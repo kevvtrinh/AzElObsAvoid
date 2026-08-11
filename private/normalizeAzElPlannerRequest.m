@@ -142,7 +142,53 @@ end
 for obstacleIndex = 1:numel(obstacles)
     obstacles{obstacleIndex} = ...
         normalizeAzElTimeObstacleData(obstacles{obstacleIndex});
+    obstacles{obstacleIndex} = compressStaticObstacleSamples( ...
+        obstacles{obstacleIndex});
 end
+end
+
+function obstacle = compressStaticObstacleSamples(obstacle)
+%% Section 0: Header & Readme
+% SYNTAX
+%   obstacle = compressStaticObstacleSamples(obstacle)
+%**************************************************************************
+% PURPOSE
+%   - Replace a fully repeated canonical obstacle history by its two end
+%     samples without changing its held or interpolated occupied set.
+%**************************************************************************
+% INPUTS
+%   - obstacle (normalized scalar canonical obstacle)
+%**************************************************************************
+% OUTPUTS
+%   - obstacle (equivalent normalized canonical obstacle)
+%**************************************************************************
+% UNITS
+%   - Canonical fields retain their documented units.
+
+sampleCount = numel(obstacle.time_s);
+if sampleCount <= 2
+    return;
+end
+firstAzimuth_deg = obstacle.az_deg{1};
+firstElevation_deg = obstacle.el_deg{1};
+firstStatus = obstacle.status(1);
+isStatic = true;
+for sampleIndex = 2:sampleCount
+    if ~isequaln(obstacle.az_deg{sampleIndex}, firstAzimuth_deg) || ...
+            ~isequaln(obstacle.el_deg{sampleIndex}, ...
+                firstElevation_deg) || ...
+            obstacle.status(sampleIndex) ~= firstStatus
+        isStatic = false;
+        break;
+    end
+end
+if ~isStatic
+    return;
+end
+obstacle.time_s = obstacle.time_s([1, end]);
+obstacle.az_deg = obstacle.az_deg([1, end]);
+obstacle.el_deg = obstacle.el_deg([1, end]);
+obstacle.status = obstacle.status([1, end]);
 end
 
 function state = normalizeBoundaryState(state, fieldName, requireTime)

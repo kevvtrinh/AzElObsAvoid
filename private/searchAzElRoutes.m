@@ -59,6 +59,12 @@ for routeIndex = 1:numel(routes)
         latestUsefulArrival_s, temporalResolution_s);
 
     routeFound = false;
+    routeCandidateCount = 0;
+    if numel(routes) > 1
+        maximumCandidatesPerRoute = 128;
+    else
+        maximumCandidatesPerRoute = Inf;
+    end
     for arrivalIndex = 1:numel(candidateArrival_s)
         arrivalTime_s = candidateArrival_s(arrivalIndex);
         goalState = evaluateAzElGoal(request.goal, arrivalTime_s);
@@ -71,6 +77,9 @@ for routeIndex = 1:numel(routes)
         for waitIndex = 1:numel(waitDuration_s)
             if budgetExpired(request, planningTimer)
                 search.budgetExpired = true;
+                break;
+            end
+            if routeCandidateCount >= maximumCandidatesPerRoute
                 break;
             end
             try
@@ -90,6 +99,7 @@ for routeIndex = 1:numel(routes)
             end
 
             search.candidateCount = search.candidateCount + 1;
+            routeCandidateCount = routeCandidateCount + 1;
             motion = validateAzElMotion(candidateCommand, ...
                 request.limits, request.options);
             if ~motion.isValid
@@ -118,8 +128,12 @@ for routeIndex = 1:numel(routes)
                 search.validationFailureCount + 1;
             search.failureMessages(end + 1, 1) = ...
                 summarizeValidationFailure(validation);
+            if routeCandidateCount >= maximumCandidatesPerRoute
+                break;
+            end
         end
-        if routeFound || search.budgetExpired
+        if routeFound || search.budgetExpired || ...
+                routeCandidateCount >= maximumCandidatesPerRoute
             break;
         end
     end
@@ -325,7 +339,7 @@ if maximumWait_s < temporalResolution_s
     return;
 end
 waitDuration_s = 0:temporalResolution_s:maximumWait_s;
-maximumWaitCandidateCount = 32;
+maximumWaitCandidateCount = 4;
 if numel(waitDuration_s) > maximumWaitCandidateCount
     selectedIndices = unique(round(linspace(1, numel(waitDuration_s), ...
         maximumWaitCandidateCount)));

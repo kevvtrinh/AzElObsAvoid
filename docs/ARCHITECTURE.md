@@ -14,16 +14,22 @@ the current construction is also acceleration-continuous at internal knots.
 
 ## Planning flow
 
-1. Normalize canonical inputs without changing their public schema.
+1. Normalize canonical inputs without changing their public schema; collapse
+   fully repeated static histories to equivalent endpoint samples internally.
 2. Establish endpoint facts and an obstacle-free synchronized lower bound.
 3. Measure mission extent, obstacle feature size and cadence, safety margin,
    seam proximity, dynamics, and horizon.
 4. Derive a deterministic coarse-to-fine spatial and temporal schedule.
-5. Generate route seeds from offset polygon boundary and bounding-box points.
-6. Build a provisional visibility graph directly from canonical geometry.
+5. Generate route seeds from adaptive geometry extrema, offset polygon
+   boundaries, scene envelopes, and distinct directional topologies.
+6. Build a sparse provisional visibility graph directly from canonical
+   geometry.
 7. Search routes, arrival times, motion durations, and feasible departure
-   holds in earliest-arrival order.
-8. Construct a complete quintic command with shared interior turn velocity.
+   holds with bounded per-route work so one blocked topology cannot starve
+   alternatives.
+8. Construct a complete command: a constant-jerk S-curve for direct
+   rest-to-rest motion, or quintic Hermite segments with shared interior turn
+   velocity for general routes.
 9. Reject obvious motion-limit failures, then invoke the independent validator.
 10. Retain the best validated incumbent across every refinement level.
 

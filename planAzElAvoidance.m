@@ -206,7 +206,7 @@ for levelIndex = 1:numel(schedule.spatialResolution_deg)
     if isempty(request.obstacles) && request.goal.type == "fixed" && ...
             isfinite(bestArrivalTime_s)
         result.diagnostics.stoppingReason = ...
-            "ObstacleFreeQuinticMinimumEstablished";
+            "ObstacleFreeSCurveMinimumEstablished";
         break;
     end
     if levelIndex == numel(schedule.spatialResolution_deg)
@@ -239,8 +239,8 @@ if isfinite(bestArrivalTime_s)
     if isempty(request.obstacles) && bestWasDirect
         result.guarantee.optimality = ...
             "Minimum arrival under a stated model";
-        result.guarantee.model = ["C2 quintic Hermite direct motion with " ...
-            "exact endpoint position, velocity, and acceleration"];
+        result.guarantee.model = ["C2 constant-jerk S-curve direct motion " ...
+            "with exact endpoint position, velocity, and acceleration"];
         if isempty(schedule.temporalResolution_s)
             result.guarantee.tolerance_s = NaN;
         else

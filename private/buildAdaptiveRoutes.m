@@ -42,7 +42,9 @@ offsetBase_deg = request.options.safetyMargin_deg + ...
 
 for obstacleIndex = 1:numel(request.obstacles)
     obstacle = request.obstacles{obstacleIndex};
-    for sampleIndex = 1:numel(obstacle.time_s)
+    routeSampleIndices = representativeRouteSampleIndices( ...
+        obstacle, spatialResolution_deg);
+    for sampleIndex = reshape(routeSampleIndices, 1, [])
         regions_deg = splitAzElRegions(obstacle.az_deg{sampleIndex}, ...
             obstacle.el_deg{sampleIndex});
         for regionIndex = 1:numel(regions_deg)
@@ -62,14 +64,18 @@ nodes_deg = filterAndDeduplicateNodes(nodes_deg, request, ...
     spatialResolution_deg, nominalArrivalTime_s);
 nodes_deg = ensureEndpointsFirst(nodes_deg, startPosition_deg, ...
     goalPosition_deg);
+routes = appendEnvelopeRoutes(routes, nodes_deg, startPosition_deg, ...
+    goalPosition_deg, request, spatialResolution_deg);
 
 %% Section 2: Construct A Provisional Visibility Graph
 nodeCount = size(nodes_deg, 1);
 edgeWeight = inf(nodeCount, nodeCount);
 edgeCount = 0;
+candidateEdge = candidateEdgeMask(nodes_deg);
 for firstNodeIndex = 1:(nodeCount - 1)
     for secondNodeIndex = (firstNodeIndex + 1):nodeCount
-        if provisionalEdgeIsSafe(nodes_deg(firstNodeIndex, :), ...
+        if candidateEdge(firstNodeIndex, secondNodeIndex) && ...
+                provisionalEdgeIsSafe(nodes_deg(firstNodeIndex, :), ...
                 nodes_deg(secondNodeIndex, :), startPosition_deg, ...
                 goalPosition_deg, nominalArrivalTime_s, request, ...
                 spatialResolution_deg)
@@ -88,6 +94,10 @@ for firstNodeIndex = 1:(nodeCount - 1)
 end
 
 %% Section 3: Extract Deterministic Alternative Routes
+routes = appendDirectionalGraphRoutes(routes, nodes_deg, edgeWeight, ...
+    spatialResolution_deg);
+routes = appendCommonNeighborRoutes(routes, nodes_deg, edgeWeight, ...
+    spatialResolution_deg);
 workingWeight = edgeWeight;
 maximumRouteCount = min(8, max(3, ceil(sqrt(nodeCount))));
 maximumAttempts = 3 .* maximumRouteCount;
@@ -123,6 +133,307 @@ statistics = struct( ...
     "routeCount", numel(routes));
 end
 
+function routes = appendEnvelopeRoutes(routes, nodes_deg, ...
+        startPosition_deg, goalPosition_deg, request, ...
+        spatialResolution_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   routes = appendEnvelopeRoutes(routes, nodes_deg, ...
+%       startPosition_deg, goalPosition_deg, request, ...
+%       spatialResolution_deg)
+%**************************************************************************
+% PURPOSE
+%   - Add scene-scale upper, lower, left, and right bypasses derived from
+%     internally generated obstacle-boundary extrema.
+%**************************************************************************
+% INPUTS
+%   - routes (cell column)
+%   - nodes_deg (N-by-2 numeric)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric)
+%   - request (normalized scalar request)
+%   - spatialResolution_deg (positive scalar)
+%**************************************************************************
+% OUTPUTS
+%   - routes (augmented cell column)
+%**************************************************************************
+% UNITS
+%   - Positions and resolution are degrees; time is seconds.
+
+if size(nodes_deg, 1) <= 2
+    return;
+end
+boundaryNodes_deg = nodes_deg(3:end, :);
+envelopeMargin_deg = 0.75 .* spatialResolution_deg;
+minimum_deg = min(boundaryNodes_deg, [], 1) - envelopeMargin_deg;
+maximum_deg = max(boundaryNodes_deg, [], 1) + envelopeMargin_deg;
+minimum_deg(2) = max(minimum_deg(2), ...
+    request.limits.elevation_deg(1));
+maximum_deg(2) = min(maximum_deg(2), ...
+    request.limits.elevation_deg(2));
+if ~request.options.azimuthWrap
+    minimum_deg(1) = max(minimum_deg(1), ...
+        request.limits.azimuth_deg(1));
+    maximum_deg(1) = min(maximum_deg(1), ...
+        request.limits.azimuth_deg(2));
+end
+candidateRoutes = { ...
+    [startPosition_deg; minimum_deg(1), maximum_deg(2); ...
+        maximum_deg; goalPosition_deg]
+    [startPosition_deg; minimum_deg; ...
+        maximum_deg(1), minimum_deg(2); goalPosition_deg]
+    [startPosition_deg; minimum_deg; ...
+        minimum_deg(1), maximum_deg(2); goalPosition_deg]
+    [startPosition_deg; maximum_deg(1), minimum_deg(2); ...
+        maximum_deg; goalPosition_deg]};
+for candidateIndex = 1:numel(candidateRoutes)
+    candidateRoute_deg = removeCollinearRouteNodes( ...
+        candidateRoutes{candidateIndex}, spatialResolution_deg);
+    if routeAlreadyPresent(routes, candidateRoute_deg, ...
+            spatialResolution_deg)
+        continue;
+    end
+    routes{end + 1, 1} = candidateRoute_deg; %#ok<AGROW>
+end
+end
+
+function routes = appendDirectionalGraphRoutes(routes, nodes_deg, ...
+        edgeWeight, spatialResolution_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   routes = appendDirectionalGraphRoutes(routes, nodes_deg, ...
+%       edgeWeight, spatialResolution_deg)
+%**************************************************************************
+% PURPOSE
+%   - Extract upper, lower, right, and left graph routes so alternatives
+%     represent distinct scene-scale topologies rather than edge variants.
+%**************************************************************************
+% INPUTS
+%   - routes (cell column)
+%   - nodes_deg (N-by-2 numeric)
+%   - edgeWeight (N-by-N provisional graph)
+%   - spatialResolution_deg (positive scalar)
+%**************************************************************************
+% OUTPUTS
+%   - routes (augmented cell column)
+%**************************************************************************
+% UNITS
+%   - Positions and resolution are degrees.
+
+nodeCount = size(nodes_deg, 1);
+if nodeCount <= 3
+    return;
+end
+interiorIndices = (3:nodeCount).';
+medianAzimuth_deg = median(nodes_deg(interiorIndices, 1));
+medianElevation_deg = median(nodes_deg(interiorIndices, 2));
+directionalMasks = { ...
+    nodes_deg(:, 2) >= medianElevation_deg
+    nodes_deg(:, 2) <= medianElevation_deg
+    nodes_deg(:, 1) >= medianAzimuth_deg
+    nodes_deg(:, 1) <= medianAzimuth_deg};
+for directionIndex = 1:numel(directionalMasks)
+    allowedNode = directionalMasks{directionIndex};
+    allowedNode(1:2) = true;
+    restrictedWeight = inf(size(edgeWeight));
+    restrictedWeight(allowedNode, allowedNode) = ...
+        edgeWeight(allowedNode, allowedNode);
+    routeIndices = shortestPathIndices(restrictedWeight, 1, 2);
+    if isempty(routeIndices)
+        continue;
+    end
+    candidateRoute_deg = removeCollinearRouteNodes( ...
+        nodes_deg(routeIndices, :), spatialResolution_deg);
+    if ~routeAlreadyPresent(routes, candidateRoute_deg, ...
+            spatialResolution_deg)
+        routes{end + 1, 1} = candidateRoute_deg; %#ok<AGROW>
+    end
+end
+end
+
+function routes = appendCommonNeighborRoutes(routes, nodes_deg, ...
+        edgeWeight, spatialResolution_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   routes = appendCommonNeighborRoutes(routes, nodes_deg, edgeWeight, ...
+%       spatialResolution_deg)
+%**************************************************************************
+% PURPOSE
+%   - Add geometrically diverse one-turn detours before graph penalties can
+%     spend the route set on near-duplicate shortest paths.
+%**************************************************************************
+% INPUTS
+%   - routes (cell column)
+%   - nodes_deg (N-by-2 numeric)
+%   - edgeWeight (N-by-N provisional graph)
+%   - spatialResolution_deg (positive scalar)
+%**************************************************************************
+% OUTPUTS
+%   - routes (augmented cell column)
+%**************************************************************************
+% UNITS
+%   - Positions and resolution are degrees.
+
+commonNeighbor = find(isfinite(edgeWeight(1, :)) & ...
+    isfinite(edgeWeight(2, :)));
+commonNeighbor = setdiff(commonNeighbor, [1, 2], "stable");
+if isempty(commonNeighbor)
+    return;
+end
+
+combinedWeight = edgeWeight(1, commonNeighbor) + ...
+    edgeWeight(2, commonNeighbor);
+[~, shortestOrder] = sort(combinedWeight, "ascend");
+[~, upperOrder] = sort(nodes_deg(commonNeighbor, 2), "descend");
+[~, lowerOrder] = sort(nodes_deg(commonNeighbor, 2), "ascend");
+[~, rightOrder] = sort(nodes_deg(commonNeighbor, 1), "descend");
+[~, leftOrder] = sort(nodes_deg(commonNeighbor, 1), "ascend");
+selectionOrder = unique([ ...
+    reshape(shortestOrder(1:min(2, numel(shortestOrder))), 1, []), ...
+    reshape(upperOrder(1:min(2, numel(upperOrder))), 1, []), ...
+    reshape(lowerOrder(1:min(2, numel(lowerOrder))), 1, []), ...
+    rightOrder(1), leftOrder(1)], "stable");
+
+maximumDiverseRouteCount = 6;
+addedCount = 0;
+for selectionIndex = reshape(selectionOrder, 1, [])
+    nodeIndex = commonNeighbor(selectionIndex);
+    candidateRoute_deg = [nodes_deg(1, :); ...
+        nodes_deg(nodeIndex, :); nodes_deg(2, :)];
+    if ~routeAlreadyPresent(routes, candidateRoute_deg, ...
+            spatialResolution_deg)
+        routes{end + 1, 1} = candidateRoute_deg; %#ok<AGROW>
+        addedCount = addedCount + 1;
+    end
+    if addedCount >= maximumDiverseRouteCount
+        break;
+    end
+end
+end
+
+function candidateEdge = candidateEdgeMask(nodes_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   candidateEdge = candidateEdgeMask(nodes_deg)
+%**************************************************************************
+% PURPOSE
+%   - Keep the provisional visibility graph sparse and deterministic with
+%     local geometric neighbors plus direct endpoint connections.
+%**************************************************************************
+% INPUTS
+%   - nodes_deg (N-by-2 numeric)
+%**************************************************************************
+% OUTPUTS
+%   - candidateEdge (N-by-N logical symmetric matrix)
+%**************************************************************************
+% UNITS
+%   - Node coordinates are degrees.
+
+nodeCount = size(nodes_deg, 1);
+candidateEdge = false(nodeCount, nodeCount);
+if nodeCount <= 48
+    candidateEdge = triu(true(nodeCount), 1);
+    candidateEdge = candidateEdge | candidateEdge.';
+    return;
+end
+
+neighborCount = min(nodeCount - 1, max(16, ...
+    ceil(2 .* sqrt(nodeCount))));
+for nodeIndex = 1:nodeCount
+    distanceSquared_deg2 = sum((nodes_deg - ...
+        nodes_deg(nodeIndex, :)).^2, 2);
+    distanceSquared_deg2(nodeIndex) = Inf;
+    [~, sortedIndices] = sort(distanceSquared_deg2, "ascend");
+    selectedIndices = sortedIndices(1:neighborCount);
+    candidateEdge(nodeIndex, selectedIndices) = true;
+end
+candidateEdge(1:2, :) = true;
+candidateEdge(:, 1:2) = true;
+candidateEdge(1:(nodeCount + 1):end) = false;
+candidateEdge = candidateEdge | candidateEdge.';
+end
+
+function sampleIndices = representativeRouteSampleIndices( ...
+        obstacle, spatialResolution_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   sampleIndices = representativeRouteSampleIndices( ...
+%       obstacle, spatialResolution_deg)
+%**************************************************************************
+% PURPOSE
+%   - Select time slices that define spatial topology at the current
+%     resolution while retaining endpoints, extrema, and topology changes.
+%   - Leave the complete obstacle history intact for final validation.
+%**************************************************************************
+% INPUTS
+%   - obstacle (normalized scalar canonical obstacle)
+%   - spatialResolution_deg (positive scalar)
+%**************************************************************************
+% OUTPUTS
+%   - sampleIndices (increasing integer row)
+%**************************************************************************
+% UNITS
+%   - Geometry signatures and resolution are degrees.
+
+sampleCount = numel(obstacle.time_s);
+if sampleCount <= 3
+    sampleIndices = 1:sampleCount;
+    return;
+end
+
+geometrySignature_deg = nan(sampleCount, 6);
+topologyChangeIndices = zeros(0, 1);
+for sampleIndex = 1:sampleCount
+    azimuth_deg = obstacle.az_deg{sampleIndex};
+    elevation_deg = obstacle.el_deg{sampleIndex};
+    finiteMask = isfinite(azimuth_deg) & isfinite(elevation_deg);
+    if any(finiteMask)
+        finiteAzimuth_deg = azimuth_deg(finiteMask);
+        finiteElevation_deg = elevation_deg(finiteMask);
+        geometrySignature_deg(sampleIndex, :) = [ ...
+            mean(finiteAzimuth_deg), mean(finiteElevation_deg), ...
+            min(finiteAzimuth_deg), max(finiteAzimuth_deg), ...
+            min(finiteElevation_deg), max(finiteElevation_deg)];
+    end
+    if sampleIndex > 1 && ( ...
+            ~isequal(size(obstacle.az_deg{sampleIndex - 1}), ...
+                size(azimuth_deg)) || ...
+            ~isequal(isfinite(obstacle.az_deg{sampleIndex - 1}), ...
+                isfinite(azimuth_deg)))
+        topologyChangeIndices = [topologyChangeIndices; ...
+            sampleIndex - 1; sampleIndex]; %#ok<AGROW>
+    end
+end
+
+signatureRange_deg = max(geometrySignature_deg, [], 1, ...
+    "omitmissing") - min(geometrySignature_deg, [], 1, "omitmissing");
+finiteRange_deg = signatureRange_deg(isfinite(signatureRange_deg));
+if isempty(finiteRange_deg)
+    geometryExcursion_deg = 0;
+else
+    geometryExcursion_deg = max(finiteRange_deg);
+end
+adaptiveSampleCount = max(3, ...
+    ceil(geometryExcursion_deg ./ spatialResolution_deg) + 2);
+adaptiveSampleCount = min(sampleCount, adaptiveSampleCount);
+uniformIndices = round(linspace(1, sampleCount, adaptiveSampleCount));
+
+extremumIndices = zeros(0, 1);
+for signatureIndex = 1:size(geometrySignature_deg, 2)
+    signature = geometrySignature_deg(:, signatureIndex);
+    finiteIndices = find(isfinite(signature));
+    if isempty(finiteIndices)
+        continue;
+    end
+    [~, minimumLocalIndex] = min(signature(finiteIndices));
+    [~, maximumLocalIndex] = max(signature(finiteIndices));
+    extremumIndices = [extremumIndices; ...
+        finiteIndices(minimumLocalIndex); ...
+        finiteIndices(maximumLocalIndex)]; %#ok<AGROW>
+end
+sampleIndices = unique([1; sampleCount; uniformIndices(:); ...
+    extremumIndices; topologyChangeIndices]).';
+end
+
 function shiftedRegions = shiftRegionsForWrap(vertices_deg, ...
         startAzimuth_deg, goalAzimuth_deg, request)
 %% Section 0: Header & Readme
@@ -152,14 +463,10 @@ span_deg = diff(request.limits.azimuth_deg);
 referenceAzimuth_deg = 0.5 .* (startAzimuth_deg + goalAzimuth_deg);
 centerShift = round((referenceAzimuth_deg - mean(vertices_deg(:, 1))) ./ ...
     span_deg);
-shiftedRegions = cell(3, 1);
-for shiftIndex = 1:3
-    shiftCount = centerShift + shiftIndex - 2;
-    shiftedVertices_deg = vertices_deg;
-    shiftedVertices_deg(:, 1) = shiftedVertices_deg(:, 1) + ...
-        shiftCount .* span_deg;
-    shiftedRegions{shiftIndex} = shiftedVertices_deg;
-end
+shiftedVertices_deg = vertices_deg;
+shiftedVertices_deg(:, 1) = shiftedVertices_deg(:, 1) + ...
+    centerShift .* span_deg;
+shiftedRegions = {shiftedVertices_deg};
 end
 
 function nodes_deg = boundaryOffsetNodes(vertices_deg, offsetBase_deg, ...
@@ -333,7 +640,7 @@ function isSafe = provisionalEdgeIsSafe(firstPosition_deg, ...
 edgeLength_deg = norm(secondPosition_deg - firstPosition_deg);
 sampleSpacing_deg = max([0.35 .* spatialResolution_deg, ...
     0.2 .* request.options.safetyMargin_deg, 0.02]);
-sampleCount = min(96, max(3, ceil(edgeLength_deg ./ sampleSpacing_deg) + 1));
+sampleCount = min(24, max(3, ceil(edgeLength_deg ./ sampleSpacing_deg) + 1));
 interpolationFraction = linspace(0, 1, sampleCount).';
 samplePosition_deg = firstPosition_deg + interpolationFraction .* ...
     (secondPosition_deg - firstPosition_deg);

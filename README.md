@@ -18,6 +18,7 @@ no certified answer returns `unknown`; it is never mislabeled infeasible.
 - Wrapped azimuth with a continuous unwrapped command history.
 - Exact initial and terminal position, velocity, and acceleration.
 - C2 piecewise-quintic motion with positive velocity carry through safe turns.
+- Near-bound direct rest-to-rest timing using symmetric constant-jerk S-curves.
 - Explicit, physically stationary departure waits when timing requires them.
 - Optional post-capture tracking of a moving goal.
 - Deterministic, internally selected boundary and timing refinement.
@@ -159,6 +160,11 @@ addpath(fullfile(pwd, "examples"));
 example01Unobstructed(false);
 example02StaticDetour(false);
 example03TimedWallWait(false);
+example04RlBranchArrivalOracles();
+example05RlStaticDetour(false);
+example06RlDynamicSafeIntervals(false);
+example07RlWrappedSeamDetour(false);
+example08RlNarrowPassage(false);
 
 results = runtests("tests", "IncludeSubfolders", true);
 assertSuccess(results);
@@ -166,6 +172,13 @@ assertSuccess(results);
 
 The numbered examples all use the planner's ordinary internal defaults. Their
 options describe only physical mission choices.
+
+Examples 04-08 preserve only mission inputs and independent acceptance checks
+from branch `all-dijkstra-rl-parameter-auto-tune`; no planner implementation,
+learned artifact, route, or tuning value was imported. Example 04 enforces the
+source branch's 1.03 arrival-ratio threshold on four analytic free-space
+oracles. Examples 05-08 replay representative static, moving, wrapped, and
+narrow obstacle scenes.
 
 ## Repository map
 

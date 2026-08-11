@@ -8,7 +8,8 @@ The repository contains a from-scratch MATLAB azimuth/elevation planner with:
 - canonical static, moving, multi-obstacle, and disconnected polygon input;
 - fixed and moving complete-state goals;
 - internal deterministic coarse-to-fine boundary and timing work;
-- C2 quintic motion with exact boundary state matching and turn velocity carry;
+- C2 constant-jerk direct motion plus quintic routed motion with exact boundary
+  state matching and turn velocity carry;
 - feasible explicit departure holds and optional moving-goal trailing;
 - independent continuous dynamics and collision validation;
 - wrap-safe continuous azimuth; and
@@ -47,17 +48,31 @@ end
 - Artificially exhausted work budget: correctly reported unknown.
 - Headless visualization: exercised only after validation.
 - Example source-purity scan: passes.
+- Four RL-branch analytic oracle missions: validated within the inherited
+  1.03 arrival-ratio threshold.
+- Four representative RL-branch obstacle missions: static, moving, wrapped,
+  and narrow scenes all independently validated.
 
 The final MATLAB R2024b run on 2026-08-11 produced:
 
 | Preserved input | Arrival (s) | Clearance (deg) | Velocity use | Acceleration use | Interior carry (deg/s) | Wait (s) | Planning (s) | Claim |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| `example01Unobstructed` | 4.8094 | Inf | 0.7797 | 0.9984 | N/A | 0 | 0.452 | Minimum under stated model |
-| `example02StaticDetour` | 6.6789 | 2.4752 | 0.7958 | 0.9998 | 4.2375 | 0 | 10.996 | Best found |
-| `example03TimedWallWait` | 11.5008 | 1.3794 | 0.9999 | 0.7388 | 0 | 5.25 | 20.007 | Best found |
+| `example01Unobstructed` | 4.0219 | Inf | 0.9946 | 0.9991 | 0.0562 | 0 | 0.561 | Minimum under stated model |
+| `example02StaticDetour` | 6.6454 | 4.2066 | 0.7956 | 0.9996 | 4.4098 | 0 | 9.554 | Best found |
+| `example03TimedWallWait` | 10.8598 | 2.0869 | 1.0000 | 0.9986 | 0 | 6.00 | 20.357 | Best found |
 
-All 15 function-based tests passed in 49.5 seconds. Code Analyzer reported
-zero messages across 28 MATLAB files. Runtime and memory vary with hardware;
+The imported RL-branch evidence from the same final run was:
+
+| Imported mission | Arrival (s) | Clearance (deg) | Acceptance |
+| --- | ---: | ---: | --- |
+| Four analytic free-space oracles | N/A | Inf | 4/4; maximum arrival ratio 1.005469 |
+| Static blocker | 10.3078 | 0.8027 | Validated |
+| Two moving walls | 10.4445 | 0.6399 | Validated |
+| Wrapped seam blocker | 19.0730 | 0.7656 | Validated |
+| Narrow passage | 9.4520 | 0.6611 | Validated |
+
+All 20 function-based tests passed in 106.5 seconds. Code Analyzer reported
+zero messages across 35 MATLAB files. Runtime and memory vary with hardware;
 the benchmark function returns the full evidence table, including terminal
 errors, travel, wait count, memory after each case when available, and the
 guarantee label. Deterministic command content does not depend on wall-clock
@@ -74,6 +89,9 @@ measurements.
   complete-state scan; a future analytic root certificate would be stronger.
 - The route generator is boundary-derived and deterministic, not
   probabilistically complete.
+- The global planning budget is checked between indivisible graph, command,
+  and validation operations, so measured wall time can modestly exceed the
+  requested limit before returning a completed certificate.
 
 ## Next smallest evidence-backed tasks
 
