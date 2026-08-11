@@ -1,0 +1,10 @@
+*.asv
+*.m~
+*.mlx~
+*.fig
+*.mat
+coverage/
+results/
+slprj/
+codegen/
+.matlab/
