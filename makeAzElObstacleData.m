@@ -1,12 +1,16 @@
 function azElData = makeAzElObstacleData(obstacleName, time_s, ...
-        azimuthBoundary_deg, elevationBoundary_deg)
+        azimuthBoundary_deg, elevationBoundary_deg, safetyMargin_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   azElData = makeAzElObstacleData( ...
 %       obstacleName, time_s, azimuthBoundary_deg, elevationBoundary_deg)
+%   azElData = makeAzElObstacleData( ...
+%       obstacleName, time_s, azimuthBoundary_deg, ...
+%       elevationBoundary_deg, safetyMargin_deg)
 %**************************************************************************
 % PURPOSE
 %   - Build validated canonical static or time-varying obstacle data.
+%   - Optionally inflate every polygon before publishing the final data.
 %**************************************************************************
 % INPUTS
 %   - obstacleName (scalar text)
@@ -17,6 +21,8 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %       Static boundary or one boundary vector per sample.
 %   - elevationBoundary_deg (numeric vector or cell array)
 %       Boundary representation matching azimuthBoundary_deg.
+%   - safetyMargin_deg (nonnegative scalar, optional; default 0)
+%       Euclidean polygon inflation applied here before data is returned.
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)
@@ -24,6 +30,12 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates are degrees and time_s is seconds.
+
+if nargin < 5 || isempty(safetyMargin_deg)
+    safetyMargin_deg = 0;
+end
+validateattributes(safetyMargin_deg, {'numeric'}, ...
+    {'scalar', 'real', 'finite', 'nonnegative'});
 
 %% Section 1: Normalize Static & Sampled Boundaries
 time_s = double(time_s(:));
@@ -49,4 +61,10 @@ azElData = struct( ...
 % This keeps test fixtures from relying on shapes the public planner would
 % reject in operational data.
 azElData = normalizeAzElTimeObstacleData(azElData);
+% Inflation belongs to obstacle construction. Packers, collision queries,
+% visibility graphs, and planners receive this final geometry and must use
+% zero additional safety margin.
+if safetyMargin_deg > 0
+    azElData = inflateAzElObstacleData(azElData, safetyMargin_deg);
+end
 end
