@@ -24,8 +24,9 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 %   - queryTime (numeric array or datetime array)
 %       Seconds from ReferenceTime or absolute UTC datetimes.
 %   - optionOverrides (scalar struct)
-%       CollisionMode, TimePaddingSamples, BoundsMarginDeg, and
-%       SafetyMarginDeg control the broad and narrow phases.
+%       CollisionMode, TimePaddingSamples, and BoundaryIsOccupied control
+%       the packed-geometry query. Safety clearance is already represented
+%       by the obstacle boundary and cannot be added here.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied (logical array)
@@ -33,11 +34,11 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 %   - blockingObstacleIndex (numeric array)
 %       One-based blocking obstacle index, or zero when unoccupied.
 %   - queryDetails (scalar struct)
-%       Per-query sample indices, names, times, mode, and safety margin.
+%       Per-query obstacle names, times, boundary policy, and stored margin.
 %**************************************************************************
 % UNITS
-%   - azimuth_deg, elevation_deg, BoundsMarginDeg, and SafetyMarginDeg are
-%     degrees. Numeric queryTime values are seconds.
+%   - azimuth_deg and elevation_deg are degrees. Numeric queryTime values
+%     are seconds.
 
 %% Section 1: Validate Inputs & Apply Defaults
 defaultOptions = defaultQueryAzElTimeObstacleOptions();
@@ -53,6 +54,14 @@ end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("queryAzElTimeObstacle:InvalidOptions", ...
         "options must be a scalar struct.");
+end
+legacyMarginFields = intersect(fieldnames(optionOverrides), ...
+    {'SafetyMarginDeg', 'BoundsMarginDeg'}, "stable");
+if ~isempty(legacyMarginFields)
+    error("queryAzElTimeObstacle:SafetyMarginMoved", ...
+        "Safety margins are part of canonical obstacle geometry. " + ...
+        "Remove %s and pass the margin to makeAzElObstacleData.", ...
+        strjoin(string(legacyMarginFields), ", "));
 end
 unknownOptionFields = setdiff( ...
     fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
@@ -77,10 +86,10 @@ if ~any(collisionMode == ["polygon", "bounds"])
 end
 validateattributes(resolvedOptions.TimePaddingSamples, {'numeric'}, ...
     {'scalar', 'integer', 'nonnegative'});
-validateattributes(resolvedOptions.BoundsMarginDeg, {'numeric'}, ...
-    {'vector', 'numel', 2, 'real', 'finite', 'nonnegative'});
-validateattributes(resolvedOptions.SafetyMarginDeg, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'nonnegative'});
+validateattributes(resolvedOptions.BoundaryIsOccupied, ...
+    {'logical', 'numeric'}, {'scalar'});
+resolvedOptions.BoundaryIsOccupied = ...
+    logical(resolvedOptions.BoundaryIsOccupied);
 isPackedInput = isstruct(obstacleField) && isscalar(obstacleField) && ...
     isfield(obstacleField, "Format") && any( ...
     string(obstacleField.Format) == [ ...
@@ -204,16 +213,18 @@ for packedObstacleIndex = 1:numel(packedObstacles)
         % --- Conservative Slice-Bounds Reject -----------------------------
         sampledBounds_deg = double(obstacleBounds_deg( ...
             candidateSampleIndex(candidateRows), :));
-        broadPhaseMargin_deg = resolvedOptions.BoundsMarginDeg + ...
-            resolvedOptions.SafetyMarginDeg;
+        % An internal roundoff pad keeps the broad phase from rejecting an
+        % exact packed boundary. It is numerical tolerance, not clearance.
+        boundsScale_deg = max(1, max(abs(sampledBounds_deg), [], 2));
+        broadPhaseMargin_deg = 1e-12 .* boundsScale_deg;
         minimumAzimuth_deg = ...
-            sampledBounds_deg(:, 1) - broadPhaseMargin_deg(1);
+            sampledBounds_deg(:, 1) - broadPhaseMargin_deg;
         maximumAzimuth_deg = ...
-            sampledBounds_deg(:, 2) + broadPhaseMargin_deg(1);
+            sampledBounds_deg(:, 2) + broadPhaseMargin_deg;
         minimumElevation_deg = ...
-            sampledBounds_deg(:, 3) - broadPhaseMargin_deg(2);
+            sampledBounds_deg(:, 3) - broadPhaseMargin_deg;
         maximumElevation_deg = ...
-            sampledBounds_deg(:, 4) + broadPhaseMargin_deg(2);
+            sampledBounds_deg(:, 4) + broadPhaseMargin_deg;
         isInsideSliceBounds = all(isfinite(sampledBounds_deg), 2) & ...
             queryAzimuth_deg(candidateRows) >= minimumAzimuth_deg & ...
             queryAzimuth_deg(candidateRows) <= maximumAzimuth_deg & ...
@@ -309,10 +320,10 @@ for packedObstacleIndex = 1:numel(packedObstacles)
             edgeElevationDelta_deg - ( ...
             activeQueryElevation_deg - activeEdgeStartElevation_deg) .* ...
             edgeAzimuthDelta_deg;
-        % The 1e-7 relative tolerance absorbs single-precision packing
-        % error. Separate coordinate and cross-product tolerances preserve
+        % The scale-aware tolerance absorbs polygon-buffer and arithmetic
+        % roundoff. Separate coordinate and cross-product tolerances retain
         % dimensional consistency for both boundary tests.
-        coordinateTolerance_deg = 1e-7 .* max(1, edgeLength_deg);
+        coordinateTolerance_deg = 1e-10 .* max(1, edgeLength_deg);
         crossProductTolerance_deg2 = ...
             coordinateTolerance_deg .* max(1, edgeLength_deg);
         queryOnEdge = ...
@@ -334,42 +345,12 @@ for packedObstacleIndex = 1:numel(packedObstacles)
             [activeQueryCount 1], @sum, 0);
         isInsideByOddParity = mod(crossingCount, 2) == 1;
         isOnPolygonBoundary = boundaryCount > 0;
-        activeQueriesBlocked = isInsideByOddParity | isOnPolygonBoundary;
-
-        % --- Optional Euclidean Edge Clearance ----------------------------
-        if resolvedOptions.SafetyMarginDeg > 0
-            edgeLength_deg2 = edgeAzimuthDelta_deg.^2 + ...
-                edgeElevationDelta_deg.^2;
-            minimumDistance_deg2 = inf(totalEdgeCount, 1);
-            % Adjacent azimuth images keep clearance continuous at the
-            % conventional -180/180 seam.
-            for azimuthShift_deg = [-360 0 360]
-                shiftedQueryAzimuth_deg = ...
-                    activeQueryAzimuth_deg + azimuthShift_deg;
-                edgeFraction = (( ...
-                    shiftedQueryAzimuth_deg - ...
-                    activeEdgeStartAzimuth_deg) .* ...
-                    edgeAzimuthDelta_deg + ( ...
-                    activeQueryElevation_deg - ...
-                    activeEdgeStartElevation_deg) .* ...
-                    edgeElevationDelta_deg) ./ max(edgeLength_deg2, eps);
-                edgeFraction = min(max(edgeFraction, 0), 1);
-                closestAzimuth_deg = activeEdgeStartAzimuth_deg + ...
-                    edgeFraction .* edgeAzimuthDelta_deg;
-                closestElevation_deg = activeEdgeStartElevation_deg + ...
-                    edgeFraction .* edgeElevationDelta_deg;
-                distance_deg2 = ( ...
-                    shiftedQueryAzimuth_deg - closestAzimuth_deg).^2 + ...
-                    (activeQueryElevation_deg - closestElevation_deg).^2;
-                minimumDistance_deg2 = min( ...
-                    minimumDistance_deg2, distance_deg2);
-            end
-            safetyMargin_deg2 = resolvedOptions.SafetyMarginDeg^2;
-            edgeWithinMargin = minimumDistance_deg2 <= safetyMargin_deg2;
-            nearEdgeCount = accumarray( ...
-                edgeOwner, double(edgeWithinMargin), ...
-                [activeQueryCount 1], @sum, 0);
-            activeQueriesBlocked = activeQueriesBlocked | nearEdgeCount > 0;
+        if resolvedOptions.BoundaryIsOccupied
+            activeQueriesBlocked = ...
+                isInsideByOddParity | isOnPolygonBoundary;
+        else
+            activeQueriesBlocked = ...
+                isInsideByOddParity & ~isOnPolygonBoundary;
         end
 
         newlyBlockedRows = activeRows(activeQueriesBlocked & ...
@@ -395,7 +376,9 @@ if nargout >= 3
         "ObstacleName", reshape(obstacleNames, outputSize), ...
         "QueryTimeSeconds", reshape(queryTime_s, outputSize), ...
         "CollisionMode", collisionMode, ...
-        "SafetyMarginDeg", resolvedOptions.SafetyMarginDeg, ...
+        "BoundaryIsOccupied", resolvedOptions.BoundaryIsOccupied, ...
+        "ObstacleSafetyMarginsDeg", ...
+        storedObstacleSafetyMargins(obstacleField), ...
         "Options", resolvedOptions);
 end
 end
@@ -417,11 +400,44 @@ function options = defaultQueryAzElTimeObstacleOptions()
 %       Fully populated query options.
 %**************************************************************************
 % UNITS
-%   - BoundsMarginDeg and SafetyMarginDeg are degrees.
 %   - TimePaddingSamples is dimensionless.
 options = struct( ...
     "CollisionMode", "polygon", ...
     "TimePaddingSamples", 0, ...
-    "BoundsMarginDeg", [0 0], ...
-    "SafetyMarginDeg", 0);
+    "BoundaryIsOccupied", true);
+end
+
+function safetyMargins_deg = storedObstacleSafetyMargins(obstacleField)
+%% Section 0: Header & Readme
+% SYNTAX
+%   safetyMargins_deg = storedObstacleSafetyMargins(obstacleField)
+%**************************************************************************
+% PURPOSE
+%   - Read per-obstacle construction margins from current or legacy packed
+%     field metadata without changing the queried geometry.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar struct)
+%       Packed obstacle field.
+%**************************************************************************
+% OUTPUTS
+%   - safetyMargins_deg (N-by-1 double)
+%       Stored construction-time margins, or zeros when legacy metadata is
+%       unavailable.
+%**************************************************************************
+% UNITS
+%   - Angles are degrees.
+obstacleCount = numel(obstacleField.Obstacles);
+if isfield(obstacleField, "SafetyMarginsDeg")
+    safetyMargins_deg = reshape( ...
+        double(obstacleField.SafetyMarginsDeg), [], 1);
+    return;
+end
+safetyMargins_deg = zeros(obstacleCount, 1);
+for obstacleIndex = 1:obstacleCount
+    if isfield(obstacleField.Obstacles(obstacleIndex), "SafetyMarginDeg")
+        safetyMargins_deg(obstacleIndex) = double( ...
+            obstacleField.Obstacles(obstacleIndex).SafetyMarginDeg);
+    end
+end
 end

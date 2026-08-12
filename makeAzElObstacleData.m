@@ -10,7 +10,8 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %**************************************************************************
 % PURPOSE
 %   - Build validated canonical static or time-varying obstacle data.
-%   - Optionally inflate every polygon before publishing the final data.
+%   - Own the complete safety-margin operation and retain both original and
+%     protected polygon histories in the returned canonical record.
 %**************************************************************************
 % INPUTS
 %   - obstacleName (scalar text)
@@ -56,15 +57,16 @@ azElData = struct( ...
     "time_s", time_s, ...
     "az_deg", {reshape(azimuthBoundary_deg, [], 1)}, ...
     "el_deg", {reshape(elevationBoundary_deg, [], 1)}, ...
+    "originalAz_deg", {reshape(azimuthBoundary_deg, [], 1)}, ...
+    "originalEl_deg", {reshape(elevationBoundary_deg, [], 1)}, ...
+    "safetyMargin_deg", 0, ...
     "status", repmat("visible", sampleCount, 1));
 % Route synthetic examples through the same validator as measured input.
 % This keeps test fixtures from relying on shapes the public planner would
 % reject in operational data.
 azElData = normalizeAzElTimeObstacleData(azElData);
-% Inflation belongs to obstacle construction. Packers, collision queries,
-% visibility graphs, and planners receive this final geometry and must use
-% zero additional safety margin.
-if safetyMargin_deg > 0
-    azElData = inflateAzElObstacleData(azElData, safetyMargin_deg);
-end
+% Inflation belongs exclusively to obstacle construction. Calling the
+% absolute-margin helper even for zero keeps one schema and one topology
+% path for protected geometry.
+azElData = inflateAzElObstacleData(azElData, safetyMargin_deg);
 end

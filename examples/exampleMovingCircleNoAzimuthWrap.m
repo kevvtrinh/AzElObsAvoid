@@ -1,19 +1,40 @@
 function result = exampleMovingCircleNoAzimuthWrap(options)
-%EXAMPLEMOVINGCIRCLENOAZIMUTHWRAP Define a rising circle and call planner.
-% No preferred side, detour waypoint, or directed route is supplied.
+%% Section 0: Header & Readme
+% SYNTAX
+%   result = exampleMovingCircleNoAzimuthWrap()
+%   result = exampleMovingCircleNoAzimuthWrap(options)
+%**************************************************************************
+% PURPOSE
+%   - Construct one protected rising circle and plan left-to-right without
+%     azimuth wrapping, waypoints, a preferred side, or a directed route.
+%**************************************************************************
+% INPUTS
+%   - options (scalar struct, optional)
+%       Planner option overrides.
+%**************************************************************************
+% OUTPUTS
+%   - result (scalar struct)
+%       Validated planner result and moving-obstacle geometry.
+%**************************************************************************
+% UNITS
+%   - Angles are degrees and time is seconds.
 if nargin < 1 || isempty(options)
     options = struct();
 end
 options = exampleOptions(options, struct( ...
-    "SafetyMarginDeg", 0.20, ...
     "MotionType", "velocityCarrying", ...
     "AllowAzimuthWrapping", false, ...
     "AzimuthInterval_deg", [-180 180], ...
+    "Verbose", true, ...
     "FigureVisible", "on", ...
     "Title", "Rising circle with automatic non-wrapping route"));
+% The defining behavior of this scenario is an interval-constrained route.
+% Callers may customize the interval but cannot enable wrapping here.
+options.AllowAzimuthWrapping = false;
 
-%% Obstacles
+%% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 35;
+safetyMargin_deg = 0.20;
 obstacleTime_s = (0:0.25:missionEndTime_s).';
 circleRadius_deg = 2.5;
 circleCenterElevation_deg = -3.5 + ...
@@ -31,9 +52,9 @@ for sampleIndex = 1:numel(obstacleTime_s)
 end
 obstacle = makeAzElObstacleData( ...
     "Slowly rising circle", obstacleTime_s, ...
-    circleAzimuth_deg, circleElevation_deg);
+    circleAzimuth_deg, circleElevation_deg, safetyMargin_deg);
 
-%% Planner input
+%% Section 2: Define The Planning Request
 initialState = struct("time_s", 0, "position_deg", [-12 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [12 0]);
@@ -41,20 +62,21 @@ limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [0.75 0.75]);
 
-%% Plan
+%% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 result.obstacleTime_s = obstacleTime_s;
 result.circleRadius_deg = circleRadius_deg;
 result.circleCenterElevation_deg = circleCenterElevation_deg;
-result.azimuthWrappingAllowed = false;
+result.azimuthWrappingAllowed = options.AllowAzimuthWrapping;
 result.azimuthInterval_deg = options.AzimuthInterval_deg;
 
-%% Validate
+%% Section 4: Validate The Command
 validateExampleResult(result, "moving circle");
 end
 
 function validateExampleResult(result, scenarioName)
+%% Section 0: Header & Readme
 if ~result.Success || ~result.Validation.Passed
     error("exampleMovingCircleNoAzimuthWrap:PlanningFailed", ...
         "%s validation failed. Diagnostic plots remain open. %s", ...
@@ -67,6 +89,7 @@ end
 end
 
 function options = exampleOptions(options, defaults)
+%% Section 0: Header & Readme
 names = fieldnames(defaults);
 for index = 1:numel(names)
     if ~isfield(options, names{index}) || isempty(options.(names{index}))

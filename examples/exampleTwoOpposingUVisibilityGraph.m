@@ -1,16 +1,35 @@
 function result = exampleTwoOpposingUVisibilityGraph(options)
-%EXAMPLETWOOPPOSINGUVISIBILITYGRAPH Define two Us and call the planner.
+%% Section 0: Header & Readme
+% SYNTAX
+%   result = exampleTwoOpposingUVisibilityGraph()
+%   result = exampleTwoOpposingUVisibilityGraph(options)
+%**************************************************************************
+% PURPOSE
+%   - Construct two protected opposing U obstacles and run the maintained
+%     automatic visibility planner.
+%**************************************************************************
+% INPUTS
+%   - options (scalar struct, optional)
+%       Planner option overrides.
+%**************************************************************************
+% OUTPUTS
+%   - result (scalar struct)
+%       Validated planner result and scenario geometry.
+%**************************************************************************
+% UNITS
+%   - Angles are degrees and time is seconds.
 if nargin < 1 || isempty(options)
     options = struct();
 end
 options = exampleOptions(options, struct( ...
-    "SafetyMarginDeg", 0.10, ...
     "MotionType", "velocityCarrying", ...
+    "Verbose", true, ...
     "FigureVisible", "on", ...
     "Title", "Two opposing U-shaped az/el obstacles"));
 
-%% Obstacles
+%% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 35;
+safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ ...
     -10, 8; 0, 8; 0, 5; -7, 5; ...
      -7,-5; 0,-5; 0,-8; -10,-8];
@@ -20,11 +39,13 @@ secondUBoundary_deg = [ ...
 time_s = [0; missionEndTime_s];
 obstacles = [ ...
     makeAzElObstacleData("Right-opening U", time_s, ...
-        firstUBoundary_deg(:, 1), firstUBoundary_deg(:, 2)); ...
+        firstUBoundary_deg(:, 1), firstUBoundary_deg(:, 2), ...
+        safetyMargin_deg); ...
     makeAzElObstacleData("Left-opening U", time_s, ...
-        secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2))];
+        secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2), ...
+        safetyMargin_deg)];
 
-%% Planner input
+%% Section 2: Define The Planning Request
 initialState = struct("time_s", 0, "position_deg", [-4 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [9 20]);
@@ -32,17 +53,18 @@ limits = struct( ...
     "maxVelocity_deg_s", [1 1], ...
     "maxAcceleration_deg_s2", [0.75 0.75]);
 
-%% Plan
+%% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
 result.firstUBoundary_deg = firstUBoundary_deg;
 result.secondUBoundary_deg = secondUBoundary_deg;
 
-%% Validate
+%% Section 4: Validate The Command
 validateExampleResult(result, "two opposing Us");
 end
 
 function validateExampleResult(result, scenarioName)
+%% Section 0: Header & Readme
 if ~result.Success || ~result.Validation.Passed
     error("exampleTwoOpposingUVisibilityGraph:PlanningFailed", ...
         "%s validation failed. Diagnostic plots remain open. %s", ...
@@ -55,6 +77,7 @@ end
 end
 
 function options = exampleOptions(options, defaults)
+%% Section 0: Header & Readme
 names = fieldnames(defaults);
 for index = 1:numel(names)
     if ~isfield(options, names{index}) || isempty(options.(names{index}))

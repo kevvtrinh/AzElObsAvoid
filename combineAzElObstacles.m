@@ -71,8 +71,8 @@ while pendingCount > 0
         pendingCount = requiredPendingCapacity;
     else
         error("combineAzElObstacles:InvalidInput", ...
-            ["Input %d must be an azElData struct, struct array, or cell " ...
-            "array containing azElData structs."], topLevelInputIndex);
+            "Input %d must be an azElData struct, struct array, or cell " + ...
+            "array containing azElData structs.", topLevelInputIndex);
     end
 end
 obstacleItems = obstacleItems(1:obstacleCount);
