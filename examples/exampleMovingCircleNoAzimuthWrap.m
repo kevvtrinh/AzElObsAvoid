@@ -11,6 +11,8 @@ options = exampleOptions(options, struct( ...
     "AzimuthInterval_deg", [-180 180], ...
     "FigureVisible", "on", ...
     "Title", "Rising circle with automatic non-wrapping route"));
+
+%% Obstacles
 missionEndTime_s = 35;
 obstacleTime_s = (0:0.25:missionEndTime_s).';
 circleRadius_deg = 2.5;
@@ -30,12 +32,16 @@ end
 obstacle = makeAzElObstacleData( ...
     "Slowly rising circle", obstacleTime_s, ...
     circleAzimuth_deg, circleElevation_deg);
-initialState = stateAt(0, [-12 0]);
-goalState = stateAt(missionEndTime_s, [12 0]);
+
+%% Planner input
+initialState = struct("time_s", 0, "position_deg", [-12 0]);
+goalState = struct( ...
+    "time_s", missionEndTime_s, "position_deg", [12 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [0.75 0.75]);
 
+%% Plan
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 result.obstacleTime_s = obstacleTime_s;
@@ -43,12 +49,21 @@ result.circleRadius_deg = circleRadius_deg;
 result.circleCenterElevation_deg = circleCenterElevation_deg;
 result.azimuthWrappingAllowed = false;
 result.azimuthInterval_deg = options.AzimuthInterval_deg;
+
+%% Validate
+validateExampleResult(result, "moving circle");
 end
 
-function state = stateAt(time_s, position_deg)
-state = struct( ...
-    "time_s", time_s, "position_deg", position_deg, ...
-    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+function validateExampleResult(result, scenarioName)
+if ~result.Success || ~result.Validation.Passed
+    error("exampleMovingCircleNoAzimuthWrap:PlanningFailed", ...
+        "%s validation failed. Diagnostic plots remain open. %s", ...
+        scenarioName, result.Message);
+end
+if ~any(result.directBlocked)
+    error("exampleMovingCircleNoAzimuthWrap:ScenarioNotBlocked", ...
+        "The direct path should be blocked. Diagnostic plots remain open.");
+end
 end
 
 function options = exampleOptions(options, defaults)
