@@ -81,3 +81,88 @@ for obstacleIndex = 1:numel(inflatedAzElData)
         normalizeAzElTimeObstacleData(obstacle);
 end
 end
+
+function bufferedRegions_deg = inflateAzElPolygonRegion( ...
+        region_deg, safetyMargin_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   bufferedRegions_deg = inflateAzElPolygonRegion( ...
+%       region_deg, safetyMargin_deg)
+%**************************************************************************
+% PURPOSE
+%   - Apply a compact conservative outward buffer to one finite
+%     azimuth/elevation polygon ring.
+%   - Preserve all connected output components as independently packable
+%     polygon regions.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 finite numeric matrix, N >= 3)
+%       One polygon ring in [azimuth elevation] coordinates.
+%   - safetyMargin_deg (nonnegative finite scalar)
+%       Minimum outward-buffer distance. Square joints conservatively add
+%       slightly more clearance near convex corners.
+%**************************************************************************
+% OUTPUTS
+%   - bufferedRegions_deg (column cell array)
+%       One boundary matrix per connected buffered polygon component.
+%       NaN rows inside a component retain any interior hole boundaries.
+%**************************************************************************
+% UNITS
+%   - Coordinates and safetyMargin_deg are degrees.
+
+validateattributes(region_deg, {'numeric'}, ...
+    {'real', 'finite', '2d', 'ncols', 2});
+validateattributes(safetyMargin_deg, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'nonnegative'});
+region_deg = double(region_deg);
+safetyMargin_deg = double(safetyMargin_deg);
+if size(region_deg, 1) < 3
+    error("inflateAzElPolygonRegion:TooFewVertices", ...
+        "region_deg must contain at least three finite vertices.");
+end
+
+% Remove only an explicit closing duplicate. polyshape owns all remaining
+% topology cleanup and reports a consistently ordered boundary afterward.
+coordinateScale_deg = max(1, max(abs(region_deg), [], "all"));
+duplicateTolerance_deg = 1e-12 * coordinateScale_deg;
+if size(region_deg, 1) > 3 && norm( ...
+        region_deg(end, :) - region_deg(1, :)) <= duplicateTolerance_deg
+    region_deg(end, :) = [];
+end
+
+sourcePolygon = polyshape( ...
+    region_deg(:, 1), region_deg(:, 2), ...
+    "Simplify", true, "KeepCollinearPoints", true);
+if isempty(sourcePolygon.Vertices) || area(sourcePolygon) <= 0
+    error("inflateAzElPolygonRegion:DegeneratePolygon", ...
+        "region_deg does not define a nonzero-area polygon.");
+end
+if safetyMargin_deg == 0
+    bufferedPolygon = sourcePolygon;
+else
+    % Square joints form a compact conservative envelope of the round
+    % Euclidean buffer. This avoids hundreds of tiny arc edges that an
+    % exact-polyline retimer would otherwise treat as separate corners,
+    % while never reducing the requested edge clearance.
+    bufferedPolygon = polybuffer( ...
+        sourcePolygon, safetyMargin_deg, "JointType", "square");
+end
+
+polygonComponents = regions(bufferedPolygon);
+bufferedRegions_deg = cell(numel(polygonComponents), 1);
+for componentIndex = 1:numel(polygonComponents)
+    [azimuth_deg, elevation_deg] = boundary( ...
+        polygonComponents(componentIndex));
+    componentBoundary_deg = [ ...
+        double(azimuth_deg(:)), double(elevation_deg(:))];
+    % boundary may include an all-NaN separator at its end. Removing only
+    % terminal separators avoids creating an empty ring in the packer.
+    while ~isempty(componentBoundary_deg) && ...
+            all(~isfinite(componentBoundary_deg(end, :)))
+        componentBoundary_deg(end, :) = [];
+    end
+    bufferedRegions_deg{componentIndex} = componentBoundary_deg;
+end
+bufferedRegions_deg = bufferedRegions_deg(~cellfun( ...
+    @(boundary_deg) size(boundary_deg, 1) < 3, bufferedRegions_deg));
+end
