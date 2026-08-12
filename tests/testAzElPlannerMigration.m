@@ -28,6 +28,7 @@ testCase.TestData.OriginalPath = path;
 testCase.TestData.OriginalFigureVisibility = ...
     get(groot, "DefaultFigureVisible");
 addpath(repositoryRoot);
+addpath(fullfile(repositoryRoot, "examples"));
 set(groot, "DefaultFigureVisible", "off");
 end
 
@@ -261,6 +262,89 @@ legacyField.Obstacles = rmfield( ...
 testCase.verifyEqual(logical(isOccupied), [true true]);
 testCase.verifyEqual(double(blockingIndex), [1 2]);
 testCase.verifyEqual(details.ObstacleSafetyMarginsDeg, [0; 0]);
+end
+
+function testObstacleFreePlannerUsesCanonicalEmptyField(testCase)
+%% Section 0: Header & Readme
+% Verify [] means a real zero-obstacle planning environment.
+canonicalObstacles = combineAzElObstacles([]);
+nestedCanonicalObstacles = combineAzElObstacles( ...
+    {[], {cell(0, 1), []}});
+obstacleField = buildAzElTimeObstacleField([]);
+testCase.verifySize(canonicalObstacles, [0 1]);
+testCase.verifySize(nestedCanonicalObstacles, [0 1]);
+testCase.verifyEqual( ...
+    fieldnames(nestedCanonicalObstacles), fieldnames(canonicalObstacles));
+testCase.verifyEqual(obstacleField.ObstacleCount, 0);
+testCase.verifyEmpty(obstacleField.Obstacles);
+testCase.verifyEmpty(obstacleField.SafetyMarginsDeg);
+[occupied, blocker, details] = queryAzElTimeObstacle( ...
+    obstacleField, [0 1], [0 1], [0 1]);
+testCase.verifyEqual(logical(occupied), [false false]);
+testCase.verifyEqual(double(blocker), [0 0]);
+testCase.verifyEmpty(details.ObstacleSafetyMarginsDeg);
+
+initialState = struct("time_s", 0, "position_deg", [0 0]);
+goalState = struct("time_s", 15, "position_deg", [8 -3]);
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [0.8 0.8]);
+motionTypes = ["exactStop" "velocityCarrying"];
+for motionIndex = 1:numel(motionTypes)
+    options = plannerTestOptions();
+    options.MotionType = motionTypes(motionIndex);
+    result = planAzElMotion( ...
+        [], initialState, goalState, limits, options);
+    testCase.verifyTrue(result.Success);
+    testCase.verifyEqual(result.obstacleField.ObstacleCount, 0);
+    testCase.verifyEqual(height(result.candidateDiagnostics), 1);
+    testCase.verifyFalse(any(result.directBlocked));
+    testCase.verifyFalse(any( ...
+        [result.ProgressLog.Event] == "ObstaclePrepared"));
+    closeTestFigures();
+end
+end
+
+function testMovingTargetInterceptExamples(testCase)
+%% Section 0: Header & Readme
+% Verify earliest and specified-time velocity-matched rendezvous examples.
+options = plannerTestOptions();
+options.MotionType = "velocityCarrying";
+earliestResult = exampleInterceptMovingTargetEarliest(options);
+testCase.verifyTrue(earliestResult.Success);
+testCase.verifyTrue(earliestResult.InterceptValidation.Passed);
+testCase.verifyTrue(earliestResult.SearchDiagnostics.EarliestCertified);
+testCase.verifyLessThanOrEqual( ...
+    earliestResult.InterceptValidation.PositionError_deg, 1e-7);
+testCase.verifyLessThanOrEqual( ...
+    earliestResult.InterceptValidation.VelocityError_deg_s, 1e-7);
+testCase.verifyEqual(earliestResult.obstacleField.ObstacleCount, 0);
+closeTestFigures();
+
+animationOptions = options;
+animationOptions.ShowAnimation = true;
+animationOptions.AnimationFrameStride = 100000;
+animationOptions.AnimationPause_s = 0;
+specifiedResult = exampleInterceptMovingTargetAtSetTime( ...
+    12, animationOptions);
+testCase.verifyTrue(specifiedResult.Success);
+testCase.verifyTrue(specifiedResult.InterceptValidation.Passed);
+testCase.verifyEqual(specifiedResult.InterceptTime_s, 12, ...
+    "AbsTol", 1e-8);
+testCase.verifyEqual(specifiedResult.goalLineInterceptTime_s, 12, ...
+    "AbsTol", 1e-7);
+testCase.verifyGreaterThan( ...
+    specifiedResult.timedSlopePath.WaitDuration_s, 0);
+testCase.verifyEqual(specifiedResult.obstacleField.ObstacleCount, 0);
+testCase.verifyTrue(isgraphics( ...
+    specifiedResult.animation.TargetCurrent3D));
+testCase.verifyTrue(isgraphics( ...
+    specifiedResult.animation.TargetCurrent2D));
+animatedTargetPosition_deg = [ ...
+    specifiedResult.animation.TargetCurrent2D.XData, ...
+    specifiedResult.animation.TargetCurrent2D.YData];
+testCase.verifyEqual(animatedTargetPosition_deg, ...
+    specifiedResult.TargetPositionAtIntercept_deg, "AbsTol", 1e-9);
 end
 
 function obstacle = makeSquareObstacle( ...

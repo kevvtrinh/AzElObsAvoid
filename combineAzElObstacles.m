@@ -1,16 +1,19 @@
 function azElObstacles = combineAzElObstacles(varargin)
 %% Section 0: Header & Readme
 % SYNTAX
+%   azElObstacles = combineAzElObstacles()
+%   azElObstacles = combineAzElObstacles([])
 %   azElObstacles = combineAzElObstacles(obstacle1, obstacle2, ...)
 %   azElObstacles = combineAzElObstacles(obstacleArray)
 %   azElObstacles = combineAzElObstacles(nestedObstacleCells)
 %**************************************************************************
 % PURPOSE
 %   - Flatten and validate canonical obstacle inputs in caller order.
+%   - Return a schema-preserving empty array for obstacle-free planning.
 %**************************************************************************
 % INPUTS
-%   - varargin (struct arrays or nested cell arrays)
-%       Every leaf must be a canonical scalar azElData struct.
+%   - varargin (struct arrays, nested cell arrays, or empty numeric input)
+%       Every nonempty leaf must be a canonical scalar azElData struct.
 %**************************************************************************
 % OUTPUTS
 %   - azElObstacles (column struct array)
@@ -21,8 +24,8 @@ function azElObstacles = combineAzElObstacles(varargin)
 
 %% Section 1: Validate Inputs
 if nargin == 0
-    error("combineAzElObstacles:EmptyInput", ...
-        "Provide at least one azElData obstacle.");
+    azElObstacles = emptyCanonicalAzElObstacles();
+    return;
 end
 
 %% Section 2: Flatten Nested Inputs
@@ -43,7 +46,9 @@ while pendingCount > 0
     topLevelInputIndex = pendingInputIndices(pendingCount);
     pendingValues{pendingCount} = [];
     pendingCount = pendingCount - 1;
-    if isstruct(pendingInputValue)
+    if isnumeric(pendingInputValue) && isempty(pendingInputValue)
+        continue;
+    elseif isstruct(pendingInputValue)
         flattenedStructItems = num2cell(pendingInputValue(:));
         addedObstacleCount = numel(flattenedStructItems);
         requiredObstacleCapacity = obstacleCount + addedObstacleCount;
@@ -77,8 +82,8 @@ while pendingCount > 0
 end
 obstacleItems = obstacleItems(1:obstacleCount);
 if obstacleCount == 0
-    error("combineAzElObstacles:EmptyInput", ...
-        "Provide at least one azElData obstacle.");
+    azElObstacles = emptyCanonicalAzElObstacles();
+    return;
 end
 
 %% Section 3: Normalize The Public Schema
@@ -91,4 +96,19 @@ for obstacleIndex = 1:numel(obstacleItems)
         obstacleItems{obstacleIndex});
 end
 azElObstacles = vertcat(normalizedObstacles{:});
+end
+
+function azElObstacles = emptyCanonicalAzElObstacles()
+%% Section 0: Header & Readme
+% Return the canonical field order even when no obstacle is present.
+template = struct( ...
+    "targetName", "", ...
+    "time_s", zeros(0, 1), ...
+    "az_deg", {cell(0, 1)}, ...
+    "el_deg", {cell(0, 1)}, ...
+    "originalAz_deg", {cell(0, 1)}, ...
+    "originalEl_deg", {cell(0, 1)}, ...
+    "safetyMargin_deg", 0, ...
+    "status", strings(0, 1));
+azElObstacles = repmat(template, 0, 1);
 end

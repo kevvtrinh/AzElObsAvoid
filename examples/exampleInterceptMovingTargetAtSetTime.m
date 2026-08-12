@@ -1,0 +1,97 @@
+function result = exampleInterceptMovingTargetAtSetTime( ...
+        interceptTime_s, options)
+%% Section 0: Header & Readme
+% SYNTAX
+%   result = exampleInterceptMovingTargetAtSetTime()
+%   result = exampleInterceptMovingTargetAtSetTime(interceptTime_s)
+%   result = exampleInterceptMovingTargetAtSetTime(options)
+%   result = exampleInterceptMovingTargetAtSetTime( ...
+%       interceptTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Intercept a constant-velocity moving target at a specified time in an
+%     obstacle-free azimuth/elevation environment.
+%   - Match both target position and angular velocity at rendezvous.
+%**************************************************************************
+% INPUTS
+%   - interceptTime_s (positive scalar, optional; default 12)
+%   - options (scalar struct, optional)
+%       Planner option overrides.
+%**************************************************************************
+% OUTPUTS
+%   - result (scalar struct)
+%       Validated fixed-time intercept, target track, plots, and kinematic
+%       diagnostics.
+%**************************************************************************
+% UNITS
+%   - Angles are degrees and time is seconds.
+if nargin < 1 || isempty(interceptTime_s)
+    interceptTime_s = 12;
+    options = struct();
+elseif isstruct(interceptTime_s)
+    options = interceptTime_s;
+    interceptTime_s = 12;
+elseif nargin < 2 || isempty(options)
+    options = struct();
+end
+validateattributes(interceptTime_s, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'positive'});
+options = exampleOptions(options, struct( ...
+    "MotionType", "velocityCarrying", ...
+    "Verbose", true, ...
+    "FigureVisible", "on", ...
+    "Title", sprintf( ...
+    "Moving-target intercept at t = %.3f s", interceptTime_s)));
+
+%% Section 1: Construct The Obstacle-Free Target Scenario
+obstacles = [];
+targetMotion = struct( ...
+    "referenceTime_s", 0, ...
+    "referencePosition_deg", [8 -3], ...
+    "velocity_deg_s", [0.25 -0.09375]);
+
+%% Section 2: Define The Planning Request
+initialState = struct( ...
+    "time_s", 0, ...
+    "position_deg", [0 0], ...
+    "velocity_deg_s", [0 0], ...
+    "acceleration_deg_s2", [0 0]);
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [0.8 0.8]);
+interceptOptions = struct( ...
+    "InterceptMode", "specifiedTime", ...
+    "SpecifiedInterceptTime_s", interceptTime_s, ...
+    "MatchTargetVelocity", true, ...
+    "PlannerOptions", options);
+
+%% Section 3: Run The Maintained Intercept Planner
+result = planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, interceptOptions);
+result.obstacles = obstacles;
+
+%% Section 4: Validate The Intercept
+if ~result.Success || ~result.Validation.Passed || ...
+        ~result.InterceptValidation.Passed
+    error("exampleInterceptMovingTargetAtSetTime:PlanningFailed", ...
+        "Specified-time intercept validation failed. Diagnostic plots " + ...
+        "remain open. %s", result.Message);
+end
+if result.obstacleField.ObstacleCount ~= 0 || ...
+        abs(result.InterceptTime_s - interceptTime_s) > 1e-8 || ...
+        abs(result.goalLineInterceptTime_s - interceptTime_s) > 1e-7
+    error("exampleInterceptMovingTargetAtSetTime:TimeValidationFailed", ...
+        "The command did not arrive at the requested time.");
+end
+end
+
+function options = exampleOptions(options, defaults)
+%% Section 0: Header & Readme
+% Apply example defaults without hiding caller planner overrides.
+names = fieldnames(defaults);
+for index = 1:numel(names)
+    if ~isfield(options, names{index}) || isempty(options.(names{index}))
+        options.(names{index}) = defaults.(names{index});
+    end
+end
+end

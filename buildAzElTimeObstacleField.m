@@ -11,9 +11,10 @@ function obstacleField = buildAzElTimeObstacleField( ...
 %     allocation-light collision queries.
 %**************************************************************************
 % INPUTS
-%   - azElData (struct array or cell array)
+%   - azElData (struct array, cell array, or [])
 %       Canonical obstacle samples. Nested cells and struct arrays are
-%       flattened in caller order. NaN vertex rows separate polygon regions.
+%       flattened in caller order. [] creates a valid zero-obstacle field.
+%       NaN vertex rows separate polygon regions.
 %   - optionOverrides (scalar struct)
 %       .MaximumVerticesPerRegion (positive integer or Inf)
 %           Boundary cap per region. Finite lossy caps are rejected because

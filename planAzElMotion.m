@@ -14,8 +14,9 @@ function result = planAzElMotion( ...
 %     successful and expected-failure exits.
 %**************************************************************************
 % INPUTS
-%   - obstacles (canonical obstacle struct array or nested cell array)
-%       Protected azElData records produced by makeAzElObstacleData.
+%   - obstacles (canonical obstacle data, nested cell array, or [])
+%       Protected records produced by makeAzElObstacleData. Use [] for a
+%       valid obstacle-free planning environment.
 %   - initialState, goalState (scalar structs)
 %       time_s, position_deg, and optional velocity/acceleration fields.
 %   - limits (scalar struct)
