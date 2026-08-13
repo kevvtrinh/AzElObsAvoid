@@ -33,10 +33,9 @@ end
     "Title", "U-shaped az/el obstacle"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
-missionEndTime_s = 35;
-if jerkConfiguration.JerkConstraintEnabled
-    missionEndTime_s = 120;
-end
+% Keep the physical request identical when the example-only jerk switch is
+% toggled so paired feasibility and timing comparisons remain meaningful.
+missionEndTime_s = 120;
 safetyMargin_deg = 0.20;
 uBoundary_deg = [ ...
     -8,  7; -5,  7; -5, -4; 5, -4; ...

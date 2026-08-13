@@ -1092,6 +1092,42 @@ end
 if ~isfield(diagnostics, "ExecutedMotionProfileCount")
     diagnostics.ExecutedMotionProfileCount = 0;
 end
+if ~isfield(diagnostics, "TimeOptimizationAttempted")
+    diagnostics.TimeOptimizationAttempted = false;
+end
+if ~isfield(diagnostics, "TimeOptimizationSucceeded")
+    diagnostics.TimeOptimizationSucceeded = false;
+end
+if ~isfield(diagnostics, "TimeOptimizationExitFlag")
+    diagnostics.TimeOptimizationExitFlag = NaN;
+end
+if ~isfield(diagnostics, "TimeOptimizationMessage")
+    diagnostics.TimeOptimizationMessage = "";
+end
+if ~isfield(diagnostics, "TimeOptimizationIterationCount")
+    diagnostics.TimeOptimizationIterationCount = 0;
+end
+if ~isfield(diagnostics, "TimeOptimizationFunctionCount")
+    diagnostics.TimeOptimizationFunctionCount = 0;
+end
+if ~isfield(diagnostics, "TimeOptimizationMeshIntervalCount")
+    diagnostics.TimeOptimizationMeshIntervalCount = 0;
+end
+if ~isfield(diagnostics, "InitialMotionDuration_s")
+    diagnostics.InitialMotionDuration_s = NaN;
+end
+if ~isfield(diagnostics, "OptimizedMotionDuration_s")
+    diagnostics.OptimizedMotionDuration_s = NaN;
+end
+if ~isfield(diagnostics, "TimeOptimizationReduction_s")
+    diagnostics.TimeOptimizationReduction_s = 0;
+end
+if ~isfield(diagnostics, "TimeOptimizationMaximumViolation")
+    diagnostics.TimeOptimizationMaximumViolation = NaN;
+end
+if ~isfield(diagnostics, "TimeOptimizationDerivativeBounds")
+    diagnostics.TimeOptimizationDerivativeBounds = struct([]);
+end
 if ~isfield(diagnostics, "MandatoryStopCount")
     diagnostics.MandatoryStopCount = 0;
 end
@@ -1138,6 +1174,9 @@ peakVelocity_deg_s = max(abs(timedPath.velocity_deg_s), [], 1);
 peakAcceleration_deg_s2 = max( ...
     abs(timedPath.acceleration_deg_s2), [], 1);
 peakJerk_deg_s3 = timedPathPeakJerk(timedPath);
+[peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = ...
+    includeCertifiedProfilePeaks(timedPath, peakVelocity_deg_s, ...
+        peakAcceleration_deg_s2, peakJerk_deg_s3);
 velocityScale = max([1, ...
     peakVelocity_deg_s ./ maxVelocity_deg_s]);
 accelerationScale = sqrt(max([1, ...
@@ -1160,6 +1199,10 @@ if isfield(timedPath, "MotionStartTime_s")
 end
 scaledTime_s = motionStartTime_s + ...
     (timedPath.time_s - motionStartTime_s) * timeScale;
+if any(diff(scaledTime_s) <= 0)
+    error("conservativelyScaleTimedPath:NonIncreasingTime", ...
+        "Uniform time scaling produced a non-increasing time base.");
+end
 scaledArrivalTime_s = motionStartTime_s + ...
     (timedPath.GoalLineInterceptTime_s - motionStartTime_s) * timeScale;
 if scaledArrivalTime_s > goalState.time_s + 1e-8
@@ -1175,6 +1218,20 @@ end
 timedPath.GoalLineInterceptTime_s = scaledArrivalTime_s;
 timedPath.MinimumMotionDuration_s = ...
     timedPath.MinimumMotionDuration_s * timeScale;
+if isfield(timedPath, "ConstraintDiagnostics") && ...
+        isfield(timedPath.ConstraintDiagnostics, ...
+        "OptimizedMotionDuration_s") && ...
+        isfinite(timedPath.ConstraintDiagnostics.OptimizedMotionDuration_s)
+    timedPath.ConstraintDiagnostics.OptimizedMotionDuration_s = ...
+        timedPath.ConstraintDiagnostics.OptimizedMotionDuration_s * ...
+        timeScale;
+    if isfield(timedPath.ConstraintDiagnostics, ...
+            "InitialMotionDuration_s")
+        timedPath.ConstraintDiagnostics.TimeOptimizationReduction_s = ...
+            timedPath.ConstraintDiagnostics.InitialMotionDuration_s - ...
+            timedPath.ConstraintDiagnostics.OptimizedMotionDuration_s;
+    end
+end
 timeFields = ["WaypointTime_s" "CurveNodeTime_s"];
 for fieldName = timeFields
     if isfield(timedPath, fieldName)
@@ -1252,6 +1309,9 @@ peakVelocity_deg_s = max(abs(timedPath.velocity_deg_s), [], 1);
 peakAcceleration_deg_s2 = max( ...
     abs(timedPath.acceleration_deg_s2), [], 1);
 peakJerk_deg_s3 = timedPathPeakJerk(timedPath);
+[peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = ...
+    includeCertifiedProfilePeaks(timedPath, peakVelocity_deg_s, ...
+        peakAcceleration_deg_s2, peakJerk_deg_s3);
 velocitySatisfied = all(peakVelocity_deg_s <= ...
     maxVelocity_deg_s + options.SampleTime_s * eps);
 accelerationSatisfied = all(peakAcceleration_deg_s2 <= ...
@@ -1282,6 +1342,20 @@ if isfield(timedPath.ConstraintDiagnostics, ...
     timedPath.ConstraintDiagnostics.FiniteJerkNumericallyVerified = ...
         timedPath.ConstraintDiagnostics.Satisfied;
 end
+if isfield(timedPath.ConstraintDiagnostics, "FiniteJerkCertified") && ...
+        isfield(timedPath.ConstraintDiagnostics, ...
+        "GeometryDerivativeBounds")
+    geometryBounds = ...
+        timedPath.ConstraintDiagnostics.GeometryDerivativeBounds;
+    hasContinuousCertificate = ~isempty(geometryBounds) && ...
+        all(isfield(geometryBounds, { ...
+        'CertifiedTangentByAxis', ...
+        'CertifiedSecondDerivativeByAxis_deg_inv', ...
+        'CertifiedThirdDerivativeByAxis_deg_inv2'}));
+    timedPath.ConstraintDiagnostics.FiniteJerkCertified = ...
+        timedPath.ConstraintDiagnostics.Satisfied && ...
+        hasContinuousCertificate;
+end
 if isfield(timedPath.ConstraintDiagnostics, "MinimumArcSpeed_deg_s")
     timedPath.ConstraintDiagnostics.MinimumArcSpeed_deg_s = ...
         timedPath.ConstraintDiagnostics.MinimumArcSpeed_deg_s / timeScale;
@@ -1293,6 +1367,63 @@ if timedPath.Success
         "Retiming succeeded after conservative uniform time scaling.";
     timedPath.RetimerType = ...
         string(timedPath.RetimerType) + "UniformTimeScaled";
+end
+end
+
+function [peakVelocity_deg_s, peakAcceleration_deg_s2, ...
+        peakJerk_deg_s3] = includeCertifiedProfilePeaks( ...
+        timedPath, peakVelocity_deg_s, peakAcceleration_deg_s2, ...
+        peakJerk_deg_s3)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [peakVelocity_deg_s, peakAcceleration_deg_s2, ...
+%       peakJerk_deg_s3] = includeCertifiedProfilePeaks( ...
+%       timedPath, peakVelocity_deg_s, peakAcceleration_deg_s2, ...
+%       peakJerk_deg_s3)
+%**************************************************************************
+% PURPOSE
+%   - Include continuous profile-envelope peaks when selecting a uniform
+%     rescue scale and publishing its post-scale constraint diagnostics.
+%**************************************************************************
+% INPUTS
+%   - timedPath (scalar struct)
+%       Candidate path whose SegmentProfiles may contain certified peaks.
+%   - peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3
+%       Sampled nonnegative 1-by-2 peak histories.
+%**************************************************************************
+% OUTPUTS
+%   - peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3
+%       Elementwise maxima of sampled and finite certified profile bounds.
+%**************************************************************************
+% UNITS
+%   - Outputs use deg/s, deg/s^2, and deg/s^3, respectively.
+%**************************************************************************
+if ~isfield(timedPath, "SegmentProfiles") || ...
+        isempty(timedPath.SegmentProfiles)
+    return;
+end
+profiles = timedPath.SegmentProfiles;
+fieldNames = ["PeakVelocityByAxis_deg_s", ...
+    "PeakAccelerationByAxis_deg_s2", "PeakJerkByAxis_deg_s3"];
+if ~all(isfield(profiles, cellstr(fieldNames)))
+    return;
+end
+profileVelocity_deg_s = max(vertcat( ...
+    profiles.PeakVelocityByAxis_deg_s), [], 1);
+profileAcceleration_deg_s2 = max(vertcat( ...
+    profiles.PeakAccelerationByAxis_deg_s2), [], 1);
+profileJerk_deg_s3 = max(vertcat( ...
+    profiles.PeakJerkByAxis_deg_s3), [], 1);
+if all(isfinite(profileVelocity_deg_s))
+    peakVelocity_deg_s = max( ...
+        peakVelocity_deg_s, profileVelocity_deg_s);
+end
+if all(isfinite(profileAcceleration_deg_s2))
+    peakAcceleration_deg_s2 = max( ...
+        peakAcceleration_deg_s2, profileAcceleration_deg_s2);
+end
+if all(isfinite(profileJerk_deg_s3))
+    peakJerk_deg_s3 = max(peakJerk_deg_s3, profileJerk_deg_s3);
 end
 end
 
@@ -1723,6 +1854,7 @@ if waitDuration_s > timeTolerance_s
     waitLocalTime_s = polylineRegularAndEventTimes( ...
         waitDuration_s, options.SampleTime_s, []);
     time_s = initialState.time_s + waitLocalTime_s;
+    time_s = time_s(strictlyIncreasingAbsoluteTimeMask(time_s, []));
     position_deg = repmat(initialState.position_deg, numel(time_s), 1);
     velocity_deg_s = zeros(numel(time_s), 2);
     acceleration_deg_s2 = zeros(numel(time_s), 2);
@@ -1773,13 +1905,17 @@ for segmentIndex = 1:segmentCount
     segmentVelocity_deg_s(end, :) = ...
         profile.EndSpeed_deg_s * profile.Direction;
 
-    if ~isempty(time_s) && abs(segmentTime_s(1) - time_s(end)) <= ...
-            timeTolerance_s
-        segmentTime_s(1) = [];
-        segmentPosition_deg(1, :) = [];
-        segmentVelocity_deg_s(1, :) = [];
-        segmentAcceleration_deg_s2(1, :) = [];
+    previousTime_s = [];
+    if ~isempty(time_s)
+        previousTime_s = time_s(end);
     end
+    keepSample = strictlyIncreasingAbsoluteTimeMask( ...
+        segmentTime_s, previousTime_s);
+    segmentTime_s = segmentTime_s(keepSample);
+    segmentPosition_deg = segmentPosition_deg(keepSample, :);
+    segmentVelocity_deg_s = segmentVelocity_deg_s(keepSample, :);
+    segmentAcceleration_deg_s2 = ...
+        segmentAcceleration_deg_s2(keepSample, :);
     time_s = [time_s; segmentTime_s]; %#ok<AGROW>
     position_deg = [position_deg; segmentPosition_deg]; %#ok<AGROW>
     velocity_deg_s = [velocity_deg_s; segmentVelocity_deg_s]; %#ok<AGROW>
@@ -1787,6 +1923,11 @@ for segmentIndex = 1:segmentCount
         acceleration_deg_s2; segmentAcceleration_deg_s2]; %#ok<AGROW>
     jerk_deg_s3 = [jerk_deg_s3; ...
         NaN(size(segmentAcceleration_deg_s2))]; %#ok<AGROW>
+end
+
+if numel(time_s) < 2 || any(diff(time_s) <= 0)
+    error("retimePolylineMotion:NonIncreasingTime", ...
+        "Internal profile assembly needs at least two increasing times.");
 end
 
 position_deg(1, :) = initialState.position_deg;
@@ -2010,10 +2151,70 @@ end
 function sampleTime_s = polylineRegularAndEventTimes(duration_s, sampleTime_s, events)
 %% Section 0: Header & Readme
 % Include a regular grid, exact endpoints, switches, and phase midpoints.
+% Coalesce numerically indistinguishable event times so downstream motion
+% consumers always receive a strictly increasing time base.
 regularTime_s = (0:sampleTime_s:duration_s).';
-sampleTime_s = unique([0; regularTime_s; events(:); duration_s]);
-sampleTime_s = sampleTime_s(sampleTime_s >= 0 & ...
-    sampleTime_s <= duration_s);
+candidateTime_s = sort([0; regularTime_s; events(:); duration_s]);
+candidateTime_s = candidateTime_s(candidateTime_s >= 0 & ...
+    candidateTime_s <= duration_s);
+timeMergeTolerance_s = 32 * eps(max(1, duration_s));
+keepSample = [true; diff(candidateTime_s) > timeMergeTolerance_s];
+sampleTime_s = candidateTime_s(keepSample);
+sampleTime_s(1) = 0;
+if duration_s - sampleTime_s(end) > timeMergeTolerance_s
+    sampleTime_s(end + 1, 1) = duration_s;
+else
+    sampleTime_s(end) = duration_s;
+end
+end
+
+function keepSample = strictlyIncreasingAbsoluteTimeMask( ...
+        candidateTime_s, previousTime_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   keepSample = strictlyIncreasingAbsoluteTimeMask( ...
+%       candidateTime_s, previousTime_s)
+%**************************************************************************
+% PURPOSE
+%   - Keep one state at each equal absolute time, preserving the initial
+%     candidate and final endpoint, and remove candidates behind history.
+%**************************************************************************
+% INPUTS
+%   - candidateTime_s (numeric column)
+%       Finite, nondecreasing absolute sample times.
+%   - previousTime_s (empty or finite scalar)
+%       Last time already stored in the assembled history.
+%**************************************************************************
+% OUTPUTS
+%   - keepSample (logical column)
+%       Aligned mask whose retained candidate times are strictly increasing.
+%**************************************************************************
+% UNITS
+%   - Times are seconds.
+%**************************************************************************
+candidateTime_s = double(candidateTime_s(:));
+if isempty(candidateTime_s)
+    keepSample = false(0, 1);
+    return;
+end
+if any(~isfinite(candidateTime_s)) || any(diff(candidateTime_s) < 0)
+    error("strictlyIncreasingAbsoluteTimeMask:InvalidCandidateTime", ...
+        "candidateTime_s must be finite and nondecreasing.");
+end
+keepSample = [diff(candidateTime_s) > 0; true];
+firstAdvancingSample = find(candidateTime_s > candidateTime_s(1), 1);
+if isempty(firstAdvancingSample)
+    keepSample(:) = false;
+    keepSample(1) = true;
+elseif firstAdvancingSample > 2
+    keepSample(1:firstAdvancingSample - 1) = false;
+    keepSample(1) = true;
+end
+if ~isempty(previousTime_s)
+    validateattributes(previousTime_s, {'numeric'}, ...
+        {'real','finite','scalar'});
+    keepSample = keepSample & candidateTime_s > previousTime_s;
+end
 end
 
 function [position_deg, velocity_deg_s, acceleration_deg_s2] = ...
@@ -2805,8 +3006,10 @@ function timedSlopePath = retimeRoundedMotion( ...
 %   - Without a finite jerk limit, carry velocity through tangent-continuous
 %     line/arc joins subject to velocity and acceleration limits.
 %   - With finite jerk, replace circular fillets by curvature/rate-smooth
-%     quintic blends and use analytic S-curves across each uninterrupted
-%     smooth run. Velocity is carried through those rounded joins.
+%     quintic blends and attempt local mesh time minimization on the fixed
+%     smooth path when fmincon is available. A numerically checked analytic
+%     profile is retained as fallback. Velocity and tangential acceleration
+%     are carried through ordinary smooth joins in an accepted schedule.
 %   - Apply a conservative global forward/backward pass to squared path
 %     speed. The acceleration model includes both tangential acceleration
 %     and curvature acceleration:
@@ -2824,8 +3027,9 @@ function timedSlopePath = retimeRoundedMotion( ...
 %       .maxVelocity_deg_s      positive scalar or 1-by-2 vector
 %       .maxAcceleration_deg_s2 positive scalar or 1-by-2 vector; optional
 %       .maxJerk_deg_s3         positive scalar or 1-by-2 vector; optional
-%           Finite jerk uses analytic S-curves over G3 geometric blends;
-%           only corners that cannot be smoothed remain mandatory stops.
+%           Finite jerk uses a fixed-mesh local time optimization on G3
+%           blends, with conservative analytic S-curves as fallback. Only
+%           corners that cannot be smoothed remain mandatory stops.
 %   - options (scalar struct, optional)
 %       .GoalTimeMode                 earliestArrival or fixedArrival
 %       .SampleTime_s                 maximum nominal output spacing (0.05)
@@ -2838,6 +3042,8 @@ function timedSlopePath = retimeRoundedMotion( ...
 %       Compatible timed-path fields plus jerk_deg_s3, SmoothPath,
 %       CurveArcLength_deg, CurveSpeed_deg_s,
 %       CurveTangentialAcceleration_deg_s2, and constraint diagnostics.
+%       Optimized SegmentProfiles keep realized values in Peak*; their Max*
+%       scalar fields are NaN because the enforced limits are coupled by axis.
 
 defaultOptions = struct( ...
     "GoalTimeMode", "earliestArrival", ...
@@ -3163,6 +3369,10 @@ regularTime_s = (initialState.time_s:options.SampleTime_s: ...
     goalLineInterceptTime_s).';
 time_s = unique([initialState.time_s; regularTime_s; motionStartTime_s; ...
     curveNodeTime_s; goalLineInterceptTime_s]);
+if numel(time_s) < 2 || any(diff(time_s) <= 0)
+    error("retimeRoundedMotion:NonIncreasingTime", ...
+        "Internal profile assembly needs at least two increasing times.");
+end
 sampleCount = numel(time_s);
 sampleArcLength_deg = zeros(sampleCount, 1);
 sampleSpeed_deg_s = zeros(sampleCount, 1);
@@ -3488,11 +3698,10 @@ end
 function timedPath = retimeJerkContinuousRoundedMotion( ...
         smoothPath, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% Retime each uninterrupted G3 geometric run with one analytic S-curve.
-% The quintic corner construction has q''=q'''=0 at every line join, so a
-% shared nonzero scalar speed crosses those joins without an acceleration
-% or jerk impulse. Only explicitly unsmoothed corners split the path into
-% separate zero-speed runs.
+% Build conservative analytic S-curves, then attempt a faster direct-state
+% finite-jerk schedule on the same G3 path. The quintic construction has
+% q''=q'''=0 at every line join, so shared nonzero speed and acceleration can
+% cross ordinary joins without an impulse. Only unsmoothed corners stop.
 totalLength_deg = double(smoothPath.TotalLength_deg);
 endpointSamples = sampleRoundedMotion(smoothPath, [0; totalLength_deg]);
 if norm(endpointSamples.position_deg(1, :) - initialState.position_deg) > ...
@@ -3545,12 +3754,19 @@ boundTemplate = struct( ...
     "TangentByAxis", zeros(1, 2), ...
     "SecondDerivativeByAxis_deg_inv", zeros(1, 2), ...
     "ThirdDerivativeByAxis_deg_inv2", zeros(1, 2), ...
+    "CertifiedTangentByAxis", zeros(1, 2), ...
+    "CertifiedSecondDerivativeByAxis_deg_inv", zeros(1, 2), ...
+    "CertifiedThirdDerivativeByAxis_deg_inv2", zeros(1, 2), ...
     "NumericalTangentByAxis", zeros(1, 2), ...
     "NumericalSecondDerivativeByAxis_deg_inv", zeros(1, 2), ...
     "NumericalThirdDerivativeByAxis_deg_inv2", zeros(1, 2), ...
     "EnvelopeInflationFactor", 1.0, ...
     "SampleCount", 0, ...
-    "Method", "sampledArcLengthEnvelope");
+    "CertificateSubdivisionCount", 0, ...
+    "CertificateFallbackCount", 0, ...
+    "CertificatePrimitiveCount", 0, ...
+    "SampledBoundsWithinCertificate", false, ...
+    "Method", "continuousBernsteinCertificate");
 geometryDerivativeBounds = repmat( ...
     boundTemplate, constraintCellCount, 1);
 constraintMaximumSpeed_deg_s = zeros(constraintCellCount, 1);
@@ -3641,6 +3857,17 @@ for runIndex = 1:runCount
     profiles(runIndex) = profile;
 end
 
+[optimizedProfiles, timeOptimization] = optimizeRoundedJerkProfiles( ...
+    smoothPath, profiles, constraintBoundaryS_deg, ...
+    mandatoryStopArcLength_deg, limits, options, ...
+    coordinateTolerance_deg);
+if timeOptimization.Succeeded
+    profiles = optimizedProfiles;
+    runCount = numel(profiles);
+    runBoundaryS_deg = [profiles.StartArcLength_deg, ...
+        profiles(end).EndArcLength_deg].';
+end
+
 %% Section 2: Resolve Arrival Time And Optional Initial Hold
 minimumMotionDuration_s = sum([profiles.Duration_s]);
 minimumArrivalTime_s = initialState.time_s + minimumMotionDuration_s;
@@ -3651,6 +3878,8 @@ if minimumArrivalTime_s > goalState.time_s + timeTolerance_s
         "Earliest jerk-limited arrival %.9g s exceeds goal time %.9g s.", ...
         minimumArrivalTime_s, goalState.time_s), ...
         limits, options, "velocityCarrying");
+    timedPath = retainRoundedTimeOptimizationFailure( ...
+        timedPath, timeOptimization, minimumMotionDuration_s);
     return;
 end
 waitDuration_s = 0;
@@ -3665,6 +3894,8 @@ if options.GoalTimeMode == "fixedarrival"
             "fixedArrival needs a start hold, but the initial velocity " + ...
             "or acceleration is nonzero.", ...
             limits, options, "velocityCarrying");
+        timedPath = retainRoundedTimeOptimizationFailure( ...
+            timedPath, timeOptimization, minimumMotionDuration_s);
         return;
     end
 end
@@ -3690,8 +3921,10 @@ sampleTangentialJerk_deg_s3 = zeros(0, 1);
 if waitDuration_s > timeTolerance_s
     waitLocalTime_s = polylineRegularAndEventTimes( ...
         waitDuration_s, options.SampleTime_s, []);
-    waitSampleCount = numel(waitLocalTime_s);
     time_s = initialState.time_s + waitLocalTime_s;
+    keepSample = strictlyIncreasingAbsoluteTimeMask(time_s, []);
+    time_s = time_s(keepSample);
+    waitSampleCount = numel(time_s);
     position_deg = repmat(initialState.position_deg, waitSampleCount, 1);
     velocity_deg_s = zeros(waitSampleCount, 2);
     acceleration_deg_s2 = zeros(waitSampleCount, 2);
@@ -3735,18 +3968,22 @@ for runIndex = 1:runCount
         scalarVelocity_deg_s .* scalarAcceleration_deg_s2 + ...
         curveSamples.thirdDerivative_deg_inv2 .* scalarVelocity_deg_s.^3;
     runTime_s = profile.StartTime_s + localTime_s;
-    if ~isempty(time_s) && abs(runTime_s(1) - time_s(end)) <= ...
-            timeTolerance_s
-        runTime_s(1) = [];
-        curveSamples.position_deg(1, :) = [];
-        runVelocity_deg_s(1, :) = [];
-        runAcceleration_deg_s2(1, :) = [];
-        runJerk_deg_s3(1, :) = [];
-        globalArcLength_deg(1) = [];
-        scalarVelocity_deg_s(1) = [];
-        scalarAcceleration_deg_s2(1) = [];
-        scalarJerk_deg_s3(1) = [];
+    previousTime_s = [];
+    if ~isempty(time_s)
+        previousTime_s = time_s(end);
     end
+    keepSample = strictlyIncreasingAbsoluteTimeMask( ...
+        runTime_s, previousTime_s);
+    runTime_s = runTime_s(keepSample);
+    curveSamples.position_deg = ...
+        curveSamples.position_deg(keepSample, :);
+    runVelocity_deg_s = runVelocity_deg_s(keepSample, :);
+    runAcceleration_deg_s2 = runAcceleration_deg_s2(keepSample, :);
+    runJerk_deg_s3 = runJerk_deg_s3(keepSample, :);
+    globalArcLength_deg = globalArcLength_deg(keepSample);
+    scalarVelocity_deg_s = scalarVelocity_deg_s(keepSample);
+    scalarAcceleration_deg_s2 = scalarAcceleration_deg_s2(keepSample);
+    scalarJerk_deg_s3 = scalarJerk_deg_s3(keepSample);
     time_s = [time_s; runTime_s]; %#ok<AGROW>
     position_deg = [position_deg; curveSamples.position_deg]; %#ok<AGROW>
     velocity_deg_s = [velocity_deg_s; runVelocity_deg_s]; %#ok<AGROW>
@@ -3764,6 +4001,11 @@ for runIndex = 1:runCount
         scalarJerk_deg_s3]; %#ok<AGROW>
 end
 
+if numel(time_s) < 2 || any(diff(time_s) <= 0)
+    error("retimeJerkContinuousRoundedMotion:NonIncreasingTime", ...
+        "Internal profile assembly needs at least two increasing times.");
+end
+
 position_deg(1, :) = initialState.position_deg;
 velocity_deg_s(1, :) = initialState.velocity_deg_s;
 acceleration_deg_s2(1, :) = initialState.acceleration_deg_s2;
@@ -3772,6 +4014,17 @@ position_deg(end, :) = goalState.position_deg;
 velocity_deg_s(end, :) = goalState.velocity_deg_s;
 acceleration_deg_s2(end, :) = goalState.acceleration_deg_s2;
 jerk_deg_s3(end, :) = [0 0];
+[~, sampleSpeed_deg_s(1), ...
+    sampleTangentialAcceleration_deg_s2(1), ...
+    sampleTangentialJerk_deg_s3(1)] = sampleJerkProfile( ...
+    0, profiles(1), options.KinematicTolerance);
+[~, sampleSpeed_deg_s(end), ...
+    sampleTangentialAcceleration_deg_s2(end), ...
+    sampleTangentialJerk_deg_s3(end)] = sampleJerkProfile( ...
+    profiles(end).Duration_s, profiles(end), ...
+    options.KinematicTolerance);
+sampleArcLength_deg(1) = 0;
+sampleArcLength_deg(end) = totalLength_deg;
 
 %% Section 4: Publish Primitive-Join And Constraint Diagnostics
 curveArcLength_deg = [0; primitiveBoundaryS_deg];
@@ -3845,7 +4098,7 @@ diagnostics = struct( ...
     "AccelerationSatisfied", accelerationSatisfied, ...
     "JerkSatisfied", jerkSatisfied, ...
     "JerkConstrained", true, ...
-    "FiniteJerkCertified", false, ...
+    "FiniteJerkCertified", constraintsSatisfied, ...
     "FiniteJerkNumericallyVerified", constraintsSatisfied, ...
     "ContinuousJerkCertified", false, ...
     "G2JoinCount", nnz(g3Join), ...
@@ -3856,6 +4109,26 @@ diagnostics = struct( ...
     "SpatiallyVaryingLimits", true, ...
     "SpatialRetimingCellCount", constraintCellCount, ...
     "ExecutedMotionProfileCount", runCount, ...
+    "TimeOptimizationAttempted", timeOptimization.Attempted, ...
+    "TimeOptimizationSucceeded", timeOptimization.Succeeded, ...
+    "TimeOptimizationExitFlag", timeOptimization.ExitFlag, ...
+    "TimeOptimizationMessage", timeOptimization.Message, ...
+    "TimeOptimizationIterationCount", ...
+        timeOptimization.IterationCount, ...
+    "TimeOptimizationFunctionCount", ...
+        timeOptimization.FunctionCount, ...
+    "TimeOptimizationMeshIntervalCount", ...
+        timeOptimization.MeshIntervalCount, ...
+    "InitialMotionDuration_s", ...
+        timeOptimization.InitialMotionDuration_s, ...
+    "OptimizedMotionDuration_s", ...
+        timeOptimization.OptimizedMotionDuration_s, ...
+    "TimeOptimizationReduction_s", ...
+        timeOptimization.TimeReduction_s, ...
+    "TimeOptimizationMaximumViolation", ...
+        timeOptimization.MaximumViolation, ...
+    "TimeOptimizationDerivativeBounds", ...
+        timeOptimization.DerivativeBounds, ...
     "MandatoryStopCount", mandatoryStopCount, ...
     "MandatoryStopArcLength_deg", mandatoryStopArcLength_deg, ...
     "CurvatureDiscontinuityStopCount", mandatoryStopCount, ...
@@ -3864,7 +4137,7 @@ diagnostics = struct( ...
     "Satisfied", constraintsSatisfied);
 timedPath = struct( ...
     "Success", constraintsSatisfied, ...
-    "Message", "Spatial finite-jerk G3 retiming succeeded.", ...
+    "Message", timeOptimization.SuccessMessage, ...
     "time_s", time_s, ...
     "position_deg", position_deg, ...
     "velocity_deg_s", velocity_deg_s, ...
@@ -3893,7 +4166,7 @@ timedPath = struct( ...
         sampleTangentialAcceleration_deg_s2, ...
     "SampleTangentialJerk_deg_s3", sampleTangentialJerk_deg_s3, ...
     "CurvatureDiscontinuityStopCount", mandatoryStopCount, ...
-    "RetimerType", "spatialJerkLimitedG3VelocityCarrying", ...
+    "RetimerType", timeOptimization.RetimerType, ...
     "MotionType", "velocityCarrying");
 if ~constraintsSatisfied
     timedPath.Message = ...
@@ -3907,7 +4180,7 @@ function [cellBoundaryS_deg, cellPrimitiveIndex] = ...
 % Split curved primitives into local cells while retaining whole straight
 % primitives. Local envelopes let straight sections use their own limits
 % instead of inheriting the most restrictive point on the complete path.
-maximumCurveCellLength_deg = 0.15;
+maximumCurveCellLength_deg = 0.30;
 minimumCurveCellCount = 4;
 cellBoundaryS_deg = 0;
 cellPrimitiveIndex = zeros(0, 1);
@@ -3988,6 +4261,14 @@ for runIndex = 1:runCount
         runCells.SecondDerivativeByAxis_deg_inv), [], 1);
     aggregateBounds.ThirdDerivativeByAxis_deg_inv2 = max(vertcat( ...
         runCells.ThirdDerivativeByAxis_deg_inv2), [], 1);
+    aggregateBounds.CertifiedTangentByAxis = max(vertcat( ...
+        runCells.CertifiedTangentByAxis), [], 1);
+    aggregateBounds.CertifiedSecondDerivativeByAxis_deg_inv = max( ...
+        vertcat(runCells.CertifiedSecondDerivativeByAxis_deg_inv), ...
+        [], 1);
+    aggregateBounds.CertifiedThirdDerivativeByAxis_deg_inv2 = max( ...
+        vertcat(runCells.CertifiedThirdDerivativeByAxis_deg_inv2), ...
+        [], 1);
     aggregateBounds.NumericalTangentByAxis = max(vertcat( ...
         runCells.NumericalTangentByAxis), [], 1);
     aggregateBounds.NumericalSecondDerivativeByAxis_deg_inv = max( ...
@@ -3996,9 +4277,771 @@ for runIndex = 1:runCount
     aggregateBounds.NumericalThirdDerivativeByAxis_deg_inv2 = max( ...
         vertcat(runCells.NumericalThirdDerivativeByAxis_deg_inv2), ...
         [], 1);
+    aggregateBounds.EnvelopeInflationFactor = max( ...
+        [runCells.EnvelopeInflationFactor]);
     aggregateBounds.SampleCount = sum([runCells.SampleCount]);
-    aggregateBounds.Method = "aggregatedSpatialEnvelope";
+    aggregateBounds.CertificateSubdivisionCount = sum( ...
+        [runCells.CertificateSubdivisionCount]);
+    aggregateBounds.CertificateFallbackCount = sum( ...
+        [runCells.CertificateFallbackCount]);
+    aggregateBounds.CertificatePrimitiveCount = sum( ...
+        [runCells.CertificatePrimitiveCount]);
+    aggregateBounds.SampledBoundsWithinCertificate = all( ...
+        [runCells.SampledBoundsWithinCertificate]);
+    aggregateBounds.Method = "aggregatedContinuousCertificate";
     runDerivativeBounds(runIndex) = aggregateBounds;
+end
+end
+
+function [profiles, optimization] = optimizeRoundedJerkProfiles( ...
+        smoothPath, initialProfiles, constraintBoundaryS_deg, ...
+        mandatoryStopArcLength_deg, limits, options, tolerance_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [profiles, optimization] = optimizeRoundedJerkProfiles( ...
+%       smoothPath, initialProfiles, constraintBoundaryS_deg, ...
+%       mandatoryStopArcLength_deg, limits, options, tolerance_deg)
+%**************************************************************************
+% PURPOSE
+%   - Minimize traversal time on one fixed smooth path with a direct
+%     piecewise-constant-jerk transcription.
+%   - Retain the conservative analytic profiles as a numerical fallback.
+%**************************************************************************
+% INPUTS
+%   - smoothPath (scalar struct)
+%       Fixed G3 path and exact arc-length geometry.
+%   - initialProfiles (structure column)
+%       Conservative S-curves used as the optimizer warm start.
+%   - constraintBoundaryS_deg (numeric column)
+%       Spatial-envelope boundaries in degrees of path arc length.
+%   - mandatoryStopArcLength_deg (numeric column)
+%       Interior arc lengths at which speed and acceleration must be zero.
+%   - limits, options (scalar structs)
+%       Per-axis kinematic limits and resolved retiming controls.
+%   - tolerance_deg (positive scalar)
+%       Arc-length comparison tolerance in degrees.
+%**************************************************************************
+% OUTPUTS
+%   - profiles (structure column)
+%       Optimized profiles, or initialProfiles when optimization is not
+%       available, does not converge, or fails dense verification.
+%   - optimization (scalar struct)
+%       Stable solver, mesh, duration, and verification diagnostics.
+%**************************************************************************
+% UNITS
+%   - Arc length is degrees; time is seconds; speed, acceleration, and jerk
+%     are degrees per second, per second squared, and per second cubed.
+%**************************************************************************
+initialDuration_s = sum([initialProfiles.Duration_s]);
+profiles = initialProfiles;
+optimization = struct( ...
+    "Attempted", false, ...
+    "Succeeded", false, ...
+    "ExitFlag", NaN, ...
+    "Message", "Optimization Toolbox is unavailable; used the " + ...
+        "conservative analytic fallback.", ...
+    "IterationCount", 0, ...
+    "FunctionCount", 0, ...
+    "MeshIntervalCount", numel(initialProfiles), ...
+    "InitialMotionDuration_s", initialDuration_s, ...
+    "OptimizedMotionDuration_s", initialDuration_s, ...
+    "TimeReduction_s", 0, ...
+    "MaximumViolation", NaN, ...
+    "DerivativeBounds", struct([]), ...
+    "SuccessMessage", "Spatial finite-jerk G3 retiming succeeded.", ...
+    "RetimerType", "spatialJerkLimitedG3VelocityCarrying");
+
+hasOptimizer = exist("fmincon", "file") == 2;
+if hasOptimizer
+    try
+        hasOptimizer = license("test", "Optimization_Toolbox");
+    catch
+        hasOptimizer = false;
+    end
+end
+if ~hasOptimizer
+    return;
+end
+optimization.Attempted = true;
+
+meshS_deg = constraintBoundaryS_deg(:);
+for profileIndex = 1:numel(initialProfiles)
+    profile = initialProfiles(profileIndex);
+    phaseS_deg = profile.StartArcLength_deg + ...
+        profile.PhaseStartPosition_deg(:);
+    meshS_deg = [meshS_deg; phaseS_deg; ...
+        profile.EndArcLength_deg]; %#ok<AGROW>
+end
+meshS_deg = [meshS_deg; mandatoryStopArcLength_deg(:); ...
+    0; smoothPath.TotalLength_deg];
+meshS_deg = mergeRoundedOptimizationNodes( ...
+    meshS_deg, smoothPath.TotalLength_deg, tolerance_deg);
+intervalLength_deg = diff(meshS_deg);
+intervalCount = numel(intervalLength_deg);
+optimization.MeshIntervalCount = intervalCount;
+
+[nodeTime_s, nodeSpeed_deg_s, nodeAcceleration_deg_s2] = ...
+    sampleProfileSequenceAtArcLength( ...
+    initialProfiles, meshS_deg, options.KinematicTolerance);
+intervalDuration_s = diff(nodeTime_s);
+if any(intervalDuration_s <= options.KinematicTolerance)
+    optimization.Message = ...
+        "The analytic warm start produced a nonpositive mesh duration; " + ...
+        "used the conservative fallback.";
+    return;
+end
+
+boundTemplate = roundedRunDerivativeBounds( ...
+    smoothPath, meshS_deg(1), meshS_deg(2), 1);
+geometryBounds = repmat(boundTemplate, intervalCount, 1);
+for intervalIndex = 1:intervalCount
+    bounds = roundedRunDerivativeBounds( ...
+        smoothPath, meshS_deg(intervalIndex), ...
+        meshS_deg(intervalIndex + 1), intervalIndex);
+    geometryBounds(intervalIndex) = bounds;
+end
+optimization.DerivativeBounds = geometryBounds;
+
+decision0 = [intervalDuration_s; nodeSpeed_deg_s; ...
+    nodeAcceleration_deg_s2];
+durationIndices = 1:intervalCount;
+speedIndices = intervalCount + (1:(intervalCount + 1));
+accelerationIndices = 2 * intervalCount + 1 + ...
+    (1:(intervalCount + 1));
+lowerBound = -Inf(size(decision0));
+upperBound = Inf(size(decision0));
+minimumIntervalDuration_s = max(1e-7, options.KinematicTolerance);
+lowerBound(durationIndices) = minimumIntervalDuration_s;
+lowerBound(speedIndices) = 0;
+
+fixedNode = false(intervalCount + 1, 1);
+fixedNode([1 end]) = true;
+for stopIndex = 1:numel(mandatoryStopArcLength_deg)
+    [stopDistance_deg, stopNodeIndex] = min(abs( ...
+        meshS_deg - mandatoryStopArcLength_deg(stopIndex)));
+    if stopDistance_deg > tolerance_deg
+        error("optimizeRoundedJerkProfiles:MissingStopNode", ...
+            "A mandatory stop does not coincide with the optimization mesh.");
+    end
+    fixedNode(stopNodeIndex) = true;
+    nodeSpeed_deg_s(stopNodeIndex) = 0;
+    nodeAcceleration_deg_s2(stopNodeIndex) = 0;
+end
+lowerBound(speedIndices(fixedNode)) = nodeSpeed_deg_s(fixedNode);
+upperBound(speedIndices(fixedNode)) = nodeSpeed_deg_s(fixedNode);
+lowerBound(accelerationIndices(fixedNode)) = ...
+    nodeAcceleration_deg_s2(fixedNode);
+upperBound(accelerationIndices(fixedNode)) = ...
+    nodeAcceleration_deg_s2(fixedNode);
+
+finiteVelocity = limits.maxVelocity_deg_s( ...
+    isfinite(limits.maxVelocity_deg_s));
+speedScale_deg_s = max([1, finiteVelocity]);
+finiteAcceleration = limits.maxAcceleration_deg_s2( ...
+    isfinite(limits.maxAcceleration_deg_s2));
+accelerationScale_deg_s2 = max([1, finiteAcceleration]);
+variableScale = [intervalDuration_s; ...
+    repmat(speedScale_deg_s, intervalCount + 1, 1); ...
+    repmat(accelerationScale_deg_s2, intervalCount + 1, 1)];
+normalizedDecision0 = decision0 ./ variableScale;
+normalizedLowerBound = lowerBound ./ variableScale;
+normalizedUpperBound = upperBound ./ variableScale;
+optimizationLimits = limits;
+tangentBound = vertcat(geometryBounds.CertifiedTangentByAxis);
+secondBound_deg_inv = vertcat( ...
+    geometryBounds.CertifiedSecondDerivativeByAxis_deg_inv);
+thirdBound_deg_inv2 = vertcat( ...
+    geometryBounds.CertifiedThirdDerivativeByAxis_deg_inv2);
+constraintFunction = @(normalizedDecision) ...
+    roundedJerkOptimizationConstraints( ...
+    normalizedDecision .* variableScale, intervalLength_deg, ...
+    tangentBound, secondBound_deg_inv, thirdBound_deg_inv2, ...
+    optimizationLimits, speedScale_deg_s);
+[warmInequality, warmEquality] = constraintFunction(normalizedDecision0);
+warmInequalityViolation = max([0; warmInequality(:)]);
+warmEqualityViolation = max(abs(warmEquality(:)));
+objectiveFunction = @(normalizedDecision) ...
+    roundedJerkDurationObjective( ...
+    normalizedDecision, intervalCount, variableScale);
+solverOptions = optimoptions("fmincon", ...
+    "Algorithm", "sqp", ...
+    "Display", "none", ...
+    "MaxIterations", 150, ...
+    "MaxFunctionEvaluations", max(30000, 150 * numel(decision0)), ...
+    "ConstraintTolerance", 1e-7, ...
+    "OptimalityTolerance", 1e-4, ...
+    "StepTolerance", 1e-8, ...
+    "TypicalX", ones(size(normalizedDecision0)), ...
+    "SpecifyObjectiveGradient", true);
+try
+    [normalizedDecision, optimizedDuration_s, exitFlag, solverOutput] = ...
+        fmincon(objectiveFunction, normalizedDecision0, [], [], [], [], ...
+        normalizedLowerBound, normalizedUpperBound, constraintFunction, ...
+        solverOptions);
+catch optimizerException
+    optimization.Message = "Time optimization failed: " + ...
+        string(optimizerException.message) + ...
+        " Used the conservative analytic fallback.";
+    return;
+end
+
+optimization.ExitFlag = exitFlag;
+optimization.IterationCount = solverOutput.iterations;
+optimization.FunctionCount = solverOutput.funcCount;
+[inequality, equality] = constraintFunction(normalizedDecision);
+decision = normalizedDecision .* variableScale;
+inequalityViolation = max([0; inequality(:)]);
+equalityViolation = max(abs(equality(:)));
+denseViolation = verifyRoundedJerkDecision( ...
+    decision, meshS_deg, smoothPath, limits);
+finiteDecision = all(isfinite(decision));
+lowerBoundViolation = normalizedLowerBound - normalizedDecision;
+upperBoundViolation = normalizedDecision - normalizedUpperBound;
+boundScale = max(1, abs(normalizedDecision));
+boundViolation = max([0; ...
+    lowerBoundViolation(isfinite(normalizedLowerBound)) ./ ...
+    boundScale(isfinite(normalizedLowerBound)); ...
+    upperBoundViolation(isfinite(normalizedUpperBound)) ./ ...
+    boundScale(isfinite(normalizedUpperBound))]);
+maximumViolation = max([inequalityViolation, equalityViolation, ...
+    denseViolation, ...
+    boundViolation]);
+optimization.MaximumViolation = maximumViolation;
+optimization.OptimizedMotionDuration_s = optimizedDuration_s;
+optimization.TimeReduction_s = initialDuration_s - optimizedDuration_s;
+
+durationTolerance_s = 1e-8 * max(1, initialDuration_s);
+solutionIsFeasible = finiteDecision && inequalityViolation <= 2e-7 && ...
+    equalityViolation <= 5e-8 && denseViolation <= 2e-7 && ...
+    boundViolation <= 2e-7;
+solutionConverged = exitFlag > 0;
+solutionIsNoSlower = optimizedDuration_s <= ...
+    initialDuration_s + durationTolerance_s;
+if ~(solutionIsFeasible && solutionConverged && solutionIsNoSlower)
+    optimization.Message = sprintf( ...
+        "Time optimization was rejected (exit %d; maximum normalized " + ...
+        "violation %.3g; warm inequality %.3g, equality %.3g; final " + ...
+        "inequality %.3g, equality %.3g, dense %.3g, bounds %.3g); " + ...
+        "used the conservative analytic fallback.", exitFlag, ...
+        maximumViolation, warmInequalityViolation, ...
+        warmEqualityViolation, max([0; inequality(:)]), ...
+        max(abs(equality(:))), denseViolation, boundViolation);
+    optimization.OptimizedMotionDuration_s = initialDuration_s;
+    optimization.TimeReduction_s = 0;
+    return;
+end
+
+profiles = profilesFromRoundedJerkDecision( ...
+    decision, meshS_deg, smoothPath, geometryBounds, ...
+    initialProfiles(1));
+optimization.Succeeded = true;
+optimization.Message = string(solverOutput.message);
+optimization.SuccessMessage = ...
+    "Mesh-optimized finite-jerk G3 retiming succeeded.";
+optimization.RetimerType = ...
+    "meshOptimizedJerkLimitedG3VelocityCarrying";
+end
+
+function timedPath = retainRoundedTimeOptimizationFailure( ...
+        timedPath, optimization, minimumMotionDuration_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   timedPath = retainRoundedTimeOptimizationFailure( ...
+%       timedPath, optimization, minimumMotionDuration_s)
+%**************************************************************************
+% PURPOSE
+%   - Preserve completed rounded-path optimization evidence when a later
+%     goal-time policy rejects an otherwise feasible motion.
+%**************************************************************************
+% INPUTS
+%   - timedPath (scalar struct)
+%       Stable finite-jerk failure record to enrich.
+%   - optimization (scalar struct)
+%       Solver, mesh, duration, and verification diagnostics.
+%   - minimumMotionDuration_s (nonnegative scalar)
+%       Executed optimizer or analytic-fallback duration.
+%**************************************************************************
+% OUTPUTS
+%   - timedPath (scalar struct)
+%       Failure record retaining the optimization attempt diagnostics.
+%**************************************************************************
+% UNITS
+%   - Duration fields are seconds; MaximumViolation is dimensionless.
+%**************************************************************************
+diagnostics = timedPath.ConstraintDiagnostics;
+diagnostics.TimeOptimizationAttempted = optimization.Attempted;
+diagnostics.TimeOptimizationSucceeded = optimization.Succeeded;
+diagnostics.TimeOptimizationExitFlag = optimization.ExitFlag;
+diagnostics.TimeOptimizationMessage = optimization.Message;
+diagnostics.TimeOptimizationIterationCount = optimization.IterationCount;
+diagnostics.TimeOptimizationFunctionCount = optimization.FunctionCount;
+diagnostics.TimeOptimizationMeshIntervalCount = ...
+    optimization.MeshIntervalCount;
+diagnostics.InitialMotionDuration_s = optimization.InitialMotionDuration_s;
+diagnostics.OptimizedMotionDuration_s = ...
+    optimization.OptimizedMotionDuration_s;
+diagnostics.TimeOptimizationReduction_s = optimization.TimeReduction_s;
+diagnostics.TimeOptimizationMaximumViolation = ...
+    optimization.MaximumViolation;
+diagnostics.TimeOptimizationDerivativeBounds = optimization.DerivativeBounds;
+timedPath.ConstraintDiagnostics = diagnostics;
+timedPath.MinimumMotionDuration_s = minimumMotionDuration_s;
+timedPath.RetimerType = optimization.RetimerType;
+end
+
+function meshS_deg = mergeRoundedOptimizationNodes( ...
+        candidateS_deg, totalLength_deg, tolerance_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   meshS_deg = mergeRoundedOptimizationNodes( ...
+%       candidateS_deg, totalLength_deg, tolerance_deg)
+%**************************************************************************
+% PURPOSE
+%   - Sort and merge nearly coincident path nodes without creating tiny
+%     optimization intervals.
+%**************************************************************************
+% INPUTS
+%   - candidateS_deg (numeric vector)
+%       Candidate arc lengths in degrees.
+%   - totalLength_deg, tolerance_deg (positive scalars)
+%       Path length and node-merging tolerance in degrees.
+%**************************************************************************
+% OUTPUTS
+%   - meshS_deg (numeric column)
+%       Strictly increasing nodes spanning the complete path.
+%**************************************************************************
+% UNITS
+%   - All quantities are degrees of path arc length.
+%**************************************************************************
+candidateS_deg = sort(min(max(double(candidateS_deg(:)), 0), ...
+    totalLength_deg));
+meshS_deg = candidateS_deg(1);
+for candidateIndex = 2:numel(candidateS_deg)
+    if candidateS_deg(candidateIndex) - meshS_deg(end) > tolerance_deg
+        meshS_deg(end + 1, 1) = candidateS_deg(candidateIndex); %#ok<AGROW>
+    end
+end
+meshS_deg(1) = 0;
+meshS_deg(end) = totalLength_deg;
+if any(diff(meshS_deg) <= 0)
+    error("mergeRoundedOptimizationNodes:InvalidMesh", ...
+        "The optimization mesh must be strictly increasing.");
+end
+end
+
+function [nodeTime_s, nodeSpeed_deg_s, nodeAcceleration_deg_s2] = ...
+        sampleProfileSequenceAtArcLength(profiles, nodeS_deg, tolerance)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [nodeTime_s, nodeSpeed_deg_s, nodeAcceleration_deg_s2] = ...
+%       sampleProfileSequenceAtArcLength(profiles, nodeS_deg, tolerance)
+%**************************************************************************
+% PURPOSE
+%   - Sample a contiguous analytic profile sequence to form a dynamically
+%     feasible direct-transcription warm start.
+%**************************************************************************
+% INPUTS
+%   - profiles (structure column)
+%       Contiguous scalar S-curve profiles.
+%   - nodeS_deg (numeric column)
+%       Query arc lengths in degrees.
+%   - tolerance (positive scalar)
+%       Numerical comparison tolerance.
+%**************************************************************************
+% OUTPUTS
+%   - nodeTime_s, nodeSpeed_deg_s, nodeAcceleration_deg_s2
+%       Column histories at nodeS_deg.
+%**************************************************************************
+% UNITS
+%   - Time is seconds; speed and acceleration are deg/s and deg/s^2.
+%**************************************************************************
+profileEndS_deg = [profiles.EndArcLength_deg].';
+profileStartTime_s = [0; cumsum([profiles.Duration_s].')];
+nodeCount = numel(nodeS_deg);
+nodeTime_s = zeros(nodeCount, 1);
+nodeSpeed_deg_s = zeros(nodeCount, 1);
+nodeAcceleration_deg_s2 = zeros(nodeCount, 1);
+for nodeIndex = 1:nodeCount
+    profileIndex = find(nodeS_deg(nodeIndex) <= ...
+        profileEndS_deg + tolerance, 1);
+    if isempty(profileIndex)
+        profileIndex = numel(profiles);
+    end
+    profile = profiles(profileIndex);
+    localS_deg = min(max(nodeS_deg(nodeIndex) - ...
+        profile.StartArcLength_deg, 0), profile.Length_deg);
+    localTime_s = jerkProfileTimeAtDistance( ...
+        profile, localS_deg, tolerance);
+    [~, nodeSpeed_deg_s(nodeIndex), ...
+        nodeAcceleration_deg_s2(nodeIndex)] = sampleJerkProfile( ...
+        localTime_s, profile, tolerance);
+    nodeTime_s(nodeIndex) = ...
+        profileStartTime_s(profileIndex) + localTime_s;
+end
+end
+
+function [duration_s, gradient] = roundedJerkDurationObjective( ...
+        normalizedDecision, intervalCount, variableScale)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [duration_s, gradient] = roundedJerkDurationObjective( ...
+%       normalizedDecision, intervalCount, variableScale)
+%**************************************************************************
+% PURPOSE
+%   - Return total motion duration and its exact decision gradient.
+%**************************************************************************
+% INPUTS
+%   - normalizedDecision (numeric column)
+%       Dimensionless interval durations, node speeds, and accelerations.
+%   - intervalCount (positive integer scalar)
+%       Number of piecewise-constant-jerk intervals.
+%   - variableScale (positive numeric column)
+%       Physical duration and speed scale for each decision entry.
+%**************************************************************************
+% OUTPUTS
+%   - duration_s (scalar), gradient (numeric column)
+%       Objective value in seconds and dimension-compatible gradient.
+%**************************************************************************
+% UNITS
+%   - The objective is seconds; the gradient follows decision units.
+%**************************************************************************
+duration_s = sum(normalizedDecision(1:intervalCount) .* ...
+    variableScale(1:intervalCount));
+if nargout > 1
+    gradient = zeros(size(normalizedDecision));
+    gradient(1:intervalCount) = variableScale(1:intervalCount);
+end
+end
+
+function [inequality, equality] = roundedJerkOptimizationConstraints( ...
+        decision, intervalLength_deg, tangentBound, secondBound_deg_inv, ...
+        thirdBound_deg_inv2, limits, speedScale_deg_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [inequality, equality] = roundedJerkOptimizationConstraints( ...
+%       decision, intervalLength_deg, tangentBound, ...
+%       secondBound_deg_inv, thirdBound_deg_inv2, limits, ...
+%       speedScale_deg_s)
+%**************************************************************************
+% PURPOSE
+%   - Enforce exact constant-jerk state integration and conservative
+%     per-axis velocity, acceleration, and jerk envelopes.
+%**************************************************************************
+% INPUTS
+%   - decision (numeric column)
+%       Interval durations followed by node speeds and accelerations.
+%   - intervalLength_deg (numeric column)
+%       Fixed path distance of every interval.
+%   - tangentBound, secondBound_deg_inv, thirdBound_deg_inv2
+%       Numeric N-by-2 absolute q', q'', and q''' envelopes.
+%   - limits (scalar struct)
+%       Per-axis velocity, acceleration, and jerk limits.
+%   - speedScale_deg_s (positive scalar)
+%       Equality and nonnegative-speed scaling value.
+%**************************************************************************
+% OUTPUTS
+%   - inequality, equality (numeric columns)
+%       fmincon constraints using inequality <= 0 and equality == 0.
+%**************************************************************************
+% UNITS
+%   - Returned constraints are dimensionless.
+%**************************************************************************
+intervalCount = numel(intervalLength_deg);
+duration_s = decision(1:intervalCount);
+nodeSpeed_deg_s = decision( ...
+    intervalCount + (1:(intervalCount + 1)));
+nodeAcceleration_deg_s2 = decision( ...
+    2 * intervalCount + 1 + (1:(intervalCount + 1)));
+startSpeed_deg_s = nodeSpeed_deg_s(1:end - 1);
+endSpeed_deg_s = nodeSpeed_deg_s(2:end);
+startAcceleration_deg_s2 = nodeAcceleration_deg_s2(1:end - 1);
+endAcceleration_deg_s2 = nodeAcceleration_deg_s2(2:end);
+scalarJerk_deg_s3 = (endAcceleration_deg_s2 - ...
+    startAcceleration_deg_s2) ./ duration_s;
+integratedEndSpeed_deg_s = startSpeed_deg_s + ...
+    0.5 * (startAcceleration_deg_s2 + endAcceleration_deg_s2) .* ...
+    duration_s;
+integratedDistance_deg = startSpeed_deg_s .* duration_s + ...
+    (2 * startAcceleration_deg_s2 + endAcceleration_deg_s2) .* ...
+    duration_s.^2 / 6;
+distanceScale_deg = max(1, intervalLength_deg);
+equality = [ ...
+    (integratedEndSpeed_deg_s - endSpeed_deg_s) / speedScale_deg_s; ...
+    (integratedDistance_deg - intervalLength_deg) ./ distanceScale_deg];
+
+[minimumSpeed_deg_s, peakSpeed_deg_s] = ...
+    constantJerkIntervalSpeedExtrema( ...
+    startSpeed_deg_s, endSpeed_deg_s, ...
+    startAcceleration_deg_s2, scalarJerk_deg_s3, duration_s);
+peakAcceleration_deg_s2 = max(abs([startAcceleration_deg_s2, ...
+    endAcceleration_deg_s2]), [], 2);
+velocityBound_deg_s = tangentBound .* peakSpeed_deg_s;
+accelerationBound_deg_s2 = tangentBound .* peakAcceleration_deg_s2 + ...
+    secondBound_deg_inv .* peakSpeed_deg_s.^2;
+jerkBound_deg_s3 = tangentBound .* abs(scalarJerk_deg_s3) + ...
+    3 * secondBound_deg_inv .* peakSpeed_deg_s .* ...
+    peakAcceleration_deg_s2 + thirdBound_deg_inv2 .* peakSpeed_deg_s.^3;
+
+inequality = -minimumSpeed_deg_s / speedScale_deg_s;
+for axisIndex = 1:2
+    if isfinite(limits.maxVelocity_deg_s(axisIndex))
+        inequality = [inequality; ...
+            velocityBound_deg_s(:, axisIndex) / ...
+            limits.maxVelocity_deg_s(axisIndex) - 1]; %#ok<AGROW>
+    end
+    if isfinite(limits.maxAcceleration_deg_s2(axisIndex))
+        inequality = [inequality; ...
+            accelerationBound_deg_s2(:, axisIndex) / ...
+            limits.maxAcceleration_deg_s2(axisIndex) - 1]; %#ok<AGROW>
+    end
+    if isfinite(limits.maxJerk_deg_s3(axisIndex))
+        inequality = [inequality; ...
+            jerkBound_deg_s3(:, axisIndex) / ...
+            limits.maxJerk_deg_s3(axisIndex) - 1]; %#ok<AGROW>
+    end
+end
+end
+
+function [minimumSpeed_deg_s, peakSpeed_deg_s] = ...
+        constantJerkIntervalSpeedExtrema(startSpeed_deg_s, ...
+        endSpeed_deg_s, startAcceleration_deg_s2, jerk_deg_s3, duration_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [minimumSpeed_deg_s, peakSpeed_deg_s] = ...
+%       constantJerkIntervalSpeedExtrema(startSpeed_deg_s, ...
+%       endSpeed_deg_s, startAcceleration_deg_s2, jerk_deg_s3, duration_s)
+%**************************************************************************
+% PURPOSE
+%   - Find exact scalar-speed extrema for constant jerk on each interval.
+%**************************************************************************
+% INPUTS
+%   - startSpeed_deg_s, endSpeed_deg_s (numeric columns)
+%       Boundary path speeds.
+%   - startAcceleration_deg_s2, jerk_deg_s3 (numeric columns)
+%       Initial acceleration and constant jerk per interval.
+%   - duration_s (positive numeric column)
+%       Interval durations.
+%**************************************************************************
+% OUTPUTS
+%   - minimumSpeed_deg_s, peakSpeed_deg_s (numeric columns)
+%       Exact extrema including any interior zero-acceleration point.
+%**************************************************************************
+% UNITS
+%   - Speed is deg/s, acceleration deg/s^2, jerk deg/s^3, time seconds.
+%**************************************************************************
+minimumSpeed_deg_s = min(startSpeed_deg_s, endSpeed_deg_s);
+peakSpeed_deg_s = max(startSpeed_deg_s, endSpeed_deg_s);
+hasJerk = abs(jerk_deg_s3) > 1e-12;
+stationaryTime_s = zeros(size(duration_s));
+stationaryTime_s(hasJerk) = -startAcceleration_deg_s2(hasJerk) ./ ...
+    jerk_deg_s3(hasJerk);
+hasInteriorStationarySpeed = hasJerk & stationaryTime_s > 0 & ...
+    stationaryTime_s < duration_s;
+if any(hasInteriorStationarySpeed)
+    stationarySpeed_deg_s = startSpeed_deg_s + ...
+        startAcceleration_deg_s2 .* stationaryTime_s + ...
+        0.5 * jerk_deg_s3 .* stationaryTime_s.^2;
+    minimumSpeed_deg_s(hasInteriorStationarySpeed) = min( ...
+        minimumSpeed_deg_s(hasInteriorStationarySpeed), ...
+        stationarySpeed_deg_s(hasInteriorStationarySpeed));
+    peakSpeed_deg_s(hasInteriorStationarySpeed) = max( ...
+        peakSpeed_deg_s(hasInteriorStationarySpeed), ...
+        stationarySpeed_deg_s(hasInteriorStationarySpeed));
+end
+end
+
+function maximumViolation = verifyRoundedJerkDecision( ...
+        decision, meshS_deg, smoothPath, limits)
+%% Section 0: Header & Readme
+% SYNTAX
+%   maximumViolation = verifyRoundedJerkDecision( ...
+%       decision, meshS_deg, smoothPath, limits)
+%**************************************************************************
+% PURPOSE
+%   - Independently sample the optimized continuous-time state equations at
+%     dense off-grid times before accepting an optimized profile.
+%**************************************************************************
+% INPUTS
+%   - decision (numeric column)
+%       Optimized interval durations, node speeds, and node accelerations.
+%   - meshS_deg (numeric column)
+%       Fixed interval boundary arc lengths in degrees.
+%   - smoothPath, limits (scalar structs)
+%       Exact geometric path and per-axis kinematic limits.
+%**************************************************************************
+% OUTPUTS
+%   - maximumViolation (scalar)
+%       Largest normalized limit excess; nonpositive means all checks pass.
+%**************************************************************************
+% UNITS
+%   - The returned normalized violation is dimensionless.
+%**************************************************************************
+intervalCount = numel(meshS_deg) - 1;
+duration_s = decision(1:intervalCount);
+nodeSpeed_deg_s = decision( ...
+    intervalCount + (1:(intervalCount + 1)));
+nodeAcceleration_deg_s2 = decision( ...
+    2 * intervalCount + 1 + (1:(intervalCount + 1)));
+% Sixty-five off-grid checks per interval independently probe the accepted
+% state law at a finer resolution than the optimizer mesh without making the
+% nonlinear callback itself expensive.
+timeFraction = linspace(0, 1, 65).';
+maximumViolation = -Inf;
+finiteVelocity_deg_s = limits.maxVelocity_deg_s( ...
+    isfinite(limits.maxVelocity_deg_s));
+speedScale_deg_s = max([1, finiteVelocity_deg_s]);
+for intervalIndex = 1:intervalCount
+    intervalTime_s = duration_s(intervalIndex) * timeFraction;
+    startSpeed_deg_s = nodeSpeed_deg_s(intervalIndex);
+    startAcceleration_deg_s2 = ...
+        nodeAcceleration_deg_s2(intervalIndex);
+    scalarJerk_deg_s3 = ( ...
+        nodeAcceleration_deg_s2(intervalIndex + 1) - ...
+        startAcceleration_deg_s2) / duration_s(intervalIndex);
+    localS_deg = startSpeed_deg_s * intervalTime_s + ...
+        0.5 * startAcceleration_deg_s2 * intervalTime_s.^2 + ...
+        scalarJerk_deg_s3 * intervalTime_s.^3 / 6;
+    scalarSpeed_deg_s = startSpeed_deg_s + ...
+        startAcceleration_deg_s2 * intervalTime_s + ...
+        0.5 * scalarJerk_deg_s3 * intervalTime_s.^2;
+    scalarAcceleration_deg_s2 = startAcceleration_deg_s2 + ...
+        scalarJerk_deg_s3 * intervalTime_s;
+    arcLength_deg = meshS_deg(intervalIndex) + localS_deg;
+    queryArcLength_deg = min(max(arcLength_deg, ...
+        meshS_deg(intervalIndex)), meshS_deg(intervalIndex + 1));
+    samples = sampleRoundedMotion(smoothPath, queryArcLength_deg);
+    velocity_deg_s = samples.tangent .* scalarSpeed_deg_s;
+    acceleration_deg_s2 = samples.tangent .* ...
+        scalarAcceleration_deg_s2 + ...
+        samples.secondDerivative_deg_inv .* scalarSpeed_deg_s.^2;
+    jerk_deg_s3 = samples.tangent * scalarJerk_deg_s3 + ...
+        3 * samples.secondDerivative_deg_inv .* scalarSpeed_deg_s .* ...
+        scalarAcceleration_deg_s2 + ...
+        samples.thirdDerivative_deg_inv2 .* scalarSpeed_deg_s.^3;
+    for axisIndex = 1:2
+        if isfinite(limits.maxVelocity_deg_s(axisIndex))
+            maximumViolation = max(maximumViolation, max(abs( ...
+                velocity_deg_s(:, axisIndex))) / ...
+                limits.maxVelocity_deg_s(axisIndex) - 1);
+        end
+        if isfinite(limits.maxAcceleration_deg_s2(axisIndex))
+            maximumViolation = max(maximumViolation, max(abs( ...
+                acceleration_deg_s2(:, axisIndex))) / ...
+                limits.maxAcceleration_deg_s2(axisIndex) - 1);
+        end
+        if isfinite(limits.maxJerk_deg_s3(axisIndex))
+            maximumViolation = max(maximumViolation, max(abs( ...
+                jerk_deg_s3(:, axisIndex))) / ...
+                limits.maxJerk_deg_s3(axisIndex) - 1);
+        end
+    end
+    maximumViolation = max(maximumViolation, ...
+        -min(scalarSpeed_deg_s) / speedScale_deg_s);
+end
+if isempty(maximumViolation) || ~isfinite(maximumViolation)
+    maximumViolation = Inf;
+end
+end
+
+function profiles = profilesFromRoundedJerkDecision( ...
+        decision, meshS_deg, smoothPath, geometryBounds, ...
+        profileTemplate)
+%% Section 0: Header & Readme
+% SYNTAX
+%   profiles = profilesFromRoundedJerkDecision( ...
+%       decision, meshS_deg, smoothPath, geometryBounds, ...
+%       profileTemplate)
+%**************************************************************************
+% PURPOSE
+%   - Convert the accepted direct-transcription decision into the existing
+%     analytic profile schema used by sampling and diagnostics.
+%**************************************************************************
+% INPUTS
+%   - decision (numeric column)
+%       Accepted interval durations, node speeds, and node accelerations.
+%   - meshS_deg (numeric column)
+%       Optimization arc-length nodes in degrees.
+%   - smoothPath, geometryBounds (structs)
+%       Exact geometry and guarded numerical derivative envelopes.
+%   - profileTemplate (scalar struct)
+%       Existing stable profile-field template.
+%**************************************************************************
+% OUTPUTS
+%   - profiles (structure column)
+%       One constant-jerk profile per optimization interval.
+%**************************************************************************
+% UNITS
+%   - Arc length is degrees and kinematic quantities use seconds.
+%**************************************************************************
+intervalCount = numel(meshS_deg) - 1;
+duration_s = decision(1:intervalCount);
+nodeSpeed_deg_s = decision( ...
+    intervalCount + (1:(intervalCount + 1)));
+nodeAcceleration_deg_s2 = decision( ...
+    2 * intervalCount + 1 + (1:(intervalCount + 1)));
+nodeSamples = sampleRoundedMotion(smoothPath, meshS_deg);
+midpointSamples = sampleRoundedMotion(smoothPath, ...
+    0.5 * (meshS_deg(1:end - 1) + meshS_deg(2:end)));
+profiles = repmat(profileTemplate, intervalCount, 1);
+for intervalIndex = 1:intervalCount
+    profile = profileTemplate;
+    intervalDuration_s = duration_s(intervalIndex);
+    startSpeed_deg_s = nodeSpeed_deg_s(intervalIndex);
+    endSpeed_deg_s = nodeSpeed_deg_s(intervalIndex + 1);
+    intervalLength_deg = meshS_deg(intervalIndex + 1) - ...
+        meshS_deg(intervalIndex);
+    startAcceleration_deg_s2 = nodeAcceleration_deg_s2(intervalIndex);
+    endAcceleration_deg_s2 = ...
+        nodeAcceleration_deg_s2(intervalIndex + 1);
+    scalarJerk_deg_s3 = (endAcceleration_deg_s2 - ...
+        startAcceleration_deg_s2) / intervalDuration_s;
+    [~, peakSpeed_deg_s] = constantJerkIntervalSpeedExtrema( ...
+        startSpeed_deg_s, endSpeed_deg_s, ...
+        startAcceleration_deg_s2, scalarJerk_deg_s3, ...
+        intervalDuration_s);
+    peakAcceleration_deg_s2 = max(abs( ...
+        [startAcceleration_deg_s2, endAcceleration_deg_s2]));
+    bounds = geometryBounds(intervalIndex);
+    profile.PrimitiveType = midpointSamples.PrimitiveType(intervalIndex);
+    profile.StartPosition_deg = nodeSamples.position_deg(intervalIndex, :);
+    profile.EndPosition_deg = nodeSamples.position_deg( ...
+        intervalIndex + 1, :);
+    profile.Length_deg = intervalLength_deg;
+    profile.StartArcLength_deg = meshS_deg(intervalIndex);
+    profile.EndArcLength_deg = meshS_deg(intervalIndex + 1);
+    profile.StartSpeed_deg_s = startSpeed_deg_s;
+    profile.EndSpeed_deg_s = endSpeed_deg_s;
+    % Coupled Cartesian constraints do not have an independent scalar cap.
+    % NaN retains the Max-versus-Peak distinction instead of publishing a
+    % misleading limit that the optimized schedule could exceed.
+    profile.MaxSpeed_deg_s = NaN;
+    profile.MaxAcceleration_deg_s2 = NaN;
+    profile.MaxJerk_deg_s3 = NaN;
+    profile.PeakSpeed_deg_s = peakSpeed_deg_s;
+    profile.PeakAcceleration_deg_s2 = peakAcceleration_deg_s2;
+    profile.PeakJerk_deg_s3 = abs(scalarJerk_deg_s3);
+    [profile.PeakVelocityByAxis_deg_s, ...
+        profile.PeakAccelerationByAxis_deg_s2, ...
+        profile.PeakJerkByAxis_deg_s3] = ...
+        roundedRunKinematicBounds(bounds, profile);
+    profile.PhaseDuration_s = intervalDuration_s;
+    profile.PhaseJerk_deg_s3 = scalarJerk_deg_s3;
+    profile.PhaseStartTime_s = 0;
+    profile.PhaseStartPosition_deg = 0;
+    profile.PhaseStartSpeed_deg_s = startSpeed_deg_s;
+    profile.PhaseStartAcceleration_deg_s2 = ...
+        startAcceleration_deg_s2;
+    profile.CruiseTime_s = 0;
+    if abs(scalarJerk_deg_s3) <= 1e-12 && ...
+            peakAcceleration_deg_s2 <= 1e-12
+        profile.CruiseTime_s = intervalDuration_s;
+    end
+    profile.Duration_s = intervalDuration_s;
+    profile.StartTime_s = NaN;
+    profile.EndTime_s = NaN;
+    profile.TangentialAcceleration_deg_s2 = ...
+        startAcceleration_deg_s2;
+    profiles(intervalIndex) = profile;
 end
 end
 
@@ -4140,17 +5183,45 @@ end
 function derivativeBounds = roundedRunDerivativeBounds( ...
         smoothPath, startS_deg, endS_deg, runIndex)
 %% Section 0: Header & Readme
-% Form local sampled envelopes plus analytic whole-primitive reference bounds
-% on q', q'', and q''' for one spatial retiming cell. The local envelopes
-% drive retiming; the broader analytic bounds remain diagnostic provenance.
-tangentBound = zeros(1, 2);
-secondDerivativeBound = zeros(1, 2);
-thirdDerivativeBound = zeros(1, 2);
+% SYNTAX
+%   derivativeBounds = roundedRunDerivativeBounds( ...
+%       smoothPath, startS_deg, endS_deg, runIndex)
+%**************************************************************************
+% PURPOSE
+%   - Certify continuous per-axis bounds on the first three arc-length
+%     derivatives of one rounded-path interval.
+%   - Retain sampled maxima only as independent diagnostic witnesses.
+%**************************************************************************
+% INPUTS
+%   - smoothPath (scalar struct)
+%       Rounded line, arc, and quintic geometry from smoothRoundedMotion.
+%   - startS_deg, endS_deg (finite scalar doubles)
+%       Ordered global arc-length endpoints in degrees.
+%   - runIndex (positive integer scalar)
+%       Diagnostic identifier for the interval.
+%**************************************************************************
+% OUTPUTS
+%   - derivativeBounds (scalar struct)
+%       Continuous certified bounds, sampled witnesses, and certificate
+%       provenance. Numerical* fields never constrain accepted motion.
+%**************************************************************************
+% UNITS
+%   - Arc length is degrees; derivatives use 1, deg^-1, and deg^-2.
+%**************************************************************************
+certifiedTangentBound = zeros(1, 2);
+certifiedSecondBound_deg_inv = zeros(1, 2);
+certifiedThirdBound_deg_inv2 = zeros(1, 2);
 coveredPrimitiveCount = 0;
+certificateSubdivisionCount = 0;
+certificateFallbackCount = 0;
+certificateRoundoffFactor = 1 + 1e-12;
+overlapTolerance_deg = 128 * eps(max([1, abs(startS_deg), ...
+    abs(endS_deg)]));
 for primitiveIndex = 1:numel(smoothPath.Primitives)
     primitive = smoothPath.Primitives(primitiveIndex);
-    if primitive.EndArcLength_deg < startS_deg || ...
-            primitive.StartArcLength_deg > endS_deg
+    overlapStartS_deg = max(startS_deg, primitive.StartArcLength_deg);
+    overlapEndS_deg = min(endS_deg, primitive.EndArcLength_deg);
+    if overlapEndS_deg - overlapStartS_deg <= overlapTolerance_deg
         continue;
     end
     coveredPrimitiveCount = coveredPrimitiveCount + 1;
@@ -4160,83 +5231,193 @@ for primitiveIndex = 1:numel(smoothPath.Primitives)
         primitiveSecondBound = [0 0];
         primitiveThirdBound = [0 0];
     elseif primitiveType == "arc"
-        primitiveTangentBound = [1 1];
-        primitiveSecondBound = repmat(1 / primitive.Radius_deg, 1, 2);
-        primitiveThirdBound = repmat(1 / primitive.Radius_deg^2, 1, 2);
+        localStartS_deg = overlapStartS_deg - ...
+            primitive.StartArcLength_deg;
+        localEndS_deg = overlapEndS_deg - primitive.StartArcLength_deg;
+        startAngle_rad = primitive.StartAngle_rad + ...
+            primitive.TurnSign * localStartS_deg / primitive.Radius_deg;
+        endAngle_rad = primitive.StartAngle_rad + ...
+            primitive.TurnSign * localEndS_deg / primitive.Radius_deg;
+        sineBound = maximumAbsoluteSineOnInterval( ...
+            startAngle_rad, endAngle_rad);
+        cosineBound = maximumAbsoluteCosineOnInterval( ...
+            startAngle_rad, endAngle_rad);
+        primitiveTangentBound = [sineBound, cosineBound];
+        primitiveSecondBound = ...
+            [cosineBound, sineBound] / primitive.Radius_deg;
+        primitiveThirdBound = ...
+            primitiveTangentBound / primitive.Radius_deg^2;
     else
-        controlPoints_deg = primitive.ControlPoints_deg;
-        incomingDirection = controlPoints_deg(2, :) - ...
-            controlPoints_deg(1, :);
-        outgoingDirection = controlPoints_deg(end, :) - ...
-            controlPoints_deg(end - 1, :);
-        halfTrimDistance_deg = norm(incomingDirection);
-        incomingDirection = incomingDirection / halfTrimDistance_deg;
-        outgoingDirection = outgoingDirection / norm(outgoingDirection);
-        trimDistance_deg = 2 * halfTrimDistance_deg;
-        halfAngleCosine = sqrt(max(0, ...
-            0.5 * (1 + dot(incomingDirection, outgoingDirection))));
-        parameterSpeedLowerBound_deg = ...
-            (25 / 16) * trimDistance_deg * halfAngleCosine;
-        if parameterSpeedLowerBound_deg <= 0
-            error("retimeJerkContinuousRoundedMotion:DegenerateQuintic", ...
-                "A quintic blend lacks a positive derivative lower bound.");
+        localStartS_deg = overlapStartS_deg - ...
+            primitive.StartArcLength_deg;
+        localEndS_deg = overlapEndS_deg - primitive.StartArcLength_deg;
+        startLookupIndex = find(primitive.ArcLengthGrid_deg <= ...
+            localStartS_deg, 1, "last");
+        endLookupIndex = find(primitive.ArcLengthGrid_deg >= ...
+            localEndS_deg, 1, "first");
+        if isempty(startLookupIndex)
+            startLookupIndex = 1;
         end
-        secondControl = 20 * diff(controlPoints_deg, 2, 1);
-        thirdControl = 60 * diff(controlPoints_deg, 3, 1);
-        parameterSecondBound_deg = max(vecnorm( ...
-            secondControl, 2, 2));
-        parameterThirdBound_deg = max(vecnorm( ...
-            thirdControl, 2, 2));
-        curvatureNormBound_deg_inv = parameterSecondBound_deg / ...
-            parameterSpeedLowerBound_deg^2;
-        thirdDerivativeNormBound_deg_inv2 = ...
-            2 * parameterThirdBound_deg / ...
-            parameterSpeedLowerBound_deg^3 + ...
-            8 * parameterSecondBound_deg^2 / ...
-            parameterSpeedLowerBound_deg^4;
-        primitiveTangentBound = [1 1];
-        primitiveSecondBound = repmat( ...
-            curvatureNormBound_deg_inv, 1, 2);
-        primitiveThirdBound = repmat( ...
-            thirdDerivativeNormBound_deg_inv2, 1, 2);
+        if isempty(endLookupIndex)
+            endLookupIndex = numel(primitive.ParameterGrid);
+        end
+        parameterInterval = [ ...
+            primitive.ParameterGrid(startLookupIndex), ...
+            primitive.ParameterGrid(endLookupIndex)];
+        if parameterInterval(2) <= parameterInterval(1)
+            parameterInterval = [ ...
+                primitive.ParameterGrid(max(1, startLookupIndex - 1)), ...
+                primitive.ParameterGrid(min( ...
+                numel(primitive.ParameterGrid), endLookupIndex + 1))];
+        end
+        certificate = azElInternal.certifyQuinticArcDerivatives( ...
+            primitive.ControlPoints_deg, parameterInterval);
+        primitiveTangentBound = certificate.TangentByAxis;
+        primitiveSecondBound = ...
+            certificate.SecondDerivativeByAxis_deg_inv;
+        primitiveThirdBound = ...
+            certificate.ThirdDerivativeByAxis_deg_inv2;
+        primitiveSubdivisionCount = certificate.SubdivisionCount;
+        certificateSubdivisionCount = certificateSubdivisionCount + ...
+            primitiveSubdivisionCount;
+        certificateFallbackCount = certificateFallbackCount + ...
+            certificate.FallbackCount;
     end
-    tangentBound = max(tangentBound, primitiveTangentBound);
-    secondDerivativeBound = max( ...
-        secondDerivativeBound, primitiveSecondBound);
-    thirdDerivativeBound = max( ...
-        thirdDerivativeBound, primitiveThirdBound);
+    certifiedTangentBound = max( ...
+        certifiedTangentBound, primitiveTangentBound);
+    certifiedSecondBound_deg_inv = max( ...
+        certifiedSecondBound_deg_inv, primitiveSecondBound);
+    certifiedThirdBound_deg_inv2 = max( ...
+        certifiedThirdBound_deg_inv2, primitiveThirdBound);
 end
-diagnosticStep_deg = 0.002;
-diagnosticS_deg = (startS_deg:diagnosticStep_deg:endS_deg).';
-diagnosticS_deg = unique([diagnosticS_deg; endS_deg]);
+if coveredPrimitiveCount == 0
+    error("roundedRunDerivativeBounds:EmptyInterval", ...
+        "The interval [%.9g, %.9g] deg has no positive-length primitive.", ...
+        startS_deg, endS_deg);
+end
+certifiedTangentBound = min(1, certificateRoundoffFactor * ...
+    certifiedTangentBound);
+certifiedSecondBound_deg_inv = certificateRoundoffFactor * ...
+    certifiedSecondBound_deg_inv;
+certifiedThirdBound_deg_inv2 = certificateRoundoffFactor * ...
+    certifiedThirdBound_deg_inv2;
+
+diagnosticSampleCount = 17;
+diagnosticS_deg = linspace( ...
+    startS_deg, endS_deg, diagnosticSampleCount).';
 diagnosticSamples = sampleRoundedMotion(smoothPath, diagnosticS_deg);
 numericalTangentBound = max(abs(diagnosticSamples.tangent), [], 1);
 numericalSecondBound = max(abs( ...
     diagnosticSamples.secondDerivative_deg_inv), [], 1);
 numericalThirdBound = max(abs( ...
     diagnosticSamples.thirdDerivative_deg_inv2), [], 1);
+certificateComparisonTolerance = 1e-10 * max(1, max([ ...
+    certifiedTangentBound, certifiedSecondBound_deg_inv, ...
+    certifiedThirdBound_deg_inv2]));
+sampledBoundsWithinCertificate = all(numericalTangentBound <= ...
+    certifiedTangentBound + certificateComparisonTolerance) && ...
+    all(numericalSecondBound <= certifiedSecondBound_deg_inv + ...
+    certificateComparisonTolerance) && ...
+    all(numericalThirdBound <= certifiedThirdBound_deg_inv2 + ...
+    certificateComparisonTolerance);
+if ~sampledBoundsWithinCertificate
+    error("roundedRunDerivativeBounds:CertificateViolation", ...
+        "A sampled derivative exceeded its continuous certificate on " + ...
+        "interval %d [%.9g, %.9g] deg.", ...
+        runIndex, startS_deg, endS_deg);
+end
 derivativeBounds = struct( ...
     "RunIndex", runIndex, ...
     "StartArcLength_deg", startS_deg, ...
     "EndArcLength_deg", endS_deg, ...
-    "TangentByAxis", tangentBound, ...
-    "SecondDerivativeByAxis_deg_inv", secondDerivativeBound, ...
-    "ThirdDerivativeByAxis_deg_inv2", thirdDerivativeBound, ...
+    "TangentByAxis", certifiedTangentBound, ...
+    "SecondDerivativeByAxis_deg_inv", certifiedSecondBound_deg_inv, ...
+    "ThirdDerivativeByAxis_deg_inv2", certifiedThirdBound_deg_inv2, ...
+    "CertifiedTangentByAxis", certifiedTangentBound, ...
+    "CertifiedSecondDerivativeByAxis_deg_inv", ...
+        certifiedSecondBound_deg_inv, ...
+    "CertifiedThirdDerivativeByAxis_deg_inv2", ...
+        certifiedThirdBound_deg_inv2, ...
     "NumericalTangentByAxis", numericalTangentBound, ...
     "NumericalSecondDerivativeByAxis_deg_inv", numericalSecondBound, ...
     "NumericalThirdDerivativeByAxis_deg_inv2", numericalThirdBound, ...
-    "EnvelopeInflationFactor", 1.0, ...
-    "SampleCount", coveredPrimitiveCount, ...
-    "Method", "sampledArcLengthEnvelope");
+    "EnvelopeInflationFactor", certificateRoundoffFactor, ...
+    "SampleCount", diagnosticSampleCount, ...
+    "CertificateSubdivisionCount", certificateSubdivisionCount, ...
+    "CertificateFallbackCount", certificateFallbackCount, ...
+    "CertificatePrimitiveCount", coveredPrimitiveCount, ...
+    "SampledBoundsWithinCertificate", sampledBoundsWithinCertificate, ...
+    "Method", "continuousBernsteinRationalEnvelope");
+end
+
+function bound = maximumAbsoluteSineOnInterval(startAngle_rad, endAngle_rad)
+%% Section 0: Header & Readme
+% SYNTAX
+%   bound = maximumAbsoluteSineOnInterval(startAngle_rad, endAngle_rad)
+%**************************************************************************
+% PURPOSE
+%   - Return the exact maximum absolute sine over a closed interval.
+%**************************************************************************
+% INPUTS
+%   - startAngle_rad, endAngle_rad (finite scalar doubles)
+%       Interval endpoints in either order.
+%**************************************************************************
+% OUTPUTS
+%   - bound (scalar double)
+%       Maximum absolute sine in [0, 1].
+%**************************************************************************
+% UNITS
+%   - Input angles are radians; the bound is dimensionless.
+%**************************************************************************
+lowerAngle_rad = min(startAngle_rad, endAngle_rad);
+upperAngle_rad = max(startAngle_rad, endAngle_rad);
+firstPeakIndex = ceil((lowerAngle_rad - pi / 2) / pi);
+lastPeakIndex = floor((upperAngle_rad - pi / 2) / pi);
+if firstPeakIndex <= lastPeakIndex
+    bound = 1;
+else
+    bound = max(abs(sin([lowerAngle_rad, upperAngle_rad])));
+end
+end
+
+function bound = maximumAbsoluteCosineOnInterval(startAngle_rad, endAngle_rad)
+%% Section 0: Header & Readme
+% SYNTAX
+%   bound = maximumAbsoluteCosineOnInterval(startAngle_rad, endAngle_rad)
+%**************************************************************************
+% PURPOSE
+%   - Return the exact maximum absolute cosine over a closed interval.
+%**************************************************************************
+% INPUTS
+%   - startAngle_rad, endAngle_rad (finite scalar doubles)
+%       Interval endpoints in either order.
+%**************************************************************************
+% OUTPUTS
+%   - bound (scalar double)
+%       Maximum absolute cosine in [0, 1].
+%**************************************************************************
+% UNITS
+%   - Input angles are radians; the bound is dimensionless.
+%**************************************************************************
+lowerAngle_rad = min(startAngle_rad, endAngle_rad);
+upperAngle_rad = max(startAngle_rad, endAngle_rad);
+firstPeakIndex = ceil(lowerAngle_rad / pi);
+lastPeakIndex = floor(upperAngle_rad / pi);
+if firstPeakIndex <= lastPeakIndex
+    bound = 1;
+else
+    bound = max(abs(cos([lowerAngle_rad, upperAngle_rad])));
+end
 end
 
 function [maxSpeed_deg_s, maxAcceleration_deg_s2, maxJerk_deg_s3] = ...
         roundedRunScalarLimits(bounds, limits, tolerance)
 %% Section 0: Header & Readme
-% Allocate separate tangential, curvature, and curvature-rate budgets.
-tangentBound = bounds.NumericalTangentByAxis;
-secondBound = bounds.NumericalSecondDerivativeByAxis_deg_inv;
-thirdBound = bounds.NumericalThirdDerivativeByAxis_deg_inv2;
+% Allocate separate tangential, curvature, and curvature-rate budgets from
+% continuous derivative certificates rather than sampled maxima.
+tangentBound = bounds.CertifiedTangentByAxis;
+secondBound = bounds.CertifiedSecondDerivativeByAxis_deg_inv;
+thirdBound = bounds.CertifiedThirdDerivativeByAxis_deg_inv2;
 velocityLimit_deg_s = limits.maxVelocity_deg_s;
 accelerationLimit_deg_s2 = limits.maxAcceleration_deg_s2;
 jerkLimit_deg_s3 = limits.maxJerk_deg_s3;
@@ -4327,10 +5508,10 @@ function [velocityBound_deg_s, accelerationBound_deg_s2, ...
         jerkBound_deg_s3] = roundedRunKinematicBounds(bounds, profile)
 %% Section 0: Header & Readme
 % Convert scalar S-curve peaks into conservative per-axis Cartesian peaks
-% using the same guarded numerical envelope used by the retimer.
-tangentBound = bounds.NumericalTangentByAxis;
-secondBound = bounds.NumericalSecondDerivativeByAxis_deg_inv;
-thirdBound = bounds.NumericalThirdDerivativeByAxis_deg_inv2;
+% using the same continuous certificate used by the retimer.
+tangentBound = bounds.CertifiedTangentByAxis;
+secondBound = bounds.CertifiedSecondDerivativeByAxis_deg_inv;
+thirdBound = bounds.CertifiedThirdDerivativeByAxis_deg_inv2;
 velocityBound_deg_s = tangentBound * profile.PeakSpeed_deg_s;
 accelerationBound_deg_s2 = ...
     tangentBound * profile.PeakAcceleration_deg_s2 + ...
@@ -4542,8 +5723,10 @@ sampleTangentialJerk_deg_s3 = zeros(0, 1);
 if waitDuration_s > timeTolerance_s
     waitLocalTime_s = polylineRegularAndEventTimes( ...
         waitDuration_s, options.SampleTime_s, []);
-    waitSampleCount = numel(waitLocalTime_s);
     time_s = initialState.time_s + waitLocalTime_s;
+    keepSample = strictlyIncreasingAbsoluteTimeMask(time_s, []);
+    time_s = time_s(keepSample);
+    waitSampleCount = numel(time_s);
     position_deg = repmat(initialState.position_deg, waitSampleCount, 1);
     velocity_deg_s = zeros(waitSampleCount, 2);
     acceleration_deg_s2 = zeros(waitSampleCount, 2);
@@ -4581,18 +5764,22 @@ for primitiveIndex = 1:primitiveCount
     primitiveTime_s = profile.StartTime_s + localTime_s;
     primitiveArcLength_deg = primitive.StartArcLength_deg + ...
         localDistance_deg;
-    if ~isempty(time_s) && abs(primitiveTime_s(1) - time_s(end)) <= ...
-            timeTolerance_s
-        primitiveTime_s(1) = [];
-        primitivePosition_deg(1, :) = [];
-        primitiveVelocity_deg_s(1, :) = [];
-        primitiveAcceleration_deg_s2(1, :) = [];
-        primitiveJerk_deg_s3(1, :) = [];
-        primitiveArcLength_deg(1) = [];
-        scalarVelocity_deg_s(1) = [];
-        scalarAcceleration_deg_s2(1) = [];
-        scalarJerk_deg_s3(1) = [];
+    previousTime_s = [];
+    if ~isempty(time_s)
+        previousTime_s = time_s(end);
     end
+    keepSample = strictlyIncreasingAbsoluteTimeMask( ...
+        primitiveTime_s, previousTime_s);
+    primitiveTime_s = primitiveTime_s(keepSample);
+    primitivePosition_deg = primitivePosition_deg(keepSample, :);
+    primitiveVelocity_deg_s = primitiveVelocity_deg_s(keepSample, :);
+    primitiveAcceleration_deg_s2 = ...
+        primitiveAcceleration_deg_s2(keepSample, :);
+    primitiveJerk_deg_s3 = primitiveJerk_deg_s3(keepSample, :);
+    primitiveArcLength_deg = primitiveArcLength_deg(keepSample);
+    scalarVelocity_deg_s = scalarVelocity_deg_s(keepSample);
+    scalarAcceleration_deg_s2 = scalarAcceleration_deg_s2(keepSample);
+    scalarJerk_deg_s3 = scalarJerk_deg_s3(keepSample);
     time_s = [time_s; primitiveTime_s]; %#ok<AGROW>
     position_deg = [position_deg; primitivePosition_deg]; %#ok<AGROW>
     velocity_deg_s = [velocity_deg_s; primitiveVelocity_deg_s]; %#ok<AGROW>
@@ -4610,6 +5797,11 @@ for primitiveIndex = 1:primitiveCount
         scalarJerk_deg_s3]; %#ok<AGROW>
 end
 
+if numel(time_s) < 2 || any(diff(time_s) <= 0)
+    error("retimeJerkLimitedPrimitives:NonIncreasingTime", ...
+        "Internal profile assembly needs at least two increasing times.");
+end
+
 position_deg(1, :) = initialState.position_deg;
 velocity_deg_s(1, :) = initialState.velocity_deg_s;
 acceleration_deg_s2(1, :) = initialState.acceleration_deg_s2;
@@ -4618,6 +5810,17 @@ position_deg(end, :) = goalState.position_deg;
 velocity_deg_s(end, :) = goalState.velocity_deg_s;
 acceleration_deg_s2(end, :) = goalState.acceleration_deg_s2;
 jerk_deg_s3(end, :) = [0 0];
+[~, sampleSpeed_deg_s(1), ...
+    sampleTangentialAcceleration_deg_s2(1), ...
+    sampleTangentialJerk_deg_s3(1)] = sampleJerkProfile( ...
+    0, profiles(1), options.KinematicTolerance);
+[~, sampleSpeed_deg_s(end), ...
+    sampleTangentialAcceleration_deg_s2(end), ...
+    sampleTangentialJerk_deg_s3(end)] = sampleJerkProfile( ...
+    profiles(end).Duration_s, profiles(end), ...
+    options.KinematicTolerance);
+sampleArcLength_deg(1) = profiles(1).StartArcLength_deg;
+sampleArcLength_deg(end) = profiles(end).EndArcLength_deg;
 
 peakVelocity_deg_s = max(vertcat( ...
     profiles.PeakVelocityByAxis_deg_s), [], 1);
@@ -4981,11 +6184,9 @@ atStart = time_s <= tolerance;
 atEnd = time_s >= profile.Duration_s - tolerance;
 position_deg(atStart) = 0;
 speed_deg_s(atStart) = profile.StartSpeed_deg_s;
-acceleration_deg_s2(atStart) = 0;
 jerk_deg_s3(atStart) = 0;
 position_deg(atEnd) = profile.Length_deg;
 speed_deg_s(atEnd) = profile.EndSpeed_deg_s;
-acceleration_deg_s2(atEnd) = 0;
 jerk_deg_s3(atEnd) = 0;
 end
 

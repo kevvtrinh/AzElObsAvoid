@@ -46,10 +46,9 @@ validateattributes(slalomCount, {'numeric'}, ...
     "Alternating slalom with %d baffles", slalomCount)), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
-missionEndTime_s = 120;
-if jerkConfiguration.JerkConstraintEnabled
-    missionEndTime_s = 120 + 60 * slalomCount;
-end
+% Use one conservative horizon for both retimers so jerk is the only paired
+% benchmark input that changes.
+missionEndTime_s = 120 + 60 * slalomCount;
 safetyMargin_deg = 0.25;
 time_s = [0; missionEndTime_s];
 gateSpacing_deg = 5;

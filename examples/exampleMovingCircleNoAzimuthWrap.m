@@ -39,10 +39,9 @@ end
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
-missionEndTime_s = 35;
-if jerkConfiguration.JerkConstraintEnabled
-    missionEndTime_s = 120;
-end
+% The shared horizon keeps both the obstacle rate and planner deadline
+% identical when the example-only jerk switch is toggled.
+missionEndTime_s = 120;
 safetyMargin_deg = 0.20;
 obstacleTime_s = (0:0.25:missionEndTime_s).';
 circleRadius_deg = 2.5;
