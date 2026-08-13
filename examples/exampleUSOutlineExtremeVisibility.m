@@ -5,8 +5,9 @@ function result = exampleUSOutlineExtremeVisibility(options)
 %   result = exampleUSOutlineExtremeVisibility(options)
 %**************************************************************************
 % PURPOSE
-%   - Plan Mexico-to-Canada around a dense static U.S. outline using bounded
-%     extreme visibility candidates and full protected collision geometry.
+%   - Plan sequential routes around the dense static outlines of Hawaii,
+%     Croatia, and the Philippines using bounded extreme visibility
+%     candidates and full protected collision geometry.
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional; default struct())
@@ -15,8 +16,9 @@ function result = exampleUSOutlineExtremeVisibility(options)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Stable planner result plus independent ExampleValidation,
-%       ObstacleHistory, and ExampleConfiguration metadata.
+%       Final-region planner result plus independent ExampleValidation,
+%       RegionSequenceResults, RegionSequenceSummary, ObstacleHistory, and
+%       ExampleConfiguration metadata for the complete sequence.
 %**************************************************************************
 % UNITS
 %   - Position is degrees, time is seconds, velocity is degrees per second,
@@ -41,42 +43,103 @@ end
     "ShowSweptSurfaces", false, ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", "Mexico-to-Canada route: reduced U.S. visibility nodes"), ...
+    "Title", "Extreme geographic-region visibility sequence"), ...
     [12 12]);
 
 %% Section 2: Create Obstacles
 missionEndTime_s = 120;
-% The private geometry helper is retained because shapefile union and
-% 14,000-plus outline vertices would obscure the visible scenario flow.
-[obstacle, obstacleHistory] = createContiguousUSObstacle( ...
-    [0; missionEndTime_s], 0.15, struct( ...
-    "MotionMode", "static", "UseParallel", false, ...
-    "Verbose", options.Verbose));
+regionNames = ["Hawaii" "Croatia" "Philippines"];
+regionCount = numel(regionNames);
+obstacles = cell(regionCount, 1);
+obstacleHistories = cell(regionCount, 1);
+regionScenarios = cell(regionCount, 1);
+% The private geometry helper is retained because source-shapefile
+% selection, clipping, and thousands of coastline vertices would obscure
+% the visible scenario flow.
+for regionIndex = 1:regionCount
+    [obstacles{regionIndex}, obstacleHistories{regionIndex}, ...
+        regionScenarios{regionIndex}] = createGeographicRegionObstacle( ...
+        regionNames(regionIndex), [0; missionEndTime_s], 0.15, ...
+        struct("Verbose", options.Verbose));
+end
 
 %% Section 3: Create Planner Inputs
-initialState = struct("time_s", 0, "position_deg", [-102 23]);
-goalState = struct( ...
-    "time_s", missionEndTime_s, "position_deg", [-102 52]);
 limits = struct( ...
     "maxVelocity_deg_s", [8 8], ...
     "maxAcceleration_deg_s2", [3 3], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
-result = planAzElMotion( ...
-    obstacle, initialState, goalState, limits, options);
+regionResults = cell(regionCount, 1);
+for regionIndex = 1:regionCount
+    scenario = regionScenarios{regionIndex};
+    initialState = struct( ...
+        "time_s", 0, ...
+        "position_deg", scenario.initialPosition_deg);
+    goalState = struct( ...
+        "time_s", missionEndTime_s, ...
+        "position_deg", scenario.goalPosition_deg);
+    regionOptions = options;
+    regionOptions.Title = "Extreme visibility: " + ...
+        regionNames(regionIndex);
+    regionResults{regionIndex} = planAzElMotion( ...
+        obstacles{regionIndex}, initialState, goalState, ...
+        limits, regionOptions);
+end
 
 %% Section 5: Validate Result
-exampleValidation = validateAzElExampleResult( ...
-    result, "static U.S. outline", ...
-    struct("RequireDirectBlocked", true));
+regionPassed = false(regionCount, 1);
+regionArrivalTime_s = nan(regionCount, 1);
+regionRouteLength_deg = nan(regionCount, 1);
+regionNativeVertexCount = zeros(regionCount, 1);
+regionTestVertexCount = zeros(regionCount, 1);
+for regionIndex = 1:regionCount
+    resultForRegion = regionResults{regionIndex};
+    exampleValidation = validateAzElExampleResult( ...
+        resultForRegion, ...
+        "static " + lower(regionNames(regionIndex)) + " outline", ...
+        struct("RequireDirectBlocked", true));
+    resultForRegion.ExampleValidation = exampleValidation;
+    resultForRegion.ObstacleHistory = ...
+        obstacleHistories{regionIndex};
+    resultForRegion.ExampleConfiguration = jerkConfiguration;
+    resultForRegion.ExampleConfiguration.RegionName = ...
+        regionNames(regionIndex);
+    resultForRegion.ExampleConfiguration.RegionScenario = ...
+        regionScenarios{regionIndex};
+    regionResults{regionIndex} = resultForRegion;
+    regionPassed(regionIndex) = exampleValidation.Passed;
+    regionNativeVertexCount(regionIndex) = ...
+        obstacleHistories{regionIndex}.nativeSourceVertexCount;
+    regionTestVertexCount(regionIndex) = ...
+        obstacleHistories{regionIndex}.sourceVertexCount;
+    if resultForRegion.Success
+        regionArrivalTime_s(regionIndex) = ...
+            resultForRegion.timedSlopePath.time_s(end);
+        regionRouteLength_deg(regionIndex) = ...
+            sum(vecnorm(diff( ...
+            resultForRegion.selectedRoute_deg, 1, 1), 2, 2));
+    end
+end
 
 %% Section 6: Plot Diagnostics And Motion
 % planAzElMotion already created the requested workspace, animation, and
-% kinematic figures from the returned result without scenario knowledge.
+% kinematic figures for each returned result without scenario knowledge.
 
 %% Section 7: Return Example Metadata
-result.ExampleValidation = exampleValidation;
-result.ObstacleHistory = obstacleHistory;
-result.ExampleConfiguration = jerkConfiguration;
+result = regionResults{end};
+regionSequencePassed = all(regionPassed);
+result.RegionSequenceResults = regionResults;
+result.RegionSequenceSummary = table( ...
+    regionNames.', regionPassed, regionArrivalTime_s, ...
+    regionRouteLength_deg, regionNativeVertexCount, ...
+    regionTestVertexCount, ...
+    'VariableNames', {'Region', 'Passed', 'ArrivalTime_s', ...
+    'RouteLength_deg', 'NativeVertexCount', 'TestVertexCount'});
+result.RegionSequencePassed = regionSequencePassed;
+result.ExampleValidation.RegionSequencePassed = ...
+    regionSequencePassed;
+result.ExampleValidation.Passed = ...
+    result.ExampleValidation.Passed && regionSequencePassed;
+result.ExampleConfiguration.RegionSequence = regionNames;
 end
