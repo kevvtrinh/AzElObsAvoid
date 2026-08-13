@@ -10,7 +10,8 @@ function result = exampleUShapedAzElTimeSpace(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional)
-%       Planner option overrides.
+%       Planner option overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3 example controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -21,14 +22,18 @@ function result = exampleUShapedAzElTimeSpace(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-options = exampleOptions(options, struct( ...
+[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+    options, struct( ...
     "MotionType", "velocityCarrying", ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", "U-shaped az/el obstacle"));
+    "Title", "U-shaped az/el obstacle"), [2.5 2.5]);
 
 %% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 35;
+if jerkConfiguration.JerkConstraintEnabled
+    missionEndTime_s = 120;
+end
 safetyMargin_deg = 0.20;
 uBoundary_deg = [ ...
     -8,  7; -5,  7; -5, -4; 5, -4; ...
@@ -43,12 +48,14 @@ goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [0 -10]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.75 0.75]);
+    "maxAcceleration_deg_s2", [0.75 0.75], ...
+    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 result.uBoundary_deg = uBoundary_deg;
+result.ExampleConfiguration = jerkConfiguration;
 
 %% Section 4: Validate The Command
 validateExampleResult(result, "single U");
@@ -64,15 +71,5 @@ end
 if ~any(result.directBlocked)
     error("exampleUShapedAzElTimeSpace:ScenarioNotBlocked", ...
         "The direct path should be blocked. Diagnostic plots remain open.");
-end
-end
-
-function options = exampleOptions(options, defaults)
-%% Section 0: Header & Readme
-names = fieldnames(defaults);
-for index = 1:numel(names)
-    if ~isfield(options, names{index}) || isempty(options.(names{index}))
-        options.(names{index}) = defaults.(names{index});
-    end
 end
 end

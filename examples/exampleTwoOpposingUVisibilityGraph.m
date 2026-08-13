@@ -10,7 +10,8 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional)
-%       Planner option overrides.
+%       Planner option overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3 example controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -21,14 +22,18 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-options = exampleOptions(options, struct( ...
+[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+    options, struct( ...
     "MotionType", "velocityCarrying", ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", "Two opposing U-shaped az/el obstacles"));
+    "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
 
 %% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 35;
+if jerkConfiguration.JerkConstraintEnabled
+    missionEndTime_s = 180;
+end
 safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ ...
     -10, 8; 0, 8; 0, 5; -7, 5; ...
@@ -51,13 +56,15 @@ goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [9 20]);
 limits = struct( ...
     "maxVelocity_deg_s", [1 1], ...
-    "maxAcceleration_deg_s2", [0.75 0.75]);
+    "maxAcceleration_deg_s2", [0.75 0.75], ...
+    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
 result.firstUBoundary_deg = firstUBoundary_deg;
 result.secondUBoundary_deg = secondUBoundary_deg;
+result.ExampleConfiguration = jerkConfiguration;
 
 %% Section 4: Validate The Command
 validateExampleResult(result, "two opposing Us");
@@ -73,15 +80,5 @@ end
 if ~any(result.directBlocked)
     error("exampleTwoOpposingUVisibilityGraph:ScenarioNotBlocked", ...
         "The direct path should be blocked. Diagnostic plots remain open.");
-end
-end
-
-function options = exampleOptions(options, defaults)
-%% Section 0: Header & Readme
-names = fieldnames(defaults);
-for index = 1:numel(names)
-    if ~isfield(options, names{index}) || isempty(options.(names{index}))
-        options.(names{index}) = defaults.(names{index});
-    end
 end
 end

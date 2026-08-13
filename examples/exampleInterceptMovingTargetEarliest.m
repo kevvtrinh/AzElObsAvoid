@@ -11,7 +11,8 @@ function result = exampleInterceptMovingTargetEarliest(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional)
-%       Planner option overrides.
+%       Planner option overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3 example controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -23,11 +24,12 @@ function result = exampleInterceptMovingTargetEarliest(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-options = exampleOptions(options, struct( ...
+[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+    options, struct( ...
     "MotionType", "velocityCarrying", ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", "Earliest moving-target intercept"));
+    "Title", "Earliest moving-target intercept"), [2.5 2.5]);
 
 %% Section 1: Construct The Obstacle-Free Target Scenario
 obstacles = [];
@@ -44,7 +46,8 @@ initialState = struct( ...
     "acceleration_deg_s2", [0 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.8 0.8]);
+    "maxAcceleration_deg_s2", [0.8 0.8], ...
+    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 interceptOptions = struct( ...
     "InterceptMode", "earliestArrival", ...
     "MaximumSearchDuration_s", 30, ...
@@ -57,6 +60,7 @@ interceptOptions = struct( ...
 result = planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 result.obstacles = obstacles;
+result.ExampleConfiguration = jerkConfiguration;
 
 %% Section 4: Validate The Intercept
 if ~result.Success || ~result.Validation.Passed || ...
@@ -73,16 +77,5 @@ if result.obstacleField.ObstacleCount ~= 0 || ...
         interceptOptions.SearchTimeTolerance_s + eps
     error("exampleInterceptMovingTargetEarliest:SearchValidationFailed", ...
         "The first feasible intercept was not certified by the search.");
-end
-end
-
-function options = exampleOptions(options, defaults)
-%% Section 0: Header & Readme
-% Apply example defaults without hiding caller planner overrides.
-names = fieldnames(defaults);
-for index = 1:numel(names)
-    if ~isfield(options, names{index}) || isempty(options.(names{index}))
-        options.(names{index}) = defaults.(names{index});
-    end
 end
 end

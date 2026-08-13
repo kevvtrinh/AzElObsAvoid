@@ -10,7 +10,8 @@ function result = exampleMovingCircleNoAzimuthWrap(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional)
-%       Planner option overrides.
+%       Planner option overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3 example controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -21,19 +22,24 @@ function result = exampleMovingCircleNoAzimuthWrap(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-options = exampleOptions(options, struct( ...
+[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+    options, struct( ...
     "MotionType", "velocityCarrying", ...
     "AllowAzimuthWrapping", false, ...
     "AzimuthInterval_deg", [-180 180], ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", "Rising circle with automatic non-wrapping route"));
+    "Title", "Rising circle with automatic non-wrapping route"), ...
+    [2.5 2.5]);
 % The defining behavior of this scenario is an interval-constrained route.
 % Callers may customize the interval but cannot enable wrapping here.
 options.AllowAzimuthWrapping = false;
 
 %% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 35;
+if jerkConfiguration.JerkConstraintEnabled
+    missionEndTime_s = 120;
+end
 safetyMargin_deg = 0.20;
 obstacleTime_s = (0:0.25:missionEndTime_s).';
 circleRadius_deg = 2.5;
@@ -60,7 +66,8 @@ goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [12 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.75 0.75]);
+    "maxAcceleration_deg_s2", [0.75 0.75], ...
+    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
@@ -70,6 +77,7 @@ result.circleRadius_deg = circleRadius_deg;
 result.circleCenterElevation_deg = circleCenterElevation_deg;
 result.azimuthWrappingAllowed = options.AllowAzimuthWrapping;
 result.azimuthInterval_deg = options.AzimuthInterval_deg;
+result.ExampleConfiguration = jerkConfiguration;
 
 %% Section 4: Validate The Command
 validateExampleResult(result, "moving circle");
@@ -85,15 +93,5 @@ end
 if ~any(result.directBlocked)
     error("exampleMovingCircleNoAzimuthWrap:ScenarioNotBlocked", ...
         "The direct path should be blocked. Diagnostic plots remain open.");
-end
-end
-
-function options = exampleOptions(options, defaults)
-%% Section 0: Header & Readme
-names = fieldnames(defaults);
-for index = 1:numel(names)
-    if ~isfield(options, names{index}) || isempty(options.(names{index}))
-        options.(names{index}) = defaults.(names{index});
-    end
 end
 end

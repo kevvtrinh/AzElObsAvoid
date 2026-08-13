@@ -13,7 +13,8 @@ function result = exampleAlternatingSlalom(slalomCount, options)
 % INPUTS
 %   - slalomCount (integer scalar from 1 through 10, optional; default 6)
 %   - options (scalar struct, optional)
-%       Planner option overrides.
+%       Planner option overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3 example controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -33,15 +34,20 @@ elseif nargin < 2 || isempty(options)
 end
 validateattributes(slalomCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', '>=', 1, '<=', 10});
-options = exampleOptions(options, struct( ...
+[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+    options, struct( ...
     "MotionType", "velocityCarrying", ...
     "TurnRadius_deg", 0.50, ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
-    "Title", sprintf("Alternating slalom with %d baffles", slalomCount)));
+    "Title", sprintf( ...
+    "Alternating slalom with %d baffles", slalomCount)), [2.5 2.5]);
 
 %% Section 1: Construct Canonical Obstacles
 missionEndTime_s = 120;
+if jerkConfiguration.JerkConstraintEnabled
+    missionEndTime_s = 120 + 60 * slalomCount;
+end
 safetyMargin_deg = 0.25;
 time_s = [0; missionEndTime_s];
 gateSpacing_deg = 5;
@@ -94,7 +100,8 @@ goalState = struct( ...
     "position_deg", [goalAzimuth_deg, 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.75 0.75]);
+    "maxAcceleration_deg_s2", [0.75 0.75], ...
+    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 3: Run The Maintained Planner
 result = planAzElMotion( ...
@@ -107,6 +114,7 @@ end
 result.slalomCount = slalomCount;
 result.baffleBoundaries_deg = baffleBoundaries_deg;
 result.gateSpacing_deg = gateSpacing_deg;
+result.ExampleConfiguration = jerkConfiguration;
 gateAzimuth_deg = gateSpacing_deg * (1:slalomCount).';
 passageElevation_deg = zeros(slalomCount, 1);
 for baffleIndex = 1:slalomCount
@@ -126,15 +134,5 @@ if ~any(result.directBlocked) || any( ...
     error("exampleAlternatingSlalom:ScenarioValidationFailed", ...
         "The route did not alternate through every gate. " + ...
         "Diagnostic plots remain open.");
-end
-end
-
-function options = exampleOptions(options, defaults)
-%% Section 0: Header & Readme
-names = fieldnames(defaults);
-for index = 1:numel(names)
-    if ~isfield(options, names{index}) || isempty(options.(names{index}))
-        options.(names{index}) = defaults.(names{index});
-    end
 end
 end
