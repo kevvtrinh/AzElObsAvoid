@@ -1,5 +1,6 @@
 function azElData = makeAzElObstacleData(obstacleName, time_s, ...
-        azimuthBoundary_deg, elevationBoundary_deg, safetyMargin_deg)
+        azimuthBoundary_deg, elevationBoundary_deg, safetyMargin_deg, ...
+        constructionOptions)
 %% Section 0: Header & Readme
 % SYNTAX
 %   azElData = makeAzElObstacleData( ...
@@ -7,6 +8,9 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %   azElData = makeAzElObstacleData( ...
 %       obstacleName, time_s, azimuthBoundary_deg, ...
 %       elevationBoundary_deg, safetyMargin_deg)
+%   azElData = makeAzElObstacleData( ...
+%       obstacleName, time_s, azimuthBoundary_deg, ...
+%       elevationBoundary_deg, safetyMargin_deg, constructionOptions)
 %**************************************************************************
 % PURPOSE
 %   - Build validated canonical static or time-varying obstacle data.
@@ -24,6 +28,10 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %       Boundary representation matching azimuthBoundary_deg.
 %   - safetyMargin_deg (nonnegative scalar, optional; default 0)
 %       Euclidean polygon inflation applied here before data is returned.
+%   - constructionOptions (scalar struct, optional)
+%       .Verbose prints per-slice protection progress (default false).
+%       .UseParallel is auto/on/off or logical; unavailable parallel
+%       support falls back to serial execution.
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)
@@ -34,6 +42,9 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 
 if nargin < 5 || isempty(safetyMargin_deg)
     safetyMargin_deg = 0;
+end
+if nargin < 6 || isempty(constructionOptions)
+    constructionOptions = struct();
 end
 validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
@@ -68,5 +79,6 @@ azElData = normalizeAzElTimeObstacleData(azElData);
 % Inflation belongs exclusively to obstacle construction. Calling the
 % absolute-margin helper even for zero keeps one schema and one topology
 % path for protected geometry.
-azElData = inflateAzElObstacleData(azElData, safetyMargin_deg);
+azElData = inflateAzElObstacleData( ...
+    azElData, safetyMargin_deg, constructionOptions);
 end

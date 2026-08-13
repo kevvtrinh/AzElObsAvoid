@@ -21,6 +21,8 @@ function obstacleField = buildAzElTimeObstacleField( ...
 %           collision geometry must conservatively contain the source.
 %       .ReferenceTime (datetime scalar)
 %           UTC epoch corresponding to time_s == 0.
+%       .Verbose (logical scalar)
+%           Print completed per-slice packing progress (default false).
 %**************************************************************************
 % OUTPUTS
 %   - obstacleField (scalar struct)
@@ -67,6 +69,9 @@ if isfinite(resolvedOptions.MaximumVerticesPerRegion)
         {'integer', '>=', 4});
 end
 maximumVerticesPerRegion = resolvedOptions.MaximumVerticesPerRegion;
+validateattributes(resolvedOptions.Verbose, ...
+    {'logical','numeric'}, {'scalar'});
+resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
 if isfinite(maximumVerticesPerRegion)
     error("buildAzElTimeObstacleField:NonconservativeVertexCap", ...
         "Finite MaximumVerticesPerRegion values can shrink protected " + ...
@@ -106,6 +111,11 @@ for obstacleIndex = 1:numel(canonicalObstacles)
     obstacleData = canonicalObstacles(obstacleIndex);
     sliceTime_s = double(obstacleData.time_s(:));
     sliceCount = numel(sliceTime_s);
+    if resolvedOptions.Verbose
+        fprintf("[az/el pack] obstacle %d/%d '%s': %d slices.\n", ...
+            obstacleIndex, numel(canonicalObstacles), ...
+            obstacleData.targetName, sliceCount);
+    end
     reducedRegionCount = 0;
     droppedRegionCount = 0;
 
@@ -261,6 +271,12 @@ for obstacleIndex = 1:numel(canonicalObstacles)
             sliceAzimuthBuffer_deg{sliceIndex} = zeros(0, 1);
             sliceElevationBuffer_deg{sliceIndex} = zeros(0, 1);
             sliceEdgeBuffer_deg{sliceIndex} = zeros(0, 4);
+            if resolvedOptions.Verbose
+                fprintf( ...
+                    "[az/el pack] slice %d/%d at t=%.3f s: " + ...
+                    "empty protected geometry.\n", ...
+                    sliceIndex, sliceCount, sliceTime_s(sliceIndex));
+            end
             continue;
         end
 
@@ -291,6 +307,14 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         % which is what keeps the offset tables below honest.
         sliceVertexCounts(sliceIndex) = numel(sliceVertexAzimuth_deg);
         sliceEdgeCounts(sliceIndex) = keptEdgeTotal;
+        if resolvedOptions.Verbose
+            fprintf( ...
+                "[az/el pack] slice %d/%d at t=%.3f s: " + ...
+                "%d vertices, %d rings, %d edges.\n", ...
+                sliceIndex, sliceCount, sliceTime_s(sliceIndex), ...
+                sliceVertexCounts(sliceIndex), keptRingCount, ...
+                sliceEdgeCounts(sliceIndex));
+        end
     end
 
     % CSR-style offset tables. Slice i owns rows
@@ -466,5 +490,6 @@ function options = defaultAzElTimeObstacleFieldOptions()
 %   - ReferenceTime is a UTC datetime.
 options = struct( ...
     "MaximumVerticesPerRegion", Inf, ...
-    "ReferenceTime", []);
+    "ReferenceTime", [], ...
+    "Verbose", false);
 end

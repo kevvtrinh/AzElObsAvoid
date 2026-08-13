@@ -19,6 +19,9 @@ function result = exampleMovingCircleNoAzimuthWrap(options)
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
+
+%% Section 1: Resolve Example Controls
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -35,7 +38,7 @@ end
 % Callers may customize the interval but cannot enable wrapping here.
 options.AllowAzimuthWrapping = false;
 
-%% Section 1: Construct Canonical Obstacles
+%% Section 2: Create Obstacles
 missionEndTime_s = 35;
 if jerkConfiguration.JerkConstraintEnabled
     missionEndTime_s = 120;
@@ -60,7 +63,7 @@ obstacle = makeAzElObstacleData( ...
     "Slowly rising circle", obstacleTime_s, ...
     circleAzimuth_deg, circleElevation_deg, safetyMargin_deg);
 
-%% Section 2: Define The Planning Request
+%% Section 3: Create Planner Inputs
 initialState = struct("time_s", 0, "position_deg", [-12 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [12 0]);
@@ -69,29 +72,23 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [0.75 0.75], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
-%% Section 3: Run The Maintained Planner
+%% Section 4: Run Planner
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
+
+%% Section 5: Validate Result
+exampleValidation = validateAzElExampleResult( ...
+    result, "moving circle", struct("RequireDirectBlocked", true));
+
+%% Section 6: Plot Diagnostics And Motion
+% planAzElMotion created all requested plots from the returned result.
+
+%% Section 7: Return Example Metadata
+result.ExampleValidation = exampleValidation;
 result.obstacleTime_s = obstacleTime_s;
 result.circleRadius_deg = circleRadius_deg;
 result.circleCenterElevation_deg = circleCenterElevation_deg;
 result.azimuthWrappingAllowed = options.AllowAzimuthWrapping;
 result.azimuthInterval_deg = options.AzimuthInterval_deg;
 result.ExampleConfiguration = jerkConfiguration;
-
-%% Section 4: Validate The Command
-validateExampleResult(result, "moving circle");
-end
-
-function validateExampleResult(result, scenarioName)
-%% Section 0: Header & Readme
-if ~result.Success || ~result.Validation.Passed
-    error("exampleMovingCircleNoAzimuthWrap:PlanningFailed", ...
-        "%s validation failed. Diagnostic plots remain open. %s", ...
-        scenarioName, result.Message);
-end
-if ~any(result.directBlocked)
-    error("exampleMovingCircleNoAzimuthWrap:ScenarioNotBlocked", ...
-        "The direct path should be blocked. Diagnostic plots remain open.");
-end
 end

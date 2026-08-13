@@ -5,25 +5,26 @@ function result = exampleUSOutlineExtremeVisibility(options)
 %   result = exampleUSOutlineExtremeVisibility(options)
 %**************************************************************************
 % PURPOSE
-%   - Plan a Mexico-to-Canada route around the full-resolution contiguous
-%     United States outline without turning every coastline vertex into a
-%     visibility-graph node.
-%   - Demonstrate bounded directional-extreme and endpoint-tangency nodes
-%     while retaining the complete outline for collision validation and
-%     boundary-following edges.
+%   - Plan Mexico-to-Canada around a dense static U.S. outline using bounded
+%     extreme visibility candidates and full protected collision geometry.
 %**************************************************************************
 % INPUTS
-%   - options (scalar struct, optional)
-%       Planner option overrides. PolygonCandidateMode defaults to extreme.
-%       EnableJerkConstraint and MaxJerk_deg_s3 control jerk retiming.
+%   - options (scalar struct, optional; default struct())
+%       Planner/display overrides plus EnableJerkConstraint and
+%       MaxJerk_deg_s3.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Validated planner result plus source-outline and reduction metrics.
+%       Stable planner result plus independent ExampleValidation,
+%       ObstacleHistory, and ExampleConfiguration metadata.
 %**************************************************************************
 % UNITS
-%   - Longitude/latitude are interpreted as azimuth/elevation degrees.
-%   - Time is seconds.
+%   - Position is degrees, time is seconds, velocity is degrees per second,
+%     acceleration is degrees per second squared, and jerk is degrees per
+%     second cubed.
+%**************************************************************************
+
+%% Section 1: Resolve Example Controls
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -43,144 +44,39 @@ end
     "Title", "Mexico-to-Canada route: reduced U.S. visibility nodes"), ...
     [12 12]);
 
-%% Section 1: Read & Union The Mainland State Boundaries
-boundaryFile = which("usastatehi.shp");
-if isempty(boundaryFile)
-    error("exampleUSOutlineExtremeVisibility:MappingToolboxRequired", ...
-        "Mapping Toolbox file usastatehi.shp was not found.");
-end
-stateBoundary = shaperead(boundaryFile, "UseGeoCoords", true);
-stateName = string({stateBoundary.Name});
-stateBoundary = stateBoundary(~ismember(stateName, ["Alaska" "Hawaii"]));
-if isempty(stateBoundary)
-    error("exampleUSOutlineExtremeVisibility:NoMainlandStates", ...
-        "No contiguous-U.S. state boundaries were found.");
-end
-
-mainlandUS = polyshape( ...
-    stateBoundary(1).Lon, stateBoundary(1).Lat, ...
-    "Simplify", false, "KeepCollinearPoints", true);
-for stateIndex = 2:numel(stateBoundary)
-    statePolygon = polyshape( ...
-        stateBoundary(stateIndex).Lon, stateBoundary(stateIndex).Lat, ...
-        "Simplify", false, "KeepCollinearPoints", true);
-    mainlandUS = union(mainlandUS, statePolygon);
-end
-[allLongitude_deg, allLatitude_deg] = boundary(mainlandUS);
-[USoutlineLon_deg, USoutlineLat_deg] = largestFiniteRing( ...
-    allLongitude_deg, allLatitude_deg);
-rawOutlineVertexCount = numel(USoutlineLon_deg);
-
-%% Section 2: Construct The Canonical Full-Resolution Obstacle
+%% Section 2: Create Obstacles
 missionEndTime_s = 120;
-safetyMargin_deg = 0.15;
-obstacle = makeAzElObstacleData( ...
-    "Contiguous United States", [0; missionEndTime_s], ...
-    USoutlineLon_deg, USoutlineLat_deg, safetyMargin_deg);
+% The private geometry helper is retained because shapefile union and
+% 14,000-plus outline vertices would obscure the visible scenario flow.
+[obstacle, obstacleHistory] = createContiguousUSObstacle( ...
+    [0; missionEndTime_s], 0.15, struct( ...
+    "MotionMode", "static", "UseParallel", false, ...
+    "Verbose", options.Verbose));
 
-%% Section 3: Define Mexico-To-Canada Planning Inputs
-initialState = struct( ...
-    "time_s", 0, ...
-    "position_deg", [-102.0 23.0]);
+%% Section 3: Create Planner Inputs
+initialState = struct("time_s", 0, "position_deg", [-102 23]);
 goalState = struct( ...
-    "time_s", missionEndTime_s, ...
-    "position_deg", [-102.0 52.0]);
+    "time_s", missionEndTime_s, "position_deg", [-102 52]);
 limits = struct( ...
     "maxVelocity_deg_s", [8 8], ...
     "maxAcceleration_deg_s2", [3 3], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
-%% Section 4: Plan Once Through The Maintained Public API
+%% Section 4: Run Planner
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
-result.USoutlineLatLon_deg = [USoutlineLat_deg, USoutlineLon_deg];
-result.RawOutlineVertexCount = rawOutlineVertexCount;
+
+%% Section 5: Validate Result
+exampleValidation = validateAzElExampleResult( ...
+    result, "static U.S. outline", ...
+    struct("RequireDirectBlocked", true));
+
+%% Section 6: Plot Diagnostics And Motion
+% planAzElMotion already created the requested workspace, animation, and
+% kinematic figures from the returned result without scenario knowledge.
+
+%% Section 7: Return Example Metadata
+result.ExampleValidation = exampleValidation;
+result.ObstacleHistory = obstacleHistory;
 result.ExampleConfiguration = jerkConfiguration;
-
-diagnostics = result.spaceView.CandidateReductionDiagnostics;
-result.GeometricCandidateVertexCount = sum( ...
-    [diagnostics.SelectedCandidateCount]);
-result.CandidateVertexCount = sum( ...
-    [diagnostics.GraphActiveCandidateCount]);
-result.CandidateRegionCount = numel(diagnostics);
-result.CandidateReductionPercent = 100 * max(0, ...
-    1 - result.CandidateVertexCount / rawOutlineVertexCount);
-if isempty(result.spaceView.VisibilityGraphs)
-    result.GeneratedVisibilityEdgeCount = 0;
-else
-    result.GeneratedVisibilityEdgeCount = sum( ...
-        [result.spaceView.VisibilityGraphs.GeneratedVisibilityEdgeCount]);
-end
-
-%% Section 5: Make The Visibility View Read Like A Geographic Map
-if isgraphics(result.spaceView.Axes)
-    view(result.spaceView.Axes, 2);
-    xlabel(result.spaceView.Axes, "Longitude / azimuth (deg)");
-    ylabel(result.spaceView.Axes, "Latitude / elevation (deg)");
-    text(result.spaceView.Axes, initialState.position_deg(1), ...
-        initialState.position_deg(2), initialState.time_s, ...
-        "  Mexico start", "FontWeight", "bold", ...
-        "Color", [0.08 0.42 0.12]);
-    text(result.spaceView.Axes, goalState.position_deg(1), ...
-        goalState.position_deg(2), initialState.time_s, ...
-        "  Canada goal", "FontWeight", "bold", ...
-        "Color", [0.65 0.08 0.08]);
-end
-
-%% Section 6: Validate & Report The Reduction
-if ~result.Success || ~result.Validation.Passed
-    error("exampleUSOutlineExtremeVisibility:PlanningFailed", ...
-        "Mexico-to-Canada validation failed. Plots remain open. %s", ...
-        result.Message);
-end
-if ~any(result.directBlocked)
-    error("exampleUSOutlineExtremeVisibility:DirectRouteNotBlocked", ...
-        "The direct Mexico-to-Canada route should cross the U.S. obstacle.");
-end
-candidateBoundPerRegion = options.ExtremeDirectionCount + ...
-    2 * options.MaximumTangenciesPerReference;
-if any([diagnostics.SelectedCandidateCount] > candidateBoundPerRegion)
-    error("exampleUSOutlineExtremeVisibility:CandidateBoundExceeded", ...
-        "A region exceeded the configured %d-node candidate bound.", ...
-        candidateBoundPerRegion);
-end
-fprintf( ...
-    "U.S. outline vertices: %d\n" + ...
-    "Geometric candidates: %d; route-relevant candidates: %d " + ...
-    "across %d packed regions " + ...
-    "(%.2f%% reduction)\n" + ...
-    "Generated visibility edges: %d\n", ...
-    result.RawOutlineVertexCount, ...
-    result.GeometricCandidateVertexCount, result.CandidateVertexCount, ...
-    result.CandidateRegionCount, ...
-    result.CandidateReductionPercent, ...
-    result.GeneratedVisibilityEdgeCount);
-end
-
-function [largestX, largestY] = largestFiniteRing(x, y)
-%% Section 0: Header & Readme
-% Extract the largest finite boundary ring and discard holes/islands.
-x = double(x(:));
-y = double(y(:));
-finiteRows = isfinite(x) & isfinite(y);
-changes = diff([false; finiteRows; false]);
-ringStart = find(changes == 1);
-ringStop = find(changes == -1) - 1;
-if isempty(ringStart)
-    error("exampleUSOutlineExtremeVisibility:EmptyOutline", ...
-        "The state union did not produce a finite exterior boundary.");
-end
-ringArea = zeros(numel(ringStart), 1);
-for ringIndex = 1:numel(ringStart)
-    rows = ringStart(ringIndex):ringStop(ringIndex);
-    ringArea(ringIndex) = abs(polyarea(x(rows), y(rows)));
-end
-[~, largestRingIndex] = max(ringArea);
-largestRows = ringStart(largestRingIndex):ringStop(largestRingIndex);
-largestX = x(largestRows);
-largestY = y(largestRows);
-if largestX(1) == largestX(end) && largestY(1) == largestY(end)
-    largestX(end) = [];
-    largestY(end) = [];
-end
 end

@@ -818,6 +818,140 @@ finalSliceCandidates = viewResult.CandidatePointsAzElTime( ...
 testCase.verifyNotEqual(firstSliceCandidates, finalSliceCandidates);
 end
 
+function testMovingSnapshotRoutesAreConsolidatedBeforeRetiming(testCase)
+%% Section 0: Header & Readme
+% Keep every moving-obstacle visibility graph for inspection while bounding
+% the number of distinct graph routes sent through kinematic retiming.
+obstacleTime_s = (0:5:40).';
+circleAngle_rad = linspace(0, 2 * pi, 41).';
+circleAngle_rad(end) = [];
+circleAzimuth_deg = cell(numel(obstacleTime_s), 1);
+circleElevation_deg = cell(numel(obstacleTime_s), 1);
+for sampleIndex = 1:numel(obstacleTime_s)
+    centerElevation_deg = -0.8 + ...
+        1.6 * obstacleTime_s(sampleIndex) / obstacleTime_s(end);
+    circleAzimuth_deg{sampleIndex} = 1.5 * cos(circleAngle_rad);
+    circleElevation_deg{sampleIndex} = ...
+        centerElevation_deg + 1.5 * sin(circleAngle_rad);
+end
+
+obstacle = makeAzElObstacleData( ...
+    "slowly moving regression circle", obstacleTime_s, ...
+    circleAzimuth_deg, circleElevation_deg, 0.10);
+initialState = struct("time_s", 0, "position_deg", [-5 0]);
+goalState = struct("time_s", 40, "position_deg", [5 0]);
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1]);
+options = plannerTestOptions();
+options.MaximumDisplayedSlicesPerObstacle = numel(obstacleTime_s);
+options.MaximumRetimedVisibilityRoutes = 3;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+testCase.verifyEqual( ...
+    numel(result.spaceView.VisibilityGraphs), numel(obstacleTime_s));
+testCase.verifyGreaterThan( ...
+    result.visibilityRouteConsolidation.DistinctRouteCount, ...
+    options.MaximumRetimedVisibilityRoutes);
+testCase.verifyLessThanOrEqual( ...
+    numel(result.retimedVisibilityGraphIndices), ...
+    options.MaximumRetimedVisibilityRoutes);
+testCase.verifyEqual( ...
+    result.visibilityRouteConsolidation.SelectedRouteCount, ...
+    numel(result.retimedVisibilityGraphIndices));
+testCase.verifyTrue(all(ismember( ...
+    result.retimedVisibilityGraphIndices, ...
+    find([result.spaceView.VisibilityGraphs.Success]))));
+end
+
+function testExplorerDefaultsToTenMovingSlices(testCase)
+%% Section 0: Header & Readme
+% Verify long obstacle histories remain intact while the default explorer
+% uses ten evenly distributed slices to control plot and graph clutter.
+sampleTime_s = (0:20).';
+azimuthBySlice_deg = cell(numel(sampleTime_s), 1);
+elevationBySlice_deg = cell(numel(sampleTime_s), 1);
+for sampleIndex = 1:numel(sampleTime_s)
+    centerAzimuth_deg = 0.02 * sampleTime_s(sampleIndex);
+    azimuthBySlice_deg{sampleIndex} = ...
+        centerAzimuth_deg + [-1; 1; 1; -1];
+    elevationBySlice_deg{sampleIndex} = [-1; -1; 1; 1];
+end
+obstacle = makeAzElObstacleData( ...
+    "twenty-one-slice obstacle", sampleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, 0);
+obstacleField = buildAzElTimeObstacleField(obstacle);
+startState = struct("time_s", 0, "position_deg", [-3 0]);
+goalState = struct("time_s", 20, "position_deg", [3 0]);
+viewResult = visualizeAzElTimeSpace( ...
+    obstacleField, startState, goalState, struct( ...
+    "FigureVisible", "off", "ShowSweptSurfaces", false));
+
+testCase.verifyEqual(numel(obstacleField.Obstacles.TimeSeconds), 21);
+testCase.verifyEqual( ...
+    viewResult.Options.MaximumDisplayedSlicesPerObstacle, 10);
+testCase.verifyEqual(numel(viewResult.VisibilityGraphs), 10);
+testCase.verifyEqual(viewResult.VisibilityGraphs(1).Time_s, 0);
+testCase.verifyEqual(viewResult.VisibilityGraphs(end).Time_s, 20);
+end
+
+function testGenericMovingObstacleConstructorAllowsIndependentShapes(testCase)
+%% Section 0: Header & Readme
+% Verify the production constructor, rather than an example loop, owns
+% arbitrary slice generation and accepts different vertex counts per time.
+sourcePosition_deg = [ ...
+    -1 -1; 1 -1; 1 1; -1 1];
+sampleTime_s = [0; 5; 10];
+sliceTransform = @(source_deg, time_s, sampleIndex) ...
+    independentlyShapedSlice(source_deg, time_s, sampleIndex);
+[obstacle, history] = makeMovingAzElObstacleData( ...
+    "independently shaped moving obstacle", sampleTime_s, ...
+    sourcePosition_deg(:, 1), sourcePosition_deg(:, 2), ...
+    sliceTransform, 0.15, struct( ...
+    "UseParallel", false, "Verbose", false));
+
+testCase.verifyEqual(history.vertexCount, [4; 5; 6]);
+testCase.verifyEqual(history.time_s, sampleTime_s);
+testCase.verifyFalse(history.ParallelExecution.Enabled);
+testCase.verifyEqual(numel(obstacle.time_s), 3);
+testCase.verifyEqual(obstacle.safetyMargin_deg, 0.15);
+originalVertexCount = zeros(3, 1);
+for sampleIndex = 1:3
+    originalVertexCount(sampleIndex) = nnz(isfinite( ...
+        obstacle.originalAz_deg{sampleIndex}));
+end
+testCase.verifyEqual(originalVertexCount, [4; 5; 6]);
+testCase.verifyGreaterThan(range(history.area_deg2), 0);
+testCase.verifyGreaterThan(range(history.centroid_deg(:, 1)), 0);
+end
+
+function testExampleValidationIndependentlyChecksReturnedMotion(testCase)
+%% Section 0: Header & Readme
+% Verify example validation checks public trajectory data independently of
+% the planner-owned Success and Validation fields.
+[initialState, goalState, limits, options] = directPlanInputs();
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+validation = validateAzElExampleResult(result, "direct regression");
+testCase.verifyTrue(validation.Passed, validation.Message);
+testCase.verifyTrue(validation.CollisionFree);
+testCase.verifyEqual(result.TerminationReason, "goalReached");
+testCase.verifyGreaterThanOrEqual(result.ElapsedPlanningTime_s, 0);
+
+tamperedResult = result;
+tamperedResult.timedSlopePath.velocity_deg_s(2, 1) = ...
+    2 * limits.maxVelocity_deg_s(1);
+tamperedValidation = validateAzElExampleResult( ...
+    tamperedResult, "tampered direct regression");
+testCase.verifyFalse(tamperedValidation.Passed);
+testCase.verifyFalse(tamperedValidation.VelocityWithinLimits);
+testCase.verifyTrue(any(tamperedValidation.Issues == ...
+    "velocityWithinLimits"));
+end
+
 function obstacle = makeSquareObstacle( ...
         obstacleName, center_deg, safetyMargin_deg, time_s)
 %% Section 0: Header & Readme
@@ -834,6 +968,19 @@ vertices_deg = reshape(double(center_deg), 1, 2) + [ ...
     -1 -1; 1 -1; 1 1; -1 1];
 azimuth_deg = vertices_deg(:, 1);
 elevation_deg = vertices_deg(:, 2);
+end
+
+function position_deg = independentlyShapedSlice( ...
+        sourcePosition_deg, sampleTime_s, sampleIndex)
+%% Section 0: Header & Readme
+% Return an ordered polygon whose topology and vertex count vary by slice.
+vertexCount = 3 + sampleIndex;
+angle_rad = (0:vertexCount - 1).' * 2 * pi / vertexCount;
+sourceScale = max(abs(sourcePosition_deg), [], "all");
+radius_deg = sourceScale * (1 + 0.05 * sampleIndex);
+position_deg = [ ...
+    0.05 * sampleTime_s + radius_deg * cos(angle_rad), ...
+    radius_deg * sin(angle_rad)];
 end
 
 function [initialState, goalState, limits, options] = directPlanInputs()

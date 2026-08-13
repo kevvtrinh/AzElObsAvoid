@@ -22,7 +22,9 @@ function result = exampleAlternatingSlalom(slalomCount, options)
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
 
+%% Section 1: Resolve Example Controls
 if nargin < 1 || isempty(slalomCount)
     slalomCount = 6;
     options = struct();
@@ -43,7 +45,7 @@ validateattributes(slalomCount, {'numeric'}, ...
     "Title", sprintf( ...
     "Alternating slalom with %d baffles", slalomCount)), [2.5 2.5]);
 
-%% Section 1: Construct Canonical Obstacles
+%% Section 2: Create Obstacles
 missionEndTime_s = 120;
 if jerkConfiguration.JerkConstraintEnabled
     missionEndTime_s = 120 + 60 * slalomCount;
@@ -93,7 +95,7 @@ for baffleIndex = 1:slalomCount
         boundary_deg(:, 1), boundary_deg(:, 2), safetyMargin_deg);
 end
 
-%% Section 2: Define The Planning Request
+%% Section 3: Create Planner Inputs
 initialState = struct("time_s", 0, "position_deg", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, ...
@@ -103,36 +105,41 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [0.75 0.75], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
-%% Section 3: Run The Maintained Planner
+%% Section 4: Run Planner
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
-if ~result.Success || ~result.Validation.Passed
-    error("exampleAlternatingSlalom:PlanningFailed", ...
-        "Slalom validation failed. Diagnostic plots remain open. %s", ...
-        result.Message);
+
+%% Section 5: Validate Result
+exampleValidation = validateAzElExampleResult( ...
+    result, "alternating slalom", ...
+    struct("RequireDirectBlocked", true));
+gateAzimuth_deg = gateSpacing_deg * (1:slalomCount).';
+passageElevation_deg = nan(slalomCount, 1);
+if exampleValidation.HasTrajectory
+    for baffleIndex = 1:slalomCount
+        [~, nearestSampleIndex] = min(abs( ...
+            result.timedSlopePath.position_deg(:, 1) - ...
+            gateAzimuth_deg(baffleIndex)));
+        passageElevation_deg(baffleIndex) = ...
+            result.timedSlopePath.position_deg(nearestSampleIndex, 2);
+    end
 end
+expectedPassageSign = 2 * mod((1:slalomCount).', 2) - 1;
+alternatingPassageSatisfied = all( ...
+    expectedPassageSign .* passageElevation_deg > gateTipElevation_deg);
+exampleValidation.AlternatingPassageSatisfied = ...
+    alternatingPassageSatisfied;
+exampleValidation.Passed = exampleValidation.Passed && ...
+    alternatingPassageSatisfied;
+
+%% Section 6: Plot Diagnostics And Motion
+% planAzElMotion created all requested plots from the returned result.
+
+%% Section 7: Return Example Metadata
+result.ExampleValidation = exampleValidation;
 result.slalomCount = slalomCount;
 result.baffleBoundaries_deg = baffleBoundaries_deg;
 result.gateSpacing_deg = gateSpacing_deg;
-result.ExampleConfiguration = jerkConfiguration;
-gateAzimuth_deg = gateSpacing_deg * (1:slalomCount).';
-passageElevation_deg = zeros(slalomCount, 1);
-for baffleIndex = 1:slalomCount
-    [~, nearestSampleIndex] = min(abs( ...
-        result.timedSlopePath.position_deg(:, 1) - ...
-        gateAzimuth_deg(baffleIndex)));
-    passageElevation_deg(baffleIndex) = ...
-        result.timedSlopePath.position_deg(nearestSampleIndex, 2);
-end
 result.passageElevation_deg = passageElevation_deg;
-
-%% Section 4: Validate The Command
-expectedPassageSign = 2 * mod((1:slalomCount).', 2) - 1;
-if ~any(result.directBlocked) || any( ...
-        expectedPassageSign .* passageElevation_deg <= ...
-        gateTipElevation_deg)
-    error("exampleAlternatingSlalom:ScenarioValidationFailed", ...
-        "The route did not alternate through every gate. " + ...
-        "Diagnostic plots remain open.");
-end
+result.ExampleConfiguration = jerkConfiguration;
 end

@@ -19,6 +19,9 @@ function result = exampleUShapedAzElTimeSpace(options)
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
+
+%% Section 1: Resolve Example Controls
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -29,7 +32,7 @@ end
     "FigureVisible", "on", ...
     "Title", "U-shaped az/el obstacle"), [2.5 2.5]);
 
-%% Section 1: Construct Canonical Obstacles
+%% Section 2: Create Obstacles
 missionEndTime_s = 35;
 if jerkConfiguration.JerkConstraintEnabled
     missionEndTime_s = 120;
@@ -42,7 +45,7 @@ obstacle = makeAzElObstacleData( ...
     "Static U-shaped obstacle", [0; missionEndTime_s], ...
     uBoundary_deg(:, 1), uBoundary_deg(:, 2), safetyMargin_deg);
 
-%% Section 2: Define The Planning Request
+%% Section 3: Create Planner Inputs
 initialState = struct("time_s", 0, "position_deg", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [0 -10]);
@@ -51,25 +54,19 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [0.75 0.75], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
-%% Section 3: Run The Maintained Planner
+%% Section 4: Run Planner
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
+
+%% Section 5: Validate Result
+exampleValidation = validateAzElExampleResult( ...
+    result, "single U", struct("RequireDirectBlocked", true));
+
+%% Section 6: Plot Diagnostics And Motion
+% planAzElMotion created all requested plots from the returned result.
+
+%% Section 7: Return Example Metadata
+result.ExampleValidation = exampleValidation;
 result.uBoundary_deg = uBoundary_deg;
 result.ExampleConfiguration = jerkConfiguration;
-
-%% Section 4: Validate The Command
-validateExampleResult(result, "single U");
-end
-
-function validateExampleResult(result, scenarioName)
-%% Section 0: Header & Readme
-if ~result.Success || ~result.Validation.Passed
-    error("exampleUShapedAzElTimeSpace:PlanningFailed", ...
-        "%s validation failed. Diagnostic plots remain open. %s", ...
-        scenarioName, result.Message);
-end
-if ~any(result.directBlocked)
-    error("exampleUShapedAzElTimeSpace:ScenarioNotBlocked", ...
-        "The direct path should be blocked. Diagnostic plots remain open.");
-end
 end

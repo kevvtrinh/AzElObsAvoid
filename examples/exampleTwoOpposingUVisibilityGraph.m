@@ -19,6 +19,9 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
+
+%% Section 1: Resolve Example Controls
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -29,7 +32,7 @@ end
     "FigureVisible", "on", ...
     "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
 
-%% Section 1: Construct Canonical Obstacles
+%% Section 2: Create Obstacles
 missionEndTime_s = 35;
 if jerkConfiguration.JerkConstraintEnabled
     missionEndTime_s = 180;
@@ -50,7 +53,7 @@ obstacles = [ ...
         secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2), ...
         safetyMargin_deg)];
 
-%% Section 2: Define The Planning Request
+%% Section 3: Create Planner Inputs
 initialState = struct("time_s", 0, "position_deg", [-4 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [9 20]);
@@ -59,26 +62,20 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [0.75 0.75], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
-%% Section 3: Run The Maintained Planner
+%% Section 4: Run Planner
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
+
+%% Section 5: Validate Result
+exampleValidation = validateAzElExampleResult( ...
+    result, "two opposing Us", struct("RequireDirectBlocked", true));
+
+%% Section 6: Plot Diagnostics And Motion
+% planAzElMotion created all requested plots from the returned result.
+
+%% Section 7: Return Example Metadata
+result.ExampleValidation = exampleValidation;
 result.firstUBoundary_deg = firstUBoundary_deg;
 result.secondUBoundary_deg = secondUBoundary_deg;
 result.ExampleConfiguration = jerkConfiguration;
-
-%% Section 4: Validate The Command
-validateExampleResult(result, "two opposing Us");
-end
-
-function validateExampleResult(result, scenarioName)
-%% Section 0: Header & Readme
-if ~result.Success || ~result.Validation.Passed
-    error("exampleTwoOpposingUVisibilityGraph:PlanningFailed", ...
-        "%s validation failed. Diagnostic plots remain open. %s", ...
-        scenarioName, result.Message);
-end
-if ~any(result.directBlocked)
-    error("exampleTwoOpposingUVisibilityGraph:ScenarioNotBlocked", ...
-        "The direct path should be blocked. Diagnostic plots remain open.");
-end
 end
