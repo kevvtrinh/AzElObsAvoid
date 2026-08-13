@@ -898,6 +898,19 @@ testCase.verifyEqual(viewResult.VisibilityGraphs(1).Time_s, 0);
 testCase.verifyEqual(viewResult.VisibilityGraphs(end).Time_s, 20);
 end
 
+function testAnimationDefaultsFavorFastPlayback(testCase)
+%% Section 0: Header & Readme
+% Keep planner-driven and direct animation defaults synchronized and fast.
+plannerOptions = planAzElMotion();
+animationOptions = animateAzElTimedSlopePath();
+testCase.verifyEqual(plannerOptions.AnimationFrameStride, 10);
+testCase.verifyEqual(plannerOptions.AnimationPause_s, 0.001);
+testCase.verifyEqual(animationOptions.FrameStride, ...
+    plannerOptions.AnimationFrameStride);
+testCase.verifyEqual(animationOptions.Pause_s, ...
+    plannerOptions.AnimationPause_s);
+end
+
 function testGenericMovingObstacleConstructorAllowsIndependentShapes(testCase)
 %% Section 0: Header & Readme
 % Verify the production constructor, rather than an example loop, owns
