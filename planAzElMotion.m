@@ -73,9 +73,15 @@ goalBlocked = queryAzElTimeObstacle(obstacleField, ...
 endpointBlocked = logical(startBlocked || goalBlocked);
 
 % --- Generate distinct geometric candidates ----------------------------
-candidateClearance_deg = max(0.05, 3 * min(options.TurnRadius_deg, 0.45));
+% Visibility vertices lie on the protected boundary. Offset them by a
+% documented fraction of the search resolution so smoothing, sampled path
+% chords, and floating-point contact do not turn a nominal tangent into an
+% obstacle crossing.
+routingClearance_deg = 0.25 * options.VisibilitySampleStep_deg;
 searchOptions = struct(...
-    "CandidateClearance_deg", candidateClearance_deg, ...
+    "CandidateClearance_deg", routingClearance_deg, ...
+    "MaximumSnapshotsPerObstacle", ...
+    options.MaximumVisibilitySnapshotsPerObstacle, ...
     "VisibilitySampleStep_deg", options.VisibilitySampleStep_deg, ...
     "UseParallel", options.UseParallel, ...
     "Verbose", options.Verbose);
@@ -117,46 +123,65 @@ for candidateIndex = 1:candidateCount
             error("planAzElMotion:AzimuthPolicy", ...
                 "Candidate violates the configured azimuth interval.");
         end
-        smoothPath = smoothRoute(route_deg, obstacleField, ...
-            snapshotTime_s(candidateIndex), options);
         departureCandidateTime_s = departureSearchTime_s;
+        if graphIndex(candidateIndex) > 0
+            departureCandidateTime_s = unique([ ...
+                initialState.time_s; snapshotTime_s(candidateIndex)]);
+        end
+        smoothPath = emptySmoothPath(route_deg);
         timedPath = emptyTimedPath( ...
             limits, options, "No departure time was feasible.");
         blocked = false(0, 1);
         bestArrivalTime_s = Inf;
         fallbackArrivalTime_s = Inf;
+        fallbackSmoothPath = smoothPath;
         fallbackTimedPath = timedPath;
         fallbackBlocked = blocked;
+        previousDepartureTime_s = NaN;
+        previousDepartureWasBlocked = false;
         for departureIndex = 1:numel(departureCandidateTime_s)
-            attemptTimedPath = retimeSpatialPath( ...
-                smoothPath, initialState, goalState, limits, options, ...
-                departureCandidateTime_s(departureIndex));
+            departureTime_s = departureCandidateTime_s(departureIndex);
+            [attemptSmoothPath, attemptTimedPath, attemptBlocked] = ...
+                evaluateDeparture(route_deg, obstacleField, ...
+                initialState, goalState, limits, options, departureTime_s);
             if attemptTimedPath.Success
-                attemptBlocked = queryAzElTimedPathCollision( ...
-                    obstacleField, attemptTimedPath.time_s, ...
-                    attemptTimedPath.position_deg, struct( ...
-                    "TimePaddingSamples", ...
-                    options.CollisionTimePaddingSamples, ...
-                    "BoundaryIsOccupied", false));
                 departureArrivalTime_s = ...
                     attemptTimedPath.GoalLineInterceptTime_s;
                 if departureArrivalTime_s < fallbackArrivalTime_s
                     fallbackArrivalTime_s = departureArrivalTime_s;
+                    fallbackSmoothPath = attemptSmoothPath;
                     fallbackTimedPath = attemptTimedPath;
                     fallbackBlocked = attemptBlocked;
                 end
                 if ~any(attemptBlocked) && ...
                         departureArrivalTime_s < bestArrivalTime_s
+                    if previousDepartureWasBlocked
+                        [attemptSmoothPath, attemptTimedPath, ...
+                            attemptBlocked] = refineClearDeparture( ...
+                            route_deg, obstacleField, initialState, ...
+                            goalState, limits, options, ...
+                            previousDepartureTime_s, departureTime_s, ...
+                            attemptSmoothPath, attemptTimedPath, ...
+                            attemptBlocked);
+                        departureArrivalTime_s = ...
+                            attemptTimedPath.GoalLineInterceptTime_s;
+                    end
                     bestArrivalTime_s = departureArrivalTime_s;
+                    smoothPath = attemptSmoothPath;
                     timedPath = attemptTimedPath;
                     blocked = attemptBlocked;
                     break;
                 end
             elseif ~fallbackTimedPath.Success
+                fallbackSmoothPath = attemptSmoothPath;
                 fallbackTimedPath = attemptTimedPath;
             end
+            previousDepartureTime_s = departureTime_s;
+            previousDepartureWasBlocked = ...
+                attemptTimedPath.Success && any(attemptBlocked);
         end
         if ~isfinite(bestArrivalTime_s)
+            smoothPath = fallbackSmoothPath;
             timedPath = fallbackTimedPath;
             blocked = fallbackBlocked;
         end
@@ -266,10 +291,15 @@ searchDiagnostics = struct(...
     "VisibilityGraphCount", numel(search.VisibilityGraphs), ...
     "SuccessfulVisibilityGraphCount", nnz([search.VisibilityGraphs.Success]), ...
     "VisibilityGraphs", search.VisibilityGraphs, ...
+    "SnapshotDiagnostics", search.SnapshotDiagnostics, ...
     "CandidateRouteCount", candidateCount, ...
     "FeasibleCandidateCount", nnz(collisionFree), ...
     "SelectedCandidateIndex", selectedCandidateIndex, ...
     "RouteConsolidation", consolidation, ...
+    "VisibilitySearchOptions", search.Options, ...
+    "TimedRouteOptimalityCertified", false, ...
+    "TimedRouteOptimalityScope", ...
+    "Fastest validated direct or geometric-shortest snapshot route", ...
     "DepartureTimeCandidates_s", departureSearchTime_s, ...
     "DepartureTimeCandidateCount", numel(departureSearchTime_s), ...
     "ParallelExecution", search.ParallelExecution, ...
@@ -313,6 +343,108 @@ end
 
 %% Section 6: Local Functions
 
+function [smoothPath, timedPath, blocked] = evaluateDeparture( ...
+        route_deg, obstacleField, initialState, goalState, limits, ...
+        options, departureTime_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [smoothPath, timedPath, blocked] = evaluateDeparture( ...
+%       route_deg, obstacleField, initialState, goalState, limits, ...
+%       options, departureTime_s)
+%**************************************************************************
+% PURPOSE
+%   - Smooth, retime, and collision-check one route at one departure time.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric), obstacleField (scalar struct)
+%       Candidate geometry and protected time-varying obstacles.
+%   - initialState, goalState, limits, options (scalar structs)
+%       Resolved request, physical limits, and planner options.
+%   - departureTime_s (finite scalar)
+%       Candidate motion-start time.
+%**************************************************************************
+% OUTPUTS
+%   - smoothPath, timedPath (scalar structs), blocked (logical vector)
+%       Candidate geometry, motion result, and complete collision result.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
+try
+    smoothPath = smoothRoute( ...
+        route_deg, obstacleField, departureTime_s, options);
+    timedPath = retimeSpatialPath( ...
+        smoothPath, initialState, goalState, limits, options, ...
+        departureTime_s);
+catch departureError
+    smoothPath = emptySmoothPath(route_deg);
+    timedPath = emptyTimedPath( ...
+        limits, options, string(departureError.message));
+end
+
+blocked = false(0, 1);
+if timedPath.Success
+    blocked = queryAzElTimedPathCollision( ...
+        obstacleField, timedPath.time_s, timedPath.position_deg, struct( ...
+        "TimePaddingSamples", options.CollisionTimePaddingSamples, ...
+        "BoundaryIsOccupied", false));
+end
+end
+
+function [clearSmoothPath, clearTimedPath, clearBlocked] = ...
+        refineClearDeparture(route_deg, obstacleField, initialState, ...
+        goalState, limits, options, blockedDepartureTime_s, ...
+        clearDepartureTime_s, clearSmoothPath, clearTimedPath, clearBlocked)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [clearSmoothPath, clearTimedPath, clearBlocked] = ...
+%       refineClearDeparture(route_deg, obstacleField, initialState, ...
+%       goalState, limits, options, blockedDepartureTime_s, ...
+%       clearDepartureTime_s, clearSmoothPath, clearTimedPath, clearBlocked)
+%**************************************************************************
+% PURPOSE
+%   - Bisect one adjacent blocked-to-clear departure interval so obstacle
+%     sample times do not quantize the earliest usable motion start.
+%**************************************************************************
+% INPUTS
+%   - route_deg, obstacleField, initialState, goalState, limits, options
+%       Same candidate request consumed by evaluateDeparture.
+%   - blockedDepartureTime_s, clearDepartureTime_s (finite scalars)
+%       Adjacent tested departure times bracketing a collision transition.
+%   - clearSmoothPath, clearTimedPath, clearBlocked
+%       Already validated upper-bracket result.
+%**************************************************************************
+% OUTPUTS
+%   - clearSmoothPath, clearTimedPath, clearBlocked
+%       Earliest clear result found to the stated time tolerance.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
+timeTolerance_s = max(1e-3, ...
+    1e-8 * max(1, abs(clearDepartureTime_s)));
+maximumRefinementCount = 24;
+
+for refinementIndex = 1:maximumRefinementCount
+    if clearDepartureTime_s - blockedDepartureTime_s <= timeTolerance_s
+        break;
+    end
+    middleDepartureTime_s = 0.5 * ( ...
+        blockedDepartureTime_s + clearDepartureTime_s);
+    [middleSmoothPath, middleTimedPath, middleBlocked] = ...
+        evaluateDeparture(route_deg, obstacleField, initialState, ...
+        goalState, limits, options, middleDepartureTime_s);
+    if middleTimedPath.Success && ~any(middleBlocked)
+        clearDepartureTime_s = middleDepartureTime_s;
+        clearSmoothPath = middleSmoothPath;
+        clearTimedPath = middleTimedPath;
+        clearBlocked = middleBlocked;
+    else
+        blockedDepartureTime_s = middleDepartureTime_s;
+    end
+end
+end
+
 % --- Options And Input Normalization -----------------------------------
 function options = plannerDefaults()
 %% Section 0: Header & Readme
@@ -340,6 +472,7 @@ options = struct(...
     "AllowAzimuthWrapping", false, ...
     "AzimuthInterval_deg", [-180 180], ...
     "VisibilitySampleStep_deg", 0.10, ...
+    "MaximumVisibilitySnapshotsPerObstacle", 10, ...
     "MaximumRetimedVisibilityRoutes", 12, ...
     "UseParallel", false, ...
     "Verbose", false);
@@ -418,10 +551,29 @@ for optionIndex = 1:numel(logicalNames)
 end
 
 positiveNames = ["SampleTime_s" "TurnRadius_deg" ...
-    "VisibilitySampleStep_deg" "MaximumRetimedVisibilityRoutes"];
+    "VisibilitySampleStep_deg"];
 for optionIndex = 1:numel(positiveNames)
     validateattributes(options.(positiveNames(optionIndex)), {'numeric'}, ...
         {'real','finite','scalar','positive'});
+end
+
+validateattributes(options.MaximumRetimedVisibilityRoutes, ...
+    {'numeric'}, {'real', 'scalar', 'positive'});
+if isfinite(options.MaximumRetimedVisibilityRoutes) && ...
+        fix(options.MaximumRetimedVisibilityRoutes) ~= ...
+        options.MaximumRetimedVisibilityRoutes
+    error("planAzElMotion:InvalidRouteLimit", ...
+        "MaximumRetimedVisibilityRoutes must be a positive integer or Inf.");
+end
+
+validateattributes(options.MaximumVisibilitySnapshotsPerObstacle, ...
+    {'numeric'}, {'real', 'scalar', 'positive'});
+if isfinite(options.MaximumVisibilitySnapshotsPerObstacle) && ...
+        fix(options.MaximumVisibilitySnapshotsPerObstacle) ~= ...
+        options.MaximumVisibilitySnapshotsPerObstacle
+    error("planAzElMotion:InvalidSnapshotLimit", ...
+        "MaximumVisibilitySnapshotsPerObstacle must be a positive " + ...
+        "integer or Inf.");
 end
 
 validateattributes(options.CollisionTimePaddingSamples, {'numeric'}, ...
@@ -616,6 +768,7 @@ for visibilityGraphIndex = reshape(successful, 1, [])
 end
 
 if numel(routes) > maximumCount + 1
+    availableRouteCount = numel(routes) - 1;
     cost = zeros(numel(routes) - 1, 1);
 
     for routeIndex = 2:numel(routes)
@@ -634,6 +787,11 @@ if numel(routes) > maximumCount + 1
     routes = routes(keep);
     snapshotTime_s = snapshotTime_s(keep);
     graphIndex = graphIndex(keep);
+    warning("planAzElMotion:RouteReduction", ...
+        "Retained %d of %d distinct visibility routes for retiming. " + ...
+        "The returned route is fastest only among retained candidates. " + ...
+        "Set MaximumRetimedVisibilityRoutes=Inf to disable this explicit " + ...
+        "runtime tradeoff.", numel(routes) - 1, availableRouteCount);
 end
 
 diagnostics = struct(...
@@ -1310,6 +1468,7 @@ end
 % --- Build one analytic motion profile for every run -------------------
 profiles = repmat(profileTemplate(), runCount, 1);
 runEndpoint = samplePath(smoothPath, boundaryS_deg);
+uniformTimeScaleFactor = 1;
 
 for runIndex = 1:runCount
     if jerkConstrained
@@ -1365,6 +1524,16 @@ for runIndex = 1:runCount
         profile.PeakJerkByAxis_deg_s3] = ...
         cartesianBounds(bounds(runIndex), profile);
     profiles(runIndex) = profile;
+end
+
+if jerkConstrained
+    [profiles, nodeSpeed_deg_s, uniformTimeScaleFactor, feasible, ...
+        failureMessage] = enforceCoupledCartesianLimits( ...
+        profiles, nodeSpeed_deg_s, bounds, limits, tolerance);
+    if ~feasible
+        timedPath = emptyTimedPath(limits, options, failureMessage);
+        return;
+    end
 end
 
 % --- Resolve arrival policy and assign absolute profile times -----------
@@ -1484,6 +1653,7 @@ diagnostics = struct(...
     "JoinContinuityOrder", "G3", ...
     "GeometryDerivativeBounds", bounds, ...
     "SpatiallyVaryingLimits", true, ...
+    "UniformTimeScaleFactor", uniformTimeScaleFactor, ...
     "SpatialRetimingCellCount", runCount, ...
     "ExecutedMotionProfileCount", runCount, ...
     "MandatoryStopCount", nnz(mandatoryStopNode), ...
@@ -1712,37 +1882,20 @@ for axisIndex = 1:2
     if tangent(axisIndex) > tolerance
         maximumSpeed_deg_s = min(maximumSpeed_deg_s, ...
             limits.maxVelocity_deg_s(axisIndex) / tangent(axisIndex));
-        accelerationFraction = 1;
-        jerkFraction = 1;
-        if hasCurvature && any(isfinite(limits.maxJerk_deg_s3))
-            accelerationFraction = 0.55;
-            jerkFraction = 1 / 3;
-        end
         maximumAcceleration_deg_s2 = min(maximumAcceleration_deg_s2, ...
-            accelerationFraction * ...
             limits.maxAcceleration_deg_s2(axisIndex) / tangent(axisIndex));
         maximumJerk_deg_s3 = min(maximumJerk_deg_s3, ...
-            jerkFraction * limits.maxJerk_deg_s3(axisIndex) / tangent(axisIndex));
+            limits.maxJerk_deg_s3(axisIndex) / tangent(axisIndex));
     end
     if hasCurvature && second(axisIndex) > tolerance
-        curvatureFraction = 1;
-        if any(isfinite(limits.maxJerk_deg_s3))
-            curvatureFraction = 0.45;
-        end
         maximumSpeed_deg_s = min(maximumSpeed_deg_s, sqrt( ...
-            curvatureFraction * limits.maxAcceleration_deg_s2(axisIndex) / second(axisIndex)));
+            limits.maxAcceleration_deg_s2(axisIndex) / ...
+            second(axisIndex)));
     end
     if hasCurvature && third(axisIndex) > tolerance
         maximumSpeed_deg_s = min(maximumSpeed_deg_s, nthroot( ...
-            limits.maxJerk_deg_s3(axisIndex) / (3 * third(axisIndex)), 3));
-    end
-end
-for axisIndex = 1:2
-    if hasCurvature && second(axisIndex) > tolerance
-        crossLimit_deg_s2 = limits.maxJerk_deg_s3(axisIndex) / ...
-            (9 * second(axisIndex) * max(maximumSpeed_deg_s, eps));
-        maximumAcceleration_deg_s2 = min(...
-            maximumAcceleration_deg_s2, crossLimit_deg_s2);
+            limits.maxJerk_deg_s3(axisIndex) / ...
+            third(axisIndex), 3));
     end
 end
 if ~all(isfinite([maximumSpeed_deg_s, maximumAcceleration_deg_s2])) || ...
@@ -1963,7 +2116,7 @@ speedTolerance_deg_s = tolerance * max(1, max(maximumSpeed_deg_s));
 
 if initialSpeed_deg_s > cap_deg_s(1) + speedTolerance_deg_s || ...
         goalSpeed_deg_s > cap_deg_s(end) + speedTolerance_deg_s
-    nodeSpeed_deg_s = zeros(count + 1, 1);
+    nodeSpeed_deg_s = zeros(runCount + 1, 1);
     feasible = false;
     message = "An endpoint speed exceeds its local path limit.";
     return;
@@ -2507,6 +2660,141 @@ jerkBound_deg_s3 = tangent * profile.PeakJerk_deg_s3 + ...
     third * profile.PeakSpeed_deg_s^3;
 end
 
+function [profiles, nodeSpeed_deg_s, scaleFactor, feasible, message] = ...
+        enforceCoupledCartesianLimits(profiles, nodeSpeed_deg_s, bounds, ...
+        limits, tolerance)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [profiles, nodeSpeed_deg_s, scaleFactor, feasible, message] = ...
+%       enforceCoupledCartesianLimits(profiles, nodeSpeed_deg_s, bounds, ...
+%       limits, tolerance)
+%**************************************************************************
+% PURPOSE
+%   - Uniformly dilate a finite-jerk schedule until its certified coupled
+%     Cartesian velocity, acceleration, and jerk bounds satisfy every axis.
+%**************************************************************************
+% INPUTS
+%   - profiles (structure array), nodeSpeed_deg_s (numeric vector)
+%       Analytic scalar profiles and their shared boundary speeds.
+%   - bounds (structure array), limits (scalar struct), tolerance (scalar)
+%       Certified path derivatives, Cartesian limits, and comparison margin.
+%**************************************************************************
+% OUTPUTS
+%   - profiles, nodeSpeed_deg_s
+%       Feasible profiles and node speeds after any uniform time dilation.
+%   - scaleFactor (scalar), feasible (logical), message (string)
+%       Applied time factor and an actionable feasibility result.
+%**************************************************************************
+% UNITS
+%   - Time is seconds; motion uses degree-based derivative units.
+%**************************************************************************
+profileCount = numel(profiles);
+velocityPeak_deg_s = zeros(profileCount, 2);
+accelerationPeak_deg_s2 = zeros(profileCount, 2);
+jerkPeak_deg_s3 = zeros(profileCount, 2);
+
+for profileIndex = 1:profileCount
+    [velocityPeak_deg_s(profileIndex, :), ...
+        accelerationPeak_deg_s2(profileIndex, :), ...
+        jerkPeak_deg_s3(profileIndex, :)] = ...
+        cartesianBounds(bounds(profileIndex), profiles(profileIndex));
+end
+
+velocityRatio = maxConstraintRatio(velocityPeak_deg_s, ...
+    limits.maxVelocity_deg_s);
+accelerationRatio = maxConstraintRatio(accelerationPeak_deg_s2, ...
+    limits.maxAcceleration_deg_s2);
+jerkRatio = maxConstraintRatio(jerkPeak_deg_s3, ...
+    limits.maxJerk_deg_s3);
+scaleFactor = max([1, velocityRatio, sqrt(accelerationRatio), ...
+    nthroot(jerkRatio, 3)]);
+
+if ~isfinite(scaleFactor) || scaleFactor <= 0
+    feasible = false;
+    message = "Certified coupled path limits produced an invalid time scale.";
+    return;
+end
+
+if scaleFactor > 1 + tolerance
+    endpointSpeedScale_deg_s = 1;
+    finiteVelocityLimit_deg_s = limits.maxVelocity_deg_s( ...
+        isfinite(limits.maxVelocity_deg_s));
+    if ~isempty(finiteVelocityLimit_deg_s)
+        endpointSpeedScale_deg_s = max( ...
+            endpointSpeedScale_deg_s, max(finiteVelocityLimit_deg_s));
+    end
+    endpointSpeedTolerance_deg_s = tolerance * endpointSpeedScale_deg_s;
+    hasFixedMovingEndpoint = ...
+        abs(profiles(1).StartSpeed_deg_s) > endpointSpeedTolerance_deg_s || ...
+        abs(profiles(end).EndSpeed_deg_s) > endpointSpeedTolerance_deg_s;
+    if hasFixedMovingEndpoint
+        feasible = false;
+        message = "Coupled path limits require time dilation, but a nonzero " + ...
+            "endpoint speed is fixed by the request.";
+        return;
+    end
+
+    % A small roundoff guard keeps the certificate inside the public limits.
+    scaleFactor = scaleFactor * (1 + 32 * eps(scaleFactor));
+    for profileIndex = 1:profileCount
+        profile = profiles(profileIndex);
+        profile.Duration_s = profile.Duration_s * scaleFactor;
+        profile.StartSpeed_deg_s = profile.StartSpeed_deg_s / scaleFactor;
+        profile.EndSpeed_deg_s = profile.EndSpeed_deg_s / scaleFactor;
+        profile.PeakSpeed_deg_s = profile.PeakSpeed_deg_s / scaleFactor;
+        profile.PeakAcceleration_deg_s2 = ...
+            profile.PeakAcceleration_deg_s2 / scaleFactor^2;
+        profile.PeakJerk_deg_s3 = profile.PeakJerk_deg_s3 / scaleFactor^3;
+        profile.PhaseDuration_s = profile.PhaseDuration_s * scaleFactor;
+        profile.PhaseStartTime_s = profile.PhaseStartTime_s * scaleFactor;
+        profile.PhaseStartSpeed_deg_s = ...
+            profile.PhaseStartSpeed_deg_s / scaleFactor;
+        profile.PhaseStartAcceleration_deg_s2 = ...
+            profile.PhaseStartAcceleration_deg_s2 / scaleFactor^2;
+        profile.PhaseJerk_deg_s3 = ...
+            profile.PhaseJerk_deg_s3 / scaleFactor^3;
+        profile.TangentialAcceleration_deg_s2 = ...
+            profile.TangentialAcceleration_deg_s2 / scaleFactor^2;
+        [profile.PeakVelocityByAxis_deg_s, ...
+            profile.PeakAccelerationByAxis_deg_s2, ...
+            profile.PeakJerkByAxis_deg_s3] = ...
+            cartesianBounds(bounds(profileIndex), profile);
+        profiles(profileIndex) = profile;
+    end
+    nodeSpeed_deg_s = nodeSpeed_deg_s / scaleFactor;
+end
+
+feasible = true;
+message = "";
+end
+
+function ratio = maxConstraintRatio(peakByAxis, limitByAxis)
+%% Section 0: Header & Readme
+% SYNTAX
+%   ratio = maxConstraintRatio(peakByAxis, limitByAxis)
+%**************************************************************************
+% PURPOSE
+%   - Return the largest finite-axis peak-to-limit ratio.
+%**************************************************************************
+% INPUTS
+%   - peakByAxis (N-by-2 numeric), limitByAxis (1-by-2 numeric)
+%       Nonnegative certified peaks and positive per-axis limits.
+%**************************************************************************
+% OUTPUTS
+%   - ratio (nonnegative scalar)
+%       Largest constrained-axis ratio, or zero when every axis is infinite.
+%**************************************************************************
+% UNITS
+%   - The ratio is dimensionless; inputs have matching derivative units.
+%**************************************************************************
+finiteAxis = isfinite(limitByAxis);
+if ~any(finiteAxis)
+    ratio = 0;
+    return;
+end
+ratio = max(peakByAxis(:, finiteAxis) ./ limitByAxis(finiteAxis), [], "all");
+end
+
 % --- Stable Failure Records And Independent Validation ------------------
 function smoothPath = emptySmoothPath(route_deg)
 %% Section 0: Header & Readme
@@ -2567,7 +2855,8 @@ diagnostics = struct( "PeakVelocity_deg_s", [NaN NaN], ...
     "G3JoinCount", 0, "MinimumG3JoinSpeed_deg_s", NaN, ...
     "VelocityCarriedAcrossG3Joins", false, "JoinContinuityOrder", "G3", ...
     "GeometryDerivativeBounds", repmat(derivativeBoundsTemplate(), 0, 1), ...
-    "SpatiallyVaryingLimits", true, "SpatialRetimingCellCount", 0, ...
+    "SpatiallyVaryingLimits", true, "UniformTimeScaleFactor", NaN, ...
+    "SpatialRetimingCellCount", 0, ...
     "ExecutedMotionProfileCount", 0, "MandatoryStopCount", 0, ...
     "MandatoryStopArcLength_deg", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
     "RoundedVelocityCarried", false, "MinimumArcSpeed_deg_s", NaN, "Satisfied", false);

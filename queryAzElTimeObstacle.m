@@ -171,6 +171,30 @@ for packedObstacleIndex = 1:numel(packedObstacles)
     end
     packedObstacle = packedObstacles(packedObstacleIndex);
     obstacleTime_s = double(packedObstacle.TimeSeconds);
+    isSourceTimeQuery = ismember(queryTime_s, obstacleTime_s);
+
+    % Interpolated geometry owns the physical state between source slices.
+    % Exact source times stay on the vectorized packed-slice path below.
+    interpolatedRows = find(isUnresolvedQuery & ...
+        queryTime_s >= obstacleTime_s(1) & ...
+        queryTime_s <= obstacleTime_s(end) & ~isSourceTimeQuery);
+    for interpolatedRowIndex = reshape(interpolatedRows, 1, [])
+        [polygonOccupied, boundsOccupied] = ...
+            azElInternal.queryPackedMovingObstacle( ...
+            packedObstacle, queryTime_s(interpolatedRowIndex), ...
+            [queryAzimuth_deg(interpolatedRowIndex), ...
+            queryElevation_deg(interpolatedRowIndex)], ...
+            resolvedOptions.BoundaryIsOccupied, 0);
+        if (collisionMode == "polygon" && polygonOccupied) || ...
+                (collisionMode == "bounds" && boundsOccupied)
+            isOccupied(interpolatedRowIndex) = true;
+            blockingObstacleIndex(interpolatedRowIndex) = ...
+                uint32(packedObstacleIndex);
+        end
+    end
+
+    isUnresolvedQuery = ~isOccupied & isfinite(queryAzimuth_deg) & ...
+        isfinite(queryElevation_deg) & isfinite(queryTime_s);
     obstacleBounds_deg = packedObstacle.BoundsDeg;
     sliceEdgeOffsets = packedObstacle.EdgeOffsets;
     edgeStartAzimuth_deg = packedObstacle.EdgeStartAzimuthDeg;
@@ -178,8 +202,8 @@ for packedObstacleIndex = 1:numel(packedObstacles)
     edgeEndAzimuth_deg = packedObstacle.EdgeEndAzimuthDeg;
     edgeEndElevation_deg = packedObstacle.EdgeEndElevationDeg;
 
-    % Uniform time bases map arithmetically. Irregular time bases use nearest
-    % interpolation, but neither path extrapolates outside the obstacle span.
+    % Neighbor-padding ownership still uses the nearest source index; the
+    % unpadded physical polygon was interpolated above.
     nearestSampleIndex = zeros(size(queryTime_s));
     isInsideObstacleTimeSpan = false(size(queryTime_s));
     if packedObstacle.SampleCount > 0
@@ -200,11 +224,16 @@ for packedObstacleIndex = 1:numel(packedObstacles)
         nearestSampleIndex = round(nearestSampleIndex);
     end
     isEligibleQuery = isUnresolvedQuery & isInsideObstacleTimeSpan;
+    if resolvedOptions.TimePaddingSamples == 0
+        isEligibleQuery = isEligibleQuery & isSourceTimeQuery;
+    end
 
-    % Padding checks neighboring source slices rather than inventing an
-    % interpolated polygon between measured boundaries.
-    for sampleOffset = -resolvedOptions.TimePaddingSamples: ...
-            resolvedOptions.TimePaddingSamples
+    % Padding intentionally checks neighboring source slices in addition to
+    % the interpolated physical polygon. Offset zero also evaluates exact
+    % source-time queries through the existing vectorized kernel.
+    sampleOffsetRange = -resolvedOptions.TimePaddingSamples: ...
+        resolvedOptions.TimePaddingSamples;
+    for sampleOffset = sampleOffsetRange
         candidateSampleIndex = nearestSampleIndex + sampleOffset;
         isCandidateQuery = isEligibleQuery & candidateSampleIndex >= 1 & ...
             candidateSampleIndex <= packedObstacle.SampleCount & ~isOccupied;
