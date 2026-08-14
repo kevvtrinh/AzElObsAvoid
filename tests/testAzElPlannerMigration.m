@@ -575,6 +575,32 @@ testCase.verifyEqual(arrivalTimes_s, ...
     "AbsTol", 1e-10);
 end
 
+function testAccelerationOnlyRetimerDoesNotInventJerkLimit(testCase)
+%% Section 0: Header & Readme
+% Verify jerk-off uses the exact acceleration-limited direct schedule and
+% reports jerk as unconstrained instead of substituting a large finite cap.
+[initialState, goalState, limits] = jerkLimitedPlanInputs();
+limits.maxJerk_deg_s3 = [Inf Inf];
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, plannerTestOptions());
+timedPath = result.timedSlopePath;
+diagnostics = timedPath.ConstraintDiagnostics;
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+testCase.verifyEqual(timedPath.MinimumMotionDuration_s, 7, ...
+    "AbsTol", 1e-10);
+testCase.verifyEqual(timedPath.RetimerType, ...
+    "certifiedSpatialAccelerationForwardBackward");
+testCase.verifyFalse(diagnostics.JerkConstrained);
+testCase.verifyFalse(diagnostics.FiniteJerkCertified);
+testCase.verifyFalse(diagnostics.FiniteJerkNumericallyVerified);
+testCase.verifyTrue(all(isnan(diagnostics.PeakJerk_deg_s3)));
+testCase.verifyTrue(all(isnan(timedPath.jerk_deg_s3), "all"));
+testCase.verifyTrue(diagnostics.VelocitySatisfied);
+testCase.verifyTrue(diagnostics.AccelerationSatisfied);
+end
+
 function testJerkRetimersHonorFixedArrivalWithStartHold(testCase)
 %% Section 0: Header & Readme
 % Verify fixed arrival adds a stationary hold without changing the
@@ -1007,6 +1033,12 @@ testCase.verifyFalse( ...
 testCase.verifyEqual(jerkOffResult.limits.maxJerk_deg_s3, [Inf Inf]);
 testCase.verifyFalse( ...
     jerkOffResult.timedSlopePath.ConstraintDiagnostics.JerkConstrained);
+testCase.verifyEqual(jerkOffResult.timedSlopePath.RetimerType, ...
+    "certifiedSpatialAccelerationForwardBackward");
+testCase.verifyFalse(jerkOffResult.timedSlopePath. ...
+    ConstraintDiagnostics.FiniteJerkCertified);
+testCase.verifyTrue(all(isnan( ...
+    jerkOffResult.timedSlopePath.jerk_deg_s3), "all"));
 
 exampleResults = {jerkOnResult, jerkOffResult};
 for resultIndex = 1:numel(exampleResults)
