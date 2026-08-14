@@ -19,7 +19,9 @@
 %   - limits (scalar struct)
 %       Per-axis velocity, acceleration, and optional jerk limits.
 %   - optionOverrides (scalar struct, optional; default struct())
-%       Partial overrides of the zero-input defaults.
+%       Partial overrides of the zero-input defaults. UseParallel accepts
+%       auto, on, off, or a logical scalar for independent polygon-search
+%       tasks and falls back to serial execution when unavailable.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -75,6 +77,7 @@ candidateClearance_deg = max(0.05, 3 * min(options.TurnRadius_deg, 0.45));
 searchOptions = struct(...
     "CandidateClearance_deg", candidateClearance_deg, ...
     "VisibilitySampleStep_deg", options.VisibilitySampleStep_deg, ...
+    "UseParallel", options.UseParallel, ...
     "Verbose", options.Verbose);
 
 search = buildAzElVisibilityRoutes(obstacleField, initialState, ...
@@ -106,14 +109,46 @@ for candidateIndex = 1:candidateCount
         end
         smoothPath = smoothRoute(route_deg, obstacleField, ...
             snapshotTime_s(candidateIndex), options);
-        timedPath = retimeSpatialPath(smoothPath, initialState, goalState, limits, options);
-
+        departureCandidateTime_s = unique([ ...
+            initialState.time_s; snapshotTime_s(candidateIndex)]);
+        timedPath = emptyTimedPath( ...
+            limits, options, "No departure time was feasible.");
         blocked = false(0, 1);
-        if timedPath.Success
-            blocked = queryAzElTimedPathCollision(obstacleField, ...
-                timedPath.time_s, timedPath.position_deg, struct(...
-                "TimePaddingSamples", options.CollisionTimePaddingSamples, ...
-                "BoundaryIsOccupied", false));
+        bestArrivalTime_s = Inf;
+        fallbackArrivalTime_s = Inf;
+        fallbackTimedPath = timedPath;
+        fallbackBlocked = blocked;
+        for departureIndex = 1:numel(departureCandidateTime_s)
+            attemptTimedPath = retimeSpatialPath( ...
+                smoothPath, initialState, goalState, limits, options, ...
+                departureCandidateTime_s(departureIndex));
+            if attemptTimedPath.Success
+                attemptBlocked = queryAzElTimedPathCollision( ...
+                    obstacleField, attemptTimedPath.time_s, ...
+                    attemptTimedPath.position_deg, struct( ...
+                    "TimePaddingSamples", ...
+                    options.CollisionTimePaddingSamples, ...
+                    "BoundaryIsOccupied", false));
+                departureArrivalTime_s = ...
+                    attemptTimedPath.GoalLineInterceptTime_s;
+                if departureArrivalTime_s < fallbackArrivalTime_s
+                    fallbackArrivalTime_s = departureArrivalTime_s;
+                    fallbackTimedPath = attemptTimedPath;
+                    fallbackBlocked = attemptBlocked;
+                end
+                if ~any(attemptBlocked) && ...
+                        departureArrivalTime_s < bestArrivalTime_s
+                    bestArrivalTime_s = departureArrivalTime_s;
+                    timedPath = attemptTimedPath;
+                    blocked = attemptBlocked;
+                end
+            elseif ~fallbackTimedPath.Success
+                fallbackTimedPath = attemptTimedPath;
+            end
+        end
+        if ~isfinite(bestArrivalTime_s)
+            timedPath = fallbackTimedPath;
+            blocked = fallbackBlocked;
         end
     catch candidateError
         smoothPath = emptySmoothPath(route_deg);
@@ -220,10 +255,12 @@ elapsedPlanningTime_s = toc(planningTimer);
 searchDiagnostics = struct(...
     "VisibilityGraphCount", numel(search.VisibilityGraphs), ...
     "SuccessfulVisibilityGraphCount", nnz([search.VisibilityGraphs.Success]), ...
+    "VisibilityGraphs", search.VisibilityGraphs, ...
     "CandidateRouteCount", candidateCount, ...
     "FeasibleCandidateCount", nnz(collisionFree), ...
     "SelectedCandidateIndex", selectedCandidateIndex, ...
     "RouteConsolidation", consolidation, ...
+    "ParallelExecution", search.ParallelExecution, ...
     "BestAttemptPosition_deg", bestAttemptPosition_deg, ...
     "BestAttemptTime_s", bestAttemptTime_s, ...
     "ElapsedPlanningTime_s", elapsedPlanningTime_s, ...
@@ -292,6 +329,7 @@ options = struct(...
     "AzimuthInterval_deg", [-180 180], ...
     "VisibilitySampleStep_deg", 0.10, ...
     "MaximumRetimedVisibilityRoutes", 12, ...
+    "UseParallel", false, ...
     "Verbose", false);
 end
 
@@ -353,6 +391,8 @@ if ~isscalar(options.GoalTimeMode) || ...
         "GoalTimeMode must be earliestArrival or fixedArrival.");
 end
 
+options.UseParallel = normalizeParallelOption(options.UseParallel);
+
 logicalNames = ["AllowAzimuthWrapping" "Verbose"];
 for optionIndex = 1:numel(logicalNames)
     name = logicalNames(optionIndex);
@@ -376,6 +416,45 @@ validateattributes(options.CollisionTimePaddingSamples, {'numeric'}, ...
     {'real','finite','scalar','integer','nonnegative'});
 validateattributes(options.AzimuthInterval_deg, {'numeric'}, ...
     {'real','finite','vector','numel',2,'increasing'});
+end
+
+function mode = normalizeParallelOption(mode)
+%% Section 0: Header & Readme
+% SYNTAX
+%   mode = normalizeParallelOption(mode)
+%**************************************************************************
+% PURPOSE
+%   - Normalize the planner parallel control to auto, on, or off.
+%**************************************************************************
+% INPUTS
+%   - mode (scalar text, logical scalar, or binary numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - mode (scalar string)
+%**************************************************************************
+% UNITS
+%   - The mode is dimensionless.
+%**************************************************************************
+if (islogical(mode) || isnumeric(mode)) && isscalar(mode)
+    validateattributes(mode, ...
+        {'logical', 'numeric'}, {'real', 'finite', 'scalar'});
+    if isnumeric(mode) && ~any(mode == [0 1])
+        error("planAzElMotion:InvalidUseParallel", ...
+            "Numeric UseParallel must be zero or one.");
+    end
+    if logical(mode)
+        mode = "on";
+    else
+        mode = "off";
+    end
+else
+    mode = lower(string(mode));
+end
+
+if ~isscalar(mode) || ~any(mode == ["auto" "on" "off"])
+    error("planAzElMotion:InvalidUseParallel", ...
+        "UseParallel must be auto, on, off, or a logical scalar.");
+end
 end
 
 function state = normalizeState(state, label)
@@ -499,18 +578,40 @@ snapshotTime_s = initialState.time_s;
 graphIndex = 0;
 successful = find([graphs.Success]);
 distinct = zeros(0, 1);
+isTemporalOpportunity = false;
 
 for visibilityGraphIndex = reshape(successful, 1, [])
     candidate = graphs(visibilityGraphIndex).PathPosition_deg;
     isDuplicate = false;
+    matchedExistingGeometry = false;
+    previousGraphHadSamePath = false;
+    if visibilityGraphIndex > 1 && graphs(visibilityGraphIndex - 1).Success
+        previousPath = graphs(visibilityGraphIndex - 1).PathPosition_deg;
+        previousGraphHadSamePath = ...
+            isequal(size(previousPath), size(candidate)) && ...
+            max(abs(previousPath(:) - candidate(:))) <= 1e-9;
+    end
+    opensTimedWindow = ~previousGraphHadSamePath && ...
+        graphs(visibilityGraphIndex).Time_s > initialState.time_s;
 
     for routeIndex = 1:numel(routes)
         route = routes{routeIndex};
 
-        if isequal(size(route), size(candidate)) && max(abs(route(:) - candidate(:))) <= 1e-9
-            isDuplicate = true;
-            break;
+        sameGeometry = isequal(size(route), size(candidate)) && ...
+            max(abs(route(:) - candidate(:))) <= 1e-9;
+        if ~sameGeometry
+            continue;
         end
+        matchedExistingGeometry = true;
+
+        % The same geometry is useful again when it reappears after one or
+        % more snapshots with a different selected path. It receives its
+        % own availability time without consuming the geometric-route cap.
+        if opensTimedWindow
+            continue;
+        end
+        isDuplicate = true;
+        break;
     end
 
     if ~isDuplicate
@@ -519,25 +620,36 @@ for visibilityGraphIndex = reshape(successful, 1, [])
             graphs(visibilityGraphIndex).Time_s; %#ok<AGROW>
         graphIndex(end + 1, 1) = visibilityGraphIndex; %#ok<AGROW>
         distinct(end + 1, 1) = visibilityGraphIndex; %#ok<AGROW>
+        isTemporalOpportunity(end + 1, 1) = ...
+            matchedExistingGeometry && opensTimedWindow; %#ok<AGROW>
     end
 end
 
 if numel(routes) > maximumCount + 1
-    cost = zeros(numel(routes) - 1, 1);
+    geometricRouteIndex = find(~isTemporalOpportunity);
+    geometricRouteIndex(geometricRouteIndex == 1) = [];
+    cost = zeros(numel(geometricRouteIndex), 1);
 
-    for routeIndex = 2:numel(routes)
-        cost(routeIndex - 1) = ...
+    for localRouteIndex = 1:numel(geometricRouteIndex)
+        routeIndex = geometricRouteIndex(localRouteIndex);
+        cost(localRouteIndex) = ...
             sum(vecnorm(diff(routes{routeIndex}), 2, 2));
     end
 
-    [~, cheapest] = min(cost);
-    retained = unique(round(linspace(1, numel(cost), maximumCount))).';
-    retained = unique([cheapest; retained], "stable");
-    if numel(retained) > maximumCount
-        retained = retained(1:maximumCount);
+    retainedNonDirectIndex = zeros(0, 1);
+    if ~isempty(cost)
+        [~, cheapest] = min(cost);
+        retained = unique(round(linspace( ...
+            1, numel(cost), min(maximumCount, numel(cost))))).';
+        retained = unique([cheapest; retained], "stable");
+        if numel(retained) > maximumCount
+            retained = retained(1:maximumCount);
+        end
+        retainedNonDirectIndex = geometricRouteIndex(retained);
     end
 
-    keep = [1; retained + 1];
+    keep = [1; retainedNonDirectIndex; find(isTemporalOpportunity)];
+    keep = unique(keep, "stable");
     routes = routes(keep);
     snapshotTime_s = snapshotTime_s(keep);
     graphIndex = graphIndex(keep);
@@ -1073,11 +1185,14 @@ samples = struct( "arcLength_deg", queryS_deg, "position_deg", position_deg, ...
 end
 
 % --- Spatial Retiming And Motion Profiles -------------------------------
-function timedPath = retimeSpatialPath(smoothPath, initialState, goalState, limits, options)
+function timedPath = retimeSpatialPath( ...
+        smoothPath, initialState, goalState, limits, options, ...
+        departureCandidateTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   timedPath = retimeSpatialPath(smoothPath, initialState, goalState, ...
-%       limits, options)
+%   timedPath = retimeSpatialPath( ...
+%       smoothPath, initialState, goalState, limits, options, ...
+%       departureCandidateTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Retime one fixed G3 path with certified spatial limits in either mode.
@@ -1085,6 +1200,8 @@ function timedPath = retimeSpatialPath(smoothPath, initialState, goalState, limi
 % INPUTS
 %   - smoothPath, initialState, goalState, limits, options (scalar structs)
 %       Fixed geometry, boundary states, physical limits, and time policy.
+%   - departureCandidateTime_s (finite numeric scalar)
+%       Earliest motion-start time for this independently checked schedule.
 %**************************************************************************
 % OUTPUTS
 %   - timedPath (scalar struct)
@@ -1096,6 +1213,8 @@ function timedPath = retimeSpatialPath(smoothPath, initialState, goalState, limi
 
 % --- Match the endpoint states to the fixed path ------------------------
 tolerance = 1e-9;
+validateattributes(departureCandidateTime_s, {'numeric'}, ...
+    {'real', 'finite', 'scalar'});
 totalLength_deg = smoothPath.TotalLength_deg;
 endpoint = samplePath(smoothPath, [0; totalLength_deg]);
 
@@ -1269,7 +1388,10 @@ end
 
 % --- Resolve arrival policy and assign absolute profile times -----------
 minimumMotionDuration_s = sum([profiles.Duration_s]);
-minimumArrivalTime_s = initialState.time_s + minimumMotionDuration_s;
+minimumWaitDuration_s = max( ...
+    0, departureCandidateTime_s - initialState.time_s);
+minimumArrivalTime_s = initialState.time_s + ...
+    minimumWaitDuration_s + minimumMotionDuration_s;
 timeTolerance_s = tolerance * max(1, abs(goalState.time_s));
 if minimumArrivalTime_s > goalState.time_s + timeTolerance_s
     timedPath = emptyTimedPath(limits, options, sprintf( ...
@@ -1278,15 +1400,25 @@ if minimumArrivalTime_s > goalState.time_s + timeTolerance_s
     return;
 end
 
-waitDuration_s = 0;
+waitDuration_s = minimumWaitDuration_s;
 if options.GoalTimeMode == "fixedarrival"
-    waitDuration_s = max(0, goalState.time_s - minimumArrivalTime_s);
-    if waitDuration_s > timeTolerance_s && (norm(initialState.velocity_deg_s) > tolerance || ...
-            norm(initialState.acceleration_deg_s2) > tolerance)
-        timedPath = emptyTimedPath(limits, options, ...
-            "fixedArrival cannot hold a moving initial state.");
+    waitDuration_s = max(0, ...
+        goalState.time_s - initialState.time_s - ...
+        minimumMotionDuration_s);
+    if waitDuration_s + timeTolerance_s < minimumWaitDuration_s
+        timedPath = emptyTimedPath(limits, options, sprintf( ...
+            "Fixed arrival would require motion before %.9g s.", ...
+            departureCandidateTime_s));
         return;
     end
+end
+requiresInitialHold = waitDuration_s > timeTolerance_s;
+initialStateIsMoving = norm(initialState.velocity_deg_s) > tolerance || ...
+    norm(initialState.acceleration_deg_s2) > tolerance;
+if requiresInitialHold && initialStateIsMoving
+    timedPath = emptyTimedPath(limits, options, ...
+        "The timed route requires a hold, but the initial state is moving.");
+    return;
 end
 
 motionStartTime_s = initialState.time_s + waitDuration_s;
@@ -1393,6 +1525,7 @@ timedPath = struct(...
     "jerk_deg_s3", jerk_deg_s3, ...
     "PathPosition_deg", smoothPath.position_deg, ...
     "WaypointTime_s", curveNodeTime_s, ...
+    "DepartureCandidateTime_s", departureCandidateTime_s, ...
     "MotionStartTime_s", motionStartTime_s, ...
     "WaitDuration_s", waitDuration_s, ...
     "MinimumMotionDuration_s", minimumMotionDuration_s, ...
@@ -2461,7 +2594,8 @@ timedPath = struct( "Success", false, "Message", string(message), ...
     "time_s", zeros(0, 1), "position_deg", zeros(0, 2), "velocity_deg_s", zeros(0, 2), ...
     "acceleration_deg_s2", zeros(0, 2), "jerk_deg_s3", zeros(0, 2), ...
     "PathPosition_deg", zeros(0, 2), "WaypointTime_s", zeros(0, 1), ...
-    "MotionStartTime_s", NaN, "WaitDuration_s", NaN, "MinimumMotionDuration_s", NaN, ...
+    "DepartureCandidateTime_s", NaN, "MotionStartTime_s", NaN, ...
+    "WaitDuration_s", NaN, "MinimumMotionDuration_s", NaN, ...
     "GoalLineInterceptTime_s", NaN, "SegmentProfiles", repmat(profileTemplate(), 0, 1), ...
     "Limits", limits, "Options", struct("GoalTimeMode", options.GoalTimeMode, ...
         "SampleTime_s", options.SampleTime_s), ...

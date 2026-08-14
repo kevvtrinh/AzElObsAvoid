@@ -676,6 +676,24 @@ expected results merely to obtain a passing run.
 ## Change Discipline
 
 - Inspect existing interfaces and call sites before editing.
+- Before completing, committing, or pushing a change, inspect the per-file
+  diff statistics. If an existing source file or script has more than 50 added
+  lines in the current change, explain that growth directly in the chat before
+  claiming completion.
+- For every file above the 50-added-line threshold, report its additions,
+  deletions, and net growth; the responsibilities added; why existing code was
+  not sufficient; the alternatives considered; why the selected design and
+  file location were chosen; and the checks that exercised the new code.
+- Count headers, comments, UI plumbing, compatibility code, and helper
+  functions in the disclosure. Do not dismiss them as boilerplate or hide them
+  by reporting only net line growth.
+- If a working-tree diff combines several user requests, separate the line
+  growth by request when reliable history permits it. Otherwise state that the
+  exact separation is unavailable and explain the cumulative diff honestly.
+- If the explanation does not justify the size or reveals duplicated or
+  weakly related responsibilities, simplify or refactor the change before
+  completing it. Moving the same code into another file is not a size
+  reduction and must not be presented as one.
 - Preserve backward compatibility unless the task explicitly authorizes an API
   change. If an API must change, update all examples, tests, and documentation
   together.

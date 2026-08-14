@@ -95,19 +95,84 @@ testCase.verifyGreaterThan( ...
     timedPath.MinimumMotionDuration_s);
 end
 
+function testOpeningUWaitsAndBeatsClosedDetour(testCase)
+result = exampleOpeningUShapedAzElTimeSpace(struct( ...
+    "FigureVisible", "off", ...
+    "PlotOutputs", false, ...
+    "EnableJerkConstraint", true, ...
+    "UseParallel", "off", ...
+    "Verbose", false));
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.ExampleValidation.Passed, ...
+    result.ExampleValidation.Message);
+testCase.verifyTrue(result.OpeningValidation.Passed, ...
+    result.OpeningValidation.Message);
+testCase.verifyTrue(result.OpeningValidation.WaitedUntilOpening);
+testCase.verifyTrue(result.OpeningValidation.SelectedDirectGeometry);
+testCase.verifyTrue(result.OpeningValidation.CrossedOpenGap);
+testCase.verifyTrue( ...
+    result.OpeningValidation.OpeningWasFasterThanDetour);
+testCase.verifyGreaterThan(result.OpeningValidation.TimeSaved_s, 0);
+testCase.verifyGreaterThanOrEqual( ...
+    result.timedSlopePath.MotionStartTime_s, result.openingTime_s);
+testCase.verifyEqual(result.timedSlopePath.DepartureCandidateTime_s, ...
+    result.timedSlopePath.MotionStartTime_s, "AbsTol", 1e-12);
+
+holdMask = result.timedSlopePath.time_s <= ...
+    result.timedSlopePath.MotionStartTime_s;
+heldPosition_deg = result.timedSlopePath.position_deg(holdMask, :);
+testCase.verifyEqual(heldPosition_deg, repmat( ...
+    result.initialState.position_deg, size(heldPosition_deg, 1), 1), ...
+    "AbsTol", 1e-12);
+blocked = queryAzElTimedPathCollision(result.obstacleField, ...
+    result.timedSlopePath.time_s, result.timedSlopePath.position_deg, ...
+    struct("TimePaddingSamples", 0, "BoundaryIsOccupied", false));
+testCase.verifyFalse(any(blocked));
+end
+
 function testPlotConsumesResultWithoutReplanning(testCase)
 result = exampleAzElPlanning(struct("FigureVisible", "off", ...
     "PlotOutputs", false));
 handles = plotAzElMotion(result, struct("FigureVisible", "off", ...
     "FrameStride", 1000, "Pause_s", 0));
 cleanup = onCleanup(@() close([handles.WorkspaceFigure ...
-    handles.KinematicsFigure handles.Animation.Figure]));
+    handles.VisibilityGraphs.Figure handles.KinematicsFigure ...
+    handles.Animation.Figure]));
 testCase.verifyTrue(isgraphics(handles.WorkspaceFigure));
+testCase.verifyTrue(isgraphics(handles.VisibilityGraphs.Figure));
+testCase.verifyTrue(isgraphics(handles.VisibilityGraphs.OverviewAxes));
+testCase.verifyTrue(isgraphics(handles.VisibilityGraphs.SnapshotAxes));
 testCase.verifyTrue(isgraphics(handles.KinematicsFigure));
 testCase.verifyEqual(numel(handles.KinematicsAxes), 4);
 testCase.verifyTrue(isgraphics(handles.Animation.Figure));
 testCase.verifyTrue(isgraphics(handles.Animation.Axes3D));
 testCase.verifyTrue(isgraphics(handles.Animation.Axes2D));
+
+graphs = result.SearchDiagnostics.VisibilityGraphs;
+testCase.verifyGreaterThan(numel(graphs), 1);
+blockedTestWasRetained = false;
+for graphIndex = 1:numel(graphs)
+    graph = graphs(graphIndex);
+    blockedTestWasRetained = blockedTestWasRetained || ...
+        any(graph.VisibilityBlockedMask, "all");
+    testCase.verifyEqual(graph.VisibilityTestedMask, ...
+        graph.VisibilityTestedMask.');
+    testCase.verifyEqual(graph.VisibilityBlockedMask, ...
+        graph.VisibilityBlockedMask.');
+    testCase.verifyFalse(any(graph.VisibilityBlockedMask & ...
+        ~graph.VisibilityTestedMask, "all"));
+end
+testCase.verifyTrue(blockedTestWasRetained);
+
+requestedTime_s = mean([graphs.Time_s]);
+set(handles.VisibilityGraphs.TimeEdit, ...
+    "String", sprintf("%.12g", requestedTime_s));
+callback = get(handles.VisibilityGraphs.GoButton, "Callback");
+callback(handles.VisibilityGraphs.GoButton, []);
+[~, expectedSnapshotIndex] = min(abs([graphs.Time_s] - requestedTime_s));
+testCase.verifyEqual(getappdata(handles.VisibilityGraphs.Figure, ...
+    "SelectedSnapshotIndex"), expectedSnapshotIndex);
 end
 
 function testMovingPointHistoryUsesSameObstacleConstructor(testCase)
@@ -126,6 +191,46 @@ limits = struct("maxVelocity_deg_s", [2 2], ...
 result = planAzElMotion(obstacle, initialState, goalState, limits);
 testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+end
+
+function testParallelPolygonReductionMatchesSerial(testCase)
+squareAzimuth_deg = {[-2; 0; 0; -2], [-1; 1; 1; -1], ...
+    [1; 3; 3; 1]};
+squareElevation_deg = {[-1; -1; 1; 1], [-1; -1; 1; 1], ...
+    [-1; -1; 1; 1]};
+obstacle = makeAzElObstacleData( ...
+    "moving obstacle", [0; 10; 20], squareAzimuth_deg, ...
+    squareElevation_deg, 0);
+obstacleField = buildAzElTimeObstacleField(obstacle);
+initialState = struct("time_s", 0, "position_deg", [-4 3]);
+goalState = struct("time_s", 20, "position_deg", [4 3]);
+
+serialSearch = buildAzElVisibilityRoutes( ...
+    obstacleField, initialState, goalState, ...
+    struct("UseParallel", "off"));
+parallelSearch = buildAzElVisibilityRoutes( ...
+    obstacleField, initialState, goalState, ...
+    struct("UseParallel", "on"));
+
+testCase.verifyEqual(serialSearch.ParallelExecution.RequestedMode, "off");
+testCase.verifyEqual(parallelSearch.ParallelExecution.RequestedMode, "on");
+testCase.verifyGreaterThan(parallelSearch.ParallelExecution.TaskCount, 1);
+testCase.verifyEqual(numel(parallelSearch.VisibilityGraphs), ...
+    numel(serialSearch.VisibilityGraphs));
+testCase.verifyEqual(parallelSearch.CandidatePointsAzElTime, ...
+    serialSearch.CandidatePointsAzElTime, "AbsTol", 1e-12);
+
+for snapshotIndex = 1:numel(serialSearch.VisibilityGraphs)
+    serialGraph = serialSearch.VisibilityGraphs(snapshotIndex);
+    parallelGraph = parallelSearch.VisibilityGraphs(snapshotIndex);
+    testCase.verifyEqual(parallelGraph.Success, serialGraph.Success);
+    testCase.verifyEqual(parallelGraph.PathPosition_deg, ...
+        serialGraph.PathPosition_deg, "AbsTol", 1e-12);
+    testCase.verifyEqual(parallelGraph.PathCost_deg, ...
+        serialGraph.PathCost_deg, "AbsTol", 1e-12);
+    testCase.verifyEqual(parallelGraph.CandidateActiveMask, ...
+        serialGraph.CandidateActiveMask);
+end
 end
 
 function testTwoVertexRegionsWarnAndAreRemoved(testCase)
@@ -223,6 +328,7 @@ testCase.verifyEqual(result.TerminationReason, "endpointBlocked");
 testCase.verifyFalse(isempty(result.SearchDiagnostics));
 handles = plotAzElMotion(result, struct("FigureVisible", "off"));
 cleanup = onCleanup(@() close([handles.WorkspaceFigure ...
-    handles.KinematicsFigure]));
+    handles.VisibilityGraphs.Figure handles.KinematicsFigure]));
 testCase.verifyTrue(isgraphics(handles.WorkspaceFigure));
+testCase.verifyTrue(isgraphics(handles.VisibilityGraphs.Figure));
 end

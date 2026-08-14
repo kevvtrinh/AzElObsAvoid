@@ -220,6 +220,7 @@ result.InterceptTime_s = interceptTime_s;
 result.InterceptPosition_deg = interceptPosition_deg;
 result.TargetPositionAtIntercept_deg = targetPositionAtIntercept_deg;
 result.TargetVelocityAtIntercept_deg_s = targetVelocityAtIntercept_deg_s;
+result.PlannerSearchDiagnostics = result.SearchDiagnostics;
 result.SearchDiagnostics = searchDiagnostics;
 result.InterceptValidation = interceptValidation;
 result.TargetTrackTime_s = trackTime_s;
