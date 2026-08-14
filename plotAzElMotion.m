@@ -13,18 +13,23 @@ function handles = plotAzElMotion(result, optionOverrides)
 %   - result (scalar planner-result struct)
 %       Output from planAzElMotion.
 %   - optionOverrides (scalar struct, optional; default struct())
-%       FigureVisible is "on" or "off" and Title is scalar text.
+%       FigureVisible, Title, ShowAnimation, FrameStride, Pause_s,
+%       ShowSweptSurfaces, and MaximumDisplayedSlicesPerObstacle.
 %**************************************************************************
 % OUTPUTS
 %   - handles (scalar struct)
-%       WorkspaceFigure, WorkspaceAxes, KinematicsFigure, and
-%       KinematicsAxes. A zero-input call returns plot defaults.
+%       Workspace, kinematic, and optional synchronized animation handles.
+%       A zero-input call returns plot defaults.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
 %**************************************************************************
-defaults = struct("FigureVisible", "on", "Title", "Az/El motion plan");
+defaults = struct("FigureVisible", "on", "Title", "Az/El motion plan", ...
+    "ShowAnimation", true, "ShowKinematics", true, ...
+    "FrameStride", 10, "Pause_s", 0.001, ...
+    "ShowSweptSurfaces", true, ...
+    "MaximumDisplayedSlicesPerObstacle", 30);
 if nargin == 0
     handles = defaults;
     return;
@@ -78,47 +83,82 @@ plot(workspaceAxes, result.goalState.position_deg(1), ...
     "DisplayName", "Goal");
 xlabel(workspaceAxes, "Azimuth (deg)");
 ylabel(workspaceAxes, "Elevation (deg)");
-title(workspaceAxes, options.Title + " — " + result.TerminationReason);
+title(workspaceAxes, options.Title + " - " + result.TerminationReason);
 axis(workspaceAxes, "equal");
 grid(workspaceAxes, "on");
 box(workspaceAxes, "on");
 legend(workspaceAxes, "Location", "best");
 
 %% Section 2: Plot Kinematics
-kinematicsFigure = figure("Visible", options.FigureVisible, ...
-    "Name", options.Title + " kinematics");
-layout = tiledlayout(kinematicsFigure, 4, 1, ...
-    "TileSpacing", "compact", "Padding", "compact");
+kinematicsFigure = gobjects(0, 1);
 kinematicAxes = gobjects(4, 1);
-quantities = {"position_deg", "velocity_deg_s", ...
-    "acceleration_deg_s2", "jerk_deg_s3"};
-labels = ["Position (deg)" "Velocity (deg/s)" ...
-    "Acceleration (deg/s^2)" "Jerk (deg/s^3)"];
-for quantityIndex = 1:4
-    kinematicAxes(quantityIndex) = nexttile(layout);
-    values = timedPath.(quantities{quantityIndex});
-    if ~isempty(timedPath.time_s) && ~isempty(values)
-        plot(kinematicAxes(quantityIndex), timedPath.time_s, values, ...
-            "LineWidth", 1.2);
+if options.ShowKinematics
+    kinematicsFigure = figure("Visible", options.FigureVisible, ...
+        "Name", options.Title + " kinematics");
+    layout = tiledlayout(kinematicsFigure, 4, 1, ...
+        "TileSpacing", "compact", "Padding", "compact");
+    quantities = {"position_deg", "velocity_deg_s", ...
+        "acceleration_deg_s2", "jerk_deg_s3"};
+    labels = ["Position (deg)" "Velocity (deg/s)" ...
+        "Acceleration (deg/s^2)" "Jerk (deg/s^3)"];
+    for quantityIndex = 1:4
+        kinematicAxes(quantityIndex) = nexttile(layout);
+        values = timedPath.(quantities{quantityIndex});
+        hasFiniteValue = ~isempty(values) && any(isfinite(values), "all");
+        if ~isempty(timedPath.time_s) && hasFiniteValue
+            plot(kinematicAxes(quantityIndex), timedPath.time_s, values, ...
+                "LineWidth", 1.2);
+        elseif ~isempty(timedPath.time_s)
+            xlim(kinematicAxes(quantityIndex), ...
+                [timedPath.time_s(1), timedPath.time_s(end)]);
+            text(kinematicAxes(quantityIndex), 0.5, 0.5, ...
+                "Unconstrained / not reported", "Units", "normalized", ...
+                "HorizontalAlignment", "center", "Color", [0.35 0.35 0.35]);
+        end
+        ylabel(kinematicAxes(quantityIndex), labels(quantityIndex));
+        grid(kinematicAxes(quantityIndex), "on");
+        box(kinematicAxes(quantityIndex), "on");
     end
-    ylabel(kinematicAxes(quantityIndex), labels(quantityIndex));
-    grid(kinematicAxes(quantityIndex), "on");
-    box(kinematicAxes(quantityIndex), "on");
+    xlabel(kinematicAxes(end), "Time (s)");
+    legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
+        "Location", "best");
+    title(layout, options.Title);
 end
-xlabel(kinematicAxes(end), "Time (s)");
-legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
-    "Location", "best");
-title(layout, options.Title);
+animation = struct();
+if result.Success && options.ShowAnimation
+    animationPause_s = options.Pause_s;
+    if options.FigureVisible == "off"
+        animationPause_s = 0;
+    end
+    animationOptions = struct( ...
+        "FigureVisible", options.FigureVisible, ...
+        "FrameStride", options.FrameStride, ...
+        "Pause_s", animationPause_s, ...
+        "ShowSweptSurfaces", options.ShowSweptSurfaces, ...
+        "MaximumDisplayedSlicesPerObstacle", ...
+            options.MaximumDisplayedSlicesPerObstacle, ...
+        "Title", options.Title + " animation");
+    if isfield(result, "TargetTrackTime_s") && ...
+            isfield(result, "TargetTrackPosition_deg")
+        animationOptions.TargetTime_s = result.TargetTrackTime_s;
+        animationOptions.TargetPosition_deg = ...
+            result.TargetTrackPosition_deg;
+        animationOptions.TargetLabel = "Moving target";
+    end
+    animation = animateAzElTimedSlopePath( ...
+        timedPath, result.obstacleField, animationOptions);
+end
 handles = struct("WorkspaceFigure", workspaceFigure, ...
     "WorkspaceAxes", workspaceAxes, ...
     "KinematicsFigure", kinematicsFigure, ...
-    "KinematicsAxes", kinematicAxes);
+    "KinematicsAxes", kinematicAxes, ...
+    "Animation", animation);
 end
 
 %% Section 3: Local Functions
 function options = resolvePlotOptions(defaults, overrides)
 %% Section 0: Header & Readme
-% Merge and validate the two presentation-only controls.
+% Merge and validate presentation and animation controls.
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("plotAzElMotion:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -146,6 +186,30 @@ end
 if ~isscalar(options.Title)
     error("plotAzElMotion:InvalidTitle", "Title must be scalar text.");
 end
+options.ShowAnimation = logicalScalar(options.ShowAnimation, ...
+    "ShowAnimation");
+options.ShowKinematics = logicalScalar(options.ShowKinematics, ...
+    "ShowKinematics");
+options.ShowSweptSurfaces = logicalScalar(options.ShowSweptSurfaces, ...
+    "ShowSweptSurfaces");
+validateattributes(options.FrameStride, {'numeric'}, ...
+    {'scalar','integer','positive'});
+validateattributes(options.Pause_s, {'numeric'}, ...
+    {'scalar','real','finite','nonnegative'});
+validateattributes(options.MaximumDisplayedSlicesPerObstacle, {'numeric'}, ...
+    {'scalar','integer','positive'});
+end
+
+function value = logicalScalar(value, name)
+%% Section 0: Header & Readme
+% Normalize one logical presentation control.
+if ~(islogical(value) && isscalar(value)) && ...
+        ~(isnumeric(value) && isscalar(value) && ...
+        isfinite(value) && any(value == [0 1]))
+    error("plotAzElMotion:InvalidLogicalOption", ...
+        "%s must be scalar logical or binary numeric.", name);
+end
+value = logical(value);
 end
 
 function plotObstacleHistory( ...

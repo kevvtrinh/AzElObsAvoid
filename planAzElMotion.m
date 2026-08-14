@@ -1403,7 +1403,12 @@ end
 atEnd = time_s == profile.Duration_s;
 position_deg(atEnd) = profile.Length_deg;
 speed_deg_s(atEnd) = profile.EndSpeed_deg_s;
-acceleration_deg_s2(atEnd) = 0;
+if isfinite(profile.MaxJerk_deg_s3)
+    acceleration_deg_s2(atEnd) = 0;
+else
+    acceleration_deg_s2(atEnd) = ...
+        profile.TangentialAcceleration_deg_s2;
+end
 end
 function [time_s, arcLength_deg, speed_deg_s, acceleration_deg_s2, ...
         jerk_deg_s3] = sampleProfiles( profiles, initialTime_s, waitDuration_s, sampleTime_s)

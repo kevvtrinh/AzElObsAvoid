@@ -123,10 +123,11 @@ end
 %% Section 6: Plot Diagnostics And Motion
 if jerkConfiguration.PlotOutputs
     for regionIndex = 1:regionCount
+        plotOptions = jerkConfiguration.PlotOptions;
+        plotOptions.Title = "Extreme visibility: " + ...
+            regionNames(regionIndex);
         regionResults{regionIndex}.PlotHandles = plotAzElMotion( ...
-            regionResults{regionIndex}, struct( ...
-            "FigureVisible", jerkConfiguration.FigureVisible, ...
-            "Title", "Extreme visibility: " + regionNames(regionIndex)));
+            regionResults{regionIndex}, plotOptions);
     end
 end
 

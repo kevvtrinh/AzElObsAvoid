@@ -11,6 +11,7 @@ function result = exampleAzElPlanning(exampleOverrides)
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       FigureVisible is "on" or "off"; PlotOutputs controls plotting;
+%       ShowAnimation and ShowKinematicPlot select returned figures;
 %       EnableJerkConstraint selects finite or unlimited jerk.
 %**************************************************************************
 % OUTPUTS
@@ -25,6 +26,7 @@ function result = exampleAzElPlanning(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 controls = struct("FigureVisible", "on", "PlotOutputs", true, ...
+    "ShowAnimation", true, "ShowKinematicPlot", true, ...
     "EnableJerkConstraint", true);
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
@@ -49,7 +51,8 @@ if ~isscalar(controls.FigureVisible) || ...
     error("exampleAzElPlanning:InvalidFigureVisible", ...
         "FigureVisible must be on or off.");
 end
-logicalNames = ["PlotOutputs" "EnableJerkConstraint"];
+logicalNames = ["PlotOutputs" "ShowAnimation" ...
+    "ShowKinematicPlot" "EnableJerkConstraint"];
 for nameIndex = 1:numel(logicalNames)
     value = controls.(logicalNames(nameIndex));
     if ~(islogical(value) && isscalar(value)) && ...
@@ -104,6 +107,8 @@ result.PlotHandles = struct();
 if controls.PlotOutputs
     result.PlotHandles = plotAzElMotion(result, struct( ...
         "FigureVisible", controls.FigureVisible, ...
+        "ShowAnimation", controls.ShowAnimation, ...
+        "ShowKinematics", controls.ShowKinematicPlot, ...
         "Title", "Minimal azimuth/elevation planning example"));
 end
 
