@@ -124,28 +124,43 @@ segmentBlockingSliceIndex = zeros( ...
     size(segmentOccupied), "uint32");
 
 packedObstacles = obstacleField.Obstacles;
-for segmentIndex = 1:pathPointCount - 1
-    segmentStartTime_s = time_s(segmentIndex);
-    segmentEndTime_s = time_s(segmentIndex + 1);
-    segmentStart_deg = position_deg(segmentIndex, :);
-    segmentEnd_deg = position_deg(segmentIndex + 1, :);
+isSameTimePath = pathPointCount > 1 && all(time_s == time_s(1));
+if isSameTimePath
     for obstacleIndex = 1:numel(packedObstacles)
         packedObstacle = packedObstacles(obstacleIndex);
-        [segmentIsOccupied, ~, blockingSliceIndex] = ...
+        [obstacleSegmentOccupied, ~, obstacleBlockingSliceIndex] = ...
             azElInternal.queryPackedMovingObstacle( ...
-            packedObstacle, [segmentStartTime_s; segmentEndTime_s], ...
-            [segmentStart_deg; segmentEnd_deg], ...
+            packedObstacle, time_s(1), position_deg, ...
             resolvedOptions.BoundaryIsOccupied, ...
             resolvedOptions.TimePaddingSamples);
-        if segmentIsOccupied
-            segmentOccupied(segmentIndex) = true;
-            segmentBlockingObstacleIndex(segmentIndex) = ...
-                uint32(obstacleIndex);
-            segmentBlockingSliceIndex(segmentIndex) = ...
-                uint32(blockingSliceIndex);
-        end
-        if segmentOccupied(segmentIndex)
-            break;
+        newlyBlocked = obstacleSegmentOccupied & ~segmentOccupied;
+        segmentOccupied = segmentOccupied | obstacleSegmentOccupied;
+        segmentBlockingObstacleIndex(newlyBlocked) = uint32(obstacleIndex);
+        segmentBlockingSliceIndex(newlyBlocked) = uint32( ...
+            obstacleBlockingSliceIndex(newlyBlocked));
+    end
+else
+    for segmentIndex = 1:pathPointCount - 1
+        segmentStartTime_s = time_s(segmentIndex);
+        segmentEndTime_s = time_s(segmentIndex + 1);
+        segmentStart_deg = position_deg(segmentIndex, :);
+        segmentEnd_deg = position_deg(segmentIndex + 1, :);
+        for obstacleIndex = 1:numel(packedObstacles)
+            packedObstacle = packedObstacles(obstacleIndex);
+            [segmentIsOccupied, ~, blockingSliceIndex] = ...
+                azElInternal.queryPackedMovingObstacle( ...
+                packedObstacle, [segmentStartTime_s; segmentEndTime_s], ...
+                [segmentStart_deg; segmentEnd_deg], ...
+                resolvedOptions.BoundaryIsOccupied, ...
+                resolvedOptions.TimePaddingSamples);
+            if segmentIsOccupied
+                segmentOccupied(segmentIndex) = true;
+                segmentBlockingObstacleIndex(segmentIndex) = ...
+                    uint32(obstacleIndex);
+                segmentBlockingSliceIndex(segmentIndex) = ...
+                    uint32(blockingSliceIndex);
+                break;
+            end
         end
     end
 end

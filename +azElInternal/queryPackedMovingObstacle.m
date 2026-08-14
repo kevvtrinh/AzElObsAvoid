@@ -9,8 +9,9 @@ function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 %       boundaryIsOccupied, timePaddingSamples)
 %**************************************************************************
 % PURPOSE
-%   - Check a point or one linear timed segment against a polygon whose
-%     corresponding vertices move linearly between source samples.
+%   - Check a point, one linear timed segment, or a same-time spatial path
+%     against a polygon whose corresponding vertices move linearly between
+%     source samples.
 %   - Treat topology changes as discrete source geometry and check both
 %     adjacent shapes over a crossing interval.
 %**************************************************************************
@@ -18,17 +19,19 @@ function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 %   - packedObstacle (scalar packed-obstacle struct)
 %   - time_s (scalar or two-element finite numeric vector)
 %       One query time or the endpoints of a nondecreasing time interval.
-%   - position_deg (1-by-2 or 2-by-2 finite numeric matrix)
-%       Point or linear segment in [azimuth elevation] order.
+%   - position_deg (N-by-2 finite numeric matrix)
+%       A scalar time accepts a point or a same-time spatial path. Two
+%       times require one linear segment with two position rows.
 %   - boundaryIsOccupied (logical scalar)
 %   - timePaddingSamples (nonnegative integer scalar)
 %       Neighboring source slices checked as additional static uncertainty.
 %**************************************************************************
 % OUTPUTS
-%   - isOccupied, isInsideBounds (logical scalars)
-%       Polygon and broad-phase occupancy over the complete query.
-%   - blockingSliceIndex (nonnegative integer scalar)
-%       First source interval or padded slice that blocks, or zero.
+%   - isOccupied, isInsideBounds (logical scalar or column)
+%       Point/segment results are scalar. A same-time N-point path returns
+%       N-1 results, one for each connecting segment.
+%   - blockingSliceIndex (nonnegative integer scalar or column)
+%       Source interval or padded slice that blocks each result, or zero.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and time is seconds.
@@ -44,11 +47,9 @@ validateattributes(timePaddingSamples, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 time_s = double(time_s(:));
 position_deg = double(position_deg);
+isStaticPath = isscalar(time_s) && size(position_deg, 1) > 1;
 if isscalar(time_s)
-    if size(position_deg, 1) ~= 1
-        error("queryPackedMovingObstacle:PointSizeMismatch", ...
-            "A scalar time requires one position row.");
-    end
+    % One time may describe a point or a complete static spatial path.
 elseif numel(time_s) == 2
     if size(position_deg, 1) ~= 2 || time_s(2) < time_s(1)
         error("queryPackedMovingObstacle:SegmentSizeMismatch", ...
@@ -62,14 +63,46 @@ boundaryIsOccupied = logical(boundaryIsOccupied);
 
 %% Section 2: Check A Point Or Timed Segment
 
-isOccupied = false;
-isInsideBounds = false;
-blockingSliceIndex = 0;
+if isStaticPath
+    resultCount = size(position_deg, 1) - 1;
+else
+    resultCount = 1;
+end
+isOccupied = false(resultCount, 1);
+isInsideBounds = false(resultCount, 1);
+blockingSliceIndex = zeros(resultCount, 1);
 if packedObstacle.SampleCount < 1
     return;
 end
 obstacleTime_s = double(packedObstacle.TimeSeconds(:));
 if time_s(end) < obstacleTime_s(1) || time_s(1) > obstacleTime_s(end)
+    return;
+end
+
+if isStaticPath
+    [edgeSets, sourceSliceIndex] = edgeSetsAtTime( ...
+        packedObstacle, time_s, timePaddingSamples);
+    for edgeSetIndex = 1:numel(edgeSets)
+        edgeSet = edgeSets{edgeSetIndex};
+        if isempty(edgeSet)
+            continue;
+        end
+        for segmentIndex = 1:resultCount
+            if isOccupied(segmentIndex)
+                continue;
+            end
+            [blocked, boundsHit] = staticSegmentHitsEdges( ...
+                position_deg(segmentIndex:segmentIndex + 1, :), ...
+                edgeSet, boundaryIsOccupied);
+            isInsideBounds(segmentIndex) = ...
+                isInsideBounds(segmentIndex) || boundsHit;
+            if blocked
+                isOccupied(segmentIndex) = true;
+                blockingSliceIndex(segmentIndex) = ...
+                    sourceSliceIndex(edgeSetIndex);
+            end
+        end
+    end
     return;
 end
 
@@ -597,11 +630,11 @@ if boundaryIsOccupied && ~isempty(contactParameter)
     return;
 end
 breakParameter = unique([0; contactParameter; 1]);
-testParameter = breakParameter;
-if numel(breakParameter) > 1
-    testParameter = unique([testParameter; ...
-        0.5 * (breakParameter(1:end - 1) + breakParameter(2:end))]);
-end
+% Boundary contacts partition the segment into intervals of constant
+% inside/outside state. One interior point per interval is therefore exact;
+% testing endpoints and contacts again only repeats a full polygon scan.
+testParameter = 0.5 * ( ...
+    breakParameter(1:end - 1) + breakParameter(2:end));
 for parameter = reshape(testParameter, 1, [])
     point_deg = segmentStart_deg + parameter * segmentDelta_deg;
     if pointOccupiedByEdges( ...
@@ -723,15 +756,20 @@ if ~isempty(candidateParameter)
         candidateEdgeVector_deg, 2) ./ lengthSquared_deg2;
     validContact = lengthSquared_deg2 > tolerance^2 & ...
         projection >= -tolerance & projection <= 1 + tolerance;
+    if boundaryIsOccupied && any(validContact)
+        isOccupied = true;
+        boundsHit = true;
+        return;
+    end
     eventParameter = [eventParameter; ...
         candidateParameter(validContact)];
 end
 eventParameter = unique(min(1, max(0, eventParameter)));
-testParameter = eventParameter;
-if numel(eventParameter) > 1
-    testParameter = unique([testParameter; 0.5 * ( ...
-        eventParameter(1:end - 1) + eventParameter(2:end))]);
-end
+% Moving boundary contacts partition time into intervals over which polygon
+% occupancy cannot change. Midpoints are sufficient and avoid rescanning the
+% complete polygon at the two endpoints and at every known contact.
+testParameter = 0.5 * ( ...
+    eventParameter(1:end - 1) + eventParameter(2:end));
 for parameter = reshape(testParameter, 1, [])
     point_deg = pointStart_deg + parameter * pointDelta_deg;
     edgeSet = firstEdgeSet + parameter * ...
