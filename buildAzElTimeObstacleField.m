@@ -120,6 +120,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
     sliceVertexCounts = zeros(sliceCount, 1);   % vertex rows written per slice
     sliceEdgeCounts = zeros(sliceCount, 1);     % edge rows written per slice
     sliceBounds_deg = nan(sliceCount, 4);
+    sliceTopologySignature = cell(sliceCount, 1);
 
     for sliceIndex = 1:sliceCount
         inputAzimuth_deg = double(obstacleData.az_deg{sliceIndex}(:));
@@ -163,6 +164,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         keptRingAzimuth_deg = cell(numel(ringFirstVertex), 1);
         keptRingElevation_deg = cell(numel(ringFirstVertex), 1);
         keptRingEdges_deg = cell(numel(ringFirstVertex), 1);
+        keptRingEdgePattern = cell(numel(ringFirstVertex), 1);
         keptRingCount = 0;        % rings that survived to be packed
         keptVertexTotal = 0;      % their combined vertex count
         keptEdgeTotal = 0;        % their combined edge count
@@ -204,6 +206,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
                 ringElevation_deg(edgeHasLength), ...
                 edgeEndAzimuth_deg(edgeHasLength), ...
                 edgeEndElevation_deg(edgeHasLength)];
+            keptRingEdgePattern{keptRingCount} = edgeHasLength;
             keptVertexTotal = keptVertexTotal + numel(ringAzimuth_deg);
             keptEdgeTotal = keptEdgeTotal + nnz(edgeHasLength);
         end
@@ -214,6 +217,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
             sliceAzimuthBuffer_deg{sliceIndex} = zeros(0, 1);
             sliceElevationBuffer_deg{sliceIndex} = zeros(0, 1);
             sliceEdgeBuffer_deg{sliceIndex} = zeros(0, 4);
+            sliceTopologySignature{sliceIndex} = cell(0, 1);
             if resolvedOptions.Verbose
                 fprintf( ...
                     "[az/el pack] slice %d/%d at t=%.3f s: " + ...
@@ -246,6 +250,12 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         sliceElevationBuffer_deg{sliceIndex} = sliceVertexElevation_deg;
         sliceEdgeBuffer_deg{sliceIndex} = ...
             vertcat(keptRingEdges_deg{1:keptRingCount});
+        % Exact edge-retention patterns prove that packed edge row i has
+        % the same vertex-pair identity in the next time slice. Matching
+        % only total edge counts would be unsafe when duplicate vertices
+        % occur at different positions in otherwise equal-sized rings.
+        sliceTopologySignature{sliceIndex} = ...
+            keptRingEdgePattern(1:keptRingCount);
         % Counts are taken from what was actually written, never predicted,
         % which is what keeps the offset tables below honest.
         sliceVertexCounts(sliceIndex) = numel(sliceVertexAzimuth_deg);
@@ -286,6 +296,14 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         packedEdges_deg = vertcat(sliceEdgeBuffer_deg{:});
     end
 
+    topologyMatchesNext = false(sliceCount, 1);
+    for sliceIndex = 1:sliceCount - 1
+        topologyMatchesNext(sliceIndex) = ...
+            isequal(sliceTopologySignature{sliceIndex}, ...
+            sliceTopologySignature{sliceIndex + 1}) && ...
+            sliceEdgeCounts(sliceIndex) == sliceEdgeCounts(sliceIndex + 1);
+    end
+
     % Uniform-grid metadata: when the time step is constant, a query time
     % maps to a slice index arithmetically instead of via search. The
     % relative tolerance absorbs floating-point noise across long missions
@@ -321,12 +339,13 @@ for obstacleIndex = 1:numel(canonicalObstacles)
     packedObstacle.EdgeEndAzimuthDeg = packedEdges_deg(:, 3);
     packedObstacle.EdgeEndElevationDeg = packedEdges_deg(:, 4);
     packedObstacle.BoundsDeg = sliceBounds_deg;
+    packedObstacle.TopologyMatchesNext = topologyMatchesNext;
     packedObstacle.SampleCount = sliceCount;
     packedObstacle.PackedVertexCount = numel(packedAzimuth_deg);
     packedObstacle.PackedEdgeCount = size(packedEdges_deg, 1);
     % Reported footprint: geometry, time, and uint64 offsets all use eight
     % bytes per value so collision boundaries retain source precision.
-    doubleStorageBytes = 8 * (numel(packedObstacle.TimeSeconds) + ...
+    numericStorageBytes = 8 * (numel(packedObstacle.TimeSeconds) + ...
         numel(packedObstacle.SliceOffsets) + ...
         numel(packedObstacle.EdgeOffsets) + ...
         numel(packedObstacle.AzimuthDeg) + ...
@@ -336,7 +355,9 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         numel(packedObstacle.EdgeEndAzimuthDeg) + ...
         numel(packedObstacle.EdgeEndElevationDeg) + ...
         numel(packedObstacle.BoundsDeg));
-    packedObstacle.EstimatedStorageBytes = doubleStorageBytes;
+    logicalStorageBytes = numel(packedObstacle.TopologyMatchesNext);
+    packedObstacle.EstimatedStorageBytes = ...
+        numericStorageBytes + logicalStorageBytes;
     packedObstacles(obstacleIndex) = packedObstacle;
     if droppedRegionCount > 0
         warning("buildAzElTimeObstacleField:RegionsDropped", ...
@@ -351,7 +372,7 @@ end
 % Format and Version allow planners and queries to reuse packed input.
 obstacleField = struct();
 obstacleField.Format = "AzElTimeObstacleField";
-obstacleField.Version = 4;
+obstacleField.Version = 5;
 obstacleField.ReferenceTime = referenceTime;
 obstacleField.Obstacles = packedObstacles;
 obstacleField.ObstacleCount = numel(packedObstacles);
@@ -403,6 +424,7 @@ packedObstacle = struct( ...
     "EdgeEndAzimuthDeg", zeros(0, 1), ...      % edge end vertices
     "EdgeEndElevationDeg", zeros(0, 1), ...
     "BoundsDeg", zeros(0, 4), ...       % [azMin azMax elMin elMax] rows
+    "TopologyMatchesNext", false(0, 1), ... % edge correspondence flag
     "SampleCount", 0, ...             % number of time slices
     "PackedVertexCount", 0, ...       % rows in AzimuthDeg/ElevationDeg
     "PackedEdgeCount", 0, ...         % rows in the edge arrays

@@ -418,6 +418,55 @@ testCase.verifyTrue(any(fullCrossing));
 testCase.verifyFalse(any(earlyClear));
 end
 
+function testCachedTopologyMatchesLegacyCompleteTraversal(testCase)
+outerAzimuth_deg = [-4; 4; 4; -4];
+outerElevation_deg = [-3; -3; 3; 3];
+innerAzimuth_deg = [-1; -1; 1; 1];
+innerElevation_deg = [-1; 1; 1; -1];
+firstAzimuth_deg = [outerAzimuth_deg; NaN; innerAzimuth_deg];
+firstElevation_deg = [outerElevation_deg; NaN; innerElevation_deg];
+lastAzimuth_deg = firstAzimuth_deg + 2;
+lastElevation_deg = firstElevation_deg + 0.5;
+obstacle = makeAzElObstacleData( ...
+    "moving ring", [0; 10], ...
+    {firstAzimuth_deg; lastAzimuth_deg}, ...
+    {firstElevation_deg; lastElevation_deg}, 0);
+blockedField = buildAzElTimeObstacleField(obstacle);
+
+legacyField = blockedField;
+legacyField.Obstacles = rmfield( ...
+    legacyField.Obstacles, "TopologyMatchesNext");
+
+queryTime_s = linspace(0, 10, 121).';
+queryAzimuth_deg = linspace(-6, 8, 121).';
+queryElevation_deg = 2.5 * sin(queryTime_s);
+blockedQuery = queryAzElTimeObstacle( ...
+    blockedField, queryAzimuth_deg, queryElevation_deg, queryTime_s);
+legacyQuery = queryAzElTimeObstacle( ...
+    legacyField, queryAzimuth_deg, queryElevation_deg, queryTime_s);
+testCase.verifyEqual(blockedQuery, legacyQuery);
+
+pathPosition_deg = [queryAzimuth_deg, queryElevation_deg];
+blockedPath = queryAzElTimedPathCollision( ...
+    blockedField, queryTime_s, pathPosition_deg);
+legacyPath = queryAzElTimedPathCollision( ...
+    legacyField, queryTime_s, pathPosition_deg);
+testCase.verifyEqual(blockedPath, legacyPath);
+testCase.verifyTrue(blockedField.Obstacles.TopologyMatchesNext(1));
+
+firstDuplicateAzimuth_deg = [0; 0; 2; 2];
+firstDuplicateElevation_deg = [0; 0; 0; 2];
+lastDuplicateAzimuth_deg = [0; 2; 2; 2];
+lastDuplicateElevation_deg = [0; 0; 2; 2];
+changedDuplicate = makeAzElObstacleData( ...
+    "changed duplicate", [0; 10], ...
+    {firstDuplicateAzimuth_deg; lastDuplicateAzimuth_deg}, ...
+    {firstDuplicateElevation_deg; lastDuplicateElevation_deg}, 0);
+changedDuplicateField = buildAzElTimeObstacleField(changedDuplicate);
+testCase.verifyFalse( ...
+    changedDuplicateField.Obstacles.TopologyMatchesNext(1));
+end
+
 function testAsynchronousObstacleTimesShareVisibilityGraph(testCase)
 firstObstacle = makeAzElObstacleData( ...
     "first", [0; 10], [-2; -1; -1; -2], ...

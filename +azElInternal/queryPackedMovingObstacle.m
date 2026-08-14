@@ -249,9 +249,30 @@ obstacleTime_s = double(packedObstacle.TimeSeconds(:));
 [lowerSliceIndex, upperSliceIndex, fraction] = ...
     bracketingSliceIndices(obstacleTime_s, queryTime_s);
 if lowerSliceIndex == upperSliceIndex
-    [vertices_deg, finiteVertex] = ...
-        packedSliceVertices(packedObstacle, lowerSliceIndex);
-    edgeSet = edgesFromSeparatedVertices(vertices_deg, finiteVertex);
+    edgeSet = packedSliceEdges(packedObstacle, lowerSliceIndex);
+    topologyMatches = true;
+    return;
+end
+
+% --- Pre-Vectorized Reference Form ------------------------------------
+% Corresponding edge rows are interpolated below as one matrix operation.
+% The scalar form is:
+%
+%   for edgeIndex = 1:size(firstEdgeSet, 1)
+%       edgeSet(edgeIndex, :) = (1 - fraction) * ...
+%           firstEdgeSet(edgeIndex, :) + fraction * ...
+%           lastEdgeSet(edgeIndex, :);
+%   end
+%
+% TopologyMatchesNext is true only when every ring retains the same exact
+% vertex-pair edge pattern, so this batching cannot pair unrelated edges.
+hasCachedTopology = isfield(packedObstacle, "TopologyMatchesNext") && ...
+    numel(packedObstacle.TopologyMatchesNext) >= lowerSliceIndex;
+if hasCachedTopology && ...
+        packedObstacle.TopologyMatchesNext(lowerSliceIndex)
+    firstEdgeSet = packedSliceEdges(packedObstacle, lowerSliceIndex);
+    lastEdgeSet = packedSliceEdges(packedObstacle, upperSliceIndex);
+    edgeSet = (1 - fraction) * firstEdgeSet + fraction * lastEdgeSet;
     topologyMatches = true;
     return;
 end
@@ -262,12 +283,11 @@ end
 topologyMatches = isequal(size(firstVertices_deg), ...
     size(lastVertices_deg)) && isequal(firstFinite, lastFinite);
 if topologyMatches
-    interpolatedVertices_deg = firstVertices_deg;
-    interpolatedVertices_deg(firstFinite, :) = ...
-        (1 - fraction) * firstVertices_deg(firstFinite, :) + ...
-        fraction * lastVertices_deg(lastFinite, :);
-    edgeSet = edgesFromSeparatedVertices( ...
-        interpolatedVertices_deg, firstFinite);
+    firstEdgeSet = edgesFromSeparatedVertices( ...
+        firstVertices_deg, firstFinite);
+    lastEdgeSet = edgesFromSeparatedVertices( ...
+        lastVertices_deg, lastFinite);
+    edgeSet = (1 - fraction) * firstEdgeSet + fraction * lastEdgeSet;
 else
     if fraction < 0.5
         edgeSet = edgesFromSeparatedVertices( ...
@@ -472,6 +492,7 @@ boundsHit = false;
 if isempty(edgeSet)
     return;
 end
+polygonEdgeSet = edgeSet;
 segmentStart_deg = segmentPosition_deg(1, :);
 segmentEnd_deg = segmentPosition_deg(2, :);
 segmentDelta_deg = segmentEnd_deg - segmentStart_deg;
@@ -499,9 +520,33 @@ end
 segmentLength_deg = norm(segmentDelta_deg);
 if segmentLength_deg <= tolerance_deg
     isOccupied = pointOccupiedByEdges( ...
-        segmentStart_deg, edgeSet, boundaryIsOccupied);
+        segmentStart_deg, polygonEdgeSet, boundaryIsOccupied);
     return;
 end
+
+% --- Pre-Vectorized Reference Form ------------------------------------
+% The mask below batches this scalar broad phase:
+%
+%   for edgeIndex = 1:size(edgeSet, 1)
+%       keep(edgeIndex) = edgeMaxAz >= segmentMinAz && ...
+%           edgeMinAz <= segmentMaxAz && ...
+%           edgeMaxEl >= segmentMinEl && ...
+%           edgeMinEl <= segmentMaxEl;
+%   end
+%
+% A rejected edge has disjoint closed bounding boxes and therefore cannot
+% contribute a boundary-contact parameter. Occupancy between contacts is
+% still tested against polygonEdgeSet, the complete original polygon.
+edgeMinimum_deg = min(edgeStart_deg, edgeEnd_deg);
+edgeMaximum_deg = max(edgeStart_deg, edgeEnd_deg);
+possibleContact = ...
+    edgeMaximum_deg(:, 1) >= segmentBounds_deg(1) - tolerance_deg & ...
+    edgeMinimum_deg(:, 1) <= segmentBounds_deg(2) + tolerance_deg & ...
+    edgeMaximum_deg(:, 2) >= segmentBounds_deg(3) - tolerance_deg & ...
+    edgeMinimum_deg(:, 2) <= segmentBounds_deg(4) + tolerance_deg;
+edgeStart_deg = edgeStart_deg(possibleContact, :);
+edgeEnd_deg = edgeEnd_deg(possibleContact, :);
+edgeDelta_deg = edgeDelta_deg(possibleContact, :);
 offset_deg = edgeStart_deg - segmentStart_deg;
 denominator_deg2 = segmentDelta_deg(1) .* edgeDelta_deg(:, 2) - ...
     segmentDelta_deg(2) .* edgeDelta_deg(:, 1);
@@ -559,7 +604,8 @@ if numel(breakParameter) > 1
 end
 for parameter = reshape(testParameter, 1, [])
     point_deg = segmentStart_deg + parameter * segmentDelta_deg;
-    if pointOccupiedByEdges(point_deg, edgeSet, boundaryIsOccupied)
+    if pointOccupiedByEdges( ...
+            point_deg, polygonEdgeSet, boundaryIsOccupied)
         isOccupied = true;
         return;
     end
@@ -727,6 +773,36 @@ function isOccupied = pointOccupiedByEdges( ...
 edgeStart_deg = edgeSet(:, 1:2);
 edgeEnd_deg = edgeSet(:, 3:4);
 edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
+
+% --- Pre-Vectorized Reference Form ------------------------------------
+% The relevant-edge mask is the batched equivalent of:
+%
+%   for edgeIndex = 1:size(edgeSet, 1)
+%       keep(edgeIndex) = edgeMaxAz >= pointAz && ...
+%           edgeMinEl <= pointEl && edgeMaxEl >= pointEl;
+%   end
+%
+% Odd-even occupancy casts a ray toward positive azimuth. An edge wholly
+% left of the point or wholly above/below that ray cannot cross it or hold
+% the point on its boundary. The tolerance only enlarges the retained set.
+coordinateScale_deg = max(1, max(abs(edgeSet), [], "all"));
+broadPhaseTolerance_deg = 1e-10 * coordinateScale_deg;
+edgeMinimum_deg = min(edgeStart_deg, edgeEnd_deg);
+edgeMaximum_deg = max(edgeStart_deg, edgeEnd_deg);
+edgeIsRelevant = ...
+    edgeMaximum_deg(:, 1) >= point_deg(1) - ...
+    broadPhaseTolerance_deg & ...
+    edgeMinimum_deg(:, 2) <= point_deg(2) + ...
+    broadPhaseTolerance_deg & ...
+    edgeMaximum_deg(:, 2) >= point_deg(2) - ...
+    broadPhaseTolerance_deg;
+edgeStart_deg = edgeStart_deg(edgeIsRelevant, :);
+edgeEnd_deg = edgeEnd_deg(edgeIsRelevant, :);
+edgeDelta_deg = edgeDelta_deg(edgeIsRelevant, :);
+if isempty(edgeStart_deg)
+    isOccupied = false;
+    return;
+end
 startsAbove = edgeStart_deg(:, 2) > point_deg(2);
 endsAbove = edgeEnd_deg(:, 2) > point_deg(2);
 verticalStraddle = startsAbove ~= endsAbove;
