@@ -27,6 +27,7 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 %**************************************************************************
 % UNITS
 %   - Polygon coordinates and safetyMargin_deg are degrees.
+%**************************************************************************
 
 %% Section 1: Resolve Options & Normalize Obstacles
 
@@ -53,7 +54,12 @@ verbose = false;
 if isfield(optionOverrides, "Verbose") && ...
         ~isempty(optionOverrides.Verbose)
     validateattributes(optionOverrides.Verbose, ...
-        {'logical','numeric'}, {'scalar'});
+        {'logical','numeric'}, {'real','finite','scalar'});
+    if isnumeric(optionOverrides.Verbose) && ...
+            ~any(optionOverrides.Verbose == [0 1])
+        error("inflateAzElObstacleData:InvalidVerbose", ...
+            "Verbose must be scalar logical or binary numeric.");
+    end
     verbose = logical(optionOverrides.Verbose);
 end
 inflatedAzElData = combineAzElObstacles(azElData);
@@ -185,6 +191,7 @@ function [protectedAzimuth_deg, protectedElevation_deg] = ...
 %**************************************************************************
 % UNITS
 %   - Coordinates and safetyMargin_deg are degrees.
+%**************************************************************************
 
 validateattributes(azimuth_deg, {'numeric'}, {'real', 'column'});
 validateattributes(elevation_deg, {'numeric'}, {'real', 'column'});

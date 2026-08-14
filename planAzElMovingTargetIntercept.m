@@ -38,8 +38,9 @@ function result = planAzElMovingTargetIntercept( ...
 %     Earliest mode numerically scans arbitrary sampled paths at the target
 %     knots and at no more than InitialSearchStep_s between knots, then
 %     bisects the first detected feasibility transition. EarliestCertified
-%     is true only for the legacy receding-ray model; arbitrary-path results
-%     report EarliestNumericallyResolved instead. A stationary initial
+%     is true only for the constant-velocity receding-ray model;
+%     arbitrary-path results report EarliestNumericallyResolved instead. A
+%     stationary initial
 %     state is required because fixed-arrival slack may use an initial hold.
 %     Velocity matching requires the instantaneous target velocity to be
 %     tangent to the direct obstacle-free route; use false for a
@@ -55,6 +56,7 @@ function result = planAzElMovingTargetIntercept( ...
 %**************************************************************************
 % UNITS
 %   - Angles are degrees; time is seconds; velocity is deg/s.
+%**************************************************************************
 
 %% Section 1: Resolve Options & Validate Inputs
 
@@ -258,7 +260,7 @@ unknownFields = setdiff( ...
     fieldnames(overrides), fieldnames(defaultOptions), "stable");
 if ~isempty(unknownFields)
     warning("planAzElMovingTargetIntercept:UnknownOptions", ...
-        "Ignoring unknown option fields: %s.", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
         strjoin(string(unknownFields), ", "));
     overrides = rmfield(overrides, unknownFields);
 end
@@ -291,7 +293,12 @@ validateattributes(options.MaximumSearchIterations, {'numeric'}, ...
 validateattributes(options.TargetTrackSampleCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', '>=', 2});
 validateattributes(options.MatchTargetVelocity, ...
-    {'logical', 'numeric'}, {'scalar'});
+    {'logical', 'numeric'}, {'real', 'finite', 'scalar'});
+if isnumeric(options.MatchTargetVelocity) && ...
+        ~any(options.MatchTargetVelocity == [0 1])
+    error("planAzElMovingTargetIntercept:InvalidMatchTargetVelocity", ...
+        "MatchTargetVelocity must be scalar logical or binary numeric.");
+end
 options.MatchTargetVelocity = logical(options.MatchTargetVelocity);
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planAzElMovingTargetIntercept:InvalidPlannerOptions", ...
@@ -529,7 +536,7 @@ function certifiable = targetHasCertifiedRecedingRay( ...
 %   certifiable = targetHasCertifiedRecedingRay(initialState, targetMotion)
 %**************************************************************************
 % PURPOSE
-%   - Recognize the legacy monotone geometry proved by bisection.
+%   - Recognize the constant-velocity monotone geometry proved by bisection.
 %**************************************************************************
 % INPUTS
 %   - initialState (normalized scalar struct)

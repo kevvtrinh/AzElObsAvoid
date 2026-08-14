@@ -65,7 +65,12 @@ if ~isscalar(motionMode) || ...
         "MotionMode must be static or movingDeforming.");
 end
 validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'scalar'});
+    {'logical','numeric'}, {'real','finite','scalar'});
+if isnumeric(resolvedOptions.Verbose) && ...
+        ~any(resolvedOptions.Verbose == [0 1])
+    error("createContiguousUSObstacle:InvalidVerbose", ...
+        "Verbose must be scalar logical or binary numeric.");
+end
 verbose = logical(resolvedOptions.Verbose);
 resolvedOptions.Verbose = verbose;
 

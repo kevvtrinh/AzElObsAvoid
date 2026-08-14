@@ -39,6 +39,7 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates are degrees and time_s is seconds.
+%**************************************************************************
 
 if nargin < 5 || isempty(safetyMargin_deg)
     safetyMargin_deg = 0;

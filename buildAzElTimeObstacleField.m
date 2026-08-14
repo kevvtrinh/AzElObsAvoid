@@ -29,6 +29,7 @@ function obstacleField = buildAzElTimeObstacleField( ...
 % UNITS
 %   - Input boundary fields az_deg and el_deg are degrees.
 %   - Input time_s and packed TimeSeconds values are seconds.
+%**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
 
@@ -48,7 +49,7 @@ unknownOptionFields = setdiff( ...
     fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
 if ~isempty(unknownOptionFields)
     warning("buildAzElTimeObstacleField:UnknownOptions", ...
-        "Ignoring unknown option fields: %s.", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
         strjoin(string(unknownOptionFields), ", "));
     optionOverrides = rmfield(optionOverrides, unknownOptionFields);
 end
@@ -61,7 +62,12 @@ for optionIndex = 1:numel(providedOptionFields)
     end
 end
 validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'scalar'});
+    {'logical','numeric'}, {'real','finite','scalar'});
+if isnumeric(resolvedOptions.Verbose) && ...
+        ~any(resolvedOptions.Verbose == [0 1])
+    error("buildAzElTimeObstacleField:InvalidVerbose", ...
+        "Verbose must be scalar logical or binary numeric.");
+end
 resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
 
 % The reference epoch is the one input still checked here, because
@@ -405,6 +411,7 @@ function packedObstacle = emptyPackedObstacle()
 %**************************************************************************
 % UNITS
 %   - Unit-bearing fields identify seconds or degrees in their names.
+%**************************************************************************
 %
 % Serves both as the preallocation template (fixing field order for
 % struct-array assignment) and as documentation of every field. Offset
@@ -448,6 +455,7 @@ function options = defaultAzElTimeObstacleFieldOptions()
 %**************************************************************************
 % UNITS
 %   - ReferenceTime is a UTC datetime.
+%**************************************************************************
 options = struct( ...
     "ReferenceTime", [], ...
     "Verbose", false);

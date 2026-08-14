@@ -63,7 +63,12 @@ for optionIndex = 1:numel(optionNames)
     end
 end
 validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'scalar'});
+    {'logical','numeric'}, {'real','finite','scalar'});
+if isnumeric(resolvedOptions.Verbose) && ...
+        ~any(resolvedOptions.Verbose == [0 1])
+    error("createGeographicRegionObstacle:InvalidVerbose", ...
+        "Verbose must be scalar logical or binary numeric.");
+end
 verbose = logical(resolvedOptions.Verbose);
 resolvedOptions.Verbose = verbose;
 validateattributes(time_s, {'numeric'}, ...

@@ -1416,12 +1416,13 @@ if ~isstruct(overrides) || ~isscalar(overrides)
     error("planAzElMotion:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
 
-legacyMarginNames = intersect(fieldnames(overrides), ...
+movedMarginNames = intersect(fieldnames(overrides), ...
     {'SafetyMarginDeg', 'RoundingClearance_deg'}, "stable");
-if ~isempty(legacyMarginNames)
+if ~isempty(movedMarginNames)
     error("planAzElMotion:SafetyMarginMoved", ...
         "Safety margins belong to obstacle data. Remove %s and pass " + ...
-        "each margin to makeAzElObstacleData.", strjoin(string(legacyMarginNames), ", "));
+        "each margin to makeAzElObstacleData.", ...
+        strjoin(string(movedMarginNames), ", "));
 end
 
 options = defaults;

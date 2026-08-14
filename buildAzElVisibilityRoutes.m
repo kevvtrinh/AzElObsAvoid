@@ -63,7 +63,8 @@ end
 unknownFields = setdiff(fieldnames(optionOverrides), fieldnames(defaults), "stable");
 if ~isempty(unknownFields)
     warning("buildAzElVisibilityRoutes:UnknownOptions", ...
-        "Ignoring unknown fields: %s.", strjoin(string(unknownFields), ", "));
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
+        strjoin(string(unknownFields), ", "));
     optionOverrides = rmfield(optionOverrides, unknownFields);
 end
 options = defaults;
@@ -85,9 +86,20 @@ validateattributes(options.RequiredSnapshotTimes_s, {'numeric'}, ...
     {'real', 'finite', 'vector'});
 options.RequiredSnapshotTimes_s = ...
     unique(double(options.RequiredSnapshotTimes_s(:)));
-validateattributes(options.DetectSnapshotEvents, ...
-    {'logical', 'numeric'}, {'scalar'});
-options.DetectSnapshotEvents = logical(options.DetectSnapshotEvents);
+logicalOptionNames = ["DetectSnapshotEvents" "Verbose"];
+for logicalOptionIndex = 1:numel(logicalOptionNames)
+    optionName = logicalOptionNames(logicalOptionIndex);
+    optionValue = options.(optionName);
+    isLogicalScalar = islogical(optionValue) && isscalar(optionValue);
+    isBinaryNumericScalar = isnumeric(optionValue) && ...
+        isreal(optionValue) && isfinite(optionValue) && ...
+        isscalar(optionValue) && any(optionValue == [0 1]);
+    if ~(isLogicalScalar || isBinaryNumericScalar)
+        error("buildAzElVisibilityRoutes:InvalidLogicalOption", ...
+            "%s must be scalar logical or binary numeric.", optionName);
+    end
+    options.(optionName) = logical(optionValue);
+end
 validateattributes(options.SnapshotProbeEdgeCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
 validateattributes(options.SnapshotCountChangeThreshold, {'numeric'}, ...
@@ -98,6 +110,17 @@ validateattributes(options.SnapshotBoundaryMotionThreshold_deg, ...
     {'numeric'}, {'real', 'scalar', 'nonnegative'});
 validateattributes(options.CandidateClearance_deg, {'numeric'}, ...
     {'scalar','real','finite','nonnegative'});
+polygonCandidateMode = lower(string(options.PolygonCandidateMode));
+if ~isscalar(polygonCandidateMode) || ~any( ...
+        polygonCandidateMode == ["adaptive" "allcorners" "extreme"])
+    error("buildAzElVisibilityRoutes:InvalidPolygonCandidateMode", ...
+        "PolygonCandidateMode must be adaptive, allCorners, or extreme.");
+end
+if polygonCandidateMode == "allcorners"
+    options.PolygonCandidateMode = "allCorners";
+else
+    options.PolygonCandidateMode = polygonCandidateMode;
+end
 validateattributes(options.ExtremeDirectionCount, {'numeric'}, ...
     {'scalar','integer','>=',4});
 validateattributes(options.MaximumTangenciesPerReference, {'numeric'}, ...
@@ -108,7 +131,6 @@ validateattributes(options.VisibilitySampleStep_deg, {'numeric'}, ...
     {'scalar','real','finite','positive'});
 validateattributes(options.ConnectivityPathCostChangeThreshold, ...
     {'numeric'}, {'scalar', 'real', 'finite', '>=', 0, '<=', 1});
-options.Verbose = logical(options.Verbose);
 options.UseParallel = normalizeParallelMode(options.UseParallel);
 fieldIsPacked = isstruct(obstacleField) && isscalar(obstacleField) && ...
     isfield(obstacleField, "Format") && ...
@@ -462,6 +484,10 @@ rotationThresholdCrossed = false(sampleCount, 1);
 motionThresholdCrossed = false(sampleCount, 1);
 eventSampleIndex = zeros(0, 1);
 
+% --- Measure Every Available Source Slice -------------------------------
+% These descriptors are deliberately cheaper than constructing a
+% visibility graph. They identify intervals worth refining without making
+% the planner solve the full graph at every source timestamp.
 for availableIndex = 1:sampleCount
     sampleIndex = availableSampleIndex(availableIndex);
     vertexCount(availableIndex) = double( ...
@@ -537,6 +563,9 @@ for availableIndex = 1:sampleCount
     end
 end
 
+% --- Detect Changes Between Adjacent Source Slices ----------------------
+% An interval becomes an event when topology, size, orientation, or bulk
+% motion changes enough to alter the useful visibility connections.
 if options.DetectSnapshotEvents
     for availableIndex = 2:sampleCount
         previousSampleIndex = availableSampleIndex(availableIndex - 1);
@@ -586,6 +615,8 @@ if options.DetectSnapshotEvents
         end
     end
 end
+
+% --- Publish Event Samples And Their Evidence ---------------------------
 eventSampleIndex = unique(eventSampleIndex);
 diagnostics = struct( ...
     "SampleIndex", availableSampleIndex(:), ...

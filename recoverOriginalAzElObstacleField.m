@@ -24,6 +24,7 @@ function [originalObstacleField, safetyMargins_deg, hasStoredOriginal] = ...
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Stored Geometry Provenance
 

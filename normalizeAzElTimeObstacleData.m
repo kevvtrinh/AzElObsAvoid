@@ -19,6 +19,7 @@ function azElData = normalizeAzElTimeObstacleData(inputData)
 %**************************************************************************
 % UNITS
 %   - az_deg and el_deg are degrees; time_s is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Structure & Sample Time
 
@@ -29,7 +30,7 @@ if hasRequiredStructure
 end
 if ~hasRequiredStructure
     error("normalizeAzElTimeObstacleData:InvalidInput", ...
-        "azElData must be a scalar calculateAreaTargetAzEl result with " + ...
+        "azElData must be a scalar canonical obstacle record with " + ...
         "targetName, time_s, az_deg, el_deg, and status.");
 end
 
@@ -203,6 +204,8 @@ azElData = struct( ...
     "status", statusBySample);
 end
 
+%% Section 5: Local Functions
+
 function [azimuth_deg, elevation_deg, removedRegionCount] = ...
         normalizeBoundarySliceTopology(azimuth_deg, elevation_deg, ...
         sampleIndex, boundaryRole)
@@ -233,6 +236,7 @@ function [azimuth_deg, elevation_deg, removedRegionCount] = ...
 %**************************************************************************
 % UNITS
 %   - azimuth_deg and elevation_deg are degrees.
+%**************************************************************************
 
 %% Section 1: Require Paired Coordinate Separators
 

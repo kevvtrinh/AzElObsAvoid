@@ -196,7 +196,8 @@ end
 unknown = setdiff(fieldnames(overrides), fieldnames(defaults), "stable");
 if ~isempty(unknown)
     warning("plotAzElMotion:UnknownOptions", ...
-        "Ignored unknown fields: %s.", strjoin(string(unknown), ", "));
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
+        strjoin(string(unknown), ", "));
     overrides = rmfield(overrides, unknown);
 end
 options = defaults;

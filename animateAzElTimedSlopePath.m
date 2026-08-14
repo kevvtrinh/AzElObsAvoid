@@ -16,7 +16,7 @@ function animation = animateAzElTimedSlopePath( ...
 %**************************************************************************
 % INPUTS
 %   - timedSlopePath (scalar struct)
-%       Successful retimeAzElVisibilityPath output.
+%       Successful planAzElMotion timedSlopePath output.
 %   - obstacleField (scalar struct, optional)
 %       Packed AzElTimeObstacleField. Pass [] to animate only the path.
 %   - optionOverrides (scalar struct, optional)
@@ -30,6 +30,7 @@ function animation = animateAzElTimedSlopePath( ...
 %**************************************************************************
 % UNITS
 %   - Azimuth/elevation are degrees, time is seconds, and velocity is deg/s.
+%**************************************************************************
 
 %% Section 1: Resolve Options & Validate The Timed Path
 
@@ -61,19 +62,11 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("animateAzElTimedSlopePath:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
-legacyGeometryFields = intersect(fieldnames(optionOverrides), ...
-    {'SafetyMarginDeg', 'OriginalObstacleField'}, "stable");
-if ~isempty(legacyGeometryFields)
-    error("animateAzElTimedSlopePath:ObstacleGeometryMoved", ...
-        "Original and protected geometry are recovered from the packed " + ...
-        "field. Remove legacy options: %s.", ...
-        strjoin(string(legacyGeometryFields), ", "));
-end
 unknownFields = setdiff( ...
     fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
 if ~isempty(unknownFields)
     warning("animateAzElTimedSlopePath:UnknownOptions", ...
-        "Ignoring unknown option fields: %s.", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
         strjoin(string(unknownFields), ", "));
     optionOverrides = rmfield(optionOverrides, unknownFields);
 end

@@ -21,6 +21,7 @@ function azElObstacles = combineAzElObstacles(varargin)
 %**************************************************************************
 % UNITS
 %   - Canonical az_deg and el_deg fields are degrees; time_s is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Inputs
 
@@ -100,6 +101,8 @@ for obstacleIndex = 1:numel(obstacleItems)
 end
 azElObstacles = vertcat(normalizedObstacles{:});
 end
+
+%% Section 4: Local Functions
 
 function azElObstacles = emptyCanonicalAzElObstacles()
 %% Section 0: Header & Readme
