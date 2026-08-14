@@ -17,10 +17,15 @@ function tests = testMinimalAzElWorkflow
 % UNITS
 %   - Position is degrees and time is seconds.
 %**************************************************************************
+
+%% Section 1: Create The Function-Test Suite
+
 root = fileparts(fileparts(mfilename("fullpath")));
 addpath(root, fullfile(root, "examples"));
 tests = functiontests(localfunctions);
 end
+
+%% Section 2: Local Test Cases
 
 function testDenseObstacleIsReducedOnlyForSearch(testCase)
 result = exampleAzElPlanning(struct("FigureVisible", "off", ...
@@ -121,6 +126,86 @@ limits = struct("maxVelocity_deg_s", [2 2], ...
 result = planAzElMotion(obstacle, initialState, goalState, limits);
 testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+end
+
+function testTwoVertexRegionsWarnAndAreRemoved(testCase)
+validAzimuth_deg = [-2; 0; 0; -2];
+validElevation_deg = [-1; -1; 1; 1];
+twoVertexAzimuth_deg = [5; 6];
+twoVertexElevation_deg = [0; 0];
+azimuth_deg = [validAzimuth_deg; NaN; twoVertexAzimuth_deg];
+elevation_deg = [validElevation_deg; NaN; twoVertexElevation_deg];
+
+lastwarn("");
+obstacle = makeAzElObstacleData( ...
+    "mixed regions", [0; 10], azimuth_deg, elevation_deg, 0);
+[warningMessage, warningIdentifier] = lastwarn;
+testCase.verifyEqual(string(warningIdentifier), ...
+    "normalizeAzElTimeObstacleData:RemovedTwoVertexRegions");
+testCase.verifyTrue(contains(warningMessage, "two-vertex regions"));
+testCase.verifyEqual(nnz(isfinite(obstacle.az_deg{1})), 4);
+testCase.verifyEqual(nnz(isfinite(obstacle.originalAz_deg{1})), 4);
+
+obstacleField = buildAzElTimeObstacleField(obstacle);
+testCase.verifyTrue(queryAzElTimeObstacle(obstacleField, -1, 0, 5));
+testCase.verifyFalse(queryAzElTimeObstacle(obstacleField, 5.5, 0, 5));
+
+lastwarn("");
+emptyObstacle = makeAzElObstacleData( ...
+    "only two vertices", [0; 10], ...
+    twoVertexAzimuth_deg, twoVertexElevation_deg, 0);
+[~, warningIdentifier] = lastwarn;
+testCase.verifyEqual(string(warningIdentifier), ...
+    "normalizeAzElTimeObstacleData:RemovedTwoVertexRegions");
+testCase.verifyEmpty(emptyObstacle.az_deg{1});
+testCase.verifyEmpty(emptyObstacle.el_deg{1});
+end
+
+function testFourCirclesAccelerateDecelerateAndTouch(testCase)
+result = exampleFourAcceleratingCircles(struct( ...
+    "FigureVisible", "off", ...
+    "PlotOutputs", false, ...
+    "EnableJerkConstraint", true, ...
+    "Verbose", false));
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.ExampleValidation.Passed, ...
+    result.ExampleValidation.Message);
+testCase.verifyTrue(result.CircleMotionValidation.Passed);
+testCase.verifyEqual(numel(result.originalAzElData), 4);
+
+centerAzimuth_deg = result.circleCenterAzimuth_deg;
+centerElevation_deg = result.circleCenterElevation_deg;
+diameter_deg = 2 * result.circleRadius_deg;
+testCase.verifyEqual(diff(centerAzimuth_deg([1 2])), ...
+    diameter_deg, "AbsTol", 1e-12);
+testCase.verifyEqual(diff(centerAzimuth_deg([3 4])), ...
+    diameter_deg, "AbsTol", 1e-12);
+
+[~, midpointIndex] = min(abs(result.obstacleTime_s - ...
+    0.5 * result.obstacleMotionDuration_s));
+midpointStep_deg = hypot(diff(centerAzimuth_deg), ...
+    diff(centerElevation_deg(midpointIndex, :)));
+testCase.verifyEqual(midpointStep_deg, ...
+    repmat(diameter_deg, 1, 3), "AbsTol", 1e-12);
+
+[~, motionEndIndex] = min(abs(result.obstacleTime_s - ...
+    result.obstacleMotionDuration_s));
+endpointRows = [1 motionEndIndex];
+testCase.verifyEqual(result.circleCenterVelocity_deg_s( ...
+    endpointRows, :), zeros(2, 4), "AbsTol", 1e-12);
+testCase.verifyEqual(result.circleCenterAcceleration_deg_s2( ...
+    endpointRows, :), zeros(2, 4), "AbsTol", 1e-12);
+testCase.verifyGreaterThan(max( ...
+    result.circleCenterVelocity_deg_s(:, 1:2), [], "all"), 0);
+testCase.verifyLessThan(min( ...
+    result.circleCenterVelocity_deg_s(:, 3:4), [], "all"), 0);
+
+collision = queryAzElTimedPathCollision(result.obstacleField, ...
+    result.timedSlopePath.time_s, result.timedSlopePath.position_deg);
+testCase.verifyFalse(any(collision));
+testCase.verifyTrue(result.timedSlopePath.ConstraintDiagnostics. ...
+    FiniteJerkCertified);
 end
 
 function testBlockedEndpointReturnsStableFailure(testCase)

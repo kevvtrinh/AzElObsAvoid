@@ -27,6 +27,7 @@ function result = exampleUSOutlineExtremeVisibility(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -47,6 +48,7 @@ end
     [12 12]);
 
 %% Section 2: Create Obstacles
+
 missionEndTime_s = 120;
 regionNames = ["Hawaii" "Croatia" "Philippines"];
 regionCount = numel(regionNames);
@@ -64,12 +66,14 @@ for regionIndex = 1:regionCount
 end
 
 %% Section 3: Create Planner Inputs
+
 limits = struct( ...
     "maxVelocity_deg_s", [8 8], ...
     "maxAcceleration_deg_s2", [3 3], ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 regionResults = cell(regionCount, 1);
 for regionIndex = 1:regionCount
     scenario = regionScenarios{regionIndex};
@@ -86,6 +90,7 @@ for regionIndex = 1:regionCount
 end
 
 %% Section 5: Validate Result
+
 regionPassed = false(regionCount, 1);
 regionArrivalTime_s = nan(regionCount, 1);
 regionRouteLength_deg = nan(regionCount, 1);
@@ -121,6 +126,7 @@ for regionIndex = 1:regionCount
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
 if jerkConfiguration.PlotOutputs
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
@@ -132,6 +138,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result = regionResults{end};
 regionSequencePassed = all(regionPassed);
 result.RegionSequenceResults = regionResults;

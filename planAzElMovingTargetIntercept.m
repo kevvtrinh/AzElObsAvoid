@@ -56,6 +56,8 @@ function result = planAzElMovingTargetIntercept( ...
 % UNITS
 %   - Angles are degrees; time is seconds; velocity is deg/s.
 
+%% Section 1: Resolve Options & Validate Inputs
+
 defaultOptions = struct( ...
     "InterceptMode", "earliestArrival", ...
     "SpecifiedInterceptTime_s", NaN, ...
@@ -89,7 +91,8 @@ if targetMotion.ModelType == "sampledTrajectory" && ...
         "target is defined throughout the planned intercept.");
 end
 
-%% Section 1: Resolve The Concrete Intercept State
+%% Section 2: Resolve The Concrete Intercept State
+
 interceptMode = lower(string(options.InterceptMode));
 searchDiagnostics = emptyInterceptSearchDiagnostics();
 if interceptMode == "specifiedtime"
@@ -124,7 +127,8 @@ goalState = struct( ...
     "velocity_deg_s", goalVelocity_deg_s, ...
     "acceleration_deg_s2", [0 0]);
 
-%% Section 2: Run The Maintained Obstacle-Free Planner
+%% Section 3: Run The Maintained Obstacle-Free Planner
+
 plannerOptions = options.PlannerOptions;
 plannerOptions.GoalTimeMode = "fixedArrival";
 result = planAzElMotion([], initialState, goalState, limits, ...
@@ -138,7 +142,8 @@ if plannerSucceeded
 end
 trackPosition_deg = evaluateTargetMotion(targetMotion, trackTime_s);
 
-%% Section 3: Validate The Intercept Contract
+%% Section 4: Validate The Intercept Contract
+
 targetPositionAtIntercept_deg = interceptPosition_deg;
 positionError_deg = Inf;
 targetVelocityError_deg_s = Inf;
@@ -206,7 +211,8 @@ if ~interceptPassed
     result.Message = string(result.Message) + " " + validationMessage;
 end
 
-%% Section 4: Assemble Intercept Diagnostics
+%% Section 5: Assemble Intercept Diagnostics
+
 result.InterceptMode = options.InterceptMode;
 result.TargetMotion = targetMotion;
 result.RequestedInterceptTime_s = options.SpecifiedInterceptTime_s;
@@ -221,9 +227,28 @@ result.TargetTrackPosition_deg = trackPosition_deg;
 result.InterceptOptions = options;
 end
 
+%% Section 6: Local Functions
+
 function options = resolveInterceptOptions(defaultOptions, overrides)
 %% Section 0: Header & Readme
-% Resolve and validate public intercept controls.
+% SYNTAX
+%   options = resolveInterceptOptions(defaultOptions, overrides)
+%**************************************************************************
+% PURPOSE
+%   - Merge and validate public moving-target intercept controls.
+%**************************************************************************
+% INPUTS
+%   - defaultOptions (scalar struct)
+%   - overrides (scalar struct)
+%       Partial user overrides; unknown fields are ignored with one warning.
+%**************************************************************************
+% OUTPUTS
+%   - options (scalar struct)
+%       Fully resolved and normalized intercept controls.
+%**************************************************************************
+% UNITS
+%   - Time-valued fields are seconds; counts are dimensionless.
+%**************************************************************************
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("planAzElMovingTargetIntercept:InvalidOptions", ...
         "options must be a scalar struct.");
@@ -275,7 +300,23 @@ end
 
 function initialState = validateInterceptInitialState(initialState)
 %% Section 0: Header & Readme
-% Validate the state fields needed before the maintained planner runs.
+% SYNTAX
+%   initialState = validateInterceptInitialState(initialState)
+%**************************************************************************
+% PURPOSE
+%   - Validate and normalize the state required by intercept planning.
+%**************************************************************************
+% INPUTS
+%   - initialState (scalar struct)
+%       Requires scalar time_s and two-element position_deg.
+%**************************************************************************
+% OUTPUTS
+%   - initialState (scalar struct)
+%       Input record with normalized double time and row position.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 if ~isstruct(initialState) || ~isscalar(initialState) || ...
         ~all(isfield(initialState, ["time_s" "position_deg"]))
     error("planAzElMovingTargetIntercept:InvalidInitialState", ...
@@ -666,7 +707,22 @@ end
 
 function validateEarliestInitialVelocity(initialState)
 %% Section 0: Header & Readme
-% Expose the current fixed-arrival retimer's scheduling limitation early.
+% SYNTAX
+%   validateEarliestInitialVelocity(initialState)
+%**************************************************************************
+% PURPOSE
+%   - Reject unsupported moving initial states before earliest search.
+%**************************************************************************
+% INPUTS
+%   - initialState (scalar struct)
+%       Optional velocity_deg_s must be zero.
+%**************************************************************************
+% OUTPUTS
+%   - None. Invalid states throw an identified contract error.
+%**************************************************************************
+% UNITS
+%   - Velocity is degrees per second.
+%**************************************************************************
 initialVelocity_deg_s = [0 0];
 if isfield(initialState, "velocity_deg_s") && ...
         ~isempty(initialState.velocity_deg_s)
@@ -686,6 +742,25 @@ function validateVelocityMatchGeometry( ...
         initialState, interceptPosition_deg, targetVelocity_deg_s, ...
         matchVelocity)
 %% Section 0: Header & Readme
+% SYNTAX
+%   validateVelocityMatchGeometry(initialState, ...
+%       interceptPosition_deg, targetVelocity_deg_s, matchVelocity)
+%**************************************************************************
+% PURPOSE
+%   - Validate terminal-velocity compatibility with the direct route.
+%**************************************************************************
+% INPUTS
+%   - initialState (scalar struct)
+%   - interceptPosition_deg (1-by-2 numeric row)
+%   - targetVelocity_deg_s (1-by-2 numeric row)
+%   - matchVelocity (logical scalar)
+%**************************************************************************
+% OUTPUTS
+%   - None. Unsupported geometry throws an identified contract error.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and velocity is degrees per second.
+%**************************************************************************
 % A direct obstacle-free route can match only a tangent terminal velocity.
 if ~matchVelocity || norm(targetVelocity_deg_s) <= 1e-12
     return;
@@ -714,8 +789,29 @@ end
 function [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
         initialState, targetMotion, limits, options)
 %% Section 0: Header & Readme
-% Scan arbitrary paths in chronological order, retaining exponential
-% bracketing only for the receding-ray case where monotonicity is proved.
+% SYNTAX
+%   [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
+%       initialState, targetMotion, limits, options)
+%**************************************************************************
+% PURPOSE
+%   - Find the first numerically feasible intercept on a target track.
+%**************************************************************************
+% INPUTS
+%   - initialState (normalized scalar struct)
+%   - targetMotion (normalized scalar struct)
+%   - limits (scalar planner-limit struct)
+%   - options (resolved scalar intercept-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - interceptTime_s (finite numeric scalar)
+%   - diagnostics (scalar struct)
+%       Bracket, iteration, residual, and certification information.
+%**************************************************************************
+% UNITS
+%   - Time and residual values are seconds.
+%**************************************************************************
+% Arbitrary paths are scanned chronologically. Exponential bracketing is
+% retained only for the receding-ray case where monotonicity is proved.
 searchStartTime_s = initialState.time_s;
 searchEndTime_s = initialState.time_s + options.MaximumSearchDuration_s;
 if targetMotion.ModelType == "sampledTrajectory"
@@ -816,7 +912,29 @@ function [residual_s, arrivalTime_s] = interceptResidual( ...
         candidateTime_s, searchEndTime_s, initialState, targetMotion, ...
         limits, options)
 %% Section 0: Header & Readme
-% Evaluate minimum planner arrival minus the candidate target time.
+% SYNTAX
+%   [residual_s, arrivalTime_s] = interceptResidual( ...
+%       candidateTime_s, searchEndTime_s, initialState, targetMotion, ...
+%       limits, options)
+%**************************************************************************
+% PURPOSE
+%   - Evaluate planner arrival relative to one candidate target time.
+%**************************************************************************
+% INPUTS
+%   - candidateTime_s, searchEndTime_s (finite numeric scalars)
+%   - initialState (normalized scalar struct)
+%   - targetMotion (normalized scalar struct)
+%   - limits (scalar planner-limit struct)
+%   - options (resolved scalar intercept-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - residual_s (numeric scalar)
+%       Minimum arrival time minus candidateTime_s.
+%   - arrivalTime_s (numeric scalar)
+%**************************************************************************
+% UNITS
+%   - Input and output time values are seconds.
+%**************************************************************************
 goalVelocity_deg_s = [0 0];
 [targetPosition_deg, targetVelocity_deg_s] = evaluateTargetMotion( ...
     targetMotion, candidateTime_s);
@@ -859,7 +977,22 @@ end
 
 function diagnostics = emptyInterceptSearchDiagnostics()
 %% Section 0: Header & Readme
-% Return the stable search schema for specified-time interception.
+% SYNTAX
+%   diagnostics = emptyInterceptSearchDiagnostics()
+%**************************************************************************
+% PURPOSE
+%   - Define the stable intercept-search diagnostics schema.
+%**************************************************************************
+% INPUTS
+%   - None.
+%**************************************************************************
+% OUTPUTS
+%   - diagnostics (scalar struct)
+%       Default values for specified-time and search failure paths.
+%**************************************************************************
+% UNITS
+%   - Time and residual fields are seconds.
+%**************************************************************************
 diagnostics = struct( ...
     "Success", true, ...
     "Message", "", ...

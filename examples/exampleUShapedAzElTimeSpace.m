@@ -22,6 +22,7 @@ function result = exampleUShapedAzElTimeSpace(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -33,6 +34,7 @@ end
     "Title", "U-shaped az/el obstacle"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
+
 % Keep the physical request identical when the example-only jerk switch is
 % toggled so paired feasibility and timing comparisons remain meaningful.
 missionEndTime_s = 120;
@@ -45,6 +47,7 @@ obstacle = makeAzElObstacleData( ...
     uBoundary_deg(:, 1), uBoundary_deg(:, 2), safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [0 -10]);
@@ -54,14 +57,17 @@ limits = struct( ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "single U", struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
@@ -69,6 +75,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.uBoundary_deg = uBoundary_deg;
 result.ExampleConfiguration = jerkConfiguration;

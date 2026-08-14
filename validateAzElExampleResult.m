@@ -34,6 +34,7 @@ function validation = validateAzElExampleResult( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 if nargin < 2 || isempty(scenarioName)
     scenarioName = "az/el example";
 end
@@ -76,6 +77,7 @@ if ~isempty(missingFields)
 end
 
 %% Section 2: Validate Timed State History
+
 timedPath = result.timedSlopePath;
 hasTrajectory = isstruct(timedPath) && isscalar(timedPath) && ...
     isfield(timedPath, "time_s") && ...
@@ -168,6 +170,7 @@ if hasTrajectory
 end
 
 %% Section 3: Validate Scenario And Safety Metadata
+
 directRouteRequirementSatisfied = ~requireDirectBlocked || ...
     any(result.directBlocked);
 safetyMarginPolicySatisfied = ...
@@ -200,6 +203,7 @@ if ~passed
 end
 
 %% Section 4: Assemble Stable Validation Output
+
 validation = struct( ...
     "Passed", passed, ...
     "Message", message, ...
@@ -227,9 +231,26 @@ validation = struct( ...
 end
 
 %% Section 5: Local Functions
+
 function value = requirementValue(requirements, fieldName, defaultValue)
 %% Section 0: Header & Readme
-% Return one optional validation requirement without duplicating defaults.
+% SYNTAX
+%   value = requirementValue(requirements, fieldName, defaultValue)
+%**************************************************************************
+% PURPOSE
+%   - Resolve one optional independent-validation requirement.
+%**************************************************************************
+% INPUTS
+%   - requirements (scalar struct)
+%   - fieldName (scalar text)
+%   - defaultValue (value of any supported requirement type)
+%**************************************************************************
+% OUTPUTS
+%   - value (resolved requirement value)
+%**************************************************************************
+% UNITS
+%   - Units are inherited from the named requirement.
+%**************************************************************************
 value = defaultValue;
 if isfield(requirements, fieldName) && ...
         ~isempty(requirements.(fieldName))
@@ -240,7 +261,26 @@ end
 function [peakValue, withinLimits] = checkKinematicHistory( ...
         timedPath, historyField, limits, limitField, tolerance)
 %% Section 0: Header & Readme
-% Independently compare one two-axis kinematic history with its limits.
+% SYNTAX
+%   [peakValue, withinLimits] = checkKinematicHistory( ...
+%       timedPath, historyField, limits, limitField, tolerance)
+%**************************************************************************
+% PURPOSE
+%   - Independently compare one two-axis history with its limits.
+%**************************************************************************
+% INPUTS
+%   - timedPath (scalar timed-path struct)
+%   - historyField, limitField (scalar text)
+%   - limits (scalar planner-limit struct)
+%   - tolerance (nonnegative numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - peakValue (1-by-2 numeric row)
+%   - withinLimits (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Units are inherited from historyField and limitField.
+%**************************************************************************
 limit = [Inf Inf];
 if isfield(limits, limitField) && ~isempty(limits.(limitField))
     limit = reshape(double(limits.(limitField)), 1, []);

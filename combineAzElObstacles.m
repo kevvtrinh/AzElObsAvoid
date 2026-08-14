@@ -23,12 +23,14 @@ function azElObstacles = combineAzElObstacles(varargin)
 %   - Canonical az_deg and el_deg fields are degrees; time_s is seconds.
 
 %% Section 1: Validate Inputs
+
 if nargin == 0
     azElObstacles = emptyCanonicalAzElObstacles();
     return;
 end
 
 %% Section 2: Flatten Nested Inputs
+
 % The stack carries each top-level argument number so a malformed nested
 % value still identifies the public input that contained it. Reversing each
 % push makes the next pop match the caller's original order.
@@ -87,6 +89,7 @@ if obstacleCount == 0
 end
 
 %% Section 3: Normalize The Public Schema
+
 % Validation occurs after flattening so all accepted container forms reach
 % one schema gate. A bad obstacle therefore cannot survive merely because
 % it arrived inside a cell or struct array.
@@ -100,7 +103,22 @@ end
 
 function azElObstacles = emptyCanonicalAzElObstacles()
 %% Section 0: Header & Readme
-% Return the canonical field order even when no obstacle is present.
+% SYNTAX
+%   azElObstacles = emptyCanonicalAzElObstacles()
+%**************************************************************************
+% PURPOSE
+%   - Define canonical obstacle field order for an empty collection.
+%**************************************************************************
+% INPUTS
+%   - None.
+%**************************************************************************
+% OUTPUTS
+%   - azElObstacles (zero-by-one structure array)
+%       Empty canonical obstacle records with stable field order.
+%**************************************************************************
+% UNITS
+%   - Time fields are seconds and coordinates are degrees.
+%**************************************************************************
 template = struct( ...
     "targetName", "", ...
     "time_s", zeros(0, 1), ...

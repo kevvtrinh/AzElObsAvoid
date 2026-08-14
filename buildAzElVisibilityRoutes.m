@@ -26,6 +26,9 @@ function search = buildAzElVisibilityRoutes( ...
 % UNITS
 %   - Position is degrees and time is seconds.
 %**************************************************************************
+
+%% Section 1: Resolve Options & Validate Inputs
+
 if nargin < 4 || isempty(optionOverrides)
     optionOverrides = struct();
 end
@@ -76,6 +79,9 @@ if ~fieldIsPacked
     error("buildAzElVisibilityRoutes:InvalidObstacleField", ...
         "obstacleField must come from buildAzElTimeObstacleField.");
 end
+
+%% Section 2: Collect Bounded Boundary Candidates
+
 startPoint = normalizedStatePoint(initialState, "initialState");
 goalPoint = normalizedStatePoint(goalState, "goalState");
 candidatePoints = zeros(0, 3);
@@ -145,6 +151,9 @@ for obstacleIndex = 1:obstacleField.ObstacleCount
         end
     end
 end
+
+%% Section 3: Build Snapshot Visibility Graphs
+
 visibilityGraphs = buildSnapshotVisibilityGraphs( ...
     obstacleField, candidatePoints, candidateTypes, ...
     candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex, ...
@@ -168,6 +177,9 @@ for graphIndex = 1:numel(visibilityGraphs)
         end
     end
 end
+
+%% Section 4: Assemble Search Diagnostics
+
 search = struct( ...
     "VisibilityGraphs", visibilityGraphs, ...
     "CandidateReductionDiagnostics", candidateReductionDiagnostics, ...
@@ -175,12 +187,39 @@ search = struct( ...
     "Options", options);
 end
 
-%% Section 1: Local Functions
+%% Section 5: Local Functions
+
 function [candidatePoints_deg, candidateTypes, diagnostics] = ...
         boundaryCandidates(region_deg, startPosition_deg, ...
         goalPosition_deg, options)
 %% Section 0: Header & Readme
-% Generate a bounded graph-node set without simplifying collision geometry.
+% SYNTAX
+%   [candidatePoints_deg, candidateTypes, diagnostics] = ...
+%       boundaryCandidates(region_deg, startPosition_deg, ...
+%       goalPosition_deg, options)
+%**************************************************************************
+% PURPOSE
+%   - Generate bounded graph nodes while preserving collision geometry.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%       Closed obstacle-ring vertices in [azimuth elevation] order.
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%       Route endpoints used to identify tangent contacts.
+%   - options (scalar struct)
+%       Candidate-selection controls resolved by the public function.
+%**************************************************************************
+% OUTPUTS
+%   - candidatePoints_deg (M-by-2 numeric matrix)
+%       Selected boundary points.
+%   - candidateTypes (M-by-1 string array)
+%       Provenance label for each point.
+%   - diagnostics (scalar struct)
+%       Candidate counts and reduction metadata.
+%**************************************************************************
+% UNITS
+%   - Positions and angular thresholds are degrees.
+%**************************************************************************
 diagnostics = struct( ...
     "ObstacleIndex", 0, ...
     "SampleIndex", 0, ...
@@ -271,7 +310,25 @@ end
 
 function cornerIndex = meaningfulCornerIndices(region_deg, threshold_deg)
 %% Section 0: Header & Readme
-% Preserve the legacy all-corners candidate policy as an explicit fallback.
+% SYNTAX
+%   cornerIndex = meaningfulCornerIndices(region_deg, threshold_deg)
+%**************************************************************************
+% PURPOSE
+%   - Select vertices whose geometric turn exceeds a threshold.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%       Cyclic polygon vertices.
+%   - threshold_deg (nonnegative numeric scalar)
+%       Minimum absolute turn angle.
+%**************************************************************************
+% OUTPUTS
+%   - cornerIndex (M-by-1 numeric vector)
+%       Indices into region_deg.
+%**************************************************************************
+% UNITS
+%   - Positions and threshold are degrees.
+%**************************************************************************
 vertexCount = size(region_deg, 1);
 previousVertex_deg = region_deg([vertexCount 1:vertexCount - 1], :);
 nextVertex_deg = region_deg([2:vertexCount 1], :);
@@ -287,7 +344,26 @@ end
 function extremeIndex = directionalExtremeVertexIndices( ...
         region_deg, directionCount)
 %% Section 0: Header & Readme
-% Keep full-resolution polygon support points in bounded directions.
+% SYNTAX
+%   extremeIndex = directionalExtremeVertexIndices( ...
+%       region_deg, directionCount)
+%**************************************************************************
+% PURPOSE
+%   - Select full-resolution polygon support points in bounded directions.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%       Cyclic polygon vertices.
+%   - directionCount (positive integer scalar)
+%       Number of uniformly spaced support directions.
+%**************************************************************************
+% OUTPUTS
+%   - extremeIndex (M-by-1 numeric vector)
+%       Stable unique indices into region_deg.
+%**************************************************************************
+% UNITS
+%   - Positions are degrees; directions are dimensionless.
+%**************************************************************************
 center_deg = mean(region_deg, 1);
 directionAngle_rad = (0:directionCount - 1).' .* ...
     (2 * pi / directionCount);
@@ -300,6 +376,23 @@ end
 function reductionPercent = candidateReductionPercent( ...
         inputVertexCount, selectedCandidateCount)
 %% Section 0: Header & Readme
+% SYNTAX
+%   reductionPercent = candidateReductionPercent( ...
+%       inputVertexCount, selectedCandidateCount)
+%**************************************************************************
+% PURPOSE
+%   - Report the percentage reduction from vertices to graph candidates.
+%**************************************************************************
+% INPUTS
+%   - inputVertexCount (nonnegative integer scalar)
+%   - selectedCandidateCount (nonnegative integer scalar)
+%**************************************************************************
+% OUTPUTS
+%   - reductionPercent (nonnegative numeric scalar)
+%**************************************************************************
+% UNITS
+%   - The output is percent; counts are dimensionless.
+%**************************************************************************
 if inputVertexCount <= 0
     reductionPercent = 0;
     return;
@@ -311,7 +404,26 @@ end
 function routingRegion_deg = candidateRoutingBoundary( ...
         protectedRegion_deg, candidateClearance_deg)
 %% Section 0: Header & Readme
-% Offset only the search boundary; protected collision geometry is unchanged.
+% SYNTAX
+%   routingRegion_deg = candidateRoutingBoundary( ...
+%       protectedRegion_deg, candidateClearance_deg)
+%**************************************************************************
+% PURPOSE
+%   - Offset only graph candidates while retaining protected collision data.
+%**************************************************************************
+% INPUTS
+%   - protectedRegion_deg (N-by-2 numeric matrix)
+%       Protected obstacle boundary.
+%   - candidateClearance_deg (nonnegative numeric scalar)
+%       Additional routing offset.
+%**************************************************************************
+% OUTPUTS
+%   - routingRegion_deg (M-by-2 numeric matrix)
+%       First finite ring of the optional offset boundary.
+%**************************************************************************
+% UNITS
+%   - Positions and clearance are degrees.
+%**************************************************************************
 if candidateClearance_deg <= 0
     routingRegion_deg = protectedRegion_deg;
     return;
@@ -337,9 +449,29 @@ end
 function tangentIndex = polygonTangentVertexIndices( ...
         region_deg, referencePosition_deg, maximumCount)
 %% Section 0: Header & Readme
-% Find sampled boundary vertices where bearing from a reference reverses.
-% These local angular extrema approximate tangencies on rounded buffers and
-% recover lip contacts that are no longer sharp polygon corners.
+% SYNTAX
+%   tangentIndex = polygonTangentVertexIndices( ...
+%       region_deg, referencePosition_deg, maximumCount)
+%**************************************************************************
+% PURPOSE
+%   - Approximate tangent contacts from reversals in boundary bearing.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%       Cyclic polygon vertices.
+%   - referencePosition_deg (1-by-2 numeric row)
+%       External position used for bearing measurements.
+%   - maximumCount (nonnegative integer scalar or Inf)
+%       Maximum contacts retained.
+%**************************************************************************
+% OUTPUTS
+%   - tangentIndex (M-by-1 numeric vector)
+%       Selected indices into region_deg.
+%**************************************************************************
+% UNITS
+%   - Positions are degrees; bearings are evaluated in radians.
+%**************************************************************************
+% Local angular extrema recover rounded lip contacts that are not corners.
 vertexCount = size(region_deg, 1);
 if vertexCount < 3
     tangentIndex = zeros(0, 1);
@@ -394,7 +526,24 @@ end
 
 function [isCircle, center_deg, radius_deg] = fittedCircle(region_deg)
 %% Section 0: Header & Readme
-% Fit a circle and reject rings whose radial residual is not circle-like.
+% SYNTAX
+%   [isCircle, center_deg, radius_deg] = fittedCircle(region_deg)
+%**************************************************************************
+% PURPOSE
+%   - Fit a circle and reject rings with excessive radial residual.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%       Polygon-ring vertices.
+%**************************************************************************
+% OUTPUTS
+%   - isCircle (logical scalar)
+%   - center_deg (1-by-2 numeric row)
+%   - radius_deg (numeric scalar)
+%**************************************************************************
+% UNITS
+%   - Center, radius, and residuals are degrees.
+%**************************************************************************
 isCircle = false;
 center_deg = [NaN NaN];
 radius_deg = NaN;
@@ -424,7 +573,23 @@ end
 function tangentPoints_deg = tangentContacts( ...
         referencePosition_deg, center_deg, radius_deg)
 %% Section 0: Header & Readme
-% Return the two exact contacts from an external point to a circle.
+% SYNTAX
+%   tangentPoints_deg = tangentContacts( ...
+%       referencePosition_deg, center_deg, radius_deg)
+%**************************************************************************
+% PURPOSE
+%   - Return exact tangent contacts from an external point to a circle.
+%**************************************************************************
+% INPUTS
+%   - referencePosition_deg, center_deg (1-by-2 numeric rows)
+%   - radius_deg (positive numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - tangentPoints_deg (zero-by-2 or two-by-2 numeric matrix)
+%**************************************************************************
+% UNITS
+%   - Positions and radius are degrees; internal angles are radians.
+%**************************************************************************
 centerToReference_deg = referencePosition_deg - center_deg;
 referenceDistance_deg = hypot( ...
     centerToReference_deg(1), centerToReference_deg(2));
@@ -447,7 +612,34 @@ function graphs = buildSnapshotVisibilityGraphs( ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, options)
 %% Section 0: Header & Readme
-% Build one all-obstacle graph at each retained obstacle-slice time.
+% SYNTAX
+%   graphs = buildSnapshotVisibilityGraphs( ...
+%       obstacleField, candidatePoints, candidateTypes, ...
+%       candidateObstacleIndex, candidateSampleIndex, ...
+%       candidateRegionIndex, candidateBoundaryGeometry, ...
+%       startPosition_deg, goalPosition_deg, options)
+%**************************************************************************
+% PURPOSE
+%   - Build one all-obstacle graph at each retained slice time.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field)
+%   - candidatePoints (N-by-3 numeric matrix)
+%       Candidate [azimuth elevation time] rows.
+%   - candidateTypes (N-by-1 string array)
+%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
+%   - candidateRegionIndex (N-by-1 numeric vector)
+%   - candidateBoundaryGeometry (N-by-1 cell array)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - graphs (structure array)
+%       One stable visibility-graph record per retained time.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 graphs = repmat(emptyVisibilityGraph(), 0, 1);
 if isempty(candidatePoints)
     return;
@@ -478,7 +670,34 @@ function graph = buildOneSnapshotVisibilityGraph( ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, options, snapshotTime_s)
 %% Section 0: Header & Readme
-% Solve one graph for one retained obstacle snapshot.
+% SYNTAX
+%   graph = buildOneSnapshotVisibilityGraph( ...
+%       obstacleField, candidatePoints, candidateTypes, ...
+%       candidateObstacleIndex, candidateSampleIndex, ...
+%       candidateRegionIndex, candidateBoundaryGeometry, ...
+%       startPosition_deg, goalPosition_deg, options, snapshotTime_s)
+%**************************************************************************
+% PURPOSE
+%   - Select candidates at one retained time and solve their graph.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field)
+%   - candidatePoints (N-by-3 numeric matrix)
+%   - candidateTypes (N-by-1 string array)
+%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
+%   - candidateRegionIndex (N-by-1 numeric vector)
+%   - candidateBoundaryGeometry (N-by-1 cell array)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%   - options (scalar struct)
+%   - snapshotTime_s (finite numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - graph (scalar struct)
+%       Solved or failed snapshot graph with stable diagnostics.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 candidateIsOnSnapshot = abs( ...
     candidatePoints(:, 3) - snapshotTime_s) <= 1e-10;
 globalCandidateIndex = find(candidateIsOnSnapshot);
@@ -495,7 +714,22 @@ end
 
 function graph = emptyVisibilityGraph()
 %% Section 0: Header & Readme
-% Define the stable public schema for one snapshot visibility graph.
+% SYNTAX
+%   graph = emptyVisibilityGraph()
+%**************************************************************************
+% PURPOSE
+%   - Define the stable schema for one snapshot visibility graph.
+%**************************************************************************
+% INPUTS
+%   - None.
+%**************************************************************************
+% OUTPUTS
+%   - graph (scalar struct)
+%       Empty graph record used for success and failure paths.
+%**************************************************************************
+% UNITS
+%   - Position and path cost fields are degrees; Time_s is seconds.
+%**************************************************************************
 graph = struct( ...
     "Success", false, ...
     "Message", "Visibility graph was not evaluated.", ...
@@ -531,7 +765,35 @@ function graph = buildVisibilityGraphAtTime( ...
         globalCandidateIndex, ...
         startPosition_deg, goalPosition_deg, snapshotTime_s, options)
 %% Section 0: Header & Readme
-% Connect all mutually visible nodes and adjacent same-boundary candidates.
+% SYNTAX
+%   graph = buildVisibilityGraphAtTime( ...
+%       obstacleField, candidatePosition_deg, candidateTypes, ...
+%       candidateObstacleIndex, candidateSampleIndex, ...
+%       candidateRegionIndex, candidateBoundaryGeometry, ...
+%       globalCandidateIndex, startPosition_deg, goalPosition_deg, ...
+%       snapshotTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Connect visible nodes and compatible same-boundary neighbors.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field)
+%   - candidatePosition_deg (N-by-2 numeric matrix)
+%   - candidateTypes (N-by-1 string array)
+%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
+%   - candidateRegionIndex, globalCandidateIndex (N-by-1 vectors)
+%   - candidateBoundaryGeometry (N-by-1 cell array)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%   - snapshotTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - graph (scalar struct)
+%       Graph matrices, selected route, and construction counts.
+%**************************************************************************
+% UNITS
+%   - Position and edge costs are degrees; time is seconds.
+%**************************************************************************
 graph = emptyVisibilityGraph();
 graph.Time_s = snapshotTime_s;
 candidateCount = size(candidatePosition_deg, 1);
@@ -752,7 +1014,30 @@ function [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded] = ...
         nodePosition_deg, firstNodeIndex, secondNodeIndex, ...
         obstacleField, snapshotTime_s, options)
 %% Section 0: Header & Readme
-% Add one straight graph edge only when its open interior is collision-free.
+% SYNTAX
+%   [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded] = ...
+%       addVisibilityEdgeIfClear(edgeCost_deg, edgeType, ...
+%       edgeRoute_deg, nodePosition_deg, firstNodeIndex, ...
+%       secondNodeIndex, obstacleField, snapshotTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Add a straight graph edge only when its open interior is clear.
+%**************************************************************************
+% INPUTS
+%   - edgeCost_deg, edgeType, edgeRoute_deg (square graph matrices)
+%   - nodePosition_deg (N-by-2 numeric matrix)
+%   - firstNodeIndex, secondNodeIndex (positive integer scalars)
+%   - obstacleField (scalar packed obstacle field)
+%   - snapshotTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - edgeCost_deg, edgeType, edgeRoute_deg (updated graph matrices)
+%   - edgeWasAdded (zero or one)
+%**************************************************************************
+% UNITS
+%   - Position and cost are degrees; time is seconds.
+%**************************************************************************
 edgeWasAdded = 0;
 displacement_deg = nodePosition_deg(secondNodeIndex, :) - ...
     nodePosition_deg(firstNodeIndex, :);
@@ -780,7 +1065,23 @@ end
 function candidateArc_deg = candidateBoundaryArcPositions( ...
         region_deg, candidatePosition_deg)
 %% Section 0: Header & Readme
-% Project every graph candidate onto one cyclic boundary coordinate.
+% SYNTAX
+%   candidateArc_deg = candidateBoundaryArcPositions( ...
+%       region_deg, candidatePosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Project graph candidates onto one cyclic boundary coordinate.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%   - candidatePosition_deg (M-by-2 numeric matrix)
+%**************************************************************************
+% OUTPUTS
+%   - candidateArc_deg (M-by-1 numeric vector)
+%**************************************************************************
+% UNITS
+%   - Positions and boundary arc coordinates are degrees.
+%**************************************************************************
 if size(region_deg, 1) > 1 && hypot( ...
         region_deg(end, 1) - region_deg(1, 1), ...
         region_deg(end, 2) - region_deg(1, 2)) <= 1e-10
@@ -803,7 +1104,25 @@ end
 function [pathNodeIndex, pathCost] = shortestVisibilityGraphPath( ...
         edgeCost, startNodeIndex, goalNodeIndex)
 %% Section 0: Header & Readme
-% Run deterministic Dijkstra on the small dense snapshot graph.
+% SYNTAX
+%   [pathNodeIndex, pathCost] = shortestVisibilityGraphPath( ...
+%       edgeCost, startNodeIndex, goalNodeIndex)
+%**************************************************************************
+% PURPOSE
+%   - Run deterministic Dijkstra on a dense snapshot graph.
+%**************************************************************************
+% INPUTS
+%   - edgeCost (N-by-N numeric matrix)
+%       Symmetric nonnegative costs with Inf for absent edges.
+%   - startNodeIndex, goalNodeIndex (positive integer scalars)
+%**************************************************************************
+% OUTPUTS
+%   - pathNodeIndex (M-by-1 numeric vector)
+%   - pathCost (nonnegative numeric scalar or Inf)
+%**************************************************************************
+% UNITS
+%   - Path cost inherits the edge-cost units.
+%**************************************************************************
 nodeCount = size(edgeCost, 1);
 costToReach = inf(nodeCount, 1);
 hopCount = inf(nodeCount, 1);
@@ -861,9 +1180,29 @@ end
 function [reducedRoute_deg, success] = reduceBoundaryRouteForGraph( ...
         sourceRoute_deg, obstacleField, sampleTime_s, options)
 %% Section 0: Header & Readme
-% Reduce a boundary-following command polyline without changing collision
-% geometry. RDP proposes a compact shape, blocked chords restore source
-% detail, and a final farthest-visible pass removes redundant safe points.
+% SYNTAX
+%   [reducedRoute_deg, success] = reduceBoundaryRouteForGraph( ...
+%       sourceRoute_deg, obstacleField, sampleTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Compact a boundary route without changing collision geometry.
+%**************************************************************************
+% INPUTS
+%   - sourceRoute_deg (N-by-2 numeric matrix)
+%   - obstacleField (scalar packed obstacle field)
+%   - sampleTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - reducedRoute_deg (M-by-2 numeric matrix)
+%   - success (logical scalar)
+%       True only when every reduced segment remains visible.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
+% RDP proposes a compact shape, blocked chords restore source detail, and
+% a final farthest-visible pass removes only redundant safe points.
 sourceRoute_deg = removeConsecutiveDuplicatePoints(sourceRoute_deg);
 sourceVertexCount = size(sourceRoute_deg, 1);
 if sourceVertexCount <= 2 || ...
@@ -908,7 +1247,23 @@ end
 
 function retainedIndex = rdpPolylineIndices(position_deg, tolerance_deg)
 %% Section 0: Header & Readme
-% Iterative Ramer-Douglas-Peucker indices; endpoints are always retained.
+% SYNTAX
+%   retainedIndex = rdpPolylineIndices(position_deg, tolerance_deg)
+%**************************************************************************
+% PURPOSE
+%   - Return iterative Ramer-Douglas-Peucker retained indices.
+%**************************************************************************
+% INPUTS
+%   - position_deg (N-by-2 numeric matrix)
+%   - tolerance_deg (nonnegative numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - retainedIndex (M-by-1 numeric vector)
+%       Endpoint indices are always retained.
+%**************************************************************************
+% UNITS
+%   - Position and tolerance are degrees.
+%**************************************************************************
 vertexCount = size(position_deg, 1);
 isRetained = false(vertexCount, 1);
 isRetained([1 end]) = true;
@@ -939,6 +1294,23 @@ end
 function distance_deg = pointToSegmentDistance( ...
         point_deg, firstPosition_deg, secondPosition_deg)
 %% Section 0: Header & Readme
+% SYNTAX
+%   distance_deg = pointToSegmentDistance( ...
+%       point_deg, firstPosition_deg, secondPosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Measure point-to-closed-segment Euclidean distance.
+%**************************************************************************
+% INPUTS
+%   - point_deg (N-by-2 numeric matrix)
+%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - distance_deg (N-by-1 numeric vector)
+%**************************************************************************
+% UNITS
+%   - Positions and distances are degrees.
+%**************************************************************************
 segment_deg = secondPosition_deg - firstPosition_deg;
 segmentLengthSquared_deg2 = sum(segment_deg.^2);
 if segmentLengthSquared_deg2 <= eps
@@ -957,7 +1329,28 @@ end
 function retainedIndex = refineBlockedRouteSegments( ...
         sourceRoute_deg, retainedIndex, obstacleField, sampleTime_s, options)
 %% Section 0: Header & Readme
-% Restore source vertices only where an RDP chord penetrates an obstacle.
+% SYNTAX
+%   retainedIndex = refineBlockedRouteSegments( ...
+%       sourceRoute_deg, retainedIndex, obstacleField, ...
+%       sampleTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Restore source vertices where a reduced chord is blocked.
+%**************************************************************************
+% INPUTS
+%   - sourceRoute_deg (N-by-2 numeric matrix)
+%   - retainedIndex (M-by-1 numeric vector)
+%   - obstacleField (scalar packed obstacle field)
+%   - sampleTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - retainedIndex (K-by-1 numeric vector)
+%       Refined stable indices into sourceRoute_deg.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 changed = true;
 while changed
     changed = false;
@@ -991,6 +1384,25 @@ end
 function visible = routeSegmentsAreVisible( ...
         route_deg, obstacleField, sampleTime_s, options)
 %% Section 0: Header & Readme
+% SYNTAX
+%   visible = routeSegmentsAreVisible( ...
+%       route_deg, obstacleField, sampleTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Require every consecutive segment of a route to be visible.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric matrix)
+%   - obstacleField (scalar packed obstacle field)
+%   - sampleTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - visible (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 visible = true;
 for segmentIndex = 1:size(route_deg, 1) - 1
     if ~lineVisibleAtTime(obstacleField, ...
@@ -1006,7 +1418,26 @@ function visible = lineVisibleAtTime( ...
         obstacleField, firstPosition_deg, secondPosition_deg, ...
         sampleTime_s, ~)
 %% Section 0: Header & Readme
-% Test one open segment by topology intervals rather than distance samples.
+% SYNTAX
+%   visible = lineVisibleAtTime(obstacleField, firstPosition_deg, ...
+%       secondPosition_deg, sampleTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Test one open segment using exact topology intervals.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field)
+%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
+%   - sampleTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%       Reserved for the shared visibility-call signature.
+%**************************************************************************
+% OUTPUTS
+%   - visible (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
 % Polygon occupancy is constant between consecutive boundary crossings, so
 % one midpoint per interval is exact for the stored piecewise-linear field.
 % Cost therefore scales with packed edges and actual crossings, not with
@@ -1033,7 +1464,25 @@ end
 function intervalMidpoint = visibilitySegmentIntervalMidpoints( ...
         obstacleField, firstPosition_deg, secondPosition_deg, sampleTime_s)
 %% Section 0: Header & Readme
-% Find every parameter at which the segment crosses a packed slice edge.
+% SYNTAX
+%   intervalMidpoint = visibilitySegmentIntervalMidpoints( ...
+%       obstacleField, firstPosition_deg, secondPosition_deg, sampleTime_s)
+%**************************************************************************
+% PURPOSE
+%   - Partition a segment at every packed-slice boundary crossing.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field)
+%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
+%   - sampleTime_s (finite numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - intervalMidpoint (M-by-1 numeric vector)
+%       Fractions in [0, 1], one per constant-occupancy interval.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; time is seconds; fractions are dimensionless.
+%**************************************************************************
 breakpoint = [0; 1];
 segmentMinimum_deg = min(firstPosition_deg, secondPosition_deg);
 segmentMaximum_deg = max(firstPosition_deg, secondPosition_deg);
@@ -1094,7 +1543,25 @@ function intersectionParameter = segmentEdgeIntersectionParameters( ...
         firstPosition_deg, secondPosition_deg, ...
         edgeStart_deg, edgeEnd_deg)
 %% Section 0: Header & Readme
-% Return candidate-segment parameters for crossings and collinear overlaps.
+% SYNTAX
+%   intersectionParameter = segmentEdgeIntersectionParameters( ...
+%       firstPosition_deg, secondPosition_deg, ...
+%       edgeStart_deg, edgeEnd_deg)
+%**************************************************************************
+% PURPOSE
+%   - Return segment parameters for crossings and collinear overlaps.
+%**************************************************************************
+% INPUTS
+%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
+%   - edgeStart_deg, edgeEnd_deg (N-by-2 numeric matrices)
+%**************************************************************************
+% OUTPUTS
+%   - intersectionParameter (M-by-1 numeric vector)
+%       Candidate-segment fractions clipped to [0, 1].
+%**************************************************************************
+% UNITS
+%   - Positions are degrees; output fractions are dimensionless.
+%**************************************************************************
 segmentVector_deg = secondPosition_deg - firstPosition_deg;
 edgeVector_deg = edgeEnd_deg - edgeStart_deg;
 edgeOffset_deg = edgeStart_deg - firstPosition_deg;
@@ -1151,7 +1618,26 @@ function [route_deg, edgeCount, routeDistance_deg] = ...
         forwardBoundaryRoute(region_deg, startCandidate_deg, ...
         goalCandidate_deg)
 %% Section 0: Header & Readme
-% Walk one polygon ring in its stored direction between two contacts.
+% SYNTAX
+%   [route_deg, edgeCount, routeDistance_deg] = ...
+%       forwardBoundaryRoute(region_deg, startCandidate_deg, ...
+%       goalCandidate_deg)
+%**************************************************************************
+% PURPOSE
+%   - Walk a polygon ring in its stored direction between contacts.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%   - startCandidate_deg, goalCandidate_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - route_deg (M-by-2 numeric matrix)
+%   - edgeCount (nonnegative integer scalar)
+%   - routeDistance_deg (nonnegative numeric scalar)
+%**************************************************************************
+% UNITS
+%   - Position and route distance are degrees.
+%**************************************************************************
 if size(region_deg, 1) > 1 && hypot( ...
         region_deg(end, 1) - region_deg(1, 1), ...
         region_deg(end, 2) - region_deg(1, 2)) <= 1e-10
@@ -1201,7 +1687,25 @@ function arcPosition_deg = boundaryArcPosition( ...
         region_deg, edgeLength_deg, vertexArc_deg, point_deg, ...
         perimeter_deg)
 %% Section 0: Header & Readme
-% Project a boundary candidate to the closest polygon edge and arclength.
+% SYNTAX
+%   arcPosition_deg = boundaryArcPosition(region_deg, edgeLength_deg, ...
+%       vertexArc_deg, point_deg, perimeter_deg)
+%**************************************************************************
+% PURPOSE
+%   - Project a boundary point to the closest edge and cyclic arc length.
+%**************************************************************************
+% INPUTS
+%   - region_deg (N-by-2 numeric matrix)
+%   - edgeLength_deg, vertexArc_deg (N-by-1 numeric vectors)
+%   - point_deg (1-by-2 numeric row)
+%   - perimeter_deg (positive numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - arcPosition_deg (numeric scalar)
+%**************************************************************************
+% UNITS
+%   - Positions, lengths, and arc coordinates are degrees.
+%**************************************************************************
 nextRegion_deg = region_deg([2:end 1], :);
 edgeVector_deg = nextRegion_deg - region_deg;
 edgeLengthSquared_deg2 = sum(edgeVector_deg.^2, 2);
@@ -1219,7 +1723,21 @@ end
 
 function route_deg = removeConsecutiveDuplicatePoints(route_deg)
 %% Section 0: Header & Readme
-% Retain geometric turns while removing zero-length augmented edges.
+% SYNTAX
+%   route_deg = removeConsecutiveDuplicatePoints(route_deg)
+%**************************************************************************
+% PURPOSE
+%   - Remove zero-length steps while retaining geometric turns.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric matrix)
+%**************************************************************************
+% OUTPUTS
+%   - route_deg (M-by-2 numeric matrix)
+%**************************************************************************
+% UNITS
+%   - Positions are degrees.
+%**************************************************************************
 if size(route_deg, 1) < 2
     return;
 end
@@ -1231,7 +1749,24 @@ end
 
 function point = normalizedStatePoint(state, label)
 %% Section 0: Header & Readme
-% Convert a boundary state to [azimuth elevation time].
+% SYNTAX
+%   point = normalizedStatePoint(state, label)
+%**************************************************************************
+% PURPOSE
+%   - Validate and normalize a state to [azimuth elevation time].
+%**************************************************************************
+% INPUTS
+%   - state (scalar struct)
+%       Requires scalar time_s and two-element position_deg.
+%   - label (scalar text)
+%       Input name used in diagnostics.
+%**************************************************************************
+% OUTPUTS
+%   - point (1-by-3 numeric row)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 hasRequiredFields = isstruct(state) && isscalar(state) && ...
     all(isfield(state, ["time_s" "position_deg"]));
 if ~hasRequiredFields
@@ -1249,7 +1784,24 @@ end
 function relevantRegion = routeRelevantRegionMask( ...
         regions, startPosition_deg, goalPosition_deg)
 %% Section 0: Header & Readme
-% Exclude enclosed free-space components that neither endpoint can occupy.
+% SYNTAX
+%   relevantRegion = routeRelevantRegionMask( ...
+%       regions, startPosition_deg, goalPosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Exclude nested components that neither route endpoint can occupy.
+%**************************************************************************
+% INPUTS
+%   - regions (N-by-1 cell array)
+%       Independent polygon rings for one time slice.
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - relevantRegion (N-by-1 logical vector)
+%**************************************************************************
+% UNITS
+%   - Positions and polygon coordinates are degrees.
+%**************************************************************************
 % Ring nesting is recomputed independently for every time slice, so moving
 % or deforming topology never inherits classifications from another slice.
 regionCount = numel(regions);
@@ -1319,7 +1871,23 @@ end
 
 function regions = unpackSliceRegions(obstacle, sampleIndex)
 %% Section 0: Header & Readme
-% Recover independent finite polygon rings from one packed slice.
+% SYNTAX
+%   regions = unpackSliceRegions(obstacle, sampleIndex)
+%**************************************************************************
+% PURPOSE
+%   - Recover independent finite polygon rings from one packed slice.
+%**************************************************************************
+% INPUTS
+%   - obstacle (scalar packed-obstacle struct)
+%   - sampleIndex (positive integer scalar)
+%**************************************************************************
+% OUTPUTS
+%   - regions (N-by-1 cell array)
+%       Each cell contains one M-by-2 [azimuth elevation] ring.
+%**************************************************************************
+% UNITS
+%   - Polygon coordinates are degrees.
+%**************************************************************************
 firstVertex = double(obstacle.SliceOffsets(sampleIndex));
 finalVertex = double(obstacle.SliceOffsets(sampleIndex + 1) - 1);
 if finalVertex < firstVertex

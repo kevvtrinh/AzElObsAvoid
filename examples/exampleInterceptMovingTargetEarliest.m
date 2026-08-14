@@ -25,6 +25,7 @@ function result = exampleInterceptMovingTargetEarliest(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -36,9 +37,11 @@ end
     "Title", "Earliest moving-target intercept"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
+
 obstacles = [];
 
 %% Section 3: Create Planner Inputs
+
 targetMotion = struct( ...
     "time_s", (0:5:30).', ...
     "position_deg", [ ...
@@ -62,10 +65,12 @@ interceptOptions = struct( ...
     "PlannerOptions", options);
 
 %% Section 4: Run Planner
+
 result = planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "earliest moving-target intercept");
 earliestSearchSatisfied = result.obstacleField.ObstacleCount == 0 && ...
@@ -81,6 +86,7 @@ exampleValidation.Passed = exampleValidation.Passed && ...
     earliestSearchSatisfied;
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
@@ -88,6 +94,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.obstacles = obstacles;
 result.ExampleConfiguration = jerkConfiguration;

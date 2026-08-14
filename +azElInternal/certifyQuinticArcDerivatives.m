@@ -35,6 +35,7 @@ function certificate = certifyQuinticArcDerivatives( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Build Analytic Reference Bounds
+
 validateattributes(controlPoints_deg, {'numeric'}, ...
     {'real', 'finite', 'size', [6 2]}, mfilename, ...
     'controlPoints_deg');
@@ -58,6 +59,7 @@ thirdControl_deg = 60 * diff(controlPoints_deg, 3, 1);
         thirdControl_deg);
 
 %% Section 2: Restrict The Polynomial & Certify Every Leaf
+
 restrictedFirstControl_deg = restrictBernsteinControl( ...
     firstControl_deg, parameterInterval(1), parameterInterval(2));
 restrictedSecondControl_deg = restrictBernsteinControl( ...
@@ -102,6 +104,7 @@ for subdivisionIndex = 1:baseSubdivisionCount
 end
 
 %% Section 3: Publish Certificate Diagnostics
+
 method = "continuousBernsteinRationalEnvelope";
 if fallbackCount > 0
     method = "continuousBernsteinWithAnalyticFallback";

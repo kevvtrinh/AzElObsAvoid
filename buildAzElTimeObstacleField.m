@@ -31,6 +31,7 @@ function obstacleField = buildAzElTimeObstacleField( ...
 %   - Input time_s and packed TimeSeconds values are seconds.
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 defaultOptions = defaultAzElTimeObstacleFieldOptions();
 if nargin == 0
     obstacleField = defaultOptions;
@@ -84,6 +85,7 @@ end
 tolerance_deg = 1e-12;
 
 %% Section 2: Normalize & Pack Obstacles
+
 canonicalObstacles = combineAzElObstacles(azElData);
 
 % combineAzElObstacles owns recursive flattening and returns a canonical
@@ -345,6 +347,7 @@ for obstacleIndex = 1:numel(canonicalObstacles)
 end
 
 %% Section 3: Assemble The Output
+
 % Format and Version allow planners and queries to reuse packed input.
 obstacleField = struct();
 obstacleField.Format = "AzElTimeObstacleField";
@@ -363,6 +366,7 @@ obstacleField.EstimatedStorageBytes = sum(packedStorageBytes);
 end
 
 %% Section 4: Local Functions
+
 function packedObstacle = emptyPackedObstacle()
 %% Section 0: Header & Readme
 % SYNTAX

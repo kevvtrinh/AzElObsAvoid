@@ -26,6 +26,7 @@ function result = exampleMovingDeformingUSOutlineVisibility(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -47,6 +48,7 @@ end
     [12 12]);
 
 %% Section 2: Create Obstacles
+
 missionEndTime_s = 5 * 60;
 obstacleTimeStep_s = 5;
 obstacleTime_s = (0:obstacleTimeStep_s:missionEndTime_s).';
@@ -58,6 +60,7 @@ obstacleTime_s = (0:obstacleTimeStep_s:missionEndTime_s).';
     "Verbose", options.Verbose));
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [-102 20]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [-102 55]);
@@ -67,15 +70,18 @@ limits = struct( ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "moving/deforming U.S.", ...
     struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
@@ -83,6 +89,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.ObstacleHistory = obstacleHistory;
 result.ExampleConfiguration = jerkConfiguration;

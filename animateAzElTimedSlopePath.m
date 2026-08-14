@@ -32,6 +32,7 @@ function animation = animateAzElTimedSlopePath( ...
 %   - Azimuth/elevation are degrees, time is seconds, and velocity is deg/s.
 
 %% Section 1: Resolve Options & Validate The Timed Path
+
 defaultOptions = struct( ...
     "FrameStride", 10, ...
     "Pause_s", 0.001, ...
@@ -194,6 +195,7 @@ if any(obstacleSafetyMargins_deg > 0)
 end
 
 %% Section 2: Create Equal-Scale 3-D & 2-D Views
+
 [allAzimuth_deg, allElevation_deg, allTime_s] = ...
     collectDisplayCoordinates( ...
     position_deg, time_s, obstacleField, hasObstacleField, options);
@@ -332,6 +334,7 @@ else
 end
 
 %% Section 3: Animate The Shared Timeline
+
 frameIndices = unique([ ...
     (1:options.FrameStride:numel(time_s)).'; numel(time_s)]);
 obstacle2DHandles = gobjects(0, 1);
@@ -437,10 +440,30 @@ animation = struct( ...
     "Options", options);
 end
 
+%% Section 4: Local Functions
+
 function handles = drawObstacleTimeSpace( ...
         axesHandle, obstacleField, colors, options)
 %% Section 0: Header & Readme
-% Draw selected polygon slices and compatible swept boundary surfaces.
+% SYNTAX
+%   handles = drawObstacleTimeSpace( ...
+%       axesHandle, obstacleField, colors, options)
+%**************************************************************************
+% PURPOSE
+%   - Draw selected obstacle slices and compatible swept surfaces.
+%**************************************************************************
+% INPUTS
+%   - axesHandle (scalar axes handle)
+%   - obstacleField (scalar packed obstacle field)
+%   - colors (N-by-3 numeric matrix)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - handles (M-by-1 graphics-handle array)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 handles = gobjects(0, 1);
 for obstacleIndex = 1:numel(obstacleField.Obstacles)
     obstacle = obstacleField.Obstacles(obstacleIndex);
@@ -527,7 +550,26 @@ end
 function handles = drawObstacleSnapshot( ...
         axesHandle, obstacleField, currentTime_s, colors, options)
 %% Section 0: Header & Readme
-% Draw the stored polygon slice nearest to the current animation time.
+% SYNTAX
+%   handles = drawObstacleSnapshot(axesHandle, obstacleField, ...
+%       currentTime_s, colors, options)
+%**************************************************************************
+% PURPOSE
+%   - Draw the obstacle slice nearest to the current animation time.
+%**************************************************************************
+% INPUTS
+%   - axesHandle (scalar axes handle)
+%   - obstacleField (scalar packed obstacle field)
+%   - currentTime_s (finite numeric scalar)
+%   - colors (N-by-3 numeric matrix)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - handles (M-by-1 graphics-handle array)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 handles = gobjects(0, 1);
 for obstacleIndex = 1:numel(obstacleField.Obstacles)
     obstacle = obstacleField.Obstacles(obstacleIndex);
@@ -579,7 +621,23 @@ end
 
 function regions = unpackSliceRegions(obstacle, sampleIndex)
 %% Section 0: Header & Readme
-% Recover independent finite polygon rings from one packed obstacle slice.
+% SYNTAX
+%   regions = unpackSliceRegions(obstacle, sampleIndex)
+%**************************************************************************
+% PURPOSE
+%   - Recover finite polygon rings from one packed obstacle slice.
+%**************************************************************************
+% INPUTS
+%   - obstacle (scalar packed-obstacle struct)
+%   - sampleIndex (positive integer scalar)
+%**************************************************************************
+% OUTPUTS
+%   - regions (N-by-1 cell array)
+%       Each cell contains one M-by-2 [azimuth elevation] ring.
+%**************************************************************************
+% UNITS
+%   - Polygon coordinates are degrees.
+%**************************************************************************
 firstVertex = double(obstacle.SliceOffsets(sampleIndex));
 finalVertex = double(obstacle.SliceOffsets(sampleIndex + 1) - 1);
 if finalVertex < firstVertex
@@ -603,7 +661,27 @@ function [azimuth_deg, elevation_deg, time_s] = ...
         collectDisplayCoordinates( ...
         pathPosition_deg, pathTime_s, obstacleField, hasObstacleField, options)
 %% Section 0: Header & Readme
-% Collect path and obstacle coordinates for stable shared display limits.
+% SYNTAX
+%   [azimuth_deg, elevation_deg, time_s] = ...
+%       collectDisplayCoordinates(pathPosition_deg, pathTime_s, ...
+%       obstacleField, hasObstacleField, options)
+%**************************************************************************
+% PURPOSE
+%   - Collect all coordinates needed for stable shared display limits.
+%**************************************************************************
+% INPUTS
+%   - pathPosition_deg (N-by-2 numeric matrix)
+%   - pathTime_s (N-by-1 numeric vector)
+%   - obstacleField (scalar packed obstacle field or empty)
+%   - hasObstacleField (logical scalar)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - azimuth_deg, elevation_deg, time_s (numeric column vectors)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 azimuth_deg = pathPosition_deg(:, 1);
 elevation_deg = pathPosition_deg(:, 2);
 time_s = pathTime_s;
@@ -641,7 +719,23 @@ end
 
 function limits = equalCubeLimits(azimuth_deg, elevation_deg, time_s)
 %% Section 0: Header & Readme
-% Give all three axes the same numeric span and physical box length.
+% SYNTAX
+%   limits = equalCubeLimits(azimuth_deg, elevation_deg, time_s)
+%**************************************************************************
+% PURPOSE
+%   - Give three display axes one shared numeric span.
+%**************************************************************************
+% INPUTS
+%   - azimuth_deg, elevation_deg (numeric vectors)
+%   - time_s (numeric vector)
+%**************************************************************************
+% OUTPUTS
+%   - limits (3-by-2 numeric matrix)
+%       Minimum and maximum limits for azimuth, elevation, and time.
+%**************************************************************************
+% UNITS
+%   - Rows use degrees, degrees, and seconds respectively.
+%**************************************************************************
 minimumValues = [min(azimuth_deg), min(elevation_deg), min(time_s)];
 maximumValues = [max(azimuth_deg), max(elevation_deg), max(time_s)];
 centerValues = (minimumValues + maximumValues) / 2;
@@ -654,7 +748,22 @@ end
 
 function limits = equalPlaneLimits(azimuth_deg, elevation_deg)
 %% Section 0: Header & Readme
-% Use one shared az/el span so a circle remains circular in the 2-D view.
+% SYNTAX
+%   limits = equalPlaneLimits(azimuth_deg, elevation_deg)
+%**************************************************************************
+% PURPOSE
+%   - Use one az/el span so circular geometry remains circular.
+%**************************************************************************
+% INPUTS
+%   - azimuth_deg, elevation_deg (numeric vectors)
+%**************************************************************************
+% OUTPUTS
+%   - limits (2-by-2 numeric matrix)
+%       Minimum and maximum limits for azimuth and elevation.
+%**************************************************************************
+% UNITS
+%   - Limits are degrees.
+%**************************************************************************
 minimumValues = [min(azimuth_deg), min(elevation_deg)];
 maximumValues = [max(azimuth_deg), max(elevation_deg)];
 centerValues = (minimumValues + maximumValues) / 2;
@@ -667,7 +776,22 @@ end
 
 function count = obstacleCount(obstacleField, hasObstacleField)
 %% Section 0: Header & Readme
-% Return zero without dereferencing an omitted obstacle field.
+% SYNTAX
+%   count = obstacleCount(obstacleField, hasObstacleField)
+%**************************************************************************
+% PURPOSE
+%   - Count obstacles without dereferencing an omitted field.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field or empty)
+%   - hasObstacleField (logical scalar)
+%**************************************************************************
+% OUTPUTS
+%   - count (nonnegative integer scalar)
+%**************************************************************************
+% UNITS
+%   - Count is dimensionless.
+%**************************************************************************
 if hasObstacleField
     count = numel(obstacleField.Obstacles);
 else
@@ -677,7 +801,23 @@ end
 
 function value = logicalScalar(value, fieldName)
 %% Section 0: Header & Readme
-% Normalize a scalar logical display option.
+% SYNTAX
+%   value = logicalScalar(value, fieldName)
+%**************************************************************************
+% PURPOSE
+%   - Normalize one scalar logical animation option.
+%**************************************************************************
+% INPUTS
+%   - value (scalar logical or numeric value)
+%   - fieldName (scalar text)
+%       Option name used in diagnostics.
+%**************************************************************************
+% OUTPUTS
+%   - value (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Values are dimensionless.
+%**************************************************************************
 validateattributes(value, {'logical', 'numeric'}, {'scalar'});
 value = logical(value);
 if ~isscalar(value)
@@ -688,7 +828,21 @@ end
 
 function deleteValidGraphics(handles)
 %% Section 0: Header & Readme
-% Delete only still-live graphics handles from the previous 2-D snapshot.
+% SYNTAX
+%   deleteValidGraphics(handles)
+%**************************************************************************
+% PURPOSE
+%   - Delete live graphics handles from the previous 2-D snapshot.
+%**************************************************************************
+% INPUTS
+%   - handles (graphics-handle array)
+%**************************************************************************
+% OUTPUTS
+%   - None.
+%**************************************************************************
+% UNITS
+%   - Not applicable.
+%**************************************************************************
 if isempty(handles)
     return;
 end

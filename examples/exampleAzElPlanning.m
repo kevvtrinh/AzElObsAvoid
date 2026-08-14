@@ -25,6 +25,7 @@ function result = exampleAzElPlanning(exampleOverrides)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 controls = struct("FigureVisible", "on", "PlotOutputs", true, ...
     "ShowAnimation", true, "ShowKinematicPlot", true, ...
     "EnableJerkConstraint", true);
@@ -66,6 +67,7 @@ for nameIndex = 1:numel(logicalNames)
 end
 
 %% Section 2: Create Obstacles
+
 % The 721-point circle demonstrates automatic planning-node reduction.
 % Its full boundary remains untouched for collision checking.
 angle_rad = (0:719).' * (2 * pi / 720);
@@ -77,6 +79,7 @@ obstacle = makeAzElObstacleData("obstacle", obstacleTime_s, ...
 obstacles = obstacle;
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [-7 0], ...
     "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 goalState = struct("time_s", 120, "position_deg", [7 0], ...
@@ -94,15 +97,18 @@ options = struct("GoalTimeMode", "earliestArrival", ...
     "AzimuthInterval_deg", [-180 180], "Verbose", false);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 result.ExampleValidation = result.Validation;
 if ~result.Success
     warning("exampleAzElPlanning:PlanningFailed", "%s", result.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if controls.PlotOutputs
     result.PlotHandles = plotAzElMotion(result, struct( ...
@@ -113,6 +119,7 @@ if controls.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleControls = controls;
 result.ExampleInputs = struct("obstacles", obstacles, ...
     "initialState", initialState, "goalState", goalState, ...

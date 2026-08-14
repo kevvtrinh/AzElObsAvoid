@@ -46,6 +46,7 @@ if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, required))
 end
 
 %% Section 1: Plot Workspace & Routes
+
 workspaceFigure = figure("Visible", options.FigureVisible, ...
     "Name", options.Title);
 workspaceAxes = axes(workspaceFigure);
@@ -90,6 +91,7 @@ box(workspaceAxes, "on");
 legend(workspaceAxes, "Location", "best");
 
 %% Section 2: Plot Kinematics
+
 kinematicsFigure = gobjects(0, 1);
 kinematicAxes = gobjects(4, 1);
 if options.ShowKinematics
@@ -156,9 +158,27 @@ handles = struct("WorkspaceFigure", workspaceFigure, ...
 end
 
 %% Section 3: Local Functions
+
 function options = resolvePlotOptions(defaults, overrides)
 %% Section 0: Header & Readme
-% Merge and validate presentation and animation controls.
+% SYNTAX
+%   options = resolvePlotOptions(defaults, overrides)
+%**************************************************************************
+% PURPOSE
+%   - Merge and validate presentation and animation controls.
+%**************************************************************************
+% INPUTS
+%   - defaults (scalar struct)
+%   - overrides (scalar struct)
+%       Partial controls; unknown fields are ignored with one warning.
+%**************************************************************************
+% OUTPUTS
+%   - options (scalar struct)
+%       Fully resolved and normalized plot controls.
+%**************************************************************************
+% UNITS
+%   - Pause_s is seconds; counts and logical controls are dimensionless.
+%**************************************************************************
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("plotAzElMotion:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -202,7 +222,23 @@ end
 
 function value = logicalScalar(value, name)
 %% Section 0: Header & Readme
-% Normalize one logical presentation control.
+% SYNTAX
+%   value = logicalScalar(value, name)
+%**************************************************************************
+% PURPOSE
+%   - Normalize one logical presentation control.
+%**************************************************************************
+% INPUTS
+%   - value (scalar logical or binary numeric value)
+%   - name (scalar text)
+%       Option name used in diagnostics.
+%**************************************************************************
+% OUTPUTS
+%   - value (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Values are dimensionless.
+%**************************************************************************
 if ~(islogical(value) && isscalar(value)) && ...
         ~(isnumeric(value) && isscalar(value) && ...
         isfinite(value) && any(value == [0 1]))
@@ -215,7 +251,26 @@ end
 function plotObstacleHistory( ...
         axesHandle, obstacles, color, lineStyle, displayName)
 %% Section 0: Header & Readme
-% Plot at most first, middle, and last full-resolution obstacle slices.
+% SYNTAX
+%   plotObstacleHistory(axesHandle, obstacles, color, ...
+%       lineStyle, displayName)
+%**************************************************************************
+% PURPOSE
+%   - Plot representative full-resolution obstacle-history slices.
+%**************************************************************************
+% INPUTS
+%   - axesHandle (scalar axes handle)
+%   - obstacles (structure array)
+%       Canonical obstacle records with time_s, az_deg, and el_deg.
+%   - color (1-by-3 numeric RGB row)
+%   - lineStyle, displayName (scalar text)
+%**************************************************************************
+% OUTPUTS
+%   - None. Graphics are added to axesHandle.
+%**************************************************************************
+% UNITS
+%   - Azimuth and elevation are degrees.
+%**************************************************************************
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     sampleCount = numel(obstacle.time_s);

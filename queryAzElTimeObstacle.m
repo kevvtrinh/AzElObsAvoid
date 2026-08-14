@@ -41,6 +41,7 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 %     are seconds.
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 defaultOptions = defaultQueryAzElTimeObstacleOptions();
 if nargin == 0
     isOccupied = defaultOptions;
@@ -109,6 +110,7 @@ if ~obstacleFieldHasRequiredFields
 end
 
 %% Section 2: Broadcast Query Arrays
+
 if isdatetime(queryTime)
     queryTime.TimeZone = "UTC";
     broadcastTime_s = seconds(queryTime - obstacleField.ReferenceTime);
@@ -157,6 +159,7 @@ isOccupied = false(queryCount, 1);
 blockingObstacleIndex = zeros(queryCount, 1, "uint32");
 
 %% Section 3: Test Packed Obstacles
+
 packedObstacles = obstacleField.Obstacles;
 for packedObstacleIndex = 1:numel(packedObstacles)
     % Once one obstacle claims a query, later obstacles cannot change its
@@ -362,6 +365,7 @@ for packedObstacleIndex = 1:numel(packedObstacles)
 end
 
 %% Section 4: Assemble The Output
+
 isOccupied = reshape(isOccupied, outputSize);
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
 if nargout >= 3
@@ -384,6 +388,7 @@ end
 end
 
 %% Section 5: Local Functions
+
 function options = defaultQueryAzElTimeObstacleOptions()
 %% Section 0: Header & Readme
 % SYNTAX

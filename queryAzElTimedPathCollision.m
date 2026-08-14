@@ -41,6 +41,7 @@ function [isOccupied, collisionDetails] = queryAzElTimedPathCollision( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 defaultOptions = struct( ...
     "TimePaddingSamples", 0, ...
     "BoundaryIsOccupied", true);
@@ -105,6 +106,7 @@ if ~isPackedInput
 end
 
 %% Section 2: Check Samples & Continuous Connecting Segments
+
 pointOptions = struct( ...
     "CollisionMode", "polygon", ...
     "TimePaddingSamples", resolvedOptions.TimePaddingSamples, ...
@@ -183,6 +185,7 @@ for segmentIndex = 1:pathPointCount - 1
 end
 
 %% Section 3: Assemble Stable Diagnostics
+
 isOccupied = sampleOccupied;
 if pathPointCount > 1
     isOccupied(2:end) = isOccupied(2:end) | segmentOccupied;
@@ -212,6 +215,7 @@ collisionDetails = struct( ...
 end
 
 %% Section 4: Local Functions
+
 function [activationStartTime_s, activationEndTime_s] = ...
         nearestSliceActivationIntervals(obstacleTime_s)
 %% Section 0: Header & Readme

@@ -31,6 +31,7 @@ function [obstacle, history] = createContiguousUSObstacle( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 if nargin < 3 || isempty(options)
     options = struct();
 end
@@ -69,6 +70,7 @@ verbose = logical(resolvedOptions.Verbose);
 resolvedOptions.Verbose = verbose;
 
 %% Section 2: Load One Dense Exterior Boundary
+
 boundaryFile = which("usastatehi.shp");
 if isempty(boundaryFile)
     error("createContiguousUSObstacle:MappingToolboxRequired", ...
@@ -103,6 +105,7 @@ end
     allLongitude_deg, allLatitude_deg);
 
 %% Section 3: Delegate All Slice Work To The Generic Constructor
+
 time_s = double(time_s(:));
 missionStartTime_s = time_s(1);
 missionDuration_s = time_s(end) - missionStartTime_s;
@@ -127,6 +130,7 @@ history.ExampleOptions = resolvedOptions;
 end
 
 %% Section 4: Local Functions
+
 function transformed_deg = transformUSSlice( ...
         sourcePosition_deg, sampleTime_s, ~, motionMode, ...
         missionStartTime_s, missionDuration_s, ...

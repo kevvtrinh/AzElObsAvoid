@@ -28,6 +28,8 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 % UNITS
 %   - Polygon coordinates and safetyMargin_deg are degrees.
 
+%% Section 1: Resolve Options & Normalize Obstacles
+
 validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
 if nargin < 3 || isempty(optionOverrides)
@@ -56,7 +58,8 @@ if isfield(optionOverrides, "Verbose") && ...
 end
 inflatedAzElData = combineAzElObstacles(azElData);
 
-%% Section 1: Rebuild Protected Geometry From Original Geometry
+%% Section 2: Rebuild Protected Geometry From Original Geometry
+
 % The requested margin is absolute. Rebuilding from original boundaries
 % makes repeated calls idempotent and prevents downstream double inflation.
 for obstacleIndex = 1:numel(inflatedAzElData)
@@ -95,11 +98,31 @@ for obstacleIndex = 1:numel(inflatedAzElData)
 end
 end
 
+%% Section 3: Local Functions
+
 function [protectedAzimuth_deg, protectedElevation_deg, ...
         sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
         originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
 %% Section 0: Header & Readme
-% Protect one independent boundary slice for serial or parfor execution.
+% SYNTAX
+%   [protectedAzimuth_deg, protectedElevation_deg, ...
+%       sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
+%       originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
+%**************************************************************************
+% PURPOSE
+%   - Protect one polygon slice for serial or parallel execution.
+%**************************************************************************
+% INPUTS
+%   - originalAzimuth_deg, originalElevation_deg (numeric vectors)
+%   - safetyMargin_deg (nonnegative numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - protectedAzimuth_deg, protectedElevation_deg (numeric columns)
+%   - sourceVertexCount, protectedVertexCount (integer scalars)
+%**************************************************************************
+% UNITS
+%   - Coordinates and safety margin are degrees.
+%**************************************************************************
 originalAzimuth_deg = double(originalAzimuth_deg(:));
 originalElevation_deg = double(originalElevation_deg(:));
 [protectedAzimuth_deg, protectedElevation_deg] = ...
@@ -113,7 +136,22 @@ end
 
 function printProtectionProgress(progress)
 %% Section 0: Header & Readme
-% Report completions on the client to keep worker output readable.
+% SYNTAX
+%   printProtectionProgress(progress)
+%**************************************************************************
+% PURPOSE
+%   - Report parallel slice completion on the MATLAB client.
+%**************************************************************************
+% INPUTS
+%   - progress (scalar struct)
+%       Completed index, total count, time, and vertex counts.
+%**************************************************************************
+% OUTPUTS
+%   - None. Progress is written to the command window.
+%**************************************************************************
+% UNITS
+%   - Time_s is seconds; counts are dimensionless.
+%**************************************************************************
 fprintf( ...
     "[az/el protect] slice %d/%d at t=%.3f s: " + ...
     "%d source -> %d protected vertices.\n", ...

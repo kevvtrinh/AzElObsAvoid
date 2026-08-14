@@ -25,6 +25,7 @@ function result = exampleAlternatingSlalom(slalomCount, options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(slalomCount)
     slalomCount = 6;
     options = struct();
@@ -46,6 +47,7 @@ validateattributes(slalomCount, {'numeric'}, ...
     "Alternating slalom with %d baffles", slalomCount)), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
+
 % Use one conservative horizon for both retimers so jerk is the only paired
 % benchmark input that changes.
 missionEndTime_s = 120 + 60 * slalomCount;
@@ -95,6 +97,7 @@ for baffleIndex = 1:slalomCount
 end
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, ...
@@ -105,10 +108,12 @@ limits = struct( ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "alternating slalom", ...
     struct("RequireDirectBlocked", true));
@@ -132,6 +137,7 @@ exampleValidation.Passed = exampleValidation.Passed && ...
     alternatingPassageSatisfied;
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
@@ -139,6 +145,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.slalomCount = slalomCount;
 result.baffleBoundaries_deg = baffleBoundaries_deg;

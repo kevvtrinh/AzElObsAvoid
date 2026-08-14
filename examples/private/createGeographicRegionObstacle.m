@@ -37,6 +37,7 @@ function [obstacle, history, scenario] = ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 if nargin < 4 || isempty(options)
     options = struct();
 end
@@ -85,6 +86,7 @@ if ~any(regionName == supportedRegions)
 end
 
 %% Section 2: Load & Clip Full-Resolution Geographic Boundaries
+
 if regionName == "hawaii"
     sourceFile = which("usastatehi.shp");
     if isempty(sourceFile)
@@ -167,6 +169,7 @@ maximumBoundarySpacing_deg = 0.02;
 finiteBoundary = isfinite(longitude_deg) & isfinite(latitude_deg);
 
 %% Section 3: Derive A Directly Blocked Request
+
 finiteLongitude_deg = longitude_deg(finiteBoundary);
 finiteLatitude_deg = latitude_deg(finiteBoundary);
 minimumLongitude_deg = min(finiteLongitude_deg);
@@ -201,6 +204,7 @@ goalPosition_deg = [ ...
     routeLongitude_deg, maximumLatitude_deg + endpointClearance_deg];
 
 %% Section 4: Construct The Canonical Protected Obstacle
+
 displayName = upper(extractBefore(regionName, 2)) + ...
     extractAfter(regionName, 1);
 constructionOptions = struct("Verbose", verbose);
@@ -233,6 +237,7 @@ end
 end
 
 %% Section 5: Local Functions
+
 function shape = rectanglePolyshape(bounds_deg)
 %% Section 0: Header & Readme
 % SYNTAX

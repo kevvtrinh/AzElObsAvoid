@@ -29,6 +29,7 @@ function result = exampleInterceptMovingTargetAtSetTime( ...
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(interceptTime_s)
     interceptTime_s = 12;
     options = struct();
@@ -50,9 +51,11 @@ validateattributes(interceptTime_s, {'numeric'}, ...
     [2.5 2.5]);
 
 %% Section 2: Create Obstacles
+
 obstacles = [];
 
 %% Section 3: Create Planner Inputs
+
 targetTime_s = linspace(0, max(30, interceptTime_s + 5), 7).';
 targetMotion = struct( ...
     "time_s", targetTime_s, ...
@@ -75,10 +78,12 @@ interceptOptions = struct( ...
     "PlannerOptions", options);
 
 %% Section 4: Run Planner
+
 result = planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "specified-time moving-target intercept");
 specifiedTimeSatisfied = result.obstacleField.ObstacleCount == 0 && ...
@@ -90,6 +95,7 @@ exampleValidation.Passed = exampleValidation.Passed && ...
     specifiedTimeSatisfied;
 
 %% Section 6: Plot Diagnostics And Motion
+
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
@@ -97,6 +103,7 @@ if jerkConfiguration.PlotOutputs
 end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.obstacles = obstacles;
 result.ExampleConfiguration = jerkConfiguration;

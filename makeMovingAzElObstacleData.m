@@ -39,6 +39,7 @@ function [azElData, history] = makeMovingAzElObstacleData( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 if nargin < 7 || isempty(options)
     options = struct();
 end
@@ -88,6 +89,7 @@ validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'real','finite','scalar','nonnegative'});
 
 %% Section 2: Generate Independent Source Slices
+
 sourcePosition_deg = [sourceAzimuth_deg, sourceElevation_deg];
 sliceCount = numel(time_s);
 azimuthBySlice_deg = cell(sliceCount, 1);
@@ -113,6 +115,7 @@ for sampleIndex = 1:sliceCount
 end
 
 %% Section 3: Construct The Canonical Protected History
+
 constructionOptions = struct("Verbose", verbose);
 azElData = makeAzElObstacleData( ...
     obstacleName, time_s, azimuthBySlice_deg, elevationBySlice_deg, ...
@@ -130,6 +133,7 @@ history = struct( ...
 end
 
 %% Section 4: Local Functions
+
 function [azimuth_deg, elevation_deg, vertexCount, area_deg2, ...
         aspectRatio, centroid_deg, bounds_deg] = generateOneSlice( ...
         sliceTransform, sourcePosition_deg, sampleTime_s, sampleIndex)
