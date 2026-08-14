@@ -146,7 +146,7 @@ report = struct( ...
     "MATLABVersion", string(version), ...
     "Platform", string(computer), ...
     "MATLABCoreCount", feature("numcores"), ...
-    "OptimizationAvailable", optimizationIsAvailable(), ...
+    "RetimerImplementation", "certifiedAnalyticSpatialJerk", ...
     "ImplementationBaseRevision", ...
         "a79d1bf868f5029ac96777f474082e5443596370", ...
     "ImplementationState", ...
@@ -274,35 +274,6 @@ if isnumeric(value) && value ~= 0 && value ~= 1
         "%s must be logical or numeric 0 or 1.", fieldName);
 end
 value = logical(value);
-end
-
-function available = optimizationIsAvailable()
-%% Section 0: Header & Readme
-% SYNTAX
-%   available = optimizationIsAvailable()
-%**************************************************************************
-% PURPOSE
-%   - Report whether the finite-jerk mesh optimizer can run in this session.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - available (logical scalar)
-%       True when fmincon and its Optimization Toolbox license are present.
-%**************************************************************************
-% UNITS
-%   - The output is dimensionless.
-%**************************************************************************
-available = exist("fmincon", "file") == 2;
-if available
-    try
-        available = license("test", "Optimization_Toolbox");
-    catch
-        available = false;
-    end
-end
-available = logical(available);
 end
 
 function catalog = sharedExampleCatalog()
@@ -703,7 +674,6 @@ function record = extractRunRecord( ...
 %   - Physical field names carry seconds and degree-based units.
 %**************************************************************************
 timedPath = result.timedSlopePath;
-diagnostics = timedPath.ConstraintDiagnostics;
 candidateCount = height(result.candidateDiagnostics);
 feasibleCandidateCount = nnz( ...
     result.candidateDiagnostics.Retimed & ...
@@ -742,14 +712,6 @@ record.CandidateRouteCount = candidateCount;
 record.FeasibleCandidateCount = feasibleCandidateCount;
 record.SelectedCandidateIndex = result.selectedCandidateIndex;
 record.RetimerType = string(timedPath.RetimerType);
-record.TimeOptimizationAttempted = logical(fieldOrDefault( ...
-    diagnostics, "TimeOptimizationAttempted", false));
-record.TimeOptimizationSucceeded = logical(fieldOrDefault( ...
-    diagnostics, "TimeOptimizationSucceeded", false));
-record.TimeOptimizationIterationCount = fieldOrDefault( ...
-    diagnostics, "TimeOptimizationIterationCount", 0);
-record.TimeOptimizationFunctionCount = fieldOrDefault( ...
-    diagnostics, "TimeOptimizationFunctionCount", 0);
 end
 
 function record = emptyRunRecord()
@@ -795,11 +757,7 @@ record = struct( ...
     "CandidateRouteCount", 0, ...
     "FeasibleCandidateCount", 0, ...
     "SelectedCandidateIndex", NaN, ...
-    "RetimerType", "", ...
-    "TimeOptimizationAttempted", false, ...
-    "TimeOptimizationSucceeded", false, ...
-    "TimeOptimizationIterationCount", 0, ...
-    "TimeOptimizationFunctionCount", 0);
+    "RetimerType", "");
 end
 
 function peak = finiteColumnPeak(values)
@@ -855,36 +813,6 @@ if size(position_deg, 1) < 2
     return;
 end
 length_deg = sum(vecnorm(diff(double(position_deg), 1, 1), 2, 2));
-end
-
-function value = fieldOrDefault(structure, fieldName, defaultValue)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = fieldOrDefault(structure, fieldName, defaultValue)
-%**************************************************************************
-% PURPOSE
-%   - Read one optional nonempty field while preserving a stable fallback.
-%**************************************************************************
-% INPUTS
-%   - structure (scalar struct or other value)
-%       Candidate diagnostics structure.
-%   - fieldName (string scalar or character vector)
-%       Field to read when present and nonempty.
-%   - defaultValue (any value)
-%       Value returned when the requested field is unavailable.
-%**************************************************************************
-% OUTPUTS
-%   - value (any value)
-%       Requested field value or the supplied default.
-%**************************************************************************
-% UNITS
-%   - Units are inherited from the requested field or default value.
-%**************************************************************************
-value = defaultValue;
-if isstruct(structure) && isfield(structure, fieldName) && ...
-        ~isempty(structure.(fieldName))
-    value = structure.(fieldName);
-end
 end
 
 function summaryTable = summarizeRuns(runTable, catalog)

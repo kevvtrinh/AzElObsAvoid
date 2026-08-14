@@ -1,4 +1,9 @@
-# Shared Example Jerk-Constraint Benchmark
+# Archived Shared Example Jerk-Constraint Benchmark
+
+These results describe the pre-refactor implementation and are retained only
+as the reproducible comparison baseline. Run the benchmark source on the
+current branch before drawing runtime conclusions about the distilled
+analytic retimer.
 
 This report compares the complete finite-jerk and unconstrained-jerk planner
 modes on the eight runnable scenarios shared with
@@ -24,7 +29,7 @@ difference: `[Inf Inf]` versus the example's finite limit.
 
 - MATLAB R2024b Update 4, Windows `PCWIN64`
 - Six MATLAB-reported cores
-- Optimization Toolbox and `fmincon` available
+- Pre-refactor mesh optimizer was available for this archived run
 - Serial execution (`UseParallel = "off"`)
 - Figures, animation, swept surfaces, and kinematic plots disabled
 - One discarded fixed-intercept warm-up per mode
