@@ -31,6 +31,16 @@ violation, fallback, substitution, or unfavorable result inside the code.
 
 - Do not put example names, obstacle names, map shapes, or expected routes into
   planner logic.
+- Do not encode an example's event sequence, route transition, opening time,
+  or expected decision as a production-planner heuristic, even when the code
+  uses neutral names. Generality is determined by behavior, not identifiers.
+- A planner change motivated by one example must state the input-driven
+  invariant it implements and must be tested on a structurally different case.
+  If no general algorithm has been implemented, report that limitation instead
+  of presenting an example-specific heuristic as general, adaptive, optimal,
+  or complete.
+- Do not pretend that passing the motivating example proves general behavior.
+  Report exactly which scenario families and failure modes were exercised.
 - Do not add hidden waypoints, preferred detour directions, guided corridors,
   hard-coded seeds, or scenario-specific branches to make a fixture pass.
 - Do not trick the user into thinking a requirement passed by hiding a limit,

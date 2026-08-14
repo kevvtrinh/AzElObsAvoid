@@ -87,6 +87,16 @@ search = buildAzElVisibilityRoutes(obstacleField, initialState, ...
     options.MaximumRetimedVisibilityRoutes);
 candidateCount = numel(candidateRoutes_deg);
 
+departureSearchTime_s = initialState.time_s;
+if options.GoalTimeMode == "earliestarrival" && ...
+        ~isempty(search.VisibilityGraphs)
+    graphTime_s = [search.VisibilityGraphs.Time_s].';
+    graphTime_s = graphTime_s( ...
+        graphTime_s >= initialState.time_s & ...
+        graphTime_s <= goalState.time_s);
+    departureSearchTime_s = unique([departureSearchTime_s; graphTime_s]);
+end
+
 %% Section 3: Smooth, Retime & Check Every Candidate
 
 candidateTimedPaths = cell(candidateCount, 1);
@@ -109,8 +119,7 @@ for candidateIndex = 1:candidateCount
         end
         smoothPath = smoothRoute(route_deg, obstacleField, ...
             snapshotTime_s(candidateIndex), options);
-        departureCandidateTime_s = unique([ ...
-            initialState.time_s; snapshotTime_s(candidateIndex)]);
+        departureCandidateTime_s = departureSearchTime_s;
         timedPath = emptyTimedPath( ...
             limits, options, "No departure time was feasible.");
         blocked = false(0, 1);
@@ -141,6 +150,7 @@ for candidateIndex = 1:candidateCount
                     bestArrivalTime_s = departureArrivalTime_s;
                     timedPath = attemptTimedPath;
                     blocked = attemptBlocked;
+                    break;
                 end
             elseif ~fallbackTimedPath.Success
                 fallbackTimedPath = attemptTimedPath;
@@ -260,6 +270,8 @@ searchDiagnostics = struct(...
     "FeasibleCandidateCount", nnz(collisionFree), ...
     "SelectedCandidateIndex", selectedCandidateIndex, ...
     "RouteConsolidation", consolidation, ...
+    "DepartureTimeCandidates_s", departureSearchTime_s, ...
+    "DepartureTimeCandidateCount", numel(departureSearchTime_s), ...
     "ParallelExecution", search.ParallelExecution, ...
     "BestAttemptPosition_deg", bestAttemptPosition_deg, ...
     "BestAttemptTime_s", bestAttemptTime_s, ...
@@ -578,40 +590,20 @@ snapshotTime_s = initialState.time_s;
 graphIndex = 0;
 successful = find([graphs.Success]);
 distinct = zeros(0, 1);
-isTemporalOpportunity = false;
 
 for visibilityGraphIndex = reshape(successful, 1, [])
     candidate = graphs(visibilityGraphIndex).PathPosition_deg;
     isDuplicate = false;
-    matchedExistingGeometry = false;
-    previousGraphHadSamePath = false;
-    if visibilityGraphIndex > 1 && graphs(visibilityGraphIndex - 1).Success
-        previousPath = graphs(visibilityGraphIndex - 1).PathPosition_deg;
-        previousGraphHadSamePath = ...
-            isequal(size(previousPath), size(candidate)) && ...
-            max(abs(previousPath(:) - candidate(:))) <= 1e-9;
-    end
-    opensTimedWindow = ~previousGraphHadSamePath && ...
-        graphs(visibilityGraphIndex).Time_s > initialState.time_s;
 
     for routeIndex = 1:numel(routes)
         route = routes{routeIndex};
 
         sameGeometry = isequal(size(route), size(candidate)) && ...
             max(abs(route(:) - candidate(:))) <= 1e-9;
-        if ~sameGeometry
-            continue;
+        if sameGeometry
+            isDuplicate = true;
+            break;
         end
-        matchedExistingGeometry = true;
-
-        % The same geometry is useful again when it reappears after one or
-        % more snapshots with a different selected path. It receives its
-        % own availability time without consuming the geometric-route cap.
-        if opensTimedWindow
-            continue;
-        end
-        isDuplicate = true;
-        break;
     end
 
     if ~isDuplicate
@@ -620,36 +612,25 @@ for visibilityGraphIndex = reshape(successful, 1, [])
             graphs(visibilityGraphIndex).Time_s; %#ok<AGROW>
         graphIndex(end + 1, 1) = visibilityGraphIndex; %#ok<AGROW>
         distinct(end + 1, 1) = visibilityGraphIndex; %#ok<AGROW>
-        isTemporalOpportunity(end + 1, 1) = ...
-            matchedExistingGeometry && opensTimedWindow; %#ok<AGROW>
     end
 end
 
 if numel(routes) > maximumCount + 1
-    geometricRouteIndex = find(~isTemporalOpportunity);
-    geometricRouteIndex(geometricRouteIndex == 1) = [];
-    cost = zeros(numel(geometricRouteIndex), 1);
+    cost = zeros(numel(routes) - 1, 1);
 
-    for localRouteIndex = 1:numel(geometricRouteIndex)
-        routeIndex = geometricRouteIndex(localRouteIndex);
-        cost(localRouteIndex) = ...
+    for routeIndex = 2:numel(routes)
+        cost(routeIndex - 1) = ...
             sum(vecnorm(diff(routes{routeIndex}), 2, 2));
     end
 
-    retainedNonDirectIndex = zeros(0, 1);
-    if ~isempty(cost)
-        [~, cheapest] = min(cost);
-        retained = unique(round(linspace( ...
-            1, numel(cost), min(maximumCount, numel(cost))))).';
-        retained = unique([cheapest; retained], "stable");
-        if numel(retained) > maximumCount
-            retained = retained(1:maximumCount);
-        end
-        retainedNonDirectIndex = geometricRouteIndex(retained);
+    [~, cheapest] = min(cost);
+    retained = unique(round(linspace(1, numel(cost), maximumCount))).';
+    retained = unique([cheapest; retained], "stable");
+    if numel(retained) > maximumCount
+        retained = retained(1:maximumCount);
     end
 
-    keep = [1; retainedNonDirectIndex; find(isTemporalOpportunity)];
-    keep = unique(keep, "stable");
+    keep = [1; retained + 1];
     routes = routes(keep);
     snapshotTime_s = snapshotTime_s(keep);
     graphIndex = graphIndex(keep);
