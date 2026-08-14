@@ -30,8 +30,6 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %       Euclidean polygon inflation applied here before data is returned.
 %   - constructionOptions (scalar struct, optional)
 %       .Verbose prints per-slice protection progress (default false).
-%       .UseParallel is auto/on/off or logical; unavailable parallel
-%       support falls back to serial execution.
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)

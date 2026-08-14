@@ -80,8 +80,6 @@ for regionIndex = 1:regionCount
         "time_s", missionEndTime_s, ...
         "position_deg", scenario.goalPosition_deg);
     regionOptions = options;
-    regionOptions.Title = "Extreme visibility: " + ...
-        regionNames(regionIndex);
     regionResults{regionIndex} = planAzElMotion( ...
         obstacles{regionIndex}, initialState, goalState, ...
         limits, regionOptions);
@@ -123,8 +121,14 @@ for regionIndex = 1:regionCount
 end
 
 %% Section 6: Plot Diagnostics And Motion
-% planAzElMotion already created the requested workspace, animation, and
-% kinematic figures for each returned result without scenario knowledge.
+if jerkConfiguration.PlotOutputs
+    for regionIndex = 1:regionCount
+        regionResults{regionIndex}.PlotHandles = plotAzElMotion( ...
+            regionResults{regionIndex}, struct( ...
+            "FigureVisible", jerkConfiguration.FigureVisible, ...
+            "Title", "Extreme visibility: " + regionNames(regionIndex)));
+    end
+end
 
 %% Section 7: Return Example Metadata
 result = regionResults{end};

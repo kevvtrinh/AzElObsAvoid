@@ -16,9 +16,6 @@ function obstacleField = buildAzElTimeObstacleField( ...
 %       flattened in caller order. [] creates a valid zero-obstacle field.
 %       NaN vertex rows separate polygon regions.
 %   - optionOverrides (scalar struct)
-%       .MaximumVerticesPerRegion (positive integer or Inf)
-%           Boundary cap per region. Finite lossy caps are rejected because
-%           collision geometry must conservatively contain the source.
 %       .ReferenceTime (datetime scalar)
 %           UTC epoch corresponding to time_s == 0.
 %       .Verbose (logical scalar)
@@ -62,21 +59,9 @@ for optionIndex = 1:numel(providedOptionFields)
         resolvedOptions.(optionName) = optionOverrides.(optionName);
     end
 end
-validateattributes(resolvedOptions.MaximumVerticesPerRegion, {'numeric'}, ...
-    {'scalar', 'real', 'positive'});
-if isfinite(resolvedOptions.MaximumVerticesPerRegion)
-    validateattributes(resolvedOptions.MaximumVerticesPerRegion, {'numeric'}, ...
-        {'integer', '>=', 4});
-end
-maximumVerticesPerRegion = resolvedOptions.MaximumVerticesPerRegion;
 validateattributes(resolvedOptions.Verbose, ...
     {'logical','numeric'}, {'scalar'});
 resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
-if isfinite(maximumVerticesPerRegion)
-    error("buildAzElTimeObstacleField:NonconservativeVertexCap", ...
-        "Finite MaximumVerticesPerRegion values can shrink protected " + ...
-        "geometry. Use Inf so packed collision geometry remains exact.");
-end
 
 % The reference epoch is the one input still checked here, because
 % queryAzElTimeObstacle reads it from the obstacle field on every collision
@@ -116,7 +101,6 @@ for obstacleIndex = 1:numel(canonicalObstacles)
             obstacleIndex, numel(canonicalObstacles), ...
             obstacleData.targetName, sliceCount);
     end
-    reducedRegionCount = 0;
     droppedRegionCount = 0;
 
     % One buffer entry per time slice, filled by the slice loop below and
@@ -192,52 +176,9 @@ for obstacleIndex = 1:numel(canonicalObstacles)
             ringAzimuth_deg = inputAzimuth_deg(ringVertexRows);
             ringElevation_deg = inputElevation_deg(ringVertexRows);
 
-            % Cap the ring by uniform index subsampling. This is a storage
-            % and performance control, NOT a geometric simplifier: it does
-            % not preserve area or shape, it just thins vertices evenly. A
-            % ring that arrives explicitly closed stays explicitly closed.
-            inputRingSize = numel(ringAzimuth_deg);
-            hasFiniteVertexCap = isfinite(maximumVerticesPerRegion);
-            exceedsVertexCap = inputRingSize > maximumVerticesPerRegion;
-            shouldReduceRing = hasFiniteVertexCap && exceedsVertexCap;
-            if shouldReduceRing
-                reducedRegionCount = reducedRegionCount + 1;
-                % "Explicitly closed" means the last vertex repeats the
-                % first. Such a ring must keep that property, or the closing
-                % edge below would be computed from the wrong pair.
-                isExplicitlyClosed = inputRingSize > 3 && ...
-                    hypot( ...
-                    ringAzimuth_deg(1) - ringAzimuth_deg(end), ...
-                    ringElevation_deg(1) - ringElevation_deg(end)) <= ...
-                    tolerance_deg;
-                if isExplicitlyClosed
-                    % Thin the unique vertices only -- range stops one short
-                    % of the duplicate closer -- then re-append the first
-                    % kept vertex. That is one fewer unique vertex than the
-                    % cap plus one repeat, so the cap is respected exactly.
-                    keptVertexIndex = round(linspace( ...
-                        1, inputRingSize - 1, ...
-                        maximumVerticesPerRegion - 1));
-                    ringAzimuth_deg = [ ...
-                        ringAzimuth_deg(keptVertexIndex); ...
-                        ringAzimuth_deg(keptVertexIndex(1))];
-                    ringElevation_deg = [ ...
-                        ringElevation_deg(keptVertexIndex); ...
-                        ringElevation_deg(keptVertexIndex(1))];
-                else
-                    keptVertexIndex = round(linspace( ...
-                        1, inputRingSize, maximumVerticesPerRegion));
-                    ringAzimuth_deg = ringAzimuth_deg(keptVertexIndex);
-                    ringElevation_deg = ...
-                        ringElevation_deg(keptVertexIndex);
-                end
-                % round(linspace(...)) can repeat an index when the cap is
-                % close to the ring size. Harmless: repeats become
-                % zero-length edges and are dropped just below.
-            end
             if numel(ringAzimuth_deg) < 3
                 droppedRegionCount = droppedRegionCount + 1;
-                continue;  % ring degenerated during reduction; drop it
+                continue;
             end
 
             % Build the closed edge list. circshift(-1) pairs vertex i with
@@ -395,12 +336,6 @@ for obstacleIndex = 1:numel(canonicalObstacles)
         numel(packedObstacle.BoundsDeg));
     packedObstacle.EstimatedStorageBytes = doubleStorageBytes;
     packedObstacles(obstacleIndex) = packedObstacle;
-    if reducedRegionCount > 0
-        warning("buildAzElTimeObstacleField:RegionsReduced", ...
-            "Obstacle %d (%s) uniformly reduced %d polygon regions; " + ...
-            "the packed collision boundary is an approximation.", ...
-            obstacleIndex, packedObstacle.Name, reducedRegionCount);
-    end
     if droppedRegionCount > 0
         warning("buildAzElTimeObstacleField:RegionsDropped", ...
             "Obstacle %d (%s) dropped %d regions with fewer than three " + ...
@@ -486,10 +421,8 @@ function options = defaultAzElTimeObstacleFieldOptions()
 %       Fully populated public options structure.
 %**************************************************************************
 % UNITS
-%   - MaximumVerticesPerRegion is dimensionless.
 %   - ReferenceTime is a UTC datetime.
 options = struct( ...
-    "MaximumVerticesPerRegion", Inf, ...
     "ReferenceTime", [], ...
     "Verbose", false);
 end

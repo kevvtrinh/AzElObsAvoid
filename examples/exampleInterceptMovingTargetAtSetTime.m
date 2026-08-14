@@ -90,7 +90,12 @@ exampleValidation.Passed = exampleValidation.Passed && ...
     specifiedTimeSatisfied;
 
 %% Section 6: Plot Diagnostics And Motion
-% planAzElMovingTargetIntercept created all requested plots from result data.
+result.PlotHandles = struct();
+if jerkConfiguration.PlotOutputs
+    result.PlotHandles = plotAzElMotion(result, struct( ...
+        "FigureVisible", jerkConfiguration.FigureVisible, ...
+        "Title", jerkConfiguration.Title));
+end
 
 %% Section 7: Return Example Metadata
 result.ExampleValidation = exampleValidation;

@@ -16,6 +16,9 @@ function [plannerOptions, jerkConfiguration] = ...
 % EXAMPLE-ONLY OPTION FIELDS
 %   - EnableJerkConstraint (logical scalar; default true)
 %   - MaxJerk_deg_s3 (positive finite scalar or two-element vector)
+%   - FigureVisible ("on" or "off"; default "on")
+%   - PlotOutputs (logical scalar; default true)
+%   - Title (scalar text)
 %**************************************************************************
 % OUTPUTS
 %   - plannerOptions (scalar struct)
@@ -69,28 +72,43 @@ if isscalar(maxJerk_deg_s3)
     maxJerk_deg_s3 = repmat(maxJerk_deg_s3, 1, 2);
 end
 
-exampleOnlyFields = intersect(fieldnames(optionOverrides), ...
-    {'EnableJerkConstraint', 'MaxJerk_deg_s3'}, "stable");
-if ~isempty(exampleOnlyFields)
-    optionOverrides = rmfield(optionOverrides, exampleOnlyFields);
+figureVisible = fieldValue(optionOverrides, plannerDefaults, ...
+    "FigureVisible", "on");
+figureVisible = lower(string(figureVisible));
+if ~isscalar(figureVisible) || ~any(figureVisible == ["on" "off"])
+    error("resolveAzElExampleOptions:InvalidFigureVisible", ...
+        "FigureVisible must be on or off.");
 end
-plotDefaults = struct( ...
-    "FigureVisible", "on", ...
-    "ShowAnimation", true, ...
-    "ShowKinematicPlot", true);
-plotDefaultNames = fieldnames(plotDefaults);
-for index = 1:numel(plotDefaultNames)
-    name = plotDefaultNames{index};
-    if ~isfield(plannerDefaults, name) || isempty(plannerDefaults.(name))
-        plannerDefaults.(name) = plotDefaults.(name);
-    end
+plotOutputs = fieldValue(optionOverrides, plannerDefaults, ...
+    "PlotOutputs", true);
+validateattributes(plotOutputs, {'logical','numeric'}, ...
+    {'real','finite','scalar'});
+plotOutputs = logical(plotOutputs);
+titleText = string(fieldValue(optionOverrides, plannerDefaults, ...
+    "Title", "Azimuth/elevation motion plan"));
+if ~isscalar(titleText)
+    error("resolveAzElExampleOptions:InvalidTitle", ...
+        "Title must be scalar text.");
 end
 
-plannerOptions = plannerDefaults;
-overrideNames = fieldnames(optionOverrides);
+plannerSupported = string(fieldnames(planAzElMotion()));
+plannerOptions = struct();
+defaultNames = intersect(string(fieldnames(plannerDefaults)), ...
+    plannerSupported, "stable");
+for index = 1:numel(defaultNames)
+    name = defaultNames(index);
+    plannerOptions.(name) = plannerDefaults.(name);
+end
+exampleOnlyNames = ["EnableJerkConstraint" "MaxJerk_deg_s3" ...
+    "FigureVisible" "PlotOutputs" "Title" "ShowAnimation" ...
+    "ShowKinematicPlot" "ShowSweptSurfaces" ...
+    "AnimationFrameStride" "AnimationPause_s" ...
+    "MaximumDisplayedSlicesPerObstacle" "MotionType" "UseParallel"];
+overrideNames = setdiff(string(fieldnames(optionOverrides)), ...
+    exampleOnlyNames, "stable");
 for index = 1:numel(overrideNames)
-    name = overrideNames{index};
-    if ~isempty(optionOverrides.(name))
+    name = overrideNames(index);
+    if any(name == plannerSupported) && ~isempty(optionOverrides.(name))
         plannerOptions.(name) = optionOverrides.(name);
     end
 end
@@ -101,5 +119,20 @@ end
 jerkConfiguration = struct( ...
     "JerkConstraintEnabled", enableJerkConstraint, ...
     "MaxJerk_deg_s3", resolvedJerk_deg_s3, ...
-    "ConfiguredFiniteMaxJerk_deg_s3", maxJerk_deg_s3);
+    "ConfiguredFiniteMaxJerk_deg_s3", maxJerk_deg_s3, ...
+    "FigureVisible", figureVisible, ...
+    "PlotOutputs", plotOutputs, ...
+    "Title", titleText);
+end
+
+function value = fieldValue(overrides, defaults, name, fallback)
+%% Section 0: Header & Readme
+% Resolve one example-only control without passing it to the planner.
+value = fallback;
+if isfield(defaults, name) && ~isempty(defaults.(name))
+    value = defaults.(name);
+end
+if isfield(overrides, name) && ~isempty(overrides.(name))
+    value = overrides.(name);
+end
 end

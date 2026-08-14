@@ -126,26 +126,7 @@ goalState = struct( ...
 
 %% Section 2: Run The Maintained Obstacle-Free Planner
 plannerOptions = options.PlannerOptions;
-plannerDefaultOptions = planAzElMotion();
-animationRequested = logical(plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "ShowAnimation"));
-figureVisible = plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "FigureVisible");
-animationFrameStride = plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "AnimationFrameStride");
-animationPause_s = plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "AnimationPause_s");
-showSweptSurfaces = plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "ShowSweptSurfaces");
-maximumDisplayedSlices = plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, ...
-    "MaximumDisplayedSlicesPerObstacle");
-plannerTitle = string(plannerDisplayOption( ...
-    plannerOptions, plannerDefaultOptions, "Title"));
 plannerOptions.GoalTimeMode = "fixedArrival";
-% The wrapper supplies the final animation itself so the target and the
-% pursuer advance on the same timeline.
-plannerOptions.ShowAnimation = false;
 result = planAzElMotion([], initialState, goalState, limits, ...
     plannerOptions);
 plannerSucceeded = result.Success;
@@ -156,24 +137,6 @@ if plannerSucceeded
     trackTime_s = unique([trackTime_s; result.timedSlopePath.time_s]);
 end
 trackPosition_deg = evaluateTargetMotion(targetMotion, trackTime_s);
-if plannerSucceeded && animationRequested
-    if lower(string(figureVisible)) == "off"
-        animationPause_s = 0;
-    end
-    result.animation = animateAzElTimedSlopePath( ...
-        result.timedSlopePath, result.obstacleField, struct( ...
-        "FigureVisible", figureVisible, ...
-        "FrameStride", animationFrameStride, ...
-        "Pause_s", animationPause_s, ...
-        "ShowSweptSurfaces", showSweptSurfaces, ...
-        "MaximumDisplayedSlicesPerObstacle", ...
-        maximumDisplayedSlices, ...
-        "TargetTime_s", trackTime_s, ...
-        "TargetPosition_deg", trackPosition_deg, ...
-        "TargetLabel", "Moving target", ...
-        "Title", plannerTitle + " animation"));
-end
-result.Options.ShowAnimation = animationRequested;
 
 %% Section 3: Validate The Intercept Contract
 targetPositionAtIntercept_deg = interceptPosition_deg;
@@ -243,34 +206,7 @@ if ~interceptPassed
     result.Message = string(result.Message) + " " + validationMessage;
 end
 
-%% Section 4: Draw The Moving Target World Line
-targetTrackHandles = struct( ...
-    "TimeSpace", gobjects(0, 1), ...
-    "Intercept", gobjects(0, 1), ...
-    "Animation3D", gobjects(0, 1), ...
-    "Animation2D", gobjects(0, 1));
-if isfield(result, "spaceView") && ...
-        isgraphics(result.spaceView.Axes)
-    targetTrackHandles.TimeSpace = plot3(result.spaceView.Axes, ...
-        trackPosition_deg(:, 1), trackPosition_deg(:, 2), trackTime_s, ...
-        "-.", "Color", [0.72 0.10 0.72], "LineWidth", 2.3, ...
-        "DisplayName", "Moving target");
-    targetTrackHandles.Intercept = plot3(result.spaceView.Axes, ...
-        interceptPosition_deg(1), interceptPosition_deg(2), ...
-        interceptTime_s, "p", "MarkerSize", 13, ...
-        "MarkerFaceColor", [0.95 0.30 0.82], ...
-        "MarkerEdgeColor", "k", "DisplayName", "Intercept");
-    legend(result.spaceView.Axes, "Location", "best");
-end
-if isfield(result, "animation") && isstruct(result.animation) && ...
-        isfield(result.animation, "Axes3D") && ...
-        isgraphics(result.animation.Axes3D)
-    targetTrackHandles.Animation3D = ...
-        result.animation.TargetWorldLine3D;
-    targetTrackHandles.Animation2D = ...
-        result.animation.TargetWorldLine2D;
-end
-
+%% Section 4: Assemble Intercept Diagnostics
 result.InterceptMode = options.InterceptMode;
 result.TargetMotion = targetMotion;
 result.RequestedInterceptTime_s = options.SpecifiedInterceptTime_s;
@@ -282,7 +218,6 @@ result.SearchDiagnostics = searchDiagnostics;
 result.InterceptValidation = interceptValidation;
 result.TargetTrackTime_s = trackTime_s;
 result.TargetTrackPosition_deg = trackPosition_deg;
-result.TargetTrackHandles = targetTrackHandles;
 result.InterceptOptions = options;
 end
 
@@ -910,14 +845,9 @@ goalState = struct( ...
     "acceleration_deg_s2", [0 0]);
 plannerOptions = options.PlannerOptions;
 plannerOptions.GoalTimeMode = "earliestArrival";
-plannerOptions.FigureVisible = "off";
-plannerOptions.ShowAnimation = false;
-plannerOptions.ShowKinematicPlot = false;
-plannerOptions.ShowSweptSurfaces = false;
 plannerOptions.Verbose = false;
 trialResult = planAzElMotion( ...
     [], initialState, goalState, limits, plannerOptions);
-deletePlannerFigures(trialResult);
 if ~trialResult.Success
     residual_s = Inf;
     arrivalTime_s = Inf;
@@ -925,32 +855,6 @@ if ~trialResult.Success
 end
 arrivalTime_s = trialResult.goalLineInterceptTime_s;
 residual_s = arrivalTime_s - candidateTime_s;
-end
-
-function value = plannerDisplayOption(overrides, defaults, fieldName)
-%% Section 0: Header & Readme
-% Resolve one planner display option without duplicating planner parsing.
-value = defaults.(fieldName);
-if isfield(overrides, fieldName) && ~isempty(overrides.(fieldName))
-    value = overrides.(fieldName);
-end
-end
-
-function deletePlannerFigures(plannerResult)
-%% Section 0: Header & Readme
-% Close every hidden figure produced by one feasibility trial.
-containerNames = ["spaceView" "animation" "kinematicPlot"];
-for containerIndex = 1:numel(containerNames)
-    containerName = containerNames(containerIndex);
-    if ~isfield(plannerResult, containerName)
-        continue;
-    end
-    container = plannerResult.(containerName);
-    if isstruct(container) && isfield(container, "Figure") && ...
-            isgraphics(container.Figure)
-        delete(container.Figure);
-    end
-end
 end
 
 function diagnostics = emptyInterceptSearchDiagnostics()

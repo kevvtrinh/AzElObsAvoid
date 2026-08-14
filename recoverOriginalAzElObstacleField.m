@@ -61,7 +61,7 @@ for obstacleIndex = 1:numel(originalAzElData)
     originalAzElData(obstacleIndex) = ...
         normalizeAzElTimeObstacleData(originalAzElData(obstacleIndex));
 end
-buildOptions = struct("MaximumVerticesPerRegion", Inf);
+buildOptions = struct();
 if isfield(obstacleField, "ReferenceTime") && ...
         isdatetime(obstacleField.ReferenceTime)
     buildOptions.ReferenceTime = obstacleField.ReferenceTime;

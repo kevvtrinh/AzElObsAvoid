@@ -132,7 +132,12 @@ exampleValidation.Passed = exampleValidation.Passed && ...
     alternatingPassageSatisfied;
 
 %% Section 6: Plot Diagnostics And Motion
-% planAzElMotion created all requested plots from the returned result.
+result.PlotHandles = struct();
+if jerkConfiguration.PlotOutputs
+    result.PlotHandles = plotAzElMotion(result, struct( ...
+        "FigureVisible", jerkConfiguration.FigureVisible, ...
+        "Title", jerkConfiguration.Title));
+end
 
 %% Section 7: Return Example Metadata
 result.ExampleValidation = exampleValidation;

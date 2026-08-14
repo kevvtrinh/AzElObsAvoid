@@ -11,15 +11,14 @@ function [obstacle, history] = createContiguousUSObstacle( ...
 %   - Load and union the Mapping Toolbox contiguous-U.S. outline.
 %   - Construct either a static outline history or the maintained moving,
 %     independently deforming dense-obstacle demonstration history.
-%   - Keep source loading, deformation code, optional parfor execution,
-%     progress, validation, and safety protection out of example scripts.
+%   - Keep source loading, deformation code, validation, and safety
+%     protection out of example scripts.
 %**************************************************************************
 % INPUTS
 %   - time_s (nonempty increasing numeric vector)
 %   - safetyMargin_deg (nonnegative scalar)
 %   - options (scalar struct, optional)
 %       .MotionMode is static or movingDeforming (default static).
-%       .UseParallel is auto/on/off or logical (default auto).
 %       .Verbose is logical (default false).
 %**************************************************************************
 % OUTPUTS
@@ -41,7 +40,6 @@ if ~isstruct(options) || ~isscalar(options)
 end
 defaultOptions = struct( ...
     "MotionMode", "static", ...
-    "UseParallel", "auto", ...
     "Verbose", false);
 unknownOptionFields = setdiff( ...
     fieldnames(options), fieldnames(defaultOptions), "stable");
@@ -69,7 +67,6 @@ validateattributes(resolvedOptions.Verbose, ...
     {'logical','numeric'}, {'scalar'});
 verbose = logical(resolvedOptions.Verbose);
 resolvedOptions.Verbose = verbose;
-useParallel = resolvedOptions.UseParallel;
 
 %% Section 2: Load One Dense Exterior Boundary
 boundaryFile = which("usastatehi.shp");
@@ -120,8 +117,7 @@ sliceTransform = @(sourcePosition_deg, sampleTime_s, sampleIndex) ...
 [obstacle, history] = makeMovingAzElObstacleData( ...
     "Contiguous United States", time_s, ...
     baseLongitude_deg, baseLatitude_deg, sliceTransform, ...
-    safetyMargin_deg, struct( ...
-    "UseParallel", useParallel, "Verbose", verbose));
+    safetyMargin_deg, struct("Verbose", verbose));
 history.motionMode = motionMode;
 history.sourceFile = string(boundaryFile);
 history.sourceOutlineLatLon_deg = ...
