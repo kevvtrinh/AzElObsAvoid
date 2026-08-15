@@ -27,6 +27,10 @@ function [isOccupied, collisionDetails] = queryAzElTimedPathCollision( ...
 %   - optionOverrides (scalar struct, optional; default struct())
 %       .TimePaddingSamples is a nonnegative integer (default 0).
 %       .BoundaryIsOccupied controls exact polygon contact (default true).
+%       .StopAtFirstCollision permits an incomplete segment scan after the
+%       earliest collision is established (default false). This is useful
+%       for rejecting candidates; complete trajectory validation keeps the
+%       default false value.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied (N-by-1 logical vector)
@@ -34,7 +38,8 @@ function [isOccupied, collisionDetails] = queryAzElTimedPathCollision( ...
 %       inbound segment, so any(isOccupied) validates the complete path.
 %   - collisionDetails (scalar struct)
 %       Stable sample/segment masks, blocking obstacle and source-slice
-%       indices, interpreted time/position histories, and resolved options.
+%       indices, evaluated-segment count, scan-completion status,
+%       interpreted time/position histories, and resolved options.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and numeric time is seconds from ReferenceTime.
@@ -44,7 +49,8 @@ function [isOccupied, collisionDetails] = queryAzElTimedPathCollision( ...
 
 defaultOptions = struct( ...
     "TimePaddingSamples", 0, ...
-    "BoundaryIsOccupied", true);
+    "BoundaryIsOccupied", true, ...
+    "StopAtFirstCollision", false);
 if nargin == 0
     isOccupied = defaultOptions;
     collisionDetails = struct();
@@ -84,6 +90,15 @@ if isnumeric(resolvedOptions.BoundaryIsOccupied) && ...
 end
 resolvedOptions.BoundaryIsOccupied = ...
     logical(resolvedOptions.BoundaryIsOccupied);
+validateattributes(resolvedOptions.StopAtFirstCollision, ...
+    {'logical','numeric'}, {'real','finite','scalar'});
+if isnumeric(resolvedOptions.StopAtFirstCollision) && ...
+        ~any(resolvedOptions.StopAtFirstCollision == [0 1])
+    error("queryAzElTimedPathCollision:InvalidEarlyExitPolicy", ...
+        "StopAtFirstCollision must be scalar logical or binary numeric.");
+end
+resolvedOptions.StopAtFirstCollision = ...
+    logical(resolvedOptions.StopAtFirstCollision);
 
 validateattributes(position_deg, {'numeric'}, ...
     {'real','finite','2d','ncols',2,'nonempty'});
@@ -127,6 +142,9 @@ segmentBlockingObstacleIndex = zeros( ...
     size(segmentOccupied), "uint32");
 segmentBlockingSliceIndex = zeros( ...
     size(segmentOccupied), "uint32");
+segmentCount = numel(segmentOccupied);
+evaluatedSegmentCount = 0;
+stoppedAtFirstCollision = false;
 
 packedObstacles = obstacleField.Obstacles;
 isSameTimePath = pathPointCount > 1 && all(time_s == time_s(1));
@@ -144,8 +162,20 @@ if isSameTimePath
         segmentBlockingSliceIndex(newlyBlocked) = uint32( ...
             obstacleBlockingSliceIndex(newlyBlocked));
     end
+    evaluatedSegmentCount = segmentCount;
 else
-    for segmentIndex = 1:pathPointCount - 1
+    segmentEvaluationLimit = segmentCount;
+    firstOccupiedSampleIndex = find(sampleOccupied, 1, "first");
+    if resolvedOptions.StopAtFirstCollision && ...
+            ~isempty(firstOccupiedSampleIndex)
+        % Only inbound segments preceding the earliest occupied sample can
+        % contain an earlier collision. Later segments cannot change the
+        % first-collision result needed for candidate rejection.
+        segmentEvaluationLimit = max(0, firstOccupiedSampleIndex - 1);
+    end
+
+    for segmentIndex = 1:segmentEvaluationLimit
+        evaluatedSegmentCount = segmentIndex;
         segmentStartTime_s = time_s(segmentIndex);
         segmentEndTime_s = time_s(segmentIndex + 1);
         segmentStart_deg = position_deg(segmentIndex, :);
@@ -167,8 +197,19 @@ else
                 break;
             end
         end
+        if segmentOccupied(segmentIndex) && ...
+                resolvedOptions.StopAtFirstCollision
+            break;
+        end
     end
+
+    stoppedAtFirstCollision = ...
+        resolvedOptions.StopAtFirstCollision && ...
+        evaluatedSegmentCount < segmentCount && ...
+        (~isempty(firstOccupiedSampleIndex) || ...
+        any(segmentOccupied(1:evaluatedSegmentCount)));
 end
+segmentEvaluationComplete = evaluatedSegmentCount == segmentCount;
 
 %% Section 3: Assemble Stable Diagnostics
 
@@ -195,6 +236,9 @@ collisionDetails = struct( ...
     "BlockingSliceIndex", blockingSliceIndex, ...
     "SegmentBlockingObstacleIndex", segmentBlockingObstacleIndex, ...
     "SegmentBlockingSliceIndex", segmentBlockingSliceIndex, ...
+    "EvaluatedSegmentCount", evaluatedSegmentCount, ...
+    "SegmentEvaluationComplete", segmentEvaluationComplete, ...
+    "StoppedAtFirstCollision", stoppedAtFirstCollision, ...
     "time_s", time_s, ...
     "position_deg", position_deg, ...
     "Options", resolvedOptions);

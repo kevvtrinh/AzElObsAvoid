@@ -1,18 +1,23 @@
 function result = planAzElMovingTargetIntercept( ...
-        initialState, targetMotion, limits, optionOverrides)
+        obstacles, initialState, targetMotion, limits, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = planAzElMovingTargetIntercept()
 %   result = planAzElMovingTargetIntercept( ...
 %       initialState, targetMotion, limits, options)
+%   result = planAzElMovingTargetIntercept( ...
+%       obstacles, initialState, targetMotion, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Resolve a sampled or constant-velocity target into the earliest
 %     feasible or a specified intercept state, then use planAzElMotion.
-%   - Support obstacle-free azimuth/elevation intercept demonstrations
-%     without introducing a second retiming implementation.
+%   - Support interception through static or moving obstacles without
+%     introducing a second search or retiming implementation.
 %**************************************************************************
 % INPUTS
+%   - obstacles (canonical obstacle data, nested cell array, or [])
+%       Static or time-varying protected geometry. The four-input legacy
+%       call omits this argument and remains obstacle-free.
 %   - initialState (scalar struct)
 %       time_s, position_deg, and optional velocity/acceleration fields.
 %   - targetMotion (scalar struct)
@@ -37,14 +42,21 @@ function result = planAzElMovingTargetIntercept( ...
 %       .PlannerOptions            planAzElMotion option overrides
 %     Earliest mode numerically scans arbitrary sampled paths at the target
 %     knots and at no more than InitialSearchStep_s between knots, then
-%     bisects the first detected feasibility transition. EarliestCertified
-%     is true only for the constant-velocity receding-ray model;
+%     bisects the first detected feasibility transition. With obstacles,
+%     a velocity-only displacement bound safely removes times that are
+%     impossible, and a point query removes times when the target is inside
+%     protected geometry, before the full planner and continuous collision
+%     query; the interpolated first proposal is always rechecked. Search
+%     stops when the target first leaves PlannerOptions.AzimuthInterval_deg
+%     or the physical elevation interval [-90, 90] degrees.
+%     EarliestCertified
+%     is true only for the obstacle-free constant-velocity receding-ray model;
 %     arbitrary-path results report EarliestNumericallyResolved instead. A
 %     stationary initial
 %     state is required because fixed-arrival slack may use an initial hold.
 %     Velocity matching requires the instantaneous target velocity to be
-%     tangent to the direct obstacle-free route; use false for a
-%     position-only intercept of a general path.
+%     tangent to the direct start-to-intercept vector. Use false for a
+%     position-only intercept of a general or obstacle-avoiding path.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -52,7 +64,9 @@ function result = planAzElMovingTargetIntercept( ...
 %       validation, and target-track plot diagnostics. TargetMotion echoes
 %       the normalized model; TargetVelocityAtIntercept_deg_s is evaluated
 %       from its selected interpolation. Expected planner infeasibility is
-%       returned by planAzElMotion; invalid target contracts throw.
+%       returned by planAzElMotion; invalid target contracts throw. If the
+%       target leaves the az/el frame before a feasible intercept, Success
+%       is false and TerminationReason is "targetLeftAzElFrame".
 %**************************************************************************
 % UNITS
 %   - Angles are degrees; time is seconds; velocity is deg/s.
@@ -74,7 +88,29 @@ if nargin == 0
     result = defaultOptions;
     return;
 end
-if nargin < 4 || isempty(optionOverrides)
+
+% The original obstacle-free interface placed initialState first. Detect
+% that stable record shape before validating either form so existing
+% callers continue to use the same implementation without an adapter.
+usesObstacleFreeCall = isstruct(obstacles) && isscalar(obstacles) && ...
+    isfield(obstacles, "position_deg") && isfield(obstacles, "time_s");
+if usesObstacleFreeCall
+    legacyInitialState = obstacles;
+    legacyTargetMotion = initialState;
+    legacyLimits = targetMotion;
+    legacyOptions = struct();
+    if nargin >= 4 && ~isempty(limits)
+        legacyOptions = limits;
+    end
+    obstacles = [];
+    initialState = legacyInitialState;
+    targetMotion = legacyTargetMotion;
+    limits = legacyLimits;
+    optionOverrides = legacyOptions;
+elseif nargin < 4
+    error("planAzElMovingTargetIntercept:NotEnoughInputs", ...
+        "Provide obstacles, initialState, targetMotion, and limits.");
+elseif nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 options = resolveInterceptOptions(defaultOptions, optionOverrides);
@@ -101,19 +137,48 @@ if interceptMode == "specifiedtime"
     interceptTime_s = options.SpecifiedInterceptTime_s;
     validateattributes(interceptTime_s, {'numeric'}, ...
         {'real', 'finite', 'scalar', '>', initialState.time_s});
-    searchDiagnostics.Message = ...
-        "The caller supplied the intercept time; no search was required.";
+    [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
+        targetMotion, initialState.time_s, interceptTime_s, options);
+    targetLeftFrameBeforeIntercept = targetLeavesFrame && ...
+        interceptTime_s > frameExitTime_s + options.SearchTimeTolerance_s;
+    if targetLeftFrameBeforeIntercept
+        interceptTime_s = frameExitTime_s;
+        searchDiagnostics.Success = false;
+        searchDiagnostics.TerminationReason = "targetLeftAzElFrame";
+        searchDiagnostics.Message = ...
+            "Cannot catch up to the target before it leaves the az/el frame.";
+    else
+        searchDiagnostics.Message = ...
+            "The caller supplied the intercept time; no search was required.";
+    end
 else
     validateEarliestInitialVelocity(initialState);
+    requestedSearchEndTime_s = initialState.time_s + ...
+        options.MaximumSearchDuration_s;
+    [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
+        targetMotion, initialState.time_s, requestedSearchEndTime_s, options);
     targetAtInitial_deg = evaluateTargetMotion( ...
         targetMotion, initialState.time_s);
     if norm(targetAtInitial_deg - initialState.position_deg) <= 1e-10
         error("planAzElMovingTargetIntercept:InitialCoincidence", ...
             "The target is already at initialState.position_deg.");
     end
+    searchOptions = options;
+    if targetLeavesFrame
+        searchOptions.MaximumSearchDuration_s = min( ...
+            options.MaximumSearchDuration_s, ...
+            frameExitTime_s - initialState.time_s);
+    end
     [interceptTime_s, searchDiagnostics] = ...
-        searchEarliestInterceptTime(initialState, targetMotion, ...
-        limits, options);
+        searchEarliestInterceptTime(obstacles, initialState, ...
+        targetMotion, limits, searchOptions);
+    targetLeftFrameBeforeIntercept = targetLeavesFrame && ...
+        ~searchDiagnostics.Success;
+    if targetLeftFrameBeforeIntercept
+        searchDiagnostics.TerminationReason = "targetLeftAzElFrame";
+        searchDiagnostics.Message = ...
+            "Cannot catch up to the target before it leaves the az/el frame.";
+    end
 end
 [interceptPosition_deg, targetVelocityAtIntercept_deg_s] = ...
     evaluateTargetMotion(targetMotion, interceptTime_s);
@@ -129,11 +194,11 @@ goalState = struct( ...
     "velocity_deg_s", goalVelocity_deg_s, ...
     "acceleration_deg_s2", [0 0]);
 
-%% Section 3: Run The Maintained Obstacle-Free Planner
+%% Section 3: Run The Maintained Planner
 
 plannerOptions = options.PlannerOptions;
 plannerOptions.GoalTimeMode = "fixedArrival";
-result = planAzElMotion([], initialState, goalState, limits, ...
+result = planAzElMotion(obstacles, initialState, goalState, limits, ...
     plannerOptions);
 plannerSucceeded = result.Success;
 
@@ -209,7 +274,13 @@ interceptValidation = struct( ...
     "TimeError_s", timeError_s, ...
     "Message", validationMessage);
 result.Success = interceptPassed;
-if ~interceptPassed
+if targetLeftFrameBeforeIntercept
+    result.TerminationReason = "targetLeftAzElFrame";
+    result.Message = searchDiagnostics.Message;
+elseif ~searchDiagnostics.Success
+    result.TerminationReason = searchDiagnostics.TerminationReason;
+    result.Message = searchDiagnostics.Message;
+elseif ~interceptPassed
     result.Message = string(result.Message) + " " + validationMessage;
 end
 
@@ -222,6 +293,14 @@ result.InterceptTime_s = interceptTime_s;
 result.InterceptPosition_deg = interceptPosition_deg;
 result.TargetPositionAtIntercept_deg = targetPositionAtIntercept_deg;
 result.TargetVelocityAtIntercept_deg_s = targetVelocityAtIntercept_deg_s;
+result.TargetFrameExitTime_s = frameExitTime_s;
+result.TargetLeftFrameBeforeIntercept = targetLeftFrameBeforeIntercept;
+if targetLeftFrameBeforeIntercept
+    result.InterceptTime_s = NaN;
+    result.InterceptPosition_deg = [NaN NaN];
+    result.TargetPositionAtIntercept_deg = [NaN NaN];
+    result.TargetVelocityAtIntercept_deg_s = [NaN NaN];
+end
 result.PlannerSearchDiagnostics = result.SearchDiagnostics;
 result.SearchDiagnostics = searchDiagnostics;
 result.InterceptValidation = interceptValidation;
@@ -304,6 +383,93 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planAzElMovingTargetIntercept:InvalidPlannerOptions", ...
         "PlannerOptions must be a scalar struct.");
 end
+end
+
+function [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
+        targetMotion, startTime_s, requestedEndTime_s, options)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
+%       targetMotion, startTime_s, requestedEndTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Find the first time the target leaves the configured azimuth interval
+%     or the physical elevation interval.
+%**************************************************************************
+% INPUTS
+%   - targetMotion (normalized scalar struct)
+%   - startTime_s, requestedEndTime_s (finite numeric scalars)
+%   - options (resolved intercept-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - frameExitTime_s (numeric scalar)
+%       First boundary-crossing time, or Inf when the target stays in frame.
+%   - targetLeavesFrame (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Time is seconds and frame coordinates are degrees.
+%**************************************************************************
+plannerDefaults = planAzElMotion();
+azimuthInterval_deg = plannerDefaults.AzimuthInterval_deg;
+if isfield(options.PlannerOptions, "AzimuthInterval_deg") && ...
+        ~isempty(options.PlannerOptions.AzimuthInterval_deg)
+    azimuthInterval_deg = options.PlannerOptions.AzimuthInterval_deg;
+end
+validateattributes(azimuthInterval_deg, {'numeric'}, ...
+    {'real', 'finite', 'vector', 'numel', 2, 'increasing'});
+azimuthInterval_deg = reshape(double(azimuthInterval_deg), 1, 2);
+elevationInterval_deg = [-90 90];
+
+endTime_s = requestedEndTime_s;
+if targetMotion.ModelType == "sampledTrajectory"
+    endTime_s = min(endTime_s, targetMotion.DomainTime_s(2));
+    knotIsRelevant = targetMotion.time_s > startTime_s & ...
+        targetMotion.time_s < endTime_s;
+    inspectionTime_s = [startTime_s; ...
+        targetMotion.time_s(knotIsRelevant); endTime_s];
+else
+    inspectionTime_s = [startTime_s; endTime_s];
+end
+inspectionTime_s = unique(inspectionTime_s);
+inspectionPosition_deg = evaluateTargetMotion( ...
+    targetMotion, inspectionTime_s);
+positionIsInFrame = ...
+    inspectionPosition_deg(:, 1) >= azimuthInterval_deg(1) & ...
+    inspectionPosition_deg(:, 1) <= azimuthInterval_deg(2) & ...
+    inspectionPosition_deg(:, 2) >= elevationInterval_deg(1) & ...
+    inspectionPosition_deg(:, 2) <= elevationInterval_deg(2);
+
+firstOutsideIndex = find(~positionIsInFrame, 1, "first");
+targetLeavesFrame = ~isempty(firstOutsideIndex);
+frameExitTime_s = Inf;
+if ~targetLeavesFrame
+    return;
+end
+if firstOutsideIndex == 1
+    frameExitTime_s = inspectionTime_s(1);
+    return;
+end
+
+% PCHIP and linear target segments remain within their endpoint ranges.
+% Bisection therefore isolates the first inside-to-outside crossing without
+% introducing an approximate target model or extrapolating the trajectory.
+lowerTime_s = inspectionTime_s(firstOutsideIndex - 1);
+upperTime_s = inspectionTime_s(firstOutsideIndex);
+for iterationIndex = 1:60
+    middleTime_s = 0.5 * (lowerTime_s + upperTime_s);
+    middlePosition_deg = evaluateTargetMotion(targetMotion, middleTime_s);
+    middleIsInFrame = ...
+        middlePosition_deg(1) >= azimuthInterval_deg(1) && ...
+        middlePosition_deg(1) <= azimuthInterval_deg(2) && ...
+        middlePosition_deg(2) >= elevationInterval_deg(1) && ...
+        middlePosition_deg(2) <= elevationInterval_deg(2);
+    if middleIsInFrame
+        lowerTime_s = middleTime_s;
+    else
+        upperTime_s = middleTime_s;
+    end
+end
+frameExitTime_s = lowerTime_s;
 end
 
 function initialState = validateInterceptInitialState(initialState)
@@ -769,7 +935,8 @@ function validateVelocityMatchGeometry( ...
 % UNITS
 %   - Position is degrees and velocity is degrees per second.
 %**************************************************************************
-% A direct obstacle-free route can match only a tangent terminal velocity.
+% The compatible velocity-matching mode uses the direct start-to-target
+% direction. Obstacle-avoiding routes should request position-only capture.
 if ~matchVelocity || norm(targetVelocity_deg_s) <= 1e-12
     return;
 end
@@ -795,16 +962,17 @@ end
 end
 
 function [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
-        initialState, targetMotion, limits, options)
+        obstacles, initialState, targetMotion, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
-%       initialState, targetMotion, limits, options)
+%       obstacles, initialState, targetMotion, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Find the first numerically feasible intercept on a target track.
 %**************************************************************************
 % INPUTS
+%   - obstacles (canonical obstacle data, nested cell array, or [])
 %   - initialState (normalized scalar struct)
 %   - targetMotion (normalized scalar struct)
 %   - limits (scalar planner-limit struct)
@@ -832,8 +1000,8 @@ if searchEndTime_s <= searchStartTime_s
     error("planAzElMovingTargetIntercept:EmptyTargetSearchDomain", ...
         "The target trajectory does not overlap the requested search horizon.");
 end
-certifiedRecedingRay = targetHasCertifiedRecedingRay( ...
-    initialState, targetMotion);
+certifiedRecedingRay = isempty(obstacles) && ...
+    targetHasCertifiedRecedingRay(initialState, targetMotion);
 if certifiedRecedingRay
     candidateTimes_s = recedingRaySearchTimes( ...
         searchStartTime_s, searchEndTime_s, options.InitialSearchStep_s);
@@ -842,22 +1010,40 @@ else
         targetMotion, searchStartTime_s, searchEndTime_s, ...
         options.InitialSearchStep_s);
 end
-lowerTime_s = candidateTimes_s(1);
-[lowerResidual_s, lowerArrivalTime_s] = interceptResidual( ...
-    lowerTime_s, searchEndTime_s, initialState, targetMotion, ...
-    limits, options);
+targetCandidateCount = numel(candidateTimes_s);
+
+prefilter = emptyKinematicPrefilterDiagnostics(candidateTimes_s);
+if ~isempty(obstacles)
+    prefilter = kinematicInterceptPrefilter(candidateTimes_s, obstacles, ...
+        initialState, targetMotion, limits);
+    candidateTimes_s = prefilter.FullValidationTimes_s;
+end
+
+if prefilter.HasKnownLowerBound
+    lowerTime_s = prefilter.LowerInfeasibleTime_s;
+    lowerResidual_s = prefilter.LowerResidual_s;
+    lowerArrivalTime_s = prefilter.LowerMinimumArrivalTime_s;
+    firstCandidateIndex = 1;
+    bracketEvaluationCount = 0;
+else
+    lowerTime_s = candidateTimes_s(1);
+    [lowerResidual_s, lowerArrivalTime_s] = interceptResidual( ...
+        lowerTime_s, searchEndTime_s, obstacles, initialState, ...
+        targetMotion, limits, options);
+    firstCandidateIndex = 2;
+    bracketEvaluationCount = 1;
+end
 upperTime_s = lowerTime_s;
 upperResidual_s = lowerResidual_s;
 upperArrivalTime_s = lowerArrivalTime_s;
-bracketEvaluationCount = 1;
-for candidateIndex = 2:numel(candidateTimes_s)
+for candidateIndex = firstCandidateIndex:numel(candidateTimes_s)
     if upperResidual_s <= 0
         break;
     end
     upperTime_s = candidateTimes_s(candidateIndex);
     [upperResidual_s, upperArrivalTime_s] = interceptResidual( ...
-        upperTime_s, searchEndTime_s, initialState, targetMotion, ...
-        limits, options);
+        upperTime_s, searchEndTime_s, obstacles, initialState, ...
+        targetMotion, limits, options);
     bracketEvaluationCount = bracketEvaluationCount + 1;
     if upperResidual_s > 0
         lowerTime_s = upperTime_s;
@@ -866,9 +1052,37 @@ for candidateIndex = 2:numel(candidateTimes_s)
     end
 end
 if upperResidual_s > 0
-    error("planAzElMovingTargetIntercept:NoInterceptInHorizon", ...
-        "No feasible intercept was found within %.6g seconds.", ...
-        options.MaximumSearchDuration_s);
+    interceptTime_s = searchEndTime_s;
+    diagnostics = emptyInterceptSearchDiagnostics();
+    diagnostics.Success = false;
+    diagnostics.Message = "No feasible intercept was found before the " + ...
+        "target search ended.";
+    diagnostics.TerminationReason = "noInterceptInHorizon";
+    diagnostics.LowerInfeasibleTime_s = lowerTime_s;
+    diagnostics.LowerResidual_s = lowerResidual_s;
+    diagnostics.LowerMinimumArrivalTime_s = lowerArrivalTime_s;
+    diagnostics.BracketEvaluationCount = bracketEvaluationCount;
+    diagnostics.KinematicPrefilterApplied = prefilter.Applied;
+    diagnostics.KinematicPrefilterEvaluationCount = ...
+        prefilter.EvaluationCount;
+    diagnostics.KinematicPrunedCandidateCount = ...
+        prefilter.PrunedCandidateCount;
+    diagnostics.InterpolatedCandidateTime_s = ...
+        prefilter.InterpolatedCandidateTime_s;
+    diagnostics.TargetCandidateCount = targetCandidateCount;
+    diagnostics.FullValidationCandidateCount = numel(candidateTimes_s);
+    diagnostics.FullPlannerEvaluationCount = bracketEvaluationCount;
+    diagnostics.EarliestCertified = false;
+    diagnostics.EarliestNumericallyResolved = false;
+    diagnostics.SearchMethod = conditionalSearchMethod(certifiedRecedingRay);
+    if prefilter.Applied
+        diagnostics.SearchMethod = ...
+            "interpolatedKinematicPrefilterAndValidatedScan";
+    end
+    diagnostics.SearchStartTime_s = searchStartTime_s;
+    diagnostics.SearchEndTime_s = searchEndTime_s;
+    diagnostics.MaximumScanStep_s = options.InitialSearchStep_s;
+    return;
 end
 
 iterationCount = 0;
@@ -878,8 +1092,8 @@ while upperTime_s - lowerTime_s > ...
     iterationCount = iterationCount + 1;
     middleTime_s = 0.5 * (lowerTime_s + upperTime_s);
     [middleResidual_s, middleArrivalTime_s] = interceptResidual( ...
-        middleTime_s, searchEndTime_s, initialState, targetMotion, ...
-        limits, options);
+        middleTime_s, searchEndTime_s, obstacles, initialState, ...
+        targetMotion, limits, options);
     if middleResidual_s <= 0
         upperTime_s = middleTime_s;
         upperResidual_s = middleResidual_s;
@@ -891,10 +1105,20 @@ while upperTime_s - lowerTime_s > ...
     end
 end
 interceptTime_s = upperTime_s;
+fullPlannerEvaluationCount = bracketEvaluationCount + iterationCount;
+searchMethod = conditionalSearchMethod(certifiedRecedingRay);
+message = earliestSearchMessage(certifiedRecedingRay);
+if prefilter.Applied
+    searchMethod = "interpolatedKinematicPrefilterAndValidatedScan";
+    message = message + " The interpolated target prefilter discarded " + ...
+        string(prefilter.PrunedCandidateCount) + ...
+        " dynamically impossible candidate times before full obstacle checks.";
+end
 diagnostics = struct( ...
     "Success", lowerResidual_s > 0 && upperResidual_s <= 0 && ...
     upperTime_s - lowerTime_s <= options.SearchTimeTolerance_s, ...
-    "Message", earliestSearchMessage(certifiedRecedingRay), ...
+    "Message", message, ...
+    "TerminationReason", "interceptFound", ...
     "LowerInfeasibleTime_s", lowerTime_s, ...
     "UpperFeasibleTime_s", upperTime_s, ...
     "LowerResidual_s", lowerResidual_s, ...
@@ -903,6 +1127,13 @@ diagnostics = struct( ...
     "UpperMinimumArrivalTime_s", upperArrivalTime_s, ...
     "BracketEvaluationCount", bracketEvaluationCount, ...
     "BisectionIterationCount", iterationCount, ...
+    "KinematicPrefilterApplied", prefilter.Applied, ...
+    "KinematicPrefilterEvaluationCount", prefilter.EvaluationCount, ...
+    "KinematicPrunedCandidateCount", prefilter.PrunedCandidateCount, ...
+    "InterpolatedCandidateTime_s", prefilter.InterpolatedCandidateTime_s, ...
+    "TargetCandidateCount", targetCandidateCount, ...
+    "FullValidationCandidateCount", numel(candidateTimes_s), ...
+    "FullPlannerEvaluationCount", fullPlannerEvaluationCount, ...
     "EarliestCertified", certifiedRecedingRay && ...
     lowerResidual_s > 0 && ...
     upperResidual_s <= 0 && upperTime_s - lowerTime_s <= ...
@@ -910,26 +1141,163 @@ diagnostics = struct( ...
     "EarliestNumericallyResolved", lowerResidual_s > 0 && ...
     upperResidual_s <= 0 && upperTime_s - lowerTime_s <= ...
     options.SearchTimeTolerance_s, ...
-    "SearchMethod", conditionalSearchMethod(certifiedRecedingRay), ...
+    "SearchMethod", searchMethod, ...
     "SearchStartTime_s", searchStartTime_s, ...
     "SearchEndTime_s", searchEndTime_s, ...
     "MaximumScanStep_s", options.InitialSearchStep_s);
 end
 
+function diagnostics = kinematicInterceptPrefilter(candidateTimes_s, ...
+        obstacles, initialState, targetMotion, limits)
+%% Section 0: Header & Readme
+% SYNTAX
+%   diagnostics = kinematicInterceptPrefilter(candidateTimes_s, ...
+%       obstacles, initialState, targetMotion, limits)
+%**************************************************************************
+% PURPOSE
+%   - Discard target times forbidden by velocity or target-point occupancy.
+%   - Interpolate the first safe lower-bound zero crossing for validation.
+%**************************************************************************
+% INPUTS
+%   - candidateTimes_s (N-by-1 increasing numeric)
+%   - obstacles (canonical static or moving obstacle data)
+%   - initialState, targetMotion, limits (scalar structs)
+%       Normalized intercept request and resolved controls.
+%**************************************************************************
+% OUTPUTS
+%   - diagnostics (scalar struct)
+%       Pruned times, interpolated proposal, and known infeasible bound.
+%**************************************************************************
+% UNITS
+%   - Candidate, arrival, and residual values are seconds.
+%**************************************************************************
+diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s);
+diagnostics.Applied = true;
+residual_s = inf(size(candidateTimes_s));
+arrivalTime_s = inf(size(candidateTimes_s));
+firstPotentialIndex = 0;
+obstacleField = buildAzElTimeObstacleField(obstacles);
+
+maximumVelocity_deg_s = limits.maxVelocity_deg_s;
+validateattributes(maximumVelocity_deg_s, {'numeric'}, ...
+    {'real', 'positive', 'nonempty'});
+maximumVelocity_deg_s = reshape(double(maximumVelocity_deg_s), 1, []);
+if isscalar(maximumVelocity_deg_s)
+    maximumVelocity_deg_s = repmat(maximumVelocity_deg_s, 1, 2);
+elseif numel(maximumVelocity_deg_s) ~= 2
+    error("planAzElMovingTargetIntercept:InvalidVelocityLimit", ...
+        "limits.maxVelocity_deg_s must be scalar or two-element.");
+end
+
+for candidateIndex = 1:numel(candidateTimes_s)
+    targetPosition_deg = evaluateTargetMotion( ...
+        targetMotion, candidateTimes_s(candidateIndex));
+    displacement_deg = abs( ...
+        targetPosition_deg - initialState.position_deg);
+    minimumDuration_s = max( ...
+        displacement_deg ./ maximumVelocity_deg_s);
+    arrivalTime_s(candidateIndex) = ...
+        initialState.time_s + minimumDuration_s;
+    residual_s(candidateIndex) = arrivalTime_s(candidateIndex) - ...
+        candidateTimes_s(candidateIndex);
+    targetIsOccupied = queryAzElTimeObstacle( ...
+        obstacleField, targetPosition_deg(1), targetPosition_deg(2), ...
+        candidateTimes_s(candidateIndex));
+    if targetIsOccupied
+        residual_s(candidateIndex) = Inf;
+        arrivalTime_s(candidateIndex) = Inf;
+    end
+    diagnostics.EvaluationCount = candidateIndex;
+    if residual_s(candidateIndex) <= 0
+        firstPotentialIndex = candidateIndex;
+        break;
+    end
+end
+
+if firstPotentialIndex == 0
+    diagnostics.HasKnownLowerBound = true;
+    diagnostics.LowerInfeasibleTime_s = candidateTimes_s(end);
+    diagnostics.LowerResidual_s = residual_s(end);
+    diagnostics.LowerMinimumArrivalTime_s = arrivalTime_s(end);
+    diagnostics.PrunedCandidateCount = numel(candidateTimes_s);
+    diagnostics.FullValidationTimes_s = candidateTimes_s(end);
+    return;
+end
+if firstPotentialIndex == 1
+    diagnostics.FullValidationTimes_s = candidateTimes_s;
+    return;
+end
+
+lowerIndex = firstPotentialIndex - 1;
+lowerTime_s = candidateTimes_s(lowerIndex);
+upperTime_s = candidateTimes_s(firstPotentialIndex);
+lowerResidual_s = residual_s(lowerIndex);
+upperResidual_s = residual_s(firstPotentialIndex);
+interpolatedTime_s = upperTime_s;
+if isfinite(lowerResidual_s) && isfinite(upperResidual_s) && ...
+        lowerResidual_s > 0 && upperResidual_s <= 0
+    interpolationFraction = lowerResidual_s / ...
+        (lowerResidual_s - upperResidual_s);
+    interpolatedTime_s = lowerTime_s + interpolationFraction * ...
+        (upperTime_s - lowerTime_s);
+end
+
+diagnostics.HasKnownLowerBound = true;
+diagnostics.LowerInfeasibleTime_s = lowerTime_s;
+diagnostics.LowerResidual_s = lowerResidual_s;
+diagnostics.LowerMinimumArrivalTime_s = arrivalTime_s(lowerIndex);
+diagnostics.PrunedCandidateCount = lowerIndex;
+diagnostics.InterpolatedCandidateTime_s = interpolatedTime_s;
+diagnostics.FullValidationTimes_s = unique([ ...
+    interpolatedTime_s; candidateTimes_s(firstPotentialIndex:end)]);
+end
+
+function diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s)
+%% Section 0: Header & Readme
+% SYNTAX
+%   diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s)
+%**************************************************************************
+% PURPOSE
+%   - Return the stable internal target-prefilter diagnostics record.
+%**************************************************************************
+% INPUTS
+%   - candidateTimes_s (N-by-1 numeric)
+%       Chronological candidate times before kinematic pruning.
+%**************************************************************************
+% OUTPUTS
+%   - diagnostics (scalar struct)
+%       Default prefilter state and unchanged validation times.
+%**************************************************************************
+% UNITS
+%   - Candidate, arrival, and residual values are seconds.
+%**************************************************************************
+diagnostics = struct( ...
+    "Applied", false, ...
+    "EvaluationCount", 0, ...
+    "PrunedCandidateCount", 0, ...
+    "HasKnownLowerBound", false, ...
+    "LowerInfeasibleTime_s", NaN, ...
+    "LowerResidual_s", NaN, ...
+    "LowerMinimumArrivalTime_s", NaN, ...
+    "InterpolatedCandidateTime_s", NaN, ...
+    "FullValidationTimes_s", candidateTimes_s(:));
+end
+
 function [residual_s, arrivalTime_s] = interceptResidual( ...
-        candidateTime_s, searchEndTime_s, initialState, targetMotion, ...
-        limits, options)
+        candidateTime_s, searchEndTime_s, obstacles, initialState, ...
+        targetMotion, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [residual_s, arrivalTime_s] = interceptResidual( ...
-%       candidateTime_s, searchEndTime_s, initialState, targetMotion, ...
-%       limits, options)
+%       candidateTime_s, searchEndTime_s, obstacles, initialState, ...
+%       targetMotion, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Evaluate planner arrival relative to one candidate target time.
 %**************************************************************************
 % INPUTS
 %   - candidateTime_s, searchEndTime_s (finite numeric scalars)
+%   - obstacles (canonical obstacle data, nested cell array, or [])
 %   - initialState (normalized scalar struct)
 %   - targetMotion (normalized scalar struct)
 %   - limits (scalar planner-limit struct)
@@ -973,7 +1341,7 @@ plannerOptions = options.PlannerOptions;
 plannerOptions.GoalTimeMode = "earliestArrival";
 plannerOptions.Verbose = false;
 trialResult = planAzElMotion( ...
-    [], initialState, goalState, limits, plannerOptions);
+    obstacles, initialState, goalState, limits, plannerOptions);
 if ~trialResult.Success
     residual_s = Inf;
     arrivalTime_s = Inf;
@@ -1004,6 +1372,7 @@ function diagnostics = emptyInterceptSearchDiagnostics()
 diagnostics = struct( ...
     "Success", true, ...
     "Message", "", ...
+    "TerminationReason", "notRun", ...
     "LowerInfeasibleTime_s", NaN, ...
     "UpperFeasibleTime_s", NaN, ...
     "LowerResidual_s", NaN, ...
@@ -1012,6 +1381,13 @@ diagnostics = struct( ...
     "UpperMinimumArrivalTime_s", NaN, ...
     "BracketEvaluationCount", 0, ...
     "BisectionIterationCount", 0, ...
+    "KinematicPrefilterApplied", false, ...
+    "KinematicPrefilterEvaluationCount", 0, ...
+    "KinematicPrunedCandidateCount", 0, ...
+    "InterpolatedCandidateTime_s", NaN, ...
+    "TargetCandidateCount", 0, ...
+    "FullValidationCandidateCount", 0, ...
+    "FullPlannerEvaluationCount", 0, ...
     "EarliestCertified", true, ...
     "EarliestNumericallyResolved", true, ...
     "SearchMethod", "specifiedTime", ...
