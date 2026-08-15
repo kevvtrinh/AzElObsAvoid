@@ -332,8 +332,13 @@ if planningSucceeded
     [~, order] = sortrows(ranking, [1 2 3]);
     selectedCandidateIndex = feasibleIndex(order(1));
 else
-    selectedCandidateIndex = selectBestAttempt(retimed, ...
-        attemptArrivalTime_s, pathLength_deg, graphIndex);
+    % A failed result still returns the most informative attempted route:
+    % prefer retimed motion, then earlier arrival, shorter geometry, and
+    % finally the direct route and stable candidate order.
+    failedRanking = [~retimed(:), attemptArrivalTime_s(:), ...
+        pathLength_deg(:), graphIndex(:) > 0, (1:candidateCount).'];
+    [~, failedOrder] = sortrows(failedRanking, [1 2 3 4 5]);
+    selectedCandidateIndex = failedOrder(1);
 end
 
 selectedRoute_deg = candidateRoutes_deg{selectedCandidateIndex};
@@ -516,10 +521,27 @@ hasRefinableInterval = selectedIntervalIndex > 0;
 
 if ~(refinementRequested && stepBudgetAvailable && ...
         timeBudgetAvailable && hasRefinableInterval)
-    stopReason = adaptiveTemporalStopReason( ...
-        result, options, intervalSummary, refinementRequested, ...
-        stepBudgetAvailable, timeBudgetAvailable, ...
-        hasRefinableInterval);
+    if ~refinementRequested && result.Success && ...
+            ~options.ContinueAfterFirstFeasible
+        stopReason = "firstFeasibleAccepted";
+    elseif ~refinementRequested
+        stopReason = "outcomeNotRefinable";
+    elseif ~stepBudgetAvailable
+        stopReason = "refinementStepLimit";
+    elseif ~timeBudgetAvailable
+        stopReason = "planningTimeLimit";
+    elseif ~hasRefinableInterval && ...
+            intervalSummary.OmittedSourceSampleCount == 0 && ...
+            intervalSummary.ContinuousCoverageCertified
+        stopReason = "continuousCoverageCertified";
+    elseif ~hasRefinableInterval && ...
+            intervalSummary.OmittedSourceSampleCount == 0
+        stopReason = "sourceSnapshotsExhaustedContinuousCoverageUnknown";
+    elseif ~hasRefinableInterval
+        stopReason = "noCompetitiveRefinableInterval";
+    else
+        stopReason = "noRefinementNeeded";
+    end
     result = attachTemporalSearchDiagnostics( ...
         result, intervals, history, false, stopReason, ...
         options, toc(planningTimer));
@@ -586,8 +608,29 @@ keepRefinedResult = false;
 if ~result.Success
     keepRefinedResult = true;
 elseif refinedResult.Success
-    keepRefinedResult = refinedPlanIsPreferred( ...
-        refinedResult, result, options.GoalTimeMode);
+    % Compare the timing quantity controlled by GoalTimeMode, then use
+    % route length only as a deterministic near-equal tie breaker.
+    if options.GoalTimeMode == "fixedarrival"
+        refinedTime_s = ...
+            refinedResult.timedSlopePath.MinimumMotionDuration_s;
+        currentTime_s = result.timedSlopePath.MinimumMotionDuration_s;
+    else
+        refinedTime_s = refinedResult.goalLineInterceptTime_s;
+        currentTime_s = result.goalLineInterceptTime_s;
+    end
+    comparisonTolerance_s = 1e-9 * max( ...
+        1, max(abs([refinedTime_s currentTime_s])));
+    if refinedTime_s < currentTime_s - comparisonTolerance_s
+        keepRefinedResult = true;
+    elseif abs(refinedTime_s - currentTime_s) <= ...
+            comparisonTolerance_s
+        refinedLength_deg = sum(vecnorm(diff( ...
+            refinedResult.selectedRoute_deg, 1, 1), 2, 2));
+        currentLength_deg = sum(vecnorm(diff( ...
+            result.selectedRoute_deg, 1, 1), 2, 2));
+        keepRefinedResult = ...
+            refinedLength_deg < currentLength_deg - 1e-9;
+    end
 end
 
 if keepRefinedResult
@@ -771,8 +814,12 @@ for intervalIndex = 1:intervalCount
         sourceTimes_s < endTime_s;
     omittedTimes_s = sourceTimes_s(omittedMask);
 
-    connectivityChanged = intervalOverlapsConnectivityChange( ...
-        startTime_s, endTime_s, changeIntervals);
+    connectivityChanged = false;
+    if ~isempty(changeIntervals)
+        connectivityChanged = any( ...
+            [changeIntervals.EarlierTime_s] <= endTime_s & ...
+            [changeIntervals.LaterTime_s] >= startTime_s);
+    end
     intervalBlockingTimes_s = blockingTimes_s( ...
         blockingTimes_s >= startTime_s & ...
         blockingTimes_s <= endTime_s);
@@ -900,38 +947,6 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
 end
 end
 
-function overlaps = intervalOverlapsConnectivityChange( ...
-        startTime_s, endTime_s, changeIntervals)
-%% Section 0: Header & Readme
-% SYNTAX
-%   overlaps = intervalOverlapsConnectivityChange( ...
-%       startTime_s, endTime_s, changeIntervals)
-%**************************************************************************
-% PURPOSE
-%   - Identify intervals whose sampled graph connectivity or path cost
-%     changed and therefore deserve earlier local refinement.
-%**************************************************************************
-% INPUTS
-%   - startTime_s, endTime_s (finite scalar times)
-%   - changeIntervals (structure array)
-%**************************************************************************
-% OUTPUTS
-%   - overlaps (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Times are seconds.
-%**************************************************************************
-overlaps = false;
-for changeIndex = 1:numel(changeIntervals)
-    change = changeIntervals(changeIndex);
-    if change.EarlierTime_s <= endTime_s && ...
-            change.LaterTime_s >= startTime_s
-        overlaps = true;
-        return;
-    end
-end
-end
-
 function [intervalIndex, refinementTime_s] = ...
         selectTemporalIntervalForRefinement(intervals)
 %% Section 0: Header & Readme
@@ -1054,102 +1069,6 @@ result.SearchDiagnostics.ElapsedPlanningTime_s = elapsedPlanningTime_s;
 result.ElapsedPlanningTime_s = elapsedPlanningTime_s;
 end
 
-function reason = adaptiveTemporalStopReason( ...
-        result, options, intervalSummary, refinementRequested, ...
-        stepBudgetAvailable, timeBudgetAvailable, hasRefinableInterval)
-%% Section 0: Header & Readme
-% SYNTAX
-%   reason = adaptiveTemporalStopReason( ...
-%       result, options, intervalSummary, refinementRequested, ...
-%       stepBudgetAvailable, timeBudgetAvailable, hasRefinableInterval)
-%**************************************************************************
-% PURPOSE
-%   - Explain exactly why adaptive temporal search stopped.
-%**************************************************************************
-% INPUTS
-%   - result, options, intervalSummary (scalar structs)
-%   - refinementRequested, stepBudgetAvailable, timeBudgetAvailable, ...
-%       hasRefinableInterval (logical scalars)
-%**************************************************************************
-% OUTPUTS
-%   - reason (scalar string)
-%**************************************************************************
-% UNITS
-%   - The reason is dimensionless text.
-%**************************************************************************
-if ~refinementRequested && result.Success && ...
-        ~options.ContinueAfterFirstFeasible
-    reason = "firstFeasibleAccepted";
-elseif ~refinementRequested
-    reason = "outcomeNotRefinable";
-elseif ~stepBudgetAvailable
-    reason = "refinementStepLimit";
-elseif ~timeBudgetAvailable
-    reason = "planningTimeLimit";
-elseif ~hasRefinableInterval && ...
-        intervalSummary.OmittedSourceSampleCount == 0 && ...
-        intervalSummary.ContinuousCoverageCertified
-    reason = "continuousCoverageCertified";
-elseif ~hasRefinableInterval && ...
-        intervalSummary.OmittedSourceSampleCount == 0
-    reason = "sourceSnapshotsExhaustedContinuousCoverageUnknown";
-elseif ~hasRefinableInterval
-    reason = "noCompetitiveRefinableInterval";
-else
-    reason = "noRefinementNeeded";
-end
-end
-
-function preferred = refinedPlanIsPreferred(refinedResult, ...
-        currentResult, goalTimeMode)
-%% Section 0: Header & Readme
-% SYNTAX
-%   preferred = refinedPlanIsPreferred( ...
-%       refinedResult, currentResult, goalTimeMode)
-%**************************************************************************
-% PURPOSE
-%   - Compare two independently validated plans using the public timing
-%     policy, then route length as a deterministic tie breaker.
-%**************************************************************************
-% INPUTS
-%   - refinedResult, currentResult (successful scalar planner results)
-%   - goalTimeMode (scalar string)
-%       earliestarrival compares arrival; fixedarrival compares minimum
-%       motion duration because both returned arrivals equal the goal time.
-%**************************************************************************
-% OUTPUTS
-%   - preferred (logical scalar)
-%       True only when the refined result is strictly better.
-%**************************************************************************
-% UNITS
-%   - Timing keys are seconds and tie-break path lengths are degrees.
-%**************************************************************************
-if goalTimeMode == "fixedarrival"
-    refinedTime_s = refinedResult.timedSlopePath.MinimumMotionDuration_s;
-    currentTime_s = currentResult.timedSlopePath.MinimumMotionDuration_s;
-else
-    refinedTime_s = refinedResult.goalLineInterceptTime_s;
-    currentTime_s = currentResult.goalLineInterceptTime_s;
-end
-
-comparisonTolerance_s = 1e-9 * max( ...
-    1, max(abs([refinedTime_s currentTime_s])));
-if refinedTime_s < currentTime_s - comparisonTolerance_s
-    preferred = true;
-    return;
-end
-if refinedTime_s > currentTime_s + comparisonTolerance_s
-    preferred = false;
-    return;
-end
-
-refinedLength_deg = sum(vecnorm( ...
-    diff(refinedResult.selectedRoute_deg, 1, 1), 2, 2));
-currentLength_deg = sum(vecnorm( ...
-    diff(currentResult.selectedRoute_deg, 1, 1), 2, 2));
-preferred = refinedLength_deg < currentLength_deg - 1e-9;
-end
-
 function [smoothPath, timedPath, blocked, collisionCheck] = ...
         evaluateDeparture( ...
         route_deg, obstacleField, initialState, goalState, limits, ...
@@ -1162,25 +1081,19 @@ function [smoothPath, timedPath, blocked, collisionCheck] = ...
 %       options, departureTime_s, arrivalValidationBound_s)
 %**************************************************************************
 % PURPOSE
-%   - Smooth and retime one route at one departure time.
-%   - In hybrid mode, cheaply reject sampled collisions before running the
-%     mandatory continuous between-sample collision query.
+%   - Smooth, retime, prefilter, and continuously validate one departure.
 %**************************************************************************
 % INPUTS
 %   - route_deg (N-by-2 numeric), obstacleField (scalar struct)
-%       Candidate geometry and protected time-varying obstacles.
 %   - initialState, goalState, limits, options (scalar structs)
-%       Resolved request, physical limits, and planner options.
-%   - departureTime_s (finite scalar)
-%       Candidate motion-start time.
-%   - arrivalValidationBound_s (finite scalar or Inf)
-%       Arrival already achieved by a continuously validated candidate.
+%       Candidate geometry, protected obstacles, and resolved request.
+%   - departureTime_s, arrivalValidationBound_s (numeric scalars)
+%       Motion start and incumbent continuously validated arrival.
 %**************************************************************************
 % OUTPUTS
-%   - smoothPath, timedPath (scalar structs), blocked (logical vector)
-%       Candidate geometry, motion result, and collision result.
-%   - collisionCheck (scalar struct)
-%       Prefilter and continuous-validation status for this attempt.
+%   - smoothPath, timedPath, collisionCheck (scalar structs)
+%   - blocked (logical vector)
+%       Candidate motion and complete collision-validation evidence.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and time is seconds.
@@ -1304,12 +1217,10 @@ function [clearSmoothPath, clearTimedPath, clearBlocked, ...
 % INPUTS
 %   - route_deg, obstacleField, initialState, goalState, limits, options
 %       Same candidate request consumed by evaluateDeparture.
-%   - blockedDepartureTime_s, clearDepartureTime_s (finite scalars)
-%       Adjacent tested departure times bracketing a collision transition.
+%   - blockedDepartureTime_s, clearDepartureTime_s (numeric scalars)
 %   - clearSmoothPath, clearTimedPath, clearBlocked, clearCollisionCheck
-%       Already continuously validated upper-bracket result.
-%   - arrivalValidationBound_s (finite scalar or Inf)
-%       Arrival already achieved by another continuously clear candidate.
+%   - arrivalValidationBound_s (numeric scalar)
+%       Collision bracket, validated upper result, and incumbent arrival.
 %**************************************************************************
 % OUTPUTS
 %   - clearSmoothPath, clearTimedPath, clearBlocked, clearCollisionCheck
@@ -1591,7 +1502,6 @@ if (islogical(mode) || isnumeric(mode)) && isscalar(mode)
 else
     mode = lower(string(mode));
 end
-
 if ~isscalar(mode) || ~any(mode == ["auto" "on" "off"])
     error("planAzElMotion:InvalidUseParallel", ...
         "UseParallel must be auto, on, off, or a logical scalar.");
@@ -1808,35 +1718,6 @@ respects = all(azimuth_deg >= options.AzimuthInterval_deg(1) - 1e-9) && ...
     all(abs(diff(azimuth_deg)) < 180);
 end
 
-function selectedIndex = selectBestAttempt(retimed, arrivalTime_s, ...
-        pathLength_deg, graphIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   selectedIndex = selectBestAttempt(retimed, arrivalTime_s, ...
-%       pathLength_deg, graphIndex)
-%**************************************************************************
-% PURPOSE
-%   - Rank failed candidates by usable timing, path length, and directness.
-%**************************************************************************
-% INPUTS
-%   - retimed (logical vector), arrivalTime_s, pathLength_deg (vectors)
-%       Candidate status, arrival time, and route length.
-%   - graphIndex (integer vector)
-%       Visibility-graph provenance; zero identifies the direct route.
-%**************************************************************************
-% OUTPUTS
-%   - selectedIndex (positive integer)
-%       Index of the most informative failed candidate.
-%**************************************************************************
-% UNITS
-%   - Arrival time is seconds and path length is degrees.
-%**************************************************************************
-rank = [~retimed(:), arrivalTime_s(:), pathLength_deg(:), ...
-    graphIndex(:) > 0, (1:numel(retimed)).'];
-[~, order] = sortrows(rank, [1 2 3 4 5]);
-selectedIndex = order(1);
-end
-
 % --- Geometric Smoothing And Path Sampling ------------------------------
 function smoothPath = smoothRoute(route_deg, obstacleField, ...
         collisionTime_s, options)
@@ -1932,11 +1813,19 @@ for cornerIndex = 1:cornerCount
 
     for radius_deg = trialRadii_deg
         trim_deg = radius_deg * tangentScale;
-        controlPoints_deg = quinticControls(corner, trim_deg, incoming, outgoing);
+        % Repeated endpoint controls make q'' and q''' vanish at both
+        % joins, so the line-to-curve transition remains G3.
+        controlPoints_deg = [corner - trim_deg * incoming; ...
+            corner - 0.5 * trim_deg * incoming; corner; corner; ...
+            corner + 0.5 * trim_deg * outgoing; ...
+            corner + trim_deg * outgoing];
         primitive = quinticLookup(controlPoints_deg);
         checkCount = max(21, ceil(primitive.Length_deg / 0.02) + 1);
         checkS_deg = linspace(0, primitive.Length_deg, checkCount).';
-        checkPosition_deg = samplePrimitive(primitive, checkS_deg);
+        checkParameter = interp1(primitive.ArcLengthGrid_deg, ...
+            primitive.ParameterGrid, checkS_deg, "pchip");
+        checkPosition_deg = evaluateQuintic(controlPoints_deg, ...
+            min(max(checkParameter, 0), 1));
         blocked = queryAzElTimedPathCollision(obstacleField, ...
             collisionTime_s, checkPosition_deg, struct(...
             "TimePaddingSamples", options.CollisionTimePaddingSamples, ...
@@ -2043,34 +1932,6 @@ smoothPath = struct(...
     "RoundedCornerCount", nnz([corners.Smoothed]), ...
     "MandatoryStopCount", nnz([corners.MandatoryStop]), ...
     "Options", struct("TurnRadius_deg", options.TurnRadius_deg));
-end
-
-function controlPoints_deg = quinticControls(corner_deg, trim_deg, ...
-        incoming, outgoing)
-%% Section 0: Header & Readme
-% SYNTAX
-%   controlPoints_deg = quinticControls(corner_deg, trim_deg, ...
-%       incoming, outgoing)
-%**************************************************************************
-% PURPOSE
-%   - Construct a symmetric quintic with zero q'' and q''' at both joins.
-%**************************************************************************
-% INPUTS
-%   - corner_deg (1-by-2), trim_deg (scalar)
-%       Polyline corner and tangent trim distance.
-%   - incoming, outgoing (1-by-2 unit vectors)
-%       Directions entering and leaving the corner.
-%**************************************************************************
-% OUTPUTS
-%   - controlPoints_deg (6-by-2 numeric)
-%       Quintic Bezier control polygon.
-%**************************************************************************
-% UNITS
-%   - Positions and trim distance are degrees.
-%**************************************************************************
-controlPoints_deg = [ corner_deg - trim_deg * incoming; ...
-    corner_deg - 0.5 * trim_deg * incoming; corner_deg; corner_deg; ...
-    corner_deg + 0.5 * trim_deg * outgoing; corner_deg + trim_deg * outgoing];
 end
 
 function primitive = quinticLookup(controlPoints_deg)
@@ -2182,35 +2043,6 @@ primitive.StartArcLength_deg = startS_deg;
 endS_deg = startS_deg + length_deg;
 primitive.EndArcLength_deg = endS_deg;
 primitives(end + 1, 1) = primitive;
-end
-
-function position_deg = samplePrimitive(primitive, localS_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   position_deg = samplePrimitive(primitive, localS_deg)
-%**************************************************************************
-% PURPOSE
-%   - Sample one line or quintic primitive by local arc length.
-%**************************************************************************
-% INPUTS
-%   - primitive (scalar struct), localS_deg (numeric vector)
-%       Path primitive and local arc-length queries.
-%**************************************************************************
-% OUTPUTS
-%   - position_deg (N-by-2 numeric)
-%       Azimuth/elevation positions at every query.
-%**************************************************************************
-% UNITS
-%   - Arc length and position are degrees.
-%**************************************************************************
-if primitive.Type == "line"
-    position_deg = primitive.StartPosition_deg + localS_deg(:) .* primitive.Direction;
-else
-    parameter = interp1(primitive.ArcLengthGrid_deg, ...
-        primitive.ParameterGrid, localS_deg(:), "pchip");
-    position_deg = evaluateQuintic(primitive.ControlPoints_deg, ...
-        min(max(parameter, 0), 1));
-end
 end
 
 function samples = samplePath(smoothPath, arcLength_deg)
@@ -3517,7 +3349,8 @@ speed_deg_s = zeros(0, 1);
 acceleration_deg_s2 = zeros(0, 1);
 jerk_deg_s3 = zeros(0, 1);
 if waitDuration_s > 1e-12
-    localTime_s = regularTimes(waitDuration_s, sampleTime_s, []);
+    localTime_s = unique([0; ...
+        (0:sampleTime_s:waitDuration_s).'; waitDuration_s]);
     time_s = initialTime_s + localTime_s;
     arcLength_deg = zeros(size(time_s));
     speed_deg_s = zeros(size(time_s));
@@ -3529,7 +3362,11 @@ for index = 1:numel(profiles)
     phaseEnd_s = cumsum(profile.PhaseDuration_s);
     phaseStart_s = [0; phaseEnd_s(1:end - 1)];
     events_s = unique([phaseStart_s; phaseStart_s + 0.5 * profile.PhaseDuration_s; phaseEnd_s]);
-    localTime_s = regularTimes(profile.Duration_s, sampleTime_s, events_s);
+    localTime_s = unique([0; ...
+        (0:sampleTime_s:profile.Duration_s).'; ...
+        events_s(:); profile.Duration_s]);
+    localTime_s = localTime_s( ...
+        localTime_s >= 0 & localTime_s <= profile.Duration_s);
     [distance_deg, velocity_deg_s, accel_deg_s2, localJerk_deg_s3] = ...
         sampleProfile(localTime_s, profile);
     if any(distance_deg < -1e-10) || any(distance_deg > profile.Length_deg + 1e-10)
@@ -3542,7 +3379,13 @@ for index = 1:numel(profiles)
     if ~isempty(time_s)
         previousTime_s = time_s(end);
     end
-    keep = strictTimeMask(absoluteTime_s, previousTime_s);
+    % Floating-point addition can collapse neighboring local samples onto
+    % one absolute timestamp. Keep the last member of each collapsed group
+    % and discard every sample at or before the previous profile endpoint.
+    keep = [diff(absoluteTime_s(:)) > 0; true];
+    if ~isempty(previousTime_s)
+        keep = keep & absoluteTime_s(:) > previousTime_s;
+    end
     time_s = [time_s; absoluteTime_s(keep)]; %#ok<AGROW>
     arcLength_deg = [arcLength_deg; ...
         profile.StartArcLength_deg + distance_deg(keep)]; %#ok<AGROW>
@@ -3553,55 +3396,6 @@ end
 if numel(time_s) < 2 || any(diff(time_s) <= 0)
     error("planAzElMotion:NonIncreasingTime", ...
         "Profile assembly must produce strictly increasing time.");
-end
-end
-
-function time_s = regularTimes(duration_s, sampleTime_s, events_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   time_s = regularTimes(duration_s, sampleTime_s, events_s)
-%**************************************************************************
-% PURPOSE
-%   - Combine regular samples and exact events on one local duration.
-%**************************************************************************
-% INPUTS
-%   - duration_s, sampleTime_s (scalars), events_s (numeric vector)
-%       Profile duration, regular interval, and exact phase events.
-%**************************************************************************
-% OUTPUTS
-%   - time_s (column vector)
-%       Unique local query times including both endpoints.
-%**************************************************************************
-% UNITS
-%   - All values are seconds.
-%**************************************************************************
-time_s = unique([0; (0:sampleTime_s:duration_s).'; events_s(:); duration_s]);
-time_s = time_s(time_s >= 0 & time_s <= duration_s);
-end
-
-function keep = strictTimeMask(time_s, previousTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   keep = strictTimeMask(time_s, previousTime_s)
-%**************************************************************************
-% PURPOSE
-%   - Keep the last collapsed timestamp and remove previous-profile joins.
-%**************************************************************************
-% INPUTS
-%   - time_s (numeric vector), previousTime_s (empty or scalar)
-%       Candidate absolute times and the prior retained endpoint.
-%**************************************************************************
-% OUTPUTS
-%   - keep (logical column vector)
-%       Mask that guarantees strict timestamp growth when appended.
-%**************************************************************************
-% UNITS
-%   - Time values are seconds.
-%**************************************************************************
-time_s = time_s(:);
-keep = [diff(time_s) > 0; true];
-if ~isempty(previousTime_s)
-    keep = keep & time_s > previousTime_s;
 end
 end
 

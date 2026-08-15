@@ -666,7 +666,6 @@ if (islogical(mode) || isnumeric(mode)) && isscalar(mode)
 else
     mode = lower(string(mode));
 end
-
 if ~isscalar(mode) || ~any(mode == ["auto" "on" "off"])
     error("buildAzElVisibilityRoutes:InvalidUseParallel", ...
         "UseParallel must be auto, on, off, or a logical scalar.");
@@ -804,8 +803,8 @@ if isCircle
     diagnostics.StartTangentCount = size(startTangents_deg, 1);
     diagnostics.GoalTangentCount = size(goalTangents_deg, 1);
     diagnostics.SelectedCandidateCount = size(candidatePoints_deg, 1);
-    diagnostics.ReductionPercent = candidateReductionPercent( ...
-        diagnostics.InputVertexCount, diagnostics.SelectedCandidateCount);
+    diagnostics.ReductionPercent = 100 * max(0, 1 - ...
+        diagnostics.SelectedCandidateCount / diagnostics.InputVertexCount);
     diagnostics.Mode = "circleTangencies";
     return;
 end
@@ -819,8 +818,20 @@ if useAllCorners
         region_deg, startPosition_deg, Inf);
     goalTangentIndex = polygonTangentVertexIndices( ...
         region_deg, goalPosition_deg, Inf);
-    cornerIndex = meaningfulCornerIndices( ...
-        region_deg, options.CornerAngleThreshold_deg);
+
+    % Retain only turns large enough to change useful visibility. This
+    % works on the original ring; collision geometry is never reduced.
+    vertexCount = size(region_deg, 1);
+    previousVertex_deg = region_deg([vertexCount 1:vertexCount - 1], :);
+    nextVertex_deg = region_deg([2:vertexCount 1], :);
+    incoming_deg = region_deg - previousVertex_deg;
+    outgoing_deg = nextVertex_deg - region_deg;
+    turnCross = incoming_deg(:, 1) .* outgoing_deg(:, 2) - ...
+        incoming_deg(:, 2) .* outgoing_deg(:, 1);
+    turnDot = sum(incoming_deg .* outgoing_deg, 2);
+    turnAngle_deg = abs(rad2deg(atan2(turnCross, turnDot)));
+    cornerIndex = find( ...
+        turnAngle_deg >= options.CornerAngleThreshold_deg);
     extremeIndex = zeros(0, 1);
     if options.PolygonCandidateMode == "adaptive"
         diagnostics.Mode = "adaptiveAllCorners";
@@ -833,8 +844,16 @@ else
         region_deg, goalPosition_deg, ...
         options.MaximumTangenciesPerReference);
     cornerIndex = zeros(0, 1);
-    extremeIndex = directionalExtremeVertexIndices( ...
-        region_deg, options.ExtremeDirectionCount);
+
+    % Support points in uniform directions bound the graph size while
+    % retaining the extremal contacts most likely to open a short route.
+    center_deg = mean(region_deg, 1);
+    directionAngle_rad = (0:options.ExtremeDirectionCount - 1).' .* ...
+        (2 * pi / options.ExtremeDirectionCount);
+    direction = [cos(directionAngle_rad), sin(directionAngle_rad)];
+    projection = (region_deg - center_deg) * direction.';
+    [~, supportIndex] = max(projection, [], 1);
+    extremeIndex = unique(supportIndex(:), "stable");
     if options.PolygonCandidateMode == "adaptive"
         diagnostics.Mode = "adaptiveExtreme";
     end
@@ -861,101 +880,8 @@ diagnostics.GoalTangentCount = numel(goalTangentIndex);
 diagnostics.ExtremePointCount = numel(extremeIndex);
 diagnostics.CornerCount = numel(cornerIndex);
 diagnostics.SelectedCandidateCount = size(candidatePoints_deg, 1);
-diagnostics.ReductionPercent = candidateReductionPercent( ...
-    diagnostics.InputVertexCount, diagnostics.SelectedCandidateCount);
-end
-
-function cornerIndex = meaningfulCornerIndices(region_deg, threshold_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   cornerIndex = meaningfulCornerIndices(region_deg, threshold_deg)
-%**************************************************************************
-% PURPOSE
-%   - Select vertices whose geometric turn exceeds a threshold.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%       Cyclic polygon vertices.
-%   - threshold_deg (nonnegative numeric scalar)
-%       Minimum absolute turn angle.
-%**************************************************************************
-% OUTPUTS
-%   - cornerIndex (M-by-1 numeric vector)
-%       Indices into region_deg.
-%**************************************************************************
-% UNITS
-%   - Positions and threshold are degrees.
-%**************************************************************************
-vertexCount = size(region_deg, 1);
-previousVertex_deg = region_deg([vertexCount 1:vertexCount - 1], :);
-nextVertex_deg = region_deg([2:vertexCount 1], :);
-incoming_deg = region_deg - previousVertex_deg;
-outgoing_deg = nextVertex_deg - region_deg;
-turnCross = incoming_deg(:, 1) .* outgoing_deg(:, 2) - ...
-    incoming_deg(:, 2) .* outgoing_deg(:, 1);
-turnDot = sum(incoming_deg .* outgoing_deg, 2);
-turnAngle_deg = abs(rad2deg(atan2(turnCross, turnDot)));
-cornerIndex = find(turnAngle_deg >= threshold_deg);
-end
-
-function extremeIndex = directionalExtremeVertexIndices( ...
-        region_deg, directionCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   extremeIndex = directionalExtremeVertexIndices( ...
-%       region_deg, directionCount)
-%**************************************************************************
-% PURPOSE
-%   - Select full-resolution polygon support points in bounded directions.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%       Cyclic polygon vertices.
-%   - directionCount (positive integer scalar)
-%       Number of uniformly spaced support directions.
-%**************************************************************************
-% OUTPUTS
-%   - extremeIndex (M-by-1 numeric vector)
-%       Stable unique indices into region_deg.
-%**************************************************************************
-% UNITS
-%   - Positions are degrees; directions are dimensionless.
-%**************************************************************************
-center_deg = mean(region_deg, 1);
-directionAngle_rad = (0:directionCount - 1).' .* ...
-    (2 * pi / directionCount);
-direction = [cos(directionAngle_rad), sin(directionAngle_rad)];
-projection = (region_deg - center_deg) * direction.';
-[~, supportIndex] = max(projection, [], 1);
-extremeIndex = unique(supportIndex(:), "stable");
-end
-
-function reductionPercent = candidateReductionPercent( ...
-        inputVertexCount, selectedCandidateCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   reductionPercent = candidateReductionPercent( ...
-%       inputVertexCount, selectedCandidateCount)
-%**************************************************************************
-% PURPOSE
-%   - Report the percentage reduction from vertices to graph candidates.
-%**************************************************************************
-% INPUTS
-%   - inputVertexCount (nonnegative integer scalar)
-%   - selectedCandidateCount (nonnegative integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - reductionPercent (nonnegative numeric scalar)
-%**************************************************************************
-% UNITS
-%   - The output is percent; counts are dimensionless.
-%**************************************************************************
-if inputVertexCount <= 0
-    reductionPercent = 0;
-    return;
-end
-reductionPercent = 100 * max(0, ...
-    1 - selectedCandidateCount / inputVertexCount);
+diagnostics.ReductionPercent = 100 * max(0, 1 - ...
+    diagnostics.SelectedCandidateCount / diagnostics.InputVertexCount);
 end
 
 function routingRegion_deg = candidateRoutingBoundary( ...
@@ -1181,16 +1107,12 @@ function [graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
 %**************************************************************************
 % INPUTS
 %   - obstacleField (scalar packed obstacle field)
-%   - candidatePoints (N-by-3 numeric matrix)
-%       Candidate [azimuth elevation time] rows.
-%   - candidateTypes (N-by-1 string array)
-%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
-%   - candidateRegionIndex (N-by-1 numeric vector)
-%   - candidateBoundaryGeometry (N-by-1 cell array)
+%   - candidatePoints (N-by-3 numeric), candidateTypes (N-by-1 string)
+%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex
+%       N-by-1 provenance vectors; candidateBoundaryGeometry is N-by-1.
 %   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - snapshotTimes_s (K-by-1 numeric vector)
-%       Every retained time, including slices with no boundary candidates.
-%   - options (scalar struct)
+%   - snapshotTimes_s (K-by-1 numeric), options (scalar struct)
+%       Retained times, including slices without boundary candidates.
 %**************************************************************************
 % OUTPUTS
 %   - graphs (structure array)
@@ -1265,14 +1187,11 @@ function graph = buildOneSnapshotVisibilityGraph( ...
 %**************************************************************************
 % INPUTS
 %   - obstacleField (scalar packed obstacle field)
-%   - candidatePoints (N-by-3 numeric matrix)
-%   - candidateTypes (N-by-1 string array)
-%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
-%   - candidateRegionIndex (N-by-1 numeric vector)
-%   - candidateBoundaryGeometry (N-by-1 cell array)
+%   - candidatePoints (N-by-3 numeric), candidateTypes (N-by-1 string)
+%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex
+%       N-by-1 provenance vectors; candidateBoundaryGeometry is N-by-1.
 %   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - options (scalar struct)
-%   - snapshotTime_s (finite numeric scalar)
+%   - options (scalar struct), snapshotTime_s (numeric scalar)
 %**************************************************************************
 % OUTPUTS
 %   - graph (scalar struct)
@@ -1384,14 +1303,12 @@ function graph = buildVisibilityGraphAtTime( ...
 %**************************************************************************
 % INPUTS
 %   - obstacleField (scalar packed obstacle field)
-%   - candidatePosition_deg (N-by-2 numeric matrix)
-%   - candidateTypes (N-by-1 string array)
-%   - candidateObstacleIndex, candidateSampleIndex (N-by-1 vectors)
-%   - candidateRegionIndex, globalCandidateIndex (N-by-1 vectors)
+%   - candidatePosition_deg (N-by-2), candidateTypes (N-by-1 string)
+%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex,
+%       globalCandidateIndex (N-by-1 provenance vectors)
 %   - candidateBoundaryGeometry (N-by-1 cell array)
 %   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - snapshotTime_s (finite numeric scalar)
-%   - options (scalar struct)
+%   - snapshotTime_s (numeric scalar), options (scalar struct)
 %**************************************************************************
 % OUTPUTS
 %   - graph (scalar struct)
@@ -1655,14 +1572,12 @@ function [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
 %   - edgeCost_deg, edgeType, edgeRoute_deg (square graph matrices)
 %   - nodePosition_deg (N-by-2 numeric matrix)
 %   - firstNodeIndex, secondNodeIndex (positive integer scalars)
-%   - obstacleField (scalar packed obstacle field)
-%   - snapshotTime_s (finite numeric scalar)
-%   - options (scalar struct)
+%   - obstacleField (scalar packed field), snapshotTime_s (numeric scalar)
+%   - options (scalar resolved options struct)
 %**************************************************************************
 % OUTPUTS
 %   - edgeCost_deg, edgeType, edgeRoute_deg (updated graph matrices)
-%   - edgeWasAdded (zero or one)
-%   - edgeWasTested, edgeWasBlocked (logical scalars)
+%   - edgeWasAdded, edgeWasTested, edgeWasBlocked (scalar flags)
 %       Distinguish a collision rejection from a pair skipped because an
 %       existing boundary connection was already no more expensive.
 %**************************************************************************
