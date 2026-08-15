@@ -943,6 +943,12 @@ testCase.verifyTrue(result.ScenarioValidation.Passed);
 testCase.verifyTrue(result.ScenarioValidation.TargetTrackIsStraight);
 testCase.verifyTrue(result.ScenarioValidation.AlternationIsPresent);
 testCase.verifyTrue(result.ScenarioValidation.ShapeProbesPassed);
+testCase.verifyTrue(result.ScenarioValidation.BoresightIsFaster);
+testCase.verifyTrue(result.ScenarioValidation.InterceptInInterShapeGap);
+testCase.verifyTrue(result.ScenarioValidation.InterceptTargetIsClear);
+testCase.verifyTrue(result.ScenarioValidation.CatchOccurredBeforeTrackEnd);
+testCase.verifyLessThan(result.ScenarioValidation.TargetSpeed_deg_s, ...
+    min(result.limits.maxVelocity_deg_s));
 testCase.verifyEqual(result.ScenarioValidation.BlockedRunCount, 5);
 testCase.verifyEqual(result.ScenarioValidation.ClearRunCount, 5);
 testCase.verifyEqual(result.ScenarioValidation.OccupancyTransitionCount, 9);
