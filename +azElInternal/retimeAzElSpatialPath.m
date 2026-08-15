@@ -433,11 +433,15 @@ primitiveType = strings(count, 1);
 primitives = smoothPath.Primitives;
 for index = 1:numel(primitives)
     primitive = primitives(index);
-    belongs = queryS_deg >= primitive.StartArcLength_deg - tolerance_deg;
+    % Bounds tolerance admits tiny endpoint roundoff, but primitive
+    % ownership must remain exact and half-open. Shifting an internal join
+    % by that global tolerance pairs one profile's scalar derivatives with
+    % its neighbor's path derivatives and can violate Cartesian limits.
+    belongs = queryS_deg >= primitive.StartArcLength_deg;
     if index < numel(primitives)
-        belongs = belongs & queryS_deg < primitive.EndArcLength_deg - tolerance_deg;
+        belongs = belongs & queryS_deg < primitive.EndArcLength_deg;
     else
-        belongs = belongs & queryS_deg <= primitive.EndArcLength_deg + tolerance_deg;
+        belongs = belongs & queryS_deg <= primitive.EndArcLength_deg;
     end
     belongs = belongs & primitiveIndex == 0;
     if ~any(belongs)
@@ -1726,7 +1730,19 @@ for index = 1:numel(profiles)
     absoluteTime_s = profile.StartTime_s + localTime_s;
     previousTime_s = [];
     if ~isempty(time_s)
-        previousTime_s = time_s(end);
+        % The path evaluator assigns a shared arc-length boundary to the
+        % primitive on its right. Replace the preceding endpoint sample so
+        % scalar acceleration and jerk come from that same profile. Keeping
+        % the left jerk with the right tangent can violate Cartesian limits
+        % even when both neighboring profiles are individually certified.
+        time_s(end) = [];
+        arcLength_deg(end) = [];
+        speed_deg_s(end) = [];
+        acceleration_deg_s2(end) = [];
+        jerk_deg_s3(end) = [];
+        if ~isempty(time_s)
+            previousTime_s = time_s(end);
+        end
     end
     % Floating-point addition can collapse neighboring local samples onto
     % one absolute timestamp. Keep the last member of each collapsed group
@@ -1997,5 +2013,3 @@ timedPath = struct( "Success", false, "Message", string(message), ...
     "SampleTangentialJerk_deg_s3", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
     "RetimerType", "certifiedAnalyticSpatialJerk", "MotionType", "velocityCarrying");
 end
-
-

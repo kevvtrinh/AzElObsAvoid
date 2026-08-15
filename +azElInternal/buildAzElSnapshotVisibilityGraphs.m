@@ -1,8 +1,8 @@
-function [graphs, parallelExecution] = ...
+function [graphs, mergedGraphCandidates, parallelExecution] = ...
         buildAzElSnapshotVisibilityGraphs(obstacleField, selection, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [graphs, parallelExecution] = ...
+%   [graphs, mergedGraphCandidates, parallelExecution] = ...
 %       azElInternal.buildAzElSnapshotVisibilityGraphs( ...
 %       obstacleField, selection, options)
 %**************************************************************************
@@ -16,11 +16,15 @@ function [graphs, parallelExecution] = ...
 %   - selection (scalar struct)
 %       Output from azElInternal.selectAzElVisibilitySnapshots.
 %   - options (scalar struct)
-%       Resolved visibility resolution and parallel-execution controls.
+%       Resolved visibility resolution, stage, and parallel controls.
 %**************************************************************************
 % OUTPUTS
 %   - graphs (structure array)
 %       One stable visibility graph and shortest route per retained time.
+%   - mergedGraphCandidates (structure array)
+%       One dense-scene alternative whose protected obstacle history is
+%       merged to about one group per five source obstacles. Its sparse
+%       graph retains corridor groups and nearby detour groups.
 %   - parallelExecution (scalar struct)
 %       Requested mode, availability, worker count, and fallback evidence.
 %**************************************************************************
@@ -30,7 +34,8 @@ function [graphs, parallelExecution] = ...
 
 %% Section 1: Build Snapshot Graphs
 
-[graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
+[graphs, mergedGraphCandidates, parallelExecution] = ...
+    buildSnapshotVisibilityGraphs( ...
     obstacleField, selection.CandidatePointsAzElTime, ...
     selection.CandidateTypes, selection.CandidateObstacleIndex, ...
     selection.CandidateSampleIndex, selection.CandidateRegionIndex, ...
@@ -113,14 +118,16 @@ diagnostics = struct( ...
     "Message", string(message));
 end
 
-function [graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
+function [graphs, mergedGraphs, parallelExecution] = ...
+        buildSnapshotVisibilityGraphs( ...
         obstacleField, candidatePoints, candidateTypes, ...
         candidateObstacleIndex, candidateSampleIndex, ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, snapshotTimes_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
+%   [graphs, mergedGraphs, parallelExecution] = ...
+%       buildSnapshotVisibilityGraphs( ...
 %       obstacleField, candidatePoints, candidateTypes, ...
 %       candidateObstacleIndex, candidateSampleIndex, ...
 %       candidateRegionIndex, candidateBoundaryGeometry, ...
@@ -141,6 +148,8 @@ function [graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
 % OUTPUTS
 %   - graphs (structure array)
 %       One stable visibility-graph record per retained time.
+%   - mergedGraphs (structure array)
+%       One full-history dense-scene merge attempt.
 %   - parallelExecution (scalar struct)
 %       Requested mode, availability, worker count, and fallback message.
 %**************************************************************************
@@ -148,6 +157,7 @@ function [graphs, parallelExecution] = buildSnapshotVisibilityGraphs( ...
 %   - Position is degrees and time is seconds.
 %**************************************************************************
 graphs = repmat(emptyVisibilityGraph(), 0, 1);
+mergedGraphs = repmat(emptyVisibilityGraph(), 0, 1);
 snapshotTimes_s = unique(snapshotTimes_s(:));
 if isempty(snapshotTimes_s)
     [~, parallelExecution] = resolveParallelExecution( ...
@@ -155,26 +165,40 @@ if isempty(snapshotTimes_s)
     return;
 end
 snapshotCount = numel(snapshotTimes_s);
-[useParallel, parallelExecution] = resolveParallelExecution( ...
-    options.UseParallel, snapshotCount);
-graphs = repmat(emptyVisibilityGraph(), snapshotCount, 1);
-if useParallel
-    parfor snapshotIndex = 1:snapshotCount
-        graphs(snapshotIndex) = buildOneSnapshotVisibilityGraph( ...
-            obstacleField, candidatePoints, candidateTypes, ...
-            candidateObstacleIndex, candidateSampleIndex, ...
-            candidateRegionIndex, candidateBoundaryGeometry, ...
-            startPosition_deg, goalPosition_deg, options, ...
-            snapshotTimes_s(snapshotIndex));
-    end
+if ~options.BuildFullVisibilityGraphs
+    [~, parallelExecution] = resolveParallelExecution( ...
+        options.UseParallel, 0);
 else
-    for snapshotIndex = 1:snapshotCount
-        graphs(snapshotIndex) = buildOneSnapshotVisibilityGraph( ...
-            obstacleField, candidatePoints, candidateTypes, ...
-            candidateObstacleIndex, candidateSampleIndex, ...
-            candidateRegionIndex, candidateBoundaryGeometry, ...
-            startPosition_deg, goalPosition_deg, options, ...
-            snapshotTimes_s(snapshotIndex));
+    [useParallel, parallelExecution] = resolveParallelExecution( ...
+        options.UseParallel, snapshotCount);
+    graphs = repmat(emptyVisibilityGraph(), snapshotCount, 1);
+    if useParallel
+        parfor snapshotIndex = 1:snapshotCount
+            graphs(snapshotIndex) = buildOneSnapshotVisibilityGraph( ...
+                obstacleField, candidatePoints, candidateTypes, ...
+                candidateObstacleIndex, candidateSampleIndex, ...
+                candidateRegionIndex, candidateBoundaryGeometry, ...
+                startPosition_deg, goalPosition_deg, options, ...
+                snapshotTimes_s(snapshotIndex));
+        end
+    else
+        for snapshotIndex = 1:snapshotCount
+            graphs(snapshotIndex) = buildOneSnapshotVisibilityGraph( ...
+                obstacleField, candidatePoints, candidateTypes, ...
+                candidateObstacleIndex, candidateSampleIndex, ...
+                candidateRegionIndex, candidateBoundaryGeometry, ...
+                startPosition_deg, goalPosition_deg, options, ...
+                snapshotTimes_s(snapshotIndex));
+        end
+    end
+end
+if options.BuildMergedVisibilityGraph
+    mergedGraph = buildMergedObstacleGraphAtTime( ...
+        candidateObstacleIndex, candidateSampleIndex, ...
+        candidateRegionIndex, candidateBoundaryGeometry, ...
+        startPosition_deg, goalPosition_deg, snapshotTimes_s(1), options);
+    if mergedGraph.ObstacleMergeAttempted
+        mergedGraphs = mergedGraph;
     end
 end
 
@@ -189,6 +213,13 @@ if options.Verbose
             snapshotTimes_s(snapshotIndex), ...
             nnz(graphs(snapshotIndex).CandidateActiveMask), ...
             graphs(snapshotIndex).Success);
+    end
+    if ~isempty(mergedGraphs)
+        fprintf("[visibility graph] merged %d obstacles to %d groups; " + ...
+            "the sparse graph retained %d: success=%d.\n", ...
+            mergedGraphs.SourceObstacleCount, ...
+            mergedGraphs.MergedGroupCount, ...
+            mergedGraphs.GraphObstacleCount, mergedGraphs.Success);
     end
 end
 end
@@ -259,6 +290,488 @@ graph = buildVisibilityGraphAtTime( ...
     snapshotTime_s, options);
 end
 
+function mergedGraph = buildMergedObstacleGraphAtTime( ...
+        candidateObstacleIndex, candidateSampleIndex, ...
+        candidateRegionIndex, candidateBoundaryGeometry, ...
+        startPosition_deg, goalPosition_deg, snapshotTime_s, options)
+%% Section 0: Header & Readme
+% SYNTAX
+%   mergedGraph = buildMergedObstacleGraphAtTime( ...
+%       candidateObstacleIndex, candidateSampleIndex, ...
+%       candidateRegionIndex, candidateBoundaryGeometry, ...
+%       startPosition_deg, goalPosition_deg, snapshotTime_s, options)
+%**************************************************************************
+% PURPOSE
+%   - Build one conservative dense-scene alternative from protected swept
+%     hulls without enclosing either endpoint.
+%   - Limit grouping complexity to about one group per five source
+%     obstacles, then graph only corridor-relevant and neighboring groups.
+%**************************************************************************
+% INPUTS
+%   - candidate provenance vectors and boundary geometry (N-by-1)
+%       Protected obstacle regions across the retained time history.
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%   - snapshotTime_s (numeric scalar), options (scalar struct)
+%**************************************************************************
+% OUTPUTS
+%   - mergedGraph (scalar visibility-graph record)
+%       A completed graph or explicit evidence that merging was impossible.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
+mergedGraph = emptyVisibilityGraph();
+mergedGraph.Representation = "mergedObstacleGraph";
+mergedGraph.Time_s = snapshotTime_s;
+sourceObstacleIndex = unique(candidateObstacleIndex(:), "stable");
+sourceObstacleIndex = sourceObstacleIndex(sourceObstacleIndex > 0);
+sourceObstacleCount = numel(sourceObstacleIndex);
+mergedGraph.SourceObstacleCount = sourceObstacleCount;
+if sourceObstacleCount <= 4
+    mergedGraph.Message = ...
+        "Four or fewer obstacles; no merged graph was needed.";
+    return;
+end
+mergedGraph.ObstacleMergeAttempted = true;
+
+% Rounding up keeps every source obstacle represented while bounding the
+% merged graph to approximately one protected group per five obstacles.
+maximumMergedObstacleCount = ceil(sourceObstacleCount / 5);
+mergedGraph.MaximumGraphObstacleCount = maximumMergedObstacleCount;
+
+groupGeometry_deg = cell(sourceObstacleCount, 1);
+groupMembership = cell(sourceObstacleCount, 1);
+for sourceIndex = 1:sourceObstacleCount
+    obstacleIndex = sourceObstacleIndex(sourceIndex);
+    belongsToObstacle = candidateObstacleIndex == obstacleIndex;
+    boundaryKey = [candidateSampleIndex(belongsToObstacle), ...
+        candidateRegionIndex(belongsToObstacle)];
+    [~, firstBoundaryRow] = unique(boundaryKey, "rows", "stable");
+    obstacleBoundaryGeometry = ...
+        candidateBoundaryGeometry(belongsToObstacle);
+    obstacleVertex_deg = zeros(0, 2);
+    for boundaryIndex = reshape(firstBoundaryRow, 1, [])
+        region_deg = obstacleBoundaryGeometry{boundaryIndex};
+        region_deg = region_deg(all(isfinite(region_deg), 2), :);
+        obstacleVertex_deg = [obstacleVertex_deg; region_deg]; %#ok<AGROW>
+    end
+    [obstacleHull_deg, hullIsValid] = convexBoundary( ...
+        obstacleVertex_deg);
+    if ~hullIsValid
+        mergedGraph.Message = "Obstacle " + obstacleIndex + ...
+            " has no valid two-dimensional boundary to merge.";
+        return;
+    end
+    if boundaryContainsEndpoint( ...
+            obstacleHull_deg, startPosition_deg, goalPosition_deg)
+        mergedGraph.Message = "The convex hull of obstacle " + ...
+            obstacleIndex + " contains the start or goal; conservative " + ...
+            "group merging is unavailable for this history.";
+        return;
+    end
+    groupGeometry_deg{sourceIndex} = obstacleHull_deg;
+    groupMembership{sourceIndex} = obstacleIndex;
+end
+
+[groupGeometry_deg, groupMembership, mergeComplete] = ...
+    mergeNearestObstacleGroups(groupGeometry_deg, groupMembership, ...
+    startPosition_deg, goalPosition_deg, maximumMergedObstacleCount);
+mergedGraph.MergedGroupCount = numel(groupGeometry_deg);
+mergedGraph.ObstacleMergeComplete = mergeComplete;
+if ~mergeComplete
+    mergedGraph.Message = "No endpoint-safe sequence of conservative " + ...
+        "merges reached the adaptive obstacle-group limit.";
+    return;
+end
+
+maximumMergedBoundaryVertexCount = 24;
+for groupIndex = 1:numel(groupGeometry_deg)
+    conservativeBoundary_deg = conservativeMergedBoundary( ...
+        groupGeometry_deg{groupIndex}, ...
+        maximumMergedBoundaryVertexCount);
+    if ~boundaryContainsEndpoint(conservativeBoundary_deg, ...
+            startPosition_deg, goalPosition_deg)
+        groupGeometry_deg{groupIndex} = conservativeBoundary_deg;
+    end
+end
+
+[selectedGroupIndex, omittedGroupIndex] = sparseMergedGroupIndices( ...
+    groupGeometry_deg, startPosition_deg, goalPosition_deg);
+selectedGroupGeometry_deg = groupGeometry_deg(selectedGroupIndex);
+selectedGroupMembership = groupMembership(selectedGroupIndex);
+omittedGroupGeometry_deg = groupGeometry_deg(omittedGroupIndex);
+omittedGroupMembership = groupMembership(omittedGroupIndex);
+
+mergedGraph.GraphObstacleCount = numel(selectedGroupIndex);
+mergedGraph.MergedObstacleMembership = selectedGroupMembership;
+mergedGraph.MergedObstacleGeometry_deg = selectedGroupGeometry_deg;
+mergedGraph.OmittedObstacleMembership = omittedGroupMembership;
+mergedGraph.OmittedObstacleGeometry_deg = omittedGroupGeometry_deg;
+
+mergedObstacleData = cell(numel(selectedGroupGeometry_deg), 1);
+candidatePosition_deg = zeros(0, 2);
+candidateTypes = strings(0, 1);
+candidateGroupIndex = zeros(0, 1);
+candidateBoundaryGeometryForGraph = cell(0, 1);
+for groupIndex = 1:numel(selectedGroupGeometry_deg)
+    region_deg = selectedGroupGeometry_deg{groupIndex};
+    mergedObstacleData{groupIndex} = makeAzElObstacleData( ...
+        "Merged obstacle group " + groupIndex, snapshotTime_s, ...
+        region_deg(:, 1), region_deg(:, 2), 0);
+    vertexCount = size(region_deg, 1);
+    candidatePosition_deg = [candidatePosition_deg; ...
+        region_deg]; %#ok<AGROW>
+    candidateTypes = [candidateTypes; ...
+        repmat("mergedHullVertex", vertexCount, 1)]; %#ok<AGROW>
+    candidateGroupIndex = [candidateGroupIndex; ...
+        repmat(groupIndex, vertexCount, 1)]; %#ok<AGROW>
+    candidateBoundaryGeometryForGraph = [ ...
+        candidateBoundaryGeometryForGraph; ...
+        repmat({region_deg}, vertexCount, 1)]; %#ok<AGROW>
+end
+mergedObstacleField = buildAzElTimeObstacleField(mergedObstacleData);
+candidateCount = size(candidatePosition_deg, 1);
+mergedGraph = buildVisibilityGraphAtTime( ...
+    mergedObstacleField, candidatePosition_deg, candidateTypes, ...
+    candidateGroupIndex, ones(candidateCount, 1), ...
+    ones(candidateCount, 1), candidateBoundaryGeometryForGraph, ...
+    zeros(candidateCount, 1), startPosition_deg, goalPosition_deg, ...
+    snapshotTime_s, options);
+mergedGraph.Representation = "mergedObstacleGraph";
+mergedGraph.ObstacleMergeAttempted = true;
+mergedGraph.ObstacleMergeComplete = true;
+mergedGraph.SourceObstacleCount = sourceObstacleCount;
+mergedGraph.MaximumGraphObstacleCount = maximumMergedObstacleCount;
+mergedGraph.MergedGroupCount = numel(groupGeometry_deg);
+mergedGraph.GraphObstacleCount = numel(selectedGroupGeometry_deg);
+mergedGraph.MergedObstacleMembership = selectedGroupMembership;
+mergedGraph.MergedObstacleGeometry_deg = selectedGroupGeometry_deg;
+mergedGraph.OmittedObstacleMembership = omittedGroupMembership;
+mergedGraph.OmittedObstacleGeometry_deg = omittedGroupGeometry_deg;
+end
+
+function [selectedGroupIndex, omittedGroupIndex] = ...
+        sparseMergedGroupIndices( ...
+        groupGeometry_deg, startPosition_deg, goalPosition_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [selectedGroupIndex, omittedGroupIndex] = ...
+%       sparseMergedGroupIndices( ...
+%       groupGeometry_deg, startPosition_deg, goalPosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Retain merged groups that block the direct corridor.
+%   - Add nearby groups on both sides of the corridor so the sparse graph
+%     preserves meaningful detours instead of only the direct obstruction.
+%**************************************************************************
+% INPUTS
+%   - groupGeometry_deg (G-by-1 cell column)
+%       Closed polygon boundaries for endpoint-safe merged groups.
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - selectedGroupIndex, omittedGroupIndex (integer column vectors)
+%**************************************************************************
+% UNITS
+%   - Position and distance are degrees.
+%**************************************************************************
+groupCount = numel(groupGeometry_deg);
+intersectsCorridor = false(groupCount, 1);
+distanceToCorridor_deg = Inf(groupCount, 1);
+signedSide = zeros(groupCount, 1);
+routeDirection_deg = goalPosition_deg - startPosition_deg;
+
+for groupIndex = 1:groupCount
+    boundary_deg = groupGeometry_deg{groupIndex};
+    intersectsCorridor(groupIndex) = boundaryIntersectsRoute( ...
+        boundary_deg, startPosition_deg, goalPosition_deg);
+    distanceToCorridor_deg(groupIndex) = min(pointToSegmentDistance( ...
+        boundary_deg, startPosition_deg, goalPosition_deg));
+    groupCenter_deg = mean(boundary_deg, 1);
+    centerOffset_deg = groupCenter_deg - startPosition_deg;
+    signedSide(groupIndex) = routeDirection_deg(1) * ...
+        centerOffset_deg(2) - routeDirection_deg(2) * ...
+        centerOffset_deg(1);
+end
+
+seedIndex = find(intersectsCorridor);
+if isempty(seedIndex)
+    [~, seedIndex] = min(distanceToCorridor_deg);
+end
+
+selectedGroupIndex = seedIndex(:);
+for seedPosition = 1:numel(seedIndex)
+    seedGroupIndex = seedIndex(seedPosition);
+    neighborIndex = nearestDetourGroupIndices( ...
+        seedGroupIndex, groupGeometry_deg, signedSide);
+    selectedGroupIndex = [selectedGroupIndex; ...
+        neighborIndex(:)]; %#ok<AGROW>
+end
+selectedGroupIndex = unique(selectedGroupIndex, "sorted");
+omittedGroupIndex = setdiff((1:groupCount).', selectedGroupIndex, "stable");
+end
+
+function neighborIndex = nearestDetourGroupIndices( ...
+        seedGroupIndex, groupGeometry_deg, signedSide)
+%% Section 0: Header & Readme
+% SYNTAX
+%   neighborIndex = nearestDetourGroupIndices( ...
+%       seedGroupIndex, groupGeometry_deg, signedSide)
+%**************************************************************************
+% PURPOSE
+%   - Select at most two nearby groups, preferring one on each side of the
+%     start-goal corridor so both detour directions remain represented.
+%**************************************************************************
+% INPUTS
+%   - seedGroupIndex (positive integer scalar)
+%   - groupGeometry_deg (G-by-1 cell column)
+%   - signedSide (G-by-1 numeric vector)
+%**************************************************************************
+% OUTPUTS
+%   - neighborIndex (zero-to-two integer column vector)
+%**************************************************************************
+% UNITS
+%   - Group geometry and distances are degrees.
+%**************************************************************************
+groupCount = numel(groupGeometry_deg);
+candidateIndex = setdiff((1:groupCount).', seedGroupIndex, "stable");
+if isempty(candidateIndex)
+    neighborIndex = zeros(0, 1);
+    return;
+end
+
+distance_deg = Inf(groupCount, 1);
+seedBoundary_deg = groupGeometry_deg{seedGroupIndex};
+for candidatePosition = 1:numel(candidateIndex)
+    groupIndex = candidateIndex(candidatePosition);
+    candidateBoundary_deg = groupGeometry_deg{groupIndex};
+    displacement_deg = reshape(seedBoundary_deg, [], 1, 2) - ...
+        reshape(candidateBoundary_deg, 1, [], 2);
+    pairDistance_deg = hypot( ...
+        displacement_deg(:, :, 1), displacement_deg(:, :, 2));
+    distance_deg(groupIndex) = min(pairDistance_deg, [], "all");
+end
+
+neighborIndex = zeros(0, 1);
+positiveSideIndex = candidateIndex(signedSide(candidateIndex) >= 0);
+negativeSideIndex = candidateIndex(signedSide(candidateIndex) < 0);
+if ~isempty(positiveSideIndex)
+    [~, localIndex] = min(distance_deg(positiveSideIndex));
+    neighborIndex(end + 1, 1) = positiveSideIndex(localIndex);
+end
+if ~isempty(negativeSideIndex)
+    [~, localIndex] = min(distance_deg(negativeSideIndex));
+    neighborIndex(end + 1, 1) = negativeSideIndex(localIndex);
+end
+
+% A one-sided scene still retains two nearby alternatives when available.
+if numel(neighborIndex) < min(2, numel(candidateIndex))
+    remainingIndex = setdiff(candidateIndex, neighborIndex, "stable");
+    [~, order] = sort(distance_deg(remainingIndex), "ascend");
+    neededCount = min(2 - numel(neighborIndex), numel(remainingIndex));
+    neighborIndex = [neighborIndex; ...
+        remainingIndex(order(1:neededCount))];
+end
+end
+
+function intersectsRoute = boundaryIntersectsRoute( ...
+        boundary_deg, startPosition_deg, goalPosition_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   intersectsRoute = boundaryIntersectsRoute( ...
+%       boundary_deg, startPosition_deg, goalPosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Identify merged groups whose protected boundary intersects the direct
+%     start-goal segment.
+%**************************************************************************
+% INPUTS
+%   - boundary_deg (N-by-2 numeric matrix)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - intersectsRoute (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees.
+%**************************************************************************
+edgeStart_deg = boundary_deg;
+edgeEnd_deg = boundary_deg([2:end 1], :);
+routeVector_deg = goalPosition_deg - startPosition_deg;
+edgeVector_deg = edgeEnd_deg - edgeStart_deg;
+edgeOffset_deg = edgeStart_deg - startPosition_deg;
+denominator_deg2 = routeVector_deg(1) .* edgeVector_deg(:, 2) - ...
+    routeVector_deg(2) .* edgeVector_deg(:, 1);
+tolerance_deg2 = 1e-11 .* max(1, norm(routeVector_deg) .* ...
+    hypot(edgeVector_deg(:, 1), edgeVector_deg(:, 2)));
+isNonparallel = abs(denominator_deg2) > tolerance_deg2;
+routeParameter = nan(size(denominator_deg2));
+edgeParameter = nan(size(denominator_deg2));
+routeParameter(isNonparallel) = ( ...
+    edgeOffset_deg(isNonparallel, 1) .* ...
+    edgeVector_deg(isNonparallel, 2) - ...
+    edgeOffset_deg(isNonparallel, 2) .* ...
+    edgeVector_deg(isNonparallel, 1)) ./ ...
+    denominator_deg2(isNonparallel);
+edgeParameter(isNonparallel) = ( ...
+    edgeOffset_deg(isNonparallel, 1) .* routeVector_deg(2) - ...
+    edgeOffset_deg(isNonparallel, 2) .* routeVector_deg(1)) ./ ...
+    denominator_deg2(isNonparallel);
+parameterTolerance = 1e-10;
+properIntersection = isNonparallel & ...
+    routeParameter >= -parameterTolerance & ...
+    routeParameter <= 1 + parameterTolerance & ...
+    edgeParameter >= -parameterTolerance & ...
+    edgeParameter <= 1 + parameterTolerance;
+
+isParallel = ~isNonparallel;
+collinearCross_deg2 = edgeOffset_deg(:, 1) .* routeVector_deg(2) - ...
+    edgeOffset_deg(:, 2) .* routeVector_deg(1);
+isCollinear = isParallel & ...
+    abs(collinearCross_deg2) <= tolerance_deg2;
+collinearOverlap = false(size(isCollinear));
+if any(isCollinear)
+    routeLengthSquared_deg2 = sum(routeVector_deg.^2);
+    edgeStartParameter = edgeOffset_deg(isCollinear, :) * ...
+        routeVector_deg.' / routeLengthSquared_deg2;
+    edgeEndParameter = (edgeEnd_deg(isCollinear, :) - ...
+        startPosition_deg) * routeVector_deg.' / ...
+        routeLengthSquared_deg2;
+    collinearOverlap(isCollinear) = ...
+        min(max(edgeStartParameter, edgeEndParameter), 1) >= ...
+        max(min(edgeStartParameter, edgeEndParameter), 0) - ...
+        parameterTolerance;
+end
+intersectsRoute = any(properIntersection | collinearOverlap);
+end
+
+function [groups_deg, memberships, complete] = ...
+        mergeNearestObstacleGroups(groups_deg, memberships, ...
+        startPosition_deg, goalPosition_deg, maximumGroupCount)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [groups_deg, memberships, complete] = ...
+%       mergeNearestObstacleGroups(groups_deg, memberships, ...
+%       startPosition_deg, goalPosition_deg, maximumGroupCount)
+%**************************************************************************
+% PURPOSE
+%   - Repeatedly choose the endpoint-safe hull merge adding the least area.
+%**************************************************************************
+% INPUTS
+%   - groups_deg, memberships (cell columns)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%   - maximumGroupCount (positive integer scalar)
+%**************************************************************************
+% OUTPUTS
+%   - groups_deg, memberships (reduced cell columns)
+%   - complete (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees and merge cost is square degrees.
+%**************************************************************************
+while numel(groups_deg) > maximumGroupCount
+    bestFirstIndex = 0;
+    bestSecondIndex = 0;
+    bestMergeCost_deg2 = Inf;
+    bestHull_deg = zeros(0, 2);
+    for firstIndex = 1:numel(groups_deg) - 1
+        firstArea_deg2 = polyarea( ...
+            groups_deg{firstIndex}(:, 1), ...
+            groups_deg{firstIndex}(:, 2));
+        for secondIndex = firstIndex + 1:numel(groups_deg)
+            [mergedHull_deg, hullIsValid] = convexBoundary([ ...
+                groups_deg{firstIndex}; groups_deg{secondIndex}]);
+            if ~hullIsValid || boundaryContainsEndpoint( ...
+                    mergedHull_deg, startPosition_deg, goalPosition_deg)
+                continue;
+            end
+            secondArea_deg2 = polyarea( ...
+                groups_deg{secondIndex}(:, 1), ...
+                groups_deg{secondIndex}(:, 2));
+            mergedArea_deg2 = polyarea( ...
+                mergedHull_deg(:, 1), mergedHull_deg(:, 2));
+            mergeCost_deg2 = mergedArea_deg2 - ...
+                firstArea_deg2 - secondArea_deg2;
+            if mergeCost_deg2 < bestMergeCost_deg2
+                bestFirstIndex = firstIndex;
+                bestSecondIndex = secondIndex;
+                bestMergeCost_deg2 = mergeCost_deg2;
+                bestHull_deg = mergedHull_deg;
+            end
+        end
+    end
+    if bestFirstIndex == 0
+        break;
+    end
+    groups_deg{bestFirstIndex} = bestHull_deg;
+    memberships{bestFirstIndex} = sort([ ...
+        memberships{bestFirstIndex}(:); ...
+        memberships{bestSecondIndex}(:)]).';
+    groups_deg(bestSecondIndex) = [];
+    memberships(bestSecondIndex) = [];
+end
+complete = numel(groups_deg) <= maximumGroupCount;
+end
+
+function [boundary_deg, isValid] = convexBoundary(position_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [boundary_deg, isValid] = convexBoundary(position_deg)
+%**************************************************************************
+% PURPOSE
+%   - Return a duplicate-free convex boundary for conservative merging.
+%**************************************************************************
+% INPUTS
+%   - position_deg (N-by-2 numeric matrix)
+%**************************************************************************
+% OUTPUTS
+%   - boundary_deg (M-by-2 numeric matrix), isValid (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees.
+%**************************************************************************
+position_deg = unique(double(position_deg), "rows", "stable");
+isValid = size(position_deg, 1) >= 3 && ...
+    rank(position_deg - mean(position_deg, 1)) >= 2;
+if ~isValid
+    boundary_deg = zeros(0, 2);
+    return;
+end
+hullIndex = convhull(position_deg(:, 1), position_deg(:, 2));
+boundary_deg = position_deg(hullIndex(1:end - 1), :);
+end
+
+function containsEndpoint = boundaryContainsEndpoint( ...
+        boundary_deg, startPosition_deg, goalPosition_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   containsEndpoint = boundaryContainsEndpoint( ...
+%       boundary_deg, startPosition_deg, goalPosition_deg)
+%**************************************************************************
+% PURPOSE
+%   - Reject a conservative hull when its interior or boundary covers an
+%     endpoint that the original protected obstacles leave available.
+%**************************************************************************
+% INPUTS
+%   - boundary_deg (N-by-2 numeric matrix)
+%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
+%**************************************************************************
+% OUTPUTS
+%   - containsEndpoint (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Position is degrees.
+%**************************************************************************
+[startInside, startOnBoundary] = inpolygon( ...
+    startPosition_deg(1), startPosition_deg(2), ...
+    boundary_deg(:, 1), boundary_deg(:, 2));
+[goalInside, goalOnBoundary] = inpolygon( ...
+    goalPosition_deg(1), goalPosition_deg(2), ...
+    boundary_deg(:, 1), boundary_deg(:, 2));
+containsEndpoint = startInside || startOnBoundary || ...
+    goalInside || goalOnBoundary;
+end
+
 function graph = emptyVisibilityGraph()
 %% Section 0: Header & Readme
 % SYNTAX
@@ -280,6 +793,17 @@ function graph = emptyVisibilityGraph()
 graph = struct( ...
     "Success", false, ...
     "Message", "Visibility graph was not evaluated.", ...
+    "Representation", "fullObstacleGraph", ...
+    "ObstacleMergeAttempted", false, ...
+    "ObstacleMergeComplete", false, ...
+    "SourceObstacleCount", 0, ...
+    "MaximumGraphObstacleCount", 0, ...
+    "MergedGroupCount", 0, ...
+    "GraphObstacleCount", 0, ...
+    "MergedObstacleMembership", {cell(0, 1)}, ...
+    "MergedObstacleGeometry_deg", {cell(0, 1)}, ...
+    "OmittedObstacleMembership", {cell(0, 1)}, ...
+    "OmittedObstacleGeometry_deg", {cell(0, 1)}, ...
     "Time_s", NaN, ...
     "NodePosition_deg", zeros(0, 2), ...
     "NodeType", strings(0, 1), ...
@@ -355,7 +879,6 @@ edgeType = strings(nodeCount, nodeCount);
 edgeRoute_deg = cell(nodeCount, nodeCount);
 visibilityTestedMask = false(nodeCount, nodeCount);
 visibilityBlockedMask = false(nodeCount, nodeCount);
-generatedVisibilityEdgeCount = 0;
 generatedBoundaryEdgeCount = 0;
 boundaryRouteInputVertexCount = 0;
 boundaryRouteRetainedVertexCount = 0;
@@ -364,39 +887,16 @@ boundaryRouteRetainedVertexCount = 0;
 % plus the direct edge. Together with cyclic boundary edges below, this
 % produces a feasible upper-bound route before any candidate-pair clique is
 % attempted.
-endpointPair = [1 2];
-for endpointPairIndex = 1:size(endpointPair, 1)
-    firstNodeIndex = endpointPair(endpointPairIndex, 1);
-    secondNodeIndex = endpointPair(endpointPairIndex, 2);
-    [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
-        edgeWasTested, edgeWasBlocked] = ...
-        addVisibilityEdgeIfClear(edgeCost_deg, edgeType, edgeRoute_deg, ...
-        nodePosition_deg, firstNodeIndex, secondNodeIndex, ...
-        obstacleField, snapshotTime_s, options);
-    [visibilityTestedMask, visibilityBlockedMask] = ...
-        recordVisibilityTest(visibilityTestedMask, ...
-        visibilityBlockedMask, firstNodeIndex, secondNodeIndex, ...
-        edgeWasTested, edgeWasBlocked);
-    generatedVisibilityEdgeCount = generatedVisibilityEdgeCount + ...
-        edgeWasAdded;
-end
-for candidateIndex = 1:candidateCount
-    candidateNodeIndex = candidateIndex + 2;
-    for endpointNodeIndex = 1:2
-        [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
-            edgeWasTested, edgeWasBlocked] = ...
-            addVisibilityEdgeIfClear( ...
-            edgeCost_deg, edgeType, edgeRoute_deg, nodePosition_deg, ...
-            endpointNodeIndex, candidateNodeIndex, obstacleField, ...
-            snapshotTime_s, options);
-        [visibilityTestedMask, visibilityBlockedMask] = ...
-            recordVisibilityTest(visibilityTestedMask, ...
-            visibilityBlockedMask, endpointNodeIndex, ...
-            candidateNodeIndex, edgeWasTested, edgeWasBlocked);
-        generatedVisibilityEdgeCount = generatedVisibilityEdgeCount + ...
-            edgeWasAdded;
-    end
-end
+candidateNodeIndex = (3:nodeCount).';
+endpointCandidatePairs = [ ...
+    ones(candidateCount, 1), candidateNodeIndex; ...
+    2 * ones(candidateCount, 1), candidateNodeIndex];
+phaseOnePairs = [[1 2]; endpointCandidatePairs];
+[edgeCost_deg, edgeType, edgeRoute_deg, visibilityTestedMask, ...
+    visibilityBlockedMask, ~] = ...
+    addVisibilityEdgesIfClear(edgeCost_deg, edgeType, edgeRoute_deg, ...
+    visibilityTestedMask, visibilityBlockedMask, nodePosition_deg, ...
+    phaseOnePairs, obstacleField, snapshotTime_s, options);
 
 % Candidates on one ring are sorted by boundary arclength. Connecting only
 % cyclic neighbors preserves both sides of every obstacle without creating
@@ -431,9 +931,10 @@ for boundaryGroupIndex = 1:size(boundaryGroups, 1)
             forwardBoundaryRoute(region_deg, ...
             candidatePosition_deg(firstCandidateIndex, :), ...
             candidatePosition_deg(secondCandidateIndex, :));
-        [boundaryRoute_deg, routeIsValid] = ...
-            reduceBoundaryRouteForGraph(rawBoundaryRoute_deg, ...
-            obstacleField, snapshotTime_s, options);
+        boundaryRoute_deg = removeConsecutiveDuplicatePoints( ...
+            rawBoundaryRoute_deg);
+        routeIsValid = routeSegmentsAreVisible( ...
+            boundaryRoute_deg, obstacleField, snapshotTime_s, options);
         if ~routeIsValid
             continue;
         end
@@ -491,34 +992,30 @@ if ~isempty(baselinePathNodeIndex) && isfinite(baselinePathCost_deg)
     edgeRoute_deg(:, inactiveNodeIndex) = {[]};
 end
 
-% Phase 2 completes only the candidates that can improve this graph's
+% Phase 2 completes only candidates that can improve this graph's
 % geometric objective.
 activeCandidateIndex = find(candidateActiveMask);
-for firstActiveIndex = 1:numel(activeCandidateIndex) - 1
-    firstCandidateIndex = activeCandidateIndex(firstActiveIndex);
-    firstNodeIndex = firstCandidateIndex + 2;
-    for secondActiveIndex = firstActiveIndex + 1: ...
-            numel(activeCandidateIndex)
-        secondCandidateIndex = activeCandidateIndex(secondActiveIndex);
-        secondNodeIndex = secondCandidateIndex + 2;
-        [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
-            edgeWasTested, edgeWasBlocked] = ...
-            addVisibilityEdgeIfClear( ...
-            edgeCost_deg, edgeType, edgeRoute_deg, nodePosition_deg, ...
-            firstNodeIndex, secondNodeIndex, obstacleField, ...
-            snapshotTime_s, options);
-        [visibilityTestedMask, visibilityBlockedMask] = ...
-            recordVisibilityTest(visibilityTestedMask, ...
-            visibilityBlockedMask, firstNodeIndex, secondNodeIndex, ...
-            edgeWasTested, edgeWasBlocked);
-        generatedVisibilityEdgeCount = generatedVisibilityEdgeCount + ...
-            edgeWasAdded;
+if numel(activeCandidateIndex) >= 2
+    phaseTwoCandidatePairs = nchoosek(activeCandidateIndex, 2);
+    isMergedGraph = candidateCount > 0 && all( ...
+        candidateTypes == "mergedHullVertex");
+    if isMergedGraph
+        phaseTwoCandidatePairs = sparseMergedCandidatePairs( ...
+            phaseTwoCandidatePairs, candidatePosition_deg, ...
+            candidateObstacleIndex);
     end
+    phaseTwoPairs = phaseTwoCandidatePairs + 2;
+    [edgeCost_deg, edgeType, edgeRoute_deg, visibilityTestedMask, ...
+        visibilityBlockedMask, ~] = ...
+        addVisibilityEdgesIfClear( ...
+        edgeCost_deg, edgeType, edgeRoute_deg, visibilityTestedMask, ...
+        visibilityBlockedMask, nodePosition_deg, phaseTwoPairs, ...
+        obstacleField, snapshotTime_s, options);
 end
 generatedVisibilityEdgeCount = nnz(triu(edgeType == "visibility", 1));
 generatedBoundaryEdgeCount = nnz(triu(edgeType == "boundary", 1));
 
-[pathNodeIndex, pathCost_deg] = shortestVisibilityGraphPath( ...
+[pathNodeIndex, ~] = shortestVisibilityGraphPath( ...
     edgeCost_deg, 1, 2);
 graph.NodePosition_deg = nodePosition_deg;
 graph.NodeType = nodeType;
@@ -545,25 +1042,18 @@ if isempty(pathNodeIndex)
     return;
 end
 
-pathEdgeCount = numel(pathNodeIndex) - 1;
-pathEdgeType = strings(pathEdgeCount, 1);
-pathPosition_deg = zeros(0, 2);
-for pathEdgeIndex = 1:pathEdgeCount
-    firstNodeIndex = pathNodeIndex(pathEdgeIndex);
-    secondNodeIndex = pathNodeIndex(pathEdgeIndex + 1);
-    pathEdgeType(pathEdgeIndex) = edgeType( ...
-        firstNodeIndex, secondNodeIndex);
-    edgePath_deg = edgeRoute_deg{firstNodeIndex, secondNodeIndex};
-    if isempty(pathPosition_deg)
-        pathPosition_deg = edgePath_deg;
-    else
-        pathPosition_deg = [pathPosition_deg; ...
-            edgePath_deg(2:end, :)]; %#ok<AGROW>
-    end
+[pathPosition_deg, pathEdgeType] = assembleGraphRoute( ...
+    pathNodeIndex, edgeType, edgeRoute_deg);
+[compactPathPosition_deg, compactPathIsValid] = compactSelectedRoute( ...
+    pathPosition_deg, obstacleField, snapshotTime_s, options);
+if compactPathIsValid
+    pathPosition_deg = compactPathPosition_deg;
 end
+pathStep_deg = diff(pathPosition_deg, 1, 1);
+pathCost_deg = sum(hypot(pathStep_deg(:, 1), pathStep_deg(:, 2)));
+pathEdgeCount = numel(pathNodeIndex) - 1;
 graph.Success = true;
-graph.Message = ...
-    "Global visibility-graph Dijkstra connected start to goal.";
+graph.Message = "Global visibility-graph Dijkstra connected start to goal.";
 graph.PathNodeIndex = pathNodeIndex;
 graph.PathCandidateIndex = nodeCandidateIndex(pathNodeIndex);
 graph.PathObstacleIndex = nodeObstacleIndex(pathNodeIndex);
@@ -576,98 +1066,366 @@ graph.PathVisibilityEdgeCount = nnz(pathEdgeType == "visibility");
 graph.PathBoundaryEdgeCount = nnz(pathEdgeType == "boundary");
 end
 
-function [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
-        edgeWasTested, edgeWasBlocked] = ...
-        addVisibilityEdgeIfClear(edgeCost_deg, edgeType, edgeRoute_deg, ...
-        nodePosition_deg, firstNodeIndex, secondNodeIndex, ...
-        obstacleField, snapshotTime_s, options)
+function [compactRoute_deg, success] = compactSelectedRoute( ...
+        sourceRoute_deg, obstacleField, sampleTime_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [edgeCost_deg, edgeType, edgeRoute_deg, edgeWasAdded, ...
-%       edgeWasTested, edgeWasBlocked] = ...
-%       addVisibilityEdgeIfClear(edgeCost_deg, edgeType, ...
-%       edgeRoute_deg, nodePosition_deg, firstNodeIndex, ...
-%       secondNodeIndex, obstacleField, snapshotTime_s, options)
+%   [compactRoute_deg, success] = compactSelectedRoute( ...
+%       sourceRoute_deg, obstacleField, sampleTime_s, options)
 %**************************************************************************
 % PURPOSE
-%   - Add a straight graph edge only when its open interior is clear.
+%   - Remove redundant vertices from only the graph's selected route.
+%   - Batch every forward visibility query from the current vertex so
+%     polygon sampling density does not become unnecessary motion turns.
+%**************************************************************************
+% INPUTS
+%   - sourceRoute_deg (N-by-2 numeric matrix)
+%       Collision-checked route assembled from graph edges.
+%   - obstacleField (scalar packed obstacle field)
+%   - sampleTime_s (finite numeric scalar)
+%   - options (scalar resolved search-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - compactRoute_deg (M-by-2 numeric matrix)
+%   - success (logical scalar)
+%       True only when every retained segment is independently visible.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds.
+%**************************************************************************
+sourceRoute_deg = removeConsecutiveDuplicatePoints(sourceRoute_deg);
+compactRoute_deg = sourceRoute_deg;
+success = false;
+sourceVertexCount = size(sourceRoute_deg, 1);
+if sourceVertexCount < 2
+    return;
+elseif sourceVertexCount == 2
+    success = routeSegmentsAreVisible( ...
+        compactRoute_deg, obstacleField, sampleTime_s, options);
+    return;
+end
+
+compactRoute_deg = sourceRoute_deg(1, :);
+
+% RDP anchors retain the route's geometric shape while preventing one
+% dense source boundary from creating a candidate-by-edge Cartesian
+% product. Logarithmic look-ahead points remain available between anchors,
+% so a blocked long chord does not force one-vertex-at-a-time progress.
+shapeAnchor = false(sourceVertexCount, 1);
+shapeAnchor([1 end]) = true;
+segmentStack = [1 sourceVertexCount];
+shapeTolerance_deg = options.VisibilitySampleStep_deg;
+while ~isempty(segmentStack)
+    firstIndex = segmentStack(end, 1);
+    finalIndex = segmentStack(end, 2);
+    segmentStack(end, :) = [];
+    if finalIndex <= firstIndex + 1
+        continue;
+    end
+    interiorIndex = (firstIndex + 1:finalIndex - 1).';
+    deviation_deg = pointToSegmentDistance( ...
+        sourceRoute_deg(interiorIndex, :), ...
+        sourceRoute_deg(firstIndex, :), sourceRoute_deg(finalIndex, :));
+    [maximumDeviation_deg, maximumDeviationIndex] = max(deviation_deg);
+    if maximumDeviation_deg <= shapeTolerance_deg
+        continue;
+    end
+    splitIndex = interiorIndex(maximumDeviationIndex);
+    shapeAnchor(splitIndex) = true;
+    segmentStack = [segmentStack; ...
+        firstIndex splitIndex; splitIndex finalIndex]; %#ok<AGROW>
+end
+shapeAnchorIndex = find(shapeAnchor);
+
+currentIndex = 1;
+while currentIndex < sourceVertexCount
+    remainingVertexCount = sourceVertexCount - currentIndex;
+    lookAheadCount = min(16, remainingVertexCount);
+    if remainingVertexCount == 1
+        lookAheadOffset = 1;
+    else
+        lookAheadOffset = unique(round(logspace( ...
+            0, log10(remainingVertexCount), lookAheadCount))).';
+    end
+    candidateIndex = unique([ ...
+        currentIndex + lookAheadOffset; ...
+        shapeAnchorIndex(shapeAnchorIndex > currentIndex)], "sorted");
+    candidateCount = numel(candidateIndex);
+    firstPosition_deg = repmat( ...
+        sourceRoute_deg(currentIndex, :), candidateCount, 1);
+    visible = linesVisibleAtTime( ...
+        obstacleField, firstPosition_deg, ...
+        sourceRoute_deg(candidateIndex, :), sampleTime_s, options);
+    farthestVisibleIndex = find(visible, 1, "last");
+    if isempty(farthestVisibleIndex)
+        nextIndex = currentIndex + 1;
+    else
+        nextIndex = candidateIndex(farthestVisibleIndex);
+    end
+    compactRoute_deg(end + 1, :) = ...
+        sourceRoute_deg(nextIndex, :); %#ok<AGROW>
+    currentIndex = nextIndex;
+end
+success = routeSegmentsAreVisible( ...
+    compactRoute_deg, obstacleField, sampleTime_s, options);
+end
+
+function retainedPairIndex = sparseMergedCandidatePairs( ...
+        pairIndex, candidatePosition_deg, candidateGroupIndex)
+%% Section 0: Header & Readme
+% SYNTAX
+%   retainedPairIndex = sparseMergedCandidatePairs( ...
+%       pairIndex, candidatePosition_deg, candidateGroupIndex)
+%**************************************************************************
+% PURPOSE
+%   - Bound the cross-group visibility work in a merged dense-scene graph.
+%   - Preserve local alternatives and at least two candidate connections
+%     between every represented group pair before collision testing.
+%**************************************************************************
+% INPUTS
+%   - pairIndex (P-by-2 positive integer matrix)
+%   - candidatePosition_deg (N-by-2 numeric matrix)
+%   - candidateGroupIndex (N-by-1 positive integer vector)
+%**************************************************************************
+% OUTPUTS
+%   - retainedPairIndex (Q-by-2 positive integer matrix)
+%**************************************************************************
+% UNITS
+%   - Candidate positions and pair distances are degrees.
+%**************************************************************************
+if isempty(pairIndex)
+    retainedPairIndex = pairIndex;
+    return;
+end
+
+firstGroupIndex = candidateGroupIndex(pairIndex(:, 1));
+secondGroupIndex = candidateGroupIndex(pairIndex(:, 2));
+crossesGroup = firstGroupIndex ~= secondGroupIndex;
+pairIndex = pairIndex(crossesGroup, :);
+firstGroupIndex = firstGroupIndex(crossesGroup);
+secondGroupIndex = secondGroupIndex(crossesGroup);
+if isempty(pairIndex)
+    retainedPairIndex = pairIndex;
+    return;
+end
+
+pairOffset_deg = candidatePosition_deg(pairIndex(:, 1), :) - ...
+    candidatePosition_deg(pairIndex(:, 2), :);
+pairDistance_deg = hypot(pairOffset_deg(:, 1), pairOffset_deg(:, 2));
+retainPair = false(size(pairIndex, 1), 1);
+
+% Eight local cross-group neighbors preserve alternatives around blocked
+% nearest connections without restoring the quadratic candidate clique.
+maximumLocalNeighborCount = 8;
+activeCandidateIndex = unique(pairIndex(:), "stable");
+for activeIndex = reshape(activeCandidateIndex, 1, [])
+    incidentPair = pairIndex(:, 1) == activeIndex | ...
+        pairIndex(:, 2) == activeIndex;
+    incidentRow = find(incidentPair);
+    [~, localOrder] = sort(pairDistance_deg(incidentRow), "ascend");
+    retainedCount = min(maximumLocalNeighborCount, numel(incidentRow));
+    retainPair(incidentRow(localOrder(1:retainedCount))) = true;
+end
+
+groupPair = sort([firstGroupIndex, secondGroupIndex], 2);
+uniqueGroupPair = unique(groupPair, "rows", "stable");
+minimumConnectionsPerGroupPair = 2;
+for groupPairIndex = 1:size(uniqueGroupPair, 1)
+    belongsToGroupPair = all( ...
+        groupPair == uniqueGroupPair(groupPairIndex, :), 2);
+    groupPairRow = find(belongsToGroupPair);
+    [~, localOrder] = sort(pairDistance_deg(groupPairRow), "ascend");
+    retainedCount = min( ...
+        minimumConnectionsPerGroupPair, numel(groupPairRow));
+    retainPair(groupPairRow(localOrder(1:retainedCount))) = true;
+end
+
+retainedPairIndex = pairIndex(retainPair, :);
+end
+
+function conservativeBoundary_deg = conservativeMergedBoundary( ...
+        sourceBoundary_deg, maximumVertexCount)
+%% Section 0: Header & Readme
+% SYNTAX
+%   conservativeBoundary_deg = conservativeMergedBoundary( ...
+%       sourceBoundary_deg, maximumVertexCount)
+%**************************************************************************
+% PURPOSE
+%   - Bound merged-graph vertex count with a convex outer approximation.
+%   - Preserve every source point inside the returned polygon so geometric
+%     reduction cannot clip a protected obstacle corner.
+%**************************************************************************
+% INPUTS
+%   - sourceBoundary_deg (N-by-2 numeric matrix)
+%       Convex protected boundary.
+%   - maximumVertexCount (integer scalar at least four)
+%**************************************************************************
+% OUTPUTS
+%   - conservativeBoundary_deg (M-by-2 numeric matrix)
+%       Source boundary or a containing support polygon.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; support directions are dimensionless.
+%**************************************************************************
+conservativeBoundary_deg = sourceBoundary_deg;
+if size(sourceBoundary_deg, 1) <= maximumVertexCount
+    return;
+end
+
+angle_rad = (0:maximumVertexCount - 1).' * ...
+    (2 * pi / maximumVertexCount);
+normal = [cos(angle_rad), sin(angle_rad)];
+support_deg = max(sourceBoundary_deg * normal.', [], 1).';
+roundoffGuard_deg = 64 * eps(max(1, max(abs(sourceBoundary_deg), [], "all")));
+support_deg = support_deg + roundoffGuard_deg;
+candidateBoundary_deg = zeros(maximumVertexCount, 2);
+
+for normalIndex = 1:maximumVertexCount
+    nextNormalIndex = mod(normalIndex, maximumVertexCount) + 1;
+    normalPair = normal([normalIndex nextNormalIndex], :);
+    if abs(det(normalPair)) <= 1e-12
+        return;
+    end
+    candidateBoundary_deg(normalIndex, :) = (normalPair \ ...
+        support_deg([normalIndex nextNormalIndex])).';
+end
+
+[candidateBoundary_deg, boundaryIsValid] = convexBoundary( ...
+    candidateBoundary_deg);
+if ~boundaryIsValid
+    return;
+end
+[inside, onBoundary] = inpolygon( ...
+    sourceBoundary_deg(:, 1), sourceBoundary_deg(:, 2), ...
+    candidateBoundary_deg(:, 1), candidateBoundary_deg(:, 2));
+if all(inside | onBoundary)
+    conservativeBoundary_deg = candidateBoundary_deg;
+end
+end
+
+function [routePosition_deg, routeEdgeType] = assembleGraphRoute( ...
+        routeNodeIndex, edgeType, edgeRoute_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [routePosition_deg, routeEdgeType] = assembleGraphRoute( ...
+%       routeNodeIndex, edgeType, edgeRoute_deg)
+%**************************************************************************
+% PURPOSE
+%   - Expand one node path into its routed geometry and edge labels.
+%**************************************************************************
+% INPUTS
+%   - routeNodeIndex (N-by-1 node-index vector)
+%   - edgeType (square string matrix)
+%   - edgeRoute_deg (square cell matrix of routed positions)
+%**************************************************************************
+% OUTPUTS
+%   - routePosition_deg (M-by-2 numeric matrix)
+%   - routeEdgeType (N-1-by-1 string vector)
+%**************************************************************************
+% UNITS
+%   - Position is degrees; edge labels are dimensionless.
+%**************************************************************************
+edgeCount = numel(routeNodeIndex) - 1;
+routeEdgeType = strings(edgeCount, 1);
+routePosition_deg = zeros(0, 2);
+for edgeIndex = 1:edgeCount
+    firstNodeIndex = routeNodeIndex(edgeIndex);
+    secondNodeIndex = routeNodeIndex(edgeIndex + 1);
+    routeEdgeType(edgeIndex) = edgeType(firstNodeIndex, secondNodeIndex);
+    edgePosition_deg = edgeRoute_deg{firstNodeIndex, secondNodeIndex};
+    if isempty(edgePosition_deg)
+        error("buildAzElSnapshotVisibilityGraphs:MissingEdgeRoute", ...
+            "A retained graph edge has no routed position geometry.");
+    end
+    if isempty(routePosition_deg)
+        routePosition_deg = edgePosition_deg;
+    else
+        routePosition_deg = [routePosition_deg; ...
+            edgePosition_deg(2:end, :)]; %#ok<AGROW>
+    end
+end
+routePosition_deg = removeConsecutiveDuplicatePoints(routePosition_deg);
+end
+
+function [edgeCost_deg, edgeType, edgeRoute_deg, testedMask, ...
+        blockedMask, addedEdgeCount] = addVisibilityEdgesIfClear( ...
+        edgeCost_deg, edgeType, edgeRoute_deg, testedMask, blockedMask, ...
+        nodePosition_deg, nodePairIndex, obstacleField, snapshotTime_s, ...
+        options)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [edgeCost_deg, edgeType, edgeRoute_deg, testedMask, ...
+%       blockedMask, addedEdgeCount] = addVisibilityEdgesIfClear( ...
+%       edgeCost_deg, edgeType, edgeRoute_deg, testedMask, blockedMask, ...
+%       nodePosition_deg, nodePairIndex, obstacleField, snapshotTime_s, ...
+%       options)
+%**************************************************************************
+% PURPOSE
+%   - Batch straight-edge collision queries at one resolved snapshot time.
 %**************************************************************************
 % INPUTS
 %   - edgeCost_deg, edgeType, edgeRoute_deg (square graph matrices)
+%   - testedMask, blockedMask (square logical matrices)
 %   - nodePosition_deg (N-by-2 numeric matrix)
-%   - firstNodeIndex, secondNodeIndex (positive integer scalars)
+%   - nodePairIndex (M-by-2 positive integer matrix)
 %   - obstacleField (scalar packed field), snapshotTime_s (numeric scalar)
 %   - options (scalar resolved options struct)
 %**************************************************************************
 % OUTPUTS
-%   - edgeCost_deg, edgeType, edgeRoute_deg (updated graph matrices)
-%   - edgeWasAdded, edgeWasTested, edgeWasBlocked (scalar flags)
-%       Distinguish a collision rejection from a pair skipped because an
-%       existing boundary connection was already no more expensive.
+%   - Updated graph matrices and visibility masks.
+%   - addedEdgeCount (nonnegative integer scalar)
 %**************************************************************************
 % UNITS
 %   - Position and cost are degrees; time is seconds.
 %**************************************************************************
-edgeWasAdded = 0;
-edgeWasTested = false;
-edgeWasBlocked = false;
-displacement_deg = nodePosition_deg(secondNodeIndex, :) - ...
-    nodePosition_deg(firstNodeIndex, :);
-distance_deg = hypot(displacement_deg(1), displacement_deg(2));
-if distance_deg <= 1e-12 || distance_deg >= ...
-        edgeCost_deg(firstNodeIndex, secondNodeIndex) - 1e-10
+addedEdgeCount = 0;
+if isempty(nodePairIndex)
     return;
 end
-edgeWasTested = true;
-if ~lineVisibleAtTime(obstacleField, ...
-        nodePosition_deg(firstNodeIndex, :), ...
-        nodePosition_deg(secondNodeIndex, :), snapshotTime_s, options)
-    edgeWasBlocked = true;
+firstNodeIndex = nodePairIndex(:, 1);
+secondNodeIndex = nodePairIndex(:, 2);
+firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
+secondPosition_deg = nodePosition_deg(secondNodeIndex, :);
+displacement_deg = secondPosition_deg - firstPosition_deg;
+distance_deg = hypot(displacement_deg(:, 1), displacement_deg(:, 2));
+matrixIndex = sub2ind(size(edgeCost_deg), ...
+    firstNodeIndex, secondNodeIndex);
+pairNeedsTest = distance_deg > 1e-12 & ...
+    distance_deg < edgeCost_deg(matrixIndex) - 1e-10;
+if ~any(pairNeedsTest)
     return;
 end
-edgeCost_deg(firstNodeIndex, secondNodeIndex) = distance_deg;
-edgeCost_deg(secondNodeIndex, firstNodeIndex) = distance_deg;
-edgeType(firstNodeIndex, secondNodeIndex) = "visibility";
-edgeType(secondNodeIndex, firstNodeIndex) = "visibility";
-edgeRoute_deg{firstNodeIndex, secondNodeIndex} = [ ...
-    nodePosition_deg(firstNodeIndex, :); ...
-    nodePosition_deg(secondNodeIndex, :)];
-edgeRoute_deg{secondNodeIndex, firstNodeIndex} = [ ...
-    nodePosition_deg(secondNodeIndex, :); ...
-    nodePosition_deg(firstNodeIndex, :)];
-edgeWasAdded = 1;
-end
+testedPairIndex = find(pairNeedsTest);
+pairIsVisible = linesVisibleAtTime(obstacleField, ...
+    firstPosition_deg(pairNeedsTest, :), ...
+    secondPosition_deg(pairNeedsTest, :), snapshotTime_s, options);
+testedFirstNodeIndex = firstNodeIndex(pairNeedsTest);
+testedSecondNodeIndex = secondNodeIndex(pairNeedsTest);
+testedForwardIndex = sub2ind(size(testedMask), ...
+    testedFirstNodeIndex, testedSecondNodeIndex);
+testedReverseIndex = sub2ind(size(testedMask), ...
+    testedSecondNodeIndex, testedFirstNodeIndex);
+testedMask([testedForwardIndex; testedReverseIndex]) = true;
+blockedValue = ~pairIsVisible;
+blockedMask(testedForwardIndex) = blockedValue;
+blockedMask(testedReverseIndex) = blockedValue;
 
-function [testedMask, blockedMask] = recordVisibilityTest( ...
-        testedMask, blockedMask, firstNodeIndex, secondNodeIndex, ...
-        edgeWasTested, edgeWasBlocked)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [testedMask, blockedMask] = recordVisibilityTest( ...
-%       testedMask, blockedMask, firstNodeIndex, secondNodeIndex, ...
-%       edgeWasTested, edgeWasBlocked)
-%**************************************************************************
-% PURPOSE
-%   - Record one symmetric visibility-test outcome for diagnostics.
-%**************************************************************************
-% INPUTS
-%   - testedMask, blockedMask (N-by-N logical matrices)
-%   - firstNodeIndex, secondNodeIndex (positive integer scalars)
-%   - edgeWasTested, edgeWasBlocked (logical scalars)
-%**************************************************************************
-% OUTPUTS
-%   - testedMask, blockedMask (updated N-by-N logical matrices)
-%**************************************************************************
-% UNITS
-%   - All values are dimensionless.
-%**************************************************************************
-if ~edgeWasTested
-    return;
+addedPairIndex = testedPairIndex(pairIsVisible);
+for addedIndex = reshape(addedPairIndex, 1, [])
+    firstIndex = firstNodeIndex(addedIndex);
+    secondIndex = secondNodeIndex(addedIndex);
+    edgeCost_deg(firstIndex, secondIndex) = distance_deg(addedIndex);
+    edgeCost_deg(secondIndex, firstIndex) = distance_deg(addedIndex);
+    edgeType(firstIndex, secondIndex) = "visibility";
+    edgeType(secondIndex, firstIndex) = "visibility";
+    edgeRoute_deg{firstIndex, secondIndex} = [ ...
+        nodePosition_deg(firstIndex, :); ...
+        nodePosition_deg(secondIndex, :)];
+    edgeRoute_deg{secondIndex, firstIndex} = [ ...
+        nodePosition_deg(secondIndex, :); ...
+        nodePosition_deg(firstIndex, :)];
 end
-testedMask(firstNodeIndex, secondNodeIndex) = true;
-testedMask(secondNodeIndex, firstNodeIndex) = true;
-blockedMask(firstNodeIndex, secondNodeIndex) = edgeWasBlocked;
-blockedMask(secondNodeIndex, firstNodeIndex) = edgeWasBlocked;
+addedEdgeCount = numel(addedPairIndex);
 end
 
 function candidateArc_deg = candidateBoundaryArcPositions( ...
@@ -785,120 +1543,6 @@ while pathNodeIndex(1) ~= startNodeIndex
 end
 end
 
-function [reducedRoute_deg, success] = reduceBoundaryRouteForGraph( ...
-        sourceRoute_deg, obstacleField, sampleTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [reducedRoute_deg, success] = reduceBoundaryRouteForGraph( ...
-%       sourceRoute_deg, obstacleField, sampleTime_s, options)
-%**************************************************************************
-% PURPOSE
-%   - Compact a boundary route without changing collision geometry.
-%**************************************************************************
-% INPUTS
-%   - sourceRoute_deg (N-by-2 numeric matrix)
-%   - obstacleField (scalar packed obstacle field)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - reducedRoute_deg (M-by-2 numeric matrix)
-%   - success (logical scalar)
-%       True only when every reduced segment remains visible.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
-% RDP proposes a compact shape, blocked chords restore source detail, and
-% a final farthest-visible pass removes only redundant safe points.
-sourceRoute_deg = removeConsecutiveDuplicatePoints(sourceRoute_deg);
-sourceVertexCount = size(sourceRoute_deg, 1);
-if sourceVertexCount <= 2 || ...
-        options.BoundaryRouteReductionTolerance_deg <= 0
-    reducedRoute_deg = sourceRoute_deg;
-    success = routeSegmentsAreVisible( ...
-        reducedRoute_deg, obstacleField, sampleTime_s, options);
-    return;
-end
-
-retainedIndex = rdpPolylineIndices(sourceRoute_deg, ...
-    options.BoundaryRouteReductionTolerance_deg);
-retainedIndex = refineBlockedRouteSegments( ...
-    sourceRoute_deg, retainedIndex, obstacleField, sampleTime_s, options);
-proposedRoute_deg = sourceRoute_deg(retainedIndex, :);
-if ~routeSegmentsAreVisible( ...
-        proposedRoute_deg, obstacleField, sampleTime_s, options)
-    reducedRoute_deg = sourceRoute_deg;
-    success = routeSegmentsAreVisible( ...
-        reducedRoute_deg, obstacleField, sampleTime_s, options);
-    return;
-end
-
-% Greedily jump to the farthest collision-free retained point. This keeps
-% true protrusions while removing points that do not constrain visibility.
-reducedRoute_deg = proposedRoute_deg(1, :);
-currentIndex = 1;
-while currentIndex < size(proposedRoute_deg, 1)
-    nextIndex = size(proposedRoute_deg, 1);
-    while nextIndex > currentIndex + 1 && ~lineVisibleAtTime( ...
-            obstacleField, proposedRoute_deg(currentIndex, :), ...
-            proposedRoute_deg(nextIndex, :), sampleTime_s, options)
-        nextIndex = nextIndex - 1;
-    end
-    reducedRoute_deg(end + 1, :) = ...
-        proposedRoute_deg(nextIndex, :); %#ok<AGROW>
-    currentIndex = nextIndex;
-end
-success = routeSegmentsAreVisible( ...
-    reducedRoute_deg, obstacleField, sampleTime_s, options);
-end
-
-function retainedIndex = rdpPolylineIndices(position_deg, tolerance_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   retainedIndex = rdpPolylineIndices(position_deg, tolerance_deg)
-%**************************************************************************
-% PURPOSE
-%   - Return iterative Ramer-Douglas-Peucker retained indices.
-%**************************************************************************
-% INPUTS
-%   - position_deg (N-by-2 numeric matrix)
-%   - tolerance_deg (nonnegative numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - retainedIndex (M-by-1 numeric vector)
-%       Endpoint indices are always retained.
-%**************************************************************************
-% UNITS
-%   - Position and tolerance are degrees.
-%**************************************************************************
-vertexCount = size(position_deg, 1);
-isRetained = false(vertexCount, 1);
-isRetained([1 end]) = true;
-segmentStack = [1 vertexCount];
-while ~isempty(segmentStack)
-    firstIndex = segmentStack(end, 1);
-    finalIndex = segmentStack(end, 2);
-    segmentStack(end, :) = [];
-    if finalIndex <= firstIndex + 1
-        continue;
-    end
-    interiorIndex = (firstIndex + 1:finalIndex - 1).';
-    distance_deg = pointToSegmentDistance( ...
-        position_deg(interiorIndex, :), position_deg(firstIndex, :), ...
-        position_deg(finalIndex, :));
-    [maximumDistance_deg, localMaximumIndex] = max(distance_deg);
-    if maximumDistance_deg <= tolerance_deg
-        continue;
-    end
-    splitIndex = interiorIndex(localMaximumIndex);
-    isRetained(splitIndex) = true;
-    segmentStack = [segmentStack; ...
-        firstIndex splitIndex; splitIndex finalIndex]; %#ok<AGROW>
-end
-retainedIndex = find(isRetained);
-end
-
 function distance_deg = pointToSegmentDistance( ...
         point_deg, firstPosition_deg, secondPosition_deg)
 %% Section 0: Header & Readme
@@ -934,61 +1578,6 @@ offset_deg = point_deg - closestPoint_deg;
 distance_deg = hypot(offset_deg(:, 1), offset_deg(:, 2));
 end
 
-function retainedIndex = refineBlockedRouteSegments( ...
-        sourceRoute_deg, retainedIndex, obstacleField, sampleTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   retainedIndex = refineBlockedRouteSegments( ...
-%       sourceRoute_deg, retainedIndex, obstacleField, ...
-%       sampleTime_s, options)
-%**************************************************************************
-% PURPOSE
-%   - Restore source vertices where a reduced chord is blocked.
-%**************************************************************************
-% INPUTS
-%   - sourceRoute_deg (N-by-2 numeric matrix)
-%   - retainedIndex (M-by-1 numeric vector)
-%   - obstacleField (scalar packed obstacle field)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - retainedIndex (K-by-1 numeric vector)
-%       Refined stable indices into sourceRoute_deg.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
-changed = true;
-while changed
-    changed = false;
-    refinedIndex = retainedIndex(1);
-    for segmentIndex = 1:numel(retainedIndex) - 1
-        firstIndex = retainedIndex(segmentIndex);
-        finalIndex = retainedIndex(segmentIndex + 1);
-        isVisible = lineVisibleAtTime(obstacleField, ...
-            sourceRoute_deg(firstIndex, :), ...
-            sourceRoute_deg(finalIndex, :), sampleTime_s, options);
-        if ~isVisible && finalIndex > firstIndex + 1
-            interiorIndex = (firstIndex + 1:finalIndex - 1).';
-            distance_deg = pointToSegmentDistance( ...
-                sourceRoute_deg(interiorIndex, :), ...
-                sourceRoute_deg(firstIndex, :), ...
-                sourceRoute_deg(finalIndex, :));
-            [~, localMaximumIndex] = max(distance_deg);
-            splitIndex = interiorIndex(localMaximumIndex);
-            if splitIndex <= firstIndex || splitIndex >= finalIndex
-                splitIndex = floor((firstIndex + finalIndex) / 2);
-            end
-            refinedIndex(end + 1, 1) = splitIndex; %#ok<AGROW>
-            changed = true;
-        end
-        refinedIndex(end + 1, 1) = finalIndex; %#ok<AGROW>
-    end
-    retainedIndex = unique(refinedIndex, "stable");
-end
-end
-
 function visible = routeSegmentsAreVisible( ...
         route_deg, obstacleField, sampleTime_s, options)
 %% Section 0: Header & Readme
@@ -1011,14 +1600,14 @@ function visible = routeSegmentsAreVisible( ...
 % UNITS
 %   - Position is degrees and time is seconds.
 %**************************************************************************
-visible = true;
-for segmentIndex = 1:size(route_deg, 1) - 1
-    if ~lineVisibleAtTime(obstacleField, ...
-            route_deg(segmentIndex, :), ...
-            route_deg(segmentIndex + 1, :), sampleTime_s, options)
-        visible = false;
-        return;
-    end
+if size(route_deg, 1) == 2
+    visible = lineVisibleAtTime(obstacleField, ...
+        route_deg(1, :), route_deg(2, :), sampleTime_s, options);
+else
+    segmentVisible = linesVisibleAtTime(obstacleField, ...
+        route_deg(1:end - 1, :), route_deg(2:end, :), ...
+        sampleTime_s, options);
+    visible = all(segmentVisible);
 end
 end
 
@@ -1046,180 +1635,58 @@ function visible = lineVisibleAtTime( ...
 % UNITS
 %   - Position is degrees and time is seconds.
 %**************************************************************************
-% Polygon occupancy is constant between consecutive boundary crossings, so
-% one midpoint per interval is exact for the stored piecewise-linear field.
-% Cost therefore scales with packed edges and actual crossings, not with
-% segment length divided by VisibilitySampleStep_deg.
-displacement_deg = secondPosition_deg - firstPosition_deg;
-distance_deg = hypot(displacement_deg(1), displacement_deg(2));
-if distance_deg <= 1e-12
-    visible = true;
-    return;
-end
-sampleFraction = visibilitySegmentIntervalMidpoints( ...
-    obstacleField, firstPosition_deg, secondPosition_deg, sampleTime_s);
-samplePosition_deg = firstPosition_deg + ...
-    sampleFraction .* displacement_deg;
-blocked = queryAzElTimeObstacle(obstacleField, ...
-    samplePosition_deg(:, 1), samplePosition_deg(:, 2), ...
-    repmat(sampleTime_s, numel(sampleFraction), 1), struct( ...
-    "CollisionMode", "polygon", ...
-    "TimePaddingSamples", 0, ...
-    "BoundaryIsOccupied", false));
-visible = ~any(blocked);
+visible = linesVisibleAtTime(obstacleField, firstPosition_deg, ...
+    secondPosition_deg, sampleTime_s, struct());
 end
 
-function intervalMidpoint = visibilitySegmentIntervalMidpoints( ...
-        obstacleField, firstPosition_deg, secondPosition_deg, sampleTime_s)
+function visible = linesVisibleAtTime( ...
+        obstacleField, firstPosition_deg, secondPosition_deg, ...
+        sampleTime_s, ~)
 %% Section 0: Header & Readme
 % SYNTAX
-%   intervalMidpoint = visibilitySegmentIntervalMidpoints( ...
-%       obstacleField, firstPosition_deg, secondPosition_deg, sampleTime_s)
+%   visible = linesVisibleAtTime(obstacleField, firstPosition_deg, ...
+%       secondPosition_deg, sampleTime_s, options)
 %**************************************************************************
 % PURPOSE
-%   - Partition a segment at every packed-slice boundary crossing.
+%   - Test independent open segments through the maintained continuous
+%     moving-obstacle collision kernel.
 %**************************************************************************
 % INPUTS
 %   - obstacleField (scalar packed obstacle field)
-%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
+%   - firstPosition_deg, secondPosition_deg (N-by-2 numeric matrices)
 %   - sampleTime_s (finite numeric scalar)
+%   - options (scalar struct)
+%       Reserved for the shared visibility-call signature.
 %**************************************************************************
 % OUTPUTS
-%   - intervalMidpoint (M-by-1 numeric vector)
-%       Fractions in [0, 1], one per constant-occupancy interval.
+%   - visible (N-by-1 logical vector)
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; fractions are dimensionless.
+%   - Position is degrees and time is seconds.
 %**************************************************************************
-breakpoint = [0; 1];
-segmentMinimum_deg = min(firstPosition_deg, secondPosition_deg);
-segmentMaximum_deg = max(firstPosition_deg, secondPosition_deg);
-for obstacleIndex = 1:numel(obstacleField.Obstacles)
-    obstacle = obstacleField.Obstacles(obstacleIndex);
-    if obstacle.SampleCount < 1 || sampleTime_s < ...
-            double(obstacle.TimeSeconds(1)) || sampleTime_s > ...
-            double(obstacle.TimeSeconds(end))
+segmentCount = size(firstPosition_deg, 1);
+visible = true(segmentCount, 1);
+if segmentCount == 0
+    return;
+end
+packedObstacles = obstacleField.Obstacles;
+for segmentIndex = 1:segmentCount
+    segment_deg = [ ...
+        firstPosition_deg(segmentIndex, :); ...
+        secondPosition_deg(segmentIndex, :)];
+    if norm(diff(segment_deg, 1, 1)) <= 1e-12
         continue;
     end
-    [~, sampleIndex] = min(abs( ...
-        double(obstacle.TimeSeconds(:)) - sampleTime_s));
-    bounds_deg = double(obstacle.BoundsDeg(sampleIndex, :));
-    if any(~isfinite(bounds_deg)) || ...
-            segmentMaximum_deg(1) < bounds_deg(1) || ...
-            segmentMinimum_deg(1) > bounds_deg(2) || ...
-            segmentMaximum_deg(2) < bounds_deg(3) || ...
-            segmentMinimum_deg(2) > bounds_deg(4)
-        continue;
-    end
-    firstEdgeIndex = double(obstacle.EdgeOffsets(sampleIndex));
-    finalEdgeIndex = double(obstacle.EdgeOffsets(sampleIndex + 1)) - 1;
-    if finalEdgeIndex < firstEdgeIndex
-        continue;
-    end
-    edgeIndex = (firstEdgeIndex:finalEdgeIndex).';
-    edgeStart_deg = [ ...
-        double(obstacle.EdgeStartAzimuthDeg(edgeIndex)), ...
-        double(obstacle.EdgeStartElevationDeg(edgeIndex))];
-    edgeEnd_deg = [ ...
-        double(obstacle.EdgeEndAzimuthDeg(edgeIndex)), ...
-        double(obstacle.EdgeEndElevationDeg(edgeIndex))];
-    edgeBreakpoint = segmentEdgeIntersectionParameters( ...
-        firstPosition_deg, secondPosition_deg, ...
-        edgeStart_deg, edgeEnd_deg);
-    breakpoint = [breakpoint; edgeBreakpoint]; %#ok<AGROW>
-end
-breakpoint = sort(max(0, min(1, breakpoint)));
-if numel(breakpoint) > 1
-    scale = max(1, max(abs(breakpoint)));
-    retain = [true; diff(breakpoint) > 1e-11 * scale];
-    breakpoint = breakpoint(retain);
-end
-if breakpoint(1) > 0
-    breakpoint = [0; breakpoint];
-end
-if breakpoint(end) < 1
-    breakpoint(end + 1, 1) = 1;
-end
-intervalMidpoint = 0.5 .* (breakpoint(1:end - 1) + ...
-    breakpoint(2:end));
-if isempty(intervalMidpoint)
-    intervalMidpoint = 0.5;
-end
-end
-
-function intersectionParameter = segmentEdgeIntersectionParameters( ...
-        firstPosition_deg, secondPosition_deg, ...
-        edgeStart_deg, edgeEnd_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   intersectionParameter = segmentEdgeIntersectionParameters( ...
-%       firstPosition_deg, secondPosition_deg, ...
-%       edgeStart_deg, edgeEnd_deg)
-%**************************************************************************
-% PURPOSE
-%   - Return segment parameters for crossings and collinear overlaps.
-%**************************************************************************
-% INPUTS
-%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
-%   - edgeStart_deg, edgeEnd_deg (N-by-2 numeric matrices)
-%**************************************************************************
-% OUTPUTS
-%   - intersectionParameter (M-by-1 numeric vector)
-%       Candidate-segment fractions clipped to [0, 1].
-%**************************************************************************
-% UNITS
-%   - Positions are degrees; output fractions are dimensionless.
-%**************************************************************************
-segmentVector_deg = secondPosition_deg - firstPosition_deg;
-edgeVector_deg = edgeEnd_deg - edgeStart_deg;
-edgeOffset_deg = edgeStart_deg - firstPosition_deg;
-denominator_deg2 = segmentVector_deg(1) .* edgeVector_deg(:, 2) - ...
-    segmentVector_deg(2) .* edgeVector_deg(:, 1);
-edgeLength_deg = hypot(edgeVector_deg(:, 1), edgeVector_deg(:, 2));
-segmentLength_deg = hypot(segmentVector_deg(1), segmentVector_deg(2));
-tolerance_deg2 = 1e-11 .* max(1, ...
-    segmentLength_deg .* edgeLength_deg);
-isNonparallel = abs(denominator_deg2) > tolerance_deg2;
-intersectionParameter = zeros(0, 1);
-if any(isNonparallel)
-    numeratorT_deg2 = edgeOffset_deg(:, 1) .* edgeVector_deg(:, 2) - ...
-        edgeOffset_deg(:, 2) .* edgeVector_deg(:, 1);
-    numeratorU_deg2 = edgeOffset_deg(:, 1) .* segmentVector_deg(2) - ...
-        edgeOffset_deg(:, 2) .* segmentVector_deg(1);
-    parameterT = numeratorT_deg2(isNonparallel) ./ ...
-        denominator_deg2(isNonparallel);
-    parameterU = numeratorU_deg2(isNonparallel) ./ ...
-        denominator_deg2(isNonparallel);
-    parameterTolerance = 1e-10;
-    isOnBothSegments = parameterT >= -parameterTolerance & ...
-        parameterT <= 1 + parameterTolerance & ...
-        parameterU >= -parameterTolerance & ...
-        parameterU <= 1 + parameterTolerance;
-    intersectionParameter = parameterT(isOnBothSegments);
-end
-
-isParallel = ~isNonparallel;
-if any(isParallel)
-    collinearCross_deg2 = ...
-        edgeOffset_deg(:, 1) .* segmentVector_deg(2) - ...
-        edgeOffset_deg(:, 2) .* segmentVector_deg(1);
-    isCollinear = isParallel & ...
-        abs(collinearCross_deg2) <= tolerance_deg2;
-    if any(isCollinear)
-        segmentLengthSquared_deg2 = sum(segmentVector_deg.^2);
-        collinearStart = edgeOffset_deg(isCollinear, :) * ...
-            segmentVector_deg.' ./ segmentLengthSquared_deg2;
-        collinearEnd = (edgeEnd_deg(isCollinear, :) - ...
-            firstPosition_deg) * segmentVector_deg.' ./ ...
-            segmentLengthSquared_deg2;
-        overlapStart = max(0, min(collinearStart, collinearEnd));
-        overlapEnd = min(1, max(collinearStart, collinearEnd));
-        hasOverlap = overlapEnd >= overlapStart - 1e-10;
-        intersectionParameter = [intersectionParameter; ...
-            overlapStart(hasOverlap); overlapEnd(hasOverlap)];
+    for obstacleIndex = 1:numel(packedObstacles)
+        segmentOccupied = azElInternal.queryPackedMovingObstacle( ...
+            packedObstacles(obstacleIndex), sampleTime_s, segment_deg, ...
+            false, 0);
+        if any(segmentOccupied)
+            visible(segmentIndex) = false;
+            break;
+        end
     end
 end
-intersectionParameter = max(0, min(1, intersectionParameter));
 end
 
 function [route_deg, edgeCount, routeDistance_deg] = ...
