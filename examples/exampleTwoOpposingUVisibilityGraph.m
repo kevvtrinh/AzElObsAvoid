@@ -22,21 +22,21 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
 [options, jerkConfiguration] = resolveAzElExampleOptions( ...
     options, struct( ...
-    "MotionType", "velocityCarrying", ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
     "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
-missionEndTime_s = 35;
-if jerkConfiguration.JerkConstraintEnabled
-    missionEndTime_s = 180;
-end
+
+% Keep the physical request identical when the example-only jerk switch is
+% toggled so paired feasibility and timing comparisons remain meaningful.
+missionEndTime_s = 180;
 safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ ...
     -10, 8; 0, 8; 0, 5; -7, 5; ...
@@ -54,6 +54,7 @@ obstacles = [ ...
         safetyMargin_deg)];
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [-4 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [9 20]);
@@ -63,17 +64,25 @@ limits = struct( ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "two opposing Us", struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
-% planAzElMotion created all requested plots from the returned result.
+
+result.PlotHandles = struct();
+if jerkConfiguration.PlotOutputs
+    result.PlotHandles = plotAzElMotion( ...
+        result, jerkConfiguration.PlotOptions);
+end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.firstUBoundary_deg = firstUBoundary_deg;
 result.secondUBoundary_deg = secondUBoundary_deg;

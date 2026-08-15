@@ -39,8 +39,10 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 % UNITS
 %   - azimuth_deg and elevation_deg are degrees. Numeric queryTime values
 %     are seconds.
+%**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 defaultOptions = defaultQueryAzElTimeObstacleOptions();
 if nargin == 0
     isOccupied = defaultOptions;
@@ -55,19 +57,19 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("queryAzElTimeObstacle:InvalidOptions", ...
         "options must be a scalar struct.");
 end
-legacyMarginFields = intersect(fieldnames(optionOverrides), ...
+movedMarginFields = intersect(fieldnames(optionOverrides), ...
     {'SafetyMarginDeg', 'BoundsMarginDeg'}, "stable");
-if ~isempty(legacyMarginFields)
+if ~isempty(movedMarginFields)
     error("queryAzElTimeObstacle:SafetyMarginMoved", ...
         "Safety margins are part of canonical obstacle geometry. " + ...
         "Remove %s and pass the margin to makeAzElObstacleData.", ...
-        strjoin(string(legacyMarginFields), ", "));
+        strjoin(string(movedMarginFields), ", "));
 end
 unknownOptionFields = setdiff( ...
     fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
 if ~isempty(unknownOptionFields)
     warning("queryAzElTimeObstacle:UnknownOptions", ...
-        "Ignoring unknown option fields: %s.", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
         strjoin(string(unknownOptionFields), ", "));
     optionOverrides = rmfield(optionOverrides, unknownOptionFields);
 end
@@ -80,14 +82,20 @@ for optionIndex = 1:numel(providedOptionFields)
     end
 end
 collisionMode = lower(string(resolvedOptions.CollisionMode));
-if ~any(collisionMode == ["polygon", "bounds"])
+if ~isscalar(collisionMode) || ...
+        ~any(collisionMode == ["polygon", "bounds"])
     error("queryAzElTimeObstacle:InvalidMode", ...
         "CollisionMode must be 'polygon' or 'bounds'.");
 end
 validateattributes(resolvedOptions.TimePaddingSamples, {'numeric'}, ...
     {'scalar', 'integer', 'nonnegative'});
 validateattributes(resolvedOptions.BoundaryIsOccupied, ...
-    {'logical', 'numeric'}, {'scalar'});
+    {'logical', 'numeric'}, {'real', 'finite', 'scalar'});
+if isnumeric(resolvedOptions.BoundaryIsOccupied) && ...
+        ~any(resolvedOptions.BoundaryIsOccupied == [0 1])
+    error("queryAzElTimeObstacle:InvalidBoundaryPolicy", ...
+        "BoundaryIsOccupied must be scalar logical or binary numeric.");
+end
 resolvedOptions.BoundaryIsOccupied = ...
     logical(resolvedOptions.BoundaryIsOccupied);
 isPackedInput = isstruct(obstacleField) && isscalar(obstacleField) && ...
@@ -109,6 +117,7 @@ if ~obstacleFieldHasRequiredFields
 end
 
 %% Section 2: Broadcast Query Arrays
+
 if isdatetime(queryTime)
     queryTime.TimeZone = "UTC";
     broadcastTime_s = seconds(queryTime - obstacleField.ReferenceTime);
@@ -157,6 +166,7 @@ isOccupied = false(queryCount, 1);
 blockingObstacleIndex = zeros(queryCount, 1, "uint32");
 
 %% Section 3: Test Packed Obstacles
+
 packedObstacles = obstacleField.Obstacles;
 for packedObstacleIndex = 1:numel(packedObstacles)
     % Once one obstacle claims a query, later obstacles cannot change its
@@ -168,6 +178,30 @@ for packedObstacleIndex = 1:numel(packedObstacles)
     end
     packedObstacle = packedObstacles(packedObstacleIndex);
     obstacleTime_s = double(packedObstacle.TimeSeconds);
+    isSourceTimeQuery = ismember(queryTime_s, obstacleTime_s);
+
+    % Interpolated geometry owns the physical state between source slices.
+    % Exact source times stay on the vectorized packed-slice path below.
+    interpolatedRows = find(isUnresolvedQuery & ...
+        queryTime_s >= obstacleTime_s(1) & ...
+        queryTime_s <= obstacleTime_s(end) & ~isSourceTimeQuery);
+    for interpolatedRowIndex = reshape(interpolatedRows, 1, [])
+        [polygonOccupied, boundsOccupied] = ...
+            azElInternal.queryPackedMovingObstacle( ...
+            packedObstacle, queryTime_s(interpolatedRowIndex), ...
+            [queryAzimuth_deg(interpolatedRowIndex), ...
+            queryElevation_deg(interpolatedRowIndex)], ...
+            resolvedOptions.BoundaryIsOccupied, 0);
+        if (collisionMode == "polygon" && polygonOccupied) || ...
+                (collisionMode == "bounds" && boundsOccupied)
+            isOccupied(interpolatedRowIndex) = true;
+            blockingObstacleIndex(interpolatedRowIndex) = ...
+                uint32(packedObstacleIndex);
+        end
+    end
+
+    isUnresolvedQuery = ~isOccupied & isfinite(queryAzimuth_deg) & ...
+        isfinite(queryElevation_deg) & isfinite(queryTime_s);
     obstacleBounds_deg = packedObstacle.BoundsDeg;
     sliceEdgeOffsets = packedObstacle.EdgeOffsets;
     edgeStartAzimuth_deg = packedObstacle.EdgeStartAzimuthDeg;
@@ -175,8 +209,8 @@ for packedObstacleIndex = 1:numel(packedObstacles)
     edgeEndAzimuth_deg = packedObstacle.EdgeEndAzimuthDeg;
     edgeEndElevation_deg = packedObstacle.EdgeEndElevationDeg;
 
-    % Uniform time bases map arithmetically. Irregular time bases use nearest
-    % interpolation, but neither path extrapolates outside the obstacle span.
+    % Neighbor-padding ownership still uses the nearest source index; the
+    % unpadded physical polygon was interpolated above.
     nearestSampleIndex = zeros(size(queryTime_s));
     isInsideObstacleTimeSpan = false(size(queryTime_s));
     if packedObstacle.SampleCount > 0
@@ -197,11 +231,16 @@ for packedObstacleIndex = 1:numel(packedObstacles)
         nearestSampleIndex = round(nearestSampleIndex);
     end
     isEligibleQuery = isUnresolvedQuery & isInsideObstacleTimeSpan;
+    if resolvedOptions.TimePaddingSamples == 0
+        isEligibleQuery = isEligibleQuery & isSourceTimeQuery;
+    end
 
-    % Padding checks neighboring source slices rather than inventing an
-    % interpolated polygon between measured boundaries.
-    for sampleOffset = -resolvedOptions.TimePaddingSamples: ...
-            resolvedOptions.TimePaddingSamples
+    % Padding intentionally checks neighboring source slices in addition to
+    % the interpolated physical polygon. Offset zero also evaluates exact
+    % source-time queries through the existing vectorized kernel.
+    sampleOffsetRange = -resolvedOptions.TimePaddingSamples: ...
+        resolvedOptions.TimePaddingSamples;
+    for sampleOffset = sampleOffsetRange
         candidateSampleIndex = nearestSampleIndex + sampleOffset;
         isCandidateQuery = isEligibleQuery & candidateSampleIndex >= 1 & ...
             candidateSampleIndex <= packedObstacle.SampleCount & ~isOccupied;
@@ -362,6 +401,7 @@ for packedObstacleIndex = 1:numel(packedObstacles)
 end
 
 %% Section 4: Assemble The Output
+
 isOccupied = reshape(isOccupied, outputSize);
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
 if nargout >= 3
@@ -384,6 +424,7 @@ end
 end
 
 %% Section 5: Local Functions
+
 function options = defaultQueryAzElTimeObstacleOptions()
 %% Section 0: Header & Readme
 % SYNTAX
@@ -401,6 +442,7 @@ function options = defaultQueryAzElTimeObstacleOptions()
 %**************************************************************************
 % UNITS
 %   - TimePaddingSamples is dimensionless.
+%**************************************************************************
 options = struct( ...
     "CollisionMode", "polygon", ...
     "TimePaddingSamples", 0, ...
@@ -427,6 +469,7 @@ function safetyMargins_deg = storedObstacleSafetyMargins(obstacleField)
 %**************************************************************************
 % UNITS
 %   - Angles are degrees.
+%**************************************************************************
 obstacleCount = numel(obstacleField.Obstacles);
 if isfield(obstacleField, "SafetyMarginsDeg")
     safetyMargins_deg = reshape( ...

@@ -24,8 +24,10 @@ function [originalObstacleField, safetyMargins_deg, hasStoredOriginal] = ...
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Stored Geometry Provenance
+
 originalObstacleField = obstacleField;
 obstacleCount = 1;
 if isstruct(obstacleField) && isscalar(obstacleField) && ...
@@ -51,6 +53,7 @@ if isempty(safetyMargins_deg) || ~any(safetyMargins_deg > 0)
 end
 
 %% Section 2: Rebuild The Original Packed Field
+
 originalAzElData = sourceAzElData;
 for obstacleIndex = 1:numel(originalAzElData)
     originalAzElData(obstacleIndex).az_deg = ...
@@ -61,7 +64,7 @@ for obstacleIndex = 1:numel(originalAzElData)
     originalAzElData(obstacleIndex) = ...
         normalizeAzElTimeObstacleData(originalAzElData(obstacleIndex));
 end
-buildOptions = struct("MaximumVerticesPerRegion", Inf);
+buildOptions = struct();
 if isfield(obstacleField, "ReferenceTime") && ...
         isdatetime(obstacleField.ReferenceTime)
     buildOptions.ReferenceTime = obstacleField.ReferenceTime;

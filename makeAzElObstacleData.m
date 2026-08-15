@@ -23,15 +23,15 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %   - time_s (numeric vector)
 %       Strictly increasing sample times.
 %   - azimuthBoundary_deg (numeric vector or cell array)
-%       Static boundary or one boundary vector per sample.
+%       Static boundary or one boundary vector per sample. Paired
+%       nonfinite values separate regions. Two-vertex regions are removed
+%       with one warning because they cannot enclose occupied area.
 %   - elevationBoundary_deg (numeric vector or cell array)
 %       Boundary representation matching azimuthBoundary_deg.
 %   - safetyMargin_deg (nonnegative scalar, optional; default 0)
 %       Euclidean polygon inflation applied here before data is returned.
 %   - constructionOptions (scalar struct, optional)
 %       .Verbose prints per-slice protection progress (default false).
-%       .UseParallel is auto/on/off or logical; unavailable parallel
-%       support falls back to serial execution.
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)
@@ -39,6 +39,7 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates are degrees and time_s is seconds.
+%**************************************************************************
 
 if nargin < 5 || isempty(safetyMargin_deg)
     safetyMargin_deg = 0;
@@ -50,6 +51,7 @@ validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
 
 %% Section 1: Normalize Static & Sampled Boundaries
+
 time_s = double(time_s(:));
 sampleCount = numel(time_s);
 % Numeric boundaries describe a static polygon and are repeated across the
@@ -62,7 +64,9 @@ if ~iscell(elevationBoundary_deg)
     elevationBoundary_deg = repmat( ...
         {double(elevationBoundary_deg(:))}, sampleCount, 1);
 end
+
 %% Section 2: Assemble & Validate The Output
+
 azElData = struct( ...
     "targetName", string(obstacleName), ...
     "time_s", time_s, ...

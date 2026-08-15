@@ -20,7 +20,6 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 %       Absolute construction margin for every returned obstacle.
 %   - options (scalar struct, optional)
 %       .Verbose prints one completed protection record per time slice.
-%       .UseParallel is auto/on/off or logical (default off).
 %**************************************************************************
 % OUTPUTS
 %   - inflatedAzElData (canonical obstacle struct array)
@@ -28,6 +27,9 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 %**************************************************************************
 % UNITS
 %   - Polygon coordinates and safetyMargin_deg are degrees.
+%**************************************************************************
+
+%% Section 1: Resolve Options & Normalize Obstacles
 
 validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
@@ -38,7 +40,7 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("inflateAzElObstacleData:InvalidOptions", ...
         "options must be a scalar struct.");
 end
-knownOptionNames = ["Verbose" "UseParallel"];
+knownOptionNames = "Verbose";
 unknownOptionNames = setdiff( ...
     string(fieldnames(optionOverrides)), knownOptionNames, "stable");
 if ~isempty(unknownOptionNames)
@@ -52,26 +54,24 @@ verbose = false;
 if isfield(optionOverrides, "Verbose") && ...
         ~isempty(optionOverrides.Verbose)
     validateattributes(optionOverrides.Verbose, ...
-        {'logical','numeric'}, {'scalar'});
+        {'logical','numeric'}, {'real','finite','scalar'});
+    if isnumeric(optionOverrides.Verbose) && ...
+            ~any(optionOverrides.Verbose == [0 1])
+        error("inflateAzElObstacleData:InvalidVerbose", ...
+            "Verbose must be scalar logical or binary numeric.");
+    end
     verbose = logical(optionOverrides.Verbose);
-end
-useParallelOption = false;
-if isfield(optionOverrides, "UseParallel") && ...
-        ~isempty(optionOverrides.UseParallel)
-    useParallelOption = optionOverrides.UseParallel;
 end
 inflatedAzElData = combineAzElObstacles(azElData);
 
-%% Section 1: Rebuild Protected Geometry From Original Geometry
+%% Section 2: Rebuild Protected Geometry From Original Geometry
+
 % The requested margin is absolute. Rebuilding from original boundaries
 % makes repeated calls idempotent and prevents downstream double inflation.
 for obstacleIndex = 1:numel(inflatedAzElData)
     obstacle = inflatedAzElData(obstacleIndex);
     obstacle.safetyMargin_deg = double(safetyMargin_deg);
     sampleCount = numel(obstacle.time_s);
-    [useParallel, ~] = resolveAzElParallelExecution( ...
-        useParallelOption, verbose, "obstacle safety protection", ...
-        sampleCount);
     if verbose
         fprintf("[az/el protect] obstacle %d/%d '%s': %d slices.\n", ...
             obstacleIndex, numel(inflatedAzElData), ...
@@ -82,41 +82,19 @@ for obstacleIndex = 1:numel(inflatedAzElData)
     originalAzimuthBySlice_deg = obstacle.originalAz_deg;
     originalElevationBySlice_deg = obstacle.originalEl_deg;
     sampleTime_s = obstacle.time_s;
-    if useParallel && sampleCount > 1
-        progressQueue = parallel.pool.DataQueue;
+    for sampleIndex = 1:sampleCount
+        [protectedAzimuthBySlice_deg{sampleIndex}, ...
+            protectedElevationBySlice_deg{sampleIndex}, ...
+            sourceCount, protectedCount] = protectOneSlice( ...
+            originalAzimuthBySlice_deg{sampleIndex}, ...
+            originalElevationBySlice_deg{sampleIndex}, ...
+            safetyMargin_deg);
         if verbose
-            afterEach(progressQueue, @printProtectionProgress);
-        end
-        parfor sampleIndex = 1:sampleCount
-            [protectedAzimuthBySlice_deg{sampleIndex}, ...
-                protectedElevationBySlice_deg{sampleIndex}, ...
-                sourceCount, protectedCount] = protectOneSlice( ...
-                originalAzimuthBySlice_deg{sampleIndex}, ...
-                originalElevationBySlice_deg{sampleIndex}, ...
-                safetyMargin_deg);
-            if verbose
-                send(progressQueue, struct( ...
-                    "Index", sampleIndex, "Count", sampleCount, ...
-                    "Time_s", sampleTime_s(sampleIndex), ...
-                    "SourceCount", sourceCount, ...
-                    "ProtectedCount", protectedCount));
-            end
-        end
-    else
-        for sampleIndex = 1:sampleCount
-            [protectedAzimuthBySlice_deg{sampleIndex}, ...
-                protectedElevationBySlice_deg{sampleIndex}, ...
-                sourceCount, protectedCount] = protectOneSlice( ...
-                originalAzimuthBySlice_deg{sampleIndex}, ...
-                originalElevationBySlice_deg{sampleIndex}, ...
-                safetyMargin_deg);
-            if verbose
-                printProtectionProgress(struct( ...
-                    "Index", sampleIndex, "Count", sampleCount, ...
-                    "Time_s", sampleTime_s(sampleIndex), ...
-                    "SourceCount", sourceCount, ...
-                    "ProtectedCount", protectedCount));
-            end
+            printProtectionProgress(struct( ...
+                "Index", sampleIndex, "Count", sampleCount, ...
+                "Time_s", sampleTime_s(sampleIndex), ...
+                "SourceCount", sourceCount, ...
+                "ProtectedCount", protectedCount));
         end
     end
     obstacle.az_deg = protectedAzimuthBySlice_deg;
@@ -126,11 +104,31 @@ for obstacleIndex = 1:numel(inflatedAzElData)
 end
 end
 
+%% Section 3: Local Functions
+
 function [protectedAzimuth_deg, protectedElevation_deg, ...
         sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
         originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
 %% Section 0: Header & Readme
-% Protect one independent boundary slice for serial or parfor execution.
+% SYNTAX
+%   [protectedAzimuth_deg, protectedElevation_deg, ...
+%       sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
+%       originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
+%**************************************************************************
+% PURPOSE
+%   - Protect one polygon slice for serial or parallel execution.
+%**************************************************************************
+% INPUTS
+%   - originalAzimuth_deg, originalElevation_deg (numeric vectors)
+%   - safetyMargin_deg (nonnegative numeric scalar)
+%**************************************************************************
+% OUTPUTS
+%   - protectedAzimuth_deg, protectedElevation_deg (numeric columns)
+%   - sourceVertexCount, protectedVertexCount (integer scalars)
+%**************************************************************************
+% UNITS
+%   - Coordinates and safety margin are degrees.
+%**************************************************************************
 originalAzimuth_deg = double(originalAzimuth_deg(:));
 originalElevation_deg = double(originalElevation_deg(:));
 [protectedAzimuth_deg, protectedElevation_deg] = ...
@@ -144,7 +142,22 @@ end
 
 function printProtectionProgress(progress)
 %% Section 0: Header & Readme
-% Report completions on the client to keep worker output readable.
+% SYNTAX
+%   printProtectionProgress(progress)
+%**************************************************************************
+% PURPOSE
+%   - Report parallel slice completion on the MATLAB client.
+%**************************************************************************
+% INPUTS
+%   - progress (scalar struct)
+%       Completed index, total count, time, and vertex counts.
+%**************************************************************************
+% OUTPUTS
+%   - None. Progress is written to the command window.
+%**************************************************************************
+% UNITS
+%   - Time_s is seconds; counts are dimensionless.
+%**************************************************************************
 fprintf( ...
     "[az/el protect] slice %d/%d at t=%.3f s: " + ...
     "%d source -> %d protected vertices.\n", ...
@@ -178,6 +191,7 @@ function [protectedAzimuth_deg, protectedElevation_deg] = ...
 %**************************************************************************
 % UNITS
 %   - Coordinates and safetyMargin_deg are degrees.
+%**************************************************************************
 
 validateattributes(azimuth_deg, {'numeric'}, {'real', 'column'});
 validateattributes(elevation_deg, {'numeric'}, {'real', 'column'});

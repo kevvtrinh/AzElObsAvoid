@@ -22,12 +22,12 @@ function result = exampleMovingCircleNoAzimuthWrap(options)
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
 [options, jerkConfiguration] = resolveAzElExampleOptions( ...
     options, struct( ...
-    "MotionType", "velocityCarrying", ...
     "AllowAzimuthWrapping", false, ...
     "AzimuthInterval_deg", [-180 180], ...
     "Verbose", true, ...
@@ -39,10 +39,10 @@ end
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
-missionEndTime_s = 35;
-if jerkConfiguration.JerkConstraintEnabled
-    missionEndTime_s = 120;
-end
+
+% The shared horizon keeps both the obstacle rate and planner deadline
+% identical when the example-only jerk switch is toggled.
+missionEndTime_s = 120;
 safetyMargin_deg = 0.20;
 obstacleTime_s = (0:0.25:missionEndTime_s).';
 circleRadius_deg = 2.5;
@@ -64,6 +64,7 @@ obstacle = makeAzElObstacleData( ...
     circleAzimuth_deg, circleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
+
 initialState = struct("time_s", 0, "position_deg", [-12 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [12 0]);
@@ -73,17 +74,25 @@ limits = struct( ...
     "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
+
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
 exampleValidation = validateAzElExampleResult( ...
     result, "moving circle", struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
-% planAzElMotion created all requested plots from the returned result.
+
+result.PlotHandles = struct();
+if jerkConfiguration.PlotOutputs
+    result.PlotHandles = plotAzElMotion( ...
+        result, jerkConfiguration.PlotOptions);
+end
 
 %% Section 7: Return Example Metadata
+
 result.ExampleValidation = exampleValidation;
 result.obstacleTime_s = obstacleTime_s;
 result.circleRadius_deg = circleRadius_deg;

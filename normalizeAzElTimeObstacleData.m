@@ -9,7 +9,8 @@ function azElData = normalizeAzElTimeObstacleData(inputData)
 % INPUTS
 %   - inputData (scalar struct)
 %       targetName, time_s, az_deg, el_deg, and status are required.
-%       Nonfinite paired boundary rows are preserved as region separators.
+%       Paired nonfinite rows separate regions. A two-vertex region is
+%       removed with one warning because it cannot enclose occupied area.
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)
@@ -18,8 +19,10 @@ function azElData = normalizeAzElTimeObstacleData(inputData)
 %**************************************************************************
 % UNITS
 %   - az_deg and el_deg are degrees; time_s is seconds.
+%**************************************************************************
 
 %% Section 1: Validate Structure & Sample Time
+
 requiredFields = ["targetName", "time_s", "az_deg", "el_deg", "status"];
 hasRequiredStructure = isstruct(inputData) && isscalar(inputData);
 if hasRequiredStructure
@@ -27,7 +30,7 @@ if hasRequiredStructure
 end
 if ~hasRequiredStructure
     error("normalizeAzElTimeObstacleData:InvalidInput", ...
-        "azElData must be a scalar calculateAreaTargetAzEl result with " + ...
+        "azElData must be a scalar canonical obstacle record with " + ...
         "targetName, time_s, az_deg, el_deg, and status.");
 end
 
@@ -47,6 +50,7 @@ if sampleCount == 0 || any(diff(time_s) <= 0)
         "time_s must be nonempty and strictly increasing.");
 end
 %% Section 2: Validate Boundary Slices
+
 hasCellBoundaries = iscell(inputData.az_deg) && iscell(inputData.el_deg);
 hasMatchingAzimuthSamples = numel(inputData.az_deg) == sampleCount;
 hasMatchingElevationSamples = numel(inputData.el_deg) == sampleCount;
@@ -60,6 +64,8 @@ end
 
 azimuthSlices_deg = reshape(inputData.az_deg, [], 1);
 elevationSlices_deg = reshape(inputData.el_deg, [], 1);
+removedProtectedRegionCount = 0;
+protectedRemovalBySample = false(sampleCount, 1);
 % Column-oriented cell arrays give all downstream packers one predictable
 % shape while allowing each time slice to contain a different vertex count.
 for sampleIndex = 1:sampleCount
@@ -78,13 +84,19 @@ for sampleIndex = 1:sampleCount
         azimuthSlices_deg{sampleIndex}(:));
     elevationSlices_deg{sampleIndex} = double( ...
         elevationSlices_deg{sampleIndex}(:));
-    validateBoundarySliceTopology( ...
+    [azimuthSlices_deg{sampleIndex}, ...
+        elevationSlices_deg{sampleIndex}, removedRegionCount] = ...
+        normalizeBoundarySliceTopology( ...
         azimuthSlices_deg{sampleIndex}, ...
         elevationSlices_deg{sampleIndex}, ...
         sampleIndex, "protected");
+    removedProtectedRegionCount = removedProtectedRegionCount + ...
+        removedRegionCount;
+    protectedRemovalBySample(sampleIndex) = removedRegionCount > 0;
 end
 
 %% Section 3: Preserve Original Geometry & Construction Margin
+
 hasOriginalBoundaries = isfield(inputData, "originalAz_deg") && ...
     isfield(inputData, "originalEl_deg");
 hasOnlyOneOriginalBoundary = xor( ...
@@ -106,6 +118,8 @@ if hasOriginalBoundaries
     end
     originalAzimuthSlices_deg = reshape(inputData.originalAz_deg, [], 1);
     originalElevationSlices_deg = reshape(inputData.originalEl_deg, [], 1);
+    removedOriginalRegionCount = 0;
+    originalRemovalBySample = false(sampleCount, 1);
     for sampleIndex = 1:sampleCount
         validateattributes(originalAzimuthSlices_deg{sampleIndex}, ...
             {'numeric'}, {'vector', 'real'});
@@ -121,14 +135,33 @@ if hasOriginalBoundaries
             originalAzimuthSlices_deg{sampleIndex}(:));
         originalElevationSlices_deg{sampleIndex} = double( ...
             originalElevationSlices_deg{sampleIndex}(:));
-        validateBoundarySliceTopology( ...
+        [originalAzimuthSlices_deg{sampleIndex}, ...
+            originalElevationSlices_deg{sampleIndex}, ...
+            removedRegionCount] = normalizeBoundarySliceTopology( ...
             originalAzimuthSlices_deg{sampleIndex}, ...
             originalElevationSlices_deg{sampleIndex}, ...
             sampleIndex, "original");
+        removedOriginalRegionCount = removedOriginalRegionCount + ...
+            removedRegionCount;
+        originalRemovalBySample(sampleIndex) = removedRegionCount > 0;
     end
 else
     originalAzimuthSlices_deg = azimuthSlices_deg;
     originalElevationSlices_deg = elevationSlices_deg;
+    removedOriginalRegionCount = 0;
+    originalRemovalBySample = false(sampleCount, 1);
+end
+
+removedRegionCount = removedProtectedRegionCount + ...
+    removedOriginalRegionCount;
+if removedRegionCount > 0
+    removalBySample = protectedRemovalBySample | originalRemovalBySample;
+    warning("normalizeAzElTimeObstacleData:RemovedTwoVertexRegions", ...
+        "Obstacle '%s' removed %d protected and %d original " + ...
+        "two-vertex regions across %d time slices. Two vertices cannot " + ...
+        "enclose occupied area; all remaining regions were unchanged.", ...
+        targetName, removedProtectedRegionCount, ...
+        removedOriginalRegionCount, nnz(removalBySample));
 end
 if isfield(inputData, "safetyMargin_deg")
     safetyMargin_deg = inputData.safetyMargin_deg;
@@ -146,6 +179,7 @@ if safetyMargin_deg > 0 && ~hasOriginalBoundaries
 end
 
 %% Section 4: Normalize Status & Assemble The Output
+
 statusBySample = string(inputData.status);
 % A scalar status is shorthand for a uniform history. Status is preserved
 % rather than interpreted here because the obstacle-field builder owns the
@@ -170,15 +204,20 @@ azElData = struct( ...
     "status", statusBySample);
 end
 
-function validateBoundarySliceTopology(azimuth_deg, elevation_deg, ...
+%% Section 5: Local Functions
+
+function [azimuth_deg, elevation_deg, removedRegionCount] = ...
+        normalizeBoundarySliceTopology(azimuth_deg, elevation_deg, ...
         sampleIndex, boundaryRole)
 %% Section 0: Header & Readme
 % SYNTAX
-%   validateBoundarySliceTopology(azimuth_deg, elevation_deg, ...
+%   [azimuth_deg, elevation_deg, removedRegionCount] = ...
+%       normalizeBoundarySliceTopology(azimuth_deg, elevation_deg, ...
 %       sampleIndex, boundaryRole)
 %**************************************************************************
 % PURPOSE
-%   - Reject mismatched coordinate separators and underspecified rings.
+%   - Reject mismatched separators and one-vertex regions.
+%   - Remove two-vertex regions that cannot enclose occupied area.
 %**************************************************************************
 % INPUTS
 %   - azimuth_deg, elevation_deg (Nx1 double)
@@ -189,12 +228,18 @@ function validateBoundarySliceTopology(azimuth_deg, elevation_deg, ...
 %       Human-readable geometry role used in validation diagnostics.
 %**************************************************************************
 % OUTPUTS
-%   - None. Invalid topology raises a stable validation error.
+%   - azimuth_deg, elevation_deg (numeric columns)
+%       Valid regions with canonical NaN separators when removal occurred.
+%   - removedRegionCount (nonnegative integer scalar)
+%       Number of removed two-vertex regions.
+%       Invalid topology raises a stable validation error.
 %**************************************************************************
 % UNITS
 %   - azimuth_deg and elevation_deg are degrees.
+%**************************************************************************
 
 %% Section 1: Require Paired Coordinate Separators
+
 boundaryRoleText = char(boundaryRole);
 azimuthIsFinite = isfinite(azimuth_deg);
 elevationIsFinite = isfinite(elevation_deg);
@@ -207,31 +252,57 @@ if any(xor(azimuthIsFinite, elevationIsFinite))
         boundaryRoleText, sampleIndex);
 end
 
-%% Section 2: Require Three Vertices In Every Nonempty Ring
+%% Section 2: Classify Boundary Regions
+
 finiteVertexMask = azimuthIsFinite;
-ringVertexCount = 0;
-for vertexIndex = 1:numel(finiteVertexMask)
-    if finiteVertexMask(vertexIndex)
-        ringVertexCount = ringVertexCount + 1;
-        continue
-    end
-    if ringVertexCount > 0 && ringVertexCount < 3
-        messageFormat = ...
-            "The %s boundary ring ending before vertex %d at slice " + ...
-            "%d has %d finite vertices; each nonempty ring requires " + ...
-            "at least three.";
-        error("normalizeAzElTimeObstacleData:BoundaryRingTooShort", ...
-            messageFormat, boundaryRoleText, vertexIndex, ...
-            sampleIndex, ringVertexCount);
-    end
-    ringVertexCount = 0;
-end
-if ringVertexCount > 0 && ringVertexCount < 3
-    messageFormat = ...
-        "The final %s boundary ring at slice %d has %d finite " + ...
-        "vertices; each nonempty ring requires at least three.";
+regionChanges = diff([false; finiteVertexMask; false]);
+regionStarts = find(regionChanges == 1);
+regionStops = find(regionChanges == -1) - 1;
+regionVertexCount = regionStops - regionStarts + 1;
+
+oneVertexRegionIndex = find(regionVertexCount == 1, 1, "first");
+if ~isempty(oneVertexRegionIndex)
     error("normalizeAzElTimeObstacleData:BoundaryRingTooShort", ...
-        messageFormat, ...
-        boundaryRoleText, sampleIndex, ringVertexCount);
+        "The %s boundary region %d at slice %d has one finite vertex; " + ...
+        "a nonempty region requires at least three vertices.", ...
+        boundaryRoleText, oneVertexRegionIndex, sampleIndex);
+end
+
+removeRegion = regionVertexCount == 2;
+removedRegionCount = nnz(removeRegion);
+if removedRegionCount == 0
+    return;
+end
+
+%% Section 3: Rebuild The Remaining Regions
+
+retainedRegionIndex = find(~removeRegion);
+if isempty(retainedRegionIndex)
+    azimuth_deg = zeros(0, 1);
+    elevation_deg = zeros(0, 1);
+    return;
+end
+
+retainedAzimuth_deg = cell(numel(retainedRegionIndex), 1);
+retainedElevation_deg = cell(numel(retainedRegionIndex), 1);
+for retainedIndex = 1:numel(retainedRegionIndex)
+    regionIndex = retainedRegionIndex(retainedIndex);
+    rows = regionStarts(regionIndex):regionStops(regionIndex);
+    retainedAzimuth_deg{retainedIndex} = azimuth_deg(rows);
+    retainedElevation_deg{retainedIndex} = elevation_deg(rows);
+end
+
+separatorCount = numel(retainedRegionIndex) - 1;
+outputVertexCount = sum(regionVertexCount(~removeRegion)) + separatorCount;
+azimuth_deg = NaN(outputVertexCount, 1);
+elevation_deg = NaN(outputVertexCount, 1);
+outputIndex = 1;
+for retainedIndex = 1:numel(retainedRegionIndex)
+    currentRegionVertexCount = numel( ...
+        retainedAzimuth_deg{retainedIndex});
+    outputRows = outputIndex:outputIndex + currentRegionVertexCount - 1;
+    azimuth_deg(outputRows) = retainedAzimuth_deg{retainedIndex};
+    elevation_deg(outputRows) = retainedElevation_deg{retainedIndex};
+    outputIndex = outputRows(end) + 2;
 end
 end

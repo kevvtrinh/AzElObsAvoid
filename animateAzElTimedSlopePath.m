@@ -16,7 +16,7 @@ function animation = animateAzElTimedSlopePath( ...
 %**************************************************************************
 % INPUTS
 %   - timedSlopePath (scalar struct)
-%       Successful retimeAzElVisibilityPath output.
+%       Successful planAzElMotion timedSlopePath output.
 %   - obstacleField (scalar struct, optional)
 %       Packed AzElTimeObstacleField. Pass [] to animate only the path.
 %   - optionOverrides (scalar struct, optional)
@@ -30,8 +30,10 @@ function animation = animateAzElTimedSlopePath( ...
 %**************************************************************************
 % UNITS
 %   - Azimuth/elevation are degrees, time is seconds, and velocity is deg/s.
+%**************************************************************************
 
 %% Section 1: Resolve Options & Validate The Timed Path
+
 defaultOptions = struct( ...
     "FrameStride", 10, ...
     "Pause_s", 0.001, ...
@@ -60,19 +62,11 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("animateAzElTimedSlopePath:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
-legacyGeometryFields = intersect(fieldnames(optionOverrides), ...
-    {'SafetyMarginDeg', 'OriginalObstacleField'}, "stable");
-if ~isempty(legacyGeometryFields)
-    error("animateAzElTimedSlopePath:ObstacleGeometryMoved", ...
-        "Original and protected geometry are recovered from the packed " + ...
-        "field. Remove legacy options: %s.", ...
-        strjoin(string(legacyGeometryFields), ", "));
-end
 unknownFields = setdiff( ...
     fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
 if ~isempty(unknownFields)
     warning("animateAzElTimedSlopePath:UnknownOptions", ...
-        "Ignoring unknown option fields: %s.", ...
+        "Ignoring unknown option fields: %s. No behavior changed.", ...
         strjoin(string(unknownFields), ", "));
     optionOverrides = rmfield(optionOverrides, unknownFields);
 end
@@ -149,7 +143,11 @@ time_s = double(timedSlopePath.time_s(:));
 position_deg = double(timedSlopePath.position_deg);
 velocity_deg_s = double(timedSlopePath.velocity_deg_s);
 validateattributes(time_s, {'numeric'}, ...
-    {'vector', 'real', 'finite', 'increasing'});
+    {'vector', 'real', 'finite'});
+if any(diff(time_s) <= 0)
+    error("animateAzElTimedSlopePath:NonIncreasingTime", ...
+        "timedSlopePath.time_s must be strictly increasing.");
+end
 validateattributes(position_deg, {'numeric'}, ...
     {'2d', 'ncols', 2, 'real', 'finite'});
 validateattributes(velocity_deg_s, {'numeric'}, ...
@@ -190,6 +188,7 @@ if any(obstacleSafetyMargins_deg > 0)
 end
 
 %% Section 2: Create Equal-Scale 3-D & 2-D Views
+
 [allAzimuth_deg, allElevation_deg, allTime_s] = ...
     collectDisplayCoordinates( ...
     position_deg, time_s, obstacleField, hasObstacleField, options);
@@ -328,6 +327,7 @@ else
 end
 
 %% Section 3: Animate The Shared Timeline
+
 frameIndices = unique([ ...
     (1:options.FrameStride:numel(time_s)).'; numel(time_s)]);
 obstacle2DHandles = gobjects(0, 1);
@@ -433,10 +433,30 @@ animation = struct( ...
     "Options", options);
 end
 
+%% Section 4: Local Functions
+
 function handles = drawObstacleTimeSpace( ...
         axesHandle, obstacleField, colors, options)
 %% Section 0: Header & Readme
-% Draw selected polygon slices and compatible swept boundary surfaces.
+% SYNTAX
+%   handles = drawObstacleTimeSpace( ...
+%       axesHandle, obstacleField, colors, options)
+%**************************************************************************
+% PURPOSE
+%   - Draw selected obstacle slices and compatible swept surfaces.
+%**************************************************************************
+% INPUTS
+%   - axesHandle (scalar axes handle)
+%   - obstacleField (scalar packed obstacle field)
+%   - colors (N-by-3 numeric matrix)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - handles (M-by-1 graphics-handle array)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 handles = gobjects(0, 1);
 for obstacleIndex = 1:numel(obstacleField.Obstacles)
     obstacle = obstacleField.Obstacles(obstacleIndex);
@@ -465,14 +485,14 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
                 safetyRegion_deg = safetyRegions{safetyRegionIndex};
                 closedSafetyRegion_deg = [ ...
                     safetyRegion_deg; safetyRegion_deg(1, :)];
-                handles(end + 1, 1) = plot3( ... %#ok<AGROW>
+                handles(end + 1, 1) = plot3( ...
                     axesHandle, closedSafetyRegion_deg(:, 1), ...
                     closedSafetyRegion_deg(:, 2), repmat(sampleTime_s, ...
                     size(closedSafetyRegion_deg, 1), 1), "--", ...
                     "Color", [0.92 0.18 0.08], ...
                     "LineWidth", 2.0, "HandleVisibility", "off", ...
                     "Tag", "AzElProtectedBoundary", ...
-                    "UserData", obstacleIndex);
+                    "UserData", obstacleIndex); %#ok<AGROW>
             end
         end
         regions = rawRegions;
@@ -480,7 +500,7 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
             region_deg = regions{regionIndex};
             inflatedEdgeColor = colors(obstacleIndex, :);
             inflatedLineWidth = 0.8;
-            handles(end + 1, 1) = patch(axesHandle, ... %#ok<AGROW>
+            handles(end + 1, 1) = patch(axesHandle, ...
                 region_deg(:, 1), region_deg(:, 2), ...
                 repmat(sampleTime_s, size(region_deg, 1), 1), ...
                 colors(obstacleIndex, :), ...
@@ -490,7 +510,7 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
                 "LineWidth", inflatedLineWidth, ...
                 "HandleVisibility", "off", ...
                 "Tag", "AzElOriginalBoundary", ...
-                "UserData", obstacleIndex);
+                "UserData", obstacleIndex); %#ok<AGROW>
         end
         if options.ShowSweptSurfaces && ...
                 numel(regions) == numel(previousRegions)
@@ -503,14 +523,15 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
                 end
                 closedCurrent_deg = [currentRegion_deg; currentRegion_deg(1, :)];
                 closedPrevious_deg = [previousRegion_deg; previousRegion_deg(1, :)];
-                handles(end + 1, 1) = surf(axesHandle, ... %#ok<AGROW>
+                handles(end + 1, 1) = surf(axesHandle, ...
                     [closedPrevious_deg(:, 1), closedCurrent_deg(:, 1)], ...
                     [closedPrevious_deg(:, 2), closedCurrent_deg(:, 2)], ...
                     [repmat(previousTime_s, size(closedPrevious_deg, 1), 1), ...
                     repmat(sampleTime_s, size(closedCurrent_deg, 1), 1)], ...
                     "FaceColor", colors(obstacleIndex, :), ...
                     "FaceAlpha", options.SweptSurfaceAlpha, ...
-                    "EdgeColor", "none", "HandleVisibility", "off");
+                    "EdgeColor", "none", ...
+                    "HandleVisibility", "off"); %#ok<AGROW>
             end
         end
         previousRegions = regions;
@@ -522,7 +543,26 @@ end
 function handles = drawObstacleSnapshot( ...
         axesHandle, obstacleField, currentTime_s, colors, options)
 %% Section 0: Header & Readme
-% Draw the stored polygon slice nearest to the current animation time.
+% SYNTAX
+%   handles = drawObstacleSnapshot(axesHandle, obstacleField, ...
+%       currentTime_s, colors, options)
+%**************************************************************************
+% PURPOSE
+%   - Draw the obstacle slice nearest to the current animation time.
+%**************************************************************************
+% INPUTS
+%   - axesHandle (scalar axes handle)
+%   - obstacleField (scalar packed obstacle field)
+%   - currentTime_s (finite numeric scalar)
+%   - colors (N-by-3 numeric matrix)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - handles (M-by-1 graphics-handle array)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 handles = gobjects(0, 1);
 for obstacleIndex = 1:numel(obstacleField.Obstacles)
     obstacle = obstacleField.Obstacles(obstacleIndex);
@@ -544,13 +584,13 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
             safetyRegion_deg = safetyRegions{safetyRegionIndex};
             closedSafetyRegion_deg = [ ...
                 safetyRegion_deg; safetyRegion_deg(1, :)];
-            handles(end + 1, 1) = plot( ... %#ok<AGROW>
+            handles(end + 1, 1) = plot( ...
                 axesHandle, closedSafetyRegion_deg(:, 1), ...
                 closedSafetyRegion_deg(:, 2), "--", ...
                 "Color", [0.92 0.18 0.08], ...
                 "LineWidth", 2.2, "HandleVisibility", "off", ...
                 "Tag", "AzElProtectedBoundary", ...
-                "UserData", obstacleIndex);
+                "UserData", obstacleIndex); %#ok<AGROW>
         end
     end
     regions = rawRegions;
@@ -558,7 +598,7 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
         region_deg = regions{regionIndex};
         inflatedEdgeColor = colors(obstacleIndex, :);
         inflatedLineWidth = 1.2;
-        handles(end + 1, 1) = patch(axesHandle, ... %#ok<AGROW>
+        handles(end + 1, 1) = patch(axesHandle, ...
             region_deg(:, 1), region_deg(:, 2), ...
             colors(obstacleIndex, :), ...
             "FaceAlpha", max(0.18, options.ObstacleFaceAlpha), ...
@@ -567,14 +607,30 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
             "LineWidth", inflatedLineWidth, ...
             "HandleVisibility", "off", ...
             "Tag", "AzElOriginalBoundary", ...
-            "UserData", obstacleIndex);
+            "UserData", obstacleIndex); %#ok<AGROW>
     end
 end
 end
 
 function regions = unpackSliceRegions(obstacle, sampleIndex)
 %% Section 0: Header & Readme
-% Recover independent finite polygon rings from one packed obstacle slice.
+% SYNTAX
+%   regions = unpackSliceRegions(obstacle, sampleIndex)
+%**************************************************************************
+% PURPOSE
+%   - Recover finite polygon rings from one packed obstacle slice.
+%**************************************************************************
+% INPUTS
+%   - obstacle (scalar packed-obstacle struct)
+%   - sampleIndex (positive integer scalar)
+%**************************************************************************
+% OUTPUTS
+%   - regions (N-by-1 cell array)
+%       Each cell contains one M-by-2 [azimuth elevation] ring.
+%**************************************************************************
+% UNITS
+%   - Polygon coordinates are degrees.
+%**************************************************************************
 firstVertex = double(obstacle.SliceOffsets(sampleIndex));
 finalVertex = double(obstacle.SliceOffsets(sampleIndex + 1) - 1);
 if finalVertex < firstVertex
@@ -598,7 +654,27 @@ function [azimuth_deg, elevation_deg, time_s] = ...
         collectDisplayCoordinates( ...
         pathPosition_deg, pathTime_s, obstacleField, hasObstacleField, options)
 %% Section 0: Header & Readme
-% Collect path and obstacle coordinates for stable shared display limits.
+% SYNTAX
+%   [azimuth_deg, elevation_deg, time_s] = ...
+%       collectDisplayCoordinates(pathPosition_deg, pathTime_s, ...
+%       obstacleField, hasObstacleField, options)
+%**************************************************************************
+% PURPOSE
+%   - Collect all coordinates needed for stable shared display limits.
+%**************************************************************************
+% INPUTS
+%   - pathPosition_deg (N-by-2 numeric matrix)
+%   - pathTime_s (N-by-1 numeric vector)
+%   - obstacleField (scalar packed obstacle field or empty)
+%   - hasObstacleField (logical scalar)
+%   - options (resolved scalar animation-options struct)
+%**************************************************************************
+% OUTPUTS
+%   - azimuth_deg, elevation_deg, time_s (numeric column vectors)
+%**************************************************************************
+% UNITS
+%   - Azimuth/elevation are degrees and time is seconds.
+%**************************************************************************
 azimuth_deg = pathPosition_deg(:, 1);
 elevation_deg = pathPosition_deg(:, 2);
 time_s = pathTime_s;
@@ -636,7 +712,23 @@ end
 
 function limits = equalCubeLimits(azimuth_deg, elevation_deg, time_s)
 %% Section 0: Header & Readme
-% Give all three axes the same numeric span and physical box length.
+% SYNTAX
+%   limits = equalCubeLimits(azimuth_deg, elevation_deg, time_s)
+%**************************************************************************
+% PURPOSE
+%   - Give three display axes one shared numeric span.
+%**************************************************************************
+% INPUTS
+%   - azimuth_deg, elevation_deg (numeric vectors)
+%   - time_s (numeric vector)
+%**************************************************************************
+% OUTPUTS
+%   - limits (3-by-2 numeric matrix)
+%       Minimum and maximum limits for azimuth, elevation, and time.
+%**************************************************************************
+% UNITS
+%   - Rows use degrees, degrees, and seconds respectively.
+%**************************************************************************
 minimumValues = [min(azimuth_deg), min(elevation_deg), min(time_s)];
 maximumValues = [max(azimuth_deg), max(elevation_deg), max(time_s)];
 centerValues = (minimumValues + maximumValues) / 2;
@@ -649,7 +741,22 @@ end
 
 function limits = equalPlaneLimits(azimuth_deg, elevation_deg)
 %% Section 0: Header & Readme
-% Use one shared az/el span so a circle remains circular in the 2-D view.
+% SYNTAX
+%   limits = equalPlaneLimits(azimuth_deg, elevation_deg)
+%**************************************************************************
+% PURPOSE
+%   - Use one az/el span so circular geometry remains circular.
+%**************************************************************************
+% INPUTS
+%   - azimuth_deg, elevation_deg (numeric vectors)
+%**************************************************************************
+% OUTPUTS
+%   - limits (2-by-2 numeric matrix)
+%       Minimum and maximum limits for azimuth and elevation.
+%**************************************************************************
+% UNITS
+%   - Limits are degrees.
+%**************************************************************************
 minimumValues = [min(azimuth_deg), min(elevation_deg)];
 maximumValues = [max(azimuth_deg), max(elevation_deg)];
 centerValues = (minimumValues + maximumValues) / 2;
@@ -662,7 +769,22 @@ end
 
 function count = obstacleCount(obstacleField, hasObstacleField)
 %% Section 0: Header & Readme
-% Return zero without dereferencing an omitted obstacle field.
+% SYNTAX
+%   count = obstacleCount(obstacleField, hasObstacleField)
+%**************************************************************************
+% PURPOSE
+%   - Count obstacles without dereferencing an omitted field.
+%**************************************************************************
+% INPUTS
+%   - obstacleField (scalar packed obstacle field or empty)
+%   - hasObstacleField (logical scalar)
+%**************************************************************************
+% OUTPUTS
+%   - count (nonnegative integer scalar)
+%**************************************************************************
+% UNITS
+%   - Count is dimensionless.
+%**************************************************************************
 if hasObstacleField
     count = numel(obstacleField.Obstacles);
 else
@@ -672,7 +794,23 @@ end
 
 function value = logicalScalar(value, fieldName)
 %% Section 0: Header & Readme
-% Normalize a scalar logical display option.
+% SYNTAX
+%   value = logicalScalar(value, fieldName)
+%**************************************************************************
+% PURPOSE
+%   - Normalize one scalar logical animation option.
+%**************************************************************************
+% INPUTS
+%   - value (scalar logical or numeric value)
+%   - fieldName (scalar text)
+%       Option name used in diagnostics.
+%**************************************************************************
+% OUTPUTS
+%   - value (logical scalar)
+%**************************************************************************
+% UNITS
+%   - Values are dimensionless.
+%**************************************************************************
 validateattributes(value, {'logical', 'numeric'}, {'scalar'});
 value = logical(value);
 if ~isscalar(value)
@@ -683,7 +821,21 @@ end
 
 function deleteValidGraphics(handles)
 %% Section 0: Header & Readme
-% Delete only still-live graphics handles from the previous 2-D snapshot.
+% SYNTAX
+%   deleteValidGraphics(handles)
+%**************************************************************************
+% PURPOSE
+%   - Delete live graphics handles from the previous 2-D snapshot.
+%**************************************************************************
+% INPUTS
+%   - handles (graphics-handle array)
+%**************************************************************************
+% OUTPUTS
+%   - None.
+%**************************************************************************
+% UNITS
+%   - Not applicable.
+%**************************************************************************
 if isempty(handles)
     return;
 end

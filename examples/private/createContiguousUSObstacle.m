@@ -11,15 +11,14 @@ function [obstacle, history] = createContiguousUSObstacle( ...
 %   - Load and union the Mapping Toolbox contiguous-U.S. outline.
 %   - Construct either a static outline history or the maintained moving,
 %     independently deforming dense-obstacle demonstration history.
-%   - Keep source loading, deformation code, optional parfor execution,
-%     progress, validation, and safety protection out of example scripts.
+%   - Keep source loading, deformation code, validation, and safety
+%     protection out of example scripts.
 %**************************************************************************
 % INPUTS
 %   - time_s (nonempty increasing numeric vector)
 %   - safetyMargin_deg (nonnegative scalar)
 %   - options (scalar struct, optional)
 %       .MotionMode is static or movingDeforming (default static).
-%       .UseParallel is auto/on/off or logical (default auto).
 %       .Verbose is logical (default false).
 %**************************************************************************
 % OUTPUTS
@@ -32,6 +31,7 @@ function [obstacle, history] = createContiguousUSObstacle( ...
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
+
 if nargin < 3 || isempty(options)
     options = struct();
 end
@@ -41,7 +41,6 @@ if ~isstruct(options) || ~isscalar(options)
 end
 defaultOptions = struct( ...
     "MotionMode", "static", ...
-    "UseParallel", "auto", ...
     "Verbose", false);
 unknownOptionFields = setdiff( ...
     fieldnames(options), fieldnames(defaultOptions), "stable");
@@ -66,12 +65,17 @@ if ~isscalar(motionMode) || ...
         "MotionMode must be static or movingDeforming.");
 end
 validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'scalar'});
+    {'logical','numeric'}, {'real','finite','scalar'});
+if isnumeric(resolvedOptions.Verbose) && ...
+        ~any(resolvedOptions.Verbose == [0 1])
+    error("createContiguousUSObstacle:InvalidVerbose", ...
+        "Verbose must be scalar logical or binary numeric.");
+end
 verbose = logical(resolvedOptions.Verbose);
 resolvedOptions.Verbose = verbose;
-useParallel = resolvedOptions.UseParallel;
 
 %% Section 2: Load One Dense Exterior Boundary
+
 boundaryFile = which("usastatehi.shp");
 if isempty(boundaryFile)
     error("createContiguousUSObstacle:MappingToolboxRequired", ...
@@ -106,6 +110,7 @@ end
     allLongitude_deg, allLatitude_deg);
 
 %% Section 3: Delegate All Slice Work To The Generic Constructor
+
 time_s = double(time_s(:));
 missionStartTime_s = time_s(1);
 missionDuration_s = time_s(end) - missionStartTime_s;
@@ -120,8 +125,7 @@ sliceTransform = @(sourcePosition_deg, sampleTime_s, sampleIndex) ...
 [obstacle, history] = makeMovingAzElObstacleData( ...
     "Contiguous United States", time_s, ...
     baseLongitude_deg, baseLatitude_deg, sliceTransform, ...
-    safetyMargin_deg, struct( ...
-    "UseParallel", useParallel, "Verbose", verbose));
+    safetyMargin_deg, struct("Verbose", verbose));
 history.motionMode = motionMode;
 history.sourceFile = string(boundaryFile);
 history.sourceOutlineLatLon_deg = ...
@@ -131,6 +135,7 @@ history.ExampleOptions = resolvedOptions;
 end
 
 %% Section 4: Local Functions
+
 function transformed_deg = transformUSSlice( ...
         sourcePosition_deg, sampleTime_s, ~, motionMode, ...
         missionStartTime_s, missionDuration_s, ...
