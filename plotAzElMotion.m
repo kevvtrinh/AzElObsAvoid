@@ -469,7 +469,11 @@ function redrawVisibilityGraphSnapshot( ...
 state = guidata(figureHandle);
 graph = state.Graphs(selectedIndex);
 axesHandle = state.SnapshotAxes;
-cla(axesHandle);
+% Graph artists deliberately hide their handles to keep the legend stable.
+% Plain cla preserves those hidden children, so stepping snapshots would
+% stack every previous graph. The reset form deletes all children while
+% preserving the axes position used by the inspector layout.
+cla(axesHandle, "reset");
 hold(axesHandle, "on");
 plotObstacleSnapshot(axesHandle, state.Obstacles, graph.Time_s, false);
 drawVisibilityGraphSnapshot(axesHandle, graph, false);
