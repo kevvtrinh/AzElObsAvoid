@@ -46,30 +46,16 @@ if ~isstruct(options) || ~isscalar(options)
         "options must be a scalar struct.");
 end
 defaultOptions = struct("Verbose", false);
-unknownOptionFields = setdiff( ...
-    fieldnames(options), fieldnames(defaultOptions), "stable");
+[resolvedOptions, unknownOptionFields] = ...
+    azElInternal.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createGeographicRegionObstacle:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(string(unknownOptionFields), ", "));
-    options = rmfield(options, unknownOptionFields);
+        strjoin(unknownOptionFields, ", "));
 end
-resolvedOptions = defaultOptions;
-optionNames = fieldnames(options);
-for optionIndex = 1:numel(optionNames)
-    optionName = optionNames{optionIndex};
-    if ~isempty(options.(optionName))
-        resolvedOptions.(optionName) = options.(optionName);
-    end
-end
-validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'real','finite','scalar'});
-if isnumeric(resolvedOptions.Verbose) && ...
-        ~any(resolvedOptions.Verbose == [0 1])
-    error("createGeographicRegionObstacle:InvalidVerbose", ...
-        "Verbose must be scalar logical or binary numeric.");
-end
-verbose = logical(resolvedOptions.Verbose);
+verbose = azElInternal.normalizeLogicalScalar( ...
+    resolvedOptions.Verbose, "Verbose", ...
+    "createGeographicRegionObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 validateattributes(time_s, {'numeric'}, ...
     {'real','finite','nonempty','increasing'});

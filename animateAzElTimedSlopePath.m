@@ -62,21 +62,12 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("animateAzElTimedSlopePath:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
-unknownFields = setdiff( ...
-    fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
+[options, unknownFields] = azElInternal.resolveOptions( ...
+    defaultOptions, optionOverrides);
 if ~isempty(unknownFields)
     warning("animateAzElTimedSlopePath:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(string(unknownFields), ", "));
-    optionOverrides = rmfield(optionOverrides, unknownFields);
-end
-options = defaultOptions;
-overrideFields = fieldnames(optionOverrides);
-for fieldIndex = 1:numel(overrideFields)
-    fieldName = overrideFields{fieldIndex};
-    if ~isempty(optionOverrides.(fieldName))
-        options.(fieldName) = optionOverrides.(fieldName);
-    end
+        strjoin(unknownFields, ", "));
 end
 validateattributes(options.FrameStride, {'numeric'}, ...
     {'scalar', 'integer', 'positive'});
@@ -90,10 +81,12 @@ validateattributes(options.SweptSurfaceAlpha, {'numeric'}, ...
     {'scalar', 'real', 'finite', '>=', 0, '<=', 1});
 validateattributes(options.SlopeArrowDuration_s, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'positive'});
-options.ShowObstacles = logicalScalar( ...
-    options.ShowObstacles, "ShowObstacles");
-options.ShowSweptSurfaces = logicalScalar( ...
-    options.ShowSweptSurfaces, "ShowSweptSurfaces");
+options.ShowObstacles = azElInternal.normalizeLogicalScalar( ...
+    options.ShowObstacles, "ShowObstacles", ...
+    "animateAzElTimedSlopePath:InvalidLogicalOption");
+options.ShowSweptSurfaces = azElInternal.normalizeLogicalScalar( ...
+    options.ShowSweptSurfaces, "ShowSweptSurfaces", ...
+    "animateAzElTimedSlopePath:InvalidLogicalOption");
 options.FigureVisible = lower(string(options.FigureVisible));
 if ~isscalar(options.FigureVisible) || ...
         ~any(options.FigureVisible == ["on", "off"])
@@ -473,12 +466,13 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
     for displayedIndex = 1:numel(displayedSlices)
         sampleIndex = displayedSlices(displayedIndex);
         sampleTime_s = double(obstacle.TimeSeconds(sampleIndex));
-        safetyRegions = unpackSliceRegions(obstacle, sampleIndex);
+        safetyRegions = azElInternal.unpackObstacleSliceRegions( ...
+            obstacle, sampleIndex);
         originalObstacle = ...
             options.OriginalObstacleField.Obstacles(obstacleIndex);
         [~, originalSampleIndex] = min(abs( ...
             double(originalObstacle.TimeSeconds(:)) - sampleTime_s));
-        rawRegions = unpackSliceRegions( ...
+        rawRegions = azElInternal.unpackObstacleSliceRegions( ...
             originalObstacle, originalSampleIndex);
         if obstacleMargin_deg > 0
             for safetyRegionIndex = 1:numel(safetyRegions)
@@ -573,12 +567,14 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
     end
     [~, sampleIndex] = min(abs( ...
         double(obstacle.TimeSeconds(:)) - currentTime_s));
-    safetyRegions = unpackSliceRegions(obstacle, sampleIndex);
+    safetyRegions = azElInternal.unpackObstacleSliceRegions( ...
+        obstacle, sampleIndex);
     originalObstacle = ...
         options.OriginalObstacleField.Obstacles(obstacleIndex);
     [~, originalSampleIndex] = min(abs( ...
         double(originalObstacle.TimeSeconds(:)) - currentTime_s));
-    rawRegions = unpackSliceRegions(originalObstacle, originalSampleIndex);
+    rawRegions = azElInternal.unpackObstacleSliceRegions( ...
+        originalObstacle, originalSampleIndex);
     if obstacleMargin_deg > 0
         for safetyRegionIndex = 1:numel(safetyRegions)
             safetyRegion_deg = safetyRegions{safetyRegionIndex};
@@ -609,44 +605,6 @@ for obstacleIndex = 1:numel(obstacleField.Obstacles)
             "Tag", "AzElOriginalBoundary", ...
             "UserData", obstacleIndex); %#ok<AGROW>
     end
-end
-end
-
-function regions = unpackSliceRegions(obstacle, sampleIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   regions = unpackSliceRegions(obstacle, sampleIndex)
-%**************************************************************************
-% PURPOSE
-%   - Recover finite polygon rings from one packed obstacle slice.
-%**************************************************************************
-% INPUTS
-%   - obstacle (scalar packed-obstacle struct)
-%   - sampleIndex (positive integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - regions (N-by-1 cell array)
-%       Each cell contains one M-by-2 [azimuth elevation] ring.
-%**************************************************************************
-% UNITS
-%   - Polygon coordinates are degrees.
-%**************************************************************************
-firstVertex = double(obstacle.SliceOffsets(sampleIndex));
-finalVertex = double(obstacle.SliceOffsets(sampleIndex + 1) - 1);
-if finalVertex < firstVertex
-    regions = cell(0, 1);
-    return;
-end
-azimuth_deg = double(obstacle.AzimuthDeg(firstVertex:finalVertex));
-elevation_deg = double(obstacle.ElevationDeg(firstVertex:finalVertex));
-finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
-regionChanges = diff([false; finiteVertex; false]);
-regionStarts = find(regionChanges == 1);
-regionStops = find(regionChanges == -1) - 1;
-regions = cell(numel(regionStarts), 1);
-for regionIndex = 1:numel(regionStarts)
-    rows = regionStarts(regionIndex):regionStops(regionIndex);
-    regions{regionIndex} = [azimuth_deg(rows), elevation_deg(rows)];
 end
 end
 
@@ -789,33 +747,6 @@ if hasObstacleField
     count = numel(obstacleField.Obstacles);
 else
     count = 0;
-end
-end
-
-function value = logicalScalar(value, fieldName)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = logicalScalar(value, fieldName)
-%**************************************************************************
-% PURPOSE
-%   - Normalize one scalar logical animation option.
-%**************************************************************************
-% INPUTS
-%   - value (scalar logical or numeric value)
-%   - fieldName (scalar text)
-%       Option name used in diagnostics.
-%**************************************************************************
-% OUTPUTS
-%   - value (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Values are dimensionless.
-%**************************************************************************
-validateattributes(value, {'logical', 'numeric'}, {'scalar'});
-value = logical(value);
-if ~isscalar(value)
-    error("animateAzElTimedSlopePath:InvalidLogicalOption", ...
-        "%s must be scalar.", fieldName);
 end
 end
 
