@@ -193,19 +193,11 @@ if ~isstruct(overrides) || ~isscalar(overrides)
     error("plotAzElMotion:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
-unknown = setdiff(fieldnames(overrides), fieldnames(defaults), "stable");
+[options, unknown] = azElInternal.resolveOptions(defaults, overrides);
 if ~isempty(unknown)
     warning("plotAzElMotion:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(string(unknown), ", "));
-    overrides = rmfield(overrides, unknown);
-end
-options = defaults;
-names = fieldnames(overrides);
-for nameIndex = 1:numel(names)
-    if ~isempty(overrides.(names{nameIndex}))
-        options.(names{nameIndex}) = overrides.(names{nameIndex});
-    end
+        strjoin(unknown, ", "));
 end
 options.FigureVisible = lower(string(options.FigureVisible));
 options.Title = string(options.Title);
@@ -217,14 +209,14 @@ end
 if ~isscalar(options.Title)
     error("plotAzElMotion:InvalidTitle", "Title must be scalar text.");
 end
-options.ShowAnimation = logicalScalar(options.ShowAnimation, ...
-    "ShowAnimation");
-options.ShowKinematics = logicalScalar(options.ShowKinematics, ...
-    "ShowKinematics");
-options.ShowVisibilityGraphs = logicalScalar( ...
-    options.ShowVisibilityGraphs, "ShowVisibilityGraphs");
-options.ShowSweptSurfaces = logicalScalar(options.ShowSweptSurfaces, ...
-    "ShowSweptSurfaces");
+logicalOptionNames = ["ShowAnimation" "ShowKinematics" ...
+    "ShowVisibilityGraphs" "ShowSweptSurfaces"];
+for optionIndex = 1:numel(logicalOptionNames)
+    optionName = logicalOptionNames(optionIndex);
+    options.(optionName) = azElInternal.normalizeLogicalScalar( ...
+        options.(optionName), optionName, ...
+        "plotAzElMotion:InvalidLogicalOption");
+end
 validateattributes(options.FrameStride, {'numeric'}, ...
     {'scalar','integer','positive'});
 validateattributes(options.Pause_s, {'numeric'}, ...
@@ -233,34 +225,6 @@ validateattributes(options.MaximumDisplayedSlicesPerObstacle, {'numeric'}, ...
     {'scalar','integer','positive'});
 validateattributes(options.MaximumDisplayedVisibilitySnapshots, ...
     {'numeric'}, {'scalar','integer','positive'});
-end
-
-function value = logicalScalar(value, name)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = logicalScalar(value, name)
-%**************************************************************************
-% PURPOSE
-%   - Normalize one logical presentation control.
-%**************************************************************************
-% INPUTS
-%   - value (scalar logical or binary numeric value)
-%   - name (scalar text)
-%       Option name used in diagnostics.
-%**************************************************************************
-% OUTPUTS
-%   - value (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Values are dimensionless.
-%**************************************************************************
-if ~(islogical(value) && isscalar(value)) && ...
-        ~(isnumeric(value) && isscalar(value) && ...
-        isfinite(value) && any(value == [0 1]))
-    error("plotAzElMotion:InvalidLogicalOption", ...
-        "%s must be scalar logical or binary numeric.", name);
-end
-value = logical(value);
 end
 
 function inspector = createVisibilityGraphInspector(result, options)

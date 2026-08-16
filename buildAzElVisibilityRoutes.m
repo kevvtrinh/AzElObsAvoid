@@ -64,19 +64,12 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("buildAzElVisibilityRoutes:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
-unknownFields = setdiff(fieldnames(optionOverrides), fieldnames(defaults), "stable");
+[options, unknownFields] = azElInternal.resolveOptions( ...
+    defaults, optionOverrides);
 if ~isempty(unknownFields)
     warning("buildAzElVisibilityRoutes:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(string(unknownFields), ", "));
-    optionOverrides = rmfield(optionOverrides, unknownFields);
-end
-options = defaults;
-names = fieldnames(optionOverrides);
-for index = 1:numel(names)
-    if ~isempty(optionOverrides.(names{index}))
-        options.(names{index}) = optionOverrides.(names{index});
-    end
+        strjoin(unknownFields, ", "));
 end
 validateattributes(options.MaximumSnapshotsPerObstacle, {'numeric'}, ...
     {'real','scalar','positive'});
@@ -94,16 +87,9 @@ logicalOptionNames = ["DetectSnapshotEvents" ...
     "BuildFullVisibilityGraphs" "BuildMergedVisibilityGraph" "Verbose"];
 for logicalOptionIndex = 1:numel(logicalOptionNames)
     optionName = logicalOptionNames(logicalOptionIndex);
-    optionValue = options.(optionName);
-    isLogicalScalar = islogical(optionValue) && isscalar(optionValue);
-    isBinaryNumericScalar = isnumeric(optionValue) && ...
-        isreal(optionValue) && isfinite(optionValue) && ...
-        isscalar(optionValue) && any(optionValue == [0 1]);
-    if ~(isLogicalScalar || isBinaryNumericScalar)
-        error("buildAzElVisibilityRoutes:InvalidLogicalOption", ...
-            "%s must be scalar logical or binary numeric.", optionName);
-    end
-    options.(optionName) = logical(optionValue);
+    options.(optionName) = azElInternal.normalizeLogicalScalar( ...
+        options.(optionName), optionName, ...
+        "buildAzElVisibilityRoutes:InvalidLogicalOption");
 end
 validateattributes(options.SnapshotProbeEdgeCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
@@ -134,7 +120,9 @@ validateattributes(options.VisibilitySampleStep_deg, {'numeric'}, ...
     {'scalar','real','finite','positive'});
 validateattributes(options.ConnectivityPathCostChangeThreshold, ...
     {'numeric'}, {'scalar', 'real', 'finite', '>=', 0, '<=', 1});
-options.UseParallel = normalizeParallelMode(options.UseParallel);
+options.UseParallel = azElInternal.normalizeParallelMode( ...
+    options.UseParallel, ...
+    "buildAzElVisibilityRoutes:InvalidUseParallel");
 fieldIsPacked = isstruct(obstacleField) && isscalar(obstacleField) && ...
     isfield(obstacleField, "Format") && ...
     string(obstacleField.Format) == "AzElTimeObstacleField";
@@ -377,43 +365,5 @@ for intervalIndex = 1:max(0, numel(diagnostics) - 1)
     interval.ShortestPathCostChangedSignificantly = pathCostChanged;
     interval.Significant = true;
     changeIntervals(end + 1, 1) = interval; %#ok<AGROW>
-end
-end
-
-function mode = normalizeParallelMode(mode)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mode = normalizeParallelMode(mode)
-%**************************************************************************
-% PURPOSE
-%   - Normalize the public parallel control to auto, on, or off.
-%**************************************************************************
-% INPUTS
-%   - mode (scalar text, logical scalar, or binary numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - mode (scalar string)
-%**************************************************************************
-% UNITS
-%   - The mode is dimensionless.
-%**************************************************************************
-if (islogical(mode) || isnumeric(mode)) && isscalar(mode)
-    validateattributes(mode, ...
-        {'logical', 'numeric'}, {'real', 'finite', 'scalar'});
-    if isnumeric(mode) && ~any(mode == [0 1])
-        error("buildAzElVisibilityRoutes:InvalidUseParallel", ...
-            "Numeric UseParallel must be zero or one.");
-    end
-    if logical(mode)
-        mode = "on";
-    else
-        mode = "off";
-    end
-else
-    mode = lower(string(mode));
-end
-if ~isscalar(mode) || ~any(mode == ["auto" "on" "off"])
-    error("buildAzElVisibilityRoutes:InvalidUseParallel", ...
-        "UseParallel must be auto, on, off, or a logical scalar.");
 end
 end

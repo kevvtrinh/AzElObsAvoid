@@ -126,7 +126,8 @@ for obstacleIndex = 1:obstacleField.ObstacleCount
     end
     for sampleIndex = reshape(retainedSamples, 1, [])
         sampleTime_s = double(obstacle.TimeSeconds(sampleIndex));
-        regions = unpackSliceRegions(obstacle, sampleIndex);
+        regions = azElInternal.unpackObstacleSliceRegions( ...
+            obstacle, sampleIndex);
         relevantRegion = routeRelevantRegionMask( ...
             regions, startPoint(1:2), goalPoint(1:2));
         for regionIndex = 1:numel(regions)
@@ -453,6 +454,9 @@ if useAllCorners
     % Retain only turns large enough to change useful visibility. This
     % works on the original ring; collision geometry is never reduced.
     vertexCount = size(region_deg, 1);
+    % Loop equivalent: visit each vertex with its wrapped predecessor and
+    % successor, compute the signed turn, then retain angles above the
+    % threshold. The vector form applies one convention at the wrap point.
     previousVertex_deg = region_deg([vertexCount 1:vertexCount - 1], :);
     nextVertex_deg = region_deg([2:vertexCount 1], :);
     incoming_deg = region_deg - previousVertex_deg;
@@ -482,6 +486,8 @@ else
     directionAngle_rad = (0:options.ExtremeDirectionCount - 1).' .* ...
         (2 * pi / options.ExtremeDirectionCount);
     direction = [cos(directionAngle_rad), sin(directionAngle_rad)];
+    % Loop equivalent: project every vertex onto every direction, select
+    % the largest projection per direction, then remove repeated vertices.
     projection = (region_deg - center_deg) * direction.';
     [~, supportIndex] = max(projection, [], 1);
     extremeIndex = unique(supportIndex(:), "stable");
@@ -559,7 +565,6 @@ if ~all(finiteRows)
         routingRegion_deg(firstRegionStart:firstRegionStop, :);
 end
 end
-
 function tangentIndex = polygonTangentVertexIndices( ...
         region_deg, referencePosition_deg, maximumCount)
 %% Section 0: Header & Readme
@@ -839,44 +844,6 @@ for regionIndex = 1:regionCount
     goalInside = inpolygon(goalPosition_deg(1), goalPosition_deg(2), ...
         freeSpaceAncestor(:, 1), freeSpaceAncestor(:, 2));
     relevantRegion(regionIndex) = startInside || goalInside;
-end
-end
-
-function regions = unpackSliceRegions(obstacle, sampleIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   regions = unpackSliceRegions(obstacle, sampleIndex)
-%**************************************************************************
-% PURPOSE
-%   - Recover independent finite polygon rings from one packed slice.
-%**************************************************************************
-% INPUTS
-%   - obstacle (scalar packed-obstacle struct)
-%   - sampleIndex (positive integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - regions (N-by-1 cell array)
-%       Each cell contains one M-by-2 [azimuth elevation] ring.
-%**************************************************************************
-% UNITS
-%   - Polygon coordinates are degrees.
-%**************************************************************************
-firstVertex = double(obstacle.SliceOffsets(sampleIndex));
-finalVertex = double(obstacle.SliceOffsets(sampleIndex + 1) - 1);
-if finalVertex < firstVertex
-    regions = cell(0, 1);
-    return;
-end
-azimuth_deg = double(obstacle.AzimuthDeg(firstVertex:finalVertex));
-elevation_deg = double(obstacle.ElevationDeg(firstVertex:finalVertex));
-isFiniteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
-regionChanges = diff([false; isFiniteVertex; false]);
-regionStarts = find(regionChanges == 1);
-regionStops = find(regionChanges == -1) - 1;
-regions = cell(numel(regionStarts), 1);
-for regionIndex = 1:numel(regionStarts)
-    rows = regionStarts(regionIndex):regionStops(regionIndex);
-    regions{regionIndex} = [azimuth_deg(rows), elevation_deg(rows)];
 end
 end
 

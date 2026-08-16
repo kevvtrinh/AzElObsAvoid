@@ -45,30 +45,16 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("buildAzElTimeObstacleField:InvalidOptions", ...
         "options must be a scalar struct.");
 end
-unknownOptionFields = setdiff( ...
-    fieldnames(optionOverrides), fieldnames(defaultOptions), "stable");
+[resolvedOptions, unknownOptionFields] = ...
+    azElInternal.resolveOptions(defaultOptions, optionOverrides);
 if ~isempty(unknownOptionFields)
     warning("buildAzElTimeObstacleField:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(string(unknownOptionFields), ", "));
-    optionOverrides = rmfield(optionOverrides, unknownOptionFields);
+        strjoin(unknownOptionFields, ", "));
 end
-resolvedOptions = defaultOptions;
-providedOptionFields = fieldnames(optionOverrides);
-for optionIndex = 1:numel(providedOptionFields)
-    optionName = providedOptionFields{optionIndex};
-    if ~isempty(optionOverrides.(optionName))
-        resolvedOptions.(optionName) = optionOverrides.(optionName);
-    end
-end
-validateattributes(resolvedOptions.Verbose, ...
-    {'logical','numeric'}, {'real','finite','scalar'});
-if isnumeric(resolvedOptions.Verbose) && ...
-        ~any(resolvedOptions.Verbose == [0 1])
-    error("buildAzElTimeObstacleField:InvalidVerbose", ...
-        "Verbose must be scalar logical or binary numeric.");
-end
-resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
+resolvedOptions.Verbose = azElInternal.normalizeLogicalScalar( ...
+    resolvedOptions.Verbose, "Verbose", ...
+    "buildAzElTimeObstacleField:InvalidVerbose");
 
 % The reference epoch is the one input still checked here, because
 % queryAzElTimeObstacle reads it from the obstacle field on every collision

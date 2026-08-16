@@ -45,13 +45,9 @@ validateattributes(position_deg, {'numeric'}, ...
     {'real', 'finite', '2d', 'ncols', 2, 'nonempty'});
 validateattributes(timePaddingSamples, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
-validateattributes(boundaryIsOccupied, {'logical', 'numeric'}, ...
-    {'real', 'finite', 'scalar'});
-if isnumeric(boundaryIsOccupied) && ...
-        ~any(boundaryIsOccupied == [0 1])
-    error("queryPackedMovingObstacle:InvalidBoundaryPolicy", ...
-        "boundaryIsOccupied must be scalar logical or binary numeric.");
-end
+boundaryIsOccupied = azElInternal.normalizeLogicalScalar( ...
+    boundaryIsOccupied, "boundaryIsOccupied", ...
+    "queryPackedMovingObstacle:InvalidBoundaryPolicy");
 time_s = double(time_s(:));
 position_deg = double(position_deg);
 isStaticPath = isscalar(time_s) && size(position_deg, 1) > 1;
@@ -66,8 +62,6 @@ else
     error("queryPackedMovingObstacle:InvalidTimeCount", ...
         "time_s must contain one point time or two segment endpoint times.");
 end
-boundaryIsOccupied = logical(boundaryIsOccupied);
-
 %% Section 2: Check A Point Or Timed Segment
 
 if isStaticPath
@@ -704,6 +698,11 @@ possibleContact = edgeMaximumAzimuth_deg >= ...
     edgeMaximumElevation_deg >= segmentMinimum_deg(2) - tolerance & ...
     edgeMinimumElevation_deg <= segmentMaximum_deg(2) + tolerance;
 rootEdgeIndex = find(possibleContact);
+
+% Loop equivalent: for each possibly overlapping moving edge, form its
+% relative point/edge cross-product polynomial and solve its real roots.
+% The vector form evaluates every edge with identical tolerances and keeps
+% the original edge index attached to each candidate contact time.
 edgeStart0_deg = firstEdgeSet(rootEdgeIndex, 1:2);
 edgeEnd0_deg = firstEdgeSet(rootEdgeIndex, 3:4);
 edgeStartDelta_deg = lastEdgeSet(rootEdgeIndex, 1:2) - edgeStart0_deg;

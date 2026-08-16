@@ -1071,24 +1071,11 @@ if ~isempty(movedMarginNames)
         strjoin(string(movedMarginNames), ", "));
 end
 
-options = defaults;
-names = fieldnames(overrides);
-unknown = strings(0, 1);
-
-for optionIndex = 1:numel(names)
-    name = names{optionIndex};
-    if isfield(defaults, name)
-        if ~isempty(overrides.(name))
-            options.(name) = overrides.(name);
-        end
-    else
-        unknown(end + 1, 1) = string(name); %#ok<AGROW>
-    end
-end
-
+[options, unknown] = azElInternal.resolveOptions(defaults, overrides);
 if ~isempty(unknown)
     warning("planAzElMotion:UnknownOptions", ...
-        "Ignored unknown option fields: %s. No behavior changed.", strjoin(unknown, ", "));
+        "Ignored unknown option fields: %s. No behavior changed.", ...
+        strjoin(unknown, ", "));
 end
 
 options.GoalTimeMode = lower(string(options.GoalTimeMode));
@@ -1106,19 +1093,15 @@ if ~isscalar(options.CollisionValidationMode) || ...
         "CollisionValidationMode must be hybrid or continuous.");
 end
 
-options.UseParallel = normalizeParallelOption(options.UseParallel);
+options.UseParallel = azElInternal.normalizeParallelMode( ...
+    options.UseParallel, "planAzElMotion:InvalidUseParallel");
 
 logicalNames = ["AllowAzimuthWrapping" "DetectSnapshotEvents" ...
     "ContinueAfterFirstFeasible" "Verbose"];
 for optionIndex = 1:numel(logicalNames)
     name = logicalNames(optionIndex);
-    value = options.(name);
-    if ~(islogical(value) && isscalar(value)) && ~(isnumeric(value) && isscalar(value) && ...
-            isfinite(value) && any(value == [0 1]))
-        error("planAzElMotion:InvalidLogicalOption", ...
-            "%s must be scalar logical or binary numeric.", name);
-    end
-    options.(name) = logical(value);
+    options.(name) = azElInternal.normalizeLogicalScalar( ...
+        options.(name), name, "planAzElMotion:InvalidLogicalOption");
 end
 
 positiveNames = ["SampleTime_s" "TurnRadius_deg" ...
@@ -1203,44 +1186,6 @@ validateattributes(options.CollisionTimePaddingSamples, {'numeric'}, ...
     {'real','finite','scalar','integer','nonnegative'});
 validateattributes(options.AzimuthInterval_deg, {'numeric'}, ...
     {'real','finite','vector','numel',2,'increasing'});
-end
-
-function mode = normalizeParallelOption(mode)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mode = normalizeParallelOption(mode)
-%**************************************************************************
-% PURPOSE
-%   - Normalize the planner parallel control to auto, on, or off.
-%**************************************************************************
-% INPUTS
-%   - mode (scalar text, logical scalar, or binary numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - mode (scalar string)
-%**************************************************************************
-% UNITS
-%   - The mode is dimensionless.
-%**************************************************************************
-if (islogical(mode) || isnumeric(mode)) && isscalar(mode)
-    validateattributes(mode, ...
-        {'logical', 'numeric'}, {'real', 'finite', 'scalar'});
-    if isnumeric(mode) && ~any(mode == [0 1])
-        error("planAzElMotion:InvalidUseParallel", ...
-            "Numeric UseParallel must be zero or one.");
-    end
-    if logical(mode)
-        mode = "on";
-    else
-        mode = "off";
-    end
-else
-    mode = lower(string(mode));
-end
-if ~isscalar(mode) || ~any(mode == ["auto" "on" "off"])
-    error("planAzElMotion:InvalidUseParallel", ...
-        "UseParallel must be auto, on, off, or a logical scalar.");
-end
 end
 
 function state = normalizeState(state, label)
