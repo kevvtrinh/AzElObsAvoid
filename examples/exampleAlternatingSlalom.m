@@ -13,8 +13,7 @@ function result = exampleAlternatingSlalom(slalomCount, options)
 % INPUTS
 %   - slalomCount (integer scalar from 1 through 10, optional; default 6)
 %   - options (scalar struct, optional)
-%       Planner option overrides plus EnableJerkConstraint and
-%       MaxJerk_deg_s3 example controls.
+%       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)

@@ -17,7 +17,7 @@ function result = planAzElMotion(obstacles, initialState, goalState, ...
 %   - initialState, goalState (scalar structs)
 %       time_s, position_deg, velocity_deg_s, and acceleration_deg_s2.
 %   - limits (scalar struct)
-%       Per-axis velocity, acceleration, and optional jerk limits.
+%       Finite positive per-axis velocity, acceleration, and jerk limits.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Partial overrides of the zero-input defaults. UseParallel accepts
 %       auto, on, off, or a logical scalar for independent polygon-search
@@ -1236,11 +1236,11 @@ function limits = normalizeLimits(limits)
 %   limits = normalizeLimits(limits)
 %**************************************************************************
 % PURPOSE
-%   - Normalize physical limits to positive 1-by-2 vectors.
+%   - Normalize required finite physical limits to positive 1-by-2 vectors.
 %**************************************************************************
 % INPUTS
 %   - limits (scalar struct)
-%       Velocity and optional acceleration and jerk limits.
+%       Required velocity, acceleration, and jerk limits.
 %**************************************************************************
 % OUTPUTS
 %   - limits (scalar struct)
@@ -1249,21 +1249,24 @@ function limits = normalizeLimits(limits)
 % UNITS
 %   - Limits use deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
-if ~isstruct(limits) || ~isscalar(limits) || ~isfield(limits, "maxVelocity_deg_s")
-    error("planAzElMotion:InvalidLimits", "limits must contain maxVelocity_deg_s.");
-end
-
 names = ["maxVelocity_deg_s" "maxAcceleration_deg_s2" "maxJerk_deg_s3"];
-defaults = {[], [Inf Inf], [Inf Inf]};
+if ~isstruct(limits) || ~isscalar(limits) || ...
+        ~all(isfield(limits, names))
+    error("planAzElMotion:InvalidLimits", ...
+        "limits must contain finite positive maxVelocity_deg_s, " + ...
+        "maxAcceleration_deg_s2, and maxJerk_deg_s3.");
+end
+if isnumeric(limits.maxJerk_deg_s3) && any(isinf(limits.maxJerk_deg_s3))
+    error("planAzElMotion:FiniteJerkRequired", ...
+        "maxJerk_deg_s3 must be finite on both axes; this branch has no " + ...
+        "unconstrained-jerk mode.");
+end
 
 for limitIndex = 1:numel(names)
     name = names(limitIndex);
-    if ~isfield(limits, name) || isempty(limits.(name))
-        limits.(name) = defaults{limitIndex};
-    end
-
     value = limits.(name);
-    validateattributes(value, {'numeric'}, {'real','vector','nonempty','positive'});
+    validateattributes(value, {'numeric'}, ...
+        {'real','finite','vector','nonempty','positive'});
     if any(isnan(value)) || ~(isscalar(value) || numel(value) == 2)
         error("planAzElMotion:InvalidLimits", ...
             "%s must be scalar or two-element and cannot contain NaN.", name);

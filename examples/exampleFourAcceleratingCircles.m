@@ -13,8 +13,7 @@ function result = exampleFourAcceleratingCircles(exampleOverrides)
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
-%       ShowAnimation, ShowKinematicPlot, EnableJerkConstraint, and
-%       MaxJerk_deg_s3 example controls.
+%       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planner-result struct)

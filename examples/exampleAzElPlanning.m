@@ -13,8 +13,8 @@ function result = exampleAzElPlanning(exampleOverrides)
 %       FigureVisible is "on" or "off"; PlotOutputs controls plotting;
 %       ShowAnimation, ShowKinematicPlot, and ShowVisibilityGraphs select
 %       returned figures;
-%       EnableJerkConstraint selects finite or unlimited jerk;
-%       known planAzElMotion options are forwarded unchanged.
+%       MaxJerk_deg_s3 sets the required finite jerk limit; known
+%       planAzElMotion options are forwarded unchanged.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planner-result struct)

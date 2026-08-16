@@ -1,0 +1,2 @@
+Example,JerkConstrained,RunCompleted,PlannerSuccess,ValidationPassed,CollisionFree,KinematicsPassed,CertificatePassed,FiniteJerkCertified,TerminationReason,Message,SelectedPolylineLength_deg,SmoothedPathLength_deg,MinimumMotionDuration_s,SampleCount,WallTime_s
+exampleFortyMovingCircleGrid,1,1,1,1,1,1,0,0,goalReached,Adaptive visibility and certified spatial retiming succeeded.,110.297882004889,110.232979870652,79.3823530384837,4789,105.0903409

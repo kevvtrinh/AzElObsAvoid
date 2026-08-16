@@ -10,8 +10,7 @@ function result = exampleOpeningUShapedAzElTimeSpace(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional; default struct())
-%       Planner/display overrides plus EnableJerkConstraint and
-%       MaxJerk_deg_s3.
+%       Planner/display overrides plus the finite MaxJerk_deg_s3 limit.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planner-result struct)
