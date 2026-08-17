@@ -351,6 +351,57 @@ testCase.verifyGreaterThan( ...
     smoothPath.GeometryOptimizationDiagnostics.CandidateCount, 1);
 end
 
+function testProductionTrainingLabelsAreReproducible(testCase)
+% Policy targets must come from repeatable production-retimer selections.
+firstData = azElInternal.createRpRetimerTrainingData(2, 8128);
+secondData = azElInternal.createRpRetimerTrainingData(2, 8128);
+
+testCase.verifyEqual(firstData.Format, ...
+    "AzElRpRetimerTrainingData");
+testCase.verifyEqual(firstData.TargetSource, ...
+    "productionRetimerSelectedRadius");
+testCase.verifyEqual(firstData.Observation, secondData.Observation, ...
+    "AbsTol", 0);
+testCase.verifyEqual(firstData.BestRadiusFraction, ...
+    secondData.BestRadiusFraction, "AbsTol", 0);
+for caseIndex = 1:firstData.CaseCount
+    expectedObservation = azElInternal.rpRetimerObservation( ...
+        firstData.Problems(caseIndex));
+    testCase.verifyEqual(firstData.Observation(:, caseIndex), ...
+        expectedObservation, "AbsTol", 0);
+end
+end
+
+function testTrainingDefaultsUseProductionPromotionGate(testCase)
+% Training defaults must retain extensive labels and held-out validation.
+options = trainAzElRpRetimer();
+
+testCase.verifyEqual(options.MaximumEpisodes, 5000);
+testCase.verifyGreaterThanOrEqual(options.TrainingCaseCount, 256);
+testCase.verifyGreaterThanOrEqual(options.ValidationCaseCount, 64);
+testCase.verifyGreaterThan(options.MinimumRelativeImprovement, 0);
+end
+
+function testSavedAgentUsesProductionLabelMetadata(testCase)
+% The deployed artifact must identify its production target and gate result.
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+model = load(fullfile(repositoryRoot, "models", ...
+    "azElRpRetimerAgent.mat"), "metadata");
+
+testCase.verifyEqual(model.metadata.Format, ...
+    "AzElRpRetimerAgent");
+testCase.verifyEqual(model.metadata.Version, 2);
+testCase.verifyEqual(model.metadata.TrainingTarget, ...
+    "productionRetimerSelectedRadius");
+testCase.verifyTrue(model.metadata.Promoted);
+testCase.verifyLessThan( ...
+    model.metadata.ValidationMeanAbsoluteError, ...
+    model.metadata.BestFixedMeanAbsoluteError);
+testCase.verifyLessThan( ...
+    model.metadata.ValidationMeanAbsoluteError, ...
+    model.metadata.ExistingPolicyMeanAbsoluteError);
+end
+
 function [initialState, goalState, limits, options] = ...
         requestForRoute(route_deg)
 % Build one common acceleration-limited request with deterministic RP controls.
