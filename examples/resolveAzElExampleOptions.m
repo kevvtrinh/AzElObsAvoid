@@ -177,24 +177,8 @@ end
 %% Section 4: Local Functions
 
 function value = fieldValue(overrides, defaults, name, fallback)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = fieldValue(overrides, defaults, name, fallback)
-%**************************************************************************
 % PURPOSE
 %   - Resolve one example-only control without forwarding it.
-%**************************************************************************
-% INPUTS
-%   - overrides, defaults (scalar structs)
-%   - name (scalar string)
-%   - fallback (value of any supported option type)
-%**************************************************************************
-% OUTPUTS
-%   - value (resolved option value)
-%**************************************************************************
-% UNITS
-%   - Units are inherited from the named field.
-%**************************************************************************
 value = fallback;
 if isfield(defaults, name) && ~isempty(defaults.(name))
     value = defaults.(name);

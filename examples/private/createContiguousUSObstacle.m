@@ -126,25 +126,8 @@ function transformed_deg = transformUSSlice( ...
         sourcePosition_deg, sampleTime_s, ~, motionMode, ...
         missionStartTime_s, missionDuration_s, ...
         baseCenter_deg, localRange_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   transformed_deg = transformUSSlice( ...
-%       sourcePosition_deg, sampleTime_s, sampleIndex, motionMode, ...
-%       missionStartTime_s, missionDuration_s, ...
-%       baseCenter_deg, localRange_deg)
-%**************************************************************************
 % PURPOSE
 %   - Return one U.S. slice while generic code owns iteration and execution.
-%**************************************************************************
-% INPUTS
-%   - Source boundary, sample time/index, motion mode, duration, and bounds.
-%**************************************************************************
-% OUTPUTS
-%   - transformed_deg (N-by-2 azimuth/elevation boundary)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 if motionMode == "static" || missionDuration_s <= 0
     transformed_deg = sourcePosition_deg;
     return;
@@ -174,22 +157,8 @@ transformed_deg = deformedLocal_deg * ...
 end
 
 function [largestX, largestY] = largestFiniteRing(x, y)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [largestX, largestY] = largestFiniteRing(x, y)
-%**************************************************************************
 % PURPOSE
 %   - Extract the largest finite boundary ring and discard holes/islands.
-%**************************************************************************
-% INPUTS
-%   - x, y (matching numeric boundary vectors with paired separators)
-%**************************************************************************
-% OUTPUTS
-%   - largestX, largestY (finite column vectors)
-%**************************************************************************
-% UNITS
-%   - Coordinates use the same degree units as x and y.
-%**************************************************************************
 x = double(x(:));
 y = double(y(:));
 finiteRows = isfinite(x) & isfinite(y);

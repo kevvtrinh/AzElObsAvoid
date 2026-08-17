@@ -9,6 +9,8 @@ function [graphs, mergedGraphCandidates, parallelExecution] = ...
 % PURPOSE
 %   - Build, collision-check, and solve one visibility graph at every
 %     retained obstacle snapshot.
+%   - Retain one bounded alternative route when suppressing a shortest-path
+%     edge exposes distinct graph geometry.
 %**************************************************************************
 % INPUTS
 %   - obstacleField (scalar packed obstacle field)
@@ -47,28 +49,9 @@ end
 
 function [useParallel, diagnostics] = resolveParallelExecution( ...
         requestedMode, taskCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [useParallel, diagnostics] = resolveParallelExecution( ...
-%       requestedMode, taskCount)
-%**************************************************************************
 % PURPOSE
 %   - Start or reuse a pool for independent visibility-reduction tasks.
 %   - Return a documented serial fallback when parallel work is unavailable.
-%**************************************************************************
-% INPUTS
-%   - requestedMode (scalar string)
-%       Normalized auto, on, or off selection.
-%   - taskCount (nonnegative integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - useParallel (logical scalar)
-%   - diagnostics (scalar struct)
-%       Requested mode, availability, execution mode, and worker count.
-%**************************************************************************
-% UNITS
-%   - Task and worker counts are dimensionless.
-%**************************************************************************
 validateattributes(taskCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 
@@ -124,38 +107,8 @@ function [graphs, mergedGraphs, parallelExecution] = ...
         candidateObstacleIndex, candidateSampleIndex, ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, snapshotTimes_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [graphs, mergedGraphs, parallelExecution] = ...
-%       buildSnapshotVisibilityGraphs( ...
-%       obstacleField, candidatePoints, candidateTypes, ...
-%       candidateObstacleIndex, candidateSampleIndex, ...
-%       candidateRegionIndex, candidateBoundaryGeometry, ...
-%       startPosition_deg, goalPosition_deg, snapshotTimes_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Build one all-obstacle graph at each retained slice time.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar packed obstacle field)
-%   - candidatePoints (N-by-3 numeric), candidateTypes (N-by-1 string)
-%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex
-%       N-by-1 provenance vectors; candidateBoundaryGeometry is N-by-1.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - snapshotTimes_s (K-by-1 numeric), options (scalar struct)
-%       Retained times, including slices without boundary candidates.
-%**************************************************************************
-% OUTPUTS
-%   - graphs (structure array)
-%       One stable visibility-graph record per retained time.
-%   - mergedGraphs (structure array)
-%       One full-history dense-scene merge attempt.
-%   - parallelExecution (scalar struct)
-%       Requested mode, availability, worker count, and fallback message.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 graphs = repmat(emptyVisibilityGraph(), 0, 1);
 mergedGraphs = repmat(emptyVisibilityGraph(), 0, 1);
 snapshotTimes_s = unique(snapshotTimes_s(:));
@@ -229,32 +182,8 @@ function graph = buildOneSnapshotVisibilityGraph( ...
         candidateObstacleIndex, candidateSampleIndex, ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, options, snapshotTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   graph = buildOneSnapshotVisibilityGraph( ...
-%       obstacleField, candidatePoints, candidateTypes, ...
-%       candidateObstacleIndex, candidateSampleIndex, ...
-%       candidateRegionIndex, candidateBoundaryGeometry, ...
-%       startPosition_deg, goalPosition_deg, options, snapshotTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Select candidates at one retained time and solve their graph.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar packed obstacle field)
-%   - candidatePoints (N-by-3 numeric), candidateTypes (N-by-1 string)
-%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex
-%       N-by-1 provenance vectors; candidateBoundaryGeometry is N-by-1.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - options (scalar struct), snapshotTime_s (numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - graph (scalar struct)
-%       Solved or failed snapshot graph with stable diagnostics.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 candidateIsOnSnapshot = false(size(candidatePoints, 1), 1);
 for obstacleIndex = 1:obstacleField.ObstacleCount
     obstacle = obstacleField.Obstacles(obstacleIndex);
@@ -294,32 +223,11 @@ function mergedGraph = buildMergedObstacleGraphAtTime( ...
         candidateObstacleIndex, candidateSampleIndex, ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         startPosition_deg, goalPosition_deg, snapshotTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mergedGraph = buildMergedObstacleGraphAtTime( ...
-%       candidateObstacleIndex, candidateSampleIndex, ...
-%       candidateRegionIndex, candidateBoundaryGeometry, ...
-%       startPosition_deg, goalPosition_deg, snapshotTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Build one conservative dense-scene alternative from protected swept
 %     hulls without enclosing either endpoint.
 %   - Limit grouping complexity to about one group per five source
 %     obstacles, then graph only corridor-relevant and neighboring groups.
-%**************************************************************************
-% INPUTS
-%   - candidate provenance vectors and boundary geometry (N-by-1)
-%       Protected obstacle regions across the retained time history.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - snapshotTime_s (numeric scalar), options (scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - mergedGraph (scalar visibility-graph record)
-%       A completed graph or explicit evidence that merging was impossible.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 mergedGraph = emptyVisibilityGraph();
 mergedGraph.Representation = "mergedObstacleGraph";
 mergedGraph.Time_s = snapshotTime_s;
@@ -453,28 +361,10 @@ end
 function [selectedGroupIndex, omittedGroupIndex] = ...
         sparseMergedGroupIndices( ...
         groupGeometry_deg, startPosition_deg, goalPosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [selectedGroupIndex, omittedGroupIndex] = ...
-%       sparseMergedGroupIndices( ...
-%       groupGeometry_deg, startPosition_deg, goalPosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Retain merged groups that block the direct corridor.
 %   - Add nearby groups on both sides of the corridor so the sparse graph
 %     preserves meaningful detours instead of only the direct obstruction.
-%**************************************************************************
-% INPUTS
-%   - groupGeometry_deg (G-by-1 cell column)
-%       Closed polygon boundaries for endpoint-safe merged groups.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - selectedGroupIndex, omittedGroupIndex (integer column vectors)
-%**************************************************************************
-% UNITS
-%   - Position and distance are degrees.
-%**************************************************************************
 groupCount = numel(groupGeometry_deg);
 intersectsCorridor = false(groupCount, 1);
 distanceToCorridor_deg = Inf(groupCount, 1);
@@ -513,26 +403,9 @@ end
 
 function neighborIndex = nearestDetourGroupIndices( ...
         seedGroupIndex, groupGeometry_deg, signedSide)
-%% Section 0: Header & Readme
-% SYNTAX
-%   neighborIndex = nearestDetourGroupIndices( ...
-%       seedGroupIndex, groupGeometry_deg, signedSide)
-%**************************************************************************
 % PURPOSE
 %   - Select at most two nearby groups, preferring one on each side of the
 %     start-goal corridor so both detour directions remain represented.
-%**************************************************************************
-% INPUTS
-%   - seedGroupIndex (positive integer scalar)
-%   - groupGeometry_deg (G-by-1 cell column)
-%   - signedSide (G-by-1 numeric vector)
-%**************************************************************************
-% OUTPUTS
-%   - neighborIndex (zero-to-two integer column vector)
-%**************************************************************************
-% UNITS
-%   - Group geometry and distances are degrees.
-%**************************************************************************
 groupCount = numel(groupGeometry_deg);
 candidateIndex = setdiff((1:groupCount).', seedGroupIndex, "stable");
 if isempty(candidateIndex)
@@ -576,25 +449,9 @@ end
 
 function intersectsRoute = boundaryIntersectsRoute( ...
         boundary_deg, startPosition_deg, goalPosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   intersectsRoute = boundaryIntersectsRoute( ...
-%       boundary_deg, startPosition_deg, goalPosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Identify merged groups whose protected boundary intersects the direct
 %     start-goal segment.
-%**************************************************************************
-% INPUTS
-%   - boundary_deg (N-by-2 numeric matrix)
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - intersectsRoute (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 edgeStart_deg = boundary_deg;
 edgeEnd_deg = boundary_deg([2:end 1], :);
 routeVector_deg = goalPosition_deg - startPosition_deg;
@@ -648,27 +505,8 @@ end
 function [groups_deg, memberships, complete] = ...
         mergeNearestObstacleGroups(groups_deg, memberships, ...
         startPosition_deg, goalPosition_deg, maximumGroupCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [groups_deg, memberships, complete] = ...
-%       mergeNearestObstacleGroups(groups_deg, memberships, ...
-%       startPosition_deg, goalPosition_deg, maximumGroupCount)
-%**************************************************************************
 % PURPOSE
 %   - Repeatedly choose the endpoint-safe hull merge adding the least area.
-%**************************************************************************
-% INPUTS
-%   - groups_deg, memberships (cell columns)
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - maximumGroupCount (positive integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - groups_deg, memberships (reduced cell columns)
-%   - complete (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and merge cost is square degrees.
-%**************************************************************************
 while numel(groups_deg) > maximumGroupCount
     bestFirstIndex = 0;
     bestSecondIndex = 0;
@@ -714,22 +552,8 @@ complete = numel(groups_deg) <= maximumGroupCount;
 end
 
 function [boundary_deg, isValid] = convexBoundary(position_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [boundary_deg, isValid] = convexBoundary(position_deg)
-%**************************************************************************
 % PURPOSE
 %   - Return a duplicate-free convex boundary for conservative merging.
-%**************************************************************************
-% INPUTS
-%   - position_deg (N-by-2 numeric matrix)
-%**************************************************************************
-% OUTPUTS
-%   - boundary_deg (M-by-2 numeric matrix), isValid (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 position_deg = unique(double(position_deg), "rows", "stable");
 isValid = size(position_deg, 1) >= 3 && ...
     rank(position_deg - mean(position_deg, 1)) >= 2;
@@ -743,25 +567,9 @@ end
 
 function containsEndpoint = boundaryContainsEndpoint( ...
         boundary_deg, startPosition_deg, goalPosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   containsEndpoint = boundaryContainsEndpoint( ...
-%       boundary_deg, startPosition_deg, goalPosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Reject a conservative hull when its interior or boundary covers an
 %     endpoint that the original protected obstacles leave available.
-%**************************************************************************
-% INPUTS
-%   - boundary_deg (N-by-2 numeric matrix)
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - containsEndpoint (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 [startInside, startOnBoundary] = inpolygon( ...
     startPosition_deg(1), startPosition_deg(2), ...
     boundary_deg(:, 1), boundary_deg(:, 2));
@@ -773,23 +581,8 @@ containsEndpoint = startInside || startOnBoundary || ...
 end
 
 function graph = emptyVisibilityGraph()
-%% Section 0: Header & Readme
-% SYNTAX
-%   graph = emptyVisibilityGraph()
-%**************************************************************************
 % PURPOSE
 %   - Define the stable schema for one snapshot visibility graph.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - graph (scalar struct)
-%       Empty graph record used for success and failure paths.
-%**************************************************************************
-% UNITS
-%   - Position and path cost fields are degrees; Time_s is seconds.
-%**************************************************************************
 graph = struct( ...
     "Success", false, ...
     "Message", "Visibility graph was not evaluated.", ...
@@ -821,6 +614,9 @@ graph = struct( ...
     "PathPosition_deg", zeros(0, 2), ...
     "PathEdgeType", strings(0, 1), ...
     "PathCost_deg", Inf, ...
+    "AlternativePathNodeIndex", zeros(0, 1), ...
+    "AlternativePathPosition_deg", zeros(0, 2), ...
+    "AlternativePathCost_deg", Inf, ...
     "PathEdgeCount", 0, ...
     "PathVisibilityEdgeCount", 0, ...
     "PathBoundaryEdgeCount", 0, ...
@@ -837,34 +633,8 @@ function graph = buildVisibilityGraphAtTime( ...
         candidateRegionIndex, candidateBoundaryGeometry, ...
         globalCandidateIndex, ...
         startPosition_deg, goalPosition_deg, snapshotTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   graph = buildVisibilityGraphAtTime( ...
-%       obstacleField, candidatePosition_deg, candidateTypes, ...
-%       candidateObstacleIndex, candidateSampleIndex, ...
-%       candidateRegionIndex, candidateBoundaryGeometry, ...
-%       globalCandidateIndex, startPosition_deg, goalPosition_deg, ...
-%       snapshotTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Connect visible nodes and compatible same-boundary neighbors.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar packed obstacle field)
-%   - candidatePosition_deg (N-by-2), candidateTypes (N-by-1 string)
-%   - candidateObstacleIndex, candidateSampleIndex, candidateRegionIndex,
-%       globalCandidateIndex (N-by-1 provenance vectors)
-%   - candidateBoundaryGeometry (N-by-1 cell array)
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%   - snapshotTime_s (numeric scalar), options (scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - graph (scalar struct)
-%       Graph matrices, selected route, and construction counts.
-%**************************************************************************
-% UNITS
-%   - Position and edge costs are degrees; time is seconds.
-%**************************************************************************
 graph = emptyVisibilityGraph();
 graph.Time_s = snapshotTime_s;
 candidateCount = size(candidatePosition_deg, 1);
@@ -972,6 +742,13 @@ end
     shortestVisibilityGraphPath(edgeCost_deg, 1, 2);
 candidateActiveMask = true(candidateCount, 1);
 if ~isempty(baselinePathNodeIndex) && isfinite(baselinePathCost_deg)
+    baselineAlternativePathNodeIndex = zeros(0, 1);
+    if options.BuildAlternativeTopologyRoute
+        [baselineAlternativePathNodeIndex, ~, ~] = ...
+            distinctAlternativeVisibilityRoute( ...
+            edgeCost_deg, baselinePathNodeIndex, edgeType, edgeRoute_deg, ...
+            obstacleField, snapshotTime_s, options);
+    end
     startOffset_deg = candidatePosition_deg - startPosition_deg;
     goalOffset_deg = candidatePosition_deg - goalPosition_deg;
     candidateLowerBound_deg = hypot( ...
@@ -980,9 +757,11 @@ if ~isempty(baselinePathNodeIndex) && isfinite(baselinePathCost_deg)
     costTolerance_deg = 1e-9 * max(1, baselinePathCost_deg);
     candidateActiveMask = candidateLowerBound_deg <= ...
         baselinePathCost_deg + costTolerance_deg;
-    baselineCandidateNode = baselinePathNodeIndex( ...
-        baselinePathNodeIndex > 2) - 2;
-    candidateActiveMask(baselineCandidateNode) = true;
+    retainedPathNodeIndex = unique([baselinePathNodeIndex; ...
+        baselineAlternativePathNodeIndex], "stable");
+    retainedCandidateNode = retainedPathNodeIndex( ...
+        retainedPathNodeIndex > 2) - 2;
+    candidateActiveMask(retainedCandidateNode) = true;
     inactiveNodeIndex = find(~candidateActiveMask) + 2;
     edgeCost_deg(inactiveNodeIndex, :) = Inf;
     edgeCost_deg(:, inactiveNodeIndex) = Inf;
@@ -1052,6 +831,15 @@ end
 pathStep_deg = diff(pathPosition_deg, 1, 1);
 pathCost_deg = sum(hypot(pathStep_deg(:, 1), pathStep_deg(:, 2)));
 pathEdgeCount = numel(pathNodeIndex) - 1;
+alternativePathNodeIndex = zeros(0, 1);
+alternativePathPosition_deg = zeros(0, 2);
+alternativePathCost_deg = Inf;
+if options.BuildAlternativeTopologyRoute
+    [alternativePathNodeIndex, alternativePathPosition_deg, ...
+        alternativePathCost_deg] = distinctAlternativeVisibilityRoute( ...
+        edgeCost_deg, pathNodeIndex, edgeType, edgeRoute_deg, ...
+        obstacleField, snapshotTime_s, options);
+end
 graph.Success = true;
 graph.Message = "Global visibility-graph Dijkstra connected start to goal.";
 graph.PathNodeIndex = pathNodeIndex;
@@ -1061,6 +849,9 @@ graph.PathPosition_deg = removeConsecutiveDuplicatePoints( ...
     pathPosition_deg);
 graph.PathEdgeType = pathEdgeType;
 graph.PathCost_deg = pathCost_deg;
+graph.AlternativePathNodeIndex = alternativePathNodeIndex;
+graph.AlternativePathPosition_deg = alternativePathPosition_deg;
+graph.AlternativePathCost_deg = alternativePathCost_deg;
 graph.PathEdgeCount = pathEdgeCount;
 graph.PathVisibilityEdgeCount = nnz(pathEdgeType == "visibility");
 graph.PathBoundaryEdgeCount = nnz(pathEdgeType == "boundary");
@@ -1068,31 +859,10 @@ end
 
 function [compactRoute_deg, success] = compactSelectedRoute( ...
         sourceRoute_deg, obstacleField, sampleTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [compactRoute_deg, success] = compactSelectedRoute( ...
-%       sourceRoute_deg, obstacleField, sampleTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Remove redundant vertices from only the graph's selected route.
 %   - Batch every forward visibility query from the current vertex so
 %     polygon sampling density does not become unnecessary motion turns.
-%**************************************************************************
-% INPUTS
-%   - sourceRoute_deg (N-by-2 numeric matrix)
-%       Collision-checked route assembled from graph edges.
-%   - obstacleField (scalar packed obstacle field)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar resolved search-options struct)
-%**************************************************************************
-% OUTPUTS
-%   - compactRoute_deg (M-by-2 numeric matrix)
-%   - success (logical scalar)
-%       True only when every retained segment is independently visible.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 sourceRoute_deg = removeConsecutiveDuplicatePoints(sourceRoute_deg);
 compactRoute_deg = sourceRoute_deg;
 success = false;
@@ -1170,29 +940,73 @@ success = routeSegmentsAreVisible( ...
     compactRoute_deg, obstacleField, sampleTime_s, options);
 end
 
+function [alternativeNodeIndex, alternativeRoute_deg, ...
+        alternativeCost_deg] = distinctAlternativeVisibilityRoute( ...
+        edgeCost_deg, primaryNodeIndex, edgeType, edgeRoute_deg, ...
+        obstacleField, snapshotTime_s, options)
+% PURPOSE
+%   - Keep the cheapest distinct route found by bounded edge suppression.
+alternativeNodeIndex = zeros(0, 1);
+alternativeRoute_deg = zeros(0, 2);
+alternativeCost_deg = Inf;
+primaryEdgeCount = numel(primaryNodeIndex) - 1;
+if primaryEdgeCount <= 1
+    return;
+end
+
+[primaryRoute_deg, ~] = assembleGraphRoute( ...
+    primaryNodeIndex, edgeType, edgeRoute_deg);
+[compactPrimaryRoute_deg, compactPrimaryIsValid] = ...
+    compactSelectedRoute( ...
+    primaryRoute_deg, obstacleField, snapshotTime_s, options);
+if compactPrimaryIsValid
+    primaryRoute_deg = compactPrimaryRoute_deg;
+end
+primaryRoute_deg = removeConsecutiveDuplicatePoints(primaryRoute_deg);
+
+maximumSuppressedEdgeCount = 16;
+suppressedEdgeIndex = unique(round(linspace(1, primaryEdgeCount, ...
+    min(primaryEdgeCount, maximumSuppressedEdgeCount))));
+for suppressionIndex = reshape(suppressedEdgeIndex, 1, [])
+    trialEdgeCost_deg = edgeCost_deg;
+    firstNodeIndex = primaryNodeIndex(suppressionIndex);
+    secondNodeIndex = primaryNodeIndex(suppressionIndex + 1);
+    trialEdgeCost_deg(firstNodeIndex, secondNodeIndex) = Inf;
+    trialEdgeCost_deg(secondNodeIndex, firstNodeIndex) = Inf;
+    [trialNodeIndex, ~] = shortestVisibilityGraphPath( ...
+        trialEdgeCost_deg, primaryNodeIndex(1), primaryNodeIndex(end));
+    if isempty(trialNodeIndex)
+        continue;
+    end
+    [trialRoute_deg, ~] = assembleGraphRoute( ...
+        trialNodeIndex, edgeType, edgeRoute_deg);
+    [compactTrialRoute_deg, compactTrialIsValid] = compactSelectedRoute( ...
+        trialRoute_deg, obstacleField, snapshotTime_s, options);
+    if compactTrialIsValid
+        trialRoute_deg = compactTrialRoute_deg;
+    end
+    trialRoute_deg = removeConsecutiveDuplicatePoints(trialRoute_deg);
+    routesMatch = isequal(size(trialRoute_deg), size(primaryRoute_deg)) && ...
+        max(abs(trialRoute_deg - primaryRoute_deg), [], "all") <= 1e-10;
+    if routesMatch
+        continue;
+    end
+    routeStep_deg = diff(trialRoute_deg, 1, 1);
+    trialCost_deg = sum(hypot(routeStep_deg(:, 1), routeStep_deg(:, 2)));
+    if trialCost_deg < alternativeCost_deg - 1e-10
+        alternativeNodeIndex = trialNodeIndex;
+        alternativeRoute_deg = trialRoute_deg;
+        alternativeCost_deg = trialCost_deg;
+    end
+end
+end
+
 function retainedPairIndex = sparseMergedCandidatePairs( ...
         pairIndex, candidatePosition_deg, candidateGroupIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   retainedPairIndex = sparseMergedCandidatePairs( ...
-%       pairIndex, candidatePosition_deg, candidateGroupIndex)
-%**************************************************************************
 % PURPOSE
 %   - Bound the cross-group visibility work in a merged dense-scene graph.
 %   - Preserve local alternatives and at least two candidate connections
 %     between every represented group pair before collision testing.
-%**************************************************************************
-% INPUTS
-%   - pairIndex (P-by-2 positive integer matrix)
-%   - candidatePosition_deg (N-by-2 numeric matrix)
-%   - candidateGroupIndex (N-by-1 positive integer vector)
-%**************************************************************************
-% OUTPUTS
-%   - retainedPairIndex (Q-by-2 positive integer matrix)
-%**************************************************************************
-% UNITS
-%   - Candidate positions and pair distances are degrees.
-%**************************************************************************
 if isempty(pairIndex)
     retainedPairIndex = pairIndex;
     return;
@@ -1245,28 +1059,10 @@ end
 
 function conservativeBoundary_deg = conservativeMergedBoundary( ...
         sourceBoundary_deg, maximumVertexCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   conservativeBoundary_deg = conservativeMergedBoundary( ...
-%       sourceBoundary_deg, maximumVertexCount)
-%**************************************************************************
 % PURPOSE
 %   - Bound merged-graph vertex count with a convex outer approximation.
 %   - Preserve every source point inside the returned polygon so geometric
 %     reduction cannot clip a protected obstacle corner.
-%**************************************************************************
-% INPUTS
-%   - sourceBoundary_deg (N-by-2 numeric matrix)
-%       Convex protected boundary.
-%   - maximumVertexCount (integer scalar at least four)
-%**************************************************************************
-% OUTPUTS
-%   - conservativeBoundary_deg (M-by-2 numeric matrix)
-%       Source boundary or a containing support polygon.
-%**************************************************************************
-% UNITS
-%   - Position is degrees; support directions are dimensionless.
-%**************************************************************************
 conservativeBoundary_deg = sourceBoundary_deg;
 if size(sourceBoundary_deg, 1) <= maximumVertexCount
     return;
@@ -1305,26 +1101,8 @@ end
 
 function [routePosition_deg, routeEdgeType] = assembleGraphRoute( ...
         routeNodeIndex, edgeType, edgeRoute_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [routePosition_deg, routeEdgeType] = assembleGraphRoute( ...
-%       routeNodeIndex, edgeType, edgeRoute_deg)
-%**************************************************************************
 % PURPOSE
 %   - Expand one node path into its routed geometry and edge labels.
-%**************************************************************************
-% INPUTS
-%   - routeNodeIndex (N-by-1 node-index vector)
-%   - edgeType (square string matrix)
-%   - edgeRoute_deg (square cell matrix of routed positions)
-%**************************************************************************
-% OUTPUTS
-%   - routePosition_deg (M-by-2 numeric matrix)
-%   - routeEdgeType (N-1-by-1 string vector)
-%**************************************************************************
-% UNITS
-%   - Position is degrees; edge labels are dimensionless.
-%**************************************************************************
 edgeCount = numel(routeNodeIndex) - 1;
 routeEdgeType = strings(edgeCount, 1);
 routePosition_deg = zeros(0, 2);
@@ -1352,32 +1130,8 @@ function [edgeCost_deg, edgeType, edgeRoute_deg, testedMask, ...
         edgeCost_deg, edgeType, edgeRoute_deg, testedMask, blockedMask, ...
         nodePosition_deg, nodePairIndex, obstacleField, snapshotTime_s, ...
         options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [edgeCost_deg, edgeType, edgeRoute_deg, testedMask, ...
-%       blockedMask, addedEdgeCount] = addVisibilityEdgesIfClear( ...
-%       edgeCost_deg, edgeType, edgeRoute_deg, testedMask, blockedMask, ...
-%       nodePosition_deg, nodePairIndex, obstacleField, snapshotTime_s, ...
-%       options)
-%**************************************************************************
 % PURPOSE
 %   - Batch straight-edge collision queries at one resolved snapshot time.
-%**************************************************************************
-% INPUTS
-%   - edgeCost_deg, edgeType, edgeRoute_deg (square graph matrices)
-%   - testedMask, blockedMask (square logical matrices)
-%   - nodePosition_deg (N-by-2 numeric matrix)
-%   - nodePairIndex (M-by-2 positive integer matrix)
-%   - obstacleField (scalar packed field), snapshotTime_s (numeric scalar)
-%   - options (scalar resolved options struct)
-%**************************************************************************
-% OUTPUTS
-%   - Updated graph matrices and visibility masks.
-%   - addedEdgeCount (nonnegative integer scalar)
-%**************************************************************************
-% UNITS
-%   - Position and cost are degrees; time is seconds.
-%**************************************************************************
 addedEdgeCount = 0;
 if isempty(nodePairIndex)
     return;
@@ -1430,24 +1184,8 @@ end
 
 function candidateArc_deg = candidateBoundaryArcPositions( ...
         region_deg, candidatePosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   candidateArc_deg = candidateBoundaryArcPositions( ...
-%       region_deg, candidatePosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Project graph candidates onto one cyclic boundary coordinate.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%   - candidatePosition_deg (M-by-2 numeric matrix)
-%**************************************************************************
-% OUTPUTS
-%   - candidateArc_deg (M-by-1 numeric vector)
-%**************************************************************************
-% UNITS
-%   - Positions and boundary arc coordinates are degrees.
-%**************************************************************************
 if size(region_deg, 1) > 1 && hypot( ...
         region_deg(end, 1) - region_deg(1, 1), ...
         region_deg(end, 2) - region_deg(1, 2)) <= 1e-10
@@ -1469,26 +1207,8 @@ end
 
 function [pathNodeIndex, pathCost] = shortestVisibilityGraphPath( ...
         edgeCost, startNodeIndex, goalNodeIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [pathNodeIndex, pathCost] = shortestVisibilityGraphPath( ...
-%       edgeCost, startNodeIndex, goalNodeIndex)
-%**************************************************************************
 % PURPOSE
 %   - Run deterministic Dijkstra on a dense snapshot graph.
-%**************************************************************************
-% INPUTS
-%   - edgeCost (N-by-N numeric matrix)
-%       Symmetric nonnegative costs with Inf for absent edges.
-%   - startNodeIndex, goalNodeIndex (positive integer scalars)
-%**************************************************************************
-% OUTPUTS
-%   - pathNodeIndex (M-by-1 numeric vector)
-%   - pathCost (nonnegative numeric scalar or Inf)
-%**************************************************************************
-% UNITS
-%   - Path cost inherits the edge-cost units.
-%**************************************************************************
 nodeCount = size(edgeCost, 1);
 costToReach = inf(nodeCount, 1);
 hopCount = inf(nodeCount, 1);
@@ -1545,24 +1265,8 @@ end
 
 function distance_deg = pointToSegmentDistance( ...
         point_deg, firstPosition_deg, secondPosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   distance_deg = pointToSegmentDistance( ...
-%       point_deg, firstPosition_deg, secondPosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Measure point-to-closed-segment Euclidean distance.
-%**************************************************************************
-% INPUTS
-%   - point_deg (N-by-2 numeric matrix)
-%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - distance_deg (N-by-1 numeric vector)
-%**************************************************************************
-% UNITS
-%   - Positions and distances are degrees.
-%**************************************************************************
 segment_deg = secondPosition_deg - firstPosition_deg;
 segmentLengthSquared_deg2 = sum(segment_deg.^2);
 if segmentLengthSquared_deg2 <= eps
@@ -1580,26 +1284,8 @@ end
 
 function visible = routeSegmentsAreVisible( ...
         route_deg, obstacleField, sampleTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   visible = routeSegmentsAreVisible( ...
-%       route_deg, obstacleField, sampleTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Require every consecutive segment of a route to be visible.
-%**************************************************************************
-% INPUTS
-%   - route_deg (N-by-2 numeric matrix)
-%   - obstacleField (scalar packed obstacle field)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - visible (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 if size(route_deg, 1) == 2
     visible = lineVisibleAtTime(obstacleField, ...
         route_deg(1, :), route_deg(2, :), sampleTime_s, options);
@@ -1614,27 +1300,8 @@ end
 function visible = lineVisibleAtTime( ...
         obstacleField, firstPosition_deg, secondPosition_deg, ...
         sampleTime_s, ~)
-%% Section 0: Header & Readme
-% SYNTAX
-%   visible = lineVisibleAtTime(obstacleField, firstPosition_deg, ...
-%       secondPosition_deg, sampleTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Test one open segment using exact topology intervals.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar packed obstacle field)
-%   - firstPosition_deg, secondPosition_deg (1-by-2 numeric rows)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar struct)
-%       Reserved for the shared visibility-call signature.
-%**************************************************************************
-% OUTPUTS
-%   - visible (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 visible = linesVisibleAtTime(obstacleField, firstPosition_deg, ...
     secondPosition_deg, sampleTime_s, struct());
 end
@@ -1642,28 +1309,9 @@ end
 function visible = linesVisibleAtTime( ...
         obstacleField, firstPosition_deg, secondPosition_deg, ...
         sampleTime_s, ~)
-%% Section 0: Header & Readme
-% SYNTAX
-%   visible = linesVisibleAtTime(obstacleField, firstPosition_deg, ...
-%       secondPosition_deg, sampleTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Test independent open segments through the maintained continuous
 %     moving-obstacle collision kernel.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar packed obstacle field)
-%   - firstPosition_deg, secondPosition_deg (N-by-2 numeric matrices)
-%   - sampleTime_s (finite numeric scalar)
-%   - options (scalar struct)
-%       Reserved for the shared visibility-call signature.
-%**************************************************************************
-% OUTPUTS
-%   - visible (N-by-1 logical vector)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 segmentCount = size(firstPosition_deg, 1);
 visible = true(segmentCount, 1);
 if segmentCount == 0
@@ -1692,27 +1340,8 @@ end
 function [route_deg, edgeCount, routeDistance_deg] = ...
         forwardBoundaryRoute(region_deg, startCandidate_deg, ...
         goalCandidate_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [route_deg, edgeCount, routeDistance_deg] = ...
-%       forwardBoundaryRoute(region_deg, startCandidate_deg, ...
-%       goalCandidate_deg)
-%**************************************************************************
 % PURPOSE
 %   - Walk a polygon ring in its stored direction between contacts.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%   - startCandidate_deg, goalCandidate_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - route_deg (M-by-2 numeric matrix)
-%   - edgeCount (nonnegative integer scalar)
-%   - routeDistance_deg (nonnegative numeric scalar)
-%**************************************************************************
-% UNITS
-%   - Position and route distance are degrees.
-%**************************************************************************
 if size(region_deg, 1) > 1 && hypot( ...
         region_deg(end, 1) - region_deg(1, 1), ...
         region_deg(end, 2) - region_deg(1, 2)) <= 1e-10
@@ -1761,26 +1390,8 @@ end
 function arcPosition_deg = boundaryArcPosition( ...
         region_deg, edgeLength_deg, vertexArc_deg, point_deg, ...
         perimeter_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   arcPosition_deg = boundaryArcPosition(region_deg, edgeLength_deg, ...
-%       vertexArc_deg, point_deg, perimeter_deg)
-%**************************************************************************
 % PURPOSE
 %   - Project a boundary point to the closest edge and cyclic arc length.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%   - edgeLength_deg, vertexArc_deg (N-by-1 numeric vectors)
-%   - point_deg (1-by-2 numeric row)
-%   - perimeter_deg (positive numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - arcPosition_deg (numeric scalar)
-%**************************************************************************
-% UNITS
-%   - Positions, lengths, and arc coordinates are degrees.
-%**************************************************************************
 nextRegion_deg = region_deg([2:end 1], :);
 edgeVector_deg = nextRegion_deg - region_deg;
 edgeLengthSquared_deg2 = sum(edgeVector_deg.^2, 2);
@@ -1797,22 +1408,8 @@ arcPosition_deg = mod(arcPosition_deg, perimeter_deg);
 end
 
 function route_deg = removeConsecutiveDuplicatePoints(route_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   route_deg = removeConsecutiveDuplicatePoints(route_deg)
-%**************************************************************************
 % PURPOSE
 %   - Remove zero-length steps while retaining geometric turns.
-%**************************************************************************
-% INPUTS
-%   - route_deg (N-by-2 numeric matrix)
-%**************************************************************************
-% OUTPUTS
-%   - route_deg (M-by-2 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Positions are degrees.
-%**************************************************************************
 if size(route_deg, 1) < 2
     return;
 end

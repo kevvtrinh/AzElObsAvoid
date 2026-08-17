@@ -33,8 +33,7 @@ end
 
 %% Section 2: Create Obstacles
 
-% Keep the physical request identical when the example-only jerk switch is
-% toggled so paired feasibility and timing comparisons remain meaningful.
+% Keep the physical request independent of solver initialization choices.
 missionEndTime_s = 180;
 safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ ...

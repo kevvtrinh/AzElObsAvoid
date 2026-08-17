@@ -381,23 +381,8 @@ end
 %% Section 4: Local Functions
 
 function packedObstacle = emptyPackedObstacle()
-%% Section 0: Header & Readme
-% SYNTAX
-%   packedObstacle = emptyPackedObstacle()
-%**************************************************************************
 % PURPOSE
 %   - Define the single source of truth for one packed obstacle record.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - packedObstacle (scalar struct)
-%       Empty packed obstacle record used for preallocation.
-%**************************************************************************
-% UNITS
-%   - Unit-bearing fields identify seconds or degrees in their names.
-%**************************************************************************
 %
 % Serves both as the preallocation template (fixing field order for
 % struct-array assignment) and as documentation of every field. Offset
@@ -425,23 +410,8 @@ packedObstacle = struct( ...
 end
 
 function options = defaultAzElTimeObstacleFieldOptions()
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = defaultAzElTimeObstacleFieldOptions()
-%**************************************************************************
 % PURPOSE
 %   - Keep obstacle-field defaults in one source of truth.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully populated public options structure.
-%**************************************************************************
-% UNITS
-%   - ReferenceTime is a UTC datetime.
-%**************************************************************************
 options = struct( ...
     "ReferenceTime", [], ...
     "Verbose", false);

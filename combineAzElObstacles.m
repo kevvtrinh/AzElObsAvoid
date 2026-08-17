@@ -105,23 +105,8 @@ end
 %% Section 4: Local Functions
 
 function azElObstacles = emptyCanonicalAzElObstacles()
-%% Section 0: Header & Readme
-% SYNTAX
-%   azElObstacles = emptyCanonicalAzElObstacles()
-%**************************************************************************
 % PURPOSE
 %   - Define canonical obstacle field order for an empty collection.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - azElObstacles (zero-by-one structure array)
-%       Empty canonical obstacle records with stable field order.
-%**************************************************************************
-% UNITS
-%   - Time fields are seconds and coordinates are degrees.
-%**************************************************************************
 template = struct( ...
     "targetName", "", ...
     "time_s", zeros(0, 1), ...

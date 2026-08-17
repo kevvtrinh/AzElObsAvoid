@@ -4,9 +4,9 @@ function result = planAzElMovingTargetIntercept( ...
 % SYNTAX
 %   options = planAzElMovingTargetIntercept()
 %   result = planAzElMovingTargetIntercept( ...
-%       initialState, targetMotion, limits, options)
+%       initialState, targetMotion, limits, optionOverrides)
 %   result = planAzElMovingTargetIntercept( ...
-%       obstacles, initialState, targetMotion, limits, options)
+%       obstacles, initialState, targetMotion, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Resolve a sampled or constant-velocity target into the earliest
@@ -29,7 +29,7 @@ function result = planAzElMovingTargetIntercept( ...
 %       extrapolated and must span initialState.time_s through interception.
 %   - limits (scalar struct)
 %       Limits accepted by planAzElMotion.
-%   - options (scalar struct, optional)
+%   - optionOverrides (scalar struct, optional; default struct())
 %       .InterceptMode             "earliestArrival" or "specifiedTime"
 %       .SpecifiedInterceptTime_s  required for specifiedTime
 %       .MaximumSearchDuration_s   earliest-intercept horizon (60)
@@ -88,6 +88,7 @@ if nargin == 0
     result = defaultOptions;
     return;
 end
+interceptPlanningTimer = tic;
 
 % The original obstacle-free interface placed initialState first. Detect
 % that stable record shape before validating either form so existing
@@ -196,11 +197,18 @@ goalState = struct( ...
 
 %% Section 3: Run The Maintained Planner
 
+searchDiagnostics.ElapsedPlanningTime_s = toc(interceptPlanningTimer);
 plannerOptions = options.PlannerOptions;
 plannerOptions.GoalTimeMode = "fixedArrival";
+if searchDiagnostics.CandidatePlannerGoalTimeMode == ...
+        "analyticresttorestthenfixedarrival"
+    plannerOptions = requireMeshRefinementPasses(plannerOptions, 2);
+end
 result = planAzElMotion(obstacles, initialState, goalState, limits, ...
     plannerOptions);
 plannerSucceeded = result.Success;
+plannerValidation = result.Validation;
+plannerSearchDiagnostics = result.SearchDiagnostics;
 
 trackTime_s = targetTrackTimes(targetMotion, initialState.time_s, ...
     interceptTime_s, options.TargetTrackSampleCount);
@@ -281,7 +289,18 @@ elseif ~searchDiagnostics.Success
     result.TerminationReason = searchDiagnostics.TerminationReason;
     result.Message = searchDiagnostics.Message;
 elseif ~interceptPassed
+    if plannerSucceeded
+        result.TerminationReason = "interceptValidationFailed";
+    end
     result.Message = string(result.Message) + " " + validationMessage;
+end
+if ~interceptPassed
+    result.Validation.Passed = false;
+    result.Validation.Message = validationMessage + " " + ...
+        string(result.Validation.Message);
+    result.Validation.Issues = unique([ ...
+        string(result.Validation.Issues(:)); "interceptContract"], ...
+        "stable");
 end
 
 %% Section 5: Assemble Intercept Diagnostics
@@ -301,40 +320,36 @@ if targetLeftFrameBeforeIntercept
     result.TargetPositionAtIntercept_deg = [NaN NaN];
     result.TargetVelocityAtIntercept_deg_s = [NaN NaN];
 end
-result.PlannerSearchDiagnostics = result.SearchDiagnostics;
-result.SearchDiagnostics = searchDiagnostics;
+result.PlannerValidation = plannerValidation;
+result.PlannerSearchDiagnostics = plannerSearchDiagnostics;
+result.InterceptSearchDiagnostics = searchDiagnostics;
+result.SearchDiagnostics = mergeSearchDiagnostics( ...
+    searchDiagnostics, plannerSearchDiagnostics);
+result.SearchDiagnostics.Success = result.Success;
+result.SearchDiagnostics.Message = result.Message;
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.InterceptValidation = interceptValidation;
 result.TargetTrackTime_s = trackTime_s;
 result.TargetTrackPosition_deg = trackPosition_deg;
 result.InterceptOptions = options;
+result.FinalPlannerElapsedPlanningTime_s = result.ElapsedPlanningTime_s;
+result.ElapsedPlanningTime_s = toc(interceptPlanningTimer);
+result.SearchDiagnostics.FinalPlannerElapsedPlanningTime_s = ...
+    result.FinalPlannerElapsedPlanningTime_s;
+result.SearchDiagnostics.ElapsedPlanningTime_s = ...
+    result.ElapsedPlanningTime_s;
 end
 
 %% Section 6: Local Functions
 
 function options = resolveInterceptOptions(defaultOptions, overrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolveInterceptOptions(defaultOptions, overrides)
-%**************************************************************************
 % PURPOSE
 %   - Merge and validate public moving-target intercept controls.
-%**************************************************************************
-% INPUTS
-%   - defaultOptions (scalar struct)
-%   - overrides (scalar struct)
-%       Partial user overrides; unknown fields are ignored with one warning.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved and normalized intercept controls.
-%**************************************************************************
-% UNITS
-%   - Time-valued fields are seconds; counts are dimensionless.
-%**************************************************************************
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("planAzElMovingTargetIntercept:InvalidOptions", ...
         "options must be a scalar struct.");
 end
+
 [options, unknownFields] = azElInternal.resolveOptions( ...
     defaultOptions, overrides);
 if ~isempty(unknownFields)
@@ -371,30 +386,24 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
 end
 end
 
+function combined = mergeSearchDiagnostics(interceptSearch, plannerSearch)
+% PURPOSE
+%   - Keep intercept fields while adding the uniform planner diagnostics.
+combined = interceptSearch;
+plannerFieldNames = fieldnames(plannerSearch);
+for fieldIndex = 1:numel(plannerFieldNames)
+    fieldName = plannerFieldNames{fieldIndex};
+    if ~isfield(combined, fieldName)
+        combined.(fieldName) = plannerSearch.(fieldName);
+    end
+end
+end
+
 function [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
         targetMotion, startTime_s, requestedEndTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [frameExitTime_s, targetLeavesFrame] = targetFrameExitTime( ...
-%       targetMotion, startTime_s, requestedEndTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Find the first time the target leaves the configured azimuth interval
 %     or the physical elevation interval.
-%**************************************************************************
-% INPUTS
-%   - targetMotion (normalized scalar struct)
-%   - startTime_s, requestedEndTime_s (finite numeric scalars)
-%   - options (resolved intercept-options struct)
-%**************************************************************************
-% OUTPUTS
-%   - frameExitTime_s (numeric scalar)
-%       First boundary-crossing time, or Inf when the target stays in frame.
-%   - targetLeavesFrame (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Time is seconds and frame coordinates are degrees.
-%**************************************************************************
 plannerDefaults = planAzElMotion();
 azimuthInterval_deg = plannerDefaults.AzimuthInterval_deg;
 if isfield(options.PlannerOptions, "AzimuthInterval_deg") && ...
@@ -459,24 +468,8 @@ frameExitTime_s = lowerTime_s;
 end
 
 function initialState = validateInterceptInitialState(initialState)
-%% Section 0: Header & Readme
-% SYNTAX
-%   initialState = validateInterceptInitialState(initialState)
-%**************************************************************************
 % PURPOSE
 %   - Validate and normalize the state required by intercept planning.
-%**************************************************************************
-% INPUTS
-%   - initialState (scalar struct)
-%       Requires scalar time_s and two-element position_deg.
-%**************************************************************************
-% OUTPUTS
-%   - initialState (scalar struct)
-%       Input record with normalized double time and row position.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 if ~isstruct(initialState) || ~isscalar(initialState) || ...
         ~all(isfield(initialState, ["time_s" "position_deg"]))
     error("planAzElMovingTargetIntercept:InvalidInitialState", ...
@@ -492,24 +485,8 @@ initialState.position_deg = reshape( ...
 end
 
 function targetMotion = validateTargetMotion(targetMotion)
-%% Section 0: Header & Readme
-% SYNTAX
-%   targetMotion = validateTargetMotion(targetMotion)
-%**************************************************************************
 % PURPOSE
 %   - Normalize sampled trajectories and the compatible linear model.
-%**************************************************************************
-% INPUTS
-%   - targetMotion (scalar struct)
-%       Sampled time_s/position_deg or constant-velocity reference fields.
-%**************************************************************************
-% OUTPUTS
-%   - targetMotion (scalar struct)
-%       Normalized model with ModelType and interpolation provenance.
-%**************************************************************************
-% UNITS
-%   - Time is seconds; position is degrees; velocity is deg/s.
-%**************************************************************************
 if ~isstruct(targetMotion) || ~isscalar(targetMotion)
     error("planAzElMovingTargetIntercept:InvalidTargetMotion", ...
         "targetMotion must be a scalar struct.");
@@ -583,28 +560,8 @@ end
 
 function [position_deg, velocity_deg_s] = evaluateTargetMotion( ...
         targetMotion, queryTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   position_deg = evaluateTargetMotion(targetMotion, queryTime_s)
-%   [position_deg, velocity_deg_s] = ...
-%       evaluateTargetMotion(targetMotion, queryTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Evaluate target position and instantaneous velocity without extrapolating.
-%**************************************************************************
-% INPUTS
-%   - targetMotion (normalized scalar struct)
-%       Sampled trajectory or constant-velocity model.
-%   - queryTime_s (finite numeric array)
-%       Times to evaluate.
-%**************************************************************************
-% OUTPUTS
-%   - position_deg (N-by-2 numeric matrix)
-%   - velocity_deg_s (N-by-2 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Time is seconds; position is degrees; velocity is deg/s.
-%**************************************************************************
 validateattributes(queryTime_s, {'numeric'}, {'real', 'finite'});
 queryTime_s = double(queryTime_s(:));
 if targetMotion.ModelType == "constantVelocity"
@@ -652,24 +609,8 @@ end
 
 function derivativePolynomial = differentiatePiecewisePolynomial( ...
         polynomial)
-%% Section 0: Header & Readme
-% SYNTAX
-%   derivativePolynomial = differentiatePiecewisePolynomial(polynomial)
-%**************************************************************************
 % PURPOSE
 %   - Differentiate a scalar MATLAB piecewise polynomial without a toolbox.
-%**************************************************************************
-% INPUTS
-%   - polynomial (scalar pp-form struct)
-%       Piecewise polynomial returned by pchip.
-%**************************************************************************
-% OUTPUTS
-%   - derivativePolynomial (scalar pp-form struct)
-%       Analytic first derivative in the same break representation.
-%**************************************************************************
-% UNITS
-%   - Coefficient units are inherited and divided by the x-axis unit.
-%**************************************************************************
 polynomialOrder = polynomial.order;
 if polynomialOrder <= 1
     derivativeCoefficients = zeros(polynomial.pieces, 1);
@@ -683,24 +624,8 @@ end
 
 function certifiable = targetHasCertifiedRecedingRay( ...
         initialState, targetMotion)
-%% Section 0: Header & Readme
-% SYNTAX
-%   certifiable = targetHasCertifiedRecedingRay(initialState, targetMotion)
-%**************************************************************************
 % PURPOSE
 %   - Recognize the constant-velocity monotone geometry proved by bisection.
-%**************************************************************************
-% INPUTS
-%   - initialState (normalized scalar struct)
-%   - targetMotion (normalized scalar struct)
-%**************************************************************************
-% OUTPUTS
-%   - certifiable (logical scalar)
-%       True only for a constant-velocity target receding on one ray.
-%**************************************************************************
-% UNITS
-%   - State positions are degrees and target velocity is deg/s.
-%**************************************************************************
 certifiable = false;
 if targetMotion.ModelType ~= "constantVelocity"
     return;
@@ -726,25 +651,8 @@ end
 
 function trackTime_s = targetTrackTimes( ...
         targetMotion, startTime_s, endTime_s, sampleCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   trackTime_s = targetTrackTimes( ...
-%       targetMotion, startTime_s, endTime_s, sampleCount)
-%**************************************************************************
 % PURPOSE
 %   - Retain both regular display samples and supplied trajectory knots.
-%**************************************************************************
-% INPUTS
-%   - targetMotion (normalized scalar struct)
-%   - startTime_s, endTime_s (ordered finite scalars)
-%   - sampleCount (integer scalar at least two)
-%**************************************************************************
-% OUTPUTS
-%   - trackTime_s (strictly increasing numeric column)
-%**************************************************************************
-% UNITS
-%   - All time values are seconds.
-%**************************************************************************
 trackTime_s = linspace(startTime_s, endTime_s, sampleCount).';
 if targetMotion.ModelType == "sampledTrajectory"
     suppliedTime_s = targetMotion.time_s( ...
@@ -756,24 +664,8 @@ end
 
 function candidateTimes_s = recedingRaySearchTimes( ...
         startTime_s, endTime_s, initialStep_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   candidateTimes_s = recedingRaySearchTimes( ...
-%       startTime_s, endTime_s, initialStep_s)
-%**************************************************************************
 % PURPOSE
 %   - Create exponentially expanding candidates for a monotone residual.
-%**************************************************************************
-% INPUTS
-%   - startTime_s, endTime_s (ordered finite scalars)
-%   - initialStep_s (positive finite scalar)
-%**************************************************************************
-% OUTPUTS
-%   - candidateTimes_s (strictly increasing numeric column)
-%**************************************************************************
-% UNITS
-%   - All inputs and outputs are seconds.
-%**************************************************************************
 candidateTimes_s = startTime_s;
 elapsedTime_s = initialStep_s;
 while candidateTimes_s(end) < endTime_s
@@ -786,25 +678,8 @@ end
 
 function candidateTimes_s = arbitraryTargetSearchTimes( ...
         targetMotion, startTime_s, endTime_s, maximumStep_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   candidateTimes_s = arbitraryTargetSearchTimes( ...
-%       targetMotion, startTime_s, endTime_s, maximumStep_s)
-%**************************************************************************
 % PURPOSE
 %   - Scan a general path at every supplied knot and a bounded time step.
-%**************************************************************************
-% INPUTS
-%   - targetMotion (normalized scalar struct)
-%   - startTime_s, endTime_s (ordered finite scalars)
-%   - maximumStep_s (positive finite scalar)
-%**************************************************************************
-% OUTPUTS
-%   - candidateTimes_s (strictly increasing numeric column)
-%**************************************************************************
-% UNITS
-%   - All time quantities are seconds.
-%**************************************************************************
 regularTimes_s = (startTime_s:maximumStep_s:endTime_s).';
 candidateTimes_s = unique([regularTimes_s; startTime_s; endTime_s]);
 if targetMotion.ModelType == "sampledTrajectory"
@@ -816,22 +691,8 @@ end
 end
 
 function message = earliestSearchMessage(certifiedRecedingRay)
-%% Section 0: Header & Readme
-% SYNTAX
-%   message = earliestSearchMessage(certifiedRecedingRay)
-%**************************************************************************
 % PURPOSE
 %   - Describe whether a first bracket has an analytic monotonicity proof.
-%**************************************************************************
-% INPUTS
-%   - certifiedRecedingRay (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - message (string scalar)
-%**************************************************************************
-% UNITS
-%   - The returned diagnostic text has no physical units.
-%**************************************************************************
 if certifiedRecedingRay
     message = "Earliest feasible intercept was certified by a monotone " + ...
         "receding-ray bracket and bisection.";
@@ -842,22 +703,8 @@ end
 end
 
 function method = conditionalSearchMethod(certifiedRecedingRay)
-%% Section 0: Header & Readme
-% SYNTAX
-%   method = conditionalSearchMethod(certifiedRecedingRay)
-%**************************************************************************
 % PURPOSE
 %   - Return a machine-readable earliest-search method identifier.
-%**************************************************************************
-% INPUTS
-%   - certifiedRecedingRay (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - method (string scalar)
-%**************************************************************************
-% UNITS
-%   - The identifier has no physical units.
-%**************************************************************************
 if certifiedRecedingRay
     method = "certifiedRecedingRayBisection";
 else
@@ -866,23 +713,8 @@ end
 end
 
 function validateEarliestInitialVelocity(initialState)
-%% Section 0: Header & Readme
-% SYNTAX
-%   validateEarliestInitialVelocity(initialState)
-%**************************************************************************
 % PURPOSE
 %   - Reject unsupported moving initial states before earliest search.
-%**************************************************************************
-% INPUTS
-%   - initialState (scalar struct)
-%       Optional velocity_deg_s must be zero.
-%**************************************************************************
-% OUTPUTS
-%   - None. Invalid states throw an identified contract error.
-%**************************************************************************
-% UNITS
-%   - Velocity is degrees per second.
-%**************************************************************************
 initialVelocity_deg_s = [0 0];
 if isfield(initialState, "velocity_deg_s") && ...
         ~isempty(initialState.velocity_deg_s)
@@ -901,26 +733,8 @@ end
 function validateVelocityMatchGeometry( ...
         initialState, interceptPosition_deg, targetVelocity_deg_s, ...
         matchVelocity)
-%% Section 0: Header & Readme
-% SYNTAX
-%   validateVelocityMatchGeometry(initialState, ...
-%       interceptPosition_deg, targetVelocity_deg_s, matchVelocity)
-%**************************************************************************
 % PURPOSE
 %   - Validate terminal-velocity compatibility with the direct route.
-%**************************************************************************
-% INPUTS
-%   - initialState (scalar struct)
-%   - interceptPosition_deg (1-by-2 numeric row)
-%   - targetVelocity_deg_s (1-by-2 numeric row)
-%   - matchVelocity (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Unsupported geometry throws an identified contract error.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and velocity is degrees per second.
-%**************************************************************************
 % The compatible velocity-matching mode uses the direct start-to-target
 % direction. Obstacle-avoiding routes should request position-only capture.
 if ~matchVelocity || norm(targetVelocity_deg_s) <= 1e-12
@@ -949,29 +763,8 @@ end
 
 function [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
         obstacles, initialState, targetMotion, limits, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [interceptTime_s, diagnostics] = searchEarliestInterceptTime( ...
-%       obstacles, initialState, targetMotion, limits, options)
-%**************************************************************************
 % PURPOSE
 %   - Find the first numerically feasible intercept on a target track.
-%**************************************************************************
-% INPUTS
-%   - obstacles (canonical obstacle data, nested cell array, or [])
-%   - initialState (normalized scalar struct)
-%   - targetMotion (normalized scalar struct)
-%   - limits (scalar planner-limit struct)
-%   - options (resolved scalar intercept-options struct)
-%**************************************************************************
-% OUTPUTS
-%   - interceptTime_s (finite numeric scalar)
-%   - diagnostics (scalar struct)
-%       Bracket, iteration, residual, and certification information.
-%**************************************************************************
-% UNITS
-%   - Time and residual values are seconds.
-%**************************************************************************
 % Arbitrary paths are scanned chronologically. Exponential bracketing is
 % retained only for the receding-ray case where monotonicity is proved.
 searchStartTime_s = initialState.time_s;
@@ -997,6 +790,8 @@ else
         options.InitialSearchStep_s);
 end
 targetCandidateCount = numel(candidateTimes_s);
+candidateGoalTimeMode = candidatePlannerGoalTimeMode( ...
+    obstacles, initialState, options);
 
 prefilter = emptyKinematicPrefilterDiagnostics(candidateTimes_s);
 if ~isempty(obstacles)
@@ -1013,11 +808,16 @@ if prefilter.HasKnownLowerBound
     bracketEvaluationCount = 0;
 else
     lowerTime_s = candidateTimes_s(1);
-    [lowerResidual_s, lowerArrivalTime_s] = interceptResidual( ...
-        lowerTime_s, searchEndTime_s, obstacles, initialState, ...
+    [lowerResidual_s, lowerArrivalTime_s, lowerStatus] = ...
+        interceptResidual( ...
+        lowerTime_s, obstacles, initialState, ...
         targetMotion, limits, options);
     firstCandidateIndex = 2;
     bracketEvaluationCount = 1;
+end
+numericallyUnknownEvaluationCount = 0;
+if exist("lowerStatus", "var") && lowerStatus == "numericallyUnknown"
+    numericallyUnknownEvaluationCount = 1;
 end
 upperTime_s = lowerTime_s;
 upperResidual_s = lowerResidual_s;
@@ -1027,11 +827,15 @@ for candidateIndex = firstCandidateIndex:numel(candidateTimes_s)
         break;
     end
     upperTime_s = candidateTimes_s(candidateIndex);
-    [upperResidual_s, upperArrivalTime_s] = interceptResidual( ...
-        upperTime_s, searchEndTime_s, obstacles, initialState, ...
+    [upperResidual_s, upperArrivalTime_s, upperStatus] = ...
+        interceptResidual( ...
+        upperTime_s, obstacles, initialState, ...
         targetMotion, limits, options);
     bracketEvaluationCount = bracketEvaluationCount + 1;
-    if upperResidual_s > 0
+    numericallyUnknownEvaluationCount = ...
+        numericallyUnknownEvaluationCount + ...
+        double(upperStatus == "numericallyUnknown");
+    if upperResidual_s > 0 && upperStatus ~= "numericallyUnknown"
         lowerTime_s = upperTime_s;
         lowerResidual_s = upperResidual_s;
         lowerArrivalTime_s = upperArrivalTime_s;
@@ -1041,9 +845,15 @@ if upperResidual_s > 0
     interceptTime_s = searchEndTime_s;
     diagnostics = emptyInterceptSearchDiagnostics();
     diagnostics.Success = false;
-    diagnostics.Message = "No feasible intercept was found before the " + ...
-        "target search ended.";
+    diagnostics.Message = "No feasible intercept was found " + ...
+        "before the target search ended.";
     diagnostics.TerminationReason = "noInterceptInHorizon";
+    if numericallyUnknownEvaluationCount > 0
+        diagnostics.Message = "The intercept search was " + ...
+            "inconclusive because one or more planner evaluations had a " + ...
+            "numerical or time-limit failure.";
+        diagnostics.TerminationReason = "interceptSearchInconclusive";
+    end
     diagnostics.LowerInfeasibleTime_s = lowerTime_s;
     diagnostics.LowerResidual_s = lowerResidual_s;
     diagnostics.LowerMinimumArrivalTime_s = lowerArrivalTime_s;
@@ -1057,7 +867,11 @@ if upperResidual_s > 0
         prefilter.InterpolatedCandidateTime_s;
     diagnostics.TargetCandidateCount = targetCandidateCount;
     diagnostics.FullValidationCandidateCount = numel(candidateTimes_s);
-    diagnostics.FullPlannerEvaluationCount = bracketEvaluationCount;
+    diagnostics.FullPlannerEvaluationCount = plannerEvaluationCount( ...
+        bracketEvaluationCount, candidateGoalTimeMode);
+    diagnostics.NumericallyUnknownEvaluationCount = ...
+        numericallyUnknownEvaluationCount;
+    diagnostics.CandidatePlannerGoalTimeMode = candidateGoalTimeMode;
     diagnostics.EarliestCertified = false;
     diagnostics.EarliestNumericallyResolved = false;
     diagnostics.SearchMethod = conditionalSearchMethod(certifiedRecedingRay);
@@ -1077,9 +891,13 @@ while upperTime_s - lowerTime_s > ...
         iterationCount < options.MaximumSearchIterations
     iterationCount = iterationCount + 1;
     middleTime_s = 0.5 * (lowerTime_s + upperTime_s);
-    [middleResidual_s, middleArrivalTime_s] = interceptResidual( ...
-        middleTime_s, searchEndTime_s, obstacles, initialState, ...
+    [middleResidual_s, middleArrivalTime_s, middleStatus] = ...
+        interceptResidual( ...
+        middleTime_s, obstacles, initialState, ...
         targetMotion, limits, options);
+    numericallyUnknownEvaluationCount = ...
+        numericallyUnknownEvaluationCount + ...
+        double(middleStatus == "numericallyUnknown");
     if middleResidual_s <= 0
         upperTime_s = middleTime_s;
         upperResidual_s = middleResidual_s;
@@ -1090,8 +908,32 @@ while upperTime_s - lowerTime_s > ...
         lowerArrivalTime_s = middleArrivalTime_s;
     end
 end
+fixedPlannerEvaluationCount = 0;
+fixedBoundaryFound = true;
+if candidateGoalTimeMode == "analyticresttorest"
+    [lowerTime_s, lowerResidual_s, lowerArrivalTime_s, ...
+        upperTime_s, upperResidual_s, upperArrivalTime_s, ...
+        fixedScanCount, fixedBisectionCount, fixedUnknownCount, ...
+        fixedBoundaryFound] = resolveAnalyticHs3Boundary( ...
+        lowerTime_s, upperTime_s, searchEndTime_s, obstacles, ...
+        initialState, targetMotion, limits, options);
+    fixedPlannerEvaluationCount = ...
+        fixedScanCount + fixedBisectionCount;
+    bracketEvaluationCount = bracketEvaluationCount + fixedScanCount;
+    iterationCount = iterationCount + fixedBisectionCount;
+    numericallyUnknownEvaluationCount = ...
+        numericallyUnknownEvaluationCount + fixedUnknownCount;
+    candidateGoalTimeMode = ...
+        "analyticresttorestthenfixedarrival";
+end
 interceptTime_s = upperTime_s;
-fullPlannerEvaluationCount = bracketEvaluationCount + iterationCount;
+if candidateGoalTimeMode == ...
+        "analyticresttorestthenfixedarrival"
+    fullPlannerEvaluationCount = fixedPlannerEvaluationCount;
+else
+    fullPlannerEvaluationCount = plannerEvaluationCount( ...
+        bracketEvaluationCount + iterationCount, candidateGoalTimeMode);
+end
 searchMethod = conditionalSearchMethod(certifiedRecedingRay);
 message = earliestSearchMessage(certifiedRecedingRay);
 if prefilter.Applied
@@ -1100,11 +942,23 @@ if prefilter.Applied
         string(prefilter.PrunedCandidateCount) + ...
         " dynamically impossible candidate times before full obstacle checks.";
 end
+terminationReason = "interceptFound";
+if ~fixedBoundaryFound
+    terminationReason = "noInterceptInHorizon";
+    message = "No HS-3 fixed-arrival intercept was found before the " + ...
+        "target search ended.";
+elseif numericallyUnknownEvaluationCount > 0
+    terminationReason = "interceptSearchInconclusive";
+    message = "A feasible planner sample was found, but the " + ...
+        "earliest intercept was not resolved because an earlier planner " + ...
+        "evaluation had a numerical or time-limit failure.";
+end
 diagnostics = struct( ...
-    "Success", lowerResidual_s > 0 && upperResidual_s <= 0 && ...
+    "Success", numericallyUnknownEvaluationCount == 0 && ...
+    lowerResidual_s > 0 && upperResidual_s <= 0 && ...
     upperTime_s - lowerTime_s <= options.SearchTimeTolerance_s, ...
     "Message", message, ...
-    "TerminationReason", "interceptFound", ...
+    "TerminationReason", terminationReason, ...
     "LowerInfeasibleTime_s", lowerTime_s, ...
     "UpperFeasibleTime_s", upperTime_s, ...
     "LowerResidual_s", lowerResidual_s, ...
@@ -1120,11 +974,16 @@ diagnostics = struct( ...
     "TargetCandidateCount", targetCandidateCount, ...
     "FullValidationCandidateCount", numel(candidateTimes_s), ...
     "FullPlannerEvaluationCount", fullPlannerEvaluationCount, ...
+    "NumericallyUnknownEvaluationCount", ...
+    numericallyUnknownEvaluationCount, ...
+    "CandidatePlannerGoalTimeMode", candidateGoalTimeMode, ...
     "EarliestCertified", certifiedRecedingRay && ...
+    numericallyUnknownEvaluationCount == 0 && ...
     lowerResidual_s > 0 && ...
     upperResidual_s <= 0 && upperTime_s - lowerTime_s <= ...
     options.SearchTimeTolerance_s, ...
-    "EarliestNumericallyResolved", lowerResidual_s > 0 && ...
+    "EarliestNumericallyResolved", ...
+    numericallyUnknownEvaluationCount == 0 && lowerResidual_s > 0 && ...
     upperResidual_s <= 0 && upperTime_s - lowerTime_s <= ...
     options.SearchTimeTolerance_s, ...
     "SearchMethod", searchMethod, ...
@@ -1135,28 +994,9 @@ end
 
 function diagnostics = kinematicInterceptPrefilter(candidateTimes_s, ...
         obstacles, initialState, targetMotion, limits)
-%% Section 0: Header & Readme
-% SYNTAX
-%   diagnostics = kinematicInterceptPrefilter(candidateTimes_s, ...
-%       obstacles, initialState, targetMotion, limits)
-%**************************************************************************
 % PURPOSE
 %   - Discard target times forbidden by velocity or target-point occupancy.
 %   - Interpolate the first safe lower-bound zero crossing for validation.
-%**************************************************************************
-% INPUTS
-%   - candidateTimes_s (N-by-1 increasing numeric)
-%   - obstacles (canonical static or moving obstacle data)
-%   - initialState, targetMotion, limits (scalar structs)
-%       Normalized intercept request and resolved controls.
-%**************************************************************************
-% OUTPUTS
-%   - diagnostics (scalar struct)
-%       Pruned times, interpolated proposal, and known infeasible bound.
-%**************************************************************************
-% UNITS
-%   - Candidate, arrival, and residual values are seconds.
-%**************************************************************************
 diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s);
 diagnostics.Applied = true;
 residual_s = inf(size(candidateTimes_s));
@@ -1239,24 +1079,8 @@ diagnostics.FullValidationTimes_s = unique([ ...
 end
 
 function diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   diagnostics = emptyKinematicPrefilterDiagnostics(candidateTimes_s)
-%**************************************************************************
 % PURPOSE
 %   - Return the stable internal target-prefilter diagnostics record.
-%**************************************************************************
-% INPUTS
-%   - candidateTimes_s (N-by-1 numeric)
-%       Chronological candidate times before kinematic pruning.
-%**************************************************************************
-% OUTPUTS
-%   - diagnostics (scalar struct)
-%       Default prefilter state and unchanged validation times.
-%**************************************************************************
-% UNITS
-%   - Candidate, arrival, and residual values are seconds.
-%**************************************************************************
 diagnostics = struct( ...
     "Applied", false, ...
     "EvaluationCount", 0, ...
@@ -1269,37 +1093,36 @@ diagnostics = struct( ...
     "FullValidationTimes_s", candidateTimes_s(:));
 end
 
-function [residual_s, arrivalTime_s] = interceptResidual( ...
-        candidateTime_s, searchEndTime_s, obstacles, initialState, ...
+function [residual_s, arrivalTime_s, evaluationStatus] = ...
+        interceptResidual( ...
+        candidateTime_s, obstacles, initialState, ...
         targetMotion, limits, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [residual_s, arrivalTime_s] = interceptResidual( ...
-%       candidateTime_s, searchEndTime_s, obstacles, initialState, ...
-%       targetMotion, limits, options)
-%**************************************************************************
 % PURPOSE
-%   - Evaluate planner arrival relative to one candidate target time.
-%**************************************************************************
-% INPUTS
-%   - candidateTime_s, searchEndTime_s (finite numeric scalars)
-%   - obstacles (canonical obstacle data, nested cell array, or [])
-%   - initialState (normalized scalar struct)
-%   - targetMotion (normalized scalar struct)
-%   - limits (scalar planner-limit struct)
-%   - options (resolved scalar intercept-options struct)
-%**************************************************************************
-% OUTPUTS
-%   - residual_s (numeric scalar)
-%       Minimum arrival time minus candidateTime_s.
-%   - arrivalTime_s (numeric scalar)
-%**************************************************************************
-% UNITS
-%   - Input and output time values are seconds.
-%**************************************************************************
+%   - Test one target time with an exact fixed-arrival planner request.
+evaluationStatus = "numericallyUnknown";
 goalVelocity_deg_s = [0 0];
 [targetPosition_deg, targetVelocity_deg_s] = evaluateTargetMotion( ...
     targetMotion, candidateTime_s);
+if candidateTime_s <= initialState.time_s
+    residual_s = Inf;
+    arrivalTime_s = Inf;
+    evaluationStatus = "kinematicallyInfeasible";
+    return;
+end
+candidateGoalTimeMode = candidatePlannerGoalTimeMode( ...
+    obstacles, initialState, options);
+if candidateGoalTimeMode == "analyticresttorest"
+    minimumDuration_s = minimumRestToRestDuration( ...
+        targetPosition_deg - initialState.position_deg, limits);
+    arrivalTime_s = initialState.time_s + minimumDuration_s;
+    residual_s = arrivalTime_s - candidateTime_s;
+    if residual_s <= 0
+        evaluationStatus = "feasible";
+    else
+        evaluationStatus = "kinematicallyInfeasible";
+    end
+    return;
+end
 if options.MatchTargetVelocity
     try
         validateVelocityMatchGeometry(initialState, targetPosition_deg, ...
@@ -1311,50 +1134,273 @@ if options.MatchTargetVelocity
                 "planAzElMovingTargetIntercept:VelocityMatchNeedsRoute"
             residual_s = Inf;
             arrivalTime_s = Inf;
+            evaluationStatus = "kinematicallyInfeasible";
             return;
         end
         rethrow(exception);
     end
     goalVelocity_deg_s = targetVelocity_deg_s;
 end
+plannerGoalTime_s = candidateTime_s;
+if candidateGoalTimeMode == "earliestarrival"
+    plannerGoalTime_s = initialState.time_s + ...
+        options.MaximumSearchDuration_s;
+end
 goalState = struct( ...
-    "time_s", searchEndTime_s + max(1000, ...
-    100 * options.MaximumSearchDuration_s), ...
+    "time_s", plannerGoalTime_s, ...
     "position_deg", targetPosition_deg, ...
     "velocity_deg_s", goalVelocity_deg_s, ...
     "acceleration_deg_s2", [0 0]);
 plannerOptions = options.PlannerOptions;
-plannerOptions.GoalTimeMode = "earliestArrival";
+plannerOptions.GoalTimeMode = candidateGoalTimeMode;
 plannerOptions.Verbose = false;
 trialResult = planAzElMotion( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 if ~trialResult.Success
     residual_s = Inf;
     arrivalTime_s = Inf;
+    provenInfeasibleReason = any(string(trialResult.TerminationReason) == [ ...
+        "endpointBlocked", "goalTimeInfeasible"]);
+    if provenInfeasibleReason
+        evaluationStatus = "provenInfeasible";
+    end
     return;
 end
-arrivalTime_s = trialResult.goalLineInterceptTime_s;
-residual_s = arrivalTime_s - candidateTime_s;
+if plannerOptions.GoalTimeMode == "earliestarrival"
+    arrivalTime_s = trialResult.goalLineInterceptTime_s;
+    residual_s = arrivalTime_s - candidateTime_s;
+else
+    arrivalTime_s = candidateTime_s;
+    residual_s = -max(options.SearchTimeTolerance_s, ...
+        eps(candidateTime_s));
+end
+evaluationStatus = "feasible";
+end
+
+function goalTimeMode = candidatePlannerGoalTimeMode( ...
+        obstacles, initialState, options)
+% PURPOSE
+%   - Select the safe residual method for one intercept search.
+canUseAnalyticResidual = isempty(obstacles) && ...
+    ~options.MatchTargetVelocity && ...
+    norm(initialState.velocity_deg_s, Inf) <= 1e-12 && ...
+    norm(initialState.acceleration_deg_s2, Inf) <= 1e-12;
+if canUseAnalyticResidual
+    goalTimeMode = "analyticresttorest";
+elseif isempty(obstacles)
+    goalTimeMode = "earliestarrival";
+else
+    goalTimeMode = "fixedarrival";
+end
+end
+
+function count = plannerEvaluationCount(evaluationCount, evaluationMode)
+% PURPOSE
+%   - Report zero planner calls when the analytic residual is used.
+if evaluationMode == "analyticresttorest"
+    count = 0;
+else
+    count = evaluationCount;
+end
+end
+
+function [lowerTime_s, lowerResidual_s, lowerArrivalTime_s, ...
+        upperTime_s, upperResidual_s, upperArrivalTime_s, ...
+        scanCount, bisectionCount, unknownCount, boundaryFound] = ...
+        resolveAnalyticHs3Boundary( ...
+        analyticLowerTime_s, analyticUpperTime_s, searchEndTime_s, ...
+        obstacles, initialState, targetMotion, limits, options)
+% PURPOSE
+%   - Refine an analytic lower bracket with fixed-arrival HS-3 feasibility.
+lowerTime_s = analyticLowerTime_s;
+lowerResidual_s = max(options.SearchTimeTolerance_s, eps);
+lowerArrivalTime_s = Inf;
+upperTime_s = searchEndTime_s;
+upperResidual_s = Inf;
+upperArrivalTime_s = Inf;
+scanCount = 0;
+bisectionCount = 0;
+unknownCount = 0;
+boundaryFound = false;
+trialTime_s = analyticUpperTime_s;
+while trialTime_s <= searchEndTime_s + eps(searchEndTime_s)
+    [trialResidual_s, trialArrivalTime_s, trialStatus] = ...
+        fixedArrivalHs3Residual(trialTime_s, obstacles, initialState, ...
+        targetMotion, limits, options);
+    scanCount = scanCount + 1;
+    if trialStatus == "feasible"
+        upperTime_s = trialTime_s;
+        upperResidual_s = trialResidual_s;
+        upperArrivalTime_s = trialArrivalTime_s;
+        boundaryFound = true;
+        break;
+    elseif trialStatus == "provenTranscriptionInfeasible"
+        lowerTime_s = trialTime_s;
+        lowerResidual_s = trialResidual_s;
+        lowerArrivalTime_s = trialArrivalTime_s;
+    else
+        unknownCount = unknownCount + 1;
+    end
+    nextTime_s = min(searchEndTime_s, ...
+        trialTime_s + options.InitialSearchStep_s);
+    if nextTime_s <= trialTime_s
+        break;
+    end
+    trialTime_s = nextTime_s;
+end
+if ~boundaryFound
+    return;
+end
+
+while upperTime_s - lowerTime_s > options.SearchTimeTolerance_s && ...
+        bisectionCount < options.MaximumSearchIterations
+    middleTime_s = 0.5 * (lowerTime_s + upperTime_s);
+    [middleResidual_s, middleArrivalTime_s, middleStatus] = ...
+        fixedArrivalHs3Residual(middleTime_s, obstacles, initialState, ...
+        targetMotion, limits, options);
+    bisectionCount = bisectionCount + 1;
+    if middleStatus == "feasible"
+        upperTime_s = middleTime_s;
+        upperResidual_s = middleResidual_s;
+        upperArrivalTime_s = middleArrivalTime_s;
+    elseif middleStatus == "provenTranscriptionInfeasible"
+        lowerTime_s = middleTime_s;
+        lowerResidual_s = middleResidual_s;
+        lowerArrivalTime_s = middleArrivalTime_s;
+    else
+        unknownCount = unknownCount + 1;
+        break;
+    end
+end
+end
+
+function [residual_s, arrivalTime_s, status] = ...
+        fixedArrivalHs3Residual( ...
+        candidateTime_s, obstacles, initialState, targetMotion, ...
+        limits, options)
+% PURPOSE
+%   - Test one analytic bracket time in the bounded HS-3 transcription.
+targetPosition_deg = evaluateTargetMotion(targetMotion, candidateTime_s);
+goalState = struct( ...
+    "time_s", candidateTime_s, ...
+    "position_deg", targetPosition_deg, ...
+    "velocity_deg_s", [0 0], ...
+    "acceleration_deg_s2", [0 0]);
+plannerOptions = options.PlannerOptions;
+plannerOptions.GoalTimeMode = "fixedarrival";
+plannerOptions.Verbose = false;
+plannerOptions = requireMeshRefinementPasses(plannerOptions, 2);
+trialResult = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, plannerOptions);
+if trialResult.Success
+    residual_s = -max(options.SearchTimeTolerance_s, ...
+        eps(candidateTime_s));
+    arrivalTime_s = candidateTime_s;
+    status = "feasible";
+    return;
+end
+residual_s = Inf;
+arrivalTime_s = Inf;
+terminationReason = string(trialResult.TerminationReason);
+provedLinearSeedInfeasible = ...
+    terminationReason == "initialGuessInfeasible" && ...
+    contains(string(trialResult.Message), "Exit flag: -2");
+provenReason = any(terminationReason == [ ...
+    "goalTimeInfeasible", "endpointBlocked"]) || ...
+    provedLinearSeedInfeasible;
+if provenReason
+    status = "provenTranscriptionInfeasible";
+else
+    status = "numericallyUnknown";
+end
+end
+
+function plannerOptions = requireMeshRefinementPasses( ...
+        plannerOptions, minimumPassCount)
+% PURPOSE
+%   - Apply an internal minimum without requiring a complete override.
+plannerDefaults = planAzElMotion();
+configuredPassCount = plannerDefaults.MaximumMeshRefinementPasses;
+if isfield(plannerOptions, "MaximumMeshRefinementPasses") && ...
+        ~isempty(plannerOptions.MaximumMeshRefinementPasses)
+    configuredPassCount = ...
+        plannerOptions.MaximumMeshRefinementPasses;
+end
+plannerOptions.MaximumMeshRefinementPasses = max( ...
+    minimumPassCount, configuredPassCount);
+end
+
+function duration_s = minimumRestToRestDuration( ...
+        displacement_deg, limits)
+% PURPOSE
+%   - Compute the exact independent-axis S-curve duration from rest to rest.
+velocityLimit = expandTwoAxisLimit(limits.maxVelocity_deg_s);
+accelerationLimit = expandTwoAxisLimit(limits.maxAcceleration_deg_s2);
+jerkLimit = expandTwoAxisLimit(limits.maxJerk_deg_s3);
+axisDuration_s = zeros(1, 2);
+for axisIndex = 1:2
+    distance_deg = abs(displacement_deg(axisIndex));
+    if distance_deg <= eps
+        continue;
+    end
+    maximumVelocity = velocityLimit(axisIndex);
+    maximumAcceleration = accelerationLimit(axisIndex);
+    maximumJerk = jerkLimit(axisIndex);
+    triangularJerkTime_s = (distance_deg / ...
+        (2 * maximumJerk)) ^ (1 / 3);
+    triangularAcceleration = maximumJerk * triangularJerkTime_s;
+    triangularVelocity = maximumJerk * triangularJerkTime_s ^ 2;
+    if triangularAcceleration <= maximumAcceleration && ...
+            triangularVelocity <= maximumVelocity
+        axisDuration_s(axisIndex) = 4 * triangularJerkTime_s;
+        continue;
+    end
+
+    jerkTime_s = maximumAcceleration / maximumJerk;
+    accelerationPlateau_s = 0.5 * (sqrt( ...
+        jerkTime_s ^ 2 + 4 * distance_deg / maximumAcceleration) - ...
+        3 * jerkTime_s);
+    peakVelocity = maximumAcceleration * ...
+        (jerkTime_s + accelerationPlateau_s);
+    if accelerationPlateau_s >= 0 && peakVelocity <= maximumVelocity
+        axisDuration_s(axisIndex) = ...
+            4 * jerkTime_s + 2 * accelerationPlateau_s;
+        continue;
+    end
+
+    if maximumVelocity <= maximumAcceleration ^ 2 / maximumJerk
+        jerkTime_s = sqrt(maximumVelocity / maximumJerk);
+        accelerationPlateau_s = 0;
+        rampDistance_deg = 2 * maximumJerk * jerkTime_s ^ 3;
+    else
+        jerkTime_s = maximumAcceleration / maximumJerk;
+        accelerationPlateau_s = maximumVelocity / ...
+            maximumAcceleration - jerkTime_s;
+        rampDistance_deg = maximumAcceleration * ( ...
+            2 * jerkTime_s ^ 2 + ...
+            3 * jerkTime_s * accelerationPlateau_s + ...
+            accelerationPlateau_s ^ 2);
+    end
+    cruiseTime_s = max(0, ...
+        (distance_deg - rampDistance_deg) / maximumVelocity);
+    axisDuration_s(axisIndex) = 4 * jerkTime_s + ...
+        2 * accelerationPlateau_s + cruiseTime_s;
+end
+duration_s = max(axisDuration_s);
+end
+
+function limit = expandTwoAxisLimit(limit)
+% PURPOSE
+%   - Expand one scalar limit to the two planner axes.
+limit = reshape(double(limit), 1, []);
+if isscalar(limit)
+    limit = repmat(limit, 1, 2);
+end
 end
 
 function diagnostics = emptyInterceptSearchDiagnostics()
-%% Section 0: Header & Readme
-% SYNTAX
-%   diagnostics = emptyInterceptSearchDiagnostics()
-%**************************************************************************
 % PURPOSE
 %   - Define the stable intercept-search diagnostics schema.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - diagnostics (scalar struct)
-%       Default values for specified-time and search failure paths.
-%**************************************************************************
-% UNITS
-%   - Time and residual fields are seconds.
-%**************************************************************************
 diagnostics = struct( ...
     "Success", true, ...
     "Message", "", ...
@@ -1374,10 +1420,13 @@ diagnostics = struct( ...
     "TargetCandidateCount", 0, ...
     "FullValidationCandidateCount", 0, ...
     "FullPlannerEvaluationCount", 0, ...
+    "NumericallyUnknownEvaluationCount", 0, ...
+    "CandidatePlannerGoalTimeMode", "notRun", ...
     "EarliestCertified", true, ...
     "EarliestNumericallyResolved", true, ...
     "SearchMethod", "specifiedTime", ...
     "SearchStartTime_s", NaN, ...
     "SearchEndTime_s", NaN, ...
-    "MaximumScanStep_s", NaN);
+    "MaximumScanStep_s", NaN, ...
+    "ElapsedPlanningTime_s", 0);
 end

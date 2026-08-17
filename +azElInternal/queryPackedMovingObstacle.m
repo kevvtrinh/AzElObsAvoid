@@ -217,24 +217,8 @@ end
 
 function [edgeSets, sourceSliceIndex] = edgeSetsAtTime( ...
         packedObstacle, queryTime_s, timePaddingSamples)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [edgeSets, sourceSliceIndex] = edgeSetsAtTime( ...
-%       packedObstacle, queryTime_s, timePaddingSamples)
-%**************************************************************************
 % PURPOSE
 %   - Return the interpolated polygon and requested neighboring slices.
-%**************************************************************************
-% INPUTS
-%   - packedObstacle (scalar struct), queryTime_s (scalar seconds)
-%   - timePaddingSamples (nonnegative integer scalar)
-%**************************************************************************
-% OUTPUTS
-%   - edgeSets (cell array), sourceSliceIndex (integer column)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 [primaryEdges, lowerSliceIndex] = ...
     primaryEdgesAtTime(packedObstacle, queryTime_s);
 edgeSets = {primaryEdges};
@@ -260,25 +244,9 @@ end
 
 function [edgeSet, lowerSliceIndex, topologyMatches] = ...
         primaryEdgesAtTime(packedObstacle, queryTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [edgeSet, lowerSliceIndex, topologyMatches] = ...
-%       primaryEdgesAtTime(packedObstacle, queryTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Interpolate corresponding vertices or select the nearest discrete
 %     source shape when polygon topology changes.
-%**************************************************************************
-% INPUTS
-%   - packedObstacle (scalar struct), queryTime_s (scalar seconds)
-%**************************************************************************
-% OUTPUTS
-%   - edgeSet (N-by-4), lowerSliceIndex (integer)
-%   - topologyMatches (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 obstacleTime_s = double(packedObstacle.TimeSeconds(:));
 [lowerSliceIndex, upperSliceIndex, fraction] = ...
     bracketingSliceIndices(obstacleTime_s, queryTime_s);
@@ -335,23 +303,8 @@ end
 
 function [lowerSliceIndex, upperSliceIndex, fraction] = ...
         bracketingSliceIndices(obstacleTime_s, queryTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [lowerSliceIndex, upperSliceIndex, fraction] = ...
-%       bracketingSliceIndices(obstacleTime_s, queryTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Locate the closed source-time interval containing one query.
-%**************************************************************************
-% INPUTS
-%   - obstacleTime_s (strictly increasing column), queryTime_s (scalar)
-%**************************************************************************
-% OUTPUTS
-%   - lowerSliceIndex, upperSliceIndex (integers), fraction (0 through 1)
-%**************************************************************************
-% UNITS
-%   - Input time is seconds; fraction is dimensionless.
-%**************************************************************************
 upperSliceIndex = find(obstacleTime_s >= queryTime_s, 1, "first");
 if isempty(upperSliceIndex)
     upperSliceIndex = numel(obstacleTime_s);
@@ -372,23 +325,8 @@ end
 
 function [vertices_deg, finiteVertex] = ...
         packedSliceVertices(packedObstacle, sliceIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [vertices_deg, finiteVertex] = ...
-%       packedSliceVertices(packedObstacle, sliceIndex)
-%**************************************************************************
 % PURPOSE
 %   - Recover one NaN-separated packed polygon slice.
-%**************************************************************************
-% INPUTS
-%   - packedObstacle (scalar struct), sliceIndex (positive integer)
-%**************************************************************************
-% OUTPUTS
-%   - vertices_deg (N-by-2), finiteVertex (N-by-1 logical)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 firstVertexIndex = double(packedObstacle.SliceOffsets(sliceIndex));
 lastVertexIndex = double( ...
     packedObstacle.SliceOffsets(sliceIndex + 1)) - 1;
@@ -405,22 +343,8 @@ finiteVertex = all(isfinite(vertices_deg), 2);
 end
 
 function edgeSet = packedSliceEdges(packedObstacle, sliceIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   edgeSet = packedSliceEdges(packedObstacle, sliceIndex)
-%**************************************************************************
 % PURPOSE
 %   - Recover one packed slice as [startAz startEl endAz endEl] rows.
-%**************************************************************************
-% INPUTS
-%   - packedObstacle (scalar struct), sliceIndex (positive integer)
-%**************************************************************************
-% OUTPUTS
-%   - edgeSet (N-by-4 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 firstEdgeIndex = double(packedObstacle.EdgeOffsets(sliceIndex));
 lastEdgeIndex = double( ...
     packedObstacle.EdgeOffsets(sliceIndex + 1)) - 1;
@@ -439,22 +363,8 @@ edgeSet = [double(packedObstacle.EdgeStartAzimuthDeg( ...
 end
 
 function edgeSet = edgesFromSeparatedVertices(vertices_deg, finiteVertex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   edgeSet = edgesFromSeparatedVertices(vertices_deg, finiteVertex)
-%**************************************************************************
 % PURPOSE
 %   - Convert NaN-separated polygon rings to an explicit edge matrix.
-%**************************************************************************
-% INPUTS
-%   - vertices_deg (N-by-2), finiteVertex (N-by-1 logical)
-%**************************************************************************
-% OUTPUTS
-%   - edgeSet (M-by-4 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 transitions = diff([false; finiteVertex; false]);
 ringStart = find(transitions == 1);
 ringStop = find(transitions == -1) - 1;
@@ -471,24 +381,8 @@ end
 
 function positionAtTime_deg = interpolateSegmentPosition( ...
         segmentTime_s, segmentPosition_deg, queryTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   positionAtTime_deg = interpolateSegmentPosition( ...
-%       segmentTime_s, segmentPosition_deg, queryTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Evaluate one linear timed path segment at requested times.
-%**************************************************************************
-% INPUTS
-%   - segmentTime_s (2-vector), segmentPosition_deg (2-by-2)
-%   - queryTime_s (numeric vector)
-%**************************************************************************
-% OUTPUTS
-%   - positionAtTime_deg (N-by-2 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Time is seconds and position is degrees.
-%**************************************************************************
 if segmentTime_s(2) <= segmentTime_s(1)
     positionAtTime_deg = repmat( ...
         segmentPosition_deg(1, :), numel(queryTime_s), 1);
@@ -502,25 +396,9 @@ end
 
 function [isOccupied, boundsHit] = staticSegmentHitsEdges( ...
         segmentPosition_deg, edgeSet, boundaryIsOccupied)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [isOccupied, boundsHit] = staticSegmentHitsEdges( ...
-%       segmentPosition_deg, edgeSet, boundaryIsOccupied)
-%**************************************************************************
 % PURPOSE
 %   - Check a spatial segment against one static polygon without invoking
 %     the moving-edge polynomial solver.
-%**************************************************************************
-% INPUTS
-%   - segmentPosition_deg (2-by-2), edgeSet (N-by-4 numeric)
-%   - boundaryIsOccupied (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - isOccupied, boundsHit (logical scalars)
-%**************************************************************************
-% UNITS
-%   - Position is degrees; intersection parameters are dimensionless.
-%**************************************************************************
 isOccupied = false;
 boundsHit = false;
 if isempty(edgeSet)
@@ -649,27 +527,9 @@ end
 function [isOccupied, boundsHit] = linearSegmentHitsMovingEdges( ...
         segmentPosition_deg, firstEdgeSet, lastEdgeSet, ...
         boundaryIsOccupied)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [isOccupied, boundsHit] = linearSegmentHitsMovingEdges( ...
-%       segmentPosition_deg, firstEdgeSet, lastEdgeSet, ...
-%       boundaryIsOccupied)
-%**************************************************************************
 % PURPOSE
 %   - Exactly partition a linear point/moving-edge interval at every
 %     boundary contact and test polygon occupancy between contacts.
-%**************************************************************************
-% INPUTS
-%   - segmentPosition_deg (2-by-2)
-%   - firstEdgeSet, lastEdgeSet (matching N-by-4 edge matrices)
-%   - boundaryIsOccupied (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - isOccupied, boundsHit (logical scalars)
-%**************************************************************************
-% UNITS
-%   - Position is degrees; interval parameters are dimensionless.
-%**************************************************************************
 isOccupied = false;
 boundsHit = false;
 if isempty(firstEdgeSet) || ~isequal(size(firstEdgeSet), size(lastEdgeSet))
@@ -796,24 +656,8 @@ end
 
 function isOccupied = pointOccupiedByEdges( ...
         point_deg, edgeSet, boundaryIsOccupied)
-%% Section 0: Header & Readme
-% SYNTAX
-%   isOccupied = pointOccupiedByEdges( ...
-%       point_deg, edgeSet, boundaryIsOccupied)
-%**************************************************************************
 % PURPOSE
 %   - Apply odd-even polygon occupancy and the requested boundary policy.
-%**************************************************************************
-% INPUTS
-%   - point_deg (1-by-2), edgeSet (N-by-4)
-%   - boundaryIsOccupied (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - isOccupied (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 edgeStart_deg = edgeSet(:, 1:2);
 edgeEnd_deg = edgeSet(:, 3:4);
 edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
@@ -880,22 +724,8 @@ end
 end
 
 function inside = pointInsideBounds(point_deg, bounds_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   inside = pointInsideBounds(point_deg, bounds_deg)
-%**************************************************************************
 % PURPOSE
 %   - Test one point against a finite axis-aligned box with roundoff guard.
-%**************************************************************************
-% INPUTS
-%   - point_deg (1-by-2), bounds_deg (1-by-4)
-%**************************************************************************
-% OUTPUTS
-%   - inside (logical scalar)
-%**************************************************************************
-% UNITS
-%   - Position is degrees.
-%**************************************************************************
 scale_deg = max(1, max(abs(bounds_deg)));
 tolerance_deg = 1e-12 * scale_deg;
 inside = all(isfinite(bounds_deg)) && ...

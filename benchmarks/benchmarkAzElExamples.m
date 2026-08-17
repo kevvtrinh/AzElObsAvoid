@@ -87,24 +87,8 @@ end
 %% Section 4: Local Functions
 
 function options = resolveBenchmarkOptions(optionOverrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolveBenchmarkOptions(optionOverrides)
-%**************************************************************************
 % PURPOSE
 %   - Merge benchmark overrides once and validate the public controls.
-%**************************************************************************
-% INPUTS
-%   - optionOverrides (scalar struct)
-%       Partial benchmark controls documented by benchmarkAzElExamples.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved and normalized benchmark controls.
-%**************************************************************************
-% UNITS
-%   - All controls are dimensionless except paths, which are text.
-%**************************************************************************
 defaults = struct( ...
     "ExampleNames", strings(0, 1), ...
     "OutputDirectory", "", ...
@@ -140,24 +124,8 @@ options.Verbose = azElInternal.normalizeLogicalScalar( ...
 end
 
 function exampleNames = discoverExampleNames(repositoryRoot)
-%% Section 0: Header & Readme
-% SYNTAX
-%   exampleNames = discoverExampleNames(repositoryRoot)
-%**************************************************************************
 % PURPOSE
 %   - Discover maintained example entry points without a duplicate catalog.
-%**************************************************************************
-% INPUTS
-%   - repositoryRoot (scalar text)
-%       Repository containing the examples directory.
-%**************************************************************************
-% OUTPUTS
-%   - exampleNames (N-by-1 string vector)
-%       Alphabetically ordered example function names.
-%**************************************************************************
-% UNITS
-%   - Names are dimensionless text.
-%**************************************************************************
 files = dir(fullfile(repositoryRoot, "examples", "example*.m"));
 exampleNames = sort(erase(string({files.name}).', ".m"));
 if isempty(exampleNames)
@@ -167,28 +135,8 @@ end
 end
 
 function record = executeExample(exampleName, verbose, runIndex, runCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   record = executeExample(name, verbose, index, count)
-%**************************************************************************
 % PURPOSE
 %   - Execute one headless example and extract stable comparison metrics.
-%**************************************************************************
-% INPUTS
-%   - exampleName (scalar string)
-%       Example function invoked with one override structure.
-%   - verbose (logical scalar)
-%       Progress-output control.
-%   - runIndex, runCount (positive integer scalars)
-%       Current and total run numbers used only for progress output.
-%**************************************************************************
-% OUTPUTS
-%   - record (scalar struct)
-%       Completion, validation, trajectory, certificate, and timing data.
-%**************************************************************************
-% UNITS
-%   - Path lengths are degrees and durations are seconds.
-%**************************************************************************
 record = emptyRunRecord();
 record.Example = exampleName;
 record.JerkConstrained = true;
@@ -249,7 +197,9 @@ try
             diagnostics.FiniteJerkCertified);
         record.FiniteJerkNumericallyVerified = logical( ...
             diagnostics.FiniteJerkNumericallyVerified);
-        record.CertificatePassed = record.FiniteJerkCertified;
+        record.CertificatePassed = record.FiniteJerkCertified && ...
+            logical(diagnostics.ContinuousPolynomialExtremaVerified) && ...
+            logical(diagnostics.DynamicsDefectWithinTolerance);
         record.SampleCount = numel(timedPath.time_s);
     end
 catch exception
@@ -267,23 +217,8 @@ end
 end
 
 function record = emptyRunRecord()
-%% Section 0: Header & Readme
-% SYNTAX
-%   record = emptyRunRecord()
-%**************************************************************************
 % PURPOSE
 %   - Centralize the stable benchmark row schema and unavailable values.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - record (scalar struct)
-%       Empty completion, validation, motion, and timing metrics.
-%**************************************************************************
-% UNITS
-%   - Field names identify degree- and second-based quantities.
-%**************************************************************************
 record = struct( ...
     "Example", "", ...
     "JerkConstrained", false, ...

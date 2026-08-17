@@ -277,23 +277,8 @@ end
 %% Section 4: Local Functions
 
 function options = comparatorDefaults()
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = comparatorDefaults()
-%**************************************************************************
 % PURPOSE
 %   - Return the argument-independent benchmark-comparison defaults.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved metric and optional runtime comparison controls.
-%**************************************************************************
-% UNITS
-%   - Tolerances use reported metric units; ratios are dimensionless.
-%**************************************************************************
 options = struct( ...
     "MetricAbsoluteTolerance", 1e-10, ...
     "MetricRelativeTolerance", 0, ...
@@ -303,24 +288,8 @@ options = struct( ...
 end
 
 function options = resolveComparisonOptions(defaults, overrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolveComparisonOptions(defaults, overrides)
-%**************************************************************************
 % PURPOSE
 %   - Merge partial comparison controls and validate their semantics.
-%**************************************************************************
-% INPUTS
-%   - defaults, overrides (scalar structs)
-%       Complete defaults and optional caller-supplied controls.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved, normalized comparison controls.
-%**************************************************************************
-% UNITS
-%   - Tolerances use metric units; runtime ratio is dimensionless.
-%**************************************************************************
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("compareAzElBenchmarkReports:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -349,26 +318,8 @@ validateattributes(options.RuntimeAbsoluteTolerance_s, {'numeric'}, ...
 end
 
 function runs = normalizeRunsTable(runs, label, assessRuntime)
-%% Section 0: Header & Readme
-% SYNTAX
-%   runs = normalizeRunsTable(runs, label, assessRuntime)
-%**************************************************************************
 % PURPOSE
 %   - Validate and locally normalize the stable benchmark row schema.
-%**************************************************************************
-% INPUTS
-%   - runs (table), label (scalar text)
-%       Benchmark rows and the caller-facing name used in diagnostics.
-%   - assessRuntime (logical scalar)
-%       Whether WallTime_s is required and normalized.
-%**************************************************************************
-% OUTPUTS
-%   - runs (table)
-%       Local normalized copy; caller-owned report data is not changed.
-%**************************************************************************
-% UNITS
-%   - Metric columns use degrees or seconds; outcomes are dimensionless.
-%**************************************************************************
 if ~istable(runs) || isempty(runs)
     error("compareAzElBenchmarkReports:InvalidRuns", ...
         "%s must be a nonempty table.", label);
@@ -415,24 +366,8 @@ end
 end
 
 function values = normalizeLogicalColumn(values, label, name)
-%% Section 0: Header & Readme
-% SYNTAX
-%   values = normalizeLogicalColumn(values, label, name)
-%**************************************************************************
 % PURPOSE
 %   - Convert one benchmark outcome column to a logical column safely.
-%**************************************************************************
-% INPUTS
-%   - values (logical or numeric vector), label, name (scalar text)
-%       Source values and their caller-facing report and field names.
-%**************************************************************************
-% OUTPUTS
-%   - values (logical column vector)
-%       Normalized binary outcome values.
-%**************************************************************************
-% UNITS
-%   - Outcomes are dimensionless.
-%**************************************************************************
 isBinaryNumeric = isnumeric(values) && isreal(values) && ...
     all(isfinite(values), "all") && all(ismember(values, [0 1]), "all");
 if ~(islogical(values) || isBinaryNumeric) || ~isvector(values)
@@ -443,25 +378,9 @@ values = logical(values(:));
 end
 
 function values = normalizeMetricColumn(values, label, name)
-%% Section 0: Header & Readme
-% SYNTAX
-%   values = normalizeMetricColumn(values, label, name)
-%**************************************************************************
 % PURPOSE
 %   - Normalize one nonnegative benchmark metric while preserving NaN for
 %     an unavailable value.
-%**************************************************************************
-% INPUTS
-%   - values (numeric vector), label, name (scalar text)
-%       Source metric values and caller-facing diagnostic names.
-%**************************************************************************
-% OUTPUTS
-%   - values (double column vector)
-%       Finite nonnegative values or NaN for unavailable metrics.
-%**************************************************************************
-% UNITS
-%   - Units are defined by the metric field name.
-%**************************************************************************
 if ~isnumeric(values) || ~isreal(values) || ~isvector(values)
     error("compareAzElBenchmarkReports:InvalidMetricColumn", ...
         "%s.%s must be a real numeric vector.", label, name);
@@ -475,24 +394,8 @@ end
 end
 
 function [keys, examples, jerkConstrained] = rowKeys(runs)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [keys, examples, jerkConstrained] = rowKeys(runs)
-%**************************************************************************
 % PURPOSE
 %   - Build deterministic, unique benchmark pairing keys from public rows.
-%**************************************************************************
-% INPUTS
-%   - runs (normalized table)
-%       Table exposing Example and JerkConstrained columns.
-%**************************************************************************
-% OUTPUTS
-%   - keys, examples (string columns), jerkConstrained (logical column)
-%       Pairing keys and their public components.
-%**************************************************************************
-% UNITS
-%   - Keys and names are text; jerk status is dimensionless.
-%**************************************************************************
 examples = string(runs.Example(:));
 jerkConstrained = logical(runs.JerkConstrained(:));
 separator = string(char(31));
@@ -509,28 +412,8 @@ end
 
 function [passed, delta, tolerance] = compareMetric( ...
         baselineValue, currentValue, comparisonMode, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [passed, delta, tolerance] = compareMetric( ...
-%       baselineValue, currentValue, comparisonMode, options)
-%**************************************************************************
 % PURPOSE
 %   - Apply the requested equality or lower-is-better metric rule.
-%**************************************************************************
-% INPUTS
-%   - baselineValue, currentValue (scalar doubles)
-%       Paired physical metrics, or paired NaNs when unavailable.
-%   - comparisonMode ("parity" or "dominance")
-%   - options (scalar struct)
-%       Resolved absolute and relative metric tolerances.
-%**************************************************************************
-% OUTPUTS
-%   - passed (logical), delta, tolerance (double scalars)
-%       Criterion result, current-minus-baseline value, and applied bound.
-%**************************************************************************
-% UNITS
-%   - Delta and tolerance share the paired metric's units.
-%**************************************************************************
 delta = NaN;
 tolerance = NaN;
 if isnan(baselineValue) && isnan(currentValue)
@@ -554,27 +437,8 @@ end
 
 function [passed, ratio] = compareRuntime( ...
         baselineRuntime_s, currentRuntime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [passed, ratio] = compareRuntime( ...
-%       baselineRuntime_s, currentRuntime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Apply the caller-selected runtime ratio and absolute tolerance rule.
-%**************************************************************************
-% INPUTS
-%   - baselineRuntime_s, currentRuntime_s (scalar doubles)
-%       Paired runtimes, or paired NaNs when unavailable.
-%   - options (scalar struct)
-%       Resolved maximum ratio and absolute runtime tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - passed (logical scalar), ratio (double scalar)
-%       Runtime acceptance state and current-to-baseline ratio.
-%**************************************************************************
-% UNITS
-%   - Runtimes use seconds; ratio is dimensionless.
-%**************************************************************************
 ratio = NaN;
 if isnan(baselineRuntime_s) && isnan(currentRuntime_s)
     passed = true;

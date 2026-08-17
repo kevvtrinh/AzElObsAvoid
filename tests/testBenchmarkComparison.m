@@ -24,23 +24,8 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
-%% Section 0: Header & Readme
-% SYNTAX
-%   setupOnce(testCase)
-%**************************************************************************
 % PURPOSE
 %   - Make the repository and benchmark entry point available to tests.
-%**************************************************************************
-% INPUTS
-%   - testCase (matlab.unittest.FunctionTestCase)
-%       Test fixture receiving cleanup registration.
-%**************************************************************************
-% OUTPUTS
-%   - None.
-%**************************************************************************
-% UNITS
-%   - Paths are text.
-%**************************************************************************
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 originalPath = path;
 addpath(repositoryRoot, fullfile(repositoryRoot, "benchmarks"));
@@ -134,23 +119,8 @@ testCase.verifyEqual(nnz(~comparison.Rows.HasBaseline | ...
 end
 
 function report = syntheticReport()
-%% Section 0: Header & Readme
-% SYNTAX
-%   report = syntheticReport()
-%**************************************************************************
 % PURPOSE
 %   - Build a deterministic generic benchmark report for comparator tests.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - report (scalar struct)
-%       Report with a two-row Runs table and no planner-specific values.
-%**************************************************************************
-% UNITS
-%   - Paths use degrees and durations and runtimes use seconds.
-%**************************************************************************
 runs = table( ...
     ["syntheticOne"; "syntheticTwo"], logical([false; true]), ...
     logical([true; true]), logical([true; true]), ...
