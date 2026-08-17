@@ -146,13 +146,17 @@ for candidateIndex = 1:candidateCount
                         departureArrivalTime_s);
                     break;
                 end
-            elseif ~fallbackTimedPath.Success
+            elseif ~fallbackTimedPath.Success && isBetterFailedAttempt( ...
+                    attemptTimedPath, attemptCollisionCheck, ...
+                    fallbackTimedPath, fallbackCollisionCheck)
                 fallbackSmoothPath = attemptSmoothPath;
                 fallbackTimedPath = attemptTimedPath;
+                fallbackCollisionCheck = attemptCollisionCheck;
             end
             previousDepartureTime_s = departureTime_s;
             previousDepartureWasBlocked = ...
-                attemptTimedPath.Success && any(attemptBlocked);
+                (attemptTimedPath.Success && any(attemptBlocked)) || ...
+                hasResolvedRetimerCollision(attemptTimedPath);
         end
         if ~isfinite(bestArrivalTime_s)
             smoothPath = fallbackSmoothPath;
@@ -394,11 +398,14 @@ function [smoothPath, timedPath, blocked, collisionCheck] = ...
 blocked = false(0, 1);
 collisionCheck = emptyCollisionCheck();
 
-if ~timedPath.Success
+hasDiagnosticAttempt = isfield(timedPath, "HasTimedAttempt") && ...
+    timedPath.HasTimedAttempt && numel(timedPath.time_s) >= 2;
+if ~timedPath.Success && ~hasDiagnosticAttempt
     return;
 end
 
-if timedPath.GoalLineInterceptTime_s >= arrivalValidationBound_s
+if timedPath.Success && ...
+        timedPath.GoalLineInterceptTime_s >= arrivalValidationBound_s
     collisionCheck.SkippedByArrivalBound = true;
     collisionCheck.ArrivalValidationBound_s = arrivalValidationBound_s;
     return;
@@ -443,6 +450,52 @@ if ~isempty(firstBlockedRow)
         collisionDetails.BlockingObstacleIndex(firstBlockedRow));
     collisionCheck.BlockingSliceIndex = double( ...
         collisionDetails.BlockingSliceIndex(firstBlockedRow));
+end
+end
+
+function hasCollision = hasResolvedRetimerCollision(timedPath)
+% Treat a certified RP collision failure as a valid departure bracket.
+hasCollision = false;
+if ~isstruct(timedPath) || ~isscalar(timedPath) || ...
+        ~isfield(timedPath, "HasTimedAttempt") || ...
+        ~timedPath.HasTimedAttempt || ...
+        ~isfield(timedPath, "RetimerDiagnostics")
+    return;
+end
+diagnostics = timedPath.RetimerDiagnostics;
+if ~isstruct(diagnostics) || ~isscalar(diagnostics) || ...
+        ~isfield(diagnostics, "FinalCollisionCertificate")
+    return;
+end
+certificate = diagnostics.FinalCollisionCertificate;
+hasCollision = isstruct(certificate) && isscalar(certificate) && ...
+    isfield(certificate, "Resolved") && certificate.Resolved && ...
+    isfield(certificate, "CollisionFree") && ~certificate.CollisionFree;
+end
+
+function isBetter = isBetterFailedAttempt( ...
+        candidateTimedPath, candidateCollisionCheck, currentTimedPath, ...
+        currentCollisionCheck)
+% Retain the failed attempt that has the strongest diagnostic evidence.
+candidateHasHistory = candidateTimedPath.HasTimedAttempt && ...
+    numel(candidateTimedPath.time_s) >= 2;
+currentHasHistory = currentTimedPath.HasTimedAttempt && ...
+    numel(currentTimedPath.time_s) >= 2;
+genericMessage = "No departure time was feasible.";
+candidateHasSpecificMessage = ...
+    string(candidateTimedPath.Message) ~= genericMessage;
+currentHasSpecificMessage = ...
+    string(currentTimedPath.Message) ~= genericMessage;
+candidateRank = [candidateCollisionCheck.ContinuousChecked, ...
+    candidateHasHistory, candidateHasSpecificMessage];
+currentRank = [currentCollisionCheck.ContinuousChecked, ...
+    currentHasHistory, currentHasSpecificMessage];
+isBetter = false;
+for rankIndex = 1:numel(candidateRank)
+    if candidateRank(rankIndex) ~= currentRank(rankIndex)
+        isBetter = candidateRank(rankIndex) > currentRank(rankIndex);
+        break;
+    end
 end
 end
 

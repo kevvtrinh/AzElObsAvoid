@@ -11,14 +11,15 @@ function [smoothPath, timedPath] = retimeAzElSpatialPath( ...
 %       departureTime_s, failureMessage)
 %**************************************************************************
 % PURPOSE
-%   - Smooth one geometric route and construct its certified spatial
-%     acceleration- or jerk-constrained timed trajectory.
+%   - Find the fastest certified member of a parameterized G3 corner family.
+%   - Repair only colliding corner blends without changing the supplied
+%     route or the protected obstacle safety margins.
 %**************************************************************************
 % INPUTS
 %   - route_deg (N-by-2 numeric)
 %       Ordered azimuth/elevation polyline.
 %   - obstacleField (scalar packed obstacle field)
-%       Protected geometry used while selecting collision-free blends.
+%       Protected geometry used only after unconstrained time optimization.
 %   - initialState, goalState, limits, options (scalar structs)
 %       Normalized motion request and resolved planner configuration.
 %   - departureTime_s (finite numeric scalar)
@@ -36,7 +37,7 @@ function [smoothPath, timedPath] = retimeAzElSpatialPath( ...
 %     state degrees per second, squared second, or cubed second.
 %**************************************************************************
 
-%% Section 1: Smooth Route & Retime Spatial Path
+%% Section 1: Optimize, Certify & Repair The Retimed Route
 
 if nargin < 8
     failureMessage = "";
@@ -53,36 +54,798 @@ if strlength(failureMessage) > 0
 end
 
 try
-    smoothPath = smoothRoute( ...
-        route_deg, obstacleField, departureTime_s, options);
-    timedPath = retimeSpatialPath( ...
-        smoothPath, initialState, goalState, limits, options, ...
-        departureTime_s);
+    [smoothPath, timedPath] = optimizeAndRepairRoute( ...
+        route_deg, obstacleField, initialState, goalState, limits, ...
+        options, departureTime_s);
 catch retimingError
     smoothPath = smoothPathTemplate(route_deg);
     timedPath = timedPathTemplate( ...
         limits, options, string(retimingError.message));
+    timedPath.TerminationReason = "internalError";
+    timedPath.RetimerDiagnostics.TerminationReason = "internalError";
 end
 end
 
 %% Section 2: Local Functions
 
+function [smoothPath, timedPath] = optimizeAndRepairRoute( ...
+        route_deg, obstacleField, initialState, goalState, limits, ...
+        options, departureTime_s)
+% Optimize without obstacles, then certify and locally repair the same route.
+[smoothPath, timedPath, optimization] = optimizeUnconstrainedRoute( ...
+    route_deg, initialState, goalState, limits, options, departureTime_s);
+smoothPath.GeometryOptimizationDiagnostics = optimization;
+diagnostics = retimerDiagnosticsTemplate();
+diagnostics.PolicyStatus = optimization.PolicyStatus;
+diagnostics.GeometryCandidateCount = optimization.CandidateCount;
+diagnostics.FeasibleGeometryCandidateCount = ...
+    optimization.FeasibleCandidateCount;
+diagnostics.SelectedGeometryCandidateIndex = ...
+    optimization.SelectedCandidateIndex;
+diagnostics.UnconstrainedMinimumMotionDuration_s = ...
+    timedPath.MinimumMotionDuration_s;
+diagnostics.UnconstrainedOptimizedPosition_deg = smoothPath.position_deg;
+diagnostics.UnconstrainedRadius_deg = cornerRadii(smoothPath);
+diagnostics.UnconstrainedControlPointsByCorner_deg = ...
+    cornerControlPoints(smoothPath);
+diagnostics.OriginalSafetyMargins_deg = ...
+    reshape(double(obstacleField.SafetyMarginsDeg), [], 1);
+diagnostics.FinalSafetyMargins_deg = diagnostics.OriginalSafetyMargins_deg;
+diagnostics.SafetyMarginPreserved = true;
+
+if ~timedPath.Success
+    diagnostics.TerminationReason = "unconstrainedRetimingInfeasible";
+    timedPath.TerminationReason = diagnostics.TerminationReason;
+    timedPath.RetimerDiagnostics = diagnostics;
+    timedPath.SmoothPath = smoothPath;
+    timedPath.RetimerType = "rpGeometryCertifiedSpatialRetimer";
+    return;
+end
+
+certificateField = obstacleField;
+[timedPath, certificate] = certifyCurveMotion( ...
+    smoothPath, certificateField, initialState, goalState, limits, ...
+    options, departureTime_s);
+diagnostics.InitialCollisionCertificate = certificate;
+diagnostics.UnconstrainedCollisionFree = certificate.CollisionFree;
+diagnostics.InitialCollisionSegmentIndex = ...
+    certificate.CollisionSegmentIndex;
+diagnostics.InitialCollisionTime_s = certificate.CollisionTime_s;
+
+if certificate.CollisionFree
+    diagnostics.FinalCollisionCertificate = certificate;
+    diagnostics.FinalCollisionFree = true;
+    diagnostics.FinalRadius_deg = diagnostics.UnconstrainedRadius_deg;
+    diagnostics.CornerRepairDiagnostics = cornerRepairDiagnostics( ...
+        smoothPath, smoothPath, strings(0, 1));
+    diagnostics.TerminationReason = "certifiedUnconstrainedOptimum";
+    timedPath.TerminationReason = diagnostics.TerminationReason;
+    timedPath.RetimerDiagnostics = diagnostics;
+    timedPath.SmoothPath = smoothPath;
+    timedPath.RetimerType = "rpGeometryCertifiedSpatialRetimer";
+    return;
+end
+
+[repairedSmoothPath, repairedTimedPath, repairDiagnostics] = ...
+    repairCollidingCurves(route_deg, smoothPath, timedPath, certificate, ...
+        certificateField, initialState, goalState, limits, options, ...
+        departureTime_s);
+diagnostics.RepairAttemptCount = repairDiagnostics.AttemptCount;
+diagnostics.RepairAttemptCountByCorner = ...
+    repairDiagnostics.AttemptCountByCorner;
+diagnostics.RepairAttempts = repairDiagnostics.Attempts;
+diagnostics.RepairExhausted = repairDiagnostics.Exhausted;
+diagnostics.ContinuityUpdatedPrimitiveIndex = ...
+    repairDiagnostics.ContinuityUpdatedPrimitiveIndex;
+diagnostics.FinalCollisionCertificate = ...
+    repairDiagnostics.FinalCertificate;
+diagnostics.FinalCollisionFree = ...
+    repairDiagnostics.FinalCertificate.CollisionFree;
+diagnostics.FinalRadius_deg = cornerRadii(repairedSmoothPath);
+diagnostics.CornerRepairDiagnostics = cornerRepairDiagnostics( ...
+    smoothPath, repairedSmoothPath, repairDiagnostics.RepairReasons);
+diagnostics.RadiusNondecreasing = all( ...
+    diagnostics.FinalRadius_deg + 1e-10 >= ...
+    diagnostics.UnconstrainedRadius_deg);
+
+if ~repairDiagnostics.FinalCertificate.CollisionFree || ...
+        ~diagnostics.RadiusNondecreasing
+    if ~repairDiagnostics.FinalCertificate.Resolved
+        diagnostics.TerminationReason = "collisionCertificateUnresolved";
+    else
+        diagnostics.TerminationReason = "collisionRepairExhausted";
+    end
+    message = "Local equal-or-larger-radius curve repair could not " + ...
+        "certify the supplied route against protected geometry.";
+    timedPath = repairedTimedPath;
+    timedPath.Success = false;
+    timedPath.Message = message;
+    timedPath.HasTimedAttempt = true;
+    timedPath.TerminationReason = diagnostics.TerminationReason;
+    timedPath.RetimerDiagnostics = diagnostics;
+    repairedSmoothPath.Message = message;
+    smoothPath = repairedSmoothPath;
+    timedPath.SmoothPath = smoothPath;
+    timedPath.RetimerType = "rpGeometryCertifiedSpatialRetimer";
+    return;
+end
+
+diagnostics.TerminationReason = "certifiedAfterLocalRepair";
+repairedSmoothPath.GeometryOptimizationDiagnostics = optimization;
+repairedTimedPath.TerminationReason = diagnostics.TerminationReason;
+repairedTimedPath.RetimerDiagnostics = diagnostics;
+repairedTimedPath.SmoothPath = repairedSmoothPath;
+repairedTimedPath.RetimerType = "rpGeometryCertifiedSpatialRetimer";
+smoothPath = repairedSmoothPath;
+timedPath = repairedTimedPath;
+end
+
+function [smoothPath, timedPath, diagnostics] = ...
+        optimizeUnconstrainedRoute(route_deg, initialState, goalState, ...
+        limits, options, departureTime_s)
+% Search a deterministic radius family, with one optional RP proposal.
+step_deg = diff(route_deg, 1, 1);
+normalizedRoute_deg = route_deg( ...
+    [true; vecnorm(step_deg, 2, 2) > 1e-9], :);
+cornerCount = max(0, size(normalizedRoute_deg, 1) - 2);
+deterministicFraction = [1; 0.8; 0.6; 0.4; 0.2; 0];
+radiusScaleCandidates = repmat( ...
+    deterministicFraction, 1, cornerCount);
+for cornerIndex = 1:cornerCount
+    for fractionIndex = 1:numel(deterministicFraction)
+        candidate = ones(1, cornerCount);
+        candidate(cornerIndex) = ...
+            deterministicFraction(fractionIndex);
+        radiusScaleCandidates(end + 1, :) = candidate; %#ok<AGROW>
+    end
+end
+[policyScale, policyStatus] = proposeRpRadiusScale( ...
+    normalizedRoute_deg, limits, options);
+if ~isempty(policyScale)
+    radiusScaleCandidates(end + 1, :) = policyScale;
+end
+if cornerCount == 0
+    radiusScaleCandidates = zeros(1, 0);
+else
+    radiusScaleCandidates = unique( ...
+        round(radiusScaleCandidates, 12), "rows", "stable");
+end
+
+candidateCount = size(radiusScaleCandidates, 1);
+candidateRecords = repmat(geometryCandidateTemplate(), candidateCount, 1);
+smoothPaths = cell(candidateCount, 1);
+timedPaths = cell(candidateCount, 1);
+for candidateIndex = 1:candidateCount
+    radiusScale = radiusScaleCandidates(candidateIndex, :).';
+    candidateSmoothPath = smoothRoute( ...
+        normalizedRoute_deg, options, radiusScale, ...
+        zeros(cornerCount, 2));
+    candidateTimedPath = retimeSpatialPath( ...
+        candidateSmoothPath, initialState, goalState, limits, options, ...
+        departureTime_s);
+    smoothPaths{candidateIndex} = candidateSmoothPath;
+    timedPaths{candidateIndex} = candidateTimedPath;
+    record = geometryCandidateTemplate();
+    record.Index = candidateIndex;
+    record.RadiusScaleByCorner = radiusScale;
+    record.Radius_deg = cornerRadii(candidateSmoothPath);
+    record.RetimingFeasible = candidateTimedPath.Success;
+    record.MinimumMotionDuration_s = ...
+        candidateTimedPath.MinimumMotionDuration_s;
+    record.Message = candidateTimedPath.Message;
+    candidateRecords(candidateIndex) = record;
+end
+
+preliminaryIndex = selectFastestGeometryCandidate(candidateRecords);
+if cornerCount > 0 && candidateRecords(preliminaryIndex).RetimingFeasible
+    preliminaryScale = ...
+        candidateRecords(preliminaryIndex).RadiusScaleByCorner(:).';
+    refinementStep = unique([0.1 0.05 ...
+        options.RpRadiusFractionTolerance], "stable");
+    refinedCandidates = radiusScaleCandidates;
+    for cornerIndex = 1:cornerCount
+        for stepIndex = 1:numel(refinementStep)
+            for direction = [-1 1]
+                candidate = preliminaryScale;
+                candidate(cornerIndex) = min(1, max(0, ...
+                    candidate(cornerIndex) + ...
+                    direction * refinementStep(stepIndex)));
+                refinedCandidates(end + 1, :) = candidate; %#ok<AGROW>
+            end
+        end
+    end
+    refinedCandidates = unique( ...
+        round(refinedCandidates, 12), "rows", "stable");
+    previousCandidateCount = candidateCount;
+    candidateCount = size(refinedCandidates, 1);
+    candidateRecords(candidateCount, 1) = geometryCandidateTemplate();
+    smoothPaths{candidateCount, 1} = [];
+    timedPaths{candidateCount, 1} = [];
+    radiusScaleCandidates = refinedCandidates;
+    for candidateIndex = previousCandidateCount + 1:candidateCount
+        radiusScale = radiusScaleCandidates(candidateIndex, :).';
+        candidateSmoothPath = smoothRoute( ...
+            normalizedRoute_deg, options, radiusScale, ...
+            zeros(cornerCount, 2));
+        candidateTimedPath = retimeSpatialPath( ...
+            candidateSmoothPath, initialState, goalState, limits, ...
+            options, departureTime_s);
+        smoothPaths{candidateIndex} = candidateSmoothPath;
+        timedPaths{candidateIndex} = candidateTimedPath;
+        record = geometryCandidateTemplate();
+        record.Index = candidateIndex;
+        record.RadiusScaleByCorner = radiusScale;
+        record.Radius_deg = cornerRadii(candidateSmoothPath);
+        record.RetimingFeasible = candidateTimedPath.Success;
+        record.MinimumMotionDuration_s = ...
+            candidateTimedPath.MinimumMotionDuration_s;
+        record.Message = candidateTimedPath.Message;
+        candidateRecords(candidateIndex) = record;
+    end
+end
+
+feasible = [candidateRecords.RetimingFeasible].';
+if any(feasible)
+    feasibleIndex = find(feasible);
+    duration_s = [candidateRecords(feasibleIndex).MinimumMotionDuration_s].';
+    radiusSum_deg = zeros(numel(feasibleIndex), 1);
+    for feasibleRow = 1:numel(feasibleIndex)
+        radiusSum_deg(feasibleRow) = sum( ...
+            candidateRecords(feasibleIndex(feasibleRow)).Radius_deg);
+    end
+    ranking = [duration_s, -radiusSum_deg, feasibleIndex];
+    [~, order] = sortrows(ranking, [1 2 3]);
+    selectedIndex = feasibleIndex(order(1));
+else
+    selectedIndex = 1;
+end
+smoothPath = smoothPaths{selectedIndex};
+timedPath = timedPaths{selectedIndex};
+diagnostics = struct( ...
+    "Algorithm", "rpProposalWithDeterministicCertifiedSearch", ...
+    "OptimalityScope", ...
+        "Best retimed member of the recorded radius candidate family", ...
+    "GlobalTimeOptimalityCertified", false, ...
+    "PolicyStatus", policyStatus, ...
+    "RadiusFractionTolerance", options.RpRadiusFractionTolerance, ...
+    "DeterministicLocalRefinement", true, ...
+    "CandidateCount", candidateCount, ...
+    "FeasibleCandidateCount", nnz(feasible), ...
+    "SelectedCandidateIndex", selectedIndex, ...
+    "Candidates", candidateRecords);
+end
+
+function selectedIndex = selectFastestGeometryCandidate(records)
+% Select the fastest feasible record with stable radius and index tie breaks.
+feasibleIndex = find([records.RetimingFeasible]);
+if isempty(feasibleIndex)
+    selectedIndex = 1;
+    return;
+end
+duration_s = [records(feasibleIndex).MinimumMotionDuration_s].';
+radiusSum_deg = zeros(numel(feasibleIndex), 1);
+for rowIndex = 1:numel(feasibleIndex)
+    radiusSum_deg(rowIndex) = sum(records( ...
+        feasibleIndex(rowIndex)).Radius_deg);
+end
+ranking = [duration_s, -radiusSum_deg, feasibleIndex(:)];
+[~, order] = sortrows(ranking, [1 2 3]);
+selectedIndex = feasibleIndex(order(1));
+end
+
+function [radiusScale, status] = proposeRpRadiusScale( ...
+        route_deg, limits, options)
+% Evaluate the trained policy once per interior corner without trusting it.
+persistent cachedAgent cachedAgentFile
+radiusScale = zeros(0, 1);
+if ~options.UseRpAgent
+    status = "disabled";
+    return;
+end
+agentFile = string(options.RpAgentFile);
+if ~isfile(agentFile)
+    status = "modelNotFound";
+    return;
+end
+try
+    if isempty(cachedAgent) || isempty(cachedAgentFile) || ...
+            cachedAgentFile ~= agentFile
+        agentData = load(agentFile, "agent", "metadata");
+        if ~isfield(agentData, "agent") || ...
+                ~isfield(agentData, "metadata") || ...
+                string(agentData.metadata.Format) ~= "AzElRpRetimerAgent"
+            error("retimeAzElSpatialPath:InvalidRpAgent", ...
+                "The RP model file has an invalid format.");
+        end
+        cachedAgent = agentData.agent;
+        cachedAgent.UseExplorationPolicy = false;
+        cachedAgentFile = agentFile;
+    end
+    cornerCount = size(route_deg, 1) - 2;
+    radiusScale = zeros(1, cornerCount);
+    for cornerIndex = 1:cornerCount
+        incomingVector = route_deg(cornerIndex + 1, :) - ...
+            route_deg(cornerIndex, :);
+        outgoingVector = route_deg(cornerIndex + 2, :) - ...
+            route_deg(cornerIndex + 1, :);
+        incomingLength_deg = norm(incomingVector);
+        outgoingLength_deg = norm(outgoingVector);
+        incoming = incomingVector / incomingLength_deg;
+        outgoing = outgoingVector / outgoingLength_deg;
+        angle_rad = acos(min(1, max(-1, dot(incoming, outgoing))));
+        problem = struct( ...
+            "DeflectionAngle_rad", angle_rad, ...
+            "IncomingLength_deg", incomingLength_deg, ...
+            "OutgoingLength_deg", outgoingLength_deg, ...
+            "IncomingDirection", incoming, ...
+            "OutgoingDirection", outgoing, ...
+            "TurnRadius_deg", options.TurnRadius_deg, ...
+            "MaxVelocity_deg_s", limits.maxVelocity_deg_s, ...
+            "MaxAcceleration_deg_s2", limits.maxAcceleration_deg_s2, ...
+            "MaxJerk_deg_s3", limits.maxJerk_deg_s3);
+        observation = azElInternal.rpRetimerObservation(problem);
+        action = getAction(cachedAgent, {observation});
+        if iscell(action)
+            action = action{1};
+        end
+        radiusScale(cornerIndex) = 0.5 * ...
+            (min(1, max(-1, double(action))) + 1);
+    end
+    status = "proposalEvaluated";
+catch policyError
+    radiusScale = zeros(0, 1);
+    status = "policyRejected: " + string(policyError.message);
+end
+end
+
+function [timedPath, certificate] = certifyCurveMotion( ...
+        smoothPath, certificateField, initialState, goalState, limits, ...
+        options, departureTime_s)
+% Bound nonlinear curve-to-time-chord error and check the enlarged obstacles.
+baseTimedPath = retimeSpatialPath( ...
+    smoothPath, initialState, goalState, limits, options, departureTime_s);
+certificate = collisionCertificateTemplate();
+if ~baseTimedPath.Success
+    certificate.Message = baseTimedPath.Message;
+    timedPath = baseTimedPath;
+    return;
+end
+peakAcceleration_deg_s2 = ...
+    baseTimedPath.ConstraintDiagnostics.PeakAcceleration_deg_s2;
+accelerationNorm_deg_s2 = norm(peakAcceleration_deg_s2);
+certificateStep_s = options.SampleTime_s;
+if accelerationNorm_deg_s2 > 0
+    certificateStep_s = min(certificateStep_s, sqrt( ...
+        4 * options.RpCollisionCurveTolerance_deg / ...
+        accelerationNorm_deg_s2));
+end
+estimatedSampleCount = ceil( ...
+    baseTimedPath.MinimumMotionDuration_s / certificateStep_s) + ...
+    numel(baseTimedPath.SegmentProfiles) + 2;
+if estimatedSampleCount > options.RpMaximumCollisionSamples
+    certificate.Message = sprintf( ...
+        "Curve certificate needs about %d samples; limit is %d.", ...
+        estimatedSampleCount, options.RpMaximumCollisionSamples);
+    timedPath = timedPathTemplate(limits, options, certificate.Message);
+    return;
+end
+certificateOptions = options;
+certificateOptions.SampleTime_s = certificateStep_s;
+timedPath = retimeSpatialPath( ...
+    smoothPath, initialState, goalState, limits, certificateOptions, ...
+    departureTime_s);
+if ~timedPath.Success
+    certificate.Message = timedPath.Message;
+    return;
+end
+[blocked, curveCertificate] = queryAzElTimedCurveCollision( ...
+    certificateField, timedPath, struct( ...
+        "MaximumNumericalEnvelope_deg", ...
+            options.RpCollisionCurveTolerance_deg, ...
+        "TimePaddingSamples", options.CollisionTimePaddingSamples));
+if ~curveCertificate.Resolved
+    certificate.Message = curveCertificate.Message;
+    timedPath = timedPathTemplate(limits, options, certificate.Message);
+    return;
+end
+details = struct( ...
+    "time_s", curveCertificate.time_s, ...
+    "SampleOccupied", curveCertificate.SampleOccupied, ...
+    "SegmentOccupied", curveCertificate.SegmentOccupied, ...
+    "BlockingObstacleIndex", curveCertificate.BlockingObstacleIndex);
+localization = localizeCollision( ...
+    blocked, details, timedPath, smoothPath);
+certificate.CollisionFree = ~any(blocked);
+certificate.Resolved = true;
+certificate.Message = "Nonlinear curve certificate completed.";
+certificate.CurveDeviationTolerance_deg = ...
+    options.RpCollisionCurveTolerance_deg;
+certificate.CertificateSampleTime_s = certificateStep_s;
+certificate.CertificateSampleCount = numel(timedPath.time_s);
+certificate.ObstacleExpansion_deg = ...
+    curveCertificate.MaximumEnvelope_deg;
+certificate.BoundaryIsOccupied = true;
+certificate.SampleOccupiedIndex = find(details.SampleOccupied);
+certificate.CollisionSegmentIndex = find(details.SegmentOccupied);
+certificate.CollisionTime_s = localization.CollisionTime_s;
+certificate.CollisionPrimitiveIndex = ...
+    localization.CollisionPrimitiveIndex;
+certificate.CollisionCornerIndex = localization.CollisionCornerIndex;
+certificate.CollisionLinePrimitiveIndex = ...
+    localization.CollisionLinePrimitiveIndex;
+certificate.BlockingObstacleIndex = unique(double( ...
+    details.BlockingObstacleIndex(blocked)));
+end
+
+function localization = localizeCollision( ...
+        blocked, details, timedPath, smoothPath)
+% Map continuous time-chord collisions back to curve primitives and corners.
+collisionTime_s = details.time_s(blocked);
+sampleArcLength_deg = timedPath.SampleArcLength_deg;
+queryArcLength_deg = sampleArcLength_deg(details.SampleOccupied);
+segmentIndex = find(details.SegmentOccupied);
+if ~isempty(segmentIndex)
+    segmentMidpointS_deg = 0.5 * ( ...
+        sampleArcLength_deg(segmentIndex) + ...
+        sampleArcLength_deg(segmentIndex + 1));
+    queryArcLength_deg = [queryArcLength_deg; segmentMidpointS_deg];
+end
+primitiveIndex = zeros(numel(queryArcLength_deg), 1);
+for queryIndex = 1:numel(queryArcLength_deg)
+    primitiveIndex(queryIndex) = find( ...
+        queryArcLength_deg(queryIndex) <= ...
+        [smoothPath.Primitives.EndArcLength_deg].' + 1e-10, 1, "first");
+end
+primitiveIndex = unique(primitiveIndex(primitiveIndex > 0));
+primitiveType = string({smoothPath.Primitives(primitiveIndex).Type}).';
+curvePrimitiveIndex = primitiveIndex(primitiveType ~= "line");
+linePrimitiveIndex = primitiveIndex(primitiveType == "line");
+cornerPathPointIndex = [smoothPath.Primitives( ...
+    curvePrimitiveIndex).CornerPathPointIndex].';
+localization = struct( ...
+    "CollisionTime_s", collisionTime_s, ...
+    "CollisionPrimitiveIndex", primitiveIndex, ...
+    "CollisionCornerIndex", unique(cornerPathPointIndex - 1), ...
+    "CollisionLinePrimitiveIndex", linePrimitiveIndex);
+end
+
+function [smoothPath, timedPath, diagnostics] = repairCollidingCurves( ...
+        route_deg, initialSmoothPath, initialTimedPath, ...
+        initialCertificate, certificateField, initialState, goalState, ...
+        limits, options, departureTime_s)
+% Apply same-route equal-or-larger-radius bulges and recertify every proposal.
+smoothPath = initialSmoothPath;
+timedPath = initialTimedPath;
+certificate = initialCertificate;
+cornerCount = numel(initialSmoothPath.CornerDiagnostics);
+radiusScale = reshape( ...
+    [initialSmoothPath.CornerDiagnostics.RadiusScale], [], 1);
+bulgeByCorner_deg = zeros(cornerCount, 2);
+initialRadius_deg = cornerRadii(initialSmoothPath);
+attempts = repmat(repairAttemptTemplate(), 0, 1);
+attemptCountByCorner = zeros(cornerCount, 1);
+continuityUpdatedPrimitiveIndex = zeros(0, 1);
+repairReasons = strings(cornerCount, 1);
+
+while ~certificate.CollisionFree
+    collidingCornerIndex = certificate.CollisionCornerIndex;
+    if isempty(collidingCornerIndex)
+        break;
+    end
+    hasRemainingBudget = attemptCountByCorner(collidingCornerIndex) < ...
+        options.RpMaximumRepairAttempts;
+    repairableCornerIndex = collidingCornerIndex(hasRemainingBudget);
+    if isempty(repairableCornerIndex)
+        break;
+    end
+    cornerIndex = repairableCornerIndex(1);
+    corner = smoothPath.CornerDiagnostics(cornerIndex);
+    chord_deg = corner.ExitPosition_deg - corner.EntryPosition_deg;
+    chordLength_deg = norm(chord_deg);
+    if chordLength_deg <= 1e-10
+        break;
+    end
+    unitNormal = [-chord_deg(2), chord_deg(1)] / chordLength_deg;
+    referenceRadius_deg = max(initialRadius_deg(cornerIndex), 0.02);
+    radiusFactor = [1 1.25 1.5 2];
+    bulgeFactor = [0.25 0.5 1 2];
+    bestScore = [Inf Inf Inf Inf];
+    bestSmoothPath = smoothPath;
+    bestTimedPath = timedPath;
+    bestCertificate = certificate;
+    foundClear = false;
+    for factorIndex = 1:numel(radiusFactor)
+        for direction = [-1 1]
+            for bulgeIndex = 1:numel(bulgeFactor)
+                if attemptCountByCorner(cornerIndex) >= ...
+                        options.RpMaximumRepairAttempts
+                    break;
+                end
+                candidateRadiusScale = radiusScale;
+                candidateRadiusScale(cornerIndex) = max( ...
+                    radiusScale(cornerIndex), ...
+                    radiusScale(cornerIndex) * ...
+                    radiusFactor(factorIndex));
+                candidateBulge_deg = bulgeByCorner_deg;
+                candidateBulge_deg(cornerIndex, :) = direction * ...
+                    bulgeFactor(bulgeIndex) * referenceRadius_deg * ...
+                    unitNormal;
+                candidateSmoothPath = smoothRoute( ...
+                    route_deg, options, candidateRadiusScale, ...
+                    candidateBulge_deg);
+                candidateRadius_deg = cornerRadii(candidateSmoothPath);
+                radiusIsNondecreasing = all(candidateRadius_deg + 1e-10 >= ...
+                    initialRadius_deg);
+                if radiusIsNondecreasing
+                    [candidateTimedPath, candidateCertificate] = ...
+                        certifyCurveMotion(candidateSmoothPath, ...
+                            certificateField, initialState, goalState, ...
+                            limits, options, departureTime_s);
+                else
+                    candidateTimedPath = timedPathTemplate( ...
+                        limits, options, "Repair reduced a corner radius.");
+                    candidateCertificate = collisionCertificateTemplate();
+                    candidateCertificate.Message = ...
+                        "Repair reduced a corner radius.";
+                end
+                record = repairAttemptTemplate();
+                record.Index = numel(attempts) + 1;
+                record.RepairedCornerIndex = cornerIndex;
+                attemptCountByCorner(cornerIndex) = ...
+                    attemptCountByCorner(cornerIndex) + 1;
+                record.AttemptWithinCorner = ...
+                    attemptCountByCorner(cornerIndex);
+                record.InitialRadius_deg = initialRadius_deg(cornerIndex);
+                record.CandidateRadius_deg = ...
+                    candidateRadius_deg(cornerIndex);
+                record.RadiusNondecreasing = radiusIsNondecreasing;
+                record.Displacement_deg = ...
+                    candidateBulge_deg(cornerIndex, :);
+                record.RetimingFeasible = candidateTimedPath.Success;
+                record.CollisionFree = candidateCertificate.CollisionFree;
+                record.CollisionSegmentIndex = ...
+                    candidateCertificate.CollisionSegmentIndex;
+                record.CollisionTime_s = ...
+                    candidateCertificate.CollisionTime_s;
+                record.Message = candidateCertificate.Message;
+                attempts(end + 1, 1) = record; %#ok<AGROW>
+                isSelectableRepair = radiusIsNondecreasing && ...
+                    candidateTimedPath.Success && ...
+                    candidateCertificate.Resolved;
+                if ~isSelectableRepair
+                    continue;
+                end
+                collisionCount = numel( ...
+                    candidateCertificate.CollisionSegmentIndex) + ...
+                    numel(candidateCertificate.SampleOccupiedIndex);
+                duration_s = candidateTimedPath.MinimumMotionDuration_s;
+                if ~isfinite(duration_s)
+                    duration_s = Inf;
+                end
+                score = [~candidateCertificate.Resolved, ...
+                    ~candidateCertificate.CollisionFree, ...
+                    collisionCount, duration_s];
+                if lexicographicLess(score, bestScore)
+                    bestScore = score;
+                    bestSmoothPath = candidateSmoothPath;
+                    bestTimedPath = candidateTimedPath;
+                    bestCertificate = candidateCertificate;
+                    bestRadiusScale = candidateRadiusScale;
+                    bestBulge_deg = candidateBulge_deg;
+                end
+                if candidateCertificate.CollisionFree
+                    foundClear = true;
+                end
+            end
+        end
+    end
+    if ~isfinite(bestScore(1))
+        % Keep the last certified state. This corner used its independent
+        % budget, but a later colliding corner can still have a valid repair.
+        continue;
+    end
+    previousPrimitiveCount = numel(smoothPath.Primitives);
+    smoothPath = bestSmoothPath;
+    timedPath = bestTimedPath;
+    certificate = bestCertificate;
+    radiusScale = bestRadiusScale;
+    bulgeByCorner_deg = bestBulge_deg;
+    repairReasons(cornerIndex) = ...
+        "Localized equal-or-larger-radius G3 bulge repair";
+    curvePrimitiveIndex = find([smoothPath.Primitives.CornerPathPointIndex] == ...
+        cornerIndex + 1);
+    adjacent = unique([curvePrimitiveIndex - 1; curvePrimitiveIndex + 1]);
+    adjacent = adjacent(adjacent >= 1 & ...
+        adjacent <= numel(smoothPath.Primitives));
+    continuityUpdatedPrimitiveIndex = unique([ ...
+        continuityUpdatedPrimitiveIndex; adjacent(:)]);
+    if foundClear
+        break;
+    end
+    if numel(smoothPath.Primitives) ~= previousPrimitiveCount
+        % The published primitive indices still refer to the final path.
+        continuityUpdatedPrimitiveIndex = zeros(0, 1);
+    end
+end
+diagnostics = struct( ...
+    "AttemptCount", numel(attempts), ...
+    "AttemptCountByCorner", attemptCountByCorner, ...
+    "Attempts", attempts, ...
+    "Exhausted", ~certificate.CollisionFree, ...
+    "ContinuityUpdatedPrimitiveIndex", ...
+        continuityUpdatedPrimitiveIndex, ...
+    "RepairReasons", repairReasons, ...
+    "FinalCertificate", certificate);
+end
+
+function isLess = lexicographicLess(first, second)
+% Compare fixed-length numeric score rows from left to right.
+isLess = false;
+for valueIndex = 1:numel(first)
+    if first(valueIndex) < second(valueIndex)
+        isLess = true;
+        return;
+    elseif first(valueIndex) > second(valueIndex)
+        return;
+    end
+end
+end
+
+function radius_deg = cornerRadii(smoothPath)
+% Return one conservative certified curvature radius per interior vertex.
+if isempty(smoothPath.CornerDiagnostics)
+    radius_deg = zeros(0, 1);
+else
+    radius_deg = reshape( ...
+        [smoothPath.CornerDiagnostics. ...
+        CertifiedMinimumCurvatureRadius_deg], [], 1);
+end
+end
+
+function controlPointsByCorner_deg = cornerControlPoints(smoothPath)
+% Preserve one control polygon per corner for exact repair-scope audits.
+cornerCount = numel(smoothPath.CornerDiagnostics);
+controlPointsByCorner_deg = cell(cornerCount, 1);
+for cornerIndex = 1:cornerCount
+    controlPointsByCorner_deg{cornerIndex} = ...
+        smoothPath.CornerDiagnostics(cornerIndex).ControlPoints_deg;
+end
+end
+
+function diagnostics = cornerRepairDiagnostics( ...
+        initialSmoothPath, finalSmoothPath, reasons)
+% Publish the initial and final radius and displacement for every corner.
+cornerCount = numel(initialSmoothPath.CornerDiagnostics);
+template = struct( ...
+    "CornerIndex", 0, ...
+    "PathPointIndex", 0, ...
+    "InitialRadius_deg", 0, ...
+    "FinalRadius_deg", 0, ...
+    "RadiusNondecreasing", true, ...
+    "Displacement_deg", zeros(1, 2), ...
+    "Reason", "unchanged");
+diagnostics = repmat(template, cornerCount, 1);
+for cornerIndex = 1:cornerCount
+    diagnostics(cornerIndex).CornerIndex = cornerIndex;
+    diagnostics(cornerIndex).PathPointIndex = cornerIndex + 1;
+    diagnostics(cornerIndex).InitialRadius_deg = ...
+        initialSmoothPath.CornerDiagnostics(cornerIndex). ...
+        CertifiedMinimumCurvatureRadius_deg;
+    diagnostics(cornerIndex).FinalRadius_deg = ...
+        finalSmoothPath.CornerDiagnostics(cornerIndex). ...
+        CertifiedMinimumCurvatureRadius_deg;
+    diagnostics(cornerIndex).RadiusNondecreasing = ...
+        diagnostics(cornerIndex).FinalRadius_deg + 1e-10 >= ...
+        diagnostics(cornerIndex).InitialRadius_deg;
+    diagnostics(cornerIndex).Displacement_deg = ...
+        finalSmoothPath.CornerDiagnostics(cornerIndex).BulgeDisplacement_deg;
+    if numel(reasons) >= cornerIndex && strlength(reasons(cornerIndex)) > 0
+        diagnostics(cornerIndex).Reason = reasons(cornerIndex);
+    end
+end
+end
+
+function record = geometryCandidateTemplate()
+% Define one unconstrained geometry-candidate result.
+record = struct( ...
+    "Index", 0, ...
+    "RadiusScaleByCorner", zeros(0, 1), ...
+    "Radius_deg", zeros(0, 1), ...
+    "RetimingFeasible", false, ...
+    "MinimumMotionDuration_s", NaN, ...
+    "Message", "not evaluated");
+end
+
+function record = repairAttemptTemplate()
+% Define one collision-repair attempt result.
+record = struct( ...
+    "Index", 0, ...
+    "RepairedCornerIndex", 0, ...
+    "AttemptWithinCorner", 0, ...
+    "InitialRadius_deg", NaN, ...
+    "CandidateRadius_deg", NaN, ...
+    "RadiusNondecreasing", false, ...
+    "Displacement_deg", zeros(1, 2), ...
+    "RetimingFeasible", false, ...
+    "CollisionFree", false, ...
+    "CollisionSegmentIndex", zeros(0, 1), ...
+    "CollisionTime_s", zeros(0, 1), ...
+    "Message", "not evaluated");
+end
+
+function certificate = collisionCertificateTemplate()
+% Define the nonlinear-curve collision certificate schema.
+certificate = struct( ...
+    "Resolved", false, ...
+    "CollisionFree", false, ...
+    "Message", "not evaluated", ...
+    "CurveDeviationTolerance_deg", NaN, ...
+    "CertificateSampleTime_s", NaN, ...
+    "CertificateSampleCount", 0, ...
+    "ObstacleExpansion_deg", NaN, ...
+    "BoundaryIsOccupied", true, ...
+    "SampleOccupiedIndex", zeros(0, 1), ...
+    "CollisionSegmentIndex", zeros(0, 1), ...
+    "CollisionTime_s", zeros(0, 1), ...
+    "CollisionPrimitiveIndex", zeros(0, 1), ...
+    "CollisionCornerIndex", zeros(0, 1), ...
+    "CollisionLinePrimitiveIndex", zeros(0, 1), ...
+    "BlockingObstacleIndex", zeros(0, 1));
+end
+
+function diagnostics = retimerDiagnosticsTemplate()
+% Define stable RP optimization, repair, and certificate diagnostics.
+diagnostics = struct( ...
+    "Algorithm", "rpCurveProposalWithDeterministicCertification", ...
+    "OptimalityScope", ...
+        "Best certified candidate in the evaluated curve family", ...
+    "GlobalTimeOptimalityCertified", false, ...
+    "PolicyStatus", "not evaluated", ...
+    "GeometryCandidateCount", 0, ...
+    "FeasibleGeometryCandidateCount", 0, ...
+    "SelectedGeometryCandidateIndex", 0, ...
+    "UnconstrainedMinimumMotionDuration_s", NaN, ...
+    "UnconstrainedOptimizedPosition_deg", zeros(0, 2), ...
+    "UnconstrainedRadius_deg", zeros(0, 1), ...
+    "UnconstrainedControlPointsByCorner_deg", {cell(0, 1)}, ...
+    "UnconstrainedCollisionFree", false, ...
+    "InitialCollisionCertificate", collisionCertificateTemplate(), ...
+    "InitialCollisionSegmentIndex", zeros(0, 1), ...
+    "InitialCollisionTime_s", zeros(0, 1), ...
+    "RepairAttemptCount", 0, ...
+    "RepairAttemptCountByCorner", zeros(0, 1), ...
+    "RepairAttempts", repmat(repairAttemptTemplate(), 0, 1), ...
+    "RepairExhausted", false, ...
+    "ContinuityUpdatedPrimitiveIndex", zeros(0, 1), ...
+    "FinalCollisionCertificate", collisionCertificateTemplate(), ...
+    "FinalCollisionFree", false, ...
+    "OriginalSafetyMargins_deg", zeros(0, 1), ...
+    "FinalSafetyMargins_deg", zeros(0, 1), ...
+    "SafetyMarginPreserved", false, ...
+    "FinalRadius_deg", zeros(0, 1), ...
+    "RadiusNondecreasing", true, ...
+    "CornerRepairDiagnostics", struct([]), ...
+    "TerminationReason", "notRun");
+end
+
 % --- Geometric Smoothing And Path Sampling ------------------------------
-function smoothPath = smoothRoute(route_deg, obstacleField, ...
-        collisionTime_s, options)
+function smoothPath = smoothRoute( ...
+        route_deg, options, radiusScaleByCorner, bulgeByCorner_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   smoothPath = smoothRoute(route_deg, obstacleField, ...
-%       collisionTime_s, options)
+%   smoothPath = smoothRoute( ...
+%       route_deg, options, radiusScaleByCorner, bulgeByCorner_deg)
 %**************************************************************************
 % PURPOSE
-%   - Replace every resolvable polyline turn with a symmetric G3 blend.
+%   - Replace requested polyline turns with symmetric G3 blends.
 %**************************************************************************
 % INPUTS
-%   - route_deg (N-by-2 numeric), obstacleField (packed obstacle struct)
-%       Candidate polyline and the protected collision geometry.
-%   - collisionTime_s (scalar), options (scalar struct)
-%       Geometry snapshot time and resolved smoothing options.
+%   - route_deg (N-by-2 numeric), options (scalar struct)
+%       Candidate polyline and resolved smoothing options.
+%   - radiusScaleByCorner (M-by-1 numeric)
+%       Radius fractions for the M interior polyline vertices.
+%   - bulgeByCorner_deg (M-by-2 numeric)
+%       Interior displacement. Its first three endpoint derivatives vanish.
 %**************************************************************************
 % OUTPUTS
 %   - smoothPath (scalar struct)
@@ -107,7 +870,12 @@ cornerTemplate = struct(...
     "PathPointIndex", 0, ...
     "Position_deg", zeros(1, 2), ...
     "DeflectionAngle_rad", 0, ...
+    "GeometricMaximumRadius_deg", 0, ...
+    "UnconstrainedMaximumRadius_deg", 0, ...
     "AppliedRadius_deg", 0, ...
+    "CertifiedMinimumCurvatureRadius_deg", 0, ...
+    "RadiusScale", 0, ...
+    "BulgeDisplacement_deg", zeros(1, 2), ...
     "EntryPosition_deg", zeros(1, 2), ...
     "ExitPosition_deg", zeros(1, 2), ...
     "ControlPoints_deg", zeros(6, 2), ...
@@ -115,7 +883,12 @@ cornerTemplate = struct(...
     "MandatoryStop", false, ...
     "Reason", "");
 corners = repmat(cornerTemplate, cornerCount, 1);
-minimumRadius_deg = min(0.02, options.TurnRadius_deg);
+validateattributes(radiusScaleByCorner, {'numeric'}, ...
+    {'real', 'finite', 'vector', 'numel', cornerCount, '>=', 0});
+radiusScaleByCorner = double(radiusScaleByCorner(:));
+validateattributes(bulgeByCorner_deg, {'numeric'}, ...
+    {'real', 'finite', 'size', [cornerCount 2]});
+bulgeByCorner_deg = double(bulgeByCorner_deg);
 
 for cornerIndex = 1:cornerCount
     pointIndex = cornerIndex + 1;
@@ -150,53 +923,42 @@ for cornerIndex = 1:cornerCount
     end
 
     tangentScale = (384 / 125) * sin(angle_rad / 2) / cos(angle_rad / 2)^2;
-    maximumRadius_deg = 0.45 * min(incomingLength_deg, outgoingLength_deg) / tangentScale;
-    requestedRadius_deg = min(options.TurnRadius_deg, maximumRadius_deg);
-    trialRadii_deg = requestedRadius_deg * 0.65 .^ (0:60);
-    trialRadii_deg = trialRadii_deg(trialRadii_deg >= minimumRadius_deg);
+    geometricMaximumRadius_deg = 0.45 * ...
+        min(incomingLength_deg, outgoingLength_deg) / tangentScale;
+    maximumRadius_deg = min( ...
+        options.TurnRadius_deg, geometricMaximumRadius_deg);
+    radiusScale = radiusScaleByCorner(cornerIndex);
+    radius_deg = min(geometricMaximumRadius_deg, ...
+        maximumRadius_deg * radiusScale);
+    bulge_deg = bulgeByCorner_deg(cornerIndex, :);
+    diagnostic.GeometricMaximumRadius_deg = geometricMaximumRadius_deg;
+    diagnostic.UnconstrainedMaximumRadius_deg = maximumRadius_deg;
+    diagnostic.RadiusScale = radiusScale;
+    diagnostic.BulgeDisplacement_deg = bulge_deg;
 
-    if requestedRadius_deg >= minimumRadius_deg && (isempty(trialRadii_deg) || ...
-            trialRadii_deg(end) > minimumRadius_deg * (1 + eps))
-        trialRadii_deg(end + 1) = minimumRadius_deg; %#ok<AGROW>
-    end
-
-    for radius_deg = trialRadii_deg
-        trim_deg = radius_deg * tangentScale;
-        % Repeated endpoint controls make q'' and q''' vanish at both
-        % joins, so the line-to-curve transition remains G3.
-        controlPoints_deg = [corner - trim_deg * incoming; ...
-            corner - 0.5 * trim_deg * incoming; corner; corner; ...
-            corner + 0.5 * trim_deg * outgoing; ...
-            corner + trim_deg * outgoing];
-        primitive = quinticLookup(controlPoints_deg);
-        checkCount = max(21, ceil(primitive.Length_deg / 0.02) + 1);
-        checkS_deg = linspace(0, primitive.Length_deg, checkCount).';
-        checkParameter = interp1(primitive.ArcLengthGrid_deg, ...
-            primitive.ParameterGrid, checkS_deg, "pchip");
-        checkPosition_deg = evaluateQuintic(controlPoints_deg, ...
-            min(max(checkParameter, 0), 1));
-        blocked = queryAzElTimedPathCollision(obstacleField, ...
-            collisionTime_s, checkPosition_deg, struct(...
-            "TimePaddingSamples", options.CollisionTimePaddingSamples, ...
-            "BoundaryIsOccupied", false));
-
-        if any(blocked)
-            continue;
-        end
-
-        diagnostic.AppliedRadius_deg = radius_deg;
-        diagnostic.EntryPosition_deg = controlPoints_deg(1, :);
-        diagnostic.ExitPosition_deg = controlPoints_deg(end, :);
-        diagnostic.ControlPoints_deg = controlPoints_deg;
-        diagnostic.Smoothed = true;
-        diagnostic.Reason = "collision-free G3 blend";
-        break;
-    end
-
-    if ~diagnostic.Smoothed
+    if radius_deg <= 1e-10
         diagnostic.MandatoryStop = true;
-        diagnostic.Reason = "no collision-free blend";
+        diagnostic.Reason = "candidate retains the supplied sharp vertex";
+        corners(cornerIndex) = diagnostic;
+        continue;
     end
+
+    trim_deg = radius_deg * tangentScale;
+    % Repeated endpoint controls make q'' and q''' vanish at both joins.
+    % This preserves G3 geometry when the curve joins each straight leg.
+    controlPoints_deg = [corner - trim_deg * incoming; ...
+        corner - 0.5 * trim_deg * incoming; corner; corner; ...
+        corner + 0.5 * trim_deg * outgoing; ...
+        corner + trim_deg * outgoing];
+    if any(abs(bulge_deg) > 0)
+        controlPoints_deg = addG3Bulge(controlPoints_deg, bulge_deg);
+    end
+    diagnostic.AppliedRadius_deg = radius_deg;
+    diagnostic.EntryPosition_deg = controlPoints_deg(1, :);
+    diagnostic.ExitPosition_deg = controlPoints_deg(end, :);
+    diagnostic.ControlPoints_deg = controlPoints_deg;
+    diagnostic.Smoothed = true;
+    diagnostic.Reason = "unconstrained G3 radius candidate";
 
     corners(cornerIndex) = diagnostic;
 end
@@ -269,6 +1031,7 @@ smoothPath.Success = true;
 smoothPath.Message = sprintf("Rounded %d corners; %d stops remain.", ...
     nnz([corners.Smoothed]), nnz([corners.MandatoryStop]));
 smoothPath.OriginalPathPosition_deg = route_deg;
+smoothPath.OptimizedPathPosition_deg = smoothPath.position_deg;
 smoothPath.Primitives = primitives;
 smoothPath.TotalLength_deg = currentArcLength_deg;
 smoothPath.SampleArcLength_deg = smoothPath.arcLength_deg;
@@ -278,11 +1041,59 @@ smoothPath.MandatoryStopArcLength_deg = mandatoryStopArcLength_deg;
 smoothPath.CornerDiagnostics = corners;
 smoothPath.RoundedCornerCount = nnz([corners.Smoothed]);
 smoothPath.MandatoryStopCount = nnz([corners.MandatoryStop]);
+smoothPath.GeometryOptimizationDiagnostics = struct();
 smoothPath.Options = struct("TurnRadius_deg", options.TurnRadius_deg);
+smoothPath = attachCertifiedCornerRadii(smoothPath);
 % orderfields also rejects a missing or unexpected field. The template
 % therefore keeps the success and failure contracts synchronized without
 % copying the seven sample fields that already have their public names.
 smoothPath = orderfields(smoothPath, smoothPathTemplate(route_deg));
+end
+
+function smoothPath = attachCertifiedCornerRadii(smoothPath)
+% Convert continuous curvature upper bounds to conservative minimum radii.
+for primitiveIndex = 1:numel(smoothPath.Primitives)
+    primitive = smoothPath.Primitives(primitiveIndex);
+    if primitive.Type == "line" || primitive.CornerPathPointIndex <= 0
+        continue;
+    end
+    certificate = azElInternal.certifyQuinticArcDerivatives( ...
+        primitive.ControlPoints_deg, [0 1]);
+    curvatureUpper_deg_inv = norm( ...
+        certificate.SecondDerivativeByAxis_deg_inv);
+    minimumRadius_deg = Inf;
+    if curvatureUpper_deg_inv > 0
+        minimumRadius_deg = 1 / curvatureUpper_deg_inv;
+    end
+    cornerIndex = primitive.CornerPathPointIndex - 1;
+    smoothPath.CornerDiagnostics( ...
+        cornerIndex).CertifiedMinimumCurvatureRadius_deg = ...
+        minimumRadius_deg;
+end
+end
+
+function controlPoints_deg = addG3Bulge( ...
+        quinticControlPoints_deg, displacement_deg)
+% Add a degree-eight interior bump with zero derivatives through order three.
+controlPoints_deg = quinticControlPoints_deg;
+for elevationIndex = 1:4
+    degree = size(controlPoints_deg, 1) - 1;
+    elevated = zeros(degree + 2, 2);
+    elevated(1, :) = controlPoints_deg(1, :);
+    elevated(end, :) = controlPoints_deg(end, :);
+    for controlIndex = 1:degree
+        weight = controlIndex / (degree + 1);
+        elevated(controlIndex + 1, :) = ...
+            weight * controlPoints_deg(controlIndex, :) + ...
+            (1 - weight) * controlPoints_deg(controlIndex + 1, :);
+    end
+    controlPoints_deg = elevated;
+end
+% 256*u^4*(1-u)^4 has unit peak at u=0.5. In degree-nine
+% Bernstein form, only the two central controls are nonzero.
+centralBulgeControl = 128 / 63;
+controlPoints_deg(5:6, :) = controlPoints_deg(5:6, :) + ...
+    centralBulgeControl * displacement_deg;
 end
 
 function primitive = quinticLookup(controlPoints_deg)
@@ -328,10 +1139,10 @@ function [position_deg, firstDerivative, secondDerivative, ...
 %       evaluateQuintic(controlPoints_deg, parameter)
 %**************************************************************************
 % PURPOSE
-%   - Evaluate a quintic Bezier and its first three parameter derivatives.
+%   - Evaluate a Bezier curve and its first three parameter derivatives.
 %**************************************************************************
 % INPUTS
-%   - controlPoints_deg (6-by-2), parameter (numeric vector)
+%   - controlPoints_deg (N-by-2, N >= 4), parameter (numeric vector)
 %       Bezier control polygon and dimensionless evaluation parameters.
 %**************************************************************************
 % OUTPUTS
@@ -342,17 +1153,33 @@ function [position_deg, firstDerivative, secondDerivative, ...
 %   - Position and parameter derivatives are degree-based.
 %**************************************************************************
 parameter = double(parameter(:));
+degree = size(controlPoints_deg, 1) - 1;
+if degree < 3
+    error("planAzElMotion:BezierDegree", ...
+        "A smooth curve primitive needs degree three or greater.");
+end
+position_deg = evaluateBernstein(controlPoints_deg, parameter);
+firstDerivative = evaluateBernstein( ...
+    degree * diff(controlPoints_deg, 1, 1), parameter);
+secondDerivative = evaluateBernstein( ...
+    degree * (degree - 1) * diff(controlPoints_deg, 2, 1), ...
+    parameter);
+thirdDerivative = evaluateBernstein( ...
+    degree * (degree - 1) * (degree - 2) * ...
+    diff(controlPoints_deg, 3, 1), parameter);
+end
+
+function value = evaluateBernstein(control, parameter)
+% Evaluate one vector-valued Bernstein polynomial.
+degree = size(control, 1) - 1;
+basis = zeros(numel(parameter), degree + 1);
 oneMinus = 1 - parameter;
-position_deg = [oneMinus.^5, 5 * oneMinus.^4 .* parameter, 10 * oneMinus.^3 .* parameter.^2, ...
-    10 * oneMinus.^2 .* parameter.^3, ...
-    5 * oneMinus .* parameter.^4, parameter.^5] * controlPoints_deg;
-firstDerivative = [oneMinus.^4, 4 * oneMinus.^3 .* parameter, ...
-    6 * oneMinus.^2 .* parameter.^2, 4 * oneMinus .* parameter.^3, parameter.^4] * ...
-    (5 * diff(controlPoints_deg, 1, 1));
-secondDerivative = [oneMinus.^3, 3 * oneMinus.^2 .* parameter, ...
-    3 * oneMinus .* parameter.^2, parameter.^3] * (20 * diff(controlPoints_deg, 2, 1));
-thirdDerivative = [oneMinus.^2, 2 * oneMinus .* parameter, parameter.^2] * ...
-    (60 * diff(controlPoints_deg, 3, 1));
+for controlIndex = 0:degree
+    basis(:, controlIndex + 1) = nchoosek(degree, controlIndex) .* ...
+        oneMinus .^ (degree - controlIndex) .* ...
+        parameter .^ controlIndex;
+end
+value = basis * control;
 end
 
 function [primitives, endS_deg] = appendLine(primitives, template, ...
@@ -833,6 +1660,8 @@ diagnostics.Satisfied = constraintsSatisfied;
 
 curveNodeTime_s = [profiles.StartTime_s, profiles(end).EndTime_s].';
 timedPath.Success = constraintsSatisfied;
+timedPath.HasTimedAttempt = true;
+timedPath.TerminationReason = "kinematicallyCertified";
 timedPath.time_s = time_s;
 timedPath.position_deg = position_deg;
 timedPath.velocity_deg_s = velocity_deg_s;
@@ -869,6 +1698,7 @@ end
 
 if ~constraintsSatisfied
     timedPath.Message = "Internal continuous constraint certification failed.";
+    timedPath.TerminationReason = "kinematicCertificateFailed";
 end
 end
 
@@ -1953,14 +2783,18 @@ function smoothPath = smoothPathTemplate(route_deg)
 %   - Route positions are degrees.
 %**************************************************************************
 smoothPath = struct( "Success", false, "Message", "No smooth path was produced.", ...
-    "OriginalPathPosition_deg", route_deg, "Primitives", struct([]), "TotalLength_deg", 0, ...
+    "OriginalPathPosition_deg", route_deg, ...
+    "OptimizedPathPosition_deg", zeros(0, 2), ...
+    "Primitives", struct([]), "TotalLength_deg", 0, ...
     "SampleArcLength_deg", zeros(0, 1), "position_deg", zeros(0, 2), "tangent", zeros(0, 2), ...
     "secondDerivative_deg_inv", zeros(0, 2), "thirdDerivative_deg_inv2", zeros(0, 2), ...
     "curvature_deg_inv", zeros(0, 1), "PrimitiveIndex", zeros(0, 1), ...
     "PrimitiveType", strings(0, 1), "MandatoryStop", false(0, 1), ...
     "MandatoryStopArcLength_deg", zeros(0, 1), ...
     "CornerDiagnostics", struct([]), "RoundedCornerCount", 0, ...
-    "MandatoryStopCount", 0, "Options", struct());
+    "MandatoryStopCount", 0, ...
+    "GeometryOptimizationDiagnostics", struct(), ...
+    "Options", struct());
 end
 
 function timedPath = timedPathTemplate(limits, options, message)
@@ -1997,7 +2831,8 @@ diagnostics = struct( "PeakVelocity_deg_s", [NaN NaN], ...
     "ExecutedMotionProfileCount", 0, "MandatoryStopCount", 0, ...
     "MandatoryStopArcLength_deg", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
     "RoundedVelocityCarried", false, "MinimumArcSpeed_deg_s", NaN, "Satisfied", false);
-timedPath = struct( "Success", false, "Message", string(message), ...
+timedPath = struct( "Success", false, "HasTimedAttempt", false, ...
+    "Message", string(message), "TerminationReason", "retimingFailed", ...
     "time_s", zeros(0, 1), "position_deg", zeros(0, 2), "velocity_deg_s", zeros(0, 2), ...
     "acceleration_deg_s2", zeros(0, 2), "jerk_deg_s3", zeros(0, 2), ...
     "PathPosition_deg", zeros(0, 2), "WaypointTime_s", zeros(0, 1), ...
@@ -2007,11 +2842,13 @@ timedPath = struct( "Success", false, "Message", string(message), ...
     "Limits", limits, "Options", struct("GoalTimeMode", options.GoalTimeMode, ...
         "SampleTime_s", options.SampleTime_s), ...
     "ConstraintDiagnostics", diagnostics, "SmoothPath", struct(), ...
+    "RetimerDiagnostics", retimerDiagnosticsTemplate(), ...
     "CurveArcLength_deg", zeros(0, 1), "CurveNodeTime_s", zeros(0, 1), ...
     "CurveSpeed_deg_s", zeros(0, 1), "CurveSpeedSquared_deg2_s2", zeros(0, 1), ...
     "CurveTangentialAcceleration_deg_s2", zeros(0, 1), ...
     "CurveTangentialJerk_deg_s3", zeros(0, 1), "SampleArcLength_deg", zeros(0, 1), ...
     "SampleSpeed_deg_s", zeros(0, 1), "SampleTangentialAcceleration_deg_s2", zeros(0, 1), ...
     "SampleTangentialJerk_deg_s3", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
-    "RetimerType", "certifiedAnalyticSpatialJerk", "MotionType", "velocityCarrying");
+    "RetimerType", "rpGeometryCertifiedSpatialRetimer", ...
+    "MotionType", "velocityCarrying");
 end
