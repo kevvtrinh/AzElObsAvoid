@@ -173,11 +173,32 @@ if hasObstacleField && numel(originalObstacleField.Obstacles) ~= ...
 end
 options.OriginalObstacleField = originalObstacleField;
 options.ObstacleSafetyMargins_deg = obstacleSafetyMargins_deg;
-displayTitle = options.Title;
-if any(obstacleSafetyMargins_deg > 0)
-    displayTitle = displayTitle + sprintf( ...
-        " | protected margins = %s deg", ...
-        char(mat2str(obstacleSafetyMargins_deg.', 3)));
+displayTitleLines = options.Title;
+positiveMargins_deg = obstacleSafetyMargins_deg( ...
+    obstacleSafetyMargins_deg > 0);
+if ~isempty(positiveMargins_deg)
+    protectedObstacleCount = numel(positiveMargins_deg);
+    obstacleCountLabel = "obstacle";
+    if protectedObstacleCount ~= 1
+        obstacleCountLabel = "obstacles";
+    end
+    minimumMargin_deg = min(positiveMargins_deg);
+    maximumMargin_deg = max(positiveMargins_deg);
+    % Roundoff-only differences represent one configured display margin.
+    marginSpreadTolerance_deg = 10 * eps(max(1, maximumMargin_deg));
+    if maximumMargin_deg - minimumMargin_deg <= ...
+            marginSpreadTolerance_deg
+        marginSummary = sprintf( ...
+            "Protected margin: %.3g deg (%d %s)", ...
+            minimumMargin_deg, protectedObstacleCount, ...
+            obstacleCountLabel);
+    else
+        marginSummary = sprintf( ...
+            "Protected margins: %.3g to %.3g deg (%d %s)", ...
+            minimumMargin_deg, maximumMargin_deg, ...
+            protectedObstacleCount, obstacleCountLabel);
+    end
+    displayTitleLines(end + 1, 1) = string(marginSummary);
 end
 
 %% Section 2: Create Equal-Scale 3-D & 2-D Views
@@ -190,17 +211,20 @@ cubeLimits = equalCubeLimits( ...
 planeLimits = equalPlaneLimits(allAzimuth_deg, allElevation_deg);
 
 figureHandle = figure( ...
-    "Name", char(displayTitle), ...
+    "Name", char(options.Title), ...
     "Color", "w", ...
     "Visible", options.FigureVisible);
-axes3D = subplot(1, 2, 1, "Parent", figureHandle);
+layout = tiledlayout(figureHandle, 1, 2, ...
+    "TileSpacing", "compact", "Padding", "compact");
+title(layout, cellstr(displayTitleLines));
+axes3D = nexttile(layout, 1);
 hold(axes3D, "on");
 grid(axes3D, "on");
 box(axes3D, "on");
 xlabel(axes3D, "Azimuth (deg)");
 ylabel(axes3D, "Elevation (deg)");
 zlabel(axes3D, "Time (s)");
-title(axes3D, displayTitle + " - az/el/time");
+title(axes3D, "Azimuth/elevation/time");
 view(axes3D, 42, 25);
 xlim(axes3D, cubeLimits(1, :));
 ylim(axes3D, cubeLimits(2, :));
@@ -209,7 +233,7 @@ daspect(axes3D, [1 1 1]);
 pbaspect(axes3D, [1 1 1]);
 axis(axes3D, "vis3d");
 
-axes2D = subplot(1, 2, 2, "Parent", figureHandle);
+axes2D = nexttile(layout, 2);
 hold(axes2D, "on");
 grid(axes2D, "on");
 box(axes2D, "on");
@@ -311,12 +335,12 @@ legendHandles3D = [trail3D current3D slopeArrow3D goalLineHandle];
 legendHandles2D = [trail2D current2D velocityArrow2D];
 if hasTarget
     legend(axes3D, [legendHandles3D targetCurrent3D], ...
-        "Location", "best");
+        "Location", "southwest");
     legend(axes2D, [legendHandles2D targetCurrent2D], ...
-        "Location", "best");
+        "Location", "northwest");
 else
-    legend(axes3D, legendHandles3D, "Location", "best");
-    legend(axes2D, legendHandles2D, "Location", "best");
+    legend(axes3D, legendHandles3D, "Location", "southwest");
+    legend(axes2D, legendHandles2D, "Location", "northwest");
 end
 
 %% Section 3: Animate The Shared Timeline
@@ -397,6 +421,7 @@ end
 
 animation = struct( ...
     "Figure", figureHandle, ...
+    "Layout", layout, ...
     "Axes3D", axes3D, ...
     "Axes2D", axes2D, ...
     "Trail3D", trail3D, ...
