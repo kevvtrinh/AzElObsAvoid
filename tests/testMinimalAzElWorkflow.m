@@ -623,6 +623,34 @@ testCase.verifyLessThanOrEqual(fineJerkMetricChange, ...
     jerkMetricRelativeTolerance * jerkMetricScale);
 end
 
+function testMeshRefinementStopsAfterMeasuredObjectiveConvergence(testCase)
+% PURPOSE
+%   - Stop certified refinement when the arrival change is below tolerance.
+[initialState, goalState, limits] = standardRequest([0 0], [2 0], 12);
+options = fastOptions(1);
+options.InitialCollocationSegmentCount = 4;
+options.MaximumMeshRefinementPasses = 2;
+options.MaximumCollocationSegmentCount = 16;
+options.ArrivalTimeTieTolerance_s = 1;
+options.MaximumPlanningTime_s = 60;
+result = planAzElMotion([], initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.SearchDiagnostics.SelectedCandidateIndex);
+testCase.verifyTrue(diagnostic.MeshRefinementConverged);
+testCase.verifyEqual(diagnostic.MeshPassCount, 2);
+testCase.verifyEqual(numel(diagnostic.MeshObjectiveHistory), ...
+    diagnostic.MeshPassCount);
+testCase.verifyEqual(numel(diagnostic.MeshObjectiveChangeHistory), ...
+    diagnostic.MeshPassCount);
+testCase.verifyTrue(isnan(diagnostic.MeshObjectiveChangeHistory(1)));
+testCase.verifyLessThanOrEqual( ...
+    diagnostic.MeshObjectiveChangeHistory(end), ...
+    diagnostic.MeshRefinementConvergenceTolerance);
+end
+
 function testEarliestArrivalKeepsClearDirectSeed(testCase)
 % PURPOSE
 %   - Keep an early direct seed when the goal is blocked only at horizon.
