@@ -5,9 +5,13 @@ loads this model for every request. There is no deterministic radius fallback.
 
 The model is a DDPG policy. It receives one 10-element observation for each
 interior route corner. It returns a radius fraction in `[0, 1]`. The planner
-uses the fraction to create a G3 Bernstein seed. A convex
-continuous-linear-jerk projection changes the seed geometry and selects
-timing. Independent collision and kinematic checks have final authority.
+uses the fraction to create a G3 Bernstein seed. It reduces only the RL
+displacement when the proposed spatial seed intersects protected geometry.
+The HS-3 deployment maps the learned action to the smoother half of the
+radius range. This keeps the policy ordering and prevents a near-zero action
+from giving HS-3 a sharp-corner warm start.
+HS-3 direct collocation then optimizes the safe RL seed geometry and timing
+together. Independent collision and kinematic checks have final authority.
 
 The observation order is:
 

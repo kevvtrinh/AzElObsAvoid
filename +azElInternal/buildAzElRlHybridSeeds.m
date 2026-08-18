@@ -8,7 +8,7 @@ function [seeds, diagnostics, reduction] = buildAzElRlHybridSeeds( ...
 %**************************************************************************
 % PURPOSE
 %   - Use the required RL agent to shape every spatial topology seed.
-%   - Preserve a timed SIPP law for the convex motion projection.
+%   - Preserve a timed SIPP law for HS-3 initialization.
 %**************************************************************************
 % INPUTS
 %   - seeds (N-by-1 structure array)
@@ -22,7 +22,7 @@ function [seeds, diagnostics, reduction] = buildAzElRlHybridSeeds( ...
 %**************************************************************************
 % OUTPUTS
 %   - seeds (M-by-1 structure array)
-%       RL-shaped route seeds with preserved time-law fields.
+%       RL-shaped HS-3 seeds with preserved time-law fields.
 %   - diagnostics (N-by-1 structure array)
 %       Policy status, corner actions, and before/after route metrics.
 %   - reduction (scalar struct)
@@ -54,7 +54,7 @@ if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, ...
 end
 if ~isstruct(options) || ~isscalar(options) || ~all(isfield(options, ...
         ["RpAgentFile" "RpTurnRadius_deg" ...
-        "MaximumRlProjectionSeeds"]))
+        "MaximumDirectCollocationSeeds"]))
     error("buildAzElRlHybridSeeds:InvalidOptions", ...
         "options must contain the RP seed controls.");
 end
@@ -77,12 +77,13 @@ for inputSeedIndex = 1:numel(inputSeeds)
         inputSeeds(inputSeedIndex).RouteTime_s(:));
     [timeFraction, routeProgress, routeDuration_s] = timedSeedLaw( ...
         originalRoute_deg, originalRouteTime_s);
-    [rlRoute_deg, radiusScale, cornerStatus] = roundRouteWithAgent( ...
+    [rlRoute_deg, calibratedRadiusScale, rawRadiusScale, ...
+        cornerStatus] = roundRouteWithAgent( ...
         originalRoute_deg, agent, limits, options);
     [rlRoute_deg, routeScale] = projectRouteToClearSeed( ...
         originalRoute_deg, rlRoute_deg, obstacleField, ...
         inputSeeds(inputSeedIndex).SnapshotTime_s);
-    radiusScale = routeScale * radiusScale;
+    radiusScale = routeScale * calibratedRadiusScale;
 
     agentSeed = addRpFields(inputSeeds(inputSeedIndex));
     agentSeed.RpSeedVariant = "agentDirect";
@@ -107,6 +108,9 @@ for inputSeedIndex = 1:numel(inputSeeds)
     commonRecord.RlSeedRouteLength_deg = routeLength(rlRoute_deg);
     commonRecord.CornerCount = numel(radiusScale);
     commonRecord.EvaluatedCornerCount = numel(radiusScale);
+    commonRecord.RawRadiusScale = rawRadiusScale;
+    commonRecord.CalibratedRadiusScale = calibratedRadiusScale;
+    commonRecord.ClearanceProjectionScale = routeScale;
     commonRecord.RadiusScale = radiusScale;
     commonRecord.CornerStatus = cornerStatus;
     commonRecord.TimedSeedLawPreserved = ~isempty(timeFraction);
@@ -128,7 +132,7 @@ end
 generatedSeeds = agentSeeds;
 generatedDiagnostics = agentDiagnostics;
 maximumSeedCount = min( ...
-    numel(generatedSeeds), options.MaximumRlProjectionSeeds);
+    numel(generatedSeeds), options.MaximumDirectCollocationSeeds);
 seeds = generatedSeeds(1:maximumSeedCount);
 diagnostics = generatedDiagnostics(1:maximumSeedCount);
 for seedIndex = 1:numel(seeds)
@@ -223,7 +227,7 @@ end
 agent = cachedAgent;
 end
 
-function [roundedRoute_deg, radiusScale, cornerStatus] = ...
+function [roundedRoute_deg, radiusScale, rawRadiusScale, cornerStatus] = ...
         roundRouteWithAgent(route_deg, agent, limits, options)
 % PURPOSE
 %   - Convert one polyline to an RL-rounded G3 topology seed.
@@ -239,6 +243,7 @@ end
 
 cornerCount = max(0, size(route_deg, 1) - 2);
 radiusScale = zeros(cornerCount, 1);
+rawRadiusScale = zeros(cornerCount, 1);
 cornerStatus = strings(cornerCount, 1);
 entryPosition_deg = route_deg(2:end - 1, :);
 exitPosition_deg = entryPosition_deg;
@@ -273,7 +278,14 @@ for cornerIndex = 1:cornerCount
         {'real', 'finite', 'scalar'});
     normalizedAction = 0.5 * ...
         (min(1, max(-1, double(action))) + 1);
-    radiusScale(cornerIndex) = normalizedAction;
+    rawRadiusScale(cornerIndex) = normalizedAction;
+    % Obstacle clearance is enforced after inference. A near-zero proposal
+    % gives HS-3 a sharp corner and removes the smooth warm-start benefit.
+    % Keep the learned ordering inside the smoother half of the safe search
+    % range. The later collision projection can still reduce it to zero.
+    minimumHs3RadiusFraction = 0.5;
+    radiusScale(cornerIndex) = minimumHs3RadiusFraction + ...
+        (1 - minimumHs3RadiusFraction) * normalizedAction;
 
     halfAngleCosine = cos(angle_rad / 2);
     turnCross = incomingDirection(1) * outgoingDirection(2) - ...
@@ -317,7 +329,7 @@ for cornerIndex = 1:cornerCount
         continue;
     end
     % Entry, midpoint, and exit preserve the agent's turn decision without
-    % displacing the topology knots used by the convex route tube.
+    % displacing the topology knots used by the HS-3 mesh.
     sampleCount = 3;
     parameter = linspace(0, 1, sampleCount).';
     curve_deg = evaluateBernstein(controlPoints_deg, parameter);
@@ -414,6 +426,9 @@ record = struct( ...
     "RlSeedRouteLength_deg", NaN, ...
     "CornerCount", 0, ...
     "EvaluatedCornerCount", 0, ...
+    "RawRadiusScale", zeros(0, 1), ...
+    "CalibratedRadiusScale", zeros(0, 1), ...
+    "ClearanceProjectionScale", NaN, ...
     "RadiusScale", zeros(0, 1), ...
     "CornerStatus", strings(0, 1), ...
     "TimedSeedLawPreserved", false);

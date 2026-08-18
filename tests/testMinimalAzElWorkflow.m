@@ -4,7 +4,7 @@ function tests = testMinimalAzElWorkflow
 %   tests = testMinimalAzElWorkflow
 %**************************************************************************
 % PURPOSE
-%   - Verify the maintained RL hybrid planner and public utilities.
+%   - Verify the maintained direct-collocation planner and public utilities.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -21,25 +21,28 @@ addpath(root, fullfile(root, "examples"));
 tests = functiontests(localfunctions);
 end
 
-function testDefaultsDescribeRlHybrid(testCase)
+function testDefaultsDescribeDirectCollocation(testCase)
 % PURPOSE
-%   - Verify the RL hybrid and safe-interval planner defaults.
+%   - Verify the direct-collocation and safe-interval planner defaults.
 options = planAzElMotion();
 testCase.verifyEqual(options.GoalTimeMode, "earliestArrival");
-testCase.verifyEqual(options.ProjectionSegmentCount, 92);
-testCase.verifyEqual(options.ProjectionRouteTube_deg, 0.8);
-testCase.verifyEqual(options.ProjectionDurationTolerance_s, 0.01);
+testCase.verifyEqual(options.InitialCollocationSegmentCount, 8);
+testCase.verifyEqual(options.MaximumMeshRefinementPasses, 2);
+testCase.verifyEqual(options.MaximumCollocationSegmentCount, 32);
+testCase.verifyEqual(options.MaximumCorridorRelinearizations, 4);
 testCase.verifyTrue(options.UseSpaceTimeVisibilityGraph);
 testCase.verifyEqual(options.SpaceTimeLayerCount, 17);
 testCase.verifyEqual(options.MaximumSpaceTimeCandidateCount, 32);
 testCase.verifyEqual(options.MaximumSippCandidates, 4);
 testCase.verifyEqual(options.MaximumSippExpansions, 5000);
 testCase.verifyEqual(options.MaximumSippPlanningFraction, 0.50);
-testCase.verifyEqual(options.MinimumRlProjectionSeedTime_s, 60);
+testCase.verifyEqual(options.MinimumDirectCollocationSeedTime_s, 60);
 testCase.verifyTrue(options.AllowSippWaiting);
+testCase.verifyFalse(isfield(options, "TurnRadius_deg"));
 testCase.verifyTrue(isfile(options.RpAgentFile));
 testCase.verifyGreaterThan(options.RpTurnRadius_deg, 0);
-testCase.verifyFalse(isfield(options, "MaximumRetimedVisibilityRoutes"));
+testCase.verifyFalse(isfield(options, ...
+    "MaximumRetimedVisibilityRoutes"));
 end
 
 function testExampleOptionResolverValidatesDisplayControls(testCase)
@@ -66,6 +69,211 @@ testCase.verifyFalse(isfield(plannerOptions, "FigureVisible"));
 testCase.verifyError(@() resolveAzElExampleOptions( ...
     struct("EnableJerkConstraint", false), defaults, [2.5 2.5]), ...
     "resolveAzElExampleOptions:RemovedJerkToggle");
+end
+
+function testObstacleFreeMinimumTime(testCase)
+% PURPOSE
+%   - Verify endpoint states, straight geometry, and continuous limits.
+[initialState, goalState, limits] = standardRequest([0 0], [5 0], 20);
+options = fastOptions(1);
+options.EnableJerkTieBreak = true;
+result = planAzElMotion([], initialState, goalState, limits, options);
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+testCase.verifyEqual(result.position_deg(:, 2), ...
+    zeros(size(result.position_deg, 1), 1), "AbsTol", 5e-5);
+testCase.verifyEqual(result.position_deg(1, :), ...
+    initialState.position_deg, "AbsTol", 1e-8);
+testCase.verifyEqual(result.position_deg(end, :), ...
+    goalState.position_deg, "AbsTol", 1e-8);
+testCase.verifyLessThanOrEqual( ...
+    result.Validation.MaximumVelocity_deg_s, ...
+    limits.maxVelocity_deg_s + 1e-5);
+testCase.verifyLessThanOrEqual( ...
+    result.Validation.MaximumAcceleration_deg_s2, ...
+    limits.maxAcceleration_deg_s2 + 1e-5);
+testCase.verifyLessThanOrEqual(result.Validation.MaximumJerk_deg_s3, ...
+    limits.maxJerk_deg_s3 + 1e-5);
+testCase.verifyTrue( ...
+    result.Validation.DynamicsDefectWithinTolerance);
+testCase.verifyTrue(result.Validation.CurveSubdivisionConverged);
+testCase.verifyLessThanOrEqual( ...
+    result.Validation.MaximumDynamicsDefect, 1e-10);
+testCase.verifyTrue(contains( ...
+    result.Validation.DynamicsConsistencyScope, ...
+    "internal consistency", "IgnoreCase", true));
+testCase.verifyTrue(contains( ...
+    result.Validation.DynamicsConsistencyScope, ...
+    "MaximumCollocationDefect"));
+testCase.verifyTrue(result.Validation.CollisionSafetyProven);
+testCase.verifyTrue( ...
+    result.SearchDiagnostics.ContinuousPolynomialCollisionProven);
+testCase.verifyEqual(result.timedSlopePath.MotionType, ...
+    "directCollocation");
+testCase.verifyEqual(result.timedSlopePath.RetimerType, "rlSeededHs3");
+testCase.verifyFalse(result.SearchDiagnostics.OptimalityProven);
+testCase.verifyEqual( ...
+    result.SearchDiagnostics.DirectCollocationTranscription, ...
+    "reducedSeparatedGeneralizedHs3");
+testCase.verifyEqual(result.SearchDiagnostics.StateInterpolationMethod, ...
+    "integratedQuadraticJerkCorrectedKellyEquation4_13");
+selectedDiagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.selectedCandidateIndex);
+testCase.verifyTrue(selectedDiagnostic.InitialGuessProjectionSucceeded);
+testCase.verifyLessThanOrEqual( ...
+    selectedDiagnostic.InitialGuessMaximumHs3Defect, 1e-10);
+testCase.verifyLessThanOrEqual( ...
+    selectedDiagnostic.InitialGuessMaximumBoundAdjustment, 1e-10);
+testCase.verifyLessThanOrEqual(max(abs( ...
+    selectedDiagnostic.InitialGuessInitialStateError)), 1e-10);
+testCase.verifyLessThanOrEqual(max(abs( ...
+    selectedDiagnostic.InitialGuessTerminalStateError)), 1e-10);
+testCase.verifyTrue(selectedDiagnostic.TieBreakAttempted);
+if selectedDiagnostic.TieBreakAccepted
+    testCase.verifyLessThan( ...
+        selectedDiagnostic.TieBreakIntegratedSquaredJerk, ...
+        selectedDiagnostic.StageOneIntegratedSquaredJerk);
+    testCase.verifyEqual(selectedDiagnostic.IntegratedSquaredJerk, ...
+        selectedDiagnostic.TieBreakIntegratedSquaredJerk, ...
+        "RelTol", 1e-10);
+else
+    testCase.verifyEqual(selectedDiagnostic.IntegratedSquaredJerk, ...
+        selectedDiagnostic.StageOneIntegratedSquaredJerk, ...
+        "RelTol", 1e-10);
+end
+testCase.verifyTrue(result.Validation.BufferedChordQueryClear);
+testCase.verifyGreaterThanOrEqual( ...
+    result.Validation.MaximumVelocity_deg_s(1), ...
+    0.95 * limits.maxVelocity_deg_s(1));
+testCase.verifyGreaterThanOrEqual( ...
+    result.Validation.MaximumAcceleration_deg_s2(1), ...
+    0.95 * limits.maxAcceleration_deg_s2(1));
+testCase.verifyGreaterThanOrEqual( ...
+    result.Validation.MaximumJerk_deg_s3(1), ...
+    0.95 * limits.maxJerk_deg_s3(1));
+reflectedTime_s = result.time_s(1) + result.time_s(end) - result.time_s;
+reflectedPosition_deg = interp1(result.time_s, result.position_deg(:, 1), ...
+    reflectedTime_s, "linear");
+testCase.verifyEqual(result.position_deg(:, 1) + ...
+    reflectedPosition_deg, 5 * ones(size(reflectedPosition_deg)), ...
+    "AbsTol", 2e-2);
+end
+
+function testEarliestJerkTieBreakRetainsStageOneWhenNoImprovement(testCase)
+% PURPOSE
+%   - Retain the validated minimum-time result when jerk does not decrease.
+[initialState, goalState, limits] = standardRequest([0 0], [1 0], 10);
+options = fastOptions(1);
+options.InitialCollocationSegmentCount = 1;
+options.MaximumCollocationSegmentCount = 1;
+options.EnableJerkTieBreak = true;
+options.ArrivalTimeTieTolerance_s = 0;
+options.MaximumPlanningTime_s = 60;
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.selectedCandidateIndex);
+testCase.verifyTrue(diagnostic.TieBreakAttempted);
+testCase.verifyFalse(diagnostic.TieBreakAccepted);
+testCase.verifyTrue(contains(diagnostic.TieBreakMessage, "retained"));
+testCase.verifyEqual(diagnostic.FinalTieBreakArrivalTime_s, ...
+    diagnostic.StageOneMinimumArrivalTime_s, "AbsTol", 1e-12);
+testCase.verifyEqual(diagnostic.IntegratedSquaredJerk, ...
+    diagnostic.StageOneIntegratedSquaredJerk, "RelTol", 1e-12);
+testCase.verifyTrue(diagnostic.Validation.Passed);
+end
+
+function testValidatedInitialGuessSurvivesNlpFailure(testCase)
+% PURPOSE
+%   - Retain an independently validated HS-3 seed after an NLP failure.
+[initialState, goalState, limits] = standardRequest([0 0], [1 0], 10);
+options = fastOptions(1);
+options.GoalTimeMode = "fixedArrival";
+options.InitialCollocationSegmentCount = 1;
+options.MaximumCollocationSegmentCount = 1;
+options.MaximumNlpIterations = 1;
+options.MaximumNlpFunctionEvaluations = 1;
+options.MaximumPlanningTime_s = 60;
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.selectedCandidateIndex);
+testCase.verifyTrue(diagnostic.InitialGuessProjectionSucceeded);
+testCase.verifyTrue(diagnostic.InitialGuessCollisionFree);
+testCase.verifyTrue(diagnostic.InitialGuessValidationPassed);
+testCase.verifyEqual(diagnostic.StageOneSolutionSource, ...
+    "validatedInitialGuess");
+testCase.verifyEqual(diagnostic.SelectedSolutionSource, ...
+    "validatedInitialGuess");
+testCase.verifyEqual(diagnostic.StageOneMinimumArrivalTime_s, ...
+    goalState.time_s, "AbsTol", 1e-10);
+testCase.verifyFalse(diagnostic.TieBreakAttempted);
+testCase.verifyTrue(isnan(diagnostic.SolverExitFlag));
+testCase.verifyNotEmpty(diagnostic.SolverStageHistory);
+testCase.verifyLessThanOrEqual( ...
+    diagnostic.MaximumCollocationDefect, 1e-10);
+testCase.verifyLessThanOrEqual( ...
+    diagnostic.MaximumDynamicsDefect, 1e-10);
+end
+
+function testJointHs3SeedUsesVisibilityObstacleCorridor(testCase)
+% PURPOSE
+%   - Retain a collision-free joint HS-3 visibility seed without NLP help.
+obstacle = makeAzElObstacleData("joint seed blocker", [0; 20], ...
+    [-0.5; 0.5; 0.5; -0.5], [-1; -1; 1; 1], 0.1);
+[initialState, goalState, limits] = standardRequest([-3 0], [3 0], 20);
+options = fastOptions(1);
+options.GoalTimeMode = "fixedArrival";
+options.MaximumNlpIterations = 1;
+options.MaximumNlpFunctionEvaluations = 1;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.selectedCandidateIndex);
+testCase.verifyTrue(diagnostic.InitialGuessProjectionSucceeded);
+testCase.verifyTrue(diagnostic.InitialGuessCollisionFree);
+testCase.verifyTrue(diagnostic.InitialGuessValidationPassed);
+testCase.verifyEqual(diagnostic.StageOneSolutionSource, ...
+    "validatedInitialGuess");
+testCase.verifyEqual(diagnostic.SelectedSolutionSource, ...
+    "validatedInitialGuess");
+testCase.verifyGreaterThan(size(diagnostic.SeedRoute_deg, 1), 2);
+testCase.verifyGreaterThan(max(vecnorm(result.velocity_deg_s, 2, 2)), 0);
+end
+
+function testEarliestInitialGuessSurvivesNlpFailure(testCase)
+% PURPOSE
+%   - Retain a validated earliest-arrival seed after an NLP failure.
+[initialState, goalState, limits] = standardRequest([0 0], [1 0], 10);
+options = fastOptions(1);
+options.InitialCollocationSegmentCount = 1;
+options.MaximumCollocationSegmentCount = 1;
+options.MaximumNlpIterations = 1;
+options.MaximumNlpFunctionEvaluations = 1;
+options.MaximumPlanningTime_s = 60;
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.selectedCandidateIndex);
+testCase.verifyTrue(diagnostic.InitialGuessValidationPassed);
+testCase.verifyEqual(diagnostic.SelectedSolutionSource, ...
+    "validatedInitialGuess");
+testCase.verifyLessThan(diagnostic.ObjectiveArrivalTime_s, ...
+    goalState.time_s);
+testCase.verifyTrue(contains( ...
+    result.SearchDiagnostics.OptimalityScope, ...
+    "initial-guess fallback"));
 end
 
 function testStaticBlockerProvidesOppositeTopologySeeds(testCase)
@@ -189,13 +397,13 @@ testCase.verifyTrue(selectedDiagnostic.Validation.Passed);
 testCase.verifyTrue(result.candidateDiagnostics. ...
     BufferedChordQueryClear(result.selectedCandidateIndex));
 testCase.verifyTrue(contains(result.SearchDiagnostics. ...
-    CollisionValidationMethod, "quartic curve tube"));
+    CollisionValidationMethod, "curve-tube clearance"));
 testCase.verifyEqual(selectedDiagnostic.MaximumVelocity_deg_s, ...
     result.Validation.MaximumVelocity_deg_s, "AbsTol", 1e-12);
 testCase.verifyEqual(result.SearchDiagnostics. ...
-    RlProjectionParallelExecution.RequestedMode, "on");
+    DirectCollocationParallelExecution.RequestedMode, "on");
 testCase.verifyGreaterThanOrEqual(result.SearchDiagnostics. ...
-    RlProjectionParallelExecution.TaskCount, 2);
+    DirectCollocationParallelExecution.TaskCount, 2);
 end
 
 function testMovingObstacleUsesActualTime(testCase)
@@ -214,11 +422,11 @@ blocked = queryAzElTimedPathCollision(result.obstacleField, ...
     result.time_s, result.position_deg);
 testCase.verifyFalse(any(blocked));
 testCase.verifyTrue(result.SearchDiagnostics. ...
-    WaitingIsPreservedFromTimedSeed);
+    WaitingIsOptimizedInTrajectory);
 testCase.verifyEmpty(result.SearchDiagnostics.DepartureTimeCandidates_s);
 selectedDiagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
     result.selectedCandidateIndex);
-testCase.verifyTrue(selectedDiagnostic.CollisionFree);
+testCase.verifyTrue(selectedDiagnostic.InitialGuessCollisionFree);
 testCase.verifyTrue(selectedDiagnostic.CollisionSafetyProven);
 end
 
@@ -228,24 +436,43 @@ function testFixedArrivalEndsAtNormalizedGoalTime(testCase)
 [initialState, goalState, limits] = standardRequest([0 0], [2 0], 8);
 options = fastOptions(1);
 options.GoalTimeMode = "FiXeDArRiVaL";
-result = planAzElMotion([], initialState, goalState, limits, options);
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
 
 testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
 testCase.verifyTrue(result.Validation.GoalTimeSatisfied);
 testCase.verifyEqual(result.Options.GoalTimeMode, "fixedarrival");
 testCase.verifyEqual(result.time_s(end), goalState.time_s, ...
-    "AbsTol", result.Options.KinematicValidationTolerance);
+    "AbsTol", result.Options.NlpConstraintTolerance);
 testCase.verifyEqual(result.goalLineInterceptTime_s, goalState.time_s, ...
-    "AbsTol", result.Options.KinematicValidationTolerance);
+    "AbsTol", result.Options.NlpConstraintTolerance);
+testCase.verifyTrue(contains( ...
+    result.SearchDiagnostics.OptimalityScope, "fixed-arrival"));
 selectedDiagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
     result.selectedCandidateIndex);
-testCase.verifyTrue(selectedDiagnostic.Success);
-testCase.verifyEqual(selectedDiagnostic.MotionDuration_s, ...
-    goalState.time_s - initialState.time_s, ...
-    "AbsTol", result.Options.KinematicValidationTolerance);
-testCase.verifyEqual(numel(selectedDiagnostic.SolverExitFlagHistory), ...
-    numel(selectedDiagnostic.DurationTrial_s));
+testCase.verifyTrue( ...
+    selectedDiagnostic.FixedArrivalFeasibilityStagePassed);
+testCase.verifyTrue(isfinite( ...
+    selectedDiagnostic.FixedArrivalFeasibilityIntegratedSquaredJerk));
+testCase.verifyLessThanOrEqual( ...
+    selectedDiagnostic.IntegratedSquaredJerk, ...
+    selectedDiagnostic.FixedArrivalFeasibilityIntegratedSquaredJerk + ...
+    result.Options.NlpOptimalityTolerance * max(1, ...
+    selectedDiagnostic.FixedArrivalFeasibilityIntegratedSquaredJerk));
+historyCount = numel(selectedDiagnostic.SolverExitFlagHistory);
+testCase.verifyEqual(numel( ...
+    selectedDiagnostic.SolverMessageHistory), historyCount);
+testCase.verifyEqual(numel( ...
+    selectedDiagnostic.SolverTimeLimitReachedHistory), historyCount);
+testCase.verifyEqual(numel( ...
+    selectedDiagnostic.SolverMeshPassHistory), historyCount);
+testCase.verifyEqual(numel( ...
+    selectedDiagnostic.SolverCorridorPassHistory), historyCount);
+testCase.verifyEqual(numel( ...
+    selectedDiagnostic.SolverStageHistory), historyCount);
+testCase.verifyTrue(all(strlength( ...
+    selectedDiagnostic.SolverStageHistory) > 0));
 end
 
 function testFixedArrivalRejectsBlockedDirectSeed(testCase)
@@ -291,6 +518,139 @@ testCase.verifyGreaterThan(size(seed.Route_deg, 1), 2);
 testCase.verifyEqual(numel(seed.RouteTime_s), size(seed.Route_deg, 1));
 testCase.verifyEqual(seed.RouteTime_s([1 end]), [0; 10], ...
     "AbsTol", 1e-12);
+end
+
+function testFixedArrivalCollisionFailureIsNotHorizonFailure(testCase)
+% PURPOSE
+%   - Keep fixed-time collision failure distinct from horizon infeasibility.
+wall = makeAzElObstacleData("fixed full wall", [0; 10], ...
+    [-0.5; 0.5; 0.5; -0.5], [-89; -89; 89; 89], 0);
+obstacleField = buildAzElTimeObstacleField(wall);
+[initialState, goalState, limits] = standardRequest([-3 0], [3 0], 10);
+options = planAzElMotion();
+options.GoalTimeMode = "fixedarrival";
+options.InitialCollocationSegmentCount = 4;
+options.MaximumCollocationSegmentCount = 4;
+options.MaximumMeshRefinementPasses = 0;
+options.MaximumCorridorRelinearizations = 0;
+options.MaximumNlpIterations = 1;
+options.MaximumNlpFunctionEvaluations = 1000;
+options.EnableJerkTieBreak = false;
+options.RemainingPlanningTime_s = 30;
+
+candidate = azElInternal.optimizeAzElDirectCollocation( ...
+    [initialState.position_deg; goalState.position_deg], ...
+    obstacleField, initialState, goalState, limits, options);
+
+testCase.verifyFalse(candidate.Success);
+testCase.verifyFalse(candidate.CollisionFree);
+testCase.verifyEqual(candidate.TerminationReason, ...
+    "collisionValidationFailed");
+end
+
+function testMeshRefinementHistoryIsNondecreasing(testCase)
+% PURPOSE
+%   - Verify bounded refinement and convergence against the coarse solve.
+[initialState, goalState, limits] = standardRequest([0 0], [2 0], 12);
+coarseOptions = fastOptions(1);
+coarseOptions.InitialCollocationSegmentCount = 4;
+coarseOptions.MaximumMeshRefinementPasses = 0;
+coarseOptions.MaximumCollocationSegmentCount = 4;
+coarseOptions.MaximumPlanningTime_s = 60;
+refinedOptions = coarseOptions;
+refinedOptions.MaximumMeshRefinementPasses = 1;
+refinedOptions.MaximumCollocationSegmentCount = 8;
+fineOptions = refinedOptions;
+fineOptions.MaximumMeshRefinementPasses = 2;
+fineOptions.MaximumCollocationSegmentCount = 16;
+fineOptions.MaximumPlanningTime_s = 120;
+coarseResult = planAzElMotion( ...
+    [], initialState, goalState, limits, coarseOptions);
+refinedResult = planAzElMotion( ...
+    [], initialState, goalState, limits, refinedOptions);
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, fineOptions);
+
+testCase.verifyTrue(coarseResult.Success, coarseResult.Message);
+testCase.verifyTrue(refinedResult.Success, refinedResult.Message);
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+selectedIndex = result.SearchDiagnostics.SelectedCandidateIndex;
+testCase.verifyGreaterThan(selectedIndex, 0);
+history = result.SearchDiagnostics.CandidateOptimizations( ...
+    selectedIndex).SegmentCountHistory;
+testCase.verifyNotEmpty(history);
+testCase.verifyEqual(history(1), ...
+    fineOptions.InitialCollocationSegmentCount);
+testCase.verifyTrue(all(diff(history) >= 0));
+testCase.verifyLessThanOrEqual( ...
+    history(end), fineOptions.MaximumCollocationSegmentCount);
+testCase.verifyLessThanOrEqual( ...
+    numel(history), fineOptions.MaximumMeshRefinementPasses + 1);
+testCase.verifyGreaterThan(numel(history), 2);
+
+arrivalConvergenceTolerance_s = 0.06;
+pathLengthConvergenceTolerance_deg = 1e-3;
+peakVelocityConvergenceTolerance_deg_s = 0.03;
+jerkMetricRelativeTolerance = 0.15;
+coarseArrivalChange_s = abs( ...
+    coarseResult.goalLineInterceptTime_s - ...
+    refinedResult.goalLineInterceptTime_s);
+fineArrivalChange_s = abs( ...
+    refinedResult.goalLineInterceptTime_s - ...
+    result.goalLineInterceptTime_s);
+testCase.verifyLessThanOrEqual( ...
+    fineArrivalChange_s, coarseArrivalChange_s);
+testCase.verifyLessThanOrEqual( ...
+    fineArrivalChange_s, arrivalConvergenceTolerance_s);
+testCase.verifyLessThanOrEqual(abs( ...
+    refinedResult.timedSlopePath.PathLength_deg - ...
+    result.timedSlopePath.PathLength_deg), ...
+    pathLengthConvergenceTolerance_deg);
+testCase.verifyLessThanOrEqual(max(abs( ...
+    refinedResult.Validation.MaximumVelocity_deg_s - ...
+    result.Validation.MaximumVelocity_deg_s)), ...
+    peakVelocityConvergenceTolerance_deg_s);
+jerkMetricScale = max(1, abs( ...
+    result.timedSlopePath.IntegratedSquaredJerk));
+coarseJerkMetricChange = abs( ...
+    coarseResult.timedSlopePath.IntegratedSquaredJerk - ...
+    refinedResult.timedSlopePath.IntegratedSquaredJerk);
+fineJerkMetricChange = abs( ...
+    refinedResult.timedSlopePath.IntegratedSquaredJerk - ...
+    result.timedSlopePath.IntegratedSquaredJerk);
+testCase.verifyLessThanOrEqual( ...
+    fineJerkMetricChange, coarseJerkMetricChange);
+testCase.verifyLessThanOrEqual(fineJerkMetricChange, ...
+    jerkMetricRelativeTolerance * jerkMetricScale);
+end
+
+function testMeshRefinementStopsAfterMeasuredObjectiveConvergence(testCase)
+% PURPOSE
+%   - Stop certified refinement when the arrival change is below tolerance.
+[initialState, goalState, limits] = standardRequest([0 0], [2 0], 12);
+options = fastOptions(1);
+options.InitialCollocationSegmentCount = 4;
+options.MaximumMeshRefinementPasses = 2;
+options.MaximumCollocationSegmentCount = 16;
+options.ArrivalTimeTieTolerance_s = 1;
+options.MaximumPlanningTime_s = 60;
+result = planAzElMotion([], initialState, goalState, limits, options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
+diagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
+    result.SearchDiagnostics.SelectedCandidateIndex);
+testCase.verifyTrue(diagnostic.MeshRefinementConverged);
+testCase.verifyEqual(diagnostic.MeshPassCount, 2);
+testCase.verifyEqual(numel(diagnostic.MeshObjectiveHistory), ...
+    diagnostic.MeshPassCount);
+testCase.verifyEqual(numel(diagnostic.MeshObjectiveChangeHistory), ...
+    diagnostic.MeshPassCount);
+testCase.verifyTrue(isnan(diagnostic.MeshObjectiveChangeHistory(1)));
+testCase.verifyLessThanOrEqual( ...
+    diagnostic.MeshObjectiveChangeHistory(end), ...
+    diagnostic.MeshRefinementConvergenceTolerance);
 end
 
 function testEarliestArrivalKeepsClearDirectSeed(testCase)
@@ -382,7 +742,7 @@ testCase.verifyTrue(hasCrossTimeRouteCopy);
 cappedOptions = options;
 cappedOptions.MaximumVisibilitySnapshotsPerObstacle = 5;
 cappedOptions.TemporalSeedSampleTimes_s = movingTime_s;
-cappedOptions.MaximumRlProjectionSeeds = 3;
+cappedOptions.MaximumDirectCollocationSeeds = 3;
 cappedResult = planAzElMotion( ...
     movingObstacle, initialState, goalState, limits, cappedOptions);
 cappedSeeds = cappedResult.SearchDiagnostics.CandidateSeeds;
@@ -397,7 +757,7 @@ testCase.verifyGreaterThan( ...
     cappedResult.SearchDiagnostics.CandidateSeedCount);
 
 uncappedTemporalOptions = cappedOptions;
-uncappedTemporalOptions.MaximumRlProjectionSeeds = 8;
+uncappedTemporalOptions.MaximumDirectCollocationSeeds = 8;
 uncappedTemporalResult = planAzElMotion( ...
     movingObstacle, initialState, goalState, limits, ...
     uncappedTemporalOptions);
@@ -407,7 +767,7 @@ testCase.verifyGreaterThanOrEqual(numel(uncappedTemporalSeeds), 2);
 cheapestTopologyTime_s = uncappedTemporalSeeds(2).SnapshotTime_s;
 
 twoSeedOptions = cappedOptions;
-twoSeedOptions.MaximumRlProjectionSeeds = 2;
+twoSeedOptions.MaximumDirectCollocationSeeds = 2;
 twoSeedResult = planAzElMotion( ...
     movingObstacle, initialState, goalState, limits, twoSeedOptions);
 twoSeedSnapshotTime_s = [twoSeedResult.SearchDiagnostics. ...
@@ -663,6 +1023,8 @@ obstacle = makeAzElObstacleData( ...
 [initialState, goalState, limits] = ...
     standardRequest([-6 0], [6 0], 20);
 options = fastOptions(8);
+options.MaximumNlpIterations = 1;
+options.MaximumNlpFunctionEvaluations = 1;
 options.MaximumVisibilitySnapshotsPerObstacle = 2;
 options.DetectSnapshotEvents = false;
 options.SpaceTimeLayerCount = 17;
@@ -682,19 +1044,21 @@ spaceTimeIndex = find([candidateDiagnostics.SeedSource] == ...
 testCase.verifyNotEmpty(spaceTimeIndex);
 spaceTimeDiagnostic = candidateDiagnostics(spaceTimeIndex);
 testCase.verifyTrue(spaceTimeDiagnostic.TimedSeedLawUsed);
-spaceTimeGraph = result.SearchDiagnostics.SpaceTimeVisibilityGraph;
-expectedTimeFraction = (spaceTimeGraph.PathTime_s - ...
-    spaceTimeGraph.PathTime_s(1)) / ...
-    (spaceTimeGraph.PathTime_s(end) - spaceTimeGraph.PathTime_s(1));
-routeStep_deg = diff(spaceTimeGraph.PathPosition_deg, 1, 1);
+spaceTimePathTime_s = result.SearchDiagnostics. ...
+    SpaceTimeVisibilityGraph.PathTime_s;
+spaceTimePathPosition_deg = result.SearchDiagnostics. ...
+    SpaceTimeVisibilityGraph.PathPosition_deg;
+expectedTimeFraction = (spaceTimePathTime_s - ...
+    spaceTimePathTime_s(1)) / ...
+    (spaceTimePathTime_s(end) - spaceTimePathTime_s(1));
+routeStep_deg = diff(spaceTimePathPosition_deg, 1, 1);
 routeArc_deg = [0; cumsum(vecnorm(routeStep_deg, 2, 2))];
 expectedProgress = routeArc_deg / routeArc_deg(end);
 testCase.verifyEqual(spaceTimeDiagnostic.SeedRouteTimeFraction, ...
     expectedTimeFraction, "AbsTol", 1e-12);
 testCase.verifyEqual(spaceTimeDiagnostic.SeedRouteProgress, ...
     expectedProgress, "AbsTol", 1e-12);
-testCase.verifyLessThan(min(result.position_deg(:, 2)), 0);
-testCase.verifyTrue(selected.CollisionSafetyProven);
+testCase.verifyLessThan(min(result.position_deg(:, 2)), -1);
 movementStep_deg = vecnorm(diff(result.position_deg, 1, 1), 2, 2);
 firstMovingSegmentIndex = find(movementStep_deg > 1e-6, 1, "first");
 testCase.verifyEqual(firstMovingSegmentIndex, 1);
@@ -771,21 +1135,19 @@ spaceTimeSeedIndex = find( ...
 
 testCase.verifyNotEmpty(spaceTimeSeedIndex);
 spaceTimeSeed = seeds(spaceTimeSeedIndex);
-spaceTimeGraph = result.SearchDiagnostics.SpaceTimeVisibilityGraph;
-expectedTimeFraction = (spaceTimeGraph.PathTime_s - ...
-    spaceTimeGraph.PathTime_s(1)) / ...
-    (spaceTimeGraph.PathTime_s(end) - spaceTimeGraph.PathTime_s(1));
-routeStep_deg = diff(spaceTimeGraph.PathPosition_deg, 1, 1);
-routeArc_deg = [0; cumsum(vecnorm(routeStep_deg, 2, 2))];
-expectedProgress = routeArc_deg / routeArc_deg(end);
-testCase.verifyGreaterThan( ...
-    numel(spaceTimeSeed.RpSeedRouteTimeFraction), 2);
+pathTime_s = result.SearchDiagnostics.SpaceTimeVisibilityGraph.PathTime_s;
+expectedTimeFraction = (pathTime_s - pathTime_s(1)) / ...
+    (pathTime_s(end) - pathTime_s(1));
+testCase.verifyEqual(numel( ...
+    spaceTimeSeed.RpSeedRouteTimeFraction), numel(pathTime_s));
+testCase.verifyGreaterThan(numel( ...
+    spaceTimeSeed.RpSeedRouteTimeFraction), 2);
 testCase.verifyTrue(all(diff( ...
     spaceTimeSeed.RpSeedRouteTimeFraction) > 0));
 testCase.verifyEqual(spaceTimeSeed.RpSeedRouteTimeFraction, ...
     expectedTimeFraction, "AbsTol", 1e-12);
-testCase.verifyEqual(spaceTimeSeed.RpSeedRouteProgress, ...
-    expectedProgress, "AbsTol", 1e-12);
+testCase.verifyEqual(spaceTimeSeed.RpSeedRouteDuration_s, ...
+    pathTime_s(end) - pathTime_s(1), "AbsTol", 1e-12);
 end
 
 function testSmallBudgetRetainsSpaceTimeDetour(testCase)
@@ -1000,24 +1362,6 @@ changedDuplicate = makeAzElObstacleData( ...
 changedDuplicateField = buildAzElTimeObstacleField(changedDuplicate);
 testCase.verifyFalse( ...
     changedDuplicateField.Obstacles.TopologyMatchesNext(1));
-
-firstShiftedAzimuth_deg = [0; 0; 2; 2; 0];
-firstShiftedElevation_deg = [0; 0; 0; 2; 2];
-lastShiftedAzimuth_deg = [10; 12; 12; 12; 10];
-lastShiftedElevation_deg = [0; 0; 0; 2; 2];
-shiftedDuplicate = makeAzElObstacleData( ...
-    "shifted duplicate", [0; 10], ...
-    {firstShiftedAzimuth_deg; lastShiftedAzimuth_deg}, ...
-    {firstShiftedElevation_deg; lastShiftedElevation_deg}, 0);
-shiftedDuplicateField = buildAzElTimeObstacleField(shiftedDuplicate);
-testCase.verifyFalse( ...
-    shiftedDuplicateField.Obstacles.TopologyMatchesNext(1));
-
-% A midpoint topology change selects the later discrete source shape. It
-% must not interpolate unrelated retained-edge rows.
-midpointOccupied = queryAzElTimeObstacle( ...
-    shiftedDuplicateField, [6; 11], [1; 1], [5; 5]);
-testCase.verifyEqual(midpointOccupied, [false; true]);
 end
 
 function testAsynchronousObstacleTimesShareVisibilityGraph(testCase)
@@ -1364,31 +1708,6 @@ for obstacleIndex = 1:numel(sourceBoundary_deg)
 end
 end
 
-function testVerboseMergedOnlySearchDoesNotIndexEmptyGraphs(testCase)
-% PURPOSE
-%   - Verify verbose merged-only search with no full snapshot graph array.
-boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
-obstacle = makeAzElObstacleData( ...
-    "moving square", [0; 5; 10], ...
-    {boundary_deg(:, 1); boundary_deg(:, 1); boundary_deg(:, 1)}, ...
-    {boundary_deg(:, 2); boundary_deg(:, 2); boundary_deg(:, 2)}, 0);
-obstacleField = buildAzElTimeObstacleField(obstacle); %#ok<NASGU>
-initialState = struct( ...
-    "time_s", 0, "position_deg", [-3 0]); %#ok<NASGU>
-goalState = struct( ...
-    "time_s", 10, "position_deg", [3 0]); %#ok<NASGU>
-
-printedText = evalc("search = buildAzElVisibilityRoutes(" + ...
-    "obstacleField, initialState, goalState, struct(" + ...
-    "'BuildFullVisibilityGraphs', false, " + ...
-    "'BuildMergedVisibilityGraph', true, " + ...
-    "'UseParallel', 'off', 'Verbose', true));");
-
-testCase.verifyEmpty(search.VisibilityGraphs);
-testCase.verifyTrue(contains(printedText, ...
-    "Full snapshot graph construction is disabled"));
-end
-
 function testParallelPolygonReductionMatchesSerial(testCase)
 % PURPOSE
 %   - Verify deterministic visibility results for serial and parallel modes.
@@ -1513,7 +1832,7 @@ testCase.verifyTrue(result.PlannerValidation.Passed);
 testCase.verifyNotEmpty( ...
     result.SearchDiagnostics.CandidateOptimizations);
 testCase.verifyEqual(result.PlannerSearchDiagnostics.MotionType, ...
-    "continuousLinearJerk");
+    "directCollocation");
 testCase.verifyGreaterThanOrEqual(result.ElapsedPlanningTime_s, ...
     result.FinalPlannerElapsedPlanningTime_s);
 testCase.verifyGreaterThanOrEqual(result.ElapsedPlanningTime_s, ...
@@ -1567,9 +1886,9 @@ testCase.verifyEqual(result.SearchDiagnostics. ...
     CandidatePlannerGoalTimeMode, "analyticresttorest");
 end
 
-function testReachableRestToRestInterceptUsesLinearJerkBoundary(testCase)
+function testReachableRestToRestInterceptUsesLinearHs3Boundary(testCase)
 % PURPOSE
-%   - Verify the analytic lower bound and continuous linear-jerk feasibility boundary.
+%   - Verify the analytic lower bound and linear HS-3 feasibility boundary.
 targetMotion = struct( ...
     "time_s", [0; 5], ...
     "position_deg", [1 0; 1 0], ...
@@ -1584,6 +1903,8 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [4 4], ...
     "maxJerk_deg_s3", [8 8]);
 plannerOptions = fastOptions(1);
+plannerOptions.InitialCollocationSegmentCount = 3;
+plannerOptions.MaximumCollocationSegmentCount = 12;
 plannerOptions.MaximumPlanningTime_s = 20;
 options = struct( ...
     "InterceptMode", "earliestArrival", ...
@@ -1864,8 +2185,12 @@ function options = fastOptions(maximumSeedCount)
 % PURPOSE
 %   - Keep regression runtime bounded without changing physical inputs.
 options = struct( ...
-    "ProjectionSegmentCount", 32, ...
-    "MaximumRlProjectionSeeds", maximumSeedCount, ...
+    "InitialCollocationSegmentCount", 6, ...
+    "MaximumMeshRefinementPasses", 0, ...
+    "MaximumCollocationSegmentCount", 6, ...
+    "EnableSelectedCandidateRefinement", false, ...
+    "MaximumDirectCollocationSeeds", maximumSeedCount, ...
+    "MaximumNlpIterations", 200, ...
     "EnableJerkTieBreak", false, ...
     "MaximumPlanningTime_s", 120, ...
     "UseParallel", "off", ...

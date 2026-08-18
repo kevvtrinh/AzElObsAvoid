@@ -1,10 +1,10 @@
-function tests = testAzElRlHybrid
+function tests = testAzElRpHs3
 %% Section 0: Header & Readme
 % SYNTAX
-%   results = runtests("tests/testAzElRlHybrid.m")
+%   results = runtests("tests/testAzElRpHs3.m")
 %**************************************************************************
 % PURPOSE
-%   - Verify required RL seed generation and the convex hybrid method.
+%   - Verify required RL seed generation and the single HS-3 motion method.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -45,6 +45,9 @@ options = planAzElMotion();
 
 testCase.verifyTrue(isfile(options.RpAgentFile));
 testCase.verifyGreaterThan(options.RpTurnRadius_deg, 0);
+testCase.verifyTrue(options.EnableSelectedCandidateRefinement);
+testCase.verifyEqual(options.SelectedRefinementInitialSegmentCount, 24);
+testCase.verifyEqual(options.SelectedRefinementMaximumSegmentCount, 96);
 testCase.verifyFalse(isfield(options, "UseRpAgent"));
 end
 
@@ -62,6 +65,7 @@ options = planAzElMotion();
     azElInternal.buildAzElRlHybridSeeds( ...
     seed, buildAzElTimeObstacleField([]), limits, options);
 
+testCase.verifyNumElements(firstSeed, 1);
 testCase.verifyEqual(firstDiagnostics(1).PolicyStatus, ...
     "proposalEvaluated");
 testCase.verifyTrue(all([firstDiagnostics.AgentLoaded]));
@@ -76,6 +80,15 @@ testCase.verifyEqual(firstSeed(1).Route_deg, secondSeed(1).Route_deg, ...
     "AbsTol", 0);
 testCase.verifyEqual(firstDiagnostics(1).RadiusScale, ...
     secondDiagnostics(1).RadiusScale, "AbsTol", 0);
+testCase.verifyEqual(firstDiagnostics(1).RawRadiusScale, ...
+    secondDiagnostics(1).RawRadiusScale, "AbsTol", 0);
+testCase.verifyGreaterThan( ...
+    firstDiagnostics(1).CalibratedRadiusScale, ...
+    firstDiagnostics(1).RawRadiusScale);
+testCase.verifyEqual( ...
+    firstDiagnostics(1).ClearanceProjectionScale, 1);
+testCase.verifyGreaterThanOrEqual( ...
+    firstDiagnostics(1).RadiusScale, 0.5);
 end
 
 function testTimedSippLawSurvivesRlRounding(testCase)
@@ -111,15 +124,16 @@ testCase.verifyError(@() azElInternal.buildAzElRlHybridSeeds( ...
     "buildAzElRlHybridSeeds:AgentNotFound");
 end
 
-function testDirectPlannerReportsRlConvexHybrid(testCase)
+function testDirectPlannerReportsRlSeededHs3(testCase)
 % PURPOSE
 %   - Exercise the maintained planner method without an obstacle detour.
 initialState = stateRecord(0, [0 0]);
 goalState = stateRecord(20, [2 1]);
 options = planAzElMotion();
-options.MaximumRlProjectionSeeds = 1;
-options.ProjectionSegmentCount = 32;
-options.UseSpaceTimeVisibilityGraph = false;
+options.MaximumDirectCollocationSeeds = 1;
+options.InitialCollocationSegmentCount = 4;
+options.MaximumCollocationSegmentCount = 4;
+options.MaximumMeshRefinementPasses = 0;
 options.MaximumPlanningTime_s = 30;
 options.UseParallel = "off";
 
@@ -128,11 +142,40 @@ result = planAzElMotion( ...
 
 testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyEqual(result.timedSlopePath.RetimerType, ...
-    "rlConvexHybrid");
+    "rlSeededHs3");
 testCase.verifyEqual(result.SearchDiagnostics.RpSeedMethod, ...
     "requiredRlCornerPolicy");
 testCase.verifyTrue(all([result.SearchDiagnostics. ...
     RpSeedDiagnostics.AgentLoaded]));
+end
+
+function testSelectedHs3RefinementIsReported(testCase)
+% PURPOSE
+%   - Exercise bounded high-resolution refinement after route screening.
+initialState = stateRecord(0, [0 0]);
+goalState = stateRecord(20, [2 1]);
+options = planAzElMotion();
+options.MaximumDirectCollocationSeeds = 1;
+options.InitialCollocationSegmentCount = 4;
+options.MaximumCollocationSegmentCount = 4;
+options.MaximumMeshRefinementPasses = 0;
+options.SelectedRefinementInitialSegmentCount = 6;
+options.SelectedRefinementMaximumSegmentCount = 6;
+options.SelectedRefinementMaximumPasses = 0;
+options.MinimumDirectCollocationSeedTime_s = 0.1;
+options.MaximumPlanningTime_s = 30;
+options.UseParallel = "off";
+
+result = planAzElMotion( ...
+    [], initialState, goalState, motionLimits(), options);
+
+testCase.verifyTrue(result.Success, result.Message);
+testCase.verifyTrue( ...
+    result.SearchDiagnostics.SelectedCandidateRefinement.Attempted);
+testCase.verifyEqual( ...
+    result.SearchDiagnostics.SelectedCandidateRefinement.SeedIndex, 1);
+testCase.verifyGreaterThan( ...
+    result.SearchDiagnostics.SelectedCandidateRefinement.ElapsedTime_s, 0);
 end
 
 function seed = seedRecord(route_deg, routeTime_s)
