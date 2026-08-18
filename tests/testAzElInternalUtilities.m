@@ -154,3 +154,69 @@ testCase.verifyEqual(azElInternal.polylineLength([4 8]), 0);
 testCase.verifyEqual(azElInternal.polylineLength( ...
     [0 0; 3 4; 3 6]), 7, "AbsTol", eps);
 end
+
+function testHs3SegmentPolynomialPreservesDynamics(testCase)
+% PURPOSE
+%   - Verify the shared HS-3 polynomial has exact state-derivative dynamics.
+firstState = [1 2 0.3 -0.2 0.1 -0.05];
+firstControl = [0.4 -0.3];
+midpointControl = [-0.2 0.5];
+lastControl = [0.1 0.2];
+segmentDuration_s = 1.7;
+[statePower, controlPower] = ...
+    azElInternal.buildAzElHs3SegmentPolynomials( ...
+    firstState, firstControl, midpointControl, lastControl, ...
+    segmentDuration_s);
+
+derivativePower = (1:5).' .* statePower(2:end, :) / ...
+    segmentDuration_s;
+paddedControlPower = [controlPower; zeros(2, 2)];
+dynamicsPower = [statePower(1:5, 3:6), paddedControlPower];
+testCase.verifyEqual(statePower(1, :), firstState, "AbsTol", eps);
+testCase.verifyEqual(derivativePower, dynamicsPower, ...
+    "AbsTol", 20 * eps);
+testCase.verifyEqual([1 0 0; 1 0.5 0.25; 1 1 1] * ...
+    controlPower, [firstControl; midpointControl; lastControl], ...
+    "AbsTol", 20 * eps);
+end
+
+function testPowerToBernsteinUsesExactQuadraticTransform(testCase)
+% PURPOSE
+%   - Verify the shared ascending-power to Bernstein transformation.
+powerCoefficient = [1; 2; 3];
+bernsteinCoefficient = ...
+    azElInternal.powerToBernstein(powerCoefficient);
+testCase.verifyEqual(bernsteinCoefficient, [1; 2; 6], ...
+    "AbsTol", eps);
+end
+
+function testHs3PropagationUsesOneContinuousControlChain(testCase)
+% PURPOSE
+%   - Verify shared propagation matches each segment polynomial endpoint.
+meshTau = [0; 0.4; 1];
+initialTime_s = 2;
+finalTime_s = 5;
+firstState = [1 -1 0.2 0.1 0 0];
+knotControl = [0.3 -0.2; -0.1 0.4; 0.2 0.1];
+midpointControl = [0.05 0.1; -0.2 0.3];
+solution = azElInternal.propagateAzElHs3Control( ...
+    initialTime_s, finalTime_s, meshTau, firstState, ...
+    knotControl, midpointControl);
+
+for segmentIndex = 1:2
+    segmentDuration_s = (finalTime_s - initialTime_s) * ...
+        (meshTau(segmentIndex + 1) - meshTau(segmentIndex));
+    statePower = azElInternal.buildAzElHs3SegmentPolynomials( ...
+        solution.KnotState(segmentIndex, :), ...
+        knotControl(segmentIndex, :), ...
+        midpointControl(segmentIndex, :), ...
+        knotControl(segmentIndex + 1, :), segmentDuration_s);
+    samplePower = [1 0.5 0.25 0.125 0.0625 0.03125; ...
+        ones(1, 6)];
+    expectedState = samplePower * statePower;
+    testCase.verifyEqual(solution.MidpointState(segmentIndex, :), ...
+        expectedState(1, :), "AbsTol", 20 * eps);
+    testCase.verifyEqual(solution.KnotState(segmentIndex + 1, :), ...
+        expectedState(2, :), "AbsTol", 20 * eps);
+end
+end

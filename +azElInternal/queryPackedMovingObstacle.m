@@ -28,8 +28,9 @@ function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 %   - timePaddingSamples (nonnegative integer scalar)
 %       Neighboring source slices checked as additional static uncertainty.
 %   - independentSegmentPairs (logical scalar, optional; default false)
-%       With scalar time, interpret rows 1:2, 3:4, and so on as independent
-%       segments. This internal batch mode omits connector segments.
+%       Interpret rows 1:2, 3:4, and so on as independent segments. Scalar
+%       time uses one static time. A 2N-element time vector gives one timed
+%       endpoint pair for each segment and omits connector segments.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied, isInsideBounds (logical scalar or column)
@@ -62,13 +63,25 @@ independentSegmentPairs = azElInternal.normalizeLogicalScalar( ...
 time_s = double(time_s(:));
 position_deg = double(position_deg);
 isStaticPath = isscalar(time_s) && size(position_deg, 1) > 1;
-if independentSegmentPairs && (~isscalar(time_s) || ...
-        mod(size(position_deg, 1), 2) ~= 0)
+isTimedSegmentBatch = independentSegmentPairs && ~isscalar(time_s);
+hasEvenPositionPairs = mod(size(position_deg, 1), 2) == 0;
+hasMatchingTimedPairs = numel(time_s) == size(position_deg, 1) && ...
+    mod(numel(time_s), 2) == 0;
+timedPairIsOrdered = ~isTimedSegmentBatch || all( ...
+    time_s(2:2:end) >= time_s(1:2:end));
+invalidIndependentPairs = independentSegmentPairs && ...
+    (~hasEvenPositionPairs || ...
+    (isTimedSegmentBatch && ~hasMatchingTimedPairs) || ...
+    ~timedPairIsOrdered);
+if invalidIndependentPairs
     error("queryPackedMovingObstacle:InvalidIndependentSegments", ...
-        "Independent static segments require one time and an even row count.");
+        "Independent segments require even position rows and either one " + ...
+        "time or one ordered endpoint-time pair per segment.");
 end
 if isscalar(time_s)
     % One time may describe a point or a complete static spatial path.
+elseif isTimedSegmentBatch
+    % Each adjacent row pair is one independent timed segment.
 elseif numel(time_s) == 2
     if size(position_deg, 1) ~= 2 || time_s(2) < time_s(1)
         error("queryPackedMovingObstacle:SegmentSizeMismatch", ...
@@ -80,7 +93,9 @@ else
 end
 %% Section 2: Check A Point Or Timed Segment
 
-if isStaticPath
+if isTimedSegmentBatch
+    resultCount = numel(time_s) / 2;
+elseif isStaticPath
     if independentSegmentPairs
         resultCount = size(position_deg, 1) / 2;
     else
@@ -96,7 +111,19 @@ if packedObstacle.SampleCount < 1
     return;
 end
 obstacleTime_s = double(packedObstacle.TimeSeconds(:));
-if time_s(end) < obstacleTime_s(1) || time_s(1) > obstacleTime_s(end)
+if max(time_s) < obstacleTime_s(1) || min(time_s) > obstacleTime_s(end)
+    return;
+end
+
+if isTimedSegmentBatch
+    for segmentIndex = 1:resultCount
+        pairIndex = 2 * segmentIndex - 1:2 * segmentIndex;
+        [isOccupied(segmentIndex), isInsideBounds(segmentIndex), ...
+            blockingSliceIndex(segmentIndex)] = timedSegmentHitsObstacle( ...
+            packedObstacle, obstacleTime_s, time_s(pairIndex), ...
+            position_deg(pairIndex, :), boundaryIsOccupied, ...
+            timePaddingSamples);
+    end
     return;
 end
 
@@ -108,6 +135,7 @@ if isStaticPath
         if isempty(edgeSet)
             continue;
         end
+        preparedEdgeSet = prepareStaticEdgeSet(edgeSet);
         for segmentIndex = 1:resultCount
             if isOccupied(segmentIndex)
                 continue;
@@ -117,9 +145,9 @@ if isStaticPath
             else
                 firstPositionIndex = segmentIndex;
             end
-            [blocked, boundsHit] = staticSegmentHitsEdges( ...
+            [blocked, boundsHit] = staticSegmentHitsPreparedEdges( ...
                 position_deg(firstPositionIndex:firstPositionIndex + 1, :), ...
-                edgeSet, boundaryIsOccupied);
+                preparedEdgeSet, boundaryIsOccupied);
             isInsideBounds(segmentIndex) = ...
                 isInsideBounds(segmentIndex) || boundsHit;
             if blocked
@@ -156,6 +184,21 @@ if isscalar(time_s)
     return;
 end
 
+[isOccupied, isInsideBounds, blockingSliceIndex] = ...
+    timedSegmentHitsObstacle(packedObstacle, obstacleTime_s, time_s, ...
+    position_deg, boundaryIsOccupied, timePaddingSamples);
+end
+
+%% Section 3: Local Functions
+
+function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
+        timedSegmentHitsObstacle(packedObstacle, obstacleTime_s, time_s, ...
+        position_deg, boundaryIsOccupied, timePaddingSamples)
+% PURPOSE
+%   - Check one validated timed segment without repeating public setup.
+isOccupied = false;
+isInsideBounds = false;
+blockingSliceIndex = 0;
 overlapStart_s = max(time_s(1), obstacleTime_s(1));
 overlapEnd_s = min(time_s(2), obstacleTime_s(end));
 if overlapStart_s > overlapEnd_s
@@ -224,8 +267,7 @@ for intervalIndex = 1:numel(breakTime_s) - 1
         timePaddingSamples):min(packedObstacle.SampleCount, ...
         upperSliceIndex + timePaddingSamples));
     for sliceIndex = paddedSliceIndex
-        staticEdges = packedSliceEdges( ...
-            packedObstacle, sliceIndex);
+        staticEdges = packedSliceEdges(packedObstacle, sliceIndex);
         [blocked, boundsHit] = linearSegmentHitsMovingEdges( ...
             intervalPosition_deg, staticEdges, staticEdges, ...
             boundaryIsOccupied);
@@ -238,8 +280,6 @@ for intervalIndex = 1:numel(breakTime_s) - 1
     end
 end
 end
-
-%% Section 3: Local Functions
 
 function [edgeSets, sourceSliceIndex] = edgeSetsAtTime( ...
         packedObstacle, queryTime_s, timePaddingSamples)
@@ -445,22 +485,58 @@ function [isOccupied, boundsHit] = staticSegmentHitsEdges( ...
 % PURPOSE
 %   - Check a spatial segment against one static polygon without invoking
 %     the moving-edge polynomial solver.
-isOccupied = false;
-boundsHit = false;
+preparedEdgeSet = prepareStaticEdgeSet(edgeSet);
+[isOccupied, boundsHit] = staticSegmentHitsPreparedEdges( ...
+    segmentPosition_deg, preparedEdgeSet, boundaryIsOccupied);
+end
+
+function preparedEdgeSet = prepareStaticEdgeSet(edgeSet)
+% PURPOSE
+%   - Cache static edge vectors and bounds for repeated segment queries.
+preparedEdgeSet = struct( ...
+    "EdgeSet_deg", edgeSet, ...
+    "EdgeStart_deg", zeros(0, 2), ...
+    "EdgeEnd_deg", zeros(0, 2), ...
+    "EdgeDelta_deg", zeros(0, 2), ...
+    "EdgeMinimum_deg", zeros(0, 2), ...
+    "EdgeMaximum_deg", zeros(0, 2), ...
+    "Bounds_deg", [Inf -Inf Inf -Inf], ...
+    "CoordinateScale_deg", 1);
 if isempty(edgeSet)
     return;
 end
-polygonEdgeSet = edgeSet;
-segmentStart_deg = segmentPosition_deg(1, :);
-segmentEnd_deg = segmentPosition_deg(2, :);
-segmentDelta_deg = segmentEnd_deg - segmentStart_deg;
 edgeStart_deg = edgeSet(:, 1:2);
 edgeEnd_deg = edgeSet(:, 3:4);
-edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
-polygonBounds_deg = [min(edgeSet(:, [1 3]), [], "all"), ...
+preparedEdgeSet.EdgeStart_deg = edgeStart_deg;
+preparedEdgeSet.EdgeEnd_deg = edgeEnd_deg;
+preparedEdgeSet.EdgeDelta_deg = edgeEnd_deg - edgeStart_deg;
+preparedEdgeSet.EdgeMinimum_deg = min(edgeStart_deg, edgeEnd_deg);
+preparedEdgeSet.EdgeMaximum_deg = max(edgeStart_deg, edgeEnd_deg);
+preparedEdgeSet.Bounds_deg = [ ...
+    min(edgeSet(:, [1 3]), [], "all"), ...
     max(edgeSet(:, [1 3]), [], "all"), ...
     min(edgeSet(:, [2 4]), [], "all"), ...
     max(edgeSet(:, [2 4]), [], "all")];
+preparedEdgeSet.CoordinateScale_deg = max( ...
+    1, max(abs(edgeSet), [], "all"));
+end
+
+function [isOccupied, boundsHit] = staticSegmentHitsPreparedEdges( ...
+        segmentPosition_deg, preparedEdgeSet, boundaryIsOccupied)
+% PURPOSE
+%   - Check one segment with edge data prepared once for a query batch.
+isOccupied = false;
+boundsHit = false;
+if isempty(preparedEdgeSet.EdgeSet_deg)
+    return;
+end
+segmentStart_deg = segmentPosition_deg(1, :);
+segmentEnd_deg = segmentPosition_deg(2, :);
+segmentDelta_deg = segmentEnd_deg - segmentStart_deg;
+edgeStart_deg = preparedEdgeSet.EdgeStart_deg;
+edgeEnd_deg = preparedEdgeSet.EdgeEnd_deg;
+edgeDelta_deg = preparedEdgeSet.EdgeDelta_deg;
+polygonBounds_deg = preparedEdgeSet.Bounds_deg;
 segmentBounds_deg = [min(segmentPosition_deg(:, 1)), ...
     max(segmentPosition_deg(:, 1)), ...
     min(segmentPosition_deg(:, 2)), ...
@@ -477,8 +553,8 @@ end
 
 segmentLength_deg = norm(segmentDelta_deg);
 if segmentLength_deg <= tolerance_deg
-    isOccupied = pointOccupiedByEdges( ...
-        segmentStart_deg, polygonEdgeSet, boundaryIsOccupied);
+    isOccupied = pointOccupiedByPreparedEdges( ...
+        segmentStart_deg, preparedEdgeSet, boundaryIsOccupied);
     return;
 end
 
@@ -494,9 +570,9 @@ end
 %
 % A rejected edge has disjoint closed bounding boxes and therefore cannot
 % contribute a boundary-contact parameter. Occupancy between contacts is
-% still tested against polygonEdgeSet, the complete original polygon.
-edgeMinimum_deg = min(edgeStart_deg, edgeEnd_deg);
-edgeMaximum_deg = max(edgeStart_deg, edgeEnd_deg);
+% still tested against the complete prepared polygon.
+edgeMinimum_deg = preparedEdgeSet.EdgeMinimum_deg;
+edgeMaximum_deg = preparedEdgeSet.EdgeMaximum_deg;
 possibleContact = ...
     edgeMaximum_deg(:, 1) >= segmentBounds_deg(1) - tolerance_deg & ...
     edgeMinimum_deg(:, 1) <= segmentBounds_deg(2) + tolerance_deg & ...
@@ -567,8 +643,8 @@ testParameter = 0.5 * ( ...
     breakParameter(1:end - 1) + breakParameter(2:end));
 for parameter = reshape(testParameter, 1, [])
     point_deg = segmentStart_deg + parameter * segmentDelta_deg;
-    if pointOccupiedByEdges( ...
-            point_deg, polygonEdgeSet, boundaryIsOccupied)
+    if pointOccupiedByPreparedEdges( ...
+            point_deg, preparedEdgeSet, boundaryIsOccupied)
         isOccupied = true;
         return;
     end
@@ -709,9 +785,22 @@ function isOccupied = pointOccupiedByEdges( ...
         point_deg, edgeSet, boundaryIsOccupied)
 % PURPOSE
 %   - Apply odd-even polygon occupancy and the requested boundary policy.
-edgeStart_deg = edgeSet(:, 1:2);
-edgeEnd_deg = edgeSet(:, 3:4);
-edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
+preparedEdgeSet = prepareStaticEdgeSet(edgeSet);
+isOccupied = pointOccupiedByPreparedEdges( ...
+    point_deg, preparedEdgeSet, boundaryIsOccupied);
+end
+
+function isOccupied = pointOccupiedByPreparedEdges( ...
+        point_deg, preparedEdgeSet, boundaryIsOccupied)
+% PURPOSE
+%   - Apply odd-even occupancy without rebuilding static edge data.
+edgeStart_deg = preparedEdgeSet.EdgeStart_deg;
+edgeEnd_deg = preparedEdgeSet.EdgeEnd_deg;
+edgeDelta_deg = preparedEdgeSet.EdgeDelta_deg;
+if isempty(edgeStart_deg)
+    isOccupied = false;
+    return;
+end
 
 % --- Pre-Vectorized Reference Form ------------------------------------
 % The relevant-edge mask is the batched equivalent of:
@@ -724,10 +813,10 @@ edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
 % Odd-even occupancy casts a ray toward positive azimuth. An edge wholly
 % left of the point or wholly above/below that ray cannot cross it or hold
 % the point on its boundary. The tolerance only enlarges the retained set.
-coordinateScale_deg = max(1, max(abs(edgeSet), [], "all"));
+coordinateScale_deg = preparedEdgeSet.CoordinateScale_deg;
 broadPhaseTolerance_deg = 1e-10 * coordinateScale_deg;
-edgeMinimum_deg = min(edgeStart_deg, edgeEnd_deg);
-edgeMaximum_deg = max(edgeStart_deg, edgeEnd_deg);
+edgeMinimum_deg = preparedEdgeSet.EdgeMinimum_deg;
+edgeMaximum_deg = preparedEdgeSet.EdgeMaximum_deg;
 edgeIsRelevant = ...
     edgeMaximum_deg(:, 1) >= point_deg(1) - ...
     broadPhaseTolerance_deg & ...
