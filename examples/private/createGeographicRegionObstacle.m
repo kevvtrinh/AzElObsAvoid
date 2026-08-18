@@ -230,22 +230,8 @@ end
 %% Section 5: Local Functions
 
 function shape = rectanglePolyshape(bounds_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   shape = rectanglePolyshape(bounds_deg)
-%**************************************************************************
 % PURPOSE
 %   - Construct the geographic clipping rectangle for one region window.
-%**************************************************************************
-% INPUTS
-%   - bounds_deg (1-by-4 [azimuthMin azimuthMax elevationMin elevationMax])
-%**************************************************************************
-% OUTPUTS
-%   - shape (scalar polyshape)
-%**************************************************************************
-% UNITS
-%   - Bounds are degrees.
-%**************************************************************************
 shape = polyshape( ...
     bounds_deg([1 2 2 1]), bounds_deg([3 3 4 4]), ...
     "Simplify", false, "KeepCollinearPoints", true);
@@ -253,25 +239,9 @@ end
 
 function [denseX_deg, denseY_deg] = densifyBoundaryRings( ...
         x_deg, y_deg, maximumSpacing_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [denseX_deg, denseY_deg] = densifyBoundaryRings( ...
-%       x_deg, y_deg, maximumSpacing_deg)
-%**************************************************************************
 % PURPOSE
 %   - Add collinear edge samples without changing polygon occupancy so each
 %     geographic case also stresses dense-boundary packing and validation.
-%**************************************************************************
-% INPUTS
-%   - x_deg, y_deg (matching boundary vectors with paired separators)
-%   - maximumSpacing_deg (positive scalar maximum adjacent spacing)
-%**************************************************************************
-% OUTPUTS
-%   - denseX_deg, denseY_deg (matching NaN-separated boundary vectors)
-%**************************************************************************
-% UNITS
-%   - Coordinates and maximum spacing are degrees.
-%**************************************************************************
 x_deg = double(x_deg(:));
 y_deg = double(y_deg(:));
 finiteRows = isfinite(x_deg) & isfinite(y_deg);

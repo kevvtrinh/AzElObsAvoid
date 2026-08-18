@@ -1,7 +1,7 @@
 function tests = testAzElInternalUtilities
 %% Section 0: Header & Readme
 % SYNTAX
-%   results = runtests("tests/testAzElInternalUtilities.m")
+%   tests = testAzElInternalUtilities()
 %**************************************************************************
 % PURPOSE
 %   - Verify shared option resolution, logical normalization, and packed

@@ -1,20 +1,17 @@
-function result = exampleAlternatingSlalom(slalomCount, options)
+function result = exampleAlternatingSlalom(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleAlternatingSlalom()
-%   result = exampleAlternatingSlalom(slalomCount)
-%   result = exampleAlternatingSlalom(options)
-%   result = exampleAlternatingSlalom(slalomCount, options)
+%   result = exampleAlternatingSlalom(exampleOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Construct 1 to 10 protected alternating baffles and run the automatic
 %     planner without waypoints, a preferred side, or a directed route.
 %**************************************************************************
 % INPUTS
-%   - slalomCount (integer scalar from 1 through 10, optional; default 6)
-%   - options (scalar struct, optional)
-%       Planner option overrides plus EnableJerkConstraint and
-%       MaxJerk_deg_s3 example controls.
+%   - exampleOverrides (scalar struct, optional; default struct())
+%       Planner/display overrides plus SlalomCount (default 6) and the
+%       finite MaxJerk_deg_s3 limit.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -26,20 +23,23 @@ function result = exampleAlternatingSlalom(slalomCount, options)
 
 %% Section 1: Resolve Example Controls
 
-if nargin < 1 || isempty(slalomCount)
-    slalomCount = 6;
-    options = struct();
-elseif isstruct(slalomCount)
-    options = slalomCount;
-    slalomCount = 6;
-elseif nargin < 2 || isempty(options)
-    options = struct();
+if nargin < 1 || isempty(exampleOverrides)
+    exampleOverrides = struct();
+end
+if ~isstruct(exampleOverrides) || ~isscalar(exampleOverrides)
+    error("exampleAlternatingSlalom:InvalidOverrides", ...
+        "exampleOverrides must be a scalar struct.");
+end
+slalomCount = 6;
+if isfield(exampleOverrides, "SlalomCount") && ...
+        ~isempty(exampleOverrides.SlalomCount)
+    slalomCount = exampleOverrides.SlalomCount;
+    exampleOverrides = rmfield(exampleOverrides, "SlalomCount");
 end
 validateattributes(slalomCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', '>=', 1, '<=', 10});
 [options, jerkConfiguration] = resolveAzElExampleOptions( ...
-    options, struct( ...
-    "TurnRadius_deg", 0.50, ...
+    exampleOverrides, struct( ...
     "Verbose", true, ...
     "FigureVisible", "on", ...
     "Title", sprintf( ...
@@ -47,8 +47,7 @@ validateattributes(slalomCount, {'numeric'}, ...
 
 %% Section 2: Create Obstacles
 
-% Use one conservative horizon for both retimers so jerk is the only paired
-% benchmark input that changes.
+% Use one conservative horizon for all direct-collocation seed solves.
 missionEndTime_s = 120 + 60 * slalomCount;
 safetyMargin_deg = 0.25;
 time_s = [0; missionEndTime_s];
@@ -118,22 +117,67 @@ exampleValidation = validateAzElExampleResult( ...
     struct("RequireDirectBlocked", true));
 gateAzimuth_deg = gateSpacing_deg * (1:slalomCount).';
 passageElevation_deg = nan(slalomCount, 1);
+passageSpeed_deg_s = nan(slalomCount, 1);
+passageCrossingFound = false(slalomCount, 1);
+turnWindowMinimumSpeed_deg_s = nan(slalomCount, 1);
 if exampleValidation.HasTrajectory
+    trajectorySpeed_deg_s = vecnorm( ...
+        result.timedSlopePath.velocity_deg_s, 2, 2);
     for baffleIndex = 1:slalomCount
-        [~, nearestSampleIndex] = min(abs( ...
+        [passageElevation_deg(baffleIndex), ...
+            passageSpeed_deg_s(baffleIndex), ...
+            passageCrossingFound(baffleIndex)] = interpolateGateCrossing( ...
+            result.timedSlopePath, gateAzimuth_deg(baffleIndex));
+        turnWindowMask = abs( ...
             result.timedSlopePath.position_deg(:, 1) - ...
-            gateAzimuth_deg(baffleIndex)));
-        passageElevation_deg(baffleIndex) = ...
-            result.timedSlopePath.position_deg(nearestSampleIndex, 2);
+            gateAzimuth_deg(baffleIndex)) <= 0.5 * gateSpacing_deg;
+        if any(turnWindowMask)
+            turnWindowMinimumSpeed_deg_s(baffleIndex) = min( ...
+                trajectorySpeed_deg_s(turnWindowMask));
+        end
     end
 end
 expectedPassageSign = 2 * mod((1:slalomCount).', 2) - 1;
+requiredProtectedElevation_deg = ...
+    gateTipElevation_deg + safetyMargin_deg;
 alternatingPassageSatisfied = all( ...
-    expectedPassageSign .* passageElevation_deg > gateTipElevation_deg);
+    passageCrossingFound & expectedPassageSign .* passageElevation_deg >= ...
+    requiredProtectedElevation_deg - 1e-7);
+minimumTurnSpeed_deg_s = 1e-3;
+noMandatoryStopSatisfied = all( ...
+    passageCrossingFound & passageSpeed_deg_s > minimumTurnSpeed_deg_s & ...
+    turnWindowMinimumSpeed_deg_s > minimumTurnSpeed_deg_s);
 exampleValidation.AlternatingPassageSatisfied = ...
     alternatingPassageSatisfied;
+exampleValidation.PassageCrossingFound = passageCrossingFound;
+exampleValidation.PassageSpeed_deg_s = passageSpeed_deg_s;
+exampleValidation.TurnWindowMinimumSpeed_deg_s = ...
+    turnWindowMinimumSpeed_deg_s;
+exampleValidation.MinimumTurnSpeed_deg_s = minimumTurnSpeed_deg_s;
+exampleValidation.NoMandatoryStopSatisfied = noMandatoryStopSatisfied;
+exampleValidation.ContinuousVelocityThroughTurnsSatisfied = ...
+    noMandatoryStopSatisfied;
 exampleValidation.Passed = exampleValidation.Passed && ...
-    alternatingPassageSatisfied;
+    alternatingPassageSatisfied && noMandatoryStopSatisfied;
+if ~alternatingPassageSatisfied || ~noMandatoryStopSatisfied
+    failedBaffleIndex = find(~passageCrossingFound | ...
+        expectedPassageSign .* passageElevation_deg < ...
+        requiredProtectedElevation_deg - 1e-7 | ...
+        passageSpeed_deg_s <= minimumTurnSpeed_deg_s | ...
+        turnWindowMinimumSpeed_deg_s <= minimumTurnSpeed_deg_s);
+    slalomIssues = strings(0, 1);
+    if ~alternatingPassageSatisfied
+        slalomIssues(end + 1, 1) = "alternatingPassage";
+    end
+    if ~noMandatoryStopSatisfied
+        slalomIssues(end + 1, 1) = "mandatoryStop";
+    end
+    exampleValidation.Issues = unique([ ...
+        string(exampleValidation.Issues(:)); slalomIssues], "stable");
+    exampleValidation.Message = string(exampleValidation.Message) + ...
+        " Slalom gate checks failed at baffles " + ...
+        strjoin(string(failedBaffleIndex.'), ", ") + ".";
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
@@ -150,5 +194,40 @@ result.slalomCount = slalomCount;
 result.baffleBoundaries_deg = baffleBoundaries_deg;
 result.gateSpacing_deg = gateSpacing_deg;
 result.passageElevation_deg = passageElevation_deg;
+result.passageSpeed_deg_s = passageSpeed_deg_s;
+result.turnWindowMinimumSpeed_deg_s = turnWindowMinimumSpeed_deg_s;
+result.passageCrossingFound = passageCrossingFound;
 result.ExampleConfiguration = jerkConfiguration;
+end
+
+function [elevation_deg, speed_deg_s, crossingFound] = ...
+        interpolateGateCrossing( ...
+        timedSlopePath, gateAzimuth_deg)
+% PURPOSE
+%   - Interpolate elevation and speed at the first forward gate crossing.
+azimuth_deg = timedSlopePath.position_deg(:, 1);
+crossingIndex = find( ...
+    azimuth_deg(1:end - 1) <= gateAzimuth_deg & ...
+    azimuth_deg(2:end) >= gateAzimuth_deg, 1, "first");
+elevation_deg = NaN;
+speed_deg_s = NaN;
+crossingFound = ~isempty(crossingIndex);
+if isempty(crossingIndex)
+    return;
+end
+azimuthSpan_deg = azimuth_deg(crossingIndex + 1) - ...
+    azimuth_deg(crossingIndex);
+fraction = 0;
+if azimuthSpan_deg > 0
+    fraction = (gateAzimuth_deg - azimuth_deg(crossingIndex)) / ...
+        azimuthSpan_deg;
+end
+position_deg = (1 - fraction) * ...
+    timedSlopePath.position_deg(crossingIndex, :) + fraction * ...
+    timedSlopePath.position_deg(crossingIndex + 1, :);
+velocity_deg_s = (1 - fraction) * ...
+    timedSlopePath.velocity_deg_s(crossingIndex, :) + fraction * ...
+    timedSlopePath.velocity_deg_s(crossingIndex + 1, :);
+elevation_deg = position_deg(2);
+speed_deg_s = norm(velocity_deg_s);
 end

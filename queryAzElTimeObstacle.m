@@ -171,7 +171,27 @@ for packedObstacleIndex = 1:numel(packedObstacles)
     interpolatedRows = find(isUnresolvedQuery & ...
         queryTime_s >= obstacleTime_s(1) & ...
         queryTime_s <= obstacleTime_s(end) & ~isSourceTimeQuery);
-    for interpolatedRowIndex = reshape(interpolatedRows, 1, [])
+    [batchOccupied, batchBoundsOccupied, batchHandled] = ...
+        azElInternal.queryPackedMovingPoints( ...
+        packedObstacle, queryTime_s(interpolatedRows), ...
+        [queryAzimuth_deg(interpolatedRows), ...
+        queryElevation_deg(interpolatedRows)], ...
+        resolvedOptions.BoundaryIsOccupied);
+    if collisionMode == "polygon"
+        blockedBatchRows = batchOccupied;
+    else
+        blockedBatchRows = batchBoundsOccupied;
+    end
+    newlyBlockedRows = interpolatedRows( ...
+        batchHandled & blockedBatchRows);
+    isOccupied(newlyBlockedRows) = true;
+    blockingObstacleIndex(newlyBlockedRows) = ...
+        uint32(packedObstacleIndex);
+
+    % Topology-changing rows retain the conservative scalar implementation.
+    % They cannot be paired safely in the corresponding-edge batch above.
+    fallbackRows = interpolatedRows(~batchHandled);
+    for interpolatedRowIndex = reshape(fallbackRows, 1, [])
         [polygonOccupied, boundsOccupied] = ...
             azElInternal.queryPackedMovingObstacle( ...
             packedObstacle, queryTime_s(interpolatedRowIndex), ...
@@ -412,23 +432,8 @@ end
 %% Section 5: Local Functions
 
 function options = defaultQueryAzElTimeObstacleOptions()
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = defaultQueryAzElTimeObstacleOptions()
-%**************************************************************************
 % PURPOSE
 %   - Keep collision-query defaults in one source of truth.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully populated query options.
-%**************************************************************************
-% UNITS
-%   - TimePaddingSamples is dimensionless.
-%**************************************************************************
 options = struct( ...
     "CollisionMode", "polygon", ...
     "TimePaddingSamples", 0, ...
@@ -436,26 +441,9 @@ options = struct( ...
 end
 
 function safetyMargins_deg = storedObstacleSafetyMargins(obstacleField)
-%% Section 0: Header & Readme
-% SYNTAX
-%   safetyMargins_deg = storedObstacleSafetyMargins(obstacleField)
-%**************************************************************************
 % PURPOSE
 %   - Read per-obstacle construction margins from current or legacy packed
 %     field metadata without changing the queried geometry.
-%**************************************************************************
-% INPUTS
-%   - obstacleField (scalar struct)
-%       Packed obstacle field.
-%**************************************************************************
-% OUTPUTS
-%   - safetyMargins_deg (N-by-1 double)
-%       Stored construction-time margins, or zeros when legacy metadata is
-%       unavailable.
-%**************************************************************************
-% UNITS
-%   - Angles are degrees.
-%**************************************************************************
 obstacleCount = numel(obstacleField.Obstacles);
 if isfield(obstacleField, "SafetyMarginsDeg")
     safetyMargins_deg = reshape( ...

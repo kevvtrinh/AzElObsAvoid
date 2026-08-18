@@ -112,6 +112,9 @@ if options.ShowKinematics
         "acceleration_deg_s2", "jerk_deg_s3"};
     labels = ["Position (deg)" "Velocity (deg/s)" ...
         "Acceleration (deg/s^2)" "Jerk (deg/s^3)"];
+    hasPositionTrace = ~isempty(timedPath.time_s) && ...
+        ~isempty(timedPath.position_deg) && ...
+        any(isfinite(timedPath.position_deg), "all");
     for quantityIndex = 1:4
         kinematicAxes(quantityIndex) = nexttile(layout);
         values = timedPath.(quantities{quantityIndex});
@@ -131,8 +134,10 @@ if options.ShowKinematics
         box(kinematicAxes(quantityIndex), "on");
     end
     xlabel(kinematicAxes(end), "Time (s)");
-    legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
-        "Location", "best");
+    if hasPositionTrace
+        legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
+            "Location", "best");
+    end
     title(layout, options.Title);
 end
 animation = struct();
@@ -170,25 +175,8 @@ end
 %% Section 4: Local Functions
 
 function options = resolvePlotOptions(defaults, overrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolvePlotOptions(defaults, overrides)
-%**************************************************************************
 % PURPOSE
 %   - Merge and validate presentation and animation controls.
-%**************************************************************************
-% INPUTS
-%   - defaults (scalar struct)
-%   - overrides (scalar struct)
-%       Partial controls; unknown fields are ignored with one warning.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved and normalized plot controls.
-%**************************************************************************
-% UNITS
-%   - Pause_s is seconds; counts and logical controls are dimensionless.
-%**************************************************************************
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("plotAzElMotion:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -228,27 +216,12 @@ validateattributes(options.MaximumDisplayedVisibilitySnapshots, ...
 end
 
 function inspector = createVisibilityGraphInspector(result, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   inspector = createVisibilityGraphInspector(result, options)
-%**************************************************************************
 % PURPOSE
 %   - Show retained visibility graphs in azimuth/elevation/time space.
 %   - Provide controls for stepping graphs or selecting the nearest graph
 %     to an arbitrary requested time without rerunning planning.
-%**************************************************************************
-% INPUTS
-%   - result (scalar planner-result struct)
-%   - options (scalar resolved plotting-options struct)
-%**************************************************************************
-% OUTPUTS
-%   - inspector (scalar struct)
-%       Figure, axes, slider, time edit, buttons, and status handles.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and graph time is seconds.
-%**************************************************************************
 graphs = visibilityGraphsFromResult(result);
+spaceTimeGraph = spaceTimeVisibilityGraphFromResult(result);
 figureHandle = figure( ...
     "Visible", options.FigureVisible, ...
     "Name", options.Title + " visibility graphs", ...
@@ -301,11 +274,23 @@ inspector = struct( ...
     "StatusText", statusText);
 
 if isempty(graphs)
-    axis(overviewAxes, "off");
+    if ~isempty(spaceTimeGraph.NodeAzElTime)
+        hold(overviewAxes, "on");
+        drawSpaceTimeVisibilityGraph(overviewAxes, spaceTimeGraph);
+        xlabel(overviewAxes, "Azimuth (deg)");
+        ylabel(overviewAxes, "Elevation (deg)");
+        zlabel(overviewAxes, "Time (s)");
+        grid(overviewAxes, "on");
+        box(overviewAxes, "on");
+        view(overviewAxes, 3);
+        addVisibilityGraphLegend(overviewAxes, true);
+    else
+        axis(overviewAxes, "off");
+        text(overviewAxes, 0.5, 0.5, ...
+            "No retained visibility graphs are available.", ...
+            "Units", "normalized", "HorizontalAlignment", "center");
+    end
     axis(snapshotAxes, "off");
-    text(overviewAxes, 0.5, 0.5, ...
-        "No retained visibility graphs are available.", ...
-        "Units", "normalized", "HorizontalAlignment", "center");
     set([previousButton nextButton slider timeEdit goButton], ...
         "Enable", "off");
     set(statusText, "String", "No graph snapshots returned.");
@@ -323,6 +308,7 @@ end
 
 drawVisibilityGraphOverview(overviewAxes, graphs, result.azElData, ...
     options.MaximumDisplayedVisibilitySnapshots, options.Title);
+drawSpaceTimeVisibilityGraph(overviewAxes, spaceTimeGraph);
 state = struct( ...
     "Graphs", graphs, ...
     "Obstacles", result.azElData, ...
@@ -336,22 +322,8 @@ redrawVisibilityGraphSnapshot(figureHandle, 1, NaN);
 end
 
 function graphs = visibilityGraphsFromResult(result)
-%% Section 0: Header & Readme
-% SYNTAX
-%   graphs = visibilityGraphsFromResult(result)
-%**************************************************************************
 % PURPOSE
 %   - Read direct-planner or intercept-wrapper graph diagnostics.
-%**************************************************************************
-% INPUTS
-%   - result (scalar planner-result struct)
-%**************************************************************************
-% OUTPUTS
-%   - graphs (visibility-graph structure array, possibly empty)
-%**************************************************************************
-% UNITS
-%   - Graph positions are degrees and Time_s is seconds.
-%**************************************************************************
 graphs = struct([]);
 if isfield(result, "PlannerSearchDiagnostics") && ...
         isfield(result.PlannerSearchDiagnostics, "VisibilityGraphs")
@@ -362,24 +334,23 @@ elseif isfield(result, "SearchDiagnostics") && ...
 end
 end
 
+function graph = spaceTimeVisibilityGraphFromResult(result)
+% PURPOSE
+%   - Read the direct-planner or intercept-wrapper space-time graph.
+graph = azElInternal.buildAzElSpaceTimeVisibilityGraph();
+if isfield(result, "PlannerSearchDiagnostics") && ...
+        isfield(result.PlannerSearchDiagnostics, ...
+        "SpaceTimeVisibilityGraph")
+    graph = result.PlannerSearchDiagnostics.SpaceTimeVisibilityGraph;
+elseif isfield(result, "SearchDiagnostics") && ...
+        isfield(result.SearchDiagnostics, "SpaceTimeVisibilityGraph")
+    graph = result.SearchDiagnostics.SpaceTimeVisibilityGraph;
+end
+end
+
 function visibilityGraphControlCallback(source, ~, action)
-%% Section 0: Header & Readme
-% SYNTAX
-%   visibilityGraphControlCallback(source, event, action)
-%**************************************************************************
 % PURPOSE
 %   - Resolve one inspector control event to a retained snapshot index.
-%**************************************************************************
-% INPUTS
-%   - source (graphics handle), event (unused event record)
-%   - action (previous, next, slider, or time)
-%**************************************************************************
-% OUTPUTS
-%   - None. The inspector figure and stored state are updated.
-%**************************************************************************
-% UNITS
-%   - The time-edit value is seconds; indices are dimensionless.
-%**************************************************************************
 figureHandle = ancestor(source, "figure");
 state = guidata(figureHandle);
 if isempty(state) || ~isfield(state, "Graphs") || isempty(state.Graphs)
@@ -411,25 +382,8 @@ end
 
 function redrawVisibilityGraphSnapshot( ...
         figureHandle, selectedIndex, requestedTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   redrawVisibilityGraphSnapshot( ...
-%       figureHandle, selectedIndex, requestedTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Redraw one exact retained graph selected by index or nearest time.
-%**************************************************************************
-% INPUTS
-%   - figureHandle (scalar figure handle)
-%   - selectedIndex (positive graph index)
-%   - requestedTime_s (finite scalar or NaN when stepping by index)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics, controls, and figure application data are updated.
-%**************************************************************************
-% UNITS
-%   - requestedTime_s and graph Time_s are seconds.
-%**************************************************************************
 state = guidata(figureHandle);
 graph = state.Graphs(selectedIndex);
 axesHandle = state.SnapshotAxes;
@@ -473,27 +427,8 @@ end
 
 function drawVisibilityGraphOverview( ...
         axesHandle, graphs, obstacles, maximumSnapshotCount, titleText)
-%% Section 0: Header & Readme
-% SYNTAX
-%   drawVisibilityGraphOverview( ...
-%       axesHandle, graphs, obstacles, maximumSnapshotCount, titleText)
-%**************************************************************************
 % PURPOSE
 %   - Stack representative returned graphs in three-dimensional time space.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - graphs (visibility-graph structure array)
-%   - obstacles (canonical obstacle structure array)
-%   - maximumSnapshotCount (positive integer)
-%   - titleText (scalar text)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Axes are azimuth degrees, elevation degrees, and time seconds.
-%**************************************************************************
 snapshotCount = numel(graphs);
 displayIndex = unique(round(linspace( ...
     1, snapshotCount, min(snapshotCount, maximumSnapshotCount))));
@@ -515,24 +450,8 @@ addVisibilityGraphLegend(axesHandle, true);
 end
 
 function drawVisibilityGraphSnapshot(axesHandle, graph, useTimeAxis)
-%% Section 0: Header & Readme
-% SYNTAX
-%   drawVisibilityGraphSnapshot(axesHandle, graph, useTimeAxis)
-%**************************************************************************
 % PURPOSE
 %   - Draw accepted, blocked, boundary, selected, and pruned graph data.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - graph (scalar visibility-graph struct)
-%   - useTimeAxis (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and the optional third axis is seconds.
-%**************************************************************************
 nodePosition_deg = graph.NodePosition_deg;
 blockedMask = graph.VisibilityBlockedMask;
 clearMask = graph.EdgeType == "visibility";
@@ -575,26 +494,65 @@ if size(nodePosition_deg, 1) >= 2
 end
 end
 
+function drawSpaceTimeVisibilityGraph(axesHandle, graph)
+% PURPOSE
+%   - Plot retained directed edges and the selected timed route in 3-D.
+if isempty(graph.NodeAzElTime)
+    return;
+end
+[acceptedAzimuth_deg, acceptedElevation_deg, acceptedTime_s] = ...
+    directedEdgeCoordinates(graph.NodeAzElTime, ...
+    graph.AcceptedEdgeSourceNodeIndex, ...
+    graph.AcceptedEdgeTargetNodeIndex);
+collisionRejected = graph.RejectedEdgeReason == "collision";
+[collisionAzimuth_deg, collisionElevation_deg, collisionTime_s] = ...
+    directedEdgeCoordinates(graph.NodeAzElTime, ...
+    graph.RejectedEdgeSourceNodeIndex(collisionRejected), ...
+    graph.RejectedEdgeTargetNodeIndex(collisionRejected));
+dynamicsRejected = graph.RejectedEdgeReason == "velocity";
+[dynamicsAzimuth_deg, dynamicsElevation_deg, dynamicsTime_s] = ...
+    directedEdgeCoordinates(graph.NodeAzElTime, ...
+    graph.RejectedEdgeSourceNodeIndex(dynamicsRejected), ...
+    graph.RejectedEdgeTargetNodeIndex(dynamicsRejected));
+plot3(axesHandle, acceptedAzimuth_deg, acceptedElevation_deg, ...
+    acceptedTime_s, "-", "Color", [0.10 0.65 0.70], ...
+    "LineWidth", 0.5, "HandleVisibility", "off");
+plot3(axesHandle, collisionAzimuth_deg, collisionElevation_deg, ...
+    collisionTime_s, ":", "Color", [0.85 0.20 0.20], ...
+    "LineWidth", 0.5, "HandleVisibility", "off");
+plot3(axesHandle, dynamicsAzimuth_deg, dynamicsElevation_deg, ...
+    dynamicsTime_s, ":", "Color", [0.55 0.55 0.55], ...
+    "LineWidth", 0.5, "HandleVisibility", "off");
+if ~isempty(graph.PathTime_s)
+    plot3(axesHandle, graph.PathPosition_deg(:, 1), ...
+        graph.PathPosition_deg(:, 2), graph.PathTime_s, "-", ...
+        "Color", [0.75 0.10 0.75], "LineWidth", 3.0, ...
+        "HandleVisibility", "off");
+end
+end
+
+function [azimuth_deg, elevation_deg, time_s] = ...
+        directedEdgeCoordinates(nodeAzElTime, sourceIndex, targetIndex)
+% PURPOSE
+%   - Batch directed 3-D edges into NaN-separated plot vectors.
+edgeCount = numel(sourceIndex);
+azimuth_deg = nan(3 * edgeCount, 1);
+elevation_deg = nan(3 * edgeCount, 1);
+time_s = nan(3 * edgeCount, 1);
+firstRow = (1:3:3 * edgeCount).';
+secondRow = firstRow + 1;
+azimuth_deg(firstRow) = nodeAzElTime(sourceIndex, 1);
+azimuth_deg(secondRow) = nodeAzElTime(targetIndex, 1);
+elevation_deg(firstRow) = nodeAzElTime(sourceIndex, 2);
+elevation_deg(secondRow) = nodeAzElTime(targetIndex, 2);
+time_s(firstRow) = nodeAzElTime(sourceIndex, 3);
+time_s(secondRow) = nodeAzElTime(targetIndex, 3);
+end
+
 function [azimuth_deg, elevation_deg] = straightEdgeCoordinates( ...
         nodePosition_deg, edgeMask)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [azimuth_deg, elevation_deg] = straightEdgeCoordinates( ...
-%       nodePosition_deg, edgeMask)
-%**************************************************************************
 % PURPOSE
 %   - Batch undirected straight edges into NaN-separated plot vectors.
-%**************************************************************************
-% INPUTS
-%   - nodePosition_deg (N-by-2 numeric matrix)
-%   - edgeMask (N-by-N logical matrix)
-%**************************************************************************
-% OUTPUTS
-%   - azimuth_deg, elevation_deg (NaN-separated numeric columns)
-%**************************************************************************
-% UNITS
-%   - Coordinates are degrees.
-%**************************************************************************
 [firstNodeIndex, secondNodeIndex] = find(triu(edgeMask, 1));
 edgeCount = numel(firstNodeIndex);
 azimuth_deg = nan(3 * edgeCount, 1);
@@ -609,24 +567,8 @@ end
 
 function [azimuth_deg, elevation_deg] = routedEdgeCoordinates( ...
         edgeRoutes_deg, edgeMask)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [azimuth_deg, elevation_deg] = routedEdgeCoordinates( ...
-%       edgeRoutes_deg, edgeMask)
-%**************************************************************************
 % PURPOSE
 %   - Batch undirected boundary routes into NaN-separated plot vectors.
-%**************************************************************************
-% INPUTS
-%   - edgeRoutes_deg (N-by-N cell array of route matrices)
-%   - edgeMask (N-by-N logical matrix)
-%**************************************************************************
-% OUTPUTS
-%   - azimuth_deg, elevation_deg (NaN-separated numeric columns)
-%**************************************************************************
-% UNITS
-%   - Coordinates are degrees.
-%**************************************************************************
 [firstNodeIndex, secondNodeIndex] = find(triu(edgeMask, 1));
 routeCount = numel(firstNodeIndex);
 azimuthByRoute_deg = cell(routeCount, 1);
@@ -643,26 +585,8 @@ end
 
 function plotGraphCoordinates(axesHandle, azimuth_deg, elevation_deg, ...
         time_s, useTimeAxis, lineStyle, color, lineWidth)
-%% Section 0: Header & Readme
-% SYNTAX
-%   plotGraphCoordinates(axesHandle, azimuth_deg, elevation_deg, ...
-%       time_s, useTimeAxis, lineStyle, color, lineWidth)
-%**************************************************************************
 % PURPOSE
 %   - Plot one batched graph category in two or three dimensions.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - azimuth_deg, elevation_deg (matching numeric vectors)
-%   - time_s (finite scalar), useTimeAxis (logical scalar)
-%   - lineStyle (scalar text), color (RGB row), lineWidth (positive scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Position is degrees, time is seconds, and width is points.
-%**************************************************************************
 if isempty(azimuth_deg)
     return;
 end
@@ -680,26 +604,8 @@ end
 
 function plotGraphPoints(axesHandle, position_deg, time_s, ...
         useTimeAxis, marker, color, markerSize)
-%% Section 0: Header & Readme
-% SYNTAX
-%   plotGraphPoints(axesHandle, position_deg, time_s, ...
-%       useTimeAxis, marker, color, markerSize)
-%**************************************************************************
 % PURPOSE
 %   - Plot one node category in two or three dimensions.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - position_deg (N-by-2 numeric matrix), time_s (finite scalar)
-%   - useTimeAxis (logical scalar), marker (scalar text)
-%   - color (RGB row), markerSize (positive scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Position is degrees, time is seconds, and marker size is points.
-%**************************************************************************
 if isempty(position_deg)
     return;
 end
@@ -716,24 +622,8 @@ end
 end
 
 function plotObstacleSnapshot(axesHandle, obstacles, time_s, useTimeAxis)
-%% Section 0: Header & Readme
-% SYNTAX
-%   plotObstacleSnapshot(axesHandle, obstacles, time_s, useTimeAxis)
-%**************************************************************************
 % PURPOSE
 %   - Plot the protected obstacle samples used by one retained graph.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - obstacles (canonical obstacle structure array)
-%   - time_s (finite scalar), useTimeAxis (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Position is degrees and time is seconds.
-%**************************************************************************
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     [~, sampleIndex] = min(abs(obstacle.time_s - time_s));
@@ -745,32 +635,19 @@ end
 end
 
 function addVisibilityGraphLegend(axesHandle, useTimeAxis)
-%% Section 0: Header & Readme
-% SYNTAX
-%   addVisibilityGraphLegend(axesHandle, useTimeAxis)
-%**************************************************************************
 % PURPOSE
 %   - Add one compact, stable legend for graph diagnostic categories.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - useTimeAxis (logical scalar)
-%**************************************************************************
-% OUTPUTS
-%   - None. Legend prototypes are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Values are dimensionless.
-%**************************************************************************
 categories = { ...
     "Protected obstacle", "Clear visibility", "Blocked visibility", ...
     "Boundary edge", "Selected graph path", "Active candidate", ...
-    "Pruned candidate", "Selected candidate", "Start", "Goal"};
-styles = {"-", "-", ":", "-", "-", ".", "x", "s", "o", "o"};
+    "Pruned candidate", "Selected candidate", "Start", "Goal", ...
+    "Space-time edge", "Selected space-time path"};
+styles = {"-", "-", ":", "-", "-", ".", "x", "s", "o", "o", ...
+    "-", "-"};
 colors = [0.25 0.25 0.25; 0.20 0.65 0.25; 0.85 0.20 0.20; ...
     0.90 0.55 0.10; 0.10 0.30 0.90; 0.10 0.10 0.10; ...
     0.60 0.60 0.60; 0.10 0.30 0.90; 0.10 0.65 0.10; ...
-    0.85 0.10 0.10];
+    0.85 0.10 0.10; 0.10 0.65 0.70; 0.75 0.10 0.75];
 for categoryIndex = 1:numel(categories)
     if useTimeAxis
         plot3(axesHandle, NaN, NaN, NaN, styles{categoryIndex}, ...
@@ -787,27 +664,8 @@ end
 
 function plotObstacleHistory( ...
         axesHandle, obstacles, color, lineStyle, displayName)
-%% Section 0: Header & Readme
-% SYNTAX
-%   plotObstacleHistory(axesHandle, obstacles, color, ...
-%       lineStyle, displayName)
-%**************************************************************************
 % PURPOSE
 %   - Plot representative full-resolution obstacle-history slices.
-%**************************************************************************
-% INPUTS
-%   - axesHandle (scalar axes handle)
-%   - obstacles (structure array)
-%       Canonical obstacle records with time_s, az_deg, and el_deg.
-%   - color (1-by-3 numeric RGB row)
-%   - lineStyle, displayName (scalar text)
-%**************************************************************************
-% OUTPUTS
-%   - None. Graphics are added to axesHandle.
-%**************************************************************************
-% UNITS
-%   - Azimuth and elevation are degrees.
-%**************************************************************************
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     sampleCount = numel(obstacle.time_s);

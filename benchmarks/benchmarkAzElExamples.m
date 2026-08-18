@@ -13,7 +13,6 @@ function report = benchmarkAzElExamples(optionOverrides)
 % INPUTS
 %   - optionOverrides (scalar struct, optional; default struct())
 %       .ExampleNames is a string vector; empty discovers example*.m.
-%       .JerkModes is a logical vector (default [false true]).
 %       .OutputDirectory is scalar text; empty disables artifact writes.
 %       .ArtifactPrefix is nonempty scalar text (default "azElExamples").
 %       .SourceRevision is scalar text identifying the tested worktree.
@@ -22,7 +21,7 @@ function report = benchmarkAzElExamples(optionOverrides)
 % OUTPUTS
 %   - report (scalar struct)
 %       Contains resolved options, environment metadata, one row per
-%       example and jerk mode, and aggregate completion/pass flags.
+%       finite-jerk example and aggregate completion/pass flags.
 %**************************************************************************
 % UNITS
 %   - Angles and path lengths are degrees; time is seconds. Jerk modes and
@@ -47,18 +46,12 @@ end
 
 %% Section 2: Execute Every Example And Motion Mode
 
-runCount = numel(options.ExampleNames) * numel(options.JerkModes);
+runCount = numel(options.ExampleNames);
 runs = repmat(emptyRunRecord(), runCount, 1);
-runIndex = 0;
 for exampleIndex = 1:numel(options.ExampleNames)
-    for modeIndex = 1:numel(options.JerkModes)
-        runIndex = runIndex + 1;
-        exampleName = options.ExampleNames(exampleIndex);
-        jerkConstrained = options.JerkModes(modeIndex);
-        runs(runIndex) = executeExample( ...
-            exampleName, jerkConstrained, options.Verbose, ...
-            runIndex, runCount);
-    end
+    exampleName = options.ExampleNames(exampleIndex);
+    runs(exampleIndex) = executeExample( ...
+        exampleName, options.Verbose, exampleIndex, runCount);
 end
 runTable = struct2table(runs);
 
@@ -94,27 +87,10 @@ end
 %% Section 4: Local Functions
 
 function options = resolveBenchmarkOptions(optionOverrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolveBenchmarkOptions(optionOverrides)
-%**************************************************************************
 % PURPOSE
 %   - Merge benchmark overrides once and validate the public controls.
-%**************************************************************************
-% INPUTS
-%   - optionOverrides (scalar struct)
-%       Partial benchmark controls documented by benchmarkAzElExamples.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct)
-%       Fully resolved and normalized benchmark controls.
-%**************************************************************************
-% UNITS
-%   - All controls are dimensionless except paths, which are text.
-%**************************************************************************
 defaults = struct( ...
     "ExampleNames", strings(0, 1), ...
-    "JerkModes", logical([false true]), ...
     "OutputDirectory", "", ...
     "ArtifactPrefix", "azElExamples", ...
     "SourceRevision", "", ...
@@ -131,15 +107,6 @@ if ~isempty(unknownNames)
         strjoin(unknownNames, ", "));
 end
 options.ExampleNames = reshape(string(options.ExampleNames), [], 1);
-isLogicalModes = islogical(options.JerkModes);
-isBinaryNumericModes = isnumeric(options.JerkModes) && ...
-    isreal(options.JerkModes) && all(isfinite(options.JerkModes), "all") && ...
-    all(ismember(options.JerkModes, [0 1]), "all");
-if ~(isLogicalModes || isBinaryNumericModes) || isempty(options.JerkModes)
-    error("benchmarkAzElExamples:InvalidJerkModes", ...
-        "JerkModes must be a nonempty logical or binary numeric vector.");
-end
-options.JerkModes = reshape(logical(options.JerkModes), 1, []);
 options.OutputDirectory = string(options.OutputDirectory);
 options.ArtifactPrefix = string(options.ArtifactPrefix);
 options.SourceRevision = string(options.SourceRevision);
@@ -157,24 +124,8 @@ options.Verbose = azElInternal.normalizeLogicalScalar( ...
 end
 
 function exampleNames = discoverExampleNames(repositoryRoot)
-%% Section 0: Header & Readme
-% SYNTAX
-%   exampleNames = discoverExampleNames(repositoryRoot)
-%**************************************************************************
 % PURPOSE
 %   - Discover maintained example entry points without a duplicate catalog.
-%**************************************************************************
-% INPUTS
-%   - repositoryRoot (scalar text)
-%       Repository containing the examples directory.
-%**************************************************************************
-% OUTPUTS
-%   - exampleNames (N-by-1 string vector)
-%       Alphabetically ordered example function names.
-%**************************************************************************
-% UNITS
-%   - Names are dimensionless text.
-%**************************************************************************
 files = dir(fullfile(repositoryRoot, "examples", "example*.m"));
 exampleNames = sort(erase(string({files.name}).', ".m"));
 if isempty(exampleNames)
@@ -183,33 +134,12 @@ if isempty(exampleNames)
 end
 end
 
-function record = executeExample( ...
-        exampleName, jerkConstrained, verbose, runIndex, runCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   record = executeExample(name, jerkConstrained, verbose, index, count)
-%**************************************************************************
+function record = executeExample(exampleName, verbose, runIndex, runCount)
 % PURPOSE
 %   - Execute one headless example and extract stable comparison metrics.
-%**************************************************************************
-% INPUTS
-%   - exampleName (scalar string)
-%       Example function invoked with one override structure.
-%   - jerkConstrained, verbose (logical scalars)
-%       Requested motion mode and progress-output control.
-%   - runIndex, runCount (positive integer scalars)
-%       Current and total run numbers used only for progress output.
-%**************************************************************************
-% OUTPUTS
-%   - record (scalar struct)
-%       Completion, validation, trajectory, certificate, and timing data.
-%**************************************************************************
-% UNITS
-%   - Path lengths are degrees and durations are seconds.
-%**************************************************************************
 record = emptyRunRecord();
 record.Example = exampleName;
-record.JerkConstrained = jerkConstrained;
+record.JerkConstrained = true;
 exampleOptions = struct( ...
     "FigureVisible", "off", ...
     "PlotOutputs", false, ...
@@ -218,8 +148,7 @@ exampleOptions = struct( ...
     "ShowVisibilityGraphs", false, ...
     "ShowSweptSurfaces", false, ...
     "Verbose", false, ...
-    "UseParallel", "off", ...
-    "EnableJerkConstraint", jerkConstrained);
+    "UseParallel", "off");
 
 runTimer = tic;
 try
@@ -261,13 +190,20 @@ try
                 result.smoothPath.TotalLength_deg;
         end
         timedPath = result.timedSlopePath;
+        if isnan(record.SmoothedPathLength_deg) && ...
+                isfield(timedPath, "PathLength_deg")
+            record.SmoothedPathLength_deg = timedPath.PathLength_deg;
+        end
         record.MinimumMotionDuration_s = ...
             timedPath.MinimumMotionDuration_s;
         diagnostics = timedPath.ConstraintDiagnostics;
         record.FiniteJerkCertified = logical( ...
             diagnostics.FiniteJerkCertified);
-        record.CertificatePassed = ~jerkConstrained || ...
-            record.FiniteJerkCertified;
+        record.FiniteJerkNumericallyVerified = logical( ...
+            diagnostics.FiniteJerkNumericallyVerified);
+        record.CertificatePassed = record.FiniteJerkCertified && ...
+            logical(diagnostics.ContinuousPolynomialExtremaVerified) && ...
+            logical(diagnostics.DynamicsDefectWithinTolerance);
         record.SampleCount = numel(timedPath.time_s);
     end
 catch exception
@@ -279,29 +215,14 @@ end
 
 if verbose
     fprintf("[%d/%d] %s | jerk=%d | success=%d | valid=%d | %.3f s\n", ...
-        runIndex, runCount, exampleName, jerkConstrained, ...
+        runIndex, runCount, exampleName, true, ...
         record.PlannerSuccess, record.ValidationPassed, record.WallTime_s);
 end
 end
 
 function record = emptyRunRecord()
-%% Section 0: Header & Readme
-% SYNTAX
-%   record = emptyRunRecord()
-%**************************************************************************
 % PURPOSE
 %   - Centralize the stable benchmark row schema and unavailable values.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - record (scalar struct)
-%       Empty completion, validation, motion, and timing metrics.
-%**************************************************************************
-% UNITS
-%   - Field names identify degree- and second-based quantities.
-%**************************************************************************
 record = struct( ...
     "Example", "", ...
     "JerkConstrained", false, ...
@@ -312,6 +233,7 @@ record = struct( ...
     "KinematicsPassed", false, ...
     "CertificatePassed", false, ...
     "FiniteJerkCertified", false, ...
+    "FiniteJerkNumericallyVerified", false, ...
     "TerminationReason", "notRun", ...
     "Message", "", ...
     "SelectedPolylineLength_deg", NaN, ...

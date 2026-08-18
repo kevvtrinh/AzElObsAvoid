@@ -5,7 +5,7 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 %   inflatedAzElData = inflateAzElObstacleData( ...
 %       azElData, safetyMargin_deg)
 %   inflatedAzElData = inflateAzElObstacleData( ...
-%       azElData, safetyMargin_deg, options)
+%       azElData, safetyMargin_deg, optionOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Rebuild protected boundaries from stored original geometry using one
@@ -18,7 +18,7 @@ function inflatedAzElData = inflateAzElObstacleData( ...
 %       Obstacle histories containing originalAz_deg and originalEl_deg.
 %   - safetyMargin_deg (nonnegative scalar)
 %       Absolute construction margin for every returned obstacle.
-%   - options (scalar struct, optional)
+%   - optionOverrides (scalar struct, optional; default struct())
 %       .Verbose prints one completed protection record per time slice.
 %**************************************************************************
 % OUTPUTS
@@ -98,26 +98,8 @@ end
 function [protectedAzimuth_deg, protectedElevation_deg, ...
         sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
         originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [protectedAzimuth_deg, protectedElevation_deg, ...
-%       sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
-%       originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
-%**************************************************************************
 % PURPOSE
 %   - Protect one polygon slice for serial or parallel execution.
-%**************************************************************************
-% INPUTS
-%   - originalAzimuth_deg, originalElevation_deg (numeric vectors)
-%   - safetyMargin_deg (nonnegative numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - protectedAzimuth_deg, protectedElevation_deg (numeric columns)
-%   - sourceVertexCount, protectedVertexCount (integer scalars)
-%**************************************************************************
-% UNITS
-%   - Coordinates and safety margin are degrees.
-%**************************************************************************
 originalAzimuth_deg = double(originalAzimuth_deg(:));
 originalElevation_deg = double(originalElevation_deg(:));
 [protectedAzimuth_deg, protectedElevation_deg] = ...
@@ -130,23 +112,8 @@ protectedVertexCount = nnz(isfinite(protectedAzimuth_deg) & ...
 end
 
 function printProtectionProgress(progress)
-%% Section 0: Header & Readme
-% SYNTAX
-%   printProtectionProgress(progress)
-%**************************************************************************
 % PURPOSE
 %   - Report parallel slice completion on the MATLAB client.
-%**************************************************************************
-% INPUTS
-%   - progress (scalar struct)
-%       Completed index, total count, time, and vertex counts.
-%**************************************************************************
-% OUTPUTS
-%   - None. Progress is written to the command window.
-%**************************************************************************
-% UNITS
-%   - Time_s is seconds; counts are dimensionless.
-%**************************************************************************
 fprintf( ...
     "[az/el protect] slice %d/%d at t=%.3f s: " + ...
     "%d source -> %d protected vertices.\n", ...
@@ -157,30 +124,10 @@ end
 function [protectedAzimuth_deg, protectedElevation_deg] = ...
         inflateAzElPolygonSlice(azimuth_deg, elevation_deg, ...
         safetyMargin_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [protectedAzimuth_deg, protectedElevation_deg] = ...
-%       inflateAzElPolygonSlice(azimuth_deg, elevation_deg, ...
-%       safetyMargin_deg)
-%**************************************************************************
 % PURPOSE
 %   - Apply one topology-aware outward buffer to a complete polygon slice.
 %   - Preserve disconnected regions and shrink holes rather than buffering
 %     each NaN-separated ring as an independent solid region.
-%**************************************************************************
-% INPUTS
-%   - azimuth_deg, elevation_deg (numeric column vectors)
-%       Complete NaN-separated boundary topology for one time slice.
-%   - safetyMargin_deg (nonnegative finite scalar)
-%       Absolute outward buffer distance.
-%**************************************************************************
-% OUTPUTS
-%   - protectedAzimuth_deg, protectedElevation_deg (numeric columns)
-%       Buffered boundary with NaN separators retained.
-%**************************************************************************
-% UNITS
-%   - Coordinates and safetyMargin_deg are degrees.
-%**************************************************************************
 
 validateattributes(azimuth_deg, {'numeric'}, {'real', 'column'});
 validateattributes(elevation_deg, {'numeric'}, {'real', 'column'});

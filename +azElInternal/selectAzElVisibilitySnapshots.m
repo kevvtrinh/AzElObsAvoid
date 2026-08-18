@@ -166,6 +166,12 @@ for obstacleIndex = 1:obstacleField.ObstacleCount
     end
 end
 
+[pairwiseEventTimes_s, pairwiseEventDiagnostics] = ...
+    pairwiseBoundsEventTimes( ...
+    obstacleField, initialState.time_s, goalState.time_s, options);
+retainedSnapshotTimes_s = [retainedSnapshotTimes_s; ...
+    pairwiseEventTimes_s];
+
 
 %% Section 2: Assemble Selection
 
@@ -179,37 +185,125 @@ selection = struct( ...
     "CandidateRegionIndex", candidateRegionIndex, ...
     "CandidateBoundaryGeometry", {candidateBoundaryGeometry}, ...
     "RetainedSnapshotTimes_s", unique(retainedSnapshotTimes_s), ...
+    "PairwiseEventTimes_s", pairwiseEventTimes_s, ...
+    "PairwiseEventDiagnostics", pairwiseEventDiagnostics, ...
     "SnapshotDiagnostics", snapshotDiagnostics, ...
     "CandidateReductionDiagnostics", candidateReductionDiagnostics);
 end
 
 %% Section 3: Local Functions
 
+function [eventTimes_s, diagnostics] = pairwiseBoundsEventTimes( ...
+        obstacleField, initialTime_s, goalTime_s, options)
+% PURPOSE
+%   - Detect protected-obstacle overlap transitions missed by single-body
+%     motion descriptors.
+template = struct( ...
+    "FirstObstacleIndex", 0, ...
+    "SecondObstacleIndex", 0, ...
+    "ProbeCount", 0, ...
+    "TransitionCount", 0, ...
+    "MinimumBoundsGap_deg", Inf, ...
+    "EventTimes_s", zeros(0, 1));
+diagnostics = repmat(template, 0, 1);
+eventTimes_s = zeros(0, 1);
+if ~options.DetectSnapshotEvents
+    return;
+end
+obstacles = obstacleField.Obstacles;
+for firstObstacleIndex = 1:numel(obstacles) - 1
+    firstTime_s = double(obstacles(firstObstacleIndex).TimeSeconds(:));
+    for secondObstacleIndex = firstObstacleIndex + 1:numel(obstacles)
+        secondTime_s = double( ...
+            obstacles(secondObstacleIndex).TimeSeconds(:));
+        overlapStart_s = max([initialTime_s; firstTime_s(1); ...
+            secondTime_s(1)]);
+        overlapEnd_s = min([goalTime_s; firstTime_s(end); ...
+            secondTime_s(end)]);
+        if overlapEnd_s < overlapStart_s
+            continue;
+        end
+        probeTime_s = unique([overlapStart_s; overlapEnd_s; ...
+            firstTime_s(firstTime_s > overlapStart_s & ...
+            firstTime_s < overlapEnd_s); ...
+            secondTime_s(secondTime_s > overlapStart_s & ...
+            secondTime_s < overlapEnd_s)]);
+        boundsGap_deg = zeros(numel(probeTime_s), 1);
+        for probeIndex = 1:numel(probeTime_s)
+            firstBounds_deg = interpolatedPackedBounds( ...
+                obstacles(firstObstacleIndex), probeTime_s(probeIndex));
+            secondBounds_deg = interpolatedPackedBounds( ...
+                obstacles(secondObstacleIndex), probeTime_s(probeIndex));
+            boundsGap_deg(probeIndex) = boundsSeparation( ...
+                firstBounds_deg, secondBounds_deg);
+        end
+        scale_deg = max(1, max(abs([ ...
+            obstacles(firstObstacleIndex).BoundsDeg(:); ...
+            obstacles(secondObstacleIndex).BoundsDeg(:)])));
+        overlapTolerance_deg = 100 * eps(scale_deg);
+        boundsOverlap = boundsGap_deg <= overlapTolerance_deg;
+        transitionIndex = find(diff(boundsOverlap) ~= 0);
+        pairEventTimes_s = zeros(0, 1);
+        if ~isempty(transitionIndex)
+            pairEventTimes_s = unique([ ...
+                probeTime_s(transitionIndex); ...
+                probeTime_s(transitionIndex + 1)]);
+        end
+        [minimumBoundsGap_deg, minimumIndex] = min(boundsGap_deg);
+        nearPassThreshold_deg = max( ...
+            2 * options.CandidateClearance_deg, 1e-6);
+        if minimumBoundsGap_deg <= nearPassThreshold_deg
+            pairEventTimes_s = unique([pairEventTimes_s; ...
+                probeTime_s(minimumIndex)]);
+        end
+        diagnostic = template;
+        diagnostic.FirstObstacleIndex = firstObstacleIndex;
+        diagnostic.SecondObstacleIndex = secondObstacleIndex;
+        diagnostic.ProbeCount = numel(probeTime_s);
+        diagnostic.TransitionCount = numel(transitionIndex);
+        diagnostic.MinimumBoundsGap_deg = minimumBoundsGap_deg;
+        diagnostic.EventTimes_s = pairEventTimes_s;
+        diagnostics(end + 1, 1) = diagnostic; %#ok<AGROW>
+        eventTimes_s = [eventTimes_s; pairEventTimes_s]; %#ok<AGROW>
+    end
+end
+eventTimes_s = unique(eventTimes_s);
+end
+
+function bounds_deg = interpolatedPackedBounds(obstacle, queryTime_s)
+% PURPOSE
+%   - Interpolate one protected obstacle bounding box for event probes.
+time_s = double(obstacle.TimeSeconds(:));
+upperIndex = find(time_s >= queryTime_s, 1, "first");
+lowerIndex = find(time_s <= queryTime_s, 1, "last");
+upperIndex = min(numel(time_s), max(1, upperIndex));
+lowerIndex = min(numel(time_s), max(1, lowerIndex));
+if lowerIndex == upperIndex
+    bounds_deg = double(obstacle.BoundsDeg(lowerIndex, :));
+    return;
+end
+fraction = (queryTime_s - time_s(lowerIndex)) / ...
+    (time_s(upperIndex) - time_s(lowerIndex));
+bounds_deg = (1 - fraction) * ...
+    double(obstacle.BoundsDeg(lowerIndex, :)) + fraction * ...
+    double(obstacle.BoundsDeg(upperIndex, :));
+end
+
+function gap_deg = boundsSeparation(firstBounds_deg, secondBounds_deg)
+% PURPOSE
+%   - Return Euclidean separation between two axis-aligned bounds.
+azimuthGap_deg = max([firstBounds_deg(1) - secondBounds_deg(2), ...
+    secondBounds_deg(1) - firstBounds_deg(2), 0]);
+elevationGap_deg = max([firstBounds_deg(3) - secondBounds_deg(4), ...
+    secondBounds_deg(3) - firstBounds_deg(4), 0]);
+gap_deg = hypot(azimuthGap_deg, elevationGap_deg);
+end
+
 function [eventSampleIndex, diagnostics] = detectSnapshotEvents( ...
         obstacle, availableSampleIndex, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [eventSampleIndex, diagnostics] = detectSnapshotEvents( ...
-%       obstacle, availableSampleIndex, options)
-%**************************************************************************
 % PURPOSE
 %   - Scan every available source slice using cheap structural and boundary
 %     motion descriptors before selecting expensive visibility graphs.
-%**************************************************************************
-% INPUTS
-%   - obstacle (scalar packed-obstacle struct)
-%   - availableSampleIndex (N-by-1 positive integer vector)
-%   - options (resolved visibility-search options)
-%**************************************************************************
-% OUTPUTS
-%   - eventSampleIndex (M-by-1 positive integer vector)
-%       Both sides of every detected change interval.
-%   - diagnostics (scalar struct)
-%       Per-slice counts and per-interval rotation/motion measurements.
-%**************************************************************************
-% UNITS
-%   - Edge rotation is degrees and midpoint motion is degrees.
-%**************************************************************************
 sampleCount = numel(availableSampleIndex);
 vertexCount = zeros(sampleCount, 1);
 edgeCount = zeros(sampleCount, 1);
@@ -380,34 +474,8 @@ end
 function [candidatePoints_deg, candidateTypes, diagnostics] = ...
         boundaryCandidates(region_deg, startPosition_deg, ...
         goalPosition_deg, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [candidatePoints_deg, candidateTypes, diagnostics] = ...
-%       boundaryCandidates(region_deg, startPosition_deg, ...
-%       goalPosition_deg, options)
-%**************************************************************************
 % PURPOSE
 %   - Generate bounded graph nodes while preserving collision geometry.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%       Closed obstacle-ring vertices in [azimuth elevation] order.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%       Route endpoints used to identify tangent contacts.
-%   - options (scalar struct)
-%       Candidate-selection controls resolved by the public function.
-%**************************************************************************
-% OUTPUTS
-%   - candidatePoints_deg (M-by-2 numeric matrix)
-%       Selected boundary points.
-%   - candidateTypes (M-by-1 string array)
-%       Provenance label for each point.
-%   - diagnostics (scalar struct)
-%       Candidate counts and reduction metadata.
-%**************************************************************************
-% UNITS
-%   - Positions and angular thresholds are degrees.
-%**************************************************************************
 diagnostics = struct( ...
     "ObstacleIndex", 0, ...
     "SampleIndex", 0, ...
@@ -523,27 +591,8 @@ end
 
 function routingRegion_deg = candidateRoutingBoundary( ...
         protectedRegion_deg, candidateClearance_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   routingRegion_deg = candidateRoutingBoundary( ...
-%       protectedRegion_deg, candidateClearance_deg)
-%**************************************************************************
 % PURPOSE
 %   - Offset only graph candidates while retaining protected collision data.
-%**************************************************************************
-% INPUTS
-%   - protectedRegion_deg (N-by-2 numeric matrix)
-%       Protected obstacle boundary.
-%   - candidateClearance_deg (nonnegative numeric scalar)
-%       Additional routing offset.
-%**************************************************************************
-% OUTPUTS
-%   - routingRegion_deg (M-by-2 numeric matrix)
-%       First finite ring of the optional offset boundary.
-%**************************************************************************
-% UNITS
-%   - Positions and clearance are degrees.
-%**************************************************************************
 if candidateClearance_deg <= 0
     routingRegion_deg = protectedRegion_deg;
     return;
@@ -567,29 +616,8 @@ end
 end
 function tangentIndex = polygonTangentVertexIndices( ...
         region_deg, referencePosition_deg, maximumCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   tangentIndex = polygonTangentVertexIndices( ...
-%       region_deg, referencePosition_deg, maximumCount)
-%**************************************************************************
 % PURPOSE
 %   - Approximate tangent contacts from reversals in boundary bearing.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%       Cyclic polygon vertices.
-%   - referencePosition_deg (1-by-2 numeric row)
-%       External position used for bearing measurements.
-%   - maximumCount (nonnegative integer scalar or Inf)
-%       Maximum contacts retained.
-%**************************************************************************
-% OUTPUTS
-%   - tangentIndex (M-by-1 numeric vector)
-%       Selected indices into region_deg.
-%**************************************************************************
-% UNITS
-%   - Positions are degrees; bearings are evaluated in radians.
-%**************************************************************************
 % Local angular extrema recover rounded lip contacts that are not corners.
 vertexCount = size(region_deg, 1);
 if vertexCount < 3
@@ -644,25 +672,8 @@ tangentIndex = tangentIndex(selectedPosition);
 end
 
 function [isCircle, center_deg, radius_deg] = fittedCircle(region_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [isCircle, center_deg, radius_deg] = fittedCircle(region_deg)
-%**************************************************************************
 % PURPOSE
 %   - Fit a circle and reject rings with excessive radial residual.
-%**************************************************************************
-% INPUTS
-%   - region_deg (N-by-2 numeric matrix)
-%       Polygon-ring vertices.
-%**************************************************************************
-% OUTPUTS
-%   - isCircle (logical scalar)
-%   - center_deg (1-by-2 numeric row)
-%   - radius_deg (numeric scalar)
-%**************************************************************************
-% UNITS
-%   - Center, radius, and residuals are degrees.
-%**************************************************************************
 isCircle = false;
 center_deg = [NaN NaN];
 radius_deg = NaN;
@@ -691,24 +702,8 @@ end
 
 function tangentPoints_deg = tangentContacts( ...
         referencePosition_deg, center_deg, radius_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   tangentPoints_deg = tangentContacts( ...
-%       referencePosition_deg, center_deg, radius_deg)
-%**************************************************************************
 % PURPOSE
 %   - Return exact tangent contacts from an external point to a circle.
-%**************************************************************************
-% INPUTS
-%   - referencePosition_deg, center_deg (1-by-2 numeric rows)
-%   - radius_deg (positive numeric scalar)
-%**************************************************************************
-% OUTPUTS
-%   - tangentPoints_deg (zero-by-2 or two-by-2 numeric matrix)
-%**************************************************************************
-% UNITS
-%   - Positions and radius are degrees; internal angles are radians.
-%**************************************************************************
 centerToReference_deg = referencePosition_deg - center_deg;
 referenceDistance_deg = hypot( ...
     centerToReference_deg(1), centerToReference_deg(2));
@@ -726,25 +721,8 @@ tangentPoints_deg = center_deg + radius_deg * [ ...
 end
 
 function point = normalizedStatePoint(state, label)
-%% Section 0: Header & Readme
-% SYNTAX
-%   point = normalizedStatePoint(state, label)
-%**************************************************************************
 % PURPOSE
 %   - Validate and normalize a state to [azimuth elevation time].
-%**************************************************************************
-% INPUTS
-%   - state (scalar struct)
-%       Requires scalar time_s and two-element position_deg.
-%   - label (scalar text)
-%       Input name used in diagnostics.
-%**************************************************************************
-% OUTPUTS
-%   - point (1-by-3 numeric row)
-%**************************************************************************
-% UNITS
-%   - Azimuth/elevation are degrees and time is seconds.
-%**************************************************************************
 hasRequiredFields = isstruct(state) && isscalar(state) && ...
     all(isfield(state, ["time_s" "position_deg"]));
 if ~hasRequiredFields
@@ -761,25 +739,8 @@ end
 
 function relevantRegion = routeRelevantRegionMask( ...
         regions, startPosition_deg, goalPosition_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   relevantRegion = routeRelevantRegionMask( ...
-%       regions, startPosition_deg, goalPosition_deg)
-%**************************************************************************
 % PURPOSE
 %   - Exclude nested components that neither route endpoint can occupy.
-%**************************************************************************
-% INPUTS
-%   - regions (N-by-1 cell array)
-%       Independent polygon rings for one time slice.
-%   - startPosition_deg, goalPosition_deg (1-by-2 numeric rows)
-%**************************************************************************
-% OUTPUTS
-%   - relevantRegion (N-by-1 logical vector)
-%**************************************************************************
-% UNITS
-%   - Positions and polygon coordinates are degrees.
-%**************************************************************************
 % Ring nesting is recomputed independently for every time slice, so moving
 % or deforming topology never inherits classifications from another slice.
 regionCount = numel(regions);

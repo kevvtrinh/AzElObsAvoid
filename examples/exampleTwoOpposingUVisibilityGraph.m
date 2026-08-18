@@ -10,8 +10,7 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 %**************************************************************************
 % INPUTS
 %   - options (scalar struct, optional)
-%       Planner option overrides plus EnableJerkConstraint and
-%       MaxJerk_deg_s3 example controls.
+%       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -34,8 +33,7 @@ end
 
 %% Section 2: Create Obstacles
 
-% Keep the physical request identical when the example-only jerk switch is
-% toggled so paired feasibility and timing comparisons remain meaningful.
+% Keep the physical request independent of solver initialization choices.
 missionEndTime_s = 180;
 safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ ...

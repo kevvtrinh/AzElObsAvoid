@@ -209,34 +209,9 @@ end
 function [azimuth_deg, elevation_deg, removedRegionCount] = ...
         normalizeBoundarySliceTopology(azimuth_deg, elevation_deg, ...
         sampleIndex, boundaryRole)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [azimuth_deg, elevation_deg, removedRegionCount] = ...
-%       normalizeBoundarySliceTopology(azimuth_deg, elevation_deg, ...
-%       sampleIndex, boundaryRole)
-%**************************************************************************
 % PURPOSE
 %   - Reject mismatched separators and one-vertex regions.
 %   - Remove two-vertex regions that cannot enclose occupied area.
-%**************************************************************************
-% INPUTS
-%   - azimuth_deg, elevation_deg (Nx1 double)
-%       Paired boundary coordinates for one time sample.
-%   - sampleIndex (positive integer scalar)
-%       Time-slice index used in validation diagnostics.
-%   - boundaryRole (scalar string)
-%       Human-readable geometry role used in validation diagnostics.
-%**************************************************************************
-% OUTPUTS
-%   - azimuth_deg, elevation_deg (numeric columns)
-%       Valid regions with canonical NaN separators when removal occurred.
-%   - removedRegionCount (nonnegative integer scalar)
-%       Number of removed two-vertex regions.
-%       Invalid topology raises a stable validation error.
-%**************************************************************************
-% UNITS
-%   - azimuth_deg and elevation_deg are degrees.
-%**************************************************************************
 
 %% Section 1: Require Paired Coordinate Separators
 

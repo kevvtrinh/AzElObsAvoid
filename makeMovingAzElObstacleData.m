@@ -128,27 +128,8 @@ end
 function [azimuth_deg, elevation_deg, vertexCount, area_deg2, ...
         aspectRatio, centroid_deg, bounds_deg] = generateOneSlice( ...
         sliceTransform, sourcePosition_deg, sampleTime_s, sampleIndex)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [azimuth_deg, elevation_deg, vertexCount, area_deg2, ...
-%       aspectRatio, centroid_deg, bounds_deg] = generateOneSlice( ...
-%       sliceTransform, sourcePosition_deg, sampleTime_s, sampleIndex)
-%**************************************************************************
 % PURPOSE
 %   - Evaluate and validate one independent moving-obstacle slice.
-%**************************************************************************
-% INPUTS
-%   - sliceTransform (function handle)
-%   - sourcePosition_deg (N-by-2 numeric boundary)
-%   - sampleTime_s (numeric scalar)
-%   - sampleIndex (positive integer)
-%**************************************************************************
-% OUTPUTS
-%   - Slice boundary vectors and scalar geometry diagnostics.
-%**************************************************************************
-% UNITS
-%   - Position is degrees, time is seconds, and area is square degrees.
-%**************************************************************************
 position_deg = sliceTransform( ...
     sourcePosition_deg, sampleTime_s, sampleIndex);
 validateattributes(position_deg, {'numeric'}, ...
@@ -187,23 +168,8 @@ area_deg2 = area(sliceShape);
 end
 
 function printCompletedSlice(progress)
-%% Section 0: Header & Readme
-% SYNTAX
-%   printCompletedSlice(progress)
-%**************************************************************************
 % PURPOSE
 %   - Report completion on the client without interleaved worker output.
-%**************************************************************************
-% INPUTS
-%   - progress (scalar struct)
-%       Slice index/count, time in seconds, and source vertex count.
-%**************************************************************************
-% OUTPUTS
-%   - None. One progress line is printed.
-%**************************************************************************
-% UNITS
-%   - Progress time is seconds; vertex count is dimensionless.
-%**************************************************************************
 fprintf( ...
     "[moving obstacle] slice %d/%d at t=%.3f s complete " + ...
     "(%d source vertices).\n", ...

@@ -29,6 +29,14 @@ violation, fallback, substitution, or unfavorable result inside the code.
 
 ## Generality Rules
 
+- Each development branch must have one maintained planning method. Every
+  runnable example on that branch must call and exercise that method.
+- Do not retain an older planner, retimer, motion-profile generator, or
+  example-only fallback after its replacement becomes the branch method.
+  Remove the replaced production code, its options, and its obsolete tests in
+  the same change.
+- A compatibility alias can forward a public name to the branch method, but it
+  must not preserve a second implementation or select the older behavior.
 - Do not put example names, obstacle names, map shapes, or expected routes into
   planner logic.
 - Do not encode an example's event sequence, route transition, opening time,
