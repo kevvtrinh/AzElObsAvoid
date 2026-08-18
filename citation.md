@@ -25,3 +25,19 @@ scalar path-speed transition. Analytic integration makes velocity,
 acceleration, and jerk continuous while the existing derivative envelopes
 continue to certify Cartesian speed, acceleration, and jerk. The planner
 does not claim global time optimality across all continuous-jerk functions.
+
+## Modified sigmoid jerk smoothing
+
+Fang, Y., Hu, J., Liu, W., Shao, Q., Qi, J., and Peng, Y. (2019).
+"Smooth and time-optimal S-curve trajectory planning for automated robots
+and machines." *Mechanism and Machine Theory*, 137, 127-153.
+https://doi.org/10.1016/j.mechmachtheory.2019.03.019
+
+The `continuousSigmoid` retimer option uses the paper's modified logistic
+jerk law from Eq. (5), its recommended variation parameter `sqrt(3)/2`, and
+the peak-snap relation in Eq. (19). The scalar path-speed transition uses the
+paper's snap-first constraint hierarchy to select varying-jerk, constant-jerk,
+and constant-acceleration intervals. Fixed Gauss-Legendre quadrature evaluates
+the non-elementary phase integrals. The implementation applies this law to a
+curved path coordinate. It does not reproduce the paper's separate multi-axis
+point-to-point synchronization method.

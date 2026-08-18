@@ -17,7 +17,9 @@ function result = planAzElMotion(obstacles, initialState, goalState, ...
 %   - initialState, goalState (scalar structs)
 %       time_s, position_deg, velocity_deg_s, and acceleration_deg_s2.
 %   - limits (scalar struct)
-%       Per-axis velocity, acceleration, and optional jerk limits.
+%       Per-axis velocity, acceleration, and optional jerk limits. The
+%       optional scalar maxTangentialSnap_deg_s4 limits the fourth time
+%       derivative of path arc length for continuous jerk profiles.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Partial overrides of the zero-input defaults. UseParallel accepts
 %       auto, on, off, or a logical scalar for independent polygon-search
@@ -36,9 +38,12 @@ function result = planAzElMotion(obstacles, initialState, goalState, ...
 %       used only when jerk is unlimited. A smaller value can reduce
 %       retiming conservatism and increases computation in proportion to
 %       the number of cells.
-%       JerkProfileType selects continuousSine or piecewiseConstant when
-%       maxJerk_deg_s3 is finite. continuousSine keeps scalar jerk
-%       continuous. piecewiseConstant retains the previous S-curve.
+%       JerkProfileType selects continuousSine, continuousSigmoid, or
+%       piecewiseConstant when maxJerk_deg_s3 is finite. The first two
+%       choices keep scalar jerk continuous. continuousSigmoid implements
+%       the modified logistic law from Fang et al. (2019), keeps tangential
+%       snap continuous, and requires a finite maxTangentialSnap_deg_s4.
+%       piecewiseConstant retains the previous S-curve.
 %       OptimalityTolerance_s prunes intervals that cannot improve the
 %       incumbent by a meaningful amount. TemporalRefinementSampleTimes_s
 %       optionally seeds additional source snapshots. Temporal refinement
@@ -75,6 +80,17 @@ options = resolveOptions(defaults, optionOverrides);
 initialState = normalizeState(initialState, "initialState");
 goalState = normalizeState(goalState, "goalState");
 limits = normalizeLimits(limits);
+if isfinite(limits.maxTangentialSnap_deg_s4) && ...
+        options.JerkProfileType == "piecewiseconstant"
+    error("planAzElMotion:UnsupportedSnapProfile", ...
+        "A finite maxTangentialSnap_deg_s4 requires continuousSine " + ...
+        "or continuousSigmoid.");
+end
+if options.JerkProfileType == "continuoussigmoid" && ...
+        ~isfinite(limits.maxTangentialSnap_deg_s4)
+    error("planAzElMotion:SigmoidRequiresSnapLimit", ...
+        "continuousSigmoid requires a finite maxTangentialSnap_deg_s4.");
+end
 
 if goalState.time_s <= initialState.time_s
     error("planAzElMotion:InvalidTimeWindow", ...
@@ -1103,11 +1119,13 @@ if ~isscalar(options.CollisionValidationMode) || ...
 end
 
 options.JerkProfileType = lower(string(options.JerkProfileType));
-validJerkProfileTypes = ["continuoussine" "piecewiseconstant"];
+validJerkProfileTypes = [ ...
+    "continuoussine" "continuoussigmoid" "piecewiseconstant"];
 if ~isscalar(options.JerkProfileType) || ...
         ~any(options.JerkProfileType == validJerkProfileTypes)
     error("planAzElMotion:InvalidJerkProfileType", ...
-        "JerkProfileType must be continuousSine or piecewiseConstant.");
+        "JerkProfileType must be continuousSine, continuousSigmoid, " + ...
+        "or piecewiseConstant.");
 end
 
 options.UseParallel = azElInternal.normalizeParallelMode( ...
@@ -1257,14 +1275,15 @@ function limits = normalizeLimits(limits)
 %**************************************************************************
 % INPUTS
 %   - limits (scalar struct)
-%       Velocity and optional acceleration and jerk limits.
+%       Velocity and optional acceleration, jerk, and tangential snap
+%       limits.
 %**************************************************************************
 % OUTPUTS
 %   - limits (scalar struct)
 %       Complete per-axis physical limits.
 %**************************************************************************
 % UNITS
-%   - Limits use deg/s, deg/s^2, and deg/s^3.
+%   - Limits use deg/s, deg/s^2, deg/s^3, and deg/s^4.
 %**************************************************************************
 if ~isstruct(limits) || ~isscalar(limits) || ~isfield(limits, "maxVelocity_deg_s")
     error("planAzElMotion:InvalidLimits", "limits must contain maxVelocity_deg_s.");
@@ -1293,4 +1312,17 @@ for limitIndex = 1:numel(names)
 
     limits.(name) = value;
 end
+
+if ~isfield(limits, "maxTangentialSnap_deg_s4") || ...
+        isempty(limits.maxTangentialSnap_deg_s4)
+    limits.maxTangentialSnap_deg_s4 = Inf;
+end
+validateattributes(limits.maxTangentialSnap_deg_s4, {'numeric'}, ...
+    {'real', 'scalar', 'positive'});
+if isnan(limits.maxTangentialSnap_deg_s4)
+    error("planAzElMotion:InvalidLimits", ...
+        "maxTangentialSnap_deg_s4 must be positive and cannot be NaN.");
+end
+limits.maxTangentialSnap_deg_s4 = ...
+    double(limits.maxTangentialSnap_deg_s4);
 end
