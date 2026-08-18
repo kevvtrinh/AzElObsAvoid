@@ -68,7 +68,8 @@ addpath(pwd, fullfile(pwd, "examples"));
 result = exampleAzElPlanning(struct( ...
     "FigureVisible", "off", ...
     "ShowAnimation", false, ...
-    "PlotKinematics", false));
+    "ShowKinematicPlot", false, ...
+    "ShowVisibilityGraphs", false));
 assert(result.Success && result.ExampleValidation.Passed);
 ```
 
@@ -85,6 +86,24 @@ assert(all([results.Passed]));
 
 Run maintained examples one process at a time. Record the result and failure
 diagnosis before the next example starts. Do not run examples in parallel.
+
+## HS-3 Segment Sandbox
+
+Add the sandbox folder and open the interactive azimuth/elevation grid:
+
+```matlab
+addpath(fullfile(pwd, "sandbox"));
+app = azElHs3Sandbox();
+```
+
+Select `Draw segment`, select two grid points, and edit the table. Each row
+contains endpoint velocity and acceleration, per-axis velocity, acceleration,
+and jerk limits, a time horizon, and a fixed-arrival control. Select
+`Build HS-3 motion` to use the maintained planner and show the motion profile.
+
+Connected rows must share position, velocity, and acceleration. Jerk is
+bounded. The result reports jerk jumps and terminal jerk because the current
+planner does not impose jerk continuity or zero terminal jerk.
 
 ## Maintenance Rules
 
