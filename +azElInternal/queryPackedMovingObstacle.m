@@ -1,12 +1,14 @@
 function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
         queryPackedMovingObstacle(packedObstacle, time_s, position_deg, ...
-        boundaryIsOccupied, timePaddingSamples)
+        boundaryIsOccupied, timePaddingSamples, independentSegmentPairs)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 %       azElInternal.queryPackedMovingObstacle( ...
 %       packedObstacle, time_s, position_deg, ...
 %       boundaryIsOccupied, timePaddingSamples)
+%   [...] = azElInternal.queryPackedMovingObstacle( ...
+%       ..., independentSegmentPairs)
 %**************************************************************************
 % PURPOSE
 %   - Check a point, one linear timed segment, or a same-time spatial path
@@ -25,6 +27,9 @@ function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 %   - boundaryIsOccupied (logical scalar)
 %   - timePaddingSamples (nonnegative integer scalar)
 %       Neighboring source slices checked as additional static uncertainty.
+%   - independentSegmentPairs (logical scalar, optional; default false)
+%       With scalar time, interpret rows 1:2, 3:4, and so on as independent
+%       segments. This internal batch mode omits connector segments.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied, isInsideBounds (logical scalar or column)
@@ -39,6 +44,9 @@ function [isOccupied, isInsideBounds, blockingSliceIndex] = ...
 
 %% Section 1: Validate The Query
 
+if nargin < 6 || isempty(independentSegmentPairs)
+    independentSegmentPairs = false;
+end
 validateattributes(time_s, {'numeric'}, ...
     {'real', 'finite', 'vector', 'nonempty'});
 validateattributes(position_deg, {'numeric'}, ...
@@ -48,9 +56,17 @@ validateattributes(timePaddingSamples, {'numeric'}, ...
 boundaryIsOccupied = azElInternal.normalizeLogicalScalar( ...
     boundaryIsOccupied, "boundaryIsOccupied", ...
     "queryPackedMovingObstacle:InvalidBoundaryPolicy");
+independentSegmentPairs = azElInternal.normalizeLogicalScalar( ...
+    independentSegmentPairs, "independentSegmentPairs", ...
+    "queryPackedMovingObstacle:InvalidIndependentSegmentPolicy");
 time_s = double(time_s(:));
 position_deg = double(position_deg);
 isStaticPath = isscalar(time_s) && size(position_deg, 1) > 1;
+if independentSegmentPairs && (~isscalar(time_s) || ...
+        mod(size(position_deg, 1), 2) ~= 0)
+    error("queryPackedMovingObstacle:InvalidIndependentSegments", ...
+        "Independent static segments require one time and an even row count.");
+end
 if isscalar(time_s)
     % One time may describe a point or a complete static spatial path.
 elseif numel(time_s) == 2
@@ -65,7 +81,11 @@ end
 %% Section 2: Check A Point Or Timed Segment
 
 if isStaticPath
-    resultCount = size(position_deg, 1) - 1;
+    if independentSegmentPairs
+        resultCount = size(position_deg, 1) / 2;
+    else
+        resultCount = size(position_deg, 1) - 1;
+    end
 else
     resultCount = 1;
 end
@@ -92,8 +112,13 @@ if isStaticPath
             if isOccupied(segmentIndex)
                 continue;
             end
+            if independentSegmentPairs
+                firstPositionIndex = 2 * segmentIndex - 1;
+            else
+                firstPositionIndex = segmentIndex;
+            end
             [blocked, boundsHit] = staticSegmentHitsEdges( ...
-                position_deg(segmentIndex:segmentIndex + 1, :), ...
+                position_deg(firstPositionIndex:firstPositionIndex + 1, :), ...
                 edgeSet, boundaryIsOccupied);
             isInsideBounds(segmentIndex) = ...
                 isInsideBounds(segmentIndex) || boundsHit;
@@ -503,12 +528,17 @@ if any(isCollinear)
         firstCollinearParameter(overlaps); ...
         lastCollinearParameter(overlaps)];
 end
-contactParameter = unique(min(1, max(0, contactParameter)));
+contactParameter = sort(min(1, max(0, contactParameter)));
+if ~isempty(contactParameter)
+    contactParameter = contactParameter([true; ...
+        diff(contactParameter) ~= 0]);
+end
 if boundaryIsOccupied && ~isempty(contactParameter)
     isOccupied = true;
     return;
 end
-breakParameter = unique([0; contactParameter; 1]);
+breakParameter = sort([0; contactParameter; 1]);
+breakParameter = breakParameter([true; diff(breakParameter) ~= 0]);
 % Boundary contacts partition the segment into intervals of constant
 % inside/outside state. One interior point per interval is therefore exact;
 % testing endpoints and contacts again only repeats a full polygon scan.

@@ -23,7 +23,7 @@ end
 
 function testDefaultsDescribeDirectCollocation(testCase)
 % PURPOSE
-%   - Verify that the zero-input call has no legacy retimer controls.
+%   - Verify the direct-collocation and safe-interval planner defaults.
 options = planAzElMotion();
 testCase.verifyEqual(options.GoalTimeMode, "earliestArrival");
 testCase.verifyEqual(options.InitialCollocationSegmentCount, 8);
@@ -33,6 +33,11 @@ testCase.verifyEqual(options.MaximumCorridorRelinearizations, 4);
 testCase.verifyTrue(options.UseSpaceTimeVisibilityGraph);
 testCase.verifyEqual(options.SpaceTimeLayerCount, 17);
 testCase.verifyEqual(options.MaximumSpaceTimeCandidateCount, 32);
+testCase.verifyEqual(options.MaximumSippCandidates, 4);
+testCase.verifyEqual(options.MaximumSippExpansions, 5000);
+testCase.verifyEqual(options.MaximumSippPlanningFraction, 0.50);
+testCase.verifyEqual(options.MinimumDirectCollocationSeedTime_s, 60);
+testCase.verifyTrue(options.AllowSippWaiting);
 testCase.verifyFalse(isfield(options, "TurnRadius_deg"));
 testCase.verifyFalse(isfield(options, ...
     "MaximumRetimedVisibilityRoutes"));
@@ -105,6 +110,11 @@ testCase.verifyEqual(result.timedSlopePath.MotionType, ...
     "directCollocation");
 testCase.verifyEqual(result.timedSlopePath.RetimerType, "none");
 testCase.verifyFalse(result.SearchDiagnostics.OptimalityProven);
+testCase.verifyEqual( ...
+    result.SearchDiagnostics.DirectCollocationTranscription, ...
+    "reducedSeparatedGeneralizedHs3");
+testCase.verifyEqual(result.SearchDiagnostics.StateInterpolationMethod, ...
+    "integratedQuadraticJerkCorrectedKellyEquation4_13");
 selectedDiagnostic = result.SearchDiagnostics.CandidateOptimizations( ...
     result.selectedCandidateIndex);
 testCase.verifyTrue(selectedDiagnostic.InitialGuessProjectionSucceeded);
@@ -271,7 +281,7 @@ obstacle = makeAzElObstacleData("symmetric blocker", [0; 20], ...
     [-0.5; 0.5; 0.5; -0.5], [-1; -1; 1; 1], 0.1);
 [initialState, goalState, limits] = standardRequest([-3 0], [3 0], 20);
 options = fastOptions(2);
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
@@ -299,7 +309,7 @@ obstacle = makeAzElObstacleData("moving symmetric blocker", [0; 20], ...
     {elevation_deg; elevation_deg}, 0.1);
 [initialState, goalState, limits] = standardRequest([-3 0], [3 0], 20);
 options = fastOptions(2);
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 options.MaximumVisibilitySnapshotsPerObstacle = 2;
 options.DetectSnapshotEvents = false;
 result = planAzElMotion( ...
@@ -471,7 +481,7 @@ obstacle = makeAzElObstacleData("fixed blocker", [0; 10], ...
 [initialState, goalState, limits] = standardRequest([-3 0], [3 0], 10);
 options = fastOptions(1);
 options.GoalTimeMode = "fixedArrival";
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
@@ -494,7 +504,7 @@ obstacle = makeAzElObstacleData("departing blocker", ...
 [initialState, goalState, limits] = standardRequest([-3 0], [3 0], 10);
 options = fastOptions(1);
 options.GoalTimeMode = "fixedArrival";
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
@@ -670,7 +680,7 @@ options.GoalTimeMode = "fixedArrival";
 options.MaximumVisibilitySnapshotsPerObstacle = 2;
 options.DetectSnapshotEvents = false;
 options.TemporalSeedSampleTimes_s = [0; 10];
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 
 staticResult = planAzElMotion( ...
     staticObstacle, initialState, goalState, limits, options);
@@ -788,9 +798,19 @@ function testContinuousMovingCollisionQuery(testCase)
 obstacle = makeAzElObstacleData("crossing square", [0; 2], ...
     {[-2; -1; -1; -2]; [1; 2; 2; 1]}, ...
     {[-0.5; -0.5; 0.5; 0.5]; [-0.5; -0.5; 0.5; 0.5]}, 0);
-field = buildAzElTimeObstacleField(obstacle);
-blocked = queryAzElTimedPathCollision(field, [0; 2], [0 0; 0 0]);
+farObstacle = makeAzElObstacleData("far moving square", [0; 2], ...
+    {[40; 41; 41; 40]; [42; 43; 43; 42]}, ...
+    {[-0.5; -0.5; 0.5; 0.5]; [-0.5; -0.5; 0.5; 0.5]}, 0);
+field = buildAzElTimeObstacleField( ...
+    combineAzElObstacles(obstacle, farObstacle));
+[blocked, details] = queryAzElTimedPathCollision( ...
+    field, [0; 2], [0 0; 0 0]);
 testCase.verifyTrue(any(blocked));
+testCase.verifyGreaterThan( ...
+    details.BroadPhaseRejectedObstacleSegmentPairCount, 0);
+testCase.verifyLessThan( ...
+    details.EvaluatedObstacleSegmentPairCount, ...
+    field.ObstacleCount);
 end
 
 function testMovingPointHistoryUsesCanonicalObstacleConstructor(testCase)
@@ -875,9 +895,96 @@ collisionMask = queryAzElTimedPathCollision( ...
 testCase.verifyFalse(any(collisionMask));
 end
 
+function testSafeIntervalRoadmapProducesDiverseStaticRoutes(testCase)
+% PURPOSE
+%   - Retain two static route classes as distinct SIPP candidates.
+squareAzimuth_deg = [-1; 1; 1; -1];
+squareElevation_deg = [-2; -2; 2; 2];
+obstacle = makeAzElObstacleData( ...
+    "symmetric blocker", [0; 20], ...
+    {squareAzimuth_deg; squareAzimuth_deg}, ...
+    {squareElevation_deg; squareElevation_deg}, 0);
+obstacleField = buildAzElTimeObstacleField(obstacle);
+initialState = struct("time_s", 0, "position_deg", [-6 0]);
+goalState = struct("time_s", 20, "position_deg", [6 0]);
+search = buildAzElVisibilityRoutes( ...
+    obstacleField, initialState, goalState, struct( ...
+    "UseParallel", "off", ...
+    "BuildSpaceTimeVisibilityGraph", true, ...
+    "MaximumVelocity_deg_s", [2 2], ...
+    "MaximumAcceleration_deg_s2", [1 1], ...
+    "MaximumJerk_deg_s3", [2 2], ...
+    "MaximumSippCandidates", 4));
+graph = search.SpaceTimeVisibilityGraph;
+
+testCase.verifyTrue(graph.Success, graph.Message);
+testCase.verifyEqual(graph.Representation, ...
+    "safeIntervalVisibilityRoadmap");
+testCase.verifyEqual(graph.SearchMethod, ...
+    "safeIntervalPathPlanningWithIntervalProjection");
+testCase.verifyGreaterThan(graph.ProjectedIntervalCount, 0);
+testCase.verifyGreaterThan( ...
+    graph.InvariantTraversalSampleSkipCount, 0);
+testCase.verifyGreaterThan(graph.TraversalQueryCount, 0);
+testCase.verifyGreaterThanOrEqual( ...
+    graph.CollisionRejectedTransitionCount, ...
+    graph.InvariantTraversalSampleSkipCount);
+reachedState = isfinite(graph.EarliestArrival_s);
+testCase.verifyGreaterThanOrEqual( ...
+    graph.ReachableIntervalStop_s(reachedState), ...
+    graph.EarliestArrival_s(reachedState));
+testCase.verifyGreaterThanOrEqual(graph.DiverseCandidateCount, 2);
+candidates = graph.DiverseCandidates;
+hasLowerRoute = false;
+hasUpperRoute = false;
+for candidateIndex = 1:numel(candidates)
+    testCase.verifyTrue(all(diff(candidates(candidateIndex).Time_s) > 0));
+    edgeStep_deg = diff(candidates(candidateIndex).Position_deg, 1, 1);
+    edgeDuration_s = diff(candidates(candidateIndex).Time_s);
+    jerkLowerBound_s = max((32 * abs(edgeStep_deg) ./ [2 2]) .^ ...
+        (1 / 3), [], 2);
+    testCase.verifyGreaterThanOrEqual( ...
+        edgeDuration_s, jerkLowerBound_s - 1e-10);
+    hasLowerRoute = hasLowerRoute || ...
+        min(candidates(candidateIndex).Position_deg(:, 2)) < -1;
+    hasUpperRoute = hasUpperRoute || ...
+        max(candidates(candidateIndex).Position_deg(:, 2)) > 1;
+end
+testCase.verifyTrue(hasLowerRoute);
+testCase.verifyTrue(hasUpperRoute);
+end
+
+function testSippIntervalProjectionHonorsSharedWallTime(testCase)
+% PURPOSE
+%   - Stop all SIPP-IP diversity runs at one shared wall-time limit.
+squareAzimuth_deg = [-1; 1; 1; -1];
+squareElevation_deg = [-2; -2; 2; 2];
+obstacle = makeAzElObstacleData( ...
+    "shared-time blocker", [0; 20], ...
+    {squareAzimuth_deg; squareAzimuth_deg}, ...
+    {squareElevation_deg; squareElevation_deg}, 0);
+obstacleField = buildAzElTimeObstacleField(obstacle);
+initialState = struct("time_s", 0, "position_deg", [-6 0]);
+goalState = struct("time_s", 20, "position_deg", [6 0]);
+search = buildAzElVisibilityRoutes( ...
+    obstacleField, initialState, goalState, struct( ...
+    "UseParallel", "off", ...
+    "BuildSpaceTimeVisibilityGraph", true, ...
+    "MaximumVelocity_deg_s", [2 2], ...
+    "MaximumSippWallTime_s", eps));
+graph = search.SpaceTimeVisibilityGraph;
+
+testCase.verifyFalse(graph.Success);
+testCase.verifyEqual(graph.TerminationReason, "searchTimeLimit");
+testCase.verifyTrue( ...
+    graph.CandidateGenerationDiagnostics.SharedTimeLimitReached);
+testCase.verifyLessThan( ...
+    graph.CandidateGenerationDiagnostics.ElapsedSearchTime_s, 1);
+end
+
 function testPlannerUsesEarlyLowerDetour(testCase)
 % PURPOSE
-%   - Select and validate the space-time lower route without initial wait.
+%   - Select and validate an early lower route without initial wait.
 squareAzimuth_deg = [-1; 1; 1; -1];
 obstacle = makeAzElObstacleData( ...
     "slowly rising square", [0; 20], ...
@@ -900,8 +1007,24 @@ testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyTrue(result.Validation.Passed, result.Validation.Message);
 selected = result.SearchDiagnostics.CandidateOptimizations( ...
     result.selectedCandidateIndex);
-testCase.verifyEqual(selected.SeedSource, ...
-    "spaceTimeVisibilityGraph");
+candidateDiagnostics = ...
+    result.SearchDiagnostics.CandidateOptimizations;
+spaceTimeIndex = find([candidateDiagnostics.SeedSource] == ...
+    "spaceTimeVisibilityGraph", 1);
+testCase.verifyNotEmpty(spaceTimeIndex);
+spaceTimeDiagnostic = candidateDiagnostics(spaceTimeIndex);
+testCase.verifyTrue(spaceTimeDiagnostic.TimedSeedLawUsed);
+expectedTimeFraction = (spaceTimeDiagnostic.SeedRouteTime_s - ...
+    spaceTimeDiagnostic.SeedRouteTime_s(1)) / ...
+    (spaceTimeDiagnostic.SeedRouteTime_s(end) - ...
+    spaceTimeDiagnostic.SeedRouteTime_s(1));
+routeStep_deg = diff(spaceTimeDiagnostic.SeedRoute_deg, 1, 1);
+routeArc_deg = [0; cumsum(vecnorm(routeStep_deg, 2, 2))];
+expectedProgress = routeArc_deg / routeArc_deg(end);
+testCase.verifyEqual(spaceTimeDiagnostic.SeedRouteTimeFraction, ...
+    expectedTimeFraction, "AbsTol", 1e-12);
+testCase.verifyEqual(spaceTimeDiagnostic.SeedRouteProgress, ...
+    expectedProgress, "AbsTol", 1e-12);
 testCase.verifyLessThan(min(result.position_deg(:, 2)), -1);
 movementStep_deg = vecnorm(diff(result.position_deg, 1, 1), 2, 2);
 firstMovingSegmentIndex = find(movementStep_deg > 1e-6, 1, "first");
@@ -964,7 +1087,8 @@ obstacle = makeAzElObstacleData( ...
     {[-1; -1; 1; 1]; [3; 3; 5; 5]}, 0);
 [initialState, goalState, limits] = standardRequest([-6 0], [6 0], 20);
 options = fastOptions(8);
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
+options.MaximumSippPlanningFraction = 1;
 options.MaximumVisibilitySnapshotsPerObstacle = 2;
 options.DetectSnapshotEvents = false;
 options.SpaceTimeLayerCount = 17;
@@ -996,7 +1120,8 @@ obstacle = makeAzElObstacleData( ...
     {[-1; -1; 1; 1]; [3; 3; 5; 5]}, 0);
 [initialState, goalState, limits] = standardRequest([-6 0], [6 0], 20);
 options = fastOptions(2);
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
+options.MaximumSippPlanningFraction = 1;
 options.MaximumVisibilitySnapshotsPerObstacle = 2;
 options.DetectSnapshotEvents = false;
 options.SpaceTimeLayerCount = 17;
@@ -1093,7 +1218,11 @@ testCase.verifyFalse(any(collisionMask));
 testCase.verifyTrue(clearanceProven);
 testCase.verifyTrue(diagnostics.ProvenClear);
 testCase.verifyEqual(diagnostics.UnresolvedPathSegmentCount, 0);
-testCase.verifyGreaterThan(diagnostics.EvaluatedEdgeIntervalCount, 0);
+testCase.verifyGreaterThan( ...
+    diagnostics.EvaluatedEdgeIntervalCount + ...
+    diagnostics.BroadPhaseRejectedEdgeIntervalCount, 0);
+testCase.verifyGreaterThan( ...
+    diagnostics.BroadPhaseRejectedEdgeIntervalCount, 0);
 end
 
 function testSameTimePathBatchMatchesIndividualQueries(testCase)
@@ -1123,6 +1252,26 @@ testCase.verifyEqual( ...
     batchedDetails.SegmentOccupied, individualSegmentOccupied);
 testCase.verifyEqual(batchedDetails.SegmentOccupied, ...
     [false; true; true; false]);
+
+independentPairPosition_deg = [ ...
+    -3 2; -2 0; ...
+    0 0; 2 0; ...
+    3 2; 4 2];
+packedObstacle = obstacleField.Obstacles(1);
+batchedIndependentOccupied = ...
+    azElInternal.queryPackedMovingObstacle( ...
+    packedObstacle, 5, independentPairPosition_deg, false, 0, true);
+individualIndependentOccupied = false(3, 1);
+for segmentIndex = 1:numel(individualIndependentOccupied)
+    firstPositionIndex = 2 * segmentIndex - 1;
+    individualIndependentOccupied(segmentIndex) = ...
+        azElInternal.queryPackedMovingObstacle( ...
+        packedObstacle, 5, independentPairPosition_deg( ...
+        firstPositionIndex:firstPositionIndex + 1, :), false, 0);
+end
+testCase.verifyEqual( ...
+    batchedIndependentOccupied, individualIndependentOccupied);
+testCase.verifyEqual(batchedIndependentOccupied, [false; true; false]);
 end
 
 function testCachedTopologyMatchesCompleteTraversal(testCase)
@@ -1816,7 +1965,7 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [1 1], ...
     "maxJerk_deg_s3", [2 2]);
 options = fastOptions(1);
-options.MaximumPlanningTime_s = eps;
+options.MaximumPlanningTime_s = 5;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 

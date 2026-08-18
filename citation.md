@@ -1,5 +1,18 @@
 # References
 
+## Safe Interval Path Planning
+
+- Phillips, M., and Likhachev, M. (2011). "SIPP: Safe Interval Path
+  Planning for Dynamic Environments." *2011 IEEE International Conference
+  on Robotics and Automation*, 5628-5635.
+  https://doi.org/10.1109/ICRA.2011.5980306
+
+- Ali, Z. A., and Yakovlev, K. (2023). "Safe Interval Path Planning with
+  Kinodynamic Constraints." *Proceedings of the AAAI Conference on
+  Artificial Intelligence*, 37(10), 12330-12337. This paper introduces
+  Safe Interval Path Planning with Interval Projection (SIPP-IP).
+  https://doi.org/10.1609/aaai.v37i10.26453
+
 ## Direct Collocation
 
 - Kelly, M. (2017). "An Introduction to Trajectory Optimization: How to Do

@@ -166,13 +166,27 @@ if result.Success
         time_s > openingTime_s);
 end
 
-candidate = result.candidateDiagnostics;
-isClosedDetour = candidate.Source == "visibilityGraph" & ...
-    candidate.SnapshotTime_s < openingTime_s & ...
-    candidate.PathLength_deg > directRouteLength_deg + 1e-8 & ...
-    isfinite(candidate.ArrivalTime_s);
+candidate = result.SearchDiagnostics.CandidateOptimizations;
+isClosedDetour = false(numel(candidate), 1);
+for candidateIndex = 1:numel(candidate)
+    route_deg = candidate(candidateIndex).SeedRoute_deg;
+    isLongerThanDirect = candidate(candidateIndex).SeedRouteCost_deg > ...
+        directRouteLength_deg + 1e-8;
+    hasFiniteArrival = isfinite( ...
+        candidate(candidateIndex).ObjectiveArrivalTime_s);
+    routeBlockedWhenClosed = true;
+    if size(route_deg, 1) >= 2
+        routeCollision = queryAzElTimedPathCollision( ...
+            result.obstacleField, result.initialState.time_s, ...
+            route_deg, struct("BoundaryIsOccupied", false));
+        routeBlockedWhenClosed = any(routeCollision);
+    end
+    isClosedDetour(candidateIndex) = isLongerThanDirect && ...
+        hasFiniteArrival && ~routeBlockedWhenClosed;
+end
 if any(isClosedDetour)
-    aroundArrivalTime_s = min(candidate.ArrivalTime_s(isClosedDetour));
+    aroundArrivalTime_s = min( ...
+        [candidate(isClosedDetour).ObjectiveArrivalTime_s]);
     openingWasFaster = openingArrivalTime_s < aroundArrivalTime_s;
 end
 

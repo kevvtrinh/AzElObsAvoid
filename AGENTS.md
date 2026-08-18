@@ -671,6 +671,10 @@ Before considering a change complete:
 1. Run syntax/static checks available in the environment.
 2. Run focused unit tests for modified helpers.
 3. Run every example headlessly with plots and animation disabled.
+   Run only one example process at a time. Finish and record the result,
+   output, runtime, and failure diagnosis for that example before starting
+   the next example. Do not run examples as one combined suite or in
+   parallel.
 4. Run at least one visible example when graphics are available.
 5. Exercise both a successful plan and an expected no-path result.
 6. Verify the failure case produces a search-space diagnostic figure.
