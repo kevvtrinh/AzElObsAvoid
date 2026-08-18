@@ -1,11 +1,11 @@
-function result = exampleUShapedAzElTimeSpace(exampleOverrides)
+function result = exampleMovingBarrierWait(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = exampleUShapedAzElTimeSpace()
-%   result = exampleUShapedAzElTimeSpace(exampleOverrides)
+%   result = exampleMovingBarrierWait()
+%   result = exampleMovingBarrierWait(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Demonstrate one bounded topology graph with a concave protected obstacle.
+%   - Demonstrate that HS3 can select useful waiting for a translating barrier.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
@@ -27,25 +27,33 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 3, ...
-    "CollocationSegmentCount", 7, "MaximumPlanningTime_s", 35));
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 5, ...
+    "CollocationSegmentCount", 7, "MaximumPlanningTime_s", 40, ...
+    "AzimuthInterval_deg", [-6 6], ...
+    "ElevationInterval_deg", [-3 3]));
 
 %% Section 2: Create Obstacles
 
-obstacleTime_s = [0; 24];
-obstaclePosition_deg = [ ...
-    -2 -2; 2 -2; 2 2; 1 2; 1 -0.8; ...
-    -1 -0.8; -1 2; -2 2];
-safetyMargin_deg = 0.15;
+obstacleTime_s = [0; 6; 6.5; 12];
+barrierCenterElevation_deg = [0; 0; 8; 8];
+sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
+elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+for sampleIndex = 1:numel(obstacleTime_s)
+    translatedPosition_deg = sourcePosition_deg + ...
+        [0 barrierCenterElevation_deg(sampleIndex)];
+    azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
+    elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
+end
+safetyMargin_deg = 0.1;
 obstacles = makeAzElObstacleData( ...
-    "concave obstacle", obstacleTime_s, ...
-    obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), ...
-    safetyMargin_deg);
+    "translating barrier", obstacleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
-initialState = struct("time_s", 0, "position_deg", [-6 0]);
-goalState = struct("time_s", 16, "position_deg", [6 0]);
+initialState = struct("time_s", 0, "position_deg", [-5 0]);
+goalState = struct("time_s", 12, "position_deg", [5 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [1 1], ...
@@ -59,6 +67,16 @@ result = planAzElMotion( ...
 %% Section 5: Validate Result
 
 result.ExampleValidation = validateAzElTrajectory(result);
+waitSeedSelected = result.Success && result.SelectedSeedIndex > 0 && ...
+    result.Seeds(result.SelectedSeedIndex).Source == "directWait";
+result.ExampleValidation.WaitSeedSelected = waitSeedSelected;
+result.ExampleValidation.Passed = ...
+    result.ExampleValidation.Passed && waitSeedSelected;
+if ~waitSeedSelected
+    result.ExampleValidation.Message = ...
+        result.ExampleValidation.Message + ...
+        " The planner did not select the direct waiting seed.";
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
@@ -70,11 +88,12 @@ end
 
 %% Section 7: Return Example Metadata
 
-result.ExampleName = "exampleUShapedAzElTimeSpace";
+result.ExampleName = "exampleMovingBarrierWait";
 result.ExampleMetrics = computeAzElExampleMetrics(result);
 result.ExampleControls = displayOptions;
 result.ExampleGeometry = struct( ...
     "obstacleTime_s", obstacleTime_s, ...
-    "obstaclePosition_deg", obstaclePosition_deg, ...
+    "barrierCenterElevation_deg", barrierCenterElevation_deg, ...
+    "sourcePosition_deg", sourcePosition_deg, ...
     "safetyMargin_deg", safetyMargin_deg);
 end
