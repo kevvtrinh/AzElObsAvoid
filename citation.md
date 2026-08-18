@@ -1,38 +1,12 @@
 # References
 
-## Safe Interval Path Planning
+## Third-order direct collocation
 
-- Phillips, M., and Likhachev, M. (2011). "SIPP: Safe Interval Path
-  Planning for Dynamic Environments." *2011 IEEE International Conference
-  on Robotics and Automation*, 5628-5635.
-  https://doi.org/10.1109/ICRA.2011.5980306
-
-- Ali, Z. A., and Yakovlev, K. (2023). "Safe Interval Path Planning with
-  Kinodynamic Constraints." *Proceedings of the AAAI Conference on
-  Artificial Intelligence*, 37(10), 12330-12337. This paper introduces
-  Safe Interval Path Planning with Interval Projection (SIPP-IP).
-  https://doi.org/10.1609/aaai.v37i10.26453
-
-## Direct Collocation
-
-- Kelly, M. (2017). "An Introduction to Trajectory Optimization: How to Do
-  Your Own Direct Collocation." *SIAM Review*, 59(4), 849-904.
-  https://doi.org/10.1137/16M1062569
-
-- Moreno-Martin, S., Ros, L., and Celaya, E. (2024). "Collocation Methods for
-  Second and Higher Order Systems." *Autonomous Robots*, 48, Article 2.
+- Moreno-Martin, S., Ros, L., and Celaya, E. (2024). "Collocation Methods
+  for Second and Higher Order Systems." *Autonomous Robots*, 48, Article 2.
   https://doi.org/10.1007/s10514-023-10155-z
 
-## Continuous Collision Constraints
-
-- Zhang, D., Liang, C., Gao, X., Wu, K., and Pan, Z. (2024). "Provably
-  Feasible Semi-Infinite Program Under Collision Constraints via
-  Subdivision." *IEEE Transactions on Robotics*, 40, 2602-2619. The earlier
-  preprint title used "Provably Robust." https://doi.org/10.1109/TRO.2024.3391649
-
-## Static Polygonal Global Planning
-
-- Martinsen, A. B., Lekkas, A. M., and Gros, S. (2022). "Optimal Model-Based
-  Trajectory Planning With Static Polygonal Constraints." *IEEE Transactions
-  on Control Systems Technology*, 30(3), 1159-1170.
-  https://doi.org/10.1109/TCST.2021.3094617
+  The compact optimizer uses a separated third-order chain. Quadratic jerk
+  ordinates are integrated once to produce acceleration, velocity, and
+  position polynomials. This prevents independent state splines from
+  violating the shared dynamics.

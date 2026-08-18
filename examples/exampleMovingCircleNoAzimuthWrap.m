@@ -1,201 +1,90 @@
-function result = exampleMovingCircleNoAzimuthWrap(options)
+function result = exampleMovingCircleNoAzimuthWrap(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingCircleNoAzimuthWrap()
-%   result = exampleMovingCircleNoAzimuthWrap(options)
+%   result = exampleMovingCircleNoAzimuthWrap(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Construct one protected rising circle and plan left-to-right without
-%     azimuth wrapping, waypoints, a preferred side, or a directed route.
+%   - Demonstrate an immediate non-wrapping detour around a rising circle.
 %**************************************************************************
 % INPUTS
-%   - options (scalar struct, optional)
-%       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
+%   - exampleOverrides (scalar struct, optional; default struct())
+%       Uniform display controls and public planner option overrides.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Validated planner result and moving-obstacle geometry.
+%       Planner result, independent validation, plots, and example metrics.
 %**************************************************************************
 % UNITS
-%   - Angles are degrees and time is seconds.
+%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
+%     and deg/s^3.
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
 
-if nargin < 1 || isempty(options)
-    options = struct();
+if nargin < 1 || isempty(exampleOverrides)
+    exampleOverrides = struct();
 end
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
-    options, struct( ...
-    "AllowAzimuthWrapping", false, ...
-    "AzimuthInterval_deg", [-180 180], ...
-    "MaximumPlanningTime_s", 60, ...
-    "MaximumDirectCollocationSeeds", 2, ...
-    "MaximumVisibilitySnapshotsPerObstacle", 2, ...
-    "DetectSnapshotEvents", false, ...
-    "InitialCollocationSegmentCount", 8, ...
-    "MaximumCollocationSegmentCount", 8, ...
-    "MaximumMeshRefinementPasses", 0, ...
-    "MaximumNlpIterations", 1, ...
-    "MaximumNlpFunctionEvaluations", 1, ...
-    "EnableJerkTieBreak", false, ...
-    "Verbose", true, ...
-    "FigureVisible", "on", ...
-    "Title", "Rising circle with automatic non-wrapping route"), ...
-    [2.5 2.5]);
-% The defining behavior of this scenario is an interval-constrained route.
-% Callers may customize the interval but cannot enable wrapping here.
-options.AllowAzimuthWrapping = false;
+[options, displayOptions] = resolveAzElExampleOptions( ...
+    exampleOverrides, struct( ...
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 3, ...
+    "CollocationSegmentCount", 7, "MaximumPlanningTime_s", 35, ...
+    "AllowAzimuthWrapping", false));
 
 %% Section 2: Create Obstacles
 
-% The shared horizon keeps both the obstacle rate and planner deadline
-% identical when the configured finite jerk limit changes.
-missionEndTime_s = 120;
-safetyMargin_deg = 0.20;
-% Two endpoint snapshots exactly define this constant-rate translation.
-obstacleTime_s = [0; missionEndTime_s];
-circleRadius_deg = 2.5;
-circleCenterElevation_deg = ...
-    7.0 * obstacleTime_s / missionEndTime_s;
-circleAngle_rad = (0:35).' * (2 * pi / 36);
-circleAzimuth_deg = cell(numel(obstacleTime_s), 1);
-circleElevation_deg = cell(numel(obstacleTime_s), 1);
-for sampleIndex = 1:numel(obstacleTime_s)
-    circleAzimuth_deg{sampleIndex} = ...
+obstacleTime_s = [0; 15];
+circleCenterElevation_deg = [0; 3];
+circleAngle_rad = (0:23).' * (2 * pi / 24);
+circleRadius_deg = 1.5;
+azimuthBySlice_deg = cell(2, 1);
+elevationBySlice_deg = cell(2, 1);
+for sampleIndex = 1:2
+    azimuthBySlice_deg{sampleIndex} = ...
         circleRadius_deg * cos(circleAngle_rad);
-    circleElevation_deg{sampleIndex} = ...
+    elevationBySlice_deg{sampleIndex} = ...
         circleCenterElevation_deg(sampleIndex) + ...
         circleRadius_deg * sin(circleAngle_rad);
 end
-obstacle = makeAzElObstacleData( ...
-    "Slowly rising circle", obstacleTime_s, ...
-    circleAzimuth_deg, circleElevation_deg, safetyMargin_deg);
+safetyMargin_deg = 0.1;
+obstacles = makeAzElObstacleData( ...
+    "rising circle", obstacleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
-initialState = struct("time_s", 0, "position_deg", [-12 0]);
-goalState = struct( ...
-    "time_s", missionEndTime_s, "position_deg", [12 0]);
+initialState = struct("time_s", 0, "position_deg", [-6 0]);
+goalState = struct("time_s", 15, "position_deg", [6 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.75 0.75], ...
-    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+    "maxAcceleration_deg_s2", [1 1], ...
+    "maxJerk_deg_s3", [2 2]);
 
 %% Section 4: Run Planner
 
 result = planAzElMotion( ...
-    obstacle, initialState, goalState, limits, options);
+    obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( ...
-    result, "moving circle", struct());
-detourValidation = validateRisingCircleDetour(result);
-exampleValidation.Passed = ...
-    exampleValidation.Passed && detourValidation.Passed;
-if ~detourValidation.Passed
-    exampleValidation.Message = exampleValidation.Message + " " + ...
-        detourValidation.Message;
-end
+result.ExampleValidation = validateAzElTrajectory(result);
 
 %% Section 6: Plot Diagnostics And Motion
 
 result.PlotHandles = struct();
-if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+if displayOptions.PlotOutputs
+    plotOptions = rmfield(displayOptions, 'PlotOutputs');
+    result.PlotHandles = plotAzElMotion(result, plotOptions);
 end
 
 %% Section 7: Return Example Metadata
 
-result.ExampleValidation = exampleValidation;
-result.DetourValidation = detourValidation;
-result.obstacleTime_s = obstacleTime_s;
-result.circleRadius_deg = circleRadius_deg;
-result.circleCenterElevation_deg = circleCenterElevation_deg;
-result.azimuthWrappingAllowed = options.AllowAzimuthWrapping;
-result.azimuthInterval_deg = options.AzimuthInterval_deg;
-result.ExampleConfiguration = jerkConfiguration;
-end
-
-%% Section 8: Local Functions
-
-function validation = validateRisingCircleDetour(result)
-% PURPOSE
-%   - Verify a lower, immediate detour beats the delayed direct motion.
-selectedSeedSource = "";
-selectedArrivalTime_s = NaN;
-directArrivalTime_s = NaN;
-minimumElevation_deg = NaN;
-initialWait_s = NaN;
-selectedSpaceTimeDetour = false;
-wentBelowObstacle = false;
-startedImmediately = false;
-detourWasFaster = false;
-graphWaitDuration_s = NaN;
-
-if result.Success
-    candidates = result.SearchDiagnostics.CandidateOptimizations;
-    selectedIndex = result.selectedCandidateIndex;
-    if selectedIndex >= 1 && selectedIndex <= numel(candidates)
-        selected = candidates(selectedIndex);
-        selectedSeedSource = selected.SeedSource;
-        selectedArrivalTime_s = selected.ObjectiveArrivalTime_s;
-        selectedSpaceTimeDetour = ...
-            selectedSeedSource == "spaceTimeVisibilityGraph";
-    end
-    directIndex = find([candidates.SeedSource] == "direct" & ...
-        [candidates.Success], 1);
-    if ~isempty(directIndex)
-        directArrivalTime_s = ...
-            candidates(directIndex).ObjectiveArrivalTime_s;
-        detourWasFaster = ...
-            selectedArrivalTime_s < directArrivalTime_s;
-    end
-    position_deg = result.position_deg;
-    time_s = result.time_s;
-    minimumElevation_deg = min(position_deg(:, 2));
-    wentBelowObstacle = minimumElevation_deg < -1;
-    motionStep_deg = vecnorm(diff(position_deg, 1, 1), 2, 2);
-    firstMovingSegmentIndex = find( ...
-        motionStep_deg > 1e-6, 1, "first");
-    if ~isempty(firstMovingSegmentIndex)
-        initialWait_s = time_s(firstMovingSegmentIndex) - time_s(1);
-        startedImmediately = firstMovingSegmentIndex == 1;
-    end
-    graphWaitDuration_s = result.SearchDiagnostics. ...
-        SpaceTimeVisibilityGraph.WaitDuration_s;
-end
-
-passed = result.Success && selectedSpaceTimeDetour && ...
-    wentBelowObstacle && startedImmediately && detourWasFaster && ...
-    abs(graphWaitDuration_s) <= 1e-12;
-if passed
-    message = sprintf( ...
-        "The lower detour started immediately and arrived %.3f s " + ...
-        "before the delayed direct route.", ...
-        directArrivalTime_s - selectedArrivalTime_s);
-else
-    message = sprintf( ...
-        "Detour failed: source=%s, minimum elevation=%.6g deg, " + ...
-        "initial wait=%.6g s, detour arrival=%.6g s, direct " + ...
-        "arrival=%.6g s, graph wait=%.6g s.", ...
-        selectedSeedSource, minimumElevation_deg, initialWait_s, ...
-        selectedArrivalTime_s, directArrivalTime_s, ...
-        graphWaitDuration_s);
-end
-validation = struct( ...
-    "Passed", passed, ...
-    "Message", string(message), ...
-    "SelectedSeedSource", selectedSeedSource, ...
-    "SelectedSpaceTimeDetour", selectedSpaceTimeDetour, ...
-    "WentBelowObstacle", wentBelowObstacle, ...
-    "StartedImmediately", startedImmediately, ...
-    "DetourWasFaster", detourWasFaster, ...
-    "InitialWait_s", initialWait_s, ...
-    "MinimumElevation_deg", minimumElevation_deg, ...
-    "SelectedArrivalTime_s", selectedArrivalTime_s, ...
-    "DirectArrivalTime_s", directArrivalTime_s, ...
-    "GraphWaitDuration_s", graphWaitDuration_s);
+result.ExampleName = "exampleMovingCircleNoAzimuthWrap";
+result.ExampleMetrics = computeAzElExampleMetrics(result);
+result.ExampleControls = displayOptions;
+result.ExampleGeometry = struct( ...
+    "obstacleTime_s", obstacleTime_s, ...
+    "circleCenterElevation_deg", circleCenterElevation_deg, ...
+    "circleRadius_deg", circleRadius_deg, ...
+    "safetyMargin_deg", safetyMargin_deg);
 end

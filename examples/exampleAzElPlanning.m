@@ -5,25 +5,19 @@ function result = exampleAzElPlanning(exampleOverrides)
 %   result = exampleAzElPlanning(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Demonstrate the complete maintained workflow: create dense obstacle
-%     data, plan one collision-free motion, validate it, and plot outputs.
+%   - Demonstrate deterministic side choice around one protected rectangle.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
-%       FigureVisible is "on" or "off"; PlotOutputs controls plotting;
-%       ShowAnimation, ShowKinematicPlot, and ShowVisibilityGraphs select
-%       returned figures;
-%       MaxJerk_deg_s3 sets the required finite jerk limit; known
-%       planAzElMotion options are forwarded unchanged.
+%       Uniform display controls and public planner option overrides.
 %**************************************************************************
 % OUTPUTS
-%   - result (scalar planner-result struct)
-%       Includes independent planner validation, example inputs, and plot
-%       handles when plotting is enabled.
+%   - result (scalar struct)
+%       Planner result, independent validation, plots, and example metrics.
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
+%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
+%     and deg/s^3.
 %**************************************************************************
 
 %% Section 1: Resolve Example Controls
@@ -31,65 +25,55 @@ function result = exampleAzElPlanning(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", ...
-    "SampleTime_s", 0.05, ...
-    "AllowAzimuthWrapping", false, ...
-    "AzimuthInterval_deg", [-180 180], ...
-    "UseParallel", false, ...
-    "Verbose", false, ...
-    "FigureVisible", "on", ...
-    "Title", "Minimal azimuth/elevation planning example"), ...
-    [2.5 2.5]);
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 3, ...
+    "CollocationSegmentCount", 6, "MaximumPlanningTime_s", 30));
 
 %% Section 2: Create Obstacles
 
-% The 721-point circle demonstrates automatic planning-node reduction.
-% Its full boundary remains untouched for collision checking.
-angle_rad = (0:719).' * (2 * pi / 720);
-obstacleAzimuth_deg = 2.25 * cos(angle_rad);
-obstacleElevation_deg = 2.25 * sin(angle_rad);
-obstacleTime_s = [0; 120];
-obstacle = makeAzElObstacleData("obstacle", obstacleTime_s, ...
-    obstacleAzimuth_deg, obstacleElevation_deg, 0.20);
-obstacles = obstacle;
+obstacleTime_s = [0; 20];
+obstacleAzimuth_deg = [-1; 1; 1; -1];
+obstacleElevation_deg = [-2; -2; 2; 2];
+safetyMargin_deg = 0.2;
+obstacles = makeAzElObstacleData( ...
+    "rectangle", obstacleTime_s, obstacleAzimuth_deg, ...
+    obstacleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
-initialState = struct("time_s", 0, "position_deg", [-7 0], ...
-    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-goalState = struct("time_s", 120, "position_deg", [7 0], ...
-    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.75 0.75], ...
-    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+initialState = struct("time_s", 0, "position_deg", [-5 0]);
+goalState = struct("time_s", 12, "position_deg", [5 0]);
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1], ...
+    "maxJerk_deg_s3", [2 2]);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion(obstacles, initialState, goalState, limits, options);
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-result.ExampleValidation = validateAzElExampleResult( ...
-    result, "minimal planning example", ...
-    struct("RequireDirectBlocked", true));
-if ~result.Success
-    warning("exampleAzElPlanning:PlanningFailed", "%s", result.Message);
-end
+result.ExampleValidation = validateAzElTrajectory(result);
 
 %% Section 6: Plot Diagnostics And Motion
 
 result.PlotHandles = struct();
-if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+if displayOptions.PlotOutputs
+    plotOptions = rmfield(displayOptions, 'PlotOutputs');
+    result.PlotHandles = plotAzElMotion(result, plotOptions);
 end
 
 %% Section 7: Return Example Metadata
 
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleInputs = struct("obstacles", obstacles, ...
-    "initialState", initialState, "goalState", goalState, ...
-    "limits", limits, "options", options);
+result.ExampleName = "exampleAzElPlanning";
+result.ExampleMetrics = computeAzElExampleMetrics(result);
+result.ExampleControls = displayOptions;
+result.ExampleGeometry = struct( ...
+    "obstacleTime_s", obstacleTime_s, ...
+    "obstacleAzimuth_deg", obstacleAzimuth_deg, ...
+    "obstacleElevation_deg", obstacleElevation_deg, ...
+    "safetyMargin_deg", safetyMargin_deg);
 end
