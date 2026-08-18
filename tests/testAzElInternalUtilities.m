@@ -21,7 +21,8 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
-% Put the repository API on the path for direct package-helper tests.
+% PURPOSE
+%   - Put the repository API on the path for package-helper tests.
 testFilePath = mfilename("fullpath");
 repositoryRoot = fileparts(fileparts(testFilePath));
 testCase.TestData.OriginalPath = path;
@@ -29,12 +30,14 @@ addpath(repositoryRoot);
 end
 
 function teardownOnce(testCase)
-% Restore the caller's path after this focused test file completes.
+% PURPOSE
+%   - Restore the caller path after this focused test file completes.
 path(testCase.TestData.OriginalPath);
 end
 
 function testResolveOptionsPreservesDefaultsAndFieldOrder(testCase)
-% Empty known values keep defaults; unknown values are reported, not used.
+% PURPOSE
+%   - Verify that option resolution keeps default order and values.
 defaults = struct( ...
     "First", 1, ...
     "Second", 2, ...
@@ -56,7 +59,8 @@ testCase.verifyFalse(isfield(resolved, "Unknown"));
 end
 
 function testNormalizeLogicalScalarAcceptsDocumentedForms(testCase)
-% Logical values and numeric zero/one normalize to scalar logical values.
+% PURPOSE
+%   - Verify all documented scalar logical forms.
 identifier = "testAzElInternalUtilities:InvalidControl";
 testCase.verifyFalse(azElInternal.normalizeLogicalScalar( ...
     false, "Control", identifier));
@@ -69,7 +73,8 @@ testCase.verifyTrue(azElInternal.normalizeLogicalScalar( ...
 end
 
 function testNormalizeLogicalScalarRejectsAmbiguity(testCase)
-% Nonbinary, nonfinite, and nonscalar numeric controls use the caller ID.
+% PURPOSE
+%   - Verify that ambiguous logical controls use the caller error ID.
 identifier = "testAzElInternalUtilities:InvalidControl";
 testCase.verifyError(@() azElInternal.normalizeLogicalScalar( ...
     2, "Control", identifier), identifier);
@@ -80,7 +85,8 @@ testCase.verifyError(@() azElInternal.normalizeLogicalScalar( ...
 end
 
 function testNormalizeParallelModeUsesOneAliasPolicy(testCase)
-% Text and logical aliases share one normalized three-value representation.
+% PURPOSE
+%   - Verify one normalized representation for parallel-mode aliases.
 identifier = "testAzElInternalUtilities:InvalidParallelMode";
 testCase.verifyEqual(azElInternal.normalizeParallelMode( ...
     "AUTO", identifier), "auto");
@@ -95,7 +101,8 @@ testCase.verifyError(@() azElInternal.normalizeParallelMode( ...
 end
 
 function testUnpackObstacleSliceRegionsPreservesRingOrder(testCase)
-% Decode two NaN-separated rings exactly as construction packed them.
+% PURPOSE
+%   - Verify ordered decoding of two NaN-separated polygon rings.
 firstRing_deg = [ ...
     -3 -2; ...
     -1 -2; ...
@@ -121,4 +128,29 @@ regions = azElInternal.unpackObstacleSliceRegions( ...
 testCase.verifySize(regions, [2 1]);
 testCase.verifyEqual(regions{1}, firstRing_deg);
 testCase.verifyEqual(regions{2}, secondRing_deg);
+end
+
+function testEmptyDiagnosticsUseStableFailureValues(testCase)
+% PURPOSE
+%   - Verify empty clearance and validation records remain explicit.
+clearance = azElInternal.emptyCollisionClearanceDiagnostics();
+validation = azElInternal.emptyTrajectoryValidation();
+
+testCase.verifyFalse(clearance.ProvenClear);
+testCase.verifySize(clearance.UnresolvedPathSegmentMask, [0 1]);
+testCase.verifyEqual(clearance.MaximumSubdivisionDepth, 18);
+testCase.verifyTrue(isnan(clearance.MinimumProvenLowerBound_deg));
+testCase.verifyFalse(validation.Passed);
+testCase.verifyEqual(validation.Issues, "notValidated");
+testCase.verifyEqual(validation.InitialStateError, inf(1, 6));
+testCase.verifyTrue(isinf(validation.MaximumDynamicsDefect));
+end
+
+function testPolylineLengthHandlesEmptyAndSegmentedRoutes(testCase)
+% PURPOSE
+%   - Verify zero-point, one-point, and multi-segment polyline lengths.
+testCase.verifyEqual(azElInternal.polylineLength(zeros(0, 2)), 0);
+testCase.verifyEqual(azElInternal.polylineLength([4 8]), 0);
+testCase.verifyEqual(azElInternal.polylineLength( ...
+    [0 0; 3 4; 3 6]), 7, "AbsTol", eps);
 end

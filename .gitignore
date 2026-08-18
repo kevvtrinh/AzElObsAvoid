@@ -1,1 +1,9 @@
-# Repository-wide implementation and verification policy is tracked.
+# Local run output and editor backup files are not source.
+tmp/
+*.asv
+*.m~
+*.log
+
+# Scratch benchmark output is reproducible and must stay out of source.
+scratch/*.mat
+scratch/*_runs.csv

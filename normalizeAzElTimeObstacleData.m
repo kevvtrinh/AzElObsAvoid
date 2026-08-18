@@ -213,7 +213,7 @@ function [azimuth_deg, elevation_deg, removedRegionCount] = ...
 %   - Reject mismatched separators and one-vertex regions.
 %   - Remove two-vertex regions that cannot enclose occupied area.
 
-%% Section 1: Require Paired Coordinate Separators
+% --- Require Paired Coordinate Separators -------------------------------
 
 boundaryRoleText = char(boundaryRole);
 azimuthIsFinite = isfinite(azimuth_deg);
@@ -227,7 +227,7 @@ if any(xor(azimuthIsFinite, elevationIsFinite))
         boundaryRoleText, sampleIndex);
 end
 
-%% Section 2: Classify Boundary Regions
+% --- Classify Boundary Regions ------------------------------------------
 
 finiteVertexMask = azimuthIsFinite;
 regionChanges = diff([false; finiteVertexMask; false]);
@@ -249,7 +249,7 @@ if removedRegionCount == 0
     return;
 end
 
-%% Section 3: Rebuild The Remaining Regions
+% --- Rebuild The Remaining Regions --------------------------------------
 
 retainedRegionIndex = find(~removeRegion);
 if isempty(retainedRegionIndex)

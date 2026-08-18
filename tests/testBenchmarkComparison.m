@@ -33,7 +33,8 @@ testCase.addTeardown(@() path(originalPath));
 end
 
 function testParityAcceptsReorderedEquivalentRows(testCase)
-% Verify order-independent equality when every synthetic row agrees.
+% PURPOSE
+%   - Verify order-independent equality for equivalent rows.
 baseline = syntheticReport();
 current = baseline;
 current.Runs = current.Runs([2 1], :);
@@ -50,7 +51,8 @@ testCase.verifyEqual(height(comparison.Rows), 2);
 end
 
 function testDominanceAcceptsLowerPhysicalMetrics(testCase)
-% Verify every physical metric is lower-is-better only in dominance mode.
+% PURPOSE
+%   - Verify lower physical metrics in dominance mode.
 baseline = syntheticReport();
 current = baseline;
 current.Runs.SelectedPolylineLength_deg(1) = 9.5;
@@ -68,7 +70,8 @@ testCase.verifyLessThan(dominance.Rows.PolylineDelta_deg(1), 0);
 end
 
 function testDominanceRejectsWorseDurationAndCertificateState(testCase)
-% Verify duration and certificate-state regressions remain visible.
+% PURPOSE
+%   - Verify rejection of duration and certificate regressions.
 baseline = syntheticReport();
 current = baseline;
 current.Runs.MinimumMotionDuration_s(2) = 7.1;
@@ -84,7 +87,8 @@ testCase.verifyFalse(comparison.Rows.OutcomePassed(2));
 end
 
 function testRuntimeAssessmentUsesExplicitRatio(testCase)
-% Verify runtime stays diagnostic until callers explicitly enable its gate.
+% PURPOSE
+%   - Verify that runtime gating requires an explicit ratio.
 baseline = syntheticReport();
 current = baseline;
 current.Runs.WallTime_s = [12; 6];
@@ -104,7 +108,8 @@ testCase.verifyTrue(passingComparison.Passed, passingComparison.Message);
 end
 
 function testKeyMismatchProducesStableFailure(testCase)
-% Verify missing and unexpected row keys yield an inspectable failure.
+% PURPOSE
+%   - Verify an inspectable failure for mismatched report keys.
 baseline = syntheticReport();
 current = baseline;
 current.Runs.Example(2) = "syntheticOther";

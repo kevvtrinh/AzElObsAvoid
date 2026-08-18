@@ -55,20 +55,21 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
+[result, diagnostics] = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 exampleValidation = validateAzElExampleResult( ...
-    result, "single U", struct("RequireDirectBlocked", true));
+    result, diagnostics, "single U", ...
+    struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+        result, diagnostics, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

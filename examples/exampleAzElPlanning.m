@@ -67,12 +67,13 @@ limits = struct("maxVelocity_deg_s", [2 2], ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion(obstacles, initialState, goalState, limits, options);
+[result, diagnostics] = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 result.ExampleValidation = validateAzElExampleResult( ...
-    result, "minimal planning example", ...
+    result, diagnostics, "minimal planning example", ...
     struct("RequireDirectBlocked", true));
 if ~result.Success
     warning("exampleAzElPlanning:PlanningFailed", "%s", result.Message);
@@ -83,7 +84,7 @@ end
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+        result, diagnostics, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

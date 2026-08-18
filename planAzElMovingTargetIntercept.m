@@ -1,4 +1,4 @@
-function result = planAzElMovingTargetIntercept( ...
+function [result, diagnostics] = planAzElMovingTargetIntercept( ...
         obstacles, initialState, targetMotion, limits, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -6,6 +6,8 @@ function result = planAzElMovingTargetIntercept( ...
 %   result = planAzElMovingTargetIntercept( ...
 %       initialState, targetMotion, limits, optionOverrides)
 %   result = planAzElMovingTargetIntercept( ...
+%       obstacles, initialState, targetMotion, limits, optionOverrides)
+%   [result, diagnostics] = planAzElMovingTargetIntercept( ...
 %       obstacles, initialState, targetMotion, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
@@ -60,13 +62,14 @@ function result = planAzElMovingTargetIntercept( ...
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Normal planner result augmented with target, search, intercept,
-%       validation, and target-track plot diagnostics. TargetMotion echoes
-%       the normalized model; TargetVelocityAtIntercept_deg_s is evaluated
-%       from its selected interpolation. Expected planner infeasibility is
-%       returned by planAzElMotion; invalid target contracts throw. If the
-%       target leaves the az/el frame before a feasible intercept, Success
-%       is false and TerminationReason is "targetLeftAzElFrame".
+%       Compact planner result with the intercept state and validation.
+%       Expected planner infeasibility is returned by planAzElMotion;
+%       invalid target contracts throw. If the target leaves the az/el
+%       frame before a feasible intercept, Success is false and
+%       TerminationReason is "targetLeftAzElFrame".
+%   - diagnostics (scalar struct, optional)
+%       Full planner diagnostics, intercept search history, normalized
+%       target motion, and target-track data for expert inspection.
 %**************************************************************************
 % UNITS
 %   - Angles are degrees; time is seconds; velocity is deg/s.
@@ -86,6 +89,7 @@ defaultOptions = struct( ...
     "PlannerOptions", struct());
 if nargin == 0
     result = defaultOptions;
+    diagnostics = struct();
     return;
 end
 interceptPlanningTimer = tic;
@@ -204,16 +208,16 @@ if searchDiagnostics.CandidatePlannerGoalTimeMode == ...
         "analyticresttorestthenfixedarrival"
     plannerOptions = requireMeshRefinementPasses(plannerOptions, 2);
 end
-result = planAzElMotion(obstacles, initialState, goalState, limits, ...
-    plannerOptions);
+[result, plannerDiagnostics] = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, plannerOptions);
 plannerSucceeded = result.Success;
 plannerValidation = result.Validation;
-plannerSearchDiagnostics = result.SearchDiagnostics;
+plannerSearchDiagnostics = plannerDiagnostics.Search;
 
 trackTime_s = targetTrackTimes(targetMotion, initialState.time_s, ...
     interceptTime_s, options.TargetTrackSampleCount);
 if plannerSucceeded
-    trackTime_s = unique([trackTime_s; result.timedSlopePath.time_s]);
+    trackTime_s = unique([trackTime_s; result.time_s]);
 end
 trackPosition_deg = evaluateTargetMotion(targetMotion, trackTime_s);
 
@@ -229,18 +233,17 @@ targetVelocityMatched = false;
 requestedVelocityMatched = false;
 timeMatched = false;
 hasTimedEndpoint = plannerSucceeded && ...
-    isfield(result, "timedSlopePath") && ...
-    ~isempty(result.timedSlopePath.position_deg) && ...
-    ~isempty(result.timedSlopePath.velocity_deg_s) && ...
+    ~isempty(result.position_deg) && ...
+    ~isempty(result.velocity_deg_s) && ...
     isfinite(result.goalLineInterceptTime_s);
 if hasTimedEndpoint
     [targetPositionAtIntercept_deg, actualTargetVelocity_deg_s] = ...
         evaluateTargetMotion( ...
         targetMotion, result.goalLineInterceptTime_s);
     actualTerminalPosition_deg = ...
-        result.timedSlopePath.position_deg(end, :);
+        result.position_deg(end, :);
     actualTerminalVelocity_deg_s = ...
-        result.timedSlopePath.velocity_deg_s(end, :);
+        result.velocity_deg_s(end, :);
     positionError_deg = norm( ...
         actualTerminalPosition_deg - targetPositionAtIntercept_deg);
     targetVelocityError_deg_s = norm( ...
@@ -306,7 +309,6 @@ end
 %% Section 5: Assemble Intercept Diagnostics
 
 result.InterceptMode = options.InterceptMode;
-result.TargetMotion = targetMotion;
 result.RequestedInterceptTime_s = options.SpecifiedInterceptTime_s;
 result.InterceptTime_s = interceptTime_s;
 result.InterceptPosition_deg = interceptPosition_deg;
@@ -320,24 +322,33 @@ if targetLeftFrameBeforeIntercept
     result.TargetPositionAtIntercept_deg = [NaN NaN];
     result.TargetVelocityAtIntercept_deg_s = [NaN NaN];
 end
-result.PlannerValidation = plannerValidation;
-result.PlannerSearchDiagnostics = plannerSearchDiagnostics;
-result.InterceptSearchDiagnostics = searchDiagnostics;
-result.SearchDiagnostics = mergeSearchDiagnostics( ...
-    searchDiagnostics, plannerSearchDiagnostics);
-result.SearchDiagnostics.Success = result.Success;
-result.SearchDiagnostics.Message = result.Message;
-result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.InterceptValidation = interceptValidation;
-result.TargetTrackTime_s = trackTime_s;
-result.TargetTrackPosition_deg = trackPosition_deg;
-result.InterceptOptions = options;
-result.FinalPlannerElapsedPlanningTime_s = result.ElapsedPlanningTime_s;
+plannerOptionsResolved = result.Options;
+result.Options = options;
+finalPlannerElapsedPlanningTime_s = result.ElapsedPlanningTime_s;
 result.ElapsedPlanningTime_s = toc(interceptPlanningTimer);
-result.SearchDiagnostics.FinalPlannerElapsedPlanningTime_s = ...
-    result.FinalPlannerElapsedPlanningTime_s;
-result.SearchDiagnostics.ElapsedPlanningTime_s = ...
+
+combinedSearchDiagnostics = mergeSearchDiagnostics( ...
+    searchDiagnostics, plannerSearchDiagnostics);
+combinedSearchDiagnostics.Success = result.Success;
+combinedSearchDiagnostics.Message = result.Message;
+combinedSearchDiagnostics.TerminationReason = result.TerminationReason;
+combinedSearchDiagnostics.FinalPlannerElapsedPlanningTime_s = ...
+    finalPlannerElapsedPlanningTime_s;
+combinedSearchDiagnostics.ElapsedPlanningTime_s = ...
     result.ElapsedPlanningTime_s;
+diagnostics = struct( ...
+    "Planner", plannerDiagnostics, ...
+    "PlannerOptions", plannerOptionsResolved, ...
+    "PlannerValidation", plannerValidation, ...
+    "InterceptSearch", searchDiagnostics, ...
+    "Search", combinedSearchDiagnostics, ...
+    "TargetMotion", targetMotion, ...
+    "TargetTrack", struct( ...
+        "time_s", trackTime_s, ...
+        "position_deg", trackPosition_deg), ...
+    "FinalPlannerElapsedPlanningTime_s", ...
+    finalPlannerElapsedPlanningTime_s);
 end
 
 %% Section 6: Local Functions

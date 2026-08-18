@@ -1,11 +1,12 @@
 function validation = validateAzElExampleResult( ...
-        result, scenarioName, requirements)
+        result, diagnostics, scenarioName, requirements)
 %% Section 0: Header & Readme
 % SYNTAX
-%   validation = validateAzElExampleResult(result)
-%   validation = validateAzElExampleResult(result, scenarioName)
+%   validation = validateAzElExampleResult(result, diagnostics)
 %   validation = validateAzElExampleResult( ...
-%       result, scenarioName, requirements)
+%       result, diagnostics, scenarioName)
+%   validation = validateAzElExampleResult( ...
+%       result, diagnostics, scenarioName, requirements)
 %**************************************************************************
 % PURPOSE
 %   - Independently validate the timed trajectory returned by the public
@@ -13,7 +14,9 @@ function validation = validateAzElExampleResult( ...
 %**************************************************************************
 % INPUTS
 %   - result (scalar planner-result struct)
-%       Must expose obstacleField, states, limits, options, and trajectory.
+%       Compact first output from the public planner.
+%   - diagnostics (scalar planner-diagnostics struct)
+%       Second planner output with collision and trajectory data.
 %   - scenarioName (scalar text, optional; default "az/el example")
 %       Human-readable context used in the validation message.
 %   - requirements (scalar struct, optional; default struct())
@@ -35,16 +38,25 @@ function validation = validateAzElExampleResult( ...
 
 %% Section 1: Validate Inputs & Apply Defaults
 
-if nargin < 2 || isempty(scenarioName)
+if nargin < 3 || isempty(scenarioName)
     scenarioName = "az/el example";
 end
-if nargin < 3 || isempty(requirements)
+if nargin < 4 || isempty(requirements)
     requirements = struct();
 end
 if ~isstruct(result) || ~isscalar(result) || ...
+        ~isstruct(diagnostics) || ~isscalar(diagnostics) || ...
         ~isstruct(requirements) || ~isscalar(requirements)
     error("validateAzElExampleResult:InvalidInput", ...
-        "result and requirements must be scalar structs.");
+        "result, diagnostics, and requirements must be scalar structs.");
+end
+plannerDiagnostics = diagnostics;
+if isfield(diagnostics, "Planner")
+    plannerDiagnostics = diagnostics.Planner;
+end
+motionOptions = result.Options;
+if isfield(diagnostics, "PlannerOptions")
+    motionOptions = diagnostics.PlannerOptions;
 end
 scenarioName = string(scenarioName);
 if ~isscalar(scenarioName)
@@ -69,19 +81,28 @@ validateattributes(timeTolerance_s, {'numeric'}, ...
 validateattributes(kinematicTolerance, {'numeric'}, ...
     {'real','finite','scalar','nonnegative'});
 
-requiredFields = ["Success" "Message" "obstacleField" ...
-    "initialState" "goalState" "limits" "Options" ...
-    "timedSlopePath" "directBlocked" "Validation"];
+requiredFields = ["Success" "Message" "initialState" "goalState" ...
+    "limits" "Options" "Validation"];
 missingFields = requiredFields(~isfield(result, requiredFields));
 if ~isempty(missingFields)
     error("validateAzElExampleResult:MissingResultFields", ...
         "result is missing required fields: %s.", ...
         strjoin(missingFields, ", "));
 end
+requiredDiagnosticFields = ["ObstacleField" "TimedPath" "DirectSeed" ...
+    "OriginalObstacleData" "ProtectedObstacleData" ...
+    "ObstacleSafetyMargins_deg"];
+missingDiagnosticFields = requiredDiagnosticFields( ...
+    ~isfield(plannerDiagnostics, requiredDiagnosticFields));
+if ~isempty(missingDiagnosticFields)
+    error("validateAzElExampleResult:MissingDiagnosticFields", ...
+        "diagnostics is missing required fields: %s.", ...
+        strjoin(missingDiagnosticFields, ", "));
+end
 
 %% Section 2: Validate Timed State History
 
-timedPath = result.timedSlopePath;
+timedPath = plannerDiagnostics.TimedPath;
 hasTrajectory = isstruct(timedPath) && isscalar(timedPath) && ...
     isfield(timedPath, "time_s") && ...
     isfield(timedPath, "position_deg") && ...
@@ -146,7 +167,7 @@ if hasTrajectory
         initialStateMatched = false;
         terminalStateMatched = false;
     end
-    goalTimeMode = lower(string(result.Options.GoalTimeMode));
+    goalTimeMode = lower(string(motionOptions.GoalTimeMode));
     if goalTimeMode == "fixedarrival"
         goalTimeSatisfied = abs(time_s(end) - ...
             result.goalState.time_s) <= timeTolerance_s;
@@ -156,9 +177,9 @@ if hasTrajectory
     end
 
     collisionTimePaddingSamples = 1;
-    if isfield(result.Options, "CollisionTimePaddingSamples")
+    if isfield(motionOptions, "CollisionTimePaddingSamples")
         collisionTimePaddingSamples = ...
-            result.Options.CollisionTimePaddingSamples;
+            motionOptions.CollisionTimePaddingSamples;
     end
     curveDeviation_deg = 0;
     if isfield(timedPath, "CurveDeviationBoundBySegment_deg") && ...
@@ -167,7 +188,7 @@ if hasTrajectory
             timedPath.CurveDeviationBoundBySegment_deg, [], "all");
     end
     collisionMask = queryAzElTimedPathCollision( ...
-        result.obstacleField, time_s, position_deg, struct( ...
+        plannerDiagnostics.ObstacleField, time_s, position_deg, struct( ...
         "TimePaddingSamples", collisionTimePaddingSamples, ...
         "BoundaryIsOccupied", true));
     bufferedChordQueryClear = ~any(collisionMask);
@@ -177,7 +198,7 @@ if hasTrajectory
             max(0, numel(time_s) - 1), 1);
         collisionSafetyProven = ...
             azElInternal.certifyAzElTimedPathClearance( ...
-            result.obstacleField, time_s, position_deg, ...
+            plannerDiagnostics.ObstacleField, time_s, position_deg, ...
             clearanceBuffer_deg);
     end
     collisionFree = bufferedChordQueryClear && collisionSafetyProven;
@@ -191,10 +212,10 @@ if hasTrajectory
         timedPath, "jerk_deg_s3", result.limits, ...
         "maxJerk_deg_s3", kinematicTolerance);
 
-    if result.Options.AllowAzimuthWrapping
+    if motionOptions.AllowAzimuthWrapping
         azimuthWrapPolicySatisfied = true;
     else
-        azimuthInterval_deg = double(result.Options.AzimuthInterval_deg);
+        azimuthInterval_deg = double(motionOptions.AzimuthInterval_deg);
         azimuthWrapPolicySatisfied = all( ...
             position_deg(:, 1) >= azimuthInterval_deg(1) - ...
             positionTolerance_deg & ...
@@ -241,15 +262,16 @@ if isstruct(plannerValidation) && isscalar(plannerValidation)
             plannerValidation.DynamicsDefectWithinTolerance) && ...
             isfinite(maximumDynamicsDefect) && ...
             maximumDynamicsDefect <= ...
-            result.Options.CollocationErrorTolerance;
+            motionOptions.CollocationErrorTolerance;
     end
 end
 collisionFree = collisionFree && bufferedChordQueryClear && ...
     collisionSafetyProven;
 
 directRouteRequirementSatisfied = ~requireDirectBlocked || ...
-    any(result.directBlocked);
-safetyMarginPolicySatisfied = verifySafetyMarginPolicy(result);
+    any(plannerDiagnostics.DirectSeed.blocked);
+safetyMarginPolicySatisfied = ...
+    verifySafetyMarginPolicy(plannerDiagnostics);
 plannerReportedSuccess = logical(result.Success);
 checks = [ ...
     plannerReportedSuccess, hasTrajectory, timeIsFinite, ...
@@ -361,18 +383,18 @@ else
 end
 end
 
-function policySatisfied = verifySafetyMarginPolicy(result)
+function policySatisfied = verifySafetyMarginPolicy(diagnostics)
 % PURPOSE
 %   - Rebuild each protected obstacle once from its stored original geometry.
-requiredFields = ["originalAzElData" "azElData" ...
-    "obstacleSafetyMargins_deg"];
-policySatisfied = all(isfield(result, requiredFields));
+requiredFields = ["OriginalObstacleData" "ProtectedObstacleData" ...
+    "ObstacleSafetyMargins_deg"];
+policySatisfied = all(isfield(diagnostics, requiredFields));
 if ~policySatisfied
     return;
 end
-protectedData = result.azElData;
-originalData = result.originalAzElData;
-margins_deg = double(result.obstacleSafetyMargins_deg(:));
+protectedData = diagnostics.ProtectedObstacleData;
+originalData = diagnostics.OriginalObstacleData;
+margins_deg = double(diagnostics.ObstacleSafetyMargins_deg(:));
 policySatisfied = numel(protectedData) == numel(originalData) && ...
     numel(protectedData) == numel(margins_deg) && ...
     all(isfinite(margins_deg)) && all(margins_deg >= 0);

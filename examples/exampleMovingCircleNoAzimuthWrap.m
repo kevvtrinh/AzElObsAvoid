@@ -84,14 +84,14 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
+[result, diagnostics] = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 exampleValidation = validateAzElExampleResult( ...
-    result, "moving circle", struct());
-detourValidation = validateRisingCircleDetour(result);
+    result, diagnostics, "moving circle", struct());
+detourValidation = validateRisingCircleDetour(result, diagnostics);
 exampleValidation.Passed = ...
     exampleValidation.Passed && detourValidation.Passed;
 if ~detourValidation.Passed
@@ -104,7 +104,7 @@ end
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+        result, diagnostics, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata
@@ -121,7 +121,7 @@ end
 
 %% Section 8: Local Functions
 
-function validation = validateRisingCircleDetour(result)
+function validation = validateRisingCircleDetour(result, diagnostics)
 % PURPOSE
 %   - Verify a lower, immediate detour beats the delayed direct motion.
 selectedSeedSource = "";
@@ -136,8 +136,8 @@ detourWasFaster = false;
 graphWaitDuration_s = NaN;
 
 if result.Success
-    candidates = result.SearchDiagnostics.CandidateOptimizations;
-    selectedIndex = result.selectedCandidateIndex;
+    candidates = diagnostics.Search.CandidateOptimizations;
+    selectedIndex = diagnostics.SelectedCandidateIndex;
     if selectedIndex >= 1 && selectedIndex <= numel(candidates)
         selected = candidates(selectedIndex);
         selectedSeedSource = selected.SeedSource;
@@ -164,7 +164,7 @@ if result.Success
         initialWait_s = time_s(firstMovingSegmentIndex) - time_s(1);
         startedImmediately = firstMovingSegmentIndex == 1;
     end
-    graphWaitDuration_s = result.SearchDiagnostics. ...
+    graphWaitDuration_s = diagnostics.Search. ...
         SpaceTimeVisibilityGraph.WaitDuration_s;
 end
 

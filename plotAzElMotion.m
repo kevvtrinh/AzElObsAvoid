@@ -1,9 +1,9 @@
-function handles = plotAzElMotion(result, optionOverrides)
+function handles = plotAzElMotion(result, diagnostics, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = plotAzElMotion()
-%   handles = plotAzElMotion(result)
-%   handles = plotAzElMotion(result, optionOverrides)
+%   handles = plotAzElMotion(result, diagnostics)
+%   handles = plotAzElMotion(result, diagnostics, optionOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Plot obstacle geometry, candidate routes, the selected motion,
@@ -11,7 +11,9 @@ function handles = plotAzElMotion(result, optionOverrides)
 %**************************************************************************
 % INPUTS
 %   - result (scalar planner-result struct)
-%       Output from planAzElMotion.
+%       Compact first output from planAzElMotion.
+%   - diagnostics (scalar planner-diagnostics struct)
+%       Optional second output from planAzElMotion or an intercept wrapper.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       FigureVisible, Title, ShowAnimation, FrameStride, Pause_s,
 %       ShowVisibilityGraphs, ShowSweptSurfaces, and display limits.
@@ -36,15 +38,26 @@ if nargin == 0
     handles = defaults;
     return;
 end
-if nargin < 2 || isempty(optionOverrides)
+if nargin < 2 || ~isstruct(diagnostics) || ~isscalar(diagnostics)
+    error("plotAzElMotion:InvalidDiagnostics", ...
+        "diagnostics must be the second planner output.");
+end
+if nargin < 3 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 options = resolvePlotOptions(defaults, optionOverrides);
-required = ["Success" "originalAzElData" "azElData" "candidateRoutes_deg" ...
-    "selectedRoute_deg" "timedSlopePath" "initialState" "goalState"];
+required = ["Success" "selectedRoute_deg" "initialState" "goalState"];
 if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, required))
     error("plotAzElMotion:InvalidResult", ...
         "result must be the scalar output from planAzElMotion.");
+end
+[plannerDiagnostics, targetTrack] = ...
+    plotDiagnosticViews(diagnostics);
+requiredDiagnostics = ["OriginalObstacleData" "ProtectedObstacleData" ...
+    "ObstacleField" "Search" "TimedPath"];
+if ~all(isfield(plannerDiagnostics, requiredDiagnostics))
+    error("plotAzElMotion:InvalidDiagnostics", ...
+        "diagnostics does not contain the required planner records.");
 end
 
 %% Section 1: Plot Workspace & Routes
@@ -53,28 +66,30 @@ workspaceFigure = figure("Visible", options.FigureVisible, ...
     "Name", options.Title);
 workspaceAxes = axes(workspaceFigure);
 hold(workspaceAxes, "on");
-plotObstacleHistory(workspaceAxes, result.originalAzElData, ...
+plotObstacleHistory(workspaceAxes, ...
+    plannerDiagnostics.OriginalObstacleData, ...
     [0.75 0.15 0.15], "-", "Original obstacle");
-plotObstacleHistory(workspaceAxes, result.azElData, ...
+plotObstacleHistory(workspaceAxes, ...
+    plannerDiagnostics.ProtectedObstacleData, ...
     [0.90 0.45 0.05], "--", "Protected obstacle");
-for routeIndex = 1:numel(result.candidateRoutes_deg)
-    route_deg = result.candidateRoutes_deg{routeIndex};
+candidateSeeds = plannerDiagnostics.Search.CandidateSeeds;
+for routeIndex = 1:numel(candidateSeeds)
+    route_deg = candidateSeeds(routeIndex).Route_deg;
     plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
         "Color", [0.75 0.75 0.75], "HandleVisibility", "off");
 end
 plot(workspaceAxes, result.selectedRoute_deg(:, 1), ...
     result.selectedRoute_deg(:, 2), "--", "Color", [0.15 0.35 0.8], ...
     "LineWidth", 1.2, "DisplayName", "Selected geometric route");
-timedPath = result.timedSlopePath;
+timedPath = plannerDiagnostics.TimedPath;
 if ~isempty(timedPath.position_deg)
     plot(workspaceAxes, timedPath.position_deg(:, 1), ...
         timedPath.position_deg(:, 2), "k-", "LineWidth", 2, ...
         "DisplayName", "Timed motion");
 end
-if isfield(result, "TargetTrackPosition_deg") && ...
-        ~isempty(result.TargetTrackPosition_deg)
-    plot(workspaceAxes, result.TargetTrackPosition_deg(:, 1), ...
-        result.TargetTrackPosition_deg(:, 2), "-.", ...
+if ~isempty(targetTrack.position_deg)
+    plot(workspaceAxes, targetTrack.position_deg(:, 1), ...
+        targetTrack.position_deg(:, 2), "-.", ...
         "Color", [0.65 0.10 0.65], "LineWidth", 1.4, ...
         "DisplayName", "Target track");
 end
@@ -96,7 +111,8 @@ legend(workspaceAxes, "Location", "best");
 
 visibilityGraphs = struct();
 if options.ShowVisibilityGraphs
-    visibilityGraphs = createVisibilityGraphInspector(result, options);
+    visibilityGraphs = createVisibilityGraphInspector( ...
+        plannerDiagnostics, options);
 end
 
 %% Section 3: Plot Kinematics
@@ -131,8 +147,13 @@ if options.ShowKinematics
         box(kinematicAxes(quantityIndex), "on");
     end
     xlabel(kinematicAxes(end), "Time (s)");
-    legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
-        "Location", "best");
+    hasPositionLines = ~isempty(timedPath.time_s) && ...
+        size(timedPath.position_deg, 2) == 2 && ...
+        any(isfinite(timedPath.position_deg), "all");
+    if hasPositionLines
+        legend(kinematicAxes(1), ["Azimuth" "Elevation"], ...
+            "Location", "best");
+    end
     title(layout, options.Title);
 end
 animation = struct();
@@ -149,15 +170,13 @@ if result.Success && options.ShowAnimation
         "MaximumDisplayedSlicesPerObstacle", ...
             options.MaximumDisplayedSlicesPerObstacle, ...
         "Title", options.Title + " animation");
-    if isfield(result, "TargetTrackTime_s") && ...
-            isfield(result, "TargetTrackPosition_deg")
-        animationOptions.TargetTime_s = result.TargetTrackTime_s;
-        animationOptions.TargetPosition_deg = ...
-            result.TargetTrackPosition_deg;
+    if ~isempty(targetTrack.time_s)
+        animationOptions.TargetTime_s = targetTrack.time_s;
+        animationOptions.TargetPosition_deg = targetTrack.position_deg;
         animationOptions.TargetLabel = "Moving target";
     end
     animation = animateAzElTimedSlopePath( ...
-        timedPath, result.obstacleField, animationOptions);
+        timedPath, plannerDiagnostics.ObstacleField, animationOptions);
 end
 handles = struct("WorkspaceFigure", workspaceFigure, ...
     "WorkspaceAxes", workspaceAxes, ...
@@ -210,13 +229,13 @@ validateattributes(options.MaximumDisplayedVisibilitySnapshots, ...
     {'numeric'}, {'scalar','integer','positive'});
 end
 
-function inspector = createVisibilityGraphInspector(result, options)
+function inspector = createVisibilityGraphInspector(diagnostics, options)
 % PURPOSE
 %   - Show retained visibility graphs in azimuth/elevation/time space.
 %   - Provide controls for stepping graphs or selecting the nearest graph
 %     to an arbitrary requested time without rerunning planning.
-graphs = visibilityGraphsFromResult(result);
-spaceTimeGraph = spaceTimeVisibilityGraphFromResult(result);
+graphs = diagnostics.Search.VisibilityGraphs;
+spaceTimeGraph = diagnostics.Search.SpaceTimeVisibilityGraph;
 figureHandle = figure( ...
     "Visible", options.FigureVisible, ...
     "Name", options.Title + " visibility graphs", ...
@@ -301,12 +320,13 @@ else
     set([previousButton nextButton slider], "Enable", "off");
 end
 
-drawVisibilityGraphOverview(overviewAxes, graphs, result.azElData, ...
+drawVisibilityGraphOverview(overviewAxes, graphs, ...
+    diagnostics.ProtectedObstacleData, ...
     options.MaximumDisplayedVisibilitySnapshots, options.Title);
 drawSpaceTimeVisibilityGraph(overviewAxes, spaceTimeGraph);
 state = struct( ...
     "Graphs", graphs, ...
-    "Obstacles", result.azElData, ...
+    "Obstacles", diagnostics.ProtectedObstacleData, ...
     "SnapshotAxes", snapshotAxes, ...
     "Slider", slider, ...
     "TimeEdit", timeEdit, ...
@@ -316,30 +336,19 @@ guidata(figureHandle, state);
 redrawVisibilityGraphSnapshot(figureHandle, 1, NaN);
 end
 
-function graphs = visibilityGraphsFromResult(result)
+function [plannerDiagnostics, targetTrack] = ...
+        plotDiagnosticViews(diagnostics)
 % PURPOSE
-%   - Read direct-planner or intercept-wrapper graph diagnostics.
-graphs = struct([]);
-if isfield(result, "PlannerSearchDiagnostics") && ...
-        isfield(result.PlannerSearchDiagnostics, "VisibilityGraphs")
-    graphs = result.PlannerSearchDiagnostics.VisibilityGraphs;
-elseif isfield(result, "SearchDiagnostics") && ...
-        isfield(result.SearchDiagnostics, "VisibilityGraphs")
-    graphs = result.SearchDiagnostics.VisibilityGraphs;
+%   - Select planner data and optional intercept target-track data.
+plannerDiagnostics = diagnostics;
+if isfield(diagnostics, "Planner")
+    plannerDiagnostics = diagnostics.Planner;
 end
-end
-
-function graph = spaceTimeVisibilityGraphFromResult(result)
-% PURPOSE
-%   - Read the direct-planner or intercept-wrapper space-time graph.
-graph = azElInternal.buildAzElSpaceTimeVisibilityGraph();
-if isfield(result, "PlannerSearchDiagnostics") && ...
-        isfield(result.PlannerSearchDiagnostics, ...
-        "SpaceTimeVisibilityGraph")
-    graph = result.PlannerSearchDiagnostics.SpaceTimeVisibilityGraph;
-elseif isfield(result, "SearchDiagnostics") && ...
-        isfield(result.SearchDiagnostics, "SpaceTimeVisibilityGraph")
-    graph = result.SearchDiagnostics.SpaceTimeVisibilityGraph;
+targetTrack = struct( ...
+    "time_s", zeros(0, 1), ...
+    "position_deg", zeros(0, 2));
+if isfield(diagnostics, "TargetTrack")
+    targetTrack = diagnostics.TargetTrack;
 end
 end
 

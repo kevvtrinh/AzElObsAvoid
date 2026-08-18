@@ -111,12 +111,13 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion(obstacles, initialState, goalState, limits, options);
+[result, diagnostics] = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 exampleValidation = validateAzElExampleResult( ...
-    result, "40-circle moving grid");
+    result, diagnostics, "40-circle moving grid");
 
 spacingTolerance_deg = 1e-12;
 equalColumnSpacing = all(abs(diff(columnAzimuth_deg) - ...
@@ -157,7 +158,7 @@ end
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
     result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+        result, diagnostics, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata
