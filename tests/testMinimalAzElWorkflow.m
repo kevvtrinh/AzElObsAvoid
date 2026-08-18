@@ -1350,6 +1350,24 @@ changedDuplicate = makeAzElObstacleData( ...
 changedDuplicateField = buildAzElTimeObstacleField(changedDuplicate);
 testCase.verifyFalse( ...
     changedDuplicateField.Obstacles.TopologyMatchesNext(1));
+
+firstShiftedAzimuth_deg = [0; 0; 2; 2; 0];
+firstShiftedElevation_deg = [0; 0; 0; 2; 2];
+lastShiftedAzimuth_deg = [10; 12; 12; 12; 10];
+lastShiftedElevation_deg = [0; 0; 0; 2; 2];
+shiftedDuplicate = makeAzElObstacleData( ...
+    "shifted duplicate", [0; 10], ...
+    {firstShiftedAzimuth_deg; lastShiftedAzimuth_deg}, ...
+    {firstShiftedElevation_deg; lastShiftedElevation_deg}, 0);
+shiftedDuplicateField = buildAzElTimeObstacleField(shiftedDuplicate);
+testCase.verifyFalse( ...
+    shiftedDuplicateField.Obstacles.TopologyMatchesNext(1));
+
+% At the interval midpoint, changed topology selects the later discrete
+% source shape. It must not interpolate unrelated retained-edge rows.
+midpointOccupied = queryAzElTimeObstacle( ...
+    shiftedDuplicateField, [6; 11], [1; 1], [5; 5]);
+testCase.verifyEqual(midpointOccupied, [false; true]);
 end
 
 function testAsynchronousObstacleTimesShareVisibilityGraph(testCase)

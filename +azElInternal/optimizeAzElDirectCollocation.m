@@ -223,6 +223,11 @@ end
 collisionValidationPerformed = true;
 initialGuessCollisionFree = initialGuessCollisionAssessment.CollisionFree;
 candidate.InitialGuessCollisionFree = initialGuessCollisionFree;
+if ~initialGuessCollisionFree
+    candidate.InitialGuessMessage = candidate.InitialGuessMessage + ...
+        " The warm start is not collision-free; the nonlinear " + ...
+        "corridor and mesh stages must resolve it.";
+end
 candidate.CollisionValidationPerformed = true;
 candidate.CollisionFree = initialGuessCollisionFree;
 candidate.CollisionValidationPassed = initialGuessCollisionFree;
@@ -1656,28 +1661,12 @@ for durationIndex = 1:numel(durationCandidates_s)
         string(durationCandidates_s(durationIndex)) + ...
         " seconds: " + lastFitMessage;
     if trialIsFeasible
-        trialTrajectory = reconstructTrajectory( ...
-            trialGuess, meshTau, initialState.time_s, ...
-            options.SampleTime_s, ...
-            options.ObstacleConstraintTolerance_deg);
-        [~, ~, trialCollisionAssessment] = assessTrajectoryCollision( ...
-            obstacleField, trialTrajectory, options);
-        if candidateTimeBudgetReached(candidateTimer, remainingTime_s)
-            timeBudgetReached = true;
-            message = "The initial-guess time budget expired during " + ...
-                "continuous collision validation.";
-            return;
-        end
         guess = trialGuess;
         isFeasible = true;
         failureReason = "";
         message = "A bounded HS-3-consistent initial guess was found " + ...
             "after " + string(evaluatedDurationCount) + ...
             " duration trials.";
-        if ~trialCollisionAssessment.CollisionFree
-            message = message + " The warm start is not collision-free; " + ...
-                "the nonlinear corridor and mesh stages must resolve it.";
-        end
         return;
     end
 end

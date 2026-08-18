@@ -295,12 +295,28 @@ end
 % vertex-pair edge pattern, so this batching cannot pair unrelated edges.
 hasCachedTopology = isfield(packedObstacle, "TopologyMatchesNext") && ...
     numel(packedObstacle.TopologyMatchesNext) >= lowerSliceIndex;
-if hasCachedTopology && ...
-        packedObstacle.TopologyMatchesNext(lowerSliceIndex)
-    firstEdgeSet = packedSliceEdges(packedObstacle, lowerSliceIndex);
-    lastEdgeSet = packedSliceEdges(packedObstacle, upperSliceIndex);
-    edgeSet = (1 - fraction) * firstEdgeSet + fraction * lastEdgeSet;
-    topologyMatches = true;
+if hasCachedTopology
+    if packedObstacle.TopologyMatchesNext(lowerSliceIndex)
+        firstEdgeSet = packedSliceEdges(packedObstacle, lowerSliceIndex);
+        lastEdgeSet = packedSliceEdges(packedObstacle, upperSliceIndex);
+        edgeSet = (1 - fraction) * firstEdgeSet + ...
+            fraction * lastEdgeSet;
+        topologyMatches = true;
+    else
+        % The packer compares retained edge identities, including changes
+        % caused by duplicate vertices. Re-inferring correspondence from
+        % vertex-array size can pair unrelated edges and repeats work on
+        % every collision query. A topology change therefore uses the
+        % documented nearest discrete source geometry.
+        if fraction < 0.5
+            edgeSet = packedSliceEdges( ...
+                packedObstacle, lowerSliceIndex);
+        else
+            edgeSet = packedSliceEdges( ...
+                packedObstacle, upperSliceIndex);
+        end
+        topologyMatches = false;
+    end
     return;
 end
 [firstVertices_deg, firstFinite] = ...
