@@ -1,14 +1,14 @@
-function [seeds, diagnostics, reduction] = buildAzElRlHybridSeeds( ...
+function [seeds, diagnostics, reduction] = buildAzElRlPolicySeeds( ...
         seeds, obstacleField, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [seeds, diagnostics, reduction] = ...
-%       azElInternal.buildAzElRlHybridSeeds( ...
+%       azElInternal.buildAzElRlPolicySeeds( ...
 %       seeds, obstacleField, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Use the required RL agent to shape every spatial topology seed.
-%   - Preserve a timed SIPP law for HS-3 initialization.
+%   - Preserve a timed SIPP law for direct policy-motion generation.
 %**************************************************************************
 % INPUTS
 %   - seeds (N-by-1 structure array)
@@ -22,7 +22,7 @@ function [seeds, diagnostics, reduction] = buildAzElRlHybridSeeds( ...
 %**************************************************************************
 % OUTPUTS
 %   - seeds (M-by-1 structure array)
-%       RL-shaped HS-3 seeds with preserved time-law fields.
+%       RL-shaped route seeds with preserved time-law fields.
 %   - diagnostics (N-by-1 structure array)
 %       Policy status, corner actions, and before/after route metrics.
 %   - reduction (scalar struct)
@@ -38,29 +38,31 @@ requiredSeedFields = ["Source" "Route_deg" "RouteTime_s" ...
     "RouteCost_deg"];
 if ~isstruct(seeds) || ...
         (~isempty(seeds) && ~all(isfield(seeds, requiredSeedFields)))
-    error("buildAzElRlHybridSeeds:InvalidSeeds", ...
+    error("buildAzElRlPolicySeeds:InvalidSeeds", ...
         "seeds must be a structure array with the required route fields.");
 end
 if ~isstruct(obstacleField) || ~isscalar(obstacleField) || ...
         ~isfield(obstacleField, "Obstacles")
-    error("buildAzElRlHybridSeeds:InvalidObstacleField", ...
+    error("buildAzElRlPolicySeeds:InvalidObstacleField", ...
         "obstacleField must be one scalar packed obstacle field.");
 end
 if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, ...
         ["maxVelocity_deg_s" "maxAcceleration_deg_s2" ...
         "maxJerk_deg_s3"]))
-    error("buildAzElRlHybridSeeds:InvalidLimits", ...
+    error("buildAzElRlPolicySeeds:InvalidLimits", ...
         "limits must contain finite velocity, acceleration, and jerk limits.");
 end
 if ~isstruct(options) || ~isscalar(options) || ~all(isfield(options, ...
         ["RpAgentFile" "RpTurnRadius_deg" ...
-        "MaximumDirectCollocationSeeds"]))
-    error("buildAzElRlHybridSeeds:InvalidOptions", ...
+        "MaximumRlPolicySeeds"]))
+    error("buildAzElRlPolicySeeds:InvalidOptions", ...
         "options must contain the RP seed controls.");
 end
 agent = loadRequiredAgent(options.RpAgentFile);
+isObstacleGeometryTimeInvariant = ...
+    azElInternal.packedAzElGeometryIsTimeInvariant(obstacleField);
 
-%% Section 2: Evaluate The Agent And Add Each Rounded Warm Start
+%% Section 2: Evaluate The Agent And Build Each Rounded Route
 
 inputSeeds = seeds(diverseSeedOrder(seeds));
 if isempty(inputSeeds)
@@ -77,13 +79,14 @@ for inputSeedIndex = 1:numel(inputSeeds)
         inputSeeds(inputSeedIndex).RouteTime_s(:));
     [timeFraction, routeProgress, routeDuration_s] = timedSeedLaw( ...
         originalRoute_deg, originalRouteTime_s);
-    [rlRoute_deg, calibratedRadiusScale, rawRadiusScale, ...
-        cornerStatus] = roundRouteWithAgent( ...
-        originalRoute_deg, agent, limits, options);
-    [rlRoute_deg, routeScale] = projectRouteToClearSeed( ...
+    [rlRoute_deg, radiusScale, cornerStatus] = roundRouteWithAgent( ...
+        originalRoute_deg, agent, limits, options, ...
+        isObstacleGeometryTimeInvariant);
+    [rlRoute_deg, routeScale] = reduceRouteForClearance( ...
         originalRoute_deg, rlRoute_deg, obstacleField, ...
-        inputSeeds(inputSeedIndex).SnapshotTime_s);
-    radiusScale = routeScale * calibratedRadiusScale;
+        inputSeeds(inputSeedIndex).SnapshotTime_s, timeFraction, ...
+        routeProgress, originalRouteTime_s);
+    radiusScale = routeScale * radiusScale;
 
     agentSeed = addRpFields(inputSeeds(inputSeedIndex));
     agentSeed.RpSeedVariant = "agentDirect";
@@ -108,9 +111,6 @@ for inputSeedIndex = 1:numel(inputSeeds)
     commonRecord.RlSeedRouteLength_deg = routeLength(rlRoute_deg);
     commonRecord.CornerCount = numel(radiusScale);
     commonRecord.EvaluatedCornerCount = numel(radiusScale);
-    commonRecord.RawRadiusScale = rawRadiusScale;
-    commonRecord.CalibratedRadiusScale = calibratedRadiusScale;
-    commonRecord.ClearanceProjectionScale = routeScale;
     commonRecord.RadiusScale = radiusScale;
     commonRecord.CornerStatus = cornerStatus;
     commonRecord.TimedSeedLawPreserved = ~isempty(timeFraction);
@@ -132,7 +132,7 @@ end
 generatedSeeds = agentSeeds;
 generatedDiagnostics = agentDiagnostics;
 maximumSeedCount = min( ...
-    numel(generatedSeeds), options.MaximumDirectCollocationSeeds);
+    numel(generatedSeeds), options.MaximumRlPolicySeeds);
 seeds = generatedSeeds(1:maximumSeedCount);
 diagnostics = generatedDiagnostics(1:maximumSeedCount);
 for seedIndex = 1:numel(seeds)
@@ -156,8 +156,9 @@ remainingIndex = setdiff((1:numel(seeds)).', firstIndex, "stable");
 order = [firstIndex; remainingIndex];
 end
 
-function [clearRoute_deg, appliedScale] = projectRouteToClearSeed( ...
-        originalRoute_deg, agentRoute_deg, obstacleField, snapshotTime_s)
+function [clearRoute_deg, appliedScale] = reduceRouteForClearance( ...
+        originalRoute_deg, agentRoute_deg, obstacleField, snapshotTime_s, ...
+        seedTimeFraction, seedProgress, seedTime_s)
 % PURPOSE
 %   - Reduce the RL displacement until the spatial seed is collision-free.
 if obstacleField.ObstacleCount == 0
@@ -177,8 +178,16 @@ for scaleIndex = 1:numel(scaleCandidates)
     appliedScale = scaleCandidates(scaleIndex);
     trialRoute_deg = originalCommon_deg + appliedScale * ...
         (agentCommon_deg - originalCommon_deg);
+    if isempty(seedTimeFraction)
+        collisionTime_s = snapshotTime_s;
+        collisionRoute_deg = trialRoute_deg;
+    else
+        [collisionTime_s, collisionRoute_deg] = timedClearanceRoute( ...
+            commonProgress, trialRoute_deg, seedTimeFraction, ...
+            seedProgress, seedTime_s);
+    end
     collisionMask = queryAzElTimedPathCollision( ...
-        obstacleField, snapshotTime_s, trialRoute_deg, struct( ...
+        obstacleField, collisionTime_s, collisionRoute_deg, struct( ...
         "BoundaryIsOccupied", false, "StopAtFirstCollision", true));
     if ~any(collisionMask)
         clearRoute_deg = trialRoute_deg;
@@ -187,6 +196,35 @@ for scaleIndex = 1:numel(scaleCandidates)
 end
 clearRoute_deg = originalCommon_deg;
 appliedScale = 0;
+end
+
+function [time_s, route_deg] = timedClearanceRoute( ...
+        commonProgress, commonRoute_deg, timeFraction, progress, seedTime_s)
+% PURPOSE
+%   - Evaluate an RL route with the complete SIPP phase and wait history.
+[uniqueProgress, lastIndex] = unique(progress, "last");
+commonTimeFraction = interp1(uniqueProgress, ...
+    timeFraction(lastIndex), commonProgress, "linear", "extrap");
+route_deg = commonRoute_deg;
+combinedTimeFraction = commonTimeFraction;
+waitIntervalMask = diff(progress) <= 1e-10;
+if any(waitIntervalMask)
+    waitProgress = progress(1:end - 1);
+    waitProgress = waitProgress(waitIntervalMask);
+    waitPosition_deg = interp1(commonProgress, commonRoute_deg, ...
+        waitProgress, "linear", "extrap");
+    waitStartTimeFraction = timeFraction(1:end - 1);
+    route_deg = [route_deg; waitPosition_deg];
+    combinedTimeFraction = [combinedTimeFraction; ...
+        waitStartTimeFraction(waitIntervalMask)];
+end
+[combinedTimeFraction, order] = sort(combinedTimeFraction);
+route_deg = route_deg(order, :);
+[combinedTimeFraction, uniqueIndex] = unique( ...
+    combinedTimeFraction, "last");
+route_deg = route_deg(uniqueIndex, :);
+duration_s = seedTime_s(end) - seedTime_s(1);
+time_s = seedTime_s(1) + duration_s * combinedTimeFraction;
 end
 
 function [progress, route_deg] = routeProgress(route_deg)
@@ -206,7 +244,7 @@ function agent = loadRequiredAgent(agentFile)
 persistent cachedAgent cachedAgentFile
 agentFile = string(agentFile);
 if ~isfile(agentFile)
-    error("buildAzElRlHybridSeeds:AgentNotFound", ...
+    error("buildAzElRlPolicySeeds:AgentNotFound", ...
         "RpAgentFile does not exist: %s", agentFile);
 end
 if isempty(cachedAgent) || isempty(cachedAgentFile) || ...
@@ -217,7 +255,7 @@ if isempty(cachedAgent) || isempty(cachedAgentFile) || ...
         isfield(agentData.metadata, "Format") && ...
         string(agentData.metadata.Format) == "AzElRpRetimerAgent";
     if ~validAgent
-        error("buildAzElRlHybridSeeds:InvalidAgent", ...
+        error("buildAzElRlPolicySeeds:InvalidAgent", ...
             "RpAgentFile must contain an AzElRpRetimerAgent model.");
     end
     cachedAgent = agentData.agent;
@@ -227,23 +265,23 @@ end
 agent = cachedAgent;
 end
 
-function [roundedRoute_deg, radiusScale, rawRadiusScale, cornerStatus] = ...
-        roundRouteWithAgent(route_deg, agent, limits, options)
+function [roundedRoute_deg, radiusScale, cornerStatus] = ...
+        roundRouteWithAgent(route_deg, agent, limits, options, ...
+        isObstacleGeometryTimeInvariant)
 % PURPOSE
-%   - Convert one polyline to an RL-rounded G3 topology seed.
+%   - Convert one polyline to a smooth RL policy route.
 validateattributes(route_deg, {'numeric'}, ...
     {'real', 'finite', '2d', 'ncols', 2, 'nonempty'});
 routeStep_deg = diff(route_deg, 1, 1);
 route_deg = route_deg([true; hypot( ...
     routeStep_deg(:, 1), routeStep_deg(:, 2)) > 1e-10], :);
 if size(route_deg, 1) < 2
-    error("buildAzElRlHybridSeeds:ZeroLengthRoute", ...
+    error("buildAzElRlPolicySeeds:ZeroLengthRoute", ...
         "Each seed route must contain two distinct positions.");
 end
 
 cornerCount = max(0, size(route_deg, 1) - 2);
 radiusScale = zeros(cornerCount, 1);
-rawRadiusScale = zeros(cornerCount, 1);
 cornerStatus = strings(cornerCount, 1);
 entryPosition_deg = route_deg(2:end - 1, :);
 exitPosition_deg = entryPosition_deg;
@@ -278,14 +316,13 @@ for cornerIndex = 1:cornerCount
         {'real', 'finite', 'scalar'});
     normalizedAction = 0.5 * ...
         (min(1, max(-1, double(action))) + 1);
-    rawRadiusScale(cornerIndex) = normalizedAction;
-    % Obstacle clearance is enforced after inference. A near-zero proposal
-    % gives HS-3 a sharp corner and removes the smooth warm-start benefit.
-    % Keep the learned ordering inside the smoother half of the safe search
-    % range. The later collision projection can still reduce it to zero.
-    minimumHs3RadiusFraction = 0.5;
-    radiusScale(cornerIndex) = minimumHs3RadiusFraction + ...
-        (1 - minimumHs3RadiusFraction) * normalizedAction;
+    % Very small curve intervals make direct polynomial reconstruction
+    % poorly conditioned. Preserve the learned action ordering in the
+    % smoother half of the safe geometric range. Clearance reduction below
+    % can still return the policy route to the original topology route.
+    minimumRadiusFraction = 0.5;
+    radiusScale(cornerIndex) = minimumRadiusFraction + ...
+        (1 - minimumRadiusFraction) * normalizedAction;
 
     halfAngleCosine = cos(angle_rad / 2);
     turnCross = incomingDirection(1) * outgoingDirection(2) - ...
@@ -306,16 +343,21 @@ for cornerIndex = 1:cornerCount
         continue;
     end
     trim_deg = radius_deg * tangentScale;
+    outwardDirection = incomingDirection - outgoingDirection;
+    outwardDirection = outwardDirection / norm(outwardDirection);
+    outwardDisplacement_deg = double( ...
+        ~isObstacleGeometryTimeInvariant) * trim_deg * outwardDirection;
     controlPoints_deg = [ ...
         corner_deg - trim_deg * incomingDirection; ...
         corner_deg - 0.5 * trim_deg * incomingDirection; ...
-        corner_deg; corner_deg; ...
+        corner_deg + outwardDisplacement_deg; ...
+        corner_deg + outwardDisplacement_deg; ...
         corner_deg + 0.5 * trim_deg * outgoingDirection; ...
         corner_deg + trim_deg * outgoingDirection];
     entryPosition_deg(cornerIndex, :) = controlPoints_deg(1, :);
     exitPosition_deg(cornerIndex, :) = controlPoints_deg(end, :);
     controlPointsByCorner_deg{cornerIndex} = controlPoints_deg;
-    cornerStatus(cornerIndex) = "agentSelectedG3Seed";
+    cornerStatus(cornerIndex) = "agentSelectedSmoothRoute";
 end
 
 routeParts = cell(2 * cornerCount + 1, 1);
@@ -328,8 +370,8 @@ for cornerIndex = 1:cornerCount
             exitPosition_deg(cornerIndex, :);
         continue;
     end
-    % Entry, midpoint, and exit preserve the agent's turn decision without
-    % displacing the topology knots used by the HS-3 mesh.
+    % Entry, midpoint, and exit preserve the agent's turn decision while
+    % keeping the policy route compact.
     sampleCount = 3;
     parameter = linspace(0, 1, sampleCount).';
     curve_deg = evaluateBernstein(controlPoints_deg, parameter);
@@ -426,9 +468,6 @@ record = struct( ...
     "RlSeedRouteLength_deg", NaN, ...
     "CornerCount", 0, ...
     "EvaluatedCornerCount", 0, ...
-    "RawRadiusScale", zeros(0, 1), ...
-    "CalibratedRadiusScale", zeros(0, 1), ...
-    "ClearanceProjectionScale", NaN, ...
     "RadiusScale", zeros(0, 1), ...
     "CornerStatus", strings(0, 1), ...
     "TimedSeedLawPreserved", false);

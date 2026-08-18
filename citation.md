@@ -23,16 +23,6 @@
   Artificial Intelligence*, 37(10), 12330-12337.
   https://doi.org/10.1609/aaai.v37i10.26453
 
-## Direct Collocation
-
-- Kelly, M. (2017). "An Introduction to Trajectory Optimization: How to Do
-  Your Own Direct Collocation." *SIAM Review*, 59(4), 849-904.
-  https://doi.org/10.1137/16M1062569
-
-- Moreno-Martin, S., Ros, L., and Celaya, E. (2024). "Collocation Methods for
-  Second and Higher Order Systems." *Autonomous Robots*, 48, Article 2.
-  https://doi.org/10.1007/s10514-023-10155-z
-
 ## Continuous Collision Constraints
 
 - Zhang, D., Liang, C., Gao, X., Wu, K., and Pan, Z. (2024). "Provably

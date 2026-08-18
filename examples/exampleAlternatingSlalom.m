@@ -47,7 +47,7 @@ validateattributes(slalomCount, {'numeric'}, ...
 
 %% Section 2: Create Obstacles
 
-% Use one conservative horizon for all direct-collocation seed solves.
+% Use one conservative horizon for all RL projection seed solves.
 missionEndTime_s = 120 + 60 * slalomCount;
 safetyMargin_deg = 0.25;
 time_s = [0; missionEndTime_s];
