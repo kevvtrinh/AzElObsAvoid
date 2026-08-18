@@ -116,6 +116,12 @@ options.DirectSeedOnly = false;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 verifyGreaterThanOrEqual(testCase, numel(result.Seeds), 3);
+verifyTrue(testCase, any([result.Seeds.Source] == "visibilityGraph"));
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.Grid.GraphType, ...
+    "timeExpandedVisibilityGraph");
+verifyGreaterThan(testCase, ...
+    result.SearchDiagnostics.Grid.VisibilityEdgeCount, 0);
 minimumElevations_deg = zeros(numel(result.Seeds), 1);
 maximumElevations_deg = zeros(numel(result.Seeds), 1);
 for seedIndex = 1:numel(result.Seeds)
@@ -206,6 +212,10 @@ options.MaximumSeedCount = 5;
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyGreaterThan(testCase, diagnostics.ExpandedCount, 0);
+verifyEqual(testCase, diagnostics.GraphType, ...
+    "timeExpandedVisibilityGraph");
+verifyGreaterThan(testCase, diagnostics.TemporalLayerCount, 1);
+verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
 end
 
 function testWaitingSeedDoesNotImposeCornerState(testCase)

@@ -11,7 +11,7 @@ The pipeline is:
 
 ```text
 canonical protected obstacles
-    -> at most five deterministic topology seeds by default
+    -> at most five deterministic visibility seeds by default
     -> separated third-order Hermite-Simpson optimization
     -> independent continuous validation
     -> earliest validated local solution
@@ -111,8 +111,10 @@ diagnostics.
 
 - HS3 is a local nonlinear optimizer. A finite seed set can miss a feasible
   topology.
-- The coarse graph supplies initialization only. It does not certify dynamics
-  or global optimality.
+- The spatial visibility graph uses protected boundary candidates. Moving
+  obstacles add at most 17 time layers with straight motion and wait edges.
+  This graph supplies initialization only. It does not certify dynamics or
+  global optimality.
 - Adjacent obstacle slices with different topology use a conservative union.
   Continuous validation fails an interval when its motion bound cannot be
   resolved safely.

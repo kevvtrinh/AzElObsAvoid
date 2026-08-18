@@ -92,7 +92,7 @@ if options.ShowWorkspace
         if ~isempty(explored_deg)
             scatter(workspaceAxes, explored_deg(:, 1), explored_deg(:, 2), ...
                 8, [0.75 0.75 0.75], "filled", ...
-                "DisplayName", "Explored grid nodes");
+                "DisplayName", "Explored visibility nodes");
         end
     end
     for seedIndex = 1:numel(result.Seeds)
