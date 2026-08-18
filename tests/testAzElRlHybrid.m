@@ -1,10 +1,10 @@
-function tests = testAzElRpHs3
+function tests = testAzElRlHybrid
 %% Section 0: Header & Readme
 % SYNTAX
-%   results = runtests("tests/testAzElRpHs3.m")
+%   results = runtests("tests/testAzElRlHybrid.m")
 %**************************************************************************
 % PURPOSE
-%   - Verify required RL seed generation and the single HS-3 motion method.
+%   - Verify required RL seed generation and the convex hybrid method.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -56,24 +56,26 @@ limits = motionLimits();
 options = planAzElMotion();
 
 [firstSeed, firstDiagnostics] = ...
-    azElInternal.buildAzElRpHs3Seeds(seed, limits, options);
+    azElInternal.buildAzElRlHybridSeeds( ...
+    seed, buildAzElTimeObstacleField([]), limits, options);
 [secondSeed, secondDiagnostics] = ...
-    azElInternal.buildAzElRpHs3Seeds(seed, limits, options);
+    azElInternal.buildAzElRlHybridSeeds( ...
+    seed, buildAzElTimeObstacleField([]), limits, options);
 
-testCase.verifyEqual(firstDiagnostics(2).PolicyStatus, ...
+testCase.verifyEqual(firstDiagnostics(1).PolicyStatus, ...
     "proposalEvaluated");
 testCase.verifyTrue(all([firstDiagnostics.AgentLoaded]));
-testCase.verifyEqual(firstDiagnostics(2).CornerCount, 1);
-testCase.verifyEqual(firstDiagnostics(2).EvaluatedCornerCount, 1);
-testCase.verifyEqual(firstDiagnostics(2).SeedVariant, "agentRounded");
-testCase.verifyTrue(firstDiagnostics(2).AgentRouteApplied);
-testCase.verifyGreaterThan(size(firstSeed(2).Route_deg, 1), 3);
-testCase.verifyEqual(firstSeed(2).Route_deg([1 end], :), ...
+testCase.verifyEqual(firstDiagnostics(1).CornerCount, 1);
+testCase.verifyEqual(firstDiagnostics(1).EvaluatedCornerCount, 1);
+testCase.verifyEqual(firstDiagnostics(1).SeedVariant, "agentRounded");
+testCase.verifyTrue(firstDiagnostics(1).AgentRouteApplied);
+testCase.verifyGreaterThan(size(firstSeed(1).Route_deg, 1), 3);
+testCase.verifyEqual(firstSeed(1).Route_deg([1 end], :), ...
     seed.Route_deg([1 end], :), "AbsTol", 0);
-testCase.verifyEqual(firstSeed(2).Route_deg, secondSeed(2).Route_deg, ...
+testCase.verifyEqual(firstSeed(1).Route_deg, secondSeed(1).Route_deg, ...
     "AbsTol", 0);
-testCase.verifyEqual(firstDiagnostics(2).RadiusScale, ...
-    secondDiagnostics(2).RadiusScale, "AbsTol", 0);
+testCase.verifyEqual(firstDiagnostics(1).RadiusScale, ...
+    secondDiagnostics(1).RadiusScale, "AbsTol", 0);
 end
 
 function testTimedSippLawSurvivesRlRounding(testCase)
@@ -84,15 +86,16 @@ limits = motionLimits();
 options = planAzElMotion();
 
 [roundedSeed, diagnostics] = ...
-    azElInternal.buildAzElRpHs3Seeds(seed, limits, options);
+    azElInternal.buildAzElRlHybridSeeds( ...
+    seed, buildAzElTimeObstacleField([]), limits, options);
 
-testCase.verifyTrue(diagnostics(2).TimedSeedLawPreserved);
-testCase.verifyEqual(roundedSeed(2).RpSeedRouteTimeFraction, ...
+testCase.verifyTrue(diagnostics(1).TimedSeedLawPreserved);
+testCase.verifyEqual(roundedSeed(1).RpSeedRouteTimeFraction, ...
     [0; 0.25; 5 / 12; 1], "AbsTol", 1e-12);
-testCase.verifyEqual(roundedSeed(2).RpSeedRouteProgress, ...
+testCase.verifyEqual(roundedSeed(1).RpSeedRouteProgress, ...
     [0; 0.5; 0.5; 1], "AbsTol", 1e-12);
-testCase.verifyEqual(roundedSeed(2).RpSeedRouteDuration_s, 12);
-testCase.verifyEmpty(roundedSeed(2).RouteTime_s);
+testCase.verifyEqual(roundedSeed(1).RpSeedRouteDuration_s, 12);
+testCase.verifyEmpty(roundedSeed(1).RouteTime_s);
 end
 
 function testMissingAgentFailsWithoutFallback(testCase)
@@ -103,21 +106,20 @@ options = planAzElMotion();
 options.RpAgentFile = fullfile(tempdir, ...
     "missing-az-el-rp-agent.mat");
 
-testCase.verifyError(@() azElInternal.buildAzElRpHs3Seeds( ...
-    seed, motionLimits(), options), ...
-    "buildAzElRpHs3Seeds:AgentNotFound");
+testCase.verifyError(@() azElInternal.buildAzElRlHybridSeeds( ...
+    seed, buildAzElTimeObstacleField([]), motionLimits(), options), ...
+    "buildAzElRlHybridSeeds:AgentNotFound");
 end
 
-function testDirectPlannerReportsRlSeededHs3(testCase)
+function testDirectPlannerReportsRlConvexHybrid(testCase)
 % PURPOSE
 %   - Exercise the maintained planner method without an obstacle detour.
 initialState = stateRecord(0, [0 0]);
 goalState = stateRecord(20, [2 1]);
 options = planAzElMotion();
-options.MaximumDirectCollocationSeeds = 1;
-options.InitialCollocationSegmentCount = 4;
-options.MaximumCollocationSegmentCount = 4;
-options.MaximumMeshRefinementPasses = 0;
+options.MaximumRlProjectionSeeds = 1;
+options.ProjectionSegmentCount = 32;
+options.UseSpaceTimeVisibilityGraph = false;
 options.MaximumPlanningTime_s = 30;
 options.UseParallel = "off";
 
@@ -126,7 +128,7 @@ result = planAzElMotion( ...
 
 testCase.verifyTrue(result.Success, result.Message);
 testCase.verifyEqual(result.timedSlopePath.RetimerType, ...
-    "rlSeededHs3");
+    "rlConvexHybrid");
 testCase.verifyEqual(result.SearchDiagnostics.RpSeedMethod, ...
     "requiredRlCornerPolicy");
 testCase.verifyTrue(all([result.SearchDiagnostics. ...
