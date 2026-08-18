@@ -325,6 +325,15 @@ frameIndices = unique([ ...
     (1:options.FrameStride:numel(time_s)).'; numel(time_s)]);
 obstacle2DHandles = gobjects(0, 1);
 for frameCursor = 1:numel(frameIndices)
+    animatedHandles = [trail3D trail2D current3D current2D ...
+        slopeArrow3D velocityArrow2D];
+    if hasTarget
+        animatedHandles = [animatedHandles targetTrail3D ...
+            targetTrail2D targetCurrent3D targetCurrent2D]; %#ok<AGROW>
+    end
+    if ~isgraphics(figureHandle) || ~all(isgraphics(animatedHandles))
+        break;
+    end
     frameIndex = frameIndices(frameCursor);
     currentTime_s = time_s(frameIndex);
     currentPosition_deg = position_deg(frameIndex, :);

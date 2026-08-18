@@ -13,6 +13,7 @@ function [smoothPath, timedPath] = retimeAzElSpatialPath( ...
 % PURPOSE
 %   - Smooth one geometric route and construct its certified spatial
 %     acceleration- or jerk-constrained timed trajectory.
+%   - Use the Debrouwere sequential-convex formulation for finite jerk.
 %**************************************************************************
 % INPUTS
 %   - route_deg (N-by-2 numeric)
@@ -70,27 +71,8 @@ end
 % --- Geometric Smoothing And Path Sampling ------------------------------
 function smoothPath = smoothRoute(route_deg, obstacleField, ...
         collisionTime_s, options)
-%% Section 0: Header & Readme
-% SYNTAX
-%   smoothPath = smoothRoute(route_deg, obstacleField, ...
-%       collisionTime_s, options)
-%**************************************************************************
 % PURPOSE
 %   - Replace every resolvable polyline turn with a symmetric G3 blend.
-%**************************************************************************
-% INPUTS
-%   - route_deg (N-by-2 numeric), obstacleField (packed obstacle struct)
-%       Candidate polyline and the protected collision geometry.
-%   - collisionTime_s (scalar), options (scalar struct)
-%       Geometry snapshot time and resolved smoothing options.
-%**************************************************************************
-% OUTPUTS
-%   - smoothPath (scalar struct)
-%       Ordered line/quintic primitives, samples, stops, and diagnostics.
-%**************************************************************************
-% UNITS
-%   - Positions and arc lengths are degrees; time is seconds.
-%**************************************************************************
 
 % --- Normalize the polyline --------------------------------------------
 validateattributes(route_deg, {'numeric'}, {'real','finite','2d','ncols',2});
@@ -286,24 +268,8 @@ smoothPath = orderfields(smoothPath, smoothPathTemplate(route_deg));
 end
 
 function primitive = quinticLookup(controlPoints_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   primitive = quinticLookup(controlPoints_deg)
-%**************************************************************************
 % PURPOSE
 %   - Build one monotone parameter-to-arc-length lookup.
-%**************************************************************************
-% INPUTS
-%   - controlPoints_deg (6-by-2 numeric)
-%       Regular quintic Bezier control polygon.
-%**************************************************************************
-% OUTPUTS
-%   - primitive (scalar struct)
-%       Quintic geometry and its parameter/arc-length lookup arrays.
-%**************************************************************************
-% UNITS
-%   - Positions and arc lengths are degrees; parameter is dimensionless.
-%**************************************************************************
 controlLength_deg = sum(vecnorm(diff(controlPoints_deg), 2, 2));
 parameterGrid = linspace(0, 1, max(100, ceil(controlLength_deg / 0.004)) + 1).';
 [~, firstDerivative] = evaluateQuintic(controlPoints_deg, parameterGrid);
@@ -322,25 +288,8 @@ end
 
 function [position_deg, firstDerivative, secondDerivative, ...
         thirdDerivative] = evaluateQuintic(controlPoints_deg, parameter)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [position_deg, firstDerivative, secondDerivative, thirdDerivative] = ...
-%       evaluateQuintic(controlPoints_deg, parameter)
-%**************************************************************************
 % PURPOSE
 %   - Evaluate a quintic Bezier and its first three parameter derivatives.
-%**************************************************************************
-% INPUTS
-%   - controlPoints_deg (6-by-2), parameter (numeric vector)
-%       Bezier control polygon and dimensionless evaluation parameters.
-%**************************************************************************
-% OUTPUTS
-%   - position_deg, firstDerivative, secondDerivative, thirdDerivative
-%       N-by-2 position and parameter-derivative arrays.
-%**************************************************************************
-% UNITS
-%   - Position and parameter derivatives are degree-based.
-%**************************************************************************
 parameter = double(parameter(:));
 oneMinus = 1 - parameter;
 position_deg = [oneMinus.^5, 5 * oneMinus.^4 .* parameter, 10 * oneMinus.^3 .* parameter.^2, ...
@@ -357,27 +306,8 @@ end
 
 function [primitives, endS_deg] = appendLine(primitives, template, ...
         start_deg, goal_deg, startS_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [primitives, endS_deg] = appendLine(primitives, template, ...
-%       start_deg, goal_deg, startS_deg)
-%**************************************************************************
 % PURPOSE
 %   - Append one nonzero straight primitive with exact arc metadata.
-%**************************************************************************
-% INPUTS
-%   - primitives (structure array), template (scalar struct)
-%       Existing path primitives and the stable primitive schema.
-%   - start_deg, goal_deg (1-by-2), startS_deg (scalar)
-%       Line endpoints and starting cumulative arc length.
-%**************************************************************************
-% OUTPUTS
-%   - primitives (structure array), endS_deg (scalar)
-%       Updated primitive sequence and cumulative arc length.
-%**************************************************************************
-% UNITS
-%   - Positions and arc lengths are degrees.
-%**************************************************************************
 delta_deg = goal_deg - start_deg;
 length_deg = norm(delta_deg);
 endS_deg = startS_deg;
@@ -397,24 +327,8 @@ primitives(end + 1, 1) = primitive;
 end
 
 function samples = samplePath(smoothPath, arcLength_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   samples = samplePath(smoothPath, arcLength_deg)
-%**************************************************************************
 % PURPOSE
 %   - Evaluate position and the first three arc derivatives on the path.
-%**************************************************************************
-% INPUTS
-%   - smoothPath (scalar struct), arcLength_deg (numeric vector)
-%       Ordered primitives and cumulative arc-length queries.
-%**************************************************************************
-% OUTPUTS
-%   - samples (scalar struct)
-%       Position, derivatives, curvature, and primitive provenance.
-%**************************************************************************
-% UNITS
-%   - Position/arc length are degrees; derivatives use inverse degrees.
-%**************************************************************************
 queryS_deg = double(arcLength_deg(:));
 totalLength_deg = smoothPath.TotalLength_deg;
 tolerance_deg = 1e-10 * max(1, totalLength_deg);
@@ -491,28 +405,8 @@ end
 function timedPath = retimeSpatialPath( ...
         smoothPath, initialState, goalState, limits, options, ...
         departureCandidateTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   timedPath = retimeSpatialPath( ...
-%       smoothPath, initialState, goalState, limits, options, ...
-%       departureCandidateTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Retime one fixed G3 path with certified spatial limits in either mode.
-%**************************************************************************
-% INPUTS
-%   - smoothPath, initialState, goalState, limits, options (scalar structs)
-%       Fixed geometry, boundary states, physical limits, and time policy.
-%   - departureCandidateTime_s (finite numeric scalar)
-%       Earliest motion-start time for this independently checked schedule.
-%**************************************************************************
-% OUTPUTS
-%   - timedPath (scalar struct)
-%       Stable success/failure trajectory and constraint diagnostics.
-%**************************************************************************
-% UNITS
-%   - Path is degrees; time and derivatives use degree-based SI time units.
-%**************************************************************************
 
 % --- Match the endpoint states to the fixed path ------------------------
 tolerance = 1e-9;
@@ -525,6 +419,13 @@ initialSpeed_deg_s = boundarySpeed(initialState.velocity_deg_s, ...
     endpoint.tangent(1, :), tolerance);
 goalSpeed_deg_s = boundarySpeed(goalState.velocity_deg_s, ...
     endpoint.tangent(2, :), tolerance);
+endpointVelocity_deg_s = abs([initialState.velocity_deg_s; ...
+    goalState.velocity_deg_s]);
+if any(endpointVelocity_deg_s > limits.maxVelocity_deg_s + tolerance, "all")
+    timedPath = timedPathTemplate(limits, options, ...
+        "An endpoint speed exceeds maxVelocity_deg_s.");
+    return;
+end
 
 requiredInitialAcceleration_deg_s2 = ...
     endpoint.secondDerivative_deg_inv(1, :) * initialSpeed_deg_s^2;
@@ -542,24 +443,237 @@ end
 % --- Define the spatial constraint runs -------------------------------
 jerkConstrained = any(isfinite(limits.maxJerk_deg_s3));
 geometricPrimitiveCount = numel(smoothPath.Primitives);
-runPrimitiveIndex = (1:geometricPrimitiveCount).';
-boundaryS_deg = [0; [smoothPath.Primitives.EndArcLength_deg].'];
 
-if ~jerkConstrained
-    % The acceleration-only retimer needs local curvature envelopes. The
-    % 0.1-degree cells vary the limits spatially without changing geometry.
-    boundaryS_deg = 0;
-    runPrimitiveIndex = zeros(0, 1);
-
+if jerkConstrained
+    % The spatial grid retains every geometry/stop event and adds a small
+    % global basis. Straight primitives need no geometry-driven density;
+    % quintic cells receive interior nodes for their varying derivatives.
+    gridS_deg = linspace(0, totalLength_deg, 17).';
+    gridS_deg = [gridS_deg; ...
+        [smoothPath.Primitives.StartArcLength_deg].'; ...
+        [smoothPath.Primitives.EndArcLength_deg].'; ...
+        smoothPath.MandatoryStopArcLength_deg(:)];
     for primitiveIndex = 1:geometricPrimitiveCount
         primitive = smoothPath.Primitives(primitiveIndex);
-        cellCount = max(2, ceil(primitive.Length_deg / 0.1));
-        localS_deg = linspace(primitive.StartArcLength_deg, ...
-            primitive.EndArcLength_deg, cellCount + 1).';
-        boundaryS_deg = [boundaryS_deg; localS_deg(2:end)]; %#ok<AGROW>
-        runPrimitiveIndex = [runPrimitiveIndex; ...
-            repmat(primitiveIndex, cellCount, 1)]; %#ok<AGROW>
+        if primitive.Type == "quintic"
+            gridS_deg = [gridS_deg; linspace( ...
+                primitive.StartArcLength_deg, ...
+                primitive.EndArcLength_deg, 5).']; %#ok<AGROW>
+        end
     end
+    stopArcLength_deg = smoothPath.MandatoryStopArcLength_deg(:);
+    if initialSpeed_deg_s <= tolerance
+        stopArcLength_deg = [0; stopArcLength_deg];
+    end
+    if goalSpeed_deg_s <= tolerance
+        stopArcLength_deg = [stopArcLength_deg; totalLength_deg];
+    end
+    finiteAcceleration_deg_s2 = limits.maxAcceleration_deg_s2( ...
+        isfinite(limits.maxAcceleration_deg_s2));
+    finiteJerk_deg_s3 = limits.maxJerk_deg_s3( ...
+        isfinite(limits.maxJerk_deg_s3));
+    if isempty(finiteAcceleration_deg_s2)
+        stopLayerLength_deg = totalLength_deg / 1000;
+    else
+        % A constant-jerk ramp reaches the acceleration limit after this
+        % distance. Keeping the fractional stop basis to that local layer
+        % avoids spreading its linearly changing acceleration over a full
+        % transcription cell.
+        stopLayerLength_deg = min(finiteAcceleration_deg_s2)^3 / ...
+            (6 * min(finiteJerk_deg_s3)^2);
+    end
+    stopLayerLength_deg = min(totalLength_deg / 64, ...
+        max(totalLength_deg * 1e-8, stopLayerLength_deg));
+    gridS_deg = [gridS_deg; ...
+        max(0, stopArcLength_deg - stopLayerLength_deg); ...
+        min(totalLength_deg, stopArcLength_deg + stopLayerLength_deg)];
+    gridS_deg = unique(gridS_deg);
+    stopNode = false(size(gridS_deg));
+    stopNode(1) = initialSpeed_deg_s <= tolerance;
+    stopNode(end) = goalSpeed_deg_s <= tolerance;
+    for stopArcLength_deg = reshape( ...
+            smoothPath.MandatoryStopArcLength_deg, 1, [])
+        [distance_deg, stopIndex] = min(abs(gridS_deg - ...
+            stopArcLength_deg));
+        if distance_deg > tolerance * max(1, totalLength_deg)
+            error("planAzElMotion:MissingStopNode", ...
+                "A mandatory stop is missing from the SCP grid.");
+        end
+        stopNode(stopIndex) = true;
+    end
+
+    cellCount = numel(gridS_deg) - 1;
+    bounds = repmat(derivativeBoundsTemplate(), cellCount, 1);
+    for cellIndex = 1:cellCount
+        middleS_deg = 0.5 * ( ...
+            gridS_deg(cellIndex) + gridS_deg(cellIndex + 1));
+        primitiveIndex = find(middleS_deg >= ...
+            [smoothPath.Primitives.StartArcLength_deg] & ...
+            middleS_deg <= ...
+            [smoothPath.Primitives.EndArcLength_deg], 1, "first");
+        bounds(cellIndex) = derivativeBounds( ...
+            smoothPath.Primitives(primitiveIndex), ...
+            gridS_deg(cellIndex), gridS_deg(cellIndex + 1), cellIndex);
+    end
+    pathEvaluator = @(queryS_deg) samplePath(smoothPath, queryS_deg);
+    schedule = azElInternal.retimeAzElSequentialConvex( ...
+        gridS_deg, pathEvaluator, bounds, stopNode, ...
+        [initialSpeed_deg_s; goalSpeed_deg_s], limits);
+    timedPath = timedPathTemplate(limits, options, schedule.Message);
+    timedPath.RetimerType = "debrouwereSequentialConvex";
+    timedPath.RetimerReference = ...
+        "https://doi.org/10.1109/TRO.2013.2277565";
+    timedPath.ConstraintDiagnostics.SequentialConvex = struct( ...
+        "ReferenceDOI", schedule.ReferenceDOI, ...
+        "TerminationReason", schedule.TerminationReason, ...
+        "IterationCount", schedule.IterationCount, ...
+        "Converged", schedule.Converged, ...
+        "IterationTime_s", schedule.IterationTime_s, ...
+        "SolverExitFlag", schedule.SolverExitFlag, ...
+        "SolverIterationCount", schedule.SolverIterationCount, ...
+        "SolverMessage", schedule.SolverMessage, ...
+        "SeedAmplitude_deg2_s2", schedule.SeedAmplitude_deg2_s2, ...
+        "CacheHit", schedule.CacheHit);
+    if ~schedule.Success
+        return;
+    end
+
+    minimumWaitDuration_s = max( ...
+        0, departureCandidateTime_s - initialState.time_s);
+    minimumArrivalTime_s = initialState.time_s + ...
+        minimumWaitDuration_s + schedule.MinimumMotionDuration_s;
+    timeTolerance_s = tolerance * max(1, abs(goalState.time_s));
+    if minimumArrivalTime_s > goalState.time_s + timeTolerance_s
+        timedPath.Message = sprintf( ...
+            "Earliest arrival %.9g s exceeds goal time %.9g s.", ...
+            minimumArrivalTime_s, goalState.time_s);
+        return;
+    end
+    waitDuration_s = minimumWaitDuration_s;
+    if options.GoalTimeMode == "fixedarrival"
+        waitDuration_s = max(0, goalState.time_s - ...
+            initialState.time_s - schedule.MinimumMotionDuration_s);
+        if waitDuration_s + timeTolerance_s < minimumWaitDuration_s
+            timedPath.Message = sprintf( ...
+                "Fixed arrival would require motion before %.9g s.", ...
+                departureCandidateTime_s);
+            return;
+        end
+    end
+    requiresInitialHold = waitDuration_s > timeTolerance_s;
+    initialStateIsMoving = norm(initialState.velocity_deg_s) > ...
+        tolerance || norm(initialState.acceleration_deg_s2) > tolerance;
+    if requiresInitialHold && initialStateIsMoving
+        timedPath.Message = "The timed route requires a hold, but the " + ...
+            "initial state is moving.";
+        return;
+    end
+
+    motionStartTime_s = initialState.time_s + waitDuration_s;
+    time_s = motionStartTime_s + schedule.time_s;
+    sampleS_deg = schedule.arcLength_deg;
+    scalarSpeed_deg_s = schedule.speed_deg_s;
+    scalarAcceleration_deg_s2 = schedule.acceleration_deg_s2;
+    scalarJerk_deg_s3 = schedule.jerk_deg_s3;
+    if requiresInitialHold
+        time_s = [initialState.time_s; time_s];
+        sampleS_deg = [0; sampleS_deg];
+        scalarSpeed_deg_s = [0; scalarSpeed_deg_s];
+        scalarAcceleration_deg_s2 = [0; scalarAcceleration_deg_s2];
+        scalarJerk_deg_s3 = [0; scalarJerk_deg_s3];
+    end
+    geometry = samplePath(smoothPath, sampleS_deg);
+    position_deg = geometry.position_deg;
+    velocity_deg_s = geometry.tangent .* scalarSpeed_deg_s;
+    acceleration_deg_s2 = geometry.tangent .* ...
+        scalarAcceleration_deg_s2 + ...
+        geometry.secondDerivative_deg_inv .* scalarSpeed_deg_s.^2;
+    jerk_deg_s3 = geometry.tangent .* scalarJerk_deg_s3 + ...
+        3 * geometry.secondDerivative_deg_inv .* scalarSpeed_deg_s .* ...
+        scalarAcceleration_deg_s2 + ...
+        geometry.thirdDerivative_deg_inv2 .* scalarSpeed_deg_s.^3;
+    position_deg(1, :) = initialState.position_deg;
+    velocity_deg_s(1, :) = initialState.velocity_deg_s;
+    acceleration_deg_s2(1, :) = initialState.acceleration_deg_s2;
+    position_deg(end, :) = goalState.position_deg;
+    velocity_deg_s(end, :) = goalState.velocity_deg_s;
+    acceleration_deg_s2(end, :) = goalState.acceleration_deg_s2;
+
+    diagnostics = timedPath.ConstraintDiagnostics;
+    diagnostics.PeakVelocity_deg_s = schedule.PeakVelocity_deg_s;
+    diagnostics.PeakAcceleration_deg_s2 = ...
+        schedule.PeakAcceleration_deg_s2;
+    diagnostics.PeakJerk_deg_s3 = schedule.PeakJerk_deg_s3;
+    diagnostics.VelocityMargin_deg_s = limits.maxVelocity_deg_s - ...
+        schedule.PeakVelocity_deg_s;
+    diagnostics.AccelerationMargin_deg_s2 = ...
+        limits.maxAcceleration_deg_s2 - schedule.PeakAcceleration_deg_s2;
+    diagnostics.JerkMargin_deg_s3 = limits.maxJerk_deg_s3 - ...
+        schedule.PeakJerk_deg_s3;
+    diagnostics.VelocitySatisfied = true;
+    diagnostics.AccelerationSatisfied = true;
+    diagnostics.JerkSatisfied = true;
+    diagnostics.FiniteJerkCertified = true;
+    diagnostics.FiniteJerkNumericallyVerified = true;
+    diagnostics.ContinuousJerkCertified = true;
+    diagnostics.GeometryDerivativeBounds = bounds;
+    diagnostics.UniformTimeScaleFactor = schedule.TimeScaleFactor;
+    diagnostics.SpatialRetimingCellCount = cellCount;
+    diagnostics.ExecutedMotionProfileCount = cellCount;
+    diagnostics.MandatoryStopCount = nnz(stopNode);
+    diagnostics.MandatoryStopArcLength_deg = ...
+        smoothPath.MandatoryStopArcLength_deg;
+    diagnostics.CurvatureDiscontinuityStopCount = ...
+        smoothPath.MandatoryStopCount;
+    diagnostics.Satisfied = true;
+
+    timedPath.Success = true;
+    timedPath.Message = schedule.Message;
+    timedPath.time_s = time_s;
+    timedPath.position_deg = position_deg;
+    timedPath.velocity_deg_s = velocity_deg_s;
+    timedPath.acceleration_deg_s2 = acceleration_deg_s2;
+    timedPath.jerk_deg_s3 = jerk_deg_s3;
+    timedPath.PathPosition_deg = smoothPath.position_deg;
+    timedPath.WaypointTime_s = motionStartTime_s + schedule.NodeTime_s;
+    timedPath.DepartureCandidateTime_s = departureCandidateTime_s;
+    timedPath.MotionStartTime_s = motionStartTime_s;
+    timedPath.WaitDuration_s = waitDuration_s;
+    timedPath.MinimumMotionDuration_s = schedule.MinimumMotionDuration_s;
+    timedPath.GoalLineInterceptTime_s = time_s(end);
+    timedPath.ConstraintDiagnostics = diagnostics;
+    timedPath.SmoothPath = smoothPath;
+    timedPath.CurveArcLength_deg = schedule.NodeArcLength_deg;
+    timedPath.CurveNodeTime_s = timedPath.WaypointTime_s;
+    timedPath.CurveSpeed_deg_s = schedule.NodeSpeed_deg_s;
+    timedPath.CurveSpeedSquared_deg2_s2 = schedule.NodeSpeed_deg_s.^2;
+    timedPath.CurveTangentialAcceleration_deg_s2 = ...
+        schedule.NodeAcceleration_deg_s2;
+    timedPath.CurveTangentialJerk_deg_s3 = interp1( ...
+        schedule.time_s, schedule.jerk_deg_s3, ...
+        schedule.NodeTime_s, "linear");
+    timedPath.SampleArcLength_deg = sampleS_deg;
+    timedPath.SampleSpeed_deg_s = scalarSpeed_deg_s;
+    timedPath.SampleTangentialAcceleration_deg_s2 = ...
+        scalarAcceleration_deg_s2;
+    timedPath.SampleTangentialJerk_deg_s3 = scalarJerk_deg_s3;
+    timedPath.CurvatureDiscontinuityStopCount = ...
+        smoothPath.MandatoryStopCount;
+    return;
+end
+
+% The acceleration-only retimer needs local curvature envelopes. The
+% 0.1-degree cells vary the limits spatially without changing geometry.
+boundaryS_deg = 0;
+runPrimitiveIndex = zeros(0, 1);
+for primitiveIndex = 1:geometricPrimitiveCount
+    primitive = smoothPath.Primitives(primitiveIndex);
+    cellCount = max(2, ceil(primitive.Length_deg / 0.1));
+    localS_deg = linspace(primitive.StartArcLength_deg, ...
+        primitive.EndArcLength_deg, cellCount + 1).';
+    boundaryS_deg = [boundaryS_deg; localS_deg(2:end)]; %#ok<AGROW>
+    runPrimitiveIndex = [runPrimitiveIndex; ...
+        repmat(primitiveIndex, cellCount, 1)]; %#ok<AGROW>
 end
 
 runCount = numel(runPrimitiveIndex);
@@ -576,14 +690,6 @@ effectiveLimits = limits;
 unconstrainedAcceleration = ~isfinite(limits.maxAcceleration_deg_s2);
 effectiveLimits.maxAcceleration_deg_s2(unconstrainedAcceleration) = ...
     100 * max(limits.maxVelocity_deg_s);
-
-unconstrainedJerk = ~isfinite(limits.maxJerk_deg_s3);
-if jerkConstrained
-    % Mixed finite/infinite jerk axes need a finite scalar working value.
-    % The original infinite axis remains unconstrained in final validation.
-    effectiveLimits.maxJerk_deg_s3(unconstrainedJerk) = ...
-        1000 * max(1, max(effectiveLimits.maxAcceleration_deg_s2));
-end
 
 for runIndex = 1:runCount
     primitiveIndex = runPrimitiveIndex(runIndex);
@@ -618,12 +724,6 @@ end
     accelerationNodeSpeeds(length_deg, maximumSpeed_deg_s, bounds, ...
     limits.maxAcceleration_deg_s2, initialSpeed_deg_s, ...
     goalSpeed_deg_s, mandatoryStopNode, tolerance);
-if jerkConstrained
-    [nodeSpeed_deg_s, feasible, failureMessage] = ...
-        reachableNodeSpeeds(length_deg, maximumSpeed_deg_s, ...
-        maximumAcceleration_deg_s2, maximumJerk_deg_s3, ...
-        initialSpeed_deg_s, goalSpeed_deg_s, mandatoryStopNode, tolerance);
-end
 if ~feasible
     timedPath = timedPathTemplate(limits, options, failureMessage);
     return;
@@ -635,38 +735,29 @@ runEndpoint = samplePath(smoothPath, boundaryS_deg);
 uniformTimeScaleFactor = 1;
 
 for runIndex = 1:runCount
-    if jerkConstrained
-        [profile, feasible, failureMessage] = minimumTimeProfile(...
-            length_deg(runIndex), nodeSpeed_deg_s(runIndex), ...
-            nodeSpeed_deg_s(runIndex + 1), ...
-            maximumSpeed_deg_s(runIndex), ...
-            maximumAcceleration_deg_s2(runIndex), ...
-            maximumJerk_deg_s3(runIndex), tolerance);
-    else
-        profile = profileTemplate();
-        profile.Length_deg = length_deg(runIndex);
-        profile.StartSpeed_deg_s = nodeSpeed_deg_s(runIndex);
-        profile.EndSpeed_deg_s = nodeSpeed_deg_s(runIndex + 1);
-        profile.Duration_s = 2 * length_deg(runIndex) / ...
-            (profile.StartSpeed_deg_s + profile.EndSpeed_deg_s);
-        profile.TangentialAcceleration_deg_s2 = ...
-            (profile.EndSpeed_deg_s^2 - profile.StartSpeed_deg_s^2) / ...
-            (2 * length_deg(runIndex));
-        profile.PeakSpeed_deg_s = max(profile.StartSpeed_deg_s, ...
-            profile.EndSpeed_deg_s);
-        profile.PeakAcceleration_deg_s2 = ...
-            abs(profile.TangentialAcceleration_deg_s2);
-        profile.PeakJerk_deg_s3 = NaN;
-        profile.PhaseDuration_s(1) = profile.Duration_s;
-        profile.PhaseStartTime_s(2:end) = profile.Duration_s;
-        profile.PhaseStartPosition_deg(2:end) = profile.Length_deg;
-        profile.PhaseStartSpeed_deg_s(1) = profile.StartSpeed_deg_s;
-        profile.PhaseStartSpeed_deg_s(2:end) = profile.EndSpeed_deg_s;
-        profile.PhaseStartAcceleration_deg_s2(1) = ...
-            profile.TangentialAcceleration_deg_s2;
-        feasible = isfinite(profile.Duration_s) && profile.Duration_s > 0;
-        failureMessage = "A zero-speed spatial cell is infeasible.";
-    end
+    profile = profileTemplate();
+    profile.Length_deg = length_deg(runIndex);
+    profile.StartSpeed_deg_s = nodeSpeed_deg_s(runIndex);
+    profile.EndSpeed_deg_s = nodeSpeed_deg_s(runIndex + 1);
+    profile.Duration_s = 2 * length_deg(runIndex) / ...
+        (profile.StartSpeed_deg_s + profile.EndSpeed_deg_s);
+    profile.TangentialAcceleration_deg_s2 = ...
+        (profile.EndSpeed_deg_s^2 - profile.StartSpeed_deg_s^2) / ...
+        (2 * length_deg(runIndex));
+    profile.PeakSpeed_deg_s = max(profile.StartSpeed_deg_s, ...
+        profile.EndSpeed_deg_s);
+    profile.PeakAcceleration_deg_s2 = ...
+        abs(profile.TangentialAcceleration_deg_s2);
+    profile.PeakJerk_deg_s3 = NaN;
+    profile.PhaseDuration_s(1) = profile.Duration_s;
+    profile.PhaseStartTime_s(2:end) = profile.Duration_s;
+    profile.PhaseStartPosition_deg(2:end) = profile.Length_deg;
+    profile.PhaseStartSpeed_deg_s(1) = profile.StartSpeed_deg_s;
+    profile.PhaseStartSpeed_deg_s(2:end) = profile.EndSpeed_deg_s;
+    profile.PhaseStartAcceleration_deg_s2(1) = ...
+        profile.TangentialAcceleration_deg_s2;
+    feasible = isfinite(profile.Duration_s) && profile.Duration_s > 0;
+    failureMessage = "A zero-speed spatial cell is infeasible.";
 
     if ~feasible
         timedPath = timedPathTemplate(limits, options, ...
@@ -688,16 +779,6 @@ for runIndex = 1:runCount
         profile.PeakJerkByAxis_deg_s3] = ...
         cartesianBounds(bounds(runIndex), profile);
     profiles(runIndex) = profile;
-end
-
-if jerkConstrained
-    [profiles, nodeSpeed_deg_s, uniformTimeScaleFactor, feasible, ...
-        failureMessage] = enforceCoupledCartesianLimits( ...
-        profiles, nodeSpeed_deg_s, bounds, limits, tolerance);
-    if ~feasible
-        timedPath = timedPathTemplate(limits, options, failureMessage);
-        return;
-    end
 end
 
 % --- Resolve arrival policy and assign absolute profile times -----------
@@ -765,12 +846,7 @@ acceleration_deg_s2(1, :) = initialState.acceleration_deg_s2;
 position_deg(end, :) = goalState.position_deg;
 velocity_deg_s(end, :) = goalState.velocity_deg_s;
 acceleration_deg_s2(end, :) = goalState.acceleration_deg_s2;
-if jerkConstrained
-    jerk_deg_s3(1, :) = [0 0];
-    jerk_deg_s3(end, :) = [0 0];
-else
-    jerk_deg_s3(:) = NaN;
-end
+jerk_deg_s3(:) = NaN;
 
 % --- Certify limits and assemble the stable timed-path record -----------
 peakVelocity_deg_s = max(vertcat(...
@@ -783,8 +859,8 @@ peakJerk_deg_s3 = max(vertcat(...
 velocitySatisfied = all(peakVelocity_deg_s <= limits.maxVelocity_deg_s + tolerance);
 accelerationSatisfied = all(peakAcceleration_deg_s2 <= ...
     limits.maxAcceleration_deg_s2 + tolerance);
-jerkSatisfied = ~jerkConstrained || all(peakJerk_deg_s3 <= limits.maxJerk_deg_s3 + tolerance);
-constraintsSatisfied = velocitySatisfied && accelerationSatisfied && jerkSatisfied;
+jerkSatisfied = true;
+constraintsSatisfied = velocitySatisfied && accelerationSatisfied;
 
 joinSpeed_deg_s = nodeSpeed_deg_s(2:end - 1);
 geometricJoin = ismember(boundaryS_deg(2:end - 1), ...
@@ -812,10 +888,8 @@ diagnostics.JerkMargin_deg_s3 = ...
 diagnostics.VelocitySatisfied = velocitySatisfied;
 diagnostics.AccelerationSatisfied = accelerationSatisfied;
 diagnostics.JerkSatisfied = jerkSatisfied;
-diagnostics.FiniteJerkCertified = ...
-    jerkConstrained && constraintsSatisfied;
-diagnostics.FiniteJerkNumericallyVerified = ...
-    jerkConstrained && jerkSatisfied;
+diagnostics.FiniteJerkCertified = false;
+diagnostics.FiniteJerkNumericallyVerified = false;
 diagnostics.G3JoinCount = nnz(ordinaryJoin);
 diagnostics.MinimumG3JoinSpeed_deg_s = minimumJoinSpeed_deg_s;
 diagnostics.VelocityCarriedAcrossG3Joins = joinVelocityCarried;
@@ -862,10 +936,9 @@ timedPath.SampleTangentialAcceleration_deg_s2 = ...
 timedPath.SampleTangentialJerk_deg_s3 = scalarJerk_deg_s3;
 timedPath.CurvatureDiscontinuityStopCount = nnz(mandatoryStopNode);
 
-if ~jerkConstrained
-    timedPath.Message = "Certified acceleration-only spatial retiming succeeded.";
-    timedPath.RetimerType = "certifiedSpatialAccelerationForwardBackward";
-end
+timedPath.Message = "Certified acceleration-only spatial retiming succeeded.";
+timedPath.RetimerType = "certifiedSpatialAccelerationForwardBackward";
+timedPath.RetimerReference = "";
 
 if ~constraintsSatisfied
     timedPath.Message = "Internal continuous constraint certification failed.";
@@ -873,24 +946,8 @@ end
 end
 
 function speed_deg_s = boundarySpeed(velocity_deg_s, tangent, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   speed_deg_s = boundarySpeed(velocity_deg_s, tangent, tolerance)
-%**************************************************************************
 % PURPOSE
 %   - Project a boundary velocity onto the path and reject lateral motion.
-%**************************************************************************
-% INPUTS
-%   - velocity_deg_s, tangent (1-by-2), tolerance (scalar)
-%       Cartesian velocity, unit path tangent, and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - speed_deg_s (nonnegative scalar)
-%       Forward scalar path speed.
-%**************************************************************************
-% UNITS
-%   - Velocity and returned speed are degrees per second.
-%**************************************************************************
 speed_deg_s = dot(velocity_deg_s, tangent);
 if speed_deg_s < -tolerance || norm(velocity_deg_s - speed_deg_s * tangent) > tolerance
     error("planAzElMotion:BoundaryVelocityMismatch", ...
@@ -900,23 +957,8 @@ speed_deg_s = max(0, speed_deg_s);
 end
 
 function bounds = derivativeBoundsTemplate()
-%% Section 0: Header & Readme
-% SYNTAX
-%   bounds = derivativeBoundsTemplate()
-%**************************************************************************
 % PURPOSE
 %   - Return one stable continuous derivative-certificate record.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - bounds (scalar struct)
-%       Empty certified and sampled derivative-envelope fields.
-%**************************************************************************
-% UNITS
-%   - Derivative fields use dimensionless, 1/deg, and 1/deg^2 units.
-%**************************************************************************
 bounds = struct( "RunIndex", 0, "StartArcLength_deg", 0, ...
     "EndArcLength_deg", 0, "TangentByAxis", zeros(1, 2), ...
     "SecondDerivativeByAxis_deg_inv", zeros(1, 2), ...
@@ -932,26 +974,8 @@ bounds = struct( "RunIndex", 0, "StartArcLength_deg", 0, ...
 end
 
 function bounds = derivativeBounds(primitive, startS_deg, endS_deg, index)
-%% Section 0: Header & Readme
-% SYNTAX
-%   bounds = derivativeBounds(primitive, startS_deg, endS_deg, index)
-%**************************************************************************
 % PURPOSE
 %   - Certify the first three arc derivatives over a primitive subinterval.
-%**************************************************************************
-% INPUTS
-%   - primitive (scalar struct), startS_deg, endS_deg (scalars)
-%       Path primitive and global arc-length interval.
-%   - index (positive integer)
-%       Retiming-run index stored for diagnostic provenance.
-%**************************************************************************
-% OUTPUTS
-%   - bounds (scalar struct)
-%       Continuous certificate plus independent diagnostic samples.
-%**************************************************************************
-% UNITS
-%   - Arc length is degrees; derivatives use 1/deg and 1/deg^2.
-%**************************************************************************
 localStartS_deg = max(0, startS_deg - primitive.StartArcLength_deg);
 localEndS_deg = min(primitive.Length_deg, endS_deg - primitive.StartArcLength_deg);
 if primitive.Type == "line"
@@ -1015,26 +1039,8 @@ end
 
 function [maximumSpeed_deg_s, maximumAcceleration_deg_s2, ...
         maximumJerk_deg_s3] = scalarLimits(bounds, limits, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [maximumSpeed_deg_s, maximumAcceleration_deg_s2, ...
-%       maximumJerk_deg_s3] = scalarLimits(bounds, limits, tolerance)
-%**************************************************************************
 % PURPOSE
 %   - Derive conservative scalar budgets from coupled Cartesian limits.
-%**************************************************************************
-% INPUTS
-%   - bounds, limits (scalar structs), tolerance (scalar)
-%       Path derivative certificate, per-axis limits, and tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - maximumSpeed_deg_s, maximumAcceleration_deg_s2, ...
-%       maximumJerk_deg_s3 (positive scalars)
-%       Safe scalar path limits for one retiming run.
-%**************************************************************************
-% UNITS
-%   - Outputs use deg/s, deg/s^2, and deg/s^3.
-%**************************************************************************
 tangent = bounds.CertifiedTangentByAxis;
 second = bounds.CertifiedSecondDerivativeByAxis_deg_inv;
 third = bounds.CertifiedThirdDerivativeByAxis_deg_inv2;
@@ -1074,30 +1080,8 @@ function [speed_deg_s, feasible, message] = ...
         accelerationNodeSpeeds(length_deg, runSpeedCap_deg_s, bounds, ...
         accelerationLimit_deg_s2, ...
         initialSpeed_deg_s, goalSpeed_deg_s, mandatoryStopNode, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [speed_deg_s, feasible, message] = accelerationNodeSpeeds(...
-%       length_deg, runSpeedCap_deg_s, bounds, accelerationLimit_deg_s2, ...
-%       initialSpeed_deg_s, goalSpeed_deg_s, mandatoryStopNode, tolerance)
-%**************************************************************************
 % PURPOSE
 %   - Carry maximum speed while reserving curvature-dependent acceleration.
-%**************************************************************************
-% INPUTS
-%   - length_deg, runSpeedCap_deg_s (vectors), bounds (structure array)
-%       Spatial-run lengths, scalar speed caps, and derivative bounds.
-%   - accelerationLimit_deg_s2 (1-by-2), boundary speeds (scalars)
-%       Per-axis limits and requested endpoint scalar speeds.
-%   - mandatoryStopNode (logical vector), tolerance (scalar)
-%       Forced zero-speed nodes and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - speed_deg_s (column vector), feasible (logical), message (string)
-%       Reachable node speeds and failure diagnostics.
-%**************************************************************************
-% UNITS
-%   - Length is degrees; speed and acceleration use deg/s and deg/s^2.
-%**************************************************************************
 runCount = numel(length_deg);
 cap_deg_s = [runSpeedCap_deg_s(1); min(runSpeedCap_deg_s(1:end - 1), ...
     runSpeedCap_deg_s(2:end)); runSpeedCap_deg_s(end)];
@@ -1150,30 +1134,8 @@ end
 function reachableSquaredSpeed = accelerationReachableSquared(...
         startSquaredSpeed, capSquaredSpeed, distance_deg, bounds, ...
         accelerationLimit_deg_s2, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   reachableSquaredSpeed = accelerationReachableSquared(...
-%       startSquaredSpeed, capSquaredSpeed, distance_deg, bounds, ...
-%       accelerationLimit_deg_s2, tolerance)
-%**************************************************************************
 % PURPOSE
 %   - Solve one monotone squared-speed reachability step by bisection.
-%**************************************************************************
-% INPUTS
-%   - startSquaredSpeed, capSquaredSpeed, distance_deg (scalars)
-%       Boundary speed squared, local cap squared, and run length.
-%   - bounds (scalar struct), accelerationLimit_deg_s2 (1-by-2)
-%       Derivative certificate and per-axis acceleration limits.
-%   - tolerance (scalar)
-%       Numerical feasibility tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - reachableSquaredSpeed (nonnegative scalar)
-%       Largest conservatively reachable squared speed.
-%**************************************************************************
-% UNITS
-%   - Squared speed is deg^2/s^2 and distance is degrees.
-%**************************************************************************
 if capSquaredSpeed <= startSquaredSpeed
     reachableSquaredSpeed = capSquaredSpeed;
     return;
@@ -1195,27 +1157,8 @@ end
 
 function acceleration_deg_s2 = scalarAccelerationAllowance(...
         squaredSpeed_deg2_s2, bounds, accelerationLimit_deg_s2, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   acceleration_deg_s2 = scalarAccelerationAllowance(...
-%       squaredSpeed_deg2_s2, bounds, accelerationLimit_deg_s2, tolerance)
-%**************************************************************************
 % PURPOSE
 %   - Intersect certified per-axis acceleration intervals at one path speed.
-%**************************************************************************
-% INPUTS
-%   - squaredSpeed_deg2_s2 (scalar), bounds (scalar struct)
-%       Scalar speed squared and certified path derivatives.
-%   - accelerationLimit_deg_s2 (1-by-2), tolerance (scalar)
-%       Per-axis limits and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - acceleration_deg_s2 (nonnegative scalar)
-%       Safe tangential acceleration magnitude.
-%**************************************************************************
-% UNITS
-%   - Input squared speed is deg^2/s^2; output is deg/s^2.
-%**************************************************************************
 tangent = bounds.CertifiedTangentByAxis;
 second = bounds.CertifiedSecondDerivativeByAxis_deg_inv;
 acceleration_deg_s2 = Inf;
@@ -1235,299 +1178,9 @@ for axisIndex = 1:2
 end
 end
 
-function [nodeSpeed_deg_s, feasible, message] = ...
-        reachableNodeSpeeds(length_deg, maximumSpeed_deg_s, ...
-        maximumAcceleration_deg_s2, ...
-        maximumJerk_deg_s3, initialSpeed_deg_s, goalSpeed_deg_s, mandatoryStopNode, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [nodeSpeed_deg_s, feasible, message] = reachableNodeSpeeds(...
-%       length_deg, maximumSpeed_deg_s, maximumAcceleration_deg_s2, ...
-%       maximumJerk_deg_s3, initialSpeed_deg_s, goalSpeed_deg_s, ...
-%       mandatoryStopNode, tolerance)
-%**************************************************************************
-% PURPOSE
-%   - Carry the largest mutually reachable zero-acceleration node speeds.
-%**************************************************************************
-% INPUTS
-%   - length_deg and maximum speed/acceleration/jerk vectors
-%       Spatial run lengths and conservative scalar limits.
-%   - initialSpeed_deg_s, goalSpeed_deg_s (scalars)
-%       Requested scalar endpoint speeds.
-%   - mandatoryStopNode (logical vector), tolerance (scalar)
-%       Forced stops and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - nodeSpeed_deg_s (column vector), feasible (logical), message (string)
-%       Mutually reachable node speeds and failure diagnostics.
-%**************************************************************************
-% UNITS
-%   - Length is degrees; derivatives use degree-based per-second units.
-%**************************************************************************
-runCount = numel(length_deg);
-cap_deg_s = Inf(runCount + 1, 1);
-cap_deg_s(1) = maximumSpeed_deg_s(1);
-cap_deg_s(end) = maximumSpeed_deg_s(end);
-
-for nodeIndex = 2:runCount
-    cap_deg_s(nodeIndex) = min(...
-        maximumSpeed_deg_s(nodeIndex - 1), ...
-        maximumSpeed_deg_s(nodeIndex));
-end
-
-cap_deg_s(mandatoryStopNode) = 0;
-speedTolerance_deg_s = tolerance * max(1, max(maximumSpeed_deg_s));
-
-if initialSpeed_deg_s > cap_deg_s(1) + speedTolerance_deg_s || ...
-        goalSpeed_deg_s > cap_deg_s(end) + speedTolerance_deg_s
-    nodeSpeed_deg_s = zeros(runCount + 1, 1);
-    feasible = false;
-    message = "An endpoint speed exceeds its local path limit.";
-    return;
-end
-
-nodeSpeed_deg_s = cap_deg_s;
-nodeSpeed_deg_s(1) = initialSpeed_deg_s;
-nodeSpeed_deg_s(end) = goalSpeed_deg_s;
-
-for passIndex = 1:max(8, 2 * (runCount + 1))
-    previous = nodeSpeed_deg_s;
-
-    for runIndex = 1:runCount
-        reachable = reachableSpeed(nodeSpeed_deg_s(runIndex), ...
-            length_deg(runIndex), maximumSpeed_deg_s(runIndex), ...
-            maximumAcceleration_deg_s2(runIndex), ...
-            maximumJerk_deg_s3(runIndex), tolerance);
-
-        if runIndex == runCount && ...
-                goalSpeed_deg_s > reachable + speedTolerance_deg_s
-            feasible = false;
-            message = "The goal speed is not forward reachable.";
-            return;
-        elseif runIndex < runCount
-            nodeSpeed_deg_s(runIndex + 1) = min(...
-                nodeSpeed_deg_s(runIndex + 1), reachable);
-        end
-    end
-
-    for runIndex = runCount:-1:1
-        reachable = reachableSpeed(nodeSpeed_deg_s(runIndex + 1), ...
-            length_deg(runIndex), maximumSpeed_deg_s(runIndex), ...
-            maximumAcceleration_deg_s2(runIndex), ...
-            maximumJerk_deg_s3(runIndex), tolerance);
-
-        if runIndex == 1 && ...
-                initialSpeed_deg_s > reachable + speedTolerance_deg_s
-            feasible = false;
-            message = "The initial speed cannot brake to path limits.";
-            return;
-        elseif runIndex > 1
-            nodeSpeed_deg_s(runIndex) = min(...
-                nodeSpeed_deg_s(runIndex), reachable);
-        end
-    end
-
-    nodeSpeed_deg_s(mandatoryStopNode) = 0;
-    nodeSpeed_deg_s(1) = initialSpeed_deg_s;
-    nodeSpeed_deg_s(end) = goalSpeed_deg_s;
-    if max(abs(nodeSpeed_deg_s - previous)) <= speedTolerance_deg_s
-        break;
-    end
-end
-
-feasible = true;
-message = "";
-end
-
-function speed_deg_s = reachableSpeed(boundarySpeed_deg_s, distance_deg, ...
-        speedLimit_deg_s, accelerationLimit_deg_s2, ...
-        jerkLimit_deg_s3, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   speed_deg_s = reachableSpeed(boundarySpeed_deg_s, distance_deg, ...
-%       speedLimit_deg_s, accelerationLimit_deg_s2, ...
-%       jerkLimit_deg_s3, tolerance)
-%**************************************************************************
-% PURPOSE
-%   - Find the greatest zero-acceleration speed reachable through one run.
-%**************************************************************************
-% INPUTS
-%   - boundarySpeed_deg_s, distance_deg, speedLimit_deg_s (scalars)
-%       Boundary speed, run length, and scalar speed cap.
-%   - accelerationLimit_deg_s2, jerkLimit_deg_s3, tolerance (scalars)
-%       Scalar derivative caps and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - speed_deg_s (nonnegative scalar)
-%       Greatest reachable zero-acceleration boundary speed.
-%**************************************************************************
-% UNITS
-%   - Distance is degrees; derivatives use degree-based per-second units.
-%**************************************************************************
-boundarySpeed_deg_s = min(max(boundarySpeed_deg_s, 0), speedLimit_deg_s);
-
-if transitionDistance(boundarySpeed_deg_s, speedLimit_deg_s, ...
-        accelerationLimit_deg_s2, jerkLimit_deg_s3) <= ...
-        distance_deg + tolerance * max(1, distance_deg)
-    speed_deg_s = speedLimit_deg_s;
-    return;
-end
-
-lower = boundarySpeed_deg_s;
-upper = speedLimit_deg_s;
-
-for iteration = 1:70
-    middle = 0.5 * (lower + upper);
-    if transitionDistance(boundarySpeed_deg_s, middle, ...
-            accelerationLimit_deg_s2, jerkLimit_deg_s3) <= distance_deg
-        lower = middle;
-    else
-        upper = middle;
-    end
-end
-
-speed_deg_s = lower;
-end
-
-function [profile, feasible, message] = minimumTimeProfile(length_deg, ...
-        startSpeed_deg_s, endSpeed_deg_s, ...
-        speedLimit_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [profile, feasible, message] = minimumTimeProfile(length_deg, ...
-%       startSpeed_deg_s, endSpeed_deg_s, speedLimit_deg_s, ...
-%       accelerationLimit_deg_s2, jerkLimit_deg_s3, tolerance)
-%**************************************************************************
-% PURPOSE
-%   - Build the minimum-time seven-phase scalar S-curve for one path run.
-%**************************************************************************
-% INPUTS
-%   - length_deg and start/end/maximum speed values (scalars)
-%       Run length, boundary speeds, and scalar speed cap.
-%   - accelerationLimit_deg_s2, jerkLimit_deg_s3, tolerance (scalars)
-%       Scalar derivative caps and numerical tolerance.
-%**************************************************************************
-% OUTPUTS
-%   - profile (scalar struct), feasible (logical), message (string)
-%       Analytic phase record and feasibility diagnostics.
-%**************************************************************************
-% UNITS
-%   - Length is degrees; derivatives use degree-based per-second units.
-%**************************************************************************
-profile = profileTemplate();
-profile.Length_deg = length_deg;
-profile.StartSpeed_deg_s = startSpeed_deg_s;
-profile.EndSpeed_deg_s = endSpeed_deg_s;
-
-if min([length_deg, speedLimit_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3]) <= 0 || ...
-        max(startSpeed_deg_s, endSpeed_deg_s) > speedLimit_deg_s + tolerance
-    feasible = false;
-    message = "Invalid scalar S-curve inputs.";
-    return;
-end
-
-minimumDistance_deg = transitionDistance(startSpeed_deg_s, endSpeed_deg_s, ...
-    accelerationLimit_deg_s2, jerkLimit_deg_s3);
-
-if minimumDistance_deg > length_deg + tolerance * max(1, length_deg)
-    feasible = false;
-    message = "The run is too short for its boundary speeds.";
-    return;
-end
-
-peakSpeed_deg_s = speedLimit_deg_s;
-distanceAtLimit_deg = transitionDistance(startSpeed_deg_s, ...
-    peakSpeed_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3) + ...
-    transitionDistance(peakSpeed_deg_s, endSpeed_deg_s, ...
-    accelerationLimit_deg_s2, jerkLimit_deg_s3);
-
-if distanceAtLimit_deg > length_deg
-    lower = max(startSpeed_deg_s, endSpeed_deg_s);
-    upper = speedLimit_deg_s;
-
-    for iteration = 1:80
-        middle = 0.5 * (lower + upper);
-        distance = transitionDistance(startSpeed_deg_s, middle, ...
-            accelerationLimit_deg_s2, jerkLimit_deg_s3) + ...
-            transitionDistance(middle, endSpeed_deg_s, ...
-            accelerationLimit_deg_s2, jerkLimit_deg_s3);
-        if distance <= length_deg
-            lower = middle;
-        else
-            upper = middle;
-        end
-    end
-
-    peakSpeed_deg_s = lower;
-end
-
-[firstDuration_s, firstJerk_deg_s3] = transitionPhases(...
-    startSpeed_deg_s, peakSpeed_deg_s, ...
-    accelerationLimit_deg_s2, jerkLimit_deg_s3);
-[lastDuration_s, lastJerk_deg_s3] = transitionPhases(...
-    peakSpeed_deg_s, endSpeed_deg_s, ...
-    accelerationLimit_deg_s2, jerkLimit_deg_s3);
-transitionDistance_deg = transitionDistance(startSpeed_deg_s, ...
-    peakSpeed_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3) + ...
-    transitionDistance(peakSpeed_deg_s, endSpeed_deg_s, ...
-    accelerationLimit_deg_s2, jerkLimit_deg_s3);
-cruiseDuration_s = max(0, length_deg - transitionDistance_deg) / max(peakSpeed_deg_s, eps);
-
-phaseDuration_s = [firstDuration_s; cruiseDuration_s; lastDuration_s];
-phaseJerk_deg_s3 = [firstJerk_deg_s3; 0; lastJerk_deg_s3];
-phaseStartTime_s = [0; cumsum(phaseDuration_s(1:end - 1))];
-phaseStartPosition_deg = zeros(7, 1);
-phaseStartSpeed_deg_s = zeros(7, 1);
-phaseStartAcceleration_deg_s2 = zeros(7, 1);
-phaseStartSpeed_deg_s(1) = startSpeed_deg_s;
-
-for index = 1:6
-    duration_s = phaseDuration_s(index);
-    jerk_deg_s3 = phaseJerk_deg_s3(index);
-    phaseStartPosition_deg(index + 1) = phaseStartPosition_deg(index) + ...
-        phaseStartSpeed_deg_s(index) * duration_s + ...
-        0.5 * phaseStartAcceleration_deg_s2(index) * duration_s^2 + ...
-        jerk_deg_s3 * duration_s^3 / 6;
-    phaseStartSpeed_deg_s(index + 1) = phaseStartSpeed_deg_s(index) + ...
-        phaseStartAcceleration_deg_s2(index) * duration_s + 0.5 * jerk_deg_s3 * duration_s^2;
-    phaseStartAcceleration_deg_s2(index + 1) = ...
-        phaseStartAcceleration_deg_s2(index) + jerk_deg_s3 * duration_s;
-end
-
-profile.Duration_s = sum(phaseDuration_s);
-profile.PeakSpeed_deg_s = peakSpeed_deg_s;
-profile.PeakAcceleration_deg_s2 = max(abs([ phaseStartAcceleration_deg_s2; ...
-    phaseStartAcceleration_deg_s2 + phaseJerk_deg_s3 .* phaseDuration_s]));
-profile.PeakJerk_deg_s3 = max(abs(phaseJerk_deg_s3));
-profile.PhaseDuration_s = phaseDuration_s;
-profile.PhaseJerk_deg_s3 = phaseJerk_deg_s3;
-profile.PhaseStartTime_s = phaseStartTime_s;
-profile.PhaseStartPosition_deg = phaseStartPosition_deg;
-profile.PhaseStartSpeed_deg_s = phaseStartSpeed_deg_s;
-profile.PhaseStartAcceleration_deg_s2 = phaseStartAcceleration_deg_s2;
-profile.TangentialAcceleration_deg_s2 = 0;
-feasible = true;
-message = "";
-end
-
 function profile = profileTemplate()
-%% Section 0: Header & Readme
-% SYNTAX
-%   profile = profileTemplate()
-%**************************************************************************
 % PURPOSE
-%   - Return one stable scalar S-curve profile record.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - profile (scalar struct)
-%       Empty geometry, timing, phase, limit, and peak fields.
-%**************************************************************************
-% UNITS
-%   - Field suffixes define degree-based position and derivative units.
-%**************************************************************************
+%   - Return one stable constant-acceleration spatial-cell record.
 profile = struct( "PrimitiveType", "", "StartPosition_deg", zeros(1, 2), ...
     "EndPosition_deg", zeros(1, 2), "Length_deg", 0, ...
     "StartArcLength_deg", 0, "EndArcLength_deg", 0, ...
@@ -1543,161 +1196,11 @@ profile = struct( "PrimitiveType", "", "StartPosition_deg", zeros(1, 2), ...
     "PhaseStartAcceleration_deg_s2", zeros(7, 1), "TangentialAcceleration_deg_s2", 0);
 end
 
-function distance_deg = transitionDistance(firstSpeed_deg_s, secondSpeed_deg_s, ...
-        accelerationLimit_deg_s2, jerkLimit_deg_s3)
-%% Section 0: Header & Readme
-% SYNTAX
-%   distance_deg = transitionDistance(firstSpeed_deg_s, ...
-%       secondSpeed_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3)
-%**************************************************************************
-% PURPOSE
-%   - Return the exact distance of a zero-acceleration S-curve transition.
-%**************************************************************************
-% INPUTS
-%   - firstSpeed_deg_s, secondSpeed_deg_s (scalars)
-%       Boundary speeds for one monotone transition.
-%   - accelerationLimit_deg_s2, jerkLimit_deg_s3 (positive scalars)
-%       Scalar derivative limits.
-%**************************************************************************
-% OUTPUTS
-%   - distance_deg (nonnegative scalar)
-%       Exact transition distance.
-%**************************************************************************
-% UNITS
-%   - Distance is degrees; derivatives use degree-based per-second units.
-%**************************************************************************
-[duration_s, ~] = transitionPhases(firstSpeed_deg_s, ...
-    secondSpeed_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3);
-distance_deg = 0.5 * (firstSpeed_deg_s + secondSpeed_deg_s) * sum(duration_s);
-end
-
-function [duration_s, jerk_deg_s3] = transitionPhases(firstSpeed_deg_s, ...
-        secondSpeed_deg_s, ...
-        accelerationLimit_deg_s2, jerkLimit_deg_s3)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [duration_s, jerk_deg_s3] = transitionPhases(firstSpeed_deg_s, ...
-%       secondSpeed_deg_s, accelerationLimit_deg_s2, jerkLimit_deg_s3)
-%**************************************************************************
-% PURPOSE
-%   - Return three phases for one monotone zero-acceleration transition.
-%**************************************************************************
-% INPUTS
-%   - firstSpeed_deg_s, secondSpeed_deg_s (scalars)
-%       Boundary speeds for one monotone transition.
-%   - accelerationLimit_deg_s2, jerkLimit_deg_s3 (positive scalars)
-%       Scalar derivative limits.
-%**************************************************************************
-% OUTPUTS
-%   - duration_s, jerk_deg_s3 (3-by-1 vectors)
-%       Phase durations and signed constant jerk values.
-%**************************************************************************
-% UNITS
-%   - Duration is seconds and jerk is degrees per second cubed.
-%**************************************************************************
-velocityChange_deg_s = secondSpeed_deg_s - firstSpeed_deg_s;
-direction = sign(velocityChange_deg_s);
-changeMagnitude_deg_s = abs(velocityChange_deg_s);
-if changeMagnitude_deg_s == 0
-    duration_s = zeros(3, 1);
-    jerk_deg_s3 = zeros(3, 1);
-    return;
-end
-
-jerkRampDuration_s = min(sqrt(changeMagnitude_deg_s / jerkLimit_deg_s3), ...
-    accelerationLimit_deg_s2 / jerkLimit_deg_s3);
-constantAccelerationDuration_s = max(0, ...
-    changeMagnitude_deg_s / (jerkLimit_deg_s3 * jerkRampDuration_s) - jerkRampDuration_s);
-duration_s = [jerkRampDuration_s; constantAccelerationDuration_s; jerkRampDuration_s];
-jerk_deg_s3 = direction * [jerkLimit_deg_s3; 0; -jerkLimit_deg_s3];
-end
-
-function [position_deg, speed_deg_s, acceleration_deg_s2, ...
-        jerk_deg_s3] = sampleProfile(time_s, profile)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [position_deg, speed_deg_s, acceleration_deg_s2, jerk_deg_s3] = ...
-%       sampleProfile(time_s, profile)
-%**************************************************************************
-% PURPOSE
-%   - Evaluate one analytic scalar profile at local times.
-%**************************************************************************
-% INPUTS
-%   - time_s (numeric vector), profile (scalar struct)
-%       Local query times and analytic phase record.
-%**************************************************************************
-% OUTPUTS
-%   - position_deg, speed_deg_s, acceleration_deg_s2, jerk_deg_s3
-%       Scalar motion histories at every query time.
-%**************************************************************************
-% UNITS
-%   - Time is seconds; outputs use degree-based derivative units.
-%**************************************************************************
-time_s = min(max(double(time_s(:)), 0), profile.Duration_s);
-count = numel(time_s);
-position_deg = zeros(count, 1);
-speed_deg_s = zeros(count, 1);
-acceleration_deg_s2 = zeros(count, 1);
-jerk_deg_s3 = zeros(count, 1);
-for index = 1:7
-    if index < 7
-        belongs = time_s >= profile.PhaseStartTime_s(index) & ...
-            time_s < profile.PhaseStartTime_s(index + 1);
-    else
-        belongs = time_s >= profile.PhaseStartTime_s(index);
-    end
-    localTime_s = time_s(belongs) - profile.PhaseStartTime_s(index);
-    jerk = profile.PhaseJerk_deg_s3(index);
-    position_deg(belongs) = profile.PhaseStartPosition_deg(index) + ...
-        profile.PhaseStartSpeed_deg_s(index) .* localTime_s + ...
-        0.5 * profile.PhaseStartAcceleration_deg_s2(index) .* ...
-        localTime_s.^2 + jerk .* localTime_s.^3 / 6;
-    speed_deg_s(belongs) = profile.PhaseStartSpeed_deg_s(index) + ...
-        profile.PhaseStartAcceleration_deg_s2(index) .* localTime_s + ...
-        0.5 * jerk .* localTime_s.^2;
-    acceleration_deg_s2(belongs) = profile.PhaseStartAcceleration_deg_s2(index) + ...
-        jerk .* localTime_s;
-    jerk_deg_s3(belongs) = jerk;
-end
-if isinf(profile.MaxJerk_deg_s3)
-    jerk_deg_s3(:) = NaN;
-end
-atEnd = time_s == profile.Duration_s;
-position_deg(atEnd) = profile.Length_deg;
-speed_deg_s(atEnd) = profile.EndSpeed_deg_s;
-if isfinite(profile.MaxJerk_deg_s3)
-    acceleration_deg_s2(atEnd) = 0;
-else
-    acceleration_deg_s2(atEnd) = ...
-        profile.TangentialAcceleration_deg_s2;
-end
-end
-
 function [time_s, arcLength_deg, speed_deg_s, acceleration_deg_s2, ...
         jerk_deg_s3] = sampleProfiles(profiles, initialTime_s, ...
         waitDuration_s, sampleTime_s)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [time_s, arcLength_deg, speed_deg_s, acceleration_deg_s2, ...
-%       jerk_deg_s3] = sampleProfiles(profiles, initialTime_s, ...
-%       waitDuration_s, sampleTime_s)
-%**************************************************************************
 % PURPOSE
 %   - Sample every profile while preserving strict absolute timestamps.
-%**************************************************************************
-% INPUTS
-%   - profiles (structure array)
-%       Ordered analytic scalar profiles.
-%   - initialTime_s, waitDuration_s, sampleTime_s (scalars)
-%       Absolute start, optional hold, and regular sample interval.
-%**************************************************************************
-% OUTPUTS
-%   - time_s, arcLength_deg, speed_deg_s, acceleration_deg_s2, jerk_deg_s3
-%       Strictly ordered scalar motion histories.
-%**************************************************************************
-% UNITS
-%   - Time is seconds; motion uses degree-based derivative units.
-%**************************************************************************
 time_s = zeros(0, 1);
 arcLength_deg = zeros(0, 1);
 speed_deg_s = zeros(0, 1);
@@ -1714,16 +1217,18 @@ if waitDuration_s > 1e-12
 end
 for index = 1:numel(profiles)
     profile = profiles(index);
-    phaseEnd_s = cumsum(profile.PhaseDuration_s);
-    phaseStart_s = [0; phaseEnd_s(1:end - 1)];
-    events_s = unique([phaseStart_s; phaseStart_s + 0.5 * profile.PhaseDuration_s; phaseEnd_s]);
     localTime_s = unique([0; ...
         (0:sampleTime_s:profile.Duration_s).'; ...
-        events_s(:); profile.Duration_s]);
+        0.5 * profile.Duration_s; profile.Duration_s]);
     localTime_s = localTime_s( ...
         localTime_s >= 0 & localTime_s <= profile.Duration_s);
-    [distance_deg, velocity_deg_s, accel_deg_s2, localJerk_deg_s3] = ...
-        sampleProfile(localTime_s, profile);
+    distance_deg = profile.StartSpeed_deg_s * localTime_s + ...
+        0.5 * profile.TangentialAcceleration_deg_s2 * localTime_s.^2;
+    velocity_deg_s = profile.StartSpeed_deg_s + ...
+        profile.TangentialAcceleration_deg_s2 * localTime_s;
+    accel_deg_s2 = repmat( ...
+        profile.TangentialAcceleration_deg_s2, size(localTime_s));
+    localJerk_deg_s3 = NaN(size(localTime_s));
     if any(distance_deg < -1e-10) || any(distance_deg > profile.Length_deg + 1e-10)
         error("planAzElMotion:ProfileDistanceOutsideRun", ...
             "Profile %d sampled [%.17g, %.17g] deg for length %.17g deg.", ...
@@ -1768,25 +1273,8 @@ end
 
 function [velocityBound_deg_s, accelerationBound_deg_s2, ...
         jerkBound_deg_s3] = cartesianBounds(bounds, profile)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [velocityBound_deg_s, accelerationBound_deg_s2, jerkBound_deg_s3] = ...
-%       cartesianBounds(bounds, profile)
-%**************************************************************************
 % PURPOSE
 %   - Map scalar peaks through the certified path derivative envelope.
-%**************************************************************************
-% INPUTS
-%   - bounds, profile (scalar structs)
-%       Certified geometry derivatives and one scalar motion profile.
-%**************************************************************************
-% OUTPUTS
-%   - velocityBound_deg_s, accelerationBound_deg_s2, jerkBound_deg_s3
-%       Conservative 1-by-2 per-axis motion bounds.
-%**************************************************************************
-% UNITS
-%   - Outputs use deg/s, deg/s^2, and deg/s^3.
-%**************************************************************************
 tangent = bounds.CertifiedTangentByAxis;
 second = bounds.CertifiedSecondDerivativeByAxis_deg_inv;
 third = bounds.CertifiedThirdDerivativeByAxis_deg_inv2;
@@ -1798,160 +1286,9 @@ jerkBound_deg_s3 = tangent * profile.PeakJerk_deg_s3 + ...
     third * profile.PeakSpeed_deg_s^3;
 end
 
-function [profiles, nodeSpeed_deg_s, scaleFactor, feasible, message] = ...
-        enforceCoupledCartesianLimits(profiles, nodeSpeed_deg_s, bounds, ...
-        limits, tolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [profiles, nodeSpeed_deg_s, scaleFactor, feasible, message] = ...
-%       enforceCoupledCartesianLimits(profiles, nodeSpeed_deg_s, bounds, ...
-%       limits, tolerance)
-%**************************************************************************
-% PURPOSE
-%   - Uniformly dilate a finite-jerk schedule until its certified coupled
-%     Cartesian velocity, acceleration, and jerk bounds satisfy every axis.
-%**************************************************************************
-% INPUTS
-%   - profiles (structure array), nodeSpeed_deg_s (numeric vector)
-%       Analytic scalar profiles and their shared boundary speeds.
-%   - bounds (structure array), limits (scalar struct), tolerance (scalar)
-%       Certified path derivatives, Cartesian limits, and comparison margin.
-%**************************************************************************
-% OUTPUTS
-%   - profiles, nodeSpeed_deg_s
-%       Feasible profiles and node speeds after any uniform time dilation.
-%   - scaleFactor (scalar), feasible (logical), message (string)
-%       Applied time factor and an actionable feasibility result.
-%**************************************************************************
-% UNITS
-%   - Time is seconds; motion uses degree-based derivative units.
-%**************************************************************************
-profileCount = numel(profiles);
-velocityPeak_deg_s = zeros(profileCount, 2);
-accelerationPeak_deg_s2 = zeros(profileCount, 2);
-jerkPeak_deg_s3 = zeros(profileCount, 2);
-
-for profileIndex = 1:profileCount
-    [velocityPeak_deg_s(profileIndex, :), ...
-        accelerationPeak_deg_s2(profileIndex, :), ...
-        jerkPeak_deg_s3(profileIndex, :)] = ...
-        cartesianBounds(bounds(profileIndex), profiles(profileIndex));
-end
-
-velocityRatio = maxConstraintRatio(velocityPeak_deg_s, ...
-    limits.maxVelocity_deg_s);
-accelerationRatio = maxConstraintRatio(accelerationPeak_deg_s2, ...
-    limits.maxAcceleration_deg_s2);
-jerkRatio = maxConstraintRatio(jerkPeak_deg_s3, ...
-    limits.maxJerk_deg_s3);
-scaleFactor = max([1, velocityRatio, sqrt(accelerationRatio), ...
-    nthroot(jerkRatio, 3)]);
-
-if ~isfinite(scaleFactor) || scaleFactor <= 0
-    feasible = false;
-    message = "Certified coupled path limits produced an invalid time scale.";
-    return;
-end
-
-if scaleFactor > 1 + tolerance
-    endpointSpeedScale_deg_s = 1;
-    finiteVelocityLimit_deg_s = limits.maxVelocity_deg_s( ...
-        isfinite(limits.maxVelocity_deg_s));
-    if ~isempty(finiteVelocityLimit_deg_s)
-        endpointSpeedScale_deg_s = max( ...
-            endpointSpeedScale_deg_s, max(finiteVelocityLimit_deg_s));
-    end
-    endpointSpeedTolerance_deg_s = tolerance * endpointSpeedScale_deg_s;
-    hasFixedMovingEndpoint = ...
-        abs(profiles(1).StartSpeed_deg_s) > endpointSpeedTolerance_deg_s || ...
-        abs(profiles(end).EndSpeed_deg_s) > endpointSpeedTolerance_deg_s;
-    if hasFixedMovingEndpoint
-        feasible = false;
-        message = "Coupled path limits require time dilation, but a nonzero " + ...
-            "endpoint speed is fixed by the request.";
-        return;
-    end
-
-    % A small roundoff guard keeps the certificate inside the public limits.
-    scaleFactor = scaleFactor * (1 + 32 * eps(scaleFactor));
-    for profileIndex = 1:profileCount
-        profile = profiles(profileIndex);
-        profile.Duration_s = profile.Duration_s * scaleFactor;
-        profile.StartSpeed_deg_s = profile.StartSpeed_deg_s / scaleFactor;
-        profile.EndSpeed_deg_s = profile.EndSpeed_deg_s / scaleFactor;
-        profile.PeakSpeed_deg_s = profile.PeakSpeed_deg_s / scaleFactor;
-        profile.PeakAcceleration_deg_s2 = ...
-            profile.PeakAcceleration_deg_s2 / scaleFactor^2;
-        profile.PeakJerk_deg_s3 = profile.PeakJerk_deg_s3 / scaleFactor^3;
-        profile.PhaseDuration_s = profile.PhaseDuration_s * scaleFactor;
-        profile.PhaseStartTime_s = profile.PhaseStartTime_s * scaleFactor;
-        profile.PhaseStartSpeed_deg_s = ...
-            profile.PhaseStartSpeed_deg_s / scaleFactor;
-        profile.PhaseStartAcceleration_deg_s2 = ...
-            profile.PhaseStartAcceleration_deg_s2 / scaleFactor^2;
-        profile.PhaseJerk_deg_s3 = ...
-            profile.PhaseJerk_deg_s3 / scaleFactor^3;
-        profile.TangentialAcceleration_deg_s2 = ...
-            profile.TangentialAcceleration_deg_s2 / scaleFactor^2;
-        [profile.PeakVelocityByAxis_deg_s, ...
-            profile.PeakAccelerationByAxis_deg_s2, ...
-            profile.PeakJerkByAxis_deg_s3] = ...
-            cartesianBounds(bounds(profileIndex), profile);
-        profiles(profileIndex) = profile;
-    end
-    nodeSpeed_deg_s = nodeSpeed_deg_s / scaleFactor;
-end
-
-feasible = true;
-message = "";
-end
-
-function ratio = maxConstraintRatio(peakByAxis, limitByAxis)
-%% Section 0: Header & Readme
-% SYNTAX
-%   ratio = maxConstraintRatio(peakByAxis, limitByAxis)
-%**************************************************************************
-% PURPOSE
-%   - Return the largest finite-axis peak-to-limit ratio.
-%**************************************************************************
-% INPUTS
-%   - peakByAxis (N-by-2 numeric), limitByAxis (1-by-2 numeric)
-%       Nonnegative certified peaks and positive per-axis limits.
-%**************************************************************************
-% OUTPUTS
-%   - ratio (nonnegative scalar)
-%       Largest constrained-axis ratio, or zero when every axis is infinite.
-%**************************************************************************
-% UNITS
-%   - The ratio is dimensionless; inputs have matching derivative units.
-%**************************************************************************
-finiteAxis = isfinite(limitByAxis);
-if ~any(finiteAxis)
-    ratio = 0;
-    return;
-end
-ratio = max(peakByAxis(:, finiteAxis) ./ limitByAxis(finiteAxis), [], "all");
-end
-
 function smoothPath = smoothPathTemplate(route_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   smoothPath = smoothPathTemplate(route_deg)
-%**************************************************************************
 % PURPOSE
 %   - Define the canonical smooth-path schema shared by every outcome.
-%**************************************************************************
-% INPUTS
-%   - route_deg (N-by-2 numeric)
-%       Candidate polyline retained for failure diagnostics.
-%**************************************************************************
-% OUTPUTS
-%   - smoothPath (scalar struct)
-%       Initialized unsuccessful record; successful callers replace values.
-%**************************************************************************
-% UNITS
-%   - Route positions are degrees.
-%**************************************************************************
 smoothPath = struct( "Success", false, "Message", "No smooth path was produced.", ...
     "OriginalPathPosition_deg", route_deg, "Primitives", struct([]), "TotalLength_deg", 0, ...
     "SampleArcLength_deg", zeros(0, 1), "position_deg", zeros(0, 2), "tangent", zeros(0, 2), ...
@@ -1964,24 +1301,8 @@ smoothPath = struct( "Success", false, "Message", "No smooth path was produced."
 end
 
 function timedPath = timedPathTemplate(limits, options, message)
-%% Section 0: Header & Readme
-% SYNTAX
-%   timedPath = timedPathTemplate(limits, options, message)
-%**************************************************************************
 % PURPOSE
 %   - Define the canonical timed-path and nested diagnostic schemas.
-%**************************************************************************
-% INPUTS
-%   - limits, options (scalar structs), message (scalar text)
-%       Resolved physical limits, timing options, and failure explanation.
-%**************************************************************************
-% OUTPUTS
-%   - timedPath (scalar struct)
-%       Initialized unsuccessful record; successful callers replace values.
-%**************************************************************************
-% UNITS
-%   - Empty scientific arrays retain degree-based field units.
-%**************************************************************************
 diagnostics = struct( "PeakVelocity_deg_s", [NaN NaN], ...
     "PeakAcceleration_deg_s2", [NaN NaN], "PeakJerk_deg_s3", [NaN NaN], ...
     "VelocityMargin_deg_s", [NaN NaN], "AccelerationMargin_deg_s2", [NaN NaN], ...
@@ -1996,7 +1317,15 @@ diagnostics = struct( "PeakVelocity_deg_s", [NaN NaN], ...
     "SpatialRetimingCellCount", 0, ...
     "ExecutedMotionProfileCount", 0, "MandatoryStopCount", 0, ...
     "MandatoryStopArcLength_deg", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
-    "RoundedVelocityCarried", false, "MinimumArcSpeed_deg_s", NaN, "Satisfied", false);
+    "RoundedVelocityCarried", false, "MinimumArcSpeed_deg_s", NaN, ...
+    "Satisfied", false, "SequentialConvex", struct( ...
+        "ReferenceDOI", "", "TerminationReason", "notEvaluated", ...
+        "IterationCount", 0, "Converged", false, ...
+        "IterationTime_s", zeros(0, 1), ...
+        "SolverExitFlag", zeros(0, 1), ...
+        "SolverIterationCount", zeros(0, 1), ...
+        "SolverMessage", "", "SeedAmplitude_deg2_s2", NaN, ...
+        "CacheHit", false));
 timedPath = struct( "Success", false, "Message", string(message), ...
     "time_s", zeros(0, 1), "position_deg", zeros(0, 2), "velocity_deg_s", zeros(0, 2), ...
     "acceleration_deg_s2", zeros(0, 2), "jerk_deg_s3", zeros(0, 2), ...
@@ -2013,5 +1342,6 @@ timedPath = struct( "Success", false, "Message", string(message), ...
     "CurveTangentialJerk_deg_s3", zeros(0, 1), "SampleArcLength_deg", zeros(0, 1), ...
     "SampleSpeed_deg_s", zeros(0, 1), "SampleTangentialAcceleration_deg_s2", zeros(0, 1), ...
     "SampleTangentialJerk_deg_s3", zeros(0, 1), "CurvatureDiscontinuityStopCount", 0, ...
-    "RetimerType", "certifiedAnalyticSpatialJerk", "MotionType", "velocityCarrying");
+    "RetimerType", "notEvaluated", "RetimerReference", "", ...
+    "MotionType", "velocityCarrying");
 end
