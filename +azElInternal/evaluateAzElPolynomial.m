@@ -20,7 +20,7 @@ function [time_s, position_deg, velocity_deg_s, ...
 %       Absolute evaluation times. The output uses a numeric column.
 %   - segmentIndex (numeric scalar or vector, optional; default [])
 %       Select an exact segment for each time. Empty values select segments
-%       from the uniform polynomial time base. A scalar applies to all times.
+%       from polynomial start-time records. A scalar applies to all times.
 %**************************************************************************
 % OUTPUTS
 %   - time_s (N-by-1 numeric column)
