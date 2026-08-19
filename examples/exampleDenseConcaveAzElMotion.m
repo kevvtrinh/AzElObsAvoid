@@ -27,8 +27,8 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 3, ...
-    "CollocationSegmentCount", 7, "MaximumPlanningTime_s", 35));
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 2, ...
+    "CollocationSegmentCount", 7, "MaximumPlanningTime_s", 60));
 
 %% Section 2: Create Obstacles
 
@@ -65,8 +65,8 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    plotOptions = rmfield(displayOptions, 'PlotOutputs');
-    result.PlotHandles = plotAzElMotion(result, plotOptions);
+    result.PlotHandles = plotAzElMotion( ...
+        result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

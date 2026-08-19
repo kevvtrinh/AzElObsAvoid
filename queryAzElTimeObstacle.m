@@ -94,6 +94,13 @@ end
 queryCount = numel(queryTime_s);
 isOccupied = false(queryCount, 1);
 blockingObstacleIndex = zeros(queryCount, 1, "uint32");
+if nargout < 2
+    isOccupied = occupancyOnly( ...
+        obstacles, queryAzimuth_deg, queryElevation_deg, queryTime_s, ...
+        options);
+    isOccupied = reshape(isOccupied, outputSize);
+    return;
+end
 minimumClearance_deg = Inf(queryCount, 1);
 nearestObstacleIndex = zeros(queryCount, 1, "uint32");
 
@@ -182,4 +189,103 @@ end
 azimuth_deg = values{1};
 elevation_deg = values{2};
 time_s = values{3};
+end
+
+function isOccupied = occupancyOnly( ...
+        obstacles, azimuth_deg, elevation_deg, time_s, options)
+% PURPOSE
+%   - Test occupancy without constructing clearance data that is not used.
+queryCount = numel(time_s);
+isOccupied = false(queryCount, 1);
+finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & ...
+    isfinite(time_s);
+uniqueTime_s = unique(time_s(finiteQuery));
+obstacleBounds_deg = obstacleHistoryBounds(obstacles);
+for timeIndex = 1:numel(uniqueTime_s)
+    queryIndices = find(finiteQuery & time_s == uniqueTime_s(timeIndex));
+    for obstacleIndex = 1:numel(obstacles)
+        remainingIndices = queryIndices(~isOccupied(queryIndices));
+        if isempty(remainingIndices)
+            break;
+        end
+        bound_deg = obstacleBounds_deg(obstacleIndex, :);
+        tolerance_deg = options.ClearanceTolerance_deg;
+        canIntersect = ...
+            azimuth_deg(remainingIndices) >= bound_deg(1) - tolerance_deg & ...
+            azimuth_deg(remainingIndices) <= bound_deg(2) + tolerance_deg & ...
+            elevation_deg(remainingIndices) >= bound_deg(3) - tolerance_deg & ...
+            elevation_deg(remainingIndices) <= bound_deg(4) + tolerance_deg;
+        candidateIndices = remainingIndices(canIntersect);
+        if isempty(candidateIndices)
+            continue;
+        end
+        points_deg = [azimuth_deg(candidateIndices), ...
+            elevation_deg(candidateIndices)];
+        [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
+            obstacles(obstacleIndex), uniqueTime_s(timeIndex), true);
+        if ~geometry.Active
+            continue;
+        end
+        finiteBoundary = isfinite(geometry.azimuth_deg) & ...
+            isfinite(geometry.elevation_deg);
+        hasOneRing = all(finiteBoundary);
+        if hasOneRing
+            [inside, onBoundary] = inpolygon( ...
+                points_deg(:, 1), points_deg(:, 2), ...
+                geometry.azimuth_deg, geometry.elevation_deg);
+            blocked = inside;
+            if ~options.BoundaryIsOccupied
+                blocked(onBoundary) = false;
+            end
+        else
+            if isempty(shape)
+                shape = azElInternal.obstacleShapeAtTime( ...
+                    obstacles(obstacleIndex), uniqueTime_s(timeIndex));
+            end
+            blocked = complexShapeOccupancy(shape, points_deg, options);
+        end
+        isOccupied(candidateIndices(blocked)) = true;
+    end
+end
+end
+
+function bounds_deg = obstacleHistoryBounds(obstacles)
+% PURPOSE
+%   - Bound each complete protected history for conservative broad rejection.
+obstacleCount = numel(obstacles);
+bounds_deg = repmat([Inf -Inf Inf -Inf], obstacleCount, 1);
+for obstacleIndex = 1:obstacleCount
+    obstacle = obstacles(obstacleIndex);
+    for sampleIndex = 1:numel(obstacle.time_s)
+        azimuth_deg = obstacle.az_deg{sampleIndex};
+        elevation_deg = obstacle.el_deg{sampleIndex};
+        finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
+        if ~any(finiteVertex)
+            continue;
+        end
+        bounds_deg(obstacleIndex, 1) = min( ...
+            bounds_deg(obstacleIndex, 1), min(azimuth_deg(finiteVertex)));
+        bounds_deg(obstacleIndex, 2) = max( ...
+            bounds_deg(obstacleIndex, 2), max(azimuth_deg(finiteVertex)));
+        bounds_deg(obstacleIndex, 3) = min( ...
+            bounds_deg(obstacleIndex, 3), min(elevation_deg(finiteVertex)));
+        bounds_deg(obstacleIndex, 4) = max( ...
+            bounds_deg(obstacleIndex, 4), max(elevation_deg(finiteVertex)));
+    end
+end
+end
+
+function blocked = complexShapeOccupancy(shape, points_deg, options)
+% PURPOSE
+%   - Preserve the detailed boundary policy for multi-ring geometry.
+pointCount = size(points_deg, 1);
+blocked = false(pointCount, 1);
+for pointIndex = 1:pointCount
+    clearance_deg = azElInternal.pointPolygonClearance( ...
+        shape, points_deg(pointIndex, :));
+    blocked(pointIndex) = clearance_deg < ...
+        -options.ClearanceTolerance_deg || ...
+        (options.BoundaryIsOccupied && clearance_deg <= ...
+        options.ClearanceTolerance_deg);
+end
 end

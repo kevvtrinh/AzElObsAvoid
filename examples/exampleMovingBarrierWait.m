@@ -82,8 +82,8 @@ end
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    plotOptions = rmfield(displayOptions, 'PlotOutputs');
-    result.PlotHandles = plotAzElMotion(result, plotOptions);
+    result.PlotHandles = plotAzElMotion( ...
+        result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

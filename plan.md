@@ -5,7 +5,7 @@
 Replace the current multi-planner architecture with one small, maintainable
 HS3 trajectory-planning pipeline. Preserve the useful public obstacle and
 planner interfaces, but remove the SIPP, snapshot, and competing trajectory
-generation machinery that expanded the repository to roughly 20,000 lines.
+generation machinery that expanded the repository to 24,436 lines.
 
 The production pipeline shall be:
 
@@ -23,32 +23,30 @@ verification requirements.
 
 ## Branch Creation
 
-Create the refactor as a new branch from the latest `main` branch. Git branch
-names cannot contain spaces, so the requested branch name `hs3 refactor` is
-represented as `hs3-refactor`.
+Create the refactor as a new branch from the latest `main` branch. The existing
+`hs3-refactor` worktree was inspected and preserved. This implementation uses
+the new branch `plan-502-implementation`.
 
 ```text
 git status --short
 git switch main
 git pull --ff-only
-git switch -c hs3-refactor
+git switch -c plan-502-implementation
 ```
 
-Do not overwrite an existing branch. If `hs3-refactor` already exists, stop
-and inspect it before deciding whether to resume it or create a differently
-named branch.
+Do not overwrite the existing `hs3-refactor` branch.
 
 ## Non-Negotiable Size Limits
 
 Treat code size as an acceptance requirement, not a future cleanup task.
 
-- Production MATLAB code, excluding examples, tests, and benchmarks: no more
-  than 5,000 lines.
-- Entire maintained MATLAB repository, including examples and tests: target
-  no more than 9,000 lines.
+- Production MATLAB code, excluding examples, tests, and benchmarks: target
+  no more than 6,000 lines and hard limit 7,000 lines.
+- Entire maintained MATLAB repository, including all 14 main examples: target
+  no more than 10,500 lines and hard limit 12,000 lines.
 - No production MATLAB file should exceed 900 lines without a documented
   reason and explicit approval.
-- Target 8 to 12 production files with substantial responsibilities. Do not
+- Target 8 to 16 production files with substantial responsibilities. Do not
   replace a few large files with dozens of one-function fragments.
 - Do not count comments or headers as an excuse to exceed the limits; they are
   part of the maintained code.
@@ -204,6 +202,13 @@ Requirements:
   conservative reachability bounds, but its output is only an initialization.
 - Record the graph resolution and each returned seed so failures are
   reproducible.
+- Permit an explicit seed-only clustering distance. Connected groups of at
+  least three nearby swept obstacle regions may use a conservative convex
+  hull for seed generation. Preserve the original protected obstacles for
+  HS3 constraints and independent validation.
+- Permit a conservative seed-only envelope when one dense obstacle history
+  exceeds the documented polygon-union work budget. Record and plot the
+  envelope. Preserve the exact protected history for HS3 and validation.
 
 If the direct seed succeeds and an option such as `DirectSeedOnly` is enabled,
 the graph may be skipped. The default should still attempt the bounded seed set
@@ -369,14 +374,15 @@ no example performs planning or retiming internally.
 - Delete those implementations and their exclusive options, tests,
   benchmarks, wrappers, and documentation.
 - Remove stale compatibility fields from examples and plotting.
-- Recount lines and simplify further if the production total exceeds 5,000.
+- Recount lines and simplify further if the production total exceeds 6,000.
 
 Exit criterion: there is exactly one production trajectory-planning path and
 the line-count limits are satisfied.
 
-### Phase 7: Migrate and Reduce Examples
+### Phase 7: Migrate and Preserve Examples
 
-Keep a small scenario suite that exercises structurally different behavior:
+Keep all 14 main examples. Additional focused examples can remain when they
+exercise structurally different behavior, including:
 
 - Obstacle-free analytic motion.
 - Static rectangle requiring a side choice.
@@ -389,8 +395,7 @@ Keep a small scenario suite that exercises structurally different behavior:
 - Expected no-path result.
 
 Each example must only construct inputs, call `planAzElMotion`, independently
-validate, and plot. Delete redundant examples that exercise the same algorithm
-path without adding a distinct invariant.
+validate, and plot. Do not delete a main example.
 
 Exit criterion: every retained example follows the `AGENTS.md` template and
 runs headlessly without local planning logic.
@@ -453,7 +458,8 @@ At minimum, automated tests must cover:
 
 ## Completion Criteria
 
-The `hs3-refactor` branch is complete only when all of the following are true:
+The `plan-502-implementation` branch is complete only when all of the
+following are true:
 
 - One public planner owns geometry and timing optimization.
 - The planner uses separated HS3 with jerk as the motion control.
@@ -464,7 +470,10 @@ The `hs3-refactor` branch is complete only when all of the following are true:
 - Every successful result passes independent continuous collision and
   kinematic validation.
 - Expected failures return stable results and useful diagnostics.
-- Production MATLAB code is at or below 5,000 lines.
+- Production MATLAB code is at or below 6,000 lines and below the 7,000-line
+  hard limit.
+- The complete MATLAB repository is at or below the 10,500-line target and
+  below the 12,000-line hard limit.
 - Total maintained MATLAB code is at or below the agreed repository ceiling,
   with any exception explicitly approved before completion.
 - Documentation states that the result is the best validated local solution
@@ -478,7 +487,7 @@ Stop and report instead of expanding the design when:
 
 - satisfying one example appears to require a scenario-specific heuristic;
 - a proposed feature creates a second planner or retimer;
-- the production code would exceed 5,000 lines;
+- the production code would exceed 7,000 lines;
 - continuous collision validation cannot resolve a segment safely;
 - a solver failure is being hidden by clipping, fallback, or altered inputs;
 - a deleted legacy dependency is still required by a maintained public

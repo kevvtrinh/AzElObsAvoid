@@ -1,5 +1,4 @@
-function candidate = solveAzElHs3(obstacles, initialState, goalState, ...
-        limits, options, seed)
+function candidate = solveAzElHs3(obstacles, initialState, goalState, limits, options, seed)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = azElInternal.solveAzElHs3( ...
@@ -25,16 +24,21 @@ function candidate = solveAzElHs3(obstacles, initialState, goalState, ...
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
 %**************************************************************************
-
 %% Section 1: Build The Decision Layout And Initial Guess
-
+obstacles = combineAzElObstacles(obstacles);
 segmentCount = options.CollocationSegmentCount;
+if ~isfield(seed, "CorridorBoundary_deg")
+    seed.CorridorBoundary_deg = zeros(0, 2);
+end
 controlCount = 2 * segmentCount + 1;
 isEarliestArrival = options.GoalTimeMode == "earliestArrival";
 startTime_s = initialState.time_s;
 latestFinalTime_s = goalState.time_s;
-minimumDuration_s = durationLowerBound( ...
-    initialState, goalState, limits, latestFinalTime_s);
+minimumDuration_s = durationLowerBound(initialState, goalState, limits, latestFinalTime_s);
+isTimedSeed = any(seed.Source == ["directWait", "timeExpandedVisibilityGraph"]);
+if isTimedSeed
+    minimumDuration_s = max(minimumDuration_s, seed.EstimatedDuration_s);
+end
 minimumFinalTime_s = startTime_s + minimumDuration_s;
 candidate = emptyCandidate(seed, segmentCount);
 if minimumFinalTime_s > latestFinalTime_s + options.ConstraintTolerance
@@ -42,21 +46,48 @@ if minimumFinalTime_s > latestFinalTime_s + options.ConstraintTolerance
     candidate.TerminationReason = "timeWindowInfeasible";
     return;
 end
-if isEarliestArrival
-    seedDuration_s = max( ...
-        minimumDuration_s, seed.EstimatedDuration_s);
+if isEarliestArrival && isTimedSeed
+    finalTimeGuess_s = minimumFinalTime_s;
+elseif isEarliestArrival
+    seedDuration_s = max(minimumDuration_s, seed.EstimatedDuration_s);
     finalTimeGuess_s = min(latestFinalTime_s, ...
         startTime_s + max(1.05 * minimumDuration_s, seedDuration_s));
 else
     finalTimeGuess_s = latestFinalTime_s;
 end
 controlTau = linspace(0, 1, controlCount).';
-initialJerk_deg_s3 = initialJerkGuess( ...
+[initialJerk_deg_s3, initialJerkLimitRatio] = initialJerkGuess( ...
     initialState, goalState, limits, seed, finalTimeGuess_s, ...
     segmentCount, controlTau);
-corridorTau = linspace(0, 1, 16 * segmentCount + 1).';
+if isEarliestArrival && ~isTimedSeed && initialJerkLimitRatio > 1
+    durationScale = initialJerkLimitRatio^(1 / 3);
+    durationSafetyFactor = 1.05;
+    if options.SeedClusterDistance_deg > 0
+        % Cluster hull corners need reserve for their sharper route turns.
+        durationSafetyFactor = 1.5;
+    end
+    scaledDuration_s = ...
+        (finalTimeGuess_s - startTime_s) * durationScale * ...
+        durationSafetyFactor;
+    finalTimeGuess_s = min(latestFinalTime_s, startTime_s + scaledDuration_s);
+    [initialJerk_deg_s3, ~] = initialJerkGuess( ...
+        initialState, goalState, limits, seed, finalTimeGuess_s, ...
+        segmentCount, controlTau);
+end
+% Detailed boundaries need denser checks so narrow concave features do not
+% fall between constraint points. Independent validation remains final.
+corridorCheckCount = corridorChecksPerSegment( ...
+    obstacles, startTime_s, finalTimeGuess_s, segmentCount);
+corridorTau = linspace(0, 1, corridorCheckCount * segmentCount + 1).';
+eventTau = (vertcat(obstacles.time_s) - startTime_s) / ...
+    (finalTimeGuess_s - startTime_s);
+eventTau = eventTau(eventTau > 0 & eventTau < 1);
+corridorTau = unique([corridorTau; eventTau]);
 corridor = buildCorridor( ...
-    obstacles, seed, startTime_s, finalTimeGuess_s, corridorTau, limits);
+    obstacles, seed, startTime_s, finalTimeGuess_s, corridorTau, ...
+    options.CollisionClearanceTolerance_deg, ...
+    ~isEarliestArrival, limits.maxVelocity_deg_s);
+seedCorridor = azElInternal.buildSeedCorridor(seed, segmentCount);
 decision0 = initialJerk_deg_s3(:);
 lowerBound = repmat(-limits.maxJerk_deg_s3(:), controlCount, 1);
 upperBound = repmat(limits.maxJerk_deg_s3(:), controlCount, 1);
@@ -65,13 +96,11 @@ if isEarliestArrival
     lowerBound(end + 1, 1) = minimumFinalTime_s;
     upperBound(end + 1, 1) = latestFinalTime_s;
 end
-
 %% Section 2: Minimize Arrival Time Or Fixed-Time Jerk
-
 solverTimer = tic;
 solverOptions = optimoptions("fmincon", ...
-    "Algorithm", "sqp", ...
-    "Display", solverDisplay(options.Verbose), ...
+    "Algorithm", "interior-point", ...
+    "Display", "none", ...
     "MaxIterations", options.MaximumNlpIterations, ...
     "MaxFunctionEvaluations", options.MaximumNlpFunctionEvaluations, ...
     "ConstraintTolerance", options.ConstraintTolerance, ...
@@ -82,7 +111,8 @@ solverOptions = optimoptions("fmincon", ...
     options.MaximumSolverTime_s));
 constraintFunction = @(decision) trajectoryConstraints( ...
     decision, isEarliestArrival, latestFinalTime_s, segmentCount, ...
-    initialState, goalState, limits, options, obstacles, corridor);
+    initialState, goalState, limits, options, obstacles, corridor, ...
+    seedCorridor);
 if isEarliestArrival
     stageOneObjective = @(decision) decision(end);
 else
@@ -103,9 +133,7 @@ catch exception
         "StageOneOutput", struct(), "StageTwoOutput", struct());
     return;
 end
-
 %% Section 3: Apply The Lexicographic Jerk Tie-Break
-
 selectedDecision = stageOneDecision;
 stageTwoExitFlag = NaN;
 stageTwoOutput = struct();
@@ -131,9 +159,7 @@ if isEarliestArrival && ...
         selectedDecision = trialDecision;
     end
 end
-
 %% Section 4: Reconstruct The Candidate
-
 [jerk_deg_s3, finalTime_s] = unpackDecision( ...
     selectedDecision, isEarliestArrival, latestFinalTime_s, controlCount);
 polynomial = reconstructPolynomial( ...
@@ -141,8 +167,11 @@ polynomial = reconstructPolynomial( ...
 [sampleTime_s, position_deg, velocity_deg_s, ...
     acceleration_deg_s2, sampledJerk_deg_s3] = ...
     samplePolynomial(polynomial, options.SampleTime_s);
-maximumViolation = maximumConstraintViolation( ...
-    selectedDecision, constraintFunction);
+[finalInequality, finalEquality] = constraintFunction(selectedDecision);
+maximumInequalityViolation = max([0; finalInequality(:)]);
+maximumEqualityViolation = max([0; abs(finalEquality(:))]);
+maximumViolation = max( ...
+    maximumInequalityViolation, maximumEqualityViolation);
 optimizerFeasible = maximumViolation <= ...
     max(10 * options.ConstraintTolerance, 1e-7);
 timeLimitReached = toc(solverTimer) >= options.MaximumSolverTime_s;
@@ -177,6 +206,8 @@ candidate = struct( ...
     "ControlTau", controlTau, ...
     "ControlJerk_deg_s3", jerk_deg_s3, ...
     "Corridor", corridor, ...
+    "SeedCorridorBoundary_deg", seed.CorridorBoundary_deg, ...
+    "SeedCorridor", seedCorridor, ...
     "SolverDiagnostics", struct( ...
     "StageOneExitFlag", stageOneExitFlag, ...
     "StageTwoExitFlag", stageTwoExitFlag, ...
@@ -184,28 +215,50 @@ candidate = struct( ...
     "StageTwoObjective", stageTwoObjectiveValue, ...
     "StageOneOutput", stageOneOutput, ...
     "StageTwoOutput", stageTwoOutput, ...
+    "MaximumInequalityViolation", maximumInequalityViolation, ...
+    "MaximumEqualityViolation", maximumEqualityViolation, ...
     "ElapsedTime_s", toc(solverTimer)));
 end
-
 %% Section 5: Local Functions
-
 function stop = stopForTime(~, ~, ~, solverTimer, maximumTime_s)
 % PURPOSE
 %   - Stop one fmincon stage at its assigned wall-time limit.
 stop = toc(solverTimer) >= maximumTime_s;
 end
 
-function displayMode = solverDisplay(verbose)
+function checkCount = corridorChecksPerSegment( ...
+        obstacles, startTime_s, finalTime_s, segmentCount)
 % PURPOSE
-%   - Keep solver output under the public Verbose control.
-if verbose
-    displayMode = "iter";
-else
-    displayMode = "none";
+%   - Scale density with boundary detail and obstacle-history time spacing.
+maximumVertexCount = 0;
+minimumInterval_s = Inf;
+for obstacleIndex = 1:numel(obstacles)
+    obstacle = obstacles(obstacleIndex);
+    if numel(obstacle.time_s) > 1
+        minimumInterval_s = min( ...
+            minimumInterval_s, min(diff(obstacle.time_s)));
+    end
+    for sampleIndex = 1:numel(obstacle.az_deg)
+        finiteVertexCount = nnz(isfinite(obstacle.az_deg{sampleIndex}) & ...
+            isfinite(obstacle.el_deg{sampleIndex}));
+        maximumVertexCount = max(maximumVertexCount, finiteVertexCount);
+    end
 end
+boundaryCheckCount = ceil(maximumVertexCount / 5);
+motionCheckCount = 8;
+if isfinite(minimumInterval_s) && minimumInterval_s > 0
+    samplesPerObstacleInterval = 4;
+    duration_s = finalTime_s - startTime_s;
+    motionCheckCount = ceil(samplesPerObstacleInterval * duration_s / ...
+        (segmentCount * minimumInterval_s));
+end
+maximumChecksPerSegment = 16;
+checkCount = min(maximumChecksPerSegment, ...
+    max([8, boundaryCheckCount, motionCheckCount]));
 end
 
-function jerkGuess_deg_s3 = initialJerkGuess(initialState, goalState, ...
+function [jerkGuess_deg_s3, jerkLimitRatio] = initialJerkGuess( ...
+        initialState, goalState, ...
         limits, seed, finalTime_s, segmentCount, controlTau)
 % PURPOSE
 %   - Fit a bounded jerk-chain initialization to the supplied topology seed.
@@ -259,13 +312,16 @@ for axisIndex = 1:2
         (fitMatrix.' * fitMatrix + regularization) \ ...
         (fitMatrix.' * fitOffset);
 end
+jerkLimitRatio = max( ...
+    abs(jerkGuess_deg_s3) ./ limits.maxJerk_deg_s3, [], "all");
 jerkGuess_deg_s3 = min(limits.maxJerk_deg_s3, ...
     max(-limits.maxJerk_deg_s3, jerkGuess_deg_s3));
 end
 
 function [inequality, equality] = trajectoryConstraints(decision, ...
         isEarliestArrival, fixedFinalTime_s, segmentCount, ...
-        initialState, goalState, limits, options, obstacles, corridor)
+        initialState, goalState, limits, options, obstacles, corridor, ...
+        seedCorridor)
 % PURPOSE
 %   - Enforce endpoint, continuous kinematic, and frozen-corridor constraints.
 controlCount = 2 * segmentCount + 1;
@@ -275,6 +331,8 @@ polynomial = reconstructPolynomial( ...
     jerk_deg_s3, initialState, finalTime_s, segmentCount);
 inequality = continuousBoundConstraints( ...
     polynomial, limits, options);
+inequality = [inequality; ...
+    azElInternal.seedCorridorInequality(polynomial, seedCorridor)];
 corridorTau = unique([corridor.Tau].', "stable");
 controlTime_s = initialState.time_s + corridorTau * ...
     (finalTime_s - initialState.time_s);
@@ -344,28 +402,47 @@ inequality = [inequality; ...
 end
 
 function corridor = buildCorridor( ...
-        obstacles, seed, startTime_s, finalTime_s, controlTau, limits)
+        obstacles, seed, startTime_s, finalTime_s, controlTau, ...
+        clearanceTolerance_deg, geometryIsFixed, maxVelocity_deg_s)
 % PURPOSE
-%   - Freeze obstacle edges with between-point relative-motion clearance.
+%   - Freeze obstacle edges at dense optimization constraint points.
 template = struct( ...
     "ControlIndex", 0, "ObstacleIndex", 0, "EdgeIndex", 0, ...
     "Tau", 0, ...
     "OutwardSign", 1, "UseSupport", false, ...
-    "SupportNormal", [0 0], "Clearance_deg", 0);
+    "SupportNormal", [0 0], "Clearance_deg", 0, ...
+    "GeometryIsFixed", false, "FixedNormal", [0 0], ...
+    "FixedBoundaryOffset_deg", 0);
 corridor = repmat(template, 0, 1);
+if azElInternal.seedEnvelopeContainsObstacles( ...
+        seed.CorridorBoundary_deg, obstacles, clearanceTolerance_deg)
+    return;
+end
+lockedAssociation = repmat(template, numel(obstacles), 1);
+hasLockedAssociation = false(numel(obstacles), 1);
 seedPosition_deg = interp1(seed.tau, seed.position_deg, ...
     controlTau, "linear");
 controlTime_s = startTime_s + controlTau * (finalTime_s - startTime_s);
-maximumTimeStep_s = max(diff(controlTime_s));
-vehicleSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
+vehicleSpeedBound_deg_s = norm(maxVelocity_deg_s);
 for controlIndex = 1:numel(controlTau)
     for obstacleIndex = 1:numel(obstacles)
         [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
             obstacles(obstacleIndex), controlTime_s(controlIndex));
         if ~geometry.Active
+            hasLockedAssociation(obstacleIndex) = false;
             continue;
         end
         [edgeStart_deg, edgeEnd_deg] = geometryEdges(geometry);
+        finiteVertices = isfinite(geometry.azimuth_deg) & ...
+            isfinite(geometry.elevation_deg);
+        vertices_deg = [geometry.azimuth_deg(finiteVertices), ...
+            geometry.elevation_deg(finiteVertices)];
+        hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
+        hullShape = polyshape( ...
+            vertices_deg(hullIndex(1:end - 1), :), "Simplify", false);
+        geometryIsConvex = shape.NumRegions == 1 && ...
+            abs(area(hullShape) - area(shape)) <= ...
+            1e-9 * max(1, area(hullShape));
         [edgeIndex, nearestPoint_deg] = nearestEdge( ...
             seedPosition_deg(controlIndex, :), ...
             edgeStart_deg, edgeEnd_deg);
@@ -386,19 +463,104 @@ for controlIndex = 1:numel(controlTau)
         association.EdgeIndex = edgeIndex;
         association.Tau = controlTau(controlIndex);
         association.OutwardSign = outwardSign;
-        obstacleSpeedBound_deg_s = geometry.VertexSpeedBound_deg_s;
-        if ~geometry.TopologyIsInterpolated
-            obstacleSpeedBound_deg_s = 0;
-        end
-        association.Clearance_deg = 0.5 * maximumTimeStep_s * ...
-            (vehicleSpeedBound_deg_s + obstacleSpeedBound_deg_s) + 1e-4;
-        if ~geometry.TopologyIsInterpolated
+        % A small separation prevents tolerance-level boundary contact.
+        % Adaptive validation certifies motion between constraint points.
+        association.Clearance_deg = max(1e-4, clearanceTolerance_deg);
+        stationarySpeedTolerance_deg_s = 1e-12;
+        geometryIsStationary = geometry.VertexSpeedBound_deg_s <= ...
+            stationarySpeedTolerance_deg_s;
+        if (~geometry.TopologyIsInterpolated || geometryIsStationary) && ...
+                geometryIsConvex
             outwardNormal = outwardSign * leftNormal;
             association.UseSupport = true;
             association.SupportNormal = outwardNormal;
         end
+        if geometryIsFixed || geometryIsStationary
+            if association.UseSupport
+                outwardNormal = association.SupportNormal;
+                boundaryOffset_deg = max(vertices_deg * outwardNormal.');
+            else
+                outwardNormal = outwardSign * leftNormal;
+                boundaryOffset_deg = edgeStart_deg(edgeIndex, :) * ...
+                    outwardNormal.';
+            end
+            association.GeometryIsFixed = true;
+            association.FixedNormal = outwardNormal;
+            association.FixedBoundaryOffset_deg = boundaryOffset_deg;
+        end
+        usedLockedAssociation = false;
+        geometryRequiresLock = geometry.VertexSpeedBound_deg_s > ...
+            vehicleSpeedBound_deg_s;
+        if geometryRequiresLock && hasLockedAssociation(obstacleIndex)
+            [trialAssociation, lockIsSatisfied] = moveAssociation( ...
+                lockedAssociation(obstacleIndex), geometry, ...
+                edgeStart_deg, edgeEnd_deg, controlIndex, ...
+                controlTau(controlIndex), geometryIsFixed, ...
+                seedPosition_deg(controlIndex, :));
+            if lockIsSatisfied
+                association = trialAssociation;
+                usedLockedAssociation = true;
+            end
+        end
+        if geometryRequiresLock && ~usedLockedAssociation
+            [association, ~] = moveAssociation( ...
+                association, geometry, edgeStart_deg, edgeEnd_deg, ...
+                controlIndex, controlTau(controlIndex), ...
+                geometryIsFixed, seedPosition_deg(controlIndex, :));
+        end
+        if geometryRequiresLock
+            lockedAssociation(obstacleIndex) = association;
+            hasLockedAssociation(obstacleIndex) = true;
+        else
+            hasLockedAssociation(obstacleIndex) = false;
+        end
         corridor(end + 1, 1) = association; %#ok<AGROW>
     end
+end
+end
+
+function [association, isSatisfied] = moveAssociation( ...
+        association, geometry, edgeStart_deg, edgeEnd_deg, ...
+        controlIndex, controlTau, geometryIsFixed, point_deg)
+% PURPOSE
+%   - Keep a seed half-space until the seed no longer satisfies it.
+finiteVertices = isfinite(geometry.azimuth_deg) & ...
+    isfinite(geometry.elevation_deg);
+vertices_deg = [geometry.azimuth_deg(finiteVertices), ...
+    geometry.elevation_deg(finiteVertices)];
+isSatisfied = false;
+if association.UseSupport
+    outwardNormal = association.SupportNormal;
+    boundaryOffset_deg = max(vertices_deg * outwardNormal.');
+elseif association.EdgeIndex <= size(edgeStart_deg, 1)
+    edgeDelta_deg = edgeEnd_deg(association.EdgeIndex, :) - ...
+        edgeStart_deg(association.EdgeIndex, :);
+    if norm(edgeDelta_deg) <= eps
+        return;
+    end
+    leftNormal = [-edgeDelta_deg(2), edgeDelta_deg(1)] / ...
+        norm(edgeDelta_deg);
+    outwardNormal = association.OutwardSign * leftNormal;
+    boundaryOffset_deg = edgeStart_deg(association.EdgeIndex, :) * ...
+        outwardNormal.';
+else
+    return;
+end
+pointProjection_deg = point_deg * outwardNormal.';
+seedClearance_deg = pointProjection_deg - boundaryOffset_deg;
+isSatisfied = seedClearance_deg >= association.Clearance_deg;
+if ~isSatisfied
+    return;
+end
+seedClearanceRetention = 0.25;
+association.Clearance_deg = max(association.Clearance_deg, ...
+    seedClearanceRetention * seedClearance_deg);
+association.ControlIndex = controlIndex;
+association.Tau = controlTau;
+association.GeometryIsFixed = geometryIsFixed;
+if geometryIsFixed
+    association.FixedNormal = outwardNormal;
+    association.FixedBoundaryOffset_deg = boundaryOffset_deg;
 end
 end
 
@@ -410,9 +572,18 @@ inequality = zeros(numel(corridor), 1);
 for associationIndex = 1:numel(corridor)
     association = corridor(associationIndex);
     controlIndex = association.ControlIndex;
+    if association.GeometryIsFixed
+        outwardNormal = association.FixedNormal;
+        boundaryOffset_deg = association.FixedBoundaryOffset_deg;
+        pointProjection_deg = ...
+            controlPosition_deg(controlIndex, :) * outwardNormal.';
+        inequality(associationIndex) = boundaryOffset_deg + ...
+            association.Clearance_deg - pointProjection_deg;
+        continue;
+    end
     [~, geometry] = azElInternal.obstacleShapeAtTime( ...
         obstacles(association.ObstacleIndex), ...
-        controlTime_s(controlIndex));
+        controlTime_s(controlIndex), true);
     if ~geometry.Active
         inequality(associationIndex) = -1;
         continue;
@@ -697,7 +868,6 @@ jerkBound_s = nthroot( ...
 duration_s = max([1e-3, velocityBound_s, ...
     accelerationBound_s, jerkBound_s]);
 end
-
 function candidate = emptyCandidate(seed, segmentCount)
 % PURPOSE
 %   - Define the same candidate schema for early solver failures.
@@ -720,7 +890,11 @@ candidate = struct( ...
     "ControlTau", zeros(0, 1), ...
     "ControlJerk_deg_s3", zeros(0, 2), ...
     "Corridor", struct([]), ...
+    "SeedCorridorBoundary_deg", seed.CorridorBoundary_deg, ...
+    "SeedCorridor", struct([]), ...
     "SolverDiagnostics", struct( ...
     "StageOneExitFlag", NaN, "StageTwoExitFlag", NaN, ...
-    "StageOneOutput", struct(), "StageTwoOutput", struct()));
+    "StageOneOutput", struct(), "StageTwoOutput", struct(), ...
+    "MaximumInequalityViolation", Inf, ...
+    "MaximumEqualityViolation", Inf));
 end

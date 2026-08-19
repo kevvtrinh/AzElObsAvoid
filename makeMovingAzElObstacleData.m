@@ -26,7 +26,7 @@ function [azElData, history] = makeMovingAzElObstacleData( ...
 %       N and topology may differ independently at every time slice.
 %   - safetyMargin_deg (nonnegative scalar)
 %   - options (scalar struct, optional)
-%       .Verbose prints pool and completed-slice progress (default false).
+%       .Verbose prints periodic completed-slice progress (default false).
 %**************************************************************************
 % OUTPUTS
 %   - azElData (canonical protected moving obstacle)
@@ -83,6 +83,7 @@ validateattributes(safetyMargin_deg, {'numeric'}, ...
 
 sourcePosition_deg = [sourceAzimuth_deg, sourceElevation_deg];
 sliceCount = numel(time_s);
+progressStride = max(1, ceil(sliceCount / 10));
 azimuthBySlice_deg = cell(sliceCount, 1);
 elevationBySlice_deg = cell(sliceCount, 1);
 vertexCount = zeros(sliceCount, 1);
@@ -97,7 +98,9 @@ for sampleIndex = 1:sliceCount
         centroid_deg(sampleIndex, :), bounds_deg(sampleIndex, :)] = ...
         generateOneSlice(sliceTransform, sourcePosition_deg, ...
         time_s(sampleIndex), sampleIndex);
-    if verbose
+    reportProgress = sampleIndex == 1 || sampleIndex == sliceCount || ...
+        mod(sampleIndex, progressStride) == 0;
+    if verbose && reportProgress
         printCompletedSlice(struct( ...
             "Index", sampleIndex, "Count", sliceCount, ...
             "Time_s", time_s(sampleIndex), ...

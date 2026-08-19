@@ -19,7 +19,6 @@ function tests = testHs3Planner
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
-
 function setupOnce(testCase)
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
@@ -31,9 +30,91 @@ function testDefaultsExposeOneSmallPlanner(testCase)
 % Verify that zero-input defaults expose only the maintained HS3 controls.
 options = planAzElMotion();
 verifyEqual(testCase, options.MaximumSeedCount, 5);
+verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, isfield(options, "UseParallel"));
 verifyFalse(testCase, isfield(options, "MaximumVisibilitySnapshotsPerObstacle"));
+end
+
+function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
+% Verify that three nearby regions form one seed hull without physical edits.
+obstacles = [ ...
+    rectangleObstacle([0 20], [-1 1 -4 -2], 0); ...
+    rectangleObstacle([0 20], [-1 1 -1.5 0.5], 0); ...
+    rectangleObstacle([0 20], [-1 1 1 3], 0)];
+initialState = state(0, [-5 0], [0 0], [0 0]);
+goalState = state(20, [5 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.DirectSeedOnly = false;
+options.MaximumSeedCount = 3;
+options.SeedClusterDistance_deg = 0.6;
+[seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
+    obstacles, initialState, goalState, limits, options, tic);
+verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
+verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
+verifyEqual(testCase, diagnostics.SeedCluster.ClusteredRegionCount, 3);
+verifyNotEmpty(testCase, diagnostics.SeedCluster.ClusterBoundary_deg);
+verifyGreaterThanOrEqual(testCase, numel(seeds), 2);
+isOccupied = queryAzElTimeObstacle(obstacles, 0, 0.75, 10);
+verifyFalse(testCase, isOccupied);
+end
+
+function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
+% Verify the dense seed fallback bounds history and rejects endpoint capture.
+obstacle = rectangleObstacle([0 20], [-1 1 -2 2], 0);
+sampleTimes_s = (0:5:20).';
+endpointPosition_deg = [-5 0; 5 0];
+[envelopeShape, usedEnvelope] = ...
+    azElInternal.denseSweptSeedEnvelope( ...
+    obstacle, sampleTimes_s, endpointPosition_deg, 10);
+verifyTrue(testCase, usedEnvelope);
+verifyEqual(testCase, min(envelopeShape.Vertices, [], 1), [-1 -2], ...
+    "AbsTol", 1e-5);
+verifyEqual(testCase, max(envelopeShape.Vertices, [], 1), [1 2], ...
+    "AbsTol", 1e-5);
+[capturingShape, usedCapturingEnvelope] = ...
+    azElInternal.denseSweptSeedEnvelope( ...
+    obstacle, sampleTimes_s, [0 0; 5 0], 10);
+verifyFalse(testCase, usedCapturingEnvelope);
+verifyEmpty(testCase, capturingShape.Vertices);
+triangle = makeAzElObstacleData( ...
+    "triangle", [0; 20], [-4; 4; 0], [-3; -3; 4], 0);
+[coarseShape, usedCoarseShape] = ...
+    azElInternal.denseSweptSeedEnvelope( ...
+    triangle, sampleTimes_s, [-8 0; 8 0], 10);
+verifyTrue(testCase, usedCoarseShape);
+verifyLessThan(testCase, area(coarseShape), 50);
+guardedShape = polybuffer(coarseShape, 1e-9);
+verifyTrue(testCase, all(isinterior( ...
+    guardedShape, [-4; 4; 0], [-3; -3; 4])));
+end
+
+function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
+% Verify independent containment and continuous Bernstein separation checks.
+obstacle = rectangleObstacle([0 10], [-1 1 -1 1], 0);
+boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
+seed = struct( ...
+    "tau", [0; 1], "position_deg", [-2 2; 2 2], ...
+    "CorridorBoundary_deg", boundary_deg);
+corridor = azElInternal.buildSeedCorridor(seed, 1);
+positionPower_deg = zeros(1, 2, 6);
+positionPower_deg(1, 1, 1:2) = [-2 4];
+positionPower_deg(1, 2, 1) = 2;
+polynomial = struct( ...
+    "SegmentCount", 1, "positionPower_deg", positionPower_deg);
+trajectory = struct( ...
+    "Polynomial", polynomial, ...
+    "SeedCorridorBoundary_deg", boundary_deg, ...
+    "SeedCorridor", corridor);
+[certified, clearance_deg] = azElInternal.certifySeedCorridor( ...
+    trajectory, obstacle, 1e-7);
+verifyTrue(testCase, certified);
+verifyGreaterThan(testCase, clearance_deg, 0.5);
+trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
+[certifiedAfterEntry, ~] = azElInternal.certifySeedCorridor( ...
+    trajectory, obstacle, 1e-7);
+verifyFalse(testCase, certifiedAfterEntry);
 end
 
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
@@ -122,6 +203,14 @@ verifyEqual(testCase, ...
     "timeExpandedVisibilityGraph");
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.Grid.VisibilityEdgeCount, 0);
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.AcceptedEdges_deg, 2), 4);
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.RejectedEdges_deg, 2), 4);
+verifyTrue(testCase, all(isfinite( ...
+    result.SearchDiagnostics.Grid.AcceptedEdges_deg), "all"));
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.FrontierNodes_deg, 2), 2);
 minimumElevations_deg = zeros(numel(result.Seeds), 1);
 maximumElevations_deg = zeros(numel(result.Seeds), 1);
 for seedIndex = 1:numel(result.Seeds)
@@ -154,6 +243,27 @@ obstacle = makeAzElObstacleData( ...
 occupied = queryAzElTimeObstacle( ...
     obstacle, [0; 0], [0; 0], [0; 4]);
 verifyEqual(testCase, occupied, [true; false]);
+end
+
+function testOccupancyOnlyMatchesDetailedQuery(testCase)
+% Verify the fast occupancy path preserves moving and boundary decisions.
+time_s = [0; 2];
+first_deg = [-1 -1; 1 -1; 1 1; -1 1];
+second_deg = first_deg + [2 0];
+obstacle = makeAzElObstacleData( ...
+    "moving", time_s, ...
+    {first_deg(:, 1); second_deg(:, 1)}, ...
+    {first_deg(:, 2); second_deg(:, 2)}, 0);
+queryAzimuth_deg = [0; 1; 3];
+queryElevation_deg = [0; 0; 0];
+queryTime_s = [0; 0; 2];
+fastOccupied = queryAzElTimeObstacle( ...
+    obstacle, queryAzimuth_deg, queryElevation_deg, queryTime_s);
+[detailedOccupied, ~, details] = queryAzElTimeObstacle( ...
+    obstacle, queryAzimuth_deg, queryElevation_deg, queryTime_s);
+verifyEqual(testCase, fastOccupied, detailedOccupied);
+verifyEqual(testCase, fastOccupied, [true; true; true]);
+verifyLessThanOrEqual(testCase, min(details.MinimumClearance_deg), 0);
 end
 
 function testDeformingObstacleInterpolatesAtTrajectoryTime(testCase)
@@ -189,6 +299,22 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
 
+function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
+% Verify a topology-change interval has constant conservative geometry.
+closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
+left_deg = [-2 -1; -0.5 -1; -0.5 1; -2 1];
+right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
+open_deg = [left_deg; NaN NaN; right_deg];
+obstacle = makeAzElObstacleData( ...
+    "opening", [0; 2], ...
+    {closed_deg(:, 1); open_deg(:, 1)}, ...
+    {closed_deg(:, 2); open_deg(:, 2)}, 0);
+[shape, geometry] = azElInternal.obstacleShapeAtTime(obstacle, 1);
+verifyFalse(testCase, geometry.TopologyIsInterpolated);
+verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
+verifyTrue(testCase, isinterior(shape, 0, 0));
+end
+
 function testMovingBarrierGeneratesWaitingSeed(testCase)
 % Verify that source-time motion creates one input-driven waiting seed.
 time_s = [0; 6; 8; 12];
@@ -209,7 +335,7 @@ limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacle, initialState, goalState, limits, options);
+    obstacle, initialState, goalState, limits, options, tic);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyGreaterThan(testCase, diagnostics.ExpandedCount, 0);
 verifyEqual(testCase, diagnostics.GraphType, ...
@@ -312,6 +438,22 @@ verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
 end
 
+function testTranslatedHistoryReusesExactProtectedShape(testCase)
+% Verify rigid obstacle motion preserves one translated protected boundary.
+source_deg = [-1 -1; 1 -1; 1 1; -1 1];
+translation_deg = [3 2];
+azimuth_deg = {source_deg(:, 1); ...
+    source_deg(:, 1) + translation_deg(1)};
+elevation_deg = {source_deg(:, 2); ...
+    source_deg(:, 2) + translation_deg(2)};
+obstacle = makeAzElObstacleData( ...
+    "translated", [0; 1], azimuth_deg, elevation_deg, 0.2);
+verifyEqual(testCase, obstacle.az_deg{2}, ...
+    obstacle.az_deg{1} + translation_deg(1), "AbsTol", 1e-12);
+verifyEqual(testCase, obstacle.el_deg{2}, ...
+    obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
+end
+
 function testDeterministicRepeatedRun(testCase)
 % Verify identical fixed inputs return identical seed order and trajectory.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -345,6 +487,18 @@ verifyTrue(testCase, any(result.TerminationReason == ...
 verifyEqual(testCase, numel(result.SeedSummaries), numel(result.Seeds));
 verifyGreaterThanOrEqual(testCase, ...
     result.SearchDiagnostics.Grid.ExpandedCount, 0);
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.FrontierNodes_deg, 2), 2);
+plotOptions = struct( ...
+    "FigureVisible", "off", ...
+    "ShowWorkspace", true, ...
+    "ShowVisibilityGraphs", true, ...
+    "ShowKinematics", false, ...
+    "ShowAnimation", false);
+handles = plotAzElMotion(result, plotOptions);
+figureCleanup = onCleanup(@() closeTestFigures(handles));
+verifyTrue(testCase, isgraphics(handles.WorkspaceFigure, "figure"));
+verifyTrue(testCase, isgraphics(handles.VisibilityFigure, "figure"));
 end
 
 function testMovingTargetUsesSamePlanner(testCase)
@@ -403,6 +557,12 @@ limits = struct( ...
     "maxVelocity_deg_s", velocity_deg_s, ...
     "maxAcceleration_deg_s2", acceleration_deg_s2, ...
     "maxJerk_deg_s3", jerk_deg_s3);
+end
+
+function closeTestFigures(handles)
+% Close figures created by a plot test even when its verification fails.
+figureHandles = [handles.WorkspaceFigure; handles.VisibilityFigure];
+close(figureHandles(isgraphics(figureHandles, "figure")));
 end
 
 function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)

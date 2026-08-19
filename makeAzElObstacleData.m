@@ -31,7 +31,7 @@ function azElData = makeAzElObstacleData(obstacleName, time_s, ...
 %   - safetyMargin_deg (nonnegative scalar, optional; default 0)
 %       Euclidean polygon inflation applied here before data is returned.
 %   - constructionOptions (scalar struct, optional)
-%       .Verbose prints per-slice protection progress (default false).
+%       .Verbose prints periodic protection progress (default false).
 %**************************************************************************
 % OUTPUTS
 %   - azElData (scalar struct)
