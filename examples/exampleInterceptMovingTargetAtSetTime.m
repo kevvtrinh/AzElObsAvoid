@@ -15,7 +15,7 @@ function result = exampleInterceptMovingTargetAtSetTime( ...
 %**************************************************************************
 % INPUTS
 %   - interceptTime_s (positive scalar, optional; default 12)
-%   - options (scalar struct, optional)
+%   - options (scalar struct, optional; default struct())
 %       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
 %**************************************************************************
 % OUTPUTS

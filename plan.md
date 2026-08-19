@@ -1,40 +1,41 @@
-# HS3 Planner Refactor Plan
+# Plan 325 Planner Rebuild Plan
 
 ## Objective
 
-Replace the current multi-planner architecture with one small, maintainable
-HS3 trajectory-planning pipeline. Preserve the useful public obstacle and
-planner interfaces, but remove the SIPP, snapshot, and competing trajectory
-generation machinery that expanded the repository to 24,436 lines.
+Build one compact and general azimuth/elevation planner from the useful parts
+of the inspected branches. Do not combine old planners as independent layers.
+Keep one public planner, one seed generator, two bounded motion families, one
+independent validator, and one result contract.
 
-The production pipeline shall be:
+The production pipeline is:
 
 ```text
-canonical protected obstacles
-    -> a small bounded set of topology seeds
-    -> separated HS3 trajectory optimization
+canonical original and protected obstacles
+    -> bounded direct, sampled spatial, reduced, and timed seed proposals
+    -> deterministic finite-jerk first motion when supported
+    -> optional bounded separated HS3 improvement
     -> independent continuous validation
-    -> earliest validated trajectory
+    -> deterministic candidate selection
 ```
 
-The implementation must follow the repository's `AGENTS.md`, including its
-MATLAB headers, naming, units, example structure, failure behavior, and
-verification requirements.
+The deterministic first motion is a real trajectory. It is not a waypoint
+hint. It uses rest-to-rest quintic motion on each edge and stops at each
+waypoint. It supports fixed-position goals with zero initial and terminal
+velocity and acceleration. Every first motion needs independent validation.
 
-## Branch Creation
+HS3 remains the general local trajectory optimizer. It is required when the
+first-motion family cannot represent the request. It is also an optional
+improvement stage for a valid first motion. Improvement is enabled by default
+with a 15 second budget.
 
-Create the refactor as a new branch from the latest `main` branch. The existing
-`hs3-refactor` worktree was inspected and preserved. This implementation uses
-the new branch `plan-502-implementation`.
+The implementation must follow `AGENTS.md`. This includes the planner
+contract, stable failure results, units, examples, diagnostics, validation,
+MATLAB headers, and verification reports.
 
-```text
-git status --short
-git switch main
-git pull --ff-only
-git switch -c plan-502-implementation
-```
+## Branch
 
-Do not overwrite the existing `hs3-refactor` branch.
+This implementation uses the Git branch `plan-325`. It uses an isolated
+worktree so that work on Plan 502 is unchanged.
 
 ## Non-Negotiable Size Limits
 
@@ -56,443 +57,366 @@ Treat code size as an acceptance requirement, not a future cleanup task.
 
 ## Required Planner Contract
 
-Retain one public entry point:
+Keep one public entry point:
 
 ```matlab
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
-Retain a zero-input defaults call:
+Keep the zero-input defaults call:
 
 ```matlab
 options = planAzElMotion();
 ```
 
-The planner must support:
+The planner supports these input families through this interface:
 
 - static and known time-varying polygon obstacles;
 - fixed-arrival and earliest-arrival goal policies;
+- fixed-position and sampled moving goals;
 - initial and terminal position, velocity, and acceleration;
 - per-axis velocity, acceleration, and jerk limits;
-- optional azimuth wrapping;
-- waiting when it is dynamically feasible and useful;
+- waiting in timed seed proposals;
 - safety margins applied exactly once by obstacle construction;
 - deterministic behavior for identical inputs and options;
 - success and expected failure through one stable result schema.
 
-The result should contain only information that callers, validators, or plots
-actually use:
+Azimuth wrapping is a restricted input family. It is currently supported only
+for an obstacle-free request with a fixed-position goal. Reject wrapping with
+obstacles or a moving goal as an unsupported configuration. This restriction
+protects physical collision and target correctness at the coordinate seam.
 
-- `Success`, `Message`, and `TerminationReason`;
+The stable result includes:
+
+- status, message, and termination reason;
 - resolved inputs, limits, and options;
-- original and protected obstacle geometry;
-- attempted seed summaries and selected seed index;
-- selected geometric seed;
-- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, and
-  `jerk_deg_s3`;
-- independent collision and kinematic validation;
-- elapsed time and concise solver diagnostics.
+- original and protected obstacle data;
+- bounded search diagnostics and every attempted seed summary;
+- the selected seed and selected motion source;
+- sampled position, velocity, acceleration, and jerk histories;
+- the exact segment polynomial;
+- independent collision and constraint validation;
+- arrival time, trajectory duration, and goal horizon;
+- elapsed time, first validated motion time, and deadline overrun.
 
-Remove compatibility fields that no maintained example or public workflow
-needs. Do not retain two representations of the same trajectory.
+Expected planning outcomes return a result. Invalid inputs and unsupported
+configurations throw identified errors.
 
-## Honest Optimality Statement
+## Honest Result Claim
 
-The planner shall make this precise claim:
+Use this claim:
 
-> The result is the earliest independently validated local HS3 solution found
-> from the finite deterministic seed set that was attempted.
+> The result is the earliest independently validated candidate from the finite
+> deterministic seed and motion families that the planner attempted.
 
-It shall not claim global time optimality, global path completeness, or proof
-that no feasible trajectory exists. If all seeds fail, return a reason such as
-`noValidatedSeed` and preserve the diagnostic outcome for each attempted seed.
+For arrival times within `ArrivalTimeTolerance_s`, select the candidate with
+the lowest exact integrated squared jerk. Use the deterministic seed index for
+the final tie.
 
-## Mathematical Formulation
+Do not claim global time optimality, global path completeness, or proof that
+no feasible trajectory exists. A `noValidatedSeed` result means only that the
+bounded attempted families did not produce a valid result.
 
-Use the separated third-order Hermite-Simpson formulation described by
-Moreno-Martin, Ros, and Celaya:
+## Bounded Seed Generator
 
-https://arxiv.org/abs/2302.09056
+Use one deterministic seed generator. It supplies proposals and diagnostics.
+It does not make a global planning claim.
 
-Use the jerk-controlled state:
+Generate a bounded mixture of:
 
-```text
-q = [azimuth, elevation]
-v = dq/dt
-a = dv/dt
-j = da/dt
-```
+1. the direct seed;
+2. distinct spatial visibility seeds;
+3. time-layer seeds with motion and wait edges for changing obstacles.
 
-with dynamics:
+The default maximum seed count is five. The hard public maximum is nine.
+Moving histories use bounded time layers, nodes, and collision samples.
+Retain the complete generated and rejected counts in diagnostics.
 
-```text
-dq/dt = v
-dv/dt = a
-da/dt = j
-```
+Spatial proposal construction can use a conservative dense-history support
+region or an optional clustered convex region. Mark each affected seed with
+`UsesReducedGeometry`. Use these regions only for spatial proposals and for a
+certified seed corridor. Verify that the reduced region contains the original
+protected geometry before a corridor can support a first motion.
 
-For earliest arrival, use final time and the HS3 jerk ordinates as decision
-variables. Reconstruct position, velocity, and acceleration from the shared
-third-order chain rather than maintaining inconsistent independent splines.
+Timed search queries the original protected obstacle histories at a bounded
+set of edge samples. It must not use a cluster or dense-history envelope in
+place of an obstacle. It is a proposal, not a continuous certificate. HS3 and
+independent validation also use the original protected histories. Only final
+adaptive validation certifies continuous collision freedom.
 
-Use a lexicographic objective implemented in two stages:
+`EstimatedDuration_s` is an HS3 initial guess. It is not a causal constraint
+and is not a lower bound on final time. The goal-time policy, endpoint state,
+and physical limits define the permitted time range.
 
-1. Minimize final time.
-2. Holding arrival time within a documented tolerance, minimize integrated
-   squared jerk.
+## Deterministic First Motion
 
-This prevents a jerk weight from secretly trading away meaningful arrival
-time while still selecting the smoother solution among time-equivalent
-candidates.
+For each supported seed, construct a piecewise quintic trajectory with these
+properties:
 
-Enforce:
+- position follows each seed edge;
+- velocity and acceleration are zero at every edge boundary;
+- position, velocity, and acceleration are continuous;
+- each edge duration satisfies analytic velocity, acceleration, and jerk
+  limits;
+- the result contains exact polynomial coefficients and sampled histories;
+- the public validator checks the polynomial, histories, endpoints, limits,
+  and continuous collision state.
 
-- exact initial state;
-- terminal position, velocity, and acceleration;
-- fixed or bounded final time according to the goal policy;
+This motion family supports zero initial and terminal derivatives. It supports
+a fixed-position goal and a moving goal with a fixed arrival time. It rejects
+an earliest-arrival moving goal, nonzero endpoint derivatives, and a seed that
+needs a stationary wait segment. These are supported through HS3 when the
+general optimizer finds a valid solution.
+
+The first motion can use an exact seed corridor. It can use a reduced spatial
+corridor only after an independent containment and separation certificate.
+The certificate and final trajectory validation both use the exact protected
+obstacles.
+
+## Bounded HS3 Stage
+
+Use the separated third-order Hermite-Simpson formulation with jerk as the
+control. The state is position, velocity, and acceleration. Reconstruct the
+state from one consistent third-order chain.
+
+Use HS3 in two cases:
+
+1. Run it as an improvement when `EnableHs3Improvement` is true.
+2. Run it as the required general motion stage when no valid first motion
+   exists, even if optional improvement is disabled.
+
+`EnableHs3Improvement` is true by default.
+`MaximumHs3ImprovementTime_s` is 15 seconds by default. Divide the remaining
+improvement budget across the remaining seed attempts. A failed, invalid,
+later, or higher-jerk HS3 result must not replace a better valid motion.
+
+For earliest arrival, use final time and jerk ordinates as decision variables.
+Use two objective stages:
+
+1. minimize final time;
+2. hold time within its tolerance and minimize exact integrated squared jerk.
+
+Compute the squared-jerk integral from the polynomial. Do not use a quadrature
+rule that is not exact for the jerk polynomial. Mesh refinement can replace a
+candidate only when it does not make arrival time or exact jerk cost worse.
+
+HS3 obstacle constraints use exact protected obstacle histories. Reduced
+geometry can initialize a spatial corridor. It cannot replace exact geometry
+in optimization or final validation.
+
+## Cooperative Deadlines
+
+Use `MaximumPlanningTime_s` for the complete planner call. Use
+`MaximumHs3ImprovementTime_s` for optional improvement. Pass the remaining
+time to HS3 and to independent validation.
+
+Deadline checks are cooperative. Check them:
+
+- before and after seed construction units;
+- before each first-motion and HS3 attempt;
+- inside solver callbacks;
+- during adaptive collision validation;
+- before optional mesh refinement.
+
+A bounded operation can complete after the last check. Report this as
+`PlanningDeadlineOverrun_s`. Do not hide an overrun. Preserve a valid first
+motion if the optional improvement deadline ends.
+
+## Independent Continuous Validation
+
+Use one public validator for planner selection, tests, and examples. It must
+not trust a solver status or the planner success flag.
+
+Validate:
+
+- finite and strictly increasing sampled time;
+- exact polynomial schema and segment time base;
+- polynomial continuity at every segment boundary;
+- initial and terminal position, velocity, and acceleration;
+- agreement between the polynomial and sampled histories;
 - continuous workspace, velocity, acceleration, and jerk limits;
-- obstacle separation at optimization constraint points;
-- independent post-solve collision and dynamics validation between points.
+- continuous collision clearance against exact protected moving geometry;
+- safety-margin provenance and the wrapping policy;
+- deadline state and unresolved adaptive intervals.
+
+Use analytic polynomial bounds when practical. Use adaptive subdivision for
+moving-obstacle collision checks. Fail an interval when its relative motion
+bound cannot prove separation at the minimum time step.
+
+Do not accept a trajectory by clipping it. Do not reconstruct missing
+polynomials from sampled output. Do not infer a passed check from a solver
+success code.
 
 ## Minimal Production Architecture
 
-The final implementation should converge toward the following responsibility
-layout. Existing public filenames may be retained where doing so reduces
-migration work, but responsibilities must not be duplicated.
+Keep these responsibilities separate without adding another planner:
 
 | Responsibility | Target size |
 | --- | ---: |
 | `planAzElMotion.m`: validation, orchestration, selection, result | 300-500 |
 | Obstacle construction, packing, interpolation, and query | 700-1,000 total |
 | One bounded topology-seed generator | 400-700 |
+| First-motion construction | 350-650 |
 | HS3 transcription and solve | 800-1,400 total |
-| Trajectory reconstruction and adaptive sampling | 250-450 |
 | Independent collision and kinematic validation | 400-700 |
 | Plotting and animation | 500-800 total |
 
-Small shared normalization utilities are allowed, but every new file must own
-a distinct reusable invariant.
-
-## Topology Seeds
-
-HS3 is a local nonlinear optimizer, so retain one deliberately small seed
-generator. It exists only to propose different sides and timings around
-obstacles; it must not become a second motion planner.
-
-Generate seeds in this deterministic order:
-
-1. Direct start-to-goal route.
-2. A small number of shortest distinct routes from one coarse topology graph.
-3. Optional waiting variants only when moving geometry blocks a spatially
-   useful route during part of the horizon.
-
-Requirements:
-
-- Cap the default seed count at five and expose at most one option to increase
-  it to a documented hard maximum.
-- Keep only geometrically distinct seeds.
-- Never impose seed vertices as trajectory equalities. They initialize HS3
-  and select a local obstacle corridor only.
-- Do not rank a seed as dynamically feasible before HS3 validates it.
-- Do not create snapshot visibility graphs, SIPP safe intervals, event
-  detectors, or a second optimality claim.
-- Prefer a coarse time-expanded graph for moving obstacles over separate
-  spatial and temporal planning systems. It may include waiting edges and
-  conservative reachability bounds, but its output is only an initialization.
-- Record the graph resolution and each returned seed so failures are
-  reproducible.
-- Permit an explicit seed-only clustering distance. Connected groups of at
-  least three nearby swept obstacle regions may use a conservative convex
-  hull for seed generation. Preserve the original protected obstacles for
-  HS3 constraints and independent validation.
-- Permit a conservative seed-only envelope when one dense obstacle history
-  exceeds the documented polygon-union work budget. Record and plot the
-  envelope. Preserve the exact protected history for HS3 and validation.
-
-If the direct seed succeeds and an option such as `DirectSeedOnly` is enabled,
-the graph may be skipped. The default should still attempt the bounded seed set
-needed for basic obstacle-side diversity.
-
-## Obstacle Constraints
-
-Continue using the protected geometry stored by `makeAzElObstacleData` as the
-single source of truth. Do not add another planner-level safety margin.
-
-Use a simple local obstacle-corridor strategy:
-
-- Associate each seed sample with a separating polygon edge or convex piece.
-- Freeze the association during one `fmincon` solve so the nonlinear
-  constraint remains differentiable.
-- Permit at most two input-driven corridor relinearizations when independent
-  collision validation identifies a failed segment.
-- Do not introduce a complex general corridor-repair framework.
-- For moving obstacles, evaluate the associated geometry at the trajectory
-  time represented by the HS3 point.
-- For concave geometry, preserve the obstacle boundary faithfully or use a
-  documented convex decomposition; never replace a concave protected obstacle
-  by an unsafe inward approximation.
-
-Optimization-point clearance is not sufficient evidence of collision freedom.
-The final result must pass the independent continuous validation below.
-
-## Continuous Validation
-
-Implement one independent validator used by the planner, tests, and examples.
-It must not trust `fmincon` success or the planner's `Success` flag.
-
-Validate:
-
-- exact start and terminal states within documented tolerances;
-- finite, strictly increasing time;
-- continuous position bounds;
-- continuous velocity, acceleration, and jerk bounds;
-- HS3 dynamics consistency;
-- collision freedom against the protected moving geometry;
-- azimuth wrapping policy;
-- safety-margin provenance.
-
-Use polynomial bounds where they are simple and reliable. Use adaptive
-subdivision for moving-obstacle collision validation, refining a segment until
-the relative trajectory/obstacle motion cannot cross the measured clearance
-or until a documented resolution limit is reached. An unresolved segment must
-fail validation; it must never be silently accepted.
-
-## Explicit Legacy Removal
-
-After the replacement pipeline passes focused tests, remove the superseded
-production paths rather than leaving them disabled behind options.
-
-Delete or fully replace the responsibilities currently provided by:
-
-- snapshot visibility-graph construction;
-- visibility-snapshot selection and change detection;
-- safe-interval roadmap construction;
-- SIPP and SIPP-IP search;
-- the separate space-time visibility-graph forwarding layer;
-- large candidate-reduction and seed-budget allocation systems;
-- parallel multi-seed planning infrastructure;
-- specialized fixed-arrival LP/QP/projection pipelines that duplicate the HS3
-  feasibility solve;
-- repeated empty schemas and compatibility trajectory conversions;
-- benchmark baselines tied only to deleted algorithms;
-- options, tests, and documentation for deleted behavior.
-
-Do not retain a legacy planner mode on this replacement branch. Keep only
-shared obstacle, query, visualization, and validation code that the new HS3
-pipeline genuinely calls.
-
-## Moving-Target Simplification
-
-Do not maintain another thousand-line planner for moving targets. Represent a
-known moving goal as a time-indexed goal position function or sampled goal
-history consumed by the same HS3 planner.
-
-- Fixed intercept time: constrain the terminal position to the goal position
-  at the requested time.
-- Earliest intercept: make final time a decision variable and constrain the
-  terminal position to the interpolated goal position at that time.
-- Terminal velocity and acceleration policy must be explicit.
-
-Any public intercept helper should be a thin input-adaptation wrapper around
-`planAzElMotion`, not an independent planning implementation.
+Keep obstacle construction, seed proposal, motion construction, validation,
+and visualization separate. Do not add SIPP, snapshot planners, parallel
+planner modes, scenario-specific waypoints, or another result schema.
 
 ## Implementation Phases
 
-### Phase 1: Record the Baseline
+### Phase 1: Preserve the Useful Baseline
 
-- Create `hs3-refactor` from updated `main`.
-- Record the starting commit hash and working-tree status.
-- Count MATLAB lines separately for production, examples, tests, and
-  benchmarks.
-- Run the smallest representative baseline cases headlessly:
-  - obstacle-free motion;
-  - one static obstacle;
-  - one moving obstacle;
-  - expected no-path case.
-- Record behavior and runtime. Do not preserve a bug merely because it is in
-  the baseline.
+- Start Plan 325 from the inspected Plan 502 revision.
+- Use an isolated worktree.
+- Record the branch, source revision, repository size, and baseline behavior.
+- Preserve Plan 502 and all unrelated user changes.
 
-Exit criterion: the branch and reproducible baseline report exist.
+Exit criterion: the isolated Plan 325 branch and baseline evidence exist.
 
-### Phase 2: Extract the HS3 Mathematical Kernel
+### Phase 2: Restore the Required Example Contracts
 
-- Identify the current separated HS3 decision layout, integration equations,
-  endpoint constraints, objective, and polynomial reconstruction.
-- Rewrite only that kernel into the small target architecture.
-- Remove warm-start projections, solver cascades, repair loops, and
-  compatibility schema assembly from the mathematical kernel.
-- Add focused tests against analytic one-axis and two-axis jerk-controlled
-  motions.
-- Verify fixed-duration feasibility before enabling final-time optimization.
+- Restore the original single U geometry and request.
+- Restore the 40-circle moving field and goal-time policy.
+- Restore the native changing U.S. outline and goal-time policy.
+- Keep compact controls as runtime overrides only.
 
-Exit criterion: obstacle-free fixed-arrival and earliest-arrival problems pass
-independent state and limit validation.
+Exit criterion: tests protect the physical geometry and request of each case.
 
-### Phase 3: Add Minimal Obstacle-Constrained HS3
+### Phase 3: Add the Deterministic First Motion
 
-- Connect canonical protected obstacle queries to the HS3 constraint points.
-- Build a local separating corridor from a supplied geometric seed.
-- Add at most two corridor relinearization attempts.
-- Add adaptive continuous collision validation.
-- Test convex, concave, static, translating, and deforming obstacles.
+- Implement the rest-to-rest quintic edge invariant once.
+- Produce the full polynomial and sampled result schema.
+- Validate each candidate independently.
+- Reject unsupported endpoint and moving-goal cases clearly.
 
-Exit criterion: supplied seeds can produce independently collision-free HS3
-trajectories or concise, reproducible failures.
+Exit criterion: analytic tests prove endpoint, continuity, limit, and
+collision behavior.
 
-### Phase 4: Build the Single Bounded Seed Generator
+### Phase 4: Rebuild Bounded Seed Coverage
 
-- Attempt the direct route.
-- Build one coarse topology graph only when obstacle-side alternatives are
-  needed.
-- Return at most five distinct default seeds.
-- Support known moving obstacles with time layers and waiting edges without
-  introducing SIPP.
-- Keep graph diagnostics bounded and separate from HS3 solver diagnostics.
+- Keep direct and original-geometry sampled timed seed search.
+- Permit reduced geometry only for spatial proposal work.
+- Add containment certificates for reduced corridors.
+- Record unreduced sampled, reduced, timed, and completeness diagnostics.
 
-Exit criterion: the static rectangle, U-shaped obstacle, moving barrier, and
-alternating-slot scenarios each generate the expected route diversity without
-scenario-specific waypoints.
+Exit criterion: the single U, 40-circle, and changing U.S. families receive
+bounded deterministic proposals without scenario-specific logic.
 
-### Phase 5: Integrate the Public Planner
+### Phase 5: Bound and Correct HS3 Improvement
 
-- Make `planAzElMotion` validate inputs and resolve defaults once.
-- Generate the bounded seed set.
-- Solve HS3 independently for each seed.
-- Validate every returned trajectory with the shared validator.
-- Select earliest arrival, then lowest integrated squared jerk within the
-  arrival-time tolerance, then lowest deterministic seed index.
-- Return one compact stable result on success and failure.
+- Use the first valid motion as the retained baseline.
+- Attempt all bounded seeds in deterministic order.
+- Treat timed seed duration as an initial guess.
+- Use exact jerk integration and safe final-time bounds.
+- Keep a refined or improved candidate only when selection quality does not
+  become worse.
 
-Exit criterion: all maintained examples call the same production planner and
-no example performs planning or retiming internally.
+Exit criterion: a failed optional solve cannot erase a valid candidate, and a
+request outside the first-motion family can still use HS3.
 
-### Phase 6: Remove the Superseded Stack
+### Phase 6: Strengthen Validation and Deadlines
 
-- Use repository-wide call-site searches to prove that legacy SIPP, snapshot,
-  and alternate planner functions are no longer called.
-- Delete those implementations and their exclusive options, tests,
-  benchmarks, wrappers, and documentation.
-- Remove stale compatibility fields from examples and plotting.
-- Recount lines and simplify further if the production total exceeds 6,000.
+- Validate the polynomial schema, time base, continuity, endpoints, and
+  sampled-history agreement.
+- Use exact protected obstacle histories for continuous validation.
+- Pass remaining deadline values through all expensive stages.
+- Report first-valid time and any deadline overrun.
 
-Exit criterion: there is exactly one production trajectory-planning path and
-the line-count limits are satisfied.
+Exit criterion: an unrelated, shifted, discontinuous, or falsely sampled
+polynomial cannot pass.
 
-### Phase 7: Migrate and Preserve Examples
+### Phase 7: Verify the Complete Repository
 
-Keep all 14 main examples. Additional focused examples can remain when they
-exercise structurally different behavior, including:
+Run one MATLAB process at a time:
 
-- Obstacle-free analytic motion.
-- Static rectangle requiring a side choice.
-- Static U-shaped obstacle.
-- Moving barrier where waiting is best.
-- Moving barrier where immediate detour is best.
-- Alternating slalom or alternating slots.
-- Moving-target earliest intercept.
-- Dense concave polygon after canonical simplification.
-- Expected no-path result.
+- Code Analyzer and syntax checks;
+- focused first-motion tests;
+- HS3, seed, moving-target, wrapping, and validator tests;
+- default and override tests;
+- a successful plan and an expected no-path result;
+- every maintained example headlessly;
+- at least one visible example when graphics are available.
 
-Each example must only construct inputs, call `planAzElMotion`, independently
-validate, and plot. Do not delete a main example.
+For each example, report the required path, duration, collision, kinematic,
+validation, runtime, and termination metrics. Do not omit an unfavorable
+result.
 
-Exit criterion: every retained example follows the `AGENTS.md` template and
-runs headlessly without local planning logic.
+Exit criterion: reports contain the exact commands, results, runtimes, and
+untested items.
 
-### Phase 8: Final Verification and Size Audit
+### Phase 8: Audit Size and Publish
 
-Run, one process at a time:
+- Count production and total MATLAB lines.
+- Inspect per-file additions and deletions.
+- Explain every existing source file with more than 50 added lines.
+- Update the benchmark and assessment from the new evidence.
+- Commit and push branch `plan-325`.
 
-- MATLAB syntax and Code Analyzer checks where available;
-- focused HS3 unit tests;
-- obstacle-construction and interpolation tests;
-- successful static and moving-obstacle tests;
-- fixed-arrival and earliest-arrival tests;
-- nonzero endpoint state tests;
-- azimuth wrapping enabled and disabled tests;
-- expected no-path and time-limit tests;
-- every retained example headlessly;
-- at least one visible animation when graphics are available.
-
-For each example, report:
-
-- planner and independent-validation success;
-- selected seed and seed count;
-- arrival time;
-- path length;
-- maximum velocity, acceleration, and jerk;
-- collision result;
-- runtime and termination reason.
-
-Finally report:
-
-- production MATLAB line count;
-- total MATLAB line count;
-- number of production files;
-- every production file exceeding 700 lines;
-- deleted files and removed options;
-- untested MATLAB/toolbox limitations;
-- exact claim of optimality and completeness.
+Exit criterion: the pushed branch contains the tested implementation and its
+evidence.
 
 ## Required Tests
 
-At minimum, automated tests must cover:
+At minimum, tests must cover:
 
-- HS3 integration agrees with known constant-jerk motion;
-- reconstructed knot and midpoint states satisfy the HS3 equations;
-- terminal state equalities are enforced;
-- continuous velocity, acceleration, and jerk limits detect between-knot
-  violations;
-- direct obstacle-free earliest arrival reaches the analytic or independently
-  computed minimum within tolerance;
-- different seeds can converge to different obstacle-side local solutions;
-- the selected solution is the earliest validated candidate;
-- moving obstacles are evaluated at trajectory time, not a frozen snapshot;
-- waiting can occur without forcing zero velocity at geometric corners;
-- collision at a point between collocation nodes fails validation;
-- safety margin is applied once;
-- deterministic repeated runs return the same seed ordering and result;
-- failed seeds do not erase their diagnostics;
-- no-path returns `Success=false` without throwing an expected-planning error.
+- exact first-motion endpoint states and polynomial continuity;
+- continuous velocity, acceleration, and jerk limits;
+- collision checks between returned samples;
+- unsupported first-motion states route to HS3 without false success;
+- direct, unreduced sampled spatial, reduced spatial, and timed seeds;
+- timed duration as an initial guess, not a lower bound;
+- moving and deforming obstacles evaluated at trajectory time;
+- reduced corridor containment against exact protected geometry;
+- earliest and fixed arrival;
+- fixed and moving goals;
+- nonzero endpoint derivatives through HS3;
+- deterministic candidate ordering and selection;
+- optional HS3 failure with retained valid first motion;
+- exact jerk cost and no-worse mesh refinement;
+- deadline termination and reported overrun;
+- obstacle-free azimuth wrapping;
+- rejected wrapping with obstacles and with moving goals;
+- expected no-path with stable search diagnostics;
+- the three restored large-scenario input contracts.
 
 ## Completion Criteria
 
-The `plan-502-implementation` branch is complete only when all of the
-following are true:
+Plan 325 is complete only when all these statements are true:
 
-- One public planner owns geometry and timing optimization.
-- The planner uses separated HS3 with jerk as the motion control.
-- All retained examples use that planner.
-- Static obstacles, moving obstacles, moving targets, waiting, and jerk limits
-  use the same production path.
-- The SIPP, snapshot, and competing planner implementations are removed.
-- Every successful result passes independent continuous collision and
-  kinematic validation.
-- Expected failures return stable results and useful diagnostics.
+- One public planner owns selection and returns one stable schema.
+- One bounded seed generator produces direct, unreduced sampled spatial,
+  reduced spatial, and original-geometry sampled timed proposals.
+- A supported seed can produce a deterministic independently validated first
+  motion.
+- HS3 is bounded, optional for improvement, and required for unsupported
+  first-motion requests.
+- Timed edge samples, HS3, and validation use original protected histories.
+- Reduced geometry is limited to spatial proposals and certified corridors.
+- Every successful result passes independent continuous validation.
+- Expected failures retain useful diagnostics.
+- Deadline overrun is measured and reported.
+- Azimuth wrapping restrictions are explicit and enforced.
 - Production MATLAB code is at or below 6,000 lines and below the 7,000-line
   hard limit.
 - The complete MATLAB repository is at or below the 10,500-line target and
   below the 12,000-line hard limit.
-- Total maintained MATLAB code is at or below the agreed repository ceiling,
-  with any exception explicitly approved before completion.
-- Documentation states that the result is the best validated local solution
-  among attempted seeds, not a globally optimality-certified path.
-- The final diff contains no scenario-specific route, waypoint, timing, or
-  obstacle-name logic.
+- The final diff contains no scenario-specific planner behavior.
+- Documentation makes no global completeness or optimality claim.
 
 ## Stop Conditions
 
-Stop and report instead of expanding the design when:
+Stop and report before adding more architecture when:
 
-- satisfying one example appears to require a scenario-specific heuristic;
-- a proposed feature creates a second planner or retimer;
-- the production code would exceed 7,000 lines;
-- continuous collision validation cannot resolve a segment safely;
-- a solver failure is being hidden by clipping, fallback, or altered inputs;
-- a deleted legacy dependency is still required by a maintained public
-  workflow;
-- MATLAB or Optimization Toolbox is unavailable for required verification.
+- an example appears to need a scenario-specific heuristic;
+- a feature creates a second planner, retimer, or validator;
+- production code would exceed 7,000 lines;
+- exact validation cannot resolve collision or constraint safety;
+- a deadline, reduction, fallback, or failure would be hidden;
+- required verification cannot run in the available MATLAB environment.
 
-The purpose of this branch is not to preserve every experiment. It is to leave
-one understandable HS3 planner that can be trusted, tested, and maintained.
+The result must be small enough to understand and strict enough to trust. It
+must report the limits of the bounded search and local optimization.

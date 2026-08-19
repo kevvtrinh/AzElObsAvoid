@@ -76,7 +76,8 @@ if ~isempty(unknownNames)
         strjoin(unknownNames, ", "));
 end
 options.InterceptMode = string(options.InterceptMode);
-if ~any(options.InterceptMode == ["earliest", "specifiedTime"])
+if ~isscalar(options.InterceptMode) || ...
+        ~any(options.InterceptMode == ["earliest", "specifiedTime"])
     error("planAzElMovingTargetIntercept:InvalidMode", ...
         "InterceptMode must be 'earliest' or 'specifiedTime'.");
 end
@@ -103,6 +104,10 @@ end
 validateattributes(targetMotion.time_s, {'numeric'}, ...
     {'real', 'finite', 'vector', 'increasing'});
 targetTime_s = double(targetMotion.time_s(:));
+if numel(targetTime_s) < 2
+    error("planAzElMovingTargetIntercept:TargetHistoryTooShort", ...
+        "targetMotion.time_s must contain at least two samples.");
+end
 validateattributes(targetMotion.position_deg, {'numeric'}, ...
     {'real', 'finite', '2d', 'ncols', 2, 'nrows', numel(targetTime_s)});
 targetPosition_deg = double(targetMotion.position_deg);
@@ -111,7 +116,8 @@ if isfield(targetMotion, "InterpolationMethod") && ...
         ~isempty(targetMotion.InterpolationMethod)
     interpolationMethod = string(targetMotion.InterpolationMethod);
 end
-if ~any(interpolationMethod == ["linear", "pchip"])
+if ~isscalar(interpolationMethod) || ...
+        ~any(interpolationMethod == ["linear", "pchip"])
     error("planAzElMovingTargetIntercept:InvalidInterpolation", ...
         "InterpolationMethod must be 'linear' or 'pchip'.");
 end

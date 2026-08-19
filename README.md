@@ -1,4 +1,4 @@
-# Compact HS3 azimuth/elevation planner
+# Compact Plan 325 azimuth/elevation planner
 
 This branch contains one production planner:
 
@@ -10,21 +10,35 @@ result = planAzElMotion( ...
 The pipeline is:
 
 ```text
-canonical protected obstacles
-    -> at most five deterministic visibility seeds by default
-    -> separated third-order Hermite-Simpson optimization
+canonical original and protected obstacles
+    -> bounded direct, sampled spatial, reduced, and timed seed proposals
+    -> independently validated finite-jerk first motions when supported
+    -> optional bounded separated HS3 improvement
     -> independent continuous validation
-    -> earliest validated local solution
+    -> deterministic candidate selection
 ```
 
-The result is the earliest independently validated local HS3 solution from
-the finite seed set that was attempted. It is not a global time-optimality or
-path-completeness certificate.
+The first-motion constructor uses one rest-to-rest quintic segment on each
+geometric edge. It stops at each waypoint. This family is available for a
+fixed-position goal with zero initial and terminal velocity and acceleration.
+The planner validates each first motion before it can become a result.
+
+The separated third-order Hermite-Simpson (HS3) solve is an optional
+improvement stage. It is enabled by default. Its default improvement budget is
+15 seconds through `MaximumHs3ImprovementTime_s`. HS3 is required when the
+first-motion family does not support the endpoint state, moving goal, or timed
+wait structure. A failed or worse HS3 solve does not replace a valid first
+motion.
+
+The result is the earliest independently validated candidate from the finite
+seed and motion families that the planner attempted. A tie uses integrated
+squared jerk and then the deterministic seed index. The result is not a
+global time-optimality or path-completeness certificate.
 
 ## Requirements
 
 - MATLAB R2024b or a compatible release.
-- Optimization Toolbox for `fmincon`.
+- Optimization Toolbox for the HS3 stage and for requests that require HS3.
 
 ## Minimal use
 
@@ -50,9 +64,66 @@ result = planAzElMotion([], initialState, goalState, limits, options);
 ```
 
 Use `makeAzElObstacleData` to construct protected static or sampled moving
-polygons. It stores original and protected geometry and applies the safety
+polygons. It stores original and protected geometry. It applies the safety
 margin exactly once. Use `makeMovingAzElObstacleData` when a callback creates
 each moving or deforming source slice.
+
+## Seed and geometry policy
+
+The seed generator returns at most five deterministic seeds by default. It can
+produce these proposal types:
+
+- a direct seed;
+- unreduced sampled or reduced spatial visibility seeds;
+- original-geometry sampled time-layer seeds with motion and wait edges.
+
+Dense-history support envelopes and optional obstacle clusters are permitted
+only for spatial seed proposals and their corridor certificates. Diagnostics
+set `UsesReducedGeometry` when a seed uses this reduction. Timed edge samples,
+HS3, and final validation use the original protected obstacle histories. The
+timed graph is only a bounded proposal. Only final adaptive validation gives a
+continuous collision certificate. A reduced region never replaces the
+obstacle data used to accept a trajectory.
+
+`EstimatedDuration_s` is an initial guess for HS3. It is not a required lower
+bound. HS3 can shorten or extend the motion when the goal-time policy and
+physical constraints permit this change.
+
+## Motion stages
+
+The planner uses two motion stages:
+
+1. It constructs and independently validates each supported deterministic
+   stop-at-waypoint motion.
+2. It runs bounded HS3 improvement when `EnableHs3Improvement` is true. It
+   also runs HS3 when no valid first motion exists.
+
+The first stage gives the planner a fast, finite-jerk result for a common
+endpoint family. It does not make HS3 a fallback that can bypass validation.
+Both stages return the same polynomial and sampled-history contract. Both
+stages must pass `validateAzElTrajectory` before selection.
+
+Use these main controls:
+
+```matlab
+options.EnableHs3Improvement = true;
+options.MaximumHs3ImprovementTime_s = 15;
+options.MaximumPlanningTime_s = 60;
+```
+
+The deadlines are cooperative. The planner checks them between bounded units
+of work and inside adaptive validation. One unit can finish after its check.
+The result reports `FirstValidatedMotionTime_s` and
+`PlanningDeadlineOverrun_s`. A reported overrun is not hidden or changed to
+zero.
+
+## Azimuth wrapping
+
+Azimuth wrapping is currently supported only for obstacle-free requests with
+a fixed-position goal. The planner rejects wrapping with any obstacle or with
+a moving goal. This restriction prevents an incorrect collision or target
+interpretation across the coordinate seam. Use an unwrapped obstacle and goal
+coordinate system before you request these cases.
 
 ## Result contract
 
@@ -61,41 +132,41 @@ Every expected outcome returns the same main fields:
 - `Success`, `Message`, and `TerminationReason`;
 - resolved `Options` and `Inputs`;
 - attempted `Seeds`, `SeedSummaries`, and `SelectedSeedIndex`;
+- `SelectedMotionSource`, `ArrivalTime_s`, `TrajectoryDuration_s`, and
+  `GoalHorizon_s`;
 - sampled `time_s`, `position_deg`, `velocity_deg_s`,
   `acceleration_deg_s2`, and `jerk_deg_s3`;
 - the exact segment `Polynomial` used for continuous validation;
 - independent `Validation` and bounded `SearchDiagnostics`;
-- elapsed time, deterministic seed, and the precise optimality statement.
+- elapsed time, first-valid time, deadline overrun, and deterministic seed.
 
-Expected failure does not throw. Invalid inputs and unsupported contracts do
-throw identified errors.
+Expected planning failure does not throw. Invalid inputs and unsupported
+contracts throw identified errors.
 
 ## General diagnostics
 
-Set `options.Verbose = true` for concise planner diagnostics in any public
-planner call. The output reports the topology-graph size, each attempted seed,
-the optimizer and validation outcome, the arrival time, the largest reported
-violation, the termination reason, and the selected result. Moving-obstacle
-construction and inflation report periodic progress for large histories. The
-nonlinear solver remains quiet, so its iteration table does not hide planner
-events.
+Set `options.Verbose = true` for concise planner diagnostics. The output
+reports the topology-graph size, each attempted seed, each motion source, the
+solver and validation outcome, arrival time, largest reported violation,
+termination reason, and selected result.
 
-`result.SearchDiagnostics` remains available when verbose output is disabled.
-Use `plotAzElMotion` to show original and protected obstacles, seed-only
-envelopes, accepted and rejected graph edges, explored nodes, the frontier,
-the best partial route, and the selected motion. A failed result can therefore
-produce a useful diagnostic plot without a selected trajectory.
+`result.SearchDiagnostics` is available when verbose output is disabled. Use
+`plotAzElMotion` to show original and protected obstacles, reduced seed-only
+regions, accepted and rejected graph edges, explored nodes, the frontier, the
+best partial route, and the selected motion. A failed result can therefore
+produce a diagnostic plot without a selected trajectory.
 
 ## Maintained examples
 
 The `examples` directory contains 14 main scenarios and four focused
 verification scenarios. They cover obstacle-free motion, static and moving
 obstacles, concave and geographic geometry, fixed and earliest moving-target
-intercepts, waiting, azimuth wrapping, dense fields, and expected failure.
+intercepts, waiting, obstacle-free azimuth wrapping, dense fields, and
+expected failure.
 
 Every example uses the same planner, validator, and plotter. A failed result
 can show the retained visibility edges, rejected edges, explored states,
-frontier data, and best partial seed without rerunning the planner.
+frontier data, and best partial seed without a second planner call.
 
 Run an example without figures as follows:
 
@@ -113,51 +184,38 @@ results = runtests("tests/testHs3Planner.m");
 assertSuccess(results);
 ```
 
-The focused tests cover the analytic jerk chain, endpoint constraints,
-earliest arrival, mesh refinement, topology diversity, translating and
-deforming geometry, waiting seeds, between-node collision and kinematic
-failures, safety-margin provenance, azimuth wrapping, deterministic
-repetition, time-limit failure, moving-target adaptation, and stable no-path
-diagnostics.
+Also run `tests/testBuildAzElStopWaypointMotion.m` and
+`tests/testExampleContracts.m`. The focused tests cover the deterministic
+first-motion family, the HS3 jerk chain, endpoint constraints, earliest
+arrival, mesh refinement, seed diversity, unreduced and reduced seed policy,
+moving geometry, waiting seeds, continuous collision and kinematic failures,
+safety-margin provenance, wrapping restrictions, deterministic repetition,
+deadlines, moving targets, and stable no-path diagnostics.
 
 The current measured results are in `benchmark.csv`. The evidence-based branch
-strength and weaknesses are in `branch_assessment.md`. Repository instructions
-require later agents to update both records when planner evidence changes.
+assessment is in `branch_assessment.md`. Update both records when planner
+evidence changes.
 
 ## Known limits
 
-- HS3 is a local nonlinear optimizer. A finite seed set can miss a feasible
-  topology.
-- The spatial visibility graph uses protected boundary candidates. Moving
-  obstacles add at most 17 time layers with straight motion and wait edges.
-  This graph supplies initialization only. It does not certify dynamics or
-  global optimality.
-- One obstacle with a very dense swept history can use a conservative coarse
-  directional support polygon for seed generation. The generator starts with
-  16 directions and increases the count only when needed to keep the start or
-  goal outside the polygon. It uses the exact convex hull if no coarse polygon
-  preserves the request. This avoids a large polygon union without replacing
-  the shape with a rectangle. Diagnostics and plots identify the envelope.
-  HS3 and independent validation still use the exact protected history. The
-  seed generator omits timed gap search because the envelope covers the
-  complete swept history.
-- `SeedClusterDistance_deg` is zero by default. A positive value replaces
-  each connected group of at least three nearby swept regions with a
-  conservative convex hull for seed generation. The plot shows these hulls.
-  HS3 and independent validation still use every original protected obstacle.
-  Cluster mode uses spatial routes around the swept hull and omits timed
-  gap-seeking seeds. A large value can remove a useful narrow seed corridor.
-- A seed-only convex envelope is converted to a continuous half-plane
-  corridor. HS3 checks its complete segment polynomials. An independent
-  certificate verifies envelope containment and continuous corridor clearance.
-- Adjacent obstacle slices with different topology use a stationary
-  conservative union inside the source interval. Source event times split HS3
-  corridor checks. Continuous validation fails an interval when its motion
-  bound cannot be resolved safely.
-- Timed visibility seeds preserve causal lower-bound schedules. HS3 does not
-  shorten a waiting or time-expanded seed below its estimated duration.
-- Concave obstacle corridors use frozen local boundary-edge associations.
-  Independent validation rejects contact with any other boundary part.
-- Mesh refinement is supported for the selected candidate and is controlled by
-  `MaximumMeshRefinementPasses`. Its default is zero to keep ordinary calls
-  bounded. Set it to one or two when a denser final mesh is required.
+- The finite seed set is not complete. It can miss a feasible topology.
+- The deterministic first-motion family requires a fixed-position goal and
+  zero endpoint velocity and acceleration. It stops at geometric waypoints.
+- HS3 is a local nonlinear optimizer. It can fail or return a local solution.
+- Spatial seed reduction can remove a useful narrow proposal. It cannot make
+  an invalid motion pass because HS3 and validation use original protected
+  obstacle histories.
+- The moving-obstacle topology graph uses at most 17 time layers with bounded
+  nodes and samples. It supplies proposals only.
+- A seed-only convex region needs an independent containment and continuous
+  corridor-clearance certificate before a first motion can use it.
+- Adjacent obstacle slices with different topology use a conservative union
+  inside the source interval. An unresolved validation interval fails.
+- Concave obstacle corridors use fixed local boundary associations. Final
+  validation checks all exact protected boundaries.
+- Mesh refinement is optional. `MaximumMeshRefinementPasses` is zero by
+  default. A refined result cannot replace a candidate when it is later or has
+  a worse exact jerk cost.
+- Cooperative deadlines can have a small reported overrun.
+- Azimuth wrapping with obstacles or moving goals is unsupported.
+- No result proves global feasibility, completeness, or optimality.

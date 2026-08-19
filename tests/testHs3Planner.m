@@ -38,8 +38,14 @@ end
 
 function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
 % Verify that three nearby regions form one seed hull without physical edits.
+movingSource_deg = [-1 -4; 1 -4; 1 -2; -1 -2];
+movingTarget_deg = movingSource_deg + [0 0.25];
+movingObstacle = makeAzElObstacleData( ...
+    "moving rectangle", [0; 20], ...
+    {movingSource_deg(:, 1); movingTarget_deg(:, 1)}, ...
+    {movingSource_deg(:, 2); movingTarget_deg(:, 2)}, 0);
 obstacles = [ ...
-    rectangleObstacle([0 20], [-1 1 -4 -2], 0); ...
+    movingObstacle; ...
     rectangleObstacle([0 20], [-1 1 -1.5 0.5], 0); ...
     rectangleObstacle([0 20], [-1 1 1 3], 0)];
 initialState = state(0, [-5 0], [0 0], [0 0]);
@@ -56,6 +62,16 @@ verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusteredRegionCount, 3);
 verifyNotEmpty(testCase, diagnostics.SeedCluster.ClusterBoundary_deg);
 verifyGreaterThanOrEqual(testCase, numel(seeds), 2);
+verifyFalse(testCase, diagnostics.Coverage.ExactSpatialProposalUsed);
+verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+verifyTrue(testCase, diagnostics.Coverage.ExtendedTimedSearchAttempted);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
+verifyEqual(testCase, ...
+    diagnostics.Coverage.TimedSearchSuppressionReason, "");
+verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
+visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
+verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
 isOccupied = queryAzElTimeObstacle(obstacles, 0, 0.75, 10);
 verifyFalse(testCase, isOccupied);
 end
@@ -88,6 +104,14 @@ verifyLessThan(testCase, area(coarseShape), 50);
 guardedShape = polybuffer(coarseShape, 1e-9);
 verifyTrue(testCase, all(isinterior( ...
     guardedShape, [-4; 4; 0], [-3; -3; 4])));
+secondTriangle = makeAzElObstacleData( ...
+    "second triangle", [0; 20], [6; 8; 7], [-3; -3; 4], 0);
+[manyObstacleShape, usedManyObstacleEnvelope] = ...
+    azElInternal.denseSweptSeedEnvelope( ...
+    [triangle; secondTriangle], linspace(0, 20, 2000), ...
+    [-8 8; 12 8], 10000);
+verifyTrue(testCase, usedManyObstacleEnvelope);
+verifyNotEmpty(testCase, manyObstacleShape.Vertices);
 end
 
 function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
@@ -131,6 +155,45 @@ verifyTrue(testCase, validation.Passed, validation.Message);
 verifyLessThanOrEqual(testCase, validation.MaximumDynamicsResidual, 1e-12);
 end
 
+function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
+% Verify valid samples cannot hide unrelated polynomial coefficients.
+duration_s = 2;
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(duration_s, [4 / 3 0], [2 0], [2 0]);
+limits = physicalLimits([3 3], [3 3], [2 2]);
+trajectory = constantJerkTrajectory(duration_s);
+trajectory.Polynomial.positionPower_deg(:) = 0;
+trajectory.Polynomial.velocityPower_deg_s(:) = 0;
+trajectory.Polynomial.accelerationPower_deg_s2(:) = 0;
+trajectory.Polynomial.jerkPower_deg_s3(:) = 0;
+validation = validateAzElTrajectory( ...
+    trajectory, [], initialState, goalState, limits, fixedOptions());
+verifyFalse(testCase, validation.Passed);
+verifyTrue(testCase, validation.PolynomialSchemaValid);
+verifyFalse(testCase, validation.PolynomialEndpointStatesMatched);
+verifyFalse(testCase, validation.PolynomialHistoryConsistent);
+end
+
+function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
+% Verify matching shifted samples and coefficients still honor initial time.
+duration_s = 2;
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(10, [4 / 3 0], [2 0], [2 0]);
+limits = physicalLimits([3 3], [3 3], [2 2]);
+trajectory = constantJerkTrajectory(duration_s);
+trajectory.time_s = trajectory.time_s + 1;
+trajectory.Polynomial.SegmentStartTime_s = ...
+    trajectory.Polynomial.SegmentStartTime_s + 1;
+trajectory.Polynomial.FinalTime_s = trajectory.Polynomial.FinalTime_s + 1;
+options = fixedOptions();
+options.GoalTimeMode = "earliestArrival";
+validation = validateAzElTrajectory( ...
+    trajectory, [], initialState, goalState, limits, options);
+verifyFalse(testCase, validation.Passed);
+verifyFalse(testCase, validation.PolynomialInitialTimeMatched);
+verifyTrue(testCase, validation.PolynomialHistoryConsistent);
+end
+
 function testFixedArrivalEnforcesTerminalState(testCase)
 % Verify fixed time and nonzero initial and terminal state equalities.
 initialState = state(0, [0 0], [0.1 0], [0.05 0]);
@@ -169,10 +232,99 @@ verifyEqual(testCase, result.time_s(end), independentMinimumTime_s, ...
     "AbsTol", 0.25);
 end
 
-function testSelectedCandidateSupportsMeshRefinement(testCase)
-% Verify one selected motion can be re-solved on a denser HS3 mesh.
+function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
+% Verify a later blocked goal does not reject a valid earlier arrival.
+source_deg = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
+initialObstacle_deg = source_deg + [20 20];
+finalObstacle_deg = source_deg + [5 0];
+obstacle = makeAzElObstacleData( ...
+    "late goal blocker", [0; 10], ...
+    {initialObstacle_deg(:, 1); finalObstacle_deg(:, 1)}, ...
+    {initialObstacle_deg(:, 2); finalObstacle_deg(:, 2)}, 0);
 initialState = state(0, [0 0], [0 0], [0 0]);
-goalState = state(7, [3 1], [0 0], [0 0]);
+goalState = state(10, [5 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.GoalTimeMode = "earliestArrival";
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyLessThan(testCase, result.ArrivalTime_s, goalState.time_s);
+verifyTrue(testCase, result.Validation.CollisionFree);
+end
+
+function testIntegerWorkLimitsRejectFractionalValues(testCase)
+% Verify invalid optimizer work limits fail at the public boundary.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(8, [4 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.MaximumNlpIterations = 1.5;
+didThrow = false;
+try
+    planAzElMotion([], initialState, goalState, limits, options);
+catch exception
+    didThrow = true;
+    verifyTrue(testCase, contains(exception.message, "integer"));
+end
+verifyTrue(testCase, didThrow);
+end
+
+function testMovingGoalInterpolationMethodMustBeScalar(testCase)
+% Verify a text array cannot pass as one interpolation method.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(10, [5 0], [0 0], [0 0]);
+goalState.targetTime_s = [0; 10];
+goalState.targetPosition_deg = [4 0; 5 0];
+goalState.InterpolationMethod = ["linear" "pchip"];
+limits = physicalLimits([2 2], [1 1], [2 2]);
+verifyError(testCase, @() planAzElMotion( ...
+    [], initialState, goalState, limits, fixedOptions()), ...
+    "planAzElMotion:InvalidGoalInterpolation");
+end
+
+function testMovingGoalHistoryRequiresTwoSamples(testCase)
+% Verify one target sample fails with one actionable public error.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(10, [1 0], [0 0], [0 0]);
+goalState.targetTime_s = 10;
+goalState.targetPosition_deg = [1 0];
+limits = physicalLimits([2 2], [1 1], [2 2]);
+verifyError(testCase, @() planAzElMotion( ...
+    [], initialState, goalState, limits, fixedOptions()), ...
+    "planAzElMotion:MovingGoalHistoryTooShort");
+end
+
+function testInterceptWrapperTextOptionsMustBeScalar(testCase)
+% Verify the moving-target wrapper rejects ambiguous text arrays.
+targetMotion = struct("time_s", [0; 10], ...
+    "position_deg", [1 0; 2 0], "InterpolationMethod", "linear");
+initialState = state(0, [0 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = struct("InterceptMode", ["earliest" "specifiedTime"]);
+verifyError(testCase, @() planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, options), ...
+    "planAzElMovingTargetIntercept:InvalidMode");
+targetMotion.InterpolationMethod = ["linear" "pchip"];
+verifyError(testCase, @() planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, struct()), ...
+    "planAzElMovingTargetIntercept:InvalidInterpolation");
+end
+
+function testInterceptWrapperRequiresTwoTargetSamples(testCase)
+% Verify the wrapper rejects a one-sample target at its public boundary.
+targetMotion = struct("time_s", 10, "position_deg", [1 0]);
+initialState = state(0, [0 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+verifyError(testCase, @() planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, struct()), ...
+    "planAzElMovingTargetIntercept:TargetHistoryTooShort");
+end
+
+function testSelectedCandidateSupportsMeshRefinement(testCase)
+% Verify an HS3-only endpoint state can be re-solved on a denser mesh.
+initialState = state(0, [0 0], [0.1 0], [0.05 0]);
+goalState = state(8, [4 2], [0.2 -0.1], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.CollocationSegmentCount = 4;
@@ -211,6 +363,15 @@ verifyTrue(testCase, all(isfinite( ...
     result.SearchDiagnostics.Grid.AcceptedEdges_deg), "all"));
 verifyEqual(testCase, ...
     size(result.SearchDiagnostics.Grid.FrontierNodes_deg, 2), 2);
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.ExactSpatialProposalUsed);
+verifyFalse(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.ReducedSpatialProposalUsed);
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.CompletenessLost);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.CompletenessLossReason, ...
+    "boundedSeedNodeAndTimeSearch");
 minimumElevations_deg = zeros(numel(result.Seeds), 1);
 maximumElevations_deg = zeros(numel(result.Seeds), 1);
 for seedIndex = 1:numel(result.Seeds)
@@ -316,7 +477,7 @@ verifyTrue(testCase, isinterior(shape, 0, 0));
 end
 
 function testMovingBarrierGeneratesWaitingSeed(testCase)
-% Verify that source-time motion creates one input-driven waiting seed.
+% Verify a requested but unused cluster does not suppress timed search.
 time_s = [0; 6; 8; 12];
 source_deg = [-0.5 -2; 0.5 -2; 0.5 2; -0.5 2];
 centerElevation_deg = [0; 0; 6; 6];
@@ -334,14 +495,88 @@ goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
+options.SeedClusterDistance_deg = 0.6;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
     obstacle, initialState, goalState, limits, options, tic);
+verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
+verifyEqual(testCase, ...
+    diagnostics.Coverage.TimedSearchSuppressionReason, "");
 verifyGreaterThan(testCase, diagnostics.ExpandedCount, 0);
 verifyEqual(testCase, diagnostics.GraphType, ...
     "timeExpandedVisibilityGraph");
 verifyGreaterThan(testCase, diagnostics.TemporalLayerCount, 1);
 verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
+end
+
+function testObstacleActivationSpanEnablesTimedSearch(testCase)
+% Verify equal geometry can still change occupancy through its active span.
+obstacle = rectangleObstacle([3 6], [-0.5 0.5 -2 2], 0);
+initialState = state(0, [-5 0], [0 0], [0 0]);
+goalState = state(10, [5 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = planAzElMotion();
+[~, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
+    obstacle, initialState, goalState, limits, options, tic);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
+end
+
+function testTimedSeedKeepsDistinctAbsoluteDuration(testCase)
+% Verify equal spatial routes keep distinct moving-obstacle time guesses.
+azimuth_deg = repmat({[-1; 1; 1; -1]}, 2, 1);
+elevation_deg = {[9; 9; 11; 11]; [11; 11; 13; 13]};
+obstacle = makeAzElObstacleData( ...
+    "far moving obstacle", [0; 20], azimuth_deg, elevation_deg, 0);
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(20, [4 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = planAzElMotion();
+options.MaximumSeedCount = 5;
+[seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
+    obstacle, initialState, goalState, limits, options, tic);
+directSeed = seeds([seeds.Source] == "directVisibilityEdge");
+timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
+verifyNotEmpty(testCase, directSeed);
+verifyNotEmpty(testCase, timedSeed);
+verifyEqual(testCase, directSeed(1).position_deg, timedSeed(1).position_deg);
+verifyGreaterThan(testCase, timedSeed(1).EstimatedDuration_s, ...
+    directSeed(1).EstimatedDuration_s);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+end
+
+function testDenseEnvelopeKeepsTimedSearchAlternative(testCase)
+% Verify a reduced static proposal does not remove an exact timed wait.
+time_s = [0; 6; 8; 12];
+angle_rad = (0:1199).' * (2 * pi / 1200);
+source_deg = [0.5 * cos(angle_rad), 2 * sin(angle_rad)];
+centerElevation_deg = [0; 0; 6; 6];
+azimuth_deg = repmat({source_deg(:, 1)}, 4, 1);
+elevation_deg = cell(4, 1);
+for sampleIndex = 1:4
+    elevation_deg{sampleIndex} = ...
+        source_deg(:, 2) + centerElevation_deg(sampleIndex);
+end
+obstacle = makeAzElObstacleData( ...
+    "dense moving barrier", time_s, azimuth_deg, elevation_deg, 0);
+initialState = state(0, [-5 0], [0 0], [0 0]);
+goalState = state(12, [5 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = planAzElMotion();
+options.MaximumSeedCount = 5;
+[seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
+    obstacle, initialState, goalState, limits, options, tic);
+verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
+verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
+verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+directWaitSeeds = seeds([seeds.Source] == "directWait");
+verifyNotEmpty(testCase, directWaitSeeds);
+verifyFalse(testCase, any([directWaitSeeds.UsesReducedGeometry]));
+spatialSeeds = seeds([seeds.Source] == "visibilityGraph");
+verifyNotEmpty(testCase, spatialSeeds);
+verifyTrue(testCase, all([spatialSeeds.UsesReducedGeometry]));
 end
 
 function testWaitingSeedDoesNotImposeCornerState(testCase)
@@ -355,7 +590,7 @@ seed = struct( ...
     "Index", 1, "Source", "directWait", ...
     "position_deg", [0 0; 0 0; 4 0], ...
     "tau", [0; 0.4; 1], "EstimatedDuration_s", 8, ...
-    "Length_deg", 4);
+    "Length_deg", 4, "UsesReducedGeometry", false);
 candidate = azElInternal.solveAzElHs3( ...
     [], initialState, goalState, limits, options, seed);
 cornerTime_s = 0.4 * goalState.time_s;
@@ -385,6 +620,19 @@ verifyEqual(testCase, shortResult.position_deg(end, 1), 181, ...
 verifyTrue(testCase, shortResult.Validation.AzimuthWrapPolicySatisfied);
 end
 
+function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
+% Verify wrapped obstacle requests cannot return a false physical success.
+initialState = state(0, [179 0], [0 0], [0 0]);
+goalState = state(8, [-179 0], [0 0], [0 0]);
+limits = physicalLimits([1 1], [1 1], [2 2]);
+options = fixedOptions();
+options.AllowAzimuthWrapping = true;
+obstacle = rectangleObstacle([0 8], [-180.5 -179.5 -1 1], 0);
+verifyError(testCase, @() planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options), ...
+    "planAzElMotion:UnsupportedWrappedGeometry");
+end
+
 function testPlanningTimeLimitReturnsStableFailure(testCase)
 % Verify a time budget is an expected result with per-seed diagnostics.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -400,6 +648,23 @@ verifyEqual(testCase, ...
     result.SeedSummaries(1).TerminationReason, "planningTimeLimit");
 end
 
+function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
+% Verify endpoint failure and success use one public validation schema.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(8, [4 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+success = planAzElMotion( ...
+    [], initialState, goalState, limits, fixedOptions());
+blockingObstacle = rectangleObstacle([0 8], [-1 1 -1 1], 0);
+failure = planAzElMotion( ...
+    blockingObstacle, initialState, goalState, limits, fixedOptions());
+verifyTrue(testCase, success.Validation.Passed);
+verifyFalse(testCase, failure.Success);
+verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
+verifyEqual(testCase, fieldnames(failure.Validation), ...
+    fieldnames(success.Validation));
+end
+
 function testBetweenNodeCollisionFailsValidation(testCase)
 % Verify a collision at the segment midpoint cannot hide between samples.
 initialState = state(0, [-1 0], [2 0], [0 0]);
@@ -407,6 +672,20 @@ goalState = state(1, [1 0], [2 0], [0 0]);
 limits = physicalLimits([3 3], [1 1], [1 1]);
 trajectory = linearTrajectory(initialState, goalState);
 obstacle = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
+validation = validateAzElTrajectory( ...
+    trajectory, obstacle, initialState, goalState, limits, fixedOptions());
+verifyFalse(testCase, validation.Passed);
+verifyFalse(testCase, validation.CollisionFree);
+verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
+end
+
+function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
+% Verify collision at the first active event endpoint cannot be missed.
+initialState = state(0, [0 0], [0.1 0], [0 0]);
+goalState = state(10, [1 0], [0.1 0], [0 0]);
+limits = physicalLimits([1 1], [1 1], [1 1]);
+trajectory = linearTrajectory(initialState, goalState);
+obstacle = rectangleObstacle([10 20], [0.5 1.5 -0.5 0.5], 0);
 validation = validateAzElTrajectory( ...
     trajectory, obstacle, initialState, goalState, limits, fixedOptions());
 verifyFalse(testCase, validation.Passed);

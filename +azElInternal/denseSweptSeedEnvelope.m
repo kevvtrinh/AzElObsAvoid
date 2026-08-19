@@ -28,9 +28,7 @@ function [envelopeShape, usedEnvelope] = denseSweptSeedEnvelope( ...
 % UNITS
 %   - Position is degrees. Time is seconds. The work budget is a count.
 %**************************************************************************
-
 %% Section 1: Estimate The Swept Boolean Work
-
 validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, ...
     {'real', 'finite', 'size', [2 2]});
@@ -43,8 +41,8 @@ for obstacleIndex = 1:numel(obstacles)
         maximumVertexCount = max(maximumVertexCount, ...
             numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
     end
-    maximumVerticesPerLayer = max( ...
-        maximumVerticesPerLayer, maximumVertexCount);
+    maximumVerticesPerLayer = ...
+        maximumVerticesPerLayer + maximumVertexCount;
 end
 estimatedVertexWork = numel(sampleTimes_s) * maximumVerticesPerLayer;
 envelopeShape = polyshape();
@@ -52,9 +50,7 @@ usedEnvelope = false;
 if estimatedVertexWork <= vertexWorkBudget
     return;
 end
-
 %% Section 2: Collect All Protected History Vertices
-
 historyVertices_deg = zeros(0, 2);
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
@@ -71,9 +67,7 @@ end
 if size(historyVertices_deg, 1) < 3
     return;
 end
-
 %% Section 3: Build A Conservative Directional Support Hull
-
 % A fixed set of support directions limits graph size. More directions are
 % tried only when a coarse hull captures an endpoint that the exact convex
 % hull does not capture.
@@ -99,9 +93,7 @@ end
 envelopeShape = trialShape;
 usedEnvelope = true;
 end
-
 %% Section 4: Local Functions
-
 function envelopeShape = directionalSupportHull(vertices_deg, directionCount)
 % PURPOSE
 %   - Clip a bounding polygon by ordered supports to make a coarse hull.
@@ -126,7 +118,6 @@ hullIndex = convhull( ...
 envelopeShape = polyshape( ...
     envelopeVertices_deg(hullIndex(1:end - 1), :), "Simplify", false);
 end
-
 function clippedVertices_deg = clipToSupportHalfPlane( ...
         vertices_deg, normal, offset_deg)
 % PURPOSE
@@ -158,7 +149,6 @@ if size(clippedVertices_deg, 1) > 1 && ...
     clippedVertices_deg(end, :) = [];
 end
 end
-
 function vertices_deg = appendDistinctPoint(vertices_deg, point_deg)
 % PURPOSE
 %   - Omit consecutive duplicate vertices created at support intersections.
@@ -166,7 +156,6 @@ if isempty(vertices_deg) || norm(vertices_deg(end, :) - point_deg) > 1e-7
     vertices_deg(end + 1, :) = point_deg;
 end
 end
-
 function areOutside = endpointsAreOutside(envelopeShape, endpointPosition_deg)
 % PURPOSE
 %   - Reject a seed envelope that contains or touches a request endpoint.

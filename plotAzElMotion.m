@@ -22,9 +22,7 @@ function handles = plotAzElMotion(result, optionOverrides)
 % UNITS
 %   - Axes show degrees, seconds, deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
-
 %% Section 1: Resolve Display Controls
-
 defaults = struct( ...
     "FigureVisible", "on", ...
     "Title", "Azimuth/elevation HS3 plan", ...
@@ -85,9 +83,7 @@ for name = countNames
         {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 handles = emptyHandles(options);
-
 %% Section 2: Plot Workspace And Failure Diagnostics
-
 if options.ShowWorkspace
     workspaceFigure = figure( ...
         "Name", options.Title, "Visible", options.FigureVisible);
@@ -134,7 +130,7 @@ if options.ShowWorkspace
     end
     drawTargetTrack(workspaceAxes, result.Inputs.goalState);
     start_deg = result.Inputs.initialState.position_deg;
-    goal_deg = goalPositionAtTime( ...
+    goal_deg = azElInternal.goalPositionAtTime( ...
         result.Inputs.goalState, result.Inputs.goalState.time_s);
     scatter(workspaceAxes, start_deg(1), start_deg(2), 50, "g", ...
         "filled", "DisplayName", "Start");
@@ -148,7 +144,6 @@ if options.ShowWorkspace
     handles.WorkspaceAxes = workspaceAxes;
 end
 %% Section 3: Plot Time-Expanded Visibility Diagnostics
-
 if options.ShowVisibilityGraphs
     visibilityFigure = figure( ...
         "Name", options.Title + " visibility diagnostics", ...
@@ -204,9 +199,7 @@ if options.ShowVisibilityGraphs
     handles.VisibilityGraphs = struct( ...
         "Figure", visibilityFigure, "Axes", visibilityAxes);
 end
-
 %% Section 4: Plot Returned Kinematics
-
 if options.ShowKinematics && result.Success
     kinematicFigure = figure( ...
         "Name", options.Title + " kinematics", ...
@@ -250,9 +243,7 @@ if options.ShowKinematics && result.Success
     handles.KinematicsFigure = kinematicFigure;
     handles.KinematicsAxes = axesHandles;
 end
-
 %% Section 5: Animate Returned Motion
-
 if options.ShowAnimation && result.Success
     animationFigure = figure( ...
         "Name", options.Title + " animation", ...
@@ -288,9 +279,7 @@ if options.ShowAnimation && result.Success
         "Figure", animationFigure, "Axes", animationAxes);
 end
 end
-
 %% Section 6: Local Functions
-
 function options = normalizePlotAliases(options)
 % PURPOSE
 %   - Forward deprecated display spellings through one compatibility map.
@@ -320,7 +309,6 @@ for name = compatibilityNames
     end
 end
 end
-
 function configureSpatialAxes(axesHandle)
 % PURPOSE
 %   - Apply one explicit spatial-axis style to workspace and animation axes.
@@ -329,7 +317,6 @@ grid(axesHandle, "on");
 box(axesHandle, "on");
 axis(axesHandle, "equal");
 end
-
 function drawSearchEdges(axesHandle, gridRecord)
 % PURPOSE
 %   - Draw retained accepted and collision-rejected visibility tests.
@@ -369,7 +356,6 @@ if isfield(gridRecord, "RejectedEdges_deg") && ...
         "DisplayName", "Collision-rejected edge");
 end
 end
-
 function [azimuth_deg, elevation_deg] = edgeLineData(edges_deg)
 % PURPOSE
 %   - Convert N-by-4 edge endpoints to NaN-separated plot vectors.
@@ -379,7 +365,6 @@ azimuth_deg = reshape([ ...
 elevation_deg = reshape([ ...
     edges_deg(:, 2), edges_deg(:, 4), nan(edgeCount, 1)].', [], 1);
 end
-
 function drawObstacles(axesHandle, obstacles, time_s, showOriginal)
 % PURPOSE
 %   - Draw original and protected geometry from one canonical source.
@@ -399,7 +384,6 @@ for obstacleIndex = 1:numel(obstacles)
         "Protected obstacle");
 end
 end
-
 function drawShape(axesHandle, shape, color, lineStyle, displayName)
 % PURPOSE
 %   - Draw each NaN-separated polyshape boundary on explicit axes.
@@ -411,7 +395,6 @@ plot(axesHandle, azimuth_deg, elevation_deg, ...
     "Color", color, "LineStyle", lineStyle, ...
     "LineWidth", 1.2, "DisplayName", displayName);
 end
-
 function drawObstacleLayers(axesHandle, obstacles, times_s, maximumCount)
 % PURPOSE
 %   - Draw protected obstacle slices in azimuth/elevation/time space.
@@ -439,7 +422,6 @@ for timeIndex = reshape(timeIndices, 1, [])
     end
 end
 end
-
 function drawTargetTrack(axesHandle, goalState)
 % PURPOSE
 %   - Draw a sampled moving target when the result contains one.
@@ -450,19 +432,6 @@ if isfield(goalState, "targetPosition_deg") && ...
         "LineWidth", 1.1, "DisplayName", "Moving target track");
 end
 end
-
-function position_deg = goalPositionAtTime(goalState, time_s)
-% PURPOSE
-%   - Evaluate fixed or sampled goal geometry for display.
-if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
-    position_deg = interp1( ...
-        goalState.targetTime_s, goalState.targetPosition_deg, ...
-        time_s, goalState.InterpolationMethod);
-else
-    position_deg = goalState.position_deg;
-end
-end
-
 function times_s = visibilityLayerTimes(gridRecord, inputs)
 % PURPOSE
 %   - Select retained temporal layers or the planning endpoints.
@@ -478,7 +447,6 @@ if isempty(times_s)
 end
 times_s = unique(times_s(:));
 end
-
 function indices = sampledIndices(count, maximumCount)
 % PURPOSE
 %   - Retain evenly distributed display indices without changing counts.
@@ -490,7 +458,6 @@ else
     indices = unique(round(linspace(1, count, maximumCount))).';
 end
 end
-
 function titleText = diagnosticTitle(result, prefix)
 % PURPOSE
 %   - Include the termination reason and complete key search counts.
@@ -501,7 +468,6 @@ titleText = sprintf("%s | %s | seeds %d | expanded %d | rejected %d", ...
     prefix, result.TerminationReason, numel(result.Seeds), ...
     expanded, rejected);
 end
-
 function value = fieldOrZero(record, fieldName)
 % PURPOSE
 %   - Read one optional diagnostic count without plot-time reconstruction.
@@ -510,7 +476,6 @@ if isfield(record, fieldName)
     value = record.(fieldName);
 end
 end
-
 function handles = emptyHandles(options)
 % PURPOSE
 %   - Define stable empty graphics output for every display combination.

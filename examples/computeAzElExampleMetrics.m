@@ -11,7 +11,7 @@ function metrics = computeAzElExampleMetrics(result)
 %**************************************************************************
 % OUTPUTS
 %   - metrics (scalar struct)
-%       Polyline length, motion length, duration, constraint state, and seed.
+%       Polyline length, motion length, duration policy, constraints, and seed.
 %**************************************************************************
 % UNITS
 %   - Length is degrees and duration is seconds.
@@ -19,12 +19,22 @@ function metrics = computeAzElExampleMetrics(result)
 
 %% Section 1: Compute Success Or Failure Metrics
 
+goalTimeMode = string(result.Options.GoalTimeMode);
+if goalTimeMode == "earliestArrival"
+    durationInterpretation = "earliestValidatedDuration";
+elseif goalTimeMode == "fixedArrival"
+    durationInterpretation = "fixedArrivalDuration";
+else
+    error("computeAzElExampleMetrics:InvalidGoalTimeMode", ...
+        "result.Options.GoalTimeMode must be earliestArrival or " + ...
+        "fixedArrival.");
+end
 if result.Success
     selectedPolylineLength_deg = result.Seeds( ...
         result.SelectedSeedIndex).Length_deg;
     smoothedPathLength_deg = sum(vecnorm( ...
         diff(result.position_deg, 1, 1), 2, 2));
-    minimumMotionDuration_s = result.time_s(end) - result.time_s(1);
+    motionDuration_s = result.time_s(end) - result.time_s(1);
     collisionFree = result.Validation.CollisionFree;
     kinematicCertificatePassed = ...
         result.Validation.VelocityWithinLimits && ...
@@ -40,18 +50,20 @@ if result.Success
 else
     selectedPolylineLength_deg = NaN;
     smoothedPathLength_deg = NaN;
-    minimumMotionDuration_s = NaN;
-    collisionFree = false;
-    kinematicCertificatePassed = false;
+    motionDuration_s = NaN;
+    collisionFree = NaN;
+    kinematicCertificatePassed = NaN;
     maximumAbsoluteVelocity_deg_s = NaN;
     maximumAbsoluteAcceleration_deg_s2 = NaN;
     maximumAbsoluteJerk_deg_s3 = NaN;
 end
 metrics = struct( ...
     "JerkConstraintEnabled", true, ...
+    "GoalTimeMode", goalTimeMode, ...
     "SelectedPolylineLength_deg", selectedPolylineLength_deg, ...
     "SmoothedPathLength_deg", smoothedPathLength_deg, ...
-    "MinimumMotionDuration_s", minimumMotionDuration_s, ...
+    "MotionDuration_s", motionDuration_s, ...
+    "MotionDurationInterpretation", durationInterpretation, ...
     "CollisionFree", collisionFree, ...
     "KinematicCertificatePassed", kinematicCertificatePassed, ...
     "MaximumAbsoluteVelocity_deg_s", maximumAbsoluteVelocity_deg_s, ...

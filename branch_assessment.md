@@ -1,69 +1,70 @@
-# Plan 502 branch assessment
+# Plan 325 branch assessment
 
 ## Evidence scope
 
-This assessment applies to branch `plan-502-implementation` at source commit
-`6c6b948`. It uses the 18 maintained example runs, 25 focused tests, MATLAB
-Code Analyzer results, visible and headless plot checks, line counts, and the
-repository-wide legacy-code and call-site review.
+This assessment applies to the uncommitted Plan 325 implementation based on
+`cc6eec3`. Static analysis found no messages in 62 MATLAB files. The three
+maintained test files passed 49 of 49 tests. The full maintained example set
+has not yet been rerun. The old Plan 502 rows in `benchmark.csv` are retained
+only as historical evidence for their recorded contracts.
 
-## Biggest strength
+The duration header in `benchmark.csv` is now `MotionDuration_s`. A
+fixed-arrival duration is the configured horizon. It is not a measured minimum.
 
-The largest strength is one correctness-focused planning path with independent
-evidence. Static obstacles, moving obstacles, deforming obstacles, waiting,
-moving targets, fixed arrival, earliest arrival, concave geometry, and dense
-geographic geometry use the same public planner. Each successful example
-passed independent collision and kinematic validation.
+## Largest strength
 
-The planner also keeps failure evidence. A no-path or time-limit result retains
-the explored nodes, accepted and rejected transitions, frontier, best partial
-route, seed summaries, and termination reason. General `Verbose` output reports
-the same planner events without enabling an optimizer iteration table.
+Plan 325 has one public planning path for static, moving, and deforming
+obstacles; fixed and earliest arrival; waiting; and moving goals. It first
+builds a finite-jerk stop-at-waypoint motion when that motion family supports
+the request. It accepts that motion only after independent polynomial,
+kinematic, endpoint, and continuous collision validation. A bounded HS3 stage
+can improve the result or handle requests that the first motion does not
+support.
 
-This is stronger than an example-only success claim. The result states that it
-is the earliest validated local HS3 solution from the attempted deterministic
-seed set. It does not claim global completeness or global time optimality.
+The validator checks event endpoints, complete polynomial segments, sampled
+history agreement, state continuity, physical limits, safety-margin
+provenance, and original protected obstacle histories. Planning failures keep
+stable diagnostics. The result does not claim global completeness or global
+optimality.
 
-## Biggest weaknesses
+## Largest weaknesses
 
-### 1. Finite local-search coverage
+### 1. Bounded proposal coverage
 
-The planner can miss a feasible topology. HS3 is a local nonlinear optimizer,
-and the topology generator returns a bounded seed set. A conservative cluster,
-dense swept envelope, or frozen local corridor can remove a narrow useful
-initialization even when an exact feasible path exists. Independent validation
-prevents false success, but it cannot make the seed set complete.
+Spatial and time-layer searches use finite samples. Dense-envelope and cluster
+reductions can remove a useful topology. Final validation prevents false
+success, but it cannot make the proposal set complete. A reduced failure is an
+incomplete bounded search, not proof that no physical path exists.
 
-### 2. Runtime on difficult geometry
+### 2. Conservative first-motion family
 
-The slowest verified examples were:
+The fast motion stops at each geometric waypoint and assigns one common edge
+duration. It can be slower than a through-velocity motion. It can also reject a
+feasible nonuniform edge schedule. Timed waits, nonzero endpoint derivatives,
+and earliest moving-goal intercepts require HS3.
 
-- `exampleUSOutlineExtremeVisibility`: 333.423481 s.
-- `exampleFourAcceleratingCircles`: 176.305066 s.
-- `exampleOpeningUShapedAzElTimeSpace`: 121.012455 s.
+### 3. Local optimization and cooperative deadlines
 
-Continuous collision resolution, repeated local optimization, and dense
-geometry protection improve correctness but increase runtime. The branch has
-not established a worst-case runtime bound.
+HS3 uses a frozen local corridor and a local nonlinear solve. Setup and
+certificate loops check an absolute deadline between bounded operations, but a
+single operation is not preempted. `PlanningDeadlineOverrun_s` reports an
+observed overrun. Optimization Toolbox `fmincon` is required for HS3.
 
-### 3. Small remaining size margin
+### 4. Restricted azimuth wrapping
 
-Production MATLAB code has 5,997 physical lines. The target is 6,000 lines.
-`generateAzElTopologySeeds.m` and `solveAzElHs3.m` each have 900 physical
-lines. This leaves little space for a new feature without simplification.
-There are 22 production files, which exceeds the 8-to-16 file-count target,
-although the line-count target and hard limits pass.
+Periodic obstacle images are not implemented. Azimuth wrapping is therefore
+supported only for an obstacle-free fixed-position goal. Other wrapped
+requests return an identified unsupported-configuration error.
 
-### 4. Conservative seed geometry is an explicit tradeoff
+### 5. Size target
 
-Nearby obstacle clustering and the coarse directional dense envelope reduce
-topology-graph work. They do not replace the exact obstacle history used by
-HS3 and validation. However, a large clustering distance or coarse convex
-envelope can remove a narrow seed corridor and cause a false planning failure.
+The implementation has 26 production MATLAB files and 6,988 physical
+production lines. The largest files have 900, 900, and 869 lines. The complete
+MATLAB tree has 11,546 physical lines. The production and complete hard limits
+pass. The 10,500-line complete-tree target does not pass.
 
 ## Current judgment
 
-The branch is suitable as a compact correctness reference and as a general
-deterministic planner for the verified scenario families. Its main development
-need is lower runtime and broader seed coverage without adding a second planner,
-weakening continuous validation, or exceeding the size limits.
+The code and focused tests support a compact, correctness-first Plan 325
+candidate. Runtime, route quality, visible graphics, and all maintained example
+contracts still require serial execution before this branch is complete.
