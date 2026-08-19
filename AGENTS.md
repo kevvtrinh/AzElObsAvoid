@@ -666,6 +666,11 @@ when making a performance comparison.
 
 ## Testing and Verification
 
+Do not run every maintained example before a planned code change. Inspect the
+available baseline evidence, make the code change, and run the required
+example verification after the change. Before the change, run only the
+focused cases that are necessary to identify a specific failure.
+
 Before considering a change complete:
 
 1. Run syntax/static checks available in the environment.
@@ -686,6 +691,35 @@ Before considering a change complete:
 Use deterministic tests. If a planner is randomized, set and return the seed.
 Do not weaken assertions, enlarge tolerances, reduce obstacle geometry, or alter
 expected results merely to obtain a passing run.
+
+## Branch Assessment and Benchmark Records
+
+Every agent must inspect these root records before a commit or push. Every
+agent that changes planner behavior, example behavior, validation, diagnostics,
+or runtime must maintain them:
+
+- `branch_assessment.md` states the largest current strength and weaknesses.
+  Base each statement on measured evidence. Update it when a change affects
+  correctness, coverage, diagnostics, maintainability, size, or runtime. Keep
+  unfavorable limits visible. Do not convert a local result into a global
+  optimality or completeness claim.
+- `benchmark.csv` contains one row for each executed maintained example and
+  motion-constraint mode. Record the run date, source commit, branch, example,
+  goal-time mode, jerk state, planner and independent-validation states,
+  polyline and smoothed lengths, motion duration, collision and certificate
+  states, wall time, termination reason, and concise notes.
+
+Before a commit or push, update both records when the current work changed the
+evidence that they describe. If no benchmark was executed, do not invent or
+copy a new result. Preserve the last measured row and state that the metric was
+not rerun in the chat. Append a new row when the source commit, option mode, or
+measured result changes. Do not delete or replace an unfavorable historical
+row to make a comparison look better. Correct a factual CSV error in place and
+explain the correction in the commit message or verification report.
+
+Use `NaN` for an unavailable numeric benchmark value. Use an empty note only
+when no clarification is required. Keep the CSV header stable. Add a column
+only when it represents a general result that later runs can populate.
 
 ## Change Discipline
 

@@ -120,6 +120,10 @@ failures, safety-margin provenance, azimuth wrapping, deterministic
 repetition, time-limit failure, moving-target adaptation, and stable no-path
 diagnostics.
 
+The current measured results are in `benchmark.csv`. The evidence-based branch
+strength and weaknesses are in `branch_assessment.md`. Repository instructions
+require later agents to update both records when planner evidence changes.
+
 ## Known limits
 
 - HS3 is a local nonlinear optimizer. A finite seed set can miss a feasible

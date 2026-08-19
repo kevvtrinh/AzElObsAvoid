@@ -1,0 +1,19 @@
+RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,ValidationPassed,SelectedPolylineLength_deg,SmoothedPathLength_deg,MinimumMotionDuration_s,CollisionFree,KinematicCertificatePassed,ApplicableCertificatePassed,WallTime_s,TerminationReason,Notes
+2026-08-19,6c6b948,plan-502-implementation,exampleObstacleFreeAzElMotion,fixedArrival,1,1,1,4.472135955,4.472135955,8,1,1,1,7.421851,goalReached,
+2026-08-19,6c6b948,plan-502-implementation,exampleAzElPlanning,fixedArrival,1,1,1,11.152119519,11.4302740211,12,1,1,1,6.832057,goalReached,Arrival time error was zero
+2026-08-19,6c6b948,plan-502-implementation,exampleUShapedAzElTimeSpace,fixedArrival,1,1,1,13.0984626634,13.6337924413,16,1,1,1,12.883694,goalReached,
+2026-08-19,6c6b948,plan-502-implementation,exampleMovingBarrierWait,fixedArrival,1,1,1,10,10,12,1,1,1,19.674199,goalReached,Selected a causal wait route
+2026-08-19,6c6b948,plan-502-implementation,exampleMovingCircleNoAzimuthWrap,fixedArrival,1,1,1,12,12.0763830708,15,1,1,1,14.929877,goalReached,
+2026-08-19,6c6b948,plan-502-implementation,exampleAlternatingSlalom,fixedArrival,1,1,1,21.5931584237,22.8432289377,22,1,1,1,29.413146,goalReached,
+2026-08-19,6c6b948,plan-502-implementation,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.0975244491,7.34221772005,6.27580767236,1,1,1,10.547406,goalReached,InterceptMode=earliest
+2026-08-19,6c6b948,plan-502-implementation,exampleDenseConcaveAzElMotion,fixedArrival,1,1,1,12.7007215595,12.9226250876,15,1,1,1,9.870478,goalReached,Minimum clearance was 0.000458186985853 deg
+2026-08-19,6c6b948,plan-502-implementation,exampleNoPathAzElMotion,fixedArrival,1,0,1,NaN,NaN,NaN,NaN,NaN,NaN,20.872299,planningTimeLimit,Expected failure with valid search diagnostics
+2026-08-19,6c6b948,plan-502-implementation,exampleFourAcceleratingCircles,fixedArrival,1,1,1,20,23.0143665216,22,1,1,1,176.305066,goalReached,InterceptMode=specifiedTime
+2026-08-19,6c6b948,plan-502-implementation,exampleFortyMovingCircleGrid,fixedArrival,1,1,1,110.719601696,119.913574761,200,1,1,1,14.448237,goalReached,Used nearby-obstacle clustering
+2026-08-19,6c6b948,plan-502-implementation,exampleInterceptMovingTargetAtSetTime,fixedArrival,1,1,1,9.53894054682,9.53894054682,12,1,1,1,4.775197,goalReached,Arrival time error was zero; InterceptMode=specifiedTime
+2026-08-19,6c6b948,plan-502-implementation,exampleMovingDeformingUSOutlineVisibility,fixedArrival,1,1,1,63.0848051466,69.9329648988,300,1,1,1,53.478524,goalReached,Arrival time error was zero
+2026-08-19,6c6b948,plan-502-implementation,exampleOpeningUShapedAzElTimeSpace,earliestArrival,1,1,1,10,10.0000000006,15.0009983536,1,1,1,121.012455,goalReached,Selected a wait route
+2026-08-19,6c6b948,plan-502-implementation,exampleStraightTargetAlternatingOcclusion,fixedArrival,1,1,1,20.285321411,14.0302781079,20.8695652174,1,1,1,63.571625,goalReached,InterceptMode=specifiedTime
+2026-08-19,6c6b948,plan-502-implementation,exampleTargetExitsObstacle,fixedArrival,1,1,1,19.824386759,22.8844763641,24,1,1,1,20.278459,goalReached,InterceptMode=specifiedTime
+2026-08-19,6c6b948,plan-502-implementation,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,24.035784715,24.2986004456,22.8761245347,1,1,1,91.218125,goalReached,
+2026-08-19,6c6b948,plan-502-implementation,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.2394635087,26.8345751175,7.23988773649,1,1,1,333.423481,goalReached,Runtime covers the three-region sequence
