@@ -547,8 +547,8 @@ verifyGreaterThan(testCase, timedSeed(1).EstimatedDuration_s, ...
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 end
 
-function testDenseEnvelopeKeepsTimedSearchAlternative(testCase)
-% Verify a reduced static proposal does not remove an exact timed wait.
+function testDenseEnvelopeReportsTimedSearchWorkLimit(testCase)
+% Verify dense timed work is suppressed and reported as incomplete.
 time_s = [0; 6; 8; 12];
 angle_rad = (0:1199).' * (2 * pi / 1200);
 source_deg = [0.5 * cos(angle_rad), 2 * sin(angle_rad)];
@@ -570,13 +570,15 @@ options.MaximumSeedCount = 5;
     obstacle, initialState, goalState, limits, options, tic);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
-verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+verifyFalse(testCase, diagnostics.Coverage.TimedSearchAttempted);
+verifyEqual(testCase, diagnostics.Coverage.TimedSearchSuppressionReason, ...
+    "timedQueryWorkLimit");
 directWaitSeeds = seeds([seeds.Source] == "directWait");
-verifyNotEmpty(testCase, directWaitSeeds);
-verifyFalse(testCase, any([directWaitSeeds.UsesReducedGeometry]));
+verifyEmpty(testCase, directWaitSeeds);
 spatialSeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyNotEmpty(testCase, spatialSeeds);
 verifyTrue(testCase, all([spatialSeeds.UsesReducedGeometry]));
+verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
 end
 
 function testWaitingSeedDoesNotImposeCornerState(testCase)

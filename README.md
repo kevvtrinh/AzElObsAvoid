@@ -75,15 +75,17 @@ produce these proposal types:
 
 - a direct seed;
 - unreduced sampled or reduced spatial visibility seeds;
-- original-geometry sampled time-layer seeds with motion and wait edges.
+- original-geometry sampled time-layer seeds with motion and wait edges when
+  their estimated query work is inside the bounded seed-search limit.
 
 Dense-history support envelopes and optional obstacle clusters are permitted
 only for spatial seed proposals and their corridor certificates. Diagnostics
-set `UsesReducedGeometry` when a seed uses this reduction. Timed edge samples,
-HS3, and final validation use the original protected obstacle histories. The
-timed graph is only a bounded proposal. Only final adaptive validation gives a
-continuous collision certificate. A reduced region never replaces the
-obstacle data used to accept a trajectory.
+set `UsesReducedGeometry` when a seed uses this reduction. The dense-history
+work gate suppresses sampled timed search and reports `timedQueryWorkLimit`.
+This can miss a wait topology. When timed search runs, its edge samples use the
+original protected history. HS3 and final validation always use that history.
+Only final adaptive validation gives a continuous collision certificate. A
+reduced region never replaces the obstacle data used to accept a trajectory.
 
 `EstimatedDuration_s` is an initial guess for HS3. It is not a required lower
 bound. HS3 can shorten or extend the motion when the goal-time policy and

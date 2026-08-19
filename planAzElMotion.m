@@ -103,8 +103,14 @@ if ~endpointFeasible
     return;
 end
 %% Section 3: Generate The Bounded Deterministic Seed Set
+% Seeds are initializations. Reserve most of the finite budget for complete
+% motion construction and independent validation.
+seedPlanningTimeLimit_s = 0.30 * options.MaximumPlanningTime_s;
+seedOptions = options;
+seedOptions.MaximumPlanningTime_s = seedPlanningTimeLimit_s;
 [seeds, gridDiagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacles, initialState, goalState, limits, options, planningTimer);
+    obstacles, initialState, goalState, limits, seedOptions, planningTimer);
+gridDiagnostics.SeedPlanningTimeLimit_s = seedPlanningTimeLimit_s;
 result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
 if options.Verbose

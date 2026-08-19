@@ -127,7 +127,8 @@ Generate a bounded mixture of:
 
 1. the direct seed;
 2. distinct spatial visibility seeds;
-3. time-layer seeds with motion and wait edges for changing obstacles.
+3. time-layer seeds with motion and wait edges for changing obstacles when
+   their estimated query work is inside the seed-search work limit.
 
 The default maximum seed count is five. The hard public maximum is nine.
 Moving histories use bounded time layers, nodes, and collision samples.
@@ -141,8 +142,10 @@ protected geometry before a corridor can support a first motion.
 
 Timed search queries the original protected obstacle histories at a bounded
 set of edge samples. It must not use a cluster or dense-history envelope in
-place of an obstacle. It is a proposal, not a continuous certificate. HS3 and
-independent validation also use the original protected histories. Only final
+place of an obstacle. The dense-history gate suppresses timed search and
+reports `timedQueryWorkLimit`; this makes coverage incomplete. The generator
+keeps a base spatial route before optional timed work starts. HS3 and
+independent validation use the original protected histories. Only final
 adaptive validation certifies continuous collision freedom.
 
 `EstimatedDuration_s` is an HS3 initial guess. It is not a causal constraint

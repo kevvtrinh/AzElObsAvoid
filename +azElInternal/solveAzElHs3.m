@@ -282,7 +282,6 @@ function stop = stopForTime(~, ~, ~, solverTimer, maximumTime_s)
 %   - Stop one fmincon stage at its assigned wall-time limit.
 stop = toc(solverTimer) >= maximumTime_s;
 end
-
 function checkCount = corridorChecksPerSegment( ...
         obstacles, startTime_s, finalTime_s, segmentCount)
 % PURPOSE
@@ -313,7 +312,6 @@ maximumChecksPerSegment = 16;
 checkCount = min(maximumChecksPerSegment, ...
     max([8, boundaryCheckCount, motionCheckCount]));
 end
-
 function [jerkGuess_deg_s3, jerkLimitRatio] = initialJerkGuess( ...
         initialState, goalState, ...
         limits, seed, finalTime_s, segmentCount, controlTau)
@@ -367,7 +365,6 @@ jerkLimitRatio = max( ...
 jerkGuess_deg_s3 = min(limits.maxJerk_deg_s3, ...
     max(-limits.maxJerk_deg_s3, jerkGuess_deg_s3));
 end
-
 function [inequality, equality] = trajectoryConstraints(decision, ...
         isEarliestArrival, fixedFinalTime_s, segmentCount, ...
         initialState, goalState, limits, options, obstacles, corridor, ...
@@ -401,7 +398,6 @@ equality = [ ...
     terminalVelocity_deg_s - goalState.velocity_deg_s, ...
     terminalAcceleration_deg_s2 - goalState.acceleration_deg_s2].';
 end
-
 function inequality = continuousBoundConstraints(polynomial, limits, options)
 % PURPOSE
 %   - Use Bernstein convex-hull bounds over every complete HS3 segment.
@@ -450,7 +446,6 @@ inequality = [inequality; ...
     bernsteinCoefficient - upperBound; ...
     lowerBound - bernsteinCoefficient];
 end
-
 function corridor = buildCorridor( ...
         obstacles, seed, startTime_s, finalTime_s, controlTau, ...
         clearanceTolerance_deg, geometryIsFixed, maxVelocity_deg_s)
@@ -710,7 +705,6 @@ projectedPoint_deg = edgeStart_deg + projection .* edgeDelta_deg;
 [~, edgeIndex] = min(sum((point_deg - projectedPoint_deg).^2, 2));
 nearestPoint_deg = projectedPoint_deg(edgeIndex, :);
 end
-
 function polynomial = reconstructPolynomial( ...
         jerk_deg_s3, initialState, finalTime_s, segmentCount)
 % PURPOSE
@@ -818,14 +812,12 @@ else
     finalTime_s = fixedFinalTime_s;
 end
 end
-
 function violation = maximumConstraintViolation(decision, constraintFunction)
 % PURPOSE
 %   - Reduce nonlinear inequality and equality residuals to one diagnostic.
 [inequality, equality] = constraintFunction(decision);
 violation = max([0; inequality(:); abs(equality(:))]);
 end
-
 function duration_s = durationLowerBound( ...
         initialState, goalState, limits, latestFinalTime_s)
 % PURPOSE
@@ -842,7 +834,6 @@ displacement_deg = abs(goalPosition_deg - initialState.position_deg);
 velocityBound_s = displacement_deg ./ limits.maxVelocity_deg_s;
 duration_s = max([1e-3, velocityBound_s]);
 end
-
 function duration_s = movingTargetDurationLowerBound( ...
         initialState, goalState, limits)
 % PURPOSE

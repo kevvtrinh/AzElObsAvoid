@@ -2,11 +2,13 @@
 
 ## Evidence scope
 
-This assessment applies to the uncommitted Plan 325 implementation based on
-`cc6eec3`. Static analysis found no messages in 62 MATLAB files. The three
+This assessment applies to the uncommitted seed-budget follow-up based on
+`689576a`. Static analysis found no messages in 62 MATLAB files. The three
 maintained test files passed 49 of 49 tests. The full maintained example set
-has not yet been rerun. The old Plan 502 rows in `benchmark.csv` are retained
-only as historical evidence for their recorded contracts.
+has not been rerun after this change. A focused 120-second moving/deforming
+U.S. run returned a validated analytic motion after the earlier generator used
+the full 360-second limit without attempting a motion. The old Plan 502 rows in
+`benchmark.csv` remain historical evidence for their recorded contracts.
 
 The duration header in `benchmark.csv` is now `MotionDuration_s`. A
 fixed-arrival duration is the configured horizon. It is not a measured minimum.
@@ -32,9 +34,10 @@ optimality.
 ### 1. Bounded proposal coverage
 
 Spatial and time-layer searches use finite samples. Dense-envelope and cluster
-reductions can remove a useful topology. Final validation prevents false
-success, but it cannot make the proposal set complete. A reduced failure is an
-incomplete bounded search, not proof that no physical path exists.
+reductions can remove a useful topology. The dense-history work gate suppresses
+timed search and reports `timedQueryWorkLimit`; this can remove a required wait
+topology. Final validation prevents false success, but it cannot make the
+proposal set complete. A reduced failure is not proof that no path exists.
 
 ### 2. Conservative first-motion family
 
@@ -58,13 +61,14 @@ requests return an identified unsupported-configuration error.
 
 ### 5. Size target
 
-The implementation has 26 production MATLAB files and 6,988 physical
-production lines. The largest files have 900, 900, and 869 lines. The complete
-MATLAB tree has 11,546 physical lines. The production and complete hard limits
+The implementation has 26 production MATLAB files and 6,985 physical
+production lines. The largest files have 900, 891, and 875 lines. The complete
+MATLAB tree has 11,545 physical lines. The production and complete hard limits
 pass. The 10,500-line complete-tree target does not pass.
 
 ## Current judgment
 
-The code and focused tests support a compact, correctness-first Plan 325
-candidate. Runtime, route quality, visible graphics, and all maintained example
-contracts still require serial execution before this branch is complete.
+The code, focused tests, and U.S. diagnostic support a compact,
+correctness-first Plan 325 candidate. Runtime, route quality, visible graphics,
+and all maintained example contracts still require serial execution before
+this branch is complete.
