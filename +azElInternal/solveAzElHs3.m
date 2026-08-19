@@ -54,9 +54,17 @@ controlTau = linspace(0, 1, controlCount).';
 initialJerk_deg_s3 = initialJerkGuess( ...
     initialState, goalState, limits, seed, finalTimeGuess_s, ...
     segmentCount, controlTau);
-corridorTau = linspace(0, 1, 16 * segmentCount + 1).';
+% Static geometry uses seven checks between each HS3 knot or midpoint.
+% Moving geometry uses three plus an obstacle-motion clearance.
+corridorSubdivisionCount = 8;
+if obstacleHistoriesAreStatic(obstacles)
+    corridorSubdivisionCount = 16;
+end
+corridorTau = linspace( ...
+    0, 1, corridorSubdivisionCount * segmentCount + 1).';
 corridor = buildCorridor( ...
-    obstacles, seed, startTime_s, finalTimeGuess_s, corridorTau, limits);
+    obstacles, seed, startTime_s, finalTimeGuess_s, corridorTau, limits, ...
+    options.CollisionClearanceTolerance_deg);
 decision0 = initialJerk_deg_s3(:);
 lowerBound = repmat(-limits.maxJerk_deg_s3(:), controlCount, 1);
 upperBound = repmat(limits.maxJerk_deg_s3(:), controlCount, 1);
@@ -188,6 +196,25 @@ candidate = struct( ...
 end
 
 %% Section 5: Local Functions
+
+function areStatic = obstacleHistoriesAreStatic(obstacles)
+% PURPOSE
+%   - Select corridor density from geometry history, not scenario identity.
+areStatic = true;
+for obstacleIndex = 1:numel(obstacles)
+    azimuthHistory_deg = obstacles(obstacleIndex).az_deg;
+    elevationHistory_deg = obstacles(obstacleIndex).el_deg;
+    for sampleIndex = 2:numel(azimuthHistory_deg)
+        if ~isequaln(azimuthHistory_deg{sampleIndex}, ...
+                azimuthHistory_deg{1}) || ...
+                ~isequaln(elevationHistory_deg{sampleIndex}, ...
+                elevationHistory_deg{1})
+            areStatic = false;
+            return;
+        end
+    end
+end
+end
 
 function stop = stopForTime(~, ~, ~, solverTimer, maximumTime_s)
 % PURPOSE
@@ -344,9 +371,10 @@ inequality = [inequality; ...
 end
 
 function corridor = buildCorridor( ...
-        obstacles, seed, startTime_s, finalTime_s, controlTau, limits)
+        obstacles, seed, startTime_s, finalTime_s, controlTau, limits, ...
+        clearanceTolerance_deg)
 % PURPOSE
-%   - Freeze obstacle edges with between-point relative-motion clearance.
+%   - Freeze obstacle edges with local motion clearance between points.
 template = struct( ...
     "ControlIndex", 0, "ObstacleIndex", 0, "EdgeIndex", 0, ...
     "Tau", 0, ...
@@ -355,9 +383,16 @@ template = struct( ...
 corridor = repmat(template, 0, 1);
 seedPosition_deg = interp1(seed.tau, seed.position_deg, ...
     controlTau, "linear");
-controlTime_s = startTime_s + controlTau * (finalTime_s - startTime_s);
-maximumTimeStep_s = max(diff(controlTime_s));
-vehicleSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
+motionDuration_s = finalTime_s - startTime_s;
+controlTime_s = startTime_s + controlTau * motionDuration_s;
+maximumTimeStep_s = max(diff(controlTau)) * motionDuration_s;
+baseClearance_deg = max(1e-4, clearanceTolerance_deg);
+seedSegmentDuration_s = diff(seed.tau) * motionDuration_s;
+seedSegmentSpeed_deg_s = vecnorm( ...
+    diff(seed.position_deg, 1, 1), 2, 2) ./ seedSegmentDuration_s;
+seedSpeedGuard_deg_s = min( ...
+    norm(limits.maxVelocity_deg_s), ...
+    2 * max(seedSegmentSpeed_deg_s));
 for controlIndex = 1:numel(controlTau)
     for obstacleIndex = 1:numel(obstacles)
         [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
@@ -386,13 +421,18 @@ for controlIndex = 1:numel(controlTau)
         association.EdgeIndex = edgeIndex;
         association.Tau = controlTau(controlIndex);
         association.OutwardSign = outwardSign;
+        hasUnboundedObstacleSpeed = ...
+            ~isfinite(geometry.VertexSpeedBound_deg_s);
         obstacleSpeedBound_deg_s = geometry.VertexSpeedBound_deg_s;
-        if ~geometry.TopologyIsInterpolated
+        if ~isfinite(obstacleSpeedBound_deg_s)
+            % A conservative endpoint union is fixed within a topology-change
+            % interval. Only trajectory motion remains between checks.
             obstacleSpeedBound_deg_s = 0;
         end
-        association.Clearance_deg = 0.5 * maximumTimeStep_s * ...
-            (vehicleSpeedBound_deg_s + obstacleSpeedBound_deg_s) + 1e-4;
-        if ~geometry.TopologyIsInterpolated
+        association.Clearance_deg = baseClearance_deg + ...
+            0.5 * maximumTimeStep_s * ...
+            (seedSpeedGuard_deg_s + obstacleSpeedBound_deg_s);
+        if ~geometry.TopologyIsInterpolated || hasUnboundedObstacleSpeed
             outwardNormal = outwardSign * leftNormal;
             association.UseSupport = true;
             association.SupportNormal = outwardNormal;

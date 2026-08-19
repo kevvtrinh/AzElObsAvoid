@@ -207,15 +207,42 @@ initialState = state(0, [-5 0], [0 0], [0 0]);
 goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
-options.MaximumSeedCount = 5;
+options.MaximumSeedCount = 2;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
     obstacle, initialState, goalState, limits, options);
-verifyTrue(testCase, any([seeds.Source] == "directWait"));
+verifyEqual(testCase, [seeds.Source], ...
+    ["directVisibilityEdge" "directWait"]);
+verifyEqual(testCase, diagnostics.NodeCount, 2);
+verifyEqual(testCase, diagnostics.SampledShapeCount, 0);
 verifyGreaterThan(testCase, diagnostics.ExpandedCount, 0);
 verifyEqual(testCase, diagnostics.GraphType, ...
     "timeExpandedVisibilityGraph");
 verifyGreaterThan(testCase, diagnostics.TemporalLayerCount, 1);
 verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
+end
+
+function testTopologyChangeAtSourceTimeUsesFiniteCorridor(testCase)
+% Verify adjacent topology changes do not create infinite corridor values.
+firstShape_deg = [-1 4; 1 4; 1 6; -1 6];
+secondShape_deg = [ ...
+    -2 4; -0.5 4; -0.5 6; -2 6; NaN NaN; ...
+    0.5 4; 2 4; 2 6; 0.5 6];
+obstacle = makeAzElObstacleData( ...
+    "topology change", [0; 6], ...
+    {firstShape_deg(:, 1); secondShape_deg(:, 1)}, ...
+    {firstShape_deg(:, 2); secondShape_deg(:, 2)}, 0.1);
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(6, [3 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.MaximumPlanningTime_s = 8;
+options.MaximumNlpIterations = 40;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+verifyNotEqual(testCase, ...
+    result.SeedSummaries(1).TerminationReason, "solverError");
+verifyTrue(testCase, all(isfinite( ...
+    [result.SeedSummaries.MaximumConstraintViolation])));
 end
 
 function testWaitingSeedDoesNotImposeCornerState(testCase)

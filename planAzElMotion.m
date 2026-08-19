@@ -83,6 +83,9 @@ if ~endpointFeasible
     result.Message = endpointMessage;
     result.TerminationReason = endpointReason;
     result.ElapsedPlanningTime_s = toc(planningTimer);
+    if options.Verbose
+        fprintf("[HS3] %s: %s\n", endpointReason, endpointMessage);
+    end
     return;
 end
 
@@ -92,6 +95,13 @@ end
     obstacles, initialState, goalState, limits, options);
 result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
+if options.Verbose
+    fprintf("[HS3 graph] nodes %d, visible edges %d, rejected %d, " + ...
+        "expanded %d, seeds %d.\n", gridDiagnostics.NodeCount, ...
+        gridDiagnostics.VisibilityEdgeCount, ...
+        gridDiagnostics.RejectedTransitionCount, ...
+        gridDiagnostics.ExpandedCount, numel(seeds));
+end
 summaryTemplate = emptySeedSummary();
 seedSummaries = repmat(summaryTemplate, numel(seeds), 1);
 candidates = cell(numel(seeds), 1);
@@ -142,6 +152,16 @@ for seedIndex = 1:numel(seeds)
     candidates{seedIndex} = finalCandidate;
     seedSummaries(seedIndex) = candidateSummary( ...
         finalCandidate, relinearizationCount);
+    if options.Verbose
+        fprintf("[HS3 seed %d/%d] %s, optimizer=%d, validation=%d, " + ...
+            "arrival=%.6g s, violation=%.3g, reason=%s.\n", ...
+            seedIndex, numel(seeds), seeds(seedIndex).Source, ...
+            seedSummaries(seedIndex).OptimizerFeasible, ...
+            seedSummaries(seedIndex).ValidationPassed, ...
+            seedSummaries(seedIndex).ArrivalTime_s, ...
+            seedSummaries(seedIndex).MaximumConstraintViolation, ...
+            seedSummaries(seedIndex).TerminationReason);
+    end
 end
 
 %% Section 5: Select And Assemble The Result
@@ -163,6 +183,10 @@ if isempty(validatedIndices)
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
     result.SearchDiagnostics.BestPartialSeedIndex = ...
         bestPartialSeed(seedSummaries);
+    if options.Verbose
+        fprintf("[HS3] %s Seeds %d, validated 0, elapsed %.3f s.\n", ...
+            result.Message, numel(seeds), result.ElapsedPlanningTime_s);
+    end
     return;
 end
 selectedSeedIndex = selectValidatedCandidate( ...

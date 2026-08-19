@@ -54,51 +54,55 @@ if options.DirectSeedOnly || options.MaximumSeedCount == 1 || ...
     diagnostics.GeneratedSeedCount = numel(seeds);
     return;
 end
-
-%% Section 2: Build One Protected-Geometry Visibility Graph
-
+%% Section 2: Generate A Direct Waiting Alternative
 sampleTimes_s = obstacleSampleTimes( ...
     obstacles, initialState.time_s, goalState.time_s);
+diagnostics.SampleTimes_s = sampleTimes_s;
+historyChanges = obstacleHistoryChanges(obstacles);
+if historyChanges && numel(seeds) < options.MaximumSeedCount
+    directTimedCost_deg = [0, norm(goal_deg - start_deg); ...
+        norm(goal_deg - start_deg), 0];
+    [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
+        timeExpandedVisibilitySearch( ...
+        [start_deg; goal_deg], directTimedCost_deg, obstacles, ...
+        initialState, goalState, limits, sampleTimes_s, options);
+    diagnostics = appendTimeRecord(diagnostics, timeRecord);
+    seeds = appendTimedSeed( ...
+        seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
+end
+if numel(seeds) >= options.MaximumSeedCount
+    diagnostics.NodeCount = 2;
+    diagnostics.NodePosition_deg = [start_deg; goal_deg];
+    diagnostics.GeneratedSeedCount = numel(seeds);
+    return;
+end
+%% Section 3: Build One Protected-Geometry Visibility Graph
 [sweptShape, sampledShapeCount] = sweptObstacleShape( ...
     obstacles, sampleTimes_s);
 [nodePosition_deg, edgeCost_deg, graphRecord] = buildVisibilityGraph( ...
     sweptShape, start_deg, goal_deg, options);
 diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
-diagnostics.SampleTimes_s = sampleTimes_s;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
+diagnostics.NodePosition_deg = nodePosition_deg;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
+diagnostics.AcceptedEdges_deg = graphRecord.AcceptedEdges_deg;
+diagnostics.RejectedEdges_deg = graphRecord.RejectedEdges_deg;
 diagnostics.RejectedTransitionCount = ...
     graphRecord.RejectedTransitionCount;
 diagnostics.SampledShapeCount = sampledShapeCount;
+%% Section 4: Search The Time-Expanded Visibility Graph
 
-%% Section 3: Search The Time-Expanded Visibility Graph
-
-if obstacleHistoryChanges(obstacles) && ...
-        numel(seeds) < options.MaximumSeedCount
-    directTimedCost_deg = [0, norm(goal_deg - start_deg); ...
-        norm(goal_deg - start_deg), 0];
+if historyChanges && numel(seeds) < options.MaximumSeedCount
     [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
         timeExpandedVisibilitySearch( ...
-        nodePosition_deg(1:2, :), directTimedCost_deg, ...
-        obstacles, initialState, ...
+        nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
         goalState, limits, sampleTimes_s, options);
     diagnostics = appendTimeRecord(diagnostics, timeRecord);
     seeds = appendTimedSeed( ...
         seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
-    if numel(seeds) < options.MaximumSeedCount
-        [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
-            timeExpandedVisibilitySearch( ...
-            nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
-            goalState, limits, sampleTimes_s, options);
-        diagnostics = appendTimeRecord(diagnostics, timeRecord);
-        seeds = appendTimedSeed( ...
-            seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
-    end
 end
-
-%% Section 4: Search Distinct Spatial Visibility Routes
-
+%% Section 5: Search Distinct Spatial Visibility Routes
 sideModes = [0 1 -1];
 baseNodePath = zeros(0, 1);
 for sideModeIndex = 1:numel(sideModes)
@@ -130,8 +134,7 @@ for sideModeIndex = 1:numel(sideModes)
         directDuration_s, availableDuration_s, limits); %#ok<AGROW>
 end
 
-%% Section 5: Add Edge-Removal Visibility Alternatives
-
+%% Section 6: Add Edge-Removal Visibility Alternatives
 if numel(seeds) < options.MaximumSeedCount && ...
         numel(baseNodePath) > 2
     for pathEdgeIndex = 1:numel(baseNodePath) - 1
@@ -162,12 +165,9 @@ if numel(seeds) < options.MaximumSeedCount && ...
             directDuration_s, availableDuration_s, limits); %#ok<AGROW>
     end
 end
-
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
-
-%% Section 6: Local Functions
-
+%% Section 7: Local Functions
 function [sweptShape, sampledShapeCount] = sweptObstacleShape( ...
         obstacles, sampleTimes_s)
 % PURPOSE
@@ -221,6 +221,9 @@ edgeCost_deg(1:nodeCount + 1:end) = 0;
 [edgeStart_deg, edgeEnd_deg] = boundaryEdges(sweptShape);
 visibilityEdgeCount = 0;
 rejectedTransitionCount = 0;
+maximumRetainedEdgeCount = 2000;
+acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
+rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 for firstNodeIndex = 1:nodeCount - 1
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
         firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
@@ -232,8 +235,16 @@ for firstNodeIndex = 1:nodeCount - 1
             edgeCost_deg(firstNodeIndex, secondNodeIndex) = distance_deg;
             edgeCost_deg(secondNodeIndex, firstNodeIndex) = distance_deg;
             visibilityEdgeCount = visibilityEdgeCount + 1;
+            if visibilityEdgeCount <= maximumRetainedEdgeCount
+                acceptedEdges_deg(visibilityEdgeCount, :) = ...
+                    [firstPosition_deg, secondPosition_deg];
+            end
         else
             rejectedTransitionCount = rejectedTransitionCount + 1;
+            if rejectedTransitionCount <= maximumRetainedEdgeCount
+                rejectedEdges_deg(rejectedTransitionCount, :) = ...
+                    [firstPosition_deg, secondPosition_deg];
+            end
         end
     end
 end
@@ -242,6 +253,10 @@ record = struct( ...
     minimum_deg(2), maximum_deg(2)], ...
     "CandidateOffset_deg", candidateOffset_deg, ...
     "VisibilityEdgeCount", visibilityEdgeCount, ...
+    "AcceptedEdges_deg", acceptedEdges_deg( ...
+    1:min(visibilityEdgeCount, maximumRetainedEdgeCount), :), ...
+    "RejectedEdges_deg", rejectedEdges_deg( ...
+    1:min(rejectedTransitionCount, maximumRetainedEdgeCount), :), ...
     "RejectedTransitionCount", rejectedTransitionCount);
 end
 
@@ -612,7 +627,6 @@ if ~temporalSeedDuplicates(timedSeed, seeds)
     seeds(end + 1, 1) = timedSeed;
 end
 end
-
 function allowedNode = sideAllowedNodes( ...
         nodePosition_deg, start_deg, goal_deg, sideMode, tolerance_deg)
 % PURPOSE
@@ -766,6 +780,12 @@ for obstacleIndex = 1:numel(obstacles)
 end
 sampleTimes_s = unique(sampleTimes_s( ...
     sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
+maximumSampleTimeCount = 17;
+if numel(sampleTimes_s) > maximumSampleTimeCount
+    sampleIndices = unique(round(linspace( ...
+        1, numel(sampleTimes_s), maximumSampleTimeCount))).';
+    sampleTimes_s = sampleTimes_s(sampleIndices);
+end
 end
 
 function sideValue = signedSide(azimuth_deg, elevation_deg, start_deg, goal_deg)
@@ -861,7 +881,10 @@ diagnostics = struct( ...
     "SampleTimes_s", zeros(0, 1), ...
     "SampledShapeCount", 0, ...
     "NodeCount", 0, ...
+    "NodePosition_deg", zeros(0, 2), ...
     "VisibilityEdgeCount", 0, ...
+    "AcceptedEdges_deg", zeros(0, 4), ...
+    "RejectedEdges_deg", zeros(0, 4), ...
     "TemporalLayerTimes_s", zeros(0, 1), ...
     "TemporalLayerCount", 0, ...
     "WaitEdgeCount", 0, ...

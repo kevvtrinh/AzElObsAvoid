@@ -72,17 +72,25 @@ throw identified errors.
 
 ## Maintained examples
 
-The `examples` directory contains nine scenarios:
+The `examples` directory contains 18 scenarios. The original compact set
+covers obstacle-free motion, static rectangle and U-shaped obstacles, a
+moving barrier, a moving circle, an alternating slalom, earliest moving-target
+intercept, a dense concave polygon, and expected failure.
 
-- obstacle-free fixed arrival;
-- one static rectangle;
-- one static concave obstacle;
-- a translating barrier with a waiting seed;
-- a rising circle with azimuth wrapping disabled;
-- alternating static barriers;
-- earliest moving-target intercept;
-- one dense concave polygon;
-- one expected no-path result.
+The extended set adds:
+
+- fixed-time moving-target intercept;
+- two opposing U-shaped obstacles with visibility-route diversity;
+- a target that exits a moving obstacle;
+- a straight target with alternating occlusion;
+- four accelerating circles and a moving target;
+- a 40-circle moving-grid stress case;
+- a 61-slice moving and deforming contiguous-U.S. outline;
+- a timed opening in a U-shaped obstacle;
+- Hawaii, Croatia, and Philippines coastline stress cases.
+
+Stress examples return a validated success or an explicit bounded failure.
+A bounded failure is not a no-path certificate.
 
 Run an example without figures as follows:
 
@@ -92,6 +100,21 @@ result = exampleAzElPlanning(struct( ...
     "PlotOutputs", false, ...
     "FigureVisible", "off"));
 ```
+
+## Plotting
+
+`plotAzElMotion` consumes only the returned planner result. It can create:
+
+- a workspace plot with original and protected obstacles, all seeds,
+  accepted and rejected search edges, explored nodes, and the selected path;
+- a 3-D azimuth, elevation, and time visibility plot;
+- position, velocity, acceleration, and jerk plots with limit lines;
+- a motion animation against time-varying protected obstacles;
+- failure plots with the termination reason, counts, frontier data, and best
+  partial seed when available.
+
+The plotter supports visible and headless figures. It returns stable handles
+for every enabled plot group.
 
 ## Verification
 
