@@ -67,15 +67,19 @@ result = planAzElMotion( ...
 %% Section 5: Validate Result
 
 result.ExampleValidation = validateAzElTrajectory(result);
-waitSeedSelected = result.Success && result.SelectedSeedIndex > 0 && ...
-    result.Seeds(result.SelectedSeedIndex).Source == "directWait";
+waitSeedSelected = false;
+if result.Success && result.SelectedSeedIndex > 0
+    selectedSeed = result.Seeds(result.SelectedSeedIndex);
+    waitSeedSelected = any(vecnorm( ...
+        diff(selectedSeed.position_deg, 1, 1), 2, 2) <= 1e-12);
+end
 result.ExampleValidation.WaitSeedSelected = waitSeedSelected;
 result.ExampleValidation.Passed = ...
     result.ExampleValidation.Passed && waitSeedSelected;
 if ~waitSeedSelected
     result.ExampleValidation.Message = ...
         result.ExampleValidation.Message + ...
-        " The planner did not select the direct waiting seed.";
+        " The planner did not select a seed that contains waiting.";
 end
 
 %% Section 6: Plot Diagnostics And Motion

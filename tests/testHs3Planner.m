@@ -122,6 +122,12 @@ verifyEqual(testCase, ...
     "timeExpandedVisibilityGraph");
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.Grid.VisibilityEdgeCount, 0);
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.AcceptedEdges_deg, 2), 4);
+verifyEqual(testCase, ...
+    size(result.SearchDiagnostics.Grid.RejectedEdges_deg, 2), 4);
+verifyTrue(testCase, all(isfinite( ...
+    result.SearchDiagnostics.Grid.AcceptedEdges_deg), "all"));
 minimumElevations_deg = zeros(numel(result.Seeds), 1);
 maximumElevations_deg = zeros(numel(result.Seeds), 1);
 for seedIndex = 1:numel(result.Seeds)
@@ -168,6 +174,22 @@ obstacle = makeAzElObstacleData( ...
 occupied = queryAzElTimeObstacle( ...
     obstacle, [1.5; 1.5], [0; 0], [0; 2]);
 verifyEqual(testCase, occupied, [false; true]);
+end
+
+function testTopologyChangeUsesStaticConservativeUnion(testCase)
+% Verify a topology-change interval has one finite static union bound.
+first_deg = [-2 -1; 0 -1; 0 1; -2 1];
+second_deg = [0 -1; 2 -1; 2 1; 0 1; NaN NaN; ...
+    -2 -1; -1 -1; -1 1; -2 1];
+obstacle = makeAzElObstacleData( ...
+    "topology change", [0; 1], ...
+    {first_deg(:, 1); second_deg(:, 1)}, ...
+    {first_deg(:, 2); second_deg(:, 2)}, 0);
+[shape, geometry] = azElInternal.obstacleShapeAtTime(obstacle, 0.5);
+verifyFalse(testCase, geometry.TopologyIsInterpolated);
+verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
+verifyTrue(testCase, isinterior(shape, -1.5, 0));
+verifyTrue(testCase, isinterior(shape, 1.5, 0));
 end
 
 function testDeformingObstacleUsesThePlannerPath(testCase)
@@ -312,6 +334,22 @@ verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
 end
 
+function testTranslatedHistoryReusesExactProtectedShape(testCase)
+% Verify rigid obstacle motion preserves one translated protected boundary.
+source_deg = [-1 -1; 1 -1; 1 1; -1 1];
+translation_deg = [3 2];
+azimuth_deg = {source_deg(:, 1); ...
+    source_deg(:, 1) + translation_deg(1)};
+elevation_deg = {source_deg(:, 2); ...
+    source_deg(:, 2) + translation_deg(2)};
+obstacle = makeAzElObstacleData( ...
+    "translated", [0; 1], azimuth_deg, elevation_deg, 0.2);
+verifyEqual(testCase, obstacle.az_deg{2}, ...
+    obstacle.az_deg{1} + translation_deg(1), "AbsTol", 1e-12);
+verifyEqual(testCase, obstacle.el_deg{2}, ...
+    obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
+end
+
 function testDeterministicRepeatedRun(testCase)
 % Verify identical fixed inputs return identical seed order and trajectory.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -345,6 +383,16 @@ verifyTrue(testCase, any(result.TerminationReason == ...
 verifyEqual(testCase, numel(result.SeedSummaries), numel(result.Seeds));
 verifyGreaterThanOrEqual(testCase, ...
     result.SearchDiagnostics.Grid.ExpandedCount, 0);
+plotOptions = struct( ...
+    "FigureVisible", "off", ...
+    "ShowWorkspace", true, ...
+    "ShowVisibilityGraphs", true, ...
+    "ShowKinematics", false, ...
+    "ShowAnimation", false);
+handles = plotAzElMotion(result, plotOptions);
+figureCleanup = onCleanup(@() closeTestFigures(handles));
+verifyTrue(testCase, isgraphics(handles.WorkspaceFigure, "figure"));
+verifyTrue(testCase, isgraphics(handles.VisibilityFigure, "figure"));
 end
 
 function testMovingTargetUsesSamePlanner(testCase)
@@ -403,6 +451,12 @@ limits = struct( ...
     "maxVelocity_deg_s", velocity_deg_s, ...
     "maxAcceleration_deg_s2", acceleration_deg_s2, ...
     "maxJerk_deg_s3", jerk_deg_s3);
+end
+
+function closeTestFigures(handles)
+% Close figures created by a plot test even when its verification fails.
+figureHandles = [handles.WorkspaceFigure; handles.VisibilityFigure];
+close(figureHandles(isgraphics(figureHandles, "figure")));
 end
 
 function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)

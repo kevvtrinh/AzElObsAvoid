@@ -26,7 +26,6 @@ function [seeds, diagnostics] = generateAzElTopologySeeds( ...
 %**************************************************************************
 
 %% Section 1: Create The Direct Visibility Seed
-
 start_deg = initialState.position_deg;
 goal_deg = goalPositionAtHorizon(goalState);
 if options.AllowAzimuthWrapping
@@ -56,10 +55,11 @@ if options.DirectSeedOnly || options.MaximumSeedCount == 1 || ...
 end
 
 %% Section 2: Build One Protected-Geometry Visibility Graph
-
 sampleTimes_s = obstacleSampleTimes( ...
     obstacles, initialState.time_s, goalState.time_s);
-[sweptShape, sampledShapeCount] = sweptObstacleShape( ...
+[sweptShape, sampledShapeCount, temporalCandidatePosition_deg, ...
+    gapCandidatePosition_deg, sweptGeometryMode] = ...
+    sweptObstacleShape( ...
     obstacles, sampleTimes_s);
 [nodePosition_deg, edgeCost_deg, graphRecord] = buildVisibilityGraph( ...
     sweptShape, start_deg, goal_deg, options);
@@ -67,30 +67,72 @@ diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
 diagnostics.SampleTimes_s = sampleTimes_s;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
+diagnostics.NodePosition_deg = nodePosition_deg;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
+diagnostics.AcceptedEdges_deg = graphRecord.AcceptedEdges_deg;
+diagnostics.RejectedEdges_deg = graphRecord.RejectedEdges_deg;
 diagnostics.RejectedTransitionCount = ...
     graphRecord.RejectedTransitionCount;
 diagnostics.SampledShapeCount = sampledShapeCount;
+diagnostics.SweptGeometryMode = sweptGeometryMode;
+[initialSweptNodePath, sweptSearchRecord] = shortestVisibilityPath( ...
+    edgeCost_deg, true(size(nodePosition_deg, 1), 1), ...
+    nodePosition_deg);
+diagnostics = appendSearchRecord(diagnostics, sweptSearchRecord);
 
 %% Section 3: Search The Time-Expanded Visibility Graph
-
 if obstacleHistoryChanges(obstacles) && ...
         numel(seeds) < options.MaximumSeedCount
     directTimedCost_deg = [0, norm(goal_deg - start_deg); ...
         norm(goal_deg - start_deg), 0];
     [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
-        timeExpandedVisibilitySearch( ...
+        azElInternal.searchAzElTimeExpandedGraph( ...
         nodePosition_deg(1:2, :), directTimedCost_deg, ...
         obstacles, initialState, ...
         goalState, limits, sampleTimes_s, options);
     diagnostics = appendTimeRecord(diagnostics, timeRecord);
     seeds = appendTimedSeed( ...
         seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
-    if numel(seeds) < options.MaximumSeedCount
+    if numel(seeds) < options.MaximumSeedCount && ...
+            (isempty(initialSweptNodePath) || ...
+            (sweptGeometryMode == "boundingBoxEnvelope" && ...
+            options.GoalTimeMode == "earliestArrival"))
+        maximumTimedNodeCount = min(48, ...
+            16 + ceil(5 * sqrt(numel(obstacles))));
+        gapCandidatePosition_deg = unique( ...
+            gapCandidatePosition_deg, "rows", "stable");
+        temporalCandidatePosition_deg = unique( ...
+            temporalCandidatePosition_deg, "rows", "stable");
+        endpointCount = min(4, floor((maximumTimedNodeCount - 2) / 2));
+        endpointPosition_deg = unique([endpointSupportVertices( ...
+            temporalCandidatePosition_deg, start_deg, ...
+            goal_deg - start_deg, endpointCount); ...
+            endpointSupportVertices(temporalCandidatePosition_deg, ...
+            goal_deg, start_deg - goal_deg, endpointCount)], ...
+            "rows", "stable");
+        remainingCount = maximumTimedNodeCount - 2 - ...
+            size(endpointPosition_deg, 1);
+        boundaryCount = ceil(0.55 * remainingCount);
+        routeBoundaryPosition_deg = selectCandidateVertices( ...
+            temporalCandidatePosition_deg, start_deg, goal_deg, ...
+            boundaryCount);
+        supportPosition_deg = unique([endpointPosition_deg; ...
+            routeBoundaryPosition_deg], "rows", "stable");
+        gapCount = maximumTimedNodeCount - 2 - ...
+            size(supportPosition_deg, 1);
+        gapCandidatePosition_deg = selectCandidateVertices( ...
+            gapCandidatePosition_deg, start_deg, goal_deg, gapCount);
+        temporalCandidatePosition_deg = [ ...
+            supportPosition_deg; gapCandidatePosition_deg];
+        timedNodePosition_deg = unique([start_deg; goal_deg; ...
+            temporalCandidatePosition_deg], "rows", "stable");
+        timedEdgeCost_deg = hypot( ...
+            timedNodePosition_deg(:, 1) - timedNodePosition_deg(:, 1).', ...
+            timedNodePosition_deg(:, 2) - timedNodePosition_deg(:, 2).');
         [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
-            timeExpandedVisibilitySearch( ...
-            nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
-            goalState, limits, sampleTimes_s, options);
+            azElInternal.searchAzElTimeExpandedGraph( ...
+            timedNodePosition_deg, timedEdgeCost_deg, obstacles, ...
+            initialState, goalState, limits, sampleTimes_s, options);
         diagnostics = appendTimeRecord(diagnostics, timeRecord);
         seeds = appendTimedSeed( ...
             seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
@@ -100,18 +142,22 @@ end
 %% Section 4: Search Distinct Spatial Visibility Routes
 
 sideModes = [0 1 -1];
-baseNodePath = zeros(0, 1);
+baseNodePath = initialSweptNodePath;
 for sideModeIndex = 1:numel(sideModes)
     if numel(seeds) >= options.MaximumSeedCount
         break;
     end
-    allowedNode = sideAllowedNodes( ...
-        nodePosition_deg, start_deg, goal_deg, ...
-        sideModes(sideModeIndex), ...
-        graphRecord.CandidateOffset_deg);
-    [nodePath, searchRecord] = shortestVisibilityPath( ...
-        edgeCost_deg, allowedNode, nodePosition_deg);
-    diagnostics = appendSearchRecord(diagnostics, searchRecord);
+    if sideModeIndex == 1
+        nodePath = initialSweptNodePath;
+    else
+        allowedNode = sideAllowedNodes( ...
+            nodePosition_deg, start_deg, goal_deg, ...
+            sideModes(sideModeIndex), ...
+            graphRecord.CandidateOffset_deg);
+        [nodePath, searchRecord] = shortestVisibilityPath( ...
+            edgeCost_deg, allowedNode, nodePosition_deg);
+        diagnostics = appendSearchRecord(diagnostics, searchRecord);
+    end
     if isempty(nodePath)
         continue;
     end
@@ -162,32 +208,82 @@ if numel(seeds) < options.MaximumSeedCount && ...
             directDuration_s, availableDuration_s, limits); %#ok<AGROW>
     end
 end
-
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
 
 %% Section 6: Local Functions
-
-function [sweptShape, sampledShapeCount] = sweptObstacleShape( ...
+function [sweptShape, sampledShapeCount, candidatePosition_deg, ...
+        gapPosition_deg, sweptGeometryMode] = ...
+        sweptObstacleShape( ...
         obstacles, sampleTimes_s)
 % PURPOSE
-%   - Union protected source and midpoint geometry for seed construction.
-sweptShape = polyshape();
+%   - Union samples and retain offset temporal boundary candidates.
+maximumShapeCount = numel(sampleTimes_s) * numel(obstacles);
+sampledShapes = cell(maximumShapeCount, 1);
+sampledCandidatePosition = cell(maximumShapeCount, 1);
+gapCandidatePosition = cell(numel(sampleTimes_s), 1);
 sampledShapeCount = 0;
 for sampleTimeIndex = 1:numel(sampleTimes_s)
     sampleTime_s = sampleTimes_s(sampleTimeIndex);
+    sampleCenter_deg = NaN(numel(obstacles), 2);
     for obstacleIndex = 1:numel(obstacles)
         shape = azElInternal.obstacleShapeAtTime( ...
             obstacles(obstacleIndex), sampleTime_s);
         if isempty(shape.Vertices)
             continue;
         end
-        sweptShape = union(sweptShape, shape);
         sampledShapeCount = sampledShapeCount + 1;
+        sampledShapes{sampledShapeCount} = shape;
+        vertices_deg = shape.Vertices;
+        finiteVertex = all(isfinite(vertices_deg), 2);
+        center_deg = mean(vertices_deg(finiteVertex, :), 1);
+        sampleCenter_deg(obstacleIndex, :) = center_deg;
+        outwardDirection = vertices_deg - center_deg;
+        outwardNorm = vecnorm(outwardDirection, 2, 2);
+        outwardDirection = outwardDirection ./ max(outwardNorm, eps);
+        sampledCandidatePosition{sampledShapeCount} = ...
+            vertices_deg + 1e-3 * outwardDirection;
     end
+    sampleCenter_deg = sampleCenter_deg( ...
+        all(isfinite(sampleCenter_deg), 2), :);
+    [firstCenterIndex, secondCenterIndex] = find( ...
+        triu(true(size(sampleCenter_deg, 1)), 1));
+    if ~isempty(firstCenterIndex)
+        centerDistance_deg = vecnorm( ...
+            sampleCenter_deg(firstCenterIndex, :) - ...
+            sampleCenter_deg(secondCenterIndex, :), 2, 2);
+        nearbyPair = centerDistance_deg <= 1.5 * min(centerDistance_deg);
+        firstCenterIndex = firstCenterIndex(nearbyPair);
+        secondCenterIndex = secondCenterIndex(nearbyPair);
+    end
+    gapCandidatePosition{sampleTimeIndex} = ( ...
+        sampleCenter_deg(firstCenterIndex, :) + ...
+        sampleCenter_deg(secondCenterIndex, :)) / 2;
 end
+if sampledShapeCount == 0
+    sweptShape = polyshape();
+    sweptGeometryMode = "empty";
+elseif sampledShapeCount > 24
+    sampledVertices_deg = vertcat( ...
+        sampledCandidatePosition{1:sampledShapeCount});
+    sampledVertices_deg = sampledVertices_deg( ...
+        all(isfinite(sampledVertices_deg), 2), :);
+    minimum_deg = min(sampledVertices_deg, [], 1);
+    maximum_deg = max(sampledVertices_deg, [], 1);
+    sweptShape = polyshape( ...
+        [minimum_deg(1), minimum_deg(2); ...
+        maximum_deg(1), minimum_deg(2); ...
+        maximum_deg; minimum_deg(1), maximum_deg(2)]);
+    sweptGeometryMode = "boundingBoxEnvelope";
+else
+    % One balanced Boolean operation avoids repeated growth of the union.
+    sweptShape = union([sampledShapes{1:sampledShapeCount}]);
+    sweptGeometryMode = "polygonUnion";
 end
-
+candidatePosition_deg = vertcat( ...
+    sampledCandidatePosition{1:sampledShapeCount});
+gapPosition_deg = vertcat(gapCandidatePosition{:});
+end
 function [nodePosition_deg, edgeCost_deg, record] = ...
         buildVisibilityGraph(sweptShape, start_deg, goal_deg, options)
 % PURPOSE
@@ -205,6 +301,25 @@ if ~isempty(sweptShape.Vertices)
         sweptShape, candidateOffset_deg, "JointType", "miter");
 end
 candidatePosition_deg = candidateShape.Vertices;
+if ~isempty(candidatePosition_deg)
+    candidateMinimum_deg = min(candidatePosition_deg, [], 1);
+    candidateMaximum_deg = max(candidatePosition_deg, [], 1);
+    outerClearance_deg = max(1, 0.05 * ...
+        min(candidateMaximum_deg - candidateMinimum_deg));
+    candidateMinimum_deg = max(candidateMinimum_deg - ...
+        outerClearance_deg, [options.AzimuthInterval_deg(1), ...
+        options.ElevationInterval_deg(1)]);
+    candidateMaximum_deg = min(candidateMaximum_deg + ...
+        outerClearance_deg, [options.AzimuthInterval_deg(2), ...
+        options.ElevationInterval_deg(2)]);
+    outerSupport_deg = [ ...
+        candidateMinimum_deg; ...
+        candidateMaximum_deg(1), candidateMinimum_deg(2); ...
+        candidateMaximum_deg; ...
+        candidateMinimum_deg(1), candidateMaximum_deg(2)];
+else
+    outerSupport_deg = zeros(0, 2);
+end
 insideWorkspace = ...
     candidatePosition_deg(:, 1) >= options.AzimuthInterval_deg(1) & ...
     candidatePosition_deg(:, 1) <= options.AzimuthInterval_deg(2) & ...
@@ -212,7 +327,13 @@ insideWorkspace = ...
     candidatePosition_deg(:, 2) <= options.ElevationInterval_deg(2);
 candidatePosition_deg = candidatePosition_deg(insideWorkspace, :);
 candidatePosition_deg = selectCandidateVertices( ...
-    candidatePosition_deg, start_deg, goal_deg, 96);
+    candidatePosition_deg, start_deg, goal_deg, 92);
+outerSupport_deg = outerSupport_deg( ...
+    outerSupport_deg(:, 1) >= options.AzimuthInterval_deg(1) & ...
+    outerSupport_deg(:, 1) <= options.AzimuthInterval_deg(2) & ...
+    outerSupport_deg(:, 2) >= options.ElevationInterval_deg(1) & ...
+    outerSupport_deg(:, 2) <= options.ElevationInterval_deg(2), :);
+candidatePosition_deg = [candidatePosition_deg; outerSupport_deg];
 nodePosition_deg = unique( ...
     [start_deg; goal_deg; candidatePosition_deg], "rows", "stable");
 nodeCount = size(nodePosition_deg, 1);
@@ -221,6 +342,9 @@ edgeCost_deg(1:nodeCount + 1:end) = 0;
 [edgeStart_deg, edgeEnd_deg] = boundaryEdges(sweptShape);
 visibilityEdgeCount = 0;
 rejectedTransitionCount = 0;
+maximumRetainedEdgeCount = 2000;
+acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
+rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 for firstNodeIndex = 1:nodeCount - 1
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
         firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
@@ -232,8 +356,16 @@ for firstNodeIndex = 1:nodeCount - 1
             edgeCost_deg(firstNodeIndex, secondNodeIndex) = distance_deg;
             edgeCost_deg(secondNodeIndex, firstNodeIndex) = distance_deg;
             visibilityEdgeCount = visibilityEdgeCount + 1;
+            if visibilityEdgeCount <= maximumRetainedEdgeCount
+                acceptedEdges_deg(visibilityEdgeCount, :) = ...
+                    [firstPosition_deg, secondPosition_deg];
+            end
         else
             rejectedTransitionCount = rejectedTransitionCount + 1;
+            if rejectedTransitionCount <= maximumRetainedEdgeCount
+                rejectedEdges_deg(rejectedTransitionCount, :) = ...
+                    [firstPosition_deg, secondPosition_deg];
+            end
         end
     end
 end
@@ -242,38 +374,68 @@ record = struct( ...
     minimum_deg(2), maximum_deg(2)], ...
     "CandidateOffset_deg", candidateOffset_deg, ...
     "VisibilityEdgeCount", visibilityEdgeCount, ...
+    "AcceptedEdges_deg", acceptedEdges_deg( ...
+    1:min(visibilityEdgeCount, maximumRetainedEdgeCount), :), ...
+    "RejectedEdges_deg", rejectedEdges_deg( ...
+    1:min(rejectedTransitionCount, maximumRetainedEdgeCount), :), ...
     "RejectedTransitionCount", rejectedTransitionCount);
 end
-
 function selectedPosition_deg = selectCandidateVertices( ...
         candidatePosition_deg, start_deg, goal_deg, maximumCount)
 % PURPOSE
-%   - Bound dense polygon input while retaining global and endpoint supports.
+%   - Retain paired boundary supports near successive direct-route stations.
 candidatePosition_deg = unique(candidatePosition_deg, "rows", "stable");
 candidateCount = size(candidatePosition_deg, 1);
 if candidateCount <= maximumCount
     selectedPosition_deg = candidatePosition_deg;
     return;
 end
-selectedIndex = unique(round(linspace(1, candidateCount, ...
-    maximumCount - 24))).';
-direction_rad = (0:15).' * (2 * pi / 16);
-direction = [cos(direction_rad), sin(direction_rad)];
-for directionIndex = 1:size(direction, 1)
-    [~, supportIndex] = max( ...
-        candidatePosition_deg * direction(directionIndex, :).');
-    selectedIndex(end + 1, 1) = supportIndex; %#ok<AGROW>
+segment_deg = goal_deg - start_deg;
+segmentLength_deg = norm(segment_deg);
+segmentLengthSquared_deg2 = max(sum(segment_deg.^2), eps);
+projection = (candidatePosition_deg - start_deg) * segment_deg.' / ...
+    segmentLengthSquared_deg2;
+projection = min(1, max(0, projection));
+projectedPosition_deg = start_deg + projection .* segment_deg;
+distanceToSegment_deg = vecnorm( ...
+    candidatePosition_deg - projectedPosition_deg, 2, 2);
+signedOffset_deg = (segment_deg(1) * ...
+    (candidatePosition_deg(:, 2) - start_deg(2)) - segment_deg(2) * ...
+    (candidatePosition_deg(:, 1) - start_deg(1))) / segmentLength_deg;
+stationCount = ceil(maximumCount / 3);
+targetProjection = repelem(linspace(0, 1, stationCount).', 3);
+targetProjection = targetProjection(1:maximumCount);
+targetSide = repmat([1; -1; 1], stationCount, 1);
+selectedIndex = zeros(maximumCount, 1);
+for selectionIndex = 1:maximumCount
+    score_deg = distanceToSegment_deg + segmentLength_deg * ...
+        abs(projection - targetProjection(selectionIndex));
+    score_deg(targetSide(selectionIndex) * signedOffset_deg < 0) = Inf;
+    score_deg(selectedIndex(1:selectionIndex - 1)) = Inf;
+    [~, selectedIndex(selectionIndex)] = min(score_deg);
 end
-for reference_deg = [start_deg; goal_deg].'
-    distance_deg = vecnorm(candidatePosition_deg - reference_deg.', 2, 2);
-    [~, order] = sort(distance_deg, "ascend");
-    selectedIndex = [selectedIndex; order(1:4)]; %#ok<AGROW>
-end
-selectedIndex = unique(selectedIndex, "stable");
-selectedIndex = selectedIndex(1:min(maximumCount, numel(selectedIndex)));
 selectedPosition_deg = candidatePosition_deg(selectedIndex, :);
 end
-
+function selectedPosition_deg = endpointSupportVertices( ...
+        candidatePosition_deg, reference_deg, direction_deg, maximumCount)
+% PURPOSE
+%   - Retain angularly distinct supports near one route endpoint.
+offset_deg = candidatePosition_deg - reference_deg;
+[~, distanceOrder] = sort(vecnorm(offset_deg, 2, 2), "ascend");
+nearbyCount = min(32, numel(distanceOrder));
+nearbyPosition_deg = candidatePosition_deg( ...
+    distanceOrder(1:nearbyCount), :);
+nearbyOffset_deg = nearbyPosition_deg - reference_deg;
+angle_rad = atan2( ...
+    direction_deg(1) * nearbyOffset_deg(:, 2) - ...
+    direction_deg(2) * nearbyOffset_deg(:, 1), ...
+    nearbyOffset_deg * direction_deg.');
+[~, angleOrder] = sort(angle_rad, "ascend");
+supportOrder = unique(round(linspace( ...
+    1, numel(angleOrder), min(maximumCount, numel(angleOrder)))));
+selectedPosition_deg = nearbyPosition_deg( ...
+    angleOrder(supportOrder), :);
+end
 function [edgeStart_deg, edgeEnd_deg] = boundaryEdges(shape)
 % PURPOSE
 %   - Convert polyshape rings to closed boundary-edge pairs.
@@ -297,7 +459,6 @@ for runIndex = 1:numel(runStart)
     edgeEnd_deg = [edgeEnd_deg; ring_deg([2:end 1], :)]; %#ok<AGROW>
 end
 end
-
 function visible = segmentIsVisible( ...
         firstPosition_deg, secondPosition_deg, shape, ...
         edgeStart_deg, edgeEnd_deg)
@@ -356,206 +517,6 @@ if any(collinear)
     visible = ~any(overlaps);
 end
 end
-
-function [route_deg, routeTime_s, record] = ...
-        timeExpandedVisibilitySearch( ...
-        nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
-        goalState, limits, sampleTimes_s, options)
-% PURPOSE
-%   - Search forward time layers with visible motion and waiting edges.
-layerTimes_s = boundedTimeLayers( ...
-    sampleTimes_s, initialState.time_s, goalState.time_s, 17);
-layerCount = numel(layerTimes_s);
-nodeCount = size(nodePosition_deg, 1);
-nodeIsFree = true(layerCount, nodeCount);
-for layerIndex = 1:layerCount
-    queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
-    nodeIsFree(layerIndex, :) = ~queryAzElTimeObstacle( ...
-        obstacles, nodePosition_deg(:, 1), ...
-        nodePosition_deg(:, 2), queryTime_s).';
-end
-reachable = false(layerCount, nodeCount);
-spatialCost_deg = Inf(layerCount, nodeCount);
-parentLayerIndex = zeros(layerCount, nodeCount, "uint16");
-parentNodeIndex = zeros(layerCount, nodeCount, "uint16");
-reachable(1, 1) = nodeIsFree(1, 1);
-spatialCost_deg(1, 1) = 0;
-waitEdgeCount = 0;
-motionEdgeCount = 0;
-rejectedTransitionCount = 0;
-expandedCount = 0;
-exploredNodes_deg = zeros(0, 2);
-for layerIndex = 1:layerCount - 1
-    currentNodeIndices = find(reachable(layerIndex, :));
-    for currentNodeIndex = reshape(currentNodeIndices, 1, [])
-        expandedCount = expandedCount + 1;
-        exploredNodes_deg(end + 1, :) = ...
-            nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
-        if nodeIsFree(layerIndex + 1, currentNodeIndex) && ...
-                motionEdgeIsClear( ...
-                obstacles, nodePosition_deg(currentNodeIndex, :), ...
-                nodePosition_deg(currentNodeIndex, :), ...
-                layerTimes_s(layerIndex), ...
-                layerTimes_s(layerIndex + 1))
-            [reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex] = updateTemporalState( ...
-                reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex, layerIndex, currentNodeIndex, ...
-                layerIndex + 1, currentNodeIndex, 0);
-            waitEdgeCount = waitEdgeCount + 1;
-        else
-            rejectedTransitionCount = rejectedTransitionCount + 1;
-        end
-        visibleNeighbor = find(isfinite( ...
-            edgeCost_deg(currentNodeIndex, :)));
-        targetNodeIndices = unique([1, 2, visibleNeighbor]);
-        targetNodeIndices(targetNodeIndices == currentNodeIndex) = [];
-        for targetNodeIndex = reshape(targetNodeIndices, 1, [])
-            displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
-                nodePosition_deg(currentNodeIndex, :);
-            minimumDuration_s = max( ...
-                abs(displacement_deg) ./ limits.maxVelocity_deg_s);
-            candidateLayerIndices = find( ...
-                layerTimes_s > layerTimes_s(layerIndex) + ...
-                minimumDuration_s - 1e-12);
-            for targetLayerIndex = reshape(candidateLayerIndices, 1, [])
-                if ~nodeIsFree(targetLayerIndex, targetNodeIndex)
-                    rejectedTransitionCount = ...
-                        rejectedTransitionCount + 1;
-                    continue;
-                end
-                isClear = motionEdgeIsClear( ...
-                    obstacles, nodePosition_deg(currentNodeIndex, :), ...
-                    nodePosition_deg(targetNodeIndex, :), ...
-                    layerTimes_s(layerIndex), ...
-                    layerTimes_s(targetLayerIndex));
-                if ~isClear
-                    rejectedTransitionCount = ...
-                        rejectedTransitionCount + 1;
-                    continue;
-                end
-                [reachable, spatialCost_deg, parentLayerIndex, ...
-                    parentNodeIndex] = updateTemporalState( ...
-                    reachable, spatialCost_deg, parentLayerIndex, ...
-                    parentNodeIndex, layerIndex, currentNodeIndex, ...
-                    targetLayerIndex, targetNodeIndex, ...
-                    norm(displacement_deg));
-                motionEdgeCount = motionEdgeCount + 1;
-            end
-        end
-    end
-end
-if options.GoalTimeMode == "earliestArrival"
-    goalLayerIndex = find(reachable(:, 2), 1, "first");
-else
-    goalLayerIndex = layerCount;
-    if ~reachable(goalLayerIndex, 2)
-        goalLayerIndex = [];
-    end
-end
-[route_deg, routeTime_s] = reconstructTimedRoute( ...
-    nodePosition_deg, layerTimes_s, parentLayerIndex, ...
-    parentNodeIndex, goalLayerIndex);
-record = struct( ...
-    "LayerTimes_s", layerTimes_s, ...
-    "WaitEdgeCount", waitEdgeCount, ...
-    "MotionEdgeCount", motionEdgeCount, ...
-    "RejectedTransitionCount", rejectedTransitionCount, ...
-    "ExpandedCount", expandedCount, ...
-    "ExploredNodes_deg", exploredNodes_deg);
-end
-
-function layerTimes_s = boundedTimeLayers( ...
-        sampleTimes_s, startTime_s, endTime_s, maximumLayerCount)
-% PURPOSE
-%   - Retain source timing and a uniform base in one bounded layer set.
-uniformTime_s = linspace(startTime_s, endTime_s, 9).';
-candidateTime_s = unique([startTime_s; sampleTimes_s(:); ...
-    uniformTime_s; endTime_s]);
-candidateTime_s = candidateTime_s( ...
-    candidateTime_s >= startTime_s & candidateTime_s <= endTime_s);
-if numel(candidateTime_s) <= maximumLayerCount
-    layerTimes_s = candidateTime_s;
-    return;
-end
-targetTime_s = linspace( ...
-    startTime_s, endTime_s, maximumLayerCount).';
-selectedIndex = zeros(maximumLayerCount, 1);
-for targetIndex = 1:maximumLayerCount
-    [~, selectedIndex(targetIndex)] = min( ...
-        abs(candidateTime_s - targetTime_s(targetIndex)));
-end
-selectedIndex = unique([1; selectedIndex; numel(candidateTime_s)]);
-layerTimes_s = candidateTime_s(selectedIndex);
-end
-
-function clear = motionEdgeIsClear( ...
-        obstacles, firstPosition_deg, secondPosition_deg, ...
-        firstTime_s, secondTime_s)
-% PURPOSE
-%   - Check a moving seed edge at deterministic trajectory-time samples.
-sampleCount = 13;
-sampleFraction = linspace(0, 1, sampleCount).';
-samplePosition_deg = firstPosition_deg + sampleFraction .* ...
-    (secondPosition_deg - firstPosition_deg);
-sampleTime_s = firstTime_s + sampleFraction * ...
-    (secondTime_s - firstTime_s);
-occupied = queryAzElTimeObstacle( ...
-    obstacles, samplePosition_deg(:, 1), ...
-    samplePosition_deg(:, 2), sampleTime_s);
-clear = ~any(occupied);
-end
-
-function [reachable, spatialCost_deg, parentLayerIndex, ...
-        parentNodeIndex] = updateTemporalState( ...
-        reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex, ...
-        sourceLayerIndex, sourceNodeIndex, targetLayerIndex, ...
-        targetNodeIndex, edgeLength_deg)
-% PURPOSE
-%   - Apply deterministic shortest-distance tie breaking at one timed state.
-trialCost_deg = spatialCost_deg( ...
-    sourceLayerIndex, sourceNodeIndex) + edgeLength_deg;
-if trialCost_deg >= spatialCost_deg( ...
-        targetLayerIndex, targetNodeIndex) - 1e-12
-    return;
-end
-reachable(targetLayerIndex, targetNodeIndex) = true;
-spatialCost_deg(targetLayerIndex, targetNodeIndex) = trialCost_deg;
-parentLayerIndex(targetLayerIndex, targetNodeIndex) = ...
-    uint16(sourceLayerIndex);
-parentNodeIndex(targetLayerIndex, targetNodeIndex) = ...
-    uint16(sourceNodeIndex);
-end
-
-function [route_deg, routeTime_s] = reconstructTimedRoute( ...
-        nodePosition_deg, layerTimes_s, parentLayerIndex, ...
-        parentNodeIndex, goalLayerIndex)
-% PURPOSE
-%   - Reconstruct one forward time-layer path without losing wait states.
-route_deg = zeros(0, 2);
-routeTime_s = zeros(0, 1);
-if isempty(goalLayerIndex)
-    return;
-end
-layerPath = goalLayerIndex;
-nodePath = 2;
-while ~(layerPath(1) == 1 && nodePath(1) == 1)
-    priorLayerIndex = double(parentLayerIndex( ...
-        layerPath(1), nodePath(1)));
-    priorNodeIndex = double(parentNodeIndex( ...
-        layerPath(1), nodePath(1)));
-    if priorLayerIndex == 0 || priorNodeIndex == 0
-        route_deg = zeros(0, 2);
-        routeTime_s = zeros(0, 1);
-        return;
-    end
-    layerPath = [priorLayerIndex; layerPath]; %#ok<AGROW>
-    nodePath = [priorNodeIndex; nodePath]; %#ok<AGROW>
-end
-route_deg = nodePosition_deg(nodePath, :);
-routeTime_s = layerTimes_s(layerPath);
-end
-
 function source = timedRouteSource(route_deg)
 % PURPOSE
 %   - Name a pure direct waiting path separately from a timed detour.
@@ -568,14 +529,12 @@ else
     source = "timeExpandedVisibilityGraph";
 end
 end
-
 function tau = normalizedTimeLaw(time_s)
 % PURPOSE
 %   - Convert strictly increasing layer times to a normalized seed law.
 duration_s = time_s(end) - time_s(1);
 tau = (time_s - time_s(1)) / duration_s;
 end
-
 function duplicate = temporalSeedDuplicates(seed, seeds)
 % PURPOSE
 %   - Compare both geometry and time law so distinct waits remain available.
@@ -593,7 +552,6 @@ for seedIndex = 1:numel(seeds)
     end
 end
 end
-
 function seeds = appendTimedSeed( ...
         seeds, seedTemplate, route_deg, routeTime_s)
 % PURPOSE
@@ -612,7 +570,6 @@ if ~temporalSeedDuplicates(timedSeed, seeds)
     seeds(end + 1, 1) = timedSeed;
 end
 end
-
 function allowedNode = sideAllowedNodes( ...
         nodePosition_deg, start_deg, goal_deg, sideMode, tolerance_deg)
 % PURPOSE
@@ -632,7 +589,6 @@ else
 end
 allowedNode(1:2) = true;
 end
-
 function [nodePath, record] = shortestVisibilityPath( ...
         edgeCost_deg, allowedNode, nodePosition_deg)
 % PURPOSE
@@ -691,7 +647,6 @@ record = struct( ...
     "RejectedTransitionCount", rejectedTransitionCount, ...
     "ExploredNodes_deg", exploredNodes_deg);
 end
-
 function diagnostics = appendSearchRecord(diagnostics, record)
 % PURPOSE
 %   - Add complete counts and a bounded deterministic diagnostic trace.
@@ -703,12 +658,16 @@ diagnostics.RejectedTransitionCount = ...
 diagnostics.ExploredNodes_deg = appendBoundedTrace( ...
     diagnostics.ExploredNodes_deg, record.ExploredNodes_deg, 2000);
 end
-
 function diagnostics = appendTimeRecord(diagnostics, record)
 % PURPOSE
 %   - Add one time-layer search without reconstructing its decisions.
 diagnostics.TemporalLayerTimes_s = record.LayerTimes_s;
 diagnostics.TemporalLayerCount = numel(record.LayerTimes_s);
+diagnostics.TemporalNodeCount = max( ...
+    diagnostics.TemporalNodeCount, record.NodeCount);
+diagnostics.TemporalNodePosition_deg = record.NodePosition_deg;
+diagnostics.TemporalExploredNodes_deg = appendBoundedTrace( ...
+    diagnostics.TemporalExploredNodes_deg, record.ExploredNodes_deg, 2000);
 diagnostics.WaitEdgeCount = diagnostics.WaitEdgeCount + ...
     record.WaitEdgeCount;
 diagnostics.MotionEdgeCount = diagnostics.MotionEdgeCount + ...
@@ -721,7 +680,6 @@ diagnostics.RejectedTransitionCount = ...
 diagnostics.ExploredNodes_deg = appendBoundedTrace( ...
     diagnostics.ExploredNodes_deg, record.ExploredNodes_deg, 2000);
 end
-
 function seed = createSpatialSeed( ...
         seedTemplate, seedIndex, route_deg, directDuration_s, ...
         availableDuration_s, limits)
@@ -735,7 +693,6 @@ seed.position_deg = route_deg;
 seed.EstimatedDuration_s = min(availableDuration_s, max( ...
     directDuration_s, seed.Length_deg / max(limits.maxVelocity_deg_s)));
 end
-
 function changing = obstacleHistoryChanges(obstacles)
 % PURPOSE
 %   - Detect input geometry changes without snapshot event inference.
@@ -754,7 +711,6 @@ for obstacleIndex = 1:numel(obstacles)
     end
 end
 end
-
 function sampleTimes_s = obstacleSampleTimes(obstacles, startTime_s, endTime_s)
 % PURPOSE
 %   - Use source times and interval midpoints without event detection.
@@ -766,8 +722,20 @@ for obstacleIndex = 1:numel(obstacles)
 end
 sampleTimes_s = unique(sampleTimes_s( ...
     sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
+maximumSampleTimeCount = max(9, min(33, ...
+    floor(48 / sqrt(max(1, numel(obstacles))))));
+if numel(sampleTimes_s) > maximumSampleTimeCount
+    targetTime_s = linspace( ...
+        startTime_s, endTime_s, maximumSampleTimeCount).';
+    selectedIndex = zeros(maximumSampleTimeCount, 1);
+    for targetIndex = 1:maximumSampleTimeCount
+        [~, selectedIndex(targetIndex)] = min( ...
+            abs(sampleTimes_s - targetTime_s(targetIndex)));
+    end
+    selectedIndex = unique([1; selectedIndex; numel(sampleTimes_s)]);
+    sampleTimes_s = sampleTimes_s(selectedIndex);
 end
-
+end
 function sideValue = signedSide(azimuth_deg, elevation_deg, start_deg, goal_deg)
 % PURPOSE
 %   - Measure deterministic side of the input-defined start-to-goal line.
@@ -775,7 +743,6 @@ direction_deg = goal_deg - start_deg;
 sideValue = direction_deg(1) * (elevation_deg - start_deg(2)) - ...
     direction_deg(2) * (azimuth_deg - start_deg(1));
 end
-
 function route_deg = removeCollinearPoints(route_deg)
 % PURPOSE
 %   - Remove spatial points that do not change route direction.
@@ -789,7 +756,6 @@ turn_deg2 = routeStep_deg(1:end - 1, 1) .* ...
 keep = [true; abs(turn_deg2) > 1e-10; true];
 route_deg = route_deg(keep, :);
 end
-
 function duplicate = routeDuplicates(route_deg, seeds, tolerance_deg)
 % PURPOSE
 %   - Reject geometrically indistinguishable bounded graph routes.
@@ -809,7 +775,6 @@ for seedIndex = 1:numel(seeds)
     end
 end
 end
-
 function [tau, length_deg] = routeTau(route_deg)
 % PURPOSE
 %   - Parameterize a route by normalized cumulative Euclidean length.
@@ -821,13 +786,11 @@ else
     tau = cumulativeLength_deg / length_deg;
 end
 end
-
 function length_deg = polylineLength(route_deg)
 % PURPOSE
 %   - Measure route length while repeated wait positions contribute zero.
 length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
 end
-
 function values = appendBoundedTrace(values, additions, maximumCount)
 % PURPOSE
 %   - Retain a deterministic prefix while preserving complete counts.
@@ -837,7 +800,6 @@ if remainingCount > 0
         size(additions, 1)), :)];
 end
 end
-
 function position_deg = goalPositionAtHorizon(goalState)
 % PURPOSE
 %   - Select the fixed or sampled target position at the planning horizon.
@@ -849,7 +811,6 @@ else
     position_deg = goalState.position_deg;
 end
 end
-
 function diagnostics = emptyDiagnostics(start_deg, goal_deg)
 % PURPOSE
 %   - Define stable bounded diagnostics before a graph is required.
@@ -860,10 +821,17 @@ diagnostics = struct( ...
     "CandidateOffset_deg", NaN, ...
     "SampleTimes_s", zeros(0, 1), ...
     "SampledShapeCount", 0, ...
+    "SweptGeometryMode", "empty", ...
     "NodeCount", 0, ...
+    "NodePosition_deg", zeros(0, 2), ...
     "VisibilityEdgeCount", 0, ...
+    "AcceptedEdges_deg", zeros(0, 4), ...
+    "RejectedEdges_deg", zeros(0, 4), ...
     "TemporalLayerTimes_s", zeros(0, 1), ...
     "TemporalLayerCount", 0, ...
+    "TemporalNodeCount", 0, ...
+    "TemporalNodePosition_deg", zeros(0, 2), ...
+    "TemporalExploredNodes_deg", zeros(0, 2), ...
     "WaitEdgeCount", 0, ...
     "MotionEdgeCount", 0, ...
     "ExpandedCount", 0, ...
@@ -873,5 +841,5 @@ diagnostics = struct( ...
     "Start_deg", start_deg, ...
     "Goal_deg", goal_deg, ...
     "TraceDownsampleRule", ...
-    "First 2000 expanded visibility nodes in search order");
+    "Seed time and temporal-node caps scale with obstacle count");
 end

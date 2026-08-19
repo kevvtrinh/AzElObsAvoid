@@ -1,16 +1,23 @@
 function [plannerOptions, displayOptions] = ...
-        resolveAzElExampleOptions(exampleOverrides, scenarioDefaults)
+        resolveAzElExampleOptions( ...
+        exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plannerOptions, displayOptions] = ...
 %       resolveAzElExampleOptions(exampleOverrides, scenarioDefaults)
+%   [plannerOptions, displayOptions] = resolveAzElExampleOptions( ...
+%       exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
 %**************************************************************************
 % PURPOSE
 %   - Resolve uniform example display controls and public planner overrides.
+%   - Accept the maintained main-branch display names through one mapping.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct or []; empty uses defaults)
+%       Display controls and public planAzElMotion options are accepted.
 %   - scenarioDefaults (scalar partial planAzElMotion options struct)
+%   - defaultMaxJerk_deg_s3 (positive scalar or two-element vector)
+%       Optional default is [2.5 2.5]. MaxJerk_deg_s3 can override it.
 %**************************************************************************
 % OUTPUTS
 %   - plannerOptions (resolved planner options for the scenario)
@@ -28,6 +35,9 @@ end
 if nargin < 2 || isempty(scenarioDefaults)
     scenarioDefaults = struct();
 end
+if nargin < 3 || isempty(defaultMaxJerk_deg_s3)
+    defaultMaxJerk_deg_s3 = [2.5 2.5];
+end
 if ~isstruct(exampleOverrides) || ~isscalar(exampleOverrides) || ...
         ~isstruct(scenarioDefaults) || ~isscalar(scenarioDefaults)
     error("resolveAzElExampleOptions:InvalidOptions", ...
@@ -36,57 +46,125 @@ end
 displayDefaults = struct( ...
     "PlotOutputs", true, ...
     "FigureVisible", "on", ...
+    "Title", "Azimuth/elevation motion plan", ...
     "ShowWorkspace", true, ...
     "ShowKinematics", true, ...
     "ShowAnimation", true, ...
-    "AnimationFrameStride", 4, ...
-    "Pause_s", 0.01);
+    "ShowVisibilityGraphs", true, ...
+    "FrameStride", 4, ...
+    "Pause_s", 0.01, ...
+    "ShowSweptSurfaces", true, ...
+    "MaximumDisplayedSlicesPerObstacle", 30, ...
+    "MaximumDisplayedVisibilitySnapshots", 30);
+normalizedOverrides = normalizeDisplayAliases(exampleOverrides);
 displayOptions = displayDefaults;
 displayNames = string(fieldnames(displayDefaults));
-for name = displayNames.'
-    if isfield(exampleOverrides, name) && ~isempty(exampleOverrides.(name))
-        displayOptions.(name) = exampleOverrides.(name);
+for name = intersect(string(fieldnames(scenarioDefaults)), ...
+        displayNames, "stable").'
+    if ~isempty(scenarioDefaults.(name))
+        displayOptions.(name) = scenarioDefaults.(name);
     end
 end
-logicalNames = ["PlotOutputs", "ShowWorkspace", ...
-    "ShowKinematics", "ShowAnimation"];
+for name = displayNames.'
+    if isfield(normalizedOverrides, name) && ...
+            ~isempty(normalizedOverrides.(name))
+        displayOptions.(name) = normalizedOverrides.(name);
+    end
+end
+maxJerk_deg_s3 = defaultMaxJerk_deg_s3;
+if isfield(normalizedOverrides, "MaxJerk_deg_s3") && ...
+        ~isempty(normalizedOverrides.MaxJerk_deg_s3)
+    maxJerk_deg_s3 = normalizedOverrides.MaxJerk_deg_s3;
+end
+validateattributes(maxJerk_deg_s3, {'numeric'}, ...
+    {'real', 'finite', 'positive', 'nonempty'});
+if ~isscalar(maxJerk_deg_s3) && numel(maxJerk_deg_s3) ~= 2
+    error("resolveAzElExampleOptions:InvalidMaxJerk", ...
+        "MaxJerk_deg_s3 must be scalar or two-element.");
+end
+maxJerk_deg_s3 = reshape(double(maxJerk_deg_s3), 1, []);
+if isscalar(maxJerk_deg_s3)
+    maxJerk_deg_s3 = repmat(maxJerk_deg_s3, 1, 2);
+end
+logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
+    "ShowAnimation", "ShowVisibilityGraphs", "ShowSweptSurfaces"];
 for name = logicalNames
     displayOptions.(name) = azElInternal.normalizeLogicalScalar( ...
         displayOptions.(name), name, ...
         "resolveAzElExampleOptions:InvalidLogicalOption");
 end
 displayOptions.FigureVisible = lower(string(displayOptions.FigureVisible));
-if ~any(displayOptions.FigureVisible == ["on", "off"])
+displayOptions.Title = string(displayOptions.Title);
+if ~isscalar(displayOptions.FigureVisible) || ...
+        ~any(displayOptions.FigureVisible == ["on", "off"])
     error("resolveAzElExampleOptions:InvalidFigureVisible", ...
         "FigureVisible must be 'on' or 'off'.");
 end
-validateattributes(displayOptions.AnimationFrameStride, {'numeric'}, ...
+if ~isscalar(displayOptions.Title)
+    error("resolveAzElExampleOptions:InvalidTitle", ...
+        "Title must be scalar text.");
+end
+validateattributes(displayOptions.FrameStride, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
 validateattributes(displayOptions.Pause_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'});
+displayCountNames = ["MaximumDisplayedSlicesPerObstacle", ...
+    "MaximumDisplayedVisibilitySnapshots"];
+for name = displayCountNames
+    validateattributes(displayOptions.(name), {'numeric'}, ...
+        {'real', 'finite', 'scalar', 'integer', 'positive'});
+end
 
 %% Section 2: Forward Only Public Planner Options
 
-plannerOptions = scenarioDefaults;
 plannerNames = string(fieldnames(planAzElMotion()));
-overrideNames = string(fieldnames(exampleOverrides));
-unknownNames = setdiff(overrideNames, [plannerNames; displayNames], "stable");
+plannerOptions = struct();
+for name = intersect(string(fieldnames(scenarioDefaults)), ...
+        plannerNames, "stable").'
+    if ~isempty(scenarioDefaults.(name))
+        plannerOptions.(name) = scenarioDefaults.(name);
+    end
+end
+overrideNames = string(fieldnames(normalizedOverrides));
+aliasNames = ["ShowKinematicPlot", "AnimationFrameStride", ...
+    "AnimationPause_s", "MaxJerk_deg_s3"];
+scenarioNames = string(fieldnames(scenarioDefaults));
+unknownNames = setdiff(overrideNames, ...
+    [plannerNames; displayNames; aliasNames.'], "stable");
+unknownNames = unique([unknownNames; setdiff(scenarioNames, ...
+    [plannerNames; displayNames], "stable")], "stable");
 if ~isempty(unknownNames)
     warning("resolveAzElExampleOptions:UnknownOptions", ...
         "Ignoring unknown example fields: %s. No behavior changed.", ...
         strjoin(unknownNames, ", "));
 end
 for name = intersect(overrideNames, plannerNames, "stable").'
-    if ~isempty(exampleOverrides.(name))
-        plannerOptions.(name) = exampleOverrides.(name);
+    if ~isempty(normalizedOverrides.(name))
+        plannerOptions.(name) = normalizedOverrides.(name);
     end
 end
-displayOptions = rmfield(displayOptions, "PlotOutputs");
-displayOptions.PlotOutputs = displayDefaults.PlotOutputs;
-if isfield(exampleOverrides, "PlotOutputs") && ...
-        ~isempty(exampleOverrides.PlotOutputs)
-    displayOptions.PlotOutputs = azElInternal.normalizeLogicalScalar( ...
-        exampleOverrides.PlotOutputs, "PlotOutputs", ...
-        "resolveAzElExampleOptions:InvalidPlotOutputs");
+plotOptions = rmfield(displayOptions, "PlotOutputs");
+displayOptions.JerkConstraintEnabled = true;
+displayOptions.MaxJerk_deg_s3 = maxJerk_deg_s3;
+displayOptions.ConfiguredFiniteMaxJerk_deg_s3 = maxJerk_deg_s3;
+displayOptions.PlotOptions = plotOptions;
+end
+
+%% Section 3: Local Functions
+
+function normalized = normalizeDisplayAliases(overrides)
+% PURPOSE
+%   - Map maintained example aliases to one plot-option vocabulary.
+normalized = overrides;
+aliases = [ ...
+    "ShowKinematicPlot", "ShowKinematics"; ...
+    "AnimationFrameStride", "FrameStride"; ...
+    "AnimationPause_s", "Pause_s"];
+for aliasIndex = 1:size(aliases, 1)
+    oldName = aliases(aliasIndex, 1);
+    newName = aliases(aliasIndex, 2);
+    if isfield(normalized, oldName) && ~isfield(normalized, newName)
+        normalized.(newName) = normalized.(oldName);
+    end
 end
 end

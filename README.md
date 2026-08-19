@@ -72,17 +72,14 @@ throw identified errors.
 
 ## Maintained examples
 
-The `examples` directory contains nine scenarios:
+The `examples` directory contains all 14 main scenarios and four focused
+verification scenarios. They cover obstacle-free motion, static and moving
+obstacles, concave and geographic geometry, fixed and earliest moving-target
+intercepts, waiting, azimuth wrapping, dense fields, and expected failure.
 
-- obstacle-free fixed arrival;
-- one static rectangle;
-- one static concave obstacle;
-- a translating barrier with a waiting seed;
-- a rising circle with azimuth wrapping disabled;
-- alternating static barriers;
-- earliest moving-target intercept;
-- one dense concave polygon;
-- one expected no-path result.
+Every example uses the same planner, validator, and plotter. A failed result
+can show the retained visibility edges, rejected edges, explored states,
+frontier data, and best partial seed without rerunning the planner.
 
 Run an example without figures as follows:
 
@@ -112,9 +109,13 @@ diagnostics.
 - HS3 is a local nonlinear optimizer. A finite seed set can miss a feasible
   topology.
 - The spatial visibility graph uses protected boundary candidates. Moving
-  obstacles add at most 17 time layers with straight motion and wait edges.
-  This graph supplies initialization only. It does not certify dynamics or
-  global optimality.
+  obstacles add at most 17 time layers, 16 to 48 input-scaled temporal
+  nodes, straight motion edges, and wait edges. Each seed edge uses 5 to 33
+  length-scaled occupancy samples. This graph supplies initialization only.
+  It does not certify dynamics or global optimality.
+- More than 24 sampled obstacle shapes use one conservative bounding-box
+  envelope for swept spatial seeds. This can reject an inner route. It cannot
+  admit a route through sampled or linearly interpolated protected geometry.
 - Adjacent obstacle slices with different topology use a conservative union.
   Continuous validation fails an interval when its motion bound cannot be
   resolved safely.

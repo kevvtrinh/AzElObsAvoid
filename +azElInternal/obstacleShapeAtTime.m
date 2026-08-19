@@ -1,8 +1,11 @@
-function [shape, geometry] = obstacleShapeAtTime(obstacle, queryTime_s)
+function [shape, geometry] = obstacleShapeAtTime( ...
+        obstacle, queryTime_s, geometryOnly)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
 %       obstacle, queryTime_s)
+%   [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
+%       obstacle, queryTime_s, geometryOnly)
 %**************************************************************************
 % PURPOSE
 %   - Interpolate one canonical protected obstacle at one query time.
@@ -13,10 +16,13 @@ function [shape, geometry] = obstacleShapeAtTime(obstacle, queryTime_s)
 %       Protected az_deg and el_deg histories from makeAzElObstacleData.
 %   - queryTime_s (finite scalar)
 %       Absolute query time.
+%   - geometryOnly (logical scalar, optional; default false)
+%       If true, skip polyshape construction when topology is unchanged.
 %**************************************************************************
 % OUTPUTS
 %   - shape (scalar polyshape)
-%       Protected occupied geometry. It is empty outside the active span.
+%       Protected occupied geometry. It is empty in geometry-only mode and
+%       outside the active span.
 %   - geometry (scalar struct)
 %       Interpolated boundary, vertex-speed bound, and provenance flags.
 %**************************************************************************
@@ -33,6 +39,16 @@ if ~isstruct(obstacle) || ~isscalar(obstacle) || ...
 end
 validateattributes(queryTime_s, {'numeric'}, ...
     {'real', 'finite', 'scalar'});
+if nargin < 3 || isempty(geometryOnly)
+    geometryOnly = false;
+end
+validateattributes(geometryOnly, {'logical', 'numeric'}, ...
+    {'real', 'finite', 'scalar'});
+if isnumeric(geometryOnly) && ~ismember(geometryOnly, [0 1])
+    error("azElInternal:obstacleShapeAtTime:InvalidGeometryOnly", ...
+        "geometryOnly must be a scalar logical or binary numeric value.");
+end
+geometryOnly = logical(geometryOnly);
 queryTime_s = double(queryTime_s);
 time_s = double(obstacle.time_s(:));
 geometry = emptyGeometry();
@@ -69,7 +85,13 @@ if lowerIndex == upperIndex
     elevation_deg = lowerElevation_deg;
     vertexSpeedBound_deg_s = adjacentVertexSpeedBound( ...
         obstacle, lowerIndex);
-    topologyIsInterpolated = true;
+    topologyIsInterpolated = isfinite(vertexSpeedBound_deg_s);
+    if ~topologyIsInterpolated
+        % Adjacent topology-changing intervals use a static union. Treat
+        % their shared exact sample as static so no infinite speed enters
+        % the local optimization corridor.
+        vertexSpeedBound_deg_s = 0;
+    end
 else
     upperAzimuth_deg = double(obstacle.az_deg{upperIndex}(:));
     upperElevation_deg = double(obstacle.el_deg{upperIndex}(:));
@@ -99,7 +121,8 @@ else
             upperAzimuth_deg, upperElevation_deg);
         shape = union(lowerShape, upperShape);
         [azimuth_deg, elevation_deg] = boundary(shape);
-        vertexSpeedBound_deg_s = Inf;
+        % The conservative union is constant throughout this interval.
+        vertexSpeedBound_deg_s = 0;
         topologyIsInterpolated = false;
     end
 end
@@ -108,11 +131,12 @@ end
 
 azimuth_deg(~isfinite(azimuth_deg)) = NaN;
 elevation_deg(~isfinite(elevation_deg)) = NaN;
-if isempty(shape.Vertices)
+if isempty(shape.Vertices) && ~geometryOnly
     shape = boundaryShape(azimuth_deg, elevation_deg);
 end
+active = nnz(isfinite(azimuth_deg) & isfinite(elevation_deg)) >= 3;
 geometry = struct( ...
-    "Active", ~isempty(shape.Vertices), ...
+    "Active", active, ...
     "azimuth_deg", double(azimuth_deg(:)), ...
     "elevation_deg", double(elevation_deg(:)), ...
     "VertexSpeedBound_deg_s", vertexSpeedBound_deg_s, ...

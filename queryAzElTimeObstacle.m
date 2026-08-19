@@ -100,6 +100,69 @@ nearestObstacleIndex = zeros(queryCount, 1, "uint32");
 %% Section 3: Query Interpolated Protected Geometry
 
 clearanceTolerance_deg = double(options.ClearanceTolerance_deg);
+if nargout < 3
+    finiteQuery = isfinite(queryAzimuth_deg) & ...
+        isfinite(queryElevation_deg) & isfinite(queryTime_s);
+    for obstacleIndex = 1:numel(obstacles)
+        candidateQueryIndices = find(finiteQuery & ~isOccupied);
+        if isempty(candidateQueryIndices)
+            break;
+        end
+        candidateTimes_s = unique(queryTime_s(candidateQueryIndices));
+        for timeIndex = 1:numel(candidateTimes_s)
+            currentTime_s = candidateTimes_s(timeIndex);
+            timeQueryIndices = candidateQueryIndices( ...
+                queryTime_s(candidateQueryIndices) == currentTime_s);
+            [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
+                obstacles(obstacleIndex), currentTime_s, true);
+            if ~geometry.Active
+                continue;
+            end
+            finiteBoundary = isfinite(geometry.azimuth_deg) & ...
+                isfinite(geometry.elevation_deg);
+            boundaryAzimuth_deg = geometry.azimuth_deg(finiteBoundary);
+            boundaryElevation_deg = geometry.elevation_deg(finiteBoundary);
+            inBounds = ...
+                queryAzimuth_deg(timeQueryIndices) >= ...
+                    min(boundaryAzimuth_deg) - clearanceTolerance_deg & ...
+                queryAzimuth_deg(timeQueryIndices) <= ...
+                    max(boundaryAzimuth_deg) + clearanceTolerance_deg & ...
+                queryElevation_deg(timeQueryIndices) >= ...
+                    min(boundaryElevation_deg) - clearanceTolerance_deg & ...
+                queryElevation_deg(timeQueryIndices) <= ...
+                    max(boundaryElevation_deg) + clearanceTolerance_deg;
+            boundedQueryIndices = timeQueryIndices(inBounds);
+            if isempty(boundedQueryIndices)
+                continue;
+            end
+            if isempty(shape.Vertices)
+                shape = polyshape( ...
+                    geometry.azimuth_deg, geometry.elevation_deg, ...
+                    "Simplify", false, "KeepCollinearPoints", true);
+            end
+            for boundedIndex = reshape(boundedQueryIndices, 1, [])
+                point_deg = [queryAzimuth_deg(boundedIndex), ...
+                    queryElevation_deg(boundedIndex)];
+                clearance_deg = azElInternal.pointPolygonClearance( ...
+                    shape, point_deg);
+                isBoundaryBlocked = options.BoundaryIsOccupied && ...
+                    clearance_deg <= clearanceTolerance_deg;
+                isInteriorBlocked = ...
+                    clearance_deg < -clearanceTolerance_deg;
+                if isBoundaryBlocked || isInteriorBlocked
+                    isOccupied(boundedIndex) = true;
+                    blockingObstacleIndex(boundedIndex) = ...
+                        uint32(obstacleIndex);
+                end
+            end
+        end
+    end
+    isOccupied = reshape(isOccupied, outputSize);
+    blockingObstacleIndex = reshape( ...
+        blockingObstacleIndex, outputSize);
+    queryDetails = struct();
+    return;
+end
 for queryIndex = 1:queryCount
     if ~all(isfinite([queryAzimuth_deg(queryIndex), ...
             queryElevation_deg(queryIndex), queryTime_s(queryIndex)]))
@@ -134,6 +197,10 @@ isOccupied = reshape(isOccupied, outputSize);
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
 minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
+if nargout < 3
+    queryDetails = struct();
+    return;
+end
 obstacleNames = strings(outputSize);
 for obstacleIndex = 1:numel(obstacles)
     obstacleNames(nearestObstacleIndex == obstacleIndex) = ...

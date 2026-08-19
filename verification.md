@@ -1,108 +1,112 @@
-# HS3 refactor verification
+# HS3 diagnostic refactor verification
 
 ## Environment
 
-- Branch: `hs3-refactor`
-- Starting commit: `e46ccae6343a8127d303211a0d1134754a847bc2`
-- Runtime: MATLAB R2024b Update 4
-- Solver: Optimization Toolbox `fmincon`
+- Branch: `hs3-diagnostic-refactor`.
+- Starting commit: `e46ccae6343a8127d303211a0d1134754a847bc2`.
+- Runtime: MATLAB R2024b Update 4.
+- Solver: Optimization Toolbox `fmincon`.
+- Random seed: zero for all default planner calls.
 
-## Size checkpoints
+## Final size
 
-| Checkpoint | Production | Examples | Tests | Other | Total |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Baseline | 18,090 | 2,989 | 2,521 | 836 | 24,436 |
-| Legacy removal checkpoint | 4,069 | 897 | 370 | 0 | 5,336 |
-| Compact HS3 commit | 4,135 | 922 | 486 | 0 | 5,543 |
-| Visibility correction | 4,576 | 922 | 496 | 0 | 5,994 |
+| Scope | Files | MATLAB lines |
+| --- | ---: | ---: |
+| Production | 17 | 5,215 |
+| Examples and private example helpers | 23 | 2,873 |
+| Focused tests | 1 | 519 |
+| Complete maintained MATLAB repository | 41 | 8,607 |
 
-The final repository has 16 production MATLAB files. The target was 8 to 12.
-The four-file exception preserves the small public obstacle constructors,
-normalizer, inflation function, and query interface. Merging these interfaces
-into the planner would reduce the file count but would mix obstacle ownership
-with optimization. All hard line limits are satisfied.
+The baseline had 18,090 production lines and 24,436 total MATLAB lines. The
+final result is below the 6,000-line production target and the 10,500-line
+repository target.
 
-Two production files exceed the 700-line target. Both are below the 900-line
-hard limit. `+azElInternal/solveAzElHs3.m` has 726 lines. It owns one decision
-layout, the integrated third-order chain, continuous polynomial bounds, the
-frozen local corridor, and candidate reconstruction. The corrected
-`+azElInternal/generateAzElTopologySeeds.m` has 877 lines. It owns the shared
-protected-boundary candidates, exact spatial visibility edges, distinct-route
-search, forward time layers, motion edges, wait edges, and bounded search
-diagnostics. Splitting either file would add another internal representation
-and could make reconstruction or graph diagnostics inconsistent.
+The target was 8 to 16 production files. The result has 17. The additional
+file, `+azElInternal/searchAzElTimeExpandedGraph.m`, owns the complete bounded
+time-layer search. Keeping this function separate prevents the seed generator
+from exceeding the 900-line file limit and prevents time-search state from
+entering the HS3 solver.
+
+Three production files exceed 700 lines. All are below 900 lines:
+
+- `+azElInternal/generateAzElTopologySeeds.m`: 837 lines. It owns spatial
+  visibility seeds, conservative swept geometry, seed diversity, and graph
+  diagnostics.
+- `+azElInternal/solveAzElHs3.m`: 809 lines. It owns the separated
+  jerk-controlled HS3 model, local obstacle corridor, nonlinear solve, and
+  candidate reconstruction.
+- `planAzElMotion.m`: 744 lines. It owns input normalization, seed scheduling,
+  independent candidate validation, result selection, and the stable schema.
+
+These responsibilities share internal state that would need a new duplicate
+representation if they were divided again. The selected split keeps the graph,
+the mathematical kernel, and public orchestration separate.
 
 ## Final headless example results
 
-All examples used jerk constraints. `vmax`, `amax`, and `jmax` are maximum
-absolute sampled component values. Continuous polynomial certificates also
-passed for each successful result.
+All runs used jerk constraints. `Planner` is the planner success state.
+`Validation` is the independent example-validation state. Lengths are degrees.
+Duration and runtime are seconds.
 
-| Example | Planner / validation | Seed | Duration (s) | Seed length (deg) | Motion length (deg) | vmax | amax | jmax | Collision / kinematic | Runtime (s) | Reason |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |
-| `exampleObstacleFreeAzElMotion` | success / pass | 1/1 | 8 | 4.472136 | 4.472136 | 0.937934 | 0.360067 | 0.461151 | pass / pass | 2.013279 | `goalReached` |
-| `exampleAzElPlanning` | success / pass | 2/3 | 12 | 11.152120 | 11.714168 | 1.563224 | 0.465244 | 0.493145 | pass / pass | 30.387430 | `goalReached` |
-| `exampleUShapedAzElTimeSpace` | success / pass | 2/3 | 16 | 13.098463 | 14.035227 | 1.406249 | 0.290373 | 0.266976 | pass / pass | 35.581630 | `goalReached` |
-| `exampleMovingBarrierWait` | success / pass | 2/2 | 12 | 10 | 10.162733 | 1.730429 | 0.557482 | 0.612760 | pass / pass | 34.789296 | `goalReached` |
-| `exampleMovingCircleNoAzimuthWrap` | success / pass | 1/3 | 15 | 12 | 12.021127 | 1.495556 | 0.309236 | 0.214327 | pass / pass | 35.307706 | `goalReached` |
-| `exampleAlternatingSlalom` | success / pass | 2/3 | 22 | 16.019320 | 16.690230 | 1.156965 | 0.400538 | 0.406357 | pass / pass | 41.595010 | `goalReached` |
-| `exampleInterceptMovingTargetEarliest` | success / pass | 1/1 | 6.275806 | 10.097524 | 7.342217 | 1.993137 | 1 | 2 | pass / pass | 5.407495 | `goalReached` |
-| `exampleDenseConcaveAzElMotion` | success / pass | 2/3 | 15 | 12.700722 | 13.090750 | 1.500732 | 0.317475 | 0.226989 | pass / pass | 35.537637 | `goalReached` |
-| `exampleNoPathAzElMotion` | failure / pass | 0/1 | `NaN` | `NaN` | `NaN` | `NaN` | `NaN` | `NaN` | not available | 13.115984 | `noValidatedSeed` |
+| Example or region | Planner | Validation | Polyline | Smoothed | Duration | Collision | Kinematic | Runtime | Reason |
+| --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: | --- |
+| `exampleObstacleFreeAzElMotion` | pass | pass | 4.472136 | 4.472136 | 8 | pass | pass | 4.465437 | `goalReached` |
+| `exampleAzElPlanning` | pass | pass | 11.152120 | 11.567722 | 12 | pass | pass | 41.228741 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | pass | pass | 13.098463 | 13.795538 | 16 | pass | pass | 11.035922 | `goalReached` |
+| `exampleMovingBarrierWait` | pass | pass | 11.769860 | 10.321701 | 12 | pass | pass | 12.016864 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | pass | pass | 12 | 12.012667 | 15 | pass | pass | 14.703396 | `goalReached` |
+| `exampleAlternatingSlalom` | pass | pass | 16.019320 | 16.384571 | 22 | pass | pass | 16.920260 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | pass | pass | 10.097524 | 7.342217 | 6.275806 | pass | pass | 10.227419 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | pass | pass | 13.831635 | 13.036816 | 15 | pass | pass | 43.488484 | `goalReached` |
+| `exampleNoPathAzElMotion` | expected fail | pass | `NaN` | `NaN` | `NaN` | not available | not available | 5.377993 | `noValidatedSeed` |
+| `exampleFortyMovingCircleGrid` | pass | pass | 111.354775 | 118.866473 | 200 | pass | pass | 135.786504 | `goalReached` |
+| `exampleFourAcceleratingCircles` | pass | pass | 25.164826 | 20.588787 | 22 | pass | pass | 50.204030 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | pass | pass | 9.538941 | 9.538941 | 12 | pass | pass | 4.657692 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | pass | pass | 71.930983 | 470.884620 | 300 | pass | pass | 245.673700 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | pass | pass | 10 | 10.153312 | 12.304983 | pass | pass | 50.441460 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | pass | pass | 13.556661 | 14.423757 | 20.869565 | pass | pass | 44.173038 | `goalReached` |
+| `exampleTargetExitsObstacle` | pass | pass | 24.461148 | 20.598601 | 24 | pass | pass | 26.046134 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | pass | pass | 23.853721 | 24.296649 | 22.875112 | pass | pass | 62.204455 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility/Hawaii` | pass | pass | 14.304462 | 13.188632 | 120 | pass | pass | see note | `goalReached` |
+| `exampleUSOutlineExtremeVisibility/Croatia` | pass | pass | 6.700000 | 7.931866 | 120 | pass | pass | see note | `goalReached` |
+| `exampleUSOutlineExtremeVisibility/Philippines` | pass | pass | 24.711660 | 19.677931 | 120 | pass | pass | see note | `goalReached` |
 
-The moving-wait example selected the time-layer `directWait` seed. The expected
-failure created a hidden diagnostic figure. The figure title contained
-`noValidatedSeed` and the visibility expansion count of 3. A visible obstacle-free
-run created the workspace, kinematic, and animation figures.
+The three-region geographic sequence took 178.617265 seconds. The 40-circle
+grid and moving/deforming U.S. outline used the documented conservative swept
+bounding-box envelope. Every successful result passed the public continuous
+collision and kinematic validator.
 
-## Automated and static checks
+## Automated and visual checks
 
-- Code Analyzer: 28 files, 0 issues.
-- Focused tests: 19 passed, 0 failed, 0 incomplete, 52.002326 seconds.
-- Legacy MATLAB dependency search: 0 matches.
-- Expected no-path result: stable failure without an exception.
+- Code Analyzer: 41 files, zero messages.
+- Focused tests: 21 passed, zero failed, zero incomplete, 54.932075 seconds.
+- Legacy MATLAB dependency search: zero matches.
 - `git diff --check`: passed.
+- Visible success check: three figures were created and all three were visible.
+- Hidden failure check: two figures were created. A title included
+  `noValidatedSeed`.
 
-The tests cover the analytic jerk chain, fixed and earliest arrival, nonzero
-endpoint state, mesh refinement, opposite-side seeds, selection order, static,
-translating, and deforming polygons, moving-time queries, waiting-seed freedom,
-between-node collision and velocity violations, safety-margin idempotence,
-azimuth wrapping on and off, deterministic repetition, planning-time failure,
-no-path diagnostics, and moving-target adaptation.
+The focused tests cover the analytic jerk chain, fixed and earliest arrival,
+endpoint state, mesh refinement, opposite-side seeds, translating and
+deforming polygons, waiting, safety-margin provenance, between-node
+collision and kinematic violations, deterministic repetition, planning-time
+failure, no-path diagnostics, and moving-target adaptation.
 
-## Removed stack
+## Removed stack and retained limits
 
-The change deletes 33 files. The deleted responsibilities are the snapshot
-visibility graphs, visibility-event selection, safe-interval and SIPP search,
-the space-time visibility forwarding graph, the old direct-collocation solver,
-packed moving-obstacle queries, the old collision certifier, parallel mode,
-two obsolete benchmarks, redundant examples and geographic helpers, three
-legacy test suites, scratch visualization, and compatibility validation and
-animation layers.
+The refactor removes the SIPP and safe-interval search, snapshot visibility
+graphs, event selection, alternate space-time forwarding planner, old direct
+collocation path, parallel multi-seed machinery, old solver cascades, and
+their exclusive options, tests, benchmarks, and wrappers.
 
-Removed option families include visibility resolution and snapshots, event
-detection, space-time graph layers and candidates, SIPP intervals and search,
-direct-collocation seed budgets, parallel execution, solver cascades, old
-corridor-repair counts, and compatibility validation tolerances. The remaining
-options describe the goal policy, workspace, bounded seed set, one HS3 mesh,
-one solver, independent collision resolution, and display-independent runtime.
+The maintained planner has one production path. A finite deterministic seed
+set can miss a feasible topology. HS3 is a local nonlinear optimizer. The
+local corridor can reject a feasible route. More than 24 sampled shapes use a
+conservative bounding-box envelope for swept spatial seeds. This envelope can
+reject a feasible inner route. It cannot admit a route through protected
+geometry. Independent continuous validation remains the authority for every
+success result.
 
-## Limits and claim
-
-- The seed generator uses exact spatial visibility checks on protected swept
-  boundaries. Moving-obstacle seeds use at most 17 forward time layers,
-  straight motion edges, wait edges, conservative per-axis velocity bounds,
-  and 13 trajectory-time occupancy samples per motion edge. The independent
-  continuous validator remains the authority for a returned trajectory.
-- A finite seed set can miss a feasible obstacle topology.
-- The local frozen corridor can reject a feasible route. Independent validation
-  never converts this rejection to success.
-- Adjacent slices with different topology use a conservative union.
-- No replacement performance benchmark was added because the deleted
-  benchmarks measured removed algorithms.
-- Octave was not used. MATLAB is the behavioral reference.
-
-The result is the earliest independently validated local HS3 solution found
-from the finite deterministic seed set that was attempted. The planner does
-not claim global time optimality, global path completeness, or a proof that a
-failed seed set means that no feasible trajectory exists.
+The planner claims only the earliest independently validated local HS3 result
+from the deterministic seeds that it attempted. It does not claim global time
+optimality or global path completeness.
