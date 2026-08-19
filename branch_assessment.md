@@ -42,10 +42,10 @@ proposal set complete. A reduced failure is not proof that no path exists.
 
 ### 2. Conservative first-motion family
 
-The fast motion stops at each geometric waypoint and assigns one common edge
-duration. It can be slower than a through-velocity motion. It can also reject a
-feasible nonuniform edge schedule. A timed seed can define stationary waits.
-Nonzero endpoint derivatives and earliest moving-goal intercepts require HS3.
+The fast motion stops at each geometric waypoint and assigns a certified
+duration to each edge. It can be slower than a through-velocity motion. A timed
+seed can define stationary waits. Nonzero endpoint derivatives and earliest
+moving-goal intercepts require HS3.
 
 ### 3. Local optimization and cooperative deadlines
 

@@ -46,10 +46,10 @@ verifyTrue(testCase, candidate.Validation.Passed);
 verifyEqual(testCase, candidate.TerminationReason, ...
     "seedMotionValidated");
 verifyEqual(testCase, candidate.Polynomial.SegmentCount, 8);
-edgeDuration_s = candidate.AnalyticDiagnostics.UniformEdgeDuration_s;
-verifyEqual(testCase, candidate.MotionDuration_s, 2 * edgeDuration_s, ...
+edgeDuration_s = 4 * candidate.Polynomial.SegmentDuration_s(1:4:end);
+verifyEqual(testCase, candidate.MotionDuration_s, sum(edgeDuration_s), ...
     "AbsTol", 1e-12);
-waypointTime_s = initialState.time_s + edgeDuration_s;
+waypointTime_s = initialState.time_s + edgeDuration_s(1);
 [waypointError_s, waypointIndex] = min( ...
     abs(candidate.time_s - waypointTime_s));
 verifyLessThanOrEqual(testCase, waypointError_s, 1e-12);
@@ -91,9 +91,8 @@ verifyTrue(testCase, candidate.Success, candidate.Message);
 verifyEqual(testCase, candidate.FinalTime_s, 22, "AbsTol", 1e-12);
 verifyEqual(testCase, candidate.MotionDuration_s, 20, ...
     "AbsTol", 1e-12);
-verifyEqual(testCase, ...
-    candidate.AnalyticDiagnostics.UniformEdgeDuration_s, 10, ...
-    "AbsTol", 1e-12);
+verifyEqual(testCase, sum(candidate.Polynomial.SegmentDuration_s), ...
+    20, "AbsTol", 1e-12);
 verifyTrue(testCase, candidate.Validation.GoalTimeSatisfied);
 end
 
@@ -112,9 +111,9 @@ verifyTrue(testCase, candidate.Success, candidate.Message);
 verifyTrue(testCase, candidate.Validation.VelocityWithinLimits);
 verifyTrue(testCase, candidate.Validation.AccelerationWithinLimits);
 verifyTrue(testCase, candidate.Validation.JerkWithinLimits);
-edgeDuration_s = candidate.AnalyticDiagnostics.UniformEdgeDuration_s;
+edgeDuration_s = 4 * candidate.Polynomial.SegmentDuration_s(1:4:end);
 for waypointIndex = 2:size(waypoint_deg, 1) - 1
-    waypointTime_s = (waypointIndex - 1) * edgeDuration_s;
+    waypointTime_s = sum(edgeDuration_s(1:waypointIndex - 1));
     [timeError_s, sampleIndex] = min( ...
         abs(candidate.time_s - waypointTime_s));
     verifyLessThanOrEqual(testCase, timeError_s, 1e-11);

@@ -43,8 +43,12 @@ if isempty(time_s) || any(~isfinite(time_s))
     return;
 end
 if nargin < 3 || isempty(segmentIndex)
-    segmentIndex = floor((time_s - polynomial.SegmentStartTime_s(1)) / ...
-        polynomial.SegmentDuration_s) + 1;
+    segmentStarts_s = double(polynomial.SegmentStartTime_s(:));
+    if isscalar(segmentStarts_s)
+        segmentIndex = ones(sampleCount, 1);
+    else
+        segmentIndex = sum(time_s >= segmentStarts_s(2:end).', 2) + 1;
+    end
     segmentIndex = min(polynomial.SegmentCount, max(1, segmentIndex));
 else
     segmentIndex = double(segmentIndex(:));
@@ -55,9 +59,13 @@ end
 %% Section 2: Evaluate Ascending-Power Records
 for sampleIndex = 1:sampleCount
     selectedSegmentIndex = segmentIndex(sampleIndex);
-    localTau = (time_s(sampleIndex) - ...
-        polynomial.SegmentStartTime_s(selectedSegmentIndex)) / ...
-        polynomial.SegmentDuration_s;
+    if isscalar(polynomial.SegmentDuration_s)
+        selectedDuration_s = polynomial.SegmentDuration_s;
+    else
+        selectedDuration_s = polynomial.SegmentDuration_s(selectedSegmentIndex);
+    end
+    localTau = (time_s(sampleIndex) - polynomial.SegmentStartTime_s(selectedSegmentIndex)) / ...
+        selectedDuration_s;
     localTau = min(1, max(0, localTau));
     position_deg(sampleIndex, :) = evaluateRecord( ...
         polynomial.positionPower_deg, selectedSegmentIndex, localTau);

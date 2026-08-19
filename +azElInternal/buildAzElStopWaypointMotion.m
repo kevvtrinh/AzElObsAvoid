@@ -51,8 +51,7 @@ candidate.SeedCorridorBoundary_deg = optionalCorridorBoundary(seed);
 stateTolerance = max(10 * options.ConstraintTolerance, 1e-7);
 %% Section 2: Check The Supported Geometric Contract
 endpointDerivative = [initialState.velocity_deg_s, ...
-    initialState.acceleration_deg_s2, goalState.velocity_deg_s, ...
-    goalState.acceleration_deg_s2];
+    initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
 if any(abs(endpointDerivative) > stateTolerance)
     candidate.Message = "The analytic seed motion supports only zero " + ...
         "initial and terminal velocity and acceleration.";
@@ -60,8 +59,7 @@ if any(abs(endpointDerivative) > stateTolerance)
     candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
     return;
 end
-hasMovingGoal = isfield(goalState, "targetTime_s") && ...
-    ~isempty(goalState.targetTime_s);
+hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
 if hasMovingGoal && goalTimeMode == "earliestArrival"
     candidate.Message = "Earliest arrival to a moving goal is not " + ...
         "supported by the analytic seed motion.";
@@ -69,8 +67,7 @@ if hasMovingGoal && goalTimeMode == "earliestArrival"
     candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
     return;
 end
-goalPosition_deg = azElInternal.goalPositionAtTime( ...
-    goalState, goalState.time_s);
+goalPosition_deg = azElInternal.goalPositionAtTime(goalState, goalState.time_s);
 seedPosition_deg = double(seed.position_deg);
 endpointError_deg = max(abs([ ...
     seedPosition_deg(1, :) - initialState.position_deg, ...
@@ -83,11 +80,7 @@ if endpointError_deg > stateTolerance
     return;
 end
 edgeDelta_deg = diff(seedPosition_deg, 1, 1);
-edgeLength_deg = vecnorm(edgeDelta_deg, 2, 2);
-zeroLengthTolerance_deg = max(1e-12, ...
-    100 * eps(max(1, max(abs(seedPosition_deg), [], "all"))));
-hasStationarySegment = any(edgeLength_deg <= zeroLengthTolerance_deg);
-%% Section 3: Select One Certified Uniform Edge Duration
+%% Section 3: Select Certified Edge Durations
 % Four equal polynomial records per edge tighten the validator's Bernstein
 % bounds. Their dimensionless coefficient bounds are exact rational values
 % for velocity and acceleration and the exact jerk maximum.
@@ -103,10 +96,15 @@ accelerationDuration_s = sqrt(max( ...
 jerkDuration_s = nthroot(max( ...
     jerkCoefficient * abs(edgeDelta_deg) ./ ...
     limits.maxJerk_deg_s3, [], 2), 3);
-edgeMinimumDuration_s = max([velocityDuration_s, ...
-    accelerationDuration_s, jerkDuration_s], [], 2);
+edgeMinimumDuration_s = max([velocityDuration_s, accelerationDuration_s, jerkDuration_s], [], 2);
 minimumUniformEdgeDuration_s = max(edgeMinimumDuration_s);
 edgeCount = size(edgeDelta_deg, 1);
+edgeFraction = diff(double(seed.tau(:)));
+if numel(edgeFraction) ~= edgeCount || any(~isfinite(edgeFraction)) || ...
+        any(edgeFraction <= 0) || abs(sum(edgeFraction) - 1) > 1e-9
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidSeedTimeLaw", ...
+        "seed.tau must increase from zero to one across all seed rows.");
+end
 availableDuration_s = goalState.time_s - initialState.time_s;
 if availableDuration_s <= 0
     candidate.Message = "The goal time must be after the initial time.";
@@ -115,51 +113,50 @@ if availableDuration_s <= 0
     return;
 end
 if goalTimeMode == "fixedArrival"
-    uniformEdgeDuration_s = availableDuration_s / edgeCount;
-    if uniformEdgeDuration_s < minimumUniformEdgeDuration_s
+    minimumMotionDuration_s = sum(edgeMinimumDuration_s);
+    if availableDuration_s < minimumMotionDuration_s
         candidate.Message = "The fixed-arrival time is too short for the " + ...
             "certified stop-at-waypoint profile.";
         candidate.TerminationReason = "fixedArrivalInfeasible";
         candidate.AnalyticDiagnostics = analyticDiagnostics( ...
             seedPosition_deg, edgeMinimumDuration_s, ...
-            minimumUniformEdgeDuration_s, uniformEdgeDuration_s, ...
+            minimumUniformEdgeDuration_s, NaN(edgeCount, 1), ...
             limits);
         candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
         return;
     end
+    edgeDuration_s = edgeMinimumDuration_s + ...
+        (availableDuration_s - minimumMotionDuration_s) * edgeFraction;
 else
     % This small scale prevents a roundoff-only limit failure at equality.
     durationRoundoffScale = 1 + 32 * eps;
-    timedSeedDuration_s = 0;
-    if hasStationarySegment && isfinite(seed.EstimatedDuration_s)
-        timedSeedDuration_s = seed.EstimatedDuration_s / edgeCount;
+    edgeDuration_s = durationRoundoffScale * edgeMinimumDuration_s;
+    if any(edgeMinimumDuration_s == 0) && isfinite(seed.EstimatedDuration_s)
+        edgeDuration_s = max(edgeDuration_s, seed.EstimatedDuration_s * edgeFraction);
     end
-    uniformEdgeDuration_s = durationRoundoffScale * max( ...
-        minimumUniformEdgeDuration_s, timedSeedDuration_s);
-    motionDuration_s = edgeCount * uniformEdgeDuration_s;
+    edgeDuration_s = max(edgeDuration_s, 1e-3 * edgeFraction);
+    motionDuration_s = sum(edgeDuration_s);
     if motionDuration_s > availableDuration_s + stateTolerance
         candidate.Message = "The certified stop-at-waypoint profile does " + ...
             "not fit in the goal-time window.";
         candidate.TerminationReason = "timeWindowInfeasible";
         candidate.AnalyticDiagnostics = analyticDiagnostics( ...
             seedPosition_deg, edgeMinimumDuration_s, ...
-            minimumUniformEdgeDuration_s, uniformEdgeDuration_s, ...
+            minimumUniformEdgeDuration_s, edgeDuration_s, ...
             limits);
         candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
         return;
     end
 end
 %% Section 4: Build And Sample The Exact Quintic Motion
-finalTime_s = initialState.time_s + edgeCount * uniformEdgeDuration_s;
-polynomial = buildPolynomial( ...
-    seedPosition_deg, initialState.time_s, uniformEdgeDuration_s);
+finalTime_s = initialState.time_s + sum(edgeDuration_s);
+polynomial = buildPolynomial(seedPosition_deg, initialState.time_s, edgeDuration_s);
 [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
     jerk_deg_s3] = samplePolynomial(polynomial, options.SampleTime_s);
 candidate.ConstructionFeasible = true;
 candidate.FinalTime_s = finalTime_s;
 candidate.MotionDuration_s = finalTime_s - initialState.time_s;
-candidate.IntegratedSquaredJerk_deg2_s5 = 720 * ...
-    sum(edgeDelta_deg.^2, "all") / uniformEdgeDuration_s^5;
+candidate.IntegratedSquaredJerk_deg2_s5 = 720 * sum(sum(edgeDelta_deg.^2, 2) ./ edgeDuration_s.^5);
 candidate.MaximumConstraintViolation = 0;
 candidate.time_s = time_s;
 candidate.position_deg = position_deg;
@@ -168,17 +165,14 @@ candidate.acceleration_deg_s2 = acceleration_deg_s2;
 candidate.jerk_deg_s3 = jerk_deg_s3;
 candidate.Polynomial = polynomial;
 if ~isempty(candidate.SeedCorridorBoundary_deg)
-    % Equal edge durations make a uniform waypoint time law exact for this
-    % stop profile. The validator still verifies original-obstacle
-    % containment and complete polynomial separation before acceptance.
+    % The corridor association follows the selected waypoint time law.
     corridorSeed = seed;
-    corridorSeed.tau = linspace(0, 1, edgeCount + 1).';
-    candidate.SeedCorridor = azElInternal.buildSeedCorridor( ...
-        corridorSeed, polynomial.SegmentCount);
+    corridorSeed.tau = [0; cumsum(edgeDuration_s)] / sum(edgeDuration_s);
+    candidate.SeedCorridor = azElInternal.buildSeedCorridor(corridorSeed, polynomial.SegmentCount);
 end
 candidate.AnalyticDiagnostics = analyticDiagnostics( ...
     seedPosition_deg, edgeMinimumDuration_s, ...
-    minimumUniformEdgeDuration_s, uniformEdgeDuration_s, limits);
+    minimumUniformEdgeDuration_s, edgeDuration_s, limits);
 %% Section 5: Independently Validate The Complete Motion
 validation = validateAzElTrajectory( ...
     candidate, obstacles, initialState, goalState, limits, options);
@@ -242,7 +236,8 @@ requireFields(options, ["GoalTimeMode", "SampleTime_s", ...
     "ConstraintTolerance", "CollisionClearanceTolerance_deg", ...
     "CollisionMinimumTimeStep_s", "AllowAzimuthWrapping", ...
     "AzimuthInterval_deg", "ElevationInterval_deg"], "options");
-requireFields(seed, ["Index", "Source", "position_deg"], "seed");
+requireFields(seed, ["Index", "Source", "position_deg", "tau", ...
+    "EstimatedDuration_s"], "seed");
 validateattributes(initialState.time_s, {'numeric'}, ...
     {'real', 'finite', 'scalar'});
 validateattributes(goalState.time_s, {'numeric'}, ...
@@ -303,14 +298,15 @@ else
     boundary_deg = zeros(0, 2);
 end
 end
-function polynomial = buildPolynomial( ...
-        waypoint_deg, initialTime_s, uniformEdgeDuration_s)
+function polynomial = buildPolynomial(waypoint_deg, initialTime_s, edgeDuration_s)
 % PURPOSE
-%   - Expand each rest-to-rest quintic into four equal-duration records.
+%   - Expand each rest-to-rest quintic into four records per seed edge.
 subsegmentCountPerEdge = 4;
 edgeCount = size(waypoint_deg, 1) - 1;
 segmentCount = subsegmentCountPerEdge * edgeCount;
-segmentDuration_s = uniformEdgeDuration_s / subsegmentCountPerEdge;
+segmentDuration_s = repelem(edgeDuration_s(:) / subsegmentCountPerEdge, ...
+    subsegmentCountPerEdge);
+segmentDuration_s = segmentDuration_s(:);
 positionPower_deg = zeros(segmentCount, 2, 6);
 velocityPower_deg_s = zeros(segmentCount, 2, 5);
 accelerationPower_deg_s2 = zeros(segmentCount, 2, 4);
@@ -329,11 +325,11 @@ for edgeIndex = 1:edgeCount
         positionPower = edgeDelta_deg.' .* profilePower;
         positionPower(:, 1) = positionPower(:, 1) + edgeStart_deg.';
         velocityPower = positionPower(:, 2:end) .* (1:5) / ...
-            segmentDuration_s;
+            segmentDuration_s(segmentIndex);
         accelerationPower = velocityPower(:, 2:end) .* (1:4) / ...
-            segmentDuration_s;
+            segmentDuration_s(segmentIndex);
         jerkPower = accelerationPower(:, 2:end) .* (1:3) / ...
-            segmentDuration_s;
+            segmentDuration_s(segmentIndex);
         positionPower_deg(segmentIndex, :, :) = positionPower;
         velocityPower_deg_s(segmentIndex, :, :) = velocityPower;
         accelerationPower_deg_s2(segmentIndex, :, :) = ...
@@ -341,9 +337,8 @@ for edgeIndex = 1:edgeCount
         jerkPower_deg_s3(segmentIndex, :, :) = jerkPower;
     end
 end
-segmentStartTime_s = initialTime_s + ...
-    (0:segmentCount - 1).' * segmentDuration_s;
-finalTime_s = initialTime_s + edgeCount * uniformEdgeDuration_s;
+segmentStartTime_s = initialTime_s + [0; cumsum(segmentDuration_s(1:end - 1))];
+finalTime_s = initialTime_s + sum(edgeDuration_s);
 terminalPosition_deg = sum(positionPower, 2).';
 terminalVelocity_deg_s = sum(velocityPower, 2).';
 terminalAcceleration_deg_s2 = sum(accelerationPower, 2).';
@@ -394,21 +389,20 @@ time_s = unique([uniformTime_s; polynomial.SegmentStartTime_s; ...
 end
 function diagnostics = analyticDiagnostics(waypoint_deg, ...
         edgeMinimumDuration_s, minimumUniformEdgeDuration_s, ...
-        uniformEdgeDuration_s, limits)
+        edgeDuration_s, limits)
 % PURPOSE
 %   - Report exact peaks and conservative Bernstein certificate peaks.
 edgeDelta_deg = diff(waypoint_deg, 1, 1);
-maximumAxisDisplacement_deg = max(abs(edgeDelta_deg), [], 1);
-if isfinite(uniformEdgeDuration_s) && uniformEdgeDuration_s > 0
-    exactPeakVelocity_deg_s = (15 / 8) * ...
-        maximumAxisDisplacement_deg / uniformEdgeDuration_s;
-    exactPeakAcceleration_deg_s2 = (10 * sqrt(3) / 3) * ...
-        maximumAxisDisplacement_deg / uniformEdgeDuration_s^2;
-    exactPeakJerk_deg_s3 = 60 * maximumAxisDisplacement_deg / ...
-        uniformEdgeDuration_s^3;
+if all(isfinite(edgeDuration_s)) && all(edgeDuration_s > 0)
+    exactPeakVelocity_deg_s = max((15 / 8) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s, [], 1);
+    exactPeakAcceleration_deg_s2 = max((10 * sqrt(3) / 3) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^2, [], 1);
+    exactPeakJerk_deg_s3 = max(60 * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^3, [], 1);
     certifiedPeakVelocity_deg_s = exactPeakVelocity_deg_s;
-    certifiedPeakAcceleration_deg_s2 = (25 / 4) * ...
-        maximumAxisDisplacement_deg / uniformEdgeDuration_s^2;
+    certifiedPeakAcceleration_deg_s2 = max((25 / 4) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^2, [], 1);
     certifiedPeakJerk_deg_s3 = exactPeakJerk_deg_s3;
     maximumLimitRatio = max([ ...
         certifiedPeakVelocity_deg_s ./ limits.maxVelocity_deg_s, ...
@@ -423,6 +417,10 @@ else
     certifiedPeakAcceleration_deg_s2 = [NaN NaN];
     certifiedPeakJerk_deg_s3 = [NaN NaN];
     maximumLimitRatio = NaN;
+end
+uniformEdgeDuration_s = NaN;
+if all(abs(edgeDuration_s - edgeDuration_s(1)) <= 1e-12)
+    uniformEdgeDuration_s = edgeDuration_s(1);
 end
 diagnostics = struct( ...
     "Profile", "restToRestQuintic", ...
