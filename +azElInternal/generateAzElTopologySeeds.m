@@ -118,7 +118,7 @@ end
 sideModes = [0 1 -1];
 baseNodePath = zeros(0, 1);
 for sideModeIndex = 1:numel(sideModes)
-    if numel(seeds) >= options.MaximumSeedCount - double(hasChangingObstacles)
+    if numel(seeds) >= options.MaximumSeedCount - double(hasChangingObstacles && ~usedDenseEnvelope)
         break;
     end
     allowedNode = sideAllowedNodes(nodePosition_deg, start_deg, goal_deg, ...

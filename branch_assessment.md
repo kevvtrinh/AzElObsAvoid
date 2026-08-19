@@ -2,13 +2,14 @@
 
 ## Evidence scope
 
-This assessment applies to the uncommitted seed-budget follow-up based on
-`689576a`. Static analysis found no messages in 62 MATLAB files. The three
+This assessment applies to the uncommitted dense seed-slot correction based on
+`822e7b9`. Static analysis found no messages in 62 MATLAB files. The three
 maintained test files passed 49 of 49 tests. The full maintained example set
 has not been rerun after this change. A focused 120-second moving/deforming
 U.S. run returned a validated analytic motion after the earlier generator used
-the full 360-second limit without attempting a motion. The old Plan 502 rows in
-`benchmark.csv` remain historical evidence for their recorded contracts.
+the full 360-second limit without attempting a motion. A focused 40-circle run
+also passed after the dense gate stopped reserving an unavailable timed-search
+slot. The old Plan 502 rows in `benchmark.csv` remain historical evidence.
 
 The duration header in `benchmark.csv` is now `MotionDuration_s`. A
 fixed-arrival duration is the configured horizon. It is not a measured minimum.

@@ -565,7 +565,7 @@ initialState = state(0, [-5 0], [0 0], [0 0]);
 goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
-options.MaximumSeedCount = 5;
+options.MaximumSeedCount = 2;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
     obstacle, initialState, goalState, limits, options, tic);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
