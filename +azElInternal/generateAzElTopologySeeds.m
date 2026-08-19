@@ -57,6 +57,31 @@ end
 sampleTimes_s = obstacleSampleTimes(obstacles, initialState.time_s, goalState.time_s);
 [sweptShape, usedDenseEnvelope] = azElInternal.denseSweptSeedEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], 10e3);
+hasChangingObstacles = obstacleHistoryChanges(obstacles, initialState.time_s, goalState.time_s);
+coverage = diagnostics.Coverage;
+coverage.TimedSearchSuppressionReason = "";
+diagnostics.SampleTimes_s = sampleTimes_s;
+if ~hasChangingObstacles
+    coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
+elseif usedDenseEnvelope
+    coverage.TimedSearchSuppressionReason = "timedQueryWorkLimit";
+else
+    coverage.TimedSearchAttempted = true;
+    coverage.TimedSearchUsesExactObstacles = true;
+    directTimedPosition_deg = [start_deg; goal_deg];
+    directTimedCost_deg = [0, directSeed.Length_deg; directSeed.Length_deg, 0];
+    [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
+        directTimedPosition_deg, directTimedCost_deg, obstacles, ...
+        initialState, goalState, limits, sampleTimes_s, options, planningTimer);
+    diagnostics = appendTimeRecord(diagnostics, timeRecord);
+    seeds = appendTimedSeed(seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
+end
+if toc(planningTimer) >= options.MaximumPlanningTime_s
+    coverage.TimedSearchSuppressionReason = "planningTimeLimitAfterDirectTimedSearch";
+    diagnostics.Coverage = coverage;
+    diagnostics.GeneratedSeedCount = numel(seeds);
+    return;
+end
 if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
     sampledNodes_deg = sweptShape.Vertices;
@@ -80,7 +105,6 @@ spatialSeedTemplate.UsesReducedGeometry = usedDenseEnvelope || clusterCreated;
     sweptShape, start_deg, goal_deg, options, planningTimer);
 diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
-diagnostics.SampleTimes_s = sampleTimes_s;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
 diagnostics.NodePosition_deg = nodePosition_deg;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
@@ -89,19 +113,11 @@ diagnostics.RejectedEdges_deg = graphRecord.RejectedEdges_deg;
 diagnostics.RejectedTransitionCount = graphRecord.RejectedTransitionCount;
 diagnostics.SampledShapeCount = sampledShapeCount;
 diagnostics.DenseSeedEnvelopeUsed = usedDenseEnvelope;
-coverage = diagnostics.Coverage;
 coverage.ExactSpatialProposalUsed = ~spatialSeedTemplate.UsesReducedGeometry;
 coverage.ReducedSpatialProposalUsed = spatialSeedTemplate.UsesReducedGeometry;
-hasChangingObstacles = obstacleHistoryChanges(obstacles, initialState.time_s, goalState.time_s);
 coverage.CompletenessLossReason = "boundedSeedNodeAndTimeSearch";
 if spatialSeedTemplate.UsesReducedGeometry
     coverage.CompletenessLossReason = "reducedSpatialProposalAndBoundedSearch";
-end
-coverage.TimedSearchSuppressionReason = "";
-if ~hasChangingObstacles
-    coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
-elseif usedDenseEnvelope
-    coverage.TimedSearchSuppressionReason = "timedQueryWorkLimit";
 end
 if usedDenseEnvelope
     diagnostics.DenseSeedEnvelope_deg = sweptShape.Vertices;
@@ -135,39 +151,28 @@ for sideModeIndex = 1:numel(sideModes)
     if routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
         continue;
     end
-    % The public seed cap bounds this public structure growth.
-    seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, ...
-        numel(seeds) + 1, route_deg, ...
+    seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, route_deg, ...
         directDuration_s, availableDuration_s, limits); %#ok<AGROW>
 end
 %% Section 4: Search The Time-Expanded Visibility Graph
 if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
-    coverage.TimedSearchAttempted = true;
-    coverage.TimedSearchUsesExactObstacles = true;
-    directTimedCost_deg = [0, norm(goal_deg - start_deg); norm(goal_deg - start_deg), 0];
-    [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
-        nodePosition_deg(1:2, :), directTimedCost_deg, ...
-        obstacles, initialState, goalState, limits, sampleTimes_s, options, planningTimer);
-    diagnostics = appendTimeRecord(diagnostics, timeRecord);
-    seeds = appendTimedSeed(seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
     if toc(planningTimer) >= options.MaximumPlanningTime_s
-        coverage.TimedSearchSuppressionReason = "planningTimeLimitAfterDirectTimedSearch";
-    elseif numel(seeds) < options.MaximumSeedCount
+        coverage.TimedSearchSuppressionReason = "planningTimeLimitBeforeExtendedTimedSearch";
+    else
         coverage.ExtendedTimedSearchAttempted = true;
         maximumTimedNodeCount = 24;
         directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
-        timedPosition_deg = [start_deg; goal_deg; directNode_deg; ...
-            selectCandidateVertices(sampledNodes_deg, start_deg, ...
+        timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
+            sampledNodes_deg, start_deg, ...
             goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
-        timedEdgeCost_deg = hypot(timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
+        timedEdgeCost_deg = hypot( ...
+            timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
             timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
         [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
             timedPosition_deg, timedEdgeCost_deg, obstacles, ...
             initialState, goalState, limits, sampleTimes_s, options, planningTimer);
         diagnostics = appendTimeRecord(diagnostics, timeRecord);
         seeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
-    else
-        coverage.TimedSearchSuppressionReason = "seedLimitAfterDirectTimedSearch";
     end
 end
 diagnostics.Coverage = coverage;
@@ -192,9 +197,7 @@ if numel(seeds) < options.MaximumSeedCount && numel(baseNodePath) > 2
         if routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
             continue;
         end
-        % The public seed cap is nine, so this growth remains bounded.
-        seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, ...
-            numel(seeds) + 1, route_deg, ...
+        seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, route_deg, ...
             directDuration_s, availableDuration_s, limits); %#ok<AGROW>
     end
 end
@@ -639,8 +642,7 @@ for seedIndex = 1:numel(seeds)
     end
 end
 end
-function seeds = appendTimedSeed( ...
-        seeds, seedTemplate, route_deg, routeTime_s)
+function seeds = appendTimedSeed(seeds, seedTemplate, route_deg, routeTime_s)
 %   - Append one distinct timed visibility route within the public seed cap.
 if isempty(route_deg)
     return;
@@ -665,8 +667,7 @@ if sideMode == 0
 end
 sideValue_deg2 = signedSide( ...
     nodePosition_deg(:, 1), nodePosition_deg(:, 2), start_deg, goal_deg);
-sideTolerance_deg2 = tolerance_deg * ...
-    max(1, norm(goal_deg - start_deg));
+sideTolerance_deg2 = tolerance_deg * max(1, norm(goal_deg - start_deg));
 if sideMode > 0
     allowedNode = sideValue_deg2 >= -sideTolerance_deg2;
 else
@@ -674,8 +675,7 @@ else
 end
 allowedNode(1:2) = true;
 end
-function [nodePath, record] = shortestVisibilityPath( ...
-        edgeCost_deg, allowedNode, nodePosition_deg)
+function [nodePath, record] = shortestVisibilityPath(edgeCost_deg, allowedNode, nodePosition_deg)
 %   - Run deterministic Dijkstra search and retain expanded visibility nodes.
 nodeCount = size(edgeCost_deg, 1);
 costToCome_deg = Inf(nodeCount, 1);

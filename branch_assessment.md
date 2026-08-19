@@ -44,8 +44,8 @@ proposal set complete. A reduced failure is not proof that no path exists.
 
 The fast motion stops at each geometric waypoint and assigns one common edge
 duration. It can be slower than a through-velocity motion. It can also reject a
-feasible nonuniform edge schedule. Timed waits, nonzero endpoint derivatives,
-and earliest moving-goal intercepts require HS3.
+feasible nonuniform edge schedule. A timed seed can define stationary waits.
+Nonzero endpoint derivatives and earliest moving-goal intercepts require HS3.
 
 ### 3. Local optimization and cooperative deadlines
 

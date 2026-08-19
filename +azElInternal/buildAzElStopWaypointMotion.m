@@ -23,9 +23,8 @@ function candidate = buildAzElStopWaypointMotion( ...
 %       GoalTimeMode, SampleTime_s, workspace, and validation fields are
 %       required. earliestArrival minimizes this fixed profile family.
 %   - seed (scalar geometric-seed struct)
-%       Index, Source, and N-by-2 position_deg are required. Consecutive
-%       duplicate positions, which can represent a timed wait, are not
-%       supported by this geometric construction.
+%       Index, Source, N-by-2 position_deg, and time-law data are required.
+%       Consecutive duplicate positions make certified stationary waits.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
@@ -87,13 +86,7 @@ edgeDelta_deg = diff(seedPosition_deg, 1, 1);
 edgeLength_deg = vecnorm(edgeDelta_deg, 2, 2);
 zeroLengthTolerance_deg = max(1e-12, ...
     100 * eps(max(1, max(abs(seedPosition_deg), [], "all"))));
-if any(edgeLength_deg <= zeroLengthTolerance_deg)
-    candidate.Message = "The geometric seed contains a stationary " + ...
-        "segment. Timed waits require a separate construction.";
-    candidate.TerminationReason = "unsupportedStationarySeedSegment";
-    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
-    return;
-end
+hasStationarySegment = any(edgeLength_deg <= zeroLengthTolerance_deg);
 %% Section 3: Select One Certified Uniform Edge Duration
 % Four equal polynomial records per edge tighten the validator's Bernstein
 % bounds. Their dimensionless coefficient bounds are exact rational values
@@ -137,8 +130,12 @@ if goalTimeMode == "fixedArrival"
 else
     % This small scale prevents a roundoff-only limit failure at equality.
     durationRoundoffScale = 1 + 32 * eps;
-    uniformEdgeDuration_s = ...
-        durationRoundoffScale * minimumUniformEdgeDuration_s;
+    timedSeedDuration_s = 0;
+    if hasStationarySegment && isfinite(seed.EstimatedDuration_s)
+        timedSeedDuration_s = seed.EstimatedDuration_s / edgeCount;
+    end
+    uniformEdgeDuration_s = durationRoundoffScale * max( ...
+        minimumUniformEdgeDuration_s, timedSeedDuration_s);
     motionDuration_s = edgeCount * uniformEdgeDuration_s;
     if motionDuration_s > availableDuration_s + stateTolerance
         candidate.Message = "The certified stop-at-waypoint profile does " + ...

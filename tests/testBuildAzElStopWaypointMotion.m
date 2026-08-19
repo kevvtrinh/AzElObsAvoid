@@ -189,6 +189,30 @@ verifyEqual(testCase, candidate.TerminationReason, ...
 verifyEmpty(testCase, candidate.time_s);
 end
 
+function testTimedWaitUsesTheSeedDuration(testCase)
+% PURPOSE
+%   - Verify a stationary timed edge waits for a different moving barrier.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(20, [4 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [2 2], [4 4]);
+options = plannerOptions("earliestArrival");
+seed = geometricSeed([0 0; 0 0; 4 0]);
+seed.Source = "directWait";
+seed.tau = [0; 0.5; 1];
+seed.EstimatedDuration_s = 10;
+obstacle = makeAzElObstacleData( ...
+    "temporary barrier", [0; 4], ...
+    [1.5; 2.5; 2.5; 1.5], [-1; -1; 1; 1], 0);
+candidate = azElInternal.buildAzElStopWaypointMotion( ...
+    obstacle, initialState, goalState, limits, options, seed);
+verifyTrue(testCase, candidate.Success, candidate.Message);
+verifyEqual(testCase, candidate.MotionDuration_s, 10, "AbsTol", 1e-10);
+beforeMotion = candidate.time_s <= 5;
+verifyEqual(testCase, candidate.position_deg(beforeMotion, :), ...
+    zeros(nnz(beforeMotion), 2), "AbsTol", 1e-11);
+verifyTrue(testCase, candidate.Validation.CollisionFree);
+end
+
 function testEarlyFailureKeepsValidationFieldOrder(testCase)
 % PURPOSE
 %   - Verify early and validated candidates use one validation schema.

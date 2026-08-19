@@ -168,9 +168,9 @@ properties:
   and continuous collision state.
 
 This motion family supports zero initial and terminal derivatives. It supports
-a fixed-position goal and a moving goal with a fixed arrival time. It rejects
-an earliest-arrival moving goal, nonzero endpoint derivatives, and a seed that
-needs a stationary wait segment. These are supported through HS3 when the
+a fixed-position goal, a moving goal with a fixed arrival time, and stationary
+wait edges with a finite seed duration. It rejects an earliest-arrival moving
+goal and nonzero endpoint derivatives. HS3 handles these cases when the
 general optimizer finds a valid solution.
 
 The first motion can use an exact seed corridor. It can use a reduced spatial
