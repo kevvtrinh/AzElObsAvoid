@@ -5,7 +5,7 @@ function result = exampleObstacleFreeAzElMotion(exampleOverrides)
 %   result = exampleObstacleFreeAzElMotion(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Demonstrate fixed-arrival HS3 motion without obstacle constraints.
+%   - Demonstrate earliest-arrival motion without obstacle constraints.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
@@ -27,7 +27,7 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "fixedArrival", ...
+    "GoalTimeMode", "earliestArrival", ...
     "DirectSeedOnly", true, "MaximumSeedCount", 1, ...
     "CollocationSegmentCount", 6, "MaximumPlanningTime_s", 20));
 
