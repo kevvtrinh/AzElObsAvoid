@@ -2,163 +2,144 @@
 
 ## Evidence scope
 
-This assessment applies to planner commit `c5fb6e9` and geographic example
-budget commit `f1014e7` on branch `plan-325`.
+This assessment applies to source commit `b238e6e` on branch `plan-325`.
 
-- All 18 maintained headless examples completed in separate MATLAB processes.
+- All 18 maintained examples ran in separate MATLAB processes.
 - Seventeen examples returned validated success.
 - The no-path example returned the expected validated failure.
-- The zero-input visible example passed and created four figures.
-- The visible no-path example passed failure validation and created one search
-  diagnostic figure.
-- The focused test result is 50 passed, 0 failed, and 0 incomplete. The summed
-  MATLAB test duration is 56.414948200 seconds.
+- All 13 fixed-goal examples use earliest arrival.
+- Five moving-target examples keep their target-time policy.
+- The visible success and visible failure plot checks passed.
+- All 51 tests passed.
 - Code Analyzer checked 52 MATLAB files and returned 0 messages.
 
-The implementation has 26 production MATLAB files and 6,997 physical
-production lines. The complete MATLAB tree has 52 files and 11,588 physical
-lines. The production and complete hard limits pass. The 10,500-line
-complete-tree target does not pass.
+The implementation has 26 production MATLAB files and 7,000 physical
+production lines. The complete MATLAB tree has 52 files and 11,621 physical
+lines. Both hard limits pass. The preferred 10,500-line complete-tree target
+does not pass.
 
-## Recommended design
+## Current judgment
 
-I would use the Plan 325 structure again. I would not combine complete planner
-stacks from the other branches.
+Plan 325 remains the best compact rebuild candidate in this repository. It
+uses one public planner, a finite deterministic proposal set, a certified
+finite-jerk first motion, bounded local HS3 work, and one independent
+validator. It does not combine complete planner stacks from other branches.
 
-The useful structure is:
+The latest example policy is better. Fixed-goal examples now measure earliest
+validated arrival. Moving-target examples can still state an exact intercept
+time when that time is part of the request.
 
-1. Keep one public planner and one stable result.
-2. Generate a small deterministic set of geometry and timed proposals.
-3. Build a certified finite-jerk motion as soon as one proposal supports it.
-4. Validate that motion with the independent validator.
-5. Use bounded HS3 only when it is required or when it can improve a valid
-   motion.
-6. Keep original protected obstacle histories as the final collision
-   authority.
+## Main strengths
 
-This structure gave one path for static, moving, and deforming obstacles;
-fixed and earliest arrival; timed waiting; and moving goals. It also kept
-expected failure results and search diagnostics stable.
+### 1. Physical checks remain authoritative
 
-## Largest strengths
+Every successful headless run passed collision, kinematic, and applicable
+certificate checks. The validator checks polynomial consistency, endpoint
+events, state history, continuity, physical limits, safety provenance, and
+moving collision intervals.
 
-### 1. Correctness before local optimization
+The no-path case returned a stable failure result and usable search
+diagnostics. A failed finite proposal set is not reported as a proof that no
+physical path exists.
 
-The analytic path can return a valid finite-jerk motion before HS3 completes.
-The planner does not accept it until the independent validator checks the
-polynomial coefficients, event endpoints, sampled state history, continuity,
-physical limits, safety provenance, and moving collision intervals.
+### 2. The slalom now tests the intended topology
 
-The final matrix had 17 validated successes. Every successful result passed
-collision, kinematic, and applicable certificate checks. The no-path case
-returned `noValidatedSeed` and a valid diagnostic record.
+The slalom elevation interval is `[-5 5]` degrees. The protected upper
+barriers reach the top bound, and the protected lower barrier reaches the
+bottom bound. A route cannot pass above or below the complete obstacle set.
+The returned route must alternate around the barriers.
 
-### 2. Compact public structure
+The final slalom motion passed independent validation. It had a
+16.0425349764-degree seed, a 16.7453475476-degree returned motion, and a
+12.1834571132-second duration.
 
-One public planner owns input resolution, stage control, selection, and the
-stable result. Internal functions own seed generation, analytic motion, HS3,
-polynomial evaluation, and validation. No production file exceeds 900 lines.
+### 3. Earliest-arrival results are now comparable by meaning
 
-The implementation is much smaller than the large branch families that kept
-snapshot graphs, SIPP, several retimers, and competing planner paths.
+The fixed-goal examples no longer report forced horizon durations. Examples
+that changed from fixed to earliest arrival returned these durations:
 
-### 3. Useful results on the stress cases
+| Example | Previous fixed duration (s) | Earliest duration (s) |
+| --- | ---: | ---: |
+| Alternating slalom | 22 | 12.1834571132 |
+| Basic azimuth/elevation planning | 12 | 7.81726894407 |
+| Dense concave obstacle | 15 | 8.7986387782 |
+| Moving barrier | 12 | 10.5465620376 |
+| Moving circle | 15 | 12.0310423352 |
+| Obstacle free | 8 | 5 |
 
-- The 40-circle case returned a 64.5557855485-second motion in 25.6657512
-  seconds. The spatial reference returned a 77.022740-second motion in
-  40.793195 seconds. Plan 325 used a longer motion path.
-- The moving-U.S. case returned a 25.614496552-second motion. The spatial
-  reference returned 29.667632 seconds. Plan 325 took 138.9406737 seconds of
-  wall time. The spatial reference took 50.403850 seconds.
-- The large-U case returned a 34.9425880405-degree motion in
-  38.5495931039 seconds. The spatial reference returned a 35.012080-degree
-  motion in 43.976516 seconds. Plan 325 wall time was 62.3235920 seconds,
-  compared with 1.546111 seconds.
-- The two-U case took 62.7020007 seconds, compared with 91.218125 seconds for
-  Plan 502. The returned motion lengths and durations were almost equal.
+These are single runs. They are not repeated performance studies.
 
-These values show that no one planner wins every metric. The Plan 325
-architecture is useful, but its expensive cases still need work.
+### 4. Dense cases still return useful motions
 
-## Largest weaknesses
+- The 40-circle case returned a 64.5710759977-second motion in
+  31.6790719 seconds.
+- The native moving-U.S. case returned a 25.614496552-second motion in
+  167.6347756 seconds.
+- The two-opposing-U case returned a 22.875124576-second motion in
+  64.9545585 seconds.
+- The large single-U case returned a 26.4922113988-second motion in
+  50.8781644 seconds after its work limit increased to 75 seconds.
 
-### 1. Proposal coverage is incomplete
+### 5. Plot output again has a stable visual language
+
+The plotter uses the `main` branch route and obstacle style without restoring
+the old large plotting implementation. The current plotter keeps the Plan 325
+result schema and diagnostics. Programmatic checks verified the colors, line
+styles, visible success figures, and visible failure figures.
+
+## Main weaknesses
+
+### 1. Proposal coverage remains incomplete
 
 Spatial and time-layer searches use finite samples. Dense-envelope and cluster
-reductions can remove a useful topology. Dense moving histories can exceed the
-timed-query work limit. The planner then omits the timed family and reports
-incomplete coverage.
+reductions can remove a useful topology. Final validation prevents false
+success, but it cannot make the proposal search complete.
 
-Final validation prevents false success. It cannot make the proposal search
-complete. A bounded failure is not proof that no feasible path exists.
+### 2. Runtime is still high and variable
 
-### 2. The first motion is conservative
+The native moving-U.S. case took 167.6347756 seconds. The three-region extreme
+U.S. sequence took 488.9379664 seconds. The large-U example failed at its old
+35-second work limit because validation did not finish. It passed with a
+75-second work limit.
 
-The analytic motion stops at each geometric waypoint. It assigns a certified
-duration to each edge. This gives a fast correctness path, but it can be much
-slower than a through-velocity motion. Nonzero endpoint derivatives and
-earliest moving-goal intercepts require HS3.
+Deadline checks are cooperative. One active solver or geometry operation is
+not preempted. The result can return after a configured check deadline.
 
-The next motion improvement should be one general through-velocity primitive
-family with a continuous derivative certificate. It should not add another
-public planner.
+### 3. HS3 has numerical conditioning warnings
 
-### 3. Complex geometry can still be slow
+`exampleAzElPlanning`, `exampleMovingBarrierWait`, and the extreme U.S.
+sequence emitted fmincon conditioning warnings. Their returned motions passed
+independent validation, but the warnings show that solver scaling still needs
+work.
 
-The moving-U.S. run took 138.9406737 seconds. The full geographic sequence
-took 463.8727127 seconds. The large-U result took about 40 times the spatial
-reference wall time. These are material runtime limits.
+### 4. The first motion is conservative
 
-The final results reported zero deadline overrun. However, deadlines remain
-cooperative. One active solver or geometry operation is not preempted.
+The analytic motion stops at each geometric waypoint. This gives a clear
+finite-jerk certificate, but it can be slower than a through-velocity motion.
+Nonzero endpoint derivatives and earliest moving-target intercepts require
+HS3.
 
-### 4. HS3 remains local and toolbox-dependent
+### 5. The preferred size target still fails
 
-HS3 uses a frozen local corridor and local nonlinear optimization. It can miss
-a feasible solution or select an unfavorable local solution. It requires
-Optimization Toolbox `fmincon`.
+The production code meets the 7,000-line hard limit exactly. The complete tree
+is 1,121 lines above the 10,500-line target. There is no remaining production
+size margin.
 
-### 5. Azimuth wrapping is restricted
+## Recommended next work
 
-Periodic obstacle images are not implemented. Wrapping is supported only for
-an obstacle-free fixed-position goal. Other wrapped requests return an
-identified unsupported-configuration error.
+1. Keep the current public interface and independent validator.
+2. Improve nonlinear scaling before adding a new solver stage.
+3. Cache prepared obstacle history data for dense timed queries.
+4. Add one general through-velocity finite-jerk primitive family.
+5. Reduce production code before any feature adds more lines.
+6. Keep moving-target time policy explicit in each target example.
 
-### 6. The preferred size target failed
+## Final claim
 
-The 7,000-line production hard limit passes by three lines. The 12,000-line
-complete hard limit passes by 412 lines. The preferred 10,500-line complete
-target fails by 1,088 lines. The branch is compact relative to the other full
-planner branches, but it did not reach that target.
+Plan 325 is a compact, useful planner candidate. It supports static, moving,
+and deforming obstacles; fixed and earliest target interception; timed waits;
+and stable failure diagnostics.
 
-## Lessons from failed runs
-
-- An early moving-U.S. attempt spent the complete 360-second budget in seed
-  generation. Expensive proposal stages now have bounded work and preserve
-  time for motion validation.
-- An early dense 40-circle attempt reserved a timed-search slot that it could
-  not use. The final dense work gate keeps the available spatial proposal.
-- An early opening-U result failed independent example validation. The timed
-  wait invariant corrected it and produced the final 10-degree motion.
-- Hawaii failed twice with a 120-second geographic-region budget. It passed in
-  an isolated 180-second run. The final complete sequence uses an explicit
-  full-region budget, and all three regions pass.
-- A numerical-equivalence test was too strict at `1e-10`. The observed
-  difference was `6.96e-9`. The final `1e-8` tolerance remains below the
-  planner constraint tolerance and does not change physical results.
-
-These failures support stage budgets, independent validation, and honest
-coverage reports. They do not support scenario-specific routes or hidden
-waypoints.
-
-## Final judgment
-
-Plan 325 is a good compact planner candidate. It has a clear public contract,
-a fast certified feasibility path, a bounded optimizer, strong independent
-validation, and useful search diagnostics. The complete maintained matrix
-supports this judgment.
-
-It is not a complete or globally optimal planner. It also does not meet the
-10,500-line complete-tree target. The next work should improve the general
-through-velocity motion family and reduce dense-geometry query cost. It should
-keep the current public interface and independent validator.
+It is not complete or globally optimal. Its dense cases can be slow. The next
+changes should improve general numerical scaling and motion quality. They
+should not add scenario-specific routes or another public planner.

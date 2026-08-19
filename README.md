@@ -159,6 +159,10 @@ regions, accepted and rejected graph edges, explored nodes, the frontier, the
 best partial route, and the selected motion. A failed result can therefore
 produce a diagnostic plot without a selected trajectory.
 
+The plotter uses the `main` branch visual conventions for original and
+protected obstacles, candidate and selected routes, returned motion, moving
+targets, and animation state.
+
 ## Maintained examples
 
 The `examples` directory contains 14 main scenarios and four focused
@@ -170,6 +174,9 @@ expected failure.
 Every example uses the same planner, validator, and plotter. A failed result
 can show the retained visibility edges, rejected edges, explored states,
 frontier data, and best partial seed without a second planner call.
+
+Fixed-goal examples use earliest arrival. Moving-target examples state either
+an earliest intercept or a specified intercept time as part of the request.
 
 Run an example without figures as follows:
 
