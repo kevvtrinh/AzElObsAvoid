@@ -21,7 +21,8 @@ canonical original and protected obstacles
 The first-motion constructor uses one rest-to-rest quintic segment on each
 geometric edge. It stops at each waypoint. This family is available for a
 fixed-position goal with zero initial and terminal velocity and acceleration.
-The planner validates each first motion before it can become a result.
+The planner validates first motions in seed order. It stops this stage at the
+first pass before it spends the bounded optional HS3 improvement budget.
 
 The separated third-order Hermite-Simpson (HS3) solve is an optional
 improvement stage. It is enabled by default. Its default improvement budget is
@@ -95,8 +96,8 @@ physical constraints permit this change.
 
 The planner uses two motion stages:
 
-1. It constructs and independently validates each supported deterministic
-   stop-at-waypoint motion.
+1. It constructs deterministic stop-at-waypoint motions in seed order until
+   one passes independent validation.
 2. It runs bounded HS3 improvement when `EnableHs3Improvement` is true. It
    also runs HS3 when no valid first motion exists.
 

@@ -171,6 +171,9 @@ for seedIndex = 1:numel(seeds)
             seeds(seedIndex).Source, firstCandidate.Validation.Passed, ...
             firstCandidate.FinalTime_s, firstCandidate.TerminationReason);
     end
+    if firstCandidate.Validation.Passed
+        break;
+    end
 end
 %% Section 5: Apply Optional HS3 Improvement
 firstMotionIndices = find([seedSummaries.ValidationPassed]).';

@@ -2,14 +2,14 @@
 
 ## Evidence scope
 
-This assessment applies to the uncommitted dense seed-slot correction based on
-`822e7b9`. Static analysis found no messages in 62 MATLAB files. The three
+This assessment applies to the uncommitted first-motion stopping correction
+based on `9bcd410`. Static analysis found no messages in 62 MATLAB files. The three
 maintained test files passed 49 of 49 tests. The full maintained example set
-has not been rerun after this change. A focused 120-second moving/deforming
-U.S. run returned a validated analytic motion after the earlier generator used
-the full 360-second limit without attempting a motion. A focused 40-circle run
-also passed after the dense gate stopped reserving an unavailable timed-search
-slot. The old Plan 502 rows in `benchmark.csv` remain historical evidence.
+has not been rerun after this change. The maintained moving/deforming U.S. case
+returned the same validated motion in 264.99 seconds instead of 496.34 seconds
+after the planner stopped the deterministic stage at its first valid motion.
+A focused 40-circle run also passed after the dense gate stopped reserving an
+unavailable timed-search slot. Old Plan 502 rows remain historical evidence.
 
 The duration header in `benchmark.csv` is now `MotionDuration_s`. A
 fixed-arrival duration is the configured horizon. It is not a measured minimum.
@@ -62,9 +62,9 @@ requests return an identified unsupported-configuration error.
 
 ### 5. Size target
 
-The implementation has 26 production MATLAB files and 6,985 physical
-production lines. The largest files have 900, 891, and 875 lines. The complete
-MATLAB tree has 11,545 physical lines. The production and complete hard limits
+The implementation has 26 production MATLAB files and 6,988 physical
+production lines. The largest files have 900, 891, and 878 lines. The complete
+MATLAB tree has 11,555 physical lines. The production and complete hard limits
 pass. The 10,500-line complete-tree target does not pass.
 
 ## Current judgment

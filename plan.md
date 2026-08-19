@@ -154,7 +154,8 @@ and physical limits define the permitted time range.
 
 ## Deterministic First Motion
 
-For each supported seed, construct a piecewise quintic trajectory with these
+Construct supported piecewise quintic trajectories in seed order. Stop this
+stage at the first independently validated motion. Each trajectory has these
 properties:
 
 - position follows each seed edge;

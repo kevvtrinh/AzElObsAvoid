@@ -545,6 +545,13 @@ verifyEqual(testCase, directSeed(1).position_deg, timedSeed(1).position_deg);
 verifyGreaterThan(testCase, timedSeed(1).EstimatedDuration_s, ...
     directSeed(1).EstimatedDuration_s);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
+options.GoalTimeMode = "fixedArrival";
+options.EnableHs3Improvement = false;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.SeedSummaries(1).FirstMotionValidationPassed);
+verifyFalse(testCase, any([result.SeedSummaries(2:end).FirstMotionAttempted]));
 end
 
 function testDenseEnvelopeReportsTimedSearchWorkLimit(testCase)
