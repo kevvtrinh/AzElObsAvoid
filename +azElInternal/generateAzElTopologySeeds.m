@@ -6,7 +6,7 @@ function [seeds, diagnostics] = generateAzElTopologySeeds( ...
 %       obstacles, initialState, goalState, limits, options, planningTimer)
 %**************************************************************************
 % PURPOSE
-%   - Generate bounded visibility seeds with time layers and waiting edges.
+%   - Generate bounded homology-diverse visibility and timed seeds.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
@@ -15,8 +15,7 @@ function [seeds, diagnostics] = generateAzElTopologySeeds( ...
 %   - options (resolved planner options), planningTimer (tic timer handle)
 %**************************************************************************
 % OUTPUTS
-%   - seeds (column struct array): Geometry, time law, reduction flag, and duration.
-%   - diagnostics (scalar struct): Graph, time-layer, count, and trace data.
+%   - seeds and diagnostics (struct arrays): Bounded proposals and search trace.
 %**************************************************************************
 % UNITS
 %   - Position is degrees. Time and duration are seconds.
@@ -92,6 +91,8 @@ end
 [sweptShape, diagnostics.SeedCluster] = azElInternal.clusterAzElSeedShape( ...
     sweptShape, options.SeedClusterDistance_deg, [start_deg; goal_deg]);
 clusterCreated = diagnostics.SeedCluster.ClusterGroupCount > 0;
+representative_deg = homologyRepresentatives(sweptShape);
+diagnostics.HomologyRepresentative_deg = representative_deg;
 spatialSeedTemplate = seedTemplate;
 timedSeedTemplate = seedTemplate;
 timedSeedTemplate.UsesReducedGeometry = usedDenseEnvelope;
@@ -131,28 +132,25 @@ if toc(planningTimer) >= options.MaximumPlanningTime_s
     return;
 end
 %% Section 3: Search Distinct Spatial Visibility Routes
-sideModes = [0 1 -1];
-baseNodePath = zeros(0, 1);
-for sideModeIndex = 1:numel(sideModes)
-    if numel(seeds) >= options.MaximumSeedCount - double(hasChangingObstacles && ~usedDenseEnvelope)
-        break;
+reservedTimedSeedCount = double(hasChangingObstacles && ~usedDenseEnvelope);
+maximumClassCount = max(0, options.MaximumSeedCount - ...
+    reservedTimedSeedCount - numel(seeds));
+[nodePaths, classSignatures, searchRecord] = homologyVisibilityPaths( ...
+    edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount, ...
+    options, planningTimer);
+diagnostics = appendSearchRecord(diagnostics, searchRecord);
+diagnostics.HomologySearchAttempted = maximumClassCount > 0;
+diagnostics.HomologyClassSignatures = classSignatures;
+diagnostics.HomologyClassCount = size(classSignatures, 1);
+diagnostics.HomologyStateCount = searchRecord.StateCount;
+diagnostics.HomologySearchTruncated = searchRecord.Truncated;
+for classIndex = 1:numel(nodePaths)
+    route_deg = nodePosition_deg(nodePaths{classIndex}, :);
+    if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
+        seed = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, ...
+            route_deg, directDuration_s, availableDuration_s, limits);
+        seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
-    allowedNode = sideAllowedNodes(nodePosition_deg, start_deg, goal_deg, ...
-        sideModes(sideModeIndex), graphRecord.CandidateOffset_deg);
-    [nodePath, searchRecord] = shortestVisibilityPath(edgeCost_deg, allowedNode, nodePosition_deg);
-    diagnostics = appendSearchRecord(diagnostics, searchRecord);
-    if isempty(nodePath)
-        continue;
-    end
-    if isempty(baseNodePath)
-        baseNodePath = nodePath;
-    end
-    route_deg = removeCollinearPoints(nodePosition_deg(nodePath, :));
-    if routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
-        continue;
-    end
-    seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, route_deg, ...
-        directDuration_s, availableDuration_s, limits); %#ok<AGROW>
 end
 %% Section 4: Search The Time-Expanded Visibility Graph
 if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
@@ -172,35 +170,11 @@ if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumS
             timedPosition_deg, timedEdgeCost_deg, obstacles, ...
             initialState, goalState, limits, sampleTimes_s, options, planningTimer);
         diagnostics = appendTimeRecord(diagnostics, timeRecord);
-        seeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+        seeds = appendTimedSeed( ...
+            seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
     end
 end
 diagnostics.Coverage = coverage;
-%% Section 5: Add Edge-Removal Visibility Alternatives
-if numel(seeds) < options.MaximumSeedCount && numel(baseNodePath) > 2
-    for pathEdgeIndex = 1:numel(baseNodePath) - 1
-        if numel(seeds) >= options.MaximumSeedCount
-            break;
-        end
-        alternativeCost_deg = edgeCost_deg;
-        firstNodeIndex = baseNodePath(pathEdgeIndex);
-        secondNodeIndex = baseNodePath(pathEdgeIndex + 1);
-        alternativeCost_deg(firstNodeIndex, secondNodeIndex) = Inf;
-        alternativeCost_deg(secondNodeIndex, firstNodeIndex) = Inf;
-        [nodePath, searchRecord] = shortestVisibilityPath( ...
-            alternativeCost_deg, true(size(nodePosition_deg, 1), 1), nodePosition_deg);
-        diagnostics = appendSearchRecord(diagnostics, searchRecord);
-        if isempty(nodePath)
-            continue;
-        end
-        route_deg = removeCollinearPoints(nodePosition_deg(nodePath, :));
-        if routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
-            continue;
-        end
-        seeds(end + 1, 1) = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, route_deg, ...
-            directDuration_s, availableDuration_s, limits); %#ok<AGROW>
-    end
-end
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
 %% Section 6: Local Functions
@@ -658,78 +632,104 @@ if ~temporalSeedDuplicates(timedSeed, seeds)
     seeds(end + 1, 1) = timedSeed;
 end
 end
-function allowedNode = sideAllowedNodes( ...
-        nodePosition_deg, start_deg, goal_deg, sideMode, tolerance_deg)
-%   - Restrict one visibility search to an input-defined side of the route.
-allowedNode = true(size(nodePosition_deg, 1), 1);
-if sideMode == 0
+function [nodePaths, classSignatures, record] = homologyVisibilityPaths( ...
+        edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount, ...
+        options, planningTimer)
+%   - Search a bounded graph augmented by 2-D homology signatures.
+% The path-integral state follows Bhattacharya et al.; see citation.md.
+nodeCount = size(edgeCost_deg, 1);
+representativeCount = size(representative_deg, 1);
+nodePaths = cell(0, 1);
+classSignatures = zeros(0, representativeCount, "int8");
+record = struct("ExpandedCount", 0, "RejectedTransitionCount", 0, ...
+    "ExploredNodes_deg", zeros(0, 2), "FrontierNodes_deg", zeros(0, 2), ...
+    "StateCount", 0, "Truncated", false);
+if maximumClassCount == 0
     return;
 end
-sideValue_deg2 = signedSide( ...
-    nodePosition_deg(:, 1), nodePosition_deg(:, 2), start_deg, goal_deg);
-sideTolerance_deg2 = tolerance_deg * max(1, norm(goal_deg - start_deg));
-if sideMode > 0
-    allowedNode = sideValue_deg2 >= -sideTolerance_deg2;
-else
-    allowedNode = sideValue_deg2 <= sideTolerance_deg2;
-end
-allowedNode(1:2) = true;
-end
-function [nodePath, record] = shortestVisibilityPath(edgeCost_deg, allowedNode, nodePosition_deg)
-%   - Run deterministic Dijkstra search and retain expanded visibility nodes.
-nodeCount = size(edgeCost_deg, 1);
-costToCome_deg = Inf(nodeCount, 1);
-parentNodeIndex = zeros(nodeCount, 1, "uint16");
-closed = ~allowedNode(:);
-costToCome_deg(1) = 0;
-expandedCount = 0;
+phase_rad = atan2(nodePosition_deg(:, 2) - representative_deg(:, 2).', ...
+    nodePosition_deg(:, 1) - representative_deg(:, 1).');
+referenceTurn = principalAngle(phase_rad - phase_rad(1, :)) / (2 * pi);
+maximumStateCount = min(4000, max(200, 8 * nodeCount * maximumClassCount));
+stateNodeIndex = zeros(maximumStateCount, 1, "uint16");
+stateSignature = zeros(maximumStateCount, representativeCount, "int8");
+stateCost_deg = Inf(maximumStateCount, 1);
+parentStateIndex = zeros(maximumStateCount, 1, "uint16");
+closed = false(maximumStateCount, 1);
+stateNodeIndex(1) = 1;
+stateCost_deg(1) = 0;
+stateCount = 1;
 rejectedTransitionCount = 0;
-exploredNodes_deg = zeros(0, 2);
-while ~closed(2)
-    unsettledCost_deg = costToCome_deg;
+while size(classSignatures, 1) < maximumClassCount
+    unsettledCost_deg = stateCost_deg;
     unsettledCost_deg(closed) = Inf;
-    [currentCost_deg, currentNodeIndex] = min(unsettledCost_deg);
+    [currentCost_deg, currentStateIndex] = min(unsettledCost_deg);
     if ~isfinite(currentCost_deg)
         break;
     end
-    closed(currentNodeIndex) = true;
-    if currentNodeIndex == 2
+    if toc(planningTimer) >= options.MaximumPlanningTime_s
+        record.Truncated = true;
         break;
     end
-    expandedCount = expandedCount + 1;
-    exploredNodes_deg(end + 1, :) = ...
-        nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
+    closed(currentStateIndex) = true;
+    currentNodeIndex = double(stateNodeIndex(currentStateIndex));
+    if currentNodeIndex == 2
+        statePath = currentStateIndex;
+        while statePath(1) ~= 1
+            statePath = [double(parentStateIndex(statePath(1))); statePath]; %#ok<AGROW>
+        end
+        nodePaths{end + 1, 1} = double(stateNodeIndex(statePath)); %#ok<AGROW>
+        classSignatures(end + 1, :) = stateSignature(currentStateIndex, :); %#ok<AGROW>
+        continue;
+    end
     neighborNodeIndices = find(isfinite(edgeCost_deg(currentNodeIndex, :)));
     for neighborNodeIndex = reshape(neighborNodeIndices, 1, [])
-        if closed(neighborNodeIndex) || ...
-                neighborNodeIndex == currentNodeIndex
+        if neighborNodeIndex == currentNodeIndex
+            rejectedTransitionCount = rejectedTransitionCount + 1;
+            continue;
+        end
+        phaseStep = principalAngle(phase_rad(neighborNodeIndex, :) - ...
+            phase_rad(currentNodeIndex, :)) / (2 * pi);
+        signatureStep = round(referenceTurn(currentNodeIndex, :) + ...
+            phaseStep - referenceTurn(neighborNodeIndex, :));
+        trialSignature = int8(double(stateSignature(currentStateIndex, :)) + ...
+            signatureStep);
+        if any(abs(double(trialSignature)) > 1)
+            rejectedTransitionCount = rejectedTransitionCount + 1;
+            continue;
+        end
+        sameState = stateNodeIndex(1:stateCount) == neighborNodeIndex & ...
+            all(stateSignature(1:stateCount, :) == trialSignature, 2);
+        neighborStateIndex = find(sameState, 1);
+        if isempty(neighborStateIndex)
+            if stateCount >= maximumStateCount
+                record.Truncated = true;
+                rejectedTransitionCount = rejectedTransitionCount + 1;
+                continue;
+            end
+            stateCount = stateCount + 1;
+            neighborStateIndex = stateCount;
+            stateNodeIndex(neighborStateIndex) = uint16(neighborNodeIndex);
+            stateSignature(neighborStateIndex, :) = trialSignature;
+        elseif closed(neighborStateIndex)
             rejectedTransitionCount = rejectedTransitionCount + 1;
             continue;
         end
         trialCost_deg = currentCost_deg + ...
             edgeCost_deg(currentNodeIndex, neighborNodeIndex);
-        if trialCost_deg < costToCome_deg(neighborNodeIndex) - 1e-12
-            costToCome_deg(neighborNodeIndex) = trialCost_deg;
-            parentNodeIndex(neighborNodeIndex) = uint16(currentNodeIndex);
+        if trialCost_deg < stateCost_deg(neighborStateIndex) - 1e-12
+            stateCost_deg(neighborStateIndex) = trialCost_deg;
+            parentStateIndex(neighborStateIndex) = uint16(currentStateIndex);
         end
     end
 end
-nodePath = zeros(0, 1);
-if isfinite(costToCome_deg(2))
-    nodePath = 2;
-    while nodePath(1) ~= 1
-        parentIndex = double(parentNodeIndex(nodePath(1)));
-        if parentIndex == 0
-            nodePath = zeros(0, 1);
-            break;
-        end
-        nodePath = [parentIndex; nodePath]; %#ok<AGROW>
-    end
-end
-frontierNodes_deg = nodePosition_deg(isfinite(costToCome_deg) & ~closed, :);
-record = struct("ExpandedCount", expandedCount, ...
-    "RejectedTransitionCount", rejectedTransitionCount, ...
-    "ExploredNodes_deg", exploredNodes_deg, "FrontierNodes_deg", frontierNodes_deg);
+frontierState = isfinite(stateCost_deg(1:stateCount)) & ~closed(1:stateCount);
+expandedState = closed(1:stateCount) & stateNodeIndex(1:stateCount) ~= 2;
+record.ExpandedCount = sum(expandedState);
+record.RejectedTransitionCount = rejectedTransitionCount;
+record.ExploredNodes_deg = nodePosition_deg(double(stateNodeIndex(expandedState)), :);
+record.FrontierNodes_deg = nodePosition_deg(double(stateNodeIndex(frontierState)), :);
+record.StateCount = stateCount;
 end
 function diagnostics = appendSearchRecord(diagnostics, record)
 %   - Add complete counts and a bounded deterministic diagnostic trace.
@@ -815,23 +815,20 @@ maximumLayerCount = min(33, max(9, ...
 sampleTimes_s = boundedTimeLayers( ...
     sampleTimes_s, startTime_s, endTime_s, maximumLayerCount);
 end
-function sideValue = signedSide(azimuth_deg, elevation_deg, start_deg, goal_deg)
-%   - Measure deterministic side of the input-defined start-to-goal line.
-direction_deg = goal_deg - start_deg;
-sideValue = direction_deg(1) * (elevation_deg - start_deg(2)) - ...
-    direction_deg(2) * (azimuth_deg - start_deg(1));
+function representative_deg = homologyRepresentatives(shape)
+%   - Select one guaranteed interior point for each connected shape region.
+shapeRegions = regions(shape);
+representative_deg = zeros(numel(shapeRegions), 2);
+for regionIndex = 1:numel(shapeRegions)
+    [candidate_deg, radius_deg] = incenter( ...
+        triangulation(shapeRegions(regionIndex)));
+    [~, largestRadiusIndex] = max(radius_deg);
+    representative_deg(regionIndex, :) = candidate_deg(largestRadiusIndex, :);
 end
-function route_deg = removeCollinearPoints(route_deg)
-%   - Remove spatial points that do not change route direction.
-if size(route_deg, 1) <= 2
-    return;
 end
-routeStep_deg = diff(route_deg, 1, 1);
-turn_deg2 = routeStep_deg(1:end - 1, 1) .* ...
-    routeStep_deg(2:end, 2) - ...
-    routeStep_deg(1:end - 1, 2) .* routeStep_deg(2:end, 1);
-keep = [true; abs(turn_deg2) > 1e-10; true];
-route_deg = route_deg(keep, :);
+function angle_rad = principalAngle(angle_rad)
+%   - Map angular change to the deterministic principal interval.
+angle_rad = atan2(sin(angle_rad), cos(angle_rad));
 end
 function duplicate = routeDuplicates(route_deg, seeds, tolerance_deg)
 %   - Reject geometrically indistinguishable bounded graph routes.
@@ -892,9 +889,12 @@ diagnostics = struct( ...
     "RejectedEdges_deg", zeros(0, 4), ...
     "TemporalLayerTimes_s", zeros(0, 1), "TemporalLayerCount", 0, ...
     "TemporalNodeCount", 0, "WaitEdgeCount", 0, "MotionEdgeCount", 0, ...
+    "HomologySearchAttempted", false, "HomologyRepresentative_deg", zeros(0, 2), ...
+    "HomologyClassSignatures", zeros(0, 0, "int8"), ...
+    "HomologyClassCount", 0, "HomologyStateCount", 0, "HomologySearchTruncated", false, ...
     "ExpandedCount", 0, "RejectedTransitionCount", 0, ...
     "GeneratedSeedCount", 1, "ExploredNodes_deg", zeros(0, 2), ...
     "FrontierNodes_deg", zeros(0, 2), "Start_deg", start_deg, ...
     "Goal_deg", goal_deg, "TraceDownsampleRule", ...
-    "Time samples cap at 33, temporal nodes at 24, traces at 2000 each");
+    "Time samples cap at 33, temporal nodes at 24, homology states at 4000, traces at 2000 each");
 end

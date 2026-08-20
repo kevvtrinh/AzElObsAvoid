@@ -79,6 +79,12 @@ produce these proposal types:
 - original-geometry sampled time-layer seeds with motion and wait edges when
   their estimated query work is inside the bounded seed-search limit.
 
+The spatial visibility search augments each node with an integer 2-D homology
+signature. It keeps the shortest route for each discovered signature. One
+interior representative defines each connected sampled obstacle region. Each
+signature component is limited to one winding, the search uses at most 4,000
+augmented states, and the public seed limit still controls returned routes.
+
 Dense-history support envelopes and optional obstacle clusters are permitted
 only for spatial seed proposals and their corridor certificates. Diagnostics
 set `UsesReducedGeometry` when a seed uses this reduction. The dense-history
@@ -209,6 +215,10 @@ evidence changes.
 ## Known limits
 
 - The finite seed set is not complete. It can miss a feasible topology.
+- The homology signature classifies routes around sampled spatial regions. It
+  does not classify continuous Az/El/time paths. Reduced or merged regions can
+  also merge signature classes. Diagnostics report the representatives,
+  discovered signatures, state count, and truncation state.
 - The deterministic first-motion family requires a fixed-position goal and
   zero endpoint velocity and acceleration. It stops at geometric waypoints.
 - HS3 is a local nonlinear optimizer. It can fail or return a local solution.

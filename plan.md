@@ -126,13 +126,20 @@ It does not make a global planning claim.
 Generate a bounded mixture of:
 
 1. the direct seed;
-2. distinct spatial visibility seeds;
+2. spatial visibility seeds from distinct bounded 2-D homology signatures;
 3. time-layer seeds with motion and wait edges for changing obstacles when
    their estimated query work is inside the seed-search work limit.
 
 The default maximum seed count is five. The hard public maximum is nine.
 Moving histories use bounded time layers, nodes, and collision samples.
 Retain the complete generated and rejected counts in diagnostics.
+
+Augment each spatial graph state with principal-angle path integrals about one
+interior representative of each connected sampled obstacle region. Keep only
+signature components from -1 through 1. Stop at the public route count, 4,000
+augmented states, or the seed deadline. Record representatives, discovered
+signatures, state count, and truncation state. This is a bounded 2-D homology
+proposal search. It is not a continuous Az/El/time homotopy certificate.
 
 Spatial proposal construction can use a conservative dense-history support
 region or an optional clustered convex region. Mark each affected seed with
@@ -303,6 +310,8 @@ collision behavior.
 ### Phase 4: Rebuild Bounded Seed Coverage
 
 - Keep direct and original-geometry sampled timed seed search.
+- Replace side restrictions and edge-removal retries with bounded
+  homology-signature spatial search.
 - Permit reduced geometry only for spatial proposal work.
 - Add containment certificates for reduced corridors.
 - Record unreduced sampled, reduced, timed, and completeness diagnostics.
@@ -393,7 +402,8 @@ Plan 325 is complete only when all these statements are true:
 
 - One public planner owns selection and returns one stable schema.
 - One bounded seed generator produces direct, unreduced sampled spatial,
-  reduced spatial, and original-geometry sampled timed proposals.
+  reduced spatial, and original-geometry sampled timed proposals. Spatial
+  routes retain distinct bounded 2-D homology signatures.
 - A supported seed can produce a deterministic independently validated first
   motion.
 - HS3 is bounded, optional for improvement, and required for unsupported

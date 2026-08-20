@@ -1,5 +1,19 @@
 # References
 
+## Homology-signature graph search
+
+- Bhattacharya, S., Likhachev, M., and Kumar, V. (2012). "Search-Based Path
+  Planning with Homotopy Class Constraints in 3D." *Proceedings of the
+  Twenty-Sixth AAAI Conference on Artificial Intelligence*, 2097-2099.
+  https://doi.org/10.1609/aaai.v26i1.8435
+
+  The spatial visibility search augments each graph node with a bounded 2-D
+  homology signature. The signature integrates principal angle changes about
+  one interior representative of each connected sampled obstacle region. This
+  preserves distinct route classes during Dijkstra search. It is a 2-D
+  adaptation. It is not the paper's 3-D electromagnetic construction and is
+  not a continuous Az/El/time homotopy certificate.
+
 ## Third-order direct collocation
 
 - Moreno-Martin, S., Ros, L., and Celaya, E. (2024). "Collocation Methods
