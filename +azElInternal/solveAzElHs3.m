@@ -1,12 +1,11 @@
 function candidate = solveAzElHs3(obstacles, initialState, goalState, limits, options, seed)
 %% Section 0: Header & Readme
 % SYNTAX
-%   candidate = azElInternal.solveAzElHs3( ...
-%       obstacles, initialState, goalState, limits, options, seed)
+%   candidate = azElInternal.solveAzElHs3(obstacles, initialState, ...
+%       goalState, limits, options, seed)
 %**************************************************************************
 % PURPOSE
-%   - Solve one separated third-order Hermite-Simpson trajectory problem.
-%   - Reconstruct one position, velocity, and acceleration chain from jerk.
+%   - Solve and reconstruct one separated third-order Hermite-Simpson motion.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
@@ -21,18 +20,11 @@ function candidate = solveAzElHs3(obstacles, initialState, goalState, limits, op
 %       Solver outcome, polynomial trajectory, samples, and diagnostics.
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2, and deg/s^3.
+%   - Position is degrees; derivatives use deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
 %% Section 1: Build The Decision Layout And Initial Guess
 solverTimer = tic;
 maximumSolverTime_s = options.MaximumSolverTime_s;
-if isfield(options, "InternalPlanningTimer") && ...
-        isfield(options, "InternalPlanningDeadline_s")
-    remainingPlanningTime_s = options.InternalPlanningDeadline_s - ...
-        toc(options.InternalPlanningTimer);
-    maximumSolverTime_s = min( ...
-        maximumSolverTime_s, max(0, remainingPlanningTime_s));
-end
 obstacles = combineAzElObstacles(obstacles);
 segmentCount = options.CollocationSegmentCount;
 if ~isfield(seed, "CorridorBoundary_deg")
@@ -45,8 +37,7 @@ latestFinalTime_s = goalState.time_s;
 minimumDuration_s = durationLowerBound(initialState, goalState, limits, latestFinalTime_s);
 isTimedSeed = any(seed.Source == ["directWait", "timeExpandedVisibilityGraph"]);
 minimumFinalTime_s = startTime_s + minimumDuration_s;
-if isEarliestArrival && isfield(goalState, "targetTime_s") && ...
-        ~isempty(goalState.targetTime_s)
+if isEarliestArrival && isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
     minimumFinalTime_s = max( ...
         minimumFinalTime_s, goalState.targetTime_s(1));
 end
@@ -140,8 +131,8 @@ solverOptions = optimoptions("fmincon", ...
     "ScaleProblem", true, ...
     "TypicalX", typicalDecision, ...
     "OutputFcn", @(decision, solverValues, state) ...
-    stopForTime(decision, solverValues, state, solverTimer, ...
-    maximumSolverTime_s));
+    hs3Progress(decision, solverValues, state, solverTimer, ...
+    maximumSolverTime_s, options.Verbose, seed.Index));
 constraintFunction = @(decision) trajectoryConstraints( ...
     decision, isEarliestArrival, latestFinalTime_s, segmentCount, ...
     initialState, goalState, limits, options, obstacles, corridor, ...
@@ -275,10 +266,33 @@ candidate = struct( ...
     "ElapsedTime_s", toc(solverTimer)));
 end
 %% Section 5: Local Functions
-function stop = stopForTime(~, ~, ~, solverTimer, maximumTime_s)
+function stop = hs3Progress(~, solverValues, state, solverTimer, ...
+        maximumTime_s, verbose, seedIndex)
 % PURPOSE
-%   - Stop one fmincon stage at its assigned wall-time limit.
+%   - Stop optional solver work and report deterministic progress intervals.
 stop = toc(solverTimer) >= maximumTime_s;
+if ~verbose
+    return;
+end
+iteration = outputValue(solverValues, "iteration");
+if state == "init" || state == "done" || ...
+        (state == "iter" && mod(iteration, 10) == 0)
+    fprintf("[AzEl][HS3][seed %d] state=%s, iteration=%g, " + ...
+        "evaluations=%g, objective=%.6g, violation=%.3g.\n", ...
+        seedIndex, state, iteration, ...
+        outputValue(solverValues, "funccount"), ...
+        outputValue(solverValues, "fval"), ...
+        outputValue(solverValues, "constrviolation"));
+end
+end
+function value = outputValue(output, fieldName)
+% PURPOSE
+%   - Read one optional fmincon output value for stable verbose messages.
+if isstruct(output) && isfield(output, fieldName)
+    value = output.(fieldName);
+else
+    value = NaN;
+end
 end
 function checkCount = corridorChecksPerSegment( ...
         obstacles, startTime_s, finalTime_s, segmentCount)
@@ -397,10 +411,10 @@ function inequality = continuousBoundConstraints(polynomial, limits, options)
 % PURPOSE
 %   - Use Bernstein convex-hull bounds over every complete HS3 segment.
 inequality = zeros(0, 1);
-positionLower_deg = [options.AzimuthInterval_deg(1), ...
-    options.ElevationInterval_deg(1)];
-positionUpper_deg = [options.AzimuthInterval_deg(2), ...
-    options.ElevationInterval_deg(2)];
+positionLower_deg = [limits.azimuthInterval_deg(1), ...
+    limits.elevationInterval_deg(1)];
+positionUpper_deg = [limits.azimuthInterval_deg(2), ...
+    limits.elevationInterval_deg(2)];
 for segmentIndex = 1:polynomial.SegmentCount
     for axisIndex = 1:2
         if ~(axisIndex == 1 && options.AllowAzimuthWrapping)

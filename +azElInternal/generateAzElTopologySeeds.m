@@ -1,9 +1,9 @@
 function [seeds, diagnostics] = generateAzElTopologySeeds( ...
-        obstacles, initialState, goalState, limits, options, planningTimer)
+        obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-%       obstacles, initialState, goalState, limits, options, planningTimer)
+%       obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Generate bounded homology-diverse visibility and timed seeds.
@@ -12,7 +12,7 @@ function [seeds, diagnostics] = generateAzElTopologySeeds( ...
 %   - obstacles (canonical protected obstacle struct array)
 %   - initialState, goalState (normalized scalar state structs)
 %   - limits (normalized physical limits struct)
-%   - options (resolved planner options), planningTimer (tic timer handle)
+%   - options (resolved planner options)
 %**************************************************************************
 % OUTPUTS
 %   - seeds and diagnostics (struct arrays): Bounded proposals and search trace.
@@ -48,10 +48,6 @@ if options.DirectSeedOnly || options.MaximumSeedCount == 1 || isempty(obstacles)
     diagnostics.GeneratedSeedCount = numel(seeds);
     return;
 end
-if toc(planningTimer) >= options.MaximumPlanningTime_s
-    diagnostics.GeneratedSeedCount = numel(seeds);
-    return;
-end
 %% Section 2: Build One Protected-Geometry Visibility Graph
 sampleTimes_s = obstacleSampleTimes(obstacles, initialState.time_s, goalState.time_s);
 [sweptShape, usedDenseEnvelope] = azElInternal.denseSweptSeedEnvelope( ...
@@ -71,15 +67,9 @@ else
     directTimedCost_deg = [0, directSeed.Length_deg; directSeed.Length_deg, 0];
     [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
         directTimedPosition_deg, directTimedCost_deg, obstacles, ...
-        initialState, goalState, limits, sampleTimes_s, options, planningTimer);
+        initialState, goalState, limits, sampleTimes_s, options);
     diagnostics = appendTimeRecord(diagnostics, timeRecord);
     seeds = appendTimedSeed(seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
-end
-if toc(planningTimer) >= options.MaximumPlanningTime_s
-    coverage.TimedSearchSuppressionReason = "planningTimeLimitAfterDirectTimedSearch";
-    diagnostics.Coverage = coverage;
-    diagnostics.GeneratedSeedCount = numel(seeds);
-    return;
 end
 if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
@@ -103,7 +93,7 @@ elseif clusterCreated
 end
 spatialSeedTemplate.UsesReducedGeometry = usedDenseEnvelope || clusterCreated;
 [nodePosition_deg, edgeCost_deg, graphRecord] = buildVisibilityGraph( ...
-    sweptShape, start_deg, goal_deg, options, planningTimer);
+    sweptShape, start_deg, goal_deg, limits);
 diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
@@ -123,21 +113,12 @@ end
 if usedDenseEnvelope
     diagnostics.DenseSeedEnvelope_deg = sweptShape.Vertices;
 end
-if toc(planningTimer) >= options.MaximumPlanningTime_s
-    if coverage.TimedSearchSuppressionReason == ""
-        coverage.TimedSearchSuppressionReason = "planningTimeLimit";
-    end
-    diagnostics.Coverage = coverage;
-    diagnostics.GeneratedSeedCount = numel(seeds);
-    return;
-end
 %% Section 3: Search Distinct Spatial Visibility Routes
 reservedTimedSeedCount = double(hasChangingObstacles && ~usedDenseEnvelope);
 maximumClassCount = max(0, options.MaximumSeedCount - ...
     reservedTimedSeedCount - numel(seeds));
 [nodePaths, classSignatures, searchRecord] = homologyVisibilityPaths( ...
-    edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount, ...
-    options, planningTimer);
+    edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount);
 diagnostics = appendSearchRecord(diagnostics, searchRecord);
 diagnostics.HomologySearchAttempted = maximumClassCount > 0;
 diagnostics.HomologyClassSignatures = classSignatures;
@@ -154,25 +135,21 @@ for classIndex = 1:numel(nodePaths)
 end
 %% Section 4: Search The Time-Expanded Visibility Graph
 if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
-    if toc(planningTimer) >= options.MaximumPlanningTime_s
-        coverage.TimedSearchSuppressionReason = "planningTimeLimitBeforeExtendedTimedSearch";
-    else
-        coverage.ExtendedTimedSearchAttempted = true;
-        maximumTimedNodeCount = 24;
-        directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
-        timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
-            sampledNodes_deg, start_deg, ...
-            goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
-        timedEdgeCost_deg = hypot( ...
-            timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
-            timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
-        [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
-            timedPosition_deg, timedEdgeCost_deg, obstacles, ...
-            initialState, goalState, limits, sampleTimes_s, options, planningTimer);
-        diagnostics = appendTimeRecord(diagnostics, timeRecord);
-        seeds = appendTimedSeed( ...
-            seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
-    end
+    coverage.ExtendedTimedSearchAttempted = true;
+    maximumTimedNodeCount = 24;
+    directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
+    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
+        sampledNodes_deg, start_deg, ...
+        goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
+    timedEdgeCost_deg = hypot( ...
+        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
+        timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
+    [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
+        timedPosition_deg, timedEdgeCost_deg, obstacles, ...
+        initialState, goalState, limits, sampleTimes_s, options);
+    diagnostics = appendTimeRecord(diagnostics, timeRecord);
+    seeds = appendTimedSeed( ...
+        seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
 end
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
@@ -206,7 +183,7 @@ else
 end
 end
 function [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
-        sweptShape, start_deg, goal_deg, options, planningTimer)
+        sweptShape, start_deg, goal_deg, limits)
 %   - Build one bounded exact segment-visibility graph around swept geometry.
 allPosition_deg = [start_deg; goal_deg; sweptShape.Vertices];
 minimum_deg = min(allPosition_deg, [], 1);
@@ -225,10 +202,10 @@ if ~isempty(sweptShape.Vertices)
 end
 candidatePosition_deg = candidateShape.Vertices;
 insideWorkspace = ...
-    candidatePosition_deg(:, 1) >= options.AzimuthInterval_deg(1) & ...
-    candidatePosition_deg(:, 1) <= options.AzimuthInterval_deg(2) & ...
-    candidatePosition_deg(:, 2) >= options.ElevationInterval_deg(1) & ...
-    candidatePosition_deg(:, 2) <= options.ElevationInterval_deg(2);
+    candidatePosition_deg(:, 1) >= limits.azimuthInterval_deg(1) & ...
+    candidatePosition_deg(:, 1) <= limits.azimuthInterval_deg(2) & ...
+    candidatePosition_deg(:, 2) >= limits.elevationInterval_deg(1) & ...
+    candidatePosition_deg(:, 2) <= limits.elevationInterval_deg(2);
 candidatePosition_deg = candidatePosition_deg(insideWorkspace, :);
 candidatePosition_deg = selectCandidateVertices( ...
     candidatePosition_deg, start_deg, goal_deg, candidateLimit);
@@ -242,13 +219,7 @@ maximumRetainedEdgeCount = 2000;
 acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 for firstNodeIndex = 1:nodeCount - 1
-    if toc(planningTimer) >= options.MaximumPlanningTime_s
-        break;
-    end
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
-        if toc(planningTimer) >= options.MaximumPlanningTime_s
-            break;
-        end
         firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
         secondPosition_deg = nodePosition_deg(secondNodeIndex, :);
         if segmentIsVisible( ...
@@ -386,16 +357,13 @@ end
 end
 function [route_deg, routeTime_s, record] = timeExpandedVisibilitySearch( ...
         nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
-        goalState, limits, sampleTimes_s, options, planningTimer)
+        goalState, limits, sampleTimes_s, options)
 %   - Search forward time layers with visible motion and waiting edges.
 layerTimes_s = boundedTimeLayers(sampleTimes_s, initialState.time_s, goalState.time_s, 17);
 layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
-    if toc(planningTimer) >= options.MaximumPlanningTime_s
-        break;
-    end
     queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
     nodeIsFree(layerIndex, :) = ~queryAzElTimeObstacle(obstacles, ...
         nodePosition_deg(:, 1), ...
@@ -413,17 +381,11 @@ rejectedTransitionCount = 0;
 expandedCount = 0;
 exploredNodes_deg = zeros(0, 2);
 for layerIndex = 1:layerCount - 1
-    if toc(planningTimer) >= options.MaximumPlanningTime_s
-        break;
-    end
     if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
         break;
     end
     currentNodeIndices = find(reachable(layerIndex, :));
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
-        if toc(planningTimer) >= options.MaximumPlanningTime_s
-            break;
-        end
         expandedCount = expandedCount + 1;
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
         if nodeIsFree(layerIndex + 1, currentNodeIndex) && ...
@@ -445,9 +407,6 @@ for layerIndex = 1:layerCount - 1
         targetNodeIndices = unique([1, 2, visibleNeighbor]);
         targetNodeIndices(targetNodeIndices == currentNodeIndex) = [];
         for targetNodeIndex = reshape(targetNodeIndices, 1, [])
-            if toc(planningTimer) >= options.MaximumPlanningTime_s
-                break;
-            end
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
                 nodePosition_deg(currentNodeIndex, :);
             speedDuration_s = abs(displacement_deg) ./ limits.maxVelocity_deg_s;
@@ -633,8 +592,7 @@ if ~temporalSeedDuplicates(timedSeed, seeds)
 end
 end
 function [nodePaths, classSignatures, record] = homologyVisibilityPaths( ...
-        edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount, ...
-        options, planningTimer)
+        edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount)
 %   - Search a bounded graph augmented by 2-D homology signatures.
 % The path-integral state follows Bhattacharya et al.; see citation.md.
 nodeCount = size(edgeCost_deg, 1);
@@ -665,10 +623,6 @@ while size(classSignatures, 1) < maximumClassCount
     unsettledCost_deg(closed) = Inf;
     [currentCost_deg, currentStateIndex] = min(unsettledCost_deg);
     if ~isfinite(currentCost_deg)
-        break;
-    end
-    if toc(planningTimer) >= options.MaximumPlanningTime_s
-        record.Truncated = true;
         break;
     end
     closed(currentStateIndex) = true;

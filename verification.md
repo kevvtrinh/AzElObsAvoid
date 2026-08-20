@@ -3,119 +3,131 @@
 ## Evidence scope
 
 - Branch: `plan-325`.
-- Verified source commit: `f06fa9c`.
+- Baseline commit: `b845880`.
+- Verified state: the current uncommitted Plan 325 implementation.
 - Runtime: MATLAB R2024b Update 4 with Optimization Toolbox.
-- Date: 2026-08-19 through 2026-08-20.
-- All examples used finite jerk limits.
+- Date: 2026-08-20.
+- Every maintained example used a finite jerk limit.
 
-Each maintained example ran in a separate MATLAB process. The runs were
-serial. The headless controls disabled all plots, animation, and pauses.
+Each maintained example ran in its own MATLAB process. Runs were serial.
+Headless controls disabled plots, animation, and pauses.
 
-## Requested policy changes
+## Implemented contract changes
 
-- All 13 fixed-goal examples now state `GoalTimeMode="earliestArrival"`.
-- Five moving-target examples retain their target-time policy. Four use a
-  specified intercept time. One uses earliest target intercept.
-- `exampleAlternatingSlalom` uses `ElevationInterval_deg=[-5 5]`. This bound
-  prevents a route above all three barriers and makes the route alternate.
-- `plotAzElMotion` uses the `main` branch visual conventions. Original
-  obstacles are red and solid. Protected obstacles are orange and dashed.
-  Candidate routes are gray. The selected route is blue and dashed. The
-  returned motion is black. The target track is purple. The animation uses
-  the light complete path, cyan elapsed path, and red current-state marker.
-- The single-U example work limit is 75 seconds. Its first 35-second run
-  reached the validation deadline. Its physical request did not change.
+- Workspace bounds moved from planner options to
+  `limits.azimuthInterval_deg` and `limits.elevationInterval_deg`.
+- `MaximumPlanningTime_s` and the whole-planner deadline were removed.
+- Required work uses deterministic seed, graph, iteration, evaluation,
+  collocation, and refinement limits.
+- Optional HS3 improvement retains its separate 15-second default limit.
+- Stable verbose messages use the `[AzEl]` prefix and stage prefixes.
+- Fixed-goal examples state earliest arrival. Moving-target examples state
+  their target-time policy.
+- The slalom elevation interval is `[-5 5]` degrees.
+- All maintained examples route `MaxJerk_deg_s3` into physical limits.
+- The plotter retains the `main` branch visual style.
+- A planning-runtime non-regression gate now applies to later changes.
 
 ## Size checks
 
 | Scope | Files | Physical lines | Limit | Result |
 | --- | ---: | ---: | ---: | --- |
-| Production MATLAB | 26 | 7,000 | 7,000 hard limit | pass exactly |
-| Complete MATLAB tree | 52 | 11,653 | 12,000 hard limit | pass by 347 |
-| Complete MATLAB tree | 52 | 11,653 | 10,500 target | **fail by 1,153** |
+| Core production, without plotting | 26 | 6,497 | 7,000 hard limit | pass |
+| Plotting | 1 | 499 | separate report | pass |
+| Production MATLAB | 27 | 6,996 | 7,000 hard limit | pass by 4 |
+| Complete MATLAB tree | 53 | 11,701 | 12,000 hard limit | pass by 299 |
+| Complete MATLAB tree | 53 | 11,701 | 10,500 target | fail by 1,201 |
 
-No production file is longer than 900 lines. The preferred complete-tree
-target does not pass.
+No production MATLAB file is longer than 900 lines. The preferred complete
+tree target does not pass.
 
 ## Final headless example results
 
-`P/V` means planner success and independent example-validation pass. `C/K/A`
-means collision, kinematic, and applicable certificate pass. The duration is
-the returned motion duration. A fixed duration is a required target time. It
-is not a minimum-time result.
+`P/V` means planner success and independent example-validation pass. `C/K`
+means collision and kinematic certificate pass. `NaN` means unavailable after
+an expected failure. Fixed target durations are required target times, not
+minimum-time results.
 
-| Example | Goal mode | P/V | Polyline (deg) | Motion (deg) | Duration (s) | C/K/A | Wall (s) | Reason |
+| Example | Goal mode | P/V | Polyline (deg) | Motion (deg) | Duration (s) | C/K | Wall (s) | Reason |
 | --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
-| `exampleAlternatingSlalom` | earliest | 1/1 | 16 | 16.691842238 | 12.180624977 | 1/1/1 | 33.4689311 | `goalReached` |
-| `exampleAzElPlanning` | earliest | 1/1 | 11.152119519 | 11.303432110 | 7.817268021 | 1/1/1 | 20.3210242 | `goalReached` |
-| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.700721560 | 12.808110687 | 8.798640057 | 1/1/1 | 41.6276308 | `goalReached` |
-| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685 | 122.955593942 | 64.556780013 | 1/1/1 | 22.6353983 | `goalReached` |
-| `exampleFourAcceleratingCircles` | fixed target | 1/1 | 24.363303007 | 27.712518684 | 22 | 1/1/1 | 65.0622422 | `goalReached` |
-| `exampleInterceptMovingTargetAtSetTime` | fixed target | 1/1 | 9.538940547 | 9.538940547 | 12 | 1/1/1 | 3.1102479 | `goalReached` |
-| `exampleInterceptMovingTargetEarliest` | earliest target | 1/1 | 10.097524449 | 7.342215833 | 6.275807672 | 1/1/1 | 4.6761014 | `goalReached` |
-| `exampleMovingBarrierWait` | earliest | 1/1 | 10 | 10.211853154 | 10.545227891 | 1/1/1 | 40.5701264 | `goalReached` |
-| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.113593185 | 12.113593185 | 12.293137410 | 1/1/1 | 17.1009844 | `goalReached` |
-| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.084805147 | 63.084805147 | 25.614496552 | 1/1/1 | 127.8696377 | `goalReached` |
-| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN` | 20.3535105 | `noValidatedSeed` |
-| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955 | 4.472860956 | 4.613406127 | 1/1/1 | 5.9388048 | `goalReached` |
-| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10 | 10 | 15 | 1/1/1 | 16.8039567 | `goalReached` |
-| `exampleStraightTargetAlternatingOcclusion` | fixed target | 1/1 | 13.341664064 | 15.299430296 | 20.869565217 | 1/1/1 | 27.6978874 | `goalReached` |
-| `exampleTargetExitsObstacle` | fixed target | 1/1 | 19.824386759 | 22.879930804 | 24 | 1/1/1 | 12.7454655 | `goalReached` |
-| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 23.853720884 | 24.302835532 | 22.876124561 | 1/1/1 | 63.9628870 | `goalReached` |
-| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.942588040 | 42.580183511 | 26.492831986 | 1/1/1 | 41.1340763 | `goalReached` |
-| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463509 | 26.834419733 | 7.239885850 | 1/1/1 | 210.4986503 | `goalReached` |
+| `exampleAlternatingSlalom` | earliest | 1/1 | 16.019319798 | 16.720993523 | 12.180470771 | 1/1 | 30.5571294 | `goalReached` |
+| `exampleAzElPlanning` | earliest | 1/1 | 11.152119519 | 11.303432110 | 7.817268021 | 1/1 | 19.2394053 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.700721560 | 12.807761070 | 8.817608547 | 1/1 | 36.9767274 | `goalReached` |
+| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685 | 122.955593942 | 64.556780013 | 1/1 | 23.0213970 | `goalReached` |
+| `exampleFourAcceleratingCircles` | fixed target | 1/1 | 24.363303007 | 27.712518684 | 22 | 1/1 | 54.6080525 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | fixed target | 1/1 | 9.538940547 | 9.538940547 | 12 | 1/1 | 6.5785018 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | earliest target | 1/1 | 10.097524449 | 7.342215833 | 6.275807672 | 1/1 | 4.8420572 | `goalReached` |
+| `exampleMovingBarrierWait` | earliest | 1/1 | 10 | 10.141928092 | 10.544230762 | 1/1 | 30.7819031 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.113593185 | 12.113593185 | 12.293137410 | 1/1 | 17.2775305 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.084805147 | 71.508173805 | 12.986426213 | 1/1 | 86.6511818 | `goalReached` |
+| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN/NaN` | 15.9084524 | `noValidatedSeed` |
+| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955 | 4.472860956 | 4.613406127 | 1/1 | 6.2970645 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10 | 10 | 15 | 1/1 | 16.7152230 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | fixed target | 1/1 | 13.341664064 | 19.229413228 | 20.869565217 | 1/1 | 23.2660849 | `goalReached` |
+| `exampleTargetExitsObstacle` | fixed target | 1/1 | 19.824386759 | 22.879930804 | 24 | 1/1 | 13.0101589 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 23.853720884 | 24.302835532 | 22.876124561 | 1/1 | 64.0032750 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.942588040 | 42.580112086 | 26.492875797 | 1/1 | 40.6891619 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463509 | 25.132264157 | 8.902682125 | 1/1 | 120.1529240 | `goalReached` |
 
-The extreme U.S. wall time covers the complete maintained geographic case.
+The wide single-U request is unchanged. Its validated arrival duration is
+26.493 seconds, which is below the requested 38-second threshold.
 
-## Display and failure checks
+## Runtime non-regression check
 
-The visible obstacle-free run created two visible figures. Planning and
-independent validation passed.
+The shared-jerk correction preserves the old `[2 2]` defaults. Seven changed
+examples stayed within 2.7% of their recorded runs. The basic example received
+an explicit A/B check:
 
-The visible no-path run created one search diagnostic figure. It returned
-`Success=false`, and independent failure validation passed. Its reason was
-`noValidatedSeed`, which matched the separate headless run.
+- old source: 18.842, 18.979, and 19.518 seconds;
+- corrected source: 19.090, 19.239, and 19.279 seconds.
+
+The ranges overlap. The 1.37% median difference is inside observed process
+noise. The returned path and duration were identical. No confirmed runtime
+increase was accepted.
+
+## Display and verbose checks
+
+- Visible success: obstacle-free planning passed and created three figures.
+- Visible failure: the no-path example passed failure validation and created
+  two diagnostic figures with reason `noValidatedSeed`.
+- Verbose success: the obstacle-free example printed setup, seed generation,
+  first motion, ten-iteration HS3 updates, selection, and completion lines.
+- Quiet runs produced no planner progress text.
 
 ## Automated checks
 
-- Full tests: 52 passed, 0 failed, and 0 incomplete.
-- Summed MATLAB test duration: 37.438059200 seconds.
-- Full test process wall time: 41.594795500 seconds.
-- Code Analyzer: 52 MATLAB files and 0 messages.
-- Visible success and no-path checks: passed with two and one figures.
+- Full tests: 56 passed, 0 failed, and 0 incomplete.
+- Full test process time: 35.3990197 seconds.
+- Code Analyzer: 53 MATLAB files and 0 messages.
 - `git diff --check`: passed.
-- No MATLAB source line is longer than 100 characters.
+- MATLAB source lines longer than 100 characters: 0.
+- Focused jerk-contract tests: 4 passed, 0 failed.
 
-The focused one-obstacle and two-obstacle homology tests passed before the
-complete 52-test run.
+## Downloaded audit artifacts and cleanup decisions
 
-## Runtime warnings and failed attempts
+The branch includes `repo_inconsistencies_plan_325.md` and
+`repo_cleanup_audit_plan_325.md`. The workspace skill directory includes the
+downloaded `repository-cleanup` skill.
 
-- An initial final-code `exampleAzElPlanning` run found duplicate normalized
-  interpolation parameters during corridor reassociation. The planner now
-  removes those numerical duplicates. The repaired example and the complete
-  verification passed.
-- The two known fmincon matrix-conditioning warning identifiers were hidden in
-  the long serial runs to keep logs bounded. Returned motions still passed the
-  independent checks.
-- MATLAB R2024b returned a file-system startup fault between isolated
-  processes. The runtime service was reset before each remaining process.
-  No two example processes overlapped, and scenario inputs did not change.
-- Deadline checks are cooperative. One active nonlinear solve or geometry
-  operation cannot be stopped inside MATLAB. The extreme geographic case took
-  210.4986503 seconds.
+The audits describe commit `b845880`, so some findings are stale after this
+work. Workspace ownership, verbose behavior, timeout removal, production size,
+and jerk routing are now corrected. `certifySeedCorridor` is retained because
+the current production validator calls it. `RandomSeed` is retained for public
+compatibility because removal would be a breaking result-schema change.
+Polynomial-sampling and prepared-obstacle refactors remain measurement-first
+cleanup candidates. They were not changed without profiler evidence.
 
 ## Known limits and claim
 
-- Spatial and timed proposals use finite samples. They can miss a feasible
-  topology. The 2-D homology signature does not classify continuous
-  Az/El/time paths.
+- Spatial and timed proposals use finite samples and can miss a feasible
+  topology.
 - Reduced seed geometry can reject a useful proposal. Final validation uses
   the original protected obstacle history.
 - The analytic motion stops at geometric waypoints. HS3 is local and can
   return a poor local result.
-- Periodic obstacle images are not implemented. Wrapped obstacle requests are
-  not supported.
+- Solver matrix-conditioning warnings can occur. Accepted motions still pass
+  independent validation.
+- Periodic obstacle images are not implemented.
 - Optimization Toolbox is required for HS3.
 
 A successful result is an independently validated motion from a finite,

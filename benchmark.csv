@@ -89,3 +89,21 @@ RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,
 2026-08-20,f06fa9c,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720884,24.302835532,22.876124561,1,1,1,63.9628870,goalReached,Final verified source
 2026-08-20,f06fa9c,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040,42.580183511,26.492831986,1,1,1,41.1340763,goalReached,Final verified source
 2026-08-20,f06fa9c,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,26.834419733,7.239885850,1,1,1,210.4986503,goalReached,Final verified source
+2026-08-20,b845880+worktree,plan-325,exampleAlternatingSlalom,earliestArrival,1,1,1,16.019319798,16.720993523,12.180470771,1,1,1,30.5571294,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleAzElPlanning,earliestArrival,1,1,1,11.152119519,11.303432110,7.817268021,1,1,1,19.2394053,goalReached,Three-run corrected-source median timing
+2026-08-20,b845880+worktree,plan-325,exampleDenseConcaveAzElMotion,earliestArrival,1,1,1,12.700721560,12.807761070,8.817608547,1,1,1,36.9767274,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleFortyMovingCircleGrid,earliestArrival,1,1,1,110.807929685,122.955593942,64.556780013,1,1,1,23.0213970,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleFourAcceleratingCircles,fixedArrival,1,1,1,24.363303007,27.712518684,22,1,1,1,54.6080525,goalReached,Specified moving-target time
+2026-08-20,b845880+worktree,plan-325,exampleInterceptMovingTargetAtSetTime,fixedArrival,1,1,1,9.538940547,9.538940547,12,1,1,1,6.5785018,goalReached,Specified intercept time
+2026-08-20,b845880+worktree,plan-325,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.097524449,7.342215833,6.275807672,1,1,1,4.8420572,goalReached,Earliest moving-target intercept
+2026-08-20,b845880+worktree,plan-325,exampleMovingBarrierWait,earliestArrival,1,1,1,10,10.141928092,10.544230762,1,1,1,30.7819031,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleMovingCircleNoAzimuthWrap,earliestArrival,1,1,1,12.113593185,12.113593185,12.293137410,1,1,1,17.2775305,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleMovingDeformingUSOutlineVisibility,earliestArrival,1,1,1,63.084805147,71.508173805,12.986426213,1,1,1,86.6511818,goalReached,Native unsimplified U.S. boundary
+2026-08-20,b845880+worktree,plan-325,exampleNoPathAzElMotion,earliestArrival,1,0,1,NaN,NaN,NaN,NaN,NaN,NaN,15.9084524,noValidatedSeed,Expected validated failure
+2026-08-20,b845880+worktree,plan-325,exampleObstacleFreeAzElMotion,earliestArrival,1,1,1,4.472135955,4.472860956,4.613406127,1,1,1,6.2970645,goalReached,Default jerk preserved
+2026-08-20,b845880+worktree,plan-325,exampleOpeningUShapedAzElTimeSpace,earliestArrival,1,1,1,10,10,15,1,1,1,16.7152230,goalReached,Validated wait motion
+2026-08-20,b845880+worktree,plan-325,exampleStraightTargetAlternatingOcclusion,fixedArrival,1,1,1,13.341664064,19.229413228,20.869565217,1,1,1,23.2660849,goalReached,Specified moving-target time; route-quality regression recorded
+2026-08-20,b845880+worktree,plan-325,exampleTargetExitsObstacle,fixedArrival,1,1,1,19.824386759,22.879930804,24,1,1,1,13.0101589,goalReached,Specified moving-target time
+2026-08-20,b845880+worktree,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720884,24.302835532,22.876124561,1,1,1,64.0032750,goalReached,Final timeout-free contract
+2026-08-20,b845880+worktree,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040,42.580112086,26.492875797,1,1,1,40.6891619,goalReached,Wide U; arrival below 38 seconds
+2026-08-20,b845880+worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,25.132264157,8.902682125,1,1,1,120.1529240,goalReached,Final timeout-free contract

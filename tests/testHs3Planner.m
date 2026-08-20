@@ -34,6 +34,53 @@ verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, isfield(options, "UseParallel"));
 verifyFalse(testCase, isfield(options, "MaximumVisibilitySnapshotsPerObstacle"));
+verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
+verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
+verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
+end
+
+function testWorkspaceIntervalsBelongToLimits(testCase)
+% Verify omitted and explicit workspace intervals use the limits contract.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(6, [2 0], [0 0], [0 0]);
+limits = rmfield(physicalLimits([2 2], [1 1], [2 2]), ...
+    ["azimuthInterval_deg", "elevationInterval_deg"]);
+result = planAzElMotion([], initialState, goalState, limits, fixedOptions());
+verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-180 180]);
+verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-90 90]);
+limits.azimuthInterval_deg = [-12 14];
+limits.elevationInterval_deg = [-5 6];
+result = planAzElMotion([], initialState, goalState, limits, fixedOptions());
+verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-12 14]);
+verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-5 6]);
+end
+
+function testOldWorkspaceOptionGivesMigrationError(testCase)
+% Verify old workspace option names identify their new limits location.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(6, [2 0], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.ElevationInterval_deg = [-5 5];
+verifyError(testCase, @() planAzElMotion( ...
+    [], initialState, goalState, limits, options), ...
+    "planAzElMotion:WorkspaceLimitMoved");
+end
+
+function testVerboseOutputUsesOnePrefixFamily(testCase)
+% Verify quiet mode is quiet and verbose mode uses only the public prefix.
+% checkcode cannot see that evalc reads these three local variables.
+initialState = state(0, [0 0], [0 0], [0 0]); %#ok<NASGU>
+goalState = state(6, [2 0], [0 0], [0 0]); %#ok<NASGU>
+limits = physicalLimits([2 2], [1 1], [2 2]); %#ok<NASGU>
+options = fixedOptions();
+quietText = evalc("planAzElMotion([], initialState, goalState, limits, options);");
+verifyEmpty(testCase, strtrim(quietText));
+options.Verbose = true;
+verboseText = evalc("planAzElMotion([], initialState, goalState, limits, options);");
+verifyNotEmpty(testCase, regexp(verboseText, '\[AzEl\]', 'once'));
+verifyEmpty(testCase, regexp(verboseText, ...
+    '(?m)^\[HS3\]|^\[first motion', 'once'));
 end
 
 function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
@@ -56,7 +103,7 @@ options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacles, initialState, goalState, limits, options, tic);
+    obstacles, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusteredRegionCount, 3);
@@ -413,7 +460,7 @@ options = fixedOptions();
 options.MaximumSeedCount = 5;
 options.DirectSeedOnly = false;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacles, initialState, goalState, limits, options, tic);
+    obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
 verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 2);
@@ -529,7 +576,7 @@ options = planAzElMotion();
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacle, initialState, goalState, limits, options, tic);
+    obstacle, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -551,7 +598,7 @@ goalState = state(10, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 [~, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacle, initialState, goalState, limits, options, tic);
+    obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
 end
@@ -568,7 +615,7 @@ limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacle, initialState, goalState, limits, options, tic);
+    obstacle, initialState, goalState, limits, options);
 directSeed = seeds([seeds.Source] == "directVisibilityEdge");
 timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
 verifyNotEmpty(testCase, directSeed);
@@ -606,7 +653,7 @@ limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 2;
 [seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
-    obstacle, initialState, goalState, limits, options, tic);
+    obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
 verifyFalse(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -626,7 +673,7 @@ initialState = state(0, [0 0], [0 0], [0 0]);
 goalState = state(8, [4 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.MaximumSolverTime_s = options.MaximumPlanningTime_s;
+options.MaximumSolverTime_s = Inf;
 seed = struct( ...
     "Index", 1, "Source", "directWait", ...
     "position_deg", [0 0; 0 0; 4 0], ...
@@ -674,19 +721,16 @@ verifyError(testCase, @() planAzElMotion( ...
     "planAzElMotion:UnsupportedWrappedGeometry");
 end
 
-function testPlanningTimeLimitReturnsStableFailure(testCase)
-% Verify a time budget is an expected result with per-seed diagnostics.
+function testRemovedPlanningTimeOptionGivesMigrationError(testCase)
+% Verify the removed planner timeout gives an actionable public error.
 initialState = state(0, [0 0], [0 0], [0 0]);
 goalState = state(8, [4 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.MaximumPlanningTime_s = 1e-9;
-result = planAzElMotion([], initialState, goalState, limits, options);
-verifyFalse(testCase, result.Success);
-verifyEqual(testCase, result.TerminationReason, "planningTimeLimit");
-verifyEqual(testCase, numel(result.SeedSummaries), numel(result.Seeds));
-verifyEqual(testCase, ...
-    result.SeedSummaries(1).TerminationReason, "planningTimeLimit");
+options.MaximumPlanningTime_s = 1;
+verifyError(testCase, @() planAzElMotion( ...
+    [], initialState, goalState, limits, options), ...
+    "planAzElMotion:RemovedMaximumPlanningTime");
 end
 
 function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
@@ -797,13 +841,11 @@ goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 3;
-options.MaximumPlanningTime_s = 8;
 options.MaximumNlpIterations = 40;
-options.ElevationInterval_deg = [-10 10];
+limits.elevationInterval_deg = [-10 10];
 result = planAzElMotion(wall, initialState, goalState, limits, options);
 verifyFalse(testCase, result.Success);
-verifyTrue(testCase, any(result.TerminationReason == ...
-    ["noValidatedSeed", "planningTimeLimit"]));
+verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyEqual(testCase, numel(result.SeedSummaries), numel(result.Seeds));
 verifyGreaterThanOrEqual(testCase, ...
     result.SearchDiagnostics.Grid.ExpandedCount, 0);
@@ -856,7 +898,6 @@ options.MaximumSeedCount = 1;
 options.CollocationSegmentCount = 5;
 options.MaximumNlpIterations = 150;
 options.MaximumNlpFunctionEvaluations = 15000;
-options.MaximumPlanningTime_s = 25;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end
@@ -876,7 +917,9 @@ function limits = physicalLimits(velocity_deg_s, acceleration_deg_s2, ...
 limits = struct( ...
     "maxVelocity_deg_s", velocity_deg_s, ...
     "maxAcceleration_deg_s2", acceleration_deg_s2, ...
-    "maxJerk_deg_s3", jerk_deg_s3);
+    "maxJerk_deg_s3", jerk_deg_s3, ...
+    "azimuthInterval_deg", [-180 180], ...
+    "elevationInterval_deg", [-90 90]);
 end
 
 function closeTestFigures(handles)

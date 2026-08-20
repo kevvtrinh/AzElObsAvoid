@@ -118,25 +118,10 @@ end
     options, stateTolerance);
 %% Section 3: Certify Continuous Collision Freedom
 if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
-    validationDeadlineReached = internalDeadlineReached(options);
-    if ~validationDeadlineReached
-        [seedCorridorCertified, seedCorridorClearance_deg] = ...
-            azElInternal.certifySeedCorridor( ...
-            trajectory, obstacles, ...
-            options.CollisionClearanceTolerance_deg);
-        validationDeadlineReached = internalDeadlineReached(options);
-    else
-        seedCorridorCertified = false;
-        seedCorridorClearance_deg = NaN;
-    end
-    if validationDeadlineReached
-        seedCorridorCertified = false;
-        collisionFree = false;
-        collisionResolved = false;
-        minimumClearance_deg = NaN;
-        collisionCheckCount = 0;
-        unresolvedIntervalCount = 1;
-    elseif seedCorridorCertified
+    [seedCorridorCertified, seedCorridorClearance_deg] = ...
+        azElInternal.certifySeedCorridor( ...
+        trajectory, obstacles, options.CollisionClearanceTolerance_deg);
+    if seedCorridorCertified
         collisionFree = true;
         collisionResolved = true;
         minimumClearance_deg = seedCorridorClearance_deg;
@@ -144,9 +129,7 @@ if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
         unresolvedIntervalCount = 0;
     else
         [collisionFree, collisionResolved, minimumClearance_deg, ...
-            collisionCheckCount, unresolvedIntervalCount, ...
-            validationDeadlineReached] = ...
-            certifyCollision( ...
+            collisionCheckCount, unresolvedIntervalCount] = certifyCollision( ...
             trajectory.Polynomial, obstacles, limits, options);
     end
 else
@@ -156,7 +139,6 @@ else
     minimumClearance_deg = NaN;
     collisionCheckCount = 0;
     unresolvedIntervalCount = 0;
-    validationDeadlineReached = false;
 end
 safetyMarginPolicySatisfied = true;
 for obstacleIndex = 1:numel(obstacles)
@@ -187,7 +169,7 @@ checkNames = [ ...
     "polynomial sampled histories", "continuous limits", ...
     "polynomial dynamics", "collision freedom", ...
     "collision resolution", "safety-margin provenance", ...
-    "azimuth-wrap policy", "validation deadline"];
+    "azimuth-wrap policy"];
 checkValues = [ ...
     historySizesMatch, timeIsStrictlyIncreasing, historyIsFinite, ...
     initialStateMatched, terminalStateMatched, goalTimeSatisfied, ...
@@ -198,7 +180,7 @@ checkValues = [ ...
     polynomialChecks.HistoryConsistent, continuousBounds.Valid, ...
     dynamics.Consistent, collisionFree, ...
     collisionResolved, safetyMarginPolicySatisfied, ...
-    azimuthWrapPolicySatisfied, ~validationDeadlineReached];
+    azimuthWrapPolicySatisfied];
 for checkIndex = 1:numel(checkNames)
     if ~checkValues(checkIndex)
         issues(end + 1, 1) = checkNames(checkIndex); %#ok<AGROW>
@@ -248,7 +230,6 @@ validation = struct( ...
     "MinimumClearance_deg", minimumClearance_deg, ...
     "CollisionCheckCount", collisionCheckCount, ...
     "UnresolvedIntervalCount", unresolvedIntervalCount, ...
-    "DeadlineReached", validationDeadlineReached, ...
     "SafetyMarginPolicySatisfied", safetyMarginPolicySatisfied, ...
     "AzimuthWrapPolicySatisfied", azimuthWrapPolicySatisfied, ...
     "PeakVelocity_deg_s", maximumAbsolute(velocity_deg_s), ...
@@ -334,10 +315,10 @@ accelerationWithinLimits = true;
 jerkWithinLimits = true;
 maximumDynamicsResidual = 0;
 maximumSegmentContinuityResidual = 0;
-positionLower_deg = [options.AzimuthInterval_deg(1), ...
-    options.ElevationInterval_deg(1)];
-positionUpper_deg = [options.AzimuthInterval_deg(2), ...
-    options.ElevationInterval_deg(2)];
+positionLower_deg = [limits.azimuthInterval_deg(1), ...
+    limits.elevationInterval_deg(1)];
+positionUpper_deg = [limits.azimuthInterval_deg(2), ...
+    limits.elevationInterval_deg(2)];
 for segmentIndex = 1:segmentCount
     for axisIndex = 1:2
         positionPower = coefficients( ...
@@ -479,7 +460,7 @@ within = all(bernstein >= lower - tolerance & ...
     bernstein <= upper + tolerance);
 end
 function [collisionFree, resolved, minimumClearance_deg, ...
-        checkCount, unresolvedCount, deadlineReached] = certifyCollision( ...
+        checkCount, unresolvedCount] = certifyCollision( ...
         polynomial, obstacles, limits, options)
 % PURPOSE
 %   - Certify moving-obstacle clearance with conservative adaptive intervals.
@@ -489,7 +470,6 @@ if isempty(obstacles)
     minimumClearance_deg = Inf;
     checkCount = 0;
     unresolvedCount = 0;
-    deadlineReached = false;
     return;
 end
 collisionFree = true;
@@ -497,7 +477,6 @@ resolved = true;
 minimumClearance_deg = Inf;
 checkCount = 0;
 unresolvedCount = 0;
-deadlineReached = false;
 pathSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
 for segmentIndex = 1:polynomial.SegmentCount
     segmentStart_s = polynomial.SegmentStartTime_s(segmentIndex);
@@ -516,13 +495,6 @@ for segmentIndex = 1:polynomial.SegmentCount
     end
     splitTimes_s = unique(splitTimes_s);
     for splitIndex = 1:numel(splitTimes_s)
-        if internalDeadlineReached(options)
-            collisionFree = false;
-            resolved = false;
-            unresolvedCount = unresolvedCount + 1;
-            deadlineReached = true;
-            return;
-        end
         [~, splitPoint_deg] = azElInternal.evaluateAzElPolynomial( ...
             polynomial, splitTimes_s(splitIndex), segmentIndex);
         for obstacleIndex = 1:numel(obstacles)
@@ -544,13 +516,6 @@ for segmentIndex = 1:polynomial.SegmentCount
     stackStart_s = splitTimes_s(1:end - 1);
     stackEnd_s = splitTimes_s(2:end);
     while ~isempty(stackStart_s)
-        if internalDeadlineReached(options)
-            collisionFree = false;
-            resolved = false;
-            unresolvedCount = unresolvedCount + numel(stackStart_s);
-            deadlineReached = true;
-            return;
-        end
         intervalStart_s = stackStart_s(end);
         intervalEnd_s = stackEnd_s(end);
         stackStart_s(end) = [];
@@ -604,16 +569,6 @@ for segmentIndex = 1:polynomial.SegmentCount
     end
 end
 end
-function reached = internalDeadlineReached(options)
-% PURPOSE
-%   - Enforce the planner deadline when validation runs inside planning.
-reached = false;
-if isfield(options, "InternalPlanningTimer") && ...
-        isfield(options, "InternalPlanningDeadline_s")
-    reached = toc(options.InternalPlanningTimer) >= ...
-        options.InternalPlanningDeadline_s;
-end
-end
 function peak = maximumAbsolute(values)
 % PURPOSE
 %   - Return per-axis sampled peaks with stable NaNs for empty histories.
@@ -645,7 +600,6 @@ validation = struct( ...
     "CollisionFree", false, "CollisionResolved", false, ...
     "SeedCorridorCertified", false, "MinimumClearance_deg", NaN, ...
     "CollisionCheckCount", 0, "UnresolvedIntervalCount", 0, ...
-    "DeadlineReached", false, ...
     "SafetyMarginPolicySatisfied", false, ...
     "AzimuthWrapPolicySatisfied", false, ...
     "PeakVelocity_deg_s", [NaN NaN], ...

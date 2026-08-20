@@ -19,8 +19,9 @@ canonical original and protected obstacles
 ```
 
 The first-motion constructor uses one rest-to-rest quintic segment on each
-geometric edge. It stops at each waypoint. This family is available for a
-fixed-position goal with zero initial and terminal velocity and acceleration.
+geometric edge. It stops at each waypoint. This family supports a
+fixed-position goal and a sampled moving goal at a fixed arrival time when
+initial and terminal velocity and acceleration are zero.
 The planner validates first motions in seed order. It stops this stage at the
 first pass before it spends the bounded optional HS3 improvement budget.
 
@@ -117,14 +118,23 @@ Use these main controls:
 ```matlab
 options.EnableHs3Improvement = true;
 options.MaximumHs3ImprovementTime_s = 15;
-options.MaximumPlanningTime_s = 60;
 ```
 
-The deadlines are cooperative. The planner checks them between bounded units
-of work and inside adaptive validation. One unit can finish after its check.
-The result reports `FirstValidatedMotionTime_s` and
-`PlanningDeadlineOverrun_s`. A reported overrun is not hidden or changed to
-zero.
+`MaximumHs3ImprovementTime_s` limits only optional HS3 work after a valid
+motion exists. Required planning work uses deterministic seed, graph, solver
+iteration, function-evaluation, collocation, and refinement bounds. The
+planner has no whole-planner wall-clock cutoff. The result reports
+`FirstValidatedMotionTime_s` and total elapsed planning time.
+
+Workspace intervals belong to `limits`:
+
+```matlab
+limits.azimuthInterval_deg = [-180 180];
+limits.elevationInterval_deg = [-90 90];
+```
+
+The planner supplies these values when they are omitted. Old workspace option
+names and `MaximumPlanningTime_s` give actionable migration errors.
 
 ## Azimuth wrapping
 
@@ -147,7 +157,7 @@ Every expected outcome returns the same main fields:
   `acceleration_deg_s2`, and `jerk_deg_s3`;
 - the exact segment `Polynomial` used for continuous validation;
 - independent `Validation` and bounded `SearchDiagnostics`;
-- elapsed time, first-valid time, deadline overrun, and deterministic seed.
+- elapsed time, first-valid time, and the deterministic seed field.
 
 Expected planning failure does not throw. Invalid inputs and unsupported
 contracts throw identified errors.
@@ -206,7 +216,8 @@ first-motion family, the HS3 jerk chain, endpoint constraints, earliest
 arrival, mesh refinement, seed diversity, unreduced and reduced seed policy,
 moving geometry, waiting seeds, continuous collision and kinematic failures,
 safety-margin provenance, wrapping restrictions, deterministic repetition,
-deadlines, moving targets, and stable no-path diagnostics.
+the removed planner-timeout contract, moving targets, and stable no-path
+diagnostics.
 
 The current measured results are in `benchmark.csv`. The evidence-based branch
 assessment is in `branch_assessment.md`. Update both records when planner
@@ -219,8 +230,9 @@ evidence changes.
   does not classify continuous Az/El/time paths. Reduced or merged regions can
   also merge signature classes. Diagnostics report the representatives,
   discovered signatures, state count, and truncation state.
-- The deterministic first-motion family requires a fixed-position goal and
-  zero endpoint velocity and acceleration. It stops at geometric waypoints.
+- The deterministic first-motion family requires zero endpoint velocity and
+  acceleration. It supports a moving goal only at a fixed arrival time and
+  stops at geometric waypoints.
 - HS3 is a local nonlinear optimizer. It can fail or return a local solution.
 - Spatial seed reduction can remove a useful narrow proposal. It cannot make
   an invalid motion pass because HS3 and validation use original protected
@@ -236,6 +248,5 @@ evidence changes.
 - Mesh refinement is optional. `MaximumMeshRefinementPasses` is zero by
   default. A refined result cannot replace a candidate when it is later or has
   a worse exact jerk cost.
-- Cooperative deadlines can have a small reported overrun.
 - Azimuth wrapping with obstacles or moving goals is unsupported.
 - No result proves global feasibility, completeness, or optimality.

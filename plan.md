@@ -1,576 +1,1267 @@
-# Plan 325 Planner Rebuild Plan
+# Plan 325 Refactor Plan
 
 ## Objective
 
-Build one compact and general azimuth/elevation planner from the useful parts
-of the inspected branches. Do not combine old planners as independent layers.
-Keep one public planner, one seed generator, two bounded motion families, one
-independent validator, and one result contract.
+Refactor the existing `plan-325` branch without redesigning its planner.
 
-The production pipeline is:
+Branch to modify:
 
-```text
-canonical original and protected obstacles
-    -> bounded direct, sampled spatial, reduced, and timed seed proposals
+`https://github.com/kevvtrinh/AzElObsAvoid/tree/plan-325`
+
+Plotting reference:
+
+`https://github.com/kevvtrinh/AzElObsAvoid/tree/main`
+
+The purpose of this refactor is to improve consistency, diagnostics, API ownership, and plotting fidelity while preserving the current Plan 325 planning architecture and behavior.
+
+Required changes:
+
+1. Apply the plotting style and plotting behavior from `main` to `plan-325`.
+2. Make verbose behavior consistent across every maintained example.
+3. Move azimuth/elevation workspace limits from planner `options` into `limits`.
+4. Remove `MaximumPlanningTime_s`.
+5. Replace reliance on a whole-planner wall-clock cutoff with substantially better progress reporting through `Verbose`.
+6. Preserve current planning algorithms, solver behavior, seed families, validation rules, and deterministic selection except where changes are required by this refactor.
+
+The implementation must follow `AGENTS.md`.
+
+# Non-Goals
+
+This task is a refactor, not a new planning-method task.
+
+Do not:
+
+- replace the Plan 325 planner;
+- add another planner;
+- replace HS3;
+- replace the deterministic first-motion stage;
+- redesign seed generation;
+- add SIPP;
+- add scenario-specific planner logic;
+- change safety-margin semantics;
+- weaken collision or kinematic validation;
+- change the result-selection policy;
+- change example geometry merely to make a test pass;
+- add a renamed replacement for `MaximumPlanningTime_s`.
+
+Preserve the current Plan 325 pipeline:
+
+```
+canonical original/protected obstacles
+    -> bounded deterministic seed proposals
     -> deterministic finite-jerk first motion when supported
-    -> optional bounded separated HS3 improvement
+    -> optional/general HS3 solve
     -> independent continuous validation
     -> deterministic candidate selection
 ```
 
-The deterministic first motion is a real trajectory. It is not a waypoint
-hint. It uses rest-to-rest quintic motion on each edge and stops at each
-waypoint. It supports fixed-position goals with zero initial and terminal
-velocity and acceleration. Every first motion needs independent validation.
+# Code-Size Exception for Plotting
 
-HS3 remains the general local trajectory optimizer. It is required when the
-first-motion family cannot represent the request. It is also an optional
-improvement stage for a valid first motion. Improvement is enabled by default
-with a 15 second budget.
+The existing Plan 325 size goals remain applicable to planner, solver, seed-generation, obstacle, validation, test, and example code.
 
-The implementation must follow `AGENTS.md`. This includes the planner
-contract, stable failure results, units, examples, diagnostics, validation,
-MATLAB headers, and verification reports.
+However, **plotting and animation code are explicitly exempt from the existing code-base line limit when additional plotting code is needed to reproduce the plotting behavior of **`**main**`**.**
 
-## Branch
+This exception exists specifically so plotting fidelity is not sacrificed merely to meet the old size target.
 
-This implementation uses the Git branch `plan-325`. It uses an isolated
-worktree so that work on Plan 502 is unchanged.
+Allowed:
 
-## Non-Negotiable Size Limits
+- increasing `plotAzElMotion.m`;
+- increasing animation/plot helper code;
+- adding plotting-only helpers when they materially improve organization;
+- retaining diagnostic plotting data needed to reproduce `main`;
+- restoring richer graph, obstacle, trajectory, kinematic, and animation visualization.
 
-Treat code size as an acceptance requirement, not a future cleanup task.
+Not allowed:
 
-- Production MATLAB code, excluding examples, tests, and benchmarks: target
-  no more than 6,000 lines and hard limit 7,000 lines.
-- Entire maintained MATLAB repository, including all 14 main examples: target
-  no more than 10,500 lines and hard limit 12,000 lines.
-- No production MATLAB file should exceed 900 lines without a documented
-  reason and explicit approval.
-- Target 8 to 16 production files with substantial responsibilities. Do not
-  replace a few large files with dozens of one-function fragments.
-- Do not count comments or headers as an excuse to exceed the limits; they are
-  part of the maintained code.
-- At the end of every phase, report production and total MATLAB line counts.
-- If a feature would violate these limits, first simplify the feature or defer
-  it. Do not silently enlarge the architecture.
+- moving planner logic into plotting files to avoid the size limit;
+- duplicating solver or geometry algorithms in plotting code;
+- using the plotting exemption to justify unrelated code growth;
+- changing planning results merely to make plots easier to reproduce.
 
-## Required Planner Contract
+At the end of the task, report line counts separately for:
 
-Keep one public entry point:
+1. core production code excluding plotting/animation;
+2. plotting/animation code;
+3. examples;
+4. tests;
+5. total maintained MATLAB code.
 
-```matlab
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+Plotting growth alone must not fail the Plan 325 size gate.
+
+# Phase 0 - Establish the Refactor Baseline
+
+Before editing behavior:
+
+1. Check out `plan-325`.
+2. Read `AGENTS.md`.
+3. Run the current focused test suite.
+4. Run all maintained examples headlessly.
+5. Record the current planner defaults returned by:
+
 ```
-
-Keep the zero-input defaults call:
-
-```matlab
 options = planAzElMotion();
 ```
 
-The planner supports these input families through this interface:
-
-- static and known time-varying polygon obstacles;
-- fixed-arrival and earliest-arrival goal policies;
-- fixed-position and sampled moving goals;
-- initial and terminal position, velocity, and acceleration;
-- per-axis velocity, acceleration, and jerk limits;
-- waiting in timed seed proposals;
-- safety margins applied exactly once by obstacle construction;
-- deterministic behavior for identical inputs and options;
-- success and expected failure through one stable result schema.
-
-Azimuth wrapping is a restricted input family. It is currently supported only
-for an obstacle-free request with a fixed-position goal. Reject wrapping with
-obstacles or a moving goal as an unsupported configuration. This restriction
-protects physical collision and target correctness at the coordinate seam.
-
-The stable result includes:
-
-- status, message, and termination reason;
-- resolved inputs, limits, and options;
-- original and protected obstacle data;
-- bounded search diagnostics and every attempted seed summary;
-- the selected seed and selected motion source;
-- sampled position, velocity, acceleration, and jerk histories;
-- the exact segment polynomial;
-- independent collision and constraint validation;
-- arrival time, trajectory duration, and goal horizon;
-- elapsed time, first validated motion time, and deadline overrun.
-
-Expected planning outcomes return a result. Invalid inputs and unsupported
-configurations throw identified errors.
-
-## Honest Result Claim
-
-Use this claim:
-
-> The result is the earliest independently validated candidate from the finite
-> deterministic seed and motion families that the planner attempted.
-
-For arrival times within `ArrivalTimeTolerance_s`, select the candidate with
-the lowest exact integrated squared jerk. Use the deterministic seed index for
-the final tie.
-
-Do not claim global time optimality, global path completeness, or proof that
-no feasible trajectory exists. A `noValidatedSeed` result means only that the
-bounded attempted families did not produce a valid result.
-
-## Bounded Seed Generator
-
-Use one deterministic seed generator. It supplies proposals and diagnostics.
-It does not make a global planning claim.
-
-Generate a bounded mixture of:
-
-1. the direct seed;
-2. spatial visibility seeds from distinct bounded 2-D homology signatures;
-3. time-layer seeds with motion and wait edges for changing obstacles when
-   their estimated query work is inside the seed-search work limit.
-
-The default maximum seed count is five. The hard public maximum is nine.
-Moving histories use bounded time layers, nodes, and collision samples.
-Retain the complete generated and rejected counts in diagnostics.
-
-Augment each spatial graph state with principal-angle path integrals about one
-interior representative of each connected sampled obstacle region. Keep only
-signature components from -1 through 1. Stop at the public route count, 4,000
-augmented states, or the seed deadline. Record representatives, discovered
-signatures, state count, and truncation state. This is a bounded 2-D homology
-proposal search. It is not a continuous Az/El/time homotopy certificate.
-
-Spatial proposal construction can use a conservative dense-history support
-region or an optional clustered convex region. Mark each affected seed with
-`UsesReducedGeometry`. Use these regions only for spatial proposals and for a
-certified seed corridor. Verify that the reduced region contains the original
-protected geometry before a corridor can support a first motion.
-
-Timed search queries the original protected obstacle histories at a bounded
-set of edge samples. It must not use a cluster or dense-history envelope in
-place of an obstacle. The dense-history gate suppresses timed search and
-reports `timedQueryWorkLimit`; this makes coverage incomplete. The generator
-keeps a base spatial route before optional timed work starts. HS3 and
-independent validation use the original protected histories. Only final
-adaptive validation certifies continuous collision freedom.
-
-`EstimatedDuration_s` is an HS3 initial guess. It is not a causal constraint
-and is not a lower bound on final time. The goal-time policy, endpoint state,
-and physical limits define the permitted time range.
-
-## Deterministic First Motion
-
-Construct supported piecewise quintic trajectories in seed order. Stop this
-stage at the first independently validated motion. Each trajectory has these
-properties:
-
-- position follows each seed edge;
-- velocity and acceleration are zero at every edge boundary;
-- position, velocity, and acceleration are continuous;
-- each edge duration satisfies analytic velocity, acceleration, and jerk
-  limits;
-- the result contains exact polynomial coefficients and sampled histories;
-- the public validator checks the polynomial, histories, endpoints, limits,
-  and continuous collision state.
+1. Record all fields currently present in:
+    - `options`;
+    - normalized `limits`;
+    - `result.SearchDiagnostics`;
+    - `result.SeedSummaries`.
+2. Capture representative plots from both:
+    - `plan-325`;
+    - `main`.
 
-This motion family supports zero initial and terminal derivatives. It supports
-a fixed-position goal, a moving goal with a fixed arrival time, and stationary
-wait edges with a finite seed duration. It rejects an earliest-arrival moving
-goal and nonzero endpoint derivatives. HS3 handles these cases when the
-general optimizer finds a valid solution.
+Use at least these scenario classes when comparing plots:
 
-The first motion can use an exact seed corridor. It can use a reduced spatial
-corridor only after an independent containment and separation certificate.
-The certificate and final trajectory validation both use the exact protected
-obstacles.
+- obstacle-free;
+- one static obstacle;
+- multiple static obstacles;
+- moving obstacle;
+- moving target;
+- failed/no-path result;
+- a case with visibility-graph diagnostics.
 
-## Bounded HS3 Stage
+The baseline must document existing behavior before changes.
 
-Use the separated third-order Hermite-Simpson formulation with jerk as the
-control. The state is position, velocity, and acceleration. Reconstruct the
-state from one consistent third-order chain.
+Exit criterion:
 
-Use HS3 in two cases:
+- current tests and examples are recorded;
+- representative `main` and `plan-325` figures are available for comparison;
+- API migration locations are identified.
 
-1. Run it as an improvement when `EnableHs3Improvement` is true.
-2. Run it as the required general motion stage when no valid first motion
-   exists, even if optional improvement is disabled.
+# Phase 1 - Restore the Plotting Style from `main`
 
-`EnableHs3Improvement` is true by default.
-`MaximumHs3ImprovementTime_s` is 15 seconds by default. Divide the remaining
-improvement budget across the remaining seed attempts. A failed, invalid,
-later, or higher-jerk HS3 result must not replace a better valid motion.
+## Source of truth
 
-For earliest arrival, use final time and jerk ordinates as decision variables.
-Use two objective stages:
+Treat the plotting behavior of `main` as the visual reference.
 
-1. minimize final time;
-2. hold time within its tolerance and minimize exact integrated squared jerk.
+Do not blindly copy the entire main-branch planner or its old planning architecture.
 
-Compute the squared-jerk integral from the polynomial. Do not use a quadrature
-rule that is not exact for the jerk polynomial. Mesh refinement can replace a
-candidate only when it does not make arrival time or exact jerk cost worse.
+Copy or adapt only plotting, animation, layout, formatting, and visualization behavior that is compatible with Plan 325's result diagnostics.
 
-HS3 obstacle constraints use exact protected obstacle histories. Reduced
-geometry can initialize a spatial corridor. It cannot replace exact geometry
-in optimization or final validation.
+## Preserve visual conventions
 
-## Cooperative Deadlines
+The Plan 325 plotter should match `main` as closely as practical for the same type of result.
 
-Use `MaximumPlanningTime_s` for the complete planner call. Use
-`MaximumHs3ImprovementTime_s` for optional improvement. Pass the remaining
-time to HS3 and to independent validation.
+This includes, where applicable:
 
-Deadline checks are cooperative. Check them:
+- figure titles;
+- axes titles;
+- figure naming;
+- subplot/tiled-layout organization;
+- grid visibility;
+- box visibility;
+- equal-axis behavior;
+- azimuth/elevation labels;
+- time-axis labels;
+- kinematic plot layout;
+- legend names;
+- legend locations;
+- line styles;
+- marker styles;
+- marker sizes;
+- line widths;
+- obstacle appearance;
+- original-versus-protected obstacle appearance;
+- selected-path appearance;
+- candidate/seed route appearance;
+- accepted visibility edges;
+- rejected/blocked visibility edges;
+- explored nodes;
+- frontier nodes;
+- best partial route;
+- moving-target track;
+- start marker;
+- goal marker;
+- animation appearance;
+- diagnostic plotting for failure cases.
 
-- before and after seed construction units;
-- before each first-motion and HS3 attempt;
-- inside solver callbacks;
-- during adaptive collision validation;
-- before optional mesh refinement.
+Do not replace descriptive main-branch titles with generic titles.
 
-A bounded operation can complete after the last check. Report this as
-`PlanningDeadlineOverrun_s`. Do not hide an overrun. Preserve a valid first
-motion if the optional improvement deadline ends.
+For example, preserve the concept of:
 
-## Independent Continuous Validation
+```
+<example title> - <termination reason>
+```
 
-Use one public validator for planner selection, tests, and examples. It must
-not trust a solver status or the planner success flag.
+when that is the visual convention of the reference plot.
 
-Validate:
+## Preserve plot scale and grid size
 
-- finite and strictly increasing sampled time;
-- exact polynomial schema and segment time base;
-- polynomial continuity at every segment boundary;
-- initial and terminal position, velocity, and acceleration;
-- agreement between the polynomial and sampled histories;
-- continuous workspace, velocity, acceleration, and jerk limits;
-- continuous collision clearance against exact protected moving geometry;
-- safety-margin provenance and the wrapping policy;
-- deadline state and unresolved adaptive intervals.
+For equivalent examples, preserve the same workspace framing used by `main`.
 
-Use analytic polynomial bounds when practical. Use adaptive subdivision for
-moving-obstacle collision checks. Fail an interval when its relative motion
-bound cannot prove separation at the minimum time step.
+The plotter should not independently choose dramatically different axes limits merely because Plan 325 has a different internal implementation.
 
-Do not accept a trajectory by clipping it. Do not reconstruct missing
-polynomials from sampled output. Do not infer a passed check from a solver
-success code.
+Workspace limits should come from the canonical planner `limits` structure after the API migration described later.
 
-## Minimal Production Architecture
+Use:
 
-Keep these responsibilities separate without adding another planner:
+```
+limits.azimuthInterval_deg
+limits.elevationInterval_deg
+```
 
-| Responsibility | Target size |
-| --- | ---: |
-| `planAzElMotion.m`: validation, orchestration, selection, result | 300-500 |
-| Obstacle construction, packing, interpolation, and query | 700-1,000 total |
-| One bounded topology-seed generator | 400-700 |
-| First-motion construction | 350-650 |
-| HS3 transcription and solve | 800-1,400 total |
-| Independent collision and kinematic validation | 400-700 |
-| Plotting and animation | 500-800 total |
+as the source for requested workspace bounds where appropriate.
 
-Keep obstacle construction, seed proposal, motion construction, validation,
-and visualization separate. Do not add SIPP, snapshot planners, parallel
-planner modes, scenario-specific waypoints, or another result schema.
+Keep:
 
-## Implementation Phases
+```
+axis(..., "equal")
+grid(..., "on")
+box(..., "on")
+```
 
-### Phase 1: Preserve the Useful Baseline
+where those are part of the main plotting convention.
 
-- Start Plan 325 from the inspected Plan 502 revision.
-- Use an isolated worktree.
-- Record the branch, source revision, repository size, and baseline behavior.
-- Preserve Plan 502 and all unrelated user changes.
+Do not autoscale away the intended az/el workspace when the example explicitly defines one.
 
-Exit criterion: the isolated Plan 325 branch and baseline evidence exist.
+## Kinematic figures
 
-### Phase 2: Restore the Required Example Contracts
+Retain the main-style four-row layout:
 
-- Restore the original single U geometry and request.
-- Restore the 40-circle moving field and goal-time policy.
-- Restore the native changing U.S. outline and goal-time policy.
-- Keep compact controls as runtime overrides only.
+```
+position
+velocity
+acceleration
+jerk
+```
 
-Exit criterion: tests protect the physical geometry and request of each case.
+with shared time interpretation.
 
-### Phase 3: Add the Deterministic First Motion
+Plot azimuth and elevation consistently.
 
-- Implement the rest-to-rest quintic edge invariant once.
-- Produce the full polynomial and sampled result schema.
-- Validate each candidate independently.
-- Reject unsupported endpoint and moving-goal cases clearly.
+Show physical limit references where Plan 325 already has reliable access to those limits, but do not remove main-style layout or labeling to do so.
 
-Exit criterion: analytic tests prove endpoint, continuity, limit, and
-collision behavior.
+The plot title should remain the example/plot title, not an internal solver name.
 
-### Phase 4: Rebuild Bounded Seed Coverage
-
-- Keep direct and original-geometry sampled timed seed search.
-- Replace side restrictions and edge-removal retries with bounded
-  homology-signature spatial search.
-- Permit reduced geometry only for spatial proposal work.
-- Add containment certificates for reduced corridors.
-- Record unreduced sampled, reduced, timed, and completeness diagnostics.
-
-Exit criterion: the single U, 40-circle, and changing U.S. families receive
-bounded deterministic proposals without scenario-specific logic.
-
-### Phase 5: Bound and Correct HS3 Improvement
-
-- Use the first valid motion as the retained baseline.
-- Attempt all bounded seeds in deterministic order.
-- Treat timed seed duration as an initial guess.
-- Use exact jerk integration and safe final-time bounds.
-- Keep a refined or improved candidate only when selection quality does not
-  become worse.
-
-Exit criterion: a failed optional solve cannot erase a valid candidate, and a
-request outside the first-motion family can still use HS3.
-
-### Phase 6: Strengthen Validation and Deadlines
-
-- Validate the polynomial schema, time base, continuity, endpoints, and
-  sampled-history agreement.
-- Use exact protected obstacle histories for continuous validation.
-- Pass remaining deadline values through all expensive stages.
-- Report first-valid time and any deadline overrun.
-
-Exit criterion: an unrelated, shifted, discontinuous, or falsely sampled
-polynomial cannot pass.
-
-### Phase 7: Verify the Complete Repository
-
-Run one MATLAB process at a time:
-
-- Code Analyzer and syntax checks;
-- focused first-motion tests;
-- HS3, seed, moving-target, wrapping, and validator tests;
-- default and override tests;
-- a successful plan and an expected no-path result;
-- every maintained example headlessly;
-- at least one visible example when graphics are available.
-
-For each example, report the required path, duration, collision, kinematic,
-validation, runtime, and termination metrics. Do not omit an unfavorable
-result.
-
-Exit criterion: reports contain the exact commands, results, runtimes, and
-untested items.
-
-### Phase 8: Audit Size and Publish
-
-- Count production and total MATLAB lines.
-- Inspect per-file additions and deletions.
-- Explain every existing source file with more than 50 added lines.
-- Update the benchmark and assessment from the new evidence.
-- Commit and push branch `plan-325`.
-
-Exit criterion: the pushed branch contains the tested implementation and its
-evidence.
-
-## Required Tests
-
-At minimum, tests must cover:
-
-- exact first-motion endpoint states and polynomial continuity;
-- continuous velocity, acceleration, and jerk limits;
-- collision checks between returned samples;
-- unsupported first-motion states route to HS3 without false success;
-- direct, unreduced sampled spatial, reduced spatial, and timed seeds;
-- timed duration as an initial guess, not a lower bound;
-- moving and deforming obstacles evaluated at trajectory time;
-- reduced corridor containment against exact protected geometry;
-- earliest and fixed arrival;
-- fixed and moving goals;
-- nonzero endpoint derivatives through HS3;
-- deterministic candidate ordering and selection;
-- optional HS3 failure with retained valid first motion;
-- exact jerk cost and no-worse mesh refinement;
-- deadline termination and reported overrun;
-- obstacle-free azimuth wrapping;
-- rejected wrapping with obstacles and with moving goals;
-- expected no-path with stable search diagnostics;
-- the three restored large-scenario input contracts.
-
-## Completion Criteria
-
-Plan 325 is complete only when all these statements are true:
-
-- One public planner owns selection and returns one stable schema.
-- One bounded seed generator produces direct, unreduced sampled spatial,
-  reduced spatial, and original-geometry sampled timed proposals. Spatial
-  routes retain distinct bounded 2-D homology signatures.
-- A supported seed can produce a deterministic independently validated first
-  motion.
-- HS3 is bounded, optional for improvement, and required for unsupported
-  first-motion requests.
-- Timed edge samples, HS3, and validation use original protected histories.
-- Reduced geometry is limited to spatial proposals and certified corridors.
-- Every successful result passes independent continuous validation.
-- Expected failures retain useful diagnostics.
-- Deadline overrun is measured and reported.
-- Azimuth wrapping restrictions are explicit and enforced.
-- Production MATLAB code is at or below 6,000 lines and below the 7,000-line
-  hard limit.
-- The complete MATLAB repository is at or below the 10,500-line target and
-  below the 12,000-line hard limit.
-- The final diff contains no scenario-specific planner behavior.
-- Documentation makes no global completeness or optimality claim.
-
-## Stop Conditions
-
-Stop and report before adding more architecture when:
-
-- an example appears to need a scenario-specific heuristic;
-- a feature creates a second planner, retimer, or validator;
-- production code would exceed 7,000 lines;
-- exact validation cannot resolve collision or constraint safety;
-- a deadline, reduction, fallback, or failure would be hidden;
-- required verification cannot run in the available MATLAB environment.
-
-The result must be small enough to understand and strict enough to trust. It
-must report the limits of the bounded search and local optimization.
+## Failure diagnostics
+
+A failed Plan 325 result must remain plottable.
+
+Do not require `result.Success == true` to render useful workspace or search diagnostics.
+
+For failed cases, show whatever Plan 325 retained, including when available:
+
+- obstacles;
+- direct route;
+- sampled visibility graph;
+- accepted edges;
+- blocked edges;
+- explored nodes;
+- frontier;
+- best partial route;
+- attempted seeds;
+- moving target history.
+
+A user should be able to inspect why a solve failed without rerunning the planner.
+
+## Plotting data ownership
+
+Do not make the plotter recompute the planner.
+
+The plotter must consume diagnostics already stored in `result`.
+
+If some information required to reproduce a useful main-style diagnostic is currently thrown away, extend `result.SearchDiagnostics` in the planner or seed generator to retain that data.
+
+Do not perform a second graph search from `plotAzElMotion`.
+
+## Plot verification
+
+For each representative example, compare `main` and refactored `plan-325`.
+
+Verification must explicitly inspect:
+
+- title text;
+- axes limits;
+- grid;
+- equal-axis behavior;
+- obstacle rendering;
+- selected motion rendering;
+- graph rendering;
+- start/goal rendering;
+- moving-target rendering;
+- kinematic layout;
+- animation framing.
+
+Pixel-perfect equality is not required because the planner internals differ.
+
+Visual semantics and style should match.
+
+Exit criterion:
+
+- the Plan 325 plotting system visually follows `main`;
+- failure diagnostics remain available;
+- no planner algorithm was copied merely to support plotting.
+
+# Phase 2 - Make Verbose Mode Consistent Across All Examples
+
+## One planner control
+
+Use one public planner control:
+
+```
+options.Verbose
+```
+
+Do not add:
+
+```
+VerboseSolver
+VerboseGraph
+VerboseExample
+DisplayProgress
+PrintProgress
+```
+
+or other overlapping public verbosity switches unless already required by a separate public contract.
+
+Internal helper functions may receive the resolved verbose value, but there should be one public source of truth.
+
+## Example contract
+
+Every maintained example must expose the same override:
+
+```
+exampleOverrides.Verbose
+```
+
+The shared example option resolver must forward it into:
+
+```
+options.Verbose
+```
+
+Every example must behave the same way.
+
+Do not have some examples hard-code:
+
+```
+options.Verbose = true;
+```
+
+while others leave it off.
+
+Do not create example-specific `fprintf` logic that bypasses the planner's verbose system.
+
+Recommended behavior:
+
+- interactive example default: `Verbose = true`;
+- tests: explicitly `Verbose = false`;
+- benchmarks: explicitly `Verbose = false` unless verbose output itself is under test;
+- zero-input planner default may remain `Verbose = false`.
+
+The exact default may follow existing shared example conventions, but it must be uniform across all maintained examples.
+
+## Example output responsibility
+
+Examples may print one concise example-level summary after the planner returns.
+
+Long-running progress output should come from the planner and its internal stages.
+
+This keeps all examples consistent.
+
+Exit criterion:
+
+- every maintained example accepts the same `Verbose` override;
+- changing `Verbose` produces consistent behavior across all examples;
+- automated tests can run quietly.
+
+# Phase 3 - Move Azimuth/Elevation Workspace Limits into `limits`
+
+## Current fields to remove from `options`
+
+Remove:
+
+```
+options.AzimuthInterval_deg
+options.ElevationInterval_deg
+```
+
+These describe physical/planning workspace bounds and belong with the physical constraints, not algorithm options.
+
+## New canonical fields
+
+Use:
+
+```
+limits.azimuthInterval_deg
+limits.elevationInterval_deg
+```
+
+The canonical public limits structure should therefore contain:
+
+```
+limits = struct( ...
+    "azimuthInterval_deg", [-180 180], ...
+    "elevationInterval_deg", [-90 90], ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1], ...
+    "maxJerk_deg_s3", [2 2]);
+```
+
+Use lower-camel field naming because the existing physical limit fields use that convention.
+
+## Required ownership change
+
+After normalization, all planner stages must read the workspace from:
+
+```
+limits.azimuthInterval_deg
+limits.elevationInterval_deg
+```
+
+This includes:
+
+- endpoint validation;
+- topology-seed generation;
+- visibility graph construction;
+- time-layer search;
+- HS3 bounds;
+- independent trajectory validation;
+- plotting;
+- animation;
+- moving-target wrapper;
+- example metadata where applicable.
+
+There must not be two active sources of truth.
+
+## Defaults
+
+The planner currently has default workspace intervals.
+
+Preserve the same default numerical workspace:
+
+```
+[-180 180]
+[-90 90]
+```
+
+but move ownership into limit normalization.
+
+Because `limits` is already a required input, `normalizeLimits` should add these fields when omitted:
+
+```
+if ~isfield(limits, "azimuthInterval_deg") || isempty(...)
+    limits.azimuthInterval_deg = [-180 180];
+end
+
+if ~isfield(limits, "elevationInterval_deg") || isempty(...)
+    limits.elevationInterval_deg = [-90 90];
+end
+```
+
+This avoids forcing every existing caller to specify global az/el limits while still making `limits` the canonical owner.
+
+## Validation
+
+Validate both as:
+
+- numeric;
+- real;
+- finite;
+- two elements;
+- strictly increasing.
+
+Normalize them to row vectors.
+
+## Legacy-option handling
+
+Do not silently ignore old fields.
+
+If a caller passes:
+
+```
+options.AzimuthInterval_deg
+```
+
+or:
+
+```
+options.ElevationInterval_deg
+```
+
+raise an actionable migration error.
+
+Example:
+
+```
+AzimuthInterval_deg has moved from planner options to
+limits.azimuthInterval_deg.
+```
+
+Likewise for elevation.
+
+This is preferable to an "unknown option ignored" warning because silently using the default workspace could change the requested problem.
+
+## Repository migration
+
+Update all maintained:
+
+- examples;
+- tests;
+- benchmarks;
+- README snippets;
+- internal helper contracts;
+- moving-target calls;
+- validator calls;
+- plot calls.
+
+Search the entire repository for:
+
+```
+AzimuthInterval_deg
+ElevationInterval_deg
+```
+
+At completion, those names may remain only in deliberate migration-error handling or historical documentation.
+
+Exit criterion:
+
+- `options` contains no active workspace intervals;
+- all workspace consumers use `limits`;
+- existing behavior is unchanged for numerically equivalent inputs.
+
+# Phase 4 - Remove `MaximumPlanningTime_s`
+
+## Remove the public option completely
+
+Delete:
+
+```
+options.MaximumPlanningTime_s
+```
+
+This is not a rename.
+
+Do not replace it with:
+
+```
+PlanningTimeout
+PlannerTimeLimit
+MaximumRuntime
+WallClockLimit
+```
+
+or another whole-planner wall-clock cutoff.
+
+## Remove all dependent behavior
+
+Search the complete repository for:
+
+```
+MaximumPlanningTime_s
+planningTimeLimit
+PlanningDeadlineOverrun_s
+InternalPlanningDeadline_s
+InternalPlanningTimer
+SeedPlanningTimeLimit_s
+```
+
+Then determine whether each use exists solely to implement the full planner wall-clock deadline.
+
+Remove all such behavior.
+
+This includes current logic that:
+
+- gives seed generation a percentage of `MaximumPlanningTime_s`;
+- stops seed processing when total elapsed planner time reaches the limit;
+- skips seeds because the wall-clock limit expired;
+- sets `planningTimeLimit` termination;
+- propagates the overall planner deadline into HS3;
+- propagates the overall planner deadline into validation;
+- computes planner deadline overrun;
+- reports deadline-specific search diagnostics;
+- uses the planner time limit to decide whether a failure is `planningTimeLimit` or `noValidatedSeed`.
+
+## Failure semantics after removal
+
+If the finite deterministic seed/motion families complete without a valid trajectory, use the normal bounded-search failure semantics:
+
+```
+noValidatedSeed
+```
+
+or the existing more-specific non-timeout failure reason.
+
+A failure must describe the actual algorithmic outcome, not a removed wall-clock deadline.
+
+## Preserve elapsed-time diagnostics
+
+Keep:
+
+```
+result.ElapsedPlanningTime_s
+```
+
+and useful per-stage elapsed durations.
+
+Elapsed time becomes diagnostic only.
+
+It must not change planner decisions.
+
+`FirstValidatedMotionTime_s` may also remain because it is useful progress/performance information.
+
+Remove `PlanningDeadlineOverrun_s` if it has no remaining meaning after the whole-planner deadline is deleted.
+
+## Preserve deterministic work bounds
+
+Removing the wall-clock cutoff must not make the algorithm structurally unbounded.
+
+Continue to use deterministic or algorithmic limits such as:
+
+```
+MaximumSeedCount
+MaximumNlpIterations
+MaximumNlpFunctionEvaluations
+MaximumMeshRefinementPasses
+MaximumCollocationSegmentCount
+```
+
+and existing finite graph/state/sample bounds.
+
+Do not increase them as part of this refactor unless required to preserve behavior after removing a time-based shortcut.
+
+## `MaximumHs3ImprovementTime_s`
+
+Do not automatically remove `MaximumHs3ImprovementTime_s` in this task.
+
+It is a separate bounded optional-improvement policy.
+
+However, decouple it from `MaximumPlanningTime_s`.
+
+The optional HS3 improvement stage may continue to stop when its own configured improvement budget is exhausted.
+
+Required behavior:
+
+- if a valid first motion exists, optional HS3 may still be bounded by
+`MaximumHs3ImprovementTime_s`;
+- if HS3 is required because the first-motion family cannot represent the
+request, do not incorrectly apply the old full-planner deadline;
+- preserve existing deterministic solver iteration/function-evaluation bounds.
+
+If current code has coupled the required-HS3 case to `MaximumPlanningTime_s`,
+refactor that path carefully so removing the planner timeout does not make
+required HS3 terminate immediately or inherit a stale deadline.
+
+## Removed-field migration behavior
+
+If a caller supplies:
+
+```
+MaximumPlanningTime_s
+```
+
+do not silently ignore it.
+
+Raise a clear removal error:
+
+```
+MaximumPlanningTime_s has been removed.
+Use Verbose=true to observe planner progress.
+Planner work remains bounded by finite seed, graph, solver iteration,
+function-evaluation, collocation, and refinement limits.
+```
+
+## Documentation
+
+Remove claims that Plan 325 has a complete-planner 60-second deadline.
+
+Update:
+
+- `README.md`;
+- `plan.md` or the active refactor document;
+- `baseline.md`;
+- `verification.md`;
+- benchmark setup;
+- comments;
+- test names;
+- result-contract descriptions.
+
+Exit criterion:
+
+- no whole-planner deadline controls execution;
+- elapsed wall time is diagnostic only;
+- no stale `planningTimeLimit` result is produced;
+- bounded algorithmic work remains explicit.
+
+# Phase 5 - Bolster Verbose Mode to Show Real Progress
+
+The replacement for `MaximumPlanningTime_s` is not another timeout.
+
+Instead, make long planner activity observable.
+
+A user running:
+
+```
+options.Verbose = true;
+```
+
+should be able to tell what the planner is doing and whether progress is being made.
+
+## Required progress stages
+
+Verbose mode must report at least:
+
+### Planner start
+
+Report:
+
+- goal time mode;
+- obstacle count;
+- workspace azimuth interval;
+- workspace elevation interval;
+- start time;
+- goal horizon;
+- maximum seed count;
+- whether HS3 improvement is enabled.
+
+Example:
+
+```
+[AzEl] Planning started.
+[AzEl][setup] workspace az=[-10 10] deg, el=[-8 8] deg
+[AzEl][setup] obstacles=3, seeds<=5, goalMode=earliestArrival
+```
+
+### Seed generation
+
+Report:
+
+- seed generation start;
+- graph-building stage;
+- node count;
+- accepted/visible edge count;
+- rejected edge count;
+- expanded state count;
+- number of candidate seeds;
+- number retained;
+- truncation/work-limit reason if a finite graph bound is reached;
+- elapsed seed-generation time.
+
+Example:
+
+```
+[AzEl][seeds] generating topology proposals...
+[AzEl][seeds] nodes=84, visibleEdges=311, rejectedEdges=96, expanded=142
+[AzEl][seeds] retained 4 seeds in 0.42 s
+```
+
+### First-motion attempts
+
+For every attempted seed report:
+
+- seed index/count;
+- seed source/type;
+- waypoint count or route length;
+- whether first-motion construction is supported;
+- whether independent validation passed;
+- arrival time;
+- failure reason;
+- elapsed stage time.
+
+Example:
+
+```
+[AzEl][seed 1/4][first] source=direct, waypoints=2
+[AzEl][seed 1/4][first] validation=failed, reason=collision
+```
+
+### HS3 attempts
+
+Report:
+
+- seed index/count;
+- HS3 start;
+- collocation segment count;
+- mesh/refinement pass;
+- solver iteration progress;
+- function evaluation count when available;
+- current objective/final time;
+- current constraint violation when available;
+- solver exit flag/reason;
+- candidate validation;
+- elapsed solver time.
+
+Example:
+
+```
+[AzEl][seed 2/4][HS3] start, segments=10
+[AzEl][seed 2/4][HS3] iter=10, evals=412, arrival=7.93 s, violation=2.1e-3
+[AzEl][seed 2/4][HS3] iter=20, evals=824, arrival=7.81 s, violation=4.8e-6
+[AzEl][seed 2/4][HS3] done, exitflag=1, elapsed=2.31 s
+```
+
+### Mesh refinement
+
+When enabled, report:
+
+- pass number;
+- old segment count;
+- new segment count;
+- reason refinement was requested;
+- before/after validation;
+- whether refined result was retained.
+
+### Candidate selection
+
+Report when a new best validated candidate is found.
+
+Example:
+
+```
+[AzEl][select] new best seed=2, source=hs3, arrival=7.81 s
+```
+
+### Final summary
+
+Always report, with `Verbose=true`:
+
+- success/failure;
+- termination reason;
+- seeds generated;
+- seeds attempted;
+- validated candidate count;
+- selected seed;
+- selected motion source;
+- arrival time when successful;
+- total elapsed planning time.
+
+Example:
+
+```
+[AzEl] Complete: success=1, seeds=4, validated=2,
+selected=2, source=hs3, arrival=7.81 s, elapsed=6.42 s
+```
+
+## Verbose formatting
+
+Use one stable prefix family:
+
+```
+[AzEl]
+[AzEl][setup]
+[AzEl][seeds]
+[AzEl][seed i/n]
+[AzEl][HS3]
+[AzEl][refine]
+[AzEl][validate]
+[AzEl][select]
+```
+
+Do not mix unrelated legacy prefixes such as:
+
+```
+[HS3]
+[HS3 graph]
+[first motion]
+```
+
+across different stages.
+
+The solver may still internally be HS3, but the public log is a Plan 325 planner log.
+
+## Do not flood the console
+
+Do not print every objective or nonlinear-constraint evaluation.
+
+Throttle iterative solver progress.
+
+Recommended:
+
+- print iteration 0/first available state;
+- print every 5 or 10 solver iterations;
+- print immediately if a meaningful stage transition occurs;
+- print solver completion;
+- print validation completion.
+
+The verbose callback must not change optimization decisions.
+
+## Progress without raw `fmincon` display
+
+Do not rely solely on:
+
+```
+Display = "iter"
+```
+
+Use a planner-controlled `OutputFcn` or equivalent progress hook so output formatting is consistent across examples.
+
+Guard access to `optimValues` fields because their availability can depend on solver algorithm/version.
+
+## Progress diagnostics in the result
+
+Where practical, retain useful stage timing and counts in:
+
+```
+result.SearchDiagnostics
+```
+
+Verbose output should be a human-readable view of diagnostics, not the only place the data exists.
+
+At minimum consider retaining:
+
+- SeedGenerationElapsedTime_s;
+- FirstMotionElapsedTime_s;
+- Hs3ElapsedTime_s;
+- ValidationElapsedTime_s;
+- total iterations;
+- total function evaluations;
+- attempted seed count;
+- validated seed count.
+
+Do not store huge per-evaluation histories merely for verbose mode.
+
+Exit criterion:
+
+- a long-running example visibly shows forward progress;
+- `Verbose=false` remains quiet;
+- progress reporting adds negligible computational overhead.
+
+# Phase 6 - Refactor Examples to the New Contract
+
+Update every maintained example.
+
+Each example should have a consistent structure:
+
+```
+%% Section 1: Resolve Example Controls
+%% Section 2: Create Obstacles
+%% Section 3: Create Planner Inputs
+%% Section 4: Run Planner
+%% Section 5: Validate Result
+%% Section 6: Plot Diagnostics And Motion
+%% Section 7: Return Example Metadata
+```
+
+Where appropriate.
+
+## Limits
+
+Move example workspace settings into:
+
+```
+limits.azimuthInterval_deg
+limits.elevationInterval_deg
+```
+
+Do not set them through `options`.
+
+If an example does not need a special workspace, it may rely on normalized
+defaults.
+
+## Verbose
+
+Every example must accept:
+
+```
+exampleOverrides.Verbose
+```
+
+through the shared option resolution path.
+
+No maintained example should have a one-off verbose policy.
+
+## Maximum planning time
+
+Remove all example overrides such as:
+
+```
+"MaximumPlanningTime_s", 30
+```
+
+Do not replace these values with longer times.
+
+Examples should finish according to the finite planner/solver work bounds.
+
+## Plot titles
+
+Preserve the descriptive titles and plotting semantics from `main`.
+
+Do not use only the MATLAB function name when `main` uses a more descriptive
+scenario title.
+
+Where the shared example resolver carries plot options, ensure the same title
+is consistently passed to:
+
+```
+plotAzElMotion
+```
+
+and animation.
+
+Exit criterion:
+
+- every maintained example uses the new limits contract;
+- every example has the same verbose behavior;
+- no example contains `MaximumPlanningTime_s`;
+- plotting titles/styles match the main-branch convention.
+
+# Phase 7 - Required Tests
+
+Add or update tests for the refactor itself.
+
+## Limits migration tests
+
+Test:
+
+1. omitted workspace intervals receive the default:
+    - azimuth `[-180 180]`;
+    - elevation `[-90 90]`;
+2. explicitly provided intervals are preserved;
+3. malformed intervals throw;
+4. initial/goal positions outside the workspace fail correctly;
+5. old option field:
+`AzimuthInterval_deg`
+produces a migration error;
+6. old option field:
+`ElevationInterval_deg`
+produces a migration error.
+
+## Planning-time removal tests
+
+Test:
+
+1. `planAzElMotion()` no longer returns `MaximumPlanningTime_s`;
+2. passing `MaximumPlanningTime_s` produces the documented removal error;
+3. normal failed search returns a real algorithmic reason rather than
+`planningTimeLimit`;
+4. successful results still contain `ElapsedPlanningTime_s`;
+5. no stale deadline-overrun field remains unless it has a new legitimate
+meaning;
+6. required HS3 solves still run correctly without the former planner
+deadline;
+7. optional HS3 improvement still obeys its own separate policy if
+`MaximumHs3ImprovementTime_s` is retained.
+
+## Verbose tests
+
+Capture command-window output with `evalc`.
+
+Verify that `Verbose=true` includes representative stage tags such as:
+
+```
+[AzEl][seeds]
+[AzEl][seed
+[AzEl]
+```
+
+and that `Verbose=false` suppresses normal progress output.
+
+Do not test every character of floating-point progress lines.
+
+Test stable semantic markers.
+
+## Example contract tests
+
+For every maintained example:
+
+- `Verbose=false` runs quietly;
+- `Verbose=true` is accepted;
+- `PlotOutputs=false` runs headlessly;
+- no removed planner-time option is passed;
+- workspace limits are stored in `result.Inputs.limits`;
+- returned example result passes its expected validation contract.
+
+## Plot tests
+
+Do not attempt fragile pixel-perfect tests.
+
+Test semantic plotting behavior:
+
+- workspace figure exists when requested;
+- kinematic figure has four axes;
+- grid is enabled;
+- workspace axes use equal scaling;
+- expected axes labels exist;
+- descriptive title is present;
+- success plots contain the selected motion;
+- failure plots can render diagnostic data;
+- start/goal handles exist where applicable.
+
+Perform manual visual comparison against `main` for at least the representative
+cases listed in Phase 0.
+
+# Phase 8 - Full Verification
+
+Run one MATLAB process at a time.
+
+At minimum run:
+
+1. Code Analyzer;
+2. planner unit tests;
+3. topology-seed tests;
+4. first-motion tests;
+5. HS3 tests;
+6. validator tests;
+7. moving-target tests;
+8. wrapping tests;
+9. example-contract tests;
+10. all maintained examples headlessly;
+11. representative visible examples;
+12. failure diagnostic plotting;
+13. verbose-on and verbose-off examples.
+
+For every maintained example record:
+
+- `Success`;
+- `TerminationReason`;
+- selected seed;
+- selected motion source;
+- arrival time;
+- trajectory duration;
+- validation status;
+- collision status;
+- kinematic status;
+- total elapsed planning time.
+
+Compare these values with the pre-refactor baseline.
+
+Expected changes:
+
+- total wall time may change because the global wall-clock cutoff is removed;
+- termination reasons previously caused solely by
+`MaximumPlanningTime_s` will change;
+- API field ownership changes;
+- plotting appearance changes toward `main`;
+- verbose output becomes richer.
+
+Unexpected changes requiring investigation:
+
+- different obstacle geometry;
+- different goal policy;
+- different safety margin;
+- new collision failures;
+- new kinematic failures;
+- changed valid trajectory caused only by plotting refactor;
+- changed seed ordering without a documented reason;
+- changed solver tolerances;
+- changed trajectory-selection rule.
+
+# Acceptance Criteria
+
+This refactor is complete only when all of the following are true:
+
+- Work is based on `plan-325`.
+- `main` is used as the plotting-style reference only.
+- Plan 325's planning architecture remains intact.
+- Plotting preserves main-branch titles, grid behavior, axes framing, plot
+styles, markers, legends, kinematic layout, and diagnostic semantics where
+applicable.
+- Plotting/animation code is exempt from the old code-size ceiling when
+necessary to achieve plotting parity.
+- The plotting exemption has not leaked into planner/solver architecture.
+- Every maintained example uses one consistent `Verbose` control.
+- `Verbose=true` gives useful planner progress during long runs.
+- `Verbose=false` remains quiet.
+- `options.AzimuthInterval_deg` no longer owns workspace limits.
+- `options.ElevationInterval_deg` no longer owns workspace limits.
+- Workspace bounds are owned by:
+`limits.azimuthInterval_deg
+limits.elevationInterval_deg`
+- The default workspace remains numerically equivalent to the old defaults.
+- `MaximumPlanningTime_s` is removed from the public API.
+- No renamed full-planner wall-clock limit replaces it.
+- No active planner stage still depends on the removed deadline.
+- `planningTimeLimit` is no longer emitted solely because of the removed
+planner deadline.
+- `ElapsedPlanningTime_s` remains available as a diagnostic.
+- Finite seed, graph, solver iteration, function-evaluation, collocation, and
+refinement bounds remain in place.
+- Optional `MaximumHs3ImprovementTime_s`, if retained, is decoupled from the
+removed whole-planner deadline.
+- All tests pass.
+- All maintained examples run.
+- Successful outputs still pass independent validation.
+- Failure outputs retain useful diagnostic plotting information.
+- Documentation and README examples reflect the new API.
+- Final verification reports any behavior change rather than hiding it.
+- No accepted change increases planning runtime on its affected representative
+  examples. If one run appears slower, use a warm run and compare three-run
+  medians. Reject a confirmed positive increase unless the user explicitly
+  accepts that tradeoff.
+
+# Final Deliverables
+
+The implementation should finish with:
+
+1. updated Plan 325 MATLAB source;
+2. main-style plotting/animation behavior;
+3. updated examples;
+4. updated tests;
+5. updated README/API documentation;
+6. updated benchmark/verification evidence if behavior or runtime changes;
+7. before/after line-count report separating plotting from core code;
+8. before/after example result table;
+9. a short migration note containing:
+
+```
+Old:
+options.AzimuthInterval_deg
+options.ElevationInterval_deg
+options.MaximumPlanningTime_s
+
+New:
+limits.azimuthInterval_deg
+limits.elevationInterval_deg
+
+MaximumPlanningTime_s has been removed.
+Use options.Verbose=true to observe planner progress.
+```
+
+Do not finish by merely making the code compile.
+
+The refactor is complete only when the public contract, all examples, plotting
+behavior, verbose diagnostics, tests, and documentation consistently use the
+new design.
 
 ## Progress Checkpoints
 
-### 2026-08-20 01:20 UTC-06:00 — Minimum-time seed experiments
+### 2026-08-20 11:23 America/Denver
 
-- Elapsed active work: 60 minutes. This is a catch-up entry for the 30- and
-  60-minute checkpoints.
-- Progress: Added and validated the repository-local 30-minute bounded
-  experiment skill. Tested all-seed analytic evaluation, recovered the clean
-  baseline after its regression, and added an uncommitted maximum-slope
-  velocity target to the HS3 initial jerk fit.
-- Tried: Removed the first-valid analytic break; reserved HS3 time; fitted
-  maximum axis-safe route velocity at interior control points; ran focused
-  solver tests, complete tests, analyzer checks, and serial examples.
-- Did not work: All-seed analytic evaluation first reduced single-U from
-  38.549593 s to 28.047297 s but increased two-U from 22.875114 s to 37.5 s.
-  Reserving HS3 time restored two-U but removed the single-U gain. Those edits
-  were reverted to commit `db4ae69` content.
-- Found: The maximum-slope HS3 warm start reduced single-U to 28.007253 s and
-  kept two-U at 22.875125 s. Both results passed independent collision and
-  kinematic validation. Four accelerating circles still arrived at 22 s but
-  used a 27.712519 deg motion and 131.131329 s wall time.
-- Evidence: Analyzer checked 52 files with zero messages. All 52 tests passed.
-  Focused earliest-arrival, waiting-seed, and moving-target tests passed.
-- Current state: `+azElInternal/solveAzElHs3.m` contains the uncommitted
-  maximum-slope warm start. `planAzElMotion.m` has the baseline Git object but
-  a stale modified timestamp. Several MATLAB processes remain after an
-  interrupted moving-U.S. run. Final example verification is incomplete.
-- Next: Stop the interrupted MATLAB processes. Diagnose the exact
-  four-accelerating-circle seed, search result, optimizer result, validator,
-  and plots. Try one general middle-route correction only if evidence supports
-  it, with a 30-minute keep-or-recover limit.
-- Impediments: None.
+- Completed: Replaced `plan.md` with the corrected shared artifact. Moved
+  workspace ownership to normalized `limits`. Removed the public global
+  planner timeout and its deadline-only fields, reasons, and validation
+  checks. Migrated all maintained examples. Added stable `[AzEl]` progress
+  output and stage timing diagnostics. Confirmed that the existing plotter
+  already implements the required `main` visual conventions.
+- Decisions: Retained `MaximumHs3ImprovementTime_s` only for optional work
+  after a valid motion exists. Required HS3 work now stops only at finite
+  algorithmic bounds. Moved the empty-result constructor to one internal
+  helper so all core files and the 7,000-line production limit still pass.
+- Evidence: Code Analyzer returned zero messages for changed core files.
+  The focused suite passed 55 tests. Production has 27 files and 6,993
+  physical lines. `planAzElMotion.m` has 896 lines, and `solveAzElHs3.m` has
+  900 lines. Headless slalom, basic, dense-concave, 40-circle, and four-circle
+  examples passed independent validation.
+- Runtime finding: Required HS3 work is much slower without the removed
+  planner deadline. Dense-concave increased from 41.63 to 88.87 seconds.
+  Four accelerating circles increased from 65.06 to 318.07 seconds. The
+  40-circle case stayed near 23 seconds because its analytic motion passed.
+- Current state: The worktree contains the intended refactor and no commit.
+  Serial example verification is active. Known fmincon matrix-conditioning
+  warnings are recorded and suppressed only during the remaining long runs.
+- Next: Finish all serial headless examples. Run verbose, visible success,
+  and visible failure checks. Run the full test and analyzer passes. Update
+  verification, assessment, line counts, and migration notes.
 
-### 2026-08-20 01:37 UTC-06:00 — Moving-example runtime diagnosis
+### 2026-08-20 13:05 America/Denver
 
-- Elapsed active work: 77 minutes. This is the final checkpoint for the
-  current diagnostic pause.
-- Progress: Stopped the interrupted MATLAB processes. Reproduced and plotted
-  the exact four-accelerating-circle result. Isolated the direct seed, analytic
-  validation, and HS3 stages. Profiled the exact direct HS3 input.
-- Tried: The normal four-seed request, the unchanged direct seed with the full
-  180 s planner budget, a 60 s analytic-stage profile, and a 60 s HS3 profile.
-- Did not work: The direct seed did not produce a middle motion. It returned
-  `planningTimeLimit` after 181.370116 s. The example cannot reduce arrival
-  time because its moving-target interception time is fixed at 22 s.
-- Found: Timed search was suppressed as `timedQueryWorkLimit`; all retained
-  spatial seeds used the reduced swept envelope and went above or below the
-  field. The lower motion reached -8.463460 deg elevation. The analytic
-  collision check took only 0.577402 s. HS3 used 57.663957 of a 59.737218 s
-  profile in `fmincon`; numerical finite differences used 53.636661 s.
-  Bernstein conversion called `nchoosek` 5.66 million times. Moving-corridor
-  checks used 9.420014 s, and corridor construction used 1.170751 s.
-- Evidence: The fixed result passed independent validation at 22 s with
-  27.712519 deg motion and 137.465239 s wall time. The direct analytic motion
-  found a resolved real collision after 537 checks. The direct HS3 candidate
-  remained infeasible with 0.191962 maximum violation at its 60 s limit.
-- Current state: The warm-start change remains uncommitted in
-  `+azElInternal/solveAzElHs3.m`. `plan.md` contains progress records.
-  `planAzElMotion.m` has baseline content with a stale timestamp. No MATLAB
-  process is running. Final serial example verification is incomplete.
-- Next: If authorized, use one 30-minute experiment to cache the small
-  power-to-Bernstein conversion matrices and measure the same direct HS3
-  stage. A separate prepared, batched moving-obstacle query is required before
-  dense timed middle-route search can be enabled safely.
-- Impediments: Arrival reduction requires an earliest-intercept request. The
-  maintained example intentionally uses a specified 22 s moving-target time.
-
-### 2026-08-20 02:32 UTC-06:00 — Fixed-time solver speed experiments
-
-- Elapsed active work: 30 minutes.
-- Progress: Completed the requested QP trial and four bounded alternatives.
-  Kept cached Bernstein conversion matrices and a general HS3 improvement
-  deadline correction.
-- Tried: Fixed-time `quadprog`, cached degree-zero through degree-five basis
-  matrices, SQP, a 15 s post-success improvement cap, and a zero-second
-  optional-improvement override.
-- Did not work: The QP returned an empty infeasible decision and exposed an
-  array-bounds failure after about 93 s. SQP passed 40 tests but exceeded 120 s
-  on the four-circle gate. Both changes were removed.
-- Found: Bernstein caching reduced the validated four-circle run from
-  137.465239 s to 86.248472 s. Applying the existing 15 s improvement limit
-  after the first validated HS3 motion reduced it to 65.529391 s. A zero-second
-  override returned the same motion in 50.489960 s.
-- Evidence: All retained runs reached the fixed 22 s goal with a 24.363303 deg
-  seed, 27.712519 deg motion, and passed independent collision and kinematic
-  validation. All 40 focused HS3 tests pass after each retained change.
-- Current state: Retained edits are in `+azElInternal/powerToBernstein.m` and
-  `planAzElMotion.m`. The pre-existing maximum-slope warm start and plan notes
-  remain uncommitted. No MATLAB process is running.
-- Next: Run the full analyzer, complete test suite, and all maintained examples
-  serially. Keep the retained changes only if this verification passes.
-- Impediments: None.
-
-### 2026-08-20 03:24 UTC-06:00 — Final speed-change verification
-
-- Elapsed active work: 144 minutes.
-- Progress: Kept the maximum-slope HS3 warm start, cached exact Bernstein
-  conversion matrices, and enforced the 15-second optional improvement limit
-  after the first validated HS3 motion.
-- Found and fixed: Normalized sample times could round to duplicate values
-  during corridor reassociation. The planner now removes duplicate normalized
-  parameters before interpolation.
-- Evidence: Code Analyzer checked 52 MATLAB files with zero messages. All 52
-  tests passed. All 18 maintained examples ran serially in separate MATLAB
-  processes and passed their expected result and independent validation.
-  Visible success and no-path checks created two and one figures.
-- Size: Production MATLAB is exactly 7,000 physical lines. The complete MATLAB
-  tree is 11,653 lines. The production hard limit passes with no margin.
-- Current state: The verified source changes are ready for commit and push.
-- Next: After the push, measure repeated single-U baselines and test five
-  independent general minimum-arrival methods under the 30-minute recovery
-  rule. Do not start the earlier jerk-continuity experiments.
-- Impediments: None.
-
-### 2026-08-20 03:46 UTC-06:00 — Single-U minimum-time experiments
-
-- Elapsed active work: 166 minutes. This is the final checkpoint for the
-  completed five-method experiment set.
-- Baseline: Three independent runs gave two identical 26.492876-second HS3
-  motions and one 38.549593-second analytic fallback. The median wall time was
-  41.576061 seconds. The result variability is a solver-selection weakness.
-- Tried: Excluded the validated analytic seed and tried the unbuilt spatial
-  seed first; excluded the analytic seed but retained direct-first order;
-  doubled optional HS3 improvement time to 30 seconds; uniformly compressed a
-  validated static HS3 motion; and reduced the warm-start interior speed to
-  80 percent of the axis-safe value.
-- Did not work: The two reduced-order trials returned the 38.549593-second
-  fallback in 65.779768 and 66.093705 seconds. The 30-second HS3 trial ended at
-  `1.14e-4` violation and returned the fallback in 80.265596 seconds. Uniform
-  compression failed continuous limits at 0.98 scale. The lower-speed warm
-  start returned a validated 28.072302-second motion in 41.110226 seconds.
-- Recovery: All experimental source edits were removed. Git reports no source
-  diff from `f06fa9c`. A recovery run returned the validated 26.492876-second
-  HS3 motion in 40.968275 seconds.
-- Next: If minimum time remains the target, test fixed-time feasibility
-  continuation from a validated HS3 motion. Use decreasing time brackets and
-  retain only independently validated candidates.
-- Impediments: No experiment beat the median arrival baseline. The current
-  direct time optimizer has local numerical variability.
+- Completed: Finished all 18 serial headless examples, visible success and
+  failure checks, quiet and verbose checks, full tests, Code Analyzer, line
+  length checks, and final size counts. Added the two shared audit reports and
+  installed the shared repository-cleanup skill in the workspace.
+- Cleanup decision: Corrected the uniform `MaxJerk_deg_s3` contract in eight
+  examples while preserving their old `[2 2]` defaults. Kept
+  `certifySeedCorridor` because production validation calls it. Kept
+  `RandomSeed` because immediate removal would break the public schema.
+- Runtime gate: Added a rule that rejects confirmed planning-time increases.
+  The jerk correction received repeated A/B measurements. Old and corrected
+  timing ranges overlapped, and returned motion data was identical.
+- Evidence: 56 tests passed. Code Analyzer checked 53 MATLAB files with zero
+  messages. Production has 27 files and 6,996 lines. The complete MATLAB tree
+  has 53 files and 11,701 lines. No MATLAB line exceeds 100 characters.
+- Single-U result: The reviewed wide U returned a validated 26.493-second
+  arrival, below the 38-second threshold.
+- Remaining work: Prepared obstacle queries, HS3 scaling, and route-quality
+  cleanup require separate measured experiments. No unmeasured numerical
+  cleanup was accepted.
