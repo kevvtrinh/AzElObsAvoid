@@ -548,3 +548,29 @@ must report the limits of the bounded search and local optimization.
   independent general minimum-arrival methods under the 30-minute recovery
   rule. Do not start the earlier jerk-continuity experiments.
 - Impediments: None.
+
+### 2026-08-20 03:46 UTC-06:00 — Single-U minimum-time experiments
+
+- Elapsed active work: 166 minutes. This is the final checkpoint for the
+  completed five-method experiment set.
+- Baseline: Three independent runs gave two identical 26.492876-second HS3
+  motions and one 38.549593-second analytic fallback. The median wall time was
+  41.576061 seconds. The result variability is a solver-selection weakness.
+- Tried: Excluded the validated analytic seed and tried the unbuilt spatial
+  seed first; excluded the analytic seed but retained direct-first order;
+  doubled optional HS3 improvement time to 30 seconds; uniformly compressed a
+  validated static HS3 motion; and reduced the warm-start interior speed to
+  80 percent of the axis-safe value.
+- Did not work: The two reduced-order trials returned the 38.549593-second
+  fallback in 65.779768 and 66.093705 seconds. The 30-second HS3 trial ended at
+  `1.14e-4` violation and returned the fallback in 80.265596 seconds. Uniform
+  compression failed continuous limits at 0.98 scale. The lower-speed warm
+  start returned a validated 28.072302-second motion in 41.110226 seconds.
+- Recovery: All experimental source edits were removed. Git reports no source
+  diff from `f06fa9c`. A recovery run returned the validated 26.492876-second
+  HS3 motion in 40.968275 seconds.
+- Next: If minimum time remains the target, test fixed-time feasibility
+  continuation from a validated HS3 motion. Use decreasing time brackets and
+  retain only independently validated candidates.
+- Impediments: No experiment beat the median arrival baseline. The current
+  direct time optimizer has local numerical variability.
