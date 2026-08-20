@@ -434,3 +434,117 @@ Stop and report before adding more architecture when:
 
 The result must be small enough to understand and strict enough to trust. It
 must report the limits of the bounded search and local optimization.
+
+## Progress Checkpoints
+
+### 2026-08-20 01:20 UTC-06:00 — Minimum-time seed experiments
+
+- Elapsed active work: 60 minutes. This is a catch-up entry for the 30- and
+  60-minute checkpoints.
+- Progress: Added and validated the repository-local 30-minute bounded
+  experiment skill. Tested all-seed analytic evaluation, recovered the clean
+  baseline after its regression, and added an uncommitted maximum-slope
+  velocity target to the HS3 initial jerk fit.
+- Tried: Removed the first-valid analytic break; reserved HS3 time; fitted
+  maximum axis-safe route velocity at interior control points; ran focused
+  solver tests, complete tests, analyzer checks, and serial examples.
+- Did not work: All-seed analytic evaluation first reduced single-U from
+  38.549593 s to 28.047297 s but increased two-U from 22.875114 s to 37.5 s.
+  Reserving HS3 time restored two-U but removed the single-U gain. Those edits
+  were reverted to commit `db4ae69` content.
+- Found: The maximum-slope HS3 warm start reduced single-U to 28.007253 s and
+  kept two-U at 22.875125 s. Both results passed independent collision and
+  kinematic validation. Four accelerating circles still arrived at 22 s but
+  used a 27.712519 deg motion and 131.131329 s wall time.
+- Evidence: Analyzer checked 52 files with zero messages. All 52 tests passed.
+  Focused earliest-arrival, waiting-seed, and moving-target tests passed.
+- Current state: `+azElInternal/solveAzElHs3.m` contains the uncommitted
+  maximum-slope warm start. `planAzElMotion.m` has the baseline Git object but
+  a stale modified timestamp. Several MATLAB processes remain after an
+  interrupted moving-U.S. run. Final example verification is incomplete.
+- Next: Stop the interrupted MATLAB processes. Diagnose the exact
+  four-accelerating-circle seed, search result, optimizer result, validator,
+  and plots. Try one general middle-route correction only if evidence supports
+  it, with a 30-minute keep-or-recover limit.
+- Impediments: None.
+
+### 2026-08-20 01:37 UTC-06:00 — Moving-example runtime diagnosis
+
+- Elapsed active work: 77 minutes. This is the final checkpoint for the
+  current diagnostic pause.
+- Progress: Stopped the interrupted MATLAB processes. Reproduced and plotted
+  the exact four-accelerating-circle result. Isolated the direct seed, analytic
+  validation, and HS3 stages. Profiled the exact direct HS3 input.
+- Tried: The normal four-seed request, the unchanged direct seed with the full
+  180 s planner budget, a 60 s analytic-stage profile, and a 60 s HS3 profile.
+- Did not work: The direct seed did not produce a middle motion. It returned
+  `planningTimeLimit` after 181.370116 s. The example cannot reduce arrival
+  time because its moving-target interception time is fixed at 22 s.
+- Found: Timed search was suppressed as `timedQueryWorkLimit`; all retained
+  spatial seeds used the reduced swept envelope and went above or below the
+  field. The lower motion reached -8.463460 deg elevation. The analytic
+  collision check took only 0.577402 s. HS3 used 57.663957 of a 59.737218 s
+  profile in `fmincon`; numerical finite differences used 53.636661 s.
+  Bernstein conversion called `nchoosek` 5.66 million times. Moving-corridor
+  checks used 9.420014 s, and corridor construction used 1.170751 s.
+- Evidence: The fixed result passed independent validation at 22 s with
+  27.712519 deg motion and 137.465239 s wall time. The direct analytic motion
+  found a resolved real collision after 537 checks. The direct HS3 candidate
+  remained infeasible with 0.191962 maximum violation at its 60 s limit.
+- Current state: The warm-start change remains uncommitted in
+  `+azElInternal/solveAzElHs3.m`. `plan.md` contains progress records.
+  `planAzElMotion.m` has baseline content with a stale timestamp. No MATLAB
+  process is running. Final serial example verification is incomplete.
+- Next: If authorized, use one 30-minute experiment to cache the small
+  power-to-Bernstein conversion matrices and measure the same direct HS3
+  stage. A separate prepared, batched moving-obstacle query is required before
+  dense timed middle-route search can be enabled safely.
+- Impediments: Arrival reduction requires an earliest-intercept request. The
+  maintained example intentionally uses a specified 22 s moving-target time.
+
+### 2026-08-20 02:32 UTC-06:00 — Fixed-time solver speed experiments
+
+- Elapsed active work: 30 minutes.
+- Progress: Completed the requested QP trial and four bounded alternatives.
+  Kept cached Bernstein conversion matrices and a general HS3 improvement
+  deadline correction.
+- Tried: Fixed-time `quadprog`, cached degree-zero through degree-five basis
+  matrices, SQP, a 15 s post-success improvement cap, and a zero-second
+  optional-improvement override.
+- Did not work: The QP returned an empty infeasible decision and exposed an
+  array-bounds failure after about 93 s. SQP passed 40 tests but exceeded 120 s
+  on the four-circle gate. Both changes were removed.
+- Found: Bernstein caching reduced the validated four-circle run from
+  137.465239 s to 86.248472 s. Applying the existing 15 s improvement limit
+  after the first validated HS3 motion reduced it to 65.529391 s. A zero-second
+  override returned the same motion in 50.489960 s.
+- Evidence: All retained runs reached the fixed 22 s goal with a 24.363303 deg
+  seed, 27.712519 deg motion, and passed independent collision and kinematic
+  validation. All 40 focused HS3 tests pass after each retained change.
+- Current state: Retained edits are in `+azElInternal/powerToBernstein.m` and
+  `planAzElMotion.m`. The pre-existing maximum-slope warm start and plan notes
+  remain uncommitted. No MATLAB process is running.
+- Next: Run the full analyzer, complete test suite, and all maintained examples
+  serially. Keep the retained changes only if this verification passes.
+- Impediments: None.
+
+### 2026-08-20 03:24 UTC-06:00 — Final speed-change verification
+
+- Elapsed active work: 144 minutes.
+- Progress: Kept the maximum-slope HS3 warm start, cached exact Bernstein
+  conversion matrices, and enforced the 15-second optional improvement limit
+  after the first validated HS3 motion.
+- Found and fixed: Normalized sample times could round to duplicate values
+  during corridor reassociation. The planner now removes duplicate normalized
+  parameters before interpolation.
+- Evidence: Code Analyzer checked 52 MATLAB files with zero messages. All 52
+  tests passed. All 18 maintained examples ran serially in separate MATLAB
+  processes and passed their expected result and independent validation.
+  Visible success and no-path checks created two and one figures.
+- Size: Production MATLAB is exactly 7,000 physical lines. The complete MATLAB
+  tree is 11,653 lines. The production hard limit passes with no margin.
+- Current state: The verified source changes are ready for commit and push.
+- Next: After the push, measure repeated single-U baselines and test five
+  independent general minimum-arrival methods under the 30-minute recovery
+  rule. Do not start the earlier jerk-continuity experiments.
+- Impediments: None.

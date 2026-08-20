@@ -249,8 +249,12 @@ for orderIndex = 1:numel(improvementOrder)
     finalCandidate.Validation = validation;
     previousSummary = seedSummaries(seedIndex);
     previousCandidate = candidates{seedIndex};
-    if validation.Passed && isnan(firstValidatedMotionTime_s)
-        firstValidatedMotionTime_s = toc(planningTimer);
+    if validation.Passed
+        if isnan(firstValidatedMotionTime_s)
+            firstValidatedMotionTime_s = toc(planningTimer);
+        end
+        improvementDeadline_s = min(improvementDeadline_s, ...
+            toc(planningTimer) + options.MaximumHs3ImprovementTime_s);
     end
     if candidateIsBetter(finalCandidate, previousCandidate, ...
             options.ArrivalTimeTolerance_s)
@@ -646,9 +650,10 @@ function seed = candidateSeed(candidate, originalSeed)
 seed = originalSeed;
 sampleTau = (candidate.time_s - candidate.time_s(1)) / ...
     (candidate.time_s(end) - candidate.time_s(1));
+[sampleTau, retainedIndex] = unique(sampleTau, "stable");
 seed.tau = candidate.ControlTau;
 seed.position_deg = interp1( ...
-    sampleTau, candidate.position_deg, seed.tau, "linear");
+    sampleTau, candidate.position_deg(retainedIndex, :), seed.tau, "linear");
 seed.EstimatedDuration_s = candidate.MotionDuration_s;
 end
 function [candidate, completedPassCount] = refineCandidate( ...

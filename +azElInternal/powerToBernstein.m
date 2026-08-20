@@ -20,14 +20,14 @@ function coefficient = powerToBernstein(powerCoefficient)
 %% Section 1: Apply The Exact Basis Conversion
 powerCoefficient = double(powerCoefficient(:));
 degree = numel(powerCoefficient) - 1;
-coefficient = zeros(degree + 1, 1);
-for bernsteinIndex = 0:degree
-    for powerIndex = 0:bernsteinIndex
-        coefficient(bernsteinIndex + 1) = ...
-            coefficient(bernsteinIndex + 1) + ...
-            nchoosek(bernsteinIndex, powerIndex) / ...
-            nchoosek(degree, powerIndex) * ...
-            powerCoefficient(powerIndex + 1);
-    end
+persistent conversionMatrixByDegree
+if numel(conversionMatrixByDegree) > degree && ...
+        ~isempty(conversionMatrixByDegree{degree + 1})
+    coefficient = conversionMatrixByDegree{degree + 1} * powerCoefficient;
+    return;
 end
+conversionMatrix = pascal(degree + 1, 1);
+conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
+conversionMatrixByDegree{degree + 1} = conversionMatrix;
+coefficient = conversionMatrix * powerCoefficient;
 end
