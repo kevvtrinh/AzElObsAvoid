@@ -85,6 +85,10 @@ signature. It keeps the shortest route for each discovered signature. One
 interior representative defines each connected sampled obstacle region. Each
 signature component is limited to one winding, the search uses at most 4,000
 augmented states, and the public seed limit still controls returned routes.
+The graph checks Delaunay candidate edges plus every start and goal connection.
+This removes many long obstacle-node pairs before collision tests. The result
+field `VisibilityCandidatePairCount` reports the number of tested pairs. This
+sparse proposal is deterministic, but it is not a complete visibility graph.
 
 Dense-history support envelopes and optional obstacle clusters are permitted
 only for spatial seed proposals and their corridor certificates. Diagnostics

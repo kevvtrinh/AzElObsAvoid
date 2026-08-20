@@ -244,7 +244,7 @@ For failed cases, show whatever Plan 325 retained, including when available:
 
 - obstacles;
 - direct route;
-- sampled visibility graph;
+- sparse sampled visibility graph;
 - accepted edges;
 - blocked edges;
 - explored nodes;
@@ -414,7 +414,7 @@ This includes:
 
 - endpoint validation;
 - topology-seed generation;
-- visibility graph construction;
+- sparse Delaunay visibility candidates with complete start and goal access;
 - time-layer search;
 - HS3 bounds;
 - independent trajectory validation;

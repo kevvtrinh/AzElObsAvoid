@@ -98,6 +98,8 @@ diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
 diagnostics.NodePosition_deg = nodePosition_deg;
+diagnostics.VisibilityCandidatePairCount = ...
+    graphRecord.VisibilityCandidatePairCount;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
 diagnostics.AcceptedEdges_deg = graphRecord.AcceptedEdges_deg;
 diagnostics.RejectedEdges_deg = graphRecord.RejectedEdges_deg;
@@ -184,7 +186,7 @@ end
 end
 function [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
         sweptShape, start_deg, goal_deg, limits)
-%   - Build one bounded exact segment-visibility graph around swept geometry.
+%   - Build one bounded sparse segment-visibility graph around swept geometry.
 allPosition_deg = [start_deg; goal_deg; sweptShape.Vertices];
 minimum_deg = min(allPosition_deg, [], 1);
 maximum_deg = max(allPosition_deg, [], 1);
@@ -213,6 +215,16 @@ nodePosition_deg = unique([start_deg; goal_deg; candidatePosition_deg], "rows", 
 nodeCount = size(nodePosition_deg, 1);
 edgeCost_deg = Inf(nodeCount);
 edgeCost_deg(1:nodeCount + 1:end) = 0;
+candidatePairMask = triu(true(nodeCount), 1);
+if nodeCount >= 4
+    triangulation = delaunayTriangulation(nodePosition_deg);
+    candidatePairs = sort(edges(triangulation), 2);
+    candidatePairMask = false(nodeCount);
+    candidatePairMask(sub2ind([nodeCount nodeCount], ...
+        candidatePairs(:, 1), candidatePairs(:, 2))) = true;
+    candidatePairMask(1:2, 3:end) = true;
+    candidatePairMask(1, 2) = true;
+end
 visibilityEdgeCount = 0;
 rejectedTransitionCount = 0;
 maximumRetainedEdgeCount = 2000;
@@ -220,6 +232,9 @@ acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 for firstNodeIndex = 1:nodeCount - 1
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
+        if ~candidatePairMask(firstNodeIndex, secondNodeIndex)
+            continue;
+        end
         firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
         secondPosition_deg = nodePosition_deg(secondNodeIndex, :);
         if segmentIsVisible( ...
@@ -244,7 +259,9 @@ for firstNodeIndex = 1:nodeCount - 1
 end
 record = struct( ...
     "Bounds_deg", [minimum_deg(1), maximum_deg(1), minimum_deg(2), maximum_deg(2)], ...
-    "CandidateOffset_deg", candidateOffset_deg, "VisibilityEdgeCount", visibilityEdgeCount, ...
+    "CandidateOffset_deg", candidateOffset_deg, ...
+    "VisibilityCandidatePairCount", nnz(candidatePairMask), ...
+    "VisibilityEdgeCount", visibilityEdgeCount, ...
     "AcceptedEdges_deg", acceptedEdges_deg( ...
     1:min(visibilityEdgeCount, maximumRetainedEdgeCount), :), ...
     "RejectedEdges_deg", rejectedEdges_deg( ...
@@ -553,11 +570,6 @@ else
     source = "timeExpandedVisibilityGraph";
 end
 end
-function tau = normalizedTimeLaw(time_s)
-%   - Convert strictly increasing layer times to a normalized seed law.
-duration_s = time_s(end) - time_s(1);
-tau = (time_s - time_s(1)) / duration_s;
-end
 function duplicate = temporalSeedDuplicates(seed, seeds)
 %   - Compare both geometry and time law so distinct waits remain available.
 duplicate = false;
@@ -584,9 +596,10 @@ timedSeed = seedTemplate;
 timedSeed.Index = numel(seeds) + 1;
 timedSeed.Source = timedRouteSource(route_deg);
 timedSeed.position_deg = route_deg;
-timedSeed.tau = normalizedTimeLaw(routeTime_s);
+timedSeed.tau = (routeTime_s - routeTime_s(1)) / ...
+    (routeTime_s(end) - routeTime_s(1));
 timedSeed.EstimatedDuration_s = routeTime_s(end) - routeTime_s(1);
-timedSeed.Length_deg = polylineLength(route_deg);
+timedSeed.Length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
 if ~temporalSeedDuplicates(timedSeed, seeds)
     seeds(end + 1, 1) = timedSeed;
 end
@@ -702,13 +715,7 @@ diagnostics.TemporalLayerCount = numel(record.LayerTimes_s);
 diagnostics.TemporalNodeCount = max(diagnostics.TemporalNodeCount, record.NodeCount);
 diagnostics.WaitEdgeCount = diagnostics.WaitEdgeCount + record.WaitEdgeCount;
 diagnostics.MotionEdgeCount = diagnostics.MotionEdgeCount + record.MotionEdgeCount;
-diagnostics.ExpandedCount = diagnostics.ExpandedCount + record.ExpandedCount;
-diagnostics.RejectedTransitionCount = ...
-    diagnostics.RejectedTransitionCount + record.RejectedTransitionCount;
-diagnostics.ExploredNodes_deg = appendBoundedTrace( ...
-    diagnostics.ExploredNodes_deg, record.ExploredNodes_deg, 2000);
-diagnostics.FrontierNodes_deg = appendBoundedTrace( ...
-    diagnostics.FrontierNodes_deg, record.FrontierNodes_deg, 2000);
+diagnostics = appendSearchRecord(diagnostics, record);
 end
 function seed = createSpatialSeed( ...
         seedTemplate, seedIndex, route_deg, directDuration_s, ...
@@ -812,10 +819,6 @@ else
     tau = cumulativeLength_deg / length_deg;
 end
 end
-function length_deg = polylineLength(route_deg)
-%   - Measure route length while repeated wait positions contribute zero.
-length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
-end
 function values = appendBoundedTrace(values, additions, maximumCount)
 %   - Retain a deterministic prefix while preserving complete counts.
 remainingCount = maximumCount - size(values, 1);
@@ -839,6 +842,7 @@ diagnostics = struct( ...
     "SeedCluster", struct("Distance_deg", 0, "SourceRegionCount", 0, ...
     "ClusterGroupCount", 0, "ClusteredRegionCount", 0, "ClusterBoundary_deg", zeros(0, 2)), ...
     "NodeCount", 0, "NodePosition_deg", zeros(0, 2), ...
+    "VisibilityCandidatePairCount", 0, ...
     "VisibilityEdgeCount", 0, "AcceptedEdges_deg", zeros(0, 4), ...
     "RejectedEdges_deg", zeros(0, 4), ...
     "TemporalLayerTimes_s", zeros(0, 1), "TemporalLayerCount", 0, ...

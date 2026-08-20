@@ -3,7 +3,7 @@
 ## Evidence scope
 
 This assessment applies to the current Plan 325 worktree based on commit
-`b845880`.
+`e6c3200` plus the verified sparse visibility-graph change.
 
 - All 18 maintained examples ran in separate MATLAB processes.
 - Seventeen examples returned independently validated success.
@@ -11,8 +11,8 @@ This assessment applies to the current Plan 325 worktree based on commit
 - Visible success and failure plot checks passed.
 - All 56 tests passed.
 - Code Analyzer checked 53 MATLAB files and returned 0 messages.
-- Production has 27 files and 6,996 physical lines.
-- The complete MATLAB tree has 53 files and 11,701 physical lines.
+- Production has 27 files and 7,000 physical lines.
+- The complete MATLAB tree has 53 files and 11,711 physical lines.
 
 The production and complete-tree hard limits pass. The preferred 10,500-line
 complete-tree target does not pass.
@@ -54,15 +54,22 @@ requested 38-second threshold.
 
 ### 3. Dense-case planning time is materially lower
 
-The final 40-circle run took 23.021 seconds. The moving-U.S. run took 86.651
-seconds. The extreme-U.S. run took 120.153 seconds. These are lower than the
+The final 40-circle run took 23.006 seconds. The moving-U.S. run took 86.511
+seconds. The extreme-U.S. run took 130.892 seconds. These are lower than the
 older final report values of 22.635, 127.870, and 210.499 seconds except for
 the small 40-circle run difference, which is inside normal process noise.
 
-The four-accelerating-circle run took 54.608 seconds instead of 65.062
-seconds. The moving-barrier run took 30.782 seconds instead of 40.570 seconds.
+The four-accelerating-circle run took 54.110 seconds instead of 65.062
+seconds. The moving-barrier run took 30.089 seconds instead of 40.570 seconds.
 
-### 4. Runtime regressions now have an explicit rejection rule
+### 4. Sparse visibility work is explicit
+
+The seed graph tests Delaunay candidates plus all start and goal connections.
+The 40-circle case tested 62 of 153 pairs without losing a visible edge or
+changing the selected route. The wide U tested 55 of 120 pairs and kept both
+route classes and the same arrival time. No wall-time gain was confirmed.
+
+### 5. Runtime regressions now have an explicit rejection rule
 
 An accepted change must not produce a confirmed planning-time increase on
 its affected representative examples. Apparent increases receive repeated
@@ -72,14 +79,14 @@ run noise and the user did not explicitly accept the tradeoff.
 The shared-jerk correction received an A/B check. Old and new basic-example
 timing ranges overlapped. The returned trajectory was identical.
 
-### 5. Example controls now have one physical meaning
+### 6. Example controls now have one physical meaning
 
 Every maintained example routes `MaxJerk_deg_s3` into
 `limits.maxJerk_deg_s3`. The eight corrected examples preserve their old
 `[2 2]` defaults. An explicit `[1.23 1.45]` override reached the planner and
 passed independent validation.
 
-### 6. Plot and diagnostic behavior is stable
+### 7. Plot and diagnostic behavior is stable
 
 The plotter uses the `main` branch visual language while consuming the Plan
 325 result schema. The visible success case created three figures. The
@@ -126,9 +133,9 @@ planning-time increase.
 
 ### 6. The preferred size target still fails
 
-Production is four lines below the 7,000-line hard limit. The complete tree is
-1,201 lines above the preferred target. New production features have almost no
-size margin.
+Production is at the 7,000-line hard limit. The complete tree is 1,211 lines
+above the preferred target. New production work must remove at least as many
+lines as it adds.
 
 ## Cleanup audit decisions
 
