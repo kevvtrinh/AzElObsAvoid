@@ -2,7 +2,7 @@
 
 ## Evidence scope
 
-This assessment applies to source commit `6ddabac` on branch `plan-325`.
+This assessment applies to source commit `f06fa9c` on branch `plan-325`.
 
 - All 18 maintained examples ran in separate MATLAB processes.
 - Seventeen examples returned validated success.
@@ -53,9 +53,9 @@ barriers reach the top bound, and the protected lower barrier reaches the
 bottom bound. A route cannot pass above or below the complete obstacle set.
 The returned route must alternate around the barriers.
 
-The final slalom motion passed independent validation. It had a
-16.0425349764-degree seed, a 16.7453475476-degree returned motion, and a
-12.1834571132-second duration.
+The final slalom motion passed independent validation. It had a 16-degree
+seed, a 16.691842238-degree returned motion, and a 12.180624977-second
+duration.
 
 ### 3. Spatial route diversity now has a defined invariant
 
@@ -90,14 +90,14 @@ These are single runs. They are not repeated performance studies.
 
 ### 5. Dense cases still return useful motions
 
-- The 40-circle case returned a 64.5557806844-second motion in
-  24.0566557 seconds.
+- The 40-circle case returned a 64.556780013-second motion in
+  22.6353983 seconds.
 - The native moving-U.S. case returned a 25.614496552-second motion in
-  140.0016750 seconds.
-- The two-opposing-U case returned a 22.875114336-second motion in
-  64.9563617 seconds.
-- The large single-U case returned a 38.5495931039-second motion in
-  68.5958720 seconds.
+  127.8696377 seconds.
+- The two-opposing-U case returned a 22.876124561-second motion in
+  63.9628870 seconds.
+- The large single-U case returned a 26.492831986-second motion in
+  41.1340763 seconds.
 
 ### 6. Plot output again has a stable visual language
 
@@ -120,15 +120,13 @@ regions can also merge classes before the signature search starts.
 
 ### 2. Runtime is still high and variable
 
-The native moving-U.S. case took 140.0016750 seconds. The three-region extreme
-U.S. sequence took 464.6851317 seconds. The large-U example took 68.5958720
-seconds.
+The native moving-U.S. case took 127.8696377 seconds. The extreme U.S. case
+took 210.4986503 seconds. The large-U example took 41.1340763 seconds.
 
-The homology change is not a uniform performance gain. Against source
-`b238e6e`, the single-U duration increased from 26.4922113988 seconds to
-38.5495931039 seconds, and wall time increased from 50.8781644 seconds to
-68.5958720 seconds. The 40-circle wall time decreased from 31.6790719 seconds
-to 24.0566557 seconds. These are single runs, not repeated benchmarks.
+Runtime and local-solver selection remain variable. The final single-U run
+reached 26.492831986 seconds, while an earlier verified run from the same
+development sequence reached 38.549593104 seconds. These are single runs, not
+a repeated performance study.
 
 Deadline checks are cooperative. One active solver or geometry operation is
 not preempted. The result can return after a configured check deadline.
@@ -156,9 +154,9 @@ size margin.
 ## Recommended next work
 
 1. Keep the current public interface and independent validator.
-2. Improve nonlinear scaling before adding a new solver stage.
+2. Measure repeated single-U baselines before changing minimum-time logic.
 3. Cache prepared obstacle history data for dense timed queries.
-4. Add one general through-velocity finite-jerk primitive family.
+4. Test general minimum-arrival improvements under bounded recovery rules.
 5. Reduce production code before any feature adds more lines.
 6. Keep moving-target time policy explicit in each target example.
 

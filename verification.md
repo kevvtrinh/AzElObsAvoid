@@ -3,7 +3,7 @@
 ## Evidence scope
 
 - Branch: `plan-325`.
-- Verified source commit: `6ddabac`.
+- Verified source commit: `f06fa9c`.
 - Runtime: MATLAB R2024b Update 4 with Optimization Toolbox.
 - Date: 2026-08-19 through 2026-08-20.
 - All examples used finite jerk limits.
@@ -46,44 +46,43 @@ is not a minimum-time result.
 
 | Example | Goal mode | P/V | Polyline (deg) | Motion (deg) | Duration (s) | C/K/A | Wall (s) | Reason |
 | --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
-| `exampleAlternatingSlalom` | earliest | 1/1 | 16.0193197983 | 16.7248866356 | 12.1804707715 | 1/1/1 | 39.5196278 | `goalReached` |
-| `exampleAzElPlanning` | earliest | 1/1 | 11.1521195190 | 11.3034321229 | 7.81726894407 | 1/1/1 | 28.4886087 | `goalReached` |
-| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.7007215595 | 12.8081112211 | 8.7986387782 | 1/1/1 | 46.6578609 | `goalReached` |
-| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685 | 126.216929774 | 64.5557806844 | 1/1/1 | 24.0566557 | `goalReached` |
-| `exampleFourAcceleratingCircles` | fixed target | 1/1 | 24.3633030073 | 27.7125177045 | 22 | 1/1/1 | 107.5521149 | `goalReached` |
-| `exampleInterceptMovingTargetAtSetTime` | fixed target | 1/1 | 9.53894054682 | 9.53894054682 | 12 | 1/1/1 | 5.1742519 | `goalReached` |
-| `exampleInterceptMovingTargetEarliest` | earliest target | 1/1 | 10.0975244491 | 7.34221560094 | 6.27580651627 | 1/1/1 | 8.1218220 | `goalReached` |
-| `exampleMovingBarrierWait` | earliest | 1/1 | 10 | 10.1651478652 | 10.5442278948 | 1/1/1 | 40.7034441 | `goalReached` |
-| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.1135931849 | 12.1135931849 | 12.2931374101 | 1/1/1 | 17.3012810 | `goalReached` |
-| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.0848051466 | 63.0848051466 | 25.614496552 | 1/1/1 | 140.0016750 | `goalReached` |
-| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN` | 20.7743080 | `noValidatedSeed` |
-| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955 | 4.47286095255 | 4.61340725517 | 1/1/1 | 15.0402003 | `goalReached` |
-| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10 | 10 | 15 | 1/1/1 | 17.1663490 | `goalReached` |
-| `exampleStraightTargetAlternatingOcclusion` | fixed target | 1/1 | 20.2576694717 | 15.5645053728 | 20.8695652174 | 1/1/1 | 60.5651788 | `goalReached` |
-| `exampleTargetExitsObstacle` | fixed target | 1/1 | 19.824386759 | 22.8799304252 | 24 | 1/1/1 | 16.5908680 | `goalReached` |
-| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 24.035784715 | 24.3888467003 | 22.875114336 | 1/1/1 | 64.9563617 | `goalReached` |
-| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.9425880405 | 34.9425880405 | 38.5495931039 | 1/1/1 | 68.5958720 | `goalReached` |
-| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.2394635087 | 26.8344018212 | 7.23988773611 | 1/1/1 | 464.6851317 | `goalReached` |
+| `exampleAlternatingSlalom` | earliest | 1/1 | 16 | 16.691842238 | 12.180624977 | 1/1/1 | 33.4689311 | `goalReached` |
+| `exampleAzElPlanning` | earliest | 1/1 | 11.152119519 | 11.303432110 | 7.817268021 | 1/1/1 | 20.3210242 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.700721560 | 12.808110687 | 8.798640057 | 1/1/1 | 41.6276308 | `goalReached` |
+| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685 | 122.955593942 | 64.556780013 | 1/1/1 | 22.6353983 | `goalReached` |
+| `exampleFourAcceleratingCircles` | fixed target | 1/1 | 24.363303007 | 27.712518684 | 22 | 1/1/1 | 65.0622422 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | fixed target | 1/1 | 9.538940547 | 9.538940547 | 12 | 1/1/1 | 3.1102479 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | earliest target | 1/1 | 10.097524449 | 7.342215833 | 6.275807672 | 1/1/1 | 4.6761014 | `goalReached` |
+| `exampleMovingBarrierWait` | earliest | 1/1 | 10 | 10.211853154 | 10.545227891 | 1/1/1 | 40.5701264 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.113593185 | 12.113593185 | 12.293137410 | 1/1/1 | 17.1009844 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.084805147 | 63.084805147 | 25.614496552 | 1/1/1 | 127.8696377 | `goalReached` |
+| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN` | 20.3535105 | `noValidatedSeed` |
+| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955 | 4.472860956 | 4.613406127 | 1/1/1 | 5.9388048 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10 | 10 | 15 | 1/1/1 | 16.8039567 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | fixed target | 1/1 | 13.341664064 | 15.299430296 | 20.869565217 | 1/1/1 | 27.6978874 | `goalReached` |
+| `exampleTargetExitsObstacle` | fixed target | 1/1 | 19.824386759 | 22.879930804 | 24 | 1/1/1 | 12.7454655 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 23.853720884 | 24.302835532 | 22.876124561 | 1/1/1 | 63.9628870 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.942588040 | 42.580183511 | 26.492831986 | 1/1/1 | 41.1340763 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463509 | 26.834419733 | 7.239885850 | 1/1/1 | 210.4986503 | `goalReached` |
 
-The extreme U.S. wall time covers the Hawaii, Croatia, and Philippines
-sequence. All three region results passed planner and independent validation.
+The extreme U.S. wall time covers the complete maintained geographic case.
 
 ## Display and failure checks
 
-The visible obstacle-free run created three visible figures. Planning and
-independent validation passed. Its wall time was 16.9215069 seconds.
+The visible obstacle-free run created two visible figures. Planning and
+independent validation passed.
 
-The visible no-path run created the workspace and time-expanded diagnostic
-figures. It returned `Success=false`, and independent failure validation
-passed. Its wall time was 23.9859971 seconds. Its reason was
+The visible no-path run created one search diagnostic figure. It returned
+`Success=false`, and independent failure validation passed. Its reason was
 `noValidatedSeed`, which matched the separate headless run.
 
 ## Automated checks
 
 - Full tests: 52 passed, 0 failed, and 0 incomplete.
-- Summed MATLAB test duration: 65.740641700 seconds.
+- Summed MATLAB test duration: 37.438059200 seconds.
+- Full test process wall time: 41.594795500 seconds.
 - Code Analyzer: 52 MATLAB files and 0 messages.
-- Visible success and no-path checks: passed with three and two figures.
+- Visible success and no-path checks: passed with two and one figures.
 - `git diff --check`: passed.
 - No MATLAB source line is longer than 100 characters.
 
@@ -92,15 +91,19 @@ complete 52-test run.
 
 ## Runtime warnings and failed attempts
 
-- `exampleAzElPlanning` emitted repeated fmincon matrix-conditioning warnings.
-  The final motion passed all independent checks. The two related MATLAB
-  warning identifiers were hidden in later long runs to keep logs bounded.
+- An initial final-code `exampleAzElPlanning` run found duplicate normalized
+  interpolation parameters during corridor reassociation. The planner now
+  removes those numerical duplicates. The repaired example and the complete
+  verification passed.
+- The two known fmincon matrix-conditioning warning identifiers were hidden in
+  the long serial runs to keep logs bounded. Returned motions still passed the
+  independent checks.
 - MATLAB R2024b returned a file-system startup fault between isolated
   processes. The runtime service was reset before each remaining process.
   No two example processes overlapped, and scenario inputs did not change.
 - Deadline checks are cooperative. One active nonlinear solve or geometry
-  operation cannot be stopped inside MATLAB. The extreme geographic sequence
-  took 464.6851317 seconds.
+  operation cannot be stopped inside MATLAB. The extreme geographic case took
+  210.4986503 seconds.
 
 ## Known limits and claim
 
