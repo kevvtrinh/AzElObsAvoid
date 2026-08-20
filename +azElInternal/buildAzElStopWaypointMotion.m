@@ -210,7 +210,7 @@ function [obstacles, goalTimeMode] = validateInputs( ...
         obstacles, initialState, goalState, limits, options, seed)
 % PURPOSE
 %   - Validate the normalized internal contract before any construction.
-obstacles = combineAzElObstacles(obstacles);
+obstacles = azElInternal.prepareDynamicObstacles(obstacles);
 scalarStructNames = ["initialState", "goalState", "limits", ...
     "options", "seed"];
 scalarStructValues = {initialState, goalState, limits, options, seed};

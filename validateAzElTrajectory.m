@@ -49,7 +49,10 @@ elseif nargin ~= 6
     error("validateAzElTrajectory:InvalidCall", ...
         "Use one planner result or all six explicit validation inputs.");
 end
-obstacles = combineAzElObstacles(obstacles);
+if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
+    obstacles = combineAzElObstacles(obstacles);
+    obstacles = azElInternal.prepareDynamicObstacles(obstacles);
+end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
 if options.AllowAzimuthWrapping && ...
         (~isempty(obstacles) || hasMovingGoal)

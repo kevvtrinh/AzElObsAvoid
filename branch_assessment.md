@@ -3,16 +3,16 @@
 ## Evidence scope
 
 This assessment applies to the current Plan 325 worktree based on commit
-`e6c3200` plus the verified sparse visibility-graph change.
+`4f59472` plus the verified prepared-obstacle change.
 
 - All 18 maintained examples ran in separate MATLAB processes.
 - Seventeen examples returned independently validated success.
 - The no-path example returned the expected validated failure.
 - Visible success and failure plot checks passed.
 - All 56 tests passed.
-- Code Analyzer checked 53 MATLAB files and returned 0 messages.
-- Production has 27 files and 7,000 physical lines.
-- The complete MATLAB tree has 53 files and 11,711 physical lines.
+- Code Analyzer checked 54 MATLAB files and returned 0 messages.
+- Production has 28 files and 6,937 physical lines.
+- The complete MATLAB tree has 54 files and 11,231 physical lines.
 
 The production and complete-tree hard limits pass. The preferred 10,500-line
 complete-tree target does not pass.
@@ -54,22 +54,31 @@ requested 38-second threshold.
 
 ### 3. Dense-case planning time is materially lower
 
-The final 40-circle run took 23.006 seconds. The moving-U.S. run took 86.511
-seconds. The extreme-U.S. run took 130.892 seconds. These are lower than the
-older final report values of 22.635, 127.870, and 210.499 seconds except for
-the small 40-circle run difference, which is inside normal process noise.
+The final 40-circle run took 22.443 seconds. Its prepared-data baseline was
+23.006 seconds. This is a 2.45% decrease. The moving-U.S. run took 36.367
+seconds. Its baseline was 86.511 seconds. This is a 57.96% decrease. Both
+motions passed independent validation and kept the same arrival duration
+within numerical solver variation.
 
 The four-accelerating-circle run took 54.110 seconds instead of 65.062
 seconds. The moving-barrier run took 30.089 seconds instead of 40.570 seconds.
 
-### 4. Sparse visibility work is explicit
+### 4. Dynamic data preparation is interval-aware
+
+The planner creates source-slice shapes and interval interpolation data once
+per planning call. Matching-topology intervals keep vertex deltas and speed
+bounds. Topology-changing intervals keep a conservative union for that
+interval. The planner does not replace the complete history with a static
+shape. Public results keep the canonical obstacle format.
+
+### 5. Sparse visibility work is explicit
 
 The seed graph tests Delaunay candidates plus all start and goal connections.
 The 40-circle case tested 62 of 153 pairs without losing a visible edge or
 changing the selected route. The wide U tested 55 of 120 pairs and kept both
 route classes and the same arrival time. No wall-time gain was confirmed.
 
-### 5. Runtime regressions now have an explicit rejection rule
+### 6. Runtime regressions now have an explicit rejection rule
 
 An accepted change must not produce a confirmed planning-time increase on
 its affected representative examples. Apparent increases receive repeated
@@ -79,14 +88,14 @@ run noise and the user did not explicitly accept the tradeoff.
 The shared-jerk correction received an A/B check. Old and new basic-example
 timing ranges overlapped. The returned trajectory was identical.
 
-### 6. Example controls now have one physical meaning
+### 7. Example controls now have one physical meaning
 
 Every maintained example routes `MaxJerk_deg_s3` into
 `limits.maxJerk_deg_s3`. The eight corrected examples preserve their old
 `[2 2]` defaults. An explicit `[1.23 1.45]` override reached the planner and
 passed independent validation.
 
-### 7. Plot and diagnostic behavior is stable
+### 8. Plot and diagnostic behavior is stable
 
 The plotter uses the `main` branch visual language while consuming the Plan
 325 result schema. The visible success case created three figures. The
@@ -106,9 +115,9 @@ classify all continuous Az/El/time paths.
 
 ### 2. Some dense cases remain slow
 
-The moving-U.S. case still takes 86.651 seconds. The extreme-U.S. case takes
-120.153 seconds. The two-U case takes 64.003 seconds. These times are better
-than older results but remain large for interactive planning.
+The extreme-U.S. case takes 132.554 seconds. The two-U case takes 66.025
+seconds. These times remain large for interactive planning. The moving-U.S.
+case decreased to 36.367 seconds after prepared dynamic data was added.
 
 ### 3. HS3 still reports conditioning warnings
 
@@ -133,9 +142,9 @@ planning-time increase.
 
 ### 6. The preferred size target still fails
 
-Production is at the 7,000-line hard limit. The complete tree is 1,211 lines
-above the preferred target. New production work must remove at least as many
-lines as it adds.
+Production is 63 lines below the 7,000-line hard limit. The complete tree is
+731 lines above the preferred target. New production work must preserve the
+hard limit.
 
 ## Cleanup audit decisions
 
@@ -148,18 +157,17 @@ some stale findings.
 - `RandomSeed` remains because immediate removal would break the public result
   schema. A later compatibility migration can deprecate it.
 - Independent validation remains separate from solver constraints.
-- Polynomial sampling, repeated obstacle preparation, and occupancy-query
-  preparation remain valid measurement-first cleanup candidates.
+- Polynomial sampling remains a valid measurement-first cleanup candidate.
+- Repeated obstacle preparation is removed from the measured planning path.
 
 No numerical cleanup was accepted without profiler evidence and a runtime
 comparison.
 
 ## Recommended next work
 
-1. Prepare immutable obstacle-query data once per planning call, then profile
-   the moving-U.S. and extreme-U.S. cases.
-2. Improve HS3 variable scaling and verify that warnings and runtime decrease.
-3. Improve the straight-target route length without increasing planning time.
+1. Improve HS3 variable scaling and verify that warnings and runtime decrease.
+2. Improve the straight-target route length without increasing planning time.
+3. Profile the extreme-U.S. case with the prepared dynamic data.
 4. Test a through-velocity quintic first motion under the existing recovery
    rule and independent validator.
 5. Consolidate exact duplicate sampling helpers only if measurement shows no

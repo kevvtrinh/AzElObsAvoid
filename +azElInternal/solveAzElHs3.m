@@ -25,7 +25,10 @@ function candidate = solveAzElHs3(obstacles, initialState, goalState, limits, op
 %% Section 1: Build The Decision Layout And Initial Guess
 solverTimer = tic;
 maximumSolverTime_s = options.MaximumSolverTime_s;
-obstacles = combineAzElObstacles(obstacles);
+if isempty(obstacles) && ~isstruct(obstacles)
+    obstacles = combineAzElObstacles(obstacles);
+end
+obstacles = azElInternal.prepareDynamicObstacles(obstacles);
 segmentCount = options.CollocationSegmentCount;
 if ~isfield(seed, "CorridorBoundary_deg")
     seed.CorridorBoundary_deg = zeros(0, 2);

@@ -70,6 +70,15 @@ polygons. It stores original and protected geometry. It applies the safety
 margin exactly once. Use `makeMovingAzElObstacleData` when a callback creates
 each moving or deforming source slice.
 
+The planner prepares dynamic obstacle data once per planning call. This
+preparation keeps one shape for every source slice. It also keeps
+interval-specific interpolation data when adjacent slices have matching
+topology. When topology changes, it keeps a conservative union for that
+interval only. The planner does not replace a moving or deforming history with
+one static shape. Planning queries, motion construction, HS3, plotting, and
+independent validation reuse this immutable prepared data. Public results keep
+the canonical obstacle format and do not expose the internal cache.
+
 ## Seed and geometry policy
 
 The seed generator returns at most five deterministic seeds by default. It can

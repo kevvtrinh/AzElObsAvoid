@@ -50,6 +50,8 @@ if isnumeric(geometryOnly) && ~ismember(geometryOnly, [0 1])
 end
 geometryOnly = logical(geometryOnly);
 queryTime_s = double(queryTime_s);
+obstacle = azElInternal.prepareDynamicObstacles(obstacle);
+preparation = obstacle.InternalPreparation;
 time_s = double(obstacle.time_s(:));
 geometry = emptyGeometry();
 if geometryOnly
@@ -86,38 +88,28 @@ lowerElevation_deg = double(obstacle.el_deg{lowerIndex}(:));
 if lowerIndex == upperIndex
     azimuth_deg = lowerAzimuth_deg;
     elevation_deg = lowerElevation_deg;
-    vertexSpeedBound_deg_s = adjacentVertexSpeedBound( ...
-        obstacle, lowerIndex);
+    vertexSpeedBound_deg_s = ...
+        preparation.SampleSpeedBound_deg_s(lowerIndex);
+    if ~geometryOnly
+        shape = preparation.SampleShapes{lowerIndex};
+    end
     topologyIsInterpolated = true;
 else
-    upperAzimuth_deg = double(obstacle.az_deg{upperIndex}(:));
-    upperElevation_deg = double(obstacle.el_deg{upperIndex}(:));
-    matchingTopology = ...
-        numel(lowerAzimuth_deg) == numel(upperAzimuth_deg) && ...
-        isequal(isfinite(lowerAzimuth_deg), isfinite(upperAzimuth_deg)) && ...
-        isequal(isfinite(lowerElevation_deg), ...
-        isfinite(upperElevation_deg));
+    matchingTopology = preparation.MatchingTopology(lowerIndex);
     if matchingTopology
+        azimuthDelta_deg = preparation.DeltaAzimuth_deg{lowerIndex};
+        elevationDelta_deg = preparation.DeltaElevation_deg{lowerIndex};
         azimuth_deg = lowerAzimuth_deg + fraction * ...
-            (upperAzimuth_deg - lowerAzimuth_deg);
+            azimuthDelta_deg;
         elevation_deg = lowerElevation_deg + fraction * ...
-            (upperElevation_deg - lowerElevation_deg);
-        intervalDuration_s = time_s(upperIndex) - time_s(lowerIndex);
-        finiteRows = isfinite(lowerAzimuth_deg) & ...
-            isfinite(lowerElevation_deg);
-        vertexSpeed_deg_s = hypot( ...
-            upperAzimuth_deg(finiteRows) - lowerAzimuth_deg(finiteRows), ...
-            upperElevation_deg(finiteRows) - ...
-            lowerElevation_deg(finiteRows)) / intervalDuration_s;
-        vertexSpeedBound_deg_s = maximumOrZero(vertexSpeed_deg_s);
+            elevationDelta_deg;
+        vertexSpeedBound_deg_s = ...
+            preparation.IntervalSpeedBound_deg_s(lowerIndex);
         topologyIsInterpolated = true;
     else
-        lowerShape = boundaryShape( ...
-            lowerAzimuth_deg, lowerElevation_deg);
-        upperShape = boundaryShape( ...
-            upperAzimuth_deg, upperElevation_deg);
-        shape = union(lowerShape, upperShape);
-        [azimuth_deg, elevation_deg] = boundary(shape);
+        shape = preparation.IntervalUnionShapes{lowerIndex};
+        azimuth_deg = preparation.IntervalUnionAzimuth_deg{lowerIndex};
+        elevation_deg = preparation.IntervalUnionElevation_deg{lowerIndex};
         % The conservative union is constant inside this source interval.
         % Source-time splits contain its discontinuous endpoint change.
         vertexSpeedBound_deg_s = 0;
@@ -155,48 +147,6 @@ if nnz(finiteRows) < 3
 end
 shape = polyshape(azimuth_deg, elevation_deg, ...
     "Simplify", false, "KeepCollinearPoints", true);
-end
-
-function speedBound_deg_s = adjacentVertexSpeedBound(obstacle, sampleIndex)
-% PURPOSE
-%   - Bound vertex motion next to an exact source sample when topology agrees.
-time_s = double(obstacle.time_s(:));
-speedBound_deg_s = 0;
-neighborIndices = unique([sampleIndex - 1, sampleIndex + 1]);
-neighborIndices = neighborIndices( ...
-    neighborIndices >= 1 & neighborIndices <= numel(time_s));
-for neighborIndex = reshape(neighborIndices, 1, [])
-    firstAzimuth_deg = double(obstacle.az_deg{sampleIndex}(:));
-    firstElevation_deg = double(obstacle.el_deg{sampleIndex}(:));
-    secondAzimuth_deg = double(obstacle.az_deg{neighborIndex}(:));
-    secondElevation_deg = double(obstacle.el_deg{neighborIndex}(:));
-    matchingTopology = ...
-        numel(firstAzimuth_deg) == numel(secondAzimuth_deg) && ...
-        isequal(isfinite(firstAzimuth_deg), ...
-        isfinite(secondAzimuth_deg));
-    if ~matchingTopology
-        speedBound_deg_s = Inf;
-        return;
-    end
-    finiteRows = isfinite(firstAzimuth_deg) & ...
-        isfinite(firstElevation_deg);
-    duration_s = abs(time_s(neighborIndex) - time_s(sampleIndex));
-    speed_deg_s = hypot( ...
-        secondAzimuth_deg(finiteRows) - firstAzimuth_deg(finiteRows), ...
-        secondElevation_deg(finiteRows) - ...
-        firstElevation_deg(finiteRows)) / duration_s;
-    speedBound_deg_s = max(speedBound_deg_s, maximumOrZero(speed_deg_s));
-end
-end
-
-function value = maximumOrZero(values)
-% PURPOSE
-%   - Return a stable zero for an empty finite-vertex set.
-if isempty(values)
-    value = 0;
-else
-    value = max(values);
-end
 end
 
 function geometry = emptyGeometry()

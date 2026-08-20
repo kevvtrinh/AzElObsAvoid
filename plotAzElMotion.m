@@ -83,13 +83,13 @@ for name = countNames
         {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 handles = emptyHandles(options);
+obstacles = azElInternal.prepareDynamicObstacles(result.Inputs.obstacles);
 %% Section 2: Plot Workspace And Failure Diagnostics
 if options.ShowWorkspace
     workspaceFigure = figure( ...
         "Name", options.Title, "Visible", options.FigureVisible);
     workspaceAxes = axes(workspaceFigure);
     configureSpatialAxes(workspaceAxes);
-    obstacles = result.Inputs.obstacles;
     displayTime_s = result.Inputs.initialState.time_s;
     drawObstacles(workspaceAxes, obstacles, displayTime_s, true);
     gridRecord = result.SearchDiagnostics.Grid;
@@ -157,7 +157,7 @@ if options.ShowVisibilityGraphs
     layerIndices = sampledIndices(numel(layerTimes_s), ...
         options.MaximumDisplayedVisibilitySnapshots);
     if options.ShowSweptSurfaces
-        drawObstacleLayers(visibilityAxes, result.Inputs.obstacles, ...
+        drawObstacleLayers(visibilityAxes, obstacles, ...
             layerTimes_s(layerIndices), ...
             options.MaximumDisplayedSlicesPerObstacle);
     end
@@ -253,7 +253,7 @@ if options.ShowAnimation && result.Success
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes);
-        drawObstacles(animationAxes, result.Inputs.obstacles, ...
+        drawObstacles(animationAxes, obstacles, ...
             result.time_s(frameIndex), true);
         drawTargetTrack(animationAxes, result.Inputs.goalState);
         plot(animationAxes, result.position_deg(:, 1), result.position_deg(:, 2), ...

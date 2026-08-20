@@ -76,7 +76,10 @@ if ~isdatetime(options.ReferenceTime) || ...
         "ReferenceTime must be one finite datetime scalar.");
 end
 options.ReferenceTime.TimeZone = "UTC";
-obstacles = combineAzElObstacles(obstacles);
+if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
+    obstacles = combineAzElObstacles(obstacles);
+    obstacles = azElInternal.prepareDynamicObstacles(obstacles);
+end
 
 %% Section 2: Broadcast Query Arrays
 
@@ -200,7 +203,12 @@ isOccupied = false(queryCount, 1);
 finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & ...
     isfinite(time_s);
 uniqueTime_s = unique(time_s(finiteQuery));
-obstacleBounds_deg = obstacleHistoryBounds(obstacles);
+if isempty(obstacles)
+    obstacleBounds_deg = zeros(0, 4);
+else
+    preparation = [obstacles.InternalPreparation];
+    obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
+end
 for timeIndex = 1:numel(uniqueTime_s)
     queryIndices = find(finiteQuery & time_s == uniqueTime_s(timeIndex));
     for obstacleIndex = 1:numel(obstacles)
@@ -245,32 +253,6 @@ for timeIndex = 1:numel(uniqueTime_s)
             blocked = complexShapeOccupancy(shape, points_deg, options);
         end
         isOccupied(candidateIndices(blocked)) = true;
-    end
-end
-end
-
-function bounds_deg = obstacleHistoryBounds(obstacles)
-% PURPOSE
-%   - Bound each complete protected history for conservative broad rejection.
-obstacleCount = numel(obstacles);
-bounds_deg = repmat([Inf -Inf Inf -Inf], obstacleCount, 1);
-for obstacleIndex = 1:obstacleCount
-    obstacle = obstacles(obstacleIndex);
-    for sampleIndex = 1:numel(obstacle.time_s)
-        azimuth_deg = obstacle.az_deg{sampleIndex};
-        elevation_deg = obstacle.el_deg{sampleIndex};
-        finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
-        if ~any(finiteVertex)
-            continue;
-        end
-        bounds_deg(obstacleIndex, 1) = min( ...
-            bounds_deg(obstacleIndex, 1), min(azimuth_deg(finiteVertex)));
-        bounds_deg(obstacleIndex, 2) = max( ...
-            bounds_deg(obstacleIndex, 2), max(azimuth_deg(finiteVertex)));
-        bounds_deg(obstacleIndex, 3) = min( ...
-            bounds_deg(obstacleIndex, 3), min(elevation_deg(finiteVertex)));
-        bounds_deg(obstacleIndex, 4) = max( ...
-            bounds_deg(obstacleIndex, 4), max(elevation_deg(finiteVertex)));
     end
 end
 end
