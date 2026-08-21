@@ -98,6 +98,12 @@ passed independent validation.
 
 ### 8. Plot and diagnostic behavior is stable
 
+The current worktree now renders the sampled moving target consistently in
+the workspace, time-expanded visibility, and animation views. A visible
+earliest-intercept run produced one moving-target icon in each view, while a
+headless obstacle-free static-goal control produced none. The full focused
+planner test file passed 43 of 43 tests after this graphics change.
+
 The plotter uses the `main` branch visual language while consuming the Plan
 325 result schema. The visible success case created three figures. The
 visible no-path case created two diagnostic figures. Verbose mode reports

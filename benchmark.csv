@@ -125,3 +125,5 @@ RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,
 2026-08-20,14b7b55+worktree,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720884,24.302835532,22.876124561,1,1,1,66.7382671,goalReached,Final adaptive early-HS3 source
 2026-08-20,14b7b55+worktree,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040,41.750344495,22.828232905,1,1,1,16.8495066,goalReached,Wide U adaptive early-HS3 improvement
 2026-08-20,14b7b55+worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,26.617094587,6.684968340,1,1,1,157.4654647,goalReached,Final adaptive early-HS3 source
+2026-08-20,2120628+worktree,plan-325,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.097524449,7.342215833,6.275807672,1,1,1,17.5162125,goalReached,Visible graphics verification; moving-target icon present in workspace visibility and animation plots
+2026-08-20,2120628+worktree,plan-325,exampleObstacleFreeAzElMotion,earliestArrival,1,1,1,4.472135955,4.472860956,4.613406127,1,1,1,17.1775399,goalReached,Headless structurally different control; no moving-target icon emitted

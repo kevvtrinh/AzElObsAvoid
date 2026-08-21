@@ -841,7 +841,7 @@ end
 
 function testNoPathReturnsStableDiagnostics(testCase)
 % Verify expected no-path failure returns diagnostics instead of an error.
-wall = rectangleObstacle([0 12], [-0.5 0.5 -90 90], 0);
+wall = rectangleObstacle([0 12], [-0.5 0.5 -90 90], 0.2);
 initialState = state(0, [-5 0], [0 0], [0 0]);
 goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
@@ -867,6 +867,14 @@ handles = plotAzElMotion(result, plotOptions);
 figureCleanup = onCleanup(@() closeTestFigures(handles));
 verifyTrue(testCase, isgraphics(handles.WorkspaceFigure, "figure"));
 verifyTrue(testCase, isgraphics(handles.VisibilityFigure, "figure"));
+verifyNotEqual(testCase, ...
+    numel(wall.originalAz_deg{1}), numel(wall.az_deg{1}));
+verifyNotEmpty(testCase, findobj( ...
+    handles.WorkspaceAxes, "DisplayName", "Original obstacle"));
+surfaceHandles = findobj(handles.VisibilityAxes, "Type", "surface");
+if ~isempty(surfaceHandles)
+    verifyTrue(testCase, isnumeric(surfaceHandles(1).EdgeColor));
+end
 end
 
 function testMovingTargetUsesSamePlanner(testCase)
@@ -893,6 +901,19 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.Intercept.Mode, "earliest");
 verifyEqual(testCase, result.position_deg(end, :), ...
     result.Intercept.TargetPosition_deg, "AbsTol", 1e-6);
+plotOptions = struct( ...
+    "FigureVisible", "off", "ShowWorkspace", true, ...
+    "ShowVisibilityGraphs", true, "ShowKinematics", false, ...
+    "ShowAnimation", true, "FrameStride", numel(result.time_s));
+handles = plotAzElMotion(result, plotOptions);
+figureCleanup = onCleanup(@() closeTestFigures(handles)); %#ok<NASGU>
+axesHandles = [handles.WorkspaceAxes, handles.VisibilityAxes, ...
+    handles.AnimationAxes];
+for axesIndex = 1:numel(axesHandles)
+    targetHandles = findobj(axesHandles(axesIndex), ...
+        "DisplayName", "Moving target");
+    verifyNotEmpty(testCase, targetHandles);
+end
 end
 
 function options = fixedOptions()
