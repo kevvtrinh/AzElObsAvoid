@@ -107,3 +107,21 @@ RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,
 2026-08-20,b845880+worktree,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720884,24.302835532,22.876124561,1,1,1,64.0032750,goalReached,Final timeout-free contract
 2026-08-20,b845880+worktree,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040,42.580112086,26.492875797,1,1,1,40.6891619,goalReached,Wide U; arrival below 38 seconds
 2026-08-20,b845880+worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,25.132264157,8.902682125,1,1,1,120.1529240,goalReached,Final timeout-free contract
+2026-08-20,14b7b55+worktree,plan-325,exampleAlternatingSlalom,earliestArrival,1,1,1,16.060439635,16.754714666,12.180920588,1,1,1,31.6906219,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleAzElPlanning,earliestArrival,1,1,1,11.152119519,11.303432110,7.817268021,1,1,1,20.3847956,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleDenseConcaveAzElMotion,earliestArrival,1,1,1,12.700721560,12.807761070,8.817608547,1,1,1,39.6515532,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleFortyMovingCircleGrid,earliestArrival,1,1,1,110.807929685,122.955558288,64.556780044,1,1,1,9.0772133,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleFourAcceleratingCircles,fixedArrival,1,1,1,24.363303007,27.712518684,22,1,1,1,58.7428022,goalReached,Specified moving-target time
+2026-08-20,14b7b55+worktree,plan-325,exampleInterceptMovingTargetAtSetTime,fixedArrival,1,1,1,9.538940547,9.538940547,12,1,1,1,3.6932025,goalReached,Specified intercept time
+2026-08-20,14b7b55+worktree,plan-325,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.097524449,7.342215833,6.275807672,1,1,1,5.4600786,goalReached,Earliest moving-target intercept
+2026-08-20,14b7b55+worktree,plan-325,exampleMovingBarrierWait,earliestArrival,1,1,1,10,10.141257563,10.544230759,1,1,1,37.3061321,goalReached,Timed seed excluded from early-HS3 shortcut
+2026-08-20,14b7b55+worktree,plan-325,exampleMovingCircleNoAzimuthWrap,earliestArrival,1,1,1,12.113593185,12.113593185,12.293137410,1,1,1,16.7752213,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleMovingDeformingUSOutlineVisibility,earliestArrival,1,1,1,63.084805147,69.402637353,12.987386290,1,1,1,27.4422293,goalReached,Native unsimplified U.S. boundary
+2026-08-20,14b7b55+worktree,plan-325,exampleNoPathAzElMotion,earliestArrival,1,0,1,NaN,NaN,NaN,NaN,NaN,NaN,16.0794174,noValidatedSeed,Expected validated failure
+2026-08-20,14b7b55+worktree,plan-325,exampleObstacleFreeAzElMotion,earliestArrival,1,1,1,4.472135955,4.472860956,4.613406127,1,1,1,6.4594815,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleOpeningUShapedAzElTimeSpace,earliestArrival,1,1,1,10,10,15,1,1,1,16.7016052,goalReached,Validated wait motion
+2026-08-20,14b7b55+worktree,plan-325,exampleStraightTargetAlternatingOcclusion,fixedArrival,1,1,1,13.341664064,19.229413228,20.869565217,1,1,1,25.1504700,goalReached,Specified moving-target time; route-quality regression recorded
+2026-08-20,14b7b55+worktree,plan-325,exampleTargetExitsObstacle,fixedArrival,1,1,1,19.824386759,22.879930804,24,1,1,1,13.1727692,goalReached,Specified moving-target time
+2026-08-20,14b7b55+worktree,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720884,24.302835532,22.876124561,1,1,1,66.7382671,goalReached,Final adaptive early-HS3 source
+2026-08-20,14b7b55+worktree,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040,41.750344495,22.828232905,1,1,1,16.8495066,goalReached,Wide U adaptive early-HS3 improvement
+2026-08-20,14b7b55+worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,26.617094587,6.684968340,1,1,1,157.4654647,goalReached,Final adaptive early-HS3 source

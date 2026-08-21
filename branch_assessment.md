@@ -11,11 +11,12 @@ This assessment applies to the current Plan 325 worktree based on commit
 - Visible success and failure plot checks passed.
 - All 56 tests passed.
 - Code Analyzer checked 54 MATLAB files and returned 0 messages.
-- Production has 28 files and 6,937 physical lines.
-- The complete MATLAB tree has 54 files and 11,231 physical lines.
+- Production has 28 files and 7,058 physical lines.
+- The complete MATLAB tree has 54 files and 11,769 physical lines.
 
-The production and complete-tree hard limits pass. The preferred 10,500-line
-complete-tree target does not pass.
+The production target passes its measured performance allowance. The
+complete-tree hard limit passes. The preferred 10,500-line complete-tree
+target does not pass.
 
 ## Current judgment
 
@@ -115,9 +116,9 @@ classify all continuous Az/El/time paths.
 
 ### 2. Some dense cases remain slow
 
-The extreme-U.S. case takes 132.554 seconds. The two-U case takes 66.025
+The extreme-U.S. case takes 157.465 seconds. The two-U case takes 66.738
 seconds. These times remain large for interactive planning. The moving-U.S.
-case decreased to 36.367 seconds after prepared dynamic data was added.
+case decreased to 27.442 seconds in the final measured run.
 
 ### 3. HS3 still reports conditioning warnings
 
@@ -140,11 +141,13 @@ duration, but its final motion length increased from about 15.299 degrees to
 route-quality issue, not a false success, and it should be improved without a
 planning-time increase.
 
-### 6. The preferred size target still fails
+### 6. The preferred complete-tree target still fails
 
-Production is 63 lines below the 7,000-line hard limit. The complete tree is
-731 lines above the preferred target. New production work must preserve the
-hard limit.
+Production is 58 lines above the 7,000-line target. The proportional
+performance allowance requires a 17.4 percent wall-time reduction. The
+smallest reduction in the declared wide-U, 40-circle, and moving-U.S. set is
+24.54 percent, so production passes the allowance. The complete tree remains
+1,269 lines above its preferred 10,500-line target.
 
 ## Cleanup audit decisions
 
@@ -162,6 +165,33 @@ some stale findings.
 
 No numerical cleanup was accepted without profiler evidence and a runtime
 comparison.
+
+## Adaptive Early-HS3 assessment
+
+The early-HS3 path is worth retaining. It applies only to earliest-arrival
+spatial visibility seeds when the input has one obstacle or the seed already
+uses reduced conservative geometry. It does not apply to timed or wait seeds.
+The analytic motion remains a recoverable fallback and receives the same
+independent validation if HS3 fails.
+
+The wide single-U arrival decreased from 26.492876 to 22.828233 seconds, and
+wall time decreased from 40.762 to 16.850 seconds. The 40-circle and moving-U.S.
+arrivals remained equivalent within the configured 0.001-second tolerance.
+Their wall times decreased from 22.443 to 9.077 seconds and from 36.367 to
+27.442 seconds. All three motions passed collision, dynamics, velocity,
+acceleration, and jerk checks.
+
+The first moving-barrier trial showed an ordering defect. Early HS3 was applied
+to a timed seed and increased wall time to 45.593 seconds. The final source
+restricts the shortcut to `visibilityGraph` seeds. The corrected case passed at
+10.544231 seconds. Its 37.306-second wall time is inside the recorded historical
+range but above the single 29.906-second reference run.
+
+Final verification passed all 56 tests, all 18 serial headless examples, one
+visible success, one visible expected failure, and Code Analyzer on 54 files.
+Production has 7,058 lines. Its 58-line overage needs a 17.4 percent wall-time
+reduction and passes with a minimum measured reduction of 24.54 percent. The
+production line count is unchanged from the starting commit.
 
 ## Recommended next work
 

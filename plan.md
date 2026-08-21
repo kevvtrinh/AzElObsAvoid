@@ -88,6 +88,27 @@ At the end of the task, report line counts separately for:
 
 Plotting growth alone must not fail the Plan 325 size gate.
 
+## Performance-Based Production Size Allowance
+
+The production MATLAB target is 7,000 physical lines. Production can exceed
+this target only when measured wall-time performance pays for the excess. Each
+100 excess lines requires at least a 30 percent wall-time reduction. Apply the
+requirement proportionally:
+
+```text
+required reduction = 0.30 * excess production lines / 100
+```
+
+Declare the representative affected benchmark set before evaluation. Use the
+smallest reduction in that set. Do not use an average or a best case to hide a
+regression. Use the same inputs, options, environment, and independent
+validation. Correctness and arrival or route quality must stay within their
+documented tolerances. Record all evidence in `verification.md`.
+
+This allowance does not change the 900-line file limit, the 12,000-line
+complete-tree limit, or any correctness, generality, diagnostic, interface,
+and non-regression requirement.
+
 # Phase 0 - Establish the Refactor Baseline
 
 Before editing behavior:
@@ -1265,3 +1286,73 @@ new design.
 - Remaining work: Prepared obstacle queries, HS3 scaling, and route-quality
   cleanup require separate measured experiments. No unmeasured numerical
   cleanup was accepted.
+
+### 2026-08-20 19:03 UTC-06:00 — Adaptive Early-HS3 Collision Repair
+
+- Elapsed active work: More than 30 minutes across the bounded experiment and
+  follow-up verification.
+- Progress: Proved an obstacle-relative seed expansion, doubled the HS3 mesh
+  from the route edge count, and deferred analytic fallback validation.
+- Tried: Fixed arrivals of 25, 24, 23, and 22.5 seconds with seven segments;
+  a 25-second 14-segment solve; corridor relinearization; a certificate-buffer
+  change; origin-relative expansion; and obstacle-relative expansion.
+- Did not work: Seven-segment fixed trials were infeasible. The first
+  14-segment route failed collision validation. Relinarization still failed.
+  The certificate-buffer change produced a resolved 0.146-degree collision
+  and was removed. Putting automatic HS3 inside the analytic constructor broke
+  two constructor contract tests and was removed.
+- Found: A 14-segment obstacle-relative route passes continuous validation.
+  Deferred fallback validation removes the main planning-time cost. The
+  analytic constructor must keep its direct stop-at-waypoint contract.
+- Evidence: The maintained wide-U example passed at 22.8283156449 seconds with
+  41.7421904928 degrees of motion and 16.3439123 seconds of planner time.
+  Collision, dynamics, velocity, acceleration, and jerk checks passed. The
+  baseline was 26.492875600 seconds and 40.7620833 seconds. Constructor tests
+  pass 9/9 after contract restoration. Planner tests pass 43/43.
+- Current state: Modified files are `planAzElMotion.m` and
+  `+azElInternal/buildAzElStopWaypointMotion.m`. The functional proof passes,
+  but line-count reduction and broader example verification remain.
+- Next: Reduce the orchestration code, keep `planAzElMotion.m` within its file
+  limit, add focused diagnostics coverage, and run affected static and moving
+  examples. Keep only if runtime does not increase.
+- Impediments: None.
+
+### 2026-08-20 19:36 UTC-06:00 — Adaptive Early-HS3 Final Checkpoint
+
+- Elapsed active work: More than 60 minutes. The 30-minute and 60-minute
+  checkpoints passed during implementation and serial verification.
+- Progress: Limited early HS3 to eligible spatial visibility seeds, preserved
+  analytic fallback validation, removed repeated internal validation and one
+  duplicate diagnostics schema, and completed all verification.
+- Tried: All 18 maintained examples in separate headless MATLAB processes,
+  visible success and failure plots, the full test directory, and Code Analyzer
+  on every maintained MATLAB file.
+- Did not work: Applying early HS3 to a timed moving-barrier seed increased wall
+  time to 45.593 seconds. Restricting the shortcut to `visibilityGraph` seeds
+  removed that ordering defect. The production tree still exceeds its hard
+  line limit.
+- Found: Wide-U arrival is 22.828233 seconds with 16.849507 seconds wall time.
+  The 40-circle and moving-U.S. arrivals remain equivalent within 0.001 seconds
+  while wall times decrease to 9.077213 and 27.442229 seconds.
+- Evidence: All 56 tests passed. All 18 examples passed their expected outcome
+  checks. Visible success created three figures. Visible no-path diagnostics
+  created two figures. Code Analyzer checked 54 files with zero messages.
+- Current state: Five files are modified. The planner change is verified and
+  not committed. Production is 7,061 lines and fails the 7,000-line limit by
+  61 lines. The starting commit already had 7,058 lines by the same count.
+- Next: Remove at least 61 safe production lines before commit or obtain an
+  explicit change to the hard size requirement.
+- Impediments: The production-size hard limit does not pass.
+
+### 2026-08-20 20:05 America/Denver
+
+- Completed: Added the user-approved proportional production-size allowance.
+- Evidence: The 58-line overage requires a 17.4 percent wall-time reduction.
+  The declared wide-U, 40-circle, and moving-U.S. set has a minimum measured
+  reduction of 24.54 percent. All three results preserve independent
+  validation and arrival quality within the documented tolerance.
+- Current state: Production has 7,058 physical lines. The performance
+  allowance passes. All prior code, test, example, graphics, and analyzer
+  evidence remains applicable because this final change affects documents.
+- Next: Commit and push the verified change to `plan-325`.
+- Impediments: None.

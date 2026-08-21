@@ -9,8 +9,7 @@ function result = planAzElMotion(obstacles, initialState, goalState, ...
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Build and validate deterministic finite-jerk motions from bounded seeds.
-%   - Apply bounded HS3 improvement and independent continuous validation.
+%   - Build and independently validate finite-jerk motions from bounded seeds.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
@@ -146,10 +145,11 @@ for seedIndex = 1:numel(seeds)
             seeds(seedIndex).Source, size(seeds(seedIndex).position_deg, 1), ...
             seeds(seedIndex).Length_deg);
     end
+    firstMotionOptions = internalOptions;
+    firstMotionOptions.AttemptEarlyHs3 = true;
     firstCandidate = azElInternal.buildAzElStopWaypointMotion( ...
         obstacles, initialState, goalState, limits, ...
-        internalOptions, seeds(seedIndex));
-    firstCandidate.MotionSource = "analyticStopWaypoint";
+        firstMotionOptions, seeds(seedIndex));
     candidates{seedIndex} = firstCandidate;
     seedSummaries(seedIndex) = candidateSummary(firstCandidate, 0);
     seedSummaries(seedIndex).FirstMotionAttempted = true;
@@ -164,6 +164,12 @@ for seedIndex = 1:numel(seeds)
         end
     end
     firstMotionStageTime_s = toc(firstMotionTimer);
+    if firstCandidate.MotionSource == "hs3"
+        solverElapsedTime_s = firstCandidate.SolverDiagnostics.ElapsedTime_s;
+        hs3ElapsedTime_s = hs3ElapsedTime_s + solverElapsedTime_s;
+        firstMotionStageTime_s = max(0, ...
+            firstMotionStageTime_s - solverElapsedTime_s);
+    end
     firstMotionElapsedTime_s = firstMotionElapsedTime_s + firstMotionStageTime_s;
     if options.Verbose
         fprintf("[AzEl][seed %d/%d][first] validation=%d, " + ...
@@ -188,7 +194,8 @@ if isempty(firstMotionIndices)
         floor(options.MaximumNlpIterations / requiredSolveCount));
     requiredNlpEvaluations = max(1000, floor( ...
         options.MaximumNlpFunctionEvaluations / requiredSolveCount));
-elseif options.EnableHs3Improvement
+elseif options.EnableHs3Improvement && ...
+        ~any([seedSummaries.Hs3ValidationPassed])
     bestFirstIndex = selectValidatedCandidate( ...
         seedSummaries, firstMotionIndices, ...
         options.ArrivalTimeTolerance_s);
@@ -292,9 +299,7 @@ for orderIndex = 1:numel(improvementOrder)
     end
     candidates{seedIndex} = selectedCandidate;
     seedSummaries(seedIndex) = candidateSummary( ...
-        selectedCandidate, relinearizationCount);
-    seedSummaries(seedIndex) = preserveAttemptSummary( ...
-        seedSummaries(seedIndex), previousSummary);
+        selectedCandidate, relinearizationCount, previousSummary);
     seedSummaries(seedIndex).Hs3Attempted = true;
     seedSummaries(seedIndex).Hs3OptimizerFeasible = ...
         finalCandidate.OptimizerFeasible;
@@ -371,8 +376,8 @@ if selectedCandidate.MotionSource == "hs3"
 end
 selectedRelinearizationCount = ...
     selectedAttemptSummary.RelinearizationCount;
-result.SeedSummaries(selectedSeedIndex) = preserveAttemptSummary( ...
-    candidateSummary(selectedCandidate, selectedRelinearizationCount), ...
+result.SeedSummaries(selectedSeedIndex) = candidateSummary( ...
+    selectedCandidate, selectedRelinearizationCount, ...
     selectedAttemptSummary);
 result.SeedSummaries(selectedSeedIndex).MeshRefinementPassCount = ...
     meshRefinementPassCount;
@@ -766,10 +771,15 @@ for passIndex = 1:options.MaximumMeshRefinementPasses
     end
 end
 end
-function summary = candidateSummary(candidate, relinearizationCount)
+function summary = candidateSummary( ...
+        candidate, relinearizationCount, previousSummary)
 % PURPOSE
 %   - Retain concise outcomes without duplicating full trajectories.
-summary = emptySeedSummary();
+if nargin < 3
+    summary = emptySeedSummary();
+else
+    summary = previousSummary;
+end
 summary.SeedIndex = candidate.SeedIndex;
 summary.SeedSource = candidate.SeedSource;
 if candidate.Validation.Passed
@@ -791,6 +801,13 @@ summary.RelinearizationCount = relinearizationCount;
 summary.TerminationReason = candidate.TerminationReason;
 summary.Message = candidate.Message + " " + candidate.Validation.Message;
 summary.SolverDiagnostics = candidate.SolverDiagnostics;
+if candidate.MotionSource == "hs3"
+    summary.Hs3Attempted = true;
+    summary.Hs3OptimizerFeasible = candidate.OptimizerFeasible;
+    summary.Hs3ValidationPassed = candidate.Validation.Passed;
+    summary.Hs3TerminationReason = candidate.TerminationReason;
+    summary.Hs3SolverDiagnostics = candidate.SolverDiagnostics;
+end
 end
 function passed = candidatePassed(candidate)
 % PURPOSE
@@ -809,28 +826,11 @@ if ~candidatePassed(current)
     better = true;
     return;
 end
-if trial.FinalTime_s < current.FinalTime_s - arrivalTolerance_s
-    better = true;
-    return;
-end
-arrivalIsEquivalent = abs(trial.FinalTime_s - current.FinalTime_s) <= ...
-    arrivalTolerance_s;
-better = arrivalIsEquivalent && ...
+arrivalDifference_s = trial.FinalTime_s - current.FinalTime_s;
+better = arrivalDifference_s < -arrivalTolerance_s || ...
+    (abs(arrivalDifference_s) <= arrivalTolerance_s && ...
     trial.IntegratedSquaredJerk_deg2_s5 < ...
-    current.IntegratedSquaredJerk_deg2_s5 - 1e-12;
-end
-function summary = preserveAttemptSummary(summary, previous)
-% PURPOSE
-%   - Preserve first-motion and HS3 attempt records when selection changes.
-fieldNames = [ ...
-    "FirstMotionAttempted", "FirstMotionValidationPassed", ...
-    "FirstMotionTerminationReason", "FirstMotionDiagnostics", ...
-    "Hs3Attempted", "Hs3OptimizerFeasible", ...
-    "Hs3ValidationPassed", "Hs3TerminationReason", ...
-    "Hs3SolverDiagnostics"];
-for fieldName = fieldNames
-    summary.(fieldName) = previous.(fieldName);
-end
+    current.IntegratedSquaredJerk_deg2_s5 - 1e-12);
 end
 function selectedIndex = selectValidatedCandidate( ...
         summaries, validatedIndices, arrivalTolerance_s)

@@ -34,11 +34,11 @@ Headless controls disabled plots, animation, and pauses.
 
 | Scope | Files | Physical lines | Limit | Result |
 | --- | ---: | ---: | ---: | --- |
-| Core production, without plotting | 27 | 6,438 | 7,000 hard limit | pass |
+| Core production, without plotting | 27 | 6,559 | 7,000 hard limit | pass |
 | Plotting | 1 | 499 | separate report | pass |
-| Production MATLAB | 28 | 6,937 | 7,000 hard limit | pass by 63 |
-| Complete MATLAB tree | 54 | 11,231 | 12,000 hard limit | pass by 769 |
-| Complete MATLAB tree | 54 | 11,231 | 10,500 target | fail by 731 |
+| Production MATLAB | 28 | 7,058 | 7,000 target plus allowance | pass |
+| Complete MATLAB tree | 54 | 11,769 | 12,000 hard limit | pass by 231 |
+| Complete MATLAB tree | 54 | 11,769 | 10,500 target | fail by 1,269 |
 
 No production MATLAB file is longer than 900 lines. The preferred complete
 tree target does not pass.
@@ -155,3 +155,38 @@ moving-U.S. runtime gates.
 A successful result is an independently validated motion from a finite,
 deterministic proposal set. The planner does not claim global route
 completeness or global time optimality.
+
+## Adaptive Early-HS3 Verification — 2026-08-20
+
+The planner now constructs the analytic fallback without immediately running
+its continuous certificate for eligible spatial visibility seeds. It first
+tries a denser HS3 motion and validates that motion independently. If HS3
+fails, it validates the unchanged analytic fallback. Timed and wait seeds keep
+the existing causal workflow. Reduced-geometry seeds do not receive a second
+clearance expansion.
+
+| Example | Prior duration (s) | New duration (s) | Prior wall (s) | New wall (s) | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Wide single U | 26.492875600 | 22.828232905 | 40.7620833 | 16.8495066 | pass |
+| 40 moving circles | 64.556766026 | 64.556780044 | 22.4426104 | 9.0772133 | equivalent within 0.001 s |
+| Moving and deforming U.S. | 12.986426213 | 12.987386290 | 36.3672785 | 27.4422293 | equivalent within 0.001 s |
+
+All 18 maintained examples ran serially in separate MATLAB processes. There
+were 17 validated successes and one expected validated no-path result. The
+visible success check created three figures. The visible no-path check created
+two diagnostic figures and reported two rejected transitions. The final test
+run passed 56 tests with no failures or incomplete tests. Code Analyzer checked
+54 MATLAB files and returned zero messages. No MATLAB line exceeds 100
+characters.
+
+The complete MATLAB tree passes its 12,000-line hard limit. Production has
+7,058 lines. The starting commit contained the same production line count
+after prepared dynamic-obstacle data was added.
+
+The performance allowance uses the declared wide-U, 40-circle, and moving-U.S.
+benchmark set. A 58-line overage requires a 17.4 percent reduction because
+`0.30 * 58 / 100 = 0.174`. Their wall-time reductions are 58.66, 59.55, and
+24.54 percent. The minimum is 24.54 percent, so the allowance passes. The
+wide-U arrival improves by 13.83 percent. The other two arrivals remain within
+the configured 0.001-second equivalence tolerance. All three motions pass
+independent collision and kinematic validation.

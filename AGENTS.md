@@ -723,6 +723,25 @@ only when it represents a general result that later runs can populate.
 
 ## Change Discipline
 
+### Performance-Based Production Size Allowance
+
+- The production MATLAB target is 7,000 physical lines. A measured runtime
+  improvement can permit a proportional overage.
+- Each 100 physical production lines above the target requires at least a
+  30 percent wall-time reduction. Apply the rule proportionally:
+  `required reduction = 0.30 * excess lines / 100`.
+- Declare the representative affected benchmark set before evaluation. Use
+  the smallest wall-time reduction in that set. Do not use the average or the
+  best result to hide a regression.
+- Use the same inputs, options, environment, and independent validation for
+  the baseline and changed runs. Each benchmark must keep correctness and
+  arrival or route quality within its documented tolerance.
+- Record the line count, formula, baseline, changed result, and minimum
+  measured reduction in `verification.md` before a commit or push.
+- This allowance does not change the 900-line file limit, the 12,000-line
+  complete-tree limit, or any correctness, generality, diagnostic, interface,
+  and non-regression requirement.
+
 - Inspect existing interfaces and call sites before editing.
 - Before completing, committing, or pushing a change, inspect the per-file
   diff statistics. If an existing source file or script has more than 50 added
