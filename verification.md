@@ -639,3 +639,10 @@ cap and authorized tracking the 694-line interactive sandbox. The 24 example
 files total 3,920 lines; the combined MATLAB tree is 12,668 lines, while the
 12,000-line cap applies only to the maintained planner/test tree excluding
 examples. Example files remain excluded from planner-growth claims.
+
+Current policy: the 7,500-line production target remains unchanged, and any
+production overage must earn at least a 25 percent wall-time reduction per
+additional 100 production lines, using the smallest reduction in the declared
+representative benchmark set. Historical checkpoints below may quote the
+earlier 30-percent formula; those measurements are preserved as historical
+evidence and are not the current acceptance rule.

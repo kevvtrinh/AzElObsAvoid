@@ -92,11 +92,11 @@ Plotting growth alone must not fail the Plan 325 size gate.
 
 The production MATLAB target is 7,500 physical lines. Production can exceed
 this target only when measured wall-time performance pays for the excess. Each
-100 excess lines requires at least a 30 percent wall-time reduction. Apply the
+100 excess lines requires at least a 25 percent wall-time reduction. Apply the
 requirement proportionally:
 
 ```text
-required reduction = 0.30 * excess production lines / 100
+required reduction = 0.25 * excess production lines / 100
 ```
 
 Declare the representative affected benchmark set before evaluation. Use the

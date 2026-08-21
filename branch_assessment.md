@@ -28,6 +28,9 @@ changes remain preserved in the checkpoint.
 
 Plan 325 remains a compact, physically validated planner with materially
 better runtime and earlier arrival on the affected static-visibility cases.
+The current size policy keeps the 7,500-line production target and requires a
+minimum 25 percent wall-time reduction for every 100 production lines above
+that target; example files are uncapped but cannot justify planner growth.
 The most important change is input-driven: an exact multi-obstacle visibility
 seed may now receive the same early HS3 opportunity as the prior single- or
 reduced-obstacle cases. The analytic stop-at-waypoint motion remains the
