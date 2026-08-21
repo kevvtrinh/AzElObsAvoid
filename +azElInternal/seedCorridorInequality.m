@@ -26,23 +26,19 @@ if isempty(corridor)
     return;
 end
 coefficientCount = size(polynomial.positionPower_deg, 3);
-inequality = zeros(numel(corridor) * coefficientCount, 1);
-writeIndex = 0;
-for corridorIndex = 1:numel(corridor)
-    record = corridor(corridorIndex);
-    segmentIndex = record.SegmentIndex;
-    azimuthPower_deg = reshape( ...
-        polynomial.positionPower_deg(segmentIndex, 1, :), [], 1);
-    elevationPower_deg = reshape( ...
-        polynomial.positionPower_deg(segmentIndex, 2, :), [], 1);
-    projectionPower_deg = ...
-        record.Normal(1) * azimuthPower_deg + ...
-        record.Normal(2) * elevationPower_deg;
-    projectionBernstein_deg = azElInternal.powerToBernstein( ...
-        projectionPower_deg);
-    rows = writeIndex + (1:coefficientCount);
-    inequality(rows) = record.BoundaryOffset_deg + ...
-        record.Clearance_deg - projectionBernstein_deg;
-    writeIndex = writeIndex + coefficientCount;
-end
+corridorCount = numel(corridor);
+segmentIndex = [corridor.SegmentIndex].';
+normal = vertcat(corridor.Normal);
+selectedPower_deg = polynomial.positionPower_deg(segmentIndex, :, :);
+azimuthPower_deg = reshape( ...
+    selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
+elevationPower_deg = reshape( ...
+    selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
+projectionPower_deg = normal(:, 1) .* azimuthPower_deg + ...
+    normal(:, 2) .* elevationPower_deg;
+projectionBernstein_deg = azElInternal.powerToBernstein( ...
+    projectionPower_deg.');
+offset_deg = [corridor.BoundaryOffset_deg] + [corridor.Clearance_deg];
+inequalityMatrix = offset_deg - projectionBernstein_deg;
+inequality = inequalityMatrix(:);
 end

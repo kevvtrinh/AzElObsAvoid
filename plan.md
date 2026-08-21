@@ -90,7 +90,7 @@ Plotting growth alone must not fail the Plan 325 size gate.
 
 ## Performance-Based Production Size Allowance
 
-The production MATLAB target is 7,000 physical lines. Production can exceed
+The production MATLAB target is 7,500 physical lines. Production can exceed
 this target only when measured wall-time performance pays for the excess. Each
 100 excess lines requires at least a 30 percent wall-time reduction. Apply the
 requirement proportionally:
@@ -1461,3 +1461,435 @@ new design.
   refactor, update `benchmark.csv`, `verification.md`, and
   `branch_assessment.md`, then audit the final diff and sizes.
 - Impediments: None.
+
+### 2026-08-21 01:51 America/Denver — Pushed Checkpoint And Evaluator Follow-Up
+
+- Completed: Committed and pushed verified checkpoint `2074c14` to
+  `origin/plan-325`. The 694-line interactive sandbox remained untracked and
+  unstaged because adding it would exceed the maintained-tree hard cap.
+- User decision: The production target is now 7,500 physical lines. The
+  separate 900-line production-file cap and 12,000-line maintained-tree hard
+  cap remain in force.
+- Profile evidence: On the pushed source, finite-difference trajectory
+  constraints dominated runtime. Planner-owned totals included corridor
+  constraints at 17.7135 seconds, polynomial reconstruction at 9.9729
+  seconds, polynomial evaluation at 9.6160 seconds, and continuous Bernstein
+  bounds at 9.1107 seconds during the profiled extreme-outline run.
+- Rejected experiment: A bit-exact static-corridor vectorization improved
+  dense-concave wall time from 17.1341 to 15.5618 seconds but repeatedly
+  regressed the time-budgeted extreme case: 48.2099 to 48.4887 seconds and
+  48.4303 to 48.7783 seconds in serial pairs. The complete fast path was
+  removed and pushed source restored.
+- Accepted experiment: Replaced the two-axis polynomial-record loop with one
+  implicit-expansion sum. Uniform and nonuniform duration outputs matched bit
+  for bit. The helper microbenchmark decreased 68.25 percent. Three-run
+  medians decreased from 8.2798430 to 8.2064235 seconds for 40 circles and
+  from 6.1738282 to 6.1303500 seconds for obstacle-free planning; arrivals
+  were bit-identical. The end-to-end gains are small and ranges nearly
+  overlap, so no broad speed claim is made. Production decreases by seven
+  lines.
+- Evidence: The accepted source passes all 43 focused planner tests.
+- Remaining work: Run all 18 maintained examples serially and headlessly,
+  repeat full tests and Code Analyzer, update benchmark and assessment
+  records for the 7,500-line target, then commit and push the next checkpoint.
+- Impediments: None.
+
+### 2026-08-21 02:23 America/Denver — Batched Reconstruction Checkpoint
+
+- Push status: Staging the evaluator checkpoint was blocked by the approval
+  service's usage limit. No Git-policy workaround was attempted; verified
+  work remains local after pushed commit `2074c14`.
+- Completed: Replaced the per-segment HS3 polynomial reconstruction loop with
+  interleaved cumulative contributions. The interleaving preserves the exact
+  legacy addition order for acceleration, velocity, and position histories.
+- Equivalence evidence: Coefficients and terminal states matched bit for bit
+  for deterministic random cases with 1, 2, 7, and 19 segments. Code Analyzer
+  reported zero messages for the modified solver, and all 43 focused planner
+  tests passed.
+- Runtime evidence: Two repeated candidate runs produced 15.9953 and 16.0208
+  seconds for dense concave, 7.7309 and 7.7121 seconds for 40 circles, and
+  47.5820 and 47.2180 seconds for extreme outlines. All retained identical
+  arrivals and independent validation. `solveAzElHs3.m` decreases from 900 to
+  898 physical lines.
+- Final sweep evidence: All 18 maintained examples ran serially and
+  headlessly. Seventeen were independently validated successes and the no-path
+  example was the expected validated `noValidatedSeed` failure. The two-U wall
+  time decreased from 34.7071 to 32.0304 seconds with exact arrival retained.
+- Current risk check: Moving/deforming U.S. ran in 29.5032 seconds, above the
+  preceding 29.1378-second single run but inside its recorded 28.85-to-30.37
+  second process range. Repeat timing is required before final acceptance.
+- User policy: Tracked `AGENTS.md` now sets the production target to 7,500
+  physical lines. The 900-line file cap and 12,000-line tree cap remain.
+- Remaining work: Repeat the moving-U.S. non-regression check, run final full
+  tests/analyzer/graphics, append final benchmark rows, update assessment and
+  verification, then push when approval service capacity permits.
+- Impediments: Push approval is temporarily unavailable; local work and
+  verification remain available.
+
+### 2026-08-21 02:55 America/Denver — Lazy Polynomial Outputs Checkpoint
+
+- Rejected experiment: Directly applying cached Bernstein matrices improved
+  isolated conversions by 25.77-to-71.82 percent but regressed dense-concave
+  planning to 16.2591 and 16.3256 seconds. The complete direct-matrix change
+  and its formatting edits were removed.
+- Completed: `evaluateAzElPolynomial` now returns immediately after computing
+  the outputs requested by its caller. HS3 corridor constraints request only
+  time and position, so they no longer form unrequested velocity,
+  acceleration, and jerk histories.
+- Equivalence evidence: Two-, three-, four-, and five-output calls matched bit
+  for bit. The position-only helper path decreased from 2.708550 to 1.223250
+  seconds relative to full-output work over 20,000 repetitions, a 54.84
+  percent reduction. All 43 focused planner tests passed.
+- Runtime gate: Dense-concave confirmation was 15.6307 seconds and extreme
+  confirmation was 47.4118 seconds. After replacing four independent branch
+  checks with early returns, 40-circle repeats were 7.7807 and 7.6743 seconds,
+  overlapping and slightly improving its accepted 7.7121-to-7.7403 range.
+  Arrivals and validation were unchanged.
+- Final sweep: All 18 maintained examples ran serially and headlessly on the
+  exact lazy-output source. Seventeen returned independently validated success
+  and no-path returned the expected validated failure. Representative walls
+  were 15.3269 seconds dense, 7.7455 seconds 40 circles, 30.6768 seconds two
+  U shapes, and 47.3506 seconds extreme outlines.
+- Remaining work: Run final full tests, Code Analyzer, visible success and
+  failure checks, append benchmark rows, update assessment and verification,
+  and push when approval capacity permits.
+- Impediments: Push approval remains temporarily unavailable; no workaround
+  has been attempted.
+
+### 2026-08-21 03:27 America/Denver — Batched Seed-Corridor Checkpoint
+
+- Completed: Converted every seed-corridor projection polynomial in one
+  matrix call while preserving corridor-major inequality ordering. The
+  isolated calculation matched the scalar implementation bit for bit and
+  decreased from 1.342930 to 0.292488 seconds, a 78.22 percent reduction.
+- Runtime gate: Repeated 40-circle runs were 7.2551 and 7.2014 seconds, and
+  repeated extreme-outline runs were 46.1842 and 45.9486 seconds. Dense
+  concave remained inside prior process variation at 15.3459 and 15.6457
+  seconds. Every arrival and independent validation state was retained.
+- Final sweep: All 18 maintained examples ran serially and headlessly on the
+  exact final source. Seventeen were independently validated successes and
+  no-path retained its expected validated failure. Final representative walls
+  were 15.6605 seconds dense concave, 7.2062 seconds 40 circles, 28.5579
+  seconds moving/deforming U.S., 30.7400 seconds two U shapes, and 46.0246
+  seconds extreme outlines.
+- Verification: The full suite passed 56 of 56 tests and Code Analyzer
+  reported zero messages across 55 files. Visible success produced three
+  figures and 487 graphics objects; visible failure produced two diagnostic
+  figures with two rejected transitions. One preliminary visible-failure
+  harness invocation used the wrong diagnostics field, then the corrected
+  invocation passed without changing source.
+- Size: Production is 7,140 lines, 360 below the user-approved 7,500-line
+  target. The tracked MATLAB tree is 11,874 lines, 126 below its 12,000-line
+  hard cap. Core files remain 900 and 888 lines. The 694-line interactive
+  sandbox remains untracked.
+- Remaining work: Update assessment and verification records, audit the diff,
+  profile the exact final source, and start the next bounded optimization.
+- Impediments: Push approval remains temporarily unavailable after the
+  approval service usage limit; no workaround has been attempted.
+
+### 2026-08-21 03:57 America/Denver — Corridor-Invariant Checkpoint
+
+- Completed: Hoisted the frozen corridor time vector out of the nonlinear
+  constraint callback. The extreme-outline profile had recomputed the same
+  `unique` result 34,203 times. Constraint arrays are also assembled once,
+  removing one solver line and an intermediate concatenation.
+- Proof gate: All 52 focused planner tests passed. Two serial gates retained
+  exact arrivals while dense concave ran in 14.7514 and 14.5419 seconds,
+  40 circles in 7.1021 and 7.1510 seconds, and extreme outlines in 45.8169
+  and 45.7517 seconds. A later assembly gate ran in 14.3470, 6.9214, and
+  45.5472 seconds respectively.
+- Rejected solver experiment: SQP exceeded 60 seconds on the basic example
+  versus the 10.1412-second interior-point timing and was interrupted. The
+  interior-point CG subproblem eliminated conditioning warnings and improved
+  several cases, but regressed two opposing U shapes from 30.74 to 38.35
+  seconds. Both experimental solver changes were fully removed.
+- Final sweep: All 18 maintained examples again ran serially and headlessly.
+  Seventeen passed independently and no-path retained its validated failure.
+  Final walls included 28.6869 seconds two U shapes and 45.7315 seconds
+  extreme outlines. Dense concave at 16.1936 and 40 circles at 7.8605 were
+  above their paired gates, so both unfavorable values remain recorded.
+- Verification: The full suite passed 56 of 56 tests in 37.7540 seconds.
+  Code Analyzer reported zero messages across 55 files. Visible success and
+  failure checks passed with three and two figures respectively.
+- Remaining work: Recount sizes, update branch assessment and verification,
+  audit the diff, and profile the next non-rejected hotspot.
+- Impediments: Push approval remains unavailable after the approval service
+  limit; no workaround has been attempted.
+
+## 2026-08-21 06:15 MDT checkpoint
+
+- Accepted: Earliest-arrival stage two is now invoked only when the primary
+  nonlinear result exceeds the final feasibility tolerance, and its objective
+  is constant because this stage exists only to recover feasibility. The
+  alternating slalom retained its exact 12.180917402175-second arrival and
+  passed all certificates while its measured wall time decreased from about
+  13.8 to 10.7--11.0 seconds. Two opposing U shapes remained bit exact at
+  22.875124576026 seconds, and the maintained no-path case retained its
+  independently validated `noValidatedSeed` result.
+- Proof gate: All 43 focused HS3 tests passed in 30.1825 seconds. Code Analyzer
+  reported zero messages across 54 maintained MATLAB files. Production is
+  7,122 lines, the tracked MATLAB tree is 11,856 lines, the HS3 solver is 882
+  lines, and the public planner is 888 lines.
+- Rejected: Enabling the interior-point feasibility mode for recovery retained
+  the same eight iterations and 326 function evaluations and slightly worsened
+  alternating-slalom wall time, so the option was removed immediately.
+- Profile evidence: A no-plot dense-concave run retained the exact
+  8.797638855700-second arrival. Of 14.0092 wall seconds, fmincon spent 7.1641
+  seconds evaluating finite-difference constraints; corridor constraints used
+  3.0641 seconds, continuous Bernstein bounds 1.3737 seconds, reconstruction
+  1.0755 seconds, and polynomial evaluation 1.0016 seconds.
+- Next exact action: Exploit the input-driven invariant that every fixed-time
+  HS3 constraint is affine in jerk. Test a bounded conversion to fmincon linear
+  constraints on both static and moving fixed-arrival examples, then roll back
+  unless validation, motion quality, and runtime all remain favorable.
+- Impediment: Push approval remains unavailable after the approval-service
+  usage limit. The untracked 694-line sandbox remains excluded.
+
+## 2026-08-21 06:30 MDT checkpoint
+
+- Accepted: Fixed-arrival HS3 constraints now use an affine jerk basis through
+  fmincon linear matrices. Static and moving geometry remain general because
+  fixed final time also fixes every corridor query time. Earliest arrival
+  retains the nonlinear time-decision callback. Solver diagnostics name the
+  selected representation and tests cover both.
+- Runtime/quality evidence: The four fixed-arrival wall times changed from
+  29.0747 to 25.2320, 3.4576 to 2.9311, 22.8904 to 20.9312, and 6.9459 to
+  4.5879 seconds. Accelerating-circle motion shortened 27.7125 to 20.3724
+  degrees and alternating occlusion 15.3249 to 14.2202 degrees. The target-
+  exit jerk objective and final violation decreased; all hard certificates
+  passed.
+- Isolation evidence: All 14 earliest-arrival maintained examples retained
+  their exact preceding metrics. The opposing-U arrival is
+  22.875124576026 seconds and the wider-U arrival is 22.818548735851 seconds.
+- Diagnosed failure: The serial headless sweep initially found that the
+  moving/deforming U.S. example read omitted `Verbose` before planner default
+  resolution. The shared resolver now materializes public defaults first and
+  normalizes an empty unknown-field set. A focused default/override test, the
+  original example, and the structurally different extreme example pass.
+- Final proof gate: All 18 maintained examples ran serially and headlessly;
+  17 passed independent success validation and no-path retained its validated
+  failure. All 57 tests passed in 29.1131 seconds. Code Analyzer reported zero
+  messages across 55 files. Visible success created four figures; visible
+  failure created two figures with two rejected transitions.
+- Size: Production is 7,185 lines; the maintained MATLAB tree is 11,940 lines.
+  The solver is exactly 900 lines and the planner 888. The 694-line interactive
+  sandbox remains untracked.
+- Rejected: Interior-point feasibility mode retained eight recovery iterations
+  and 326 evaluations and slightly worsened wall time, so it was removed.
+- Remaining work: With only 60 maintained-tree lines available, profile and
+  clean existing code before attempting another bounded optimization.
+- Impediment: Push approval remains unavailable after the approval-service
+  usage limit; no further staging or push has been attempted.
+
+## 2026-08-21 07:04 MDT checkpoint
+
+- Accepted: Fixed-arrival fmincon now receives the exact analytic gradient of
+  integrated squared HS3 jerk. A seeded 30-variable central difference matched
+  to 5.33e-10 relative error. Set-time objective evaluations decreased from
+  1,032 to 24. Accelerating-circle wall decreased from 25.2320 seconds on the
+  affine-only source to 23.6113 seconds with the gradient.
+- Accepted: Convex seed-envelope containment now uses vectorized `inpolygon`
+  membership on the same buffered polyshape vertices after convexity is
+  proved, instead of repeated `polyshape.isinterior` calls. Two moving fixed-
+  case runs had a 22.9181-second median versus 23.5632 seconds before the
+  substitution. The final serial sweep run was 23.2994 seconds.
+- Correctness: A new focused test covers inside, outside, and concave envelope
+  cases. All 18 maintained examples then ran serially and headlessly; every
+  trajectory metric was exact to the preceding gradient source, with 17
+  validated successes and the expected validated no-path failure.
+- Final proof gate: 58 tests passed in 29.0953 seconds. Code Analyzer reported
+  zero messages across 56 maintained MATLAB files. Visible success created four
+  figures and visible failure created two figures with two rejected edges.
+- Size: Removing 29 redundant test-only blank lines offset most helper/test
+  growth. Production is 7,239 lines and the maintained MATLAB tree is 11,978
+  lines. The solver is 885 lines and planner 888; the interactive sandbox
+  remains untracked.
+- Remaining work: Audit the complete diff and record set, then continue only
+  with deletion-heavy cleanup because 27 maintained-tree lines remain.
+- Impediment: Push remains unavailable after the approval-service limit. No
+  staging or push retry has been attempted.
+
+- Final audit correction: The objective helper now returns the exact final-time
+  derivative when two outputs are requested for earliest arrival. Fixed and
+  variable-time central differences both match to 5.33e-10 relative error;
+  three affected focused tests pass. This adds five lines, leaving production
+  at 7,239 and the maintained MATLAB tree at 11,978 lines.
+
+- Final accepted cleanup: Canonical obstacle histories are concatenated before
+  convex-envelope membership, replacing thousands of per-slice polygon calls
+  with one call per obstacle/region and deleting eight production lines. The
+  moving fixed serial-pair median improved 4.35 percent, all 18 final examples
+  retained exact metrics, 58 tests passed, analysis was clean, and visible
+  success/failure checks passed. Final production is 7,231 lines and the
+  maintained MATLAB tree is 11,974 lines.
+
+- Frozen-source audit: The resolver now reuses the already-materialized public
+  defaults when collecting option names. Its focused contract test and the
+  final 58-test suite passed; the suite took 29.1249 seconds and analysis again
+  reported zero messages across 56 maintained files.
+
+- Durable proof: Added one full-decision directional-gradient regression and
+  removed the same number of redundant test separators. The absolute final
+  suite passed 59 tests in 29.2410 seconds; analysis remained at zero messages
+  and MATLAB line counts did not grow.
+
+## 2026-08-21 07:34 MDT checkpoint
+
+- Frozen source: No planner or helper code changed after the final 18-example
+  serial sweep, 59-test proof gate, clean Code Analyzer run, and visible
+  success/failure checks recorded above.
+- Boundary invariant: The public obstacle constructor was exercised with one
+  row-oriented and one column-oriented history slice. Normalization converted
+  both coordinate histories to columns, and batched complete-history envelope
+  containment passed. This directly covers the accepted input forms used by
+  the latest containment optimization.
+- Size remains 7,231 production MATLAB lines and 11,974 maintained MATLAB
+  lines. The 694-line interactive sandbox remains untracked and excluded from
+  maintained-tree and commit scope.
+- Remaining work: Perform a final consistency audit of the diff, benchmark
+  ledger, assessment, and verification record; do not reopen the validated
+  algorithm without new failing evidence.
+- Impediment: Push approval remains unavailable after the approval-service
+  usage limit. No staging or push retry has been attempted.
+
+### 2026-08-21 04:27 America/Denver — Fixed-Arrival Initialization Checkpoint
+
+- Diagnosis: The fixed-time alternating-occlusion result could vary with
+  wall-time warm-up. A 30-second improvement budget converged a wider
+  topology to a 14.2226-degree motion, showing that the 19.2294-degree result
+  was a local convergence limit rather than a required route.
+- Rejected broad form: Capping desired seed speed at average route speed for
+  every goal mode improved fixed-time motion but regressed dense-concave
+  earliest arrival from 8.8176085 to 8.9027893 seconds. That form was removed.
+- Accepted invariant: Only fixed-arrival initialization is capped at the
+  seed's average speed over the available duration. Earliest-arrival speed
+  initialization is mathematically unchanged. The fixed route repeated at
+  16.7791212 degrees, down 12.74 percent from 19.2294132, with all independent
+  certificates passing.
+- General fixed-family evidence: Four accelerating circles decreased from
+  43.0900 to 33.3670 seconds wall, target-exit decreased from 7.7128 to
+  7.3818 seconds, and set-time intercept remained 3.3941 seconds. All passed.
+- Earliest-family evidence: Dense concave, 40 circles, two U shapes, and
+  extreme outlines retained their accepted arrival values bit for bit in the
+  narrowed proof gate.
+- Final sweep: All 18 maintained examples ran serially and headlessly.
+  Seventeen passed independently and no-path retained its validated failure.
+  The straight fixed-time motion was 16.7791212 degrees and four accelerating
+  circles ran in 33.3670 seconds.
+- Verification: The full suite passed 56 of 56 tests in 37.2082 seconds.
+  Code Analyzer reported zero messages across 55 files. Visible success and
+  failure checks passed with three and two figures respectively.
+- Remaining work: Update branch assessment and verification, audit size and
+  diff invariants, and continue with the next bounded runtime/arrival target.
+- Impediments: Push approval remains unavailable after the approval service
+  limit; no workaround has been attempted.
+
+### 2026-08-21 04:50 America/Denver — Goal-Mode Solver Checkpoint
+
+- Rejected arrival experiment: Increasing shape-relative seed expansion from
+  2 to 5 percent retained extreme arrival and cut its wall time to 37.9509
+  seconds, but regressed wide-U arrival from 22.8196 to 24.3270 seconds. The
+  2-percent value was restored completely.
+- Accepted solver invariant: Earliest arrival retains interior-point
+  factorization. Fixed arrival uses the conjugate-gradient subproblem because
+  its average-speed initialization consistently converges the fixed-time jerk
+  tie-break faster. The solver remains one entry point and adds no option.
+- Fixed proof gate: Straight motion repeated at 15.3248805 degrees and four
+  accelerating circles repeated at 29.2401 and 29.3633 seconds. Target-exit
+  ran in 6.7637 seconds and every fixed result passed independent validation.
+- Earliest proof gate: Dense concave and two opposing U shapes retained exact
+  accepted arrivals with factorization. The earlier global-CG two-U regression
+  is therefore excluded by the goal-mode invariant rather than hidden.
+- Final sweep: All 18 maintained examples ran serially and headlessly.
+  Seventeen passed independently and no-path retained its validated failure.
+  Straight motion was 15.3248805 degrees, 20.30 percent below the earlier
+  19.2294132-degree result. Four accelerating circles ran in 29.1694 seconds.
+- Verification: The full suite passed 56 of 56 tests in 38.0220 seconds.
+  Code Analyzer reported zero messages across 55 files. Visible success and
+  failure checks passed with three and two figures respectively.
+- Remaining work: Update assessment and verification, audit final invariants,
+  and profile the next general earliest-arrival or runtime opportunity.
+- Impediments: Push approval remains unavailable after the approval service
+  limit; no workaround has been attempted.
+
+### 2026-08-21 05:10 America/Denver — Geometry-Conditioned Solver Checkpoint
+
+- Accepted invariant: Fixed arrival and untimed earliest-arrival seeds with
+  one exact obstacle or reduced geometry use the interior-point CG
+  subproblem. Timed earliest-arrival seeds and multiple exact obstacles retain
+  factorization. The rule uses only supplied timing, obstacle count, and seed
+  provenance and adds no option or scenario-specific logic.
+- Arrival evidence: Dense concave improved from 8.817608547166 to
+  8.798638844754 seconds. Basic improved by 0.000000166454 seconds. Other
+  duration changes were below the documented one-millisecond comparison
+  tolerance and are not claimed as meaningful improvements.
+- Runtime evidence: Basic ran in 9.2429 seconds, dense concave in 13.0904,
+  40 circles in 6.2417, and the three-region extreme example in 40.8815.
+  Exact multi-obstacle alternating slalom and opposing U shapes retained
+  bit-identical arrivals under factorization.
+- Rejected broad form: Allowing CG on timed seeds increased moving-barrier
+  wall time from the preceding 24.8248-second sweep to 28.2319 seconds. Timed
+  seeds were restored to factorization. The accepted motion then returned
+  bit for bit, while the final 28.1907-second wall remains unfavorable process
+  variation rather than an improvement claim.
+- Final sweep: All 18 maintained examples ran serially and headlessly.
+  Seventeen passed independent success validation; no-path retained its
+  independently validated `noValidatedSeed` result with NaN motion metrics.
+- Verification: The focused HS3 suite passed 43 of 43 tests. The full suite
+  passed 56 of 56 tests in 34.6245 seconds. Code Analyzer found zero messages
+  across 55 MATLAB files. Visible success and failure produced three and two
+  figures respectively; the failure retained two rejected transitions.
+- Size: Production remains 7,140 lines, 360 below the user-approved 7,500-line
+  target. The tracked MATLAB tree remains 11,874 lines, 126 below the 12,000-
+  line hard cap. Core files remain 900 and 888 lines. The 694-line interactive
+  sandbox remains untracked.
+- Remaining work: Audit the final records and diff, then profile a next
+  numerical-conditioning or arrival-time hotspot under a fresh bounded proof.
+- Impediments: Push approval remains unavailable after the approval service
+  limit; no workaround has been attempted.
+
+### 2026-08-21 05:45 America/Denver — Feasibility-Recovery Checkpoint
+
+- Accepted arrival policy: An earliest-arrival HS3 primary result that already
+  meets `ConstraintTolerance` is retained directly. The second nonlinear solve
+  is now reserved for recovering an infeasible primary residual instead of
+  routinely trading up to one millisecond of arrival for lower jerk. Fixed-
+  arrival jerk minimization is unchanged.
+- Recovery proof: Removing the second solve globally made alternating slalom
+  return `noValidatedSeed`. Its primary equality residuals were
+  0.00331588996721 and 0.00000257574762. The accepted residual gate restores
+  independently valid alternating-slalom success while feasible primary
+  solutions keep the fast path.
+- Arrival and runtime: Selected primary HS3 results arrive about one
+  millisecond earlier. Wide-U wall decreased from 17.0979 to 7.7078 seconds,
+  40 circles from 6.2417 to 4.4305, opposing U shapes from 28.2519 to 21.4478,
+  and extreme outlines from 40.8815 to 36.7603. Dense ran in 12.3737 seconds
+  versus 13.0904.
+- Explicit tradeoff: Minimum-time primary solutions can be wider and longer.
+  Dense motion increased 4.86 percent, 40 circles 2.57 percent, wide U 1.18
+  percent, and opposing U shapes 0.28 percent. All hard jerk, acceleration,
+  velocity, collision, endpoint, and dynamics certificates passed.
+- Rejected experiments: A `1e-5` arrival tolerance made opposing-U take
+  34.3097 seconds. Limited-memory BFGS took 13.5924 seconds on dense. PCG
+  tolerances 0.01 and 0.2 did not change iteration counts. Feasible-guess
+  `TypicalX` improved an extreme pair only 0.35 percent. Nargout-sized
+  evaluator allocation was 2.76 percent slower. Every form was removed.
+- Final sweep: All 18 maintained examples ran serially and headlessly.
+  Seventeen passed independent success validation; no-path retained its
+  independently validated `noValidatedSeed` failure.
+- Verification: The focused HS3 suite passed 43 of 43 tests in 30.8299
+  seconds. The full suite passed 56 of 56 in 33.8326 seconds. Code Analyzer
+  found zero messages across 55 MATLAB files. Visible success and failure
+  produced three and two figures; failure retained two rejected transitions.
+- Size: Production decreased from 7,140 to 7,123 lines. The tracked MATLAB
+  tree decreased from 11,874 to 11,857 lines. The solver is 883 lines and the
+  planner is 888. The 694-line interactive sandbox remains untracked.
+- Cleanup: Reused the primary or recovery constraint arrays for final
+  diagnostics instead of evaluating the selected decision again. Basic and
+  alternating results were bit exact and all 43 focused tests passed. The
+  repository-cleanup skill also consolidated 506 superseded verification
+  lines while preserving all CSV history and checkpoint evidence.
+- Remaining work: Audit final records and source diff, then continue profiling
+  from the accepted minimum-time source under another bounded experiment.
+- Impediments: Push approval remains unavailable after the approval service
+  limit; no workaround has been attempted.

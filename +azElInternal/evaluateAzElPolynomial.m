@@ -65,12 +65,24 @@ end
 localTau = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ ...
     selectedDuration_s;
 localTau = min(1, max(0, localTau));
+if nargout < 2
+    return;
+end
 position_deg = evaluateRecords( ...
     polynomial.positionPower_deg, segmentIndex, localTau);
+if nargout < 3
+    return;
+end
 velocity_deg_s = evaluateRecords( ...
     polynomial.velocityPower_deg_s, segmentIndex, localTau);
+if nargout < 4
+    return;
+end
 acceleration_deg_s2 = evaluateRecords( ...
     polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
+if nargout < 5
+    return;
+end
 jerk_deg_s3 = evaluateRecords( ...
     polynomial.jerkPower_deg_s3, segmentIndex, localTau);
 end
@@ -78,15 +90,8 @@ end
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
 % PURPOSE
 %   - Evaluate selected two-axis records without per-sample helper calls.
-segmentCount = size(coefficientArray, 1);
 coefficientCount = size(coefficientArray, 3);
-power = localTau .^ (0:coefficientCount - 1);
-value = zeros(numel(localTau), 2);
-for axisIndex = 1:2
-    coefficient = reshape( ...
-        coefficientArray(:, axisIndex, :), ...
-        segmentCount, coefficientCount);
-    value(:, axisIndex) = sum( ...
-        coefficient(segmentIndex, :) .* power, 2);
-end
+power = reshape(localTau .^ (0:coefficientCount - 1), ...
+    [], 1, coefficientCount);
+value = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
 end

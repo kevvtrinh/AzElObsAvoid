@@ -133,6 +133,17 @@ verifyTrue(testCase, isnan( ...
     failureMetrics.KinematicCertificatePassed));
 end
 
+function testExampleResolverMaterializesPlannerDefaults(testCase)
+% Verify example-local setup can read defaults before calling the planner.
+[plannerOptions, ~] = resolveAzElExampleOptions( ...
+    struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
+verifyFalse(testCase, plannerOptions.Verbose);
+verifyEqual(testCase, plannerOptions.MaximumSeedCount, 2);
+[plannerOptions, ~] = resolveAzElExampleOptions( ...
+    struct("Verbose", true), struct());
+verifyTrue(testCase, plannerOptions.Verbose);
+end
+
 function testUniformMaximumJerkRouting(testCase)
 % Verify that every example routes the shared jerk control into limits.
 exampleNames = [ ...

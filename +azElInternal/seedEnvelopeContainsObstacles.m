@@ -50,7 +50,7 @@ end
 %% Section 2: Verify Convex Regions
 
 containmentTolerance_deg = max(1e-9, tolerance_deg);
-bufferedRegions = cell(regionCount, 1);
+bufferedRegionVertices_deg = cell(regionCount, 1);
 for regionIndex = 1:regionCount
     regionVertices_deg = envelopeRegions(regionIndex).Vertices;
     regionVertices_deg = ...
@@ -67,30 +67,25 @@ for regionIndex = 1:regionCount
             areaTolerance_deg2
         return;
     end
-    bufferedRegions{regionIndex} = polybuffer( ...
+    bufferedShape = polybuffer( ...
         envelopeRegions(regionIndex), containmentTolerance_deg);
+    bufferedRegionVertices_deg{regionIndex} = bufferedShape.Vertices;
 end
 
 %% Section 3: Assign Each Complete History To One Region
 
 for obstacleIndex = 1:numel(obstacles)
     containingRegionFound = false;
+    obstacle = obstacles(obstacleIndex);
+    position_deg = [vertcat(obstacle.az_deg{:}), ...
+        vertcat(obstacle.el_deg{:})];
+    position_deg = position_deg(all(isfinite(position_deg), 2), :);
     for regionIndex = 1:regionCount
-        allSlicesInside = true;
-        for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-            position_deg = [ ...
-                obstacles(obstacleIndex).az_deg{sampleIndex}(:), ...
-                obstacles(obstacleIndex).el_deg{sampleIndex}(:)];
-            position_deg = ...
-                position_deg(all(isfinite(position_deg), 2), :);
-            if isempty(position_deg) || ~all(isinterior( ...
-                    bufferedRegions{regionIndex}, ...
-                    position_deg(:, 1), position_deg(:, 2)))
-                allSlicesInside = false;
-                break;
-            end
-        end
-        if allSlicesInside
+        boundary = bufferedRegionVertices_deg{regionIndex};
+        [isInside, isOnBoundary] = inpolygon( ...
+            position_deg(:, 1), position_deg(:, 2), ...
+            boundary(:, 1), boundary(:, 2));
+        if ~isempty(position_deg) && all(isInside | isOnBoundary)
             containingRegionFound = true;
             break;
         end

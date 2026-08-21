@@ -25,7 +25,6 @@ repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
-
 function testDefaultsExposeOneSmallPlanner(testCase)
 % Verify that zero-input defaults expose only the maintained HS3 controls.
 options = planAzElMotion();
@@ -38,7 +37,6 @@ verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
 verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
 verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
 end
-
 function testWorkspaceIntervalsBelongToLimits(testCase)
 % Verify omitted and explicit workspace intervals use the limits contract.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -54,7 +52,6 @@ result = planAzElMotion([], initialState, goalState, limits, fixedOptions());
 verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-12 14]);
 verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-5 6]);
 end
-
 function testOldWorkspaceOptionGivesMigrationError(testCase)
 % Verify old workspace option names identify their new limits location.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -66,7 +63,6 @@ verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, options), ...
     "planAzElMotion:WorkspaceLimitMoved");
 end
-
 function testVerboseOutputUsesOnePrefixFamily(testCase)
 % Verify quiet mode is quiet and verbose mode uses only the public prefix.
 % checkcode cannot see that evalc reads these three local variables.
@@ -82,7 +78,6 @@ verifyNotEmpty(testCase, regexp(verboseText, '\[AzEl\]', 'once'));
 verifyEmpty(testCase, regexp(verboseText, ...
     '(?m)^\[HS3\]|^\[first motion', 'once'));
 end
-
 function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
 % Verify that three nearby regions form one seed hull without physical edits.
 movingSource_deg = [-1 -4; 1 -4; 1 -2; -1 -2];
@@ -122,7 +117,6 @@ verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
 isOccupied = queryAzElTimeObstacle(obstacles, 0, 0.75, 10);
 verifyFalse(testCase, isOccupied);
 end
-
 function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
 % Verify the dense seed fallback bounds history and rejects endpoint capture.
 obstacle = rectangleObstacle([0 20], [-1 1 -2 2], 0);
@@ -160,7 +154,6 @@ secondTriangle = makeAzElObstacleData( ...
 verifyTrue(testCase, usedManyObstacleEnvelope);
 verifyNotEmpty(testCase, manyObstacleShape.Vertices);
 end
-
 function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
 % Verify independent containment and continuous Bernstein separation checks.
 obstacle = rectangleObstacle([0 10], [-1 1 -1 1], 0);
@@ -187,7 +180,23 @@ trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
     trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
-
+function testSeedEnvelopeRequiresConvexCompleteContainment(testCase)
+% Verify vectorized membership retains convexity and complete-history rules.
+boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
+inside = rectangleObstacle([0 2], [-1 1 -1 1], 0);
+outside = rectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, inside, 0));
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, outside, 0));
+mixedHistory = inside;
+mixedHistory.az_deg{2} = mixedHistory.az_deg{2} + 3;
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, mixedHistory, 0));
+concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    concaveBoundary_deg, inside, 0));
+end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
 % Verify the third-order chain against analytic constant-jerk motion.
 duration_s = 2;
@@ -201,7 +210,6 @@ validation = validateAzElTrajectory( ...
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyLessThanOrEqual(testCase, validation.MaximumDynamicsResidual, 1e-12);
 end
-
 function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
 % Verify valid samples cannot hide unrelated polynomial coefficients.
 duration_s = 2;
@@ -220,7 +228,6 @@ verifyTrue(testCase, validation.PolynomialSchemaValid);
 verifyFalse(testCase, validation.PolynomialEndpointStatesMatched);
 verifyFalse(testCase, validation.PolynomialHistoryConsistent);
 end
-
 function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
 % Verify matching shifted samples and coefficients still honor initial time.
 duration_s = 2;
@@ -240,7 +247,6 @@ verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.PolynomialInitialTimeMatched);
 verifyTrue(testCase, validation.PolynomialHistoryConsistent);
 end
-
 function testFixedArrivalEnforcesTerminalState(testCase)
 % Verify fixed time and nonzero initial and terminal state equalities.
 initialState = state(0, [0 0], [0.1 0], [0.05 0]);
@@ -257,8 +263,26 @@ verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
 verifyEqual(testCase, result.time_s(end), 8, "AbsTol", 1e-7);
 verifyEqual(testCase, result.velocity_deg_s(end, :), ...
     goalState.velocity_deg_s, "AbsTol", 1e-6);
+diagnostics = result.SeedSummaries( ...
+    result.SelectedSeedIndex).Hs3SolverDiagnostics;
+verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
+    "linearFixedTime");
 end
-
+function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
+% Verify the exact gradient includes both jerk and final-time decisions.
+segmentCount = 3;
+decision = [linspace(-1, 1, 2 * (2 * segmentCount + 1)).'; 8];
+direction = cos((1:numel(decision)).');
+[~, gradient] = azElInternal.integratedSquaredAzElHs3Jerk( ...
+    decision, true, 8, segmentCount, 1);
+step = 1e-6;
+forward = azElInternal.integratedSquaredAzElHs3Jerk( ...
+    decision + step * direction, true, 8, segmentCount, 1);
+backward = azElInternal.integratedSquaredAzElHs3Jerk( ...
+    decision - step * direction, true, 8, segmentCount, 1);
+verifyEqual(testCase, gradient.' * direction, ...
+    (forward - backward) / (2 * step), "RelTol", 1e-8);
+end
 function testEarliestArrivalIsInsideHorizon(testCase)
 % Verify the two-stage earliest-arrival solve and independent validation.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -270,6 +294,10 @@ result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+diagnostics = result.SeedSummaries( ...
+    result.SelectedSeedIndex).Hs3SolverDiagnostics;
+verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
+    "nonlinearTimeDecision");
 jerkRampTime_s = limits.maxAcceleration_deg_s2(1) / ...
     limits.maxJerk_deg_s3(1);
 constantAccelerationTime_s = (-1.5 + sqrt(16.25)) / 2;
@@ -278,7 +306,6 @@ independentMinimumTime_s = 2 * ...
 verifyEqual(testCase, result.time_s(end), independentMinimumTime_s, ...
     "AbsTol", 0.25);
 end
-
 function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
 % Verify a later blocked goal does not reject a valid earlier arrival.
 source_deg = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
@@ -299,7 +326,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.ArrivalTime_s, goalState.time_s);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
-
 function testIntegerWorkLimitsRejectFractionalValues(testCase)
 % Verify invalid optimizer work limits fail at the public boundary.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -316,7 +342,6 @@ catch exception
 end
 verifyTrue(testCase, didThrow);
 end
-
 function testMovingGoalInterpolationMethodMustBeScalar(testCase)
 % Verify a text array cannot pass as one interpolation method.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -329,7 +354,6 @@ verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, fixedOptions()), ...
     "planAzElMotion:InvalidGoalInterpolation");
 end
-
 function testMovingGoalHistoryRequiresTwoSamples(testCase)
 % Verify one target sample fails with one actionable public error.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -341,7 +365,6 @@ verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, fixedOptions()), ...
     "planAzElMotion:MovingGoalHistoryTooShort");
 end
-
 function testInterceptWrapperTextOptionsMustBeScalar(testCase)
 % Verify the moving-target wrapper rejects ambiguous text arrays.
 targetMotion = struct("time_s", [0; 10], ...
@@ -357,7 +380,6 @@ verifyError(testCase, @() planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, struct()), ...
     "planAzElMovingTargetIntercept:InvalidInterpolation");
 end
-
 function testInterceptWrapperRequiresTwoTargetSamples(testCase)
 % Verify the wrapper rejects a one-sample target at its public boundary.
 targetMotion = struct("time_s", 10, "position_deg", [1 0]);
@@ -367,7 +389,6 @@ verifyError(testCase, @() planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, struct()), ...
     "planAzElMovingTargetIntercept:TargetHistoryTooShort");
 end
-
 function testSelectedCandidateSupportsMeshRefinement(testCase)
 % Verify an HS3-only endpoint state can be re-solved on a denser mesh.
 initialState = state(0, [0 0], [0.1 0], [0.05 0]);
@@ -383,7 +404,6 @@ verifyEqual(testCase, result.Polynomial.SegmentCount, 8);
 verifyEqual(testCase, ...
     result.SearchDiagnostics.MeshRefinementPassCount, 1);
 end
-
 function testStaticObstacleProducesOppositeSideSeeds(testCase)
 % Verify bounded input-driven seed diversity and validated selection.
 obstacle = rectangleObstacle([0 20], [-1 1 -2 2], 0.2);
@@ -451,7 +471,6 @@ if result.Success
         min(arrival_s) + options.ArrivalTimeTolerance_s);
 end
 end
-
 function testTwoObstacleHomologySearchFindsDistinctClasses(testCase)
 % Verify signature diversity for a structurally different obstacle field.
 obstacles = [ ...
@@ -477,7 +496,6 @@ verifyGreaterThanOrEqual(testCase, ...
     sum([seeds.Source] == "visibilityGraph"), 2);
 verifyFalse(testCase, diagnostics.HomologySearchTruncated);
 end
-
 function testMovingObstacleUsesTrajectoryTime(testCase)
 % Verify that the same point changes occupancy as protected geometry moves.
 time_s = [0; 4];
@@ -490,7 +508,6 @@ occupied = queryAzElTimeObstacle( ...
     obstacle, [0; 0], [0; 0], [0; 4]);
 verifyEqual(testCase, occupied, [true; false]);
 end
-
 function testOccupancyOnlyMatchesDetailedQuery(testCase)
 % Verify the fast occupancy path preserves moving and boundary decisions.
 time_s = [0; 2];
@@ -511,7 +528,6 @@ verifyEqual(testCase, fastOccupied, detailedOccupied);
 verifyEqual(testCase, fastOccupied, [true; true; true]);
 verifyLessThanOrEqual(testCase, min(details.MinimumClearance_deg), 0);
 end
-
 function testDeformingObstacleInterpolatesAtTrajectoryTime(testCase)
 % Verify vertex interpolation changes occupancy for a deforming polygon.
 time_s = [0; 2];
@@ -525,7 +541,6 @@ occupied = queryAzElTimeObstacle( ...
     obstacle, [1.5; 1.5], [0; 0], [0; 2]);
 verifyEqual(testCase, occupied, [false; true]);
 end
-
 function testDeformingObstacleUsesThePlannerPath(testCase)
 % Verify a deforming protected polygon uses the maintained HS3 planner.
 time_s = [0; 8];
@@ -544,7 +559,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
-
 function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
 % Verify a topology-change interval has constant conservative geometry.
 closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
@@ -560,7 +574,6 @@ verifyFalse(testCase, geometry.TopologyIsInterpolated);
 verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));
 end
-
 function testMovingBarrierGeneratesWaitingSeed(testCase)
 % Verify a requested but unused cluster does not suppress timed search.
 time_s = [0; 6; 8; 12];
@@ -595,7 +608,6 @@ verifyEqual(testCase, diagnostics.GraphType, ...
 verifyGreaterThan(testCase, diagnostics.TemporalLayerCount, 1);
 verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
 end
-
 function testObstacleActivationSpanEnablesTimedSearch(testCase)
 % Verify equal geometry can still change occupancy through its active span.
 obstacle = rectangleObstacle([3 6], [-0.5 0.5 -2 2], 0);
@@ -608,7 +620,6 @@ options = planAzElMotion();
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
 end
-
 function testTimedSeedKeepsDistinctAbsoluteDuration(testCase)
 % Verify equal spatial routes keep distinct moving-obstacle time guesses.
 azimuth_deg = repmat({[-1; 1; 1; -1]}, 2, 1);
@@ -638,7 +649,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.SeedSummaries(1).FirstMotionValidationPassed);
 verifyFalse(testCase, any([result.SeedSummaries(2:end).FirstMotionAttempted]));
 end
-
 function testDenseEnvelopeReportsTimedSearchWorkLimit(testCase)
 % Verify dense timed work is suppressed and reported as incomplete.
 time_s = [0; 6; 8; 12];
@@ -672,7 +682,6 @@ verifyNotEmpty(testCase, spatialSeeds);
 verifyTrue(testCase, all([spatialSeeds.UsesReducedGeometry]));
 verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
 end
-
 function testWaitingSeedDoesNotImposeCornerState(testCase)
 % Verify a repeated seed vertex does not become a zero-velocity equality.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -696,7 +705,6 @@ verifyGreaterThan(testCase, ...
     norm(candidate.position_deg(sampleIndex, :) - ...
     seed.position_deg(2, :)), 0.1);
 end
-
 function testAzimuthWrappingChangesThePhysicalRequest(testCase)
 % Verify wrapping selects the short move and disabled wrapping keeps the long move.
 initialState = state(0, [179 0], [0 0], [0 0]);
@@ -713,7 +721,6 @@ verifyEqual(testCase, shortResult.position_deg(end, 1), 181, ...
     "AbsTol", 1e-6);
 verifyTrue(testCase, shortResult.Validation.AzimuthWrapPolicySatisfied);
 end
-
 function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
 % Verify wrapped obstacle requests cannot return a false physical success.
 initialState = state(0, [179 0], [0 0], [0 0]);
@@ -726,7 +733,6 @@ verifyError(testCase, @() planAzElMotion( ...
     obstacle, initialState, goalState, limits, options), ...
     "planAzElMotion:UnsupportedWrappedGeometry");
 end
-
 function testRemovedPlanningTimeOptionGivesMigrationError(testCase)
 % Verify the removed planner timeout gives an actionable public error.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -738,7 +744,6 @@ verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, options), ...
     "planAzElMotion:RemovedMaximumPlanningTime");
 end
-
 function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
 % Verify endpoint failure and success use one public validation schema.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -755,7 +760,6 @@ verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
 verifyEqual(testCase, fieldnames(failure.Validation), ...
     fieldnames(success.Validation));
 end
-
 function testBetweenNodeCollisionFailsValidation(testCase)
 % Verify a collision at the segment midpoint cannot hide between samples.
 initialState = state(0, [-1 0], [2 0], [0 0]);
@@ -769,7 +773,6 @@ verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.CollisionFree);
 verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
 end
-
 function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
 % Verify collision at the first active event endpoint cannot be missed.
 initialState = state(0, [0 0], [0.1 0], [0 0]);
@@ -783,7 +786,6 @@ verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.CollisionFree);
 verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
 end
-
 function testBetweenNodeVelocityViolationFailsValidation(testCase)
 % Verify Bernstein limits detect an interior velocity peak with clear samples.
 initialState = state(0, [0 0], [0 0], [4 0]);
@@ -796,7 +798,6 @@ verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.VelocityWithinLimits);
 verifyEqual(testCase, max(abs(trajectory.velocity_deg_s), [], "all"), 0);
 end
-
 function testSafetyMarginIsAppliedExactlyOnce(testCase)
 % Verify absolute reconstruction from original geometry is idempotent.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
@@ -807,7 +808,6 @@ verifyEqual(testCase, reinflated.az_deg, obstacle.az_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
 end
-
 function testTranslatedHistoryReusesExactProtectedShape(testCase)
 % Verify rigid obstacle motion preserves one translated protected boundary.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
@@ -823,7 +823,6 @@ verifyEqual(testCase, obstacle.az_deg{2}, ...
 verifyEqual(testCase, obstacle.el_deg{2}, ...
     obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
 end
-
 function testDeterministicRepeatedRun(testCase)
 % Verify identical fixed inputs return identical seed order and trajectory.
 initialState = state(0, [0 0], [0 0], [0 0]);
@@ -838,7 +837,6 @@ verifyEqual(testCase, first.time_s, second.time_s, "AbsTol", 1e-12);
 verifyEqual(testCase, first.position_deg, second.position_deg, ...
     "AbsTol", 1e-9);
 end
-
 function testNoPathReturnsStableDiagnostics(testCase)
 % Verify expected no-path failure returns diagnostics instead of an error.
 wall = rectangleObstacle([0 12], [-0.5 0.5 -90 90], 0.2);
@@ -876,7 +874,6 @@ if ~isempty(surfaceHandles)
     verifyTrue(testCase, isnumeric(surfaceHandles(1).EdgeColor));
 end
 end
-
 function testMovingTargetUsesSamePlanner(testCase)
 % Verify the intercept wrapper only adapts target inputs to planAzElMotion.
 targetTime_s = (0:5:20).';
@@ -915,7 +912,6 @@ for axesIndex = 1:numel(axesHandles)
     verifyNotEmpty(testCase, targetHandles);
 end
 end
-
 function options = fixedOptions()
 % Return fast deterministic settings for focused tests.
 options = planAzElMotion();

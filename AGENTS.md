@@ -725,7 +725,7 @@ only when it represents a general result that later runs can populate.
 
 ### Performance-Based Production Size Allowance
 
-- The production MATLAB target is 7,000 physical lines. A measured runtime
+- The production MATLAB target is 7,500 physical lines. A measured runtime
   improvement can permit a proportional overage.
 - Each 100 physical production lines above the target requires at least a
   30 percent wall-time reduction. Apply the rule proportionally:
