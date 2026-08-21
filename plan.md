@@ -105,9 +105,12 @@ regression. Use the same inputs, options, environment, and independent
 validation. Correctness and arrival or route quality must stay within their
 documented tolerances. Record all evidence in `verification.md`.
 
-This allowance does not change the 900-line file limit, the 12,000-line
-complete-tree limit, or any correctness, generality, diagnostic, interface,
-and non-regression requirement.
+This allowance does not change the 900-line production-file limit, the
+12,000-line maintained planner/test-tree limit excluding `examples/`, or any
+correctness, generality, diagnostic, interface, and non-regression
+requirement. Example files have no repository line cap, but their full line
+count must still be reported and they must not be used to justify planner
+growth.
 
 # Phase 0 - Establish the Refactor Baseline
 
@@ -1615,6 +1618,22 @@ new design.
   audit the diff, and profile the next non-rejected hotspot.
 - Impediments: Push approval remains unavailable after the approval service
   limit; no workaround has been attempted.
+
+## 2026-08-21 — Auxiliary Sandbox Push And Earliest-Arrival Profile
+
+- User decision: Example files have no repository line cap, and the
+  interactive sandbox must be pushed. Production remains 7,231 lines; the
+  maintained planner/test tree excluding examples is 8,748 lines; all 24
+  example files total 3,920 lines, including the 694-line sandbox.
+- Profile evidence on the pushed `921b2f7` source: dense concave succeeded and
+  independently validated in 19.527848 seconds under profiling. Earliest-HS3
+  finite-difference constraint Jacobians consumed about 10.89 seconds across
+  342 batches and 10,602 constraint evaluations consumed about 10.32 seconds.
+  This is the next bounded optimization target; no change has been accepted
+  from it yet.
+- Remaining action: Run Code Analyzer and syntax checks with the sandbox
+  tracked, commit the explicit example-scope accounting plus sandbox, push,
+  then resume the finite-difference constraint-Jacobian experiment.
 
 ## 2026-08-21 06:15 MDT checkpoint
 

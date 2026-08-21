@@ -738,9 +738,12 @@ only when it represents a general result that later runs can populate.
   arrival or route quality within its documented tolerance.
 - Record the line count, formula, baseline, changed result, and minimum
   measured reduction in `verification.md` before a commit or push.
-- This allowance does not change the 900-line file limit, the 12,000-line
-  complete-tree limit, or any correctness, generality, diagnostic, interface,
-  and non-regression requirement.
+- This allowance does not change the 900-line production-file limit, the
+  12,000-line maintained planner/test-tree limit excluding `examples/`, or any
+  correctness, generality, diagnostic, interface, and non-regression
+  requirement. Example files have no repository line cap, but their full line
+  count must still be reported and they must not be used to justify planner
+  growth.
 
 - Inspect existing interfaces and call sites before editing.
 - Before completing, committing, or pushing a change, inspect the per-file

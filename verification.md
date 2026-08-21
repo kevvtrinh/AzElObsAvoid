@@ -628,7 +628,14 @@ A post-audit rerun of the complete test suite passed 59 tests with zero failed
 or incomplete results in 26.0991124 seconds.
 
 Relative to pushed `2074c14`, production changed from 7,139 to 7,231 lines
-(+92) and the maintained MATLAB tree changed from 11,873 to 11,974 (+101).
+(+92) and the maintained planner/test tree excluding examples changed from
+7,953 to 8,748 (+795).
 Production is 269 lines below the user-approved 7,500-line target, so no
 performance-based overage allowance is used. The solver shrank from 900 to
 885 lines while the two focused internal helpers hold 111 lines.
+
+The user then explicitly confirmed that example files have no repository line
+cap and authorized tracking the 694-line interactive sandbox. The 24 example
+files total 3,920 lines; the combined MATLAB tree is 12,668 lines, while the
+12,000-line cap applies only to the maintained planner/test tree excluding
+examples. Example files remain excluded from planner-growth claims.

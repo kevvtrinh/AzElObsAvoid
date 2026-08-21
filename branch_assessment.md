@@ -19,10 +19,10 @@ changes remain preserved in the checkpoint.
   expected failure created two diagnostic figures with 341 graphics objects
   and retained two rejected transitions.
 - Maintained production has 30 files and 7,231 physical lines. The maintained
-  MATLAB tree has 56 files and 11,974 physical lines.
-- The untracked interactive sandbox has 694 lines. It is useful for manual
-  experiments but is not included in maintained-tree counts or benchmark
-  claims; adding it to the repository would exceed the 12,000-line hard cap.
+  planner/test tree excluding `examples/` has 33 files and 8,748 physical
+  lines. The 24 example files total 3,920 lines, including the 694-line
+  interactive sandbox; examples have no repository line cap and are excluded
+  from planner-growth accounting.
 
 ## Current judgment
 
@@ -205,10 +205,9 @@ wall-time-sensitive topology convergence still merit a general improvement.
 ### 4. Repository size has very little maintained-tree headroom
 
 Production is 269 lines below the user-approved 7,500-line target. The
-maintained MATLAB tree is only 26 lines below the 12,000-line hard cap and
-1,474 lines above the preferred 10,500-line target. The HS3 solver is 885
-lines. The untracked interactive sandbox cannot be added as-is without
-substantial cleanup.
+maintained planner/test tree excluding examples is 3,252 lines below the
+12,000-line cap. The HS3 solver is 885 lines. Example files are uncapped and
+their 3,920-line total is reported separately.
 
 ### 5. Fixed-arrival constraints now avoid nonlinear finite differences
 
@@ -326,8 +325,8 @@ by the accepted measurements.
    only 26 lines remain below the hard cap.
 2. Improve the alternating-occlusion route length through a general
    through-velocity or topology-ranking improvement.
-3. Split or shrink the interactive sandbox before considering it maintained
-   repository content.
+3. Keep the user-authorized interactive sandbox labeled auxiliary and separate
+   from maintained planner accounting.
 4. Keep runtime changes under the same serial A/B recovery rule and avoid
    growing the 885- and 888-line core files.
 
