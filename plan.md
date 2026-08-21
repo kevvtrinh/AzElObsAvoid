@@ -1356,3 +1356,108 @@ new design.
   evidence remains applicable because this final change affects documents.
 - Next: Commit and push the verified change to `plan-325`.
 - Impediments: None.
+
+### 2026-08-21 00:14 America/Denver — Arrival And Runtime Continuation
+
+- Objective: Continue Plan 325 toward the earliest validated arrival while
+  reducing planning wall time and keeping production and complete-tree size
+  within the `AGENTS.md` limits.
+- Completed: Profiled the three-region extreme-outline example. Replaced
+  per-sample polynomial evaluation with an exact batched evaluation. Enabled
+  early HS3 for exact multi-obstacle visibility seeds and made early and later
+  HS3 attempts consume one shared improvement budget.
+- Evidence: The evaluator matched the prior scalar calculation exactly for
+  uniform and nonuniform segment durations. On the identical profiled
+  extreme-outline command, wall time decreased from 158.6924874 to
+  90.5879230 seconds; the final region stayed independently valid and its
+  arrival decreased from 10.0821090 to 6.7432140 seconds. A two-polygon
+  sandbox motion became wider (12.3965-degree seed versus 13.5272-degree
+  motion), decreased arrival from 20.7178804 to 8.8577663 seconds, and reduced
+  wall time from 44.1609594 to 16.7383603 seconds. The maintained two-U case
+  retained its exact 22.876124561-second arrival and route while wall time
+  decreased from 68.8966622 to 44.3546226 seconds.
+- Recovery decision: A first broad early-HS3 attempt stopped after the first
+  validated topology and regressed the two-U arrival to 23.9675706 seconds.
+  That form was removed. Continuing unattempted seeds within the remaining
+  shared HS3 budget restored the exact baseline result and was retained.
+- Current files changed for this continuation:
+  `+azElInternal/evaluateAzElPolynomial.m`,
+  `+azElInternal/buildAzElStopWaypointMotion.m`, and `planAzElMotion.m`.
+  Pre-existing interactive-sandbox and plotting edits remain preserved.
+- Remaining work: Add focused regression coverage, run Code Analyzer and
+  focused tests, run all maintained examples serially and headlessly, run a
+  visible success and expected-failure diagnostic check, update benchmark,
+  verification, and branch assessment records, and audit final line counts.
+- Known risks: Time-limited local HS3 remains sensitive to solver progress;
+  final validation prevents false success but does not prove global minimum
+  time. The interactive sandbox still requires manual geometry input.
+- Next exact action: Re-run the two-polygon candidate under the shared-budget
+  source, then add focused evaluator and multi-obstacle budget tests.
+- Impediments: None.
+
+### 2026-08-21 00:46 America/Denver — Batched Constraint Checkpoint
+
+- Completed: Finished the 18-example serial sweep for the first accepted
+  optimization set. Added a second bounded optimization that converts all
+  segment/axis Bernstein coefficients in batches while preserving the exact
+  legacy inequality ordering.
+- Equivalence evidence: Matrix Bernstein conversion matched the scalar column
+  loop bit for bit. Complete bound vectors matched bit for bit with azimuth
+  wrapping both disabled and enabled.
+- Runtime evidence: Extreme-outline wall time decreased from 53.1321314 to
+  47.9449594 seconds. The 40-circle case decreased from a 9.9258682-second
+  candidate median representative to 7.9373138 seconds. Obstacle-free
+  decreased from a 7.4079866-second candidate median representative to
+  5.9277416 seconds. Two opposing U shapes decreased from 41.5397591 to
+  34.8855048 seconds. All returned the same arrival and route metrics and
+  passed independent validation.
+- Non-regression evidence before the second experiment: The accepted evaluator
+  source improved 40-circle median wall time from 10.1529517 to 9.9258682
+  seconds and obstacle-free from 7.5244114 to 7.4079866 seconds. Moving-U.S.
+  baseline and candidate timing ranges overlapped; their 12.987386290-second
+  arrivals were identical.
+- Current changed production files: `planAzElMotion.m`,
+  `+azElInternal/buildAzElStopWaypointMotion.m`,
+  `+azElInternal/evaluateAzElPolynomial.m`,
+  `+azElInternal/powerToBernstein.m`, and
+  `+azElInternal/solveAzElHs3.m`.
+- Remaining work: Re-run focused tests and all maintained examples on the final
+  batched-bound source, run visible success and failure diagnostics, run the
+  full tests and Code Analyzer, audit line counts, and update benchmark,
+  verification, and branch assessment records.
+- Known risks: The full serial example sweep predates the final batching edit
+  and is therefore supporting evidence only until repeated on final source.
+- Next exact action: Run the focused planner and analytic-motion tests, then
+  restart the final serial headless example sweep.
+- Impediments: None.
+
+### 2026-08-21 01:17 America/Denver — Final Size-Allowance Proof
+
+- Completed: Consolidated the planner seed templates into the existing stable
+  result constructor. Both `planAzElMotion.m` and `solveAzElHs3.m` now satisfy
+  the 900-line production-file cap, and maintained production is 7,139
+  physical lines.
+- Declared proof set: Before the final comparison, selected the extreme
+  geographic outline, dense concave field, and U-shaped time-space examples
+  as structurally different, constraint-heavy representatives of the
+  optimized HS3 evaluation path.
+- Baseline: Clean `a023f1c`, serial headless MATLAB processes, with explicit
+  `Verbose=false` to work around that commit's example-default defect.
+- Evidence: Extreme outline decreased from 83.8056819 to 48.2212733 seconds
+  (42.46 percent) with identical 6.684968340018-second arrival. Dense concave
+  decreased from 43.6252843 to 16.8686791 seconds (61.34 percent) with
+  identical 8.817608547166-second arrival. U-shaped time-space decreased from
+  89.9305427 to 17.1115690 seconds (80.97 percent) while arrival improved from
+  38.549593103900 to 22.819550649779 seconds. Every run passed planner and
+  independent example validation.
+- Size decision: The 139-line excess requires a 41.7 percent reduction. The
+  declared set's minimum measured reduction is 42.46 percent, so the
+  proportional allowance passes without hiding the narrow 0.76-point margin.
+- Recovery evidence: A focused test run initially exposed a stale local
+  template call after consolidation (29 passed, 14 errored). The call was
+  corrected to use the shared template, and the repeated focused suite passed
+  all 43 tests.
+- Remaining work: Run the full suite and Code Analyzer after the final compact
+  refactor, update `benchmark.csv`, `verification.md`, and
+  `branch_assessment.md`, then audit the final diff and sizes.
+- Impediments: None.

@@ -57,32 +57,36 @@ else
     end
 end
 %% Section 2: Evaluate Ascending-Power Records
-for sampleIndex = 1:sampleCount
-    selectedSegmentIndex = segmentIndex(sampleIndex);
-    if isscalar(polynomial.SegmentDuration_s)
-        selectedDuration_s = polynomial.SegmentDuration_s;
-    else
-        selectedDuration_s = polynomial.SegmentDuration_s(selectedSegmentIndex);
-    end
-    localTau = (time_s(sampleIndex) - polynomial.SegmentStartTime_s(selectedSegmentIndex)) / ...
-        selectedDuration_s;
-    localTau = min(1, max(0, localTau));
-    position_deg(sampleIndex, :) = evaluateRecord( ...
-        polynomial.positionPower_deg, selectedSegmentIndex, localTau);
-    velocity_deg_s(sampleIndex, :) = evaluateRecord( ...
-        polynomial.velocityPower_deg_s, selectedSegmentIndex, localTau);
-    acceleration_deg_s2(sampleIndex, :) = evaluateRecord( ...
-        polynomial.accelerationPower_deg_s2, ...
-        selectedSegmentIndex, localTau);
-    jerk_deg_s3(sampleIndex, :) = evaluateRecord( ...
-        polynomial.jerkPower_deg_s3, selectedSegmentIndex, localTau);
+if isscalar(polynomial.SegmentDuration_s)
+    selectedDuration_s = polynomial.SegmentDuration_s;
+else
+    selectedDuration_s = polynomial.SegmentDuration_s(segmentIndex);
 end
+localTau = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ ...
+    selectedDuration_s;
+localTau = min(1, max(0, localTau));
+position_deg = evaluateRecords( ...
+    polynomial.positionPower_deg, segmentIndex, localTau);
+velocity_deg_s = evaluateRecords( ...
+    polynomial.velocityPower_deg_s, segmentIndex, localTau);
+acceleration_deg_s2 = evaluateRecords( ...
+    polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
+jerk_deg_s3 = evaluateRecords( ...
+    polynomial.jerkPower_deg_s3, segmentIndex, localTau);
 end
 %% Section 3: Local Functions
-function value = evaluateRecord(coefficientArray, segmentIndex, localTau)
+function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
 % PURPOSE
-%   - Evaluate one two-axis ascending-power coefficient record.
-coefficient = reshape(coefficientArray(segmentIndex, :, :), 2, []);
-power = localTau .^ (0:size(coefficient, 2) - 1);
-value = (coefficient * power.').';
+%   - Evaluate selected two-axis records without per-sample helper calls.
+segmentCount = size(coefficientArray, 1);
+coefficientCount = size(coefficientArray, 3);
+power = localTau .^ (0:coefficientCount - 1);
+value = zeros(numel(localTau), 2);
+for axisIndex = 1:2
+    coefficient = reshape( ...
+        coefficientArray(:, axisIndex, :), ...
+        segmentCount, coefficientCount);
+    value(:, axisIndex) = sum( ...
+        coefficient(segmentIndex, :) .* power, 2);
+end
 end

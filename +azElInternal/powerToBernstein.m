@@ -7,19 +7,22 @@ function coefficient = powerToBernstein(powerCoefficient)
 %   - Apply the Farouki Bernstein-basis conversion listed in citation.md.
 %**************************************************************************
 % INPUTS
-%   - powerCoefficient (finite numeric vector)
-%       Ascending coefficients from degree zero through the highest degree.
+%   - powerCoefficient (finite numeric vector or N-by-M matrix)
+%       Each column contains ascending coefficients for one polynomial.
 %**************************************************************************
 % OUTPUTS
-%   - coefficient (N-by-1 numeric column)
-%       Same-degree Bernstein coefficients in ascending basis-index order.
+%   - coefficient (N-by-M numeric array)
+%       Same-degree Bernstein coefficients for every input column.
 %**************************************************************************
 % UNITS
 %   - Coefficients retain the physical units of the input polynomial.
 %**************************************************************************
 %% Section 1: Apply The Exact Basis Conversion
-powerCoefficient = double(powerCoefficient(:));
-degree = numel(powerCoefficient) - 1;
+powerCoefficient = double(powerCoefficient);
+if isvector(powerCoefficient)
+    powerCoefficient = powerCoefficient(:);
+end
+degree = size(powerCoefficient, 1) - 1;
 persistent conversionMatrixByDegree
 if numel(conversionMatrixByDegree) > degree && ...
         ~isempty(conversionMatrixByDegree{degree + 1})

@@ -190,3 +190,127 @@ benchmark set. A 58-line overage requires a 17.4 percent reduction because
 wide-U arrival improves by 13.83 percent. The other two arrivals remain within
 the configured 0.001-second equivalence tolerance. All three motions pass
 independent collision and kinematic validation.
+
+## Plan 325 continuation verification — 2026-08-21
+
+This section supersedes earlier final-state counts and timing tables above. It
+applies to commit `a023f1c` plus the current uncommitted optimized worktree.
+Historical measurements remain visible for comparison.
+
+### Accepted behavior
+
+- Exact multi-obstacle `visibilityGraph` seeds can attempt HS3 before the
+  analytic stop-at-waypoint fallback is accepted. The decision is based on
+  obstacle count and seed provenance, not scenario geometry or route names.
+- Early and later HS3 attempts share `MaximumHs3ImprovementTime_s`. Later work
+  skips seeds already attempted early and uses only the remaining budget.
+- Batched polynomial evaluation replaces repeated per-sample helper calls.
+- Bernstein conversion accepts multiple columns. HS3 continuous-bound
+  conversion is batched by segment and axis and then restored to the exact
+  legacy inequality order.
+- Seed and seed-summary templates are owned by the existing stable-result
+  constructor so `planAzElMotion.m` remains below 900 physical lines.
+
+The analytic motion remains a recoverable fallback and uses the same public
+independent validation. No constraint tolerance, collision margin, obstacle
+geometry, or iteration limit was weakened.
+
+### Exact-equivalence checks
+
+- Batched polynomial evaluation matched the scalar calculation bit for bit for
+  uniform and nonuniform segment durations.
+- Matrix Bernstein conversion matched a scalar column loop with maximum error
+  zero.
+- Complete continuous-bound vectors matched the prior segment/axis loop bit
+  for bit with azimuth wrapping disabled and enabled.
+
+### Declared runtime and size proof
+
+Maintained production has 28 files and 7,139 physical lines. The 139-line
+overage requires `0.30 * 139 / 100 = 0.417`, or a 41.7 percent wall-time
+reduction. Before final A/B measurement, the declared representative set was
+the extreme outline, dense concave, and U-shaped time-space examples.
+
+Both sides ran serially in separate headless MATLAB processes. The baseline
+was clean `a023f1c`; `Verbose=false` was supplied to both sides because the
+baseline example resolver otherwise leaves that accessed field unset.
+
+| Example | Baseline success/validation | Candidate success/validation | Baseline wall (s) | Candidate wall (s) | Reduction | Baseline arrival (s) | Candidate arrival (s) |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `exampleUSOutlineExtremeVisibility` | 1/1 | 1/1 | 83.8056819 | 48.2212733 | 42.46% | 6.684968340018 | 6.684968340018 |
+| `exampleDenseConcaveAzElMotion` | 1/1 | 1/1 | 43.6252843 | 16.8686791 | 61.34% | 8.817608547166 | 8.817608547166 |
+| `exampleUShapedAzElTimeSpace` | 1/1 | 1/1 | 89.9305427 | 17.1115690 | 80.97% | 38.549593103900 | 22.819550649779 |
+
+The minimum measured reduction is 42.46 percent, so the production allowance
+passes by 0.76 percentage points. The narrow margin is recorded explicitly.
+
+### Final serial headless examples
+
+Every row used finite jerk (`JerkConstrained = 1`). `P/V` is planner success
+and independent example-validation pass. `C/K` is collision and applicable
+kinematic-certificate pass. The no-path row uses `NaN` for unavailable motion
+metrics and reports its stable termination reason.
+
+| Example | Goal mode | P/V | Polyline (deg) | Motion (deg) | Duration (s) | C/K | Wall (s) | Reason |
+| --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | earliest | 1/1 | 16.060439635036 | 16.260374075985 | 12.181917401593 | 1/1 | 20.9589414 | `goalReached` |
+| `exampleAzElPlanning` | earliest | 1/1 | 11.152119519024 | 11.303432110211 | 7.817268020971 | 1/1 | 11.6422250 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.700721559528 | 12.807761070221 | 8.817608547166 | 1/1 | 16.6448439 | `goalReached` |
+| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685255 | 122.955558287524 | 64.556780043561 | 1/1 | 7.9373138 | `goalReached` |
+| `exampleFourAcceleratingCircles` | fixed | 1/1 | 24.363303007331 | 27.712518684341 | 22 | 1/1 | 41.7615641 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | fixed | 1/1 | 9.538940546821 | 9.538940546821 | 12 | 1/1 | 3.5031323 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | earliest | 1/1 | 10.097524449091 | 7.342215833181 | 6.275807672232 | 1/1 | 4.7489639 | `goalReached` |
+| `exampleMovingBarrierWait` | earliest | 1/1 | 10 | 10.211853153746 | 10.545227890750 | 1/1 | 26.3832859 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.113593184851 | 12.113593184851 | 12.293137410146 | 1/1 | 16.9825396 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.084805146555 | 69.402637353295 | 12.987386289935 | 1/1 | 28.8491449 | `goalReached` |
+| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN/NaN` | 10.8599145 | `noValidatedSeed` |
+| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955000 | 4.472860955593 | 4.613406126529 | 1/1 | 5.9277416 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10 | 10 | 15 | 1/1 | 16.9304397 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | fixed | 1/1 | 13.341664064126 | 19.229413227596 | 20.869565217391 | 1/1 | 22.9307595 | `goalReached` |
+| `exampleTargetExitsObstacle` | fixed | 1/1 | 19.824386758954 | 22.879930804015 | 24 | 1/1 | 8.3465627 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 23.853720883753 | 24.302835531542 | 22.876124561206 | 1/1 | 34.8855048 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.942588040466 | 42.753271369061 | 22.819550649779 | 1/1 | 16.8144250 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463508699 | 26.617094587006 | 6.684968340018 | 1/1 | 47.9449594 | `goalReached` |
+
+### Interactive and graphics checks
+
+- A two-polygon interactive case previously accepted an analytic
+  boundary-hugging route at about 20.718 seconds. The accepted multi-obstacle
+  early-HS3 source selected a wider smooth route at about 8.859 seconds and
+  passed independent validation.
+- Default visible obstacle-free success passed at 4.613406126529 seconds,
+  created four figures, and produced valid workspace, kinematic, and animation
+  graphics. Wall time was 14.8765553 seconds.
+- Visible expected no-path planning passed failure validation, created two
+  figures, preserved two rejected transitions, and reported
+  `noValidatedSeed`. Wall time was 14.6133705 seconds.
+
+### Rejected experiments
+
+- Returning after the first early multi-obstacle HS3 result regressed the
+  two-U arrival to 23.9675706 seconds. It was removed; unattempted topologies
+  now share the remaining HS3 budget.
+- Applying continuation to broader reduced-obstacle cases increased the
+  40-circle wall time to 24.217 seconds. Continuation was restricted to
+  multiple exact obstacles. The final 40-circle result is 7.9373138 seconds.
+- Template consolidation initially produced 14 focused-test errors because a
+  stale local constructor call remained. The defect was corrected before any
+  runtime result was accepted.
+
+### Final automated and size checks
+
+- Focused planner tests after recovery: 43 passed, 0 failed, 0 incomplete.
+- Full tests after the final internal-interface cleanup: 56 passed, 0 failed,
+  0 incomplete in 38.9511717 seconds.
+- Code Analyzer: 55 MATLAB files, 0 messages.
+- Production MATLAB: 28 files, 7,139 physical lines; allowance passes.
+- Longest production files: `solveAzElHs3.m` 900 lines and
+  `planAzElMotion.m` 888 lines.
+- Maintained tracked MATLAB tree: 54 files and 11,873 physical lines; the
+  12,000-line hard cap passes by 127 lines.
+- Untracked interactive sandbox: 694 lines; excluded from maintained counts
+  and not suitable to add without cleanup.
+
+The current planner remains bounded and local. These results establish measured
+improvement and independent feasibility for the exercised scenario families;
+they do not establish global time optimality or complete reachability.

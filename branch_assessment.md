@@ -2,220 +2,163 @@
 
 ## Evidence scope
 
-This assessment applies to the current Plan 325 worktree based on commit
-`4f59472` plus the verified prepared-obstacle change.
+This assessment covers commit `a023f1c` plus the current uncommitted Plan 325
+worktree. The worktree also contains user changes that predate this
+continuation; they were preserved.
 
-- All 18 maintained examples ran in separate MATLAB processes.
-- Seventeen examples returned independently validated success.
-- The no-path example returned the expected validated failure.
-- Visible success and failure plot checks passed.
-- All 56 tests passed.
-- Code Analyzer checked 54 MATLAB files and returned 0 messages.
-- Production has 28 files and 7,058 physical lines.
-- The complete MATLAB tree has 54 files and 11,769 physical lines.
-
-The production target passes its measured performance allowance. The
-complete-tree hard limit passes. The preferred 10,500-line complete-tree
-target does not pass.
+- All 18 maintained examples ran serially and headlessly on the final
+  batched-bound planner source. Seventeen returned independently validated
+  success and the no-path example returned its expected validated failure.
+- The final full suite passed 56 of 56 tests. Code Analyzer checked all 55
+  MATLAB files present in the worktree and reported zero messages.
+- A visible default success created four valid graphics objects. A visible
+  expected failure created two diagnostic figures and retained two rejected
+  transitions.
+- Maintained production has 28 files and 7,139 physical lines. The maintained
+  tracked MATLAB tree has 54 files and 11,873 physical lines.
+- The untracked interactive sandbox has 694 lines. It is useful for manual
+  experiments but is not included in maintained-tree counts or benchmark
+  claims; adding it to the repository would exceed the 12,000-line hard cap.
 
 ## Current judgment
 
-Plan 325 remains the best compact rebuild candidate in this repository. It
-uses one planning engine, deterministic finite proposal work, a certified
-finite-jerk first motion, bounded local HS3 work, and one independent final
-validator. It does not join complete planner stacks from other branches.
+Plan 325 remains a compact, physically validated planner with materially
+better runtime and earlier arrival on the affected static-visibility cases.
+The most important change is input-driven: an exact multi-obstacle visibility
+seed may now receive the same early HS3 opportunity as the prior single- or
+reduced-obstacle cases. The analytic stop-at-waypoint motion remains the
+validated fallback, and all early and later HS3 work shares one bounded time
+budget.
 
-The current API is clearer. Workspace intervals are physical limits. The
-whole-planner wall-clock limit is removed. Required work uses deterministic
-algorithm limits. Verbose progress identifies each planner stage.
+The planner does not claim global optimality or search completeness. It returns
+the fastest independently validated candidate found within deterministic
+proposal limits and bounded local optimization work.
 
-## Main strengths
+## Largest strengths
 
-### 1. Physical validation remains authoritative
+### 1. The wall-hugging failure class now receives an early smooth-motion test
 
-Every successful run passed collision and kinematic checks. The validator
-checks polynomial consistency, endpoints, continuity, physical limits,
-safety-margin provenance, and moving collision intervals.
+The old eligibility condition suppressed early HS3 whenever more than one
+exact obstacle was present. In the two-polygon interactive case, this allowed
+the analytic boundary-following fallback to win before a wider smooth arc was
+tested. The general fix depends only on seed provenance and obstacle count; it
+contains no scenario names, route directions, hidden waypoints, or fixture
+geometry.
 
-The expected no-path case returned a stable failure result and diagnostic
-figures. It did not claim that the finite search proved global infeasibility.
+The sandbox case decreased arrival from about 20.718 to 8.859 seconds while
+selecting a wider smooth route and passing independent validation. The
+maintained two-opposing-U case retained its exact 22.876124561206-second
+arrival and 24.302835531542-degree motion while final wall time decreased to
+34.8855048 seconds.
 
-### 2. Minimum-arrival results improved
+### 2. Polynomial and continuous-bound evaluation are batched exactly
 
-The current verified results include:
+Polynomial histories are evaluated by sample batches instead of repeated
+per-sample helper calls. Bernstein conversion accepts multiple polynomial
+columns, and HS3 converts segment/axis bounds in batches while reconstructing
+the legacy inequality ordering exactly.
 
-- single U: 26.493-second arrival;
-- two opposing U shapes: 22.876-second arrival;
-- 40 moving circles: 64.557-second arrival;
-- moving and deforming U.S.: 12.986-second arrival;
-- extreme U.S.: 8.903-second arrival.
+Uniform- and nonuniform-duration polynomial checks were bit-for-bit equal to
+the scalar calculation. Matrix Bernstein conversion and complete bound vectors
+were also bit-for-bit equal, including azimuth-wrapping mode. The optimization
+therefore changes evaluation cost, not constraint meaning or tolerance.
 
-The single-U geometry remains the reviewed wide U. Its duration is below the
-requested 38-second threshold.
+### 3. Arrival and runtime improved without weakening validation
 
-### 3. Dense-case planning time is materially lower
+On the final 18-example sweep:
 
-The final 40-circle run took 22.443 seconds. Its prepared-data baseline was
-23.006 seconds. This is a 2.45% decrease. The moving-U.S. run took 36.367
-seconds. Its baseline was 86.511 seconds. This is a 57.96% decrease. Both
-motions passed independent validation and kept the same arrival duration
-within numerical solver variation.
+- extreme outlines reached 6.684968340018 seconds in 47.9449594 seconds wall;
+- the wide U reached 22.819550649779 seconds in 16.8144250 seconds wall;
+- 40 moving circles retained 64.556780043561 seconds and ran in 7.9373138
+  seconds wall;
+- two opposing U shapes retained 22.876124561206 seconds and ran in
+  34.8855048 seconds wall;
+- obstacle-free planning retained 4.613406126529 seconds and ran in
+  5.9277416 seconds wall.
 
-The four-accelerating-circle run took 54.110 seconds instead of 65.062
-seconds. The moving-barrier run took 30.089 seconds instead of 40.570 seconds.
+Every successful motion passed collision and applicable kinematic certificate
+checks. The expected no-path result remained a stable failure with diagnostics.
 
-### 4. Dynamic data preparation is interval-aware
+### 4. The size allowance is supported by a declared A/B set
 
-The planner creates source-slice shapes and interval interpolation data once
-per planning call. Matching-topology intervals keep vertex deltas and speed
-bounds. Topology-changing intervals keep a conservative union for that
-interval. The planner does not replace the complete history with a static
-shape. Public results keep the canonical obstacle format.
+At 7,139 production lines, the 139-line excess requires a 41.7 percent
+wall-time reduction. Before final measurement, the declared representative set
+was the extreme outline, dense concave, and U-shaped time-space examples.
 
-### 5. Sparse visibility work is explicit
+Against clean `a023f1c` in separate headless MATLAB processes:
 
-The seed graph tests Delaunay candidates plus all start and goal connections.
-The 40-circle case tested 62 of 153 pairs without losing a visible edge or
-changing the selected route. The wide U tested 55 of 120 pairs and kept both
-route classes and the same arrival time. No wall-time gain was confirmed.
+| Example | Baseline wall (s) | Candidate wall (s) | Reduction | Arrival result |
+| --- | ---: | ---: | ---: | --- |
+| Extreme outlines | 83.8056819 | 48.2212733 | 42.46% | identical |
+| Dense concave | 43.6252843 | 16.8686791 | 61.34% | identical |
+| U-shaped time-space | 89.9305427 | 17.1115690 | 80.97% | improved |
 
-### 6. Runtime regressions now have an explicit rejection rule
-
-An accepted change must not produce a confirmed planning-time increase on
-its affected representative examples. Apparent increases receive repeated
-warm measurements. A change is rejected when the increase exceeds observed
-run noise and the user did not explicitly accept the tradeoff.
-
-The shared-jerk correction received an A/B check. Old and new basic-example
-timing ranges overlapped. The returned trajectory was identical.
-
-### 7. Example controls now have one physical meaning
-
-Every maintained example routes `MaxJerk_deg_s3` into
-`limits.maxJerk_deg_s3`. The eight corrected examples preserve their old
-`[2 2]` defaults. An explicit `[1.23 1.45]` override reached the planner and
-passed independent validation.
-
-### 8. Plot and diagnostic behavior is stable
-
-The current worktree now renders the sampled moving target consistently in
-the workspace, time-expanded visibility, and animation views. A visible
-earliest-intercept run produced one moving-target icon in each view, while a
-headless obstacle-free static-goal control produced none. The full focused
-planner test file passed 43 of 43 tests after this graphics change.
-
-The plotter uses the `main` branch visual language while consuming the Plan
-325 result schema. The visible success case created three figures. The
-visible no-path case created two diagnostic figures. Verbose mode reports
-setup, seed generation, first motion, HS3 progress, selection, and completion.
+The minimum measured reduction is 42.46 percent, so the proportional allowance
+passes by 0.76 percentage points. This margin is narrow and should not be
+presented as a broad machine-independent speed guarantee.
 
 ## Main weaknesses
 
-### 1. Proposal coverage remains incomplete
+### 1. Search and optimality remain bounded
 
-Spatial and time-layer searches use finite samples. Dense-envelope and cluster
-reductions can remove a useful topology. Final validation prevents false
-success, but it cannot make proposal search complete.
+Spatial and timed proposals use finite samples and deterministic caps. HS3 is
+local and time bounded. A missed topology or poor local basin can still prevent
+the globally fastest motion. Final validation prevents false success but does
+not prove global infeasibility or global minimum arrival.
 
-The 2-D homology signature separates sampled spatial classes. It does not
-classify all continuous Az/El/time paths.
+### 2. Conditioning warnings remain
 
-### 2. Some dense cases remain slow
+The basic example can emit MATLAB matrix-conditioning warnings. Returned
+motions pass independent polynomial, collision, endpoint, and kinematic
+validation, but variable scaling remains the best next numerical target.
 
-The extreme-U.S. case takes 157.465 seconds. The two-U case takes 66.738
-seconds. These times remain large for interactive planning. The moving-U.S.
-case decreased to 27.442 seconds in the final measured run.
+### 3. One route-quality weakness remains visible
 
-### 3. HS3 still reports conditioning warnings
+`exampleStraightTargetAlternatingOcclusion` retains a 19.229413227596-degree
+motion for a 13.341664064126-degree polyline. It is valid and meets its fixed
+arrival, but the excess length should be improved without accepting a runtime
+regression or scenario-specific guide.
 
-The basic example can produce MATLAB matrix-conditioning warnings. Accepted
-motions pass independent validation, but solver scaling remains a useful
-future target.
+### 4. Repository size has little headroom
 
-### 4. The first motion is conservative
+Production passes only through the proportional performance allowance. The
+maintained tracked MATLAB tree is 127 lines below the 12,000-line hard cap and
+1,373 lines above the preferred 10,500-line target. The untracked interactive
+sandbox cannot be added as-is without cleanup.
 
-The quintic first motion stops at each geometric waypoint. This gives a clear
-finite-jerk certificate but can leave velocity capacity unused. Earliest
-moving-target interception and nonzero endpoint derivatives still require
-HS3.
+## Rejected experiments and recovery
 
-### 5. One route-quality regression remains
+- Stopping after the first early multi-obstacle HS3 result regressed the
+  two-opposing-U arrival from 22.8761246 to 23.9675706 seconds. That form was
+  removed; remaining unattempted exact topologies now share the residual HS3
+  budget.
+- Continuing early HS3 too broadly increased the 40-circle wall time from its
+  roughly 9-second reference to 24.217 seconds. Continuation was narrowed to
+  multiple exact obstacles; the final 40-circle run is 7.9373138 seconds.
+- A template-consolidation edit initially left one stale local constructor
+  call. The focused suite exposed 14 errors. The call was fixed and all 43
+  focused tests then passed before the full 56-test run.
 
-The straight-target alternating-occlusion example has the same fixed target
-duration, but its final motion length increased from about 15.299 degrees to
-19.229 degrees. It remains collision-free and kinematically valid. This is a
-route-quality issue, not a false success, and it should be improved without a
-planning-time increase.
-
-### 6. The preferred complete-tree target still fails
-
-Production is 58 lines above the 7,000-line target. The proportional
-performance allowance requires a 17.4 percent wall-time reduction. The
-smallest reduction in the declared wide-U, 40-circle, and moving-U.S. set is
-24.54 percent, so production passes the allowance. The complete tree remains
-1,269 lines above its preferred 10,500-line target.
-
-## Cleanup audit decisions
-
-The two downloaded audit reports apply to the baseline commit and contain
-some stale findings.
-
-- Workspace ownership, timeout removal, verbose output, size, and jerk routing
-  are now corrected.
-- `certifySeedCorridor` remains because the production validator calls it.
-- `RandomSeed` remains because immediate removal would break the public result
-  schema. A later compatibility migration can deprecate it.
-- Independent validation remains separate from solver constraints.
-- Polynomial sampling remains a valid measurement-first cleanup candidate.
-- Repeated obstacle preparation is removed from the measured planning path.
-
-No numerical cleanup was accepted without profiler evidence and a runtime
-comparison.
-
-## Adaptive Early-HS3 assessment
-
-The early-HS3 path is worth retaining. It applies only to earliest-arrival
-spatial visibility seeds when the input has one obstacle or the seed already
-uses reduced conservative geometry. It does not apply to timed or wait seeds.
-The analytic motion remains a recoverable fallback and receives the same
-independent validation if HS3 fails.
-
-The wide single-U arrival decreased from 26.492876 to 22.828233 seconds, and
-wall time decreased from 40.762 to 16.850 seconds. The 40-circle and moving-U.S.
-arrivals remained equivalent within the configured 0.001-second tolerance.
-Their wall times decreased from 22.443 to 9.077 seconds and from 36.367 to
-27.442 seconds. All three motions passed collision, dynamics, velocity,
-acceleration, and jerk checks.
-
-The first moving-barrier trial showed an ordering defect. Early HS3 was applied
-to a timed seed and increased wall time to 45.593 seconds. The final source
-restricts the shortcut to `visibilityGraph` seeds. The corrected case passed at
-10.544231 seconds. Its 37.306-second wall time is inside the recorded historical
-range but above the single 29.906-second reference run.
-
-Final verification passed all 56 tests, all 18 serial headless examples, one
-visible success, one visible expected failure, and Code Analyzer on 54 files.
-Production has 7,058 lines. Its 58-line overage needs a 17.4 percent wall-time
-reduction and passes with a minimum measured reduction of 24.54 percent. The
-production line count is unchanged from the starting commit.
+Unfavorable evidence remains part of the assessment rather than being replaced
+by the accepted measurements.
 
 ## Recommended next work
 
-1. Improve HS3 variable scaling and verify that warnings and runtime decrease.
-2. Improve the straight-target route length without increasing planning time.
-3. Profile the extreme-U.S. case with the prepared dynamic data.
-4. Test a through-velocity quintic first motion under the existing recovery
-   rule and independent validator.
-5. Consolidate exact duplicate sampling helpers only if measurement shows no
-   runtime cost.
-6. Keep every later change under the planning-time non-regression gate.
+1. Profile and improve HS3 variable scaling, keeping exact constraint and
+   final-validation equivalence tests.
+2. Improve the alternating-occlusion route length through a general
+   through-velocity or topology-ranking improvement.
+3. Split or shrink the interactive sandbox before considering it maintained
+   repository content.
+4. Keep runtime changes under the same serial A/B recovery rule and avoid
+   growing either 900-line core file.
 
 ## Final claim
 
-Plan 325 is a compact and useful planner candidate. It supports static,
-moving, and deforming obstacles, target interception, timed waits, bounded
-route diversity, and stable failure diagnostics.
+Plan 325 now tests wider smooth motion earlier for exact multi-obstacle
+visibility routes and evaluates its polynomial constraints substantially
+faster. It supports static, moving, and deforming obstacles, target
+interception, timed waits, finite jerk, and stable no-path diagnostics.
 
-It is not complete or globally optimal. Dense cases can still be slow. Future
-work must improve general scaling or route quality without scenario-specific
-routes, hidden substitutions, or confirmed planning-time regressions.
+It is a bounded, independently validated planner—not a complete or globally
+optimal solver.

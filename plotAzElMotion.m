@@ -12,8 +12,8 @@ function handles = plotAzElMotion(result, optionOverrides)
 % INPUTS
 %   - result (scalar planAzElMotion result)
 %   - optionOverrides (scalar struct, optional; default struct())
-%       Controls workspace, visibility, kinematic, swept-surface, and
-%       animation displays. Hidden figures never pause.
+%       Controls workspace, search-edge, visibility, kinematic,
+%       swept-surface, and animation displays. Hidden figures never pause.
 %**************************************************************************
 % OUTPUTS
 %   - handles (scalar struct)
@@ -29,6 +29,7 @@ defaults = struct( ...
     "ShowWorkspace", true, ...
     "ShowKinematics", true, ...
     "ShowAnimation", true, ...
+    "ShowSearchEdges", true, ...
     "ShowVisibilityGraphs", true, ...
     "FrameStride", 10, ...
     "Pause_s", 0.001, ...
@@ -67,7 +68,7 @@ if ~isscalar(options.Title)
         "Title must be scalar text.");
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
-    "ShowVisibilityGraphs", "ShowSweptSurfaces"];
+    "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces"];
 for name = logicalNames
     options.(name) = azElInternal.normalizeLogicalScalar( ...
         options.(name), name, "plotAzElMotion:InvalidLogicalOption");
@@ -93,7 +94,9 @@ if options.ShowWorkspace
     displayTime_s = result.Inputs.initialState.time_s;
     drawObstacles(workspaceAxes, obstacles, displayTime_s, true);
     gridRecord = result.SearchDiagnostics.Grid;
-    drawSearchEdges(workspaceAxes, gridRecord);
+    if options.ShowSearchEdges
+        drawSearchEdges(workspaceAxes, gridRecord);
+    end
     if isfield(gridRecord, "ExploredNodes_deg") && ...
             ~isempty(gridRecord.ExploredNodes_deg)
         explored_deg = gridRecord.ExploredNodes_deg;

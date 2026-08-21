@@ -127,3 +127,21 @@ RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,
 2026-08-20,14b7b55+worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463509,26.617094587,6.684968340,1,1,1,157.4654647,goalReached,Final adaptive early-HS3 source
 2026-08-20,2120628+worktree,plan-325,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.097524449,7.342215833,6.275807672,1,1,1,17.5162125,goalReached,Visible graphics verification; moving-target icon present in workspace visibility and animation plots
 2026-08-20,2120628+worktree,plan-325,exampleObstacleFreeAzElMotion,earliestArrival,1,1,1,4.472135955,4.472860956,4.613406127,1,1,1,17.1775399,goalReached,Headless structurally different control; no moving-target icon emitted
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleAlternatingSlalom,earliestArrival,1,1,1,16.060439635036,16.260374075985,12.181917401593,1,1,1,20.9589414,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleAzElPlanning,earliestArrival,1,1,1,11.152119519024,11.303432110211,7.817268020971,1,1,1,11.6422250,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleDenseConcaveAzElMotion,earliestArrival,1,1,1,12.700721559528,12.807761070221,8.817608547166,1,1,1,16.6448439,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleFortyMovingCircleGrid,earliestArrival,1,1,1,110.807929685255,122.955558287524,64.556780043561,1,1,1,7.9373138,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleFourAcceleratingCircles,fixedArrival,1,1,1,24.363303007331,27.712518684341,22,1,1,1,41.7615641,goalReached,Specified fixed arrival
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleInterceptMovingTargetAtSetTime,fixedArrival,1,1,1,9.538940546821,9.538940546821,12,1,1,1,3.5031323,goalReached,Specified target time
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleInterceptMovingTargetEarliest,earliestArrival,1,1,1,10.097524449091,7.342215833181,6.275807672232,1,1,1,4.7489639,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleMovingBarrierWait,earliestArrival,1,1,1,10,10.211853153746,10.545227890750,1,1,1,26.3832859,goalReached,Validated timed wait motion
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleMovingCircleNoAzimuthWrap,earliestArrival,1,1,1,12.113593184851,12.113593184851,12.293137410146,1,1,1,16.9825396,goalReached,Final batched-bound source
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleMovingDeformingUSOutlineVisibility,earliestArrival,1,1,1,63.084805146555,69.402637353295,12.987386289935,1,1,1,28.8491449,goalReached,Moving deforming outline
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleNoPathAzElMotion,earliestArrival,1,0,1,NaN,NaN,NaN,NaN,NaN,NaN,10.8599145,noValidatedSeed,Expected failure with two rejected transitions
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleObstacleFreeAzElMotion,earliestArrival,1,1,1,4.472135955000,4.472860955593,4.613406126529,1,1,1,5.9277416,goalReached,Obstacle-free control
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleOpeningUShapedAzElTimeSpace,earliestArrival,1,1,1,10,10,15,1,1,1,16.9304397,goalReached,Validated wait motion
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleStraightTargetAlternatingOcclusion,fixedArrival,1,1,1,13.341664064126,19.229413227596,20.869565217391,1,1,1,22.9307595,goalReached,Known route-length weakness remains
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleTargetExitsObstacle,fixedArrival,1,1,1,19.824386758954,22.879930804015,24,1,1,1,8.3465627,goalReached,Specified target time
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleTwoOpposingUVisibilityGraph,earliestArrival,1,1,1,23.853720883753,24.302835531542,22.876124561206,1,1,1,34.8855048,goalReached,Exact multi-obstacle early HS3
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleUShapedAzElTimeSpace,earliestArrival,1,1,1,34.942588040466,42.753271369061,22.819550649779,1,1,1,16.8144250,goalReached,Wide-U earliest arrival
+2026-08-21,a023f1c+optimized-worktree,plan-325,exampleUSOutlineExtremeVisibility,earliestArrival,1,1,1,22.239463508699,26.617094587006,6.684968340018,1,1,1,47.9449594,goalReached,All three geographic regions validated

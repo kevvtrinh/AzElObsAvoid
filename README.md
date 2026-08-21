@@ -200,6 +200,11 @@ obstacles, concave and geographic geometry, fixed and earliest moving-target
 intercepts, waiting, obstacle-free azimuth wrapping, dense fields, and
 expected failure.
 
+For quick manual scene design, use
+`exampleAzElInteractiveSandbox`. It lets you draw a forbidden path and
+polygon obstacles in az/el space, then run the planner directly against
+that geometry.
+
 Every example uses the same planner, validator, and plotter. A failed result
 can show the retained visibility edges, rejected edges, explored states,
 frontier data, and best partial seed without a second planner call.
