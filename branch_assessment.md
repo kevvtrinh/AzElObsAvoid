@@ -343,3 +343,77 @@ finite jerk, and stable no-path diagnostics.
 
 It is a bounded, independently validated planner—not a complete or globally
 optimal solver.
+
+## 325-less-nlp evidence-gated spline assessment — 2026-08-21
+
+This isolated worktree starts at exact `plan-325` commit
+`5a067112a9f880d015f52fb97538a99010871478`. Production planner selection is
+unchanged: HS3 remains the maintained motion constructor.
+
+### Largest measured strength
+
+The research-only bounded quintic B-spline constructor produces independently
+validated repeated-turn motions with much smaller decision records and lower
+motion-construction wall time on the accepted 1-, 2-, and 5-turn scope:
+
+| Turns | HS3 stage (s) | Spline optimizer (s) | Reduction | Spline decisions | Exact validation |
+| ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 7.5631 | 1.3008 | 82.80% | 1 | pass |
+| 2 | 13.2254 | 0.8039 | 93.92% | 2 | pass |
+| 5 | 13.1546 | 9.4410 | 28.23% | 6 | pass |
+
+This speed result is not a production acceptance result. The spline motions
+are 34.96, 16.53, and 14.34 percent longer in duration than the corresponding
+HS3 motions. Minimum continuous clearance falls to 0.015047, 0.000426, and
+0.000256 degrees. The last two values are positive under the maintained
+validator but leave little numerical or modeling reserve.
+
+### Largest measured weaknesses
+
+1. The 10-turn spline gate failed. The retained mean-penalty formulation took
+   131.70 seconds and remained in collision. A worst-clearance retry took
+   59.81 seconds and remained at -0.14462 degrees sampled clearance; a
+   per-obstacle retry took 63.35 seconds and remained at -0.10607 degrees.
+   Both retry objectives were removed.
+2. The 20-turn spline case was not run because the prerequisite 10-turn gate
+   had already failed. No high-turn completeness or scaling claim is made.
+3. The selected quintic B-spline does not interpolate interior route vertices.
+   It therefore depends on exact post-construction collision validation rather
+   than inheriting geometric-route clearance.
+4. The rejected fixed-stop septic Bezier interpolated all route vertices but
+   required 28 to 84 seconds of motion on the multi-turn representation cases
+   and did not satisfy the maintained quintic polynomial schema. Its code was
+   removed; the measured comparison remains in the Phase B CSV.
+5. No supervised imitation or reinforcement-learning phase was started. The
+   deterministic prerequisite failed, and learned output would not constitute
+   a safety certificate in any case.
+6. The final `exampleFourAcceleratingCircles` run passed every independent
+   certificate but emitted extensive near-singular interior-point warnings.
+   This numerical-conditioning weakness remains visible and was not relabeled
+   as a harmless success condition.
+
+### Frozen HS3 scaling diagnosis
+
+The HS3 decision vector remains 35 variables from 1 through 20 turns, while
+nonlinear inequalities grow from 641 to 1,876. The final Phase A runs validate
+at 1, 2, and 5 turns and fail at 10 and 20 turns after 75.13 and 193.30 seconds
+in the cumulative HS3 stage. The 10-turn topology search is not truncated; its
+31-vertex visibility seed is analytically time-window infeasible and its
+optimized trajectory still collides. The 20-turn 61-vertex seed is also
+time-window infeasible and both bounded HS3 results remain constraint
+infeasible. These are motion-construction failures, not demonstrated topology
+failures.
+
+### Current scope and size
+
+The new spline code remains under `scratch/learnedSplinePolicy`; production
+contains 30 MATLAB files and 7,117 physical lines. The non-example MATLAB tree
+contains 40 files and 11,153 lines, passing the 12,000-line hard limit by 847.
+The HS3 solver is 894 lines and `planAzElMotion.m` is 888 lines, both below the
+900-line production-file limit.
+
+The correct next step is a general high-turn representation or feasibility
+method that passes exact validation with material clearance reserve. Until
+that proof exists, keep HS3, do not train a policy on failed pseudo-teacher
+labels, and do not describe the spline prototype as complete, optimal, safe,
+or production-ready.

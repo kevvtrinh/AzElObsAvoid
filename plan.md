@@ -1619,6 +1619,43 @@ new design.
 - Impediments: Push approval remains unavailable after the approval service
   limit; no workaround has been attempted.
 
+### 2026-08-21 20:20 America/Denver — 325-Less-NLP Phase A Checkpoint
+
+- Objective: Apply `plan_325_less_nlp.md` on the required `325-less-nlp`
+  branch, beginning with a reproducible HS3 scaling baseline before any
+  spline, learning, or planner-integration change.
+- Scope isolation: Created the branch at exact `plan-325` commit `5a06711` in
+  the dedicated `325-less-nlp-implementation` worktree. The separate dirty
+  `plan-325-implementation` sandbox worktree remains untouched.
+- Completed audit: Read the supplied trajectory- and performance-diagnosis
+  guidance, repository rules, README, planner, independent validator,
+  plotter, HS3 solver, first-motion constructor, evidence records, and test
+  inventory. Existing `benchmark.csv` contains no parameterized
+  1/2/5/10/20-turn HS3 scaling family.
+- Frozen environment: MATLAB R2024b Update 4, Optimization Toolbox 24.2,
+  PCWIN64, six reported cores. An attempted `gcp("nocreate")` probe failed
+  because that function is unavailable in the runtime; no parallel execution
+  will be used.
+- Focused baseline command: Ran `exampleAlternatingSlalom` headlessly with
+  plots, animation, kinematics, and verbose output disabled. It returned HS3
+  success and independent validation success, 16.060439635-degree polyline,
+  16.758281983-degree motion, 12.180917402-second duration, collision and
+  kinematic certificates, and `goalReached`.
+- Stage evidence: Total wall time was 25.3195859 seconds;
+  `SearchDiagnostics.Hs3ElapsedTime_s` was 20.9567233 seconds, seed generation
+  was 0.6368694 seconds, and first-motion work was 0.4132348 seconds. HS3 was
+  82.8 percent of this focused run.
+- Current files changed: `plan.md` only. No planner, validator, obstacle, or
+  test source has been edited.
+- Known risk: The public 15-second optional HS3 budget and 24-segment default
+  cap may turn large-route scaling into bounded timeout/failure evidence.
+  Those limits will remain visible rather than being bypassed silently.
+- Remaining work: Add the parameterized repeated-turn benchmark, record
+  route/decision/solver/validation metrics for 1, 2, 5, 10, and 20 turns,
+  then evaluate whether the measured bottleneck justifies Phase B.
+- Next action: Implement the behavior-neutral Phase A benchmark harness and
+  focused geometry/record tests, then run the five cases serially.
+
 ## 2026-08-21 — Auxiliary Sandbox Push And Earliest-Arrival Profile
 
 - User decision: Example files have no repository line cap, and the
@@ -1802,6 +1839,115 @@ new design.
   diff invariants, and continue with the next bounded runtime/arrival target.
 - Impediments: Push approval remains unavailable after the approval service
   limit; no workaround has been attempted.
+
+### 2026-08-21 21:00 America/Denver — 325-Less-NLP Phase A Complete
+
+- Completed: Added a parameterized repeated-turn HS3 benchmark for 1, 2, 5,
+  10, and 20 alternating turns, plus behavior-neutral solver-size diagnostics
+  and a focused schema test. The tracked Phase A record uses exact commit
+  `5a067112a9f880d015f52fb97538a99010871478` and deterministic seed 325.
+- Measured scaling: The successful 1-, 2-, and 5-turn cases took 7.5631,
+  13.2254, and 13.1546 seconds in the cumulative HS3 stage. The 10- and
+  20-turn cases exhausted valid seeds after 75.1263 and 193.3010 seconds.
+  The HS3 vector remained 35 variables, while nonlinear inequalities grew
+  from 641 to 1,876 as route and obstacle complexity increased.
+- Earliest-failure diagnosis: The 10-turn topology search was not truncated;
+  a direct seed collided and a 31-vertex visibility seed was analytically
+  time-window infeasible before its optimized result still collided. The
+  20-turn visibility seed had 61 vertices and was time-window infeasible;
+  both HS3 results remained nonlinear-constraint infeasible after bounded
+  relinearization. These are motion-construction/collision failures, not
+  evidence of a topology-search failure.
+- Profile evidence: The validated 5-turn case spent 22.620 seconds in HS3,
+  19.411 seconds in `fmincon`, 15.363 seconds computing finite-difference
+  gradient/Jacobian data, and 14.530 seconds across 4,769 trajectory-
+  constraint callbacks. The corridor constraints are the dominant callback
+  component.
+- Verification: Code Analyzer found zero messages in the benchmark, solver,
+  prototype, and focused test. The new diagnostic assertions passed 1 of 1.
+  The maintained alternating-slalom example passed planner and independent
+  validation with a 16.7583-degree smoothed path in 25.3196 seconds.
+- Active experiment: A research-only open quintic B-spline prototype now
+  constructs exact degree-five polynomial spans without Spline Toolbox. A
+  straight-line smoke test passed public validation, endpoint rest, derivative
+  limits, and exact C3-continuity diagnostics.
+- Files changed: `+azElInternal/solveAzElHs3.m`,
+  `tests/testHs3Planner.m`, `benchmarks/benchmarkRepeatedTurnHs3.m`,
+  `benchmarks/repeated_turn_hs3_phase_a.csv`,
+  `scratch/learnedSplinePolicy/buildQuinticBsplinePrototype.m`, and this log.
+- Next action: Exercise the prototype on the required turn families, compare
+  its parameter count and construction cost with a C3 septic Bezier model,
+  then implement the smallest deterministic low-dimensional optimizer that
+  can be independently validated against the frozen Phase A baseline.
+- Impediments: None. RepeatCount remains one because the 20-turn baseline
+  alone costs about 193 seconds; no median or variance claim is being made.
+
+### 2026-08-21 22:15 America/Denver — Spline Evidence Gate Complete
+
+- Phase B result: Both candidate representations passed scoped C3 checks.
+  Quintic B-spline was selected for the deterministic proof because the
+  fixed-stop septic required 28 to 84 seconds of motion on multi-turn routes,
+  exposed 35 parameters when made flexibly C3 at five turns, and was
+  incompatible with the maintained quintic validator. Rejected septic code
+  and candidate-only tests were removed; exact rows remain in the Phase B CSV.
+- Phase C accepted scope: The bounded normal-offset quintic optimizer passed
+  unchanged continuous validation at 1, 2, and 5 turns. Optimizer wall times
+  were 1.3008, 0.8039, and 9.4410 seconds with 1, 2, and 6 decisions. Minimum
+  clearances were 0.015047, 0.000426, and 0.000256 degrees.
+- Explicit tradeoff: Relative to HS3, the accepted spline motions were 34.96,
+  16.53, and 14.34 percent longer in duration. Small clearance reserve and a
+  high-turn failure prevent production replacement even though optimizer wall
+  time improved by 82.80, 93.92, and 28.23 percent on those cases.
+- Failed prerequisite: The 10-turn case never passed. The retained objective
+  took 131.70 seconds and remained colliding; bounded worst-clearance and
+  per-obstacle variants took 59.81 and 63.35 seconds and also remained
+  colliding. Both unsuccessful variants were removed. The 20-turn spline was
+  not run after the 10-turn gate failed.
+- Gate decision: Do not create teacher labels, supervised models, or an RL
+  environment; do not integrate the prototype into `planAzElMotion`; do not
+  remove HS3. Learned output would not be accepted as a safety certificate,
+  and the deterministic prerequisite is not met.
+- Verification: Final Phase C rows are stored in
+  `benchmarks/low_dimensional_spline_phase_c.csv`; optimizer tests pass 3 of 3
+  after correcting a test-exposed non-monotone route-size assumption. All
+  changed and added MATLAB files pass Code Analyzer.
+- Size: Production is 7,117 lines. The non-example MATLAB tree is 11,153
+  lines, 847 below its hard cap. Solver and planner are 894 and 888 lines.
+- Next action: Run the final retained research suite, focused maintained
+  tests, and the required maintained examples. Update benchmark and
+  verification records with every executed example before handoff.
+- Impediments: None. Production integration is evidence-blocked rather than
+  externally blocked.
+
+### 2026-08-21 23:05 America/Denver — 325-Less-NLP Final Verification
+
+- Retained tests: Code Analyzer checked 64 MATLAB files with zero messages
+  and zero lines over 100 characters. The complete maintained suite passed
+  59 of 59 in 51.488825 seconds. The focused HS3 plus retained research suite
+  separately passed 52 of 52 in 52.784031 seconds.
+- Maintained examples: All 18 ran headlessly and serially in separate
+  successful MATLAB processes. Seventeen returned independently validated
+  success; the no-path example returned independently validated
+  `noValidatedSeed`. Every successful row retained collision and kinematic
+  certificates. Exact metrics and walls were appended to `benchmark.csv` and
+  `verification.md`.
+- Graphics: Visible obstacle-free success created three figures. Hidden
+  no-path diagnostics created two figures and retained one expanded state and
+  two rejected transitions.
+- Environment incidents: An initial rapid PowerShell launcher produced 18
+  MATLAB startup failures before any example code executed. Two reporting
+  wrappers later used stale field names after execution; both affected cases
+  were rerun successfully. Four accelerating circles also emitted extensive
+  near-singular interior-point warnings despite passing validation.
+- Final scope: Phase A diagnostics and benchmarks, Phase B evidence, and the
+  bounded Phase C research prototype are retained. Supervised learning, RL,
+  production integration, and HS3 removal remain skipped by the failed
+  10-turn evidence gate.
+- Size: Production remains 7,117 lines. The non-example MATLAB tree remains
+  11,153 lines. No file or repository size limit is exceeded.
+- Next action: Audit CSV schemas, Git diff/whitespace, status, and final
+  file accounting, then hand off without committing or pushing.
+- Impediments: None.
 
 ### 2026-08-21 04:50 America/Denver — Goal-Mode Solver Checkpoint
 

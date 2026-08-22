@@ -646,3 +646,169 @@ additional 100 production lines, using the smallest reduction in the declared
 representative benchmark set. Historical checkpoints below may quote the
 earlier 30-percent formula; those measurements are preserved as historical
 evidence and are not the current acceptance rule.
+
+## 2026-08-21 — 325-less-nlp evidence-gated implementation
+
+### Scope and environment
+
+Work ran in the isolated `325-less-nlp-implementation` worktree on branch
+`325-less-nlp`, based on exact commit
+`5a067112a9f880d015f52fb97538a99010871478`. MATLAB was R2024b Update 4 on
+PCWIN64 with six reported cores. Optimization Toolbox 24.2 was available;
+Spline/Curve Fitting functions and a parallel pool were unavailable. No commit
+or push was requested or performed.
+
+Three long inline MATLAB launches reported a transient startup `File system
+inconsistency` before executing test code. A one-line runtime probe recovered
+the runtime; these startup failures produced no planner or prototype result.
+
+### Phase A — frozen HS3 scaling baseline
+
+`benchmarkRepeatedTurnHs3([1 2 5 10 20])` ran serially with seed 325,
+earliest-arrival mode, three maximum seeds, eight HS3 segments, no mesh
+refinement, and a 60-second per-improvement allowance. The tracked final rows
+are in `benchmarks/repeated_turn_hs3_phase_a.csv`.
+
+| Turns | HS3 seed attempts / solves | Route vertices | Variables | Inequalities | HS3 stage (s) | Total (s) | Planner / validation | Reason |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: | --- |
+| 1 | 2 / 2 | 4 | 35 | 641 | 7.5631 | 9.1771 | 1 / 1 | `goalReached` |
+| 2 | 2 / 2 | 7 | 35 | 706 | 13.2254 | 13.6974 | 1 / 1 | `goalReached` |
+| 5 | 2 / 2 | 17 | 35 | 901 | 13.1546 | 13.3591 | 1 / 1 | `goalReached` |
+| 10 | 2 / 6 | 31 | 35 | 1226 | 75.1263 | 75.3596 | 0 / 0 | `noValidatedSeed` |
+| 20 | 2 / 6 | 61 | 35 | 1876 | 193.3010 | 193.8603 | 0 / 0 | `noValidatedSeed` |
+
+The first raw five-case run was also retained in the work log rather than
+silently replaced: its total walls were 10.590, 14.052, 16.965, 75.783, and
+190.380 seconds. Repeat count is one because the 20-turn case alone costs
+about three minutes; no median or variance claim is made.
+
+Exact failure diagnosis found no search truncation. At 10 turns the direct
+seed collides; the visibility seed is analytically time-window infeasible and
+its optimized motion has -0.159396-degree minimum clearance. At 20 turns the
+visibility seed is time-window infeasible and both HS3 candidates remain
+nonlinear-constraint infeasible after two relinearizations each. The failures
+are classified as motion construction/collision, not topology generation.
+
+A five-turn MATLAB profile measured 22.620 seconds in HS3, 19.411 seconds in
+`fmincon`, 15.363 seconds in finite-difference gradient/Jacobian work, and
+14.530 seconds over 4,769 trajectory-constraint callbacks. Corridor
+constraints were the largest callback component.
+
+### Phase B — representation comparison
+
+Research-only prototypes covered straight, 45-degree, 90-degree, S-turn,
+horseshoe, and five-alternation routes. Both were exactly C3 in their scoped
+checks. The quintic B-spline passed the maintained polynomial validator. The
+fixed-stop septic Bezier interpolated every route vertex but was incompatible
+with that quintic schema and forced zero velocity, acceleration, and jerk at
+every vertex.
+
+Across five warm repeats, quintic motion durations ranged from 8.944 to 18.257
+seconds on multi-turn cases; septic durations ranged from 28 to 84 seconds.
+For the five-alternation route, quintic exposed 15 relative shape/timing
+parameters, a flexible C3 septic would expose 35, and the restrictive
+fixed-stop septic used five. Exact rows remain in
+`benchmarks/spline_representation_phase_b.csv`. The rejected septic code and
+candidate-only tests were removed under the bounded-experiment recovery rule.
+
+### Phase C — deterministic low-dimensional optimizer
+
+The retained research optimizer reduces the route by input arc length and
+goal-horizon evidence, uses one normal-offset decision per interior control,
+retimes analytically from continuous Bernstein derivative bounds, and uses
+sampled clearance only as a search signal. Success is set only by an unchanged
+`validateAzElTrajectory` call.
+
+Final serial results from `benchmarkLowDimensionalSpline([1 2 5])` are in
+`benchmarks/low_dimensional_spline_phase_c.csv`:
+
+| Turns | Route vertices | Decisions / evaluations | Optimizer (s) | Total (s) | Motion (s) | Minimum clearance (deg) | Validation |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |
+| 1 | 4 to 3 | 1 / 3 | 1.3008 | 1.8750 | 8.9443 | 0.0150470 | pass |
+| 2 | 7 to 4 | 2 / 4 | 0.8039 | 1.1165 | 10.9851 | 0.0004261 | pass |
+| 5 | 17 to 8 | 6 / 27 | 9.4410 | 10.5180 | 23.7683 | 0.0002560 | pass |
+
+Relative to HS3-stage time, these are 82.80, 93.92, and 28.23 percent faster.
+Their motion durations are respectively 34.96, 16.53, and 14.34 percent
+longer than HS3. Those tradeoffs and the small clearance reserve prevent a
+production replacement claim.
+
+The 10-turn prerequisite failed in every bounded objective experiment. The
+retained mean-penalty form took 131.70 seconds and remained colliding; a
+worst-clearance form took 59.81 seconds with -0.14462-degree sampled clearance;
+a per-obstacle form took 63.35 seconds with -0.10607-degree sampled clearance.
+The two unsuccessful objective variants were removed. The 20-turn spline was
+not run after the 10-turn gate failed.
+
+Therefore supervised imitation, reinforcement learning, production planner
+integration, and HS3 removal were skipped. No learned safety, completeness,
+or optimality claim is made.
+
+### Focused checks and size
+
+- Code Analyzer returned zero messages for both benchmark harnesses, the
+  shared scenario constructor, the quintic constructor and optimizer, and all
+  retained research tests.
+- The focused HS3 diagnostic schema test passed 1 of 1 in 5.4625 seconds.
+- The retained optimizer tests passed 3 of 3 in 3.9494 seconds after one test
+  exposed and caused correction of a non-monotone route-size assumption.
+- A maintained alternating-slalom headless run passed planner and independent
+  validation with jerk enabled, 16.06044-degree selected polyline,
+  16.75828-degree smoothed path, 12.18092-second motion, collision and
+  kinematic certificates true, and 25.31959-second wall time.
+- Production is 30 MATLAB files and 7,117 physical lines. The non-example
+  MATLAB tree is 40 files and 11,153 lines, passing the 12,000-line limit by
+  847. The solver is 894 lines and planner 888, both below 900.
+
+### Final maintained tests and example sweep
+
+Code Analyzer checked all 64 MATLAB files and returned zero messages. No
+MATLAB line exceeded 100 characters. The complete `tests` suite passed 59 of
+59 with zero failed or incomplete tests in 51.488825 seconds. The combined
+focused HS3 and retained research suite separately passed 52 of 52 in
+52.784031 seconds.
+
+All 18 maintained examples ran headlessly and serially in separate successful
+MATLAB processes. Jerk constraints were enabled in every row. `P/V` is planner
+success / independent example validation; `C/K` is collision freedom /
+kinematic certificate.
+
+| Example | Goal mode | P/V | Polyline (deg) | Smoothed (deg) | Duration (s) | C/K | Wall (s) | Reason |
+| --- | --- | :---: | ---: | ---: | ---: | :---: | ---: | --- |
+| `exampleAlternatingSlalom` | earliest | 1/1 | 16.060439635036 | 16.758281982866 | 12.180917402175 | 1/1 | 21.5868513 | `goalReached` |
+| `exampleAzElPlanning` | earliest | 1/1 | 11.152119519024 | 11.411616815005 | 7.816267856881 | 1/1 | 17.4983344 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | earliest | 1/1 | 12.700721559528 | 13.431299536656 | 8.797638855700 | 1/1 | 23.9031665 | `goalReached` |
+| `exampleFortyMovingCircleGrid` | earliest | 1/1 | 110.807929685255 | 126.114009817632 | 64.555779916429 | 1/1 | 8.7493230 | `goalReached` |
+| `exampleFourAcceleratingCircles` | fixed | 1/1 | 20.000000000000 | 20.372412421524 | 22.000000000000 | 1/1 | 38.5619066 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | fixed | 1/1 | 9.538940546821 | 9.538940546821 | 12.000000000000 | 1/1 | 7.0938467 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | earliest | 1/1 | 10.097524449092 | 7.342498781519 | 6.274806792200 | 1/1 | 6.5559756 | `goalReached` |
+| `exampleMovingBarrierWait` | earliest | 1/1 | 10.000000000000 | 10.134483812277 | 10.544227895142 | 1/1 | 35.7830259 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | earliest | 1/1 | 12.113593184851 | 12.113593184851 | 12.293137410146 | 1/1 | 20.2116419 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | earliest | 1/1 | 63.084805146555 | 71.436692325459 | 12.986386910606 | 1/1 | 44.6775511 | `goalReached` |
+| `exampleNoPathAzElMotion` | earliest | 0/1 | `NaN` | `NaN` | `NaN` | `NaN/NaN` | 20.1083406 | `noValidatedSeed` |
+| `exampleObstacleFreeAzElMotion` | earliest | 1/1 | 4.472135955000 | 4.484905564719 | 4.612405963436 | 1/1 | 5.5753072 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | earliest | 1/1 | 10.000000000000 | 10.000000000000 | 15.000000000000 | 1/1 | 20.4914773 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | fixed | 1/1 | 21.403170279055 | 14.220154562476 | 20.869565217391 | 1/1 | 27.1701093 | `goalReached` |
+| `exampleTargetExitsObstacle` | fixed | 1/1 | 19.824386758954 | 22.879868072534 | 24.000000000000 | 1/1 | 8.4301465 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | earliest | 1/1 | 23.853720883753 | 24.370904895056 | 22.875124576026 | 1/1 | 47.3626836 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | earliest | 1/1 | 34.942588040466 | 43.259235381251 | 22.818548735851 | 1/1 | 16.2122849 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463508699 | 26.617251754385 | 6.683971648809 | 1/1 | 63.6908664 | `goalReached` |
+
+The visible success rerun of `exampleObstacleFreeAzElMotion` passed and created
+three visible figures in 14.3139553 seconds. The hidden failure rerun of
+`exampleNoPathAzElMotion` passed its expected-failure validation and created
+two diagnostic figures with one expanded state and two rejected transitions
+in 33.3814964 seconds.
+
+Before these serial invocations, an attempted PowerShell loop launched 18
+MATLAB processes too rapidly; every process failed during MATLAB startup with
+`File system inconsistency` before executing example code. Two later reporting
+wrappers also used stale result/diagnostic field names after the example ran;
+the affected forty-circle and no-path cases were rerun successfully with the
+current schema. These environment/reporting failures are not counted as
+example passes or planner failures.
+
+`exampleFourAcceleratingCircles` emitted extensive `Matrix is close to
+singular or badly scaled` warnings from the interior-point linear systems.
+Planner and independent validation still passed, but the warning is retained
+as a numerical-conditioning issue rather than suppressed from the record.
