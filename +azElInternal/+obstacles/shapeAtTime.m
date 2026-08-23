@@ -124,8 +124,6 @@ geometry = struct( ...
     "TopologyIsInterpolated", topologyIsInterpolated, "LowerSampleIndex", lowerIndex, "UpperSampleIndex", upperIndex);
 end
 
-%% Section 4: Local Functions
-
 function geometry = emptyGeometry()
 % Define the stable inactive-geometry schema.
 geometry = struct( ...

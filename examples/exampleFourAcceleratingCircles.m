@@ -77,10 +77,12 @@ circleAngle_rad = (0:71).' * (2 * pi / 72);
 unitCircle = [cos(circleAngle_rad), sin(circleAngle_rad)];
 obstacleByCircle = cell(1, numel(circleCenterAzimuth_deg));
 
+% Build a separate sampled boundary history for each independently accelerating circle.
 for circleIndex = 1:numel(circleCenterAzimuth_deg)
     circleAzimuthByTime_deg = cell(numel(obstacleTime_s), 1);
     circleElevationByTime_deg = cell(numel(obstacleTime_s), 1);
 
+    % Translate the shared circular outline to this circle's center at every sample time.
     for sampleIndex = 1:numel(obstacleTime_s)
         center_deg = [circleCenterAzimuth_deg(circleIndex), circleCenterElevation_deg(sampleIndex, circleIndex)];
         circlePosition_deg = center_deg + circleRadius_deg * unitCircle;

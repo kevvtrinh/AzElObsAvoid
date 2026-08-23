@@ -38,6 +38,7 @@ circleRadius_deg = 1.5;
 azimuthBySlice_deg = cell(2, 1);
 elevationBySlice_deg = cell(2, 1);
 
+% Create the circle at both sampled elevations while keeping its azimuth outline unchanged.
 for sampleIndex = 1:2
     azimuthBySlice_deg{sampleIndex} = circleRadius_deg * cos(circleAngle_rad);
     elevationBySlice_deg{sampleIndex} = circleCenterElevation_deg(sampleIndex) + ...

@@ -96,7 +96,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusteredRegionCount, 3);
@@ -120,23 +120,23 @@ function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
 obstacle = rectangleObstacle([0 20], [-1 1 -2 2], 0);
 sampleTimes_s = (0:5:20).';
 endpointPosition_deg = [-5 0; 5 0];
-[envelopeShape, usedEnvelope] = azElInternal.search.denseSweptEnvelope( ...
+[envelopeShape, usedEnvelope] = azElPlannerMethods.corridor.internal.search.denseSweptEnvelope( ...
     obstacle, sampleTimes_s, endpointPosition_deg, 10);
 verifyTrue(testCase, usedEnvelope);
 verifyEqual(testCase, min(envelopeShape.Vertices, [], 1), [-1 -2], "AbsTol", 1e-5);
 verifyEqual(testCase, max(envelopeShape.Vertices, [], 1), [1 2], "AbsTol", 1e-5);
-[capturingShape, usedCapturingEnvelope] = azElInternal.search.denseSweptEnvelope( ...
+[capturingShape, usedCapturingEnvelope] = azElPlannerMethods.corridor.internal.search.denseSweptEnvelope( ...
     obstacle, sampleTimes_s, [0 0; 5 0], 10);
 verifyFalse(testCase, usedCapturingEnvelope);
 verifyEmpty(testCase, capturingShape.Vertices);
 triangle = makeAzElObstacleData( "triangle", [0; 20], [-4; 4; 0], [-3; -3; 4], 0);
-[coarseShape, usedCoarseShape] = azElInternal.search.denseSweptEnvelope( triangle, sampleTimes_s, [-8 0; 8 0], 10);
+[coarseShape, usedCoarseShape] = azElPlannerMethods.corridor.internal.search.denseSweptEnvelope( triangle, sampleTimes_s, [-8 0; 8 0], 10);
 verifyTrue(testCase, usedCoarseShape);
 verifyLessThan(testCase, area(coarseShape), 50);
 guardedShape = polybuffer(coarseShape, 1e-9);
 verifyTrue(testCase, all(isinterior( guardedShape, [-4; 4; 0], [-3; -3; 4])));
 secondTriangle = makeAzElObstacleData( "second triangle", [0; 20], [6; 8; 7], [-3; -3; 4], 0);
-[manyObstacleShape, usedManyObstacleEnvelope] = azElInternal.search.denseSweptEnvelope( ...
+[manyObstacleShape, usedManyObstacleEnvelope] = azElPlannerMethods.corridor.internal.search.denseSweptEnvelope( ...
     [triangle; secondTriangle], linspace(0, 20, 2000), [-8 8; 12 8], 10000);
 verifyTrue(testCase, usedManyObstacleEnvelope);
 verifyNotEmpty(testCase, manyObstacleShape.Vertices);
@@ -147,17 +147,17 @@ function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
 obstacle = rectangleObstacle([0 10], [-1 1 -1 1], 0);
 boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
 seed = struct( "tau", [0; 1], "position_deg", [-2 2; 2 2], "CorridorBoundary_deg", boundary_deg);
-corridor = azElInternal.validation.buildSeedCorridor(seed, 1);
+corridor = azElPlannerMethods.corridor.internal.validation.buildSeedCorridor(seed, 1);
 positionPower_deg = zeros(1, 2, 6);
 positionPower_deg(1, 1, 1:2) = [-2 4];
 positionPower_deg(1, 2, 1) = 2;
 polynomial = struct( "SegmentCount", 1, "positionPower_deg", positionPower_deg);
 trajectory = struct( "Polynomial", polynomial, "SeedCorridorBoundary_deg", boundary_deg, "SeedCorridor", corridor);
-[certified, clearance_deg] = azElInternal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
+[certified, clearance_deg] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
 verifyTrue(testCase, certified);
 verifyGreaterThan(testCase, clearance_deg, 0.5);
 trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
-[certifiedAfterEntry, ~] = azElInternal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
+[certifiedAfterEntry, ~] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
 
@@ -166,15 +166,15 @@ function testSeedEnvelopeRequiresCompletePolygonContainment(testCase)
 boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
 inside = rectangleObstacle([0 2], [-1 1 -1 1], 0);
 outside = rectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
-verifyTrue(testCase, azElInternal.validation.seedEnvelopeContainsObstacles( boundary_deg, inside, 0));
-verifyFalse(testCase, azElInternal.validation.seedEnvelopeContainsObstacles( boundary_deg, outside, 0));
+verifyTrue(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, inside, 0));
+verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, outside, 0));
 mixedHistory = inside;
 mixedHistory.az_deg{2} = mixedHistory.az_deg{2} + 3;
-verifyFalse(testCase, azElInternal.validation.seedEnvelopeContainsObstacles( boundary_deg, mixedHistory, 0));
+verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, mixedHistory, 0));
 concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
-verifyFalse(testCase, azElInternal.validation.seedEnvelopeContainsObstacles( concaveBoundary_deg, inside, 0));
+verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( concaveBoundary_deg, inside, 0));
 insideConcaveRegion = rectangleObstacle([0 2], [-1.5 -0.5 -1 1], 0);
-verifyTrue(testCase, azElInternal.validation.seedEnvelopeContainsObstacles( ...
+verifyTrue(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( ...
     concaveBoundary_deg, insideConcaveRegion, 0));
 end
 
@@ -389,6 +389,7 @@ verifyFalse(testCase, result.SearchDiagnostics.Grid.HomologySearchTruncated);
 minimumElevations_deg = zeros(numel(result.Seeds), 1);
 maximumElevations_deg = zeros(numel(result.Seeds), 1);
 
+% Measure every generated seed's elevation range to confirm both detour classes exist.
 for seedIndex = 1:numel(result.Seeds)
     minimumElevations_deg(seedIndex) = min( result.Seeds(seedIndex).position_deg(:, 2));
     maximumElevations_deg(seedIndex) = max( result.Seeds(seedIndex).position_deg(:, 2));
@@ -414,7 +415,7 @@ limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 5;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
 verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 2);
@@ -439,7 +440,7 @@ limits.elevationInterval_deg = [0 12];
 options = fixedOptions();
 options.MaximumSeedCount = 3;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 
 verifyNotEmpty(testCase, visibilitySeeds);
@@ -448,6 +449,7 @@ verifyTrue(testCase, diagnostics.ExhaustiveVisibilityFallbackUsed);
 verifyFalse(testCase, diagnostics.HomologySearchTruncated);
 route_deg = visibilitySeeds(1).position_deg;
 
+% Sample every route edge densely to prove the complete polyline stays outside the obstacle.
 for edgeIndex = 1:size(route_deg, 1) - 1
     edgeLength_deg = norm(route_deg(edgeIndex + 1, :) - route_deg(edgeIndex, :));
     sampleCount = ceil(edgeLength_deg / 0.01) + 1;
@@ -521,7 +523,7 @@ right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
 open_deg = [left_deg; NaN NaN; right_deg];
 obstacle = makeAzElObstacleData( ...
     "opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
-[shape, geometry] = azElInternal.obstacles.shapeAtTime(obstacle, 1);
+[shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime(obstacle, 1);
 verifyFalse(testCase, geometry.TopologyIsInterpolated);
 verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));
@@ -531,8 +533,8 @@ function testStationaryMatchingTopologyReusesExactShape(testCase)
 % Verify an unchanged interval returns its prepared source geometry exactly.
 boundary_deg = [-2 -1; 2 -1; 2 1; -2 1];
 obstacle = makeAzElObstacleData( "stationary", [0; 2], boundary_deg(:, 1), boundary_deg(:, 2), 0);
-preparedObstacle = azElInternal.obstacles.prepareDynamic(obstacle);
-[shape, geometry] = azElInternal.obstacles.shapeAtTime( preparedObstacle, 1);
+preparedObstacle = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacle);
+[shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( preparedObstacle, 1);
 verifyEqual(testCase, shape.Vertices, preparedObstacle. InternalPreparation.SampleShapes{1}.Vertices);
 verifyEqual(testCase, geometry.azimuth_deg, obstacle.az_deg{1});
 verifyEqual(testCase, geometry.elevation_deg, obstacle.el_deg{1});
@@ -544,10 +546,11 @@ function testBatchedPolygonClearanceMatchesScalarQueries(testCase)
 % Verify batched projection preserves scalar signs, points, and edge order.
 shape = polyshape([0 3 3 1 1 0], [0 0 3 3 1 1], "Simplify", false, "KeepCollinearPoints", true);
 queryPosition_deg = [-1 0.5; 0.5 0.5; 2 2; 1 1; 3.5 2.5];
-[batchClearance_deg, batchNearest_deg, batchEdgeIndex] = azElInternal.geometry.pointPolygonClearance(shape, queryPosition_deg);
+[batchClearance_deg, batchNearest_deg, batchEdgeIndex] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(shape, queryPosition_deg);
 
+% Compare each scalar clearance query with the corresponding batched result.
 for queryIndex = 1:size(queryPosition_deg, 1)
-    [clearance_deg, nearest_deg, edgeIndex] = azElInternal.geometry.pointPolygonClearance( ...
+    [clearance_deg, nearest_deg, edgeIndex] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( ...
         shape, queryPosition_deg(queryIndex, :));
     verifyEqual(testCase, batchClearance_deg(queryIndex), clearance_deg);
     verifyEqual(testCase, batchNearest_deg(queryIndex, :), nearest_deg);
@@ -563,6 +566,7 @@ centerElevation_deg = [0; 0; 6; 6];
 azimuth_deg = cell(4, 1);
 elevation_deg = cell(4, 1);
 
+% Translate the source boundary to each sampled center elevation in the history.
 for sampleIndex = 1:4
     translated_deg = source_deg + [0 centerElevation_deg(sampleIndex)];
     azimuth_deg{sampleIndex} = translated_deg(:, 1);
@@ -575,7 +579,7 @@ limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -594,7 +598,7 @@ initialState = state(0, [-5 0], [0 0], [0 0]);
 goalState = state(10, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
-[~, diagnostics] = azElInternal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[~, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
 end
@@ -609,7 +613,7 @@ goalState = state(20, [4 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 directSeed = seeds([seeds.Source] == "directVisibilityEdge");
 timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
 verifyNotEmpty(testCase, directSeed);
@@ -635,6 +639,7 @@ centerElevation_deg = [0; 0; 6; 6];
 azimuth_deg = repmat({source_deg(:, 1)}, 4, 1);
 elevation_deg = cell(4, 1);
 
+% Build every elevation slice of the dense moving barrier from the same source boundary.
 for sampleIndex = 1:4
     elevation_deg{sampleIndex} = source_deg(:, 2) + centerElevation_deg(sampleIndex);
 end
@@ -644,7 +649,7 @@ goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 2;
-[seeds, diagnostics] = azElInternal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
 verifyFalse(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -850,6 +855,7 @@ handles = plotAzElMotion(result, plotOptions);
 figureCleanup = onCleanup(@() closeTestFigures(handles));
 axesHandles = [handles.WorkspaceAxes, handles.VisibilityAxes, handles.AnimationAxes];
 
+% Confirm the moving target is rendered on every axes that should display it.
 for axesIndex = 1:numel(axesHandles)
     targetHandles = findobj(axesHandles(axesIndex), "DisplayName", "Moving target");
     verifyNotEmpty(testCase, targetHandles);

@@ -63,6 +63,7 @@ end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces"];
 
+% Normalize every display switch through the same strict logical-scalar rule.
 for name = logicalNames
     options.(name) = azElInternal.normalizeLogicalScalar( options.(name), name, "plotAzElMotion:InvalidLogicalOption");
 end
@@ -70,6 +71,7 @@ validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar'
 validateattributes(options.Pause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 countNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
 
+% Validate the two display caps before they are used to subsample graphics.
 for name = countNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
@@ -99,6 +101,8 @@ if options.ShowWorkspace
             18, [0.95 0.65 0.15], "filled", "DisplayName", "Final search frontier");
     end
 
+    % Draw every candidate seed as context before emphasizing the selected
+    % successful route or the best partial route from a failed search.
     for seedIndex = 1:numel(result.Seeds)
         route_deg = result.Seeds(seedIndex).position_deg;
         plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
@@ -146,6 +150,8 @@ if options.ShowVisibilityGraphs
     if isfield(gridRecord, "NodePosition_deg") && ~isempty(gridRecord.NodePosition_deg)
         nodePosition_deg = gridRecord.NodePosition_deg;
 
+        % Repeat the spatial graph nodes at each retained time layer so the
+        % three-dimensional view exposes how the search evolves over time.
         for layerIndex = reshape(layerIndices, 1, [])
             scatter3(visibilityAxes, nodePosition_deg(:, 1), ...
                 nodePosition_deg(:, 2), ...
@@ -154,6 +160,8 @@ if options.ShowVisibilityGraphs
         end
     end
 
+    % Plot each seed with its own estimated time coordinates to show the
+    % complete set of candidate space-time trajectories.
     for seedIndex = 1:numel(result.Seeds)
         seed = result.Seeds(seedIndex);
         seedTime_s = result.Inputs.initialState.time_s + seed.tau * seed.EstimatedDuration_s;
@@ -187,6 +195,8 @@ if options.ShowKinematics && result.Success
         result.Inputs.limits.maxAcceleration_deg_s2, result.Inputs.limits.maxJerk_deg_s3};
     axesHandles = gobjects(4, 1);
 
+    % Build one aligned panel for position and each modeled derivative so a
+    % reader can compare the returned histories without changing time axes.
     for quantityIndex = 1:4
         axesHandles(quantityIndex) = nexttile(tiledLayout);
         axesHandle = axesHandles(quantityIndex);
@@ -198,6 +208,8 @@ if options.ShowKinematics && result.Success
         plot(axesHandle, result.time_s, values(:, 2), "DisplayName", "Elevation");
         if ~isempty(limitValues{quantityIndex})
 
+            % Add positive and negative limits for azimuth and elevation to
+            % make per-axis certificate boundaries visible in each panel.
             for axisIndex = 1:2
                 yline(axesHandle, limitValues{quantityIndex}(axisIndex), "--", "HandleVisibility", "off");
                 yline(axesHandle, -limitValues{quantityIndex}(axisIndex), "--", "HandleVisibility", "off");
@@ -221,6 +233,8 @@ if options.ShowAnimation && result.Success
     animationAxes = axes(animationFigure);
     frameIndices = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
 
+    % Rebuild each selected animation frame from the same returned motion and
+    % obstacle histories; animation never asks the planner to run again.
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes);
@@ -248,8 +262,6 @@ if options.ShowAnimation && result.Success
 end
 end
 
-%% Section 6: Local Functions
-
 function options = normalizePlotAliases(options)
 % Forward deprecated display spellings through one compatibility map.
 if ~isstruct(options) || ~isscalar(options)
@@ -258,6 +270,8 @@ end
 aliases = [ ...
     "AnimationFrameStride", "FrameStride"; "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
 
+% Translate each deprecated display name once while allowing the current name
+% to win when callers provide both spellings.
 for aliasIndex = 1:size(aliases, 1)
     oldName = aliases(aliasIndex, 1);
     newName = aliases(aliasIndex, 2);
@@ -270,6 +284,8 @@ for aliasIndex = 1:size(aliases, 1)
 end
 compatibilityNames = ["JerkConstraintEnabled", "MaxJerk_deg_s3", "ConfiguredFiniteMaxJerk_deg_s3", "PlotOptions"];
 
+% Remove example-reporting fields that are not actual plotter options before
+% the remaining names are checked against the public display contract.
 for name = compatibilityNames
     if isfield(options, name)
         options = rmfield(options, name);
@@ -325,6 +341,8 @@ function drawObstacles(axesHandle, obstacles, time_s, showOriginal)
 % Draw original and protected geometry from one canonical source.
 obstacleColors = lines(max(1, numel(obstacles)));
 
+% Render each obstacle with a stable color so its original and protected
+% boundaries remain visually associated.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     obstacleColor = obstacleColors(obstacleIndex, :);
@@ -362,12 +380,16 @@ timeIndices = sampledIndices(numel(times_s), maximumCount);
 obstacleColors = lines(max(1, numel(obstacles)));
 isFirstShape = true;
 
+% Build a separate swept surface for every moving obstacle so disconnected
+% histories do not become one misleading graphics object.
 for obstacleIndex = 1:numel(obstacles)
     obstacleColor = obstacleColors(obstacleIndex, :);
     previousAzimuth_deg = zeros(0, 1);
     previousElevation_deg = zeros(0, 1);
     previousTime_s = NaN;
 
+    % Walk the retained history times in order and connect only consecutive
+    % nonempty shapes into the displayed swept surface.
     for timeIndex = reshape(timeIndices, 1, [])
         shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), times_s(timeIndex));
         if isempty(shape.Vertices)

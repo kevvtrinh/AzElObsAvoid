@@ -92,8 +92,6 @@ result.openUBoundary_deg = openBoundary_deg;
 result.gapHalfWidth_deg = gapHalfWidth_deg;
 end
 
-%% Section 8: Local Functions
-
 function validation = validateOpeningUse( result, openingTime_s, gapHalfWidth_deg, safetyMargin_deg)
 % Verify that the returned seed waits and crosses the protected gap.
 waitSeedSelected = false;

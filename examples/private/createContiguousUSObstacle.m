@@ -68,6 +68,7 @@ if isempty(stateBoundary)
 end
 mainlandUS = polyshape( stateBoundary(1).Lon, stateBoundary(1).Lat, "Simplify", false, "KeepCollinearPoints", true);
 
+% Union every remaining contiguous-state polygon into one mainland boundary.
 for stateIndex = 2:numel(stateBoundary)
     statePolygon = polyshape( ...
         stateBoundary(stateIndex).Lon, stateBoundary(stateIndex).Lat, "Simplify", false, "KeepCollinearPoints", true);
@@ -100,7 +101,6 @@ history.sourceOutlineVertexCount = numel(baseLongitude_deg);
 history.ExampleOptions = resolvedOptions;
 end
 
-%% Section 4: Local Functions
 
 function transformed_deg = transformUSSlice( ...
         sourcePosition_deg, sampleTime_s, ~, motionMode, ...
@@ -140,6 +140,7 @@ if isempty(ringStart)
 end
 ringArea = zeros(numel(ringStart), 1);
 
+% Measure every finite boundary ring so the largest mainland outline can be retained.
 for ringIndex = 1:numel(ringStart)
     rows = ringStart(ringIndex):ringStop(ringIndex);
     ringArea(ringIndex) = abs(polyarea(x(rows), y(rows)));

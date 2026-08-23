@@ -56,12 +56,14 @@ normalizedOverrides = normalizeDisplayAliases(exampleOverrides);
 displayOptions = displayDefaults;
 displayNames = string(fieldnames(displayDefaults));
 
+% Apply display controls supplied by the scenario defaults before caller overrides.
 for name = intersect(string(fieldnames(scenarioDefaults)), displayNames, "stable").'
     if ~isempty(scenarioDefaults.(name))
         displayOptions.(name) = scenarioDefaults.(name);
     end
 end
 
+% Let explicit caller overrides replace each recognized display control.
 for name = displayNames.'
     if isfield(normalizedOverrides, name) && ~isempty(normalizedOverrides.(name))
         displayOptions.(name) = normalizedOverrides.(name);
@@ -82,6 +84,7 @@ end
 logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces"];
 
+% Normalize every display toggle through the shared scalar-logical contract.
 for name = logicalNames
     displayOptions.(name) = azElInternal.normalizeLogicalScalar( ...
         displayOptions.(name), name, "resolveAzElExampleOptions:InvalidLogicalOption");
@@ -98,15 +101,28 @@ validateattributes(displayOptions.FrameStride, {'numeric'}, {'real', 'finite', '
 validateattributes(displayOptions.Pause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 displayCountNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
 
+% Validate both bounded display-count controls as positive integer limits.
 for name = displayCountNames
     validateattributes(displayOptions.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 
 %% Section 2: Forward Only Public Planner Options
 
-plannerOptions = planAzElMotion();
+% Resolve the method first so HS3 examples see HS3-specific option names and
+% corridor examples retain the no-NLP defaults without a mixed option record.
+plannerMethod = "corridorQuintic";
+if isfield(scenarioDefaults, "PlannerMethod") && ...
+        ~isempty(scenarioDefaults.PlannerMethod)
+    plannerMethod = scenarioDefaults.PlannerMethod;
+end
+if isfield(normalizedOverrides, "PlannerMethod") && ...
+        ~isempty(normalizedOverrides.PlannerMethod)
+    plannerMethod = normalizedOverrides.PlannerMethod;
+end
+plannerOptions = planAzElMotion(plannerMethod);
 plannerNames = string(fieldnames(plannerOptions));
 
+% Apply recognized scenario planner defaults without forwarding display-only fields.
 for name = intersect(string(fieldnames(scenarioDefaults)), plannerNames, "stable").'
     if ~isempty(scenarioDefaults.(name))
         plannerOptions.(name) = scenarioDefaults.(name);
@@ -123,6 +139,7 @@ if ~isempty(unknownNames)
         "Ignoring unknown example fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 
+% Forward each recognized caller planner override after scenario defaults are resolved.
 for name = intersect(overrideNames, plannerNames, "stable").'
     if ~isempty(normalizedOverrides.(name))
         plannerOptions.(name) = normalizedOverrides.(name);
@@ -135,7 +152,6 @@ displayOptions.ConfiguredFiniteMaxJerk_deg_s3 = maxJerk_deg_s3;
 displayOptions.PlotOptions = plotOptions;
 end
 
-%% Section 3: Local Functions
 
 function normalized = normalizeDisplayAliases(overrides)
 % Map maintained example aliases to one plot-option vocabulary.
@@ -143,6 +159,7 @@ normalized = overrides;
 aliases = [ ...
     "ShowKinematicPlot", "ShowKinematics"; "AnimationFrameStride", "FrameStride"; "AnimationPause_s", "Pause_s"];
 
+% Translate every supported legacy display name into its current canonical field.
 for aliasIndex = 1:size(aliases, 1)
     oldName = aliases(aliasIndex, 1);
     newName = aliases(aliasIndex, 2);

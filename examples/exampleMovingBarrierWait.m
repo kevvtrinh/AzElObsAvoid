@@ -36,6 +36,7 @@ sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
 azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
 elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
 
+% Translate the rigid barrier through its sampled elevations to define the timed geometry.
 for sampleIndex = 1:numel(obstacleTime_s)
     translatedPosition_deg = sourcePosition_deg + [0 barrierCenterElevation_deg(sampleIndex)];
     azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);

@@ -40,6 +40,7 @@ expectedHashes = [ ...
     "aa20173dbab36bd04af9b7ec204ce080ee283d9bd4c92989d758daf98535e402", ...
     "c0355350237dbcb2a76713a2adb2f2d14c19b80e39911ed055e0362b1860ed47"];
 
+% Read every contract fixture and compare its normalized source hash or required text.
 for contractIndex = 1:numel(relativePaths)
     contractPath = fullfile( testCase.TestData.RepositoryRoot, relativePaths(contractIndex));
     sourceText = string(fileread(contractPath));
@@ -67,6 +68,7 @@ exampleNames = [ ...
     "exampleOpeningUShapedAzElTimeSpace", ...
     "exampleTwoOpposingUVisibilityGraph", "exampleUShapedAzElTimeSpace", "exampleUSOutlineExtremeVisibility"];
 
+% Verify every maintained example explicitly requests earliest-arrival planning.
 for exampleName = exampleNames
     examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
     sourceText = fileread(examplePath);
@@ -118,12 +120,22 @@ verifyTrue(testCase, isnan( failureMetrics.KinematicCertificatePassed));
 end
 
 function testExampleResolverMaterializesPlannerDefaults(testCase)
-% Verify example-local setup can read defaults before calling the planner.
-[plannerOptions, ~] = resolveAzElExampleOptions( struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
-verifyFalse(testCase, plannerOptions.Verbose);
-verifyEqual(testCase, plannerOptions.MaximumSeedCount, 2);
-[plannerOptions, ~] = resolveAzElExampleOptions( struct("Verbose", true), struct());
-verifyTrue(testCase, plannerOptions.Verbose);
+% Verify examples materialize defaults from only the selected planner.
+[corridorOptions, ~] = resolveAzElExampleOptions( ...
+    struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
+verifyFalse(testCase, corridorOptions.Verbose);
+verifyEqual(testCase, corridorOptions.MaximumSeedCount, 2);
+verifyEqual(testCase, corridorOptions.PlannerMethod, "corridorQuintic");
+verifyTrue(testCase, isfield(corridorOptions, "MotionMethod"));
+verifyFalse(testCase, isfield(corridorOptions, "CollocationSegmentCount"));
+
+[hs3Options, ~] = resolveAzElExampleOptions( ...
+    struct("Verbose", true), ...
+    struct("PlannerMethod", "hs3", "CollocationSegmentCount", 6));
+verifyTrue(testCase, hs3Options.Verbose);
+verifyEqual(testCase, hs3Options.PlannerMethod, "hs3");
+verifyEqual(testCase, hs3Options.CollocationSegmentCount, 6);
+verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
 end
 
 function testUniformMaximumJerkRouting(testCase)
@@ -142,6 +154,7 @@ exampleNames = [ ...
     "exampleTargetExitsObstacle", ...
     "exampleTwoOpposingUVisibilityGraph", "exampleUShapedAzElTimeSpace", "exampleUSOutlineExtremeVisibility"];
 
+% Verify every maintained example routes its configured jerk limit into planner limits.
 for exampleName = exampleNames
     examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
     sourceText = fileread(examplePath);

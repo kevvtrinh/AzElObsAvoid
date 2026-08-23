@@ -118,9 +118,10 @@ result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, l
 
 exampleValidation = validateAzElExampleResult( ...
     result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
+obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
 
 targetOccupied = queryAzElTimeObstacle( ...
-    result.Inputs.obstacles, targetPosition_deg(:, 1), targetPosition_deg(:, 2), targetTime_s);
+    result.Inputs.obstacles, targetPosition_deg(:, 1), targetPosition_deg(:, 2), targetTime_s, obstacleQueryOptions);
 firstClearSampleIndex = find(~targetOccupied, 1, "first");
 targetStartsInside = targetOccupied(1);
 targetEventuallyExits = ~isempty(firstClearSampleIndex) && all(~targetOccupied(firstClearSampleIndex:end));
@@ -131,7 +132,7 @@ targetIsClearAtIntercept = false;
 if result.Success && all(isfinite(result.Intercept.TargetPosition_deg))
     targetIsClearAtIntercept = ~queryAzElTimeObstacle( ...
         result.Inputs.obstacles, result.Intercept.TargetPosition_deg(1), ...
-        result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s);
+        result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s, obstacleQueryOptions);
 end
 
 transitCircleIsBetween = initialState.position_deg(1) < transitCircleCenter_deg(1) && ...

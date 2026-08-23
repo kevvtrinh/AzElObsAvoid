@@ -114,13 +114,14 @@ result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, l
 
 exampleValidation = validateAzElExampleResult( ...
     result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true));
+obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
 
 occupancySampleCount = 1201;
 occupancyTime_s = linspace(0, missionEndTime_s, occupancySampleCount).';
 targetAzimuth_deg = interp1(targetTime_s, targetPosition_deg(:, 1), occupancyTime_s, "linear");
 targetElevation_deg = interp1(targetTime_s, targetPosition_deg(:, 2), occupancyTime_s, "linear");
 [targetOccupied, blockingObstacleIndex] = queryAzElTimeObstacle( ...
-    result.Inputs.obstacles, targetAzimuth_deg, targetElevation_deg, occupancyTime_s);
+    result.Inputs.obstacles, targetAzimuth_deg, targetElevation_deg, occupancyTime_s, obstacleQueryOptions);
 
 blockedRunStart = targetOccupied & [true; ~targetOccupied(1:end - 1)];
 clearRunStart = ~targetOccupied & [true; targetOccupied(1:end - 1)];
@@ -132,7 +133,7 @@ probeAzimuth_deg = [-9; -4; 2; 7.4; 9; 10.6; 14];
 probeElevation_deg = zeros(size(probeAzimuth_deg));
 probeTime_s = missionEndTime_s * (probeAzimuth_deg - targetPosition_deg(1, 1)) / diff(targetPosition_deg(:, 1));
 [probeOccupied, probeBlockingObstacleIndex] = queryAzElTimeObstacle( ...
-    result.Inputs.obstacles, probeAzimuth_deg, probeElevation_deg, probeTime_s);
+    result.Inputs.obstacles, probeAzimuth_deg, probeElevation_deg, probeTime_s, obstacleQueryOptions);
 expectedProbeOccupied = logical([1; 1; 1; 1; 0; 1; 0]);
 expectedProbeBlockingObstacleIndex = uint32([1; 2; 3; 4; 0; 4; 0]);
 
@@ -155,7 +156,7 @@ if result.Success
         interceptAzimuth_deg > interShapeGapBounds_deg(:, 1) & interceptAzimuth_deg < interShapeGapBounds_deg(:, 2));
     interceptTargetIsClear = ~queryAzElTimeObstacle( ...
         result.Inputs.obstacles, result.Intercept.TargetPosition_deg(1), ...
-        result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s);
+        result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s, obstacleQueryOptions);
 end
 catchOccurredBeforeTrackEnd = result.Success && result.Intercept.Time_s < missionEndTime_s;
 alternationIsPresent = targetOccupied(1) && ~targetOccupied(end) && ...

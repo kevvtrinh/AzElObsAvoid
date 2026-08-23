@@ -51,6 +51,8 @@ inflatedAzElData = combineAzElObstacles(azElData);
 
 % The requested margin is absolute. Rebuilding from original boundaries
 % makes repeated calls idempotent and prevents downstream double inflation.
+% Rebuild each obstacle independently so its complete history and provenance
+% remain grouped in the corresponding output record.
 for obstacleIndex = 1:numel(inflatedAzElData)
     obstacle = inflatedAzElData(obstacleIndex);
     obstacle.safetyMargin_deg = double(safetyMargin_deg);
@@ -70,6 +72,8 @@ for obstacleIndex = 1:numel(inflatedAzElData)
         templateProtectedCount] = protectOneSlice( ...
         originalAzimuthBySlice_deg{1}, originalElevationBySlice_deg{1}, safetyMargin_deg);
 
+    % Protect every history slice, reusing the buffered template only when the
+    % current polygon is exactly a rigid translation of the first slice.
     for sampleIndex = 1:sampleCount
         [isTranslatedCopy, translation_deg] = translatedCopyOffset( ...
             originalAzimuthBySlice_deg{1}, ...
@@ -98,8 +102,6 @@ for obstacleIndex = 1:numel(inflatedAzElData)
     inflatedAzElData(obstacleIndex) = normalizeAzElTimeObstacleData(obstacle);
 end
 end
-
-%% Section 3: Local Functions
 
 function [isTranslatedCopy, translation_deg] = translatedCopyOffset( ...
         templateAzimuth_deg, templateElevation_deg, sampleAzimuth_deg, sampleElevation_deg)
@@ -187,6 +189,8 @@ protectedPolygon = polybuffer( sourcePolygon, safetyMargin_deg, "JointType", "sq
 protectedAzimuth_deg = double(protectedAzimuth_deg(:));
 protectedElevation_deg = double(protectedElevation_deg(:));
 
+% Remove only trailing nonfinite separators emitted by polyshape so the
+% canonical boundary ends at its final real vertex.
 while ~isempty(protectedAzimuth_deg) && ~isfinite(protectedAzimuth_deg(end)) && ~isfinite(protectedElevation_deg(end))
     protectedAzimuth_deg(end) = [];
     protectedElevation_deg(end) = [];

@@ -92,7 +92,6 @@ validation = struct( ...
     "DirectRouteBlocked", directRouteBlocked, "TrajectoryValidation", trajectoryValidation);
 end
 
-%% Section 4: Local Functions
 
 function value = fieldOrDefault(record, fieldName, defaultValue)
 % Read one optional validation requirement.
@@ -112,6 +111,7 @@ end
 gridRecord = searchDiagnostics.Grid;
 countNames = ["NodeCount", "VisibilityEdgeCount", "ExpandedCount", "RejectedTransitionCount", "GeneratedSeedCount"];
 
+% Check every available search count for a finite, nonnegative scalar value.
 for name = countNames
     if isfield(gridRecord, name)
         value = gridRecord.(name);
@@ -137,7 +137,9 @@ sampleTime_s = linspace( initialState.time_s, goalState.time_s, sampleCount).';
 goalPosition_deg = goalPositionAtTime(goalState, goalState.time_s);
 fraction = linspace(0, 1, sampleCount).';
 position_deg = initialState.position_deg + fraction .* (goalPosition_deg - initialState.position_deg);
-occupied = queryAzElTimeObstacle( result.Inputs.obstacles, position_deg(:, 1), position_deg(:, 2), sampleTime_s);
+queryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+occupied = queryAzElTimeObstacle(result.Inputs.obstacles, position_deg(:, 1), position_deg(:, 2), sampleTime_s, queryOptions);
+
 blocked = any(occupied);
 end
 

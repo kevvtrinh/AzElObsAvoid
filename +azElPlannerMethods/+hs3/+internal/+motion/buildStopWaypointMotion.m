@@ -1,0 +1,539 @@
+function candidate = buildStopWaypointMotion( ...
+        obstacles, initialState, goalState, limits, options, seed)
+%% Section 0: Header & Readme
+% SYNTAX
+%   candidate = azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion()
+%   candidate = azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
+%       obstacles, initialState, goalState, limits, options, seed)
+%**************************************************************************
+% PURPOSE
+%   - Construct one deterministic finite-jerk motion on a geometric seed.
+%   - Optionally validate HS3 before certifying the analytic fallback.
+%**************************************************************************
+% INPUTS
+%   - obstacles (canonical protected obstacle struct array or [])
+%       The independent validator checks the complete time-varying history.
+%   - initialState, goalState (normalized scalar state structs)
+%       position_deg, velocity_deg_s, and acceleration_deg_s2 are 1-by-2.
+%       Only zero endpoint velocity and acceleration are supported.
+%   - limits (normalized scalar limits struct)
+%       maxVelocity_deg_s, maxAcceleration_deg_s2, and maxJerk_deg_s3 are
+%       positive 1-by-2 limits.
+%   - options (resolved scalar planner-options struct)
+%       GoalTimeMode, SampleTime_s, workspace, and validation fields are
+%       required. earliestArrival minimizes this fixed profile family.
+%   - seed (scalar geometric-seed struct)
+%       Index, Source, N-by-2 position_deg, and time-law data are required.
+%       Consecutive duplicate positions make certified stationary waits.
+%**************************************************************************
+% OUTPUTS
+%   - candidate (scalar struct)
+%       Stable construction, polynomial, sampled-history, validation, and
+%       analytic-certificate fields. Success is true only after independent
+%       collision and constraint validation. Unsupported states return
+%       Success = false without throwing. Invalid input contracts throw.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
+%     and deg/s^3. Integrated squared jerk uses deg^2/s^5.
+%**************************************************************************
+if nargin == 0
+    seed = struct("Index", 0, "Source", "");
+    candidate = emptyCandidate(seed);
+    return;
+end
+%% Section 1: Validate Inputs & Initialize The Stable Result
+constructionTimer = tic;
+[obstacles, goalTimeMode] = validateInputs( ...
+    obstacles, initialState, goalState, limits, options, seed);
+candidate = emptyCandidate(seed);
+candidate.SeedCorridorBoundary_deg = optionalCorridorBoundary(seed);
+stateTolerance = max(10 * options.ConstraintTolerance, 1e-7);
+%% Section 2: Check The Supported Geometric Contract
+endpointDerivative = [initialState.velocity_deg_s, ...
+    initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+if any(abs(endpointDerivative) > stateTolerance)
+    candidate.Message = "The analytic seed motion supports only zero " + ...
+        "initial and terminal velocity and acceleration.";
+    candidate.TerminationReason = "unsupportedEndpointDerivatives";
+    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    return;
+end
+hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
+if hasMovingGoal && goalTimeMode == "earliestArrival"
+    candidate.Message = "Earliest arrival to a moving goal is not " + ...
+        "supported by the analytic seed motion.";
+    candidate.TerminationReason = "unsupportedMovingGoal";
+    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    return;
+end
+goalPosition_deg = azElPlannerMethods.hs3.internal.goalPositionAtTime(goalState, goalState.time_s);
+seedPosition_deg = double(seed.position_deg);
+endpointError_deg = max(abs([ ...
+    seedPosition_deg(1, :) - initialState.position_deg, ...
+    seedPosition_deg(end, :) - goalPosition_deg]));
+if endpointError_deg > stateTolerance
+    candidate.Message = "The geometric seed endpoints do not match the " + ...
+        "requested initial and goal positions.";
+    candidate.TerminationReason = "seedEndpointMismatch";
+    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    return;
+end
+edgeDelta_deg = diff(seedPosition_deg, 1, 1);
+%% Section 3: Select Certified Edge Durations
+% Four equal polynomial records per edge tighten the validator's Bernstein
+% bounds. Their dimensionless coefficient bounds are exact rational values
+% for velocity and acceleration and the exact jerk maximum.
+velocityCoefficient = 15 / 8;
+accelerationCoefficient = 25 / 4;
+jerkCoefficient = 60;
+velocityDuration_s = max( ...
+    velocityCoefficient * abs(edgeDelta_deg) ./ ...
+    limits.maxVelocity_deg_s, [], 2);
+accelerationDuration_s = sqrt(max( ...
+    accelerationCoefficient * abs(edgeDelta_deg) ./ ...
+    limits.maxAcceleration_deg_s2, [], 2));
+jerkDuration_s = nthroot(max( ...
+    jerkCoefficient * abs(edgeDelta_deg) ./ ...
+    limits.maxJerk_deg_s3, [], 2), 3);
+edgeMinimumDuration_s = max([velocityDuration_s, accelerationDuration_s, jerkDuration_s], [], 2);
+minimumUniformEdgeDuration_s = max(edgeMinimumDuration_s);
+edgeCount = size(edgeDelta_deg, 1);
+edgeFraction = diff(double(seed.tau(:)));
+if numel(edgeFraction) ~= edgeCount || any(~isfinite(edgeFraction)) || ...
+        any(edgeFraction <= 0) || abs(sum(edgeFraction) - 1) > 1e-9
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidSeedTimeLaw", ...
+        "seed.tau must increase from zero to one across all seed rows.");
+end
+availableDuration_s = goalState.time_s - initialState.time_s;
+if availableDuration_s <= 0
+    candidate.Message = "The goal time must be after the initial time.";
+    candidate.TerminationReason = "timeWindowInfeasible";
+    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    return;
+end
+if goalTimeMode == "fixedArrival"
+    minimumMotionDuration_s = sum(edgeMinimumDuration_s);
+    if availableDuration_s < minimumMotionDuration_s
+        candidate.Message = "The fixed-arrival time is too short for the " + ...
+            "certified stop-at-waypoint profile.";
+        candidate.TerminationReason = "fixedArrivalInfeasible";
+        candidate.AnalyticDiagnostics = analyticDiagnostics( ...
+            seedPosition_deg, edgeMinimumDuration_s, ...
+            minimumUniformEdgeDuration_s, NaN(edgeCount, 1), ...
+            limits);
+        candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+        return;
+    end
+    edgeDuration_s = edgeMinimumDuration_s + ...
+        (availableDuration_s - minimumMotionDuration_s) * edgeFraction;
+else
+    % This small scale prevents a roundoff-only limit failure at equality.
+    durationRoundoffScale = 1 + 32 * eps;
+    edgeDuration_s = durationRoundoffScale * edgeMinimumDuration_s;
+    if any(edgeMinimumDuration_s == 0) && isfinite(seed.EstimatedDuration_s)
+        edgeDuration_s = max(edgeDuration_s, seed.EstimatedDuration_s * edgeFraction);
+    end
+    edgeDuration_s = max(edgeDuration_s, 1e-3 * edgeFraction);
+    motionDuration_s = sum(edgeDuration_s);
+    if motionDuration_s > availableDuration_s + stateTolerance
+        candidate.Message = "The certified stop-at-waypoint profile does " + ...
+            "not fit in the goal-time window.";
+        candidate.TerminationReason = "timeWindowInfeasible";
+        candidate.AnalyticDiagnostics = analyticDiagnostics( ...
+            seedPosition_deg, edgeMinimumDuration_s, ...
+            minimumUniformEdgeDuration_s, edgeDuration_s, ...
+            limits);
+        candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+        return;
+    end
+end
+%% Section 4: Build And Sample The Exact Quintic Motion
+finalTime_s = initialState.time_s + sum(edgeDuration_s);
+polynomial = buildPolynomial(seedPosition_deg, initialState.time_s, edgeDuration_s);
+[time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
+    jerk_deg_s3] = samplePolynomial(polynomial, options.SampleTime_s);
+candidate.ConstructionFeasible = true;
+candidate.FinalTime_s = finalTime_s;
+candidate.MotionDuration_s = finalTime_s - initialState.time_s;
+candidate.IntegratedSquaredJerk_deg2_s5 = 720 * sum(sum(edgeDelta_deg.^2, 2) ./ edgeDuration_s.^5);
+candidate.MaximumConstraintViolation = 0;
+candidate.time_s = time_s;
+candidate.position_deg = position_deg;
+candidate.velocity_deg_s = velocity_deg_s;
+candidate.acceleration_deg_s2 = acceleration_deg_s2;
+candidate.jerk_deg_s3 = jerk_deg_s3;
+candidate.Polynomial = polynomial;
+if ~isempty(candidate.SeedCorridorBoundary_deg)
+    % The corridor association follows the selected waypoint time law.
+    corridorSeed = seed;
+    corridorSeed.tau = [0; cumsum(edgeDuration_s)] / sum(edgeDuration_s);
+    candidate.SeedCorridor = azElPlannerMethods.hs3.internal.validation.buildSeedCorridor(corridorSeed, polynomial.SegmentCount);
+end
+candidate.AnalyticDiagnostics = analyticDiagnostics( ...
+    seedPosition_deg, edgeMinimumDuration_s, ...
+    minimumUniformEdgeDuration_s, edgeDuration_s, limits);
+%% Section 5: Independently Validate The Complete Motion
+tryEarlyHs3 = isfield(options, "AttemptEarlyHs3") && ...
+    options.AttemptEarlyHs3 && options.EnableHs3Improvement && ...
+    goalTimeMode == "earliestArrival" && ...
+    options.MaximumHs3ImprovementTime_s > 0 && ...
+    seed.Source == "visibilityGraph" && size(seed.position_deg, 1) > 2;
+if tryEarlyHs3
+    solverOptions = options;
+    solverOptions.MaximumSolverTime_s = options.MaximumHs3ImprovementTime_s;
+    trialSeed = expandSeedClearance(seed, obstacles, initialState.time_s);
+    solverOptions.CollocationSegmentCount = min( ...
+        solverOptions.MaximumCollocationSegmentCount, max( ...
+        solverOptions.CollocationSegmentCount, ...
+        2 * (size(trialSeed.position_deg, 1) - 1)));
+    trialCandidate = azElPlannerMethods.hs3.internal.motion.solveHs3( ...
+        obstacles, initialState, goalState, limits, ...
+        solverOptions, trialSeed);
+    trialCandidate.MotionSource = "hs3";
+    trialCandidate.Validation = azElPlannerMethods.hs3.validateTrajectory( ...
+        trialCandidate, obstacles, initialState, goalState, limits, options);
+    if trialCandidate.Validation.Passed
+        trialCandidate.AnalyticDiagnostics = candidate.AnalyticDiagnostics;
+        candidate = trialCandidate;
+        return;
+    end
+end
+validation = azElPlannerMethods.hs3.validateTrajectory( ...
+    candidate, obstacles, initialState, goalState, limits, options);
+candidate.Validation = validation;
+candidate.Success = validation.Passed;
+candidate.MaximumConstraintViolation = validationViolation( ...
+    validation, candidate.AnalyticDiagnostics);
+if validation.Passed
+    candidate.Message = "The analytic stop-at-waypoint seed motion " + ...
+        "passed independent validation.";
+    candidate.TerminationReason = "seedMotionValidated";
+elseif ~validation.CollisionFree
+    candidate.Message = "The analytic seed motion was constructed, but " + ...
+        "it did not pass continuous collision validation.";
+    candidate.TerminationReason = "seedMotionCollision";
+elseif ~validation.PositionWithinLimits
+    candidate.Message = "The analytic seed motion leaves the configured " + ...
+        "workspace.";
+    candidate.TerminationReason = "seedMotionWorkspaceViolation";
+elseif ~validation.VelocityWithinLimits || ...
+        ~validation.AccelerationWithinLimits || ...
+        ~validation.JerkWithinLimits || ~validation.DynamicsConsistent
+    candidate.Message = "The analytic seed motion did not pass its " + ...
+        "continuous kinematic certificate.";
+    candidate.TerminationReason = "seedMotionCertificateFailure";
+else
+    candidate.Message = "The analytic seed motion did not pass " + ...
+        "independent validation.";
+    candidate.TerminationReason = "seedMotionValidationFailed";
+end
+candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+end
+
+
+function seed = expandSeedClearance(seed, obstacles, initialTime_s)
+% Move interior seed points away from the nearest active obstacle.
+if seed.UsesReducedGeometry
+    return;
+end
+
+% Visit only interior waypoints because the public start and goal states are
+% immutable planner inputs.
+for waypointIndex = 2:size(seed.position_deg, 1) - 1
+    point_deg = seed.position_deg(waypointIndex, :);
+    waypointTime_s = initialTime_s + ...
+        seed.tau(waypointIndex) * seed.EstimatedDuration_s;
+    nearestClearance_deg = Inf;
+    nearestCenter_deg = [NaN NaN];
+    nearestSpan_deg = 0;
+
+    % Find the nearest active obstacle at this waypoint's estimated arrival
+    % time before choosing one outward adjustment direction.
+    for obstacleIndex = 1:numel(obstacles)
+        shape = azElPlannerMethods.hs3.internal.obstacles.shapeAtTime( ...
+            obstacles(obstacleIndex), waypointTime_s);
+        if shape.NumRegions == 0
+            continue;
+        end
+        clearance_deg = azElPlannerMethods.hs3.internal.geometry.pointPolygonClearance(shape, point_deg);
+        if clearance_deg >= nearestClearance_deg
+            continue;
+        end
+        vertices_deg = shape.Vertices;
+        vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
+        [centerAzimuth_deg, centerElevation_deg] = centroid(shape);
+        nearestCenter_deg = [centerAzimuth_deg, centerElevation_deg];
+        nearestSpan_deg = norm(max(vertices_deg, [], 1) - ...
+            min(vertices_deg, [], 1));
+        nearestClearance_deg = clearance_deg;
+    end
+    direction = point_deg - nearestCenter_deg;
+    if all(isfinite(direction)) && norm(direction) > eps
+        % A small shape-relative move clears corner cutting without rescaling.
+        clearanceExpansion_deg = 0.02 * nearestSpan_deg;
+        seed.position_deg(waypointIndex, :) = point_deg + ...
+            clearanceExpansion_deg * direction / norm(direction);
+    end
+end
+seed.Length_deg = sum(vecnorm(diff(seed.position_deg), 2, 2));
+end
+
+function [obstacles, goalTimeMode] = validateInputs( ...
+        obstacles, ~, ~, ~, options, seed)
+% Validate the normalized internal contract before any construction.
+obstacles = azElPlannerMethods.hs3.internal.obstacles.prepareDynamic(obstacles);
+if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, ...
+        ["Index", "Source", "position_deg", "tau", ...
+        "EstimatedDuration_s"]))
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidSeed", ...
+        "seed must contain its index, source, positions, tau, and duration.");
+end
+validateattributes(seed.position_deg, {'numeric'}, ...
+    {'real', 'finite', '2d', 'ncols', 2});
+if size(seed.position_deg, 1) < 2
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidSeed", ...
+        "seed.position_deg must contain at least two rows.");
+end
+validateattributes(seed.Index, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
+seedSource = string(seed.Source);
+if ~isscalar(seedSource)
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidSeedSource", ...
+        "seed.Source must be scalar text.");
+end
+goalTimeMode = string(options.GoalTimeMode);
+if ~isscalar(goalTimeMode) || ~any( ...
+        goalTimeMode == ["earliestArrival", "fixedArrival"])
+    error("azElInternal:buildAzElStopWaypointMotion:InvalidGoalTimeMode", ...
+        "options.GoalTimeMode must be earliestArrival or fixedArrival.");
+end
+validateattributes(options.SampleTime_s, {'numeric'}, ...
+    {'real', 'finite', 'positive', 'scalar'});
+end
+
+function boundary_deg = optionalCorridorBoundary(seed)
+% Preserve seed geometry for optional independent corridor certification.
+if isfield(seed, "CorridorBoundary_deg") && ...
+        ~isempty(seed.CorridorBoundary_deg)
+    boundary_deg = double(seed.CorridorBoundary_deg);
+else
+    boundary_deg = zeros(0, 2);
+end
+end
+
+function polynomial = buildPolynomial(waypoint_deg, initialTime_s, edgeDuration_s)
+% Expand each rest-to-rest quintic into four records per seed edge.
+subsegmentCountPerEdge = 4;
+edgeCount = size(waypoint_deg, 1) - 1;
+segmentCount = subsegmentCountPerEdge * edgeCount;
+segmentDuration_s = repelem(edgeDuration_s(:) / subsegmentCountPerEdge, ...
+    subsegmentCountPerEdge);
+segmentDuration_s = segmentDuration_s(:);
+positionPower_deg = zeros(segmentCount, 2, 6);
+velocityPower_deg_s = zeros(segmentCount, 2, 5);
+accelerationPower_deg_s2 = zeros(segmentCount, 2, 4);
+jerkPower_deg_s3 = zeros(segmentCount, 2, 3);
+segmentIndex = 0;
+
+% Convert every seed edge into an independently timed rest-to-rest quintic.
+for edgeIndex = 1:edgeCount
+    edgeStart_deg = waypoint_deg(edgeIndex, :);
+    edgeDelta_deg = waypoint_deg(edgeIndex + 1, :) - edgeStart_deg;
+
+    % Split this edge into four polynomial records so the downstream HS3 and
+    % validation schemas retain their established segment granularity.
+    for subsegmentIndex = 1:subsegmentCountPerEdge
+        segmentIndex = segmentIndex + 1;
+        intervalStart = (subsegmentIndex - 1) / subsegmentCountPerEdge;
+        intervalScale = 1 / subsegmentCountPerEdge;
+        profilePower = restrictedSmoothstepPower( ...
+            intervalStart, intervalScale);
+        positionPower = edgeDelta_deg.' .* profilePower;
+        positionPower(:, 1) = positionPower(:, 1) + edgeStart_deg.';
+        velocityPower = positionPower(:, 2:end) .* (1:5) / ...
+            segmentDuration_s(segmentIndex);
+        accelerationPower = velocityPower(:, 2:end) .* (1:4) / ...
+            segmentDuration_s(segmentIndex);
+        jerkPower = accelerationPower(:, 2:end) .* (1:3) / ...
+            segmentDuration_s(segmentIndex);
+        positionPower_deg(segmentIndex, :, :) = positionPower;
+        velocityPower_deg_s(segmentIndex, :, :) = velocityPower;
+        accelerationPower_deg_s2(segmentIndex, :, :) = accelerationPower;
+        jerkPower_deg_s3(segmentIndex, :, :) = jerkPower;
+    end
+end
+segmentStartTime_s = initialTime_s + [0; cumsum(segmentDuration_s(1:end - 1))];
+finalTime_s = initialTime_s + sum(edgeDuration_s);
+terminalPosition_deg = sum(positionPower, 2).';
+terminalVelocity_deg_s = sum(velocityPower, 2).';
+terminalAcceleration_deg_s2 = sum(accelerationPower, 2).';
+polynomial = struct( ...
+    "SegmentCount", segmentCount, ...
+    "SegmentStartTime_s", segmentStartTime_s, ...
+    "SegmentDuration_s", segmentDuration_s, ...
+    "FinalTime_s", finalTime_s, ...
+    "positionPower_deg", positionPower_deg, ...
+    "velocityPower_deg_s", velocityPower_deg_s, ...
+    "accelerationPower_deg_s2", accelerationPower_deg_s2, ...
+    "jerkPower_deg_s3", jerkPower_deg_s3, ...
+    "TerminalState", struct( ...
+    "position_deg", terminalPosition_deg, ...
+    "velocity_deg_s", terminalVelocity_deg_s, ...
+    "acceleration_deg_s2", terminalAcceleration_deg_s2));
+end
+
+function restrictedPower = restrictedSmoothstepPower(startFraction, scale)
+% Express the cited quintic blend on one restricted interval in ascending powers.
+basePower = [0 0 0 10 -15 6];
+degree = numel(basePower) - 1;
+restrictedPower = zeros(1, degree + 1);
+
+% Expand every source power of the quintic blend under the affine interval
+% substitution.
+for basePowerIndex = 0:degree
+    % Accumulate each local power produced by this source-power expansion.
+    for localPowerIndex = 0:basePowerIndex
+        restrictedPower(localPowerIndex + 1) = restrictedPower( ...
+            localPowerIndex + 1) + ...
+            basePower(basePowerIndex + 1) * ...
+            nchoosek(basePowerIndex, localPowerIndex) * ...
+            startFraction^(basePowerIndex - localPowerIndex) * ...
+            scale^localPowerIndex;
+    end
+end
+end
+
+function [time_s, position_deg, velocity_deg_s, ...
+        acceleration_deg_s2, jerk_deg_s3] = samplePolynomial( ...
+        polynomial, sampleTime_s)
+% Sample every polynomial knot and the requested uniform time grid.
+initialTime_s = polynomial.SegmentStartTime_s(1);
+uniformTime_s = (initialTime_s:sampleTime_s:polynomial.FinalTime_s).';
+time_s = unique([uniformTime_s; polynomial.SegmentStartTime_s; ...
+    polynomial.FinalTime_s]);
+[time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
+    jerk_deg_s3] = azElPlannerMethods.hs3.internal.motion.evaluatePolynomial( ...
+    polynomial, time_s);
+end
+
+function diagnostics = analyticDiagnostics(waypoint_deg, ...
+        edgeMinimumDuration_s, minimumUniformEdgeDuration_s, ...
+        edgeDuration_s, limits)
+% Report exact peaks and conservative Bernstein certificate peaks.
+edgeDelta_deg = diff(waypoint_deg, 1, 1);
+if all(isfinite(edgeDuration_s)) && all(edgeDuration_s > 0)
+    exactPeakVelocity_deg_s = max((15 / 8) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s, [], 1);
+    exactPeakAcceleration_deg_s2 = max((10 * sqrt(3) / 3) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^2, [], 1);
+    exactPeakJerk_deg_s3 = max(60 * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^3, [], 1);
+    certifiedPeakVelocity_deg_s = exactPeakVelocity_deg_s;
+    certifiedPeakAcceleration_deg_s2 = max((25 / 4) * ...
+        abs(edgeDelta_deg) ./ edgeDuration_s.^2, [], 1);
+    certifiedPeakJerk_deg_s3 = exactPeakJerk_deg_s3;
+    maximumLimitRatio = max([ ...
+        certifiedPeakVelocity_deg_s ./ limits.maxVelocity_deg_s, ...
+        certifiedPeakAcceleration_deg_s2 ./ ...
+        limits.maxAcceleration_deg_s2, ...
+        certifiedPeakJerk_deg_s3 ./ limits.maxJerk_deg_s3]);
+else
+    exactPeakVelocity_deg_s = [NaN NaN];
+    exactPeakAcceleration_deg_s2 = [NaN NaN];
+    exactPeakJerk_deg_s3 = [NaN NaN];
+    certifiedPeakVelocity_deg_s = [NaN NaN];
+    certifiedPeakAcceleration_deg_s2 = [NaN NaN];
+    certifiedPeakJerk_deg_s3 = [NaN NaN];
+    maximumLimitRatio = NaN;
+end
+uniformEdgeDuration_s = NaN;
+if all(abs(edgeDuration_s - edgeDuration_s(1)) <= 1e-12)
+    uniformEdgeDuration_s = edgeDuration_s(1);
+end
+diagnostics = struct( ...
+    "Profile", "restToRestQuintic", ...
+    "PolynomialSegmentsPerEdge", 4, ...
+    "WaypointCount", size(waypoint_deg, 1), ...
+    "EdgeCount", size(edgeDelta_deg, 1), ...
+    "EdgeMinimumDuration_s", edgeMinimumDuration_s, ...
+    "MinimumUniformEdgeDuration_s", minimumUniformEdgeDuration_s, ...
+    "UniformEdgeDuration_s", uniformEdgeDuration_s, ...
+    "ExactPeakVelocity_deg_s", exactPeakVelocity_deg_s, ...
+    "ExactPeakAcceleration_deg_s2", exactPeakAcceleration_deg_s2, ...
+    "ExactPeakJerk_deg_s3", exactPeakJerk_deg_s3, ...
+    "CertifiedPeakVelocity_deg_s", certifiedPeakVelocity_deg_s, ...
+    "CertifiedPeakAcceleration_deg_s2", ...
+    certifiedPeakAcceleration_deg_s2, ...
+    "CertifiedPeakJerk_deg_s3", certifiedPeakJerk_deg_s3, ...
+    "MaximumLimitRatio", maximumLimitRatio, ...
+    "StopsAtEveryWaypoint", true, ...
+    "PositionVelocityAccelerationContinuous", true, ...
+    "JerkIsPiecewiseFinite", true);
+end
+
+function candidate = emptyCandidate(seed)
+% Define one stable schema for success, failure, and unsupported exits.
+candidate = struct( ...
+    "Success", false, ...
+    "ConstructionFeasible", false, ...
+    "OptimizerFeasible", false, ...
+    "Message", "The analytic seed motion was not constructed.", ...
+    "TerminationReason", "notRun", ...
+    "MotionSource", "analyticStopWaypoint", ...
+    "SeedIndex", seed.Index, ...
+    "SeedSource", string(seed.Source), ...
+    "FinalTime_s", NaN, ...
+    "MotionDuration_s", NaN, ...
+    "IntegratedSquaredJerk_deg2_s5", Inf, ...
+    "MaximumConstraintViolation", Inf, ...
+    "time_s", zeros(0, 1), ...
+    "position_deg", zeros(0, 2), ...
+    "velocity_deg_s", zeros(0, 2), ...
+    "acceleration_deg_s2", zeros(0, 2), ...
+    "jerk_deg_s3", zeros(0, 2), ...
+    "Polynomial", emptyPolynomial(), ...
+    "ControlTau", zeros(0, 1), ...
+    "ControlJerk_deg_s3", zeros(0, 2), ...
+    "Corridor", struct([]), ...
+    "SeedCorridorBoundary_deg", zeros(0, 2), ...
+    "SeedCorridor", struct([]), ...
+    "Validation", azElPlannerMethods.hs3.validateTrajectory(), ...
+    "AnalyticDiagnostics", analyticDiagnostics( ...
+    zeros(0, 2), zeros(0, 1), NaN, NaN, struct()), ...
+    "SolverDiagnostics", struct( ...
+    "Method", "analyticRestToRestQuintic", ...
+    "UsedOptimizer", false, "ElapsedTime_s", 0));
+end
+
+function polynomial = emptyPolynomial()
+% Match the complete polynomial schema on construction failures.
+polynomial = struct( ...
+    "SegmentCount", 0, ...
+    "SegmentStartTime_s", zeros(0, 1), ...
+    "SegmentDuration_s", NaN, ...
+    "FinalTime_s", NaN, ...
+    "positionPower_deg", zeros(0, 2, 6), ...
+    "velocityPower_deg_s", zeros(0, 2, 5), ...
+    "accelerationPower_deg_s2", zeros(0, 2, 4), ...
+    "jerkPower_deg_s3", zeros(0, 2, 3), ...
+    "TerminalState", struct( ...
+    "position_deg", [NaN NaN], ...
+    "velocity_deg_s", [NaN NaN], ...
+    "acceleration_deg_s2", [NaN NaN]));
+end
+
+function violation = validationViolation(validation, diagnostics)
+% Give invalid analytic candidates an honest partial-result ranking.
+if validation.Passed
+    violation = 0;
+elseif ~validation.CollisionResolved
+    violation = Inf;
+elseif ~validation.CollisionFree
+    violation = max(1e-12, -validation.MinimumClearance_deg);
+elseif isfinite(diagnostics.MaximumLimitRatio)
+    violation = max(1e-12, diagnostics.MaximumLimitRatio - 1);
+else
+    violation = Inf;
+end
+end

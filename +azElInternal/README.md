@@ -1,22 +1,19 @@
-# Internal planner modules
+# Shared public-utility internals
 
-`azElInternal` is implementation-only. Stable user entry points remain at the
-repository root. The subpackages enforce the pipeline boundaries:
+`azElInternal` now contains only implementation details shared by root public
+utilities such as obstacle construction, plotting, time queries, and the
+compatibility trajectory validator. Neither planner backend calls this package.
+Each complete planner closure instead lives under `+azElPlannerMethods` so one
+method folder can be removed without breaking the other.
 
-```text
-obstacles -> search -> motion -> validation
-     \          \        /
-      +----------geometry
-```
+The remaining geometry is intentionally narrow:
 
-- `geometry`: shared polygon construction, edge extraction, convex
-  decomposition, and signed-clearance primitives.
-- `obstacles`: immutable preparation and time-dependent obstacle geometry.
-- `search`: bounded visibility, homology, timed-search, and seed generation.
-- `motion`: corridor construction, spline generation, retiming, and candidate
-  selection.
-- `validation`: corridor and envelope certificates used independently of
-  candidate generation.
+- `geometry`: canonical boundary-to-`polyshape` conversion used while plotting
+  prepared histories;
+- `obstacles`: immutable preparation and shape-at-time interpolation used by
+  plotting.
 
-Small cross-cutting helpers remain in this directory so the modules do not
-depend on an artificial utility hierarchy.
+Small option, logical, and goal-position helpers remain at this level because
+several public utilities share them. Planner-specific search, motion,
+validation, candidate ranking, and result construction were removed from this
+package after their callers moved into the method folders.

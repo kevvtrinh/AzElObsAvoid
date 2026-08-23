@@ -845,3 +845,45 @@ kept outside production and maintained examples. It exercises public planner
 and validator interfaces but adds no planner correctness evidence. Per the
 user's instruction, only structural checks and `git diff --check` were run;
 no MATLAB, Code Analyzer, example, or regression execution is claimed.
+
+## Combined method-suite assessment — 2026-08-23
+
+The branch now exposes two genuine planner choices without blending their
+internals. `corridorQuintic` preserves the no-NLP `325-less-nlp` engine and is
+the backward-compatible default. `hs3` preserves the `plan-325` analytic/HS3
+engine and must be selected explicitly. Each package owns obstacle preparation,
+search, motion construction, validation, result construction, and its original
+moving-target adapter. The public dispatcher runs one package only and records
+the choice in result options and diagnostics.
+
+The strongest evidence is source-baseline reproduction rather than a claim
+that the methods are equivalent. Fresh processes produced 18/18 exact gated
+matches for corridor and 18/18 for HS3. Each set contains 17 independently
+validated successes and the expected validated `noValidatedSeed` failure.
+Corridor's fresh wall sum was `163.9501049 s`; HS3's was `238.5162172 s`.
+Wall time was retained but not equality-gated. Both directions of physical
+folder removal also passed an obstacle-free maintained example with independent
+validation and the correct surviving method echo.
+
+The main maintainability cost is intentional duplication: similar low-level
+helpers exist inside both method packages so a change to one cannot silently
+change the other. This trades repository size for removability and baseline
+fidelity. Obsolete planner copies at the root were not kept—22 unreachable
+search, motion, validation, and result-builder files were deleted. The remaining
+root internals have real plotting, constructor, or option-handling callers.
+
+Repository-wide static evidence is clean. MATLAB Code Analyzer checked 109
+intended MATLAB files with zero messages. Text audits found all 368 loops
+directly explained, primary-only Section 0 headers, no local PURPOSE boilerplate,
+and no unused production MATLAB file. Canonical comparison also found no
+executable drift from either selected source snapshot after approved namespace
+and entry-point renames.
+
+The methods retain different option sets and different earliest moving-target
+policies. Users must not assume that switching only the method produces the
+same arrival interpretation or trajectory. Neither finite proposal portfolio
+is complete, neither result proves global optimality, and HS3 retains local NLP
+conditioning/failure risk. The full automated regression suite was not run
+because the user prohibited tests in this session; the 36 fresh example runs
+are direct combined-branch evidence but are not represented as an unrun test
+result.

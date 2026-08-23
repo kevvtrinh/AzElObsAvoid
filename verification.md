@@ -2104,3 +2104,81 @@ centerlines, polygon boundaries, original obstacle fills, and protected safety
 outlines. Start, goal, requested routes, solved motion, and failure-route
 entries retain their legend labels. Obstacle rendering and planner data are
 unchanged.
+
+## Combined corridor/HS3 method suite — 2026-08-23
+
+The `325-full-suite` worktree combines two complete, physically isolated
+planner snapshots behind `PlannerMethod`:
+
+- corridor source: `325-less-nlp` at `2852663`;
+- HS3 source: `plan-325` at `5a06711`.
+
+Each branch's moving-target adapter is also isolated because their earliest
+intercept policies differ. Corridor retains its chronological fixed-arrival
+search and bracket refinement. HS3 retains its one-call moving-goal
+earliest-arrival solve. Neither public dispatcher falls back to the other
+method.
+
+### Fresh-process maintained-example comparison
+
+All 18 noninteractive maintained examples were run in a fresh MATLAB process
+for each method. Each call disabled plots, animation, kinematics, search edges,
+visibility graphs, swept surfaces, and verbose output. HS3 runs reapplied only
+the collocation and improvement-time settings recorded by the Plan-325 source
+examples.
+
+The comparison gate required exact matches for goal-time policy, jerk policy,
+planner success, independent example validation, collision/certificate fields,
+and termination reason. Selected polyline length, returned-motion length, and
+motion duration had to match within `1e-6`. Wall time was recorded but was not
+an equality gate.
+
+Results:
+
+| Method | Baseline source | Cases | Validated successes | Validated expected failures | Gated differences | Wall sum (s) |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `corridorQuintic` | `working-tree-repository-cleanup` | 18 | 17 | 1 | 0 | 163.9501049 |
+| `hs3` | `2074c14+batched-envelope-history-worktree` | 18 | 17 | 1 | 0 | 238.5162172 |
+
+Both expected failures were `exampleNoPathAzElMotion` with planner
+`Success=false`, example validation passed, and termination reason
+`noValidatedSeed`. Exact fresh rows are appended to `benchmark.csv` under
+`2852663+325-full-suite-corridor-worktree` and
+`5a06711+325-full-suite-hs3-worktree`.
+
+An initial PowerShell-variable loop triggered MATLAB's pre-startup Windows
+`File system inconsistency` launcher error and executed no cases. The final
+literal-command fresh-process runs completed every recorded case on its first
+attempt. This launcher issue is not hidden or counted as planner evidence.
+
+### Physical unplugging proof
+
+Two task-owned temporary copies were created. The HS3 folder was deleted from
+one and the corridor folder from the other. In the corridor-only copy,
+`exampleObstacleFreeAzElMotion` returned success, passed independent example
+validation, and echoed `corridorQuintic`. In the HS3-only copy, the same checks
+passed and the result echoed `hs3`. The temporary copies were deleted after
+the proof.
+
+### Current verification boundary
+
+MATLAB Code Analyzer checked all 109 intended MATLAB files and returned zero
+messages. The scan excluded only the unrelated untracked
+`report_evidence_tmp.m` and `single_u_report_tmp.m` scripts. Text audits also
+found explanations immediately before all 368 loops, exactly one primary
+Section 0 in every function file, no local-function Section/PURPOSE boilerplate,
+and no production MATLAB file without an executable caller. Of the 49
+production files below 100 code lines, nine have one caller and are justified
+individually in `short_file_rationale.md`.
+
+Canonical source comparisons found no executable divergence in the 34-file
+corridor package or the 26-file HS3 package after accounting for the approved
+namespace and public-entry renames. Backend dependency scans found no call to
+the root planner or shared root internals and no reference to the sibling
+method. Only the four public dispatchers reference both method packages.
+
+The repository regression test suite was not run because the user explicitly
+prohibited tests unless requested in this session. The example matrix above is
+fresh execution evidence, not a substitute claim for unrun automated tests.
+Visible interactive sandbox verification also remains unrun; its planner
+selector received static and Code Analyzer checks only.

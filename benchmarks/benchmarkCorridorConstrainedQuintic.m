@@ -44,7 +44,7 @@ turnCounts = double(turnCounts(:));
 defaults = struct( ...
     "RepeatCount", 3, ...
     "MaximumRouteVertexCount", 22, "PrintProgress", true, "RandomSeed", 325, "PrototypeOptions", struct());
-[controls, unknownNames] = azElInternal.resolveOptions( defaults, benchmarkOverrides);
+[controls, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions( defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
     warning("benchmarkCorridorConstrainedQuintic:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -52,7 +52,7 @@ end
 validateattributes(controls.RepeatCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', 2});
 validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
-controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
+controls.PrintProgress = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", "benchmarkCorridorConstrainedQuintic:InvalidPrintControl");
 if ~isstruct(controls.PrototypeOptions) || ~isscalar(controls.PrototypeOptions)
     error("benchmarkCorridorConstrainedQuintic:InvalidPrototypeOptions", ...
@@ -75,12 +75,13 @@ runs = repmat(emptyRunRecord(), runCount, 1);
 motionResults = cell(runCount, 1);
 runIndex = 0;
 
+% Build and seed each requested geometry scale once so every repetition uses the same route.
 for turnCountIndex = 1:numel(turnCounts)
     turnCount = turnCounts(turnCountIndex);
     [obstacles, initialState, goalState, limits] = createRepeatedTurnBenchmarkScenario( turnCount, scenarioConstants);
     rng(controls.RandomSeed, "twister");
     seedTimer = tic;
-    [seeds, seedDiagnostics] = azElInternal.search.generateTopologySeeds( ...
+    [seeds, seedDiagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( ...
         obstacles, initialState, goalState, limits, plannerOptions);
     seedElapsedTime_s = toc(seedTimer);
     visibilitySeedIndex = find( [seeds.Source] == "visibilityGraph", 1, "first");
@@ -93,14 +94,15 @@ for turnCountIndex = 1:numel(turnCounts)
     prototypeOptions = controls.PrototypeOptions;
     prototypeOptions.RouteVertexCount = routeVertexCount;
 
+    % Repeat the frozen solve and validation to measure runtime variation without changing topology.
     for repeatIndex = 1:controls.RepeatCount
         runIndex = runIndex + 1;
         candidateTimer = tic;
-        motion = azElInternal.motion.solveCorridorQuintic( ...
+        motion = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
             obstacles, initialState, goalState, limits, route_deg, prototypeOptions);
         candidateWallTime_s = toc(candidateTimer);
         validationTimer = tic;
-        validation = validateAzElTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
+        validation = azElPlannerMethods.corridor.validateTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
         validationElapsedTime_s = toc(validationTimer);
         motionResults{runIndex} = motion;
         runs(runIndex) = collectRunRecord( ...
@@ -128,8 +130,6 @@ report = struct( ...
     "ScenarioConstants", scenarioConstants, ...
     "TurnCounts", turnCounts, "Runs", runTable, "Summary", summaryTable, "MotionResults", {motionResults});
 end
-
-%% Section 5: Local Functions
 
 function constants = repeatedTurnConstants()
 % Freeze the maintained repeated-turn geometry and physical limits.
@@ -314,6 +314,7 @@ function summaryTable = summarizeRuns(runTable, turnCounts)
 %**************************************************************************
 summaries = repmat(emptySummaryRecord(), numel(turnCounts), 1);
 
+% Summarize each turn-count group separately so the fastest and slowest repetitions remain visible.
 for turnIndex = 1:numel(turnCounts)
     rows = runTable(runTable.TurnCount == turnCounts(turnIndex), :);
     candidateTimes_s = rows.CandidateWallTime_s;

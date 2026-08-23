@@ -133,8 +133,6 @@ azElData = struct( ...
     "originalEl_deg", {originalElevationSlices_deg}, "safetyMargin_deg", safetyMargin_deg, "status", statusBySample);
 end
 
-%% Section 5: Local Functions
-
 function [azimuthSlices_deg, elevationSlices_deg, removedRegionCount, ...
         removalBySample] = normalizeBoundaryHistory( azimuthInput_deg, elevationInput_deg, sampleCount, boundaryRole)
 % Normalize one protected or original boundary history uniformly.
@@ -167,6 +165,8 @@ allFieldNames = ["az_deg", "el_deg"; "originalAz_deg", "originalEl_deg"];
 mismatchIdentifier = mismatchIdentifiers(roleIndex);
 fieldNames = allFieldNames(roleIndex, :);
 
+% Validate and canonicalize every time slice independently so one malformed
+% boundary reports the exact history sample and protected/original role.
 for sampleIndex = 1:sampleCount
     validateattributes(azimuthSlices_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
     validateattributes(elevationSlices_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
@@ -226,6 +226,8 @@ end
 retainedAzimuth_deg = cell(numel(retainedRegionIndex), 1);
 retainedElevation_deg = cell(numel(retainedRegionIndex), 1);
 
+% Copy only regions with enough real vertices to form a polygon, preserving
+% their original order for deterministic reconstruction.
 for retainedIndex = 1:numel(retainedRegionIndex)
     regionIndex = retainedRegionIndex(retainedIndex);
     rows = regionStarts(regionIndex):regionStops(regionIndex);
@@ -239,6 +241,8 @@ azimuth_deg = NaN(outputVertexCount, 1);
 elevation_deg = NaN(outputVertexCount, 1);
 outputIndex = 1;
 
+% Reassemble the retained regions with one NaN separator between neighboring
+% polygons so downstream polyshape calls recover the same region boundaries.
 for retainedIndex = 1:numel(retainedRegionIndex)
     currentRegionVertexCount = numel( retainedAzimuth_deg{retainedIndex});
     outputRows = outputIndex:outputIndex + currentRegionVertexCount - 1;

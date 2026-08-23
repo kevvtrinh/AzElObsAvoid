@@ -35,6 +35,7 @@ centerAzimuth_deg = [-4; 0; 4];
 centerElevation_deg = [2.5; -2.5; 2.5];
 obstacles = combineAzElObstacles();
 
+% Center each vertical barrier at its configured offset to form the alternating slalom.
 for obstacleIndex = 1:numel(centerAzimuth_deg)
     center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
     rectangle_deg = center_deg + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];

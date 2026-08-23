@@ -40,7 +40,7 @@ if nargin < 2 || isempty(benchmarkOverrides)
 end
 validateattributes(hairpinCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 defaults = struct( "FigureVisible", "off", "PrintProgress", true, "RandomSeed", 325, "RouteVertexCount", 22);
-[controls, unknownNames] = azElInternal.resolveOptions( defaults, benchmarkOverrides);
+[controls, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions( defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
     warning("benchmarkHairpinCorridorQuintic:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -50,7 +50,7 @@ if ~isscalar(controls.FigureVisible) || ~any(controls.FigureVisible == ["on", "o
     error("benchmarkHairpinCorridorQuintic:InvalidVisibility", ...
         "FigureVisible must be scalar text equal to 'on' or 'off'.");
 end
-controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
+controls.PrintProgress = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", "benchmarkHairpinCorridorQuintic:InvalidPrintControl");
 validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 validateattributes(controls.RouteVertexCount, {'numeric'}, {'real', 'scalar', 'positive'});
@@ -69,6 +69,7 @@ bottomElevation_deg = 0;
 topElevation_deg = wallSpacing_deg * (hairpinCount + 1);
 obstacleCells = cell(hairpinCount, 1);
 
+% Place each wall at the next elevation and alternate its opening to force repeated reversals.
 for wallIndex = 1:hairpinCount
     wallElevation_deg = wallSpacing_deg * wallIndex;
     if mod(wallIndex, 2) == 1
@@ -103,7 +104,7 @@ plannerOptions.MaximumSeedCount = 3;
 plannerOptions.RandomSeed = controls.RandomSeed;
 rng(controls.RandomSeed, "twister");
 seedTimer = tic;
-[seeds, seedDiagnostics] = azElInternal.search.generateTopologySeeds( ...
+[seeds, seedDiagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 seedGenerationTime_s = toc(seedTimer);
 visibilitySeedIndex = find( [seeds.Source] == "visibilityGraph", 1, "first");
@@ -128,11 +129,11 @@ requestedRouteVertexCount = min( controls.RouteVertexCount, size(route_deg, 1));
 %% Section 4: Construct And Independently Validate Motion
 
 candidateTimer = tic;
-motion = azElInternal.motion.solveCorridorQuintic( ...
+motion = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
     obstacles, initialState, goalState, limits, route_deg, struct("RouteVertexCount", requestedRouteVertexCount));
 candidateWallTime_s = toc(candidateTimer);
 validationTimer = tic;
-validation = validateAzElTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
+validation = azElPlannerMethods.corridor.validateTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
 validationTime_s = toc(validationTimer);
 
 %% Section 5: Plot The Returned Evidence
@@ -148,6 +149,7 @@ if controls.FigureVisible == "on"
     grid(axesHandle, "on");
     box(axesHandle, "on");
 
+    % Draw every protected wall separately while keeping obstacle patches out of the legend.
     for obstacleIndex = 1:numel(obstacles)
         patch(axesHandle, obstacles(obstacleIndex).az_deg{1}, ...
             obstacles(obstacleIndex).el_deg{1}, [0.85 0.25 0.2], ...

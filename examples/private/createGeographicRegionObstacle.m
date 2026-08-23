@@ -100,6 +100,7 @@ else
     regionShape = polyshape();
     selectedRecordCount = 0;
 
+    % Union every land-boundary record whose bounding box overlaps the requested window.
     for boundaryIndex = 1:numel(landBoundaries)
         boundaryBounds_deg = landBoundaries(boundaryIndex).BoundingBox;
         overlapsWindow = boundaryBounds_deg(2, 1) >= ...
@@ -154,6 +155,7 @@ longitudeCandidates_deg = linspace( minimumLongitude_deg, maximumLongitude_deg, 
 latitudeProbe_deg = linspace( minimumLatitude_deg, maximumLatitude_deg, 321);
 insideCount = zeros(size(longitudeCandidates_deg));
 
+% Probe each candidate longitude to choose the line that crosses the most interior samples.
 for longitudeIndex = 1:numel(longitudeCandidates_deg)
     probeLongitude_deg = repmat( longitudeCandidates_deg(longitudeIndex), size(latitudeProbe_deg));
     insideCount(longitudeIndex) = nnz(isinterior( regionShape, probeLongitude_deg, latitudeProbe_deg));
@@ -197,7 +199,6 @@ if verbose
 end
 end
 
-%% Section 5: Local Functions
 
 function shape = rectanglePolyshape(bounds_deg)
 % Construct the geographic clipping rectangle for one region window.
@@ -215,6 +216,7 @@ ringStop = find(ringTransition == -1) - 1;
 denseXByRing_deg = cell(numel(ringStart), 1);
 denseYByRing_deg = cell(numel(ringStart), 1);
 
+% Densify every finite boundary ring independently so separators remain intact.
 for ringIndex = 1:numel(ringStart)
     ringRows = ringStart(ringIndex):ringStop(ringIndex);
     ringX_deg = x_deg(ringRows);
@@ -232,6 +234,7 @@ for ringIndex = 1:numel(ringStart)
     denseRingY_deg = zeros(denseVertexCount, 1);
     nextWriteIndex = 1;
 
+    % Subdivide each closed-ring edge according to its angular length.
     for edgeIndex = 1:numel(ringX_deg)
         edgeFraction = (0:subdivisionCount(edgeIndex) - 1).' ./ subdivisionCount(edgeIndex);
         writeCount = numel(edgeFraction);

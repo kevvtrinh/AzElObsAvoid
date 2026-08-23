@@ -1,53 +1,53 @@
-# Active repository cleanup checkpoint
+# Active 325 full-suite checkpoint
 
 ## Objective
 
-Finish the repository-wide readability refactor without changing planner behavior:
+Create `325-full-suite` from `325-less-nlp` with two honest, user-selectable
+planner implementations:
 
-- reserve `%% Section 0: Header & Readme` for each file's primary function;
-- give every local function a direct purpose comment instead of a Section 0 header;
-- add junior-oriented explanations around loops, non-obvious branches, state transitions, and failure paths;
-- keep readable vertical spacing and avoid unnecessary short `...` continuations;
-- audit every MATLAB file below 100 executable code lines and justify separation from its callers or identify it as a merge candidate.
+- `corridorQuintic`, preserved from `325-less-nlp` at `2852663`;
+- `hs3`, preserved from `plan-325` at `5a06711`.
 
-Public interfaces and the existing `geometry`, `obstacles`, `search`, `motion`, and `validation` package boundaries remain stable. Production behavior must remain input-driven and independently valid.
+Each method must own its complete executable dependency closure in one removable
+folder. The public API selects exactly one method and never retries through the
+other. Maintained examples must reproduce the applicable recorded branch
+baseline when run with that branch's scenario settings.
 
-## Completed evidence
+## Completed
 
-- Internal code is organized into documented subpackages; public entry points are unchanged.
-- Duplicate boundary handling and dense history allocation were consolidated; prepared obstacles are reused across candidates.
-- All 68 MATLAB files have no bare `= ...` assignments, and continuation blocks at or below 120 characters were collapsed.
-- All 131 `for`/`while` loops under `+azElInternal` have an immediately preceding explanation.
-- All 86 local-function Section 0 headers were removed. Every one of the 229 local functions now opens with a direct purpose sentence rather than `PURPOSE` or `SYNTAX` boilerplate.
-- Added 183 direct local-function and decision comments in this pass, including focused explanations through the four largest motion/search files.
-- Audited all 22 production MATLAB files below 100 executable code lines. None is uncalled; 18 have multiple callers and the four single-caller files own a stable schema or a distinct algorithm extracted from an already-large orchestrator. Evidence is in `short_file_rationale.md`.
-- Removed 12 ignored benchmark outputs totaling 3,242,525 bytes and the empty ignored `scratch/` tree. Removed two superseded root audit reports for old commit `b845880` and an unreferenced HS3 baseline for old branch `hs3-refactor`; retained decisions and current evidence remain in `verification.md`, `branch_assessment.md`, and `benchmark.csv`.
-- Before the latest comments-only request, the full regression suite passed 59/59 and Code Analyzer reported zero messages across all 68 MATLAB files.
-- Added the supplied persistent interactive UI under `sandbox/`. Initial scene
-  entry now advances automatically from start to goal/first endpoint and then
-  to obstacle drawing, without separate start, goal, or obstacle-mode buttons.
-- Reflowed the planning controls so the workspace azimuth label remains below
-  the titled-panel border. Reset now explicitly deletes hidden and visible
-  axes children before rebuilding the canvas, preventing retained obstacle
-  outlines.
-- Reserved an outer plotting rectangle for axes decorations so the azimuth
-  ticks and label cannot overlap the action row. Added an explicit Add
-  Obstacle action to both tabs; automatic guidance owns the first obstacle and
-  additional strokes require the button.
-- Replaced the repeated three-line paired controls with a compact grouped
-  grid. Workspace and kinematic pairs now share column headings, scalar
-  controls occupy single rows, and verbose output sits in the free strip below
-  the panel.
-- Removed obstacle-derived legend entries while retaining the rendered
-  obstacle layers and the useful start, goal, request, solution, and failure
-  entries.
+- Created and checked out `325-full-suite` from `325-less-nlp`.
+- Isolated the corridor planner under `+azElPlannerMethods/+corridor`.
+- Imported and mechanically namespaced the HS3 planner under
+  `+azElPlannerMethods/+hs3` from the committed Git object, not the dirty source
+  worktree.
+- Isolated each branch's materially different moving-target adapter with its
+  planner.
+- Replaced `planAzElMotion` and `planAzElMovingTargetIntercept` with selectors
+  that record `PlannerMethod` in result options and diagnostics.
+- Updated the example option resolver so method-specific defaults remain
+  separate.
+- Added a visible corridor/HS3 selector to both persistent sandbox tabs.
+- Added method and internal dependency-map documentation.
+- Deleted 22 obsolete root planner copies after proving that every remaining
+  production MATLAB file has an executable caller.
+- Completed the repo-wide readability pass: all 368 loops have direct
+  explanations, every function file has one primary Section 0, and local
+  functions use direct comments.
+- Reproduced both 18-example source matrices with zero gated differences and
+  appended 36 fresh rows to `benchmark.csv`.
+- Proved each method still runs and validates in a temporary copy with the
+  sibling method folder physically absent.
+- Code Analyzer checked all 109 intended MATLAB files and reported zero
+  messages; dependency and short-file audits also passed.
+- Did not run the regression suite, as explicitly required for this session.
 
-## Current work and limits
+## In progress
 
-- Text-only structural audits report no local Section 0 headers, no missing local-function purpose comments, no unexplained internal or sandbox loops, no bare assignment continuations, no code continuations at or below 120 characters, and no trailing whitespace.
-- Per the user's current-session instruction, tests were not rerun and must not be run unless explicitly requested.
-- Preserve unrelated user changes; do not commit or push.
+- Review the final diff, stage only task-owned files, then commit and push
+  `325-full-suite`.
 
-## Next action
+## Cleanup and Git boundary
 
-Await explicit direction before running regression tests, committing the final artifact deletions, or retrying the external push.
+- Remove only task-owned temporary imports and baseline harnesses.
+- Preserve unrelated untracked report-generation files and `__pycache__`.
+- After evidence and diff review, commit and push `325-full-suite` as requested.

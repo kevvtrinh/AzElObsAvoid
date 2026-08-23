@@ -45,6 +45,8 @@ obstacleCapacity = 16;
 obstacleItems = cell(obstacleCapacity, 1);
 obstacleCount = 0;
 
+% Pop nested inputs from the explicit work stack until every leaf obstacle
+% has been collected or rejected with its top-level input index intact.
 while pendingCount > 0
     pendingInputValue = pendingValues{pendingCount};
     topLevelInputIndex = pendingInputIndices(pendingCount);
@@ -95,13 +97,13 @@ end
 % it arrived inside a cell or struct array.
 normalizedObstacles = cell(size(obstacleItems));
 
+% Send every collected obstacle through the same canonical schema gate before
+% concatenating them into the single array returned to the planner.
 for obstacleIndex = 1:numel(obstacleItems)
     normalizedObstacles{obstacleIndex} = normalizeAzElTimeObstacleData( obstacleItems{obstacleIndex});
 end
 azElObstacles = vertcat(normalizedObstacles{:});
 end
-
-%% Section 4: Local Functions
 
 function azElObstacles = emptyCanonicalAzElObstacles()
 % Define canonical obstacle field order for an empty collection.

@@ -65,6 +65,7 @@ limits = struct( ...
 
 regionResults = cell(regionCount, 1);
 
+% Plan each named geographic region independently under the same physical limits.
 for regionIndex = 1:regionCount
     scenario = regionScenarios{regionIndex};
     initialState = struct( "time_s", 0, "position_deg", scenario.initialPosition_deg);
@@ -82,6 +83,7 @@ regionRouteLength_deg = nan(regionCount, 1);
 regionNativeVertexCount = zeros(regionCount, 1);
 regionTestVertexCount = zeros(regionCount, 1);
 
+% Validate every regional result and collect comparable geometry-size evidence.
 for regionIndex = 1:regionCount
     resultForRegion = regionResults{regionIndex};
     exampleValidation = validateAzElExampleResult( ...
@@ -106,6 +108,7 @@ end
 
 if jerkConfiguration.PlotOutputs
 
+    % Plot each regional result in its own figure with a region-specific title.
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);

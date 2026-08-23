@@ -98,6 +98,7 @@ plot(axesHandle, goalPosition_deg(:, 1), goalPosition_deg(:, 2), ...
 time_s = [0; limits.MissionTime_s];
 pathObstacleData = cell(numel(drawnLineCollection_deg), 1);
 
+% Convert every drawn polyline into the same time-spanning obstacle representation.
 for lineIndex = 1:numel(drawnLineCollection_deg)
     pathObstacleData{lineIndex} = pathToObstacleData( ...
         drawnLineCollection_deg{lineIndex}, time_s, ...
@@ -140,7 +141,6 @@ result.ExampleInputs = struct( ...
 result.SandboxFigure = sandboxFigure;
 result.SandboxAxes = axesHandle;
 
-%% Section 5: Local Functions
 
 function [plannerOverrides, sandboxOverrides] = separateSandboxOverrides( overrides)
 % Split custom sandbox controls from shared planner and plotting fields.
@@ -153,6 +153,7 @@ sandboxControlNames = [ ...
 plannerOverrides = overrides;
 sandboxOverrides = struct();
 
+% Separate sandbox display controls from the options forwarded to the planner.
 for sandboxName = sandboxControlNames
     if isfield(plannerOverrides, sandboxName)
         sandboxOverrides.(sandboxName) = plannerOverrides.(sandboxName);
@@ -363,6 +364,7 @@ drawnow("nocallbacks");
 set(axesHandle, "ButtonDownFcn", " ");
 point_deg = [];
 
+% Collect left-clicked vertices until the user cancels or presses another button.
 while true
     [azimuth_deg, elevation_deg, button] = ginput(1);
     if isempty(azimuth_deg) || isempty(elevation_deg) || button ~= 1
@@ -531,6 +533,7 @@ constructionRadius_deg = radius_deg / cos(arcIncrement_rad / 2);
 pathShape = polyshape();
 hasSegment = false;
 
+% Expand every polyline segment into a capsule and union it with the path shape.
 for segmentIndex = 1:size(path_deg, 1) - 1
     startPosition_deg = path_deg(segmentIndex, :);
     endPosition_deg = path_deg(segmentIndex + 1, :);
@@ -559,6 +562,7 @@ function obstacleData = obstaclePolygonsToData( polygonCollection_deg, time_s, s
 % Convert user polygons to canonical obstacle structs.
 obstacleData = cell(numel(polygonCollection_deg), 1);
 
+% Close and normalize every drawn polygon as an independent protected obstacle.
 for polygonIndex = 1:numel(polygonCollection_deg)
     polygon_deg = polygonCollection_deg{polygonIndex};
     if ~isequal(polygon_deg(1, :), polygon_deg(end, :))

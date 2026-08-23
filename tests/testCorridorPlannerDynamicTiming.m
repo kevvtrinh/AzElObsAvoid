@@ -1,4 +1,22 @@
 function tests = testCorridorPlannerDynamicTiming
+%% Section 0: Header & Readme
+% SYNTAX
+%   tests = testCorridorPlannerDynamicTiming
+%**************************************************************************
+% PURPOSE
+%   - Collect deterministic regression tests for corridor-planner timing,
+%     dynamic-obstacle handling, and bounded recovery behavior.
+%**************************************************************************
+% INPUTS
+%   - None.
+%**************************************************************************
+% OUTPUTS
+%   - tests (MATLAB function-test array)
+%       Local test functions discovered by functiontests.
+%**************************************************************************
+% UNITS
+%   - Test fixtures use degrees, seconds, and their time derivatives.
+%**************************************************************************
 tests = functiontests(localfunctions);
 end
 
@@ -62,6 +80,7 @@ function testDisconnectedSparseGraphUsesWorkspaceBoundarySupport(testCase)
 caseSeeds = [3275783 3283702 3299540 3315378];
 obstacleCounts = [8 10 14 18];
 
+% Replay each fixed random case to preserve reproducible dynamic-planning evidence.
 for caseIndex = 1:numel(caseSeeds)
     [obstacles, initialState, goalState, limits] = movingCircleRequest(caseSeeds(caseIndex), obstacleCounts(caseIndex));
     result = planAzElMotion( obstacles, initialState, goalState, limits, plannerOptions(3, caseSeeds(caseIndex)));
@@ -142,6 +161,7 @@ centerElevation_deg = [-0.5; 3.2];
 azimuth_deg = cell(2, 1);
 elevation_deg = cell(2, 1);
 
+% Build the two source slices of the translating curved obstacle history.
 for index = 1:2
     azimuth_deg{index} = radius_deg * cos(angle_rad);
     elevation_deg{index} = centerElevation_deg(index) + radius_deg * sin(angle_rad);
@@ -165,10 +185,12 @@ radius_deg = 0.7 + 0.45 * rand(stream, obstacleCount, 1);
 amplitude_deg = 1.5 + 1.5 * rand(stream, obstacleCount, 1);
 phase_rad = 2 * pi * rand(stream, obstacleCount, 1);
 
+% Construct every randomized moving circle while preserving the seeded draw order.
 for obstacleIndex = 1:obstacleCount
     azimuthByTime_deg = cell(numel(obstacleTime_s), 1);
     elevationByTime_deg = cell(numel(obstacleTime_s), 1);
 
+    % Sample this obstacle's sinusoidal center motion at every history time.
     for timeIndex = 1:numel(obstacleTime_s)
         normalizedTime = obstacleTime_s(timeIndex) / missionEndTime_s;
         centerElevation_deg = baseElevation_deg(obstacleIndex) + ...
@@ -181,7 +203,7 @@ for obstacleIndex = 1:obstacleCount
     obstacleByIndex{obstacleIndex} = makeAzElObstacleData( ...
         "moving coverage circle " + obstacleIndex, obstacleTime_s, azimuthByTime_deg, elevationByTime_deg, 0.1);
 end
-obstacles = combineAzElObstacles(obstacleByIndex{:});
+obstacles = azElPlannerMethods.corridor.combineObstacles(obstacleByIndex{:});
 initialState = restState(0, [-17 0]);
 goalState = restState(missionEndTime_s, [17 0]);
 limits = motionLimits([-19 19], [-12 12]);

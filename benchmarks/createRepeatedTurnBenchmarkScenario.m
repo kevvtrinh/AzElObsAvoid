@@ -43,12 +43,14 @@ positiveScalarNames = [ ...
     "barrierSpacing_deg", "barrierHalfWidth_deg", ...
     "barrierCenterMagnitude_deg", "barrierHalfHeight_deg", "goalTimePerStage_s"];
 
+% Apply the same finite-positive contract to every scalar geometry and timing constant.
 for fieldName = positiveScalarNames
     validateattributes(constants.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 end
 validateattributes(constants.safetyMargin_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 limitNames = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3"];
 
+% Check both axes of every derivative limit so one invalid axis cannot enter the benchmark.
 for fieldName = limitNames
     validateattributes(constants.(fieldName), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'positive'});
 end
@@ -66,6 +68,7 @@ goalTime_s = constants.goalTimePerStage_s * (turnCount + 1);
 obstacleTime_s = [0; goalTime_s];
 obstacles = combineAzElObstacles();
 
+% Build one protected barrier at each alternating center to create the requested turn count.
 for obstacleIndex = 1:turnCount
     center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
     rectangle_deg = center_deg + [ ...
