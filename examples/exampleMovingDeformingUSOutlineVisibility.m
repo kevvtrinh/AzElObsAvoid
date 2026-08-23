@@ -35,9 +35,7 @@ end
     "MaximumDisplayedSlicesPerObstacle", 10, ...
     "MaximumSeedCount", 3, ...
     "ShowSweptSurfaces", true, ...
-    "FigureVisible", "on", ...
-    "Title", "Moving/deforming U.S.: slice-local visibility reduction"), ...
-    [12 12]);
+    "FigureVisible", "on", "Title", "Moving/deforming U.S.: slice-local visibility reduction"), [12 12]);
 
 %% Section 2: Create Obstacles
 
@@ -47,37 +45,28 @@ obstacleTime_s = (0:obstacleTimeStep_s:missionEndTime_s).';
 % The private geometry helper is retained because shapefile union and
 % 14,000-plus outline vertices would obscure the visible scenario flow.
 [obstacle, obstacleHistory] = createContiguousUSObstacle( ...
-    obstacleTime_s, 0.10, struct( ...
-    "MotionMode", "movingDeforming", ...
-    "Verbose", options.Verbose));
+    obstacleTime_s, 0.10, struct( "MotionMode", "movingDeforming", "Verbose", options.Verbose));
 
 %% Section 3: Create Planner Inputs
 
 initialState = struct("time_s", 0, "position_deg", [-102 20]);
-goalState = struct( ...
-    "time_s", missionEndTime_s, "position_deg", [-102 55]);
+goalState = struct( "time_s", missionEndTime_s, "position_deg", [-102 55]);
 limits = struct( ...
-    "maxVelocity_deg_s", [8 8], ...
-    "maxAcceleration_deg_s2", [3 3], ...
-    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+    "maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
-    obstacle, initialState, goalState, limits, options);
+result = planAzElMotion( obstacle, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( ...
-    result, "moving/deforming U.S.", ...
-    struct("RequireDirectBlocked", true));
+exampleValidation = validateAzElExampleResult( result, "moving/deforming U.S.", struct("RequireDirectBlocked", true));
 
 %% Section 6: Plot Diagnostics And Motion
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, jerkConfiguration.PlotOptions);
+    result.PlotHandles = plotAzElMotion( result, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

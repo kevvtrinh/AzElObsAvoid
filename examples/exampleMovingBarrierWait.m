@@ -26,8 +26,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5), [2 2]);
+    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -36,16 +35,15 @@ barrierCenterElevation_deg = [0; 0; 8; 8];
 sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
 azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
 elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+
 for sampleIndex = 1:numel(obstacleTime_s)
-    translatedPosition_deg = sourcePosition_deg + ...
-        [0 barrierCenterElevation_deg(sampleIndex)];
+    translatedPosition_deg = sourcePosition_deg + [0 barrierCenterElevation_deg(sampleIndex)];
     azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
     elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
 end
 safetyMargin_deg = 0.1;
 obstacles = makeAzElObstacleData( ...
-    "translating barrier", obstacleTime_s, ...
-    azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+    "translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
@@ -54,14 +52,11 @@ goalState = struct("time_s", 12, "position_deg", [5 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, ...
-    "azimuthInterval_deg", [-6 6], ...
-    "elevationInterval_deg", [-3 3]);
+    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "azimuthInterval_deg", [-6 6], "elevationInterval_deg", [-3 3]);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+result = planAzElMotion( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -69,11 +64,9 @@ result.ExampleValidation = validateAzElTrajectory(result);
 waitSeedSelected = result.Success && result.SelectedSeedIndex > 0 && ...
     result.Seeds(result.SelectedSeedIndex).Source == "directWait";
 result.ExampleValidation.WaitSeedSelected = waitSeedSelected;
-result.ExampleValidation.Passed = ...
-    result.ExampleValidation.Passed && waitSeedSelected;
+result.ExampleValidation.Passed = result.ExampleValidation.Passed && waitSeedSelected;
 if ~waitSeedSelected
-    result.ExampleValidation.Message = ...
-        result.ExampleValidation.Message + ...
+    result.ExampleValidation.Message = result.ExampleValidation.Message + ...
         " The planner did not select the direct waiting seed.";
 end
 
@@ -81,8 +74,7 @@ end
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, displayOptions.PlotOptions);
+    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata
@@ -93,6 +85,5 @@ result.ExampleControls = displayOptions;
 result.ExampleGeometry = struct( ...
     "obstacleTime_s", obstacleTime_s, ...
     "barrierCenterElevation_deg", barrierCenterElevation_deg, ...
-    "sourcePosition_deg", sourcePosition_deg, ...
-    "safetyMargin_deg", safetyMargin_deg);
+    "sourcePosition_deg", sourcePosition_deg, "safetyMargin_deg", safetyMargin_deg);
 end

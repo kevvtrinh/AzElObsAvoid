@@ -22,7 +22,9 @@ function handles = plotAzElMotion(result, optionOverrides)
 % UNITS
 %   - Axes show degrees, seconds, deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
+
 %% Section 1: Resolve Display Controls
+
 defaults = struct( ...
     "FigureVisible", "on", ...
     "Title", "Az/El motion plan", ...
@@ -33,9 +35,7 @@ defaults = struct( ...
     "ShowVisibilityGraphs", true, ...
     "FrameStride", 10, ...
     "Pause_s", 0.001, ...
-    "ShowSweptSurfaces", true, ...
-    "MaximumDisplayedSlicesPerObstacle", 30, ...
-    "MaximumDisplayedVisibilitySnapshots", 30);
+    "ShowSweptSurfaces", true, "MaximumDisplayedSlicesPerObstacle", 30, "MaximumDisplayedVisibilitySnapshots", 30);
 if nargin == 0
     handles = defaults;
     return;
@@ -43,52 +43,43 @@ end
 if nargin < 2 || isempty(optionOverrides)
     optionOverrides = struct();
 end
-if ~isstruct(result) || ~isscalar(result) || ...
-        ~all(isfield(result, {'Inputs', 'Success', 'SearchDiagnostics'}))
-    error("plotAzElMotion:InvalidResult", ...
-        "result must be a scalar planAzElMotion result.");
+if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, {'Inputs', 'Success', 'SearchDiagnostics'}))
+    error("plotAzElMotion:InvalidResult", "result must be a scalar planAzElMotion result.");
 end
 optionOverrides = normalizePlotAliases(optionOverrides);
-[options, unknownNames] = azElInternal.resolveOptions( ...
-    defaults, optionOverrides);
+[options, unknownNames] = azElInternal.resolveOptions( defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("plotAzElMotion:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(unknownNames, ", "));
+        "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 options.FigureVisible = lower(string(options.FigureVisible));
 options.Title = string(options.Title);
-if ~isscalar(options.FigureVisible) || ...
-        ~any(options.FigureVisible == ["on", "off"])
-    error("plotAzElMotion:InvalidFigureVisible", ...
-        "FigureVisible must be 'on' or 'off'.");
+if ~isscalar(options.FigureVisible) || ~any(options.FigureVisible == ["on", "off"])
+    error("plotAzElMotion:InvalidFigureVisible", "FigureVisible must be 'on' or 'off'.");
 end
 if ~isscalar(options.Title)
-    error("plotAzElMotion:InvalidTitle", ...
-        "Title must be scalar text.");
+    error("plotAzElMotion:InvalidTitle", "Title must be scalar text.");
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces"];
+
 for name = logicalNames
-    options.(name) = azElInternal.normalizeLogicalScalar( ...
-        options.(name), name, "plotAzElMotion:InvalidLogicalOption");
+    options.(name) = azElInternal.normalizeLogicalScalar( options.(name), name, "plotAzElMotion:InvalidLogicalOption");
 end
-validateattributes(options.FrameStride, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'integer', 'positive'});
-validateattributes(options.Pause_s, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'nonnegative'});
-countNames = ["MaximumDisplayedSlicesPerObstacle", ...
-    "MaximumDisplayedVisibilitySnapshots"];
+validateattributes(options.FrameStride, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+validateattributes(options.Pause_s, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+countNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
+
 for name = countNames
-    validateattributes(options.(name), {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'integer', 'positive'});
+    validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 handles = emptyHandles(options);
-obstacles = azElInternal.prepareDynamicObstacles(result.Inputs.obstacles);
+obstacles = azElInternal.obstacles.prepareDynamic(result.Inputs.obstacles);
+
 %% Section 2: Plot Workspace And Failure Diagnostics
+
 if options.ShowWorkspace
-    workspaceFigure = figure( ...
-        "Name", options.Title, "Visible", options.FigureVisible);
+    workspaceFigure = figure( "Name", options.Title, "Visible", options.FigureVisible);
     workspaceAxes = axes(workspaceFigure);
     configureSpatialAxes(workspaceAxes);
     displayTime_s = result.Inputs.initialState.time_s;
@@ -97,48 +88,38 @@ if options.ShowWorkspace
     if options.ShowSearchEdges
         drawSearchEdges(workspaceAxes, gridRecord);
     end
-    if isfield(gridRecord, "ExploredNodes_deg") && ...
-            ~isempty(gridRecord.ExploredNodes_deg)
+    if isfield(gridRecord, "ExploredNodes_deg") && ~isempty(gridRecord.ExploredNodes_deg)
         explored_deg = gridRecord.ExploredNodes_deg;
         scatter(workspaceAxes, explored_deg(:, 1), explored_deg(:, 2), ...
-            9, [0.45 0.45 0.45], "filled", ...
-            "DisplayName", "Expanded search node");
+            9, [0.45 0.45 0.45], "filled", "DisplayName", "Expanded search node");
     end
-    if isfield(gridRecord, "FrontierNodes_deg") && ...
-            ~isempty(gridRecord.FrontierNodes_deg)
+    if isfield(gridRecord, "FrontierNodes_deg") && ~isempty(gridRecord.FrontierNodes_deg)
         frontier_deg = gridRecord.FrontierNodes_deg;
         scatter(workspaceAxes, frontier_deg(:, 1), frontier_deg(:, 2), ...
-            18, [0.95 0.65 0.15], "filled", ...
-            "DisplayName", "Final search frontier");
+            18, [0.95 0.65 0.15], "filled", "DisplayName", "Final search frontier");
     end
+
     for seedIndex = 1:numel(result.Seeds)
         route_deg = result.Seeds(seedIndex).position_deg;
         plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
-            "-", "Color", [0.75 0.75 0.75], ...
-            "HandleVisibility", "off");
+            "-", "Color", [0.75 0.75 0.75], "HandleVisibility", "off");
     end
     if result.Success
         plot(workspaceAxes, result.SelectedSeed_deg(:, 1), ...
             result.SelectedSeed_deg(:, 2), "--", "Color", [0.15 0.35 0.8], ...
             "LineWidth", 1.2, "DisplayName", "Selected geometric route");
         plot(workspaceAxes, result.position_deg(:, 1), ...
-            result.position_deg(:, 2), "k-", "LineWidth", 2, ...
-            "DisplayName", "Timed motion");
+            result.position_deg(:, 2), "k-", "LineWidth", 2, "DisplayName", "Timed motion");
     elseif result.SearchDiagnostics.BestPartialSeedIndex > 0
-        partialSeed = result.Seeds( ...
-            result.SearchDiagnostics.BestPartialSeedIndex).position_deg;
+        partialSeed = result.Seeds( result.SearchDiagnostics.BestPartialSeedIndex).position_deg;
         plot(workspaceAxes, partialSeed(:, 1), partialSeed(:, 2), ...
-            "--", "Color", [0.15 0.35 0.8], "LineWidth", 1.2, ...
-            "DisplayName", "Best partial seed");
+            "--", "Color", [0.15 0.35 0.8], "LineWidth", 1.2, "DisplayName", "Best partial seed");
     end
     drawTargetTrack(workspaceAxes, result.Inputs.goalState, displayTime_s);
     start_deg = result.Inputs.initialState.position_deg;
-    goal_deg = azElInternal.goalPositionAtTime( ...
-        result.Inputs.goalState, result.Inputs.goalState.time_s);
-    plot(workspaceAxes, start_deg(1), start_deg(2), "go", ...
-        "MarkerFaceColor", "g", "DisplayName", "Start");
-    plot(workspaceAxes, goal_deg(1), goal_deg(2), "ro", ...
-        "MarkerFaceColor", "r", "DisplayName", "Goal");
+    goal_deg = azElInternal.goalPositionAtTime( result.Inputs.goalState, result.Inputs.goalState.time_s);
+    plot(workspaceAxes, start_deg(1), start_deg(2), "go", "MarkerFaceColor", "g", "DisplayName", "Start");
+    plot(workspaceAxes, goal_deg(1), goal_deg(2), "ro", "MarkerFaceColor", "r", "DisplayName", "Goal");
     xlabel(workspaceAxes, "Azimuth (deg)");
     ylabel(workspaceAxes, "Elevation (deg)");
     title(workspaceAxes, diagnosticTitle(result, options.Title));
@@ -146,50 +127,42 @@ if options.ShowWorkspace
     handles.WorkspaceFigure = workspaceFigure;
     handles.WorkspaceAxes = workspaceAxes;
 end
+
 %% Section 3: Plot Time-Expanded Visibility Diagnostics
+
 if options.ShowVisibilityGraphs
-    visibilityFigure = figure( ...
-        "Name", options.Title + " visibility diagnostics", ...
-        "Visible", options.FigureVisible);
+    visibilityFigure = figure( "Name", options.Title + " visibility diagnostics", "Visible", options.FigureVisible);
     visibilityAxes = axes(visibilityFigure);
     hold(visibilityAxes, "on");
     grid(visibilityAxes, "on");
     box(visibilityAxes, "on");
     gridRecord = result.SearchDiagnostics.Grid;
     layerTimes_s = visibilityLayerTimes(gridRecord, result.Inputs);
-    layerIndices = sampledIndices(numel(layerTimes_s), ...
-        options.MaximumDisplayedVisibilitySnapshots);
+    layerIndices = sampledIndices(numel(layerTimes_s), options.MaximumDisplayedVisibilitySnapshots);
     if options.ShowSweptSurfaces
         drawObstacleLayers(visibilityAxes, obstacles, ...
-            layerTimes_s(layerIndices), ...
-            options.MaximumDisplayedSlicesPerObstacle);
+            layerTimes_s(layerIndices), options.MaximumDisplayedSlicesPerObstacle);
     end
-    if isfield(gridRecord, "NodePosition_deg") && ...
-            ~isempty(gridRecord.NodePosition_deg)
+    if isfield(gridRecord, "NodePosition_deg") && ~isempty(gridRecord.NodePosition_deg)
         nodePosition_deg = gridRecord.NodePosition_deg;
+
         for layerIndex = reshape(layerIndices, 1, [])
             scatter3(visibilityAxes, nodePosition_deg(:, 1), ...
                 nodePosition_deg(:, 2), ...
                 repmat(layerTimes_s(layerIndex), ...
-                size(nodePosition_deg, 1), 1), ...
-                5, [0.55 0.55 0.55], "filled", ...
-                "HandleVisibility", "off");
+                size(nodePosition_deg, 1), 1), 5, [0.55 0.55 0.55], "filled", "HandleVisibility", "off");
         end
     end
+
     for seedIndex = 1:numel(result.Seeds)
         seed = result.Seeds(seedIndex);
-        seedTime_s = result.Inputs.initialState.time_s + ...
-            seed.tau * seed.EstimatedDuration_s;
+        seedTime_s = result.Inputs.initialState.time_s + seed.tau * seed.EstimatedDuration_s;
         plot3(visibilityAxes, seed.position_deg(:, 1), ...
-            seed.position_deg(:, 2), seedTime_s, ...
-            ":", "Color", [0.45 0.45 0.45], ...
-            "DisplayName", "Seed " + seedIndex);
+            seed.position_deg(:, 2), seedTime_s, ":", "Color", [0.45 0.45 0.45], "DisplayName", "Seed " + seedIndex);
     end
     if result.Success
         plot3(visibilityAxes, result.position_deg(:, 1), ...
-            result.position_deg(:, 2), result.time_s, ...
-            "k-", "LineWidth", 2.2, ...
-            "DisplayName", "Timed motion");
+            result.position_deg(:, 2), result.time_s, "k-", "LineWidth", 2.2, "DisplayName", "Timed motion");
     end
     drawTargetTimeTrack(visibilityAxes, result.Inputs.goalState);
     xlabel(visibilityAxes, "Azimuth (deg)");
@@ -202,21 +175,18 @@ if options.ShowVisibilityGraphs
     handles.VisibilityAxes = visibilityAxes;
     handles.VisibilityGraphs = struct("Figure", visibilityFigure, "Axes", visibilityAxes);
 end
+
 %% Section 4: Plot Returned Kinematics
+
 if options.ShowKinematics && result.Success
-    kinematicFigure = figure( ...
-        "Name", options.Title + " kinematics", ...
-        "Visible", options.FigureVisible);
-    tiledLayout = tiledlayout(kinematicFigure, 4, 1, ...
-        "TileSpacing", "compact", "Padding", "compact");
-    quantityNames = ["position_deg", "velocity_deg_s", ...
-        "acceleration_deg_s2", "jerk_deg_s3"];
-    yLabels = ["Position (deg)", "Velocity (deg/s)", ...
-        "Acceleration (deg/s^2)", "Jerk (deg/s^3)"];
+    kinematicFigure = figure( "Name", options.Title + " kinematics", "Visible", options.FigureVisible);
+    tiledLayout = tiledlayout(kinematicFigure, 4, 1, "TileSpacing", "compact", "Padding", "compact");
+    quantityNames = ["position_deg", "velocity_deg_s", "acceleration_deg_s2", "jerk_deg_s3"];
+    yLabels = ["Position (deg)", "Velocity (deg/s)", "Acceleration (deg/s^2)", "Jerk (deg/s^3)"];
     limitValues = {[], result.Inputs.limits.maxVelocity_deg_s, ...
-        result.Inputs.limits.maxAcceleration_deg_s2, ...
-        result.Inputs.limits.maxJerk_deg_s3};
+        result.Inputs.limits.maxAcceleration_deg_s2, result.Inputs.limits.maxJerk_deg_s3};
     axesHandles = gobjects(4, 1);
+
     for quantityIndex = 1:4
         axesHandles(quantityIndex) = nexttile(tiledLayout);
         axesHandle = axesHandles(quantityIndex);
@@ -224,16 +194,13 @@ if options.ShowKinematics && result.Success
         grid(axesHandle, "on");
         box(axesHandle, "on");
         values = result.(quantityNames(quantityIndex));
-        plot(axesHandle, result.time_s, values(:, 1), ...
-            "DisplayName", "Azimuth");
-        plot(axesHandle, result.time_s, values(:, 2), ...
-            "DisplayName", "Elevation");
+        plot(axesHandle, result.time_s, values(:, 1), "DisplayName", "Azimuth");
+        plot(axesHandle, result.time_s, values(:, 2), "DisplayName", "Elevation");
         if ~isempty(limitValues{quantityIndex})
+
             for axisIndex = 1:2
-                yline(axesHandle, limitValues{quantityIndex}(axisIndex), ...
-                    "--", "HandleVisibility", "off");
-                yline(axesHandle, -limitValues{quantityIndex}(axisIndex), ...
-                    "--", "HandleVisibility", "off");
+                yline(axesHandle, limitValues{quantityIndex}(axisIndex), "--", "HandleVisibility", "off");
+                yline(axesHandle, -limitValues{quantityIndex}(axisIndex), "--", "HandleVisibility", "off");
             end
         end
         ylabel(axesHandle, yLabels(quantityIndex));
@@ -246,36 +213,30 @@ if options.ShowKinematics && result.Success
     handles.KinematicsFigure = kinematicFigure;
     handles.KinematicsAxes = axesHandles;
 end
+
 %% Section 5: Animate Returned Motion
+
 if options.ShowAnimation && result.Success
-    animationFigure = figure( ...
-        "Name", options.Title + " animation", ...
-        "Visible", options.FigureVisible);
+    animationFigure = figure( "Name", options.Title + " animation", "Visible", options.FigureVisible);
     animationAxes = axes(animationFigure);
-    frameIndices = unique([1:options.FrameStride:numel(result.time_s), ...
-        numel(result.time_s)]);
+    frameIndices = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
+
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes);
-        drawObstacles(animationAxes, obstacles, ...
-            result.time_s(frameIndex), true);
-        drawTargetTrack(animationAxes, result.Inputs.goalState, ...
-            result.time_s(frameIndex));
+        drawObstacles(animationAxes, obstacles, result.time_s(frameIndex), true);
+        drawTargetTrack(animationAxes, result.Inputs.goalState, result.time_s(frameIndex));
         plot(animationAxes, result.position_deg(:, 1), result.position_deg(:, 2), ...
-            "-", "Color", [0.72 0.78 0.84], ...
-            "LineWidth", 1.2, "DisplayName", "Complete timed path");
+            "-", "Color", [0.72 0.78 0.84], "LineWidth", 1.2, "DisplayName", "Complete timed path");
         plot(animationAxes, result.position_deg(1:frameIndex, 1), ...
             result.position_deg(1:frameIndex, 2), "-", ...
-            "Color", [0.05 0.70 0.82], "LineWidth", 3.5, ...
-            "DisplayName", "Elapsed path");
+            "Color", [0.05 0.70 0.82], "LineWidth", 3.5, "DisplayName", "Elapsed path");
         scatter(animationAxes, result.position_deg(frameIndex, 1), ...
             result.position_deg(frameIndex, 2), 60, [0.95 0.25 0.15], ...
-            "filled", "MarkerEdgeColor", "w", "LineWidth", 1, ...
-            "DisplayName", "Current state");
+            "filled", "MarkerEdgeColor", "w", "LineWidth", 1, "DisplayName", "Current state");
         xlabel(animationAxes, "Azimuth (deg)");
         ylabel(animationAxes, "Elevation (deg)");
-        title(animationAxes, sprintf("%s | t = %.3f s", ...
-            options.Title, result.time_s(frameIndex)));
+        title(animationAxes, sprintf("%s | t = %.3f s", options.Title, result.time_s(frameIndex)));
         drawnow;
         if options.FigureVisible == "on" && options.Pause_s > 0
             pause(options.Pause_s);
@@ -286,18 +247,17 @@ if options.ShowAnimation && result.Success
     handles.Animation = struct("Figure", animationFigure, "Axes", animationAxes);
 end
 end
+
 %% Section 6: Local Functions
+
 function options = normalizePlotAliases(options)
-% PURPOSE
-%   - Forward deprecated display spellings through one compatibility map.
+% Forward deprecated display spellings through one compatibility map.
 if ~isstruct(options) || ~isscalar(options)
-    error("plotAzElMotion:InvalidOptions", ...
-        "optionOverrides must be a scalar struct.");
+    error("plotAzElMotion:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
 aliases = [ ...
-    "AnimationFrameStride", "FrameStride"; ...
-    "ShowKinematicPlot", "ShowKinematics"; ...
-    "AnimationPause_s", "Pause_s"];
+    "AnimationFrameStride", "FrameStride"; "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
+
 for aliasIndex = 1:size(aliases, 1)
     oldName = aliases(aliasIndex, 1);
     newName = aliases(aliasIndex, 2);
@@ -308,74 +268,63 @@ for aliasIndex = 1:size(aliases, 1)
         options = rmfield(options, oldName);
     end
 end
-compatibilityNames = ["JerkConstraintEnabled", "MaxJerk_deg_s3", ...
-    "ConfiguredFiniteMaxJerk_deg_s3", "PlotOptions"];
+compatibilityNames = ["JerkConstraintEnabled", "MaxJerk_deg_s3", "ConfiguredFiniteMaxJerk_deg_s3", "PlotOptions"];
+
 for name = compatibilityNames
     if isfield(options, name)
         options = rmfield(options, name);
     end
 end
 end
+
 function configureSpatialAxes(axesHandle)
-% PURPOSE
-%   - Apply one explicit spatial-axis style to workspace and animation axes.
+% Apply one explicit spatial-axis style to workspace and animation axes.
 hold(axesHandle, "on");
 grid(axesHandle, "on");
 box(axesHandle, "on");
 axis(axesHandle, "equal");
 end
+
 function drawSearchEdges(axesHandle, gridRecord)
-% PURPOSE
-%   - Draw retained accepted and collision-rejected visibility tests.
+% Draw retained accepted and collision-rejected visibility tests.
 if isfield(gridRecord, "DenseSeedEnvelopeUsed") && ...
-        gridRecord.DenseSeedEnvelopeUsed && ...
-        ~isempty(gridRecord.DenseSeedEnvelope_deg)
+        gridRecord.DenseSeedEnvelopeUsed && ~isempty(gridRecord.DenseSeedEnvelope_deg)
     boundary_deg = gridRecord.DenseSeedEnvelope_deg;
     plot(axesHandle, ...
         [boundary_deg(:, 1); boundary_deg(1, 1)], ...
         [boundary_deg(:, 2); boundary_deg(1, 2)], ...
-        "-.", "Color", [0.55 0.25 0.75], "LineWidth", 1.5, ...
-        "DisplayName", "Dense seed envelope");
+        "-.", "Color", [0.55 0.25 0.75], "LineWidth", 1.5, "DisplayName", "Dense seed envelope");
 end
-if isfield(gridRecord, "SeedCluster") && ...
-        ~isempty(gridRecord.SeedCluster.ClusterBoundary_deg)
+if isfield(gridRecord, "SeedCluster") && ~isempty(gridRecord.SeedCluster.ClusterBoundary_deg)
     boundary_deg = gridRecord.SeedCluster.ClusterBoundary_deg;
     plot(axesHandle, ...
         [boundary_deg(:, 1); boundary_deg(1, 1)], ...
         [boundary_deg(:, 2); boundary_deg(1, 2)], ...
-        "--", "Color", [0.85 0.45 0.10], "LineWidth", 1.5, ...
-        "DisplayName", "Seed-only obstacle cluster");
+        "--", "Color", [0.85 0.45 0.10], "LineWidth", 1.5, "DisplayName", "Seed-only obstacle cluster");
 end
-if isfield(gridRecord, "AcceptedEdges_deg") && ...
-        ~isempty(gridRecord.AcceptedEdges_deg)
-    [azimuth_deg, elevation_deg] = edgeLineData( ...
-        gridRecord.AcceptedEdges_deg);
+if isfield(gridRecord, "AcceptedEdges_deg") && ~isempty(gridRecord.AcceptedEdges_deg)
+    [azimuth_deg, elevation_deg] = edgeLineData( gridRecord.AcceptedEdges_deg);
     plot(axesHandle, azimuth_deg, elevation_deg, ...
-        "-", "Color", [0.30 0.75 0.78], "LineWidth", 0.4, ...
-        "DisplayName", "Accepted visibility edge");
+        "-", "Color", [0.30 0.75 0.78], "LineWidth", 0.4, "DisplayName", "Accepted visibility edge");
 end
-if isfield(gridRecord, "RejectedEdges_deg") && ...
-        ~isempty(gridRecord.RejectedEdges_deg)
-    [azimuth_deg, elevation_deg] = edgeLineData( ...
-        gridRecord.RejectedEdges_deg);
+if isfield(gridRecord, "RejectedEdges_deg") && ~isempty(gridRecord.RejectedEdges_deg)
+    [azimuth_deg, elevation_deg] = edgeLineData( gridRecord.RejectedEdges_deg);
     plot(axesHandle, azimuth_deg, elevation_deg, ...
-        ":", "Color", [0.90 0.55 0.55], "LineWidth", 0.4, ...
-        "DisplayName", "Collision-rejected edge");
+        ":", "Color", [0.90 0.55 0.55], "LineWidth", 0.4, "DisplayName", "Collision-rejected edge");
 end
 end
+
 function [azimuth_deg, elevation_deg] = edgeLineData(edges_deg)
-% PURPOSE
-%   - Convert N-by-4 edge endpoints to NaN-separated plot vectors.
+% Convert N-by-4 edge endpoints to NaN-separated plot vectors.
 edgeCount = size(edges_deg, 1);
-azimuth_deg = reshape([ ...
-    edges_deg(:, 1), edges_deg(:, 3), nan(edgeCount, 1)].', [], 1);
-elevation_deg = reshape([ ...
-    edges_deg(:, 2), edges_deg(:, 4), nan(edgeCount, 1)].', [], 1);
+azimuth_deg = reshape([ edges_deg(:, 1), edges_deg(:, 3), nan(edgeCount, 1)].', [], 1);
+elevation_deg = reshape([ edges_deg(:, 2), edges_deg(:, 4), nan(edgeCount, 1)].', [], 1);
 end
+
 function drawObstacles(axesHandle, obstacles, time_s, showOriginal)
-% PURPOSE
-%   - Draw original and protected geometry from one canonical source.
+% Draw original and protected geometry from one canonical source.
 obstacleColors = lines(max(1, numel(obstacles)));
+
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     obstacleColor = obstacleColors(obstacleIndex, :);
@@ -387,45 +336,40 @@ for obstacleIndex = 1:numel(obstacles)
         % before the original boundary is prepared because inflation can
         % change the vertex count and the interval correspondence.
         if isfield(originalObstacle, "InternalPreparation")
-            originalObstacle = rmfield( ...
-                originalObstacle, "InternalPreparation");
+            originalObstacle = rmfield( originalObstacle, "InternalPreparation");
         end
-        originalShape = azElInternal.obstacleShapeAtTime( ...
-            originalObstacle, time_s);
-        drawShape(axesHandle, originalShape, obstacleColor, ...
-            [0.12 0.12 0.12], "-", 0.22, "Original obstacle");
+        originalShape = azElInternal.obstacles.shapeAtTime( originalObstacle, time_s);
+        drawShape(axesHandle, originalShape, obstacleColor, [0.12 0.12 0.12], "-", 0.22, "Original obstacle");
     end
-    protectedShape = azElInternal.obstacleShapeAtTime(obstacle, time_s);
-    drawShape(axesHandle, protectedShape, "none", ...
-        0.65 * obstacleColor, "--", 0, "Protected obstacle");
+    protectedShape = azElInternal.obstacles.shapeAtTime(obstacle, time_s);
+    drawShape(axesHandle, protectedShape, "none", 0.65 * obstacleColor, "--", 0, "Protected obstacle");
 end
 end
-function drawShape(axesHandle, shape, faceColor, edgeColor, ...
-        lineStyle, faceAlpha, displayName)
-% PURPOSE
-%   - Draw one filled polygon and its boundary on explicit axes.
+
+function drawShape(axesHandle, shape, faceColor, edgeColor, lineStyle, faceAlpha, displayName)
+% Draw one filled polygon and its boundary on explicit axes.
 if isempty(shape.Vertices)
     return;
 end
 plot(axesHandle, shape, ...
     "FaceColor", faceColor, "FaceAlpha", faceAlpha, ...
-    "EdgeColor", edgeColor, "LineStyle", lineStyle, ...
-    "LineWidth", 1.2, "DisplayName", displayName);
+    "EdgeColor", edgeColor, "LineStyle", lineStyle, "LineWidth", 1.2, "DisplayName", displayName);
 end
+
 function drawObstacleLayers(axesHandle, obstacles, times_s, maximumCount)
-% PURPOSE
-%   - Draw colored obstacle slices and compatible swept surfaces.
+% Draw colored obstacle slices and compatible swept surfaces.
 timeIndices = sampledIndices(numel(times_s), maximumCount);
 obstacleColors = lines(max(1, numel(obstacles)));
 isFirstShape = true;
+
 for obstacleIndex = 1:numel(obstacles)
     obstacleColor = obstacleColors(obstacleIndex, :);
     previousAzimuth_deg = zeros(0, 1);
     previousElevation_deg = zeros(0, 1);
     previousTime_s = NaN;
+
     for timeIndex = reshape(timeIndices, 1, [])
-        shape = azElInternal.obstacleShapeAtTime( ...
-            obstacles(obstacleIndex), times_s(timeIndex));
+        shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), times_s(timeIndex));
         if isempty(shape.Vertices)
             previousAzimuth_deg = zeros(0, 1);
             previousElevation_deg = zeros(0, 1);
@@ -433,11 +377,9 @@ for obstacleIndex = 1:numel(obstacles)
             continue;
         end
         [azimuth_deg, elevation_deg] = boundary(shape);
-        topologyMatches = ...
-            isequal(size(previousAzimuth_deg), size(azimuth_deg)) && ...
+        topologyMatches = isequal(size(previousAzimuth_deg), size(azimuth_deg)) && ...
             isequal(isfinite(previousAzimuth_deg), isfinite(azimuth_deg)) && ...
-            isequal(isfinite(previousElevation_deg), ...
-            isfinite(elevation_deg));
+            isequal(isfinite(previousElevation_deg), isfinite(elevation_deg));
         if topologyMatches
             surface(axesHandle, ...
                 [previousAzimuth_deg.'; azimuth_deg.'], ...
@@ -446,8 +388,7 @@ for obstacleIndex = 1:numel(obstacles)
                 repmat(times_s(timeIndex), 1, numel(azimuth_deg))], ...
                 "FaceColor", obstacleColor, "FaceAlpha", 0.10, ...
                 "EdgeColor", 0.55 * obstacleColor, ...
-                "EdgeAlpha", 0.65, "LineWidth", 0.55, ...
-                "MeshStyle", "both", "HandleVisibility", "off");
+                "EdgeAlpha", 0.65, "LineWidth", 0.55, "MeshStyle", "both", "HandleVisibility", "off");
         end
         displayName = "";
         visibility = "off";
@@ -467,43 +408,35 @@ for obstacleIndex = 1:numel(obstacles)
     end
 end
 end
+
 function drawTargetTrack(axesHandle, goalState, displayTime_s)
-% PURPOSE
-%   - Draw a sampled moving-target track and its position at display time.
-if isfield(goalState, "targetPosition_deg") && ...
-        ~isempty(goalState.targetPosition_deg)
+% Draw a sampled moving-target track and its position at display time.
+if isfield(goalState, "targetPosition_deg") && ~isempty(goalState.targetPosition_deg)
     plot(axesHandle, goalState.targetPosition_deg(:, 1), ...
         goalState.targetPosition_deg(:, 2), "-.", ...
-        "Color", [0.65 0.10 0.65], "LineWidth", 1.4, ...
-        "DisplayName", "Moving target track");
-    targetPosition_deg = azElInternal.goalPositionAtTime( ...
-        goalState, displayTime_s);
+        "Color", [0.65 0.10 0.65], "LineWidth", 1.4, "DisplayName", "Moving target track");
+    targetPosition_deg = azElInternal.goalPositionAtTime( goalState, displayTime_s);
     plot(axesHandle, targetPosition_deg(1), targetPosition_deg(2), ...
         "d", "Color", [0.65 0.10 0.65], "MarkerFaceColor", ...
-        [0.95 0.35 0.95], "MarkerSize", 8, "LineWidth", 1.2, ...
-        "DisplayName", "Moving target");
+        [0.95 0.35 0.95], "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Moving target");
 end
 end
+
 function drawTargetTimeTrack(axesHandle, goalState)
-% PURPOSE
-%   - Draw a moving target in the time-expanded diagnostic view.
-if isfield(goalState, "targetPosition_deg") && ...
-        ~isempty(goalState.targetPosition_deg)
+% Draw a moving target in the time-expanded diagnostic view.
+if isfield(goalState, "targetPosition_deg") && ~isempty(goalState.targetPosition_deg)
     plot3(axesHandle, goalState.targetPosition_deg(:, 1), ...
         goalState.targetPosition_deg(:, 2), goalState.targetTime_s, ...
-        "-.", "Color", [0.65 0.10 0.65], "LineWidth", 1.4, ...
-        "DisplayName", "Moving target track");
-    targetPosition_deg = azElInternal.goalPositionAtTime( ...
-        goalState, goalState.time_s);
+        "-.", "Color", [0.65 0.10 0.65], "LineWidth", 1.4, "DisplayName", "Moving target track");
+    targetPosition_deg = azElInternal.goalPositionAtTime( goalState, goalState.time_s);
     plot3(axesHandle, targetPosition_deg(1), targetPosition_deg(2), ...
         goalState.time_s, "d", "Color", [0.65 0.10 0.65], ...
-        "MarkerFaceColor", [0.95 0.35 0.95], "MarkerSize", 8, ...
-        "LineWidth", 1.2, "DisplayName", "Moving target");
+        "MarkerFaceColor", [0.95 0.35 0.95], "MarkerSize", 8, "LineWidth", 1.2, "DisplayName", "Moving target");
 end
 end
+
 function times_s = visibilityLayerTimes(gridRecord, inputs)
-% PURPOSE
-%   - Select retained temporal layers or the planning endpoints.
+% Select retained temporal layers or the planning endpoints.
 times_s = zeros(0, 1);
 if isfield(gridRecord, "TemporalLayerTimes_s")
     times_s = gridRecord.TemporalLayerTimes_s;
@@ -516,9 +449,9 @@ if isempty(times_s)
 end
 times_s = unique(times_s(:));
 end
+
 function indices = sampledIndices(count, maximumCount)
-% PURPOSE
-%   - Retain evenly distributed display indices without changing counts.
+% Retain evenly distributed display indices without changing counts.
 if count <= 0
     indices = zeros(0, 1);
 elseif count <= maximumCount
@@ -527,27 +460,26 @@ else
     indices = unique(round(linspace(1, count, maximumCount))).';
 end
 end
+
 function titleText = diagnosticTitle(result, prefix)
-% PURPOSE
-%   - Include the termination reason and complete key search counts.
+% Include the termination reason and complete key search counts.
 gridRecord = result.SearchDiagnostics.Grid;
 expanded = fieldOrZero(gridRecord, "ExpandedCount");
 rejected = fieldOrZero(gridRecord, "RejectedTransitionCount");
 titleText = sprintf("%s | %s | seeds %d | expanded %d | rejected %d", ...
-    prefix, result.TerminationReason, numel(result.Seeds), ...
-    expanded, rejected);
+    prefix, result.TerminationReason, numel(result.Seeds), expanded, rejected);
 end
+
 function value = fieldOrZero(record, fieldName)
-% PURPOSE
-%   - Read one optional diagnostic count without plot-time reconstruction.
+% Read one optional diagnostic count without plot-time reconstruction.
 value = 0;
 if isfield(record, fieldName)
     value = record.(fieldName);
 end
 end
+
 function handles = emptyHandles(options)
-% PURPOSE
-%   - Define stable empty graphics output for every display combination.
+% Define stable empty graphics output for every display combination.
 handles = struct( ...
     "WorkspaceFigure", gobjects(0), ...
     "WorkspaceAxes", gobjects(0), ...
@@ -558,8 +490,5 @@ handles = struct( ...
     "KinematicAxes", gobjects(0), ...
     "KinematicsFigure", gobjects(0), ...
     "KinematicsAxes", gobjects(0), ...
-    "AnimationFigure", gobjects(0), ...
-    "AnimationAxes", gobjects(0), ...
-    "Animation", struct(), ...
-    "Options", options);
+    "AnimationFigure", gobjects(0), "AnimationAxes", gobjects(0), "Animation", struct(), "Options", options);
 end

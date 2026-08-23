@@ -65,6 +65,36 @@ options.GoalTimeMode = "earliestArrival";
 result = planAzElMotion([], initialState, goalState, limits, options);
 ```
 
+## Repository layout
+
+The stable public API stays at the repository root. Internal implementation is
+split by responsibility so visibility search, obstacle interpolation, motion
+generation, and certification are not mixed in one folder:
+
+```text
+planAzElMotion.m                 public planner
+planAzElMovingTargetIntercept.m  moving-target convenience adapter
+make* / normalize* / query*      public obstacle construction and queries
+validateAzElTrajectory.m         independent trajectory validator
+plotAzElMotion.m                 returned-result visualization
+
++azElInternal/
+  +geometry/                     polygon and clearance primitives
+  +obstacles/                    prepared dynamic obstacle histories
+  +search/                       visibility, homology, and timed seeds
+  +motion/                       quintic construction and retiming
+  +validation/                   corridor and envelope certificates
+  README.md                      internal dependency map
+examples/                        maintained executable scenarios
+tests/                           deterministic regression suites
+benchmarks/                      reproducible performance investigations
+```
+
+Names inside `+azElInternal` intentionally omit repeated `AzEl` and planner
+words where the containing package already supplies that context. For example,
+the visibility entry point is `azElInternal.search.generateTopologySeeds` and
+the candidate builder is `azElInternal.motion.solveCorridorQuintic`.
+
 Use `makeAzElObstacleData` to construct protected static or sampled moving
 polygons. It stores original and protected geometry. It applies the safety
 margin exactly once. Use `makeMovingAzElObstacleData` when a callback creates

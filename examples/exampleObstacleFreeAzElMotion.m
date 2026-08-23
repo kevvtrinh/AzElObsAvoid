@@ -26,9 +26,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", ...
-    "DirectSeedOnly", true, "MaximumSeedCount", 1), [2 2]);
+    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "DirectSeedOnly", true, "MaximumSeedCount", 1), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -36,21 +34,14 @@ obstacles = [];
 
 %% Section 3: Create Planner Inputs
 
-initialState = struct( ...
-    "time_s", 0, "position_deg", [0 0], ...
-    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-goalState = struct( ...
-    "time_s", 8, "position_deg", [4 2], ...
-    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+initialState = struct( "time_s", 0, "position_deg", [0 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+goalState = struct( "time_s", 8, "position_deg", [4 2], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 limits = struct( ...
-    "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+result = planAzElMotion( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -60,8 +51,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, displayOptions.PlotOptions);
+    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

@@ -1,6 +1,5 @@
 function azElData = makeAzElObstacleData(obstacleName, time_s, ...
-        azimuthBoundary_deg, elevationBoundary_deg, safetyMargin_deg, ...
-        constructionOptions)
+        azimuthBoundary_deg, elevationBoundary_deg, safetyMargin_deg, constructionOptions)
 %% Section 0: Header & Readme
 % SYNTAX
 %   azElData = makeAzElObstacleData( ...
@@ -47,8 +46,7 @@ end
 if nargin < 6 || isempty(constructionOptions)
     constructionOptions = struct();
 end
-validateattributes(safetyMargin_deg, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'nonnegative'});
+validateattributes(safetyMargin_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
 
 %% Section 1: Normalize Static & Sampled Boundaries
 
@@ -57,12 +55,10 @@ sampleCount = numel(time_s);
 % Numeric boundaries describe a static polygon and are repeated across the
 % supplied time base. Cell inputs preserve independent moving slices.
 if ~iscell(azimuthBoundary_deg)
-    azimuthBoundary_deg = repmat( ...
-        {double(azimuthBoundary_deg(:))}, sampleCount, 1);
+    azimuthBoundary_deg = repmat( {double(azimuthBoundary_deg(:))}, sampleCount, 1);
 end
 if ~iscell(elevationBoundary_deg)
-    elevationBoundary_deg = repmat( ...
-        {double(elevationBoundary_deg(:))}, sampleCount, 1);
+    elevationBoundary_deg = repmat( {double(elevationBoundary_deg(:))}, sampleCount, 1);
 end
 
 %% Section 2: Assemble & Validate The Output
@@ -74,8 +70,7 @@ azElData = struct( ...
     "el_deg", {reshape(elevationBoundary_deg, [], 1)}, ...
     "originalAz_deg", {reshape(azimuthBoundary_deg, [], 1)}, ...
     "originalEl_deg", {reshape(elevationBoundary_deg, [], 1)}, ...
-    "safetyMargin_deg", 0, ...
-    "status", repmat("visible", sampleCount, 1));
+    "safetyMargin_deg", 0, "status", repmat("visible", sampleCount, 1));
 % Route synthetic examples through the same validator as measured input.
 % This keeps test fixtures from relying on shapes the public planner would
 % reject in operational data.
@@ -83,6 +78,5 @@ azElData = normalizeAzElTimeObstacleData(azElData);
 % Inflation belongs exclusively to obstacle construction. Calling the
 % absolute-margin helper even for zero keeps one schema and one topology
 % path for protected geometry.
-azElData = inflateAzElObstacleData( ...
-    azElData, safetyMargin_deg, constructionOptions);
+azElData = inflateAzElObstacleData( azElData, safetyMargin_deg, constructionOptions);
 end

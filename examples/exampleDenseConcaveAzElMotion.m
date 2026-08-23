@@ -26,8 +26,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2), [2 2]);
+    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -39,22 +38,18 @@ obstacleElevation_deg = radius_deg .* sin(angle_rad);
 obstacleTime_s = [0; 20];
 safetyMargin_deg = 0.1;
 obstacles = makeAzElObstacleData( ...
-    "dense concave polygon", obstacleTime_s, ...
-    obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
+    "dense concave polygon", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 initialState = struct("time_s", 0, "position_deg", [-6 0]);
 goalState = struct("time_s", 15, "position_deg", [6 0]);
 limits = struct( ...
-    "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+result = planAzElMotion( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -64,8 +59,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, displayOptions.PlotOptions);
+    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata
@@ -76,6 +70,5 @@ result.ExampleControls = displayOptions;
 result.ExampleGeometry = struct( ...
     "obstacleTime_s", obstacleTime_s, ...
     "obstacleAzimuth_deg", obstacleAzimuth_deg, ...
-    "obstacleElevation_deg", obstacleElevation_deg, ...
-    "safetyMargin_deg", safetyMargin_deg);
+    "obstacleElevation_deg", obstacleElevation_deg, "safetyMargin_deg", safetyMargin_deg);
 end

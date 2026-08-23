@@ -781,3 +781,49 @@ workspace corner and all eight clearances are positive but as small as
 `39.7610225 s` for the extreme outline. This is a focused coverage improvement,
 not a global completeness, optimality, or runtime claim. Production remains at
 the exact 7,500-line conditional ceiling, leaving no growth margin.
+
+## Repository module assessment — 2026-08-22
+
+The largest maintainability strength is now explicit module ownership. Public
+entry points remain at the root, while internal geometry, obstacle
+preparation, visibility/timed search, continuous motion, and certification are
+separate MATLAB subpackages with concise names and documented dependency
+boundaries. The refactor removes 18 executable lines despite adding two shared
+geometry helpers. It also stops each corridor candidate from discarding and
+rebuilding the planner's immutable prepared-obstacle cache.
+
+Behavioral evidence is unchanged: all 59 tests pass; 17 maintained examples
+remain independently valid; the expected no-path example retains stable
+diagnostics; and every recorded route and duration exactly matches the prior
+boundary-support evidence. The flat-package refactor therefore has regression
+evidence across static obstacles, moving/deforming obstacles, moving targets,
+waiting, wrapping, dense fields, expected failure, and physical certificates.
+
+The largest weaknesses remain algorithmic rather than organizational. The
+finite seed portfolio is not complete, small-clearance boundary routes remain,
+and the fresh example wall sum is an unfavorable `222.7331866 s`. The inert
+public `RandomSeed` compatibility field remains intentionally retained rather
+than removed by an internal cleanup. Physical core size is 7,773 lines because
+the user authorized helpful comments above the ceiling; executable core size
+is 6,450 lines, 18 below the pre-refactor executable count.
+
+## Readability assessment — 2026-08-23
+
+The strongest current readability property is a consistent two-level comment
+contract: the primary function owns the complete Section 0 readme, while every
+local function starts with a direct explanation and relies on nearby comments
+for loops, decisions, state transitions, and failure paths. No local Section 0
+or duplicate local `PURPOSE` block remains. The largest planner and search
+files also explain why bounded fallbacks and candidate transitions occur, not
+only what each condition tests.
+
+The short-file audit found no unused production MATLAB file below 100 code
+lines. The four single-caller helpers remain separate because merging them
+would hide a stable result schema or add a distinct algorithm to an existing
+486-, 847-, or 898-line orchestrator. This improves navigation without claiming
+that file count alone proves good modularity.
+
+The latest pass was not regression-tested because the user explicitly disabled
+tests for the session. Structural text audits and `git diff --check` passed;
+the earlier planner, example, and Code Analyzer evidence remains historical
+evidence from before the final comments-only edits.

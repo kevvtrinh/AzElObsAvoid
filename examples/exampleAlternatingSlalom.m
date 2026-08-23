@@ -26,8 +26,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 3), [2 2]);
+    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 3), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -35,14 +34,12 @@ obstacleTime_s = [0; 30];
 centerAzimuth_deg = [-4; 0; 4];
 centerElevation_deg = [2.5; -2.5; 2.5];
 obstacles = combineAzElObstacles();
+
 for obstacleIndex = 1:numel(centerAzimuth_deg)
-    center_deg = [centerAzimuth_deg(obstacleIndex), ...
-        centerElevation_deg(obstacleIndex)];
-    rectangle_deg = center_deg + [ ...
-        -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
+    center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
+    rectangle_deg = center_deg + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
     obstacle = makeAzElObstacleData( ...
-        "barrier " + obstacleIndex, obstacleTime_s, ...
-        rectangle_deg(:, 1), rectangle_deg(:, 2), 0.1);
+        "barrier " + obstacleIndex, obstacleTime_s, rectangle_deg(:, 1), rectangle_deg(:, 2), 0.1);
     obstacles = combineAzElObstacles(obstacles, obstacle);
 end
 
@@ -52,14 +49,11 @@ initialState = struct("time_s", 0, "position_deg", [-8 0]);
 goalState = struct("time_s", 22, "position_deg", [8 0]);
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, ...
-    "elevationInterval_deg", [-5 5]);
+    "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "elevationInterval_deg", [-5 5]);
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+result = planAzElMotion( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -69,8 +63,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( ...
-        result, displayOptions.PlotOptions);
+    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata
@@ -80,6 +73,5 @@ result.ExampleMetrics = computeAzElExampleMetrics(result);
 result.ExampleControls = displayOptions;
 result.ExampleGeometry = struct( ...
     "obstacleTime_s", obstacleTime_s, ...
-    "centerAzimuth_deg", centerAzimuth_deg, ...
-    "centerElevation_deg", centerElevation_deg);
+    "centerAzimuth_deg", centerAzimuth_deg, "centerElevation_deg", centerElevation_deg);
 end

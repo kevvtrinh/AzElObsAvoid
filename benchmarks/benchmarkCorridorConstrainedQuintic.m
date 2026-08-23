@@ -1,5 +1,4 @@
-function report = benchmarkCorridorConstrainedQuintic( ...
-        turnCounts, benchmarkOverrides)
+function report = benchmarkCorridorConstrainedQuintic( turnCounts, benchmarkOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   report = benchmarkCorridorConstrainedQuintic()
@@ -40,40 +39,28 @@ end
 if nargin < 2 || isempty(benchmarkOverrides)
     benchmarkOverrides = struct();
 end
-validateattributes(turnCounts, {'numeric'}, ...
-    {'real', 'finite', 'vector', 'integer', 'positive'});
+validateattributes(turnCounts, {'numeric'}, {'real', 'finite', 'vector', 'integer', 'positive'});
 turnCounts = double(turnCounts(:));
 defaults = struct( ...
     "RepeatCount", 3, ...
-    "MaximumRouteVertexCount", 22, ...
-    "PrintProgress", true, ...
-    "RandomSeed", 325, ...
-    "PrototypeOptions", struct());
-[controls, unknownNames] = azElInternal.resolveOptions( ...
-    defaults, benchmarkOverrides);
+    "MaximumRouteVertexCount", 22, "PrintProgress", true, "RandomSeed", 325, "PrototypeOptions", struct());
+[controls, unknownNames] = azElInternal.resolveOptions( defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
     warning("benchmarkCorridorConstrainedQuintic:UnknownOptions", ...
-        "Ignoring unknown fields: %s. No behavior changed.", ...
-        strjoin(unknownNames, ", "));
+        "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
-validateattributes(controls.RepeatCount, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'integer', 'positive'});
-validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'integer', '>=', 2});
-validateattributes(controls.RandomSeed, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
+validateattributes(controls.RepeatCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', 2});
+validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
-    controls.PrintProgress, "PrintProgress", ...
-    "benchmarkCorridorConstrainedQuintic:InvalidPrintControl");
-if ~isstruct(controls.PrototypeOptions) || ...
-        ~isscalar(controls.PrototypeOptions)
+    controls.PrintProgress, "PrintProgress", "benchmarkCorridorConstrainedQuintic:InvalidPrintControl");
+if ~isstruct(controls.PrototypeOptions) || ~isscalar(controls.PrototypeOptions)
     error("benchmarkCorridorConstrainedQuintic:InvalidPrototypeOptions", ...
         "PrototypeOptions must be a scalar partial option struct.");
 end
 if isfield(controls.PrototypeOptions, "RouteVertexCount")
     error("benchmarkCorridorConstrainedQuintic:ConflictingRouteCount", ...
-        "Set MaximumRouteVertexCount on the benchmark rather than " + ...
-        "RouteVertexCount inside PrototypeOptions.");
+        "Set MaximumRouteVertexCount on the benchmark rather than " + "RouteVertexCount inside PrototypeOptions.");
 end
 scenarioConstants = repeatedTurnConstants();
 plannerOptions = planAzElMotion();
@@ -87,46 +74,39 @@ runCount = numel(turnCounts) * controls.RepeatCount;
 runs = repmat(emptyRunRecord(), runCount, 1);
 motionResults = cell(runCount, 1);
 runIndex = 0;
+
 for turnCountIndex = 1:numel(turnCounts)
     turnCount = turnCounts(turnCountIndex);
-    [obstacles, initialState, goalState, limits] = ...
-        createRepeatedTurnBenchmarkScenario( ...
-        turnCount, scenarioConstants);
+    [obstacles, initialState, goalState, limits] = createRepeatedTurnBenchmarkScenario( turnCount, scenarioConstants);
     rng(controls.RandomSeed, "twister");
     seedTimer = tic;
-    [seeds, seedDiagnostics] = ...
-        azElInternal.generateAzElTopologySeeds( ...
+    [seeds, seedDiagnostics] = azElInternal.search.generateTopologySeeds( ...
         obstacles, initialState, goalState, limits, plannerOptions);
     seedElapsedTime_s = toc(seedTimer);
-    visibilitySeedIndex = find( ...
-        [seeds.Source] == "visibilityGraph", 1, "first");
+    visibilitySeedIndex = find( [seeds.Source] == "visibilityGraph", 1, "first");
     if isempty(visibilitySeedIndex)
         error("benchmarkCorridorConstrainedQuintic:MissingVisibilitySeed", ...
             "Turn count %d produced no visibility-graph seed.", turnCount);
     end
     route_deg = seeds(visibilitySeedIndex).position_deg;
-    routeVertexCount = min( ...
-        controls.MaximumRouteVertexCount, size(route_deg, 1));
+    routeVertexCount = min( controls.MaximumRouteVertexCount, size(route_deg, 1));
     prototypeOptions = controls.PrototypeOptions;
     prototypeOptions.RouteVertexCount = routeVertexCount;
+
     for repeatIndex = 1:controls.RepeatCount
         runIndex = runIndex + 1;
         candidateTimer = tic;
-        motion = azElInternal.solveAzElCorridorQuintic( ...
-            obstacles, initialState, goalState, limits, route_deg, ...
-            prototypeOptions);
+        motion = azElInternal.motion.solveCorridorQuintic( ...
+            obstacles, initialState, goalState, limits, route_deg, prototypeOptions);
         candidateWallTime_s = toc(candidateTimer);
         validationTimer = tic;
-        validation = validateAzElTrajectory( ...
-            motion, obstacles, initialState, goalState, limits, ...
-            plannerOptions);
+        validation = validateAzElTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
         validationElapsedTime_s = toc(validationTimer);
         motionResults{runIndex} = motion;
         runs(runIndex) = collectRunRecord( ...
             turnCount, repeatIndex, controls.RandomSeed, route_deg, ...
             routeVertexCount, seedDiagnostics, seedElapsedTime_s, ...
-            motion, candidateWallTime_s, validation, ...
-            validationElapsedTime_s, limits);
+            motion, candidateWallTime_s, validation, validationElapsedTime_s, limits);
         if controls.PrintProgress
             printRunRecord(runs(runIndex));
         end
@@ -146,21 +126,15 @@ report = struct( ...
     "Controls", controls, ...
     "PlannerOptions", plannerOptions, ...
     "ScenarioConstants", scenarioConstants, ...
-    "TurnCounts", turnCounts, ...
-    "Runs", runTable, ...
-    "Summary", summaryTable, ...
-    "MotionResults", {motionResults});
+    "TurnCounts", turnCounts, "Runs", runTable, "Summary", summaryTable, "MotionResults", {motionResults});
 end
 
 %% Section 5: Local Functions
 
 function constants = repeatedTurnConstants()
-%% Section 0: Header & Readme
+% Freeze the maintained repeated-turn geometry and physical limits.
 % SYNTAX
 %   constants = repeatedTurnConstants()
-%**************************************************************************
-% PURPOSE
-%   - Freeze the maintained repeated-turn geometry and physical limits.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -179,18 +153,13 @@ constants = struct( ...
     "safetyMargin_deg", 0.1, ...
     "goalTimePerStage_s", 5.5, ...
     "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", [2 2], ...
-    "elevationInterval_deg", [-5 5]);
+    "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", [2 2], "elevationInterval_deg", [-5 5]);
 end
 
 function environment = benchmarkEnvironment()
-%% Section 0: Header & Readme
+% Record source, MATLAB, toolbox, CPU, and parallel-pool facts.
 % SYNTAX
 %   environment = benchmarkEnvironment()
-%**************************************************************************
-% PURPOSE
-%   - Record source, MATLAB, toolbox, CPU, and parallel-pool facts.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -226,19 +195,13 @@ environment = struct( ...
     "Computer", string(computer), ...
     "ReportedCoreCount", feature("numcores"), ...
     "ParallelPoolState", parallelPoolState, ...
-    "WorkerCount", workerCount, ...
-    "FigureVisibility", "off", ...
-    "AnimationEnabled", false, ...
-    "Verbose", false);
+    "WorkerCount", workerCount, "FigureVisibility", "off", "AnimationEnabled", false, "Verbose", false);
 end
 
 function value = commandText(status, output)
-%% Section 0: Header & Readme
+% Normalize one read-only source-control query.
 % SYNTAX
 %   value = commandText(status, output)
-%**************************************************************************
-% PURPOSE
-%   - Normalize one read-only source-control query.
 %**************************************************************************
 % INPUTS
 %   - status (numeric scalar)
@@ -260,14 +223,10 @@ end
 function record = collectRunRecord( ...
         turnCount, repeatIndex, randomSeed, route_deg, ...
         requestedRouteVertexCount, seedDiagnostics, seedElapsedTime_s, ...
-        motion, candidateWallTime_s, validation, ...
-        validationElapsedTime_s, limits)
-%% Section 0: Header & Readme
+        motion, candidateWallTime_s, validation, validationElapsedTime_s, limits)
+% Preserve timing, feasibility, quality, and certificate evidence.
 % SYNTAX
 %   record = collectRunRecord(...)
-%**************************************************************************
-% PURPOSE
-%   - Preserve timing, feasibility, quality, and certificate evidence.
 %**************************************************************************
 % INPUTS
 %   - Inputs are the request, stage timings, motion, and validation records.
@@ -286,48 +245,36 @@ record.ObstacleCount = turnCount;
 record.RouteVertexCount = size(route_deg, 1);
 record.RequestedRouteVertexCount = requestedRouteVertexCount;
 record.ReducedRouteVertexCount = size(motion.ReducedRoute_deg, 1);
-record.DecisionVariableCount = ...
-    motion.OptimizerDiagnostics.DecisionCount;
+record.DecisionVariableCount = motion.OptimizerDiagnostics.DecisionCount;
 record.CorridorRecordCount = numel(motion.SeedCorridor);
 record.TopologyGeneratedSeedCount = seedDiagnostics.GeneratedSeedCount;
 record.SeedGenerationTime_s = seedElapsedTime_s;
 record.CandidateWallTime_s = candidateWallTime_s;
 record.CandidateSolveTime_s = motion.OptimizerDiagnostics.SolveTime_s;
 record.IndependentValidationTime_s = validationElapsedTime_s;
-record.TotalWallTime_s = seedElapsedTime_s + candidateWallTime_s + ...
-    validationElapsedTime_s;
+record.TotalWallTime_s = seedElapsedTime_s + candidateWallTime_s + validationElapsedTime_s;
 record.Success = motion.Success;
 record.IndependentValidationPassed = validation.Passed;
-record.CorridorCertified = ...
-    motion.OptimizerDiagnostics.CorridorCertified;
-record.EnvelopeContainsObstacles = ...
-    motion.OptimizerDiagnostics.EnvelopeContainsObstacles;
+record.CorridorCertified = motion.OptimizerDiagnostics.CorridorCertified;
+record.EnvelopeContainsObstacles = motion.OptimizerDiagnostics.EnvelopeContainsObstacles;
 record.FallbackInvoked = false;
 record.SelectedPolylineLength_deg = sum(vecnorm(diff(route_deg), 2, 2));
 if ~isempty(motion.position_deg)
-    record.SmoothedPathLength_deg = sum( ...
-        vecnorm(diff(motion.position_deg), 2, 2));
+    record.SmoothedPathLength_deg = sum( vecnorm(diff(motion.position_deg), 2, 2));
 end
 record.MotionDuration_s = motion.MotionDuration_s;
 record.MinimumClearance_deg = validation.MinimumClearance_deg;
 record.CollisionFree = validation.CollisionFree;
-record.MaximumVelocityRatio = max( ...
-    validation.PeakVelocity_deg_s ./ limits.maxVelocity_deg_s);
-record.MaximumAccelerationRatio = max( ...
-    validation.PeakAcceleration_deg_s2 ./ ...
-    limits.maxAcceleration_deg_s2);
-record.MaximumJerkRatio = max( ...
-    validation.PeakJerk_deg_s3 ./ limits.maxJerk_deg_s3);
+record.MaximumVelocityRatio = max( validation.PeakVelocity_deg_s ./ limits.maxVelocity_deg_s);
+record.MaximumAccelerationRatio = max( validation.PeakAcceleration_deg_s2 ./ limits.maxAcceleration_deg_s2);
+record.MaximumJerkRatio = max( validation.PeakJerk_deg_s3 ./ limits.maxJerk_deg_s3);
 record.TerminationReason = motion.TerminationReason;
 end
 
 function printRunRecord(record)
-%% Section 0: Header & Readme
+% Print one complete outcome directly in the MATLAB log.
 % SYNTAX
 %   printRunRecord(record)
-%**************************************************************************
-% PURPOSE
-%   - Print one complete outcome directly in the MATLAB log.
 %**************************************************************************
 % INPUTS
 %   - record (scalar benchmark row)
@@ -347,17 +294,13 @@ fprintf( ...
     record.RouteVertexCount, record.ReducedRouteVertexCount, ...
     record.DecisionVariableCount, record.CorridorRecordCount, ...
     record.MotionDuration_s, record.MinimumClearance_deg, ...
-    record.CandidateWallTime_s, record.TotalWallTime_s, ...
-    record.TerminationReason);
+    record.CandidateWallTime_s, record.TotalWallTime_s, record.TerminationReason);
 end
 
 function summaryTable = summarizeRuns(runTable, turnCounts)
-%% Section 0: Header & Readme
+% Report first, median, minimum, and maximum timing per input scale.
 % SYNTAX
 %   summaryTable = summarizeRuns(runTable, turnCounts)
-%**************************************************************************
-% PURPOSE
-%   - Report first, median, minimum, and maximum timing per input scale.
 %**************************************************************************
 % INPUTS
 %   - runTable (table of benchmark rows)
@@ -370,6 +313,7 @@ function summaryTable = summarizeRuns(runTable, turnCounts)
 %   - Time is seconds; counts are dimensionless.
 %**************************************************************************
 summaries = repmat(emptySummaryRecord(), numel(turnCounts), 1);
+
 for turnIndex = 1:numel(turnCounts)
     rows = runTable(runTable.TurnCount == turnCounts(turnIndex), :);
     candidateTimes_s = rows.CandidateWallTime_s;
@@ -377,28 +321,23 @@ for turnIndex = 1:numel(turnCounts)
     summaries(turnIndex).TurnCount = turnCounts(turnIndex);
     summaries(turnIndex).RepeatCount = height(rows);
     summaries(turnIndex).SuccessCount = sum(rows.Success);
-    summaries(turnIndex).ValidationPassCount = ...
-        sum(rows.IndependentValidationPassed);
+    summaries(turnIndex).ValidationPassCount = sum(rows.IndependentValidationPassed);
     summaries(turnIndex).FirstCandidateWallTime_s = candidateTimes_s(1);
     summaries(turnIndex).MedianCandidateWallTime_s = median(candidateTimes_s);
     summaries(turnIndex).MinimumCandidateWallTime_s = min(candidateTimes_s);
     summaries(turnIndex).MaximumCandidateWallTime_s = max(candidateTimes_s);
     summaries(turnIndex).MedianTotalWallTime_s = median(totalTimes_s);
     summaries(turnIndex).MotionDuration_s = rows.MotionDuration_s(1);
-    summaries(turnIndex).MinimumClearance_deg = ...
-        rows.MinimumClearance_deg(1);
+    summaries(turnIndex).MinimumClearance_deg = rows.MinimumClearance_deg(1);
     summaries(turnIndex).TerminationReason = rows.TerminationReason(1);
 end
 summaryTable = struct2table(summaries);
 end
 
 function record = emptyRunRecord()
-%% Section 0: Header & Readme
+% Define the stable benchmark-row field order and empty values.
 % SYNTAX
 %   record = emptyRunRecord()
-%**************************************************************************
-% PURPOSE
-%   - Define the stable benchmark-row field order and empty values.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -436,18 +375,13 @@ record = struct( ...
     "MinimumClearance_deg", NaN, ...
     "CollisionFree", false, ...
     "MaximumVelocityRatio", NaN, ...
-    "MaximumAccelerationRatio", NaN, ...
-    "MaximumJerkRatio", NaN, ...
-    "TerminationReason", "notRun");
+    "MaximumAccelerationRatio", NaN, "MaximumJerkRatio", NaN, "TerminationReason", "notRun");
 end
 
 function record = emptySummaryRecord()
-%% Section 0: Header & Readme
+% Define the stable per-scale summary field order.
 % SYNTAX
 %   record = emptySummaryRecord()
-%**************************************************************************
-% PURPOSE
-%   - Define the stable per-scale summary field order.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -467,8 +401,5 @@ record = struct( ...
     "MedianCandidateWallTime_s", NaN, ...
     "MinimumCandidateWallTime_s", NaN, ...
     "MaximumCandidateWallTime_s", NaN, ...
-    "MedianTotalWallTime_s", NaN, ...
-    "MotionDuration_s", NaN, ...
-    "MinimumClearance_deg", NaN, ...
-    "TerminationReason", "notRun");
+    "MedianTotalWallTime_s", NaN, "MotionDuration_s", NaN, "MinimumClearance_deg", NaN, "TerminationReason", "notRun");
 end

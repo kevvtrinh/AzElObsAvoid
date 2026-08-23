@@ -20,11 +20,14 @@ function position_deg = goalPositionAtTime(goalState, time_s)
 % UNITS
 %   - Position is degrees. Time is seconds.
 %**************************************************************************
+
 %% Section 1: Evaluate The Selected Goal Representation
+
+% Moving goals carry their interpolation method in the normalized goal state.
+% Fixed goals deliberately ignore query time and preserve a 1-by-2 row shape.
 if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
     position_deg = interp1( ...
-        goalState.targetTime_s, goalState.targetPosition_deg, ...
-        time_s, goalState.InterpolationMethod);
+        goalState.targetTime_s, goalState.targetPosition_deg, time_s, goalState.InterpolationMethod);
 else
     position_deg = goalState.position_deg;
 end

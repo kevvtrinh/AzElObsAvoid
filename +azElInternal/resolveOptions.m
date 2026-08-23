@@ -1,9 +1,7 @@
-function [resolvedOptions, unknownNames] = resolveOptions( ...
-        defaultOptions, optionOverrides)
+function [resolvedOptions, unknownNames] = resolveOptions(defaultOptions, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [resolvedOptions, unknownNames] = ...
-%       azElInternal.resolveOptions(defaultOptions, optionOverrides)
+%   [resolvedOptions, unknownNames] = azElInternal.resolveOptions(defaultOptions, optionOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Apply the repository-wide partial-option merge invariant once.
@@ -26,8 +24,11 @@ function [resolvedOptions, unknownNames] = resolveOptions( ...
 %   - Values retain the units documented by their owning public function.
 %**************************************************************************
 
-if ~isstruct(defaultOptions) || ~isscalar(defaultOptions) || ...
-        ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
+%% Section 1: Classify Override Names Without Reordering Defaults
+
+% Unknown names are returned to the public owner so it can emit one warning
+% with the correct identifier. They are never copied into runtime behavior.
+if ~isstruct(defaultOptions) || ~isscalar(defaultOptions) || ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("azElInternal:resolveOptions:InvalidStructures", ...
         "defaultOptions and optionOverrides must be scalar structs.");
 end
@@ -37,7 +38,14 @@ overrideNames = string(fieldnames(optionOverrides));
 unknownNames = setdiff(overrideNames, defaultNames, "stable");
 knownNames = intersect(overrideNames, defaultNames, "stable");
 
+%% Section 2: Apply Only Known Nonempty Overrides
+
+% Empty means "use the default" throughout the repository. Centralizing that
+% rule prevents individual planner stages from interpreting partial options
+% differently.
 resolvedOptions = defaultOptions;
+
+% Apply overrides in caller order while preserving the default struct's field order.
 for fieldIndex = 1:numel(knownNames)
     fieldName = knownNames(fieldIndex);
     if ~isempty(optionOverrides.(fieldName))

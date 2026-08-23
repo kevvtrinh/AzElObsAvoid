@@ -1984,3 +1984,84 @@ lines. The production diff is net zero lines through local compaction; the
 dynamic-timing test adds 25 lines. Temporary diagnostic and example-gate
 harnesses were removed, and the twelve pre-existing untracked benchmark
 artifacts were left untouched. No commit or push was performed.
+
+## Repository cleanup and module refactor — 2026-08-22
+
+The repository cleanup retained every production algorithm and removed only
+resolved generated outputs. Twenty-three internal implementation files moved
+from one flat package into `geometry`, `obstacles`, `search`, `motion`, and
+`validation` subpackages. Internal names now rely on package context, for
+example `azElInternal.search.generateTopologySeeds` and
+`azElInternal.motion.solveCorridorQuintic`. The public planner, obstacle,
+validation, plotting, and example entry points did not change.
+
+Source cleanup consolidated protected/original boundary-history
+normalization, polyshape construction, and boundary-edge extraction. Dense
+history vertices are collected through preallocated cells. Corridor solves
+reuse immutable prepared obstacle caches passed by the planner; raw benchmark
+calls still normalize and prepare once. No planner tolerance, work limit,
+seed order, geometry, validation rule, or result field changed.
+
+Seven tracked `scratch/` MATLAB/CSV outputs were removed and remain
+recoverable from Git. Ignore rules now cover reproducible scratch, MAT, PNG,
+run-CSV, and summary-CSV outputs. The twelve pre-existing untracked benchmark
+artifacts remain on disk and are now ignored.
+
+Verification evidence:
+
+- Pre-change baseline: Code Analyzer `0`; tests `59/59` in `139.173458 s`.
+- Focused normalization/provenance checks: `5/5` in `2.306672 s`.
+- Post-refactor Code Analyzer: `0` across all nonscratch MATLAB files.
+- Post-refactor tests: `59/59` in `150.384070 s`.
+- Protected and original boundary-size errors retained their exact identifiers.
+- Fresh-process examples: 17 independently validated successes and one
+  validated expected `noValidatedSeed` failure. Every successful polyline,
+  smoothed length, and duration exactly matches the
+  `working-tree-boundary-support-final` evidence.
+- Fresh-process example wall sum: an unfavorable `222.7331866 s` versus the
+  prior `205.6452420 s`; no runtime improvement is claimed. The largest walls
+  remain moving/deforming outline `60.1933815 s` and extreme outline
+  `41.5000613 s`.
+- Four-wall hairpin raw-solver benchmark smoke: planner/validation/corridor
+  certificate `1/1/1`, duration `54.6635704076809 s`, candidate solve
+  `2.6237182 s`, and `corridorPrototypeValidated` termination.
+- Exact example rows are appended to `benchmark.csv` under
+  `working-tree-repository-cleanup`.
+
+Core MATLAB changes from 35 files / 7,500 physical lines / 6,468 executable
+lines / 898 comment lines to 37 files / 7,773 physical lines / 6,450
+executable lines / 1,200 comment lines. Executable code decreased by 18 lines.
+The 273-line physical overage is documentation/comment growth explicitly
+authorized by the user after regression. The largest production file is
+`search/generateTopologySeeds.m` at 886 lines; all production files remain
+below 900 lines.
+
+The Windows MATLAB launcher returned a pre-startup `File system
+inconsistency` error for long inline commands and one nested shell loop.
+Short harness-based fresh processes completed all reported checks. The
+temporary harness is removed before handoff. No commit or push was requested.
+
+## Readability and short-file audit — 2026-08-23
+
+The follow-up readability pass is comments and formatting only. Section 0 is
+now reserved for each file's primary function: all 86 local Section 0 headers
+were removed, all 229 local functions begin with a direct purpose sentence,
+and duplicate local `PURPOSE` blocks were removed. The 131 internal loops retain
+immediately preceding explanations, and additional decision comments describe
+fallbacks, work limits, candidate acceptance, retiming, and early exits in the
+four largest motion/search files.
+
+All 22 production MATLAB files below 100 nonblank, noncomment code lines were
+audited for textual callers. None is uncalled. Eighteen have multiple callers;
+the four single-caller files own a stable result schema or a distinct algorithm
+extracted from an already-large orchestrator. The complete rationale is in
+`short_file_rationale.md`.
+
+Text-only checks found zero local Section 0 headers, missing local-function
+purpose comments, unexplained internal loops, bare assignment continuations,
+code continuations at or below 120 characters, trailing whitespace, or
+physical-contract hash mismatches. `git diff --check` passed. Per the user's
+explicit instruction for this session, MATLAB tests, Code Analyzer, and
+examples were not rerun after this comments-only pass. The earlier 59/59 and
+18-example results above predate the latest comment changes and are not claimed
+as post-pass execution evidence.

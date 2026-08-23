@@ -44,6 +44,7 @@ pendingCount = nargin;
 obstacleCapacity = 16;
 obstacleItems = cell(obstacleCapacity, 1);
 obstacleCount = 0;
+
 while pendingCount > 0
     pendingInputValue = pendingValues{pendingCount};
     topLevelInputIndex = pendingInputIndices(pendingCount);
@@ -56,8 +57,7 @@ while pendingCount > 0
         addedObstacleCount = numel(flattenedStructItems);
         requiredObstacleCapacity = obstacleCount + addedObstacleCount;
         if requiredObstacleCapacity > obstacleCapacity
-            obstacleCapacity = max( ...
-                2 * obstacleCapacity, requiredObstacleCapacity);
+            obstacleCapacity = max( 2 * obstacleCapacity, requiredObstacleCapacity);
             obstacleItems{obstacleCapacity, 1} = [];
         end
         obstacleWriteRows = obstacleCount + (1:addedObstacleCount);
@@ -68,8 +68,7 @@ while pendingCount > 0
         reversedNestedValues = flipud(pendingInputValue(:));
         requiredPendingCapacity = pendingCount + nestedValueCount;
         if requiredPendingCapacity > pendingCapacity
-            pendingCapacity = max( ...
-                2 * pendingCapacity, requiredPendingCapacity);
+            pendingCapacity = max( 2 * pendingCapacity, requiredPendingCapacity);
             pendingValues{pendingCapacity, 1} = [];
             pendingInputIndices(pendingCapacity, 1) = 0;
         end
@@ -95,9 +94,9 @@ end
 % one schema gate. A bad obstacle therefore cannot survive merely because
 % it arrived inside a cell or struct array.
 normalizedObstacles = cell(size(obstacleItems));
+
 for obstacleIndex = 1:numel(obstacleItems)
-    normalizedObstacles{obstacleIndex} = normalizeAzElTimeObstacleData( ...
-        obstacleItems{obstacleIndex});
+    normalizedObstacles{obstacleIndex} = normalizeAzElTimeObstacleData( obstacleItems{obstacleIndex});
 end
 azElObstacles = vertcat(normalizedObstacles{:});
 end
@@ -105,16 +104,12 @@ end
 %% Section 4: Local Functions
 
 function azElObstacles = emptyCanonicalAzElObstacles()
-% PURPOSE
-%   - Define canonical obstacle field order for an empty collection.
+% Define canonical obstacle field order for an empty collection.
 template = struct( ...
     "targetName", "", ...
     "time_s", zeros(0, 1), ...
     "az_deg", {cell(0, 1)}, ...
     "el_deg", {cell(0, 1)}, ...
-    "originalAz_deg", {cell(0, 1)}, ...
-    "originalEl_deg", {cell(0, 1)}, ...
-    "safetyMargin_deg", 0, ...
-    "status", strings(0, 1));
+    "originalAz_deg", {cell(0, 1)}, "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));
 azElObstacles = repmat(template, 0, 1);
 end

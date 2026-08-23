@@ -1,0 +1,473 @@
+function motion = buildQuinticSpline(route_deg, initialState, goalState, limits, optionOverrides)
+%% Section 0: Header & Readme
+% SYNTAX
+%   options = azElInternal.motion.buildQuinticSpline()
+%   motion = azElInternal.motion.buildQuinticSpline( ...
+%       route_deg, initialState, goalState, limits, optionOverrides)
+%**************************************************************************
+% PURPOSE
+%   - Build a deterministic C3 quintic representation for one route. A direct
+%     two-point rest-to-rest request uses an exact jerk-switching profile;
+%     longer routes use an open B-spline whose endpoint controls and duration
+%     are solved from the requested state and derivative limits.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 array), ordered [azimuth elevation] waypoints.
+%   - initialState, goalState (scalar structs), endpoint motion states.
+%   - limits (scalar struct), velocity, acceleration, and jerk limits.
+%   - optionOverrides (scalar struct), partial spline controls.
+%**************************************************************************
+% OUTPUTS
+%   - motion (scalar struct), sampled and exact polynomial motion record.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; time is seconds; derivatives use deg/s powers.
+%**************************************************************************
+
+%% Section 1: Validate Inputs And Resolve Controls
+
+% This is a geometry-free motion constructor. Collision checks belong to the
+% corridor solver and public validator, so this function concentrates on
+% endpoint constraints, continuity, time scaling, and polynomial sampling.
+defaults = struct( ...
+    "ControlPointOffsets_deg", zeros(0, 2), ...
+    "SpanWeights", zeros(0, 1), "SampleTime_s", 0.05, "GoalTimeMode", "earliestArrival", "AllowAzimuthWrapping", false);
+% A zero-input call exposes resolved defaults for callers that build option UIs or documentation.
+if nargin == 0
+    motion = defaults;
+    return;
+end
+% Fail at the representation boundary before any route or timing assumptions are made.
+if nargin < 4
+    error("buildQuinticSpline:MissingInputs", "route_deg, initialState, goalState, and limits are required.");
+end
+% Treat an omitted override record as an empty partial update to the defaults.
+if nargin < 5 || isempty(optionOverrides)
+    optionOverrides = struct();
+end
+[options, unknownNames] = azElInternal.resolveOptions( defaults, optionOverrides);
+% Unknown fields are ignored deliberately, but warn once so misspelled controls are visible.
+if ~isempty(unknownNames)
+    warning("buildQuinticSpline:UnknownOptions", ...
+        "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
+end
+validateattributes(route_deg, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2});
+route_deg = double(route_deg);
+% A motion needs two endpoints even when it contains no interior turn.
+if size(route_deg, 1) < 2
+    error("buildQuinticSpline:InvalidRoute", "route_deg must have at least two rows.");
+end
+% Positive elapsed time is required by every derivative and duration conversion below.
+if goalState.time_s <= initialState.time_s
+    error("buildQuinticSpline:InvalidTimeWindow", "goalState.time_s must be greater than initialState.time_s.");
+end
+endpointTolerance = 1e-10;
+endpointDerivatives = [initialState.velocity_deg_s, ...
+    initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+hasNonzeroEndpointDerivative = max(abs(endpointDerivatives)) > endpointTolerance;
+if max(abs(route_deg(1, :) - initialState.position_deg)) > ...
+        endpointTolerance || max(abs(route_deg(end, :) - goalState.position_deg)) > endpointTolerance
+    error("buildQuinticSpline:RouteEndpointMismatch", ...
+        "The first and final route rows must match the requested positions.");
+end
+interiorCount = size(route_deg, 1) - 2;
+% Default offsets preserve the input route; optimization may supply explicit interior adjustments.
+if isempty(options.ControlPointOffsets_deg)
+    options.ControlPointOffsets_deg = zeros(interiorCount, 2);
+end
+validateattributes(options.ControlPointOffsets_deg, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2});
+if size(options.ControlPointOffsets_deg, 1) ~= interiorCount
+    error("buildQuinticSpline:OffsetCountMismatch", ...
+        "ControlPointOffsets_deg must have %d rows; observed %d.", ...
+        interiorCount, size(options.ControlPointOffsets_deg, 1));
+end
+spanCount = size(route_deg, 1) - 1;
+% Equal weights provide a neutral initial time allocation when no caller preference exists.
+if isempty(options.SpanWeights)
+    options.SpanWeights = ones(spanCount, 1);
+end
+validateattributes(options.SpanWeights, {'numeric'}, {'real', 'finite', 'vector', 'positive'});
+options.SpanWeights = double(options.SpanWeights(:));
+if numel(options.SpanWeights) ~= spanCount
+    error("buildQuinticSpline:SpanWeightCountMismatch", ...
+        "SpanWeights must contain %d values; observed %d.", spanCount, numel(options.SpanWeights));
+end
+validateattributes(options.SampleTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+options.GoalTimeMode = string(options.GoalTimeMode);
+if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["earliestArrival", "fixedArrival"])
+    error("buildQuinticSpline:InvalidGoalTimeMode", "GoalTimeMode must be earliestArrival or fixedArrival.");
+end
+options.AllowAzimuthWrapping = azElInternal.normalizeLogicalScalar( ...
+    options.AllowAzimuthWrapping, "AllowAzimuthWrapping", "buildQuinticSpline:InvalidWrappingOption");
+% Use the closed-form jerk-switching solution for the simplest rest-to-rest move.
+if size(route_deg, 1) == 2 && ~hasNonzeroEndpointDerivative
+    motion = buildStraightJerkSwitchingMotion( route_deg, initialState, goalState, limits, options);
+    return;
+end
+
+%% Section 2: Assemble The Open Quintic B-Spline
+
+% Repeating each endpoint three times creates enough endpoint control freedom
+% for a quintic spline. Interior route rows remain fly-through controls rather
+% than mandatory stops.
+degree = 5;
+controlPoint_deg = [ ...
+    repmat(route_deg(1, :), 3, 1); ...
+    route_deg(2:end - 1, :) + options.ControlPointOffsets_deg; repmat(route_deg(end, :), 3, 1)];
+baseSpanDuration_s = options.SpanWeights / mean(options.SpanWeights);
+% Nonzero endpoint derivatives require exact endpoint control-point constraints.
+if hasNonzeroEndpointDerivative
+    [controlPoint_deg, spanDuration_s, polynomial] = constructEndpointConstrainedMotion( ...
+        controlPoint_deg, degree, initialState, goalState, limits, baseSpanDuration_s, options.GoalTimeMode);
+else
+    basePolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+        controlPoint_deg, degree, initialState.time_s, baseSpanDuration_s);
+% -- Apply a deterministic continuous kinematic time scale. --
+% Stretching time lowers velocity linearly, acceleration quadratically, and
+% jerk cubically. Exact polynomial extrema—not only output samples—determine
+% the required common duration scale.
+[peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = continuousDerivativePeaks(basePolynomial);
+velocityScale = max( peakVelocity_deg_s ./ limits.maxVelocity_deg_s);
+accelerationScale = sqrt(max( peakAcceleration_deg_s2 ./ limits.maxAcceleration_deg_s2));
+jerkScale = nthroot(max( peakJerk_deg_s3 ./ limits.maxJerk_deg_s3), 3);
+minimumSpanDuration_s = 1e-3;
+minimumDurationScale = minimumSpanDuration_s / min(baseSpanDuration_s);
+fixedDurationScale = 0;
+% Fixed arrival consumes the caller's complete time window; earliest arrival derives its own duration.
+if options.GoalTimeMode == "fixedArrival"
+    requestedDuration_s = goalState.time_s - initialState.time_s;
+    fixedDurationScale = requestedDuration_s / sum(baseSpanDuration_s);
+end
+durationScale = max([velocityScale, accelerationScale, jerkScale, minimumDurationScale, fixedDurationScale]);
+% The small factor prevents equality-roundoff from appearing as a violation.
+durationRoundoffScale = 1 + 64 * eps;
+if options.GoalTimeMode == "fixedArrival"
+    durationRoundoffScale = 1;
+end
+spanDuration_s = baseSpanDuration_s * durationScale * durationRoundoffScale;
+if options.GoalTimeMode == "fixedArrival"
+    spanDuration_s(end) = goalState.time_s - initialState.time_s - sum(spanDuration_s(1:end - 1));
+end
+polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+    controlPoint_deg, degree, initialState.time_s, spanDuration_s);
+end
+
+%% Section 3: Sample And Independently Validate The Motion
+
+% Samples form the user-facing history. The exact piecewise polynomial remains
+% authoritative for between-sample bounds, continuity, and later collision
+% validation.
+[time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
+    jerk_deg_s3] = samplePolynomial(polynomial, options.SampleTime_s);
+continuity = continuityDiagnostics(polynomial);
+motion = emptyMotion(options);
+motion.MotionSource = "corridorQuintic";
+motion.FinalTime_s = polynomial.FinalTime_s;
+motion.MotionDuration_s = polynomial.FinalTime_s - initialState.time_s;
+motion.IntegratedSquaredJerk_deg2_s5 = integratedSquaredJerk(polynomial);
+motion.time_s = time_s;
+motion.position_deg = position_deg;
+motion.velocity_deg_s = velocity_deg_s;
+motion.acceleration_deg_s2 = acceleration_deg_s2;
+motion.jerk_deg_s3 = jerk_deg_s3;
+motion.Polynomial = polynomial;
+motion.Route_deg = route_deg;
+motion.ControlPoint_deg = controlPoint_deg;
+motion.KnotTime_s = knotTime(initialState.time_s, spanDuration_s, degree);
+motion.SpanDuration_s = spanDuration_s;
+motion.Continuity = continuity;
+relativeTimingParameterCount = max(0, spanCount - 1);
+motion.RepresentationDiagnostics = struct( ...
+    "Degree", degree, ...
+    "SpanCount", spanCount, ...
+    "ControlPointOffsetParameterCount", 2 * interiorCount, ...
+    "RelativeTimingParameterCount", relativeTimingParameterCount, ...
+    "TotalParameterCount", ...
+    2 * interiorCount + relativeTimingParameterCount, ...
+    "InteriorRouteInterpolated", false, "MaintainedValidatorCompatible", true);
+validatorOptions = planAzElMotion();
+validatorOptions.GoalTimeMode = options.GoalTimeMode;
+validatorOptions.SampleTime_s = options.SampleTime_s;
+validatorOptions.AllowAzimuthWrapping = options.AllowAzimuthWrapping;
+validation = validateAzElTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
+motion.Validation = validation;
+motion.Success = validation.Passed && continuity.C3Continuous;
+% Keep success and failure messages tied to the same independently validated result record.
+if motion.Success
+    motion.Message = "The quintic B-spline passed independent validation.";
+    motion.TerminationReason = "quinticValidated";
+else
+    motion.Message = "The quintic B-spline failed: " + validation.Message;
+    motion.TerminationReason = "quinticValidationFailed";
+end
+end
+
+%% Section 4: Local Functions
+
+function [controlPoint_deg, spanDuration_s, polynomial] = constructEndpointConstrainedMotion( ...
+        controlPoint_deg, degree, initialState, goalState, limits, baseSpanDuration_s, goalTimeMode)
+% Solve exact endpoint control points and apply a bounded continuous kinematic retime without changing interior fly-through controls.
+minimumSpanDuration_s = 1e-3;
+minimumDurationScale = minimumSpanDuration_s / min(baseSpanDuration_s);
+if goalTimeMode == "fixedArrival"
+    requestedDuration_s = goalState.time_s - initialState.time_s;
+    durationScale = requestedDuration_s / sum(baseSpanDuration_s);
+    spanDuration_s = baseSpanDuration_s * durationScale;
+    controlPoint_deg = endpointControlPoints( controlPoint_deg, degree, initialState, goalState, spanDuration_s);
+    polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+        controlPoint_deg, degree, initialState.time_s, spanDuration_s);
+    return;
+end
+durationScale = minimumDurationScale;
+maximumRetimePassCount = 16;
+
+% Recompute endpoint controls after each time stretch until every exact derivative peak fits.
+for passIndex = 1:maximumRetimePassCount
+    spanDuration_s = baseSpanDuration_s * durationScale;
+    trialControlPoint_deg = endpointControlPoints( controlPoint_deg, degree, initialState, goalState, spanDuration_s);
+    polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+        trialControlPoint_deg, degree, initialState.time_s, spanDuration_s);
+    [peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = continuousDerivativePeaks(polynomial);
+    requiredGrowth = max([ ...
+        peakVelocity_deg_s ./ limits.maxVelocity_deg_s, ...
+        sqrt(peakAcceleration_deg_s2 ./ limits.maxAcceleration_deg_s2), ...
+        nthroot(peakJerk_deg_s3 ./ limits.maxJerk_deg_s3, 3)]);
+    if requiredGrowth <= 1 + 64 * eps
+        controlPoint_deg = trialControlPoint_deg;
+        return;
+    end
+    durationScale = durationScale * requiredGrowth * (1 + 64 * eps);
+end
+controlPoint_deg = trialControlPoint_deg;
+end
+
+function controlPoint_deg = endpointControlPoints(controlPoint_deg, degree, initialState, goalState, spanDuration_s)
+% Enforce position, velocity, and acceleration at both spline endpoints through the exact linear control-point-to-polynomial map.
+controlCount = size(controlPoint_deg, 1);
+unknownIndex = [1 2 3 controlCount - 2 controlCount - 1 controlCount];
+fixedControlPoint_deg = controlPoint_deg;
+fixedControlPoint_deg(unknownIndex, :) = 0;
+    fixedPolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+    fixedControlPoint_deg, degree, initialState.time_s, spanDuration_s);
+endpointMatrix = zeros(6);
+
+% Perturb each unknown endpoint control once to build its exact endpoint-state column.
+for basisIndex = 1:numel(unknownIndex)
+    basisControlPoint_deg = fixedControlPoint_deg;
+    basisControlPoint_deg(unknownIndex(basisIndex), :) = 1;
+    basisPolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
+        basisControlPoint_deg, degree, initialState.time_s, spanDuration_s);
+    endpointMatrix(:, basisIndex) = endpointVector(basisPolynomial, 1) - endpointVector(fixedPolynomial, 1);
+end
+
+% Solve the same six-by-six endpoint map separately for azimuth and elevation.
+for axisIndex = 1:2
+    targetEndpoint = [ ...
+        initialState.position_deg(axisIndex); ...
+        initialState.velocity_deg_s(axisIndex); ...
+        initialState.acceleration_deg_s2(axisIndex); ...
+        goalState.position_deg(axisIndex); ...
+        goalState.velocity_deg_s(axisIndex); goalState.acceleration_deg_s2(axisIndex)];
+    fixedEndpoint = endpointVector(fixedPolynomial, axisIndex);
+    controlPoint_deg(unknownIndex, axisIndex) = endpointMatrix \ (targetEndpoint - fixedEndpoint);
+end
+end
+
+function value = endpointVector(polynomial, axisIndex)
+% Return exact initial and terminal position-through-acceleration.
+value = [ ...
+    polynomial.positionPower_deg(1, axisIndex, 1); ...
+    polynomial.velocityPower_deg_s(1, axisIndex, 1); ...
+    polynomial.accelerationPower_deg_s2(1, axisIndex, 1); ...
+    polynomial.TerminalState.position_deg(axisIndex); ...
+    polynomial.TerminalState.velocity_deg_s(axisIndex); polynomial.TerminalState.acceleration_deg_s2(axisIndex)];
+end
+
+function motion = buildStraightJerkSwitchingMotion(route_deg, initialState, goalState, limits, options)
+% Build the minimum-time straight scalar path with bounded piecewise constant jerk and store it in the maintained quintic coefficient schema.
+profile = azElInternal.motion.buildStraightJerkProfile( route_deg, initialState, limits);
+delta_deg = profile.Delta_deg;
+phaseDuration_s = profile.PhaseDuration_s;
+phaseJerk_s3 = profile.PhaseJerk_s3;
+polynomial = profile.Polynomial;
+if options.GoalTimeMode == "fixedArrival"
+    scale = (goalState.time_s - initialState.time_s) / (polynomial.FinalTime_s - initialState.time_s);
+    if scale >= 1
+        phaseDuration_s = scale * phaseDuration_s;
+        phaseJerk_s3 = phaseJerk_s3 / scale^3;
+        polynomial.SegmentDuration_s = phaseDuration_s;
+        polynomial.SegmentStartTime_s = initialState.time_s + [0; cumsum(phaseDuration_s(1:end - 1))];
+        polynomial.FinalTime_s = goalState.time_s;
+        polynomial.velocityPower_deg_s = polynomial.velocityPower_deg_s / scale;
+        polynomial.accelerationPower_deg_s2 = polynomial.accelerationPower_deg_s2 / scale^2;
+        polynomial.jerkPower_deg_s3 = polynomial.jerkPower_deg_s3 / scale^3;
+    end
+end
+segmentStartTime_s = polynomial.SegmentStartTime_s;
+segmentCount = polynomial.SegmentCount;
+finalTime_s = polynomial.FinalTime_s;
+[time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
+    jerk_deg_s3] = samplePolynomial(polynomial, options.SampleTime_s);
+motion = emptyMotion(options);
+motion.MotionSource = "corridorQuintic";
+motion.FinalTime_s = finalTime_s;
+motion.MotionDuration_s = finalTime_s - initialState.time_s;
+motion.IntegratedSquaredJerk_deg2_s5 = sum(delta_deg.^2) * sum(phaseJerk_s3.^2 .* phaseDuration_s);
+motion.time_s = time_s;
+motion.position_deg = position_deg;
+motion.velocity_deg_s = velocity_deg_s;
+motion.acceleration_deg_s2 = acceleration_deg_s2;
+motion.jerk_deg_s3 = jerk_deg_s3;
+motion.Polynomial = polynomial;
+motion.Route_deg = route_deg;
+motion.ControlPoint_deg = route_deg;
+motion.KnotTime_s = [segmentStartTime_s.', finalTime_s];
+motion.SpanDuration_s = phaseDuration_s;
+motion.RepresentationDiagnostics = struct( ...
+    "Degree", 5, "SpanCount", segmentCount, ...
+    "ControlPointOffsetParameterCount", 0, ...
+    "RelativeTimingParameterCount", 0, "TotalParameterCount", 0, ...
+    "InteriorRouteInterpolated", true, "MaintainedValidatorCompatible", true, "ProfileFamily", "straightJerkSwitching");
+motion.Continuity = continuityDiagnostics(polynomial);
+validatorOptions = planAzElMotion();
+validatorOptions.GoalTimeMode = options.GoalTimeMode;
+validatorOptions.SampleTime_s = options.SampleTime_s;
+validatorOptions.AllowAzimuthWrapping = options.AllowAzimuthWrapping;
+motion.Validation = validateAzElTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
+motion.Success = motion.Validation.Passed;
+if motion.Success
+    motion.Message = "The straight jerk-switching quintic passed independent validation.";
+    motion.TerminationReason = "quinticValidated";
+else
+    motion.Message = "The straight jerk-switching quintic failed: " + motion.Validation.Message;
+    motion.TerminationReason = "quinticValidationFailed";
+end
+end
+
+function knots_s = knotTime(initialTime_s, spanDuration_s, degree)
+% Build one open knot vector with simple interior physical-time knots.
+spanBoundary_s = initialTime_s + [0; cumsum(spanDuration_s(:))];
+knots_s = [ ...
+    repmat(spanBoundary_s(1), 1, degree + 1), spanBoundary_s(2:end - 1).', repmat(spanBoundary_s(end), 1, degree + 1)];
+end
+
+function [peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = continuousDerivativePeaks(polynomial)
+% Measure complete-span derivative peaks at every exact extremum.
+peakVelocity_deg_s = derivativePeak( polynomial.velocityPower_deg_s);
+peakAcceleration_deg_s2 = derivativePeak( polynomial.accelerationPower_deg_s2);
+peakJerk_deg_s3 = derivativePeak(polynomial.jerkPower_deg_s3);
+end
+
+function peak = derivativePeak(powerArray)
+% Measure one two-axis piecewise polynomial over every normalized span.
+peak = [0 0];
+
+% Inspect every polynomial span because a global peak can occur in any segment.
+for segmentIndex = 1:size(powerArray, 1)
+
+    % Find exact extrema independently for azimuth and elevation coefficients.
+    for axisIndex = 1:2
+        powerCoefficient = reshape( powerArray(segmentIndex, axisIndex, :), [], 1);
+        derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* powerCoefficient(2:end);
+        lastDerivativeIndex = find( derivativeCoefficient ~= 0, 1, "last");
+        candidateTau = [0; 1];
+        if ~isempty(lastDerivativeIndex)
+            stationaryRoot = roots(flip( derivativeCoefficient(1:lastDerivativeIndex)));
+            rootTolerance = 1e-9;
+            stationaryTau = real(stationaryRoot);
+            stationaryTau = stationaryTau( stationaryTau >= -rootTolerance & stationaryTau <= 1 + rootTolerance);
+            candidateTau = [candidateTau; min(max(stationaryTau, 0), 1)]; %#ok<AGROW>
+        end
+        candidateValue = polyval(flip(powerCoefficient), candidateTau);
+        peak(axisIndex) = max(peak(axisIndex), max(abs(candidateValue)));
+    end
+end
+end
+
+function [time_s, position_deg, velocity_deg_s, ...
+        acceleration_deg_s2, jerk_deg_s3] = samplePolynomial(polynomial, sampleTime_s)
+% Sample every knot plus a uniform display and validation time grid.
+initialTime_s = polynomial.SegmentStartTime_s(1);
+uniformTime_s = (initialTime_s:sampleTime_s:polynomial.FinalTime_s).';
+time_s = unique([uniformTime_s; polynomial.SegmentStartTime_s; polynomial.FinalTime_s]);
+[time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
+    jerk_deg_s3] = azElInternal.motion.evaluatePolynomial(polynomial, time_s);
+end
+
+function continuity = continuityDiagnostics(polynomial)
+% Measure position-through-jerk residuals at every interior knot.
+maximumResidual = zeros(1, 4);
+arrays = {polynomial.positionPower_deg, ...
+    polynomial.velocityPower_deg_s, polynomial.accelerationPower_deg_s2, polynomial.jerkPower_deg_s3};
+
+% Compare both sides of every interior knot where continuity must hold.
+for segmentIndex = 1:polynomial.SegmentCount - 1
+
+    % Measure position, velocity, acceleration, and jerk residuals at this knot.
+    for derivativeIndex = 1:numel(arrays)
+        leftValue = sum(reshape( arrays{derivativeIndex}(segmentIndex, :, :), 2, []), 2).';
+        rightValue = reshape( arrays{derivativeIndex}(segmentIndex + 1, :, 1), 1, 2);
+        maximumResidual(derivativeIndex) = max( maximumResidual(derivativeIndex), max(abs(leftValue - rightValue)));
+    end
+end
+continuityTolerance = 1e-7;
+continuity = struct( ...
+    "MaximumPositionResidual_deg", maximumResidual(1), ...
+    "MaximumVelocityResidual_deg_s", maximumResidual(2), ...
+    "MaximumAccelerationResidual_deg_s2", maximumResidual(3), ...
+    "MaximumJerkResidual_deg_s3", maximumResidual(4), "C3Continuous", all(maximumResidual <= continuityTolerance));
+end
+
+function cost_deg2_s5 = integratedSquaredJerk(polynomial)
+% Integrate squared two-axis jerk exactly over every polynomial span.
+cost_deg2_s5 = 0;
+
+% Accumulate the exact jerk energy from each physical-duration span.
+for segmentIndex = 1:polynomial.SegmentCount
+
+    % Integrate each axis polynomial before combining the two-axis cost.
+    for axisIndex = 1:2
+        jerkPower = reshape( polynomial.jerkPower_deg_s3(segmentIndex, axisIndex, :), 1, []);
+        squaredPower = conv(jerkPower, jerkPower);
+        normalizedIntegral = sum(squaredPower ./ (1:numel(squaredPower)));
+        cost_deg2_s5 = cost_deg2_s5 + polynomial.SegmentDuration_s(segmentIndex) * normalizedIntegral;
+    end
+end
+end
+
+function motion = emptyMotion(options)
+% Define one stable prototype schema for success and validation failure.
+emptyPolynomial = struct( ...
+    "SegmentCount", 0, "SegmentStartTime_s", zeros(0, 1), ...
+    "SegmentDuration_s", zeros(0, 1), "FinalTime_s", NaN, ...
+    "positionPower_deg", zeros(0, 2, 6), ...
+    "velocityPower_deg_s", zeros(0, 2, 5), ...
+    "accelerationPower_deg_s2", zeros(0, 2, 4), ...
+    "jerkPower_deg_s3", zeros(0, 2, 3), ...
+    "TerminalState", struct( "position_deg", [NaN NaN], "velocity_deg_s", [NaN NaN], "acceleration_deg_s2", [NaN NaN]));
+emptyRepresentation = struct( ...
+    "Degree", 5, "SpanCount", 0, ...
+    "ControlPointOffsetParameterCount", 0, ...
+    "RelativeTimingParameterCount", 0, ...
+    "TotalParameterCount", 0, "InteriorRouteInterpolated", false, "MaintainedValidatorCompatible", true);
+motion = struct( ...
+    "Success", false, "Message", "The prototype was not constructed.", ...
+    "TerminationReason", "notRun", "MotionSource", "", ...
+    "FinalTime_s", NaN, "MotionDuration_s", NaN, ...
+    "IntegratedSquaredJerk_deg2_s5", NaN, ...
+    "time_s", zeros(0, 1), "position_deg", zeros(0, 2), ...
+    "velocity_deg_s", zeros(0, 2), ...
+    "acceleration_deg_s2", zeros(0, 2), ...
+    "jerk_deg_s3", zeros(0, 2), "Polynomial", emptyPolynomial, ...
+    "Route_deg", zeros(0, 2), "ControlPoint_deg", zeros(0, 2), ...
+    "KnotTime_s", zeros(1, 0), "SpanDuration_s", zeros(0, 1), ...
+    "SeedCorridorBoundary_deg", zeros(0, 2), ...
+    "SeedCorridor", struct([]), ...
+    "RepresentationDiagnostics", emptyRepresentation, ...
+    "Continuity", struct( ...
+    "MaximumPositionResidual_deg", NaN, ...
+    "MaximumVelocityResidual_deg_s", NaN, ...
+    "MaximumAccelerationResidual_deg_s2", NaN, ...
+    "MaximumJerkResidual_deg_s3", NaN, "C3Continuous", false), ...
+    "Validation", validateAzElTrajectory(), "Options", options);
+end

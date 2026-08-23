@@ -36,9 +36,7 @@ end
     "MaximumSeedCount", 5, ...
     "MaximumDisplayedSlicesPerObstacle", 1, ...
     "ShowSweptSurfaces", false, ...
-    "FigureVisible", "on", ...
-    "Title", "Extreme geographic-region visibility sequence"), ...
-    [12 12]);
+    "FigureVisible", "on", "Title", "Extreme geographic-region visibility sequence"), [12 12]);
 
 %% Section 2: Create Obstacles
 
@@ -48,38 +46,32 @@ regionCount = numel(regionNames);
 obstacles = cell(regionCount, 1);
 obstacleHistories = cell(regionCount, 1);
 regionScenarios = cell(regionCount, 1);
+
 % The private geometry helper is retained because source-shapefile
 % selection, clipping, and thousands of coastline vertices would obscure
 % the visible scenario flow.
 for regionIndex = 1:regionCount
     [obstacles{regionIndex}, obstacleHistories{regionIndex}, ...
         regionScenarios{regionIndex}] = createGeographicRegionObstacle( ...
-        regionNames(regionIndex), [0; missionEndTime_s], 0.15, ...
-        struct("Verbose", options.Verbose));
+        regionNames(regionIndex), [0; missionEndTime_s], 0.15, struct("Verbose", options.Verbose));
 end
 
 %% Section 3: Create Planner Inputs
 
 limits = struct( ...
-    "maxVelocity_deg_s", [8 8], ...
-    "maxAcceleration_deg_s2", [3 3], ...
-    "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+    "maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 regionResults = cell(regionCount, 1);
+
 for regionIndex = 1:regionCount
     scenario = regionScenarios{regionIndex};
-    initialState = struct( ...
-        "time_s", 0, ...
-        "position_deg", scenario.initialPosition_deg);
-    goalState = struct( ...
-        "time_s", missionEndTime_s, ...
-        "position_deg", scenario.goalPosition_deg);
+    initialState = struct( "time_s", 0, "position_deg", scenario.initialPosition_deg);
+    goalState = struct( "time_s", missionEndTime_s, "position_deg", scenario.goalPosition_deg);
     regionOptions = options;
     regionResults{regionIndex} = planAzElMotion( ...
-        obstacles{regionIndex}, initialState, goalState, ...
-        limits, regionOptions);
+        obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
 %% Section 5: Validate Result
@@ -89,44 +81,35 @@ regionArrivalTime_s = nan(regionCount, 1);
 regionRouteLength_deg = nan(regionCount, 1);
 regionNativeVertexCount = zeros(regionCount, 1);
 regionTestVertexCount = zeros(regionCount, 1);
+
 for regionIndex = 1:regionCount
     resultForRegion = regionResults{regionIndex};
     exampleValidation = validateAzElExampleResult( ...
         resultForRegion, ...
-        "static " + lower(regionNames(regionIndex)) + " outline", ...
-        struct("RequireDirectBlocked", true));
+        "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true));
     resultForRegion.ExampleValidation = exampleValidation;
-    resultForRegion.ObstacleHistory = ...
-        obstacleHistories{regionIndex};
+    resultForRegion.ObstacleHistory = obstacleHistories{regionIndex};
     resultForRegion.ExampleConfiguration = jerkConfiguration;
-    resultForRegion.ExampleConfiguration.RegionName = ...
-        regionNames(regionIndex);
-    resultForRegion.ExampleConfiguration.RegionScenario = ...
-        regionScenarios{regionIndex};
+    resultForRegion.ExampleConfiguration.RegionName = regionNames(regionIndex);
+    resultForRegion.ExampleConfiguration.RegionScenario = regionScenarios{regionIndex};
     regionResults{regionIndex} = resultForRegion;
     regionPassed(regionIndex) = exampleValidation.Passed;
-    regionNativeVertexCount(regionIndex) = ...
-        obstacleHistories{regionIndex}.nativeSourceVertexCount;
-    regionTestVertexCount(regionIndex) = ...
-        obstacleHistories{regionIndex}.sourceVertexCount;
+    regionNativeVertexCount(regionIndex) = obstacleHistories{regionIndex}.nativeSourceVertexCount;
+    regionTestVertexCount(regionIndex) = obstacleHistories{regionIndex}.sourceVertexCount;
     if resultForRegion.Success
-        regionArrivalTime_s(regionIndex) = ...
-            resultForRegion.time_s(end);
-        regionRouteLength_deg(regionIndex) = ...
-            sum(vecnorm(diff( ...
-            resultForRegion.SelectedSeed_deg, 1, 1), 2, 2));
+        regionArrivalTime_s(regionIndex) = resultForRegion.time_s(end);
+        regionRouteLength_deg(regionIndex) = sum(vecnorm(diff( resultForRegion.SelectedSeed_deg, 1, 1), 2, 2));
     end
 end
 
 %% Section 6: Plot Diagnostics And Motion
 
 if jerkConfiguration.PlotOutputs
+
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
-        plotOptions.Title = "Extreme visibility: " + ...
-            regionNames(regionIndex);
-        regionResults{regionIndex}.PlotHandles = plotAzElMotion( ...
-            regionResults{regionIndex}, plotOptions);
+        plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);
+        regionResults{regionIndex}.PlotHandles = plotAzElMotion( regionResults{regionIndex}, plotOptions);
     end
 end
 
@@ -139,13 +122,10 @@ result.RegionSequenceSummary = table( ...
     regionNames.', regionPassed, regionArrivalTime_s, ...
     regionRouteLength_deg, regionNativeVertexCount, ...
     regionTestVertexCount, ...
-    'VariableNames', {'Region', 'Passed', 'ArrivalTime_s', ...
-    'RouteLength_deg', 'NativeVertexCount', 'TestVertexCount'});
+    'VariableNames', {'Region', 'Passed', 'ArrivalTime_s', 'RouteLength_deg', 'NativeVertexCount', 'TestVertexCount'});
 result.RegionSequencePassed = regionSequencePassed;
-result.ExampleValidation.RegionSequencePassed = ...
-    regionSequencePassed;
-result.ExampleValidation.Passed = ...
-    result.ExampleValidation.Passed && regionSequencePassed;
+result.ExampleValidation.RegionSequencePassed = regionSequencePassed;
+result.ExampleValidation.Passed = result.ExampleValidation.Passed && regionSequencePassed;
 result.ExampleConfiguration.RegionSequence = regionNames;
 result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

@@ -1,13 +1,11 @@
-function [isOccupied, blockingObstacleIndex, queryDetails] = ...
-        queryAzElTimeObstacle(obstacles, azimuth_deg, elevation_deg, ...
+function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstacle(obstacles, azimuth_deg, elevation_deg, ...
         queryTime, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = queryAzElTimeObstacle()
 %   isOccupied = queryAzElTimeObstacle( ...
 %       obstacles, azimuth_deg, elevation_deg, queryTime)
-%   [isOccupied, blockingObstacleIndex, queryDetails] = ...
-%       queryAzElTimeObstacle(obstacles, azimuth_deg, elevation_deg, ...
+%   [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstacle(obstacles, azimuth_deg, elevation_deg, ...
 %       queryTime, optionOverrides)
 %**************************************************************************
 % PURPOSE
@@ -42,9 +40,7 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = ...
 
 defaults = struct( ...
     "BoundaryIsOccupied", true, ...
-    "ClearanceTolerance_deg", 1e-10, ...
-    "ReferenceTime", datetime(1970, 1, 1, 0, 0, 0, ...
-    "TimeZone", "UTC"));
+    "ClearanceTolerance_deg", 1e-10, "ReferenceTime", datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
 if nargin == 0
     isOccupied = defaults;
     blockingObstacleIndex = [];
@@ -55,30 +51,23 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
-    error("queryAzElTimeObstacle:InvalidOptions", ...
-        "optionOverrides must be a scalar struct.");
+    error("queryAzElTimeObstacle:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
-[options, unknownNames] = azElInternal.resolveOptions( ...
-    defaults, optionOverrides);
+[options, unknownNames] = azElInternal.resolveOptions( defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("queryAzElTimeObstacle:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(unknownNames, ", "));
+        "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 options.BoundaryIsOccupied = azElInternal.normalizeLogicalScalar( ...
-    options.BoundaryIsOccupied, "BoundaryIsOccupied", ...
-    "queryAzElTimeObstacle:InvalidBoundaryPolicy");
-validateattributes(options.ClearanceTolerance_deg, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'nonnegative'});
-if ~isdatetime(options.ReferenceTime) || ...
-        ~isscalar(options.ReferenceTime) || isnat(options.ReferenceTime)
-    error("queryAzElTimeObstacle:InvalidReferenceTime", ...
-        "ReferenceTime must be one finite datetime scalar.");
+    options.BoundaryIsOccupied, "BoundaryIsOccupied", "queryAzElTimeObstacle:InvalidBoundaryPolicy");
+validateattributes(options.ClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || isnat(options.ReferenceTime)
+    error("queryAzElTimeObstacle:InvalidReferenceTime", "ReferenceTime must be one finite datetime scalar.");
 end
 options.ReferenceTime.TimeZone = "UTC";
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = combineAzElObstacles(obstacles);
-    obstacles = azElInternal.prepareDynamicObstacles(obstacles);
+    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 end
 
 %% Section 2: Broadcast Query Arrays
@@ -89,18 +78,14 @@ if isdatetime(queryTime)
 elseif isnumeric(queryTime)
     queryTime_s = double(queryTime);
 else
-    error("queryAzElTimeObstacle:InvalidTime", ...
-        "queryTime must be numeric seconds or a datetime array.");
+    error("queryAzElTimeObstacle:InvalidTime", "queryTime must be numeric seconds or a datetime array.");
 end
-[queryAzimuth_deg, queryElevation_deg, queryTime_s, outputSize] = ...
-    broadcastQueries(azimuth_deg, elevation_deg, queryTime_s);
+[queryAzimuth_deg, queryElevation_deg, queryTime_s, outputSize] = broadcastQueries(azimuth_deg, elevation_deg, queryTime_s);
 queryCount = numel(queryTime_s);
 isOccupied = false(queryCount, 1);
 blockingObstacleIndex = zeros(queryCount, 1, "uint32");
 if nargout < 2
-    isOccupied = occupancyOnly( ...
-        obstacles, queryAzimuth_deg, queryElevation_deg, queryTime_s, ...
-        options);
+    isOccupied = occupancyOnly( obstacles, queryAzimuth_deg, queryElevation_deg, queryTime_s, options);
     isOccupied = reshape(isOccupied, outputSize);
     return;
 end
@@ -110,28 +95,24 @@ nearestObstacleIndex = zeros(queryCount, 1, "uint32");
 %% Section 3: Query Interpolated Protected Geometry
 
 clearanceTolerance_deg = double(options.ClearanceTolerance_deg);
+
 for queryIndex = 1:queryCount
-    if ~all(isfinite([queryAzimuth_deg(queryIndex), ...
-            queryElevation_deg(queryIndex), queryTime_s(queryIndex)]))
+    if ~all(isfinite([queryAzimuth_deg(queryIndex), queryElevation_deg(queryIndex), queryTime_s(queryIndex)]))
         minimumClearance_deg(queryIndex) = NaN;
         continue;
     end
-    point_deg = [queryAzimuth_deg(queryIndex), ...
-        queryElevation_deg(queryIndex)];
+    point_deg = [queryAzimuth_deg(queryIndex), queryElevation_deg(queryIndex)];
+
     for obstacleIndex = 1:numel(obstacles)
-        shape = azElInternal.obstacleShapeAtTime( ...
-            obstacles(obstacleIndex), queryTime_s(queryIndex));
-        clearance_deg = azElInternal.pointPolygonClearance( ...
-            shape, point_deg);
+        shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s(queryIndex));
+        clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
         if clearance_deg < minimumClearance_deg(queryIndex)
             minimumClearance_deg(queryIndex) = clearance_deg;
             nearestObstacleIndex(queryIndex) = uint32(obstacleIndex);
         end
-        isBoundaryBlocked = options.BoundaryIsOccupied && ...
-            clearance_deg <= clearanceTolerance_deg;
+        isBoundaryBlocked = options.BoundaryIsOccupied && clearance_deg <= clearanceTolerance_deg;
         isInteriorBlocked = clearance_deg < -clearanceTolerance_deg;
-        if blockingObstacleIndex(queryIndex) == 0 && ...
-                (isBoundaryBlocked || isInteriorBlocked)
+        if blockingObstacleIndex(queryIndex) == 0 && (isBoundaryBlocked || isInteriorBlocked)
             isOccupied(queryIndex) = true;
             blockingObstacleIndex(queryIndex) = uint32(obstacleIndex);
         end
@@ -145,28 +126,25 @@ blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
 minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
 obstacleNames = strings(outputSize);
+
 for obstacleIndex = 1:numel(obstacles)
-    obstacleNames(nearestObstacleIndex == obstacleIndex) = ...
-        obstacles(obstacleIndex).targetName;
+    obstacleNames(nearestObstacleIndex == obstacleIndex) = obstacles(obstacleIndex).targetName;
 end
 queryDetails = struct( ...
     "MinimumClearance_deg", minimumClearance_deg, ...
     "NearestObstacleIndex", nearestObstacleIndex, ...
     "NearestObstacleName", obstacleNames, ...
     "QueryTime_s", reshape(queryTime_s, outputSize), ...
-    "ObstacleSafetyMargins_deg", reshape( ...
-    [obstacles.safetyMargin_deg], [], 1), ...
-    "Options", options);
+    "ObstacleSafetyMargins_deg", reshape( [obstacles.safetyMargin_deg], [], 1), "Options", options);
 end
 
 %% Section 5: Local Functions
 
-function [azimuth_deg, elevation_deg, time_s, outputSize] = ...
-        broadcastQueries(azimuth_deg, elevation_deg, time_s)
-% PURPOSE
-%   - Apply scalar expansion while preserving one caller-provided shape.
+function [azimuth_deg, elevation_deg, time_s, outputSize] = broadcastQueries(azimuth_deg, elevation_deg, time_s)
+% Apply scalar expansion while preserving one caller-provided shape.
 values = {double(azimuth_deg), double(elevation_deg), double(time_s)};
 elementCounts = zeros(1, 3);
+
 for valueIndex = 1:3
     elementCounts(valueIndex) = numel(values{valueIndex});
 end
@@ -176,13 +154,13 @@ if isempty(nonScalarCounts)
     queryCount = 1;
 elseif any(nonScalarCounts ~= nonScalarCounts(1))
     error("queryAzElTimeObstacle:SizeMismatch", ...
-        "Non-scalar azimuth, elevation, and time inputs must have " + ...
-        "equal element counts.");
+        "Non-scalar azimuth, elevation, and time inputs must have " + "equal element counts.");
 else
     queryCount = nonScalarCounts(1);
     shapeSourceIndex = find(elementCounts == queryCount, 1, "first");
     outputSize = size(values{shapeSourceIndex});
 end
+
 for valueIndex = 1:3
     if elementCounts(valueIndex) == 1
         values{valueIndex} = repmat(values{valueIndex}, queryCount, 1);
@@ -194,14 +172,11 @@ elevation_deg = values{2};
 time_s = values{3};
 end
 
-function isOccupied = occupancyOnly( ...
-        obstacles, azimuth_deg, elevation_deg, time_s, options)
-% PURPOSE
-%   - Test occupancy without constructing clearance data that is not used.
+function isOccupied = occupancyOnly( obstacles, azimuth_deg, elevation_deg, time_s, options)
+% Test occupancy without constructing clearance data that is not used.
 queryCount = numel(time_s);
 isOccupied = false(queryCount, 1);
-finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & ...
-    isfinite(time_s);
+finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & isfinite(time_s);
 uniqueTime_s = unique(time_s(finiteQuery));
 if isempty(obstacles)
     obstacleBounds_deg = zeros(0, 4);
@@ -209,8 +184,10 @@ else
     preparation = [obstacles.InternalPreparation];
     obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
 end
+
 for timeIndex = 1:numel(uniqueTime_s)
     queryIndices = find(finiteQuery & time_s == uniqueTime_s(timeIndex));
+
     for obstacleIndex = 1:numel(obstacles)
         remainingIndices = queryIndices(~isOccupied(queryIndices));
         if isempty(remainingIndices)
@@ -218,8 +195,7 @@ for timeIndex = 1:numel(uniqueTime_s)
         end
         bound_deg = obstacleBounds_deg(obstacleIndex, :);
         tolerance_deg = options.ClearanceTolerance_deg;
-        canIntersect = ...
-            azimuth_deg(remainingIndices) >= bound_deg(1) - tolerance_deg & ...
+        canIntersect = azimuth_deg(remainingIndices) >= bound_deg(1) - tolerance_deg & ...
             azimuth_deg(remainingIndices) <= bound_deg(2) + tolerance_deg & ...
             elevation_deg(remainingIndices) >= bound_deg(3) - tolerance_deg & ...
             elevation_deg(remainingIndices) <= bound_deg(4) + tolerance_deg;
@@ -227,28 +203,24 @@ for timeIndex = 1:numel(uniqueTime_s)
         if isempty(candidateIndices)
             continue;
         end
-        points_deg = [azimuth_deg(candidateIndices), ...
-            elevation_deg(candidateIndices)];
-        [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
+        points_deg = [azimuth_deg(candidateIndices), elevation_deg(candidateIndices)];
+        [shape, geometry] = azElInternal.obstacles.shapeAtTime( ...
             obstacles(obstacleIndex), uniqueTime_s(timeIndex), true);
         if ~geometry.Active
             continue;
         end
-        finiteBoundary = isfinite(geometry.azimuth_deg) & ...
-            isfinite(geometry.elevation_deg);
+        finiteBoundary = isfinite(geometry.azimuth_deg) & isfinite(geometry.elevation_deg);
         hasOneRing = all(finiteBoundary);
         if hasOneRing
             [inside, onBoundary] = inpolygon( ...
-                points_deg(:, 1), points_deg(:, 2), ...
-                geometry.azimuth_deg, geometry.elevation_deg);
+                points_deg(:, 1), points_deg(:, 2), geometry.azimuth_deg, geometry.elevation_deg);
             blocked = inside;
             if ~options.BoundaryIsOccupied
                 blocked(onBoundary) = false;
             end
         else
             if isempty(shape)
-                shape = azElInternal.obstacleShapeAtTime( ...
-                    obstacles(obstacleIndex), uniqueTime_s(timeIndex));
+                shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), uniqueTime_s(timeIndex));
             end
             blocked = complexShapeOccupancy(shape, points_deg, options);
         end
@@ -258,16 +230,14 @@ end
 end
 
 function blocked = complexShapeOccupancy(shape, points_deg, options)
-% PURPOSE
-%   - Preserve the detailed boundary policy for multi-ring geometry.
+% Preserve the detailed boundary policy for multi-ring geometry.
 pointCount = size(points_deg, 1);
 blocked = false(pointCount, 1);
+
 for pointIndex = 1:pointCount
-    clearance_deg = azElInternal.pointPolygonClearance( ...
-        shape, points_deg(pointIndex, :));
+    clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, points_deg(pointIndex, :));
     blocked(pointIndex) = clearance_deg < ...
         -options.ClearanceTolerance_deg || ...
-        (options.BoundaryIsOccupied && clearance_deg <= ...
-        options.ClearanceTolerance_deg);
+        (options.BoundaryIsOccupied && clearance_deg <= options.ClearanceTolerance_deg);
 end
 end

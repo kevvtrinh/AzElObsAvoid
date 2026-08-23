@@ -1,6 +1,4 @@
-function [obstacle, history, scenario] = ...
-        createGeographicRegionObstacle( ...
-        regionName, time_s, safetyMargin_deg, options)
+function [obstacle, history, scenario] = createGeographicRegionObstacle( regionName, time_s, safetyMargin_deg, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [obstacle, history, scenario] = createGeographicRegionObstacle( ...
@@ -42,38 +40,30 @@ if nargin < 4 || isempty(options)
     options = struct();
 end
 if ~isstruct(options) || ~isscalar(options)
-    error("createGeographicRegionObstacle:InvalidOptions", ...
-        "options must be a scalar struct.");
+    error("createGeographicRegionObstacle:InvalidOptions", "options must be a scalar struct.");
 end
 defaultOptions = struct("Verbose", false);
-[resolvedOptions, unknownOptionFields] = ...
-    azElInternal.resolveOptions(defaultOptions, options);
+[resolvedOptions, unknownOptionFields] = azElInternal.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createGeographicRegionObstacle:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(unknownOptionFields, ", "));
+        "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
 end
 verbose = azElInternal.normalizeLogicalScalar( ...
-    resolvedOptions.Verbose, "Verbose", ...
-    "createGeographicRegionObstacle:InvalidVerbose");
+    resolvedOptions.Verbose, "Verbose", "createGeographicRegionObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
-validateattributes(time_s, {'numeric'}, ...
-    {'real','finite','nonempty','increasing'});
+validateattributes(time_s, {'numeric'}, {'real','finite','nonempty','increasing'});
 time_s = double(time_s(:));
-validateattributes(safetyMargin_deg, {'numeric'}, ...
-    {'real','finite','scalar','nonnegative'});
+validateattributes(safetyMargin_deg, {'numeric'}, {'real','finite','scalar','nonnegative'});
 regionName = lower(strtrim(string(regionName)));
 if ~isscalar(regionName)
-    error("createGeographicRegionObstacle:InvalidRegion", ...
-        "regionName must be scalar text.");
+    error("createGeographicRegionObstacle:InvalidRegion", "regionName must be scalar text.");
 end
 if regionName == "philippine"
     regionName = "philippines";
 end
 supportedRegions = ["hawaii" "croatia" "philippines"];
 if ~any(regionName == supportedRegions)
-    error("createGeographicRegionObstacle:UnsupportedRegion", ...
-        "regionName must be Hawaii, Croatia, or Philippines.");
+    error("createGeographicRegionObstacle:UnsupportedRegion", "regionName must be Hawaii, Croatia, or Philippines.");
 end
 
 %% Section 2: Load & Clip Full-Resolution Geographic Boundaries
@@ -89,12 +79,10 @@ if regionName == "hawaii"
     selectedBoundary = boundaries(stateName == "Hawaii");
     if numel(selectedBoundary) ~= 1
         error("createGeographicRegionObstacle:HawaiiNotFound", ...
-            "Expected one Hawaii boundary in usastatehi.shp; found %d.", ...
-            numel(selectedBoundary));
+            "Expected one Hawaii boundary in usastatehi.shp; found %d.", numel(selectedBoundary));
     end
     regionShape = polyshape( ...
-        selectedBoundary.Lon, selectedBoundary.Lat, ...
-        "Simplify", false, "KeepCollinearPoints", true);
+        selectedBoundary.Lon, selectedBoundary.Lat, "Simplify", false, "KeepCollinearPoints", true);
     regionWindow_deg = [-161.2 -154.5 18.5 22.8];
 else
     sourceFile = which("landareas.shp");
@@ -111,20 +99,19 @@ else
     landBoundaries = shaperead(sourceFile, "UseGeoCoords", true);
     regionShape = polyshape();
     selectedRecordCount = 0;
+
     for boundaryIndex = 1:numel(landBoundaries)
         boundaryBounds_deg = landBoundaries(boundaryIndex).BoundingBox;
         overlapsWindow = boundaryBounds_deg(2, 1) >= ...
             regionWindow_deg(1) && boundaryBounds_deg(1, 1) <= ...
             regionWindow_deg(2) && boundaryBounds_deg(2, 2) >= ...
-            regionWindow_deg(3) && boundaryBounds_deg(1, 2) <= ...
-            regionWindow_deg(4);
+            regionWindow_deg(3) && boundaryBounds_deg(1, 2) <= regionWindow_deg(4);
         if ~overlapsWindow
             continue;
         end
         landShape = polyshape( ...
             landBoundaries(boundaryIndex).Lon, ...
-            landBoundaries(boundaryIndex).Lat, ...
-            "Simplify", false, "KeepCollinearPoints", true);
+            landBoundaries(boundaryIndex).Lat, "Simplify", false, "KeepCollinearPoints", true);
         clippedShape = intersect(landShape, clippingShape);
         if isempty(clippedShape.Vertices) || area(clippedShape) <= 0
             continue;
@@ -134,29 +121,25 @@ else
     end
     if selectedRecordCount == 0
         error("createGeographicRegionObstacle:EmptyRegion", ...
-            "No land boundary intersected the %s region window.", ...
-            regionName);
+            "No land boundary intersected the %s region window.", regionName);
     end
 end
 if isempty(regionShape.Vertices) || area(regionShape) <= 0
     error("createGeographicRegionObstacle:EmptyRegion", ...
-        "The %s source boundary did not produce occupied area.", ...
-        regionName);
+        "The %s source boundary did not produce occupied area.", regionName);
 end
 [longitude_deg, latitude_deg] = boundary(regionShape);
 finiteBoundary = isfinite(longitude_deg) & isfinite(latitude_deg);
 if nnz(finiteBoundary) < 3
     error("createGeographicRegionObstacle:EmptyRegion", ...
-        "The %s source boundary has fewer than three finite vertices.", ...
-        regionName);
+        "The %s source boundary has fewer than three finite vertices.", regionName);
 end
 nativeVertexCount = nnz(finiteBoundary);
 % Match the planner's default collision-check spacing so a single long
 % source edge cannot make this density regression easier than the returned
 % trajectory validation that it is intended to exercise.
 maximumBoundarySpacing_deg = 0.02;
-[longitude_deg, latitude_deg] = densifyBoundaryRings( ...
-    longitude_deg, latitude_deg, maximumBoundarySpacing_deg);
+[longitude_deg, latitude_deg] = densifyBoundaryRings( longitude_deg, latitude_deg, maximumBoundarySpacing_deg);
 finiteBoundary = isfinite(longitude_deg) & isfinite(latitude_deg);
 
 %% Section 3: Derive A Directly Blocked Request
@@ -167,42 +150,31 @@ minimumLongitude_deg = min(finiteLongitude_deg);
 maximumLongitude_deg = max(finiteLongitude_deg);
 minimumLatitude_deg = min(finiteLatitude_deg);
 maximumLatitude_deg = max(finiteLatitude_deg);
-longitudeCandidates_deg = linspace( ...
-    minimumLongitude_deg, maximumLongitude_deg, 161).';
-latitudeProbe_deg = linspace( ...
-    minimumLatitude_deg, maximumLatitude_deg, 321);
+longitudeCandidates_deg = linspace( minimumLongitude_deg, maximumLongitude_deg, 161).';
+latitudeProbe_deg = linspace( minimumLatitude_deg, maximumLatitude_deg, 321);
 insideCount = zeros(size(longitudeCandidates_deg));
+
 for longitudeIndex = 1:numel(longitudeCandidates_deg)
-    probeLongitude_deg = repmat( ...
-        longitudeCandidates_deg(longitudeIndex), ...
-        size(latitudeProbe_deg));
-    insideCount(longitudeIndex) = nnz(isinterior( ...
-        regionShape, probeLongitude_deg, latitudeProbe_deg));
+    probeLongitude_deg = repmat( longitudeCandidates_deg(longitudeIndex), size(latitudeProbe_deg));
+    insideCount(longitudeIndex) = nnz(isinterior( regionShape, probeLongitude_deg, latitudeProbe_deg));
 end
 [maximumInsideCount, selectedLongitudeIndex] = max(insideCount);
 if maximumInsideCount == 0
     error("createGeographicRegionObstacle:NoBlockedMeridian", ...
-        "Could not derive a blocked direct request through %s.", ...
-        regionName);
+        "Could not derive a blocked direct request through %s.", regionName);
 end
-routeLongitude_deg = ...
-    longitudeCandidates_deg(selectedLongitudeIndex);
+routeLongitude_deg = longitudeCandidates_deg(selectedLongitudeIndex);
 latitudeSpan_deg = maximumLatitude_deg - minimumLatitude_deg;
 endpointClearance_deg = max(1, 0.15 * latitudeSpan_deg);
-initialPosition_deg = [ ...
-    routeLongitude_deg, minimumLatitude_deg - endpointClearance_deg];
-goalPosition_deg = [ ...
-    routeLongitude_deg, maximumLatitude_deg + endpointClearance_deg];
+initialPosition_deg = [ routeLongitude_deg, minimumLatitude_deg - endpointClearance_deg];
+goalPosition_deg = [ routeLongitude_deg, maximumLatitude_deg + endpointClearance_deg];
 
 %% Section 4: Construct The Canonical Protected Obstacle
 
-displayName = upper(extractBefore(regionName, 2)) + ...
-    extractAfter(regionName, 1);
+displayName = upper(extractBefore(regionName, 2)) + extractAfter(regionName, 1);
 constructionOptions = struct("Verbose", verbose);
 obstacle = makeAzElObstacleData( ...
-    displayName + " geographic region", time_s, ...
-    longitude_deg, latitude_deg, safetyMargin_deg, ...
-    constructionOptions);
+    displayName + " geographic region", time_s, longitude_deg, latitude_deg, safetyMargin_deg, constructionOptions);
 history = struct( ...
     "RegionName", displayName, ...
     "time_s", time_s, ...
@@ -213,14 +185,12 @@ history = struct( ...
     "nativeSourceVertexCount", nativeVertexCount, ...
     "sourceVertexCount", nnz(finiteBoundary), ...
     "sourceArea_deg2", area(regionShape), ...
-    "maximumBoundarySpacing_deg", maximumBoundarySpacing_deg, ...
-    "Options", resolvedOptions);
+    "maximumBoundarySpacing_deg", maximumBoundarySpacing_deg, "Options", resolvedOptions);
 scenario = struct( ...
     "RegionName", displayName, ...
     "initialPosition_deg", initialPosition_deg, ...
     "goalPosition_deg", goalPosition_deg, ...
-    "DirectRouteLongitude_deg", routeLongitude_deg, ...
-    "EndpointClearance_deg", endpointClearance_deg);
+    "DirectRouteLongitude_deg", routeLongitude_deg, "EndpointClearance_deg", endpointClearance_deg);
 if verbose
     fprintf("[region obstacle] %s: %d vertices, area %.3f deg^2.\n", ...
         displayName, history.sourceVertexCount, history.sourceArea_deg2);
@@ -230,18 +200,12 @@ end
 %% Section 5: Local Functions
 
 function shape = rectanglePolyshape(bounds_deg)
-% PURPOSE
-%   - Construct the geographic clipping rectangle for one region window.
-shape = polyshape( ...
-    bounds_deg([1 2 2 1]), bounds_deg([3 3 4 4]), ...
-    "Simplify", false, "KeepCollinearPoints", true);
+% Construct the geographic clipping rectangle for one region window.
+shape = polyshape( bounds_deg([1 2 2 1]), bounds_deg([3 3 4 4]), "Simplify", false, "KeepCollinearPoints", true);
 end
 
-function [denseX_deg, denseY_deg] = densifyBoundaryRings( ...
-        x_deg, y_deg, maximumSpacing_deg)
-% PURPOSE
-%   - Add collinear edge samples without changing polygon occupancy so each
-%     geographic case also stresses dense-boundary packing and validation.
+function [denseX_deg, denseY_deg] = densifyBoundaryRings( x_deg, y_deg, maximumSpacing_deg)
+% Add collinear edge samples without changing polygon occupancy so each geographic case also stresses dense-boundary packing and validation.
 x_deg = double(x_deg(:));
 y_deg = double(y_deg(:));
 finiteRows = isfinite(x_deg) & isfinite(y_deg);
@@ -250,29 +214,26 @@ ringStart = find(ringTransition == 1);
 ringStop = find(ringTransition == -1) - 1;
 denseXByRing_deg = cell(numel(ringStart), 1);
 denseYByRing_deg = cell(numel(ringStart), 1);
+
 for ringIndex = 1:numel(ringStart)
     ringRows = ringStart(ringIndex):ringStop(ringIndex);
     ringX_deg = x_deg(ringRows);
     ringY_deg = y_deg(ringRows);
-    if numel(ringX_deg) > 3 && ...
-            hypot(ringX_deg(end) - ringX_deg(1), ...
-            ringY_deg(end) - ringY_deg(1)) <= 1e-12
+    if numel(ringX_deg) > 3 && hypot(ringX_deg(end) - ringX_deg(1), ringY_deg(end) - ringY_deg(1)) <= 1e-12
         ringX_deg(end) = [];
         ringY_deg(end) = [];
     end
     nextX_deg = circshift(ringX_deg, -1);
     nextY_deg = circshift(ringY_deg, -1);
-    edgeLength_deg = hypot( ...
-        nextX_deg - ringX_deg, nextY_deg - ringY_deg);
-    subdivisionCount = max(1, ceil( ...
-        edgeLength_deg ./ maximumSpacing_deg));
+    edgeLength_deg = hypot( nextX_deg - ringX_deg, nextY_deg - ringY_deg);
+    subdivisionCount = max(1, ceil( edgeLength_deg ./ maximumSpacing_deg));
     denseVertexCount = sum(subdivisionCount);
     denseRingX_deg = zeros(denseVertexCount, 1);
     denseRingY_deg = zeros(denseVertexCount, 1);
     nextWriteIndex = 1;
+
     for edgeIndex = 1:numel(ringX_deg)
-        edgeFraction = (0:subdivisionCount(edgeIndex) - 1).' ./ ...
-            subdivisionCount(edgeIndex);
+        edgeFraction = (0:subdivisionCount(edgeIndex) - 1).' ./ subdivisionCount(edgeIndex);
         writeCount = numel(edgeFraction);
         writeRows = nextWriteIndex:nextWriteIndex + writeCount - 1;
         denseRingX_deg(writeRows) = ringX_deg(edgeIndex) + ...
@@ -285,10 +246,8 @@ for ringIndex = 1:numel(ringStart)
     denseYByRing_deg{ringIndex} = denseRingY_deg;
 end
 separator = {NaN};
-denseXWithSeparator_deg = [denseXByRing_deg, separator(ones( ...
-    numel(denseXByRing_deg), 1))].';
-denseYWithSeparator_deg = [denseYByRing_deg, separator(ones( ...
-    numel(denseYByRing_deg), 1))].';
+denseXWithSeparator_deg = [denseXByRing_deg, separator(ones( numel(denseXByRing_deg), 1))].';
+denseYWithSeparator_deg = [denseYByRing_deg, separator(ones( numel(denseYByRing_deg), 1))].';
 denseX_deg = vertcat(denseXWithSeparator_deg{:});
 denseY_deg = vertcat(denseYWithSeparator_deg{:});
 denseX_deg(end) = [];

@@ -1,2 +1,0 @@
-Example,JerkConstrained,RunCompleted,PlannerSuccess,ValidationPassed,CollisionFree,KinematicsPassed,CertificatePassed,FiniteJerkCertified,TerminationReason,Message,SelectedPolylineLength_deg,SmoothedPathLength_deg,MinimumMotionDuration_s,SampleCount,WallTime_s
-exampleMovingDeformingUSOutlineVisibility,1,1,1,1,1,1,0,0,goalReached,Adaptive visibility and certified spatial retiming succeeded.,62.7700076242769,62.7643654392035,23.8848387487232,2011,133.7562964

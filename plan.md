@@ -1,68 +1,34 @@
-# Plan 325 corridor-only completion checkpoint
+# Active repository cleanup checkpoint
 
-## Objective And Outcome
+## Objective
 
-Complete `325-less-nlp` as a deterministic corridor-quintic planner without
-HS3/NLP, while preserving independently validated trajectories, stable failure
-diagnostics, maintained benchmark paths, and hard repository size limits.
+Finish the repository-wide readability refactor without changing planner behavior:
 
-The latest bounded task is complete locally. Fixed random moving-circle cases
-3, 4, 6, and 8 now solve with at most three seeds. The complete deterministic
-sweep improves from pushed baseline 4/8 to final 8/8 independently validated
-solutions, without changing any maintained example path metric.
+- reserve `%% Section 0: Header & Readme` for each file's primary function;
+- give every local function a direct purpose comment instead of a Section 0 header;
+- add junior-oriented explanations around loops, non-obvious branches, state transitions, and failure paths;
+- keep readable vertical spacing and avoid unnecessary short `...` continuations;
+- audit every MATLAB file below 100 executable code lines and justify separation from its callers or identify it as a merge candidate.
 
-## Retained Design
+Public interfaces and the existing `geometry`, `obstacles`, `search`, `motion`, and `validation` package boundaries remain stable. Production behavior must remain input-driven and independently valid.
 
-1. Generate deterministic topology from obstacle, state, limit, and option
-   inputs under the existing bounded-work policy.
-2. Preserve the established seed portfolio on connected graphs.
-3. If the sparse visibility graph remains disconnected after its third
-   offset/exhaustive retry, test the four input workspace corners as ordinary
-   visibility nodes and preserve one spatial-diversity seed opportunity.
-4. Reject blocked boundary edges normally; the workspace-spanning wall remains
-   an expected diagnosable failure.
-5. Construct, retime, and independently validate the complete C3
-   corridor-quintic motion. No obstacle name, scenario name, expected route,
-   hidden waypoint, tolerance relaxation, or HS3 fallback affects behavior.
+## Completed evidence
 
-## Final Evidence — 2026-08-22
+- Internal code is organized into documented subpackages; public entry points are unchanged.
+- Duplicate boundary handling and dense history allocation were consolidated; prepared obstacles are reused across candidates.
+- All 68 MATLAB files have no bare `= ...` assignments, and continuation blocks at or below 120 characters were collapsed.
+- All 131 `for`/`while` loops under `+azElInternal` have an immediately preceding explanation.
+- All 86 local-function Section 0 headers were removed. Every one of the 229 local functions now opens with a direct purpose sentence rather than `PURPOSE` or `SYNTAX` boilerplate.
+- Added 183 direct local-function and decision comments in this pass, including focused explanations through the four largest motion/search files.
+- Audited all 22 production MATLAB files below 100 executable code lines. None is uncalled; 18 have multiple callers and the four single-caller files own a stable schema or a distinct algorithm extracted from an already-large orchestrator. Evidence is in `short_file_rationale.md`.
+- Before the latest comments-only request, the full regression suite passed 59/59 and Code Analyzer reported zero messages across all 68 MATLAB files.
 
-- Pushed baseline: `0c8bf66`, 4/8 fixed-circle coverage.
-- Final sweep: 8/8 independently valid in `232.089424 s`; formerly failing
-  cases 3, 4, 6, and 8 have durations `21.1728041688`, `21.2089164576`,
-  `21.1748286081`, and `20.9089388561 s`.
-- Tightest final sweep clearance is `0.000355731152304 deg`; all are positive.
-- Focused dynamic suite: 7/7 in `95.3418714 s`, including the four new cases,
-  prior collision feedback, and static no-path wall.
-- Full suite: 59/59 in `134.081193 s`.
-- Code Analyzer: zero messages across 66 nonscratch MATLAB files.
-- Maintained examples: 17 validated successes and one validated expected
-  failure in fresh serial processes. Every successful polyline, smoothed
-  length, and duration is exact to pushed evidence within `1e-6`.
-- Fresh example wall sum is an unfavorable `205.6452420 s`; no speedup is
-  claimed. Exact rows are in `benchmark.csv` under
-  `working-tree-boundary-support-final`.
-- Visible success created three figures and 522 objects. Visible expected
-  failure created two returned-diagnostic figures and 342 objects before a
-  Windows graphics teardown fault; the fault is recorded in `verification.md`.
-- Core production remains exactly 7,500 lines excluding the 565-line plotter;
-  maintained MATLAB excluding examples/scratch is 10,392 lines; largest
-  production file is 887 lines.
+## Current work and limits
 
-## Current Limitations
+- Text-only structural audits report no local Section 0 headers, no missing local-function purpose comments, no unexplained internal loops, no bare assignment continuations, no code continuations at or below 120 characters, and no trailing whitespace.
+- Per the user's current-session instruction, tests were not rerun and must not be run unless explicitly requested.
+- Preserve unrelated user changes; do not commit or push.
 
-- The improvement is focused coverage, not completeness or global optimality.
-- Several random-case solutions use workspace-boundary detours and retain small
-  but independently positive clearances.
-- Dynamic route scaling and the moving/deforming and extreme-outline wall times
-  remain unfavorable.
-- Production is at the exact user-authorized 7,500-line ceiling.
-- The Windows GUI teardown fault remains an environment issue; planner tests,
-  example validation, and figure construction completed before it occurred.
+## Next action
 
-## Repository State
-
-Production, regression test, `verification.md`, `branch_assessment.md`,
-`benchmark.csv`, and this checkpoint contain the retained local change and its
-evidence. Temporary harnesses are removed. Twelve pre-existing untracked
-benchmark artifacts remain untouched. No commit or push has been requested.
+Await an explicit request before running regression tests or making another behavioral change.

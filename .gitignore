@@ -1,1 +1,8 @@
 # Repository-wide implementation and verification policy is tracked.
+
+# Reproducible local profiling, benchmark, and scratch outputs stay untracked.
+scratch/
+benchmarks/*.mat
+benchmarks/*.png
+benchmarks/*_runs.csv
+benchmarks/*_summary.csv
