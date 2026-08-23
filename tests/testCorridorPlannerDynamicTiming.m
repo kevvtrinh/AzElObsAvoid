@@ -125,6 +125,8 @@ diagnostics = result.SeedSummaries( result.SelectedSeedIndex).SolverDiagnostics;
 if isfield(diagnostics, "CompactC3")
     verifyTrue(testCase, diagnostics.CompactC3.Accepted);
     verifyGreaterThan(testCase, diagnostics.CompactC3.QpCount, 0);
+    verifyEqual(testCase, diagnostics.CompactC3.AffineBasisBuildCount, 1);
+    verifyEqual(testCase, diagnostics.CompactC3.AffineBasisReuseCount, diagnostics.CompactC3.TrialCount);
 else
     verifyTrue(testCase, diagnostics.ExactTraversalAttempted);
     verifyTrue(testCase, diagnostics.ExactTraversalAccepted);
