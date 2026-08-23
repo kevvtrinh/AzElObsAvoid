@@ -2065,3 +2065,36 @@ explicit instruction for this session, MATLAB tests, Code Analyzer, and
 examples were not rerun after this comments-only pass. The earlier 59/59 and
 18-example results above predate the latest comment changes and are not claimed
 as post-pass execution evidence.
+
+## Persistent interactive sandbox — 2026-08-23
+
+The supplied two-tab UI is now `sandbox/azElInteractiveSandbox.m`. Goal Mode
+automatically requests the start, then the goal, then obstacle strokes. Free
+Mode requests the start, then its first endpoint, then obstacle strokes;
+`Add Segment` remains for optional later endpoints. Separate start and goal
+buttons are not present.
+
+Both tabs now expose **Add Obstacle** for additional strokes. The initial
+start-to-goal sequence still enters the first obstacle automatically, then
+returns to idle after retaining it. The axes use an outer-position constraint
+so the azimuth ticks and label remain inside their reserved area instead of
+overlapping the action-button row.
+
+The planning controls were subsequently condensed into three labeled groups.
+Workspace and kinematic values share headings and use one row per setting;
+timing and obstacle values also use one row each. The verbose checkbox moved
+to the unused strip beneath the panel, removing the final-row overlap visible
+under Windows display scaling.
+
+The planning-control rows were moved below the panel title so the workspace
+azimuth label is visible under common Windows display scaling. Canvas redraw
+deletes all axes children, including graphics with hidden handles, before
+resetting and reconstructing the axes; this removes the stale obstacle outline
+that previously survived Reset.
+
+Text-only checks found one primary Section 0 header, direct opening comments on
+all 62 local functions, explanations immediately before all 20 loops, no bare
+assignment continuations, no continuation blocks at or below 120 characters,
+and no trailing whitespace. `git diff --check` passed. MATLAB, Code Analyzer,
+and regression tests were not run because the user explicitly prohibited test
+execution in this session.

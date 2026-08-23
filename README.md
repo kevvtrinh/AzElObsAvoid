@@ -86,6 +86,7 @@ plotAzElMotion.m                 returned-result visualization
   +validation/                   corridor and envelope certificates
   README.md                      internal dependency map
 examples/                        maintained executable scenarios
+sandbox/                         persistent interactive scene-building UI
 tests/                           deterministic regression suites
 benchmarks/                      reproducible performance investigations
 ```
@@ -234,6 +235,12 @@ For quick manual scene design, use
 `exampleAzElInteractiveSandbox`. It lets you draw a forbidden path and
 polygon obstacles in az/el space, then run the planner directly against
 that geometry.
+
+For a persistent two-tab workspace, add `sandbox` to the MATLAB path and call
+`azElInteractiveSandbox`. Each tab guides the first three inputs in order:
+click the start, click the goal (or first free-mode endpoint), and then draw
+the first obstacle. **Add Obstacle** starts each additional obstacle stroke;
+the interface does not require separate start or goal buttons.
 
 Every example uses the same planner, validator, and plotter. A failed result
 can show the retained visibility edges, rejected edges, explored states,

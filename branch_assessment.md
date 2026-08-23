@@ -827,3 +827,21 @@ The latest pass was not regression-tested because the user explicitly disabled
 tests for the session. Structural text audits and `git diff --check` passed;
 the earlier planner, example, and Code Analyzer evidence remains historical
 evidence from before the final comments-only edits.
+
+## Persistent sandbox assessment — 2026-08-23
+
+The branch now includes a persistent manual scene-building UI under `sandbox/`.
+Its strongest usability property is guided input: the first scene advances
+from start to goal or first endpoint and then to the first obstacle without
+separate mode buttons. Both tabs provide an explicit Add Obstacle action for
+later strokes. Reset clears retained state and all axes children, including
+hidden freehand traces.
+
+The controls use shared columns and three labeled groups instead of repeating
+axis sublabels for every value. The plot reserves its outer rectangle so
+azimuth ticks and labels do not overlap the action row. The principal weakness
+is size: the supplied UI is a 1,726-line standalone sandbox and is intentionally
+kept outside production and maintained examples. It exercises public planner
+and validator interfaces but adds no planner correctness evidence. Per the
+user's instruction, only structural checks and `git diff --check` were run;
+no MATLAB, Code Analyzer, example, or regression execution is claimed.
