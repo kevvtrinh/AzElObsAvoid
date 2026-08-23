@@ -41,13 +41,15 @@ baseline when run with that branch's scenario settings.
   messages; dependency and short-file audits also passed.
 - Did not run the regression suite, as explicitly required for this session.
 
-## In progress
+## Completion
 
-- Review the final diff, stage only task-owned files, then commit and push
-  `325-full-suite`.
+- Reviewed the final diff and staged only task-owned files.
+- Committed the combined suite as `fccdf74` and pushed `325-full-suite` to
+  `origin/325-full-suite`.
 
 ## Cleanup and Git boundary
 
 - Remove only task-owned temporary imports and baseline harnesses.
 - Preserve unrelated untracked report-generation files and `__pycache__`.
-- After evidence and diff review, commit and push `325-full-suite` as requested.
+- Left all unrelated untracked report, document, and cache artifacts outside
+  the commit.
