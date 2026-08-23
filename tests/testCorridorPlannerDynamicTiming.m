@@ -59,6 +59,31 @@ verifyEqual(testCase, ...
 verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 end
 
+function testDisconnectedSparseGraphUsesWorkspaceBoundarySupport(testCase)
+% Verify four deterministic moving fields that need spatial detour support.
+caseSeeds = [3275783 3283702 3299540 3315378];
+obstacleCounts = [8 10 14 18];
+for caseIndex = 1:numel(caseSeeds)
+    [obstacles, initialState, goalState, limits] = ...
+        movingCircleRequest(caseSeeds(caseIndex), obstacleCounts(caseIndex));
+    result = planAzElMotion( ...
+        obstacles, initialState, goalState, limits, ...
+        plannerOptions(3, caseSeeds(caseIndex)));
+
+    verifyExperimentalSuccess(testCase, result);
+    if ~result.Success || ~result.Validation.Passed
+        continue;
+    end
+    summary = result.SeedSummaries(result.SelectedSeedIndex);
+    grid = result.SearchDiagnostics.Grid;
+    verifyEqual(testCase, summary.SeedSource, "visibilityGraph");
+    verifyGreaterThanOrEqual(testCase, ...
+        grid.CandidateOffsetRetryCount, 3);
+    verifyGreaterThan(testCase, grid.HomologyClassCount, 0);
+    verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
+end
+end
+
 function testStaticWorkspaceWallRemainsExpectedFailure(testCase)
 time_s = [0; 20];
 boundary_deg = [-0.4 -4; 0.4 -4; 0.4 4; -0.4 4];

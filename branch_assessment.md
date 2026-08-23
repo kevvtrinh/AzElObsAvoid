@@ -1,5 +1,8 @@
 # Plan 325 branch assessment
 
+The current judgment is the **Retry-exhausted boundary-support assessment** at
+the end of this file. Earlier sections remain as historical evidence.
+
 ## Current corridor-only assessment — compact C3 duration controller
 
 This section supersedes the older HS3-era judgment below for the current
@@ -750,3 +753,31 @@ restores the exact benchmark path and excludes all three deeper residuals seen
 in that sequence. All 18 maintained examples and all 58 tests pass. The four
 remaining circle fields still return explicit `noValidatedSeed`; topology and
 large-residual collision recovery remain known limitations.
+
+## Retry-exhausted boundary-support assessment — 2026-08-22
+
+The largest current strength is deterministic coverage with preserved
+benchmark quality. A visibility graph that remains disconnected after the
+existing third offset/exhaustive retry now tests the four input workspace
+corners as bounded support nodes and preserves one spatial seed opportunity.
+The fixed moving-circle sweep improves from 4/8 to 8/8 independently validated
+solutions. All four formerly failing cases use a selected spatial visibility
+seed with positive continuous clearance; the unchanged workspace-spanning wall
+still returns the expected diagnosable `noValidatedSeed` result.
+
+The rule is deliberately inactive on connected retry-zero graphs. An earlier
+broader seed replacement regressed the maintained moving-circle duration from
+`8.75122873615098 s` to `8.77956166926098 s`; the retained retry-three gate
+restores it exactly. The final fresh-process 18-example matrix has 17 validated
+successes and one validated expected failure, with every successful path metric
+exact to pushed evidence. The 59-test suite passes and Code Analyzer reports no
+messages.
+
+The largest remaining weakness is runtime and the absence of completeness.
+The final eight-case sweep takes `232.089424 s`; boundary routes often use a
+workspace corner and all eight clearances are positive but as small as
+`0.000355731152304 deg`. The fresh example wall sum is an unfavorable
+`205.6452420 s`, with `61.1979723 s` for the moving/deforming outline and
+`39.7610225 s` for the extreme outline. This is a focused coverage improvement,
+not a global completeness, optimality, or runtime claim. Production remains at
+the exact 7,500-line conditional ceiling, leaving no growth margin.

@@ -81,14 +81,10 @@ diagnostics.CandidateOffsetRetryCount = graphRecord.CandidateOffsetRetryCount;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
 diagnostics.NodePosition_deg = nodePosition_deg;
 diagnostics.VisibilityWorkBudget = graphRecord.VisibilityWorkBudget;
-diagnostics.EstimatedExhaustiveVisibilityWork = ...
-    graphRecord.EstimatedExhaustiveVisibilityWork;
-diagnostics.ExhaustiveVisibilityUsed = ...
-    graphRecord.ExhaustiveVisibilityUsed;
-diagnostics.ExhaustiveVisibilityFallbackUsed = ...
-    graphRecord.ExhaustiveVisibilityFallbackUsed;
-diagnostics.VisibilityCandidatePairCount = ...
-    graphRecord.VisibilityCandidatePairCount;
+diagnostics.EstimatedExhaustiveVisibilityWork = graphRecord.EstimatedExhaustiveVisibilityWork;
+diagnostics.ExhaustiveVisibilityUsed = graphRecord.ExhaustiveVisibilityUsed;
+diagnostics.ExhaustiveVisibilityFallbackUsed = graphRecord.ExhaustiveVisibilityFallbackUsed;
+diagnostics.VisibilityCandidatePairCount = graphRecord.VisibilityCandidatePairCount;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
 diagnostics.AcceptedEdges_deg = graphRecord.AcceptedEdges_deg;
 diagnostics.RejectedEdges_deg = graphRecord.RejectedEdges_deg;
@@ -108,8 +104,7 @@ end
 reservedTimedSeedCount = 0;
 timedRoute_deg = zeros(0, 2);
 timedRouteTime_s = zeros(0, 1);
-if hasChangingObstacles && ~usedDenseEnvelope && ...
-        numel(seeds) < options.MaximumSeedCount
+if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
     coverage.ExtendedTimedSearchAttempted = true;
     maximumTimedNodeCount = 24;
     directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
@@ -123,13 +118,15 @@ if hasChangingObstacles && ~usedDenseEnvelope && ...
         timedPosition_deg, timedEdgeCost_deg, obstacles, ...
         initialState, goalState, limits, sampleTimes_s, options);
     diagnostics = appendTimeRecord(diagnostics, timeRecord);
-    trialSeeds = appendTimedSeed( ...
-        seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+    trialSeeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
     reservedTimedSeedCount = numel(trialSeeds) - numel(seeds);
+    if graphRecord.CandidateOffsetRetryCount >= 3 && options.MaximumSeedCount >= 3 && ...
+            numel(seeds) + reservedTimedSeedCount >= options.MaximumSeedCount
+        reservedTimedSeedCount = 0;
+    end
 end
 %% Section 4: Search Distinct Spatial Visibility Routes
-maximumClassCount = max(0, options.MaximumSeedCount - ...
-    reservedTimedSeedCount - numel(seeds));
+maximumClassCount = max(0, options.MaximumSeedCount - reservedTimedSeedCount - numel(seeds));
 [nodePaths, classSignatures, searchRecord] = homologyVisibilityPaths( ...
     edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount);
 diagnostics = appendSearchRecord(diagnostics, searchRecord);
@@ -146,8 +143,9 @@ for classIndex = 1:numel(nodePaths)
         seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
 end
-seeds = appendTimedSeed( ...
-    seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+if numel(seeds) < options.MaximumSeedCount
+    seeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+end
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
@@ -188,8 +186,7 @@ minimum_deg = min(allPosition_deg, [], 1);
 maximum_deg = max(allPosition_deg, [], 1);
 coordinateScale_deg = max(1, max(abs(allPosition_deg), [], "all"));
 % Offset seed vertices only; collision geometry and its margin are unchanged.
-candidateOffset_deg = candidateOffsetMultiplier * max( ...
-    1e-3, 256 * eps(coordinateScale_deg));
+candidateOffset_deg = candidateOffsetMultiplier * max(1e-3, 256 * eps(coordinateScale_deg));
 [edgeStart_deg, edgeEnd_deg] = boundaryEdges(sweptShape);
 visibilityWorkBudget = 1e6;
 candidateLimit = floor(sqrt(2 * visibilityWorkBudget / max(1, size(edgeStart_deg, 1)))) - 2;
@@ -207,16 +204,20 @@ insideWorkspace = ...
 candidatePosition_deg = candidatePosition_deg(insideWorkspace, :);
 candidatePosition_deg = selectCandidateVertices( ...
     candidatePosition_deg, start_deg, goal_deg, candidateLimit);
-nodePosition_deg = unique([start_deg; goal_deg; candidatePosition_deg], "rows", "stable");
+workspaceCorner_deg = zeros(0, 2);
+if candidateOffsetRetryCount >= 3
+    workspaceCorner_deg = [limits.azimuthInterval_deg([1 1 2 2]).', ...
+        limits.elevationInterval_deg([1 2 1 2]).'];
+end
+nodePosition_deg = unique([start_deg; goal_deg; workspaceCorner_deg; ...
+    candidatePosition_deg], "rows", "stable");
 nodeCount = size(nodePosition_deg, 1);
 edgeCost_deg = Inf(nodeCount);
 edgeCost_deg(1:nodeCount + 1:end) = 0;
 candidatePairMask = triu(true(nodeCount), 1);
 maximumPairCount = nodeCount * (nodeCount - 1) / 2;
-estimatedExhaustiveWork = maximumPairCount * ...
-    max(1, size(edgeStart_deg, 1));
-exhaustiveVisibilityAffordable = ...
-    estimatedExhaustiveWork <= visibilityWorkBudget;
+estimatedExhaustiveWork = maximumPairCount * max(1, size(edgeStart_deg, 1));
+exhaustiveVisibilityAffordable = estimatedExhaustiveWork <= visibilityWorkBudget;
 exhaustiveVisibilityUsed = nodeCount < 4 || forceExhaustiveVisibility;
 if nodeCount >= 4 && ~forceExhaustiveVisibility
     triangulation = delaunayTriangulation(nodePosition_deg);
@@ -261,8 +262,7 @@ for firstNodeIndex = 1:nodeCount - 1
 end
 componentIndex = conncomp(graph(isfinite(edgeCost_deg), "upper"));
 endpointsConnected = componentIndex(1) == componentIndex(2);
-if ~forceExhaustiveVisibility && exhaustiveVisibilityAffordable && ...
-        ~endpointsConnected
+if ~forceExhaustiveVisibility && exhaustiveVisibilityAffordable && ~endpointsConnected
     [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
         sweptShape, start_deg, goal_deg, limits, true, ...
         candidateOffsetMultiplier, candidateOffsetRetryCount);

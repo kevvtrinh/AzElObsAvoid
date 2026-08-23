@@ -1909,3 +1909,78 @@ two rejected transitions. Final size is 7,500 core production lines excluding
 the 565-line plotter, 10,367 maintained nonscratch/nonexample MATLAB lines, and
 an 887-line largest production file. The two temporary proof harnesses were
 removed; the pre-existing untracked benchmark artifacts were left untouched.
+
+## Disconnected visibility boundary support — 2026-08-22
+
+The baseline was pushed commit `0c8bf66`. On the fixed moving-circle family
+with master seed `3252026`, three allowed seeds, unchanged geometry, and public
+independent validation, cases 3, 4, 6, and 8 returned `noValidatedSeed`; the
+baseline therefore passed 4/8. Stage diagnosis classified cases 3, 4, and 8 as
+bounded-topology failures. Case 6 had a sampled-clear timed polyline with
+`0.199951692541 deg` clearance, but its smoothed motion collided at
+`-0.522166959136 deg` and no spatial fallback was available.
+
+The retained invariant is limited to a disconnected bounded visibility graph.
+After the existing offset/exhaustive retry ladder reaches retry three, the four
+input workspace corners become ordinary visibility-tested support nodes and a
+three-seed portfolio preserves one spatial-diversity opportunity. Connected
+retry-zero graphs retain their established temporal seed portfolio. The
+corners are not hidden waypoints: occupied or blocked corners receive no usable
+edge, and the unchanged workspace-spanning wall remains `noValidatedSeed`.
+
+Two broader prototypes were rejected. Adding corners to every graph changed
+the shallow collision-controller densification factor and failed its focused
+regression. Replacing the third temporal seed on every three-seed request
+changed `exampleMovingCircleNoAzimuthWrap` from the frozen
+`8.75122873615098 s` motion to `8.77956166926098 s`. Restricting both behaviors
+to graphs that exhausted retry three restored the exact frozen moving-circle
+polyline, smoothed length, and duration.
+
+The final identical eight-case sweep passed and independently validated 8/8 in
+`232.089424 s`:
+
+| Case | Duration (s) | Minimum clearance (deg) |
+| --- | ---: | ---: |
+| 1 | 20.9069577259 | 0.00570897255047 |
+| 2 | 21.1343850031 | 0.00537827059448 |
+| 3 | 21.1728041688 | 0.00268927771046 |
+| 4 | 21.2089164576 | 0.0104420223329 |
+| 5 | 20.5473740302 | 0.000355731152304 |
+| 6 | 21.1748286081 | 0.00165612365924 |
+| 7 | 20.5780642844 | 0.0012584101104 |
+| 8 | 20.9089388561 | 0.000739339048806 |
+
+The focused dynamic suite, including the four-case replay and static wall,
+passed 7/7 in `95.3418714 s`. The final complete suite passed 59/59 in
+`134.081193 s`; Code Analyzer reported zero messages across 66 nonscratch
+MATLAB files. The new deterministic regression requires retry-three topology,
+a selected `visibilityGraph` seed, positive homology coverage, and positive
+independent continuous clearance for all four formerly failing cases.
+
+The definitive 18-example gate used one fresh serial MATLAB process per
+example. All 17 expected successes passed independent collision and kinematic
+validation, and the expected no-path result passed its stable failure contract.
+Every successful polyline length, smoothed length, and duration is exact to the
+pushed `working-tree-residual-feedback-final` rows within `1e-6`; exact new
+rows are appended to `benchmark.csv` under
+`working-tree-boundary-support-final`. Measured wall sum was an unfavorable
+`205.6452420 s` versus `172.6919951 s` for the pushed evidence, so no runtime
+improvement is claimed. The moving/deforming outline and extreme outline were
+the largest walls at `61.1979723 s` and `39.7610225 s`.
+
+A visible U-shaped success passed and created three figures with 522 graphics
+objects. The visible expected failure passed its example contract and created
+two returned-diagnostic figures with 342 objects, three expanded states, and
+15 rejected transitions. MATLAB then returned Windows graphics teardown code
+`1073807364` after printing those results; a hidden retry failed before startup
+with `-1073741205`. This GUI-host fault is retained as unfavorable environment
+evidence rather than reported as a planner or figure-generation pass with a
+clean process exit.
+
+Production remains exactly 7,500 core physical lines excluding the 565-line
+plotter. The maintained nonscratch/nonexample MATLAB tree is 10,392 lines, and
+the largest production file remains `generateAzElTopologySeeds.m` at 887
+lines. The production diff is net zero lines through local compaction; the
+dynamic-timing test adds 25 lines. Temporary diagnostic and example-gate
+harnesses were removed, and the twelve pre-existing untracked benchmark
+artifacts were left untouched. No commit or push was performed.
