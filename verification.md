@@ -1805,3 +1805,52 @@ and an 881-line largest production file. The final CSV source contains exactly
 `fmincon` call. `git diff --check` found no whitespace errors; its output was
 limited to existing LF-to-CRLF notices. The temporary matrix wrapper was
 removed. No commit or push was performed.
+
+## Dynamic seed-slot coverage experiment — 2026-08-22
+
+The bounded baseline used eight deterministic moving-circle fields with master
+seed `3252026`, three allowed seeds, unchanged protected geometry and limits,
+and public independent validation. The command was
+`probeDynamicTopologyCoverage()`. Baseline planner success and independent
+validation were `2/8`; total measured wall was `51.710458 s`. In two failed
+cases the exact timed search produced a direct wait, the extended timed search
+produced no unique additional seed, and the reserved third slot remained
+unused even though a spatial visibility route existed.
+
+The retained change computes the extended timed proposal before allocating
+spatial search capacity. A slot is reserved only when that proposal is
+nonempty and distinct from the already generated exact-time seeds; spatial
+seeds are still appended before the timed proposal, preserving established
+seed precedence. No public option, work cap, obstacle tolerance, or validation
+rule changed. The final identical probe passed `3/8` in `60.5390732 s`. The new
+six-circle success is independently valid at `21.3080494189 s` duration and
+`0.00264401481202 deg` minimum clearance. The other five no-path results remain
+visible; this is a focused coverage gain, not a completeness claim.
+
+The complete 18-example headless gate passed: 17 independently validated,
+collision-free and kinematically certified successes plus the expected
+`noValidatedSeed` contract. All 17 motion durations exactly match the frozen
+`working-tree-batched-c3-final` rows within `1e-6 s`; the measured wall sum was
+`124.039315 s` in one warmed MATLAB process and is not compared with the prior
+fresh-process wall sum. Exact rows are recorded in `benchmark.csv` under
+`working-tree-topology-slot-proof`. A visible success created three figures
+with 487 graphics objects; the expected failure created two diagnostic figures
+with 341 objects without rerunning search. The final automated suite passes
+`57/57`, including the new deterministic seed-slot regression test, and Code
+Analyzer reports zero messages for the changed MATLAB files.
+
+Route-size experiments were unfavorable and removed. On the same moving
+10-wall request, the original 42-vertex dynamic fallback returned an
+independently valid solution in `15.5401058 s`. Skipping expansion finished in
+`5.9110476 s` but lost the solution. Densifying a sampled-clear 22-vertex
+subsequence finished in `8.5416433 s`, and preserving its original temporal
+coordinates finished in `9.1188355 s`; both returned `noValidatedSeed`.
+Therefore the known route-dimensional runtime cliff remains unresolved rather
+than trading correctness for speed.
+
+Final size is unchanged at 7,498 core production lines excluding the 565-line
+plotter. The maintained nonscratch/nonexample tree is 10,348 lines, and the
+largest production file is 887 lines. The production diff is net zero lines;
+the dynamic-timing test file adds 52 lines for one deterministic moving-circle
+fixture and its focused assertion. Temporary stress and benchmark harnesses
+were removed. No commit or push was performed.

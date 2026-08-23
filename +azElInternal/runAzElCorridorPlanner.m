@@ -2,9 +2,7 @@ function result = runAzElCorridorPlanner( ...
         result, summaryTemplate, seeds, gridDiagnostics, obstacles, ...
         initialState, goalState, limits, options, planningTimer)
 % Construct, validate, rank, and assemble bounded corridor candidates.
-
 %% Section 1: Construct Every Bounded Experimental Candidate
-
 seedSummaries = repmat(summaryTemplate, numel(seeds), 1);
 candidates = cell(numel(seeds), 1);
 timingRoutes_deg = cell(numel(seeds), 1);
@@ -418,7 +416,6 @@ function candidate = improveStaticCorridorTiming( ...
         candidate, obstacles, initialState, goalState, limits, ...
         route_deg, solverOptions)
 % Reduce static earliest arrival with bounded derivative-demand feedback.
-
 expandedRoute_deg = candidate.ExpandedRoute_deg;
 edgeLength_deg = vecnorm(diff(expandedRoute_deg), 2, 2);
 if any(edgeLength_deg <= 0)
@@ -711,7 +708,6 @@ for obstacleIndex = 1:numel(obstacles)
         azElInternal.pointPolygonClearance(shape, position_deg));
 end
 end
-
 function [trial, trialCount] = solveTimingTrial( ...
         logSpanWeight, trialCount, obstacles, initialState, goalState, ...
         limits, route_deg, solverOptions)
@@ -724,7 +720,6 @@ trial = azElInternal.solveAzElCorridorQuintic( ...
     obstacles, initialState, goalState, limits, route_deg, trialOptions);
 trialCount = trialCount + 1;
 end
-
 function summary = candidateRecord(candidate, seed, template)
 % Convert one candidate into the stable seed-summary schema.
 summary = template;
@@ -753,7 +748,6 @@ if candidate.Success
     summary.SelectedMotionSource = "corridorQuintic";
 end
 end
-
 function [candidate, retainedMultiplier, trialCount] = recoverTimedHold( ...
         candidate, obstacles, initialState, goalState, limits, route_deg, ...
         solverOptions, zeroLengthSpan)

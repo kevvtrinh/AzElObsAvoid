@@ -715,3 +715,19 @@ maintained-example matrix was not rerun after this runtime-only change.
 Current size is 7,267 core production lines, 565 plotting lines, and 10,024
 maintained lines excluding examples/scratch. The hard maintained-tree cap
 passes, but the 267-line core overage remains a merge-readiness blocker.
+
+## Dynamic seed-slot coverage assessment — 2026-08-22
+
+The planner now reserves bounded seed capacity for an extended temporal route
+only when that route is actually nonempty and distinct. This preserves the
+existing direct-wait and spatial-before-extended ordering while converting one
+of eight fixed-seed moving-circle failures into an independently valid motion.
+All 18 maintained examples retain their frozen motion durations and the full
+57-test suite passes.
+
+The largest remaining weakness is dynamic route scaling. A 42-vertex moving
+maze requires the original full timed topology to retain success; two faster
+22-vertex pruning variants lost that solution. Similar high-dimensional
+dynamic routes can therefore remain expensive, and the random moving-circle
+probe still succeeds in only three of eight feasible fields. No completeness
+or general runtime improvement is claimed.

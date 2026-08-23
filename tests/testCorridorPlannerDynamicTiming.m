@@ -32,6 +32,18 @@ result = planAzElMotion( ...
 verifyExperimentalSuccess(testCase, result);
 end
 
+function testUnusedTimedSlotAdmitsSpatialDiversity(testCase)
+[obstacles, initialState, goalState, limits] = ...
+    underfilledMovingCircleRequest();
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, plannerOptions(3));
+
+verifyExperimentalSuccess(testCase, result);
+verifyEqual(testCase, numel(result.Seeds), 3);
+verifyTrue(testCase, any([result.Seeds.Source] == "directWait"));
+verifyTrue(testCase, any([result.Seeds.Source] == "visibilityGraph"));
+end
+
 function testStaticWorkspaceWallRemainsExpectedFailure(testCase)
 time_s = [0; 20];
 boundary_deg = [-0.4 -4; 0.4 -4; 0.4 4; -0.4 4];
@@ -109,6 +121,46 @@ obstacles = makeAzElObstacleData( ...
 initialState = restState(0, [-6.5 -0.5]);
 goalState = restState(16, [6.5 -0.5]);
 limits = motionLimits([-8 8], [-5 6]);
+end
+
+function [obstacles, initialState, goalState, limits] = ...
+        underfilledMovingCircleRequest()
+% Reproduce a feasible detour after the unique timed proposal is a wait.
+stream = RandStream("mt19937ar", "Seed", 3267864);
+obstacleCount = 6;
+missionEndTime_s = 80;
+obstacleTime_s = [0; 20; 40; 60; missionEndTime_s];
+angle_rad = (0:15).' * (2 * pi / 16);
+obstacleByIndex = cell(obstacleCount, 1);
+centerAzimuth_deg = linspace(-13, 13, obstacleCount).' + ...
+    0.8 * (rand(stream, obstacleCount, 1) - 0.5);
+baseElevation_deg = 2.5 * (rand(stream, obstacleCount, 1) - 0.5);
+radius_deg = 0.7 + 0.45 * rand(stream, obstacleCount, 1);
+amplitude_deg = 1.5 + 1.5 * rand(stream, obstacleCount, 1);
+phase_rad = 2 * pi * rand(stream, obstacleCount, 1);
+for obstacleIndex = 1:obstacleCount
+    azimuthByTime_deg = cell(numel(obstacleTime_s), 1);
+    elevationByTime_deg = cell(numel(obstacleTime_s), 1);
+    for timeIndex = 1:numel(obstacleTime_s)
+        normalizedTime = obstacleTime_s(timeIndex) / missionEndTime_s;
+        centerElevation_deg = baseElevation_deg(obstacleIndex) + ...
+            amplitude_deg(obstacleIndex) * sin( ...
+            2 * pi * normalizedTime + phase_rad(obstacleIndex));
+        centerAzimuthAtTime_deg = centerAzimuth_deg(obstacleIndex) + ...
+            0.5 * cos(pi * normalizedTime + phase_rad(obstacleIndex));
+        azimuthByTime_deg{timeIndex} = centerAzimuthAtTime_deg + ...
+            radius_deg(obstacleIndex) * cos(angle_rad);
+        elevationByTime_deg{timeIndex} = centerElevation_deg + ...
+            radius_deg(obstacleIndex) * sin(angle_rad);
+    end
+    obstacleByIndex{obstacleIndex} = makeAzElObstacleData( ...
+        "moving coverage circle " + obstacleIndex, obstacleTime_s, ...
+        azimuthByTime_deg, elevationByTime_deg, 0.1);
+end
+obstacles = combineAzElObstacles(obstacleByIndex{:});
+initialState = restState(0, [-17 0]);
+goalState = restState(missionEndTime_s, [17 0]);
+limits = motionLimits([-19 19], [-12 12]);
 end
 
 function options = plannerOptions(maximumSeedCount)

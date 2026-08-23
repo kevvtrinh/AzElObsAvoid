@@ -104,8 +104,30 @@ end
 if usedDenseEnvelope
     diagnostics.DenseSeedEnvelope_deg = sweptShape.Vertices;
 end
-%% Section 3: Search Distinct Spatial Visibility Routes
-reservedTimedSeedCount = double(hasChangingObstacles && ~usedDenseEnvelope);
+%% Section 3: Search One Extended Timed Proposal
+reservedTimedSeedCount = 0;
+timedRoute_deg = zeros(0, 2);
+timedRouteTime_s = zeros(0, 1);
+if hasChangingObstacles && ~usedDenseEnvelope && ...
+        numel(seeds) < options.MaximumSeedCount
+    coverage.ExtendedTimedSearchAttempted = true;
+    maximumTimedNodeCount = 24;
+    directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
+    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
+        sampledNodes_deg, start_deg, ...
+        goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
+    timedEdgeCost_deg = hypot( ...
+        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
+        timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
+    [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
+        timedPosition_deg, timedEdgeCost_deg, obstacles, ...
+        initialState, goalState, limits, sampleTimes_s, options);
+    diagnostics = appendTimeRecord(diagnostics, timeRecord);
+    trialSeeds = appendTimedSeed( ...
+        seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+    reservedTimedSeedCount = numel(trialSeeds) - numel(seeds);
+end
+%% Section 4: Search Distinct Spatial Visibility Routes
 maximumClassCount = max(0, options.MaximumSeedCount - ...
     reservedTimedSeedCount - numel(seeds));
 [nodePaths, classSignatures, searchRecord] = homologyVisibilityPaths( ...
@@ -124,24 +146,8 @@ for classIndex = 1:numel(nodePaths)
         seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
 end
-%% Section 4: Search The Time-Expanded Visibility Graph
-if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
-    coverage.ExtendedTimedSearchAttempted = true;
-    maximumTimedNodeCount = 24;
-    directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
-    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
-        sampledNodes_deg, start_deg, ...
-        goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
-    timedEdgeCost_deg = hypot( ...
-        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
-        timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
-    [timedRoute_deg, timedRouteTime_s, timeRecord] = timeExpandedVisibilitySearch( ...
-        timedPosition_deg, timedEdgeCost_deg, obstacles, ...
-        initialState, goalState, limits, sampleTimes_s, options);
-    diagnostics = appendTimeRecord(diagnostics, timeRecord);
-    seeds = appendTimedSeed( ...
-        seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
-end
+seeds = appendTimedSeed( ...
+    seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
