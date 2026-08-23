@@ -8,10 +8,11 @@ interface:
 | Corridor quintic | `"corridorQuintic"` | Yes | Bounded visibility and timed seeds followed by corridor-constrained continuous quintic motion. It uses no HS3 or nonlinear-programming solve. |
 | HS3 | `"hs3"` | No | Bounded seeds, deterministic analytic first motions when applicable, and optional HS3 finite-jerk nonlinear optimization with `fmincon`. |
 
-The methods are genuine alternatives. Selecting one runs only that method's
-search, obstacle preparation, motion construction, validation, and result
-builder. The dispatcher never runs both, silently substitutes one for the
-other, or falls back after a selected method fails.
+The methods are genuine alternatives. Both consume the same canonical
+obstacle normalization and time-query layer, while selecting one runs only
+that method's search, motion construction, validation, and result builder.
+The dispatcher never runs both, silently substitutes one for the other, or
+falls back after a selected method fails.
 
 The corridor snapshot comes from `325-less-nlp` commit
 `28526638886b69efdf6d697a942ad2c1207bcc04`. The HS3 snapshot comes from
@@ -195,6 +196,20 @@ fields include:
 - `Seeds`, `SeedSummaries`, and `SelectedSeedIndex`;
 - `Validation` and complete input records;
 - `SearchDiagnostics`, including graph and rejection evidence.
+
+Both methods expose the same exclusive wall-time accounting under
+`result.SearchDiagnostics.StageTiming`:
+
+- `TopologyElapsedTime_s`;
+- `CorridorConstructionElapsedTime_s`;
+- `MotionSolvingElapsedTime_s`;
+- `CollisionCheckingElapsedTime_s`;
+- `FinalValidationElapsedTime_s`;
+- `UnattributedElapsedTime_s` and `TotalElapsedTime_s`.
+
+The five named stages do not overlap. `UnattributedElapsedTime_s` retains
+public-call work outside those stages, and all six contributions add to the
+independently measured total.
 
 The method that actually ran is echoed in both:
 

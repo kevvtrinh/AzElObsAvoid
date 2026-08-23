@@ -205,7 +205,7 @@ for obstacleIndex = 1:obstacleCount
     obstacleByIndex{obstacleIndex} = makeAzElObstacleData( ...
         "moving coverage circle " + obstacleIndex, obstacleTime_s, azimuthByTime_deg, elevationByTime_deg, 0.1);
 end
-obstacles = azElPlannerMethods.corridor.combineObstacles(obstacleByIndex{:});
+obstacles = combineAzElObstacles(obstacleByIndex{:});
 initialState = restState(0, [-17 0]);
 goalState = restState(missionEndTime_s, [17 0]);
 limits = motionLimits([-19 19], [-12 12]);

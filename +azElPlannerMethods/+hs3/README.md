@@ -16,11 +16,12 @@ MATLAB Optimization Toolbox because it uses `fmincon`.
   fallback policy, nonlinear attempts, validation, ranking, and result data.
 - `planMovingTargetIntercept.m` preserves the Plan-325 one-call moving-goal
   earliest-arrival behavior.
-- `combineObstacles.m`, `normalizeTimeObstacleData.m`, and
-  `queryTimeObstacle.m` keep obstacle representation and queries local to this
-  snapshot.
 - `validateTrajectory.m` is this method's independent complete-trajectory
   validator.
+
+Canonical combination, normalization, and time queries are shared through
+`combineAzElObstacles`, `normalizeAzElTimeObstacleData`, and
+`queryAzElTimeObstacle`. HS3 does not depend on the corridor folder.
 
 These are backend integration points. Application code should normally call
 `planAzElMotion` or `planAzElMovingTargetIntercept` at the repository root.
@@ -35,9 +36,9 @@ canonical inputs
     -> independent validation and deterministic selection
 ```
 
-The `+internal` subpackages separate geometry, obstacle preparation, search,
-motion construction, and reusable first-motion certificates. Similar files in
-the corridor folder are intentionally not shared.
+The `+internal` subpackages separate obstacle preparation, search, motion
+construction, and reusable first-motion certificates. Planner-specific
+algorithms remain local; canonical input and query semantics are shared.
 
 ## Selection and removal
 

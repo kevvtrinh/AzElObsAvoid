@@ -1,10 +1,13 @@
-function candidate = buildStopWaypointMotion( ...
-        obstacles, initialState, goalState, limits, options, seed)
+function [candidate, stageTiming] = buildStopWaypointMotion( ...
+        obstacles, initialState, goalState, limits, options, seed, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion()
 %   candidate = azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
 %       obstacles, initialState, goalState, limits, options, seed)
+%   [candidate, stageTiming] = ...
+%       azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
+%       obstacles, initialState, goalState, limits, options, seed, stageTiming)
 %**************************************************************************
 % PURPOSE
 %   - Construct one deterministic finite-jerk motion on a geometric seed.
@@ -25,6 +28,8 @@ function candidate = buildStopWaypointMotion( ...
 %   - seed (scalar geometric-seed struct)
 %       Index, Source, N-by-2 position_deg, and time-law data are required.
 %       Consecutive duplicate positions make certified stationary waits.
+%   - stageTiming (scalar struct, optional)
+%       Existing aggregate timing; omission starts an empty timing record.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
@@ -32,15 +37,21 @@ function candidate = buildStopWaypointMotion( ...
 %       analytic-certificate fields. Success is true only after independent
 %       collision and constraint validation. Unsupported states return
 %       Success = false without throwing. Invalid input contracts throw.
+%   - stageTiming (scalar struct)
+%       Aggregate construction, solver, collision, and validation time.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3. Integrated squared jerk uses deg^2/s^5.
 %**************************************************************************
 if nargin == 0
+    stageTiming = azElPlannerMethods.internal.stageTiming();
     seed = struct("Index", 0, "Source", "");
     candidate = emptyCandidate(seed);
     return;
+end
+if nargin < 7
+    stageTiming = azElPlannerMethods.internal.stageTiming();
 end
 %% Section 1: Validate Inputs & Initialize The Stable Result
 constructionTimer = tic;
@@ -56,7 +67,11 @@ if any(abs(endpointDerivative) > stateTolerance)
     candidate.Message = "The analytic seed motion supports only zero " + ...
         "initial and terminal velocity and acceleration.";
     candidate.TerminationReason = "unsupportedEndpointDerivatives";
-    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    candidate.SolverDiagnostics = ...
+        azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+        candidate.SolverDiagnostics, toc(constructionTimer), 0);
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, candidate);
     return;
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
@@ -64,7 +79,11 @@ if hasMovingGoal && goalTimeMode == "earliestArrival"
     candidate.Message = "Earliest arrival to a moving goal is not " + ...
         "supported by the analytic seed motion.";
     candidate.TerminationReason = "unsupportedMovingGoal";
-    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    candidate.SolverDiagnostics = ...
+        azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+        candidate.SolverDiagnostics, toc(constructionTimer), 0);
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, candidate);
     return;
 end
 goalPosition_deg = azElPlannerMethods.hs3.internal.goalPositionAtTime(goalState, goalState.time_s);
@@ -76,7 +95,11 @@ if endpointError_deg > stateTolerance
     candidate.Message = "The geometric seed endpoints do not match the " + ...
         "requested initial and goal positions.";
     candidate.TerminationReason = "seedEndpointMismatch";
-    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    candidate.SolverDiagnostics = ...
+        azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+        candidate.SolverDiagnostics, toc(constructionTimer), 0);
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, candidate);
     return;
 end
 edgeDelta_deg = diff(seedPosition_deg, 1, 1);
@@ -109,7 +132,11 @@ availableDuration_s = goalState.time_s - initialState.time_s;
 if availableDuration_s <= 0
     candidate.Message = "The goal time must be after the initial time.";
     candidate.TerminationReason = "timeWindowInfeasible";
-    candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+    candidate.SolverDiagnostics = ...
+        azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+        candidate.SolverDiagnostics, toc(constructionTimer), 0);
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, candidate);
     return;
 end
 if goalTimeMode == "fixedArrival"
@@ -122,7 +149,11 @@ if goalTimeMode == "fixedArrival"
             seedPosition_deg, edgeMinimumDuration_s, ...
             minimumUniformEdgeDuration_s, NaN(edgeCount, 1), ...
             limits);
-        candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+        candidate.SolverDiagnostics = ...
+            azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+            candidate.SolverDiagnostics, toc(constructionTimer), 0);
+        stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+            stageTiming, candidate);
         return;
     end
     edgeDuration_s = edgeMinimumDuration_s + ...
@@ -144,7 +175,11 @@ else
             seedPosition_deg, edgeMinimumDuration_s, ...
             minimumUniformEdgeDuration_s, edgeDuration_s, ...
             limits);
-        candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+        candidate.SolverDiagnostics = ...
+            azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+            candidate.SolverDiagnostics, toc(constructionTimer), 0);
+        stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+            stageTiming, candidate);
         return;
     end
 end
@@ -173,6 +208,12 @@ end
 candidate.AnalyticDiagnostics = analyticDiagnostics( ...
     seedPosition_deg, edgeMinimumDuration_s, ...
     minimumUniformEdgeDuration_s, edgeDuration_s, limits);
+analyticConstructionElapsedTime_s = toc(constructionTimer);
+candidate.SolverDiagnostics = ...
+    azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics( ...
+    candidate.SolverDiagnostics, analyticConstructionElapsedTime_s, 0);
+stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+    stageTiming, candidate);
 %% Section 5: Independently Validate The Complete Motion
 tryEarlyHs3 = isfield(options, "AttemptEarlyHs3") && ...
     options.AttemptEarlyHs3 && options.EnableHs3Improvement && ...
@@ -193,6 +234,8 @@ if tryEarlyHs3
     trialCandidate.MotionSource = "hs3";
     trialCandidate.Validation = azElPlannerMethods.hs3.validateTrajectory( ...
         trialCandidate, obstacles, initialState, goalState, limits, options);
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, trialCandidate);
     if trialCandidate.Validation.Passed
         trialCandidate.AnalyticDiagnostics = candidate.AnalyticDiagnostics;
         candidate = trialCandidate;
@@ -228,7 +271,16 @@ else
         "independent validation.";
     candidate.TerminationReason = "seedMotionValidationFailed";
 end
-candidate.SolverDiagnostics.ElapsedTime_s = toc(constructionTimer);
+legacyElapsedTime_s = toc(constructionTimer);
+candidate.SolverDiagnostics.ElapsedTime_s = legacyElapsedTime_s;
+validationCollisionElapsedTime_s = ...
+    validation.CollisionCheckingElapsedTime_s;
+stageTiming.CollisionCheckingElapsedTime_s = ...
+    stageTiming.CollisionCheckingElapsedTime_s + ...
+    validationCollisionElapsedTime_s;
+stageTiming.FinalValidationElapsedTime_s = ...
+    stageTiming.FinalValidationElapsedTime_s + max( ...
+    0, validation.ElapsedTime_s - validationCollisionElapsedTime_s);
 end
 
 
@@ -256,7 +308,7 @@ for waypointIndex = 2:size(seed.position_deg, 1) - 1
         if shape.NumRegions == 0
             continue;
         end
-        clearance_deg = azElPlannerMethods.hs3.internal.geometry.pointPolygonClearance(shape, point_deg);
+        clearance_deg = azElInternal.geometry.pointPolygonClearance(shape, point_deg);
         if clearance_deg >= nearestClearance_deg
             continue;
         end
@@ -474,6 +526,12 @@ end
 
 function candidate = emptyCandidate(seed)
 % Define one stable schema for success, failure, and unsupported exits.
+solverDiagnostics = ...
+    azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics();
+solverDiagnostics.Identifier = "analyticRestToRestQuintic";
+solverDiagnostics.ConstraintRepresentation = "analyticCertificate";
+solverDiagnostics.Method = "analyticRestToRestQuintic";
+solverDiagnostics.UsedOptimizer = false;
 candidate = struct( ...
     "Success", false, ...
     "ConstructionFeasible", false, ...
@@ -500,10 +558,8 @@ candidate = struct( ...
     "SeedCorridor", struct([]), ...
     "Validation", azElPlannerMethods.hs3.validateTrajectory(), ...
     "AnalyticDiagnostics", analyticDiagnostics( ...
-    zeros(0, 2), zeros(0, 1), NaN, NaN, struct()), ...
-    "SolverDiagnostics", struct( ...
-    "Method", "analyticRestToRestQuintic", ...
-    "UsedOptimizer", false, "ElapsedTime_s", 0));
+        zeros(0, 2), zeros(0, 1), NaN, NaN, struct()), ...
+    "SolverDiagnostics", solverDiagnostics);
 end
 
 function polynomial = emptyPolynomial()

@@ -35,12 +35,14 @@ function result = runCorridorPlanner( ...
 % a failed attempt remains diagnosable and cannot be mistaken for success.
 seedSummaries = repmat(summaryTemplate, numel(seeds), 1);
 candidates = cell(numel(seeds), 1);
+stageTiming = azElPlannerMethods.internal.stageTiming();
 timingRoutes_deg = cell(numel(seeds), 1);
 timingSolverOptions = cell(numel(seeds), 1);
 canImproveTiming = false(numel(seeds), 1);
 firstValidatedMotionTime_s = NaN;
 candidateElapsedTime_s = 0;
-queryOptions = azElPlannerMethods.corridor.queryTimeObstacle();
+corridorPreparationTimer = tic;
+queryOptions = queryAzElTimeObstacle();
 envelopePadding_deg = max(1e-6, 1000 * queryOptions.ClearanceTolerance_deg);
 geometryIsStatic = true;
 
@@ -66,6 +68,9 @@ if geometryIsStatic
 else
     obstacleEnvelopeBoundary_deg = zeros(0, 2);
 end
+stageTiming.CorridorConstructionElapsedTime_s = ...
+    stageTiming.CorridorConstructionElapsedTime_s + ...
+    toc(corridorPreparationTimer);
 
 %% Section 2: Construct And Validate Every Seed Candidate
 
@@ -75,6 +80,7 @@ for seedIndex = 1:numel(seeds)
     % Repeated neighboring points encode an intentional wait. They must not
     % be expanded like an ordinary moving edge or the wait semantics vanish.
     candidateTimer = tic;
+    corridorPreparationTimer = tic;
     route_deg = seeds(seedIndex).position_deg;
     zeroLengthSpan = vecnorm(diff(route_deg), 2, 2) <= 1e-12;
     dynamicRouteExpansion_deg = 0;
@@ -97,12 +103,17 @@ for seedIndex = 1:numel(seeds)
         % without forcing the conservative full-route densification fallback.
         solverOptions.ClearanceTarget_deg = 1e-4;
     end
+    stageTiming.CorridorConstructionElapsedTime_s = ...
+        stageTiming.CorridorConstructionElapsedTime_s + ...
+        toc(corridorPreparationTimer);
     if options.Verbose
         fprintf("[AzEl][seed %d/%d][corridorQuintic] start, " + ...
             "source=%s, route=%d.\n", seedIndex, numel(seeds), seeds(seedIndex).Source, size(route_deg, 1));
     end
     candidate = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
         obstacles, initialState, goalState, limits, route_deg, solverOptions);
+    stageTiming = addStageTiming( ...
+        stageTiming, candidate.OptimizerDiagnostics.StageTiming);
     canImproveStaticTiming = geometryIsStatic && candidate.Success && ...
         options.GoalTimeMode == "earliestArrival" && routeVertexTarget == size(route_deg, 1) && size(route_deg, 1) > 2;
     canImproveTiming(seedIndex) = canImproveStaticTiming;
@@ -130,20 +141,30 @@ for seedIndex = 1:numel(seeds)
         seeds(seedIndex).Source == "visibilityGraph" && 3 * (size(route_deg, 1) - 1) + 1 <= 150;
     % A failed approximate static candidate may still succeed with the bounded exact corridor formulation.
     if canTryStaticExact
+        corridorPreparationTimer = tic;
         [expandedRoute_deg, staticExpansion_deg] = azElPlannerMethods.corridor.internal.search.expandDynamicRoute( ...
             seeds(seedIndex), obstacles, initialState.time_s, goalState.time_s);
+        stageTiming.CorridorConstructionElapsedTime_s = ...
+            stageTiming.CorridorConstructionElapsedTime_s + ...
+            toc(corridorPreparationTimer);
         exactTrialCount = 0;
 
         % Increase spatial resolution gradually and stop at the first certified static result.
         for densificationFactor = 1:3
+            corridorPreparationTimer = tic;
             [trialRoute_deg, trialTau] = densifyRoute( expandedRoute_deg, seeds(seedIndex).tau, densificationFactor);
             exactOptions = solverOptions;
             exactOptions.RouteVertexCount = size(trialRoute_deg, 1);
             exactOptions.RouteTau = trialTau;
             exactOptions.ObstacleEnvelopeBoundary_deg = zeros(0, 2);
             exactOptions.RequireStaticCorridorCertificate = false;
+            stageTiming.CorridorConstructionElapsedTime_s = ...
+                stageTiming.CorridorConstructionElapsedTime_s + ...
+                toc(corridorPreparationTimer);
             exactTrial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
                 obstacles, initialState, goalState, limits, trialRoute_deg, exactOptions);
+            stageTiming = addStageTiming( ...
+                stageTiming, exactTrial.OptimizerDiagnostics.StageTiming);
             exactTrialCount = exactTrialCount + 1;
             % Prefer a validated exact trial immediately; otherwise preserve the original failure diagnostics.
             if exactTrial.Success
@@ -172,18 +193,26 @@ for seedIndex = 1:numel(seeds)
 
         % Try only the two bounded denser representations allowed for moving geometry.
         for densificationFactor = 2:3
+            corridorPreparationTimer = tic;
             [trialRoute_deg, trialTau] = densifyRoute( route_deg, seeds(seedIndex).tau, densificationFactor);
             exactOptions = solverOptions;
             exactOptions.RouteVertexCount = size(trialRoute_deg, 1);
             exactOptions.RouteTau = trialTau;
             exactOptions.ObstacleEnvelopeBoundary_deg = zeros(0, 2);
             exactOptions.RequireStaticCorridorCertificate = false;
+            stageTiming.CorridorConstructionElapsedTime_s = ...
+                stageTiming.CorridorConstructionElapsedTime_s + ...
+                toc(corridorPreparationTimer);
             exactTrial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
                 obstacles, initialState, goalState, limits, trialRoute_deg, exactOptions);
+            stageTiming = addStageTiming( ...
+                stageTiming, exactTrial.OptimizerDiagnostics.StageTiming);
             dynamicExactTrialCount = dynamicExactTrialCount + 1;
             if ~exactTrial.Success && densificationFactor == 2 && options.GoalTimeMode == "earliestArrival"
-                exactTrial = retimeDynamicRoute( ...
-                    exactTrial, obstacles, initialState, goalState, limits, options, trialRoute_deg);
+                [exactTrial, stageTiming] = ...
+                    azElPlannerMethods.corridor.internal.motion.retimeDynamicRoute( ...
+                    exactTrial, obstacles, initialState, goalState, ...
+                    limits, options, trialRoute_deg, stageTiming);
             end
             if exactTrial.Success
                 candidate = exactTrial;
@@ -206,8 +235,10 @@ for seedIndex = 1:numel(seeds)
     canRecoverTimedHold = ~geometryIsStatic && any(zeroLengthSpan) && ~candidate.Success;
     % Explicit wait spans may need their duration shifted until the moving obstacle clears.
     if canRecoverTimedHold
-        [candidate, holdMultiplier, holdTrialCount] = recoverTimedHold( ...
-            candidate, obstacles, initialState, goalState, limits, route_deg, solverOptions, zeroLengthSpan);
+        [candidate, holdMultiplier, holdTrialCount, stageTiming] = ...
+            recoverTimedHold( ...
+            candidate, obstacles, initialState, goalState, limits, ...
+            route_deg, solverOptions, zeroLengthSpan, stageTiming);
         candidate.OptimizerDiagnostics.HoldRecoveryUsed = candidate.Success;
         candidate.OptimizerDiagnostics.HoldMultiplier = holdMultiplier;
         candidate.OptimizerDiagnostics.HoldTrialCount = holdTrialCount;
@@ -286,6 +317,9 @@ if any(compactEligible) && any(isfinite(validatedDuration_s))
     [compactMotion, compactValidation, compactDiagnostics] = azElPlannerMethods.corridor.internal.motion.solveCompactC3( ...
         seeds(compactSeedIndex), min(validatedDuration_s), obstacles, initialState, goalState, limits, options);
     candidateElapsedTime_s = candidateElapsedTime_s + toc(compactTimer);
+    stageTiming = addStageTiming( ...
+        stageTiming, compactDiagnostics.StageTiming);
+    result.SearchDiagnostics.CompactC3 = compactDiagnostics;
     if compactDiagnostics.Accepted && compactMotion.MotionDuration_s < min(validatedDuration_s) - 1e-9
         candidate = candidates{compactSeedIndex};
         motionFields = fieldnames(compactMotion);
@@ -342,6 +376,7 @@ if isempty(validatedIndices)
         bestPartialIndex = 0;
     end
     result.SearchDiagnostics.BestPartialSeedIndex = bestPartialIndex;
+    result.SearchDiagnostics.StageTiming = stageTiming;
     return;
 end
 arrivalTimes_s = [seedSummaries(validatedIndices).ArrivalTime_s].';
@@ -355,9 +390,10 @@ selectedCandidate = candidates{selectedSeedIndex};
 % Improve timing only after topology selection so every seed receives the same initial work budget.
 if canImproveTiming(selectedSeedIndex)
     timingTimer = tic;
-    selectedCandidate = improveStaticCorridorTiming( ...
+    [selectedCandidate, stageTiming] = improveStaticCorridorTiming( ...
         selectedCandidate, obstacles, initialState, goalState, limits, ...
-        timingRoutes_deg{selectedSeedIndex}, timingSolverOptions{selectedSeedIndex});
+        timingRoutes_deg{selectedSeedIndex}, ...
+        timingSolverOptions{selectedSeedIndex}, stageTiming);
     candidateElapsedTime_s = candidateElapsedTime_s + toc(timingTimer);
     selectedCandidate.SeedIndex = seeds(selectedSeedIndex).Index;
     selectedCandidate.SeedSource = seeds(selectedSeedIndex).Source;
@@ -403,6 +439,7 @@ result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.SearchDiagnostics.BestPartialSeedIndex = selectedSeedIndex;
 result.OptimalityStatement = "Earliest validated corridor quintic from the finite deterministic " + ...
     "seed set; no global certificate.";
+result.SearchDiagnostics.StageTiming = stageTiming;
 end
 
 
@@ -431,8 +468,9 @@ route_deg(end, :) = sourceRoute_deg(end, :);
 tau(end) = sourceTau(end);
 end
 
-function candidate = improveStaticCorridorTiming( ...
-        candidate, obstacles, initialState, goalState, limits, route_deg, solverOptions)
+function [candidate, stageTiming] = improveStaticCorridorTiming( ...
+        candidate, obstacles, initialState, goalState, limits, ...
+        route_deg, solverOptions, stageTiming)
 % Reduce static earliest arrival with bounded derivative-demand feedback.
 expandedRoute_deg = candidate.ExpandedRoute_deg;
 edgeLength_deg = vecnorm(diff(expandedRoute_deg), 2, 2);
@@ -448,8 +486,9 @@ logSpanWeight = 1.1 * log(edgeLength_deg);
 initialDuration_s = candidate.MotionDuration_s;
 trialCount = 0;
 solverOptions.EnableExactTraversal = true;
-[trial, trialCount] = solveTimingTrial( ...
-    logSpanWeight, trialCount, obstacles, initialState, goalState, limits, route_deg, solverOptions);
+[trial, trialCount, stageTiming] = solveTimingTrial( ...
+    logSpanWeight, trialCount, obstacles, initialState, goalState, ...
+    limits, route_deg, solverOptions, stageTiming);
 if ~trial.OptimizerDiagnostics.ExactTraversalAccepted
     solverOptions.EnableExactTraversal = false;
 end
@@ -466,7 +505,9 @@ previousDemandError = zeros(0, 1);
 
 % Redistribute span time until derivative demand is balanced or improvement stalls.
 while initialTrialImproved && trial.Success && trialCount < maximumTrialCount
-    timeDemand = spanTimeDemand(trial.Polynomial, limits);
+    timeDemand = ...
+        azElPlannerMethods.corridor.internal.motion.spanTimeDemand( ...
+        trial.Polynomial, limits);
     demandError = log(max(minimumDemand, timeDemand));
     demandError = demandError - mean(demandError);
     % Stop when every span's derivative demand is balanced to within roughly half a percent.
@@ -492,13 +533,15 @@ while initialTrialImproved && trial.Success && trialCount < maximumTrialCount
     logSpanWeight = logSpanWeight + controllerGain * demandError;
     logSpanWeight = logSpanWeight - mean(logSpanWeight);
     previousDuration_s = trial.MotionDuration_s;
-    [trial, trialCount] = solveTimingTrial( ...
-        logSpanWeight, trialCount, obstacles, initialState, goalState, limits, route_deg, solverOptions);
+    [trial, trialCount, stageTiming] = solveTimingTrial( ...
+        logSpanWeight, trialCount, obstacles, initialState, goalState, ...
+        limits, route_deg, solverOptions, stageTiming);
     if compareUnitGain && trialCount < maximumTrialCount
         unitLogSpanWeight = currentLogSpanWeight + demandError;
         unitLogSpanWeight = unitLogSpanWeight - mean(unitLogSpanWeight);
-        [unitTrial, trialCount] = solveTimingTrial( ...
-            unitLogSpanWeight, trialCount, obstacles, initialState, goalState, limits, route_deg, solverOptions);
+        [unitTrial, trialCount, stageTiming] = solveTimingTrial( ...
+            unitLogSpanWeight, trialCount, obstacles, initialState, ...
+            goalState, limits, route_deg, solverOptions, stageTiming);
         if unitTrial.Success && (~trial.Success || unitTrial.MotionDuration_s < trial.MotionDuration_s)
             trial = unitTrial;
             logSpanWeight = unitLogSpanWeight;
@@ -519,249 +562,18 @@ candidate.OptimizerDiagnostics.TimingInitialDuration_s = initialDuration_s;
 candidate.OptimizerDiagnostics.TimingBestDuration_s = candidate.MotionDuration_s;
 end
 
-function timeDemand = spanTimeDemand(polynomial, limits)
-% Return the local time dilation implied by each span's derivative usage.
-normalizedTime = linspace(0, 1, 33).';
-derivativeArrays = {polynomial.velocityPower_deg_s, polynomial.accelerationPower_deg_s2, polynomial.jerkPower_deg_s3};
-derivativeLimits = {limits.maxVelocity_deg_s, limits.maxAcceleration_deg_s2, limits.maxJerk_deg_s3};
-spanCount = polynomial.SegmentCount;
-timeDemand = zeros(spanCount, 1);
-
-% Convert velocity, acceleration, and jerk utilization into equivalent time dilation.
-for derivativeOrder = 1:3
-    powerArray = derivativeArrays{derivativeOrder};
-    basis = normalizedTime.^(0:size(powerArray, 3) - 1);
-
-    % Record the largest utilization-driven dilation required by each span.
-    for spanIndex = 1:spanCount
-        coefficient = reshape(powerArray(spanIndex, :, :), 2, []).';
-        derivativeValue = basis * coefficient;
-        utilization = max(abs(derivativeValue) ./ derivativeLimits{derivativeOrder}, [], "all");
-        timeDemand(spanIndex) = max(timeDemand(spanIndex), utilization^(1 / derivativeOrder));
-    end
-end
-end
-
-function candidate = retimeDynamicRoute( ...
-        candidate, obstacles, initialState, goalState, limits, plannerOptions, route_deg)
-% Retime one dynamic route cheaply before authoritative validation.
-edgeLength_deg = vecnorm(diff(route_deg), 2, 2);
-if any(edgeLength_deg <= 0)
-    return;
-end
-spanWeights = edgeLength_deg .^ 1.1;
-bestMotion = [];
-bestDuration_s = Inf;
-
-% Perform a fixed number of path-timing feedback updates for a moving-obstacle route.
-for iterationIndex = 0:8
-    trialMotion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
-        route_deg, initialState, goalState, limits, struct( ...
-        "SpanWeights", spanWeights, ...
-        "SampleTime_s", plannerOptions.SampleTime_s, ...
-        "GoalTimeMode", plannerOptions.GoalTimeMode, "AllowAzimuthWrapping", plannerOptions.AllowAzimuthWrapping));
-    if trialMotion.Success && trialMotion.MotionDuration_s < bestDuration_s
-        bestMotion = trialMotion;
-        bestDuration_s = trialMotion.MotionDuration_s;
-    end
-    demandError = log(max(0.1, spanTimeDemand(trialMotion.Polynomial, limits)));
-    demandError = demandError - mean(demandError);
-    spanWeights = exp(log(spanWeights) + demandError);
-    spanWeights = spanWeights / mean(spanWeights);
-end
-% Every retiming trial failed, so leave the original candidate unchanged.
-if isempty(bestMotion)
-    return;
-end
-validation = azElPlannerMethods.corridor.validateTrajectory( bestMotion, obstacles, initialState, goalState, limits, plannerOptions);
-recoveryResidualLimit_deg = 0.005;
-if size(route_deg, 1) >= 12 && (validation.Passed || validation.MinimumClearance_deg >= -recoveryResidualLimit_deg)
-    [bestMotion, validation] = improveDynamicGeometry( ...
-        bestMotion, validation, obstacles, initialState, goalState, limits, plannerOptions, spanWeights);
-end
-% Geometry feedback requires a nearly feasible starting motion and cannot repair an arbitrary failed route.
-if ~validation.Passed
-    return;
-end
-motionFields = fieldnames(bestMotion);
-
-% Copy only the validated retimed motion fields into the existing candidate record.
-for fieldIndex = 1:numel(motionFields)
-    candidate.(motionFields{fieldIndex}) = bestMotion.(motionFields{fieldIndex});
-end
-candidate.Validation = validation;
-candidate.Success = true;
-candidate.Message = "The path-fixed-point dynamic retime passed validation.";
-candidate.TerminationReason = "quinticValidated";
-candidate.OptimizerDiagnostics.ValidationPassed = true;
-candidate.OptimizerDiagnostics.ContinuousClearance_deg = validation.MinimumClearance_deg;
-candidate.OptimizerDiagnostics.MotionDuration_s = bestMotion.MotionDuration_s;
-end
-
-function [bestMotion, bestValidation] = improveDynamicGeometry( ...
-        bestMotion, bestValidation, obstacles, initialState, goalState, limits, plannerOptions, spanWeights)
-% Apply bounded clearance or minimum-jerk feedback at time-local barriers.
-route_deg = [initialState.position_deg; bestMotion.ControlPoint_deg(4:end - 3, :); goalState.position_deg];
-interiorCount = size(route_deg, 1) - 2;
-decisionCount = 2 * interiorCount;
-recoveringCollision = ~bestValidation.Passed;
-if recoveringCollision
-    spanWeights = bestMotion.SpanDuration_s;
-end
-maximumIterationCount = 24;
-
-% Alternate exact affine models with validated geometry updates until no safe improvement remains.
-for iterationIndex = 1:maximumIterationCount
-    affineBasis = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
-        eye(size(bestMotion.ControlPoint_deg, 1)), 5, initialState.time_s, bestMotion.SpanDuration_s);
-    accepted = false;
-    trustRadius_deg = 0.5;
-
-    % Shrink the control-point trust region when a linearized step fails validation.
-    for backtrackIndex = 1:3
-        [barrierMatrix, barrierBound] = dynamicBarrierRows( ...
-            bestMotion, affineBasis, obstacles, interiorCount, 0.05, 0.5);
-        if recoveringCollision
-            sensitivity = vecnorm(barrierMatrix, 2, 2);
-            violated = barrierBound < 0 & sensitivity > 1e-12;
-            % The current control polygon already satisfies all active linearized barriers.
-            if ~any(violated)
-                break;
-            end
-            gain = min(1, trustRadius_deg / max( -barrierBound(violated) ./ sensitivity(violated)));
-            barrierBound(violated) = gain * barrierBound(violated);
-            [decision_deg, ~, exitFlag] = quadprog( ...
-                eye(decisionCount), zeros(decisionCount, 1), ...
-                barrierMatrix, barrierBound, [], [], ...
-                -trustRadius_deg * ones(decisionCount, 1), ...
-                trustRadius_deg * ones(decisionCount, 1), [], optimoptions("quadprog", "Display", "off"));
-            optimizerAccepted = exitFlag > 0;
-            if ~optimizerAccepted
-                decision_deg = zeros(decisionCount, 1);
-            end
-        else
-            [decision_deg, diagnostics] = azElPlannerMethods.corridor.internal.motion.optimizeExactTraversal( ...
-                bestMotion, affineBasis, zeros(decisionCount, 1), barrierMatrix, barrierBound, trustRadius_deg, limits);
-            optimizerAccepted = diagnostics.Accepted;
-        end
-        trialMotion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
-            route_deg, initialState, goalState, limits, struct( ...
-            "SpanWeights", spanWeights, ...
-            "ControlPointOffsets_deg", ...
-            [decision_deg(1:interiorCount), ...
-            decision_deg(interiorCount + 1:end)], ...
-            "SampleTime_s", plannerOptions.SampleTime_s, ...
-            "GoalTimeMode", plannerOptions.GoalTimeMode, "AllowAzimuthWrapping", plannerOptions.AllowAzimuthWrapping));
-        trialValidation = azElPlannerMethods.corridor.validateTrajectory( ...
-            trialMotion, obstacles, initialState, goalState, limits, plannerOptions);
-        clearanceImproved = trialMotion.Success && ...
-            trialValidation.MinimumClearance_deg > bestValidation.MinimumClearance_deg + 1e-6;
-        durationImproved = trialValidation.Passed && trialMotion.MotionDuration_s < bestMotion.MotionDuration_s - 1e-9;
-        accepted = optimizerAccepted && ((recoveringCollision && ...
-            clearanceImproved) || (~recoveringCollision && durationImproved));
-        % Stop at the first independently accepted update instead of perturbing a valid motion further.
-        if accepted
-            break;
-        end
-        trustRadius_deg = trustRadius_deg / 2;
-    end
-    if ~accepted
-        break;
-    end
-    bestMotion = trialMotion;
-    bestValidation = trialValidation;
-    route_deg = [initialState.position_deg; bestMotion.ControlPoint_deg(4:end - 3, :); goalState.position_deg];
-    if recoveringCollision && bestValidation.Passed
-        break;
-    end
-end
-end
-
-function [matrix, bound] = dynamicBarrierRows( ...
-        motion, affineBasis, obstacles, interiorCount, clearanceTarget_deg, activationRadius_deg)
-% Linearize protected exterior half-planes at time-local closest points.
-time_s = unique([linspace(motion.time_s(1), motion.time_s(end), 161).'; ...
-    motion.Polynomial.SegmentStartTime_s; motion.time_s(end)]);
-minimumTimes_s = zeros(motion.Polynomial.SegmentCount, 1);
-
-% Add each span's locally minimum-clearance time to the barrier sample set.
-for segmentIndex = 1:motion.Polynomial.SegmentCount
-    intervalStart_s = motion.Polynomial.SegmentStartTime_s(segmentIndex);
-    intervalEnd_s = intervalStart_s + motion.Polynomial.SegmentDuration_s(segmentIndex);
-    minimumTimes_s(segmentIndex) = fminbnd( ...
-        @(queryTime_s) clearanceAtTime( ...
-        motion.Polynomial, obstacles, queryTime_s), ...
-        intervalStart_s, intervalEnd_s, optimset("Display", "off", "TolX", 1e-5));
-end
-time_s = unique([time_s; minimumTimes_s]);
-[~, position_deg] = azElPlannerMethods.corridor.internal.motion.evaluatePolynomial( motion.Polynomial, time_s);
-matrix = zeros(numel(time_s), 2 * interiorCount);
-bound = zeros(numel(time_s), 1);
-barrierCount = 0;
-activationDistance_deg = sqrt(2) * activationRadius_deg + clearanceTarget_deg;
-
-% Build a time-local barrier only where the current trajectory approaches an obstacle.
-for timeIndex = 1:numel(time_s)
-    nearestClearance_deg = Inf;
-    nearestPoint_deg = [NaN NaN];
-
-    % Select the closest active obstacle boundary at this physical time.
-    for obstacleIndex = 1:numel(obstacles)
-        shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), time_s(timeIndex));
-        [clearance_deg, obstaclePoint_deg] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( ...
-            shape, position_deg(timeIndex, :));
-        if clearance_deg < nearestClearance_deg
-            nearestClearance_deg = clearance_deg;
-            nearestPoint_deg = obstaclePoint_deg;
-        end
-    end
-    if nearestClearance_deg >= activationDistance_deg
-        continue;
-    end
-    outward = position_deg(timeIndex, :) - nearestPoint_deg;
-    if nearestClearance_deg < 0
-        outward = -outward;
-    end
-    outward = outward / norm(outward);
-    segmentIndex = min(motion.Polynomial.SegmentCount, ...
-        sum(time_s(timeIndex) >= motion.Polynomial.SegmentStartTime_s(2:end)) + 1);
-    tau = (time_s(timeIndex) - ...
-        motion.Polynomial.SegmentStartTime_s(segmentIndex)) / motion.Polynomial.SegmentDuration_s(segmentIndex);
-    basisValue = zeros(1, interiorCount);
-
-    % Evaluate how every interior control point moves the trajectory at this barrier time.
-    for interiorIndex = 1:interiorCount
-        coefficient = reshape(affineBasis.positionPower_deg( segmentIndex, interiorIndex + 3, :), 1, []);
-        basisValue(interiorIndex) = (tau .^ (0:numel(coefficient) - 1)) * coefficient.';
-    end
-    barrierCount = barrierCount + 1;
-    matrix(barrierCount, :) = -[ outward(1) * basisValue, outward(2) * basisValue];
-    bound(barrierCount) = outward * (position_deg(timeIndex, :) - nearestPoint_deg).' - clearanceTarget_deg;
-end
-matrix = matrix(1:barrierCount, :);
-bound = bound(1:barrierCount);
-end
-
-function clearance_deg = clearanceAtTime(polynomial, obstacles, time_s)
-% Evaluate nearest protected-obstacle clearance at one physical time.
-[~, position_deg] = azElPlannerMethods.corridor.internal.motion.evaluatePolynomial(polynomial, time_s);
-clearance_deg = Inf;
-
-% Return the minimum signed clearance across all active obstacles at this time.
-for obstacleIndex = 1:numel(obstacles)
-    shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime(obstacles(obstacleIndex), time_s);
-    clearance_deg = min(clearance_deg, azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(shape, position_deg));
-end
-end
-
-function [trial, trialCount] = solveTimingTrial( ...
-        logSpanWeight, trialCount, obstacles, initialState, goalState, limits, route_deg, solverOptions)
+function [trial, trialCount, stageTiming] = solveTimingTrial( ...
+        logSpanWeight, trialCount, obstacles, initialState, goalState, ...
+        limits, route_deg, solverOptions, stageTiming)
 % Solve and certify one positive relative knot-span allocation.
 spanWeight = exp(logSpanWeight(:));
 routeTau = [0; cumsum(spanWeight)];
 trialOptions = solverOptions;
 trialOptions.RouteTau = routeTau / routeTau(end);
-trial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( obstacles, initialState, goalState, limits, route_deg, trialOptions);
+trial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
+    obstacles, initialState, goalState, limits, route_deg, trialOptions);
+stageTiming = addStageTiming( ...
+    stageTiming, trial.OptimizerDiagnostics.StageTiming);
 trialCount = trialCount + 1;
 end
 
@@ -792,8 +604,10 @@ if candidate.Success
 end
 end
 
-function [candidate, retainedMultiplier, trialCount] = recoverTimedHold( ...
-        candidate, obstacles, initialState, goalState, limits, route_deg, solverOptions, zeroLengthSpan)
+function [candidate, retainedMultiplier, trialCount, stageTiming] = ...
+        recoverTimedHold( ...
+        candidate, obstacles, initialState, goalState, limits, route_deg, ...
+        solverOptions, zeroLengthSpan, stageTiming)
 % Bracket and bisect the timing of a collision-blocked explicit hold.
 baseSpanWeight = diff(solverOptions.RouteTau);
 % Cover timing ratios geometrically without increasing the 13-trial budget.
@@ -814,6 +628,8 @@ for multiplierIndex = 1:numel(multiplierGrid)
         trialOptions = holdOptions( solverOptions, baseSpanWeight, zeroLengthSpan, multiplier);
         trial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
             obstacles, initialState, goalState, limits, route_deg, trialOptions);
+        stageTiming = addStageTiming( ...
+            stageTiming, trial.OptimizerDiagnostics.StageTiming);
     end
     if trial.Success
         validatedCandidate = trial;
@@ -840,6 +656,8 @@ for bisectionIndex = 1:maximumBisectionTrialCount
     trialOptions = holdOptions( solverOptions, baseSpanWeight, zeroLengthSpan, midpointMultiplier);
     trial = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
         obstacles, initialState, goalState, limits, route_deg, trialOptions);
+    stageTiming = addStageTiming( ...
+        stageTiming, trial.OptimizerDiagnostics.StageTiming);
     if trial.Success
         validatedCandidate = trial;
         retainedMultiplier = midpointMultiplier;
@@ -857,4 +675,34 @@ spanWeight = baseSpanWeight;
 spanWeight(zeroLengthSpan) = holdMultiplier * spanWeight(zeroLengthSpan);
 routeTau = [0; cumsum(spanWeight)];
 options.RouteTau = routeTau / routeTau(end);
+end
+
+function stageTiming = addStageTiming(stageTiming, contribution)
+%% Section 0: Header & Readme
+% SYNTAX
+%   stageTiming = addStageTiming(stageTiming, contribution)
+%**************************************************************************
+% PURPOSE
+%   - Add one component's five exclusive stages to the planner total.
+%**************************************************************************
+% INPUTS
+%   - stageTiming (scalar struct), shared planner-stage totals.
+%   - contribution (scalar struct), component stage contribution.
+%**************************************************************************
+% OUTPUTS
+%   - stageTiming (scalar struct), value-updated exclusive stage totals.
+%**************************************************************************
+% UNITS
+%   - All timing fields are seconds.
+%**************************************************************************
+stageNames = [ ...
+    "TopologyElapsedTime_s", ...
+    "CorridorConstructionElapsedTime_s", ...
+    "MotionSolvingElapsedTime_s", ...
+    "CollisionCheckingElapsedTime_s", ...
+    "FinalValidationElapsedTime_s"];
+
+for name = stageNames
+    stageTiming.(name) = stageTiming.(name) + contribution.(name);
+end
 end

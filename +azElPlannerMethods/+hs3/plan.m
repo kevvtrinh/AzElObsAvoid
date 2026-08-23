@@ -54,11 +54,13 @@ if nargin < 4
     error("planAzElMotion:MissingInputs", ...
         "obstacles, initialState, goalState, and limits are required.");
 end
+planningTimer = tic;
+stageTiming = azElPlannerMethods.internal.stageTiming();
 if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 options = resolvePlannerOptions(defaults, optionOverrides);
-obstacles = azElPlannerMethods.hs3.combineObstacles(obstacles);
+obstacles = combineAzElObstacles(obstacles);
 initialState = normalizeState(initialState, "initialState");
 goalState = normalizeGoalState(goalState);
 limits = normalizeLimits(limits);
@@ -81,7 +83,6 @@ if options.AllowAzimuthWrapping
         goalState.targetPosition_deg(:, 1) = goalState.targetPosition_deg(:, 1) + 360 * turnCount;
     end
 end
-planningTimer = tic;
 [result, summaryTemplate] = azElPlannerMethods.hs3.internal.emptyAzElPlannerResult( ...
     obstacles, initialState, goalState, limits, options);
 obstacles = azElPlannerMethods.hs3.internal.obstacles.prepareDynamic(obstacles);
@@ -99,8 +100,9 @@ end
 if ~endpointFeasible
     result.Message = endpointMessage;
     result.TerminationReason = endpointReason;
-    result.ElapsedPlanningTime_s = toc(planningTimer);
     result.SearchDiagnostics.TerminationReason = endpointReason;
+    result = azElPlannerMethods.internal.stageTiming( ...
+        result, planningTimer, stageTiming);
     if options.Verbose
         fprintf("[AzEl] Complete: success=0, reason=%s, elapsed=%.3f s. %s\n", ...
             endpointReason, result.ElapsedPlanningTime_s, endpointMessage);
@@ -115,6 +117,7 @@ end
 [seeds, gridDiagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, options);
 gridDiagnostics.ElapsedTime_s = toc(seedTimer);
+stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
 if options.Verbose
@@ -146,9 +149,10 @@ for seedIndex = 1:numel(seeds)
     end
     firstMotionOptions = internalOptions;
     firstMotionOptions.AttemptEarlyHs3 = true;
-    firstCandidate = azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
+    [firstCandidate, stageTiming] = ...
+        azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
         obstacles, initialState, goalState, limits, ...
-        firstMotionOptions, seeds(seedIndex));
+        firstMotionOptions, seeds(seedIndex), stageTiming);
     candidates{seedIndex} = firstCandidate;
     seedSummaries(seedIndex) = candidateSummary( ...
         firstCandidate, 0, summaryTemplate);
@@ -166,8 +170,8 @@ for seedIndex = 1:numel(seeds)
     if firstCandidate.MotionSource == "hs3"
         solverElapsedTime_s = firstCandidate.SolverDiagnostics.ElapsedTime_s;
         hs3ElapsedTime_s = hs3ElapsedTime_s + solverElapsedTime_s;
-        firstMotionStageTime_s = max(0, ...
-            firstMotionStageTime_s - solverElapsedTime_s);
+        firstMotionStageTime_s = max( ...
+            0, firstMotionStageTime_s - solverElapsedTime_s);
     end
     firstMotionElapsedTime_s = firstMotionElapsedTime_s + firstMotionStageTime_s;
     if options.Verbose
@@ -258,20 +262,29 @@ for orderIndex = 1:numel(improvementOrder)
         obstacles, initialState, goalState, limits, ...
         solverOptions, trialSeed);
     finalCandidate.MotionSource = "hs3";
-    validation = validateCandidate( ...
-        finalCandidate, obstacles, initialState, goalState, ...
-        limits, validationOptions);
+    if isempty(finalCandidate.time_s)
+        validation = azElPlannerMethods.hs3.validateTrajectory();
+        validation.Message = "The solver returned no trajectory.";
+    else
+        validation = azElPlannerMethods.hs3.validateTrajectory( ...
+            finalCandidate, obstacles, initialState, goalState, ...
+            limits, validationOptions);
+    end
+    finalCandidate.Validation = validation;
+    stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+        stageTiming, finalCandidate);
     relinearizationCount = 0;
 
     % Rebuild a frozen collision corridor only while collision is the remaining
     % validation failure and the bounded relinearization budget remains.
-    while ~validation.Passed && ~validation.CollisionFree && ...
-            ~isempty(finalCandidate.time_s) && ...
+    while ~validation.Passed && ...
+            ~validation.CollisionFree && ~isempty(finalCandidate.time_s) && ...
             relinearizationCount < 2 && ...
             (~isfinite(seedDeadline_s) || ...
             seedDeadline_s - toc(planningTimer) > minimumSolverTime_s)
         relinearizationCount = relinearizationCount + 1;
-        trialSeed = candidateSeed(finalCandidate, seeds(seedIndex));
+        trialSeed = azElPlannerMethods.hs3.internal.candidateSeed( ...
+            finalCandidate, seeds(seedIndex));
         remainingSeedTime_s = seedDeadline_s - toc(planningTimer);
         if isfinite(remainingSeedTime_s)
             validationReserve_s = min(1, 0.2 * remainingSeedTime_s);
@@ -286,9 +299,18 @@ for orderIndex = 1:numel(improvementOrder)
             obstacles, initialState, goalState, limits, ...
             solverOptions, trialSeed);
         finalCandidate.MotionSource = "hs3";
-        validation = validateCandidate( ...
-            finalCandidate, obstacles, initialState, goalState, ...
-            limits, validationOptions);
+        if isempty(finalCandidate.time_s)
+            validation = azElPlannerMethods.hs3.validateTrajectory();
+            validation.Message = "The solver returned no trajectory.";
+        else
+            validation = azElPlannerMethods.hs3.validateTrajectory( ...
+                finalCandidate, obstacles, initialState, goalState, ...
+                limits, validationOptions);
+        end
+        finalCandidate.Validation = validation;
+        stageTiming = ...
+            azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+            stageTiming, finalCandidate);
     end
     finalCandidate.Validation = validation;
     previousSummary = seedSummaries(seedIndex);
@@ -333,7 +355,7 @@ for orderIndex = 1:numel(improvementOrder)
     hs3ElapsedTime_s = hs3ElapsedTime_s + toc(hs3AttemptTimer);
 end
 %% Section 6: Select And Assemble The Result
-% Preserve every seed attempt and timing diagnostic before selecting a winner.
+% Preserve every seed summary and aggregate timing before selecting a winner.
 result.SeedSummaries = seedSummaries;
 result.SearchDiagnostics.SeedSummaries = seedSummaries;
 result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
@@ -350,9 +372,10 @@ result.SearchDiagnostics.AttemptedSeedCount = nnz( ...
 if isempty(validatedIndices)
     result.Message = "No attempted seed motion passed independent validation.";
     result.TerminationReason = "noValidatedSeed";
-    result.ElapsedPlanningTime_s = toc(planningTimer);
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
     result.SearchDiagnostics.BestPartialSeedIndex = bestPartialSeed(seedSummaries);
+    result = azElPlannerMethods.internal.stageTiming( ...
+        result, planningTimer, stageTiming);
     if options.Verbose
         fprintf("[AzEl] Complete: success=0, reason=%s, seeds=%d, " + ...
             "attempted=%d, validated=0, elapsed=%.3f s.\n", ...
@@ -375,16 +398,74 @@ if options.Verbose
 end
 selectedAttemptSummary = result.SeedSummaries(selectedSeedIndex);
 meshRefinementPassCount = 0;
-
 % Refine only an HS3-selected motion; deterministic stop motions have no HS3 mesh.
 if selectedCandidate.MotionSource == "hs3"
     refinementOptions = internalOptions;
-    [selectedCandidate, meshRefinementPassCount] = refineCandidate( ...
-        selectedCandidate, seeds(selectedSeedIndex), obstacles, ...
-        initialState, goalState, limits, refinementOptions, ...
-        planningTimer, improvementDeadline_s);
+    segmentCount = selectedCandidate.Polynomial.SegmentCount;
+    for passIndex = 1:refinementOptions.MaximumMeshRefinementPasses
+        nextSegmentCount = min(2 * segmentCount, ...
+            refinementOptions.MaximumCollocationSegmentCount);
+        remainingTime_s = improvementDeadline_s - toc(planningTimer);
+        if nextSegmentCount <= segmentCount || ...
+                (isfinite(remainingTime_s) && remainingTime_s <= 0.1)
+            break;
+        end
+        refinedOptions = refinementOptions;
+        refinedOptions.CollocationSegmentCount = nextSegmentCount;
+        if refinementOptions.Verbose
+            fprintf("[AzEl][refine] pass=%d, segments=%d->%d.\n", ...
+                passIndex, segmentCount, nextSegmentCount);
+        end
+        if isfinite(remainingTime_s)
+            validationReserve_s = min(2, max(0.05, 0.2 * remainingTime_s));
+            refinedOptions.MaximumSolverTime_s = remainingTime_s - ...
+                validationReserve_s;
+        else
+            refinedOptions.MaximumSolverTime_s = Inf;
+        end
+        refinedSeed = azElPlannerMethods.hs3.internal.candidateSeed( ...
+            selectedCandidate, seeds(selectedSeedIndex));
+        trial = azElPlannerMethods.hs3.internal.motion.solveHs3( ...
+            obstacles, initialState, goalState, limits, ...
+            refinedOptions, refinedSeed);
+        trial.MotionSource = "hs3";
+        if isempty(trial.time_s)
+            trial.Validation = azElPlannerMethods.hs3.validateTrajectory();
+            trial.Validation.Message = "The solver returned no trajectory.";
+        else
+            trial.Validation = azElPlannerMethods.hs3.validateTrajectory( ...
+                trial, obstacles, initialState, goalState, limits, ...
+                refinementOptions);
+        end
+        stageTiming = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
+            stageTiming, trial);
+        arrivalIsNoWorse = trial.FinalTime_s <= selectedCandidate.FinalTime_s + ...
+            refinementOptions.ArrivalTimeTolerance_s;
+        arrivalIsBetter = trial.FinalTime_s < selectedCandidate.FinalTime_s - ...
+            refinementOptions.ArrivalTimeTolerance_s;
+        jerkTolerance = max(1e-12, ...
+            refinementOptions.OptimalityTolerance * max(1, ...
+            selectedCandidate.IntegratedSquaredJerk_deg2_s5));
+        jerkIsNoWorse = trial.IntegratedSquaredJerk_deg2_s5 <= ...
+            selectedCandidate.IntegratedSquaredJerk_deg2_s5 + jerkTolerance;
+        qualityIsNoWorse = arrivalIsNoWorse && ...
+            (arrivalIsBetter || jerkIsNoWorse);
+        if ~trial.Validation.Passed || ~qualityIsNoWorse
+            if refinementOptions.Verbose
+                fprintf("[AzEl][refine] pass=%d retained=0, " + ...
+                    "validation=%d.\n", passIndex, trial.Validation.Passed);
+            end
+            break;
+        end
+        selectedCandidate = trial;
+        segmentCount = nextSegmentCount;
+        meshRefinementPassCount = passIndex;
+        if refinementOptions.Verbose
+            fprintf("[AzEl][refine] pass=%d retained=1, " + ...
+                "validation=1.\n", passIndex);
+        end
+    end
 end
-
 % Replace the selected seed's earlier summary with its final refined evidence.
 selectedRelinearizationCount = selectedAttemptSummary.RelinearizationCount;
 result.SeedSummaries(selectedSeedIndex) = candidateSummary( ...
@@ -422,12 +503,13 @@ result.SeedCorridor = selectedCandidate.SeedCorridor;
 result.Validation = selectedCandidate.Validation;
 
 % Finish the public timing and search records without rerunning any planning stage.
-result.ElapsedPlanningTime_s = toc(planningTimer);
 result.ArrivalTime_s = selectedCandidate.FinalTime_s;
 result.TrajectoryDuration_s = selectedCandidate.MotionDuration_s;
 result.GoalHorizon_s = goalState.time_s - initialState.time_s;
 result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.SearchDiagnostics.BestPartialSeedIndex = selectedSeedIndex;
+result = azElPlannerMethods.internal.stageTiming( ...
+    result, planningTimer, stageTiming);
 
 if options.Verbose
     fprintf("[AzEl] Complete: success=1, reason=%s, seeds=%d, " + ...
@@ -657,12 +739,12 @@ function [feasible, message, reason] = validateEndpoints( ...
 % Return expected endpoint infeasibility without invoking the optimizer.
 goalPosition_deg = azElPlannerMethods.hs3.internal.goalPositionAtTime( ...
     goalState, goalState.time_s);
-startIsBlocked = azElPlannerMethods.hs3.queryTimeObstacle( ...
+startIsBlocked = queryAzElTimeObstacle( ...
     obstacles, initialState.position_deg(1), ...
     initialState.position_deg(2), initialState.time_s);
 fixedTerminalIsBlocked = false;
 if options.GoalTimeMode == "fixedArrival"
-    fixedTerminalIsBlocked = azElPlannerMethods.hs3.queryTimeObstacle( ...
+    fixedTerminalIsBlocked = queryAzElTimeObstacle( ...
         obstacles, goalPosition_deg(1), goalPosition_deg(2), ...
         goalState.time_s);
 end
@@ -727,93 +809,6 @@ end
 feasible = true;
 message = "";
 reason = "";
-end
-
-function validation = validateCandidate(candidate, obstacles, ...
-        initialState, goalState, limits, options)
-% Run the public independent validator on every nonempty solver outcome.
-if isempty(candidate.time_s)
-    validation = azElPlannerMethods.hs3.validateTrajectory();
-    validation.Message = "The solver returned no trajectory.";
-    return;
-end
-validation = azElPlannerMethods.hs3.validateTrajectory( ...
-    candidate, obstacles, initialState, goalState, limits, options);
-end
-
-function seed = candidateSeed(candidate, originalSeed)
-% Reassociate a failed collision corridor without adding a new topology.
-seed = originalSeed;
-sampleTau = (candidate.time_s - candidate.time_s(1)) / ...
-    (candidate.time_s(end) - candidate.time_s(1));
-[sampleTau, retainedIndex] = unique(sampleTau, "stable");
-seed.tau = candidate.ControlTau;
-seed.position_deg = interp1( ...
-    sampleTau, candidate.position_deg(retainedIndex, :), seed.tau, "linear");
-seed.EstimatedDuration_s = candidate.MotionDuration_s;
-end
-
-function [candidate, completedPassCount] = refineCandidate( ...
-        candidate, originalSeed, obstacles, initialState, goalState, ...
-        limits, options, planningTimer, refinementDeadline_s)
-% Refine only the selected validated local solution on a denser HS3 mesh.
-completedPassCount = 0;
-segmentCount = candidate.Polynomial.SegmentCount;
-
-% Double the selected candidate's mesh one pass at a time until the configured
-% count, segment cap, or shared improvement deadline stops refinement.
-for passIndex = 1:options.MaximumMeshRefinementPasses
-    nextSegmentCount = min(2 * segmentCount, ...
-        options.MaximumCollocationSegmentCount);
-    remainingTime_s = refinementDeadline_s - toc(planningTimer);
-    if nextSegmentCount <= segmentCount || ...
-            (isfinite(remainingTime_s) && remainingTime_s <= 0.1)
-        break;
-    end
-    refinedOptions = options;
-    refinedOptions.CollocationSegmentCount = nextSegmentCount;
-    if options.Verbose
-        fprintf("[AzEl][refine] pass=%d, segments=%d->%d.\n", ...
-            passIndex, segmentCount, nextSegmentCount);
-    end
-    if isfinite(remainingTime_s)
-        validationReserve_s = min(2, max(0.05, 0.2 * remainingTime_s));
-        refinedOptions.MaximumSolverTime_s = remainingTime_s - validationReserve_s;
-    else
-        refinedOptions.MaximumSolverTime_s = Inf;
-    end
-    refinedSeed = candidateSeed(candidate, originalSeed);
-    trial = azElPlannerMethods.hs3.internal.motion.solveHs3( ...
-        obstacles, initialState, goalState, limits, ...
-        refinedOptions, refinedSeed);
-    trial.MotionSource = "hs3";
-    trial.Validation = validateCandidate( ...
-        trial, obstacles, initialState, goalState, limits, options);
-    arrivalIsNoWorse = trial.FinalTime_s <= candidate.FinalTime_s + ...
-        options.ArrivalTimeTolerance_s;
-    arrivalIsBetter = trial.FinalTime_s < candidate.FinalTime_s - ...
-        options.ArrivalTimeTolerance_s;
-    jerkTolerance = max(1e-12, options.OptimalityTolerance * ...
-        max(1, candidate.IntegratedSquaredJerk_deg2_s5));
-    jerkIsNoWorse = trial.IntegratedSquaredJerk_deg2_s5 <= ...
-        candidate.IntegratedSquaredJerk_deg2_s5 + jerkTolerance;
-    qualityIsNoWorse = arrivalIsNoWorse && ...
-        (arrivalIsBetter || jerkIsNoWorse);
-    if ~trial.Validation.Passed || ~qualityIsNoWorse
-        if options.Verbose
-            fprintf("[AzEl][refine] pass=%d retained=0, validation=%d.\n", ...
-                passIndex, trial.Validation.Passed);
-        end
-        break;
-    end
-    candidate = trial;
-    segmentCount = nextSegmentCount;
-    completedPassCount = passIndex;
-    if options.Verbose
-        fprintf("[AzEl][refine] pass=%d retained=1, validation=1.\n", ...
-            passIndex);
-    end
-end
 end
 
 function summary = candidateSummary( ...

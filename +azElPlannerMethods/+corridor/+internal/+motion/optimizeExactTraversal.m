@@ -1,10 +1,10 @@
 function [bestDecision_deg, diagnostics] = optimizeExactTraversal( ...
-        baseMotion, affineBasisPolynomial, initialDecision_deg, ...
+        baseMotion, affineModel, initialDecision_deg, ...
         corridorMatrix, corridorBound, maximumOffset_deg, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [bestDecision_deg, diagnostics] = azElPlannerMethods.corridor.internal.motion.optimizeExactTraversal(baseMotion, ...
-%       affineBasisPolynomial, initialDecision_deg, corridorMatrix, ...
+%       affineModel, initialDecision_deg, corridorMatrix, ...
 %       corridorBound, maximumOffset_deg, limits)
 %**************************************************************************
 % PURPOSE
@@ -15,7 +15,7 @@ function [bestDecision_deg, diagnostics] = optimizeExactTraversal( ...
 %**************************************************************************
 % INPUTS
 %   - baseMotion (scalar struct), affine motion origin.
-%   - affineBasisPolynomial (scalar struct), decision-to-motion basis.
+%   - affineModel (scalar struct), shared fixed-duration affine basis.
 %   - initialDecision_deg (numeric vector), starting interior offsets.
 %   - corridorMatrix, corridorBound (numeric arrays), linear safe region.
 %   - maximumOffset_deg (nonnegative scalar), decision trust bound.
@@ -37,7 +37,11 @@ function [bestDecision_deg, diagnostics] = optimizeExactTraversal( ...
 derivativeFields = ["velocityPower_deg_s", "accelerationPower_deg_s2", "jerkPower_deg_s3"];
 derivativeLimits = {limits.maxVelocity_deg_s, limits.maxAcceleration_deg_s2, limits.maxJerk_deg_s3};
 decisionCount = numel(initialDecision_deg);
-interiorCount = decisionCount / 2;
+interiorCount = affineModel.VariableControlCount;
+if decisionCount ~= 2 * affineModel.VariableControlCount
+    error("optimizeExactTraversal:DecisionCountMismatch", ...
+        "The decision vector must match the fixed-duration affine model.");
+end
 segmentCount = baseMotion.Polynomial.SegmentCount;
 basisPower = cell(3, 1);
 basePower = cell(3, 1);
@@ -47,13 +51,15 @@ for derivativeOrder = 1:3
     basePower{derivativeOrder} = baseMotion.Polynomial.(derivativeFields(derivativeOrder));
     coefficientCount = size(basePower{derivativeOrder}, 3);
     basisPower{derivativeOrder} = zeros( segmentCount, 2, coefficientCount, decisionCount);
-    affinePower = affineBasisPolynomial.(derivativeFields(derivativeOrder));
+    affinePower = affineModel.UnitControlPolynomial.( ...
+        derivativeFields(derivativeOrder));
 
     % Place each interior-control offset into its axis-specific decision column.
     for decisionIndex = 1:decisionCount
         interiorIndex = mod(decisionIndex - 1, interiorCount) + 1;
         axisIndex = floor((decisionIndex - 1) / interiorCount) + 1;
-        controlPointIndex = interiorIndex + 3;
+        controlPointIndex = ...
+            affineModel.VariableControlIndex(interiorIndex);
         basisPower{derivativeOrder}(:, axisIndex, :, decisionIndex) = affinePower(:, controlPointIndex, :);
     end
 end

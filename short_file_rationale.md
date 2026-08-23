@@ -6,14 +6,15 @@ verification files, and imported snapshots. Callers are still counted across
 tests, examples, benchmarks, and the sandbox because those calls establish
 real ownership.
 
-The combined branch has 49 production files below 100 code lines:
+The combined branch has 51 production files below 100 code lines:
 
 | Area | Short files | Result |
 | --- | ---: | --- |
-| Root public APIs | 6 | All have multiple callers. |
-| Shared root internals | 6 | Four have multiple callers; two are plotter-owned adapters. |
-| Corridor method | 21 | All are in the corridor closure; four have one caller. |
-| HS3 method | 16 | All are in the HS3 closure; three have one caller. |
+| Root public APIs | 5 | All have multiple callers. |
+| Shared root internals | 8 | Six have multiple callers; two retain narrow data contracts. |
+| Corridor method | 20 | All are in the corridor closure; four have one caller. |
+| HS3 method | 17 | All are in the HS3 closure; four have one caller. |
+| Shared planner timing | 1 | One consolidated function serves both method closures. |
 
 No short production file has zero executable callers. A separate reachability
 audit did find 22 obsolete root copies of planner search, motion, and validation
@@ -28,19 +29,19 @@ the method folders.
 | `makeAzElObstacleData.m` | 28 | Public protected-obstacle constructor used by 21 callers. |
 | `planAzElMotion.m` | 80 | Stable planner dispatcher used by 23 callers; merging it would duplicate method selection throughout the repository. |
 | `planAzElMovingTargetIntercept.m` | 43 | Stable moving-target dispatcher used by five examples and public contract checks. |
-| `queryAzElTimeObstacle.m` | 46 | Public method-aware query dispatcher used by examples and regression coverage. |
 | `validateAzElTrajectory.m` | 43 | Public method-aware validation dispatcher used by examples, sandbox, and regression coverage. |
 
-These files are small because they are interface boundaries. Their job is to
-keep callers stable while selecting one complete implementation, not to contain
-the implementation itself.
+These files are small because they are interface boundaries. The canonical
+`queryAzElTimeObstacle.m` is no longer in this table: it now owns the complete
+shared 197-code-line query implementation instead of dispatching to two copies.
 
 ## Shared root internals
 
 | Files | Why they stay separate |
 | --- | --- |
 | `resolveOptions.m`, `normalizeLogicalScalar.m` | Shared contract primitives used by constructors, plotting, example setup, and geographic helpers. Merging them would reproduce option semantics in many callers. |
-| `+obstacles/prepareDynamic.m`, `+geometry/boundaryShape.m` | Plot preparation and canonical polygon conversion. Preparation is also called by the shape adapter. |
+| `+obstacles/prepareDynamic.m`, `+geometry/boundaryShape.m` | Canonical obstacle preparation and polygon conversion shared by querying and plotting. |
+| `+geometry/boundaryToEdges.m`, `+geometry/pointPolygonClearance.m` | One deterministic traversal and vectorized signed-clearance implementation shared by both planners, querying, and validation. |
 | `+obstacles/shapeAtTime.m` | One direct plotter caller, but it owns the complete sampled-history interpolation and topology-change policy. Folding 94 code lines into the already-large plotter would mix geometry interpretation with rendering. |
 | `goalPositionAtTime.m` | One tracked plotter caller, but it owns the fixed-versus-sampled goal adapter used by several plotter sections. Keeping one adapter prevents those sections from drifting. |
 
@@ -51,16 +52,16 @@ contracts, while `plotAzElMotion.m` owns rendering.
 ## Corridor method
 
 Every corridor file below is reachable from
-`azElPlannerMethods.corridor.plan` or a method-public query/validation entry.
+`azElPlannerMethods.corridor.plan` or its method-specific validator.
 Most have two to ten direct callers.
 
 | Category | Short files | Separation reason |
 | --- | --- | --- |
-| Geometry | `boundaryShape`, `boundaryToEdges`, `convexPolygonRegions`, `pointPolygonClearance` | One authoritative polygon representation, traversal, decomposition, and signed-clearance vocabulary shared by search, motion, and certification. |
+| Geometry | `boundaryShape`, `convexPolygonRegions` | Corridor-specific polygon construction and convex decomposition used by search and certification. |
 | Obstacles | `buildEnvelopeBoundary`, `prepareDynamic`, `shapeAtTime` | Immutable obstacle preparation and time interpolation are shared across the complete corridor closure. |
-| Motion | `evaluatePolynomial` | Canonical evaluator shared by construction, optimization, and independent validation. |
+| Motion | `evaluatePolynomial`, `buildFixedDurationAffineModel`, `spanTimeDemand` | Canonical evaluation, one fixed-duration affine map, and one span-demand measure shared by distinct motion paths. |
 | Validation | `buildSeedCorridor`, `certifySeedCorridor`, `seedCorridorInequality`, `seedEnvelopeContainsObstacles` | Certificate construction and checking remain separate from the optimizer they independently check. |
-| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions`, `combineObstacles` | Reused contract and mathematical primitives prevent duplicated semantics inside the isolated method. |
+| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions` | Reused contract and mathematical primitives prevent duplicated semantics inside the method. |
 
 Four corridor files have one direct caller and need an explicit decision:
 
@@ -74,18 +75,18 @@ Four corridor files have one direct caller and need an explicit decision:
 ## HS3 method
 
 Every HS3 short file is reachable from `azElPlannerMethods.hs3.plan` or its
-method-public query/validation entry. The files also preserve the exact
-`plan-325` dependency boundary, which is required for source-baseline fidelity
-and physical folder removal.
+method-specific validator. Shared canonical obstacle and query infrastructure
+does not depend on either method folder, preserving physical folder removal.
 
 | Category | Short files | Separation reason |
 | --- | --- | --- |
-| Geometry and obstacles | `pointPolygonClearance`, `prepareDynamic` | Shared geometry used by seed construction, HS3, queries, and validation. |
+| Obstacles | `prepareDynamic` | HS3's immutable per-call obstacle cache; canonical clearance now lives in `azElInternal.geometry`. |
 | Motion | `evaluatePolynomial` | One polynomial evaluator shared by analytic motion, HS3, and independent validation. |
 | Validation | `buildSeedCorridor`, `seedCorridorInequality`, `seedEnvelopeContainsObstacles` | Shared exact certificate primitives used by the generator and validator. |
-| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions`, `combineObstacles` | Reused option, goal, conversion, and obstacle contracts inside the isolated HS3 closure. |
+| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions` | Reused option, goal, and conversion contracts inside the HS3 closure. |
+| Timing and candidate adapters | `emptyHs3SolverDiagnostics`, `addHs3CandidateTiming`, `candidateSeed` | One stable flat solver schema and one aggregate timing owner; the remaining seed adapter keeps collision relinearization semantics consistent. |
 
-Three HS3 files have one direct caller. The jerk objective and corridor
+Four HS3 files have one direct caller. The jerk objective and corridor
 certificate also have direct regression callers, so they are not included in
 this sole-caller table:
 
@@ -94,13 +95,22 @@ this sole-caller table:
 | `+internal/emptyAzElPlannerResult.m` | 58 | `plan.m` | Owns the stable result schema and keeps every expected failure structurally identical. |
 | `+internal/+motion/linearizeHs3Constraints.m` | 17 | `solveHs3.m` | Owns the sparse HS3 constraint/Jacobian mapping; inlining would obscure the nonlinear solver setup. |
 | `+internal/+search/clusterSeedShape.m` | 89 | `generateTopologySeeds.m` | A distinct clustering algorithm extracted from the largest HS3 search file. |
+| `+internal/candidateSeed.m` | 10 | `plan.m` | Reassociates a failed collision corridor without introducing a new topology; inlining it would expand the 882-line planner. |
+
+## Shared planner timing
+
+One shared timing function is used by both complete method closures:
+
+| File | Code lines | Why it stays separate |
+| --- | ---: | --- |
+| `+internal/stageTiming.m` | 56 | Defines the schema, validates exclusive ownership, reconciles the residual, and synchronizes planner-result elapsed time. |
 
 ## Merge decision
 
 No remaining short production file should be merged solely to reduce file
-count. The nine single-caller files own a stable schema, a mathematical or
+count. The ten single-caller files own a stable schema, a mathematical or
 geometry algorithm, or a data-interpretation boundary extracted from an
-already-large orchestrator. The other 40 already prevent duplication across
+already-large orchestrator. The other 41 already prevent duplication across
 multiple callers.
 
 A future merge is justified only if the owning algorithm or public boundary is

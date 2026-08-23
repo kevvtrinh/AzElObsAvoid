@@ -1,7 +1,7 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Retry-exhausted boundary-support assessment** at
-the end of this file. Earlier sections remain as historical evidence.
+The current judgment is the **Compact instrumentation assessment — 2026-08-23**
+at the end of this file. Earlier sections remain as historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
 
@@ -887,3 +887,73 @@ conditioning/failure risk. The full automated regression suite was not run
 because the user prohibited tests in this session; the 36 fresh example runs
 are direct combined-branch evidence but are not represented as an unrun test
 result.
+
+## Compact instrumentation assessment — 2026-08-23
+
+The current recommendation is to retain the compact instrumentation. Both
+methods now expose the same stable seven-field `StageTiming` record:
+`TopologyElapsedTime_s`, `CorridorConstructionElapsedTime_s`,
+`MotionSolvingElapsedTime_s`, `CollisionCheckingElapsedTime_s`,
+`FinalValidationElapsedTime_s`, `UnattributedElapsedTime_s`, and
+`TotalElapsedTime_s`. The five named stages are exclusive, unattributed time
+reconciles them to the independently measured total, and attempted candidate
+work is accumulated before selection so failed or discarded work remains
+visible instead of being overwritten.
+
+The fixed-duration constraint construction is also materially healthier. One
+shared affine builder now serves the direct, Compact C3, exact-traversal, and
+dynamic-repair motion paths, removing divergent copies of the same
+coefficient-to-state mapping. The public timing schema and this shared builder
+are the useful core of the change; the prototype solver microtimers, activity
+trees, and public HS3 attempt ledger should remain removed.
+
+Both planners passed all 18 maintained examples in fresh processes: 17
+independently validated successes and the expected validated `noValidatedSeed`
+failure for each method. The alternating three-repetition A/B used 48 fresh
+serial MATLAB processes against frozen `27070ac`. Status, validation, selected
+seed, and physical contracts matched; the largest physical numeric difference
+was only `1.3056223108405e-13 deg` in corridor U-case clearance, far below the
+`1e-6` audit threshold.
+
+The final source also passed all 127 automated tests with no failure or
+incomplete result, and MATLAB Code Analyzer reported zero findings across all
+93 maintained production and test files.
+
+Positive percentages below are slower candidate medians; negative values are
+faster. The mixed directions are evidence against claiming a uniform speedup.
+
+| Method | Representative case | Direct wall | Harness wall | Planner median (baseline -> candidate) | Planner change |
+| --- | --- | ---: | ---: | ---: | ---: |
+| HS3 | Obstacle free | +1.308% | -9.959% | 3.8779488 -> 3.6864421 s | -4.938% |
+| HS3 | U shaped | +2.650% | +0.111% | 7.7324331 -> 7.9896984 s | +3.327% |
+| HS3 | Four accelerating circles | -0.198% | -3.193% | 23.5276799 -> 22.7331264 s | -3.377% |
+| HS3 | Expected no path | -4.035% | -4.995% | 27.3161664 -> 25.9819868 s | -4.884% |
+| Corridor | Obstacle free | -5.652% | -0.090% | 1.7478295 -> 1.8684094 s | +6.899% |
+| Corridor | U shaped | +0.848% | -1.667% | 7.5230662 -> 7.5110127 s | -0.160% |
+| Corridor | Four accelerating circles | -3.841% | -6.203% | 5.8348097 -> 5.5424184 s | -5.011% |
+| Corridor | Expected no path | +2.899% | +5.907% | 1.1005869 -> 1.2595498 s | **+14.443%** |
+
+The final compact recount, after consolidating timing and canonical obstacle
+infrastructure, is 76 production MATLAB files and 15,140 physical lines versus
+76 files and 15,634 lines at `27070ac`: 494 fewer lines with no file-count
+growth. The maintained non-example, non-scratch tree is 84 files and 18,609
+lines versus 84 files and 19,057 lines: 448 fewer lines. The former 12,000-line
+maintained-tree cap is still exceeded.
+
+`+azElInternal` is retained as the neutral shared obstacle layer. Both planners
+now use its canonical boundary traversal and signed clearance, while root
+utilities also use its option, preparation, and interpolation contracts. No
+method calls its sibling package.
+
+One known HS3 limitation remains pre-existing: time spent in a failed embedded
+HS3 attempt does not reduce the later global improvement allowance. The new
+timing counts that discarded work, but changing the allowance would alter
+planner behavior and is outside this behavior-preserving checkpoint. Static
+comparison confirmed the same budget behavior in frozen `27070ac`.
+
+Immediately after the A/B run, timer boundaries were tightened and one unused
+internal output was removed. That follow-up only reclassified already measured
+elapsed work and reduced internal plumbing; it changed no topology, motion,
+selection, collision, or validation algorithm. On balance, retain this compact
+version and its honest unfavorable evidence, without restoring the prototype
+microtimers or attempt ledger.

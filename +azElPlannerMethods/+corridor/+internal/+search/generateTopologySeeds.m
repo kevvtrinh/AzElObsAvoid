@@ -238,7 +238,7 @@ maximum_deg = max(allPosition_deg, [], 1);
 coordinateScale_deg = max(1, max(abs(allPosition_deg), [], "all"));
 % Offset seed vertices only; collision geometry and its margin are unchanged.
 candidateOffset_deg = candidateOffsetMultiplier * max(1e-3, 256 * eps(coordinateScale_deg));
-[edgeStart_deg, edgeEnd_deg] = azElPlannerMethods.corridor.internal.geometry.boundaryToEdges(sweptShape, 1e-12);
+[edgeStart_deg, edgeEnd_deg] = azElInternal.geometry.boundaryToEdges(sweptShape, 1e-12);
 visibilityWorkBudget = 1e6;
 candidateLimit = floor(sqrt(2 * visibilityWorkBudget / max(1, size(edgeStart_deg, 1)))) - 2;
 candidateLimit = min(96, max(24, candidateLimit));
@@ -431,7 +431,7 @@ nodeIsFree = false(layerCount, nodeCount);
 % Precompute whether every graph node is free at every retained time layer.
 for layerIndex = 1:layerCount
     queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
-    nodeIsFree(layerIndex, :) = ~azElPlannerMethods.corridor.queryTimeObstacle(obstacles, ...
+    nodeIsFree(layerIndex, :) = ~queryAzElTimeObstacle(obstacles, ...
         nodePosition_deg(:, 1), nodePosition_deg(:, 2), queryTime_s).';
 end
 reachable = false(layerCount, nodeCount);
@@ -549,7 +549,9 @@ sampleCount = 13;
 sampleFraction = linspace(0, 1, sampleCount).';
 samplePosition_deg = firstPosition_deg + sampleFraction .* (secondPosition_deg - firstPosition_deg);
 sampleTime_s = firstTime_s + sampleFraction * (secondTime_s - firstTime_s);
-occupied = azElPlannerMethods.corridor.queryTimeObstacle(obstacles, samplePosition_deg(:, 1), samplePosition_deg(:, 2), sampleTime_s);
+occupied = queryAzElTimeObstacle( ...
+    obstacles, samplePosition_deg(:, 1), ...
+    samplePosition_deg(:, 2), sampleTime_s);
 clear = ~any(occupied);
 end
 

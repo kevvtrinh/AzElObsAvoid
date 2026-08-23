@@ -16,11 +16,13 @@ inside the sibling `+hs3` folder.
   selection, and the stable result record.
 - `planMovingTargetIntercept.m` preserves the corridor branch's bounded
   chronological search over fixed-arrival planner calls.
-- `combineObstacles.m`, `normalizeTimeObstacleData.m`, and
-  `queryTimeObstacle.m` keep obstacle representation and queries local to this
-  snapshot.
 - `validateTrajectory.m` is this method's independent complete-trajectory
   validator.
+
+Canonical combination, normalization, and time queries are shared through
+`combineAzElObstacles`, `normalizeAzElTimeObstacleData`, and
+`queryAzElTimeObstacle`. The corridor backend does not depend on the HS3
+folder.
 
 These are backend integration points. Application code should normally call
 `planAzElMotion` or `planAzElMovingTargetIntercept` at the repository root.

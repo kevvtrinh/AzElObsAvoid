@@ -31,6 +31,7 @@ if nargin == 0
     validation = emptyValidation();
     return;
 end
+validationTimer = tic;
 %% Section 1: Resolve Inputs And Basic History Checks
 if nargin == 1
     requiredResultFields = {'Inputs', 'Options', 'Polynomial'};
@@ -50,7 +51,7 @@ elseif nargin ~= 6
         "Use one planner result or all six explicit validation inputs.");
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
-    obstacles = azElPlannerMethods.hs3.combineObstacles(obstacles);
+    obstacles = combineAzElObstacles(obstacles);
     obstacles = azElPlannerMethods.hs3.internal.obstacles.prepareDynamic(obstacles);
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
@@ -119,6 +120,7 @@ end
     acceleration_deg_s2, jerk_deg_s3, initialState, goalState, limits, ...
     options, stateTolerance);
 %% Section 3: Certify Continuous Collision Freedom
+collisionCheckingTimer = tic;
 if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
     [seedCorridorCertified, seedCorridorClearance_deg] = azElPlannerMethods.hs3.internal.validation.certifySeedCorridor( ...
         trajectory, obstacles, options.CollisionClearanceTolerance_deg);
@@ -141,6 +143,7 @@ else
     collisionCheckCount = 0;
     unresolvedIntervalCount = 0;
 end
+collisionCheckingElapsedTime_s = toc(collisionCheckingTimer);
 
 safetyMarginPolicySatisfied = true;
 
@@ -241,7 +244,10 @@ validation = struct( ...
     "PeakVelocity_deg_s", maximumAbsolute(velocity_deg_s), ...
     "PeakAcceleration_deg_s2", maximumAbsolute(acceleration_deg_s2), ...
     "PeakJerk_deg_s3", maximumAbsolute(jerk_deg_s3), ...
-    "Issues", issues);
+    "Issues", issues, ...
+    "CollisionCheckingElapsedTime_s", collisionCheckingElapsedTime_s, ...
+    "ElapsedTime_s", 0);
+validation.ElapsedTime_s = toc(validationTimer);
 end
 
 function [bounds, dynamics, checks] = validatePolynomial( ...
@@ -530,7 +536,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         for obstacleIndex = 1:numel(obstacles)
             shape = azElPlannerMethods.hs3.internal.obstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), splitTimes_s(splitIndex));
-            clearance_deg = azElPlannerMethods.hs3.internal.geometry.pointPolygonClearance( ...
+            clearance_deg = azElInternal.geometry.pointPolygonClearance( ...
                 shape, splitPoint_deg);
             checkCount = checkCount + 1;
             minimumClearance_deg = min( ...
@@ -562,7 +568,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         for obstacleIndex = 1:numel(obstacles)
             [shape, geometry] = azElPlannerMethods.hs3.internal.obstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), intervalMid_s);
-            clearance_deg = azElPlannerMethods.hs3.internal.geometry.pointPolygonClearance( ...
+            clearance_deg = azElInternal.geometry.pointPolygonClearance( ...
                 shape, point_deg);
             checkCount = checkCount + 1;
             if clearance_deg <= options.CollisionClearanceTolerance_deg
@@ -636,5 +642,6 @@ validation = struct( ...
     "AzimuthWrapPolicySatisfied", false, ...
     "PeakVelocity_deg_s", [NaN NaN], ...
     "PeakAcceleration_deg_s2", [NaN NaN], ...
-    "PeakJerk_deg_s3", [NaN NaN], "Issues", strings(0, 1));
+    "PeakJerk_deg_s3", [NaN NaN], "Issues", strings(0, 1), ...
+    "CollisionCheckingElapsedTime_s", 0, "ElapsedTime_s", 0);
 end

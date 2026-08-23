@@ -1,7 +1,7 @@
 function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [edgeStart_deg, edgeEnd_deg] = azElPlannerMethods.corridor.internal.geometry.boundaryToEdges(shape, closureTolerance_deg)
+%   [edgeStart_deg, edgeEnd_deg] = azElInternal.geometry.boundaryToEdges(shape, closureTolerance_deg)
 %**************************************************************************
 % PURPOSE
 %   - Convert every connected boundary ring into explicit start/end edge rows.

@@ -1,17 +1,17 @@
 # Shared public-utility internals
 
-`azElInternal` now contains only implementation details shared by root public
-utilities such as obstacle construction, plotting, time queries, and the
-compatibility trajectory validator. Neither planner backend calls this package.
-Each complete planner closure instead lives under `+azElPlannerMethods` so one
-method folder can be removed without breaking the other.
+`azElInternal` contains implementation details shared by root public utilities
+and both planner backends. It owns canonical obstacle interpolation, boundary
+traversal, signed clearance, and small contract helpers. Either method folder
+can still be removed because both depend only on this neutral layer, never on
+their sibling.
 
 The remaining geometry is intentionally narrow:
 
-- `geometry`: canonical boundary-to-`polyshape` conversion used while plotting
-  prepared histories;
+- `geometry`: canonical boundary conversion, deterministic edge traversal, and
+  vectorized signed polygon clearance;
 - `obstacles`: immutable preparation and shape-at-time interpolation used by
-  plotting.
+  planning, querying, validation, and plotting.
 
 Small option, logical, and goal-position helpers remain at this level because
 several public utilities share them. Planner-specific search, motion,

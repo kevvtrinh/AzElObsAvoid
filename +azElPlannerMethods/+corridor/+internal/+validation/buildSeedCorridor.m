@@ -66,7 +66,7 @@ for segmentIndex = 1:segmentCount
     for regionIndex = 1:numel(corridorRegions)
         vertices_deg = corridorRegions(regionIndex).Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-        [distance_deg, nearestPoint_deg] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( ...
+        [distance_deg, nearestPoint_deg] = azElInternal.geometry.pointPolygonClearance( ...
             corridorRegions(regionIndex), point_deg);
         if distance_deg <= 1e-12
             % A seed midpoint inside or on a region cannot define a safe

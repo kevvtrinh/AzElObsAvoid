@@ -35,7 +35,7 @@ function result = plan(obstacles, initialState, goalState, limits, optionOverrid
 % OUTPUTS
 %   - result (scalar struct)
 %       Stable success-or-failure motion, seed, validation, and diagnostics,
-%       including selected source, arrival, duration, and first-valid time.
+%       including five-stage timing, source, arrival, and first-valid time.
 %       Invalid contracts throw. Expected planning failure returns
 %       Success=false and preserves every attempted seed summary.
 %**************************************************************************
@@ -56,11 +56,12 @@ end
 if nargin < 4
     error("planAzElMotion:MissingInputs", "obstacles, initialState, goalState, and limits are required.");
 end
+planningTimer = tic;
 if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 options = resolvePlannerOptions(defaults, optionOverrides);
-obstacles = azElPlannerMethods.corridor.combineObstacles(obstacles);
+obstacles = combineAzElObstacles(obstacles);
 initialState = normalizeState(initialState, "initialState");
 goalState = normalizeGoalState(goalState);
 limits = normalizeLimits(limits);
@@ -80,7 +81,6 @@ if options.AllowAzimuthWrapping
         goalState.targetPosition_deg(:, 1) = goalState.targetPosition_deg(:, 1) + 360 * turnCount;
     end
 end
-planningTimer = tic;
 [result, summaryTemplate] = azElPlannerMethods.corridor.internal.emptyAzElPlannerResult( obstacles, initialState, goalState, limits, options);
 obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
 if options.Verbose
@@ -99,8 +99,10 @@ end
 if ~endpointFeasible
     result.Message = endpointMessage;
     result.TerminationReason = endpointReason;
-    result.ElapsedPlanningTime_s = toc(planningTimer);
     result.SearchDiagnostics.TerminationReason = endpointReason;
+    stageTiming = result.SearchDiagnostics.StageTiming;
+    result = azElPlannerMethods.internal.stageTiming( ...
+        result, planningTimer, stageTiming);
     if options.Verbose
         fprintf("[AzEl] Complete: success=0, reason=%s, elapsed=%.3f s. %s\n", ...
             endpointReason, result.ElapsedPlanningTime_s, endpointMessage);
@@ -138,6 +140,10 @@ end
 result = azElPlannerMethods.corridor.internal.motion.runCorridorPlanner( ...
     result, summaryTemplate, seeds, gridDiagnostics, obstacles, initialState, ...
     goalState, limits, options, planningTimer);
+stageTiming = result.SearchDiagnostics.StageTiming;
+stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
+result = azElPlannerMethods.internal.stageTiming( ...
+    result, planningTimer, stageTiming);
 return;
 end
 
@@ -289,11 +295,11 @@ end
 function [feasible, message, reason] = validateEndpoints( obstacles, initialState, goalState, limits, options)
 % Return expected endpoint infeasibility without invoking the optimizer.
 goalPosition_deg = azElPlannerMethods.corridor.internal.goalPositionAtTime( goalState, goalState.time_s);
-startIsBlocked = azElPlannerMethods.corridor.queryTimeObstacle( ...
+startIsBlocked = queryAzElTimeObstacle( ...
     obstacles, initialState.position_deg(1), initialState.position_deg(2), initialState.time_s);
 fixedTerminalIsBlocked = false;
 if options.GoalTimeMode == "fixedArrival"
-    fixedTerminalIsBlocked = azElPlannerMethods.corridor.queryTimeObstacle( ...
+    fixedTerminalIsBlocked = queryAzElTimeObstacle( ...
         obstacles, goalPosition_deg(1), goalPosition_deg(2), goalState.time_s);
 end
 if startIsBlocked || fixedTerminalIsBlocked

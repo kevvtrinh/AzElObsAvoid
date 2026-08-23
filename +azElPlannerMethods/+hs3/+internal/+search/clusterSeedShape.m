@@ -99,7 +99,7 @@ for expandedRegionIndex = 1:numel(expandedRegions)
 
     % Reject the proposed hull if it would cover either protected endpoint.
     for pointIndex = 1:size(protectedPoints_deg, 1)
-        clearance_deg = azElPlannerMethods.hs3.internal.geometry.pointPolygonClearance( ...
+        clearance_deg = azElInternal.geometry.pointPolygonClearance( ...
             hullShape, protectedPoints_deg(pointIndex, :));
         if clearance_deg <= 1e-12
             hullContainsProtectedPoint = true;

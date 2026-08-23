@@ -1,8 +1,8 @@
 # Az/El planner method snapshots
 
-This package keeps the two production planner implementations isolated. Users
-call the public functions at the repository root; those functions select one
-folder and run only that folder's implementation.
+This package keeps the two production planning algorithms isolated. Users call
+the public functions at the repository root; those functions normalize shared
+obstacle inputs once, then select one method folder.
 
 ## Source snapshots
 
@@ -65,7 +65,7 @@ it does not select HS3.
 |-- +corridor
 |   |-- plan.m                         complete corridor planner
 |   |-- planMovingTargetIntercept.m    corridor target-time policy
-|   |-- obstacle/query/validation entry helpers
+|   |-- validateTrajectory.m           corridor-specific validation
 |   `-- +internal
 |       |-- +geometry
 |       |-- +obstacles
@@ -75,19 +75,19 @@ it does not select HS3.
 `-- +hs3
     |-- plan.m                         complete HS3 planner
     |-- planMovingTargetIntercept.m    HS3 moving-goal policy
-    |-- obstacle/query/validation entry helpers
+    |-- validateTrajectory.m           HS3-specific validation
     `-- +internal
-        |-- +geometry
         |-- +obstacles
         |-- +search
         |-- +motion
         `-- +validation
 ```
 
-Duplicated helpers are intentional. A method must not call its sibling's
-search, solver, obstacle cache, validator, or result builder. That boundary
-prevents an apparently small shared-helper edit from changing both preserved
-algorithms.
+Canonical obstacle combination, normalization, time queries, boundary
+traversal, and signed clearance live at the repository root and in
+`+azElInternal`. A method must not call its sibling's search, solver, validator,
+or result builder. This shares input meaning without coupling either planning
+algorithm to the other method folder.
 
 ## Safely unplug a method
 

@@ -54,7 +54,7 @@ for obstacleIndex = 1:numel(obstacles)
         ring_deg = [ ...
             azimuth_deg(runStart(runIndex):runEnd(runIndex)), elevation_deg(runStart(runIndex):runEnd(runIndex))];
         ringShape = polyshape(ring_deg(:, 1), ring_deg(:, 2), "Simplify", false);
-        [distance_deg, boundaryPoint_deg] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(ringShape, point_deg);
+        [distance_deg, boundaryPoint_deg] = azElInternal.geometry.pointPolygonClearance(ringShape, point_deg);
         if distance_deg < bestDistance_deg
             bestDistance_deg = distance_deg;
             bestBoundaryPoint_deg = boundaryPoint_deg;

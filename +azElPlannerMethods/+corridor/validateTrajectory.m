@@ -20,7 +20,7 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %**************************************************************************
 % OUTPUTS
 %   - validation (scalar struct)
-%       Stable independent pass/fail checks, extrema, clearance, and message.
+%       Stable checks, clearance, message, collision time, and total time.
 %**************************************************************************
 % UNITS
 %   - Position and clearance are degrees. Derivatives use deg/s, deg/s^2,
@@ -30,6 +30,7 @@ if nargin == 0
     validation = emptyValidation();
     return;
 end
+validationTimer = tic;
 
 %% Section 1: Resolve Inputs And Basic History Checks
 
@@ -48,7 +49,7 @@ elseif nargin ~= 6
     error("validateAzElTrajectory:InvalidCall", "Use one planner result or all six explicit validation inputs.");
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
-    obstacles = azElPlannerMethods.corridor.combineObstacles(obstacles);
+    obstacles = combineAzElObstacles(obstacles);
     obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
@@ -106,6 +107,7 @@ end
 
 %% Section 3: Certify Continuous Collision Freedom
 
+collisionTimer = tic;
 if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
     [seedCorridorCertified, seedCorridorClearance_deg] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( ...
         trajectory, obstacles, options.CollisionClearanceTolerance_deg);
@@ -128,6 +130,7 @@ else
     collisionCheckCount = 0;
     unresolvedIntervalCount = 0;
 end
+collisionCheckingElapsedTime_s = toc(collisionTimer);
 safetyMarginPolicySatisfied = true;
 
 % Verify every protected obstacle retains original-boundary and margin provenance.
@@ -219,7 +222,12 @@ validation = struct( ...
     "AzimuthWrapPolicySatisfied", azimuthWrapPolicySatisfied, ...
     "PeakVelocity_deg_s", maximumAbsolute(velocity_deg_s), ...
     "PeakAcceleration_deg_s2", maximumAbsolute(acceleration_deg_s2), ...
-    "PeakJerk_deg_s3", maximumAbsolute(jerk_deg_s3), "Issues", issues);
+    "PeakJerk_deg_s3", maximumAbsolute(jerk_deg_s3), "Issues", issues, ...
+    "CollisionCheckingElapsedTime_s", 0, "ElapsedTime_s", 0);
+totalElapsedTime_s = toc(validationTimer);
+validation.CollisionCheckingElapsedTime_s = ...
+    collisionCheckingElapsedTime_s;
+validation.ElapsedTime_s = totalElapsedTime_s;
 end
 
 
@@ -445,7 +453,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         % Measure the breakpoint position against every obstacle at that exact time.
         for obstacleIndex = 1:numel(obstacles)
             shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), splitTimes_s(splitIndex));
-            clearance_deg = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( shape, splitPoint_deg);
+            clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, splitPoint_deg);
             checkCount = checkCount + 1;
             minimumClearance_deg = min( minimumClearance_deg, clearance_deg);
             if clearance_deg <= options.CollisionClearanceTolerance_deg
@@ -472,7 +480,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         % Bound relative motion against every obstacle over the current interval.
         for obstacleIndex = 1:numel(obstacles)
             [shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), intervalMid_s);
-            clearance_deg = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( shape, point_deg);
+            clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
             checkCount = checkCount + 1;
             if clearance_deg <= options.CollisionClearanceTolerance_deg
                 minimumClearance_deg = min( minimumClearance_deg, clearance_deg);
@@ -536,5 +544,7 @@ validation = struct( ...
     "SafetyMarginPolicySatisfied", false, ...
     "AzimuthWrapPolicySatisfied", false, ...
     "PeakVelocity_deg_s", [NaN NaN], ...
-    "PeakAcceleration_deg_s2", [NaN NaN], "PeakJerk_deg_s3", [NaN NaN], "Issues", strings(0, 1));
+    "PeakAcceleration_deg_s2", [NaN NaN], ...
+    "PeakJerk_deg_s3", [NaN NaN], "Issues", strings(0, 1), ...
+    "CollisionCheckingElapsedTime_s", 0, "ElapsedTime_s", 0);
 end

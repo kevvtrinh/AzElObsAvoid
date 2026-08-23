@@ -403,7 +403,7 @@ nodeIsFree = false(layerCount, nodeCount);
 % Check every graph node at every retained time layer before expanding edges.
 for layerIndex = 1:layerCount
     queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
-    nodeIsFree(layerIndex, :) = ~azElPlannerMethods.hs3.queryTimeObstacle(obstacles, ...
+    nodeIsFree(layerIndex, :) = ~queryAzElTimeObstacle(obstacles, ...
         nodePosition_deg(:, 1), ...
         nodePosition_deg(:, 2), queryTime_s).';
 end
@@ -536,7 +536,9 @@ sampleFraction = linspace(0, 1, sampleCount).';
 samplePosition_deg = firstPosition_deg + sampleFraction .* ...
     (secondPosition_deg - firstPosition_deg);
 sampleTime_s = firstTime_s + sampleFraction * (secondTime_s - firstTime_s);
-occupied = azElPlannerMethods.hs3.queryTimeObstacle(obstacles, samplePosition_deg(:, 1), samplePosition_deg(:, 2), sampleTime_s);
+occupied = queryAzElTimeObstacle( ...
+    obstacles, samplePosition_deg(:, 1), ...
+    samplePosition_deg(:, 2), sampleTime_s);
 
 clear = ~any(occupied);
 end

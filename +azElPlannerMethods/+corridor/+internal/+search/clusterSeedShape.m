@@ -83,7 +83,7 @@ for expandedRegionIndex = 1:numel(expandedRegions)
 
     % Reject a merge that would place the start or goal inside the reduced obstacle hull.
     for pointIndex = 1:size(protectedPoints_deg, 1)
-        clearance_deg = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( hullShape, protectedPoints_deg(pointIndex, :));
+        clearance_deg = azElInternal.geometry.pointPolygonClearance( hullShape, protectedPoints_deg(pointIndex, :));
         if clearance_deg <= 1e-12
             hullContainsProtectedPoint = true;
             break;

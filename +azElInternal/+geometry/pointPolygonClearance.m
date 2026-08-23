@@ -1,7 +1,7 @@
 function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(shape, point_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [clearance_deg, nearestPoint_deg, edgeIndex] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(shape, point_deg)
+%   [clearance_deg, nearestPoint_deg, edgeIndex] = azElInternal.geometry.pointPolygonClearance(shape, point_deg)
 %**************************************************************************
 % PURPOSE
 %   - Compute signed Euclidean clearance from points to one polyshape.
@@ -43,7 +43,7 @@ end
 
 % Edge order is stable and shared with visibility tests, so the returned edge
 % index remains meaningful diagnostic information.
-[edgeStart_deg, edgeEnd_deg] = azElPlannerMethods.corridor.internal.geometry.boundaryToEdges(shape, 0);
+[edgeStart_deg, edgeEnd_deg] = azElInternal.geometry.boundaryToEdges(shape, 0);
 
 %% Section 3: Project Query Blocks And Apply The Occupancy Sign
 

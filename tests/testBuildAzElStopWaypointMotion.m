@@ -93,6 +93,26 @@ verifyEqual(testCase, sum(candidate.Polynomial.SegmentDuration_s), ...
 verifyTrue(testCase, candidate.Validation.GoalTimeSatisfied);
 end
 
+function testEmbeddedHs3WorkContributesToAggregateTiming(testCase)
+% Retain timing from the optional HS3 trial whether it wins or is discarded.
+initialState = state(0, [0 0], [0 0], [0 0]);
+goalState = state(8, [3 4], [0 0], [0 0]);
+limits = physicalLimits([2 2], [3 3], [10 10]);
+options = plannerOptions("earliestArrival");
+options.AttemptEarlyHs3 = true;
+options.MaximumHs3ImprovementTime_s = 0.05;
+seed = geometricSeed([0 0; 3 0; 3 4]);
+seed.Source = "visibilityGraph";
+seed.UsesReducedGeometry = false;
+[candidate, stageTiming] = ...
+    azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion( ...
+    [], initialState, goalState, limits, options, seed);
+
+verifyTrue(testCase, candidate.Validation.Passed, candidate.Message);
+verifyGreaterThan(testCase, stageTiming.MotionSolvingElapsedTime_s, ...
+    candidate.SolverDiagnostics.MotionSolvingElapsedTime_s);
+end
+
 function testAsymmetricLimitsCertifyADiagonalZigzag(testCase)
 % Verify the analytic bounds on several non-axis-aligned seed edges.
 waypoint_deg = [-5 -2; -1 4; 2 -3; 8 1];

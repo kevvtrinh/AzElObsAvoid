@@ -49,6 +49,7 @@ if nargin == 0
     motion = defaults;
     return;
 end
+stageTiming = azElPlannerMethods.internal.stageTiming();
 % Reject an incomplete solver request before normalizing obstacles or reducing the route.
 if nargin < 5
     error("solveCorridorQuintic:MissingInputs", "obstacles, endpoint states, limits, and route_deg are required.");
@@ -65,11 +66,13 @@ options = validateOptions(options, size(route_deg, 1));
 hasPreparedObstacles = isstruct(obstacles) && isfield(obstacles, "InternalPreparation");
 % Public-style calls may provide raw obstacles; planner-internal calls reuse prepared geometry.
 if ~hasPreparedObstacles
-    obstacles = azElPlannerMethods.corridor.combineObstacles(obstacles);
+    obstacles = combineAzElObstacles(obstacles);
     obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
 end
+motionTimer = tic;
 azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
     route_deg, initialState, goalState, limits, struct( "AllowAzimuthWrapping", options.AllowAzimuthWrapping));
+stageTiming.MotionSolvingElapsedTime_s = toc(motionTimer);
 inputRoute_deg = double(route_deg);
 % Static certificates use the conservative time-independent envelope; dynamic trials validate in time instead.
 if options.RequireStaticCorridorCertificate
@@ -80,6 +83,7 @@ end
 plannerOptions = azElPlannerMethods.corridor.plan();
 plannerOptions.GoalTimeMode = options.GoalTimeMode;
 plannerOptions.AllowAzimuthWrapping = options.AllowAzimuthWrapping;
+corridorTimer = tic;
 expandedRoute_deg = expandRouteClearance( ...
     route_deg, corridorObstacles, initialState.time_s, options.ClearanceTarget_deg, options.RouteExpansionFraction);
 requestedVertexCount = min(size(route_deg, 1), options.RouteVertexCount);
@@ -90,7 +94,15 @@ reducedRoute_deg = sampledVisibilitySubsequence( ...
 if isempty(reducedRoute_deg)
     % Return a normal failed candidate rather than throwing: the input contract
     % is valid, but this finite route representation cannot support a corridor.
-    motion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( route_deg, initialState, goalState, limits);
+    stageTiming.CorridorConstructionElapsedTime_s = ...
+        stageTiming.CorridorConstructionElapsedTime_s + ...
+        toc(corridorTimer);
+    motionTimer = tic;
+    motion = ...
+        azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
+        route_deg, initialState, goalState, limits);
+    stageTiming.MotionSolvingElapsedTime_s = ...
+        stageTiming.MotionSolvingElapsedTime_s + toc(motionTimer);
     motion.Success = false;
     motion.Message = "No sampled-clear ordered route subsequence exists " + "at the requested vertex count.";
     motion.TerminationReason = "noProtectedSubsequence";
@@ -102,7 +114,14 @@ if isempty(reducedRoute_deg)
         "SegmentIndex", 0, "RegionIndex", 0, "Normal", [0 0], "BoundaryOffset_deg", 0, "Clearance_deg", 0);
     motion.SeedCorridor = repmat(emptyCorridor, 0, 1);
     motion.OptimizerOptions = options;
-    motion.OptimizerDiagnostics = emptyDiagnostics( size(route_deg, 1), requestedVertexCount, toc(diagnosticTimer));
+    diagnostics = emptyDiagnostics( ...
+        size(route_deg, 1), requestedVertexCount, 0);
+    totalElapsedTime_s = toc(diagnosticTimer);
+    diagnostics.TotalDiagnosticTime_s = totalElapsedTime_s;
+    diagnostics.StageTiming = ...
+        azElPlannerMethods.internal.stageTiming( ...
+        stageTiming, totalElapsedTime_s);
+    motion.OptimizerDiagnostics = diagnostics;
     return;
 end
 route_deg = reducedRoute_deg;
@@ -124,13 +143,16 @@ spanWeights = spanWeights / mean(spanWeights);
 % position/velocity/acceleration are enforced separately by the spline builder.
 interiorCount = size(route_deg, 1) - 2;
 decisionCount = 2 * interiorCount;
+stageTiming.CorridorConstructionElapsedTime_s = ...
+    stageTiming.CorridorConstructionElapsedTime_s + toc(corridorTimer);
 
 %% Section 2: Build Complete Protected-Obstacle Corridor Records
 
 % Each route segment receives convex exterior half-planes. These are linear in
 % spline control points, which allows a small quadratic solve while retaining
 % a later exact certificate against the complete protected geometry.
-queryOptions = azElPlannerMethods.corridor.queryTimeObstacle();
+corridorTimer = tic;
+queryOptions = queryAzElTimeObstacle();
 envelopePadding_deg = max( options.EnvelopePadding_deg, 1000 * queryOptions.ClearanceTolerance_deg);
 seed = struct( ...
     "position_deg", route_deg, "tau", linspace(0, 1, size(route_deg, 1)).', "CorridorBoundary_deg", zeros(0, 2));
@@ -146,7 +168,15 @@ baseOptions = struct( ...
     "SpanWeights", spanWeights, ...
     "SampleTime_s", options.SampleTime_s, ...
     "GoalTimeMode", options.GoalTimeMode, "AllowAzimuthWrapping", options.AllowAzimuthWrapping);
-baseMotion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( route_deg, initialState, goalState, limits, baseOptions);
+stageTiming.CorridorConstructionElapsedTime_s = ...
+    stageTiming.CorridorConstructionElapsedTime_s + toc(corridorTimer);
+motionTimer = tic;
+baseMotion = ...
+    azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
+    route_deg, initialState, goalState, limits, baseOptions);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + toc(motionTimer);
+corridorTimer = tic;
 corridor = azElPlannerMethods.corridor.internal.validation.buildSeedCorridor( seed, baseMotion.Polynomial.SegmentCount);
 
 % Apply the requested clearance consistently to every segment/region support record.
@@ -154,22 +184,34 @@ for corridorIndex = 1:numel(corridor)
     corridor(corridorIndex).Clearance_deg = options.ClearanceTarget_deg;
 end
 baseInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( baseMotion.Polynomial, corridor);
+stageTiming.CorridorConstructionElapsedTime_s = ...
+    stageTiming.CorridorConstructionElapsedTime_s + toc(corridorTimer);
 
 %% Section 3: Derive & Solve The Affine Corridor System
 
 % The base spline supplies the constant term. Rebuilding it with unit interior
 % offsets supplies columns of the affine map from decision variables to every
 % corridor inequality.
+constraintAssemblyTimer = tic;
+embeddedMotionElapsedTime_s = 0;
 inequalityMatrix = zeros(numel(baseInequality_deg), decisionCount);
-if ~isempty(corridor)
+canUseDirectAffineBasis = false;
+affineModel = struct();
+if decisionCount > 0 && ~isempty(corridor)
     endpointDerivative_deg = [initialState.velocity_deg_s, ...
         initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
-    canUseDirectAffineBasis = max(abs(endpointDerivative_deg)) <= 1e-10;
+    canUseDirectAffineBasis = max(abs(endpointDerivative_deg)) <= 1e-10 && ...
+        all(baseMotion.SpanDuration_s > 0);
     % Reuse the exact B-spline affine map when endpoint derivatives do not require refitting controls.
     if canUseDirectAffineBasis
         controlPointCount = size(baseMotion.ControlPoint_deg, 1);
-        affineBasisPolynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
-            eye(controlPointCount), 5, initialState.time_s, baseMotion.SpanDuration_s);
+        motionTimer = tic;
+        affineModel = azElPlannerMethods.corridor.internal.motion.buildFixedDurationAffineModel( ...
+            controlPointCount, initialState.time_s, ...
+            baseMotion.SpanDuration_s, zeros(0, 1));
+        embeddedMotionElapsedTime_s = ...
+            embeddedMotionElapsedTime_s + toc(motionTimer);
+        affineBasisPolynomial = affineModel.UnitControlPolynomial;
         corridorSegmentIndex = [corridor.SegmentIndex].';
         corridorNormal = vertcat(corridor.Normal);
         coefficientCount = size( affineBasisPolynomial.positionPower_deg, 3);
@@ -180,7 +222,8 @@ if ~isempty(corridor)
         interiorIndex = mod(decisionIndex - 1, interiorCount) + 1;
         axisIndex = floor((decisionIndex - 1) / interiorCount) + 1;
         if canUseDirectAffineBasis
-            controlPointIndex = interiorIndex + 3;
+            controlPointIndex = ...
+                affineModel.VariableControlIndex(interiorIndex);
             selectedBasis_deg = affineBasisPolynomial.positionPower_deg( corridorSegmentIndex, controlPointIndex, :);
             basisPower_deg = reshape( selectedBasis_deg, numel(corridor), coefficientCount);
             projectionPower_deg = corridorNormal(:, axisIndex) .* basisPower_deg;
@@ -191,8 +234,11 @@ if ~isempty(corridor)
             decisionOffset_deg(interiorIndex, axisIndex) = 1;
             basisOptions = baseOptions;
             basisOptions.ControlPointOffsets_deg = decisionOffset_deg;
+            motionTimer = tic;
             basisMotion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
                 route_deg, initialState, goalState, limits, basisOptions);
+            embeddedMotionElapsedTime_s = ...
+                embeddedMotionElapsedTime_s + toc(motionTimer);
             basisInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( basisMotion.Polynomial, corridor);
             inequalityMatrix(:, decisionIndex) = basisInequality_deg - baseInequality_deg;
         end
@@ -202,6 +248,12 @@ maximumOffset_deg = options.MaximumControlPointOffset_deg;
 quadraticMatrix = eye(decisionCount);
 linearVector = zeros(decisionCount, 1);
 quadraticOptions = optimoptions( "quadprog", "Display", "off", "Algorithm", "active-set");
+constraintAssemblyElapsedTime_s = toc(constraintAssemblyTimer);
+stageTiming.CorridorConstructionElapsedTime_s = ...
+    stageTiming.CorridorConstructionElapsedTime_s + max(0, ...
+    constraintAssemblyElapsedTime_s - embeddedMotionElapsedTime_s);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + embeddedMotionElapsedTime_s;
 solveTimer = tic;
 % Routes with no movable interior controls bypass the quadratic program cleanly.
 if decisionCount == 0
@@ -237,13 +289,14 @@ end
 exactTraversalDiagnostics = struct( ...
     "Attempted", false, "Accepted", false, ...
     "InitialScale", NaN, "FinalScale", NaN, "LinearSolveCount", 0, "ActiveConstraintCount", 0);
-canOptimizeExactTraversal = exitFlag > 0 && ~isempty(corridor) && ...
+canOptimizeExactTraversal = exitFlag > 0 && decisionCount > 0 && ...
+    ~isempty(corridor) && ...
     canUseDirectAffineBasis && ...
     options.GoalTimeMode == "earliestArrival" && ...
     options.EnableExactTraversal && decisionCount * baseMotion.Polynomial.SegmentCount <= 100;
 if canOptimizeExactTraversal
     [trialDecision_deg, exactTraversalDiagnostics] = azElPlannerMethods.corridor.internal.motion.optimizeExactTraversal( ...
-        baseMotion, affineBasisPolynomial, decision_deg, ...
+        baseMotion, affineModel, decision_deg, ...
         inequalityMatrix, -baseInequality_deg, maximumOffset_deg, limits);
     % Adopt the exact traversal refinement only after its own feasibility checks accept it.
     if exactTraversalDiagnostics.Accepted
@@ -251,6 +304,8 @@ if canOptimizeExactTraversal
     end
 end
 solveTime_s = toc(solveTimer);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + solveTime_s;
 % Retry the unreduced route when an explicitly requested reduction made the optimization infeasible.
 if exitFlag <= 0 && isfinite(options.RouteVertexCount) && size(route_deg, 1) < size(inputRoute_deg, 1)
     fallbackOptions = options;
@@ -264,7 +319,23 @@ if exitFlag <= 0 && isfinite(options.RouteVertexCount) && size(route_deg, 1) < s
     motion.OptimizerDiagnostics.CompressedRouteVertexCount = size(route_deg, 1);
     motion.OptimizerDiagnostics.CompressedExitFlag = exitFlag;
     motion.OptimizerDiagnostics.CompressedSolveTime_s = solveTime_s;
-    motion.OptimizerDiagnostics.TotalDiagnosticTime_s = toc(diagnosticTimer);
+    childStageTiming = motion.OptimizerDiagnostics.StageTiming;
+    stageTiming.CorridorConstructionElapsedTime_s = ...
+        stageTiming.CorridorConstructionElapsedTime_s + ...
+        childStageTiming.CorridorConstructionElapsedTime_s;
+    stageTiming.MotionSolvingElapsedTime_s = ...
+        stageTiming.MotionSolvingElapsedTime_s + ...
+        childStageTiming.MotionSolvingElapsedTime_s;
+    stageTiming.CollisionCheckingElapsedTime_s = ...
+        childStageTiming.CollisionCheckingElapsedTime_s;
+    stageTiming.FinalValidationElapsedTime_s = ...
+        childStageTiming.FinalValidationElapsedTime_s;
+    parentTotalElapsedTime_s = toc(diagnosticTimer);
+    motion.OptimizerDiagnostics.TotalDiagnosticTime_s = ...
+        parentTotalElapsedTime_s;
+    motion.OptimizerDiagnostics.StageTiming = ...
+        azElPlannerMethods.internal.stageTiming( ...
+        stageTiming, parentTotalElapsedTime_s);
     return;
 end
 
@@ -273,6 +344,7 @@ end
 % Solver feasibility is not planner success. Reconstruct the exact polynomial,
 % validate the full timed motion, and—when requested—verify that its continuous
 % span envelopes remain inside their certified free-space supports.
+motionTimer = tic;
 if isempty(decision_deg)
     candidateMotion = baseMotion;
 else
@@ -284,6 +356,9 @@ else
 end
 candidateMotion.SeedCorridorBoundary_deg = seed.CorridorBoundary_deg;
 candidateMotion.SeedCorridor = corridor;
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + toc(motionTimer);
+collisionTimer = tic;
 if isempty(corridorObstacles)
     corridorCertified = true;
     certifiedClearance_deg = Inf;
@@ -291,7 +366,9 @@ else
     [corridorCertified, certifiedClearance_deg] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( ...
             candidateMotion, corridorObstacles, queryOptions.ClearanceTolerance_deg);
 end
+directCollisionCheckingElapsedTime_s = toc(collisionTimer);
 validation = azElPlannerMethods.corridor.validateTrajectory( candidateMotion, obstacles, initialState, goalState, limits, plannerOptions);
+collisionTimer = tic;
 candidateInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( candidateMotion.Polynomial, corridor);
 envelopeShape = polyshape( seed.CorridorBoundary_deg(:, 1), seed.CorridorBoundary_deg(:, 2), "Simplify", true);
 convexEnvelopeRegions = azElPlannerMethods.corridor.internal.geometry.convexPolygonRegions(envelopeShape);
@@ -302,7 +379,14 @@ else
     envelopeContainsObstacles = azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( ...
             seed.CorridorBoundary_deg, obstacles, queryOptions.ClearanceTolerance_deg);
 end
-totalDiagnosticTime_s = toc(diagnosticTimer);
+stageTiming.CollisionCheckingElapsedTime_s = ...
+    stageTiming.CollisionCheckingElapsedTime_s + ...
+    directCollisionCheckingElapsedTime_s + toc(collisionTimer) + ...
+    validation.CollisionCheckingElapsedTime_s;
+stageTiming.FinalValidationElapsedTime_s = ...
+    stageTiming.FinalValidationElapsedTime_s + ...
+    max(0, validation.ElapsedTime_s - ...
+    validation.CollisionCheckingElapsedTime_s);
 if isempty(decision_deg)
     maximumDecision_deg = NaN;
 else
@@ -347,7 +431,9 @@ optimizerDiagnostics = struct( ...
     "ValidationPassed", validation.Passed, ...
     "ContinuousClearance_deg", validation.MinimumClearance_deg, ...
     "MotionDuration_s", candidateMotion.MotionDuration_s, ...
-    "TotalDiagnosticTime_s", totalDiagnosticTime_s, "SolverMessage", string(solverOutput.message));
+    "TotalDiagnosticTime_s", 0, ...
+    "StageTiming", azElPlannerMethods.internal.stageTiming(), ...
+    "SolverMessage", string(solverOutput.message));
 motion = candidateMotion;
 motion.Validation = validation;
 motion.Success = exitFlag > 0 && corridorCertified && validation.Passed;
@@ -373,6 +459,11 @@ else
     motion.Message = "The corridor-feasible candidate failed maintained " + "trajectory validation.";
     motion.TerminationReason = "trajectoryValidationFailed";
 end
+totalDiagnosticTime_s = toc(diagnosticTimer);
+motion.OptimizerDiagnostics.TotalDiagnosticTime_s = totalDiagnosticTime_s;
+motion.OptimizerDiagnostics.StageTiming = ...
+    azElPlannerMethods.internal.stageTiming( ...
+    stageTiming, totalDiagnosticTime_s);
 end
 
 
@@ -393,7 +484,7 @@ for routeIndex = 2:size(route_deg, 1) - 1
         shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s);
         vertices_deg = shape.Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-        [distance_deg, boundaryPoint_deg] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(shape, point_deg);
+        [distance_deg, boundaryPoint_deg] = azElInternal.geometry.pointPolygonClearance(shape, point_deg);
         if distance_deg < nearestDistance_deg
             nearestDistance_deg = distance_deg;
             nearestBoundaryPoint_deg = boundaryPoint_deg;
@@ -437,7 +528,7 @@ for startIndex = 1:routeVertexCount - 1
         rows = sampleOffsets(edgeIndex) + 1:sampleOffsets(edgeIndex + 1);
         edgeSamples_deg(rows, :) = route_deg(startIndex, :) + edgeFraction .* edgeDelta_deg;
     end
-    isOccupied = azElPlannerMethods.corridor.queryTimeObstacle( ...
+    isOccupied = queryAzElTimeObstacle( ...
         obstacles, edgeSamples_deg(:, 1), edgeSamples_deg(:, 2), queryTime_s * ones(size(edgeSamples_deg, 1), 1));
     isOccupied = logical(isOccupied(:));
 
@@ -551,6 +642,12 @@ diagnostics = struct( ...
     "ExitFlag", 0, ...
     "SolverIterations", 0, ...
     "SolveTime_s", 0, ...
+    "ExactTraversalAttempted", false, ...
+    "ExactTraversalAccepted", false, ...
+    "ExactTraversalInitialScale", NaN, ...
+    "ExactTraversalFinalScale", NaN, ...
+    "ExactTraversalLinearSolveCount", 0, ...
+    "ExactTraversalActiveConstraintCount", 0, ...
     "MaximumDecision_deg", NaN, ...
     "CandidateMaximumInequality_deg", NaN, ...
     "CorridorCertified", false, ...
@@ -558,11 +655,7 @@ diagnostics = struct( ...
     "ValidationPassed", false, ...
     "ContinuousClearance_deg", NaN, ...
     "MotionDuration_s", NaN, ...
-    "ExactTraversalAttempted", false, ...
-    "ExactTraversalAccepted", false, ...
-    "ExactTraversalInitialScale", NaN, ...
-    "ExactTraversalFinalScale", NaN, ...
-    "ExactTraversalLinearSolveCount", 0, ...
-    "ExactTraversalActiveConstraintCount", 0, ...
-    "TotalDiagnosticTime_s", elapsedTime_s, "SolverMessage", "Route subsequence unavailable.");
+    "TotalDiagnosticTime_s", elapsedTime_s, ...
+    "StageTiming", azElPlannerMethods.internal.stageTiming(), ...
+    "SolverMessage", "Route subsequence unavailable.");
 end

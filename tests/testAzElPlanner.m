@@ -546,11 +546,11 @@ function testBatchedPolygonClearanceMatchesScalarQueries(testCase)
 % Verify batched projection preserves scalar signs, points, and edge order.
 shape = polyshape([0 3 3 1 1 0], [0 0 3 3 1 1], "Simplify", false, "KeepCollinearPoints", true);
 queryPosition_deg = [-1 0.5; 0.5 0.5; 2 2; 1 1; 3.5 2.5];
-[batchClearance_deg, batchNearest_deg, batchEdgeIndex] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance(shape, queryPosition_deg);
+[batchClearance_deg, batchNearest_deg, batchEdgeIndex] = azElInternal.geometry.pointPolygonClearance(shape, queryPosition_deg);
 
 % Compare each scalar clearance query with the corresponding batched result.
 for queryIndex = 1:size(queryPosition_deg, 1)
-    [clearance_deg, nearest_deg, edgeIndex] = azElPlannerMethods.corridor.internal.geometry.pointPolygonClearance( ...
+    [clearance_deg, nearest_deg, edgeIndex] = azElInternal.geometry.pointPolygonClearance( ...
         shape, queryPosition_deg(queryIndex, :));
     verifyEqual(testCase, batchClearance_deg(queryIndex), clearance_deg);
     verifyEqual(testCase, batchNearest_deg(queryIndex, :), nearest_deg);

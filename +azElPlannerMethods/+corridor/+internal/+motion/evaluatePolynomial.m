@@ -16,7 +16,7 @@ function [time_s, position_deg, velocity_deg_s, ...
 %**************************************************************************
 % OUTPUTS
 %   - time_s (column vector), normalized query orientation.
-%   - position_deg through jerk_deg_s3 (N-by-2 arrays), motion histories.
+%   - position_deg through jerk_deg_s3 (N-by-D arrays), motion histories.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s powers.
@@ -28,10 +28,11 @@ function [time_s, position_deg, velocity_deg_s, ...
 % when it already performed that lookup during a dense validation loop.
 time_s = double(time_s(:));
 sampleCount = numel(time_s);
-position_deg = NaN(sampleCount, 2);
-velocity_deg_s = NaN(sampleCount, 2);
-acceleration_deg_s2 = NaN(sampleCount, 2);
-jerk_deg_s3 = NaN(sampleCount, 2);
+coordinateCount = size(polynomial.positionPower_deg, 2);
+position_deg = NaN(sampleCount, coordinateCount);
+velocity_deg_s = NaN(sampleCount, coordinateCount);
+acceleration_deg_s2 = NaN(sampleCount, coordinateCount);
+jerk_deg_s3 = NaN(sampleCount, coordinateCount);
 if isempty(time_s) || any(~isfinite(time_s))
     return;
 end

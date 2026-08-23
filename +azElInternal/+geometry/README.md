@@ -1,6 +1,6 @@
 # Geometry
 
-This shared folder retains only canonical boundary-to-`polyshape` conversion
-for obstacle histories displayed by the root plotter. Planner geometry,
-clearance, boundary traversal, and decomposition live inside each complete
-method package.
+This shared folder owns canonical boundary-to-`polyshape` conversion,
+deterministic boundary traversal, and vectorized signed polygon clearance.
+Both planners, the public time query, validation, and plotting use these
+primitives so protected geometry has one interpretation.

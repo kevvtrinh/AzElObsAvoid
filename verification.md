@@ -1,5 +1,9 @@
 # Plan 325 verification
 
+Current worktree evidence is summarized in
+[Compact stage-timing checkpoint — 2026-08-23](#compact-stage-timing-checkpoint--2026-08-23);
+earlier sections are retained as historical checkpoints.
+
 ## Evidence scope
 
 - Branch: `plan-325`.
@@ -2182,3 +2186,92 @@ prohibited tests unless requested in this session. The example matrix above is
 fresh execution evidence, not a substitute claim for unrun automated tests.
 Visible interactive sandbox verification also remains unrun; its planner
 selector received static and Code Analyzer checks only.
+
+## Compact stage-timing checkpoint — 2026-08-23
+
+This checkpoint compares branch `325-full-suite` with the frozen
+`27070ac5fac6f90624731a753d4b029e7ecea8e5` (`27070ac`) baseline. The public
+`SearchDiagnostics.StageTiming` contract contains exactly these seven fields:
+
+1. `TopologyElapsedTime_s`
+2. `CorridorConstructionElapsedTime_s`
+3. `MotionSolvingElapsedTime_s`
+4. `CollisionCheckingElapsedTime_s`
+5. `FinalValidationElapsedTime_s`
+6. `UnattributedElapsedTime_s`
+7. `TotalElapsedTime_s`
+
+The five named stages are exclusive: nested work is charged once, to its
+owning stage. Repeated candidates and attempts are additive, including work
+later discarded. `TotalElapsedTime_s` is measured independently and
+`UnattributedElapsedTime_s` reconciles it against the five named stages;
+over-attribution is rejected instead of being hidden.
+
+### Maintained-example and focused verification
+
+Each maintained example gate used fresh serial MATLAB processes.
+
+| Method | Cases | Validated outcome | Direct process wall sum (s) | Harness example wall sum (s) | Planner sum (s) |
+| --- | ---: | --- | ---: | ---: | ---: |
+| `hs3` | 18/18 | 17 successes + expected validated `noPath` | 560.7800023 | 336.8454606 | 260.8179100 |
+| `corridorQuintic` | 18/18 | 17 successes + expected validated `noPath` | 413.7346972 | 220.3806093 | 161.7237387 |
+
+All 36 returned `StageTiming` records reconciled. A visible corridor smoke
+run returned planner success `1`, independent validation `1`, and created two
+figures. The focused final-source tests passed 23/23.
+
+The earlier full-suite run passed 125/125 tests in 210.6225 seconds. That run
+predates the final focused test additions and is recorded only as earlier
+evidence. On the final source, the complete suite passed 127/127 tests with
+zero failures or incomplete tests in 174.7697065 seconds. MATLAB Code Analyzer
+then checked all 93 maintained production and test files and reported zero
+findings.
+
+### Frozen-baseline A/B timing
+
+The A/B run comprised 48 successful invocations: two methods, four
+representative examples, three repetitions, and two source versions. Every
+observation used a fresh headless serial MATLAB process. Pair order was
+balanced as baseline-candidate, candidate-baseline, baseline-candidate. The
+table reports the exact median percentage changes from the recorded summary;
+negative values favor the candidate.
+
+| Method | Example | Direct-process wall | Harness wall | Planner time |
+| --- | --- | ---: | ---: | ---: |
+| `hs3` | `exampleObstacleFreeAzElMotion` | +1.308% | -9.959% | -4.938% |
+| `hs3` | `exampleUShapedAzElTimeSpace` | +2.650% | +0.111% | +3.327% |
+| `hs3` | `exampleFourAcceleratingCircles` | -0.198% | -3.193% | -3.377% |
+| `hs3` | `exampleNoPathAzElMotion` | -4.035% | -4.995% | -4.884% |
+| `corridorQuintic` | `exampleObstacleFreeAzElMotion` | -5.652% | -0.090% | +6.899% |
+| `corridorQuintic` | `exampleUShapedAzElTimeSpace` | +0.848% | -1.667% | -0.160% |
+| `corridorQuintic` | `exampleFourAcceleratingCircles` | -3.841% | -6.203% | -5.011% |
+| `corridorQuintic` | `exampleNoPathAzElMotion` | +2.899% | +5.907% | +14.443% |
+
+All 48 runs preserved status, validation, termination, policy, certificate,
+and selected-seed outputs. The largest baseline/candidate physical-value
+difference was `1.3056e-13`, below the `1e-6` audit threshold. The unfavorable
+`corridorQuintic` no-path planner median increased by 14.443%; this is retained
+as a regression signal, not averaged away or presented as a speedup.
+
+### Exact size and current limits
+
+Physical-line counts were recomputed from the frozen baseline after the timing
+cleanup and canonical obstacle-infrastructure consolidation.
+
+| Scope | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production MATLAB | 76 files / 15,634 lines | 76 files / 15,140 lines | 0 files / -494 lines |
+| Maintained MATLAB (production and tests) | 84 files / 19,057 lines | 84 files / 18,609 lines | 0 files / -448 lines |
+
+The maintained tree still exceeds the former 12,000-line hard cap. The A/B
+sample has only three observations per cell and includes fresh-process launch
+noise, so it supports behavioral equivalence and identifies possible runtime
+regressions; it does not establish a general speedup.
+
+`+azElInternal` is now the neutral shared obstacle layer. The two method-local
+combine, normalize, query, boundary-traversal, and signed-clearance copies were
+removed. A pre-deletion equivalence gate passed 5/5 across all three copies and
+the new shared query. After deletion, the permanent infrastructure tests passed
+5/5 and both planner unit files passed 92/92. The broader suite was started but
+stopped when the user requested no additional tests before pushing, so no
+post-consolidation full-suite result is claimed.
