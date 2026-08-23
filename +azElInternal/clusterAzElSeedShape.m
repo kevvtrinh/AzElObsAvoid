@@ -1,31 +1,6 @@
 function [clusteredShape, record] = clusterAzElSeedShape( ...
         sweptShape, clusterDistance_deg, protectedPoints_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [clusteredShape, record] = azElInternal.clusterAzElSeedShape( ...
-%       sweptShape, clusterDistance_deg, protectedPoints_deg)
-%**************************************************************************
-% PURPOSE
-%   - Replace nearby groups of at least three swept obstacle regions with
-%     conservative convex hulls for topology-seed generation only.
-%**************************************************************************
-% INPUTS
-%   - sweptShape (scalar polyshape)
-%       Union of protected obstacle geometry sampled across planning time.
-%   - clusterDistance_deg (nonnegative numeric scalar)
-%       Maximum connected region gap. Zero disables clustering.
-%   - protectedPoints_deg (N-by-2 finite numeric array)
-%       Start and goal points that a cluster hull must not contain.
-%**************************************************************************
-% OUTPUTS
-%   - clusteredShape (scalar polyshape)
-%       Seed-only geometry. Physical obstacle records are not changed.
-%   - record (scalar struct)
-%       Distance, region counts, group counts, and cluster boundaries.
-%**************************************************************************
-% UNITS
-%   - Polygon vertices, distances, and protected points are degrees.
-%**************************************************************************
+% Conservatively cluster nearby swept regions for topology seeding only.
 
 %% Section 1: Validate Inputs & Initialize Diagnostics
 

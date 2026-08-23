@@ -457,10 +457,25 @@ value = reshape(array(segmentIndex, axisIndex, :), [], 1);
 end
 function within = withinBounds(powerCoefficient, lower, upper, tolerance)
 % PURPOSE
-%   - Certify a polynomial range by its Bernstein convex hull.
-bernstein = azElInternal.powerToBernstein(powerCoefficient);
-within = all(bernstein >= lower - tolerance & ...
-    bernstein <= upper + tolerance);
+%   - Check the exact low-degree polynomial range on normalized [0, 1].
+derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* ...
+    powerCoefficient(2:end);
+lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");
+candidateTau = [0; 1];
+if ~isempty(lastDerivativeIndex)
+    stationaryRoot = roots(flip( ...
+        derivativeCoefficient(1:lastDerivativeIndex)));
+    rootTolerance = 1e-9;
+    stationaryTau = real(stationaryRoot);
+    stationaryTau = stationaryTau( ...
+        stationaryTau >= -rootTolerance & ...
+        stationaryTau <= 1 + rootTolerance);
+    candidateTau = [candidateTau; ...
+        min(max(stationaryTau, 0), 1)];
+end
+candidateValue = polyval(flip(powerCoefficient), candidateTau);
+within = all(candidateValue >= lower - tolerance & ...
+    candidateValue <= upper + tolerance);
 end
 function [collisionFree, resolved, minimumClearance_deg, ...
         checkCount, unresolvedCount] = certifyCollision( ...

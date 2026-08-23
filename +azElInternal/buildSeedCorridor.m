@@ -46,7 +46,7 @@ if any(xor(isfinite(boundary_deg(:, 1)), ...
 end
 corridorShape = polyshape( ...
     boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
-corridorRegions = regions(corridorShape);
+corridorRegions = azElInternal.convexPolygonRegions(corridorShape);
 if isempty(corridorRegions)
     return;
 end
@@ -64,8 +64,9 @@ for segmentIndex = 1:segmentCount
     for regionIndex = 1:numel(corridorRegions)
         vertices_deg = corridorRegions(regionIndex).Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-        [nearestPoint_deg, distance_deg] = ...
-            nearestBoundaryPoint(vertices_deg, point_deg);
+        [distance_deg, nearestPoint_deg] = ...
+            azElInternal.pointPolygonClearance( ...
+            corridorRegions(regionIndex), point_deg);
         if distance_deg <= 1e-12
             continue;
         end
@@ -86,27 +87,4 @@ for segmentIndex = 1:segmentCount
     end
 end
 corridor = corridor(1:recordCount);
-end
-
-%% Section 3: Local Functions
-
-function [nearestPoint_deg, minimumDistance_deg] = ...
-        nearestBoundaryPoint(vertices_deg, point_deg)
-% PURPOSE
-%   - Project one point onto the nearest closed polygon edge.
-edgeStart_deg = vertices_deg;
-edgeEnd_deg = vertices_deg([2:end 1], :);
-edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
-edgeLengthSquared_deg2 = sum(edgeDelta_deg.^2, 2);
-validEdge = edgeLengthSquared_deg2 > eps;
-edgeStart_deg = edgeStart_deg(validEdge, :);
-edgeDelta_deg = edgeDelta_deg(validEdge, :);
-edgeLengthSquared_deg2 = edgeLengthSquared_deg2(validEdge);
-fraction = sum((point_deg - edgeStart_deg) .* edgeDelta_deg, 2) ./ ...
-    edgeLengthSquared_deg2;
-fraction = min(1, max(0, fraction));
-projectedPoint_deg = edgeStart_deg + fraction .* edgeDelta_deg;
-distance_deg = vecnorm(projectedPoint_deg - point_deg, 2, 2);
-[minimumDistance_deg, edgeIndex] = min(distance_deg);
-nearestPoint_deg = projectedPoint_deg(edgeIndex, :);
 end

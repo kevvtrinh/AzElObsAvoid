@@ -5,7 +5,7 @@ function result = exampleMovingBarrierWait(exampleOverrides)
 %   result = exampleMovingBarrierWait(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Demonstrate that HS3 can select useful waiting for a translating barrier.
+%   - Demonstrate useful continuous waiting for a translating barrier.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
@@ -27,8 +27,7 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5, ...
-    "CollocationSegmentCount", 7), [2 2]);
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5), [2 2]);
 
 %% Section 2: Create Obstacles
 

@@ -1,34 +1,6 @@
 function [shape, geometry] = obstacleShapeAtTime( ...
         obstacle, queryTime_s, geometryOnly)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
-%       obstacle, queryTime_s)
-%   [shape, geometry] = azElInternal.obstacleShapeAtTime( ...
-%       obstacle, queryTime_s, geometryOnly)
-%**************************************************************************
-% PURPOSE
-%   - Interpolate one canonical protected obstacle at one query time.
-%   - Use a conservative union when adjacent slice topology differs.
-%**************************************************************************
-% INPUTS
-%   - obstacle (scalar canonical obstacle struct)
-%       Protected az_deg and el_deg histories from makeAzElObstacleData.
-%   - queryTime_s (finite scalar)
-%       Absolute query time.
-%   - geometryOnly (logical scalar, optional; default false)
-%       If true, skip polyshape construction when topology is unchanged.
-%**************************************************************************
-% OUTPUTS
-%   - shape (scalar polyshape or [])
-%       Protected occupied geometry. It is [] in geometry-only mode when
-%       topology is unchanged, and empty outside the active span.
-%   - geometry (scalar struct)
-%       Interpolated boundary, vertex-speed bound, and provenance flags.
-%**************************************************************************
-% UNITS
-%   - Geometry is degrees, time is seconds, and speed is degrees per second.
-%**************************************************************************
+% Interpolate protected geometry, conservatively unioning topology changes.
 
 %% Section 1: Validate The Query
 
@@ -82,7 +54,6 @@ else
             intervalDuration_s;
     end
 end
-
 lowerAzimuth_deg = double(obstacle.az_deg{lowerIndex}(:));
 lowerElevation_deg = double(obstacle.el_deg{lowerIndex}(:));
 if lowerIndex == upperIndex
@@ -103,6 +74,9 @@ else
             azimuthDelta_deg;
         elevation_deg = lowerElevation_deg + fraction * ...
             elevationDelta_deg;
+        if ~geometryOnly && preparation.IntervalSpeedBound_deg_s(lowerIndex) == 0
+            shape = preparation.SampleShapes{lowerIndex};
+        end
         vertexSpeedBound_deg_s = ...
             preparation.IntervalSpeedBound_deg_s(lowerIndex);
         topologyIsInterpolated = true;
@@ -116,7 +90,6 @@ else
         topologyIsInterpolated = false;
     end
 end
-
 %% Section 3: Assemble The Geometry Record
 
 azimuth_deg(~isfinite(azimuth_deg)) = NaN;
@@ -134,7 +107,6 @@ geometry = struct( ...
     "LowerSampleIndex", lowerIndex, ...
     "UpperSampleIndex", upperIndex);
 end
-
 %% Section 4: Local Functions
 
 function shape = boundaryShape(azimuth_deg, elevation_deg)

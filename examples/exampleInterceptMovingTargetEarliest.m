@@ -5,7 +5,7 @@ function result = exampleInterceptMovingTargetEarliest(exampleOverrides)
 %   result = exampleInterceptMovingTargetEarliest(exampleOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Demonstrate earliest interception through the single HS3 planner path.
+%   - Demonstrate earliest interception through the maintained planner path.
 %**************************************************************************
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
@@ -27,8 +27,7 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [plannerOptions, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "DirectSeedOnly", true, "MaximumSeedCount", 1, ...
-    "CollocationSegmentCount", 7), [2 2]);
+    "DirectSeedOnly", true, "MaximumSeedCount", 1), [2 2]);
 
 %% Section 2: Create Obstacles
 

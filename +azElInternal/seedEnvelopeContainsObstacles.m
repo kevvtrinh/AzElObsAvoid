@@ -7,19 +7,19 @@ function containsAllObstacles = seedEnvelopeContainsObstacles( ...
 %       boundary_deg, obstacles, tolerance_deg)
 %**************************************************************************
 % PURPOSE
-%   - Verify that convex seed-envelope regions contain obstacle histories.
+%   - Verify that the complete seed-envelope union contains obstacle histories.
 %**************************************************************************
 % INPUTS
 %   - boundary_deg (N-by-2 numeric array)
 %       Paired nonfinite rows can separate envelope regions.
 %   - obstacles (canonical protected obstacle struct array)
-%       One convex envelope region must contain each complete history.
+%       Every history vertex must lie in the complete envelope union.
 %   - tolerance_deg (nonnegative finite scalar)
 %       Outward numerical containment tolerance.
 %**************************************************************************
 % OUTPUTS
 %   - containsAllObstacles (logical scalar)
-%       True only when all regions are convex and all histories are covered.
+%       True only when the complete obstacle histories are covered.
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates and tolerance are degrees.
@@ -47,51 +47,27 @@ if regionCount < 1
     return;
 end
 
-%% Section 2: Verify Convex Regions
+%% Section 2: Buffer The Complete Envelope Union
 
 containmentTolerance_deg = max(1e-9, tolerance_deg);
-bufferedRegionVertices_deg = cell(regionCount, 1);
-for regionIndex = 1:regionCount
-    regionVertices_deg = envelopeRegions(regionIndex).Vertices;
-    regionVertices_deg = ...
-        regionVertices_deg(all(isfinite(regionVertices_deg), 2), :);
-    if size(regionVertices_deg, 1) < 3
-        return;
-    end
-    hullIndex = convhull( ...
-        regionVertices_deg(:, 1), regionVertices_deg(:, 2));
-    hullShape = polyshape(regionVertices_deg(hullIndex, :));
-    areaTolerance_deg2 = containmentTolerance_deg * ...
-        max(1, perimeter(hullShape));
-    if abs(area(hullShape) - area(envelopeRegions(regionIndex))) > ...
-            areaTolerance_deg2
-        return;
-    end
-    bufferedShape = polybuffer( ...
-        envelopeRegions(regionIndex), containmentTolerance_deg);
-    bufferedRegionVertices_deg{regionIndex} = bufferedShape.Vertices;
-end
+bufferedEnvelopeShape = polybuffer( ...
+    envelopeShape, containmentTolerance_deg);
 
-%% Section 3: Assign Each Complete History To One Region
+%% Section 3: Verify Every Complete History Polygon
 
 for obstacleIndex = 1:numel(obstacles)
-    containingRegionFound = false;
     obstacle = obstacles(obstacleIndex);
-    position_deg = [vertcat(obstacle.az_deg{:}), ...
-        vertcat(obstacle.el_deg{:})];
-    position_deg = position_deg(all(isfinite(position_deg), 2), :);
-    for regionIndex = 1:regionCount
-        boundary = bufferedRegionVertices_deg{regionIndex};
-        [isInside, isOnBoundary] = inpolygon( ...
-            position_deg(:, 1), position_deg(:, 2), ...
-            boundary(:, 1), boundary(:, 2));
-        if ~isempty(position_deg) && all(isInside | isOnBoundary)
-            containingRegionFound = true;
-            break;
+    for sampleIndex = 1:numel(obstacle.time_s)
+        obstacleShape = azElInternal.obstacleShapeAtTime( ...
+            obstacle, obstacle.time_s(sampleIndex));
+        if isempty(obstacleShape.Vertices)
+            return;
         end
-    end
-    if ~containingRegionFound
-        return;
+        uncoveredShape = subtract(obstacleShape, bufferedEnvelopeShape);
+        areaTolerance_deg2 = 256 * eps(max(1, area(obstacleShape)));
+        if area(uncoveredShape) > areaTolerance_deg2
+            return;
+        end
     end
 end
 containsAllObstacles = true;

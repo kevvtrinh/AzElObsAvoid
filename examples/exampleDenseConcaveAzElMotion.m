@@ -27,8 +27,7 @@ if nargin < 1 || isempty(exampleOverrides)
 end
 [options, displayOptions] = resolveAzElExampleOptions( ...
     exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2, ...
-    "CollocationSegmentCount", 7), [2 2]);
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2), [2 2]);
 
 %% Section 2: Create Obstacles
 

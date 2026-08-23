@@ -1,33 +1,6 @@
 function [envelopeShape, usedEnvelope] = denseSweptSeedEnvelope( ...
         obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [envelopeShape, usedEnvelope] = ...
-%       azElInternal.denseSweptSeedEnvelope( ...
-%       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
-%**************************************************************************
-% PURPOSE
-%   - Replace an excessive seed-only swept union with a conservative hull.
-%**************************************************************************
-% INPUTS
-%   - obstacles (canonical protected obstacle struct array)
-%       All protected history vertices define the envelope bounds.
-%   - sampleTimes_s (numeric vector)
-%       Seed-union times used to estimate Boolean vertex work.
-%   - endpointPosition_deg (2-by-2 numeric array)
-%       Start and goal positions in [azimuth elevation] order.
-%   - vertexWorkBudget (positive numeric scalar)
-%       Maximum estimated vertices for the ordinary swept union.
-%**************************************************************************
-% OUTPUTS
-%   - envelopeShape (scalar polyshape)
-%       Conservative seed-only coarse hull, or an empty shape when unused.
-%   - usedEnvelope (logical scalar)
-%       True only when the coarse hull is safe for both endpoints.
-%**************************************************************************
-% UNITS
-%   - Position is degrees. Time is seconds. The work budget is a count.
-%**************************************************************************
+% Replace excessive seed-only swept-union work with a conservative hull.
 %% Section 1: Estimate The Swept Boolean Work
 validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, ...

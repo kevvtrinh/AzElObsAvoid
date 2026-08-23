@@ -1,10 +1,10 @@
-function tests = testHs3Planner
+function tests = testAzElPlanner
 %% Section 0: Header & Readme
 % SYNTAX
-%   tests = testHs3Planner
+%   tests = testAzElPlanner
 %**************************************************************************
 % PURPOSE
-%   - Verify the compact HS3 planner, geometry interpolation, validation,
+%   - Verify the corridor-quintic planner, geometry interpolation, validation,
 %     deterministic seed behavior, moving targets, and stable failures.
 %**************************************************************************
 % INPUTS
@@ -26,7 +26,7 @@ addpath(repositoryRoot);
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
 function testDefaultsExposeOneSmallPlanner(testCase)
-% Verify that zero-input defaults expose only the maintained HS3 controls.
+% Verify that zero-input defaults expose only maintained planner controls.
 options = planAzElMotion();
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
@@ -76,7 +76,7 @@ options.Verbose = true;
 verboseText = evalc("planAzElMotion([], initialState, goalState, limits, options);");
 verifyNotEmpty(testCase, regexp(verboseText, '\[AzEl\]', 'once'));
 verifyEmpty(testCase, regexp(verboseText, ...
-    '(?m)^\[HS3\]|^\[first motion', 'once'));
+    '(?m)^\[first motion', 'once'));
 end
 function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
 % Verify that three nearby regions form one seed hull without physical edits.
@@ -180,8 +180,8 @@ trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
     trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
-function testSeedEnvelopeRequiresConvexCompleteContainment(testCase)
-% Verify vectorized membership retains convexity and complete-history rules.
+function testSeedEnvelopeRequiresCompletePolygonContainment(testCase)
+% Verify complete polygons and histories must lie in the envelope union.
 boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
 inside = rectangleObstacle([0 2], [-1 1 -1 1], 0);
 outside = rectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
@@ -196,6 +196,9 @@ verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
 concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
 verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     concaveBoundary_deg, inside, 0));
+insideConcaveRegion = rectangleObstacle([0 2], [-1.5 -0.5 -1 1], 0);
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    concaveBoundary_deg, insideConcaveRegion, 0));
 end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
 % Verify the third-order chain against analytic constant-jerk motion.
@@ -263,25 +266,9 @@ verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
 verifyEqual(testCase, result.time_s(end), 8, "AbsTol", 1e-7);
 verifyEqual(testCase, result.velocity_deg_s(end, :), ...
     goalState.velocity_deg_s, "AbsTol", 1e-6);
-diagnostics = result.SeedSummaries( ...
-    result.SelectedSeedIndex).Hs3SolverDiagnostics;
-verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
-    "linearFixedTime");
-end
-function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
-% Verify the exact gradient includes both jerk and final-time decisions.
-segmentCount = 3;
-decision = [linspace(-1, 1, 2 * (2 * segmentCount + 1)).'; 8];
-direction = cos((1:numel(decision)).');
-[~, gradient] = azElInternal.integratedSquaredAzElHs3Jerk( ...
-    decision, true, 8, segmentCount, 1);
-step = 1e-6;
-forward = azElInternal.integratedSquaredAzElHs3Jerk( ...
-    decision + step * direction, true, 8, segmentCount, 1);
-backward = azElInternal.integratedSquaredAzElHs3Jerk( ...
-    decision - step * direction, true, 8, segmentCount, 1);
-verifyEqual(testCase, gradient.' * direction, ...
-    (forward - backward) / (2 * step), "RelTol", 1e-8);
+verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
+verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, ...
+    "corridorQuintic");
 end
 function testEarliestArrivalIsInsideHorizon(testCase)
 % Verify the two-stage earliest-arrival solve and independent validation.
@@ -294,17 +281,8 @@ result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-diagnostics = result.SeedSummaries( ...
-    result.SelectedSeedIndex).Hs3SolverDiagnostics;
-verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
-    "nonlinearTimeDecision");
-verifyEqual(testCase, diagnostics.SegmentCount, ...
-    result.Polynomial.SegmentCount);
-expectedDecisionVariableCount = 4 * diagnostics.SegmentCount + 3;
-verifyEqual(testCase, diagnostics.DecisionVariableCount, ...
-    expectedDecisionVariableCount);
-verifyGreaterThan(testCase, diagnostics.InequalityConstraintCount, 0);
-verifyEqual(testCase, diagnostics.EqualityConstraintCount, 6);
+verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
+verifyEqual(testCase, size(result.Polynomial.positionPower_deg, 3), 6);
 jerkRampTime_s = limits.maxAcceleration_deg_s2(1) / ...
     limits.maxJerk_deg_s3(1);
 constantAccelerationTime_s = (-1.5 + sqrt(16.25)) / 2;
@@ -334,12 +312,12 @@ verifyLessThan(testCase, result.ArrivalTime_s, goalState.time_s);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
 function testIntegerWorkLimitsRejectFractionalValues(testCase)
-% Verify invalid optimizer work limits fail at the public boundary.
+% Verify an invalid bounded seed-count limit fails at the public boundary.
 initialState = state(0, [0 0], [0 0], [0 0]);
 goalState = state(8, [4 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.MaximumNlpIterations = 1.5;
+options.MaximumSeedCount = 1.5;
 didThrow = false;
 try
     planAzElMotion([], initialState, goalState, limits, options);
@@ -396,20 +374,18 @@ verifyError(testCase, @() planAzElMovingTargetIntercept( ...
     initialState, targetMotion, limits, struct()), ...
     "planAzElMovingTargetIntercept:TargetHistoryTooShort");
 end
-function testSelectedCandidateSupportsMeshRefinement(testCase)
-% Verify an HS3-only endpoint state can be re-solved on a denser mesh.
+function testEndpointStateDoesNotInvokeLegacyMeshRefinement(testCase)
+% Verify endpoint-state support stays on the experimental polynomial path.
 initialState = state(0, [0 0], [0.1 0], [0.05 0]);
 goalState = state(8, [4 2], [0.2 -0.1], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.CollocationSegmentCount = 4;
-options.MaximumCollocationSegmentCount = 8;
-options.MaximumMeshRefinementPasses = 1;
 result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
-verifyEqual(testCase, result.Polynomial.SegmentCount, 8);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
 verifyEqual(testCase, ...
-    result.SearchDiagnostics.MeshRefinementPassCount, 1);
+    result.SearchDiagnostics.MeshRefinementPassCount, 0);
 end
 function testStaticObstacleProducesOppositeSideSeeds(testCase)
 % Verify bounded input-driven seed diversity and validated selection.
@@ -494,6 +470,7 @@ options.DirectSeedOnly = false;
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
 verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 2);
+verifyFalse(testCase, diagnostics.ExhaustiveVisibilityFallbackUsed);
 verifyLessThan(testCase, diagnostics.VisibilityCandidatePairCount, ...
     diagnostics.NodeCount * (diagnostics.NodeCount - 1) / 2);
 verifyEqual(testCase, size(unique( ...
@@ -502,6 +479,46 @@ verifyEqual(testCase, size(unique( ...
 verifyGreaterThanOrEqual(testCase, ...
     sum([seeds.Source] == "visibilityGraph"), 2);
 verifyFalse(testCase, diagnostics.HomologySearchTruncated);
+end
+
+function testAffordableExhaustiveVisibilityFindsHairpinRoute(testCase)
+% Verify affordable complete visibility preserves a two-wall reversal path.
+firstWall = makeAzElObstacleData( ...
+    "first wall", 0, [-10; 6.5; 6.5; -10], ...
+    [3.65; 3.65; 4.35; 4.35], 0.15);
+secondWall = makeAzElObstacleData( ...
+    "second wall", 0, [-6.5; 10; 10; -6.5], ...
+    [7.65; 7.65; 8.35; 8.35], 0.15);
+obstacles = [firstWall; secondWall];
+initialState = state(0, [0 2], [0 0], [0 0]);
+goalState = state(120, [0 10], [0 0], [0 0]);
+limits = physicalLimits([2 2], [1 1], [2 2]);
+limits.azimuthInterval_deg = [-10 10];
+limits.elevationInterval_deg = [0 12];
+options = fixedOptions();
+options.MaximumSeedCount = 3;
+options.DirectSeedOnly = false;
+[seeds, diagnostics] = azElInternal.generateAzElTopologySeeds( ...
+    obstacles, initialState, goalState, limits, options);
+visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
+
+verifyNotEmpty(testCase, visibilitySeeds);
+verifyTrue(testCase, diagnostics.ExhaustiveVisibilityUsed);
+verifyTrue(testCase, diagnostics.ExhaustiveVisibilityFallbackUsed);
+verifyFalse(testCase, diagnostics.HomologySearchTruncated);
+route_deg = visibilitySeeds(1).position_deg;
+for edgeIndex = 1:size(route_deg, 1) - 1
+    edgeLength_deg = norm(route_deg(edgeIndex + 1, :) - ...
+        route_deg(edgeIndex, :));
+    sampleCount = ceil(edgeLength_deg / 0.01) + 1;
+    edgeFraction = linspace(0, 1, sampleCount).';
+    edgeSamples_deg = route_deg(edgeIndex, :) + edgeFraction .* ...
+        (route_deg(edgeIndex + 1, :) - route_deg(edgeIndex, :));
+    occupied = queryAzElTimeObstacle( ...
+        obstacles, edgeSamples_deg(:, 1), edgeSamples_deg(:, 2), ...
+        zeros(sampleCount, 1));
+    verifyFalse(testCase, any(occupied));
+end
 end
 function testMovingObstacleUsesTrajectoryTime(testCase)
 % Verify that the same point changes occupancy as protected geometry moves.
@@ -549,7 +566,7 @@ occupied = queryAzElTimeObstacle( ...
 verifyEqual(testCase, occupied, [false; true]);
 end
 function testDeformingObstacleUsesThePlannerPath(testCase)
-% Verify a deforming protected polygon uses the maintained HS3 planner.
+% Verify a deforming protected polygon uses the maintained planner.
 time_s = [0; 8];
 first_deg = [-1 4; 1 4; 1 6; -1 6];
 second_deg = [-2 4.5; 2 4.5; 2 5.5; -2 5.5];
@@ -580,6 +597,37 @@ obstacle = makeAzElObstacleData( ...
 verifyFalse(testCase, geometry.TopologyIsInterpolated);
 verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));
+end
+function testStationaryMatchingTopologyReusesExactShape(testCase)
+% Verify an unchanged interval returns its prepared source geometry exactly.
+boundary_deg = [-2 -1; 2 -1; 2 1; -2 1];
+obstacle = makeAzElObstacleData( ...
+    "stationary", [0; 2], boundary_deg(:, 1), boundary_deg(:, 2), 0);
+preparedObstacle = azElInternal.prepareDynamicObstacles(obstacle);
+[shape, geometry] = azElInternal.obstacleShapeAtTime( ...
+    preparedObstacle, 1);
+verifyEqual(testCase, shape.Vertices, preparedObstacle. ...
+    InternalPreparation.SampleShapes{1}.Vertices);
+verifyEqual(testCase, geometry.azimuth_deg, obstacle.az_deg{1});
+verifyEqual(testCase, geometry.elevation_deg, obstacle.el_deg{1});
+verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
+verifyTrue(testCase, geometry.TopologyIsInterpolated);
+end
+function testBatchedPolygonClearanceMatchesScalarQueries(testCase)
+% Verify batched projection preserves scalar signs, points, and edge order.
+shape = polyshape([0 3 3 1 1 0], [0 0 3 3 1 1], ...
+    "Simplify", false, "KeepCollinearPoints", true);
+queryPosition_deg = [-1 0.5; 0.5 0.5; 2 2; 1 1; 3.5 2.5];
+[batchClearance_deg, batchNearest_deg, batchEdgeIndex] = ...
+    azElInternal.pointPolygonClearance(shape, queryPosition_deg);
+for queryIndex = 1:size(queryPosition_deg, 1)
+    [clearance_deg, nearest_deg, edgeIndex] = ...
+        azElInternal.pointPolygonClearance( ...
+        shape, queryPosition_deg(queryIndex, :));
+    verifyEqual(testCase, batchClearance_deg(queryIndex), clearance_deg);
+    verifyEqual(testCase, batchNearest_deg(queryIndex, :), nearest_deg);
+    verifyEqual(testCase, batchEdgeIndex(queryIndex), edgeIndex);
+end
 end
 function testMovingBarrierGeneratesWaitingSeed(testCase)
 % Verify a requested but unused cluster does not suppress timed search.
@@ -649,12 +697,14 @@ verifyGreaterThan(testCase, timedSeed(1).EstimatedDuration_s, ...
     directSeed(1).EstimatedDuration_s);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 options.GoalTimeMode = "fixedArrival";
-options.EnableHs3Improvement = false;
 result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.SeedSummaries(1).FirstMotionValidationPassed);
-verifyFalse(testCase, any([result.SeedSummaries(2:end).FirstMotionAttempted]));
+verifyTrue(testCase, all([result.SeedSummaries.FirstMotionAttempted]));
+verifyEqual(testCase, result.SearchDiagnostics.AttemptedSeedCount, ...
+    numel(result.Seeds));
+verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
 end
 function testDenseEnvelopeReportsTimedSearchWorkLimit(testCase)
 % Verify dense timed work is suppressed and reported as incomplete.
@@ -688,29 +738,6 @@ spatialSeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyNotEmpty(testCase, spatialSeeds);
 verifyTrue(testCase, all([spatialSeeds.UsesReducedGeometry]));
 verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
-end
-function testWaitingSeedDoesNotImposeCornerState(testCase)
-% Verify a repeated seed vertex does not become a zero-velocity equality.
-initialState = state(0, [0 0], [0 0], [0 0]);
-goalState = state(8, [4 0], [0 0], [0 0]);
-limits = physicalLimits([2 2], [1 1], [2 2]);
-options = fixedOptions();
-options.MaximumSolverTime_s = Inf;
-seed = struct( ...
-    "Index", 1, "Source", "directWait", ...
-    "position_deg", [0 0; 0 0; 4 0], ...
-    "tau", [0; 0.4; 1], "EstimatedDuration_s", 8, ...
-    "Length_deg", 4, "UsesReducedGeometry", false);
-candidate = azElInternal.solveAzElHs3( ...
-    [], initialState, goalState, limits, options, seed);
-cornerTime_s = 0.4 * goalState.time_s;
-[~, sampleIndex] = min(abs(candidate.time_s - cornerTime_s));
-verifyTrue(testCase, candidate.OptimizerFeasible, candidate.Message);
-verifyGreaterThan(testCase, ...
-    norm(candidate.velocity_deg_s(sampleIndex, :)), 0.1);
-verifyGreaterThan(testCase, ...
-    norm(candidate.position_deg(sampleIndex, :) - ...
-    seed.position_deg(2, :)), 0.1);
 end
 function testAzimuthWrappingChangesThePhysicalRequest(testCase)
 % Verify wrapping selects the short move and disabled wrapping keeps the long move.
@@ -794,7 +821,7 @@ verifyFalse(testCase, validation.CollisionFree);
 verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
 end
 function testBetweenNodeVelocityViolationFailsValidation(testCase)
-% Verify Bernstein limits detect an interior velocity peak with clear samples.
+% Verify continuous extrema detect an interior peak with clear samples.
 initialState = state(0, [0 0], [0 0], [4 0]);
 goalState = state(1, [2 / 3 0], [0 0], [-4 0]);
 limits = physicalLimits([0.8 1], [5 5], [9 9]);
@@ -804,6 +831,17 @@ validation = validateAzElTrajectory( ...
 verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.VelocityWithinLimits);
 verifyEqual(testCase, max(abs(trajectory.velocity_deg_s), [], "all"), 0);
+end
+function testExactInteriorVelocityPeakAtLimitPassesValidation(testCase)
+% Verify a conservative coefficient hull does not reject a feasible curve.
+initialState = state(0, [0 0], [0 0], [4 0]);
+goalState = state(1, [2 / 3 0], [0 0], [-4 0]);
+limits = physicalLimits([1 1], [5 5], [9 9]);
+trajectory = interiorVelocityPeakTrajectory();
+validation = validateAzElTrajectory( ...
+    trajectory, [], initialState, goalState, limits, fixedOptions());
+verifyTrue(testCase, validation.Passed, validation.Message);
+verifyTrue(testCase, validation.VelocityWithinLimits);
 end
 function testSafetyMarginIsAppliedExactlyOnce(testCase)
 % Verify absolute reconstruction from original geometry is idempotent.
@@ -852,7 +890,6 @@ goalState = state(12, [5 0], [0 0], [0 0]);
 limits = physicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 3;
-options.MaximumNlpIterations = 40;
 limits.elevationInterval_deg = [-10 10];
 result = planAzElMotion(wall, initialState, goalState, limits, options);
 verifyFalse(testCase, result.Success);
@@ -903,6 +940,10 @@ result = planAzElMovingTargetIntercept( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.Intercept.Mode, "earliest");
+verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
+verifyGreaterThan(testCase, result.Intercept.Search.TrialCount, 1);
+verifyEqual(testCase, result.Intercept.Search.Method, ...
+    "boundedChronologicalFixedTime");
 verifyEqual(testCase, result.position_deg(end, :), ...
     result.Intercept.TargetPosition_deg, "AbsTol", 1e-6);
 plotOptions = struct( ...
@@ -925,9 +966,6 @@ options = planAzElMotion();
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
-options.CollocationSegmentCount = 5;
-options.MaximumNlpIterations = 150;
-options.MaximumNlpFunctionEvaluations = 15000;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end

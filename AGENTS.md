@@ -771,6 +771,12 @@ only when it represents a general result that later runs can populate.
   feature, treat that feature as the branch's production implementation, not
   as a sidecar demonstration. Before the branch is complete, migrate every
   maintained runnable example and applicable wrapper to use the new feature.
+- On an experimental or replacement branch, a maintained example counts as
+  passing only when its returned diagnostics prove that it executed the
+  branch's experimental production method. A legacy HS3/NLP solve, hidden
+  fallback, or result substituted from the legacy planner does not satisfy the
+  example gate; treat that example as unmigrated even if independent
+  validation passes.
 - On a feature-specific replacement branch, remove superseded implementation
   code, scripts, options, tests, benchmarks, and adapters once the new feature
   no longer depends on them. Do not retain parallel legacy execution paths for

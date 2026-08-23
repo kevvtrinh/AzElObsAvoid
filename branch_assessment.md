@@ -1,5 +1,132 @@
 # Plan 325 branch assessment
 
+## Current corridor-only assessment — compact C3 duration controller
+
+This section supersedes the older HS3-era judgment below for the current
+uncommitted `325-less-nlp` worktree. Production contains no HS3/NLP execution.
+HS3-only result and benchmark compatibility fields are now removed. The
+retained dynamic controller minimizes a sampled, limit-normalized integrated
+jerk quadratic while enforcing exchanged exact derivative bounds and
+time-local protected safe-side constraints. It backtracks and independently
+validates every retained update; eligibility depends on route dimension, not
+scenario identity.
+
+One additional bounded controller now handles compact static or dynamic topology. It
+fits an eight-span doubled-knot C3 quintic to the shortest validated eligible
+seed and solves fixed-duration convex minimum-jerk problems. An input-derived
+probe near the physical lower bound switches between lower-bound bisection and
+the established high-to-low continuation. Exact point-to-edge projection is
+batched for histories proven stationary; moving dense geometry retains the
+256-vertex cap. Eligibility remains input-driven: earliest arrival, three
+through ten vertices, and zero-length seeds only after successful hold recovery.
+It retains only a strictly shorter independently validated proposal.
+
+This improved forty moving circles to `62.477739862636 s` versus the frozen
+`64.555779916429 s` reference, with `15.3927512 s` fresh-process wall and
+`0.001843121779 deg` clearance. Moving circle improved to
+`8.751228736151 s`, with `6.9248772 s` wall and
+`0.001266077441 deg` clearance. Both passed independent continuous collision
+and exact kinematic validation. Batched stationary projection now makes dense
+geographic geometry tractable: extreme outline reaches `6.222166624146 s`
+versus frozen main `6.683971648809 s`, with `27.9310043 s` final wall and
+`0.00709851977447 deg` independently validated clearance.
+
+The same controller improved static basic planning to `7.649656344043 s`
+and dense concavity to `8.690573182986 s`, beating both frozen main rows with
+fresh walls of `4.0561583 s` and `3.9323402 s`. Ten-vertex eligibility improved
+slalom to `10.855664258356 s`; feasibility-switched continuation preserves U at
+`22.640860106984 s` with `5.5963246 s` wall. Opposing U now reaches
+`22.160945761398 s` versus frozen main `22.875124576026 s`, with `8.5208632 s`
+wall and `0.0143650783404 deg` clearance. Reshaping a recovered hold improved
+moving barrier to `10.371387562474 s`. A uniformly scaled analytic jerk-switching S-curve
+improved earliest intercept to `6.111534301758 s` without fixed-time regression.
+
+The final 18-example fresh-process wall sum is `167.0127367 s`, `33.74%`
+below the frozen optimized-main `252.0683835 s` matrix and `18.27%` below the
+prior complete corridor-only matrix. All 17 success durations meet or beat the
+frozen optimized-main row, and the expected no-path contract passed. This is
+not a uniform wall-speed claim: forty moving circles, moving/deforming U.S.,
+and target-exits-obstacle remain slower than optimized main in isolated wall
+time.
+
+The moving/deforming U.S. example now reaches `12.873502939647 s`, beating
+the frozen `12.986386910606 s` reference by `0.112884 s`. It is independently
+collision- and kinematic-valid with `0.001768850899 deg` clearance. The
+final fresh-process no-plot wall is `53.0425551 s`, materially slower than the
+optimized-main `26.8349249 s` row, so this is a path-time result rather
+than a runtime improvement. Core production is 7,498 literal lines
+excluding 565 plotting lines, meeting the user-authorized conditional ceiling;
+maintained MATLAB excluding examples/scratch is 10,296 lines. The largest
+production file is 881 lines.
+
+The current full suite passed 56/56 in `28.7732939 s`, and Code Analyzer found
+zero messages across 66 nonscratch MATLAB files. Visible success created three
+figures and 529 graphics objects; expected no path created two diagnostic
+figures with two rejected transitions. A 12-wall hairpin passed independent
+validation and its corridor certificate in `9.3474237 s` total wall. These
+tests establish the exercised matrix, not global optimality or completeness.
+
+The prior exact-retimer assessment follows for historical context.
+
+## Previous corridor-only assessment — exact derivative retimer
+The retained small-system retimer derives affine velocity, acceleration, and
+jerk constraints from the spline, finds exact continuous polynomial extrema,
+and uses bounded convex exchange plus a secant feedback gain. It is input-driven:
+the exact exchange is eligible only for static, earliest-arrival,
+zero-endpoint-derivative systems with at most 100 decision-span work units.
+Larger systems retain the validated span-demand controller.
+
+The motivating U case now passes both declared gates: `23.746859860594 s` is
+4.07 percent above the frozen main-branch `22.818548735851 s` reference,
+and the final fresh-process headless wall was `5.9768360 s`. It passed
+independent collision and exact kinematic
+validation. The 12-wall hairpin remained corridor-certified and independently
+valid at `164.828287993153 s` duration, `0.02 deg` clearance, and
+`7.1631349 s` total wall. Opposing U improved from the prior corridor-only
+`31.9439273474 s` to `28.5759222913 s`. Alternating slalom retained
+`13.2008531355 s` exactly.
+
+All 18 maintained examples ran headlessly and serially in fresh MATLAB
+processes: 17 independently valid successes and one independently valid
+expected no-path result. Relative to the preceding corridor-only matrix,
+durations were preserved or improved. Relative to the frozen main/HS3 matrix,
+the branch still trails materially on dense concavity, 40 moving circles,
+moving/deforming U.S. geometry, opposing U, and extreme-outline cases. The
+exact retimer therefore solves the focused U/hairpin acceptance problem but
+does not yet meet or beat every historical NLP duration. No global optimality
+or completeness claim is made.
+
+The full suite passes 54/54, and Code Analyzer reports zero messages across 65
+maintained MATLAB files. A visible success created four figures and 643
+graphics objects; the expected no-path result created two diagnostic figures
+and retained two rejected transitions. Consolidating repeated point-to-polygon
+projection and one-use planner helpers reduced core production before the
+retained trust step; current core is 7,200 physical lines excluding 565
+plotting lines, 200 above the 7,000-line target. Maintained MATLAB excluding
+examples/scratch is 9,901 lines and remains below
+12,000. The production-size target and the historical all-example duration
+comparison remain completion blockers. LP feasibility plus active-set QP
+reduced dense-concavity wall from `63.7774602 s` to `3.7330015 s` with
+bit-identical duration. The complete isolated example wall sum decreased
+28.64 percent, but individual wall variation prevents a uniform speed claim.
+
+A bounded control-law experiment confirmed that the gain is not a
+scenario-independent scalar optimum. Unit log-time gain improved U to
+`23.746859860594 s` but regressed planning and slalom. A continuous
+error-scheduled gain improved U to `23.752030563984 s` but regressed planning
+by `0.001269743990 s`; a two-band variant entered a worse `24.277638906889 s`
+U basin. All variants were removed, and U recovered to
+`23.801121658982 s`. The corridor QP changes geometry between timing trials,
+so further controller work requires a local geometry-response Jacobian or a
+trust-region acceptance test rather than scalar gain tuning.
+
+The retained controller now performs that trust-region acceptance once: for
+the first exact-exchange response it evaluates the unit and established
+damped steps, retains the shorter validated response, and then resumes secant
+feedback. The full 18-example fresh-process matrix preserved every prior
+duration except U, which improved to `23.746859860594 s`; U wall was
+`5.9768360 s`. This is bounded response selection, not a scenario branch.
+
 ## Evidence scope
 
 This assessment covers pushed commit `2074c14` plus the current loop-free,
@@ -391,6 +518,77 @@ validator but leave little numerical or modeling reserve.
    certificate but emitted extensive near-singular interior-point warnings.
    This numerical-conditioning weakness remains visible and was not relabeled
    as a harmless success condition.
+7. A bounded interior-route interpolation experiment was rejected. It reduced
+   10-turn wall time from 90.31 to 55.77 seconds but worsened continuous
+   clearance from -0.011725 to -0.544570 degrees because its derivative demand
+   forced route reduction from 14 to 8 vertices. All candidate code and tests
+   were removed, and the recovered baseline reproduced the same route count,
+   decision count, evaluation count, motion duration, clearance, and
+   termination reason. This rules out interpolation alone; it does not rule
+   out a corridor-constrained representation with independent time handling.
+8. Five isolated option experiments showed that retaining route detail is
+   necessary but not sufficient. `TimingReserveFraction=1.0` retained 24
+   vertices and produced the first independently validated 10-turn spline,
+   but its clearance was only 0.000144580 degrees and wall time was 140.74
+   seconds. Reducing duration weight by 100 times and increasing collision
+   penalty by 10 times reproduced the default decision exactly. A finer
+   coordinate step and wider normal-offset bound worsened clearance to
+   -0.393003 and -0.353569 degrees. These results reject further scalar option
+   tuning as the next step; they do not establish that the retained 24-vertex
+   result has a material safety reserve.
+9. A feasibility-first, seed-corridor-constrained quintic candidate failed its
+   focused one-turn proof: it produced no validated motion, corridor
+   certificate, or finite clearance. The candidate was removed before a
+   10-turn run, and exact recovery reproduced the frozen default deterministic
+   result. This rejects the tested combination of hard Bernstein corridor
+   ranking and the existing normal-offset coordinate search; it does not reject
+   corridor methods paired with a different decision representation or solver.
+10. A worst-clearance-first ranking candidate also failed. It improved over
+    the retained optimizer's selected sampled collision but still returned an
+    invalid 10-turn motion at -0.075959 degrees clearance and took 100.53
+    seconds. Exact recovery restored the deterministic baseline. Together with
+    the earlier worst-clearance and per-obstacle trials, this is evidence that
+    objective reformulation alone is not the missing high-turn mechanism.
+11. The earliest high-turn spline defect is now localized to route reduction.
+    The original visibility route is sampled-clear, while uniform arc-length
+    reduction creates thousands of occupied edge samples before smoothing.
+    A 5-turn profile also assigns about 80 percent of optimizer time to scalar
+    sampled-clearance queries. The next justified work is a topology-preserving
+    reducer with behavior-equivalent static batching, not another objective,
+    tolerance, seed, or validation change.
+12. Behavior-equivalent batching removed the sampled-clearance runtime
+    bottleneck for the frozen static cases and retained exact 5-turn and
+    10-turn deterministic outputs. Protected-route reduction then produced
+    independently valid 10-turn splines in 5.22 to 8.45 seconds, proving the
+    topology defect was repairable, but their continuous clearances were only
+    0.000912 and 0.000155 degrees. Continuing the coordinate search with a
+    hard 0.02-degree acceptance reserve reached only 0.000786 degrees; a
+    worst-deficit objective regressed to 0.000343 degrees and 107.35 seconds.
+    Every reducer and reserve-search edit was recovered. The remaining defect
+    is lack of explicit full-span corridor enforcement in the noninterpolating
+    quintic construction, not measured evidence for more scalar tuning.
+13. A retained affine corridor-constrained research prototype now supplies the
+    missing full-span enforcement. With an explicit 22-vertex representation,
+    it passed the frozen 10-turn independent validator and existing corridor
+    certificate at 0.0200000000000009 degrees clearance, 60.2576877911092
+    seconds motion, and 4.0949002 seconds method wall time. The same code passed
+    a single rectangle, a moving-history envelope, adaptive protected-route
+    growth, and a stable unclear-source-route failure. A new 12-wall alternating
+    end maze required repeated near-180-degree turns. The sparse visibility
+    graph was disconnected, so an exhaustive graph was used only because its
+    estimated work fit the existing budget. Compression grew from 22 to 26
+    vertices, proved infeasible, and recovered once to the complete 50-vertex
+    route. The resulting C3-continuous motion independently validated and
+    certified at 0.02 degrees clearance, 369.337421187 seconds arrival, and
+    16.0761214 seconds wall time. This is the branch's strongest deterministic
+    hairpin evidence, but it is not global minimum-arrival or production
+    replacement evidence.
+14. The same recovery does not satisfy every high-turn arrival policy. The
+    20-turn repeated-barrier case now reaches a certified full 61-vertex spline
+    at 0.02 degrees clearance, but its 122.474368665-second arrival exceeds the
+    115.5-second horizon and correctly returns `trajectoryValidationFailed`.
+    The feasibility problem is repaired; the remaining failure is timing
+    quality under that deadline.
 
 ### Frozen HS3 scaling diagnosis
 
@@ -406,14 +604,114 @@ failures.
 
 ### Current scope and size
 
-The new spline code remains under `scratch/learnedSplinePolicy`; production
-contains 30 MATLAB files and 7,117 physical lines. The non-example MATLAB tree
-contains 40 files and 11,153 lines, passing the 12,000-line hard limit by 847.
-The HS3 solver is 894 lines and `planAzElMotion.m` is 888 lines, both below the
-900-line production-file limit.
+The replacement-branch spline code remains under `scratch/learnedSplinePolicy`
+but counts as production under the repository change-discipline rule. Current
+production MATLAB is 9,206 physical lines versus the 7,000 target; the complete
+MATLAB tree is 16,483 lines versus the 12,000 cap. `HEAD` was already oversized
+at 8,389 production and 14,690 complete-tree lines, and the current work worsens
+both totals. The largest production files remain individually compliant:
+`solveAzElHs3.m` is 894 lines, while `generateAzElTopologySeeds.m` and
+`planAzElMotion.m` are each 888 lines. Branch-wide size compliance is not
+established and no performance allowance can waive the 12,000-line cap.
 
-The correct next step is a general high-turn representation or feasibility
-method that passes exact validation with material clearance reserve. Until
-that proof exists, keep HS3, do not train a policy on failed pseudo-teacher
-labels, and do not describe the spline prototype as complete, optimal, safe,
-or production-ready.
+Eighteen noninteractive maintained examples were rerun serially after the
+topology change. Seventeen returned independently valid, collision-free,
+kinematically certified motions; the expected no-path example returned
+`noValidatedSeed`, passed its example-level failure validation, and created two
+hidden diagnostic figures. `exampleAzElInteractiveSandbox` remains unexecuted
+because it requires live mouse input. Several HS3 examples retained extensive
+near-singular interior-point warnings. Keep HS3 until the new method passes the
+remaining integration, size, and compatibility gates, and do not describe the
+hairpin proof as globally optimal or production-ready.
+
+## Corridor-only replacement assessment — 2026-08-22
+
+The replacement is now integrated into the public planner. `planAzElMotion`
+accepts only `MotionMethod="corridorQuintic"`; the dormant HS3 solver,
+stop-at-waypoint constructor, NLP options, direct legacy tests, superseded
+prototype scripts, and HS3 scaling benchmark were removed. Zero-valued HS3
+diagnostic fields remain so callers can prove that no NLP attempt occurred.
+
+The retained algorithm is input-driven. A disconnected visibility graph uses
+exhaustive visibility only inside the existing work budget, then finishes a
+bounded obstacle-offset ladder to give the recovered topology continuous-motion
+reserve. Initially connected graphs retain their base offset. Static and dynamic
+routes may use bounded exact-geometry densification, and every candidate is
+checked against the original protected geometry, complete timed collisions,
+workspace, endpoint states, and exact polynomial kinematic extrema. No example
+name, obstacle name, expected route, hidden waypoint, or scenario branch is
+consulted.
+
+All 18 noninteractive maintained examples passed a final isolated-process gate.
+Seventeen returned independently valid `corridorQuintic` motions; the declared
+no-path case returned `noValidatedSeed` and passed its failure contract. Every
+case reported zero HS3 attempts. The target-exit example reaches its exact
+24-second fixed arrival. The 10-hairpin guard remains independently valid and
+corridor-certified at 137.287 seconds and 0.02 degrees clearance; prior
+20-hairpin evidence remains valid at 274.993 seconds and 0.02 degrees clearance.
+These are bounded deterministic results, not completeness or global-optimum
+certificates.
+
+The final automated suite passes 53/53. A visible slalom run created three valid
+figures, and the expected no-path run created two diagnostic figures without
+rerunning planning. Core production excluding plotting is 6,954 physical MATLAB
+lines, plotting is 565 lines, examples total 3,910 lines, and the maintained
+tree excluding examples/scratch is 9,709 lines. The 7,000 production target,
+900-line per-file limit, and 12,000 maintained-tree cap pass directly without a
+performance allowance. The interactive sandbox remains unexecuted because it
+requires live mouse input.
+
+## Span-demand controller assessment — 2026-08-22
+
+The 180-trial span coordinate search is replaced by a bounded proportional
+controller using per-span velocity, acceleration, and jerk time demand. On the
+single U it reduces timing wall time from 32.890 to 5.991 seconds while changing
+arrival from 24.740511444152 to 24.973219952131 seconds. That is a verified
+5.49-times speedup with a 0.94-percent arrival penalty; the result remains 9.44
+percent slower than the frozen 22.818548735851-second HS3 reference. It does not
+prove reproduction of HS3's exact geometric path or global minimum arrival.
+
+All 53 automated tests and all 18 isolated maintained examples pass with zero
+HS3 time. The selected single-U motion uses 11 controller trials and saturates
+the velocity and acceleration limits without exceeding velocity, acceleration,
+or jerk certificates. Alternating slalom also improves in arrival. The dense
+concavity case remains a visible performance concern at 49.84 seconds, but its
+selected motion uses no controller trials; investigate exact concave-corridor
+construction separately rather than attributing that cost to retiming.
+
+The current recount is 7,171 core production lines, 565 plotting lines, and
+9,928 maintained lines excluding examples/scratch. The largest production file
+is 900 lines and the 12,000-line maintained-tree cap passes, but core production
+is 171 lines above the 7,000-line target. Because dense concavity has a confirmed
+runtime regression outside controller work, the controller speedup cannot
+justify a performance-based size allowance. The branch is not merge-ready until
+at least 171 production lines are removed without weakening supported behavior.
+
+## Batched affine corridor runtime assessment — 2026-08-22
+
+The retained controller now terminates on the first non-improving certified
+duration, preserving the selected U motion while reducing its 11 trials to 6.
+Protected-route sampling batches identical edge samples by start vertex, and
+zero-endpoint-derivative affine corridor systems build one exact polynomial
+basis map instead of one validated trajectory per decision column. Nonzero
+endpoint derivatives retain the established path; empty corridors build no
+unneeded Jacobian.
+
+The 12-wall hairpin candidate median decreased from `17.2736906` to
+`8.3679933 s` (`51.56%`) across three independently valid runs; total-wall
+median is `9.7478098 s`. Motion duration (`164.828287993221 s`), 0.02-degree
+clearance, collision freedom, and the full-span certificate were unchanged.
+The final U run also stayed below ten seconds at `8.3241566 s`, with zero HS3
+time and unchanged independently valid `24.973219952159 s` motion.
+
+Arrival quality remains the principal blocker: U is `9.44%` slower than the
+frozen `22.818548735851 s` main-branch reference and therefore fails the
+required five-percent limit (`23.959476172644 s`). Convex geometric-jerk and
+Bernstein derivative-minimax objectives were valid but substantially slower in
+motion time and were removed. A less-conservative direct time-parameterization
+method is still required before comparing every maintained example against the
+main-branch arrival table. The automated suite passes 53/53; the complete
+maintained-example matrix was not rerun after this runtime-only change.
+Current size is 7,267 core production lines, 565 plotting lines, and 10,024
+maintained lines excluding examples/scratch. The hard maintained-tree cap
+passes, but the 267-line core overage remains a merge-readiness blocker.

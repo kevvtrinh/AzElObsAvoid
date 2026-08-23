@@ -1,31 +1,6 @@
 function [certified, minimumClearance_deg] = certifySeedCorridor( ...
         trajectory, obstacles, tolerance_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [certified, minimumClearance_deg] = ...
-%       azElInternal.certifySeedCorridor( ...
-%       trajectory, obstacles, tolerance_deg)
-%**************************************************************************
-% PURPOSE
-%   - Independently certify a complete polynomial outside seed envelopes.
-%**************************************************************************
-% INPUTS
-%   - trajectory (scalar candidate or planner-result struct)
-%       Polynomial, SeedCorridorBoundary_deg, and SeedCorridor are used.
-%   - obstacles (canonical protected obstacle struct array)
-%       Every protected history slice must lie in one convex envelope region.
-%   - tolerance_deg (nonnegative finite scalar)
-%       Numerical tolerance for containment, support, and polynomial checks.
-%**************************************************************************
-% OUTPUTS
-%   - certified (logical scalar)
-%       True only when geometry containment and continuous separation pass.
-%   - minimumClearance_deg (numeric scalar)
-%       Smallest certified supporting-half-space clearance, or NaN.
-%**************************************************************************
-% UNITS
-%   - Geometry, tolerance, and clearance are degrees.
-%**************************************************************************
+% Certify a complete polynomial outside protected seed envelopes.
 
 %% Section 1: Validate The Optional Certificate Schema
 
@@ -49,7 +24,7 @@ if size(boundary_deg, 2) ~= 2 || ...
 end
 envelopeShape = polyshape( ...
     boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
-envelopeRegions = regions(envelopeShape);
+envelopeRegions = azElInternal.convexPolygonRegions(envelopeShape);
 segmentCount = trajectory.Polynomial.SegmentCount;
 regionCount = numel(envelopeRegions);
 corridor = trajectory.SeedCorridor;

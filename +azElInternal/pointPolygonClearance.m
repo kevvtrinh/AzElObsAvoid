@@ -6,44 +6,41 @@ function [clearance_deg, nearestPoint_deg, edgeIndex] = ...
 %       azElInternal.pointPolygonClearance(shape, point_deg)
 %**************************************************************************
 % PURPOSE
-%   - Compute signed Euclidean clearance from one point to one polyshape.
+%   - Compute signed Euclidean clearance from points to one polyshape.
 %**************************************************************************
 % INPUTS
 %   - shape (scalar polyshape)
 %       Occupied polygon geometry.
-%   - point_deg (1-by-2 finite numeric row)
-%       Query point in [azimuth elevation] order.
+%   - point_deg (N-by-2 finite numeric array)
+%       Query points in [azimuth elevation] order.
 %**************************************************************************
 % OUTPUTS
-%   - clearance_deg (scalar)
+%   - clearance_deg (N-by-1 vector)
 %       Positive outside, zero on the boundary, and negative inside.
-%   - nearestPoint_deg (1-by-2 row)
+%   - nearestPoint_deg (N-by-2 array)
 %       Closest boundary point, or [NaN NaN] for empty geometry.
-%   - edgeIndex (positive integer or zero)
+%   - edgeIndex (N-by-1 positive integer or zero)
 %       One-based edge index in deterministic boundary traversal order.
 %**************************************************************************
 % UNITS
 %   - Point, clearance, and nearest boundary position are degrees.
 %**************************************************************************
-
 %% Section 1: Validate Inputs
-
 if ~isa(shape, "polyshape") || ~isscalar(shape)
     error("azElInternal:pointPolygonClearance:InvalidShape", ...
         "shape must be a scalar polyshape.");
 end
 validateattributes(point_deg, {'numeric'}, ...
-    {'real', 'finite', 'size', [1 2]});
+    {'real', 'finite', '2d', 'ncols', 2, 'nonempty'});
 point_deg = double(point_deg);
-nearestPoint_deg = [NaN NaN];
-edgeIndex = 0;
+queryCount = size(point_deg, 1);
+nearestPoint_deg = nan(queryCount, 2);
+edgeIndex = zeros(queryCount, 1);
 if isempty(shape.Vertices)
-    clearance_deg = Inf;
+    clearance_deg = inf(queryCount, 1);
     return;
 end
-
 %% Section 2: Traverse Boundary Edges
-
 [boundaryAzimuth_deg, boundaryElevation_deg] = boundary(shape);
 boundaryPosition_deg = [ ...
     double(boundaryAzimuth_deg(:)), double(boundaryElevation_deg(:))];
@@ -51,8 +48,8 @@ finiteRows = all(isfinite(boundaryPosition_deg), 2);
 regionChanges = diff([false; finiteRows; false]);
 regionStarts = find(regionChanges == 1);
 regionStops = find(regionChanges == -1) - 1;
-minimumDistanceSquared_deg2 = Inf;
-traversedEdgeCount = 0;
+edgeStart_deg = zeros(0, 2);
+edgeEnd_deg = zeros(0, 2);
 for regionIndex = 1:numel(regionStarts)
     vertices_deg = boundaryPosition_deg( ...
         regionStarts(regionIndex):regionStops(regionIndex), :);
@@ -62,43 +59,43 @@ for regionIndex = 1:numel(regionStarts)
     if all(vertices_deg(1, :) == vertices_deg(end, :))
         vertices_deg(end, :) = [];
     end
-    edgeStart_deg = vertices_deg;
-    edgeEnd_deg = vertices_deg([2:end 1], :);
-    edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
-    edgeLengthSquared_deg2 = sum(edgeDelta_deg.^2, 2);
-    pointOffset_deg = point_deg - edgeStart_deg;
-    projectionFraction = zeros(size(edgeLengthSquared_deg2));
-    nonzeroEdges = edgeLengthSquared_deg2 > 0;
-    projectionFraction(nonzeroEdges) = sum( ...
-        pointOffset_deg(nonzeroEdges, :) .* ...
-        edgeDelta_deg(nonzeroEdges, :), 2) ./ ...
-        edgeLengthSquared_deg2(nonzeroEdges);
+    edgeStart_deg = [edgeStart_deg; vertices_deg]; %#ok<AGROW>
+    edgeEnd_deg = [edgeEnd_deg; vertices_deg([2:end 1], :)]; %#ok<AGROW>
+end
+%% Section 3: Project Query Blocks And Apply The Occupancy Sign
+edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
+edgeLengthSquared_deg2 = sum(edgeDelta_deg .^ 2, 2);
+nonzeroEdge = edgeLengthSquared_deg2 > 0;
+edgeLengthSquared_deg2(~nonzeroEdge) = 1;
+clearance_deg = zeros(queryCount, 1);
+for blockStart = 1:64:queryCount
+    selectedQuery = blockStart:min(queryCount, blockStart + 63);
+    azimuthOffset_deg = point_deg(selectedQuery, 1) - edgeStart_deg(:, 1).';
+    elevationOffset_deg = point_deg(selectedQuery, 2) - edgeStart_deg(:, 2).';
+    projectionFraction = (azimuthOffset_deg .* edgeDelta_deg(:, 1).' + ...
+        elevationOffset_deg .* edgeDelta_deg(:, 2).') ./ ...
+        edgeLengthSquared_deg2.';
+    projectionFraction(:, ~nonzeroEdge) = 0;
     projectionFraction = min(1, max(0, projectionFraction));
-    projectedPoint_deg = edgeStart_deg + ...
-        projectionFraction .* edgeDelta_deg;
-    distanceSquared_deg2 = sum((point_deg - projectedPoint_deg).^2, 2);
-    [regionMinimum_deg2, regionEdgeIndex] = ...
-        min(distanceSquared_deg2);
-    if regionMinimum_deg2 < minimumDistanceSquared_deg2
-        minimumDistanceSquared_deg2 = regionMinimum_deg2;
-        nearestPoint_deg = projectedPoint_deg(regionEdgeIndex, :);
-        edgeIndex = traversedEdgeCount + regionEdgeIndex;
-    end
-    traversedEdgeCount = traversedEdgeCount + size(edgeStart_deg, 1);
+    projectedAzimuth_deg = edgeStart_deg(:, 1).' + ...
+        projectionFraction .* edgeDelta_deg(:, 1).';
+    projectedElevation_deg = edgeStart_deg(:, 2).' + ...
+        projectionFraction .* edgeDelta_deg(:, 2).';
+    distanceSquared_deg2 = ...
+        (point_deg(selectedQuery, 1) - projectedAzimuth_deg) .^ 2 + ...
+        (point_deg(selectedQuery, 2) - projectedElevation_deg) .^ 2;
+    [minimumDistanceSquared_deg2, selectedEdgeIndex] = ...
+        min(distanceSquared_deg2, [], 2);
+    selectedLinearIndex = sub2ind(size(projectionFraction), ...
+        (1:numel(selectedQuery)).', selectedEdgeIndex);
+    selectedFraction = projectionFraction(selectedLinearIndex);
+    nearestPoint_deg(selectedQuery, :) = edgeStart_deg(selectedEdgeIndex, :) + ...
+        selectedFraction .* edgeDelta_deg(selectedEdgeIndex, :);
+    edgeIndex(selectedQuery) = selectedEdgeIndex;
+    clearance_deg(selectedQuery) = sqrt(max(0, minimumDistanceSquared_deg2));
 end
-
-%% Section 3: Apply The Occupancy Sign
-
-unsignedClearance_deg = sqrt(max(0, minimumDistanceSquared_deg2));
-isInside = isinterior(shape, point_deg(1), point_deg(2));
-if isInside
-    clearance_deg = -unsignedClearance_deg;
-else
-    clearance_deg = unsignedClearance_deg;
-end
-coordinateScale_deg = max(1, max(abs(point_deg)));
-boundaryTolerance_deg = 1e-12 * coordinateScale_deg;
-if unsignedClearance_deg <= boundaryTolerance_deg
-    clearance_deg = 0;
-end
+isInside = isinterior(shape, point_deg(:, 1), point_deg(:, 2));
+clearance_deg(isInside) = -clearance_deg(isInside);
+coordinateScale_deg = max(1, max(abs(point_deg), [], 2));
+clearance_deg(abs(clearance_deg) <= 1e-12 * coordinateScale_deg) = 0;
 end
