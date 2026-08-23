@@ -21,6 +21,7 @@ Public interfaces and the existing `geometry`, `obstacles`, `search`, `motion`, 
 - All 86 local-function Section 0 headers were removed. Every one of the 229 local functions now opens with a direct purpose sentence rather than `PURPOSE` or `SYNTAX` boilerplate.
 - Added 183 direct local-function and decision comments in this pass, including focused explanations through the four largest motion/search files.
 - Audited all 22 production MATLAB files below 100 executable code lines. None is uncalled; 18 have multiple callers and the four single-caller files own a stable schema or a distinct algorithm extracted from an already-large orchestrator. Evidence is in `short_file_rationale.md`.
+- Removed 12 ignored benchmark outputs totaling 3,242,525 bytes and the empty ignored `scratch/` tree. Removed two superseded root audit reports for old commit `b845880` and an unreferenced HS3 baseline for old branch `hs3-refactor`; retained decisions and current evidence remain in `verification.md`, `branch_assessment.md`, and `benchmark.csv`.
 - Before the latest comments-only request, the full regression suite passed 59/59 and Code Analyzer reported zero messages across all 68 MATLAB files.
 
 ## Current work and limits
@@ -31,4 +32,4 @@ Public interfaces and the existing `geometry`, `obstacles`, `search`, `motion`, 
 
 ## Next action
 
-Await an explicit request before running regression tests or making another behavioral change.
+Await explicit direction before running regression tests, committing the final artifact deletions, or retrying the external push.

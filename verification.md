@@ -124,20 +124,20 @@ increase was accepted.
 - MATLAB source lines longer than 100 characters: 0.
 - Focused jerk-contract tests: 4 passed, 0 failed.
 
-## Downloaded audit artifacts and cleanup decisions
+## Superseded audit artifacts and cleanup decisions
 
-The branch includes `repo_inconsistencies_plan_325.md` and
-`repo_cleanup_audit_plan_325.md`. The workspace skill directory includes the
-downloaded `repository-cleanup` skill.
+The one-time `repo_inconsistencies_plan_325.md` and
+`repo_cleanup_audit_plan_325.md` reports described old commit `b845880` and
+were removed after their resolved decisions were preserved here and in
+`branch_assessment.md`. Workspace ownership, verbose behavior, timeout removal,
+production size, jerk routing, prepared obstacle reuse, and package ownership
+now reflect the maintained implementation rather than that historical audit.
 
-The audits describe commit `b845880`, so some findings are stale after this
-work. Workspace ownership, verbose behavior, timeout removal, production size,
-and jerk routing are now corrected. `certifySeedCorridor` is retained because
-the current production validator calls it. `RandomSeed` is retained for public
-compatibility because removal would be a breaking result-schema change.
-Polynomial sampling remains a measurement-first cleanup candidate. Prepared
-dynamic obstacle data is now reused after it passed the 40-circle and
-moving-U.S. runtime gates.
+`certifySeedCorridor` remains because the production validator calls it.
+`RandomSeed` remains for public compatibility because removing it would break
+the result schema. Polynomial sampling remains a measurement-first cleanup
+candidate. The repository-owned `repository-cleanup` skill remains under the
+parent workspace guidance directory rather than inside this project tree.
 
 ## Known limits and claim
 
