@@ -20,9 +20,7 @@ function azElData = normalizeAzElTimeObstacleData(inputData)
 % UNITS
 %   - az_deg and el_deg are degrees; time_s is seconds.
 %**************************************************************************
-
 %% Section 1: Validate Structure & Sample Time
-
 requiredFields = ["targetName", "time_s", "az_deg", "el_deg", "status"];
 hasRequiredStructure = isstruct(inputData) && isscalar(inputData);
 if hasRequiredStructure
@@ -33,7 +31,6 @@ if ~hasRequiredStructure
         "azElData must be a scalar canonical obstacle record with " + ...
         "targetName, time_s, az_deg, el_deg, and status.");
 end
-
 targetName = string(inputData.targetName);
 if ~isscalar(targetName) || strlength(strtrim(targetName)) == 0
     error("normalizeAzElTimeObstacleData:InvalidTargetName", ...
@@ -50,7 +47,6 @@ if sampleCount == 0 || any(diff(time_s) <= 0)
         "time_s must be nonempty and strictly increasing.");
 end
 %% Section 2: Validate Boundary Slices
-
 hasCellBoundaries = iscell(inputData.az_deg) && iscell(inputData.el_deg);
 hasMatchingAzimuthSamples = numel(inputData.az_deg) == sampleCount;
 hasMatchingElevationSamples = numel(inputData.el_deg) == sampleCount;

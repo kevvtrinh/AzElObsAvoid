@@ -731,3 +731,22 @@ maze requires the original full timed topology to retain success; two faster
 dynamic routes can therefore remain expensive, and the random moving-circle
 probe still succeeds in only three of eight feasible fields. No completeness
 or general runtime improvement is claimed.
+
+## Shallow collision-residual feedback assessment — 2026-08-22
+
+The dynamic retimer now applies signed-clearance feedback only to a failed
+candidate whose penetration is no deeper than `0.005 deg`. The gain is derived
+from each active barrier row's control-point sensitivity and the current trust
+radius; a minimum-norm bounded QP supplies the correction. Negative signed
+clearance uses the outward interior gradient, and every accepted step must
+strictly improve independent clearance while retaining kinematic validity.
+
+This recovers one additional fixed moving-circle field, improving the final
+deterministic sweep from `3/8` to `4/8`. Its selected motion has
+`0.00570897255047 deg` independent clearance. An initially unbounded recovery
+was rejected: it changed the extreme-outline benchmark from
+`6.22216662414646 s` to `8.39529809634767 s`. The retained local-residual bound
+restores the exact benchmark path and excludes all three deeper residuals seen
+in that sequence. All 18 maintained examples and all 58 tests pass. The four
+remaining circle fields still return explicit `noValidatedSeed`; topology and
+large-residual collision recovery remain known limitations.

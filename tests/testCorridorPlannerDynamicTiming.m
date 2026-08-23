@@ -34,7 +34,7 @@ end
 
 function testUnusedTimedSlotAdmitsSpatialDiversity(testCase)
 [obstacles, initialState, goalState, limits] = ...
-    underfilledMovingCircleRequest();
+    movingCircleRequest(3267864, 6);
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, plannerOptions(3));
 
@@ -42,6 +42,21 @@ verifyExperimentalSuccess(testCase, result);
 verifyEqual(testCase, numel(result.Seeds), 3);
 verifyTrue(testCase, any([result.Seeds.Source] == "directWait"));
 verifyTrue(testCase, any([result.Seeds.Source] == "visibilityGraph"));
+end
+
+function testShallowCollisionResidualUsesBoundedFeedback(testCase)
+[obstacles, initialState, goalState, limits] = ...
+    movingCircleRequest(3259945, 4);
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, ...
+    plannerOptions(3, 3259945));
+
+verifyExperimentalSuccess(testCase, result);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyEqual(testCase, summary.SeedSource, "visibilityGraph");
+verifyEqual(testCase, ...
+    summary.SolverDiagnostics.DynamicExactDensificationFactor, 2);
+verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 end
 
 function testStaticWorkspaceWallRemainsExpectedFailure(testCase)
@@ -124,10 +139,9 @@ limits = motionLimits([-8 8], [-5 6]);
 end
 
 function [obstacles, initialState, goalState, limits] = ...
-        underfilledMovingCircleRequest()
-% Reproduce a feasible detour after the unique timed proposal is a wait.
-stream = RandStream("mt19937ar", "Seed", 3267864);
-obstacleCount = 6;
+        movingCircleRequest(randomSeed, obstacleCount)
+% Build a deterministic moving-circle field with a clear upper witness lane.
+stream = RandStream("mt19937ar", "Seed", randomSeed);
 missionEndTime_s = 80;
 obstacleTime_s = [0; 20; 40; 60; missionEndTime_s];
 angle_rad = (0:15).' * (2 * pi / 16);
@@ -163,13 +177,16 @@ goalState = restState(missionEndTime_s, [17 0]);
 limits = motionLimits([-19 19], [-12 12]);
 end
 
-function options = plannerOptions(maximumSeedCount)
+function options = plannerOptions(maximumSeedCount, randomSeed)
+if nargin < 2
+    randomSeed = 325;
+end
 options = struct( ...
     "MotionMethod", "corridorQuintic", ...
     "GoalTimeMode", "earliestArrival", ...
     "MaximumSeedCount", maximumSeedCount, ...
     "SampleTime_s", 0.05, ...
-    "RandomSeed", 325, ...
+    "RandomSeed", randomSeed, ...
     "Verbose", false);
 end
 

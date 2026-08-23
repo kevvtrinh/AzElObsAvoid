@@ -1854,3 +1854,58 @@ largest production file is 887 lines. The production diff is net zero lines;
 the dynamic-timing test file adds 52 lines for one deterministic moving-circle
 fixture and its focused assertion. Temporary stress and benchmark harnesses
 were removed. No commit or push was performed.
+
+## Shallow collision-residual feedback experiment — 2026-08-22
+
+The collision-stage baseline was the pushed `034a6a4` topology-slot commit.
+Fixed moving-circle case 1 constructed kinematically valid motions but all
+three seeds failed authoritative collision validation; the visibility seed's
+reported clearance was `-0.0790211794215 deg`. Reconstructing its 13-vertex
+retimed spline localized the actual feedback starting residual to
+`-0.00108381917352 deg` at `28.4660205183 s` duration.
+
+The retained controller linearizes signed protected-obstacle clearance against
+interior spline controls. For a violated row, the single-row minimum required
+decision norm is `-bound / norm(row)`. The applied feedback gain is the lesser
+of one and the trust radius divided by the largest required norm. A bounded
+minimum-norm QP applies that partial residual correction. For an interior
+point, the closest-boundary vector is reversed so the gradient points toward
+increasing signed clearance. Intermediate steps must remain kinematically
+valid and strictly improve independently measured minimum clearance; only a
+fully validated trajectory can become a planner success.
+
+The first prototype took one accepted step and reached
+`0.00612677738555 deg` clearance with unchanged duration. Integrated production
+case 1 passes at `0.00570897255047 deg` selected clearance. The final identical
+eight-case moving-circle sweep passes and independently validates `4/8`, versus
+the pushed `3/8` baseline. Cases 3, 4, 6, and 8 remain reproducible
+`noValidatedSeed` outcomes; no redraw, tolerance change, or topology special
+case was used.
+
+An initial all-residual implementation failed the benchmark gate. It recovered
+three extreme-outline candidates starting at `-0.00662790746078`,
+`-0.0112188785752`, and `-0.0102058874618 deg`, changing the final-region path
+from `6.22216662414646 s` to `8.39529809634767 s`. Disabling recovery restored
+the frozen path exactly. The retained input-driven local-linearization rule
+therefore limits recovery to penetrations no deeper than `0.005 deg`, one tenth
+of the controller's `0.05 deg` clearance target. Case 1 still passes, while a
+fresh extreme-outline rerun restores the exact baseline metrics.
+
+The final 18-example gate used one fresh serial MATLAB process per example.
+All 17 expected successes passed independent validation, collision checks, and
+kinematic certificates; the expected no-path result passed its stable failure
+contract. Every successful polyline length, smoothed length, and duration is
+exact to the pushed topology-slot evidence. The fresh-process wall sum is
+`172.6919951 s`; the moving/deforming outline remains the unfavorable wall
+outlier at `53.2656011 s`. Exact rows are in `benchmark.csv` under
+`working-tree-residual-feedback-final`.
+
+The focused controller regression passes in `13.3148997 s`. The final complete
+suite passes `58/58` in `48.4440443 s`, and Code Analyzer reports zero messages
+across all 66 nonscratch MATLAB files. A visible success produced three figures and
+487 graphics objects. The expected failure produced two diagnostic figures and
+341 objects from its original search record, including one expanded state and
+two rejected transitions. Final size is 7,500 core production lines excluding
+the 565-line plotter, 10,367 maintained nonscratch/nonexample MATLAB lines, and
+an 887-line largest production file. The two temporary proof harnesses were
+removed; the pre-existing untracked benchmark artifacts were left untouched.

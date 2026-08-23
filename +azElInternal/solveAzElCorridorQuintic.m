@@ -2,9 +2,7 @@ function motion = solveAzElCorridorQuintic( ...
         obstacles, initialState, goalState, limits, route_deg, ...
         optionOverrides)
 % Construct and certify a deterministic protected-corridor quintic.
-
 %% Section 1: Validate Inputs & Resolve Options
-
 diagnosticTimer = tic;
 defaults = struct( ...
     "RouteVertexCount", Inf, ...
@@ -98,9 +96,7 @@ end
 spanWeights = spanWeights / mean(spanWeights);
 interiorCount = size(route_deg, 1) - 2;
 decisionCount = 2 * interiorCount;
-
 %% Section 2: Build Complete Protected-Obstacle Corridor Records
-
 queryOptions = queryAzElTimeObstacle();
 envelopePadding_deg = max( ...
     options.EnvelopePadding_deg, ...
@@ -133,9 +129,7 @@ for corridorIndex = 1:numel(corridor)
 end
 baseInequality_deg = azElInternal.seedCorridorInequality( ...
     baseMotion.Polynomial, corridor);
-
 %% Section 3: Derive & Solve The Affine Corridor System
-
 inequalityMatrix = zeros(numel(baseInequality_deg), decisionCount);
 if ~isempty(corridor)
     endpointDerivative_deg = [initialState.velocity_deg_s, ...
@@ -264,9 +258,7 @@ if exitFlag <= 0 && isfinite(options.RouteVertexCount) && ...
         toc(diagnosticTimer);
     return;
 end
-
 %% Section 4: Independently Validate The Candidate
-
 if isempty(decision_deg)
     candidateMotion = baseMotion;
 else
@@ -381,9 +373,7 @@ else
     motion.TerminationReason = "trajectoryValidationFailed";
 end
 end
-
 %% Section 5: Local Functions
-
 function expandedRoute_deg = expandRouteClearance( ...
         route_deg, obstacles, queryTime_s, clearanceTarget_deg, ...
         routeExpansionFraction)
@@ -419,7 +409,6 @@ for routeIndex = 2:size(route_deg, 1) - 1
     end
 end
 end
-
 function reducedRoute_deg = sampledVisibilitySubsequence( ...
         route_deg, obstacles, requestedVertexCount, queryTime_s, ...
         edgeSamplingResolution_deg)
@@ -493,7 +482,6 @@ for usedVertexCount = selectedVertexCount:-1:2
 end
 reducedRoute_deg = route_deg(selectedIndex, :);
 end
-
 function options = validateOptions(options, routeVertexCount)
 % Validate resolved corridor controls once.
 validateattributes(options.RouteVertexCount, {'numeric'}, ...
@@ -548,7 +536,6 @@ options.EnableExactTraversal = azElInternal.normalizeLogicalScalar( ...
     options.EnableExactTraversal, "EnableExactTraversal", ...
     "solveAzElCorridorQuintic:InvalidExactTraversalControl");
 end
-
 function diagnostics = emptyDiagnostics( ...
         originalRouteVertexCount, requestedRouteVertexCount, elapsedTime_s)
 % Define stable diagnostics for an unavailable route subsequence.

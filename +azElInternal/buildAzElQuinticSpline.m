@@ -1,9 +1,7 @@
 function motion = buildAzElQuinticSpline( ...
         route_deg, initialState, goalState, limits, optionOverrides)
 % Construct and validate a quintic B-spline under the motion contract.
-
 %% Section 1: Validate Inputs And Resolve Controls
-
 defaults = struct( ...
     "ControlPointOffsets_deg", zeros(0, 2), ...
     "SpanWeights", zeros(0, 1), ...
@@ -92,7 +90,6 @@ if size(route_deg, 1) == 2 && ~hasNonzeroEndpointDerivative
     return;
 end
 %% Section 2: Assemble The Open Quintic B-Spline
-
 degree = 5;
 controlPoint_deg = [ ...
     repmat(route_deg(1, :), 3, 1); ...
@@ -107,9 +104,7 @@ if hasNonzeroEndpointDerivative
 else
     basePolynomial = azElInternal.convertAzElBsplineToPolynomial( ...
         controlPoint_deg, degree, initialState.time_s, baseSpanDuration_s);
-
 %% Section 3: Apply A Deterministic Continuous Kinematic Time Scale
-
 [peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = ...
     continuousDerivativePeaks(basePolynomial);
 velocityScale = max( ...
@@ -142,9 +137,7 @@ end
 polynomial = azElInternal.convertAzElBsplineToPolynomial( ...
     controlPoint_deg, degree, initialState.time_s, spanDuration_s);
 end
-
 %% Section 4: Sample And Independently Validate The Motion
-
 [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
     jerk_deg_s3] = samplePolynomial(polynomial, options.SampleTime_s);
 continuity = continuityDiagnostics(polynomial);
@@ -193,9 +186,7 @@ else
     motion.TerminationReason = "quinticValidationFailed";
 end
 end
-
 %% Section 5: Local Functions
-
 function [controlPoint_deg, spanDuration_s, polynomial] = ...
         constructEndpointConstrainedMotion( ...
         controlPoint_deg, degree, initialState, goalState, limits, ...
@@ -237,7 +228,6 @@ for passIndex = 1:maximumRetimePassCount
 end
 controlPoint_deg = trialControlPoint_deg;
 end
-
 function controlPoint_deg = endpointControlPoints( ...
         controlPoint_deg, degree, initialState, goalState, spanDuration_s)
 % PURPOSE
@@ -272,7 +262,6 @@ for axisIndex = 1:2
         endpointMatrix \ (targetEndpoint - fixedEndpoint);
 end
 end
-
 function value = endpointVector(polynomial, axisIndex)
 % PURPOSE
 %   - Return exact initial and terminal position-through-acceleration.
@@ -284,7 +273,6 @@ value = [ ...
     polynomial.TerminalState.velocity_deg_s(axisIndex); ...
     polynomial.TerminalState.acceleration_deg_s2(axisIndex)];
 end
-
 function motion = buildStraightJerkSwitchingMotion( ...
         route_deg, initialState, goalState, limits, options)
 % PURPOSE
@@ -357,7 +345,6 @@ else
     motion.TerminationReason = "quinticValidationFailed";
 end
 end
-
 function knots_s = knotTime(initialTime_s, spanDuration_s, degree)
 % PURPOSE
 %   - Build one open knot vector with simple interior physical-time knots.
@@ -367,7 +354,6 @@ knots_s = [ ...
     spanBoundary_s(2:end - 1).', ...
     repmat(spanBoundary_s(end), 1, degree + 1)];
 end
-
 function [peakVelocity_deg_s, peakAcceleration_deg_s2, ...
         peakJerk_deg_s3] = continuousDerivativePeaks(polynomial)
 % PURPOSE
@@ -378,7 +364,6 @@ peakAcceleration_deg_s2 = derivativePeak( ...
     polynomial.accelerationPower_deg_s2);
 peakJerk_deg_s3 = derivativePeak(polynomial.jerkPower_deg_s3);
 end
-
 function peak = derivativePeak(powerArray)
 % PURPOSE
 %   - Measure one two-axis piecewise polynomial over every normalized span.
@@ -409,7 +394,6 @@ for segmentIndex = 1:size(powerArray, 1)
     end
 end
 end
-
 function [time_s, position_deg, velocity_deg_s, ...
         acceleration_deg_s2, jerk_deg_s3] = ...
         samplePolynomial(polynomial, sampleTime_s)
@@ -422,7 +406,6 @@ time_s = unique([uniformTime_s; polynomial.SegmentStartTime_s; ...
 [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
     jerk_deg_s3] = azElInternal.evaluateAzElPolynomial(polynomial, time_s);
 end
-
 function continuity = continuityDiagnostics(polynomial)
 % PURPOSE
 %   - Measure position-through-jerk residuals at every interior knot.
@@ -450,7 +433,6 @@ continuity = struct( ...
     "MaximumJerkResidual_deg_s3", maximumResidual(4), ...
     "C3Continuous", all(maximumResidual <= continuityTolerance));
 end
-
 function cost_deg2_s5 = integratedSquaredJerk(polynomial)
 % PURPOSE
 %   - Integrate squared two-axis jerk exactly over every polynomial span.
@@ -468,7 +450,6 @@ for segmentIndex = 1:polynomial.SegmentCount
     end
 end
 end
-
 function motion = emptyMotion(options)
 % PURPOSE
 %   - Define one stable prototype schema for success and validation failure.
