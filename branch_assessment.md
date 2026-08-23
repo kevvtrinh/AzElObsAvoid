@@ -840,7 +840,7 @@ hidden freehand traces.
 The controls use shared columns and three labeled groups instead of repeating
 axis sublabels for every value. The plot reserves its outer rectangle so
 azimuth ticks and labels do not overlap the action row. The principal weakness
-is size: the supplied UI is a 1,726-line standalone sandbox and is intentionally
+is size: the supplied UI is a 1,714-line standalone sandbox and is intentionally
 kept outside production and maintained examples. It exercises public planner
 and validator interfaces but adds no planner correctness evidence. Per the
 user's instruction, only structural checks and `git diff --check` were run;

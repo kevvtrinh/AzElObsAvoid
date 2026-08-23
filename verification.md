@@ -2093,8 +2093,14 @@ resetting and reconstructing the axes; this removes the stale obstacle outline
 that previously survived Reset.
 
 Text-only checks found one primary Section 0 header, direct opening comments on
-all 62 local functions, explanations immediately before all 20 loops, no bare
+all 61 local functions, explanations immediately before all 20 loops, no bare
 assignment continuations, no continuation blocks at or below 120 characters,
 and no trailing whitespace. `git diff --check` passed. MATLAB, Code Analyzer,
 and regression tests were not run because the user explicitly prohibited test
 execution in this session.
+
+Obstacle layers now use hidden legend handles for raw traces, simplified line
+centerlines, polygon boundaries, original obstacle fills, and protected safety
+outlines. Start, goal, requested routes, solved motion, and failure-route
+entries retain their legend labels. Obstacle rendering and planner data are
+unchanged.

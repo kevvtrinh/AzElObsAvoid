@@ -29,6 +29,10 @@ The first obstacle step begins automatically. After a valid obstacle is
 stored, mouse drawing returns to idle so tab changes cannot accidentally add
 geometry. Use **Add Obstacle** whenever another obstacle is needed.
 
+The legend identifies requested points, requested routes, solved motion, and
+failure routes. Obstacle fills, outlines, centerlines, and safety boundaries
+remain visible on the canvas but are intentionally omitted from the legend.
+
 **Reset** removes the retained scene and every visible or hidden graphics
 object, then restarts the guided sequence at the start-position click.
 **Diagnostics** opens the planner diagnostics for the most recent result.

@@ -1392,12 +1392,12 @@ for strokeIndex = 1:numel(modeState.RawObstacleStrokes_deg)
 end
 
 % Overlay simplified line centerlines used to construct capsule obstacles.
+% Obstacle graphics stay out of the legend because their count can be large.
 for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
     line_deg = modeState.LineObstaclePositions_deg{lineIndex};
     plot(axesHandle, line_deg(:, 1), line_deg(:, 2), ...
         "--", "Color", [0.75 0.15 0.15], "LineWidth", 1.4, ...
-        "DisplayName", displayNameForFirst( ...
-        lineIndex, "Drawn line centerline"));
+        "HandleVisibility", "off");
 end
 
 % Overlay polygon boundaries before rendering their canonical protected geometry.
@@ -1406,8 +1406,7 @@ for polygonIndex = 1:numel(modeState.PolygonObstaclePositions_deg)
     fill(axesHandle, polygon_deg(:, 1), polygon_deg(:, 2), ...
         [0.25 0.35 0.85], "FaceAlpha", 0.10, ...
         "EdgeColor", [0.25 0.35 0.85], "LineStyle", ":", ...
-        "DisplayName", displayNameForFirst( ...
-        polygonIndex, "Drawn polygon boundary"));
+        "HandleVisibility", "off");
 end
 renderCanonicalObstacles(axesHandle, modeState.CanonicalObstacles);
 
@@ -1493,29 +1492,18 @@ end
 end
 
 function renderCanonicalObstacles(axesHandle, obstacles)
-% Draw original and safety-adjusted geometry from the canonical records.
+% Draw obstacle geometry without allowing obstacle count to expand the legend.
 for obstacleIndex = 1:numel(obstacles)
     originalShape = polyshape( obstacles(obstacleIndex).originalAz_deg{1}, obstacles(obstacleIndex).originalEl_deg{1});
     protectedShape = polyshape( obstacles(obstacleIndex).az_deg{1}, obstacles(obstacleIndex).el_deg{1});
     plot(axesHandle, originalShape, ...
         "FaceColor", [0.80 0.82 0.86], "FaceAlpha", 0.25, ...
         "EdgeColor", [0.20 0.20 0.20], "LineStyle", "-", ...
-        "LineWidth", 1.0, "DisplayName", displayNameForFirst( ...
-        obstacleIndex, "Original obstacle"));
+        "LineWidth", 1.0, "HandleVisibility", "off");
     plot(axesHandle, protectedShape, ...
         "FaceColor", "none", "EdgeColor", [0.80 0.15 0.15], ...
         "LineStyle", "--", "LineWidth", 1.5, ...
-        "DisplayName", displayNameForFirst( ...
-        obstacleIndex, "Safety-adjusted obstacle"));
-end
-end
-
-function name = displayNameForFirst(itemIndex, firstName)
-% Prevent repeated legend entries while keeping each geometry visible.
-if itemIndex == 1
-    name = firstName;
-else
-    name = "";
+        "HandleVisibility", "off");
 end
 end
 

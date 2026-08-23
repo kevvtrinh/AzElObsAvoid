@@ -38,6 +38,9 @@ Public interfaces and the existing `geometry`, `obstacles`, `search`, `motion`, 
   grid. Workspace and kinematic pairs now share column headings, scalar
   controls occupy single rows, and verbose output sits in the free strip below
   the panel.
+- Removed obstacle-derived legend entries while retaining the rendered
+  obstacle layers and the useful start, goal, request, solution, and failure
+  entries.
 
 ## Current work and limits
 
