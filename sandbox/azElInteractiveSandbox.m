@@ -30,7 +30,8 @@ function sandboxState = azElInteractiveSandbox(sandboxOverrides)
 %   - sandboxState (scalar struct)
 %       Initial plain-struct state, figure handle, independent mode records,
 %       and ReadState function handle. Call sandboxState.ReadState() after
-%       interaction to inspect the current guidata-backed state.
+%       interaction to inspect the current guidata-backed state. Each mode
+%       can export its exact input/result evidence after a planner call.
 %**************************************************************************
 % UNITS
 %   - Positions and obstacle boundaries are N-by-2 [azimuth elevation] in
@@ -295,11 +296,17 @@ controls.VerboseHandle = uicontrol(tabHandle, ...
     "HorizontalAlignment", "left");
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", "Units", "normalized", "Position", [0.045 0.275 0.64 0.052]);
 if modeName == "goal"
-    actionNames = ["AddObstacle", "Run", "Reset", "Diagnostics"];
-    actionLabels = ["Add Obstacle", "Run", "Reset", "Diagnostics"];
+    actionNames = [ ...
+        "AddObstacle", "Run", "Reset", "Diagnostics", "Export"];
+    actionLabels = [ ...
+        "Add Obstacle", "Run", "Reset", "Diagnostics", "Export Bundle"];
 else
-    actionNames = ["AddObstacle", "AddSegment", "Recalculate", "Undo", "Reset", "Diagnostics"];
-    actionLabels = ["Add Obstacle", "Add Segment", "Recalculate", "Undo Point", "Reset", "Diagnostics"];
+    actionNames = [ ...
+        "AddObstacle", "AddSegment", "Recalculate", "Undo", ...
+        "Reset", "Diagnostics", "Export"];
+    actionLabels = [ ...
+        "Add Obstacle", "Add Segment", "Recalculate", "Undo Point", ...
+        "Reset", "Diagnostics", "Export Bundle"];
 end
 actions = createActionButtons( actionPanelHandle, modeName, actionNames, actionLabels);
 statusPanelHandle = uipanel(tabHandle, ...
@@ -514,6 +521,8 @@ try
             resetMode(figureHandle, modeName);
         case "Diagnostics"
             openDiagnostics(figureHandle, modeName);
+        case "Export"
+            exportModeDiagnosis(figureHandle, modeName);
     end
 catch exception
     cancelInteraction(figureHandle);
@@ -1595,6 +1604,7 @@ for modeName = modeNames
     end
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
     set(modeState.GraphicsHandles.Actions.Diagnostics, "Enable", onOff(hasResult));
+    set(modeState.GraphicsHandles.Actions.Export, "Enable", onOff(hasResult));
 end
 end
 
@@ -1723,6 +1733,30 @@ plotOptions = struct( ...
 modeState.GraphicsHandles.DiagnosticPlotHandles = plotAzElMotion(result, plotOptions);
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
+end
+
+function exportModeDiagnosis(figureHandle, modeName)
+% Save exact retained scene, input, result, and validation evidence.
+timestamp = string(datetime("now", "Format", "yyyyMMdd_HHmmss"));
+defaultName = "az_el_sandbox_" + modeName + "_" + timestamp + ".mat";
+[fileName, folderName] = uiputfile( ...
+    {"*.mat", "MATLAB diagnosis bundle (*.mat)"}, ...
+    "Export sandbox input and result", char(defaultName));
+if isequal(fileName, 0) || isequal(folderName, 0)
+    return;
+end
+applicationState = guidata(figureHandle);
+exportInfo = exportAzElSandboxDiagnosis( ...
+    fullfile(folderName, fileName), applicationState, modeName);
+modeState = getModeState(applicationState, modeName);
+modeState.Status = "Diagnosis bundle exported: " + exportInfo.FilePath;
+modeState = appendLogLines(modeState, ...
+    "[Sandbox export] " + exportInfo.FilePath + ...
+    " (" + exportInfo.Bytes + " bytes)");
+applicationState = setModeState( ...
+    applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+refreshApplication(figureHandle);
 end
 
 function modeState = getModeState(applicationState, modeName)

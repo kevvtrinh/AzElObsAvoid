@@ -1,7 +1,9 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Standalone Hermite-Simpson restoration — 2026-08-24**
-at the end of this file. Earlier sections remain as historical evidence.
+The current planner judgment is **Standalone Hermite-Simpson restoration —
+2026-08-24**. The latest scenario assessment is **Extreme deforming U.S.
+scenario — 2026-08-24** at the end of this file. Earlier sections remain as
+historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
 
@@ -1132,3 +1134,39 @@ input-derived arrival during the local solve. Those bounded choices make the
 runtime gate practical but can leave a better topology or timing local optimum
 unexplored. HS3 therefore remains a finite, locally optimized planner without a
 global optimality or completeness certificate.
+
+## Extreme deforming U.S. scenario — 2026-08-24
+
+The moving/deforming U.S. example now supplies a materially harder obstacle
+history: 8%-to-135% growth, interior deformation, a full 180-degree rotation,
+disappearance after 240 seconds, and a separate moving starburst sun along the
+bottom. Geometry assertions are part of `ExampleValidation`, so a valid path
+alone cannot conceal loss of any requested stage. Compact and standalone HS3
+both pass independent and scenario validation.
+
+The main unfavorable result is cost: the new compact example took 40.659661 s
+wall time and produced a 9.14130766846 s motion, while HS3 took 108.428247 s
+and produced a 75 s motion. This scenario therefore strengthens dynamic and
+topology-change coverage but does not support a speed or arrival-quality claim
+for HS3.
+
+## Diagnosis export and cross-frame polygon stress — 2026-08-24
+
+The persistent sandbox can now export a versioned diagnosis bundle after any
+successful or failed run. Focused tests prove that the saved request and result
+round-trip, reproduce, preserve an expected endpoint failure, and remain
+available from both tabs without serializing graphics state.
+
+A new deterministic benchmark stresses large multi-vertex obstacles that
+translate across the frame and rotate by at least 180 degrees. Compact passed
+11/12 tested seeds; standalone HS3 passed all seven exercised seeds, including
+compact's seed-1011 failure. The failing compact scene has a conservatively
+clear boundary witness and is physically feasible under the identical public
+contract.
+
+The isolated weakness is exact workspace feasibility during compact motion
+construction. Sampled QP bounds allow a minimum-jerk spline placed on the
+workspace boundary to undershoot between samples by as much as 0.000642
+degrees. The independent continuous validator correctly rejects it. This
+checkpoint exposes and preserves the regression but does not conceal it with a
+larger tolerance, expanded workspace, scenario special case, or HS3 fallback.

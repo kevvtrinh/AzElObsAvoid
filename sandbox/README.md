@@ -44,3 +44,11 @@ remain visible on the canvas but are intentionally omitted from the legend.
 **Reset** removes the retained scene and every visible or hidden graphics
 object, then restarts the guided sequence at the start-position click.
 **Diagnostics** opens the planner diagnostics for the most recent result.
+
+After any planner call, **Export Bundle** saves a diagnosis-ready MAT file for
+the active tab. The bundle contains the raw drawn geometry, canonical protected
+obstacles, exact planner inputs and resolved options, retained segment results,
+latest result, independent validation, planner log, environment metadata, and
+copyable reproduction commands. It omits figure handles and callbacks. Send
+that MAT file when asking for failure diagnosis; both successful and failed
+planner calls can be exported.

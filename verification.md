@@ -2,7 +2,9 @@
 
 Current worktree evidence is summarized in
 [Standalone Hermite-Simpson restoration — 2026-08-24](#standalone-hermite-simpson-restoration--2026-08-24);
-earlier sections are retained as historical checkpoints.
+the latest example evidence is in
+[Extreme deforming U.S. and moving-sun example — 2026-08-24](#extreme-deforming-us-and-moving-sun-example--2026-08-24).
+Earlier sections are retained as historical checkpoints.
 
 ## Evidence scope
 
@@ -2722,3 +2724,77 @@ solution on the same topology. The planning deadline is cooperative and can be
 slightly overrun by solver setup or final validation. Several difficult
 earliest-arrival solves still emit near-singular `fmincon` warnings even when
 independent validation passes.
+
+## Extreme deforming U.S. and moving-sun example — 2026-08-24
+
+`exampleMovingDeformingUSOutlineVisibility` now uses two independently moving
+obstacles. The U.S. outline is active from 0 through 240 s, grows smoothly from
+8% to 135% scale, deforms during the interior of the history, completes an
+actual 180-degree endpoint reversal, and is inactive at the 300 s mission end.
+A 32-vertex starburst sun traverses the lower scene for the complete mission.
+Scenario validation measured an initial/peak U.S. area ratio of
+0.00351165980796, endpoint-geometry cosine -1, maximum scale 1.35, inactive
+final U.S. geometry, 34.6708365607 degrees of sun-centroid travel, and maximum
+sun boundary elevation 16.6 degrees, below the 18-degree route start.
+
+Both public planner methods passed independent and scenario validation with
+jerk constraints enabled. Compact used a 41.6645269891-degree polyline,
+41.9569827325-degree smoothed motion, 9.14130766846 s duration, and 40.659661 s
+wall time. Standalone HS3 used the same polyline, a 42.4287030058-degree
+smoothed motion, 75 s duration, and 108.428247 s wall time. The longer HS3
+duration and wall time are retained as unfavorable evidence. Code Analyzer
+reported zero messages for both modified source files, the maintained
+example-contract suite passed 5/5, and a plot-enabled run created three figures
+with six axes while scenario validation remained passing.
+
+The existing example changes by +109/-12 lines. Its net growth owns the second
+obstacle, explicit scenario-history assertions, preserved result metadata, and
+the local sun transform; the earlier script had no sun and could only validate
+the planned trajectory, not the requested growth/rotation/disappearance
+history. Keeping those assertions in a test-only duplicate was rejected because
+the maintained example result must remain self-verifying. The private U.S.
+helper changes by +39/-17 lines to centralize one transformation profile shared
+by geometry generation and diagnostics. Both paths are covered by Code Analyzer,
+the 5/5 contract suite, compact and HS3 headless runs, and the graphics smoke.
+
+## Interactive export and randomized moving-polygon stress — 2026-08-24
+
+Both interactive tabs now enable `Export Bundle` after a planner call. The MAT
+file stores the versioned `azElSandboxDiagnosis-v1` bundle: raw and canonical
+scene geometry, exact planner inputs and resolved options, retained segment
+results, latest success or failure result, independent validation, sandbox log,
+environment metadata, and reproduction commands. Graphics handles and
+callbacks are deliberately excluded. `testAzElSandboxDiagnosisExport` passed
+3/3 cases: successful round-trip and reproduction, preservation of an
+`endpointBlocked` failure, and hidden-UI button state on both tabs. Code
+Analyzer reported zero messages for the exporter, sandbox, and focused test.
+
+`benchmarkRandomMovingPolygonStress` generated deterministic three-obstacle
+scenes with 5-to-12-vertex polygons, source radii from 6.5 to 8 degrees,
+35-degree cross-frame translations, and 180-to-360-degree rotations. Each case
+also retained an independently calculated lower-bound clearance for a boundary
+witness route. Compact passed 11/12 seeds (`1001:1012`); seed 1011 returned
+`noValidatedSeed` despite a 2.40166-degree witness lower bound. Standalone HS3
+passed the seven exercised seeds (`1001:1006` and `1011`) with independent
+validation, including seed 1011 in 30.061148 seconds.
+
+Seed 1011 is a compact motion-construction failure, not an input, obstacle,
+topology, or physical-feasibility failure. The primary 10-point visibility
+seed exists, HS3 solves the identical normalized request, and successful-exit
+compact QP trials become collision-free when validated with only the workspace
+bounds widened. The compact QP constrains workspace position at 257 samples
+while minimizing jerk; its seed-anchored barrier drives the curve to the
+-20-degree elevation boundary. Exact continuous validation finds between-
+sample undershoot of 0.0000017 to 0.000642 degrees and rejects the motions
+before collision certification. The reported collision-resolution and
+azimuth-wrap failures are therefore downstream prerequisite symptoms. No
+planner behavior was changed or tolerance weakened in this checkpoint.
+
+Final-source verification passed 140/140 automated tests with zero failures or
+incomplete tests. The maintained example matrix passed 18/18 for compact in
+91.618892 seconds and 18/18 for standalone HS3 in 551.197924 seconds; each
+method produced 17 independently validated successes plus the expected
+validated no-path outcome. The changed/new MATLAB files had zero Code Analyzer
+messages. The modified U.S. example's plot-enabled smoke created three figures
+and six axes while retaining passing scenario validation, and
+`git diff --check` passed.

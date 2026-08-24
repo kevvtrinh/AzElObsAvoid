@@ -383,7 +383,15 @@ earliest arrival; and expected no-path diagnostics.
 two-tab scene builder lives under `sandbox/`; see the
 [sandbox guide](sandbox/README.md). Its guided input order is start, goal or
 first endpoint, then obstacle drawing. Interactive tools are not part of the
-headless maintained-example matrix.
+headless maintained-example matrix. Both tabs can export a diagnosis-ready MAT
+bundle containing the exact retained input, result, independent validation,
+and reproduction commands.
+
+For deterministic stress outside the maintained examples, add `benchmarks` to
+the path and run `benchmarkRandomMovingPolygonStress`. Its default scenes use
+three large 5-to-12-vertex obstacles that cross most of the Az/El workspace
+while rotating 180 to 360 degrees. Every record preserves the exact inputs,
+result, independent validation, and an input-external clear boundary witness.
 
 ## Requirements
 
