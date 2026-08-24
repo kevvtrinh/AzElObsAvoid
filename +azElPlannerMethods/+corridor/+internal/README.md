@@ -5,20 +5,21 @@ Stable user entry points remain at the repository root. The subpackages make
 the pipeline boundaries visible:
 
 ```text
-obstacles -> search -> motion -> validation
-     \          \        /
-      +----------geometry
+shared obstacles -> search -> motion -> validation
+       \              \        /
+        +--------------geometry
 ```
 
-- `geometry`: shared polygon construction, edge extraction, convex
-  decomposition, and signed-clearance primitives.
-- `obstacles`: immutable preparation and time-dependent obstacle geometry.
+- `azElInternal`: shared option, goal, dynamic-obstacle, and signed-clearance
+  contracts used by both planners and root utilities.
+- `geometry`: corridor-specific convex decomposition.
+- `obstacles`: corridor-specific obstacle-envelope construction.
 - `search`: bounded visibility, homology, timed-search, and seed generation.
 - `motion`: corridor-constrained spline generation, retiming, and candidate
   selection.
 - `validation`: corridor and envelope certificates used independently of
   candidate generation.
 
-Small cross-cutting helpers remain in this directory so the modules do not
+Small method-specific helpers remain in this directory so the modules do not
 depend on an artificial utility hierarchy. Nothing here may call the sibling
-HS3 package; deliberate duplication keeps either planner removable.
+HS3 package; method-specific duplication keeps either planner removable.

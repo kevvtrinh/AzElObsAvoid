@@ -40,7 +40,8 @@ selectedPower_deg = polynomial.positionPower_deg(segmentIndex, :, :);
 azimuthPower_deg = reshape( selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
 elevationPower_deg = reshape( selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
 projectionPower_deg = normal(:, 1) .* azimuthPower_deg + normal(:, 2) .* elevationPower_deg;
-projectionBernstein_deg = azElPlannerMethods.corridor.internal.powerToBernstein( projectionPower_deg.');
+projectionBernstein_deg = azElInternal.powerToBernstein( ...
+    projectionPower_deg.');
 % Express feasibility as inequality <= 0 to match MATLAB optimizer conventions.
 offset_deg = [corridor.BoundaryOffset_deg] + [corridor.Clearance_deg];
 inequalityMatrix = offset_deg - projectionBernstein_deg;

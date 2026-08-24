@@ -12,10 +12,11 @@ obstacle inputs once, then select one method folder.
 | `+hs3` | `"hs3"` | `plan-325` at `5a067112a9f880d015f52fb97538a99010871478` | Analytic first motions plus optional HS3 nonlinear improvement. Its moving-target adapter makes one moving-goal earliest-arrival planner call. |
 
 The last planner/evidence commits before those tips were `9dc2530` for the
-corridor snapshot and `921b2f7` for HS3. Integration changes are limited to
-package qualification, mechanically necessary names, and the comment and
-layout style used by `325-less-nlp`. Numeric constants, solver decisions,
-candidate order, and validation rules belong to the source snapshots.
+corridor snapshot and `921b2f7` for HS3. Integration changes include package
+qualification, mechanically necessary names, shared behavior-equivalent
+contract and obstacle helpers, and the comment and layout style used by
+`325-less-nlp`. Numeric constants, solver decisions, candidate order, and
+validation rules belong to the source snapshots.
 
 ## Select a planner
 
@@ -77,14 +78,15 @@ it does not select HS3.
     |-- planMovingTargetIntercept.m    HS3 moving-goal policy
     |-- validateTrajectory.m           HS3-specific validation
     `-- +internal
-        |-- +obstacles
         |-- +search
         |-- +motion
         `-- +validation
 ```
 
-Canonical obstacle combination, normalization, time queries, boundary
-traversal, and signed clearance live at the repository root and in
+Canonical obstacle combination and normalization live at the repository root.
+Time queries, obstacle preparation and interpolation, boundary traversal,
+signed clearance, option merging, logical normalization, goal interpolation,
+polynomial evaluation, and power-to-Bernstein conversion live in
 `+azElInternal`. A method must not call its sibling's search, solver, validator,
 or result builder. This shares input meaning without coupling either planning
 algorithm to the other method folder.

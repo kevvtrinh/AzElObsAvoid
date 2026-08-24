@@ -228,7 +228,8 @@ if decisionCount > 0 && ~isempty(corridor)
             selectedBasis_deg = affineBasisPolynomial.positionPower_deg( corridorSegmentIndex, controlPointIndex, :);
             basisPower_deg = reshape( selectedBasis_deg, numel(corridor), coefficientCount);
             projectionPower_deg = corridorNormal(:, axisIndex) .* basisPower_deg;
-            projectionBernstein_deg = azElPlannerMethods.corridor.internal.powerToBernstein( projectionPower_deg.');
+            projectionBernstein_deg = azElInternal.powerToBernstein( ...
+                projectionPower_deg.');
             inequalityMatrix(:, decisionIndex) = -projectionBernstein_deg(:);
         else
             decisionOffset_deg = zeros(interiorCount, 2);

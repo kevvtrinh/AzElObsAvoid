@@ -1,10 +1,11 @@
 # Shared public-utility internals
 
 `azElInternal` contains implementation details shared by root public utilities
-and both planner backends. It owns canonical obstacle interpolation, boundary
-traversal, signed clearance, and small contract helpers. Either method folder
-can still be removed because both depend only on this neutral layer, never on
-their sibling.
+and both planner backends. It is the single owner of canonical obstacle
+preparation and interpolation, boundary traversal, signed clearance, option
+merging, logical normalization, goal interpolation, polynomial evaluation, and
+power-to-Bernstein conversion. Either method folder can still be removed
+because both depend only on this neutral layer, never on their sibling.
 
 The remaining geometry is intentionally narrow:
 
@@ -13,7 +14,7 @@ The remaining geometry is intentionally narrow:
 - `obstacles`: immutable preparation and shape-at-time interpolation used by
   planning, querying, validation, and plotting.
 
-Small option, logical, and goal-position helpers remain at this level because
-several public utilities share them. Planner-specific search, motion,
-validation, candidate ranking, and result construction were removed from this
-package after their callers moved into the method folders.
+Small option, logical, goal-position, and polynomial helpers remain at this
+level because public utilities and both planner methods share them.
+Planner-specific search, motion construction, validation, candidate ranking,
+and result construction stay in the method folders.

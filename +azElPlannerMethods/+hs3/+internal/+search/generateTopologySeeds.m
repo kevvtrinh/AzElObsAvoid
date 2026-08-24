@@ -22,7 +22,7 @@ function [seeds, diagnostics] = generateTopologySeeds( ...
 %**************************************************************************
 %% Section 1: Create The Direct Visibility Seed
 start_deg = initialState.position_deg;
-goal_deg = azElPlannerMethods.hs3.internal.goalPositionAtTime(goalState, goalState.time_s);
+goal_deg = azElInternal.goalPositionAtTime(goalState, goalState.time_s);
 if options.AllowAzimuthWrapping
     azimuthTurns = round((start_deg(1) - goal_deg(1)) / 360);
     goal_deg(1) = goal_deg(1) + 360 * azimuthTurns;
@@ -173,7 +173,8 @@ for sampleTimeIndex = 1:numel(sampleTimes_s)
 
     % Add each obstacle's active protected shape at this time to the swept union.
     for obstacleIndex = 1:numel(obstacles)
-        shape = azElPlannerMethods.hs3.internal.obstacles.shapeAtTime(obstacles(obstacleIndex), sampleTime_s);
+        shape = azElInternal.obstacles.shapeAtTime( ...
+            obstacles(obstacleIndex), sampleTime_s);
         if isempty(shape.Vertices)
             continue;
         end

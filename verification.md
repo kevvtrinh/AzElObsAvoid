@@ -2380,3 +2380,44 @@ hit MATLAB's pre-startup Windows `File system inconsistency` error and executed
 no governed case. Literal commands completed every recorded example. One early
 report used a stale field after a planner run; that incomplete log was excluded
 from benchmark evidence.
+
+## Shared option, goal, and obstacle helper consolidation — 2026-08-23
+
+Task baseline: local `325-full-suite` at `a51f6e9`. The existing untracked
+`docs/` directory was preserved and excluded from the change.
+
+Three corridor helpers and seven HS3-local helpers were executable copies or
+behavior-equivalent variants of neutral `azElInternal` contracts. All callers
+were redirected to shared option, logical, goal, obstacle, polynomial, and
+Bernstein implementations before the private files were removed. The shared
+shape-at-time implementation retains the same interpolation and conservative
+topology-change policy and additionally reuses a prepared shape for a
+stationary matching-topology interval. No search, motion-construction,
+candidate-selection, solver, validation, or public-dispatch algorithm changed.
+
+Verification produced:
+
+- focused pre-change baseline: 33/33 passed across shared infrastructure and
+  both planners' option, moving-goal, dynamic-obstacle, and interpolation paths;
+- post-change unit gate: 101/101 passed across
+  `testObstacleInfrastructure`, `testFixedDurationAffineModel`,
+  `testHs3Planner`, and `testAzElPlanner`;
+- MATLAB Code Analyzer: zero messages across 20 modified MATLAB files;
+- deleted-helper reference audit: zero matches;
+- corridor-to-HS3 and HS3-to-corridor call audit: zero matches;
+- `git diff --check`: passed with Windows line-ending conversion warnings only.
+
+Physical MATLAB counts, using the same PowerShell `Get-Content` method on the
+task baseline and worktree:
+
+| Scope | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Production MATLAB | 70 files / 14,822 lines | 62 files / 14,256 lines | -8 files / -566 lines |
+| Production and tests | 78 files / 18,291 lines | 70 files / 17,725 lines | -8 files / -566 lines |
+
+The maintained examples, visible graphics, and complete repository suite were
+not rerun because this cleanup changed ownership without changing planner
+behavior. No `benchmark.csv` row was added because no maintained example
+benchmark was executed. The first sandboxed MATLAB baseline launch failed
+before startup with Windows `File system inconsistency`; the approved literal
+launch completed the recorded 33-test baseline.

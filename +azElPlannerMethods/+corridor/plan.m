@@ -295,7 +295,8 @@ end
 
 function [feasible, message, reason] = validateEndpoints( obstacles, initialState, goalState, limits, options)
 % Return expected endpoint infeasibility without invoking the optimizer.
-goalPosition_deg = azElPlannerMethods.corridor.internal.goalPositionAtTime( goalState, goalState.time_s);
+goalPosition_deg = azElInternal.goalPositionAtTime( ...
+    goalState, goalState.time_s);
 startIsBlocked = queryAzElTimeObstacle( ...
     obstacles, initialState.position_deg(1), initialState.position_deg(2), initialState.time_s);
 fixedTerminalIsBlocked = false;

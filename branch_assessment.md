@@ -1023,3 +1023,32 @@ Production grew by 35 MATLAB lines and remains at 14,013 lines, above the
 10.5% task-growth allowance for those 35 lines, but does not erase the
 pre-existing overall size excess. Raw A/B and final example rows are retained
 in `benchmark.csv`.
+
+## Shared helper consolidation checkpoint — 2026-08-23
+
+Both planner methods now use `+azElInternal` as the single owner of option
+merging, logical normalization, fixed/moving-goal evaluation, dynamic-obstacle
+preparation, shape-at-time interpolation, polynomial evaluation, and
+power-to-Bernstein conversion. Ten behavior-equivalent private MATLAB
+implementations were removed: three corridor helpers and seven HS3 helpers.
+Planner-specific search, motion construction, certification, result
+construction, and independent validation remain isolated, and neither method
+calls its sibling package.
+
+Against task baseline `a51f6e9`, production MATLAB decreased from 70 files and
+14,822 physical lines to 62 files and 14,256 lines: eight fewer files and 566
+fewer lines. Production plus tests decreased from 78 files and 18,291 lines to
+70 files and 17,725 lines. The focused pre-change baseline passed 33/33. After
+consolidation, the complete shared-obstacle, HS3, and corridor unit files
+plus the fixed-duration polynomial tests passed 101/101. MATLAB Code Analyzer
+reported zero messages across all 20
+modified MATLAB files, the stale-reference and cross-method audits found zero
+matches, and `git diff --check` passed with line-ending conversion warnings
+only.
+
+This is an ownership and deployment-size improvement, not a runtime or
+trajectory-quality claim. Planner constants, decisions, candidate order,
+certificates, collision policy, and returned schemas were not changed. The
+maintained examples, visible graphics, and complete repository suite were not
+rerun, and no benchmark row was added because no maintained example benchmark
+was executed.

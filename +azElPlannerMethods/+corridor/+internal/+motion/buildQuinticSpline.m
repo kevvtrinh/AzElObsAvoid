@@ -548,7 +548,7 @@ initialTime_s = polynomial.SegmentStartTime_s(1);
 uniformTime_s = (initialTime_s:sampleTime_s:polynomial.FinalTime_s).';
 time_s = unique([uniformTime_s; polynomial.SegmentStartTime_s; polynomial.FinalTime_s]);
 [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
-    jerk_deg_s3] = azElPlannerMethods.corridor.internal.motion.evaluatePolynomial(polynomial, time_s);
+    jerk_deg_s3] = azElInternal.evaluatePolynomial(polynomial, time_s);
 end
 
 function continuity = continuityDiagnostics(polynomial)

@@ -30,7 +30,7 @@ function [seeds, diagnostics] = generateTopologySeeds(obstacles, initialState, g
 % The direct seed is always retained as the baseline candidate, even when it
 % crosses an obstacle. Later construction and validation reject it honestly.
 start_deg = initialState.position_deg;
-goal_deg = azElPlannerMethods.corridor.internal.goalPositionAtTime(goalState, goalState.time_s);
+goal_deg = azElInternal.goalPositionAtTime(goalState, goalState.time_s);
 % Move the goal to the nearest equivalent azimuth turn when circular wrapping is enabled.
 if options.AllowAzimuthWrapping
     azimuthTurns = round((start_deg(1) - goal_deg(1)) / 360);

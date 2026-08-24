@@ -6,14 +6,14 @@ verification files, and imported snapshots. Callers are still counted across
 tests, examples, benchmarks, and the sandbox because those calls establish
 real ownership.
 
-The combined branch has 51 production files below 100 code lines:
+The combined branch has 38 production files below 100 code lines:
 
 | Area | Short files | Result |
 | --- | ---: | --- |
 | Root public APIs | 5 | All have multiple callers. |
-| Shared root internals | 8 | Six have multiple callers; two retain narrow data contracts. |
-| Corridor method | 20 | All are in the corridor closure; four have one caller. |
-| HS3 method | 17 | All are in the HS3 closure; four have one caller. |
+| Shared root internals | 10 | Nine have multiple callers; one retains a narrow data contract. |
+| Corridor method | 11 | All are in the corridor closure; three have one caller. |
+| HS3 method | 11 | All are in the HS3 closure; four have one caller. |
 | Shared planner timing | 1 | One consolidated function serves both method closures. |
 
 No short production file has zero executable callers. A separate reachability
@@ -40,14 +40,15 @@ shared 197-code-line query implementation instead of dispatching to two copies.
 | Files | Why they stay separate |
 | --- | --- |
 | `resolveOptions.m`, `normalizeLogicalScalar.m` | Shared contract primitives used by constructors, plotting, example setup, and geographic helpers. Merging them would reproduce option semantics in many callers. |
-| `+obstacles/prepareDynamic.m`, `+geometry/boundaryShape.m` | Canonical obstacle preparation and polygon conversion shared by querying and plotting. |
+| `+obstacles/prepareDynamic.m`, `+geometry/boundaryShape.m` | Canonical obstacle preparation and polygon conversion shared by both planners, querying, and plotting. |
 | `+geometry/boundaryToEdges.m`, `+geometry/pointPolygonClearance.m` | One deterministic traversal and vectorized signed-clearance implementation shared by both planners, querying, and validation. |
-| `+obstacles/shapeAtTime.m` | One direct plotter caller, but it owns the complete sampled-history interpolation and topology-change policy. Folding 94 code lines into the already-large plotter would mix geometry interpretation with rendering. |
-| `goalPositionAtTime.m` | One tracked plotter caller, but it owns the fixed-versus-sampled goal adapter used by several plotter sections. Keeping one adapter prevents those sections from drifting. |
+| `+obstacles/shapeAtTime.m` | Owns the complete sampled-history interpolation and topology-change policy shared by both planners, querying, and plotting. |
+| `goalPositionAtTime.m` | Owns the fixed-versus-sampled goal adapter shared by both planners and plotting. |
+| `evaluatePolynomial.m`, `powerToBernstein.m` | Shared exact polynomial evaluation and basis conversion used by both planners, solvers, and independent validators. |
 
-`shapeAtTime.m` and `goalPositionAtTime.m` are the only short shared files with
-one tracked caller. They remain separate because they own data-interpretation
-contracts, while `plotAzElMotion.m` owns rendering.
+`boundaryShape.m` is the only short shared file with one tracked production
+caller. It remains separate because it owns the canonical conversion used by
+obstacle preparation and is directly covered by the shared geometry contract.
 
 ## Corridor method
 
@@ -59,9 +60,8 @@ Most have two to ten direct callers.
 | --- | --- | --- |
 | Geometry | `convexPolygonRegions` | Corridor-specific convex decomposition used by search and certification. |
 | Obstacles | `buildEnvelopeBoundary` | Corridor-envelope construction remains separate from shared obstacle preparation and time interpolation. |
-| Motion | `evaluatePolynomial`, `buildFixedDurationAffineModel`, `spanTimeDemand` | Canonical evaluation, one fixed-duration affine map, and one span-demand measure shared by distinct motion paths. |
+| Motion | `buildFixedDurationAffineModel`, `spanTimeDemand` | One fixed-duration affine map and one span-demand measure shared by distinct corridor motion paths. |
 | Validation | `buildSeedCorridor`, `certifySeedCorridor`, `seedCorridorInequality`, `seedEnvelopeContainsObstacles` | Certificate construction and checking remain separate from the optimizer they independently check. |
-| Common | `goalPositionAtTime`, `powerToBernstein` | Reused contract and mathematical primitives prevent duplicated semantics inside the method. |
 
 Three corridor files have one direct caller and need an explicit decision:
 
@@ -74,15 +74,13 @@ Three corridor files have one direct caller and need an explicit decision:
 ## HS3 method
 
 Every HS3 short file is reachable from `azElPlannerMethods.hs3.plan` or its
-method-specific validator. Shared canonical obstacle and query infrastructure
-does not depend on either method folder, preserving physical folder removal.
+method-specific validator. Shared option, goal, obstacle, geometry, and query
+infrastructure does not depend on either method folder, preserving physical
+folder removal.
 
 | Category | Short files | Separation reason |
 | --- | --- | --- |
-| Obstacles | `prepareDynamic` | HS3's immutable per-call obstacle cache; canonical clearance now lives in `azElInternal.geometry`. |
-| Motion | `evaluatePolynomial` | One polynomial evaluator shared by analytic motion, HS3, and independent validation. |
 | Validation | `buildSeedCorridor`, `seedCorridorInequality`, `seedEnvelopeContainsObstacles` | Shared exact certificate primitives used by the generator and validator. |
-| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions` | Reused option, goal, and conversion contracts inside the HS3 closure. |
 | Timing and candidate adapters | `emptyHs3SolverDiagnostics`, `addHs3CandidateTiming`, `candidateSeed` | One stable flat solver schema and one aggregate timing owner; the remaining seed adapter keeps collision relinearization semantics consistent. |
 
 Four HS3 files have one direct caller. The jerk objective and corridor
@@ -107,9 +105,9 @@ One shared timing function is used by both complete method closures:
 ## Merge decision
 
 No remaining short production file should be merged solely to reduce file
-count. The ten single-caller files own a stable schema, a mathematical or
+count. The seven single-caller files own a stable schema, a mathematical or
 geometry algorithm, or a data-interpretation boundary extracted from an
-already-large orchestrator. The other 41 already prevent duplication across
+already-large orchestrator. The other 31 already prevent duplication across
 multiple callers.
 
 A future merge is justified only if the owning algorithm or public boundary is

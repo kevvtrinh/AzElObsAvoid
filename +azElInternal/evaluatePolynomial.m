@@ -4,18 +4,17 @@ function [time_s, position_deg, velocity_deg_s, ...
 %% Section 0: Header & Readme
 % SYNTAX
 %   [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
-%       jerk_deg_s3] = azElPlannerMethods.hs3.internal.motion.evaluatePolynomial( ...
-%       polynomial, time_s)
+%       jerk_deg_s3] = azElInternal.evaluatePolynomial(polynomial, time_s)
 %   [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
-%       jerk_deg_s3] = azElPlannerMethods.hs3.internal.motion.evaluatePolynomial( ...
+%       jerk_deg_s3] = azElInternal.evaluatePolynomial( ...
 %       polynomial, time_s, segmentIndex)
 %**************************************************************************
 % PURPOSE
-%   - Evaluate one normalized planner polynomial at requested times.
+%   - Evaluate shared ascending-power segment records at absolute times.
 %**************************************************************************
 % INPUTS
 %   - polynomial (scalar normalized planner polynomial struct)
-%       Coefficient arrays use ascending powers and N-by-2-by-P shape.
+%       Coefficient arrays use N-by-D-by-P shape and ascending powers.
 %   - time_s (numeric vector)
 %       Absolute evaluation times. The output uses a numeric column.
 %   - segmentIndex (numeric scalar or vector, optional; default [])
@@ -25,20 +24,22 @@ function [time_s, position_deg, velocity_deg_s, ...
 % OUTPUTS
 %   - time_s (N-by-1 numeric column)
 %       Normalized requested times.
-%   - position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3
-%       N-by-2 evaluated histories in [azimuth elevation] order.
+%   - position_deg through jerk_deg_s3 (N-by-D numeric arrays)
+%       Evaluated motion histories for every modeled coordinate.
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is degrees; time is seconds; derivatives use deg/s powers.
 %**************************************************************************
+
 %% Section 1: Select Polynomial Segments
+
 time_s = double(time_s(:));
 sampleCount = numel(time_s);
-position_deg = NaN(sampleCount, 2);
-velocity_deg_s = NaN(sampleCount, 2);
-acceleration_deg_s2 = NaN(sampleCount, 2);
-jerk_deg_s3 = NaN(sampleCount, 2);
+coordinateCount = size(polynomial.positionPower_deg, 2);
+position_deg = NaN(sampleCount, coordinateCount);
+velocity_deg_s = NaN(sampleCount, coordinateCount);
+acceleration_deg_s2 = NaN(sampleCount, coordinateCount);
+jerk_deg_s3 = NaN(sampleCount, coordinateCount);
 if isempty(time_s) || any(~isfinite(time_s))
     return;
 end
@@ -56,7 +57,9 @@ else
         segmentIndex = repmat(segmentIndex, sampleCount, 1);
     end
 end
+
 %% Section 2: Evaluate Ascending-Power Records
+
 if isscalar(polynomial.SegmentDuration_s)
     selectedDuration_s = polynomial.SegmentDuration_s;
 else
@@ -88,7 +91,7 @@ jerk_deg_s3 = evaluateRecords( ...
 end
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-% Evaluate selected two-axis records without per-sample helper calls.
+% Evaluate selected coordinate records without per-sample helper calls.
 coefficientCount = size(coefficientArray, 3);
 power = reshape(localTau .^ (0:coefficientCount - 1), ...
     [], 1, coefficientCount);
