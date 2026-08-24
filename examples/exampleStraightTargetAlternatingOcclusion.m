@@ -114,7 +114,7 @@ result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, l
 
 exampleValidation = validateAzElExampleResult( ...
     result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true));
-obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+obstacleQueryOptions = struct();
 
 occupancySampleCount = 1201;
 occupancyTime_s = linspace(0, missionEndTime_s, occupancySampleCount).';

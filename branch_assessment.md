@@ -1,6 +1,6 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Compact corridor cutover — 2026-08-24**
+The current judgment is the **Quintic-only direct-planner cutover — 2026-08-24**
 at the end of this file. Earlier sections remain as historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
@@ -1107,3 +1107,52 @@ recorded example at 21.32539 s wall time, and the results do not establish a
 uniform runtime speedup. The next HS3 reduction must therefore compare every
 arrival and wall time against this committed compact baseline rather than rely
 on aggregate averages or fallback claims.
+
+
+## Quintic-only direct-planner cutover — 2026-08-24
+
+Branch `quintic-only` starts at committed `325-full-suite` tip
+`9439a43`. The public `planAzElMotion` function now directly owns
+normalization, endpoint rejection, topology generation, quintic
+solve/validation, selection, and timing finalization. The former method
+dispatcher and the complete `+azElPlannerMethods` tree were removed. Retained
+corridor motion, obstacle, search, and timing helpers moved under
+`+azElInternal`; no public planning call passes through a corridor facade.
+
+The superseded nonlinear planner implementation, options, validation facade,
+three dedicated test files, and its standalone scaling CSV were deleted.
+Historical benchmark rows and assessment text remain as evidence only. A
+filesystem and active-source audit found no executable path, file, call, or
+documentation link to the removed planner or to `azElPlannerMethods`.
+
+Verification produced 77/77 passing tests in 216.3257 seconds and zero Code
+Analyzer findings across 81 MATLAB files. All 18 maintained examples passed
+their independent contracts: 17 successful motions were collision-free and
+kinematically certified, while `exampleNoPathAzElMotion` returned the expected
+validated `noValidatedSeed` result. Every measured duration matched the
+committed compact-corridor baseline. Fresh rows are appended to
+`benchmark.csv`. A visible obstacle-free success created three figures; the
+expected failure created two diagnostic figures and retained 15 rejected
+transitions without rerunning planning.
+
+Production now contains 44 MATLAB files, 7,874 physical lines, and 5,726
+nonblank/noncomment lines under the established production exclusion rule.
+The direct cutover does not claim a runtime or trajectory-quality improvement;
+it removes obsolete architecture while preserving the measured quintic
+behavior.
+
+### Diff-growth disclosure
+
+Existing `planAzElMotion.m` changes by +298/-98 lines before rename detection.
+It absorbs only the former corridor facade's orchestration and input/default
+normalization so the sole production method has one public owner. Search,
+motion construction, collision, and validation algorithms remain in their
+existing helpers. Keeping a one-case dispatcher or a corridor compatibility
+facade was rejected because it would preserve the redundant route the branch
+was created to remove. The full test suite, all maintained examples, Code
+Analyzer, active dependency audit, and success/failure graphics gates cover the
+cutover.
+
+The remaining limitation is finite search: bounded topology and duration
+exchange do not provide completeness or global optimality. This removal does
+not broaden those claims.

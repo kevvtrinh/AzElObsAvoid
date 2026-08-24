@@ -21,10 +21,8 @@ function sandboxState = azElInteractiveSandbox(sandboxOverrides)
 %       WorkspaceElevationInterval_deg, Verbose,
 %       LatestArrivalCoarseCandidateCount,
 %       LatestArrivalRefinementCandidateCount, and PlannerOptions.
-%       PlannerOptions is a partial planAzElMotion options struct. Its
-%       PlannerMethod initializes each tab's visible planner selector.
-%       Goal-time mode, selected planner, and verbosity are then owned by
-%       the active sandbox tab.
+%       PlannerOptions is a partial planAzElMotion options struct. Goal-time
+%       mode and verbosity are owned by the active sandbox tab.
 %**************************************************************************
 % OUTPUTS
 %   - sandboxState (scalar struct)
@@ -81,6 +79,8 @@ beginGuidedScene(figureHandle, "goal");
 
 sandboxState = publicStateSnapshot(figureHandle);
 sandboxState.ReadState = @() publicStateSnapshot(figureHandle);
+
+%% Section 6: Local Functions
 
 end
 
@@ -182,15 +182,6 @@ end
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("azElInteractiveSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
 end
-
-% Materialize only the public selector needed to initialize the two dropdowns.
-% The selected planner still resolves every other partial option at plan time.
-plannerMethod = "corridorQuintic";
-if isfield(options.PlannerOptions, "PlannerMethod") && ~isempty(options.PlannerOptions.PlannerMethod)
-    plannerMethod = options.PlannerOptions.PlannerMethod;
-end
-plannerDefaults = planAzElMotion(plannerMethod);
-options.PlannerOptions.PlannerMethod = plannerDefaults.PlannerMethod;
 end
 
 function value = normalizeLogicalScalar(value, fieldName)
@@ -268,29 +259,12 @@ controls.ObstacleMarginHandle = addScalarControl( ...
     controlPanelHandle, "Polygon safety margin (deg)", 0.04, ...
     options.ObstacleSafetyMargin_deg);
 
-% The narrow strip below the panel keeps the planner choice and verbose flag
-% visible without adding another row to the already compact planning panel.
-uicontrol(tabHandle, ...
-    "Style", "text", ...
-    "String", "Planner", ...
-    "Units", "normalized", ...
-    "Position", [0.71 0.263 0.052 0.03], ...
-    "HorizontalAlignment", "left");
-plannerMethodNames = ["corridorQuintic", "hs3"];
-plannerMethodLabels = {"Corridor quintic", "HS3"};
-selectedPlannerIndex = find(plannerMethodNames == options.PlannerOptions.PlannerMethod, 1);
-controls.PlannerMethodHandle = uicontrol(tabHandle, ...
-    "Style", "popupmenu", ...
-    "String", plannerMethodLabels, ...
-    "UserData", plannerMethodNames, ...
-    "Units", "normalized", ...
-    "Position", [0.762 0.263 0.112 0.032], ...
-    "Value", selectedPlannerIndex);
+% The narrow strip below the panel keeps this option away from the final row.
 controls.VerboseHandle = uicontrol(tabHandle, ...
     "Style", "checkbox", ...
-    "String", "Verbose output", ...
+    "String", "Verbose planner output", ...
     "Units", "normalized", ...
-    "Position", [0.882 0.263 0.103 0.03], ...
+    "Position", [0.71 0.263 0.275 0.03], ...
     "Value", options.Verbose, ...
     "HorizontalAlignment", "left");
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", "Units", "normalized", "Position", [0.045 0.275 0.64 0.052]);
@@ -798,7 +772,6 @@ canonicalObstacles = buildCanonicalObstacles( modeState, obstacleTime_s, control
     modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
     0, controls.MissionTime_s, controls);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.PlannerMethod = controls.PlannerMethod;
 plannerOptions.GoalTimeMode = "earliestArrival";
 plannerOptions.Verbose = controls.Verbose;
 modeState = clearModeSolution(modeState);
@@ -921,7 +894,6 @@ segment.RequestedStop_deg = stopPosition_deg;
 segment.StartTime_s = startTime_s;
 latestAllowedTime_s = startTime_s + controls.MaximumSegmentDuration_s;
 plannerOptions = sandboxOptions.PlannerOptions;
-plannerOptions.PlannerMethod = controls.PlannerMethod;
 plannerOptions.Verbose = controls.Verbose;
 logLines = "[Free Mode Segment " + segmentIndex + "]";
 testedTimes_s = zeros(0, 1);
@@ -1162,9 +1134,6 @@ function controls = readModeControls(applicationState, modeName)
 % Read and validate one tab's independent physical and geometry controls.
 modeState = getModeState(applicationState, modeName);
 handles = modeState.GraphicsHandles.Controls;
-plannerMethodNames = string(get(handles.PlannerMethodHandle, "UserData"));
-selectedPlannerIndex = get(handles.PlannerMethodHandle, "Value");
-plannerMethod = plannerMethodNames(selectedPlannerIndex);
 workspaceAzimuthInterval_deg = readAxisPairControl( ...
     handles.WorkspaceAzimuthHandles, ...
     "Workspace azimuth interval (deg)", false);
@@ -1186,7 +1155,6 @@ pathObstacleRadius_deg = readScalarControl( handles.PathRadiusHandle, "Line/caps
 pathSafetyMargin_deg = readScalarControl( handles.PathMarginHandle, "Line safety margin (deg)", false);
 obstacleSafetyMargin_deg = readScalarControl( handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
 controls = struct( ...
-    "PlannerMethod", plannerMethod, ...
     "WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
     "WorkspaceElevationInterval_deg", workspaceElevationInterval_deg, ...
     "MaxVelocity_deg_s", maxVelocity_deg_s, ...
@@ -1229,12 +1197,6 @@ end
 
 function applyDefaultControls(handles, modeName, options)
 % Restore one tab's editable values without touching the other tab.
-plannerMethodNames = string(get(handles.PlannerMethodHandle, "UserData"));
-selectedPlannerIndex = find(plannerMethodNames == options.PlannerOptions.PlannerMethod, 1);
-if isempty(selectedPlannerIndex)
-    error("azElInteractiveSandbox:InvalidPlannerMethod", "PlannerOptions.PlannerMethod is not available in the sandbox selector.");
-end
-set(handles.PlannerMethodHandle, "Value", selectedPlannerIndex);
 writeAxisPair(handles.WorkspaceAzimuthHandles, options.WorkspaceAzimuthInterval_deg);
 writeAxisPair(handles.WorkspaceElevationHandles, options.WorkspaceElevationInterval_deg);
 writeAxisPair(handles.VelocityHandles, options.MaxVelocity_deg_s);
@@ -1576,7 +1538,6 @@ for modeName = modeNames
     end
     controlHandles = findall( modeState.GraphicsHandles.ControlPanel, "Type", "uicontrol");
     set(controlHandles, "Enable", onOff(~isPlanning));
-    set(modeState.GraphicsHandles.Controls.PlannerMethodHandle, "Enable", onOff(~isPlanning));
     set(modeState.GraphicsHandles.Controls.VerboseHandle, "Enable", onOff(~isPlanning));
     if isPlanning
         continue;

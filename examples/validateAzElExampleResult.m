@@ -137,7 +137,7 @@ sampleTime_s = linspace( initialState.time_s, goalState.time_s, sampleCount).';
 goalPosition_deg = goalPositionAtTime(goalState, goalState.time_s);
 fraction = linspace(0, 1, sampleCount).';
 position_deg = initialState.position_deg + fraction .* (goalPosition_deg - initialState.position_deg);
-queryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+queryOptions = struct();
 occupied = queryAzElTimeObstacle(result.Inputs.obstacles, position_deg(:, 1), position_deg(:, 2), sampleTime_s, queryOptions);
 
 blocked = any(occupied);

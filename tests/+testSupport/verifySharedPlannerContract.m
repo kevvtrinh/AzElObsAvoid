@@ -4,14 +4,13 @@ function verifySharedPlannerContract(testCase, method, contractName)
 %   testSupport.verifySharedPlannerContract(testCase, method, contractName)
 %**************************************************************************
 % PURPOSE
-%   - Execute one behavior-identical planner contract against a selected
-%     method while retaining method-specific tests in their owning suites.
+%   - Execute one registered planner contract against the maintained planner.
 %**************************************************************************
 % INPUTS
 %   - testCase (matlab.unittest.FunctionTestCase)
 %       Active function-based test case with shared fixtures in TestData.
 %   - method (string scalar)
-%       Either "corridor" or "hs3".
+%       Must be "corridor".
 %   - contractName (string scalar)
 %       Name of one registered shared contract.
 %**************************************************************************
@@ -24,18 +23,11 @@ function verifySharedPlannerContract(testCase, method, contractName)
 
 %% Section 1: Resolve Method Adapter
 
-method = string(method);
-switch method
-    case "corridor"
-        adapter = struct( ...
-            "FixedOptions", @() planAzElMotion());
-    case "hs3"
-        adapter = struct( ...
-            "FixedOptions", @() planAzElMotion("hs3"));
-    otherwise
-        error("testSupport:UnknownPlannerMethod", ...
-            "Shared planner contracts support corridor or hs3.");
+if string(method) ~= "corridor"
+    error("testSupport:UnknownPlannerMethod", ...
+        "Shared planner contracts support the corridor planner.");
 end
+adapter = struct("FixedOptions", @() planAzElMotion());
 
 %% Section 2: Run Named Contract
 

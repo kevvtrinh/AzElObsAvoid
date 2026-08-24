@@ -1,7 +1,7 @@
 function boundary_deg = buildEnvelopeBoundary(obstacles, envelopePadding_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   boundary_deg = azElPlannerMethods.corridor.internal.obstacles.buildEnvelopeBoundary( ...
+%   boundary_deg = azElInternal.obstacles.buildEnvelopeBoundary( ...
 %       obstacles, envelopePadding_deg)
 %**************************************************************************
 % PURPOSE

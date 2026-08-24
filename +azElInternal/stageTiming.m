@@ -1,9 +1,9 @@
 function value = stageTiming(value, totalOrTimer, timing)
 %% Section 0: Header & Readme
 % SYNTAX
-%   timing = azElPlannerMethods.internal.stageTiming()
-%   timing = azElPlannerMethods.internal.stageTiming(timing, totalElapsedTime_s)
-%   result = azElPlannerMethods.internal.stageTiming(result, planningTimer, timing)
+%   timing = azElInternal.stageTiming()
+%   timing = azElInternal.stageTiming(timing, totalElapsedTime_s)
+%   result = azElInternal.stageTiming(result, planningTimer, timing)
 %**************************************************************************
 % PURPOSE
 %   - Define the shared seven-field planner-stage schema.
@@ -46,7 +46,7 @@ end
 
 validateattributes(totalElapsedTime_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'});
-template = azElPlannerMethods.internal.stageTiming();
+template = azElInternal.stageTiming();
 requiredNames = string(fieldnames(template));
 if ~isstruct(timing) || ~isscalar(timing) || ...
         ~isequal(string(fieldnames(timing)), requiredNames)

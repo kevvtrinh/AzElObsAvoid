@@ -6,7 +6,7 @@ function handles = plotAzElMotion(result, optionOverrides)
 %   handles = plotAzElMotion(result, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Plot returned HS3 motion, search diagnostics, and physical limits.
+%   - Plot returned quintic motion, search diagnostics, and physical limits.
 %   - Animate returned motion without rerunning planning or collision logic.
 %**************************************************************************
 % INPUTS

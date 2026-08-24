@@ -94,7 +94,6 @@ end
 function testCompactC3ReportsAllAttemptedWork(testCase)
 % Verify the bounded compact controller exposes reusable-basis evidence.
 overrides = struct( ...
-    "PlannerMethod", "corridorQuintic", ...
     "PlotOutputs", false, "FigureVisible", "off", ...
     "ShowWorkspace", false, "ShowKinematics", false, ...
     "ShowAnimation", false, "ShowSearchEdges", false, ...
@@ -111,66 +110,13 @@ verifyEqual(testCase, ...
 verifyStageTiming(testCase, result);
 end
 
-function testDefaultOffHs3CompositeRetainsBaselineTiming(testCase)
-% Require the disabled improver to add no work to either public exit path.
-initialState = state(0, [0 0]);
-goalState = state(8, [4 0]);
-limits = physicalLimits();
-options = fixedHs3Options();
-success = planAzElMotion([], initialState, goalState, limits, options);
-blockingObstacle = rectangleObstacle([0 8], [-1 1 -1 1], 0);
-failure = planAzElMotion( ...
-    blockingObstacle, initialState, goalState, limits, options);
-
-verifyTrue(testCase, success.Success, success.Message);
-verifyFalse(testCase, failure.Success);
-verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
-verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Enabled);
-verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Attempted);
-verifyEqual(testCase, success.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
-verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Enabled);
-verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Attempted);
-verifyEqual(testCase, failure.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
-verifyStageTiming(testCase, success);
-verifyStageTiming(testCase, failure);
-end
-
-function testOptInHs3AttemptReconcilesCompositeTiming(testCase)
-% Keep optional improver work visible without overlapping baseline stages.
-initialState = state(0, [0 0]);
-goalState = state(3, [1 0]);
-limits = physicalLimits();
-options = fixedHs3Options();
-options.EnableHs3Improvement = true;
-options.MaximumHs3ImprovementTime_s = 0.5;
-options.CollocationSegmentCount = 2;
-options.MaximumCollocationSegmentCount = 2;
-result = planAzElMotion([], initialState, goalState, limits, options);
-composition = result.CompositionDiagnostics.Hs3;
-
-verifyTrue(testCase, result.Success, result.Message);
-verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyTrue(testCase, composition.Enabled);
-verifyTrue(testCase, composition.Attempted);
-verifyNotEmpty(testCase, composition.Attempts);
-verifyGreaterThan(testCase, composition.ElapsedTime_s, 0);
-verifyEqual(testCase, ...
-    result.SearchDiagnostics.Hs3ElapsedTime_s, ...
-    composition.ElapsedTime_s, "AbsTol", 1e-12);
-verifyStageTiming(testCase, result);
-tolerance_s = timingTolerance(result.ElapsedPlanningTime_s);
-verifyGreaterThanOrEqual(testCase, ...
-    result.SearchDiagnostics.StageTiming.UnattributedElapsedTime_s + ...
-    tolerance_s, composition.ElapsedTime_s);
-end
-
 function testFinalizerRejectsOverAttribution(testCase)
 % Reject overlapping stage ownership instead of hiding it in a zero residual.
-timing = azElPlannerMethods.internal.stageTiming();
+timing = azElInternal.stageTiming();
 timing.MotionSolvingElapsedTime_s = 2;
 
 verifyError(testCase, @() ...
-    azElPlannerMethods.internal.stageTiming(timing, 1), ...
+    azElInternal.stageTiming(timing, 1), ...
     "stageTiming:OverAttributed");
 end
 
@@ -221,21 +167,10 @@ end
 
 function options = fixedOptions()
 % Return deterministic corridor controls for focused timing tests.
-options = planAzElMotion("corridorQuintic");
+options = planAzElMotion();
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
-options.SampleTime_s = 0.05;
-options.Verbose = false;
-end
-
-function options = fixedHs3Options()
-% Return deterministic HS3 controls with optional improvement disabled.
-options = planAzElMotion("hs3");
-options.GoalTimeMode = "fixedArrival";
-options.DirectSeedOnly = true;
-options.MaximumSeedCount = 1;
-options.EnableHs3Improvement = false;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end

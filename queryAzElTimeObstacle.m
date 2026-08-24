@@ -23,8 +23,6 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 %       BoundaryIsOccupied is logical (default true).
 %       ClearanceTolerance_deg is nonnegative (default 1e-10).
 %       ReferenceTime is a datetime scalar (default Unix epoch).
-%       PlannerMethod is retained for public compatibility; both maintained
-%       planners use this shared query implementation.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied (logical array)
@@ -45,7 +43,6 @@ defaults = struct( ...
     "ClearanceTolerance_deg", 1e-10, "ReferenceTime", datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
 if nargin == 0
     isOccupied = defaults;
-    isOccupied.PlannerMethod = "corridorQuintic";
     blockingObstacleIndex = [];
     queryDetails = struct();
     return;
@@ -59,15 +56,6 @@ if nargin < 5 || isempty(optionOverrides)
 end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("queryAzElTimeObstacle:InvalidOptions", "optionOverrides must be a scalar struct.");
-end
-plannerMethod = "corridorQuintic";
-if isfield(optionOverrides, "PlannerMethod") && ...
-        ~isempty(optionOverrides.PlannerMethod)
-    methodDefaults = planAzElMotion(optionOverrides.PlannerMethod);
-    plannerMethod = methodDefaults.PlannerMethod;
-end
-if isfield(optionOverrides, "PlannerMethod")
-    optionOverrides = rmfield(optionOverrides, "PlannerMethod");
 end
 [options, unknownNames] = azElInternal.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
@@ -157,7 +145,6 @@ queryDetails = struct( ...
     "ObstacleSafetyMargins_deg", reshape( ...
         [obstacles.safetyMargin_deg], [], 1), ...
     "Options", options);
-queryDetails.Options.PlannerMethod = plannerMethod;
 end
 
 

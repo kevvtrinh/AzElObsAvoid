@@ -1,8 +1,8 @@
 function motion = buildQuinticSpline(route_deg, initialState, goalState, limits, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
-%   options = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline()
-%   motion = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
+%   options = azElInternal.motion.buildQuinticSpline()
+%   motion = azElInternal.motion.buildQuinticSpline( ...
 %       route_deg, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
@@ -121,7 +121,7 @@ if hasNonzeroEndpointDerivative
     [controlPoint_deg, spanDuration_s, polynomial] = constructEndpointConstrainedMotion( ...
         controlPoint_deg, degree, initialState, goalState, limits, baseSpanDuration_s, options.GoalTimeMode);
 else
-    basePolynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+    basePolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
         controlPoint_deg, degree, initialState.time_s, baseSpanDuration_s);
 % -- Apply a deterministic continuous kinematic time scale. --
 % Stretching time lowers velocity linearly, acceleration quadratically, and
@@ -149,7 +149,7 @@ spanDuration_s = baseSpanDuration_s * durationScale * durationRoundoffScale;
 if options.GoalTimeMode == "fixedArrival"
     spanDuration_s(end) = goalState.time_s - initialState.time_s - sum(spanDuration_s(1:end - 1));
 end
-polynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
     controlPoint_deg, degree, initialState.time_s, spanDuration_s);
 end
 
@@ -186,11 +186,11 @@ motion.RepresentationDiagnostics = struct( ...
     "TotalParameterCount", ...
     2 * interiorCount + relativeTimingParameterCount, ...
     "InteriorRouteInterpolated", false, "MaintainedValidatorCompatible", true);
-validatorOptions = azElPlannerMethods.corridor.plan();
+validatorOptions = planAzElMotion();
 validatorOptions.GoalTimeMode = options.GoalTimeMode;
 validatorOptions.SampleTime_s = options.SampleTime_s;
 validatorOptions.AllowAzimuthWrapping = options.AllowAzimuthWrapping;
-validation = azElPlannerMethods.corridor.validateTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
+validation = validateAzElTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
 motion.Validation = validation;
 motion.Success = validation.Passed && continuity.C3Continuous;
 % Keep success and failure messages tied to the same independently validated result record.
@@ -214,7 +214,7 @@ if goalTimeMode == "fixedArrival"
     durationScale = requestedDuration_s / sum(baseSpanDuration_s);
     spanDuration_s = baseSpanDuration_s * durationScale;
     controlPoint_deg = endpointControlPoints( controlPoint_deg, degree, initialState, goalState, spanDuration_s);
-    polynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+    polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
         controlPoint_deg, degree, initialState.time_s, spanDuration_s);
     return;
 end
@@ -225,7 +225,7 @@ maximumRetimePassCount = 16;
 for passIndex = 1:maximumRetimePassCount
     spanDuration_s = baseSpanDuration_s * durationScale;
     trialControlPoint_deg = endpointControlPoints( controlPoint_deg, degree, initialState, goalState, spanDuration_s);
-    polynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+    polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
         trialControlPoint_deg, degree, initialState.time_s, spanDuration_s);
     [peakVelocity_deg_s, peakAcceleration_deg_s2, peakJerk_deg_s3] = continuousDerivativePeaks(polynomial);
     requiredGrowth = max([ ...
@@ -247,7 +247,7 @@ controlCount = size(controlPoint_deg, 1);
 unknownIndex = [1 2 3 controlCount - 2 controlCount - 1 controlCount];
 fixedControlPoint_deg = controlPoint_deg;
 fixedControlPoint_deg(unknownIndex, :) = 0;
-    fixedPolynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+    fixedPolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
     fixedControlPoint_deg, degree, initialState.time_s, spanDuration_s);
 endpointMatrix = zeros(6);
 
@@ -255,7 +255,7 @@ endpointMatrix = zeros(6);
 for basisIndex = 1:numel(unknownIndex)
     basisControlPoint_deg = fixedControlPoint_deg;
     basisControlPoint_deg(unknownIndex(basisIndex), :) = 1;
-    basisPolynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+    basisPolynomial = azElInternal.motion.convertBsplineToPolynomial( ...
         basisControlPoint_deg, degree, initialState.time_s, spanDuration_s);
     endpointMatrix(:, basisIndex) = endpointVector(basisPolynomial, 1) - endpointVector(fixedPolynomial, 1);
 end
@@ -329,11 +329,11 @@ motion.RepresentationDiagnostics = struct( ...
     "RelativeTimingParameterCount", 0, "TotalParameterCount", 0, ...
     "InteriorRouteInterpolated", true, "MaintainedValidatorCompatible", true, "ProfileFamily", "straightJerkSwitching");
 motion.Continuity = continuityDiagnostics(polynomial);
-validatorOptions = azElPlannerMethods.corridor.plan();
+validatorOptions = planAzElMotion();
 validatorOptions.GoalTimeMode = options.GoalTimeMode;
 validatorOptions.SampleTime_s = options.SampleTime_s;
 validatorOptions.AllowAzimuthWrapping = options.AllowAzimuthWrapping;
-motion.Validation = azElPlannerMethods.corridor.validateTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
+motion.Validation = validateAzElTrajectory( motion, [], initialState, goalState, limits, validatorOptions);
 motion.Success = motion.Validation.Passed;
 if motion.Success
     motion.Message = "The straight jerk-switching quintic passed independent validation.";
@@ -626,5 +626,5 @@ motion = struct( ...
     "MaximumVelocityResidual_deg_s", NaN, ...
     "MaximumAccelerationResidual_deg_s2", NaN, ...
     "MaximumJerkResidual_deg_s3", NaN, "C3Continuous", false), ...
-    "Validation", azElPlannerMethods.corridor.validateTrajectory(), "Options", options);
+    "Validation", validateAzElTrajectory(), "Options", options);
 end

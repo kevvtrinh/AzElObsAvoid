@@ -8,7 +8,7 @@ function result = planAzElMovingTargetIntercept(varargin)
 %       obstacles, initialState, targetMotion, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Adapt a sampled moving target to the selected planAzElMotion method.
+%   - Adapt a sampled moving target to planAzElMotion.
 %     Specified-time mode makes one planner call; earliest mode makes a
 %     bounded chronological search and then bisects only the first observed
 %     feasible time bracket.
@@ -25,8 +25,7 @@ function result = planAzElMovingTargetIntercept(varargin)
 %       SpecifiedInterceptTime_s is required for specifiedTime.
 %       MaximumSearchDuration_s defaults to 60.
 %       MatchTargetVelocity and MatchTargetAcceleration default false.
-%       PlannerOptions is a partial planAzElMotion option struct, including
-%       PlannerMethod equal to "corridorQuintic" or "hs3".
+%       PlannerOptions is a partial planAzElMotion option struct.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planAzElMotion result)
@@ -46,7 +45,7 @@ defaults = struct( ...
     "SpecifiedInterceptTime_s", NaN, ...
     "MaximumSearchDuration_s", 60, ...
     "MatchTargetVelocity", false, "MatchTargetAcceleration", false, ...
-    "PlannerOptions", struct("PlannerMethod", "corridorQuintic"));
+    "PlannerOptions", struct());
 if nargin == 0
     result = defaults;
     return;
@@ -92,17 +91,6 @@ validateattributes(options.MaximumSearchDuration_s, {'numeric'}, {'real', 'finit
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planAzElMovingTargetIntercept:InvalidPlannerOptions", "PlannerOptions must be a scalar struct.");
 end
-plannerMethod = "corridorQuintic";
-plannerOptions = options.PlannerOptions;
-if isfield(plannerOptions, "PlannerMethod") && ~isempty(plannerOptions.PlannerMethod)
-    selectedDefaults = planAzElMotion(plannerOptions.PlannerMethod);
-    plannerMethod = selectedDefaults.PlannerMethod;
-end
-if isfield(plannerOptions, "PlannerMethod")
-    plannerOptions = rmfield(plannerOptions, "PlannerMethod");
-end
-options.PlannerOptions = plannerOptions;
-
 %% Section 2: Normalize The Sampled Target
 
 % Keep one time orientation and interpolation rule so target position and
@@ -141,7 +129,7 @@ if options.InterceptMode == "specifiedTime"
     end
     [result, interceptSearch] = planAtInterceptTime( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, interceptTime_s, plannerMethod);
+        interpolationMethod, limits, options, interceptTime_s);
 else
     if options.MatchTargetVelocity || options.MatchTargetAcceleration
         error("planAzElMovingTargetIntercept:UnsupportedMovingDerivative", ...
@@ -149,7 +137,7 @@ else
     end
     [result, ~, interceptSearch] = searchEarliestIntercept( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, plannerMethod);
+        interpolationMethod, limits, options);
 end
 if result.Success
     achievedTime_s = result.time_s(end);
@@ -158,9 +146,6 @@ else
     achievedTime_s = NaN;
     achievedTarget_deg = [NaN NaN];
 end
-options.PlannerOptions.PlannerMethod = plannerMethod;
-result.Options.PlannerMethod = plannerMethod;
-result.SearchDiagnostics.PlannerMethod = plannerMethod;
 result.Intercept = struct( ...
     "Mode", options.InterceptMode, ...
     "Time_s", achievedTime_s, ...
@@ -174,9 +159,9 @@ end
 
 function [result, selectedTime_s, search] = searchEarliestIntercept( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, plannerMethod)
+        interpolationMethod, limits, options)
 % Find the earliest validated fixed-time intercept within a bounded, deterministic time grid and refine its first observed bracket.
-plannerDefaults = planAzElMotion(plannerMethod);
+plannerDefaults = planAzElMotion();
 arrivalTolerance_s = plannerDefaults.ArrivalTimeTolerance_s;
 if isfield(options.PlannerOptions, "ArrivalTimeTolerance_s")
     arrivalTolerance_s = options.PlannerOptions.ArrivalTimeTolerance_s;
@@ -201,7 +186,7 @@ for timeIndex = 1:numel(coarseTime_s)
     queryTime_s = coarseTime_s(timeIndex);
     [trial, ~] = planAtInterceptTime( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, queryTime_s, plannerMethod);
+        interpolationMethod, limits, options, queryTime_s);
     trialCount = trialCount + 1;
     if trial.Success
         result = trial;
@@ -224,7 +209,7 @@ while isfinite(selectedTime_s) && ...
     queryTime_s = 0.5 * (lowerTime_s + selectedTime_s);
     [trial, ~] = planAtInterceptTime( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, queryTime_s, plannerMethod);
+        interpolationMethod, limits, options, queryTime_s);
     trialCount = trialCount + 1;
     refinementCount = refinementCount + 1;
     if trial.Success
@@ -251,7 +236,7 @@ end
 
 function [result, search] = planAtInterceptTime( ...
         obstacles, initialState, targetTime_s, targetPosition_deg, ...
-        interpolationMethod, limits, options, interceptTime_s, plannerMethod)
+        interpolationMethod, limits, options, interceptTime_s)
 % Solve one fixed-time intercept using the selected production planner.
 terminalPosition_deg = interp1( targetTime_s, targetPosition_deg, interceptTime_s, interpolationMethod);
 [terminalVelocity_deg_s, terminalAcceleration_deg_s2] = targetDerivatives(targetTime_s, targetPosition_deg, ...
@@ -269,7 +254,6 @@ goalState = struct( ...
     "acceleration_deg_s2", terminalAcceleration_deg_s2, ...
     "targetTime_s", targetTime_s, "targetPosition_deg", targetPosition_deg, "InterpolationMethod", interpolationMethod);
 plannerOptions = options.PlannerOptions;
-plannerOptions.PlannerMethod = plannerMethod;
 plannerOptions.GoalTimeMode = "fixedArrival";
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, plannerOptions);

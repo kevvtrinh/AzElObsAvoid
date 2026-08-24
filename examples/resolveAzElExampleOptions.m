@@ -108,18 +108,7 @@ end
 
 %% Section 2: Forward Only Public Planner Options
 
-% Resolve the method first so HS3 examples see HS3-specific option names and
-% corridor examples retain the no-NLP defaults without a mixed option record.
-plannerMethod = "corridorQuintic";
-if isfield(scenarioDefaults, "PlannerMethod") && ...
-        ~isempty(scenarioDefaults.PlannerMethod)
-    plannerMethod = scenarioDefaults.PlannerMethod;
-end
-if isfield(normalizedOverrides, "PlannerMethod") && ...
-        ~isempty(normalizedOverrides.PlannerMethod)
-    plannerMethod = normalizedOverrides.PlannerMethod;
-end
-plannerOptions = planAzElMotion(plannerMethod);
+plannerOptions = planAzElMotion();
 plannerNames = string(fieldnames(plannerOptions));
 
 % Apply recognized scenario planner defaults without forwarding display-only fields.

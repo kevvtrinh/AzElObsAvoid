@@ -137,13 +137,13 @@ end
 
 candidateTimer = tic;
 [motion, compactDiagnostics] = ...
-    azElPlannerMethods.corridor.internal.motion.solveCompactC3Candidate( ...
+    azElInternal.motion.solveCompactC3Candidate( ...
     seeds(visibilitySeedIndex), obstacles, initialState, goalState, ...
     limits, plannerOptions);
 motion.OptimizerDiagnostics.CompactC3 = compactDiagnostics;
 candidateWallTime_s = toc(candidateTimer);
 validationTimer = tic;
-validation = azElPlannerMethods.corridor.validateTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
+validation = validateAzElTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
 validationTime_s = toc(validationTimer);
 
 %% Section 5: Plot The Returned Evidence

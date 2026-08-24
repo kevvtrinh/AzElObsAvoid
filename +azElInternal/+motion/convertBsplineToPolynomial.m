@@ -1,7 +1,7 @@
 function polynomial = convertBsplineToPolynomial(controlPoint_deg, degree, initialTime_s, spanDuration_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   polynomial = azElPlannerMethods.corridor.internal.motion.convertBsplineToPolynomial( ...
+%   polynomial = azElInternal.motion.convertBsplineToPolynomial( ...
 %       controlPoint_deg, degree, initialTime_s, spanDuration_s)
 %**************************************************************************
 % PURPOSE

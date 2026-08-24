@@ -2663,3 +2663,68 @@ while `plan.md` changes by +51/-61 and therefore shrinks overall. New source is
 the 139-physical-line shared compact candidate adapter and the 41-physical-line
 clearance helper; they centralize maintained planner/benchmark behavior rather
 than moving legacy code between files.
+
+
+## Quintic-only direct-planner verification — 2026-08-24
+
+### Scope
+
+Branch `quintic-only` was created from committed `325-full-suite`
+`9439a43`. The method dispatcher, complete superseded planner package,
+method-qualified corridor facade, dedicated tests/options, and standalone
+scaling CSV were removed. The retained quintic implementation moved under
+`+azElInternal`, and `planAzElMotion` now calls it directly.
+
+### Static and dependency checks
+
+- Focused Code Analyzer gate: 10 public/moved files, zero findings.
+- Full Code Analyzer gate: 81 MATLAB files, zero findings.
+- Active-source search excluding historical evidence records:
+  zero `hs3` and zero `azElPlannerMethods` matches.
+- Filesystem audit: no method-package or removed-planner path remains.
+- The maintained compatibility value
+  `MotionMethod="corridorQuintic"` does not dispatch behavior.
+
+### Automated tests
+
+The complete remaining suite passed 77/77 with zero failures or incomplete
+tests in 216.3257 seconds:
+
+- `testAzElPlanner`;
+- `testFixedDurationAffineModel`;
+- `testCorridorPlannerDynamicTiming`;
+- `testObstacleInfrastructure`;
+- `testExampleContracts`;
+- `testPlannerStageTiming`.
+
+The expected two-vertex normalization warning remained visible and was the only
+reported warning in this gate.
+
+### Maintained examples
+
+All 18 examples ran headlessly and serially. Seventeen returned successful,
+independently validated, collision-free, kinematically certified quintic
+motions. `exampleNoPathAzElMotion` returned `Success=false`,
+`TerminationReason="noValidatedSeed"`, and passed its independent expected-
+failure contract. Motion durations exactly matched the committed compact
+baseline. The measured rows and wall times are appended to `benchmark.csv`
+under source `9439a43+quintic-only-worktree`.
+
+The first fresh-process matrix launcher encountered a MATLAB startup
+`File system inconsistency` before example code ran. A direct fresh-process
+retry of `exampleAlternatingSlalom` passed. The remaining examples then ran
+serially in one MATLAB process, with each contract asserted and printed before
+the next example began.
+
+### Graphics
+
+- Visible `exampleObstacleFreeAzElMotion`: success, independent validation,
+  and three figures.
+- Hidden `exampleNoPathAzElMotion`: expected validated failure, two diagnostic
+  figures, 15 rejected transitions, and no selected motion.
+
+### Limits
+
+These checks establish the migrated branch, maintained scenarios, and focused
+synthetic contracts. They do not prove global completeness, global optimality,
+or a uniform runtime improvement.

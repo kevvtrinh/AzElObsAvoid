@@ -1,479 +1,148 @@
 # Azimuth/Elevation Obstacle-Avoidance Planner
 
-This branch exposes two Az/El planning selections behind one public interface.
-The compact corridor planner is the immutable production baseline. The `hs3`
-selection composes that same baseline with bounded optional nonlinear
-improvement; it is not a second isolated planner:
+This branch contains one production planner:
 
-| Planner | `PlannerMethod` | Default? | Motion strategy |
-| --- | --- | :---: | --- |
-| Compact corridor | `"corridorQuintic"` | Yes | Neutral bounded topology seeds followed by compact C3/C4 quintic motion and canonical independent validation. It uses no HS3 or nonlinear-programming solve. |
-| Compact + HS3 | `"hs3"` | No | First preserves the compact result, then optionally tries bounded HS3 finite-jerk improvement with `fmincon`. Improvement is off by default. |
+```matlab
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, options);
+```
 
-Both selections consume the same neutral topology, corridor-certificate,
-result-schema, obstacle, query, and validation owners. Selecting `hs3` always
-runs the compact baseline first. A valid baseline is immutable: rejected,
-invalid, equal, or worse HS3 trials remain diagnostic evidence and cannot
-replace it. A strictly improving, independently validated HS3 trial may replace
-the selected trajectory only when improvement is explicitly enabled.
+The planner generates a bounded deterministic set of geometric and timed
+topology seeds, constructs continuous corridor-constrained quintic motion, and
+independently validates the complete time-parameterized result. It returns the
+earliest validated candidate from the finite set it attempted. This is not a
+claim of global path completeness or global time optimality.
 
-The HS3 package currently owns 1,200 noncomment lines, exactly at its cap,
-but that count does not include its compact baseline or neutral dependencies.
-The present root composition therefore transitively depends on the corridor
-package pending neutral extraction; it is not an independently removable
-HS3 closure and no whole-closure 1,200-line claim is made.
+## Requirements
 
-The corridor package originated at `325-less-nlp` commit
-`28526638886b69efdf6d697a942ad2c1207bcc04` and now contains the compact
-replacement documented in its local guide. The HS3 snapshot comes from
-`plan-325` commit `5a067112a9f880d015f52fb97538a99010871478`.
-See the [method-package guide](+azElPlannerMethods/README.md), the
-[corridor guide](+azElPlannerMethods/+corridor/README.md), and the
-[HS3 guide](+azElPlannerMethods/+hs3/README.md) for current ownership and
-dependency details.
+- MATLAB R2024b or a compatible release.
+- Optimization Toolbox for the bounded affine/QP corridor solve.
 
 ## Quick start
 
-### Default corridor planner
-
-The zero-input defaults call and a planning call without options both select
-`corridorQuintic`:
-
 ```matlab
-options = planAzElMotion();
-
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
-```
-
-The explicit form is equivalent:
-
-```matlab
-options = planAzElMotion("corridorQuintic");
-```
-
-### Compact + HS3 composition
-
-Ask for the HS3 defaults, then pass them to the same planning function:
-
-```matlab
-options = planAzElMotion("hs3");
-
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
-```
-
-Those defaults set `EnableHs3Improvement=false`, so the selected motion remains
-the validated compact baseline. Opt in explicitly to bounded improvement:
-
-```matlab
-options.EnableHs3Improvement = true;
-options.MaximumHs3ImprovementTime_s = 15;
-```
-
-A partial options structure can select either method:
-
-```matlab
-options = struct( ...
-    "PlannerMethod", "hs3", ...
-    "MaximumSeedCount", 3);
-```
-
-Accepted selector values are exactly `"corridorQuintic"` and `"hs3"`, with
-case normalized by the public dispatcher. An invalid name is an error.
-
-`PlannerMethod` is the public two-composition selector. The corridor snapshot also
-retains `MotionMethod="corridorQuintic"` as a compatibility field. Changing
-`MotionMethod` does not select HS3.
-
-## Minimal fixed-goal example
-
-```matlab
-obstacles = makeAzElObstacleData( ...
-    "protected rectangle", ...
-    [0; 20], ...
-    [-1; 1; 1; -1], ...
-    [-2; -2; 2; 2], ...
-    0.2);
-
 initialState = struct( ...
     "time_s", 0, ...
-    "position_deg", [-5 0]);
+    "position_deg", [-5 0], ...
+    "velocity_deg_s", [0 0], ...
+    "acceleration_deg_s2", [0 0]);
 
 goalState = struct( ...
     "time_s", 12, ...
-    "position_deg", [5 0]);
+    "position_deg", [5 0], ...
+    "velocity_deg_s", [0 0], ...
+    "acceleration_deg_s2", [0 0]);
 
 limits = struct( ...
     "maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [1 1], ...
     "maxJerk_deg_s3", [2 2]);
 
-options = planAzElMotion("corridorQuintic");
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
+options = planAzElMotion();
+options.GoalTimeMode = "earliestArrival";
+
+result = planAzElMotion([], initialState, goalState, limits, options);
 ```
 
-Replace the defaults call with `planAzElMotion("hs3")` to run the same
-physical request through the compact-baseline-plus-HS3 composition.
+Use `makeAzElObstacleData` for static or time-indexed polygons and
+`makeMovingAzElObstacleData` for moving shapes. The constructors retain
+original and protected geometry and apply each requested safety margin once.
 
-## Public planning contract
+## Public contract
 
-The public fixed-goal interface is:
+`initialState` and `goalState` require:
 
-```matlab
-result = planAzElMotion( ...
-    obstacles, initialState, goalState, limits, options);
-```
+- `time_s`;
+- a one-by-two `position_deg` in `[azimuth elevation]` order.
 
-### Obstacles
+Velocity and acceleration default to zero. A sampled moving goal additionally
+uses increasing `targetTime_s`, matching `targetPosition_deg`, and an
+optional `InterpolationMethod` of `"linear"` or `"pchip"`.
 
-Use `makeAzElObstacleData` for static or time-indexed polygon histories and
-`makeMovingAzElObstacleData` for moving shapes. Safety margins are applied by
-the public obstacle constructors exactly once. Both selections retain original
-and protected geometry separately.
-
-`obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
-Obstacle history coordinates use degrees and history times use seconds.
-
-### Initial and goal states
-
-Each state requires:
-
-- `time_s`: scalar time in seconds;
-- `position_deg`: one-by-two `[azimuth elevation]` position in degrees.
-
-Optional `velocity_deg_s` and `acceleration_deg_s2` fields default to zero.
-A moving goal additionally supplies increasing `targetTime_s`, matching
-`targetPosition_deg`, and its interpolation method.
-
-### Limits
-
-The required physical limits are:
+`limits` requires positive one-by-two values for:
 
 - `maxVelocity_deg_s`;
 - `maxAcceleration_deg_s2`;
 - `maxJerk_deg_s3`.
 
-Each is a positive one-by-two `[azimuth elevation]` limit. Optional
-`azimuthInterval_deg` and `elevationInterval_deg` fields define the workspace;
-their defaults are `[-180 180]` and `[-90 90]` degrees.
+Optional `azimuthInterval_deg` and `elevationInterval_deg` fields define
+the workspace and default to `[-180 180]` and `[-90 90]` degrees.
 
-### Options
+Call `planAzElMotion()` for fully resolved defaults. Partial option structures
+are accepted, and empty fields use defaults. The maintained
+`MotionMethod="corridorQuintic"` value is a compatibility field, not a
+dispatcher.
 
-Call `planAzElMotion("corridorQuintic")` or `planAzElMotion("hs3")` to inspect
-the exact options accepted by that method. Partial override structures are
-accepted, and empty fields retain method defaults. Avoid copying
-HS3-only solver options into the compact selection.
-
-Both public selections support fixed-arrival and earliest-arrival requests through
-`GoalTimeMode`. They use bounded deterministic proposal sets, so a successful
-result is an independently validated motion found by the selected finite
-search—not a proof of global completeness or global time optimality.
+Expected no-path, work-limit, and dynamic-infeasibility outcomes return
+`Success=false` with a machine-readable `TerminationReason`. Invalid public
+contracts throw identified errors. Success and failure preserve the same result
+field order.
 
 ## Moving-target interception
 
-The public call forms are:
+`planAzElMovingTargetIntercept` adapts sampled target motion to the same public
+planner:
 
 ```matlab
-result = planAzElMovingTargetIntercept( ...
-    initialState, targetMotion, limits, interceptOptions);
+interceptOptions = planAzElMovingTargetIntercept();
+interceptOptions.InterceptMode = "earliest";
+interceptOptions.PlannerOptions = planAzElMotion();
 
 result = planAzElMovingTargetIntercept( ...
     obstacles, initialState, targetMotion, limits, interceptOptions);
 ```
 
-Select the planner inside `PlannerOptions`:
-
-```matlab
-interceptOptions = planAzElMovingTargetIntercept();
-interceptOptions.InterceptMode = "earliest";
-interceptOptions.PlannerOptions = planAzElMotion("hs3");
-```
-
-One root adapter owns interception for both selections. Earliest interception
-performs a bounded chronological sequence of fixed-arrival trials and refines
-the first observed feasible bracket. Specified-time interception performs one
-fixed-arrival trial. Every trial calls `planAzElMotion`, so `PlannerMethod`
-changes the planner composition without changing target interpolation,
-derivative matching, search order, or the `Intercept.Search` schema.
+Specified-time mode evaluates one fixed arrival. Earliest mode evaluates a
+bounded chronological set of fixed-arrival trials and refines the first
+observed feasible bracket.
 
 ## Results and diagnostics
 
-Success and expected failure return the same stable result structure. Important
-fields include:
+Important result fields include:
 
 - `Success`, `Message`, and `TerminationReason`;
-- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, and
-  `jerk_deg_s3` on success;
-- `Seeds`, `SeedSummaries`, and `SelectedSeedIndex`;
-- `Validation` and complete input records;
-- `SearchDiagnostics`, including graph and rejection evidence.
+- sampled position, velocity, acceleration, and jerk histories;
+- the exact piecewise polynomial trajectory;
+- generated seeds, per-seed summaries, and the selected seed;
+- original inputs, resolved options, and deterministic seed;
+- independent collision and kinematic validation;
+- search diagnostics and exclusive stage timing.
 
-Both selections expose the same exclusive wall-time accounting under
-`result.SearchDiagnostics.StageTiming`:
-
-- `TopologyElapsedTime_s`;
-- `CorridorConstructionElapsedTime_s`;
-- `MotionSolvingElapsedTime_s`;
-- `CollisionCheckingElapsedTime_s`;
-- `FinalValidationElapsedTime_s`;
-- `UnattributedElapsedTime_s` and `TotalElapsedTime_s`.
-
-The five named stages do not overlap. `UnattributedElapsedTime_s` retains
-public-call work outside those stages, and all six contributions add to the
-independently measured total.
-
-The selected public composition is echoed in both:
-
-```matlab
-result.Options.PlannerMethod
-result.SearchDiagnostics.PlannerMethod
-```
-
-`PlannerMethod="hs3"` identifies the requested composition, not necessarily
-the selected trajectory source. `result.SelectedMotionSource` remains
-`"corridorQuintic"` when improvement is disabled, not attempted, rejected, or
-invalid. It becomes `"hs3"` only when a canonical validation pass and the
-monotone arrival/jerk comparison accept an HS3 candidate. Detailed attempted
-and rejected work remains in `result.CompositionDiagnostics.Hs3`.
-
-Moving-target results also restore it under:
-
-```matlab
-result.Intercept.Options.PlannerOptions.PlannerMethod
-```
-
-Expected no-path, work-limit, or dynamic-infeasibility outcomes return
-`Success=false` with a recognized termination reason and retained diagnostic
-data. Invalid input contracts throw errors. Selecting corridor never invokes
-HS3. Selecting HS3 deliberately starts from the compact result and, only when
-enabled, may try bounded recovery or strict improvement; this is composition,
-not an implicit fallback after an unrelated method fails.
-
-Use `validateAzElTrajectory` for independent complete timed-trajectory
-validation and `plotAzElMotion` to visualize returned motion or preserved
-failure diagnostics. Plotting does not rerun planning.
-
-## What differs between the methods
-
-### Corridor quintic
-
-- Default public planner.
-- Contains no HS3 path and does not call `fmincon`.
-- Uses a finite visibility/timing seed portfolio.
-- Builds corridor-constrained continuous quintic motion and an exact
-  jerk-switching profile for applicable straight requests.
-- Uses bounded linear or quadratic feasibility and timing work rather than a
-  nonlinear program.
-- Can still miss feasible topology or return a slower locally constructed
-  motion; no completeness or global-optimum claim is made.
-
-### HS3
-
-- Must be selected explicitly.
-- Preserves the complete compact result as an immutable baseline.
-- Defaults `EnableHs3Improvement` to `false`.
-- Uses HS3 collocation and `fmincon` only for explicitly enabled bounded
-  nonlinear improvement or recovery of a failed compact baseline.
-- Exposes method-specific collocation, mesh, iteration, evaluation, and HS3
-  time-budget options.
-- Records `MaximumMeshRefinementPasses` for compatibility and diagnostics, but
-  the current composite improver reports `RefinementSupported=false` and does
-  not perform mesh-refinement passes.
-- Enforces time budgets cooperatively through setup checks and the `fmincon`
-  output callback. One solver evaluation may finish after its deadline, so the
-  measured elapsed time can overrun the requested budget.
-- Is a local nonlinear method; conditioning warnings or local failure can
-  occur even when another proposal might be feasible.
-
-The package currently owns the facade, option resolver, composite improver,
-and HS3 solver internals. Neutral search, corridor certificates, result
-construction, and final validation live outside it. The current noncomment
-package count is stated in the local HS3 guide and is capped at 1,200.
+`plotAzElMotion` consumes the returned result. It does not rerun planning and
+can plot failed search diagnostics without a selected trajectory.
 
 ## Repository layout
 
 ```text
-planAzElMotion.m                    public fixed/moving-goal dispatcher
-planAzElMovingTargetIntercept.m     shared chronological intercept adapter
+planAzElMotion.m                 public planner and orchestration
+planAzElMovingTargetIntercept.m  moving-target adapter
+validateAzElTrajectory.m         independent trajectory validator
+queryAzElTimeObstacle.m          shared time-aware collision query
+plotAzElMotion.m                 result and failure visualization
 
-+azElPlannerMethods/
-    README.md                       selection and dependency guide
-    +corridor/
-        README.md
-        plan.m
-        +internal/
-            +obstacles/
-            +search/
-            +motion/
-    +hs3/
-        README.md
-        plan.m                      compatibility facade
-        resolvePlannerOptions.m
-        improve.m                   bounded composite improvement
-        +internal/
-            +motion/
++azElInternal/
+  +geometry/                     reusable polygon geometry
+  +motion/                       quintic construction and retiming
+  +obstacles/                    prepared obstacle histories
+  +search/                       topology and dynamic-route helpers
+  planner schema, options, timing, and certificates
 
-+azElInternal/                     neutral planner invariants
-    generateTopologySeeds.m
-    buildSeedCorridor.m
-    certifySeedCorridor.m
-    emptyPlannerResult.m
-
-makeAzElObstacleData.m              protected polygon construction
-makeMovingAzElObstacleData.m        moving polygon construction
-inflateAzElObstacleData.m           explicit obstacle inflation helper
-validateAzElTrajectory.m            public independent validation
-plotAzElMotion.m                    result and diagnostics plotting
-
-examples/                           maintained deterministic scenarios
-sandbox/                            persistent manual scene builder
-tests/                              automated contracts and regressions
-benchmarks/                         focused scaling and method evidence
-benchmark.csv                       chronological measured example records
-branch_assessment.md                strengths, weaknesses, and limitations
-verification.md                     commands and historical evidence
+examples/                        maintained runnable scenarios
+tests/                           focused and integration tests
+benchmarks/                      reproducible benchmark drivers
+sandbox/                         interactive planner UI
 ```
 
-The package folders are backend implementation boundaries, not new application
-entry points. Prefer the root public functions unless you are maintaining the
-dispatcher itself.
+## Verification
 
-## Maintained examples
-
-Add the example folder once:
+Run focused tests from the repository root:
 
 ```matlab
-addpath("examples");
+results = runtests("tests");
+assert(all([results.Passed]));
 ```
 
-Run a headless example with either method:
-
-```matlab
-result = exampleAzElPlanning(struct( ...
-    "PlannerMethod", "corridorQuintic", ...
-    "PlotOutputs", false, ...
-    "FigureVisible", "off"));
-```
-
-The 18 noninteractive maintained examples are:
-
-1. `exampleAlternatingSlalom`
-2. `exampleAzElPlanning`
-3. `exampleDenseConcaveAzElMotion`
-4. `exampleFortyMovingCircleGrid`
-5. `exampleFourAcceleratingCircles`
-6. `exampleInterceptMovingTargetAtSetTime`
-7. `exampleInterceptMovingTargetEarliest`
-8. `exampleMovingBarrierWait`
-9. `exampleMovingCircleNoAzimuthWrap`
-10. `exampleMovingDeformingUSOutlineVisibility`
-11. `exampleNoPathAzElMotion`
-12. `exampleObstacleFreeAzElMotion`
-13. `exampleOpeningUShapedAzElTimeSpace`
-14. `exampleStraightTargetAlternatingOcclusion`
-15. `exampleTargetExitsObstacle`
-16. `exampleTwoOpposingUVisibilityGraph`
-17. `exampleUShapedAzElTimeSpace`
-18. `exampleUSOutlineExtremeVisibility`
-
-They cover static, moving, and deforming obstacles; concave and geographic
-geometry; waiting; dense fields; moving targets; azimuth wrapping; fixed and
-earliest arrival; and expected no-path diagnostics.
-
-`exampleAzElInteractiveSandbox` is a manual one-run example. The persistent
-two-tab scene builder lives under `sandbox/`; see the
-[sandbox guide](sandbox/README.md). Its guided input order is start, goal or
-first endpoint, then obstacle drawing. Interactive tools are not part of the
-headless maintained-example matrix.
-
-## Requirements
-
-- MATLAB with `polyshape`, graph, table, string, and current graphics support.
-- Optimization Toolbox only when HS3 improvement is enabled; it uses
-  `fmincon`. The default compact path does not use nonlinear programming.
-- A graphical MATLAB session for visible plots and the interactive sandbox.
-  Planning, validation, and noninteractive examples can run headlessly.
-- Geographic-outline examples may require the MATLAB geographic data and
-  toolbox support used by their private geometry helpers.
-
-No network service, learned model, or external planner process is required.
-
-## Verification status
-
-Historical evidence remains in `benchmark.csv`, `verification.md`, and
-`branch_assessment.md`:
-
-- The Plan-325 HS3 source recorded a complete 18-example matrix with 17
-  independently validated successes and the expected validated no-path result,
-  plus a historical 59-test pass.
-- The 325-less-NLP corridor source recorded the same 17-success/one-expected-
-  failure example coverage and a historical 59-test pass. Its final comments
-  and sandbox-only follow-up were explicitly not rerun in that session.
-
-Those historical rows prove only the source branches at their recorded
-revisions. A pre-composition combined-branch run covered the former isolated
-selector paths:
-
-- All 18 noninteractive maintained examples exactly matched the corridor
-  source baseline at the gated categorical fields and stable metrics.
-- The same 18 examples exactly matched the HS3 source baseline after applying
-  only the source branch's recorded collocation and improvement-time settings.
-- Each method produced 17 independently validated successes and the expected
-  validated `noValidatedSeed` result, for 36 fresh example runs with zero gated
-  differences.
-- Historical pre-composition copies demonstrated each former method snapshot
-  in isolation. That evidence does not establish current HS3 removability,
-  because the current HS3 selection first calls the corridor compact baseline.
-- MATLAB Code Analyzer checked all 109 intended MATLAB files and reported zero
-  messages. Two unrelated untracked report scripts were deliberately excluded.
-
-That pre-composition evidence does not prove the current default-off composite
-policy, HS3 acceptance rule, timeout diagnostics, or current dependency
-closure. Use the latest test and benchmark records for those claims.
-
-The current compact-corridor cutover supersedes the corridor motion evidence
-above: its final source passed 133/133 tests, all 18 maintained example gates,
-the 1/5/10/20-turn and 12-hairpin benchmarks, success and expected-failure
-graphics smokes, and Code Analyzer across 99 intended MATLAB files. Every
-successful maintained-example and scaling duration met or beat its frozen
-legacy value. Exact current rows and known finite-search limitations are in
-`verification.md` and `benchmark.csv`.
-
-Exact measurements and source tags are appended to `benchmark.csv` and
-explained in `verification.md`; historical rows were not replaced.
-
-The full tracked MATLAB test tree is run with:
-
-```matlab
-results = runtests("tests", "IncludeSubfolders", true);
-assertSuccess(results);
-```
-
-The source-branch rows remain historical evidence. Fresh verification claims
-for later combined-branch changes are recorded in `verification.md` and
-`branch_assessment.md`; the visible interactive sandbox remains a manual tool
-outside the automated matrix.
-
-## Known limits
-
-- Both public selections use finite deterministic proposal sets and are not complete.
-- Neither planner proves global minimum arrival or global optimality.
-- A moving obstacle can require topology or timing proposals outside the
-  configured finite portfolio.
-- Azimuth wrapping with obstacles or moving goals remains unsupported.
-- HS3 can encounter local minima, infeasible nonlinear iterates, or numerical
-  conditioning warnings.
-- HS3 mesh refinement is currently unsupported even though the requested pass
-  count is retained in diagnostics.
-- The cooperative HS3 timeout may overrun while an active solver callback or
-  function evaluation returns.
-- Corridor motion can remain conservative or use small-clearance boundary
-  routes even when a different smooth trajectory exists.
-- The HS3 composition currently requires the corridor compact package. Removing
-  corridor is therefore unsupported until the baseline is extracted to a
-  neutral owner. There is no automatic discovery or silent fallback.
-
-Keep unfavorable failures and runtime results visible. A successful example
-demonstrates only the exercised case family, not universal feasibility.
+Maintained examples support headless overrides such as
+`PlotOutputs=false` and `FigureVisible="off"`. Benchmark history and
+branch assessments record measured behavior and limitations; historical rows
+are evidence, not a promise that every older implementation remains present.

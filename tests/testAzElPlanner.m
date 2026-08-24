@@ -48,10 +48,7 @@ verifyEqual(testCase, string(fieldnames(options)), [ ...
     "InterceptMode"; "SpecifiedInterceptTime_s"; ...
     "MaximumSearchDuration_s"; "MatchTargetVelocity"; ...
     "MatchTargetAcceleration"; "PlannerOptions"]);
-verifyEqual(testCase, string(fieldnames(options.PlannerOptions)), ...
-    "PlannerMethod");
-verifyEqual(testCase, options.PlannerOptions.PlannerMethod, ...
-    "corridorQuintic");
+verifyEmpty(testCase, fieldnames(options.PlannerOptions));
 end
 
 function testWorkspaceIntervalsBelongToLimits(testCase)
@@ -634,14 +631,12 @@ testSupport.verifySharedPlannerContract( ...
 end
 
 function testExactInteriorVelocityPeakAtLimitPassesValidation(testCase)
-% Verify the canonical exact-root bound accepts a feasible curve even when
-% the caller carries the HS3 method tag formerly routed to Bernstein bounds.
+% Verify the canonical exact-root bound accepts a feasible curve.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [4 0]);
 goalState = testCase.TestData.Fixtures.State(1, [2 / 3 0], [0 0], [-4 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([1 1], [5 5], [9 9]);
 trajectory = testCase.TestData.Fixtures.InteriorVelocityPeakTrajectory();
 options = fixedOptions();
-options.PlannerMethod = "hs3";
 validation = validateAzElTrajectory(trajectory, [], initialState, goalState, limits, options);
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyTrue(testCase, validation.VelocityWithinLimits);

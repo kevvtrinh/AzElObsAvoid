@@ -118,7 +118,7 @@ result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, l
 
 exampleValidation = validateAzElExampleResult( ...
     result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
-obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+obstacleQueryOptions = struct();
 
 targetOccupied = queryAzElTimeObstacle( ...
     result.Inputs.obstacles, targetPosition_deg(:, 1), targetPosition_deg(:, 2), targetTime_s, obstacleQueryOptions);
