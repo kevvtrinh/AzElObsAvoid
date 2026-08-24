@@ -56,7 +56,7 @@ end
 validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", "benchmarkCorridorConstrainedQuintic:InvalidPrintControl");
-scenarioConstants = repeatedTurnConstants();
+scenarioConstants = struct();
 plannerOptions = planAzElMotion();
 plannerOptions.GoalTimeMode = "earliestArrival";
 plannerOptions.MaximumSeedCount = 3;
@@ -72,7 +72,8 @@ runIndex = 0;
 % Build and seed each requested geometry scale once so every repetition uses the same route.
 for turnCountIndex = 1:numel(turnCounts)
     turnCount = turnCounts(turnCountIndex);
-    [obstacles, initialState, goalState, limits] = createRepeatedTurnBenchmarkScenario( turnCount, scenarioConstants);
+    [obstacles, initialState, goalState, limits, scenarioConstants] = ...
+        createRepeatedTurnBenchmarkScenario(turnCount);
     obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
     rng(controls.RandomSeed, "twister");
     seedTimer = tic;
@@ -133,30 +134,7 @@ report = struct( ...
     "TurnCounts", turnCounts, "Runs", runTable, "Summary", summaryTable, "MotionResults", {motionResults});
 end
 
-function constants = repeatedTurnConstants()
-% Freeze the maintained repeated-turn geometry and physical limits.
-% SYNTAX
-%   constants = repeatedTurnConstants()
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - constants (scalar scenario-constant structure)
-%**************************************************************************
-% UNITS
-%   - Position is degrees; time is seconds; derivatives use seconds.
-%**************************************************************************
-constants = struct( ...
-    "barrierSpacing_deg", 4, ...
-    "barrierHalfWidth_deg", 0.7, ...
-    "barrierCenterMagnitude_deg", 2.5, ...
-    "barrierHalfHeight_deg", 2.5, ...
-    "safetyMargin_deg", 0.1, ...
-    "goalTimePerStage_s", 5.5, ...
-    "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", [2 2], "elevationInterval_deg", [-5 5]);
-end
+%% Section 5: Local Functions
 
 function environment = benchmarkEnvironment()
 % Record source, MATLAB, toolbox, CPU, and parallel-pool facts.

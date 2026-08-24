@@ -1,13 +1,20 @@
 # HS3 motion
 
-This module owns the remaining HS3 collocation, jerk propagation, constraints,
-objective evaluation, reconstruction, diagnostics, and `fmincon` solve. The
-former deterministic stop-at-waypoint family has been removed; the immutable
-first motion now comes from the compact baseline.
+This module owns Hermite-Simpson collocation, finite-jerk propagation,
+constraints, objective derivatives, reconstruction, diagnostics, and the
+`fmincon` solve used by standalone HS3.
 
-`hs3.improve` decides attempt order and candidate acceptance. The solver
-consumes prepared obstacles and compact seeds; it does not construct scenario
-geometry or relax canonical validation. Its deadline is cooperative: setup and
-output-callback checks stop future work, but an active solver evaluation can
-finish after the requested time and cause measured overrun. Mesh refinement is
-not implemented by the current improver.
+`solveHs3` consumes prepared obstacles and a neutral topology proposal. For
+fixed arrival it uses exact affine boundary and kinematic matrices; earliest
+arrival retains a nonlinear final-time decision with exact jerk-variable
+derivatives and a bounded one-sided time derivative. Complete polynomial
+motion is returned to `hs3.plan` for canonical independent validation.
+
+The planner may rebuild collision linearizations around an HS3 candidate and
+increase collocation segments within configured mesh limits. These are repairs
+inside the HS3 method, not calls to or fallbacks from the compact planner.
+
+The deadline is cooperative: setup and the solver output callback stop future
+work, while an active function evaluation can finish after its requested time.
+Optimizer feasibility is never accepted as planner success without canonical
+trajectory validation.

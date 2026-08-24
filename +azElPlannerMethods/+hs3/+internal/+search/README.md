@@ -1,10 +1,11 @@
-# HS3 search
+# HS3 search ownership
 
-No HS3-local search implementation remains. The compact baseline produces the
-bounded visibility, homology, and timed-search seed portfolio through neutral
-`azElInternal.generateTopologySeeds`. Seeds are proposals and never establish
-planner success.
+No HS3-local graph-search implementation remains. Standalone `hs3.plan`
+obtains bounded visibility, homology, and timed-search proposals directly from
+the neutral `azElInternal.generateTopologySeeds` owner.
 
-When improvement is enabled, `hs3.improve` reuses the immutable baseline's
-seeds in deterministic order. HS3 retains only nonlinear motion work;
-candidate validation and strict improvement comparison use canonical owners.
+Seeds are proposals and never establish planner success. HS3 assigns its own
+collocation mesh, solves each attempted proposal with its Hermite-Simpson
+transcription, and requires canonical validation before selection. The compact
+planner is not called and contributes no seed, result, warm start, fallback, or
+acceptance decision.

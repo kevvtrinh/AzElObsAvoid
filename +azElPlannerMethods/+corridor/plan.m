@@ -61,26 +61,9 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 options = resolvePlannerOptions(defaults, optionOverrides);
-obstacles = combineAzElObstacles(obstacles);
-initialState = normalizeState(initialState, "initialState");
-goalState = normalizeGoalState(goalState);
-limits = normalizeLimits(limits);
-if goalState.time_s <= initialState.time_s
-    error("planAzElMotion:InvalidTimeWindow", "goalState.time_s must be greater than initialState.time_s.");
-end
-hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
-if options.AllowAzimuthWrapping && (~isempty(obstacles) || hasMovingGoal)
-    error("planAzElMotion:UnsupportedWrappedGeometry", ...
-        "AllowAzimuthWrapping is supported only for obstacle-free " + ...
-        "fixed-position goals. Disable wrapping for this request.");
-end
-if options.AllowAzimuthWrapping
-    turnCount = round((initialState.position_deg(1) - goalState.position_deg(1)) / 360);
-    goalState.position_deg(1) = goalState.position_deg(1) + 360 * turnCount;
-    if isfield(goalState, "targetPosition_deg") && ~isempty(goalState.targetPosition_deg)
-        goalState.targetPosition_deg(:, 1) = goalState.targetPosition_deg(:, 1) + 360 * turnCount;
-    end
-end
+[obstacles, initialState, goalState, limits] = ...
+    azElInternal.normalizePlannerRequest( ...
+    obstacles, initialState, goalState, limits, options);
 [result, summaryTemplate] = azElInternal.emptyPlannerResult( ...
     obstacles, initialState, goalState, limits, options, ...
     azElPlannerMethods.corridor.validateTrajectory(), "corridorQuintic");
@@ -97,7 +80,9 @@ end
 
 % Endpoint rejection is deliberately early: search cannot repair an endpoint
 % that is outside the workspace or already inside protected geometry.
-[endpointFeasible, endpointMessage, endpointReason] = validateEndpoints(obstacles, initialState, goalState, limits, options);
+[endpointFeasible, endpointMessage, endpointReason] = ...
+    azElInternal.validatePlannerEndpoints( ...
+    obstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
     result.Message = endpointMessage;
     result.TerminationReason = endpointReason;
@@ -216,146 +201,4 @@ for name = positiveNames
 end
 validateattributes(options.CollisionClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 validateattributes(options.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
-end
-
-function state = normalizeState(state, label)
-% Normalize one fixed endpoint state and derivative defaults.
-if ~isstruct(state) || ~isscalar(state) || ~all(isfield(state, {'time_s', 'position_deg'}))
-    error("planAzElMotion:InvalidState", "%s must be a scalar struct with time_s and position_deg.", label);
-end
-validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
-validateattributes(state.position_deg, {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
-state.time_s = double(state.time_s);
-state.position_deg = double(state.position_deg(:).');
-state = defaultDerivative(state, "velocity_deg_s");
-state = defaultDerivative(state, "acceleration_deg_s2");
-end
-
-function goalState = normalizeGoalState(goalState)
-% Normalize a fixed goal or sampled moving-goal history.
-goalState = normalizeState(goalState, "goalState");
-if isfield(goalState, "targetTime_s") || isfield(goalState, "targetPosition_deg")
-    if ~all(isfield(goalState, {'targetTime_s', 'targetPosition_deg'}))
-        error("planAzElMotion:IncompleteMovingGoal", "targetTime_s and targetPosition_deg must be supplied together.");
-    end
-    validateattributes(goalState.targetTime_s, {'numeric'}, {'real', 'finite', 'vector', 'increasing'});
-    goalState.targetTime_s = double(goalState.targetTime_s(:));
-    if numel(goalState.targetTime_s) < 2
-        error("planAzElMotion:MovingGoalHistoryTooShort", "targetTime_s must contain at least two increasing samples.");
-    end
-    validateattributes(goalState.targetPosition_deg, {'numeric'}, ...
-        {'real', 'finite', '2d', 'ncols', 2, 'nrows', numel(goalState.targetTime_s)});
-    goalState.targetPosition_deg = double(goalState.targetPosition_deg);
-    if goalState.time_s < goalState.targetTime_s(1) || goalState.time_s > goalState.targetTime_s(end)
-        error("planAzElMotion:MovingGoalHorizonOutsideHistory", "goalState.time_s must be inside targetTime_s.");
-    end
-    if ~isfield(goalState, "InterpolationMethod") || isempty(goalState.InterpolationMethod)
-        goalState.InterpolationMethod = "linear";
-    end
-    goalState.InterpolationMethod = string(goalState.InterpolationMethod);
-    if ~isscalar(goalState.InterpolationMethod) || ~any(goalState.InterpolationMethod == ["linear", "pchip"])
-        error("planAzElMotion:InvalidGoalInterpolation", "InterpolationMethod must be 'linear' or 'pchip'.");
-    end
-end
-end
-
-function state = defaultDerivative(state, fieldName)
-% Apply one two-axis zero derivative default at the public boundary.
-if ~isfield(state, fieldName) || isempty(state.(fieldName))
-    state.(fieldName) = [0 0];
-else
-    validateattributes(state.(fieldName), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
-    state.(fieldName) = double(state.(fieldName)(:).');
-end
-end
-
-function limits = normalizeLimits(limits)
-% Validate physical limits and own the workspace intervals.
-requiredFields = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3"];
-if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, cellstr(requiredFields)))
-    error("planAzElMotion:InvalidLimits", "limits must contain velocity, acceleration, and jerk limits.");
-end
-
-% Normalize both axes of every required kinematic limit into finite row vectors.
-for name = requiredFields
-    validateattributes(limits.(name), {'numeric'}, {'real', 'finite', 'positive', 'vector', 'numel', 2});
-    limits.(name) = double(limits.(name)(:).');
-end
-intervalDefaults = struct( "azimuthInterval_deg", [-180 180], "elevationInterval_deg", [-90 90]);
-intervalNames = string(fieldnames(intervalDefaults));
-
-% Fill and validate the azimuth and elevation workspace intervals independently.
-for name = reshape(intervalNames, 1, [])
-    if ~isfield(limits, name) || isempty(limits.(name))
-        limits.(name) = intervalDefaults.(name);
-    end
-    validateattributes(limits.(name), {'numeric'}, ...
-        {'real', 'finite', 'vector', 'numel', 2, 'increasing'}, "planAzElMotion", name);
-    limits.(name) = double(limits.(name)(:).');
-end
-end
-
-function [feasible, message, reason] = validateEndpoints( obstacles, initialState, goalState, limits, options)
-% Return expected endpoint infeasibility without invoking the optimizer.
-goalPosition_deg = azElInternal.goalPositionAtTime( ...
-    goalState, goalState.time_s);
-startIsBlocked = queryAzElTimeObstacle( ...
-    obstacles, initialState.position_deg(1), initialState.position_deg(2), initialState.time_s);
-fixedTerminalIsBlocked = false;
-if options.GoalTimeMode == "fixedArrival"
-    fixedTerminalIsBlocked = queryAzElTimeObstacle( ...
-        obstacles, goalPosition_deg(1), goalPosition_deg(2), goalState.time_s);
-end
-if startIsBlocked || fixedTerminalIsBlocked
-    feasible = false;
-    message = "The protected geometry contains the start or fixed terminal point.";
-    reason = "endpointBlocked";
-    return;
-end
-derivativesWithinLimits = all(abs(initialState.velocity_deg_s) <= limits.maxVelocity_deg_s) && ...
-    all(abs(goalState.velocity_deg_s) <= limits.maxVelocity_deg_s) && ...
-    all(abs(initialState.acceleration_deg_s2) <= ...
-    limits.maxAcceleration_deg_s2) && all(abs(goalState.acceleration_deg_s2) <= limits.maxAcceleration_deg_s2);
-if ~derivativesWithinLimits
-    feasible = false;
-    message = "An endpoint derivative exceeds its physical limit.";
-    reason = "dynamicEndpointInfeasible";
-    return;
-end
-hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
-availableDuration_s = goalState.time_s - initialState.time_s;
-if options.GoalTimeMode == "fixedArrival" || ~hasMovingGoal
-    endpointDisplacement_deg = abs(goalPosition_deg - initialState.position_deg);
-    minimumVelocityDuration_s = max(endpointDisplacement_deg ./ limits.maxVelocity_deg_s);
-    if minimumVelocityDuration_s > availableDuration_s + options.ArrivalTimeTolerance_s
-        feasible = false;
-        message = sprintf( ...
-            "The time window is too short for the endpoint displacement " + ...
-            "at the configured velocity limits (minimum %.6g s, " + ...
-            "available %.6g s). Increase goalState.time_s or the " + ...
-            "velocity limits.", minimumVelocityDuration_s, availableDuration_s);
-        reason = "timeWindowInfeasible";
-        return;
-    end
-end
-endpointPosition_deg = initialState.position_deg;
-if options.GoalTimeMode == "fixedArrival" || ~hasMovingGoal
-    endpointPosition_deg(end + 1, :) = goalPosition_deg;
-end
-positionWithinBounds = all(endpointPosition_deg(:, 2) >= limits.elevationInterval_deg(1)) && ...
-    all(endpointPosition_deg(:, 2) <= limits.elevationInterval_deg(2));
-if ~options.AllowAzimuthWrapping
-    positionWithinBounds = positionWithinBounds && ...
-        all(endpointPosition_deg(:, 1) >= limits.azimuthInterval_deg(1)) && ...
-        all(endpointPosition_deg(:, 1) <= limits.azimuthInterval_deg(2));
-end
-if ~positionWithinBounds
-    feasible = false;
-    message = "An endpoint is outside the configured workspace.";
-    reason = "endpointOutsideWorkspace";
-    return;
-end
-feasible = true;
-message = "";
-reason = "";
 end

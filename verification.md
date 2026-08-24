@@ -1,7 +1,7 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Compact corridor cutover — 2026-08-24](#compact-corridor-cutover--2026-08-24);
+[Standalone Hermite-Simpson restoration — 2026-08-24](#standalone-hermite-simpson-restoration--2026-08-24);
 earlier sections are retained as historical checkpoints.
 
 ## Evidence scope
@@ -2663,3 +2663,62 @@ while `plan.md` changes by +51/-61 and therefore shrinks overall. New source is
 the 139-physical-line shared compact candidate adapter and the 41-physical-line
 clearance helper; they centralize maintained planner/benchmark behavior rather
 than moving legacy code between files.
+
+## Standalone Hermite-Simpson restoration — 2026-08-24
+
+This section supersedes the compact-composition checkpoint above for the
+current worktree. `PlannerMethod="hs3"` dispatches directly to a standalone
+Hermite-Simpson planner. HS3 does not call the compact/corridor planner, use a
+compact result as a seed or fallback, merge method results, or emit composition
+diagnostics. Compact remains a separate public method and appears below only as
+an external frozen comparator.
+
+The HS3 production package contains 1,602 nonblank, noncomment MATLAB lines
+across nine files, below the 2,000-line limit. Exact affine sensitivity maps
+replace decision-variable finite differences for fixed-time constraints and
+most earliest-arrival derivatives. The public planner preserves nonzero
+initial and final velocity and acceleration, uses neutral topology seeds,
+bounded collision relinearization and mesh refinement, and accepts only motion
+that passes the canonical independent validator.
+
+### Final verification matrix
+
+- Complete automated suite: 137 passed, 0 failed, 0 incomplete in 360.861356 s.
+- Maintained examples: 18/18 scenario outcomes passed. This includes 17
+  independently validated successes and the expected diagnosable no-path
+  result. Every success reported `SelectedMotionSource="hs3"`.
+- Focused regression examples: static U 29.484334 s, timed-opening U 20.101672
+  s, and moving-barrier wait 53.121601 s; each passed its scenario validator.
+- Exact-sensitivity tests: 6/6 passed, including nonzero endpoint derivatives,
+  static and deforming obstacles, and event-knot timing.
+- Code Analyzer reported zero messages for the changed dispatcher, HS3 sources,
+  and neutral request helpers. `git diff --check` passed.
+
+### Standalone scaling and hairpin gate
+
+All measurements used the public HS3 dispatch with deterministic seed 325 and
+were independently revalidated. The benchmark rejects compact composition.
+
+| Case | Total wall (s) | HS3 arrival (s) | Frozen compact arrival (s) | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| 1 turn | 3.776525 | 6.61105444584 | 6.60420575985 | pass; HS3 0.006849 s later |
+| 5 turns | 7.563524 | 18.62266933 | 19.8905274829 | pass; HS3 earlier |
+| 10 turns | 63.799021 | 33.5725360484 | 36.3238796555 | pass; HS3 earlier |
+| 20 turns | 64.116174 | 114.561539749 | 68.3588042743 | pass; HS3 materially later |
+| 12 hairpins | 93.339104 | 128.179676226 | 140.56091613 | pass; under 120 s and earlier |
+
+The hairpin run produced a 50-vertex route, returned HS3-owned motion, and
+passed a separately rerun validator. The 20-turn arrival is the clearest
+remaining quality regression; the results do not establish global optimality,
+completeness, or uniform superiority over compact.
+
+### Remaining limitations
+
+Static scenes stop after the first independently valid HS3 topology to protect
+the wall-time budget, so another untried static topology may arrive earlier or
+use less jerk. Timed topology proposals are solved at their input-derived fixed
+arrival before comparison, which preserves their wait law but may miss a faster
+solution on the same topology. The planning deadline is cooperative and can be
+slightly overrun by solver setup or final validation. Several difficult
+earliest-arrival solves still emit near-singular `fmincon` warnings even when
+independent validation passes.

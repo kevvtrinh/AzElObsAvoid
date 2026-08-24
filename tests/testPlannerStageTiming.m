@@ -1,6 +1,6 @@
 function tests = testPlannerStageTiming
 %% Section 0: Header & Readme
-% Verify compact, exclusive planner-stage timing and critical early exits.
+% Verify exclusive stage timing for both independent planner methods.
 tests = functiontests(localfunctions);
 end
 
@@ -111,57 +111,49 @@ verifyEqual(testCase, ...
 verifyStageTiming(testCase, result);
 end
 
-function testDefaultOffHs3CompositeRetainsBaselineTiming(testCase)
-% Require the disabled improver to add no work to either public exit path.
+function testStandaloneHs3SuccessAndEndpointFailureShareTiming(testCase)
+% Require standalone HS3 timing on a solved request and critical early exit.
 initialState = state(0, [0 0]);
-goalState = state(8, [4 0]);
+goalState = state(4, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
 success = planAzElMotion([], initialState, goalState, limits, options);
-blockingObstacle = rectangleObstacle([0 8], [-1 1 -1 1], 0);
+blockingObstacle = rectangleObstacle([0 4], [-1 1 -1 1], 0);
 failure = planAzElMotion( ...
     blockingObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, success.Success, success.Message);
+verifyTrue(testCase, success.Validation.Passed, success.Validation.Message);
+verifyEqual(testCase, success.SelectedMotionSource, "hs3");
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
-verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Enabled);
-verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Attempted);
-verifyEqual(testCase, success.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
-verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Enabled);
-verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Attempted);
-verifyEqual(testCase, failure.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
+verifyFalse(testCase, isfield(success, "CompositionDiagnostics"));
+verifyFalse(testCase, isfield(failure, "CompositionDiagnostics"));
 verifyStageTiming(testCase, success);
 verifyStageTiming(testCase, failure);
+verifyEqual(testCase, ...
+    failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
 end
 
-function testOptInHs3AttemptReconcilesCompositeTiming(testCase)
-% Keep optional improver work visible without overlapping baseline stages.
+function testHs3SolverWorkReconcilesStandaloneTiming(testCase)
+% Keep actual HS3 solver and validation work visible in exclusive stages.
 initialState = state(0, [0 0]);
 goalState = state(3, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
-options.EnableHs3Improvement = true;
-options.MaximumHs3ImprovementTime_s = 0.5;
 options.CollocationSegmentCount = 2;
 options.MaximumCollocationSegmentCount = 2;
 result = planAzElMotion([], initialState, goalState, limits, options);
-composition = result.CompositionDiagnostics.Hs3;
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyTrue(testCase, composition.Enabled);
-verifyTrue(testCase, composition.Attempted);
-verifyNotEmpty(testCase, composition.Attempts);
-verifyGreaterThan(testCase, composition.ElapsedTime_s, 0);
-verifyEqual(testCase, ...
-    result.SearchDiagnostics.Hs3ElapsedTime_s, ...
-    composition.ElapsedTime_s, "AbsTol", 1e-12);
+verifyEqual(testCase, result.SelectedMotionSource, "hs3");
+verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
+verifyGreaterThan(testCase, result.SearchDiagnostics.Hs3ElapsedTime_s, 0);
+verifyGreaterThan(testCase, ...
+    result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
+verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 verifyStageTiming(testCase, result);
-tolerance_s = timingTolerance(result.ElapsedPlanningTime_s);
-verifyGreaterThanOrEqual(testCase, ...
-    result.SearchDiagnostics.StageTiming.UnattributedElapsedTime_s + ...
-    tolerance_s, composition.ElapsedTime_s);
 end
 
 function testFinalizerRejectsOverAttribution(testCase)
@@ -230,12 +222,15 @@ options.Verbose = false;
 end
 
 function options = fixedHs3Options()
-% Return deterministic HS3 controls with optional improvement disabled.
+% Return deterministic standalone HS3 controls for timing tests.
 options = planAzElMotion("hs3");
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
-options.EnableHs3Improvement = false;
+options.CollocationSegmentCount = 3;
+options.MaximumCollocationSegmentCount = 3;
+options.MaximumMeshRefinementPasses = 0;
+options.MaximumPlanningTime_s = 6;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end

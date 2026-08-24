@@ -9,8 +9,8 @@ function result = planAzElMotion(obstacles, initialState, goalState, limits, opt
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Run the compact planner directly, or preserve it as an immutable
-%     baseline before bounded, independently validated HS3 improvement work.
+%   - Dispatch to either the compact corridor planner or the separate
+%     Hermite-Simpson planner without cross-calls or fallback composition.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
@@ -101,7 +101,7 @@ if plannerMethod == "hs3" && isfield(methodOverrides, "MotionMethod")
     methodOverrides = rmfield(methodOverrides, "MotionMethod");
 end
 
-%% Section 3: Run The Selected Planner Composition
+%% Section 3: Run The Selected Planner
 
 switch plannerMethod
     case "corridorQuintic"
@@ -109,16 +109,11 @@ switch plannerMethod
             obstacles, initialState, goalState, limits, methodOverrides);
 
     case "hs3"
-        [hs3Options, compactOverrides] = ...
-            azElPlannerMethods.hs3.resolvePlannerOptions(methodOverrides);
-        compactBaseline = azElPlannerMethods.corridor.plan( ...
-            obstacles, initialState, goalState, limits, compactOverrides);
-        result = azElPlannerMethods.hs3.improve( ...
-            compactBaseline, hs3Options);
+        result = azElPlannerMethods.hs3.plan( ...
+            obstacles, initialState, goalState, limits, methodOverrides);
 end
 
-% Echo the selected public composition after its engine has resolved all
-% method-specific controls and retained rejected improvement evidence.
+% Echo the selected public method after its engine resolves its own controls.
 result.Options.PlannerMethod = plannerMethod;
 result.SearchDiagnostics.PlannerMethod = plannerMethod;
 

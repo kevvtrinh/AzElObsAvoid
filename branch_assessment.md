@@ -1,6 +1,6 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Compact corridor cutover — 2026-08-24**
+The current judgment is the **Standalone Hermite-Simpson restoration — 2026-08-24**
 at the end of this file. Earlier sections remain as historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
@@ -1107,3 +1107,28 @@ recorded example at 21.32539 s wall time, and the results do not establish a
 uniform runtime speedup. The next HS3 reduction must therefore compare every
 arrival and wall time against this committed compact baseline rather than rely
 on aggregate averages or fallback claims.
+
+## Standalone Hermite-Simpson restoration — 2026-08-24
+
+The branch again contains two genuinely separate motion methods. Compact owns
+its corridor-constrained quintic implementation. HS3 now owns a standalone
+third-order Hermite-Simpson transcription and returns only HS3-generated motion
+on success. Static search geometry and request normalization are neutral shared
+infrastructure; no compact planner result, warm start, fallback, or merged
+acceptance path crosses the HS3 boundary.
+
+The implementation is within its size and runtime gates: 1,602 noncomment HS3
+production lines against a 2,000-line cap, and an independently validated
+12-hairpin run in 93.339104 seconds total against the 120-second requirement.
+All 18 maintained example outcomes and all 137 automated tests passed. The
+public 1/5/10/20-turn benchmark also passed independent validation at every
+scale.
+
+This is not yet method-quality parity. HS3 beats the frozen compact arrival on
+5 turns, 10 turns, and the 12-hairpin case, but trails by 0.006849 seconds on
+one turn and by 46.202735 seconds on 20 turns. Static scenes intentionally stop
+at the first independently valid topology, and timed seeds use their
+input-derived arrival during the local solve. Those bounded choices make the
+runtime gate practical but can leave a better topology or timing local optimum
+unexplored. HS3 therefore remains a finite, locally optimized planner without a
+global optimality or completeness certificate.

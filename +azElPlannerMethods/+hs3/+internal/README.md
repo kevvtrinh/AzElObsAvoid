@@ -1,20 +1,19 @@
 # HS3 internal modules
 
-`azElPlannerMethods.hs3.internal` now contains only the nonlinear HS3 motion
-implementation and its solver diagnostics. Stable user entry points and the
-compact-baseline composition remain at the repository root:
+`azElPlannerMethods.hs3.internal` contains the nonlinear Hermite-Simpson motion
+implementation and its solver diagnostics. The standalone flow is:
 
 ```text
-immutable compact result -> optional HS3 solve -> canonical validation
+neutral topology proposal -> HS3 transcription and solve -> canonical validation
 ```
 
-- `motion`: HS3 propagation, constraints, objective evaluation, cooperative
-  timeout callback, reconstruction, and nonlinear solving.
-- `azElInternal`: neutral topology, corridor certificates, result schemas,
-  geometry, obstacle queries, polynomial utilities, and improvement comparison.
+- `motion`: HS3 propagation, exact fixed-time affine constraints, nonlinear
+  trajectory constraints, objective derivatives, cooperative timeout,
+  reconstruction, and solver diagnostics.
+- `azElInternal`: neutral request, topology, corridor-certificate, result,
+  geometry, obstacle, and polynomial contracts.
 - `validateAzElTrajectory`: the one final independent validator.
 
-No method-local stop-motion, search, certificate, result, or validation
-implementation remains. The HS3 internals do not call corridor directly, but
-the root HS3 composition does because it obtains the immutable compact baseline
-before calling `hs3.improve`.
+`hs3.plan` owns proposal ordering, collision relinearization, mesh refinement,
+validation, and candidate selection. No HS3 internal calls the compact corridor
+planner, and no compact result is used as a warm start or fallback.
