@@ -1156,3 +1156,26 @@ cutover.
 The remaining limitation is finite search: bounded topology and duration
 exchange do not provide completeness or global optimality. This removal does
 not broaden those claims.
+
+### Post-cutover dependency cleanup — 2026-08-24
+
+The quintic motion layer no longer calls `planAzElMotion()` to recover public
+defaults after the public planner has already invoked it. Its callers now pass
+the applicable constraint and collision tolerances with the other motion
+options, and an architecture test rejects any future public-planner call from
+`+azElInternal/+motion`.
+
+The test-only method dispatcher and 24 name-only forwarding tests were replaced
+by one directly discoverable planner-contract suite. Across the affected test
+files this removes 154 physical lines and 22 function definitions while
+preserving every prior contract case. The code-and-test diff, including 16
+lines of production option forwarding, is a net reduction of 138 lines.
+
+Code Analyzer reported zero findings on the six changed MATLAB files. The
+focused static, moving-obstacle, timing, and contract suites passed 68/68 in
+208.0298 seconds; the complete suite passed 78/78 in 197.991 seconds. The final
+dependency audit found zero internal motion calls to `planAzElMotion` and zero
+references to the removed forwarding dispatcher. Maintained examples were not
+rerun because their default planner path and measured outputs were unchanged,
+so `benchmark.csv` retains the prior direct-cutover measurements without new
+rows or performance claims.

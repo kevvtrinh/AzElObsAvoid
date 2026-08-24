@@ -1,93 +1,38 @@
-function verifySharedPlannerContract(testCase, method, contractName)
+function tests = testPlannerContract
 %% Section 0: Header & Readme
 % SYNTAX
-%   testSupport.verifySharedPlannerContract(testCase, method, contractName)
+%   tests = testPlannerContract
 %**************************************************************************
 % PURPOSE
-%   - Execute one registered planner contract against the maintained planner.
+%   - Verify the maintained planner's public contract directly, without a
+%     method dispatcher or pass-through test wrappers.
 %**************************************************************************
 % INPUTS
-%   - testCase (matlab.unittest.FunctionTestCase)
-%       Active function-based test case with shared fixtures in TestData.
-%   - method (string scalar)
-%       Must be "corridor".
-%   - contractName (string scalar)
-%       Name of one registered shared contract.
+%   - None.
 %**************************************************************************
 % OUTPUTS
-%   - None. Verification failures are reported through testCase.
+%   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Individual contracts document physical units through field suffixes.
+%   - Test position is degrees, time is seconds, and derivatives use
+%     deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
-
-%% Section 1: Resolve Method Adapter
-
-if string(method) ~= "corridor"
-    error("testSupport:UnknownPlannerMethod", ...
-        "Shared planner contracts support the corridor planner.");
-end
-adapter = struct("FixedOptions", @() planAzElMotion());
-
-%% Section 2: Run Named Contract
-
-contracts = struct( ...
-    "testAzimuthWrappingChangesThePhysicalRequest", ...
-    @testAzimuthWrappingChangesThePhysicalRequest, ...
-    "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry", ...
-    @testAzimuthWrappingRejectsUnmodeledPeriodicGeometry, ...
-    "testBetweenNodeCollisionFailsValidation", @testBetweenNodeCollisionFailsValidation, ...
-    "testBetweenNodeVelocityViolationFailsValidation", ...
-    @testBetweenNodeVelocityViolationFailsValidation, ...
-    "testConstantJerkPolynomialPassesIndependentDynamics", ...
-    @testConstantJerkPolynomialPassesIndependentDynamics, ...
-    "testDeformingObstacleUsesThePlannerPath", @testDeformingObstacleUsesThePlannerPath, ...
-    "testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints", ...
-    @testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints, ...
-    "testDeterministicRepeatedRun", @testDeterministicRepeatedRun, ...
-    "testEarliestGoalIsNotRejectedByHorizonOccupancy", ...
-    @testEarliestGoalIsNotRejectedByHorizonOccupancy, ...
-    "testEarlyPlannerFailureKeepsValidationFieldOrder", ...
-    @testEarlyPlannerFailureKeepsValidationFieldOrder, ...
-    "testInterceptWrapperRequiresTwoTargetSamples", ...
-    @testInterceptWrapperRequiresTwoTargetSamples, ...
-    "testInterceptWrapperTextOptionsMustBeScalar", @testInterceptWrapperTextOptionsMustBeScalar, ...
-    "testMovingGoalHistoryRequiresTwoSamples", @testMovingGoalHistoryRequiresTwoSamples, ...
-    "testMovingGoalInterpolationMethodMustBeScalar", ...
-    @testMovingGoalInterpolationMethodMustBeScalar, ...
-    "testObstacleActivationAtTerminalTimeFailsValidation", ...
-    @testObstacleActivationAtTerminalTimeFailsValidation, ...
-    "testOldWorkspaceOptionGivesMigrationError", @testOldWorkspaceOptionGivesMigrationError, ...
-    "testRemovedPlanningTimeOptionGivesMigrationError", ...
-    @testRemovedPlanningTimeOptionGivesMigrationError, ...
-    "testSafetyMarginIsAppliedExactlyOnce", @testSafetyMarginIsAppliedExactlyOnce, ...
-    "testShiftedPolynomialTimeCannotHideInitialTime", ...
-    @testShiftedPolynomialTimeCannotHideInitialTime, ...
-    "testStaticObstacleProducesOppositeSideSeeds", @testStaticObstacleProducesOppositeSideSeeds, ...
-    "testTopologyChangeUsesAStationaryConservativeUnion", ...
-    @testTopologyChangeUsesAStationaryConservativeUnion, ...
-    "testTranslatedHistoryReusesExactProtectedShape", ...
-    @testTranslatedHistoryReusesExactProtectedShape, ...
-    "testUnrelatedPolynomialCannotValidateSampledHistory", ...
-    @testUnrelatedPolynomialCannotValidateSampledHistory, ...
-    "testWorkspaceIntervalsBelongToLimits", @testWorkspaceIntervalsBelongToLimits);
-contractName = char(string(contractName));
-if ~isfield(contracts, contractName)
-    error("testSupport:UnknownPlannerContract", ...
-        "Unknown shared planner contract '%s'.", contractName);
-end
-contract = contracts.(contractName);
-contract(testCase, adapter);
+tests = functiontests(localfunctions);
 end
 
-%% Section 3: Local Contract Functions
+function setupOnce(testCase)
+% Add the repository root and materialize shared planner fixtures.
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(repositoryRoot);
+testCase.TestData.Fixtures = testSupport.plannerFixtures();
+end
 
-function testAzimuthWrappingChangesThePhysicalRequest(testCase, adapter)
+function testAzimuthWrappingChangesThePhysicalRequest(testCase)
 % Verify wrapping selects the short move and disabled wrapping keeps the long move.
 initialState = testCase.TestData.Fixtures.State(0, [179 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [-179 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([1 1], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.AllowAzimuthWrapping = false;
 longResult = planAzElMotion([], initialState, goalState, limits, options);
 options.AllowAzimuthWrapping = true;
@@ -98,12 +43,12 @@ verifyEqual(testCase, shortResult.position_deg(end, 1), 181, "AbsTol", 1e-6);
 verifyTrue(testCase, shortResult.Validation.AzimuthWrapPolicySatisfied);
 end
 
-function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase, adapter)
+function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
 % Verify wrapped obstacle requests cannot return a false physical success.
 initialState = testCase.TestData.Fixtures.State(0, [179 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [-179 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([1 1], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.AllowAzimuthWrapping = true;
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 8], [-180.5 -179.5 -1 1], 0);
 verifyError(testCase, @() planAzElMotion( ...
@@ -111,7 +56,7 @@ verifyError(testCase, @() planAzElMotion( ...
     "planAzElMotion:UnsupportedWrappedGeometry");
 end
 
-function testBetweenNodeCollisionFailsValidation(testCase, adapter)
+function testBetweenNodeCollisionFailsValidation(testCase)
 % Verify a collision at the segment midpoint cannot hide between samples.
 initialState = testCase.TestData.Fixtures.State(0, [-1 0], [2 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(1, [1 0], [2 0], [0 0]);
@@ -120,13 +65,13 @@ trajectory = testCase.TestData.Fixtures.LinearTrajectory(initialState, goalState
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
 validation = validateAzElTrajectory( ...
     trajectory, obstacle, initialState, goalState, limits, ...
-    adapter.FixedOptions());
+    planAzElMotion());
 verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.CollisionFree);
 verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
 end
 
-function testBetweenNodeVelocityViolationFailsValidation(testCase, adapter)
+function testBetweenNodeVelocityViolationFailsValidation(testCase)
 % Verify continuous extrema detect an interior peak with clear samples.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [4 0]);
 goalState = testCase.TestData.Fixtures.State(1, [2 / 3 0], [0 0], [-4 0]);
@@ -134,26 +79,26 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([0.8 1], [5 5], [9 9]);
 trajectory = testCase.TestData.Fixtures.InteriorVelocityPeakTrajectory();
 validation = validateAzElTrajectory( ...
     trajectory, [], initialState, goalState, limits, ...
-    adapter.FixedOptions());
+    planAzElMotion());
 verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.VelocityWithinLimits);
 verifyEqual(testCase, max(abs(trajectory.velocity_deg_s), [], "all"), 0);
 end
 
-function testConstantJerkPolynomialPassesIndependentDynamics(testCase, adapter)
+function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
 % Verify the third-order chain against analytic constant-jerk motion.
 duration_s = 2;
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(duration_s, [4 / 3 0], [2 0], [2 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([3 3], [3 3], [2 2]);
 trajectory = testCase.TestData.Fixtures.ConstantJerkTrajectory(duration_s);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 validation = validateAzElTrajectory( trajectory, [], initialState, goalState, limits, options);
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyLessThanOrEqual(testCase, validation.MaximumDynamicsResidual, 1e-12);
 end
 
-function testDeformingObstacleUsesThePlannerPath(testCase, adapter)
+function testDeformingObstacleUsesThePlannerPath(testCase)
 % Verify a deforming protected polygon uses the maintained planner.
 time_s = [0; 8];
 first_deg = [-1 4; 1 4; 1 6; -1 6];
@@ -165,13 +110,14 @@ obstacle = makeAzElObstacleData( ...
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-result = planAzElMotion( obstacle, initialState, goalState, limits, adapter.FixedOptions());
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, planAzElMotion());
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
 
-function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase, ~)
+function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
 % Verify the dense seed fallback bounds history and rejects endpoint capture.
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 20], [-1 1 -2 2], 0);
 sampleTimes_s = (0:5:20).';
@@ -199,12 +145,12 @@ verifyTrue(testCase, usedManyObstacleEnvelope);
 verifyNotEmpty(testCase, manyObstacleShape.Vertices);
 end
 
-function testDeterministicRepeatedRun(testCase, adapter)
+function testDeterministicRepeatedRun(testCase)
 % Verify identical fixed inputs return identical seed order and trajectory.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(6, [3 1], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 first = planAzElMotion([], initialState, goalState, limits, options);
 second = planAzElMotion([], initialState, goalState, limits, options);
 verifyEqual(testCase, first.Success, second.Success);
@@ -213,7 +159,7 @@ verifyEqual(testCase, first.time_s, second.time_s, "AbsTol", 1e-12);
 verifyEqual(testCase, first.position_deg, second.position_deg, "AbsTol", 1e-9);
 end
 
-function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase, adapter)
+function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
 % Verify a later blocked goal does not reject a valid earlier arrival.
 source_deg = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
 initialObstacle_deg = source_deg + [20 20];
@@ -225,7 +171,7 @@ obstacle = makeAzElObstacleData( ...
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.GoalTimeMode = "earliestArrival";
 result = planAzElMotion( obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
@@ -233,23 +179,24 @@ verifyLessThan(testCase, result.ArrivalTime_s, goalState.time_s);
 verifyTrue(testCase, result.Validation.CollisionFree);
 end
 
-function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase, adapter)
+function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
 % Verify endpoint failure and success use one public validation schema.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-success = planAzElMotion( [], initialState, goalState, limits, adapter.FixedOptions());
+success = planAzElMotion( ...
+    [], initialState, goalState, limits, planAzElMotion());
 blockingObstacle = testCase.TestData.Fixtures.RectangleObstacle([0 8], [-1 1 -1 1], 0);
 failure = planAzElMotion( ...
     blockingObstacle, initialState, goalState, limits, ...
-    adapter.FixedOptions());
+    planAzElMotion());
 verifyTrue(testCase, success.Validation.Passed);
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
 verifyEqual(testCase, fieldnames(failure.Validation), fieldnames(success.Validation));
 end
 
-function testInterceptWrapperRequiresTwoTargetSamples(testCase, ~)
+function testInterceptWrapperRequiresTwoTargetSamples(testCase)
 % Verify the wrapper rejects a one-sample target at its public boundary.
 targetMotion = struct("time_s", 10, "position_deg", [1 0]);
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
@@ -259,7 +206,7 @@ verifyError(testCase, @() planAzElMovingTargetIntercept( ...
     "planAzElMovingTargetIntercept:TargetHistoryTooShort");
 end
 
-function testInterceptWrapperTextOptionsMustBeScalar(testCase, ~)
+function testInterceptWrapperTextOptionsMustBeScalar(testCase)
 % Verify the moving-target wrapper rejects ambiguous text arrays.
 targetMotion = struct( ...
     "time_s", [0; 10], ...
@@ -276,7 +223,7 @@ verifyError(testCase, @() planAzElMovingTargetIntercept( ...
     "planAzElMovingTargetIntercept:InvalidInterpolation");
 end
 
-function testMovingGoalHistoryRequiresTwoSamples(testCase, adapter)
+function testMovingGoalHistoryRequiresTwoSamples(testCase)
 % Verify one target sample fails with one actionable public error.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [1 0], [0 0], [0 0]);
@@ -284,11 +231,11 @@ goalState.targetTime_s = 10;
 goalState.targetPosition_deg = [1 0];
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 verifyError(testCase, @() planAzElMotion( ...
-    [], initialState, goalState, limits, adapter.FixedOptions()), ...
+    [], initialState, goalState, limits, planAzElMotion()), ...
     "planAzElMotion:MovingGoalHistoryTooShort");
 end
 
-function testMovingGoalInterpolationMethodMustBeScalar(testCase, adapter)
+function testMovingGoalInterpolationMethodMustBeScalar(testCase)
 % Verify a text array cannot pass as one interpolation method.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
@@ -297,11 +244,11 @@ goalState.targetPosition_deg = [4 0; 5 0];
 goalState.InterpolationMethod = ["linear" "pchip"];
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 verifyError(testCase, @() planAzElMotion( ...
-    [], initialState, goalState, limits, adapter.FixedOptions()), ...
+    [], initialState, goalState, limits, planAzElMotion()), ...
     "planAzElMotion:InvalidGoalInterpolation");
 end
 
-function testObstacleActivationAtTerminalTimeFailsValidation(testCase, adapter)
+function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
 % Verify collision at the first active event endpoint cannot be missed.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [1 0], [0.1 0], [0 0]);
@@ -310,35 +257,35 @@ trajectory = testCase.TestData.Fixtures.LinearTrajectory(initialState, goalState
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([10 20], [0.5 1.5 -0.5 0.5], 0);
 validation = validateAzElTrajectory( ...
     trajectory, obstacle, initialState, goalState, limits, ...
-    adapter.FixedOptions());
+    planAzElMotion());
 verifyFalse(testCase, validation.Passed);
 verifyFalse(testCase, validation.CollisionFree);
 verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
 end
 
-function testOldWorkspaceOptionGivesMigrationError(testCase, adapter)
+function testOldWorkspaceOptionGivesMigrationError(testCase)
 % Verify old workspace option names identify their new limits location.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.ElevationInterval_deg = [-5 5];
 verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, options), "planAzElMotion:WorkspaceLimitMoved");
 end
 
-function testRemovedPlanningTimeOptionGivesMigrationError(testCase, adapter)
+function testRemovedPlanningTimeOptionGivesMigrationError(testCase)
 % Verify the removed planner timeout gives an actionable public error.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.MaximumPlanningTime_s = 1;
 verifyError(testCase, @() planAzElMotion( ...
     [], initialState, goalState, limits, options), "planAzElMotion:RemovedMaximumPlanningTime");
 end
 
-function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
+function testSafetyMarginIsAppliedExactlyOnce(testCase)
 % Verify absolute reconstruction from original geometry is idempotent.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
 obstacle = makeAzElObstacleData( "margin", [0; 1], source_deg(:, 1), source_deg(:, 2), 0.2);
@@ -348,7 +295,7 @@ verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
 end
 
-function testShiftedPolynomialTimeCannotHideInitialTime(testCase, adapter)
+function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
 % Verify matching shifted samples and coefficients still honor initial time.
 duration_s = 2;
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
@@ -358,7 +305,7 @@ trajectory = testCase.TestData.Fixtures.ConstantJerkTrajectory(duration_s);
 trajectory.time_s = trajectory.time_s + 1;
 trajectory.Polynomial.SegmentStartTime_s = trajectory.Polynomial.SegmentStartTime_s + 1;
 trajectory.Polynomial.FinalTime_s = trajectory.Polynomial.FinalTime_s + 1;
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.GoalTimeMode = "earliestArrival";
 validation = validateAzElTrajectory( trajectory, [], initialState, goalState, limits, options);
 verifyFalse(testCase, validation.Passed);
@@ -366,13 +313,13 @@ verifyFalse(testCase, validation.PolynomialInitialTimeMatched);
 verifyTrue(testCase, validation.PolynomialHistoryConsistent);
 end
 
-function testStaticObstacleProducesOppositeSideSeeds(testCase, adapter)
+function testStaticObstacleProducesOppositeSideSeeds(testCase)
 % Verify bounded input-driven seed diversity and validated selection.
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 20], [-1 1 -2 2], 0.2);
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = adapter.FixedOptions();
+options = planAzElMotion();
 options.MaximumSeedCount = 3;
 options.DirectSeedOnly = false;
 result = planAzElMotion( obstacle, initialState, goalState, limits, options);
@@ -420,7 +367,7 @@ if result.Success
 end
 end
 
-function testTopologyChangeUsesAStationaryConservativeUnion(testCase, ~)
+function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
 % Verify a topology-change interval has constant conservative geometry.
 closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
 left_deg = [-2 -1; -0.5 -1; -0.5 1; -2 1];
@@ -434,7 +381,7 @@ verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));
 end
 
-function testTranslatedHistoryReusesExactProtectedShape(testCase, ~)
+function testTranslatedHistoryReusesExactProtectedShape(testCase)
 % Verify rigid obstacle motion preserves one translated protected boundary.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
 translation_deg = [3 2];
@@ -445,7 +392,7 @@ verifyEqual(testCase, obstacle.az_deg{2}, obstacle.az_deg{1} + translation_deg(1
 verifyEqual(testCase, obstacle.el_deg{2}, obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
 end
 
-function testUnrelatedPolynomialCannotValidateSampledHistory(testCase, adapter)
+function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
 % Verify valid samples cannot hide unrelated polynomial coefficients.
 duration_s = 2;
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
@@ -458,26 +405,28 @@ trajectory.Polynomial.accelerationPower_deg_s2(:) = 0;
 trajectory.Polynomial.jerkPower_deg_s3(:) = 0;
 validation = validateAzElTrajectory( ...
     trajectory, [], initialState, goalState, limits, ...
-    adapter.FixedOptions());
+    planAzElMotion());
 verifyFalse(testCase, validation.Passed);
 verifyTrue(testCase, validation.PolynomialSchemaValid);
 verifyFalse(testCase, validation.PolynomialEndpointStatesMatched);
 verifyFalse(testCase, validation.PolynomialHistoryConsistent);
 end
 
-function testWorkspaceIntervalsBelongToLimits(testCase, adapter)
+function testWorkspaceIntervalsBelongToLimits(testCase)
 % Verify omitted and explicit workspace intervals use the limits contract.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
 limits = rmfield( ...
     testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]), ...
     ["azimuthInterval_deg", "elevationInterval_deg"]);
-result = planAzElMotion([], initialState, goalState, limits, adapter.FixedOptions());
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, planAzElMotion());
 verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-180 180]);
 verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-90 90]);
 limits.azimuthInterval_deg = [-12 14];
 limits.elevationInterval_deg = [-5 6];
-result = planAzElMotion([], initialState, goalState, limits, adapter.FixedOptions());
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, planAzElMotion());
 verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-12 14]);
 verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-5 6]);
 end

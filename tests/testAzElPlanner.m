@@ -41,6 +41,23 @@ verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
 verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
 end
 
+function testInternalMotionDoesNotCallPublicPlanner(testCase)
+% Prevent the quintic implementation from re-entering its public caller.
+motionRoot = fullfile( ...
+    testCase.TestData.RepositoryRoot, "+azElInternal", "+motion");
+motionFiles = dir(fullfile(motionRoot, "*.m"));
+offenders = strings(0, 1);
+for fileIndex = 1:numel(motionFiles)
+    source = fileread(fullfile(motionFiles(fileIndex).folder, ...
+        motionFiles(fileIndex).name));
+    if contains(source, "planAzElMotion(")
+        offenders(end + 1, 1) = string(motionFiles(fileIndex).name); %#ok<AGROW>
+    end
+end
+verifyEmpty(testCase, offenders, ...
+    "Internal motion code must not call the public planner.");
+end
+
 function testMovingTargetDefaultsPreservePublicSchema(testCase)
 % Verify the shared adapter retains the established default field order.
 options = planAzElMovingTargetIntercept();
@@ -49,16 +66,6 @@ verifyEqual(testCase, string(fieldnames(options)), [ ...
     "MaximumSearchDuration_s"; "MatchTargetVelocity"; ...
     "MatchTargetAcceleration"; "PlannerOptions"]);
 verifyEmpty(testCase, fieldnames(options.PlannerOptions));
-end
-
-function testWorkspaceIntervalsBelongToLimits(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testWorkspaceIntervalsBelongToLimits");
-end
-
-function testOldWorkspaceOptionGivesMigrationError(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testOldWorkspaceOptionGivesMigrationError");
 end
 
 function testVerboseOutputUsesOnePrefixFamily(testCase)
@@ -108,11 +115,6 @@ visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
 isOccupied = queryAzElTimeObstacle(obstacles, 0, 0.75, 10);
 verifyFalse(testCase, isOccupied);
-end
-
-function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints");
 end
 
 function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
@@ -214,21 +216,6 @@ verifyGreaterThan(testCase, validation.CollisionCheckCount, 0);
 verifyFalse(testCase, validation.Passed);
 end
 
-function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testConstantJerkPolynomialPassesIndependentDynamics");
-end
-
-function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testUnrelatedPolynomialCannotValidateSampledHistory");
-end
-
-function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testShiftedPolynomialTimeCannotHideInitialTime");
-end
-
 function testFixedArrivalEnforcesTerminalState(testCase)
 % Verify fixed time and nonzero initial and terminal state equalities.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0.05 0]);
@@ -299,11 +286,6 @@ diagnostics = result.SeedSummaries( ...
 verifyTrue(testCase, diagnostics.CompactC3.Accepted);
 end
 
-function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testEarliestGoalIsNotRejectedByHorizonOccupancy");
-end
-
 function testIntegerWorkLimitsRejectFractionalValues(testCase)
 % Verify an invalid bounded seed-count limit fails at the public boundary.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
@@ -321,26 +303,6 @@ end
 verifyTrue(testCase, didThrow);
 end
 
-function testMovingGoalInterpolationMethodMustBeScalar(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testMovingGoalInterpolationMethodMustBeScalar");
-end
-
-function testMovingGoalHistoryRequiresTwoSamples(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testMovingGoalHistoryRequiresTwoSamples");
-end
-
-function testInterceptWrapperTextOptionsMustBeScalar(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testInterceptWrapperTextOptionsMustBeScalar");
-end
-
-function testInterceptWrapperRequiresTwoTargetSamples(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testInterceptWrapperRequiresTwoTargetSamples");
-end
-
 function testEndpointStateDoesNotInvokeLegacyMeshRefinement(testCase)
 % Verify endpoint-state support stays on the experimental polynomial path.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0.05 0]);
@@ -352,11 +314,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.SelectedMotionSource, "corridorQuintic");
 verifyEqual(testCase, result.SearchDiagnostics.MeshRefinementPassCount, 0);
-end
-
-function testStaticObstacleProducesOppositeSideSeeds(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testStaticObstacleProducesOppositeSideSeeds");
 end
 
 function testTwoObstacleHomologySearchFindsDistinctClasses(testCase)
@@ -450,16 +407,6 @@ obstacle = makeAzElObstacleData( ...
     "deforming", time_s, {first_deg(:, 1); second_deg(:, 1)}, {first_deg(:, 2); second_deg(:, 2)}, 0);
 occupied = queryAzElTimeObstacle( obstacle, [1.5; 1.5], [0; 0], [0; 2]);
 verifyEqual(testCase, occupied, [false; true]);
-end
-
-function testDeformingObstacleUsesThePlannerPath(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testDeformingObstacleUsesThePlannerPath");
-end
-
-function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testTopologyChangeUsesAStationaryConservativeUnion");
 end
 
 function testStationaryMatchingTopologyReusesExactShape(testCase)
@@ -595,41 +542,6 @@ verifyTrue(testCase, all([spatialSeeds.UsesReducedGeometry]));
 verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
 end
 
-function testAzimuthWrappingChangesThePhysicalRequest(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testAzimuthWrappingChangesThePhysicalRequest");
-end
-
-function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry");
-end
-
-function testRemovedPlanningTimeOptionGivesMigrationError(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testRemovedPlanningTimeOptionGivesMigrationError");
-end
-
-function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testEarlyPlannerFailureKeepsValidationFieldOrder");
-end
-
-function testBetweenNodeCollisionFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testBetweenNodeCollisionFailsValidation");
-end
-
-function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testObstacleActivationAtTerminalTimeFailsValidation");
-end
-
-function testBetweenNodeVelocityViolationFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testBetweenNodeVelocityViolationFailsValidation");
-end
-
 function testExactInteriorVelocityPeakAtLimitPassesValidation(testCase)
 % Verify the canonical exact-root bound accepts a feasible curve.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [4 0]);
@@ -640,21 +552,6 @@ options = fixedOptions();
 validation = validateAzElTrajectory(trajectory, [], initialState, goalState, limits, options);
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyTrue(testCase, validation.VelocityWithinLimits);
-end
-
-function testSafetyMarginIsAppliedExactlyOnce(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testSafetyMarginIsAppliedExactlyOnce");
-end
-
-function testTranslatedHistoryReusesExactProtectedShape(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testTranslatedHistoryReusesExactProtectedShape");
-end
-
-function testDeterministicRepeatedRun(testCase)
-testSupport.verifySharedPlannerContract( ...
-    testCase, "corridor", "testDeterministicRepeatedRun");
 end
 
 function testNoPathReturnsStableDiagnostics(testCase)
