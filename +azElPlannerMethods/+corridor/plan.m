@@ -82,7 +82,7 @@ if options.AllowAzimuthWrapping
     end
 end
 [result, summaryTemplate] = azElPlannerMethods.corridor.internal.emptyAzElPlannerResult( obstacles, initialState, goalState, limits, options);
-obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
+obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 if options.Verbose
     fprintf("[AzEl] Planning started.\n");
     fprintf("[AzEl][setup] workspace az=[%.6g %.6g] deg, " + ...
@@ -183,7 +183,7 @@ for removedName = removedNames
             "%s has moved from options to limits.%s.", removedName, replacementName);
     end
 end
-[options, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions(defaults, overrides);
+[options, unknownNames] = azElInternal.resolveOptions(defaults, overrides);
 if ~isempty(unknownNames)
     warning("planAzElMotion:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -200,7 +200,8 @@ logicalNames = ["AllowAzimuthWrapping", "DirectSeedOnly", "Verbose"];
 
 % Normalize every logical option through the same scalar logical-or-binary contract.
 for name = logicalNames
-    options.(name) = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( options.(name), name, "planAzElMotion:InvalidLogicalOption");
+    options.(name) = azElInternal.normalizeLogicalScalar( ...
+        options.(name), name, "planAzElMotion:InvalidLogicalOption");
 end
 validateattributes(options.SampleTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 validateattributes(options.MaximumSeedCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', 1, '<=', 9});

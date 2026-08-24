@@ -208,7 +208,8 @@ for sampleTimeIndex = 1:numel(sampleTimes_s)
 
     % Add the active slice from each obstacle to this time layer's union input.
     for obstacleIndex = 1:numel(obstacles)
-        shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime(obstacles(obstacleIndex), sampleTime_s);
+        shape = azElInternal.obstacles.shapeAtTime( ...
+            obstacles(obstacleIndex), sampleTime_s);
         % Empty obstacle slices contribute neither geometry nor topology events.
         if isempty(shape.Vertices)
             continue;

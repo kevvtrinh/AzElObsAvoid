@@ -68,7 +68,8 @@ end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("planAzElMovingTargetIntercept:InvalidOptions", "options must be a scalar struct.");
 end
-[options, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions( defaults, optionOverrides);
+[options, unknownNames] = azElInternal.resolveOptions( ...
+    defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("planAzElMovingTargetIntercept:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -81,7 +82,7 @@ logicalNames = ["MatchTargetVelocity", "MatchTargetAcceleration"];
 
 % Normalize both target-derivative matching controls to scalar logical values.
 for name = logicalNames
-    options.(name) = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
+    options.(name) = azElInternal.normalizeLogicalScalar( ...
         options.(name), name, "planAzElMovingTargetIntercept:InvalidLogicalOption");
 end
 validateattributes(options.MaximumSearchDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});

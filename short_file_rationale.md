@@ -57,18 +57,17 @@ Most have two to ten direct callers.
 
 | Category | Short files | Separation reason |
 | --- | --- | --- |
-| Geometry | `boundaryShape`, `convexPolygonRegions` | Corridor-specific polygon construction and convex decomposition used by search and certification. |
-| Obstacles | `buildEnvelopeBoundary`, `prepareDynamic`, `shapeAtTime` | Immutable obstacle preparation and time interpolation are shared across the complete corridor closure. |
+| Geometry | `convexPolygonRegions` | Corridor-specific convex decomposition used by search and certification. |
+| Obstacles | `buildEnvelopeBoundary` | Corridor-envelope construction remains separate from shared obstacle preparation and time interpolation. |
 | Motion | `evaluatePolynomial`, `buildFixedDurationAffineModel`, `spanTimeDemand` | Canonical evaluation, one fixed-duration affine map, and one span-demand measure shared by distinct motion paths. |
 | Validation | `buildSeedCorridor`, `certifySeedCorridor`, `seedCorridorInequality`, `seedEnvelopeContainsObstacles` | Certificate construction and checking remain separate from the optimizer they independently check. |
-| Common | `goalPositionAtTime`, `normalizeLogicalScalar`, `powerToBernstein`, `resolveOptions` | Reused contract and mathematical primitives prevent duplicated semantics inside the method. |
+| Common | `goalPositionAtTime`, `powerToBernstein` | Reused contract and mathematical primitives prevent duplicated semantics inside the method. |
 
-Four corridor files have one direct caller and need an explicit decision:
+Three corridor files have one direct caller and need an explicit decision:
 
 | File | Code lines | Sole caller | Why it is not merged |
 | --- | ---: | --- | --- |
 | `+internal/emptyAzElPlannerResult.m` | 60 | `plan.m` | Owns the stable success/failure schema used by every early return. The planner orchestrator should not duplicate that schema across branches. |
-| `+internal/+motion/buildStraightJerkProfile.m` | 93 | `buildQuinticSpline.m` | A complete closed-form jerk-limited motion algorithm, distinct from spline assembly. |
 | `+internal/+search/clusterSeedShape.m` | 75 | `generateTopologySeeds.m` | A self-contained clustering algorithm extracted from an already-large search orchestrator. |
 | `+internal/+search/expandDynamicRoute.m` | 43 | `runCorridorPlanner.m` | Owns time-local route expansion and nearest-boundary decisions; its caller is already the corridor candidate orchestrator. |
 

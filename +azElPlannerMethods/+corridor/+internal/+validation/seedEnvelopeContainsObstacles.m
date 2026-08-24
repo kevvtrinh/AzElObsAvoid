@@ -62,7 +62,8 @@ for obstacleIndex = 1:numel(obstacles)
 
     % Verify every protected source-time slice, not merely the first or last.
     for sampleIndex = 1:numel(obstacle.time_s)
-        obstacleShape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacle, obstacle.time_s(sampleIndex));
+        obstacleShape = azElInternal.obstacles.shapeAtTime( ...
+            obstacle, obstacle.time_s(sampleIndex));
         if isempty(obstacleShape.Vertices)
             return;
         end

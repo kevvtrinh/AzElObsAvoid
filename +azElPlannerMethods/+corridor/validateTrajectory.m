@@ -50,7 +50,7 @@ elseif nargin ~= 6
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = combineAzElObstacles(obstacles);
-    obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
+    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
 if options.AllowAzimuthWrapping && (~isempty(obstacles) || hasMovingGoal)
@@ -452,7 +452,8 @@ for segmentIndex = 1:polynomial.SegmentCount
 
         % Measure the breakpoint position against every obstacle at that exact time.
         for obstacleIndex = 1:numel(obstacles)
-            shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), splitTimes_s(splitIndex));
+            shape = azElInternal.obstacles.shapeAtTime( ...
+                obstacles(obstacleIndex), splitTimes_s(splitIndex));
             clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, splitPoint_deg);
             checkCount = checkCount + 1;
             minimumClearance_deg = min( minimumClearance_deg, clearance_deg);
@@ -479,7 +480,8 @@ for segmentIndex = 1:polynomial.SegmentCount
 
         % Bound relative motion against every obstacle over the current interval.
         for obstacleIndex = 1:numel(obstacles)
-            [shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), intervalMid_s);
+            [shape, geometry] = azElInternal.obstacles.shapeAtTime( ...
+                obstacles(obstacleIndex), intervalMid_s);
             clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
             checkCount = checkCount + 1;
             if clearance_deg <= options.CollisionClearanceTolerance_deg

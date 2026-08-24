@@ -1,6 +1,6 @@
 # Corridor-quintic planner snapshot
 
-This folder is the complete `corridorQuintic` backend imported from
+This folder contains the `corridorQuintic` backend imported from
 `325-less-nlp` commit
 `28526638886b69efdf6d697a942ad2c1207bcc04`. Its latest planner baseline was
 recorded with the implementation and evidence committed at `9dc2530`.
@@ -19,9 +19,9 @@ inside the sibling `+hs3` folder.
 - `validateTrajectory.m` is this method's independent complete-trajectory
   validator.
 
-Canonical combination, normalization, and time queries are shared through
-`combineAzElObstacles`, `normalizeAzElTimeObstacleData`, and
-`queryAzElTimeObstacle`. The corridor backend does not depend on the HS3
+Canonical combination, normalization, option handling, obstacle preparation,
+geometry-at-time queries, and time queries are shared through the root
+functions and `azElInternal`. The corridor backend does not depend on the HS3
 folder.
 
 These are backend integration points. Application code should normally call

@@ -2275,3 +2275,31 @@ the new shared query. After deletion, the permanent infrastructure tests passed
 5/5 and both planner unit files passed 92/92. The broader suite was started but
 stopped when the user requested no additional tests before pushing, so no
 post-consolidation full-suite result is claimed.
+
+## Corridor helper consolidation — 2026-08-23
+
+This behavior-preserving cleanup was measured against task baseline `3280bb0`.
+
+| Scope | Baseline | Current | Delta |
+| --- | ---: | ---: | ---: |
+| Fixed-goal corridor runtime closure | 42 files / 7,713 lines | 36 files / 7,366 lines | -6 files / -347 lines |
+| Production MATLAB | 76 files / 15,133 lines | 70 files / 14,787 lines | -6 files / -346 lines |
+| Production and tests | 84 files / 18,602 lines | 78 files / 18,256 lines | -6 files / -346 lines |
+
+Five method-local copies were replaced with their executable-equivalent
+`azElInternal` implementations. `buildStraightJerkProfile` became a local
+function of its only caller, `buildQuinticSpline`. Search, candidate selection,
+result construction, and independent final validation remain separate.
+
+Verification produced:
+
+- pre-change focused tests: 52/52 passed;
+- post-change focused tests: 52/52 passed;
+- MATLAB Code Analyzer: 0 messages across 14 changed MATLAB files;
+- dependency audit: 36/36 runtime files reachable, 0 orphaned;
+- stale deleted-helper references: 0;
+- `git diff --check`: passed.
+
+The complete maintained-example, visible-graphics, and full regression matrices
+were not rerun. No `benchmark.csv` row was added because this checkpoint
+executed tests and static audits, not a maintained-example benchmark.

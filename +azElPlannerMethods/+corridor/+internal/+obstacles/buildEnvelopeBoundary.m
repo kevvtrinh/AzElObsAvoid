@@ -41,7 +41,8 @@ for obstacleIndex = 1:numel(obstacles)
     end
     if geometryIsStatic
         % Reuse exact static geometry to avoid filling concavities needlessly.
-        protectedShape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacle, obstacle.time_s(1));
+        protectedShape = azElInternal.obstacles.shapeAtTime( ...
+            obstacle, obstacle.time_s(1));
         protectedEnvelope = polybuffer( protectedShape, envelopePadding_deg);
     else
         % A time-independent certificate must cover the whole history, not an

@@ -57,7 +57,8 @@ end
 if nargin < 6 || isempty(optionOverrides)
     optionOverrides = struct();
 end
-[options, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions( defaults, optionOverrides);
+[options, unknownNames] = azElInternal.resolveOptions( ...
+    defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("solveCorridorQuintic:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -67,7 +68,7 @@ hasPreparedObstacles = isstruct(obstacles) && isfield(obstacles, "InternalPrepar
 % Public-style calls may provide raw obstacles; planner-internal calls reuse prepared geometry.
 if ~hasPreparedObstacles
     obstacles = combineAzElObstacles(obstacles);
-    obstacles = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacles);
+    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 end
 motionTimer = tic;
 azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
@@ -481,7 +482,8 @@ for routeIndex = 2:size(route_deg, 1) - 1
 
     % Find the protected obstacle that most restricts this route vertex.
     for obstacleIndex = 1:numel(obstacles)
-        shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s);
+        shape = azElInternal.obstacles.shapeAtTime( ...
+            obstacles(obstacleIndex), queryTime_s);
         vertices_deg = shape.Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
         [distance_deg, boundaryPoint_deg] = azElInternal.geometry.pointPolygonClearance(shape, point_deg);
@@ -607,16 +609,16 @@ if ~isempty(options.RouteTau)
         {'real', 'finite', 'vector', 'increasing', 'numel', routeVertexCount});
     options.RouteTau = double(options.RouteTau(:));
 end
-options.RequireStaticCorridorCertificate = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
+options.RequireStaticCorridorCertificate = azElInternal.normalizeLogicalScalar( ...
     options.RequireStaticCorridorCertificate, ...
     "RequireStaticCorridorCertificate", "solveCorridorQuintic:InvalidCertificateControl");
 options.GoalTimeMode = string(options.GoalTimeMode);
 if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["earliestArrival", "fixedArrival"])
     error("solveCorridorQuintic:InvalidGoalTimeMode", "GoalTimeMode must be earliestArrival or fixedArrival.");
 end
-options.AllowAzimuthWrapping = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
+options.AllowAzimuthWrapping = azElInternal.normalizeLogicalScalar( ...
     options.AllowAzimuthWrapping, "AllowAzimuthWrapping", "solveCorridorQuintic:InvalidWrappingOption");
-options.EnableExactTraversal = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
+options.EnableExactTraversal = azElInternal.normalizeLogicalScalar( ...
     options.EnableExactTraversal, "EnableExactTraversal", "solveCorridorQuintic:InvalidExactTraversalControl");
 end
 

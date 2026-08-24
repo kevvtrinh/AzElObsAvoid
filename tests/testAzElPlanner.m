@@ -523,7 +523,7 @@ right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
 open_deg = [left_deg; NaN NaN; right_deg];
 obstacle = makeAzElObstacleData( ...
     "opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
-[shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime(obstacle, 1);
+[shape, geometry] = azElInternal.obstacles.shapeAtTime(obstacle, 1);
 verifyFalse(testCase, geometry.TopologyIsInterpolated);
 verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));
@@ -533,8 +533,8 @@ function testStationaryMatchingTopologyReusesExactShape(testCase)
 % Verify an unchanged interval returns its prepared source geometry exactly.
 boundary_deg = [-2 -1; 2 -1; 2 1; -2 1];
 obstacle = makeAzElObstacleData( "stationary", [0; 2], boundary_deg(:, 1), boundary_deg(:, 2), 0);
-preparedObstacle = azElPlannerMethods.corridor.internal.obstacles.prepareDynamic(obstacle);
-[shape, geometry] = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( preparedObstacle, 1);
+preparedObstacle = azElInternal.obstacles.prepareDynamic(obstacle);
+[shape, geometry] = azElInternal.obstacles.shapeAtTime(preparedObstacle, 1);
 verifyEqual(testCase, shape.Vertices, preparedObstacle. InternalPreparation.SampleShapes{1}.Vertices);
 verifyEqual(testCase, geometry.azimuth_deg, obstacle.az_deg{1});
 verifyEqual(testCase, geometry.elevation_deg, obstacle.el_deg{1});

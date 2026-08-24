@@ -43,7 +43,8 @@ bestSpan_deg = 0;
 
 % Compare the query point with every obstacle active at this time.
 for obstacleIndex = 1:numel(obstacles)
-    shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s);
+    shape = azElInternal.obstacles.shapeAtTime( ...
+        obstacles(obstacleIndex), queryTime_s);
     [azimuth_deg, elevation_deg] = boundary(shape);
     finiteRow = isfinite(azimuth_deg) & isfinite(elevation_deg);
     runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);

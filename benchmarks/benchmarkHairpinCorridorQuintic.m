@@ -40,7 +40,8 @@ if nargin < 2 || isempty(benchmarkOverrides)
 end
 validateattributes(hairpinCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 defaults = struct( "FigureVisible", "off", "PrintProgress", true, "RandomSeed", 325, "RouteVertexCount", 22);
-[controls, unknownNames] = azElPlannerMethods.corridor.internal.resolveOptions( defaults, benchmarkOverrides);
+[controls, unknownNames] = azElInternal.resolveOptions( ...
+    defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
     warning("benchmarkHairpinCorridorQuintic:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
@@ -50,7 +51,7 @@ if ~isscalar(controls.FigureVisible) || ~any(controls.FigureVisible == ["on", "o
     error("benchmarkHairpinCorridorQuintic:InvalidVisibility", ...
         "FigureVisible must be scalar text equal to 'on' or 'off'.");
 end
-controls.PrintProgress = azElPlannerMethods.corridor.internal.normalizeLogicalScalar( ...
+controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", "benchmarkHairpinCorridorQuintic:InvalidPrintControl");
 validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 validateattributes(controls.RouteVertexCount, {'numeric'}, {'real', 'scalar', 'positive'});

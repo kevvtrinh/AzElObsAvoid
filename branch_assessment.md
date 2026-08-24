@@ -1,6 +1,6 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Compact instrumentation assessment — 2026-08-23**
+The current judgment is the **Corridor helper consolidation checkpoint — 2026-08-23**
 at the end of this file. Earlier sections remain as historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
@@ -957,3 +957,34 @@ elapsed work and reduced internal plumbing; it changed no topology, motion,
 selection, collision, or validation algorithm. On balance, retain this compact
 version and its honest unfavorable evidence, without restoring the prototype
 microtimers or attempt ledger.
+
+## Corridor helper consolidation checkpoint — 2026-08-23
+
+The corridor fixed-goal runtime closure now contains 36 MATLAB files and 7,366
+physical lines, down from 42 files and 7,713 lines at task baseline
+`3280bb0`. Five corridor-local helpers that were executable copies of the
+neutral `azElInternal` boundary, obstacle-preparation, interpolation, option,
+and logical-normalization helpers were removed. The closed-form straight
+jerk-profile implementation was moved into its sole caller,
+`buildQuinticSpline`, without changing its equations or returned motion
+schema.
+
+Repository production, counted as MATLAB outside examples, tests, benchmarks,
+and sandbox, is now 70 files and 14,787 physical lines versus 76 files and
+15,133 lines at the task baseline. Production plus tests is 78 files and
+18,256 lines versus 84 files and 18,602 lines. These counts use PowerShell
+`Get-Content` physical rows consistently on both sides; earlier sections retain
+their historical counting records rather than being rewritten.
+
+The focused behavior gate passed 52/52 before and 52/52 after consolidation.
+It covers shared obstacle infrastructure and corridor static, moving,
+fixed/earliest-arrival, wrapping, expected-failure, trajectory, and independent
+validation behavior. MATLAB Code Analyzer reported zero messages across all 14
+changed MATLAB callers. A static call audit found all 36 runtime files
+reachable from `azElPlannerMethods.corridor.plan`, with no reference to a
+deleted helper. `git diff --check` also passed.
+
+This checkpoint improves ownership and deployment size; it is not a runtime or
+trajectory-quality claim. The complete maintained-example, visible-graphics,
+and full 127-test matrices were not rerun. No benchmark row was appended
+because no maintained example benchmark was executed.

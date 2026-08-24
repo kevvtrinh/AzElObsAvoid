@@ -261,7 +261,8 @@ for obstacleIndex = 1:obstacleCount
         % Query moving geometry separately at every nearby trajectory time.
         for nearIndex = 1:numel(nearTimeIndex)
             timeIndex = nearTimeIndex(nearIndex);
-            shape = azElPlannerMethods.corridor.internal.obstacles.shapeAtTime( obstacles(obstacleIndex), time_s(timeIndex));
+            shape = azElInternal.obstacles.shapeAtTime( ...
+                obstacles(obstacleIndex), time_s(timeIndex));
             [clearance_deg(nearIndex), nearestPoint_deg(nearIndex, :)] = azElInternal.geometry.pointPolygonClearance( ...
                 shape, position_deg(timeIndex, :));
         end
