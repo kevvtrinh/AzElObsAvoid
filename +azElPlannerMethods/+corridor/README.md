@@ -1,9 +1,9 @@
-# Corridor-quintic planner snapshot
+# Compact corridor-quintic planner
 
-This folder contains the `corridorQuintic` backend imported from
-`325-less-nlp` commit
-`28526638886b69efdf6d697a942ad2c1207bcc04`. Its latest planner baseline was
-recorded with the implementation and evidence committed at `9dc2530`.
+This folder contains the `corridorQuintic` compatibility backend. It originated
+from `325-less-nlp` commit `28526638886b69efdf6d697a942ad2c1207bcc04`;
+its former multi-path motion stack has been replaced by one compact C3/C4
+candidate path plus a small exact direct quintic.
 
 The backend builds bounded spatial and timed route proposals, constructs a
 continuous corridor around a selected route, and generates independently
@@ -33,7 +33,7 @@ These are backend integration points. Application code should normally call
 canonical inputs
     -> prepared obstacle histories
     -> bounded topology and timing seeds
-    -> corridor-constrained continuous motion
+    -> compact C3/C4 continuous motion
     -> independent validation and deterministic selection
 ```
 

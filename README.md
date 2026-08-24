@@ -5,7 +5,7 @@ interface:
 
 | Planner | `PlannerMethod` | Default? | Motion strategy |
 | --- | --- | :---: | --- |
-| Corridor quintic | `"corridorQuintic"` | Yes | Bounded visibility and timed seeds followed by corridor-constrained continuous quintic motion. It uses no HS3 or nonlinear-programming solve. |
+| Compact corridor | `"corridorQuintic"` | Yes | Bounded visibility and timed seeds followed by compact C3/C4 quintic motion and independent validation. It uses no HS3 or nonlinear-programming solve. |
 | HS3 | `"hs3"` | No | Bounded seeds, deterministic analytic first motions when applicable, and optional HS3 finite-jerk nonlinear optimization with `fmincon`. |
 
 The methods are genuine alternatives. Both consume the same canonical
@@ -14,8 +14,9 @@ that method's search, motion construction, validation, and result builder.
 The dispatcher never runs both, silently substitutes one for the other, or
 falls back after a selected method fails.
 
-The corridor snapshot comes from `325-less-nlp` commit
-`28526638886b69efdf6d697a942ad2c1207bcc04`. The HS3 snapshot comes from
+The corridor package originated at `325-less-nlp` commit
+`28526638886b69efdf6d697a942ad2c1207bcc04` and now contains the compact
+replacement documented in its local guide. The HS3 snapshot comes from
 `plan-325` commit `5a067112a9f880d015f52fb97538a99010871478`.
 See the [method-package guide](+azElPlannerMethods/README.md), the
 [corridor guide](+azElPlannerMethods/+corridor/README.md), and the
@@ -402,6 +403,14 @@ package qualification, both selector paths, and physical unplugging:
   an HS3-only copy did the same with the corridor folder absent.
 - MATLAB Code Analyzer checked all 109 intended MATLAB files and reported zero
   messages. Two unrelated untracked report scripts were deliberately excluded.
+
+The current compact-corridor cutover supersedes the corridor motion evidence
+above: its final source passed 133/133 tests, all 18 maintained example gates,
+the 1/5/10/20-turn and 12-hairpin benchmarks, success and expected-failure
+graphics smokes, and Code Analyzer across 99 intended MATLAB files. Every
+successful maintained-example and scaling duration met or beat its frozen
+legacy value. Exact current rows and known finite-search limitations are in
+`verification.md` and `benchmark.csv`.
 
 Exact measurements and source tags are appended to `benchmark.csv` and
 explained in `verification.md`; historical rows were not replaced.

@@ -40,8 +40,9 @@ result = planAzElMotion( obstacles, initialState, goalState, limits, plannerOpti
 
 verifyExperimentalSuccess(testCase, result);
 selected = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
-verifyTrue(testCase, selected.HoldRecoveryUsed);
-verifyGreaterThan(testCase, selected.HoldMultiplier, 2);
+verifyTrue(testCase, isfield(selected, "CompactC3"));
+verifyTrue(testCase, selected.CompactC3.Accepted);
+verifyGreaterThan(testCase, selected.CompactC3.TrialCount, 1);
 end
 
 function testTranslatingCurvedObstacleRetainsValidatedTiming(testCase)
@@ -71,7 +72,8 @@ result = planAzElMotion( obstacles, initialState, goalState, limits, plannerOpti
 verifyExperimentalSuccess(testCase, result);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
 verifyEqual(testCase, summary.SeedSource, "visibilityGraph");
-verifyEqual(testCase, summary.SolverDiagnostics.DynamicExactDensificationFactor, 2);
+verifyTrue(testCase, summary.SolverDiagnostics.CompactC3.Accepted);
+verifyGreaterThan(testCase, summary.SolverDiagnostics.CompactC3.QpCount, 0);
 verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 end
 
@@ -117,21 +119,16 @@ verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, "corridorQuintic")
 end
 
 function testSmallStaticCorridorUsesValidatedTimingController(testCase)
-% Verify bounded exact exchange or its shorter validated C3 replacement.
+% Verify the compact controller reuses one affine basis across duration trials.
 result = exampleUShapedAzElTimeSpace(struct("PlotOutputs", false));
 
 verifyExperimentalSuccess(testCase, result);
 diagnostics = result.SeedSummaries( result.SelectedSeedIndex).SolverDiagnostics;
-if isfield(diagnostics, "CompactC3")
-    verifyTrue(testCase, diagnostics.CompactC3.Accepted);
-    verifyGreaterThan(testCase, diagnostics.CompactC3.QpCount, 0);
-    verifyEqual(testCase, diagnostics.CompactC3.AffineBasisBuildCount, 1);
-    verifyEqual(testCase, diagnostics.CompactC3.AffineBasisReuseCount, diagnostics.CompactC3.TrialCount);
-else
-    verifyTrue(testCase, diagnostics.ExactTraversalAttempted);
-    verifyTrue(testCase, diagnostics.ExactTraversalAccepted);
-    verifyGreaterThan(testCase, diagnostics.ExactTraversalLinearSolveCount, 0);
-end
+verifyTrue(testCase, isfield(diagnostics, "CompactC3"));
+verifyTrue(testCase, diagnostics.CompactC3.Accepted);
+verifyGreaterThan(testCase, diagnostics.CompactC3.QpCount, 0);
+verifyEqual(testCase, diagnostics.CompactC3.AffineBasisBuildCount, 1);
+verifyEqual(testCase, diagnostics.CompactC3.AffineBasisReuseCount, diagnostics.CompactC3.TrialCount);
 verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, 22.818548735851);
 end
 

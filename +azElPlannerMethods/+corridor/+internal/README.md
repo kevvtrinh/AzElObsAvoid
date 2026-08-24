@@ -15,8 +15,8 @@ shared obstacles -> search -> motion -> validation
 - `geometry`: corridor-specific convex decomposition.
 - `obstacles`: corridor-specific obstacle-envelope construction.
 - `search`: bounded visibility, homology, timed-search, and seed generation.
-- `motion`: corridor-constrained spline generation, retiming, and candidate
-  selection.
+- `motion`: compact C3/C4 spline construction, bounded duration search, and
+  candidate selection.
 - `validation`: corridor and envelope certificates used independently of
   candidate generation.
 

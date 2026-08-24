@@ -5,6 +5,6 @@ retimes candidates, and selects the earliest independently valid result. It
 consumes prepared obstacles and validation certificates; it does not construct
 scenario geometry.
 
-Straight obstacle-free requests may use the exact jerk-switching profile.
-Multi-segment requests use the corridor-constrained spline path. Neither path
-invokes HS3 or `fmincon`.
+Straight static requests use the exact endpoint quintic. Multi-segment and
+dynamic requests use the compact C3/C4 spline path, including nonzero endpoint
+velocity and acceleration. Neither path invokes HS3 or `fmincon`.

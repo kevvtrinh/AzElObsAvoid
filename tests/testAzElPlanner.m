@@ -192,6 +192,40 @@ independentMinimumTime_s = 2 * (constantAccelerationTime_s + 2 * jerkRampTime_s)
 verifyEqual(testCase, result.time_s(end), independentMinimumTime_s, "AbsTol", 0.25);
 end
 
+function testCompactDetourPreservesNonzeroEndpointStates(testCase)
+% Verify compact obstacle detours enforce supplied endpoint derivatives.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0.2 0.1], [0.05 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    50, [8 0], [0.15 -0.05], [-0.04 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
+limits.azimuthInterval_deg = [-1 9];
+limits.elevationInterval_deg = [-4 4];
+obstacle = makeAzElObstacleData( ...
+    "endpoint-state detour", [0; 50], ...
+    [3; 5; 5; 3], [-1; -1; 1; 1], 0.1);
+options = fixedOptions();
+options.GoalTimeMode = "earliestArrival";
+options.DirectSeedOnly = false;
+options.MaximumSeedCount = 3;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, result.velocity_deg_s(1, :), ...
+    initialState.velocity_deg_s, "AbsTol", 1e-10);
+verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
+    initialState.acceleration_deg_s2, "AbsTol", 1e-10);
+verifyEqual(testCase, result.velocity_deg_s(end, :), ...
+    goalState.velocity_deg_s, "AbsTol", 1e-9);
+verifyEqual(testCase, result.acceleration_deg_s2(end, :), ...
+    goalState.acceleration_deg_s2, "AbsTol", 1e-9);
+diagnostics = result.SeedSummaries( ...
+    result.SelectedSeedIndex).SolverDiagnostics;
+verifyTrue(testCase, diagnostics.CompactC3.Accepted);
+end
+
 function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
 testSupport.verifySharedPlannerContract( ...
     testCase, "corridor", "testEarliestGoalIsNotRejectedByHorizonOccupancy");

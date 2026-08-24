@@ -1,7 +1,7 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Compact stage-timing checkpoint — 2026-08-23](#compact-stage-timing-checkpoint--2026-08-23);
+[Compact corridor cutover — 2026-08-24](#compact-corridor-cutover--2026-08-24);
 earlier sections are retained as historical checkpoints.
 
 ## Evidence scope
@@ -2481,3 +2481,123 @@ The 36 fresh example rows were appended to `benchmark.csv` under
 `625b243+dedup-worktree`. This checkpoint is a maintainability and deployment-
 size improvement; no planner-runtime, completeness, optimality, or trajectory-
 quality improvement is claimed.
+
+## Compact corridor cutover — 2026-08-24
+
+This checkpoint replaces the legacy corridor motion stack on branch
+`325-full-suite` from worktree source `8111d0f+compact-cutover-worktree`.
+Static straight requests retain the exact direct endpoint quintic. Every
+obstacle-path request is assembled through `solveCompactC3Candidate` and uses
+compact C3/C4 motion; no HS3 or nonlinear solve is invoked by the corridor
+method.
+
+### Size and dependency evidence
+
+Final obstacle-path ownership is 1,023 nonblank, noncomment MATLAB lines, below
+the user-authorized 1,200-line limit:
+
+| File | Noncomment lines |
+| --- | ---: |
+| `solveCompactC3.m` | 563 |
+| `solveCompactC3Candidate.m` | 129 |
+| `runCorridorPlanner.m` | 260 |
+| `buildFixedDurationAffineModel.m` | 37 |
+| `expandRouteClearance.m` | 34 |
+
+The final count is 33 lines above the earlier 990-line checkpoint because the
+two duration brackets now share an explicit preparation cache instead of
+rebuilding the same affine basis. Against committed `8111d0f`, the four deleted
+legacy files contain 1,309 physical and 1,011 noncomment lines:
+`solveCorridorQuintic`, `retimeDynamicRoute`, `optimizeExactTraversal`, and
+`spanTimeDemand`. Repository-wide text inspection found no executable caller
+of those names. Raw `solveCompactC3` has one production caller, the shared
+candidate adapter used by the planner and both scaling benchmarks.
+
+### Correctness and regression evidence
+
+The first complete suite run found two failures: the U-case timing and stage-
+accounting tests expected one affine-basis build but observed two. Diagnostics
+showed that an infeasible 0.5 route bracket performed two trials, then a 0.8
+bracket rebuilt the identical basis and succeeded. Removing the first bracket
+changed a dynamic selected topology, so that experiment was reverted. The
+retained fix caches preparation across both brackets. Both affected test files
+then passed 16/16, and a fresh complete run passed 133/133.
+
+The final maintained-example capture ran all cases serially in one MATLAB
+process. It produced 17 independently validated successes and the expected
+validated `noValidatedSeed` failure. Every successful duration met or beat the
+frozen legacy duration:
+
+| Example | Compact duration (s) | Frozen legacy (s) | Wall (s) |
+| --- | ---: | ---: | ---: |
+| Alternating slalom | 10.7822098011 | 10.8556642584 | 3.3593887 |
+| Az/El planning | 7.64390306784 | 7.64965634404 | 0.9348455 |
+| Dense concave | 8.68804103025 | 8.69057318299 | 0.6536946 |
+| Forty moving circles | 60.3618388755 | 62.4777398626 | 5.9253491 |
+| Four accelerating circles | 22 | 22 | 4.1871735 |
+| Intercept at set time | 12 | 12 | 0.0741688 |
+| Intercept earliest | 6.11153430176 | 6.11153430176 | 0.1952022 |
+| Moving barrier wait | 10.2149013519 | 10.3713875625 | 3.2450860 |
+| Moving circle, no wrap | 8.68792447418 | 8.75122873615 | 6.3141087 |
+| Moving/deforming U.S. | 14.1949781492 | 19.2943308307 | 21.3253900 |
+| Expected no path | `NaN` | `NaN` | 0.0834465 |
+| Obstacle free | 4.53112887415 | 4.53112887415 | 0.0501164 |
+| Opening U | 11.7332839966 | 11.7353786786 | 5.7116175 |
+| Straight moving target | 20.8695652174 | 20.8695652174 | 2.0964864 |
+| Target exits obstacle | 24 | 24 | 1.9774286 |
+| Two opposing Us | 22.1109676862 | 22.1609457614 | 0.8391154 |
+| Single U | 21.8327355422 | 22.640860107 | 0.8751825 |
+| Extreme U.S. outline | 6.10504292559 | 6.22216662415 | 11.9142326 |
+
+Complete polyline, smoothed-length, collision, kinematic-certificate, and wall-
+time fields are appended to `benchmark.csv`; no metrics were copied from an
+earlier run. The no-path row records planner success false and independent
+example validation true.
+
+A structurally different obstacle detour with nonzero initial and terminal
+velocity and acceleration passed independent validation at 7.49992177607 s.
+Endpoint errors were `7.68e-16` and `3.79e-14 deg/s` for velocity and
+`1.22e-14` and `1.37e-12 deg/s^2` for acceleration. The maintained regression
+is `testCompactDetourPreservesNonzeroEndpointStates`.
+
+### Scaling, graphics, and static evidence
+
+| Case | Compact duration (s) | Frozen legacy (s) | Candidate wall (s) |
+| --- | ---: | ---: | ---: |
+| 1 turn | 6.60420575985 | 7.36692262286 | 1.7638058 |
+| 5 turns | 19.8905274829 | 29.9538760389 | 0.9634780 |
+| 10 turns | 36.3238796555 | 41.8816850826 | 0.8148864 |
+| 20 turns | 68.3588042743 | 83.4675614946 | 2.9578101 |
+| 12 hairpins | 140.56091613 | 164.828287993 | 3.7061584 |
+
+All five scaling results passed independent validation. The first combined
+scaling command used the wrong hairpin report-field name after the four turn
+cases had passed; the hairpin was rerun with its documented
+`IndependentValidation` field and passed. MATLAB Code Analyzer checked 99
+intended production, benchmark, example, and test files with zero messages.
+A visible U-case smoke produced three figures and passed; a hidden expected-
+failure smoke produced two diagnostic figures and no selected motion.
+
+The compact duration and topology searches remain finite. This evidence proves
+the maintained cases and synthetic scales only; it is not a completeness,
+global-optimality, or uniform wall-time-speedup claim.
+
+### Diff-growth disclosure
+
+The existing `solveCompactC3.m` changes by +382/-58 lines against `8111d0f`.
+Its added responsibilities are the production C3/C4 representations, endpoint-
+derivative mapping, exact jerk accounting, safe-side QPs, and reusable affine
+preparation needed to replace four solver paths. Keeping the compact solver as
+an optional sidecar was rejected because it preserved duplicate production;
+removing the first duration bracket was tested and reverted after it changed a
+dynamic selected topology. The existing `runCorridorPlanner.m` changes by
++125/-491 lines: additions normalize compact/direct candidates and preserve
+stable diagnostics while 491 lines of legacy recovery orchestration disappear.
+Both files are covered by the 133-test suite, 18-example matrix, scaling gate,
+nonzero-endpoint regression, Code Analyzer, and graphics smokes.
+
+`verification.md` itself changes by +121/-1 lines to retain the evidence above,
+while `plan.md` changes by +51/-61 and therefore shrinks overall. New source is
+the 139-physical-line shared compact candidate adapter and the 41-physical-line
+clearance helper; they centralize maintained planner/benchmark behavior rather
+than moving legacy code between files.

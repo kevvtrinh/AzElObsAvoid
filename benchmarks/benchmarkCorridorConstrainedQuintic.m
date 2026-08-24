@@ -7,19 +7,17 @@ function report = benchmarkCorridorConstrainedQuintic( turnCounts, benchmarkOver
 %       turnCounts, benchmarkOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Measure deterministic corridor-constrained quintic scaling on the
-%     frozen repeated-turn family using only the corridor planner.
+%   - Measure deterministic compact C3/C4 scaling on the frozen repeated-turn
+%     family using the complete visibility-graph topology.
 %**************************************************************************
 % INPUTS
 %   - turnCounts (numeric vector, optional; default [1 2 5 10 20])
 %       Positive integer alternating-barrier counts, executed serially.
 %   - benchmarkOverrides (scalar struct, optional; default struct())
 %       .RepeatCount is a positive integer (default 3).
-%       .MaximumRouteVertexCount is an integer >= 2 (default 22).
+%       .MaximumRouteVertexCount is an integer >= 2 or Inf (default Inf).
 %       .PrintProgress is logical (default true).
 %       .RandomSeed is a nonnegative integer (default 325).
-%       .PrototypeOptions is a scalar partial option struct (default
-%       struct()). RouteVertexCount is owned by MaximumRouteVertexCount.
 %**************************************************************************
 % OUTPUTS
 %   - report (scalar struct)
@@ -43,7 +41,7 @@ validateattributes(turnCounts, {'numeric'}, {'real', 'finite', 'vector', 'intege
 turnCounts = double(turnCounts(:));
 defaults = struct( ...
     "RepeatCount", 3, ...
-    "MaximumRouteVertexCount", 22, "PrintProgress", true, "RandomSeed", 325, "PrototypeOptions", struct());
+    "MaximumRouteVertexCount", Inf, "PrintProgress", true, "RandomSeed", 325);
 [controls, unknownNames] = azElInternal.resolveOptions( ...
     defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
@@ -51,18 +49,13 @@ if ~isempty(unknownNames)
         "Ignoring unknown fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 validateattributes(controls.RepeatCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', 2});
+validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, {'real', 'scalar', 'positive'});
+if isfinite(controls.MaximumRouteVertexCount)
+    validateattributes(controls.MaximumRouteVertexCount, {'numeric'}, {'integer', '>=', 2});
+end
 validateattributes(controls.RandomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 controls.PrintProgress = azElInternal.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", "benchmarkCorridorConstrainedQuintic:InvalidPrintControl");
-if ~isstruct(controls.PrototypeOptions) || ~isscalar(controls.PrototypeOptions)
-    error("benchmarkCorridorConstrainedQuintic:InvalidPrototypeOptions", ...
-        "PrototypeOptions must be a scalar partial option struct.");
-end
-if isfield(controls.PrototypeOptions, "RouteVertexCount")
-    error("benchmarkCorridorConstrainedQuintic:ConflictingRouteCount", ...
-        "Set MaximumRouteVertexCount on the benchmark rather than " + "RouteVertexCount inside PrototypeOptions.");
-end
 scenarioConstants = repeatedTurnConstants();
 plannerOptions = planAzElMotion();
 plannerOptions.GoalTimeMode = "earliestArrival";
@@ -80,6 +73,7 @@ runIndex = 0;
 for turnCountIndex = 1:numel(turnCounts)
     turnCount = turnCounts(turnCountIndex);
     [obstacles, initialState, goalState, limits] = createRepeatedTurnBenchmarkScenario( turnCount, scenarioConstants);
+    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
     rng(controls.RandomSeed, "twister");
     seedTimer = tic;
     [seeds, seedDiagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( ...
@@ -91,16 +85,22 @@ for turnCountIndex = 1:numel(turnCounts)
             "Turn count %d produced no visibility-graph seed.", turnCount);
     end
     route_deg = seeds(visibilitySeedIndex).position_deg;
-    routeVertexCount = min( controls.MaximumRouteVertexCount, size(route_deg, 1));
-    prototypeOptions = controls.PrototypeOptions;
-    prototypeOptions.RouteVertexCount = routeVertexCount;
-
+    if controls.MaximumRouteVertexCount < size(route_deg, 1)
+        error("benchmarkCorridorConstrainedQuintic:RouteReductionRemoved", ...
+            "Compact scaling uses all %d input-derived route vertices; " + ...
+            "MaximumRouteVertexCount=%d would change the topology.", ...
+            size(route_deg, 1), controls.MaximumRouteVertexCount);
+    end
+    routeVertexCount = size(route_deg, 1);
     % Repeat the frozen solve and validation to measure runtime variation without changing topology.
     for repeatIndex = 1:controls.RepeatCount
         runIndex = runIndex + 1;
         candidateTimer = tic;
-        motion = azElPlannerMethods.corridor.internal.motion.solveCorridorQuintic( ...
-            obstacles, initialState, goalState, limits, route_deg, prototypeOptions);
+        [motion, compactDiagnostics] = ...
+            azElPlannerMethods.corridor.internal.motion.solveCompactC3Candidate( ...
+            seeds(visibilitySeedIndex), obstacles, initialState, ...
+            goalState, limits, plannerOptions);
+        motion.OptimizerDiagnostics.CompactC3 = compactDiagnostics;
         candidateWallTime_s = toc(candidateTimer);
         validationTimer = tic;
         validation = azElPlannerMethods.corridor.validateTrajectory( motion, obstacles, initialState, goalState, limits, plannerOptions);
@@ -125,6 +125,7 @@ summaryTable = summarizeRuns(runTable, turnCounts);
 
 report = struct( ...
     "BenchmarkName", "corridorConstrainedQuinticScaling", ...
+    "MotionMethod", "compactC3", ...
     "Environment", benchmarkEnvironment(), ...
     "Controls", controls, ...
     "PlannerOptions", plannerOptions, ...
@@ -251,13 +252,14 @@ record.CorridorRecordCount = numel(motion.SeedCorridor);
 record.TopologyGeneratedSeedCount = seedDiagnostics.GeneratedSeedCount;
 record.SeedGenerationTime_s = seedElapsedTime_s;
 record.CandidateWallTime_s = candidateWallTime_s;
-record.CandidateSolveTime_s = motion.OptimizerDiagnostics.SolveTime_s;
+record.CandidateSolveTime_s = ...
+    motion.OptimizerDiagnostics.StageTiming.MotionSolvingElapsedTime_s;
 record.IndependentValidationTime_s = validationElapsedTime_s;
 record.TotalWallTime_s = seedElapsedTime_s + candidateWallTime_s + validationElapsedTime_s;
 record.Success = motion.Success;
 record.IndependentValidationPassed = validation.Passed;
-record.CorridorCertified = motion.OptimizerDiagnostics.CorridorCertified;
-record.EnvelopeContainsObstacles = motion.OptimizerDiagnostics.EnvelopeContainsObstacles;
+record.CorridorCertified = validation.SeedCorridorCertified;
+record.EnvelopeContainsObstacles = NaN;
 record.FallbackInvoked = false;
 record.SelectedPolylineLength_deg = sum(vecnorm(diff(route_deg), 2, 2));
 if ~isempty(motion.position_deg)

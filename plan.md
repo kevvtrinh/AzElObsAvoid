@@ -1,61 +1,51 @@
-# Completed ungrouped-obstacle performance checkpoint
+# Compact corridor replacement closeout
 
-## Objective and scope
+## Objective
 
-On `325-full-suite`, make the corridor-quintic engine practical for the
-maintained moving-circle case without seed-obstacle grouping, using only
-input-derived obstacle information. Also make the rotating U.S. example's
-supplied deformation visibly increase in size.
+Replace the legacy corridor motion stack with one compact, input-driven C3/C4
+implementation, support nonzero endpoint velocity and acceleration, and meet
+or beat the frozen maintained-example and repeated-turn/hairpin results within
+the user-authorized 1,200 non-comment-line limit.
 
-## Completed evidence
+## Implemented state
 
-- The only maintained example that requests clustering is
-  `exampleFortyMovingCircleGrid` (`SeedClusterDistance_deg=2`). Its supplied
-  swept geometry already has one region, so clustering creates zero groups.
-- Equivalent headless seed-325 grouped and ungrouped baselines both succeeded,
-  passed example/grid/continuous validation, and returned the same graph,
-  route, and 62.4777398626363 s motion.
-- Ungrouped profiling localized 47,793 repeated shape/clearance queries;
-  collision checking was 8.238 s of a 14.569 s median planner run.
-- The retained corridor-only broad phase uses each obstacle's supplied
-  `InternalPreparation.HistoryBounds_deg`. It assumes no fixed translation,
-  speed, rigidity, or size and falls through to exact geometry near the path.
-- Three alternating fresh-process ungrouped pairs preserved all reported
-  physics. Median planner time fell from 14.569 s to 7.004 s and median
-  collision time from 8.238 s to 0.511 s; selected collision checks fell from
-  3,440 to 56.
-- The U.S. history now starts at the native outline and ends after 12 degrees
-  of input-specified rotation with 18%/14% nominal scale growth. Measured
-  protected extents grew 16.8% azimuth and 22.9% elevation. The example still
-  succeeded and independently validated.
-- MATLAB Code Analyzer found zero messages in the three touched MATLAB files.
-  Focused corridor, dynamic-timing, and example-contract tests passed 59/59 in
-  110.6526933 s.
-- All 18 corridor examples passed in fresh literal processes, the visible U.S.
-  smoke produced three figures, the complete suite passed 132/132, and Code
-  Analyzer finished with zero messages across 106 MATLAB files.
-- Detailed measurements and every final example row are retained in
-  `verification.md`, `branch_assessment.md`, and `benchmark.csv`.
+- Obstacle-path ownership is 1,023 nonblank, noncomment MATLAB lines across
+  `solveCompactC3`, `solveCompactC3Candidate`, `runCorridorPlanner`,
+  `buildFixedDurationAffineModel`, and `expandRouteClearance`.
+- Static straight requests retain the small exact analytic quintic. Other
+  static, moving, deforming, and timed-hold routes use compact C3/C4 motion.
+- Endpoint position, velocity, and acceleration are enforced for both initial
+  and terminal states. A structurally different detour regression covers
+  nonzero derivatives.
+- Duration retries reuse one affine basis. Diagnostics aggregate every trial,
+  QP, basis build, and validation attempt.
+- `solveCorridorQuintic`, `retimeDynamicRoute`, `optimizeExactTraversal`, and
+  `spanTimeDemand` are deleted with no remaining executable callers.
+- Both scaling benchmarks call the same production compact-candidate adapter
+  and reject route truncation rather than benchmarking a changed topology.
 
-## Files changed
+## Verification state
 
-- `+azElPlannerMethods/+corridor/validateTrajectory.m`
-- `examples/private/createContiguousUSObstacle.m`
-- `tests/testExampleContracts.m`
-- `plan.md`
-- Root-local `.agents/skills/planner-performance-diagnosis/SKILL.md` records
-  the user requirement that obstacle behavior come from supplied inputs.
+- The serial 18-example gate passed all 18 outcomes: 17 independently
+  validated successes and the expected validated no-path result. Every
+  successful duration met or beat the frozen legacy duration.
+- The final-source 1/5/10/20-turn and 12-hairpin gate passed independent
+  validation and beat every frozen legacy duration.
+- The first full-suite attempt exposed two duplicate-basis accounting failures.
+  The redundant rebuild was removed without deleting the two-bracket behavior;
+  both affected test files then passed 16/16.
+- A fresh complete test run passed 133/133. The final 18-row maintained-example
+  CSV capture, 99-file Code Analyzer pass, and success/failure graphics smokes
+  also passed. Only final staging inspection and commit remain.
 
-The unrelated untracked `docs/` directory remains untouched.
+## Boundaries and next phase
 
-## Remaining limits
+The compact search remains finite and supplies no global optimality or
+completeness certificate. Runtime is reported per case and is not represented
+as a uniform speedup. Unrelated untracked `docs/` and `tmp/` content remains
+untouched.
 
-The broad phase is conservative only because its box is constructed from the
-complete obstacle history supplied by the caller; absent evolution must remain
-fail-safe through updated inputs, caller bounds, or replanning. Current proof
-is strongest for the 40-circle and deforming-U.S. families and does not support
-a global scaling claim.
-Corridor construction is now the largest measured stage at roughly 4.6 of 7.0
-seconds in the 40-circle case. The production tree remains above its line-count
-target. No files are staged, committed, or pushed, and the unrelated untracked
-`docs/` directory remains preserved.
+After this compact checkpoint is committed, begin a separate bounded HS3
+replacement: at most 1,200 HS3-owned noncomment lines, identical inputs and
+independent validation, and per-example arrival/runtime comparison against the
+committed compact baseline.

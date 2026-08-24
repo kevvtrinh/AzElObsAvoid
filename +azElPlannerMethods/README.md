@@ -1,4 +1,4 @@
-# Az/El planner method snapshots
+# Az/El planner methods
 
 This package keeps the two production planning algorithms isolated. Users call
 the public functions at the repository root; those functions normalize shared
@@ -8,7 +8,7 @@ obstacle inputs once, then select one method folder.
 
 | Folder | `PlannerMethod` value | Exact source snapshot | Preserved behavior |
 | --- | --- | --- | --- |
-| `+corridor` | `"corridorQuintic"` | `325-less-nlp` at `28526638886b69efdf6d697a942ad2c1207bcc04` | Visibility and timed seeds followed by corridor-constrained quintic motion. Its moving-target adapter performs bounded chronological fixed-arrival trials. |
+| `+corridor` | `"corridorQuintic"` | Originated at `325-less-nlp` `28526638886b69efdf6d697a942ad2c1207bcc04` | Visibility and timed seeds followed by compact C3/C4 quintic motion. Its moving-target adapter performs bounded chronological fixed-arrival trials. |
 | `+hs3` | `"hs3"` | `plan-325` at `5a067112a9f880d015f52fb97538a99010871478` | Analytic first motions plus optional HS3 nonlinear improvement. Its moving-target adapter makes one moving-goal earliest-arrival planner call. |
 
 The last planner/evidence commits before those tips were `9dc2530` for the
@@ -16,7 +16,9 @@ corridor snapshot and `921b2f7` for HS3. Integration changes include package
 qualification, mechanically necessary names, shared behavior-equivalent
 contract and obstacle helpers, and the comment and layout style used by
 `325-less-nlp`. Numeric constants, solver decisions, candidate order, and
-validation rules belong to the source snapshots.
+validation rules belong to the method packages. The corridor motion stack has
+since been replaced by the compact implementation; the HS3 package retains its
+imported solver until its separate replacement gate is satisfied.
 
 ## Select a planner
 

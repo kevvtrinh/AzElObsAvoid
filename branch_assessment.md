@@ -1,6 +1,6 @@
 # Plan 325 branch assessment
 
-The current judgment is the **Corridor helper consolidation checkpoint — 2026-08-23**
+The current judgment is the **Compact corridor cutover — 2026-08-24**
 at the end of this file. Earlier sections remain as historical evidence.
 
 ## Current corridor-only assessment — compact C3 duration controller
@@ -1081,3 +1081,29 @@ returned motion passes independent validation. The full-suite wall time was
 establish causality, so no runtime improvement is claimed. Method-specific
 envelope, clustering, graph construction, result schemas, and collision
 certificates remain separate where their contracts differ.
+
+## Compact corridor cutover — 2026-08-24
+
+The largest current strength is that one 1,023-noncomment-line compact
+obstacle-path implementation now owns the corridor method. It supports static,
+moving, deforming, timed-hold, and nonzero endpoint-derivative requests; the
+small direct analytic quintic remains separate for static straight motion.
+Four superseded legacy motion files containing 1,011 noncomment lines at
+committed `8111d0f` were removed after a zero-caller audit.
+
+The final evidence is 133/133 automated tests, zero Code Analyzer messages
+across 99 intended MATLAB files, 18/18 maintained-example outcomes, and five of
+five repeated-turn/hairpin benchmarks. The example matrix contains 17
+independently validated successes plus the expected validated no-path result;
+every successful arrival met or beat its frozen legacy duration. A distinct
+nonzero-velocity/acceleration detour also passed with endpoint errors no larger
+than `1.37e-12` in the applicable derivative units. Success and expected-
+failure graphics both rendered from returned diagnostics.
+
+The most important limitation is still finite search. Neither bounded topology
+generation nor bounded duration exchange supplies completeness or a global
+optimality certificate. The moving/deforming U.S. case remains the slowest
+recorded example at 21.32539 s wall time, and the results do not establish a
+uniform runtime speedup. The next HS3 reduction must therefore compare every
+arrival and wall time against this committed compact baseline rather than rely
+on aggregate averages or fallback claims.
