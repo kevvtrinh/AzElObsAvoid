@@ -126,7 +126,9 @@ result = planAzElMotion( ...
 Use `makeAzElObstacleData` for static or time-indexed polygon histories and
 `makeMovingAzElObstacleData` for moving shapes. Safety margins are applied by
 the public obstacle constructors exactly once. Both selections retain original
-and protected geometry separately.
+and protected geometry separately. The same `makeAzElObstacleData` owner also
+normalizes a lone canonical obstacle record and rebuilds a canonical obstacle
+container when passed a new absolute safety margin.
 
 `obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
 Obstacle history coordinates use degrees and history times use seconds.
@@ -318,9 +320,8 @@ planAzElMovingTargetIntercept.m     shared chronological intercept adapter
     certifySeedCorridor.m
     emptyPlannerResult.m
 
-makeAzElObstacleData.m              protected polygon construction
+makeAzElObstacleData.m              construct, normalize, protect obstacles
 makeMovingAzElObstacleData.m        moving polygon construction
-inflateAzElObstacleData.m           explicit obstacle inflation helper
 validateAzElTrajectory.m            public independent validation
 plotAzElMotion.m                    result and diagnostics plotting
 

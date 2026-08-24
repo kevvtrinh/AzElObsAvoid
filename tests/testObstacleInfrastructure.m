@@ -41,10 +41,10 @@ verifyEqual(testCase, combineAzElObstacles([]), rootEmpty);
 verifyEqual(testCase, fieldnames(rootEmpty), fieldnames(rootResult));
 end
 
-function testNormalizePreservesCanonicalValues(testCase)
-% Verify normalization establishes stable values, shapes, and field order.
+function testUnifiedOwnerNormalizesCanonicalValues(testCase)
+% Verify the unified owner establishes stable values, shapes, and fields.
 inputData = normalizationFixture();
-rootResult = normalizeAzElTimeObstacleData(inputData);
+rootResult = makeAzElObstacleData(inputData);
 verifyEqual(testCase, rootResult.time_s, [0; 2]);
 verifyEqual(testCase, rootResult.status, ["visible"; "visible"]);
 verifyEqual(testCase, size(rootResult.az_deg), [2 1]);
@@ -77,7 +77,7 @@ for caseIndex = 1:size(cases, 1)
     inputData = cases{caseIndex, 1}();
     expectedIdentifier = cases{caseIndex, 2};
     actualIdentifier = captureErrorIdentifier( ...
-        @normalizeAzElTimeObstacleData, inputData);
+        @makeAzElObstacleData, inputData);
     verifyEqual(testCase, actualIdentifier, expectedIdentifier);
 end
 end
@@ -90,7 +90,7 @@ inputData.el_deg{1} = [0; 1; NaN; -1; -1; 1; 1];
 inputData.originalAz_deg = inputData.az_deg;
 inputData.originalEl_deg = inputData.el_deg;
 lastwarn("");
-output = normalizeAzElTimeObstacleData(inputData);
+output = makeAzElObstacleData(inputData);
 [~, warningIdentifier] = lastwarn();
 verifyEqual(testCase, string(warningIdentifier), ...
     "normalizeAzElTimeObstacleData:RemovedTwoVertexRegions");
@@ -161,7 +161,7 @@ function obstacle = movingMultiRingObstacle()
 inputData = normalizationFixture();
 inputData.targetName = "moving multi-ring";
 inputData.safetyMargin_deg = 0;
-obstacle = normalizeAzElTimeObstacleData(inputData);
+obstacle = makeAzElObstacleData(inputData);
 end
 
 function obstacle = rectangleObstacle(name, time_s, bounds_deg)

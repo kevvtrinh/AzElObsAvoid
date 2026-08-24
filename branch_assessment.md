@@ -1170,3 +1170,20 @@ workspace boundary to undershoot between samples by as much as 0.000642
 degrees. The independent continuous validator correctly rejects it. This
 checkpoint exposes and preserves the regression but does not conceal it with a
 larger tolerance, expanded workspace, scenario special case, or HS3 fallback.
+
+## Unified obstacle construction ownership — 2026-08-24
+
+Fresh construction, imported canonical normalization, and absolute safety-
+margin reconstruction now have one public owner in `makeAzElObstacleData`.
+The separate normalizer and inflater files are removed, all maintained callers
+use the unified call forms, and the idempotent original-to-protected geometry
+invariant remains covered by both planner contract suites.
+
+This consolidation improves ownership but increases source size: the former
+three files contained 533 physical / 339 noncomment lines, while the unified
+owner contains 576 / 464. With the combiner call-site change, production grows
+by 44 physical / 126 noncomment lines. That unfavorable size cost is retained
+explicitly rather than presented as cleanup savings. The compensating evidence
+is one implementation boundary, two fewer public files, zero remaining callers
+of the removed names, 140/140 tests, and 18/18 maintained outcomes for each
+separate planner method.

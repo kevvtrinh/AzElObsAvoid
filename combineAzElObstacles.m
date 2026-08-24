@@ -100,7 +100,8 @@ normalizedObstacles = cell(size(obstacleItems));
 % Send every collected obstacle through the same canonical schema gate before
 % concatenating them into the single array returned to the planner.
 for obstacleIndex = 1:numel(obstacleItems)
-    normalizedObstacles{obstacleIndex} = normalizeAzElTimeObstacleData( obstacleItems{obstacleIndex});
+    normalizedObstacles{obstacleIndex} = ...
+        makeAzElObstacleData(obstacleItems{obstacleIndex});
 end
 azElObstacles = vertcat(normalizedObstacles{:});
 end

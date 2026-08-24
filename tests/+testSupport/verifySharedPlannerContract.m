@@ -350,7 +350,7 @@ function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
 % Verify absolute reconstruction from original geometry is idempotent.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
 obstacle = makeAzElObstacleData( "margin", [0; 1], source_deg(:, 1), source_deg(:, 2), 0.2);
-reinflated = inflateAzElObstacleData(obstacle, 0.2);
+reinflated = makeAzElObstacleData(obstacle, 0.2);
 verifyEqual(testCase, reinflated.az_deg, obstacle.az_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);

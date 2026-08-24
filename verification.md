@@ -2798,3 +2798,37 @@ validated no-path outcome. The changed/new MATLAB files had zero Code Analyzer
 messages. The modified U.S. example's plot-enabled smoke created three figures
 and six axes while retaining passing scenario validation, and
 `git diff --check` passed.
+
+## Unified obstacle construction owner — 2026-08-24
+
+`makeAzElObstacleData` now owns all three canonical construction operations:
+fresh static or sampled construction, normalization of one imported canonical
+record, and absolute reinflation of canonical arrays or nested cells. The
+separate `normalizeAzElTimeObstacleData.m` and `inflateAzElObstacleData.m`
+implementations were removed. `combineAzElObstacles`, focused tests, public
+documentation, and the safety-margin idempotence contract now call the single
+owner. Established normalization and inflation error/warning identifiers were
+preserved so malformed-input diagnostics did not change silently.
+
+This is an ownership and file-count consolidation, not a source-size claim.
+The three former owners contained 533 physical / 339 nonblank, noncomment
+lines; the unified owner contains 576 / 464. Including the one-line caller
+expansion in `combineAzElObstacles`, production changes by +44 physical / +126
+noncomment lines while removing two public files. The added code is the
+input-type dispatch and explicit local contracts needed to expose three
+unambiguous call forms in one public function. Thin compatibility wrappers
+were considered but rejected because the requested outcome was one owner and
+all repository callers are migrated. The file remains below the 900-line
+per-file limit.
+
+Verification on the final source produced zero Code Analyzer messages for the
+unified owner, combiner, and changed tests. The focused obstacle suite matched
+its 5/5 baseline; the complete suite passed 140/140 in 337.935477 seconds.
+The maintained examples passed 18/18 for compact in 91.419464 seconds and
+18/18 for standalone HS3 in 549.982944 seconds. Each method retained 17
+independently validated successes and the expected validated
+`noValidatedSeed` outcome. Plot-enabled success and failure smokes produced
+four figures/seven axes and two figures/two axes respectively, with both
+scenario gates passing. No planner algorithm, obstacle geometry, margin,
+tolerance, seed, or expected result changed, so no new benchmark row or
+performance improvement is claimed.

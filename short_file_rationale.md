@@ -2,12 +2,12 @@
 
 This audit counts nonblank, noncomment lines in production MATLAB files. It
 excludes tests, examples, benchmarks, the interactive sandbox, and temporary
-verification artifacts. The current tree has 34 production files below 100
+verification artifacts. The current tree has 33 production files below 100
 code lines:
 
 | Area | Short files | Ownership result |
 | --- | ---: | --- |
-| Root public APIs | 3 | Stable construction and dispatch boundaries. |
+| Root public APIs | 2 | Stable container and dispatch boundaries. |
 | Neutral `azElInternal` | 20 | Shared input, geometry, topology, corridor, result, polynomial, and comparison invariants. |
 | Compact corridor | 5 | Compact-specific motion/adapters plus a validator facade. |
 | HS3 | 5 | Standalone option/validation boundaries and focused Hermite-Simpson primitives. |
@@ -23,9 +23,13 @@ intercept adapter, neutral topology/corridor/result helpers, and root
 
 | File | Code lines | Why it stays separate |
 | --- | ---: | --- |
-| `combineAzElObstacles.m` | 71 | Public obstacle-container normalization used before immutable preparation. |
-| `makeAzElObstacleData.m` | 28 | Public protected-obstacle construction and safety-margin boundary. |
+| `combineAzElObstacles.m` | 72 | Public obstacle-container normalization used before immutable preparation. |
 | `planAzElMotion.m` | 80 | Public selector that dispatches to either separate planner without cross-calls. |
+
+`makeAzElObstacleData.m` is no longer a short boundary. It now owns fresh
+construction, imported-record normalization, and absolute reinflation in one
+576-physical-line implementation; the separate normalizer and inflater were
+removed after all maintained callers migrated.
 
 The shared `planAzElMovingTargetIntercept.m` and canonical
 `validateAzElTrajectory.m` are no longer short dispatchers; each owns its
