@@ -38,8 +38,6 @@ candidates = cell(numel(seeds), 1);
 stageTiming = azElPlannerMethods.internal.stageTiming();
 firstValidatedMotionTime_s = NaN;
 candidateElapsedTime_s = 0;
-geometryIsStatic = isempty(obstacles) || all(arrayfun(@(obstacle) all( ...
-    obstacle.InternalPreparation.IntervalSpeedBound_deg_s == 0), obstacles));
 
 % Prefer one bounded compact solve on the input-eligible topology whose
 % timing semantics must be preserved, then fall back to spatial topology.
@@ -70,12 +68,7 @@ if compactPrimaryIndex > 0
         stageTiming, compactPrimaryDiagnostics.StageTiming);
     result.SearchDiagnostics.CompactC3 = compactPrimaryDiagnostics;
 end
-compactPrimaryAccepted = ~isempty(compactPrimaryCandidate) && ...
-    compactPrimaryCandidate.Success;
-if compactPrimaryAccepted && ~hasExplicitHoldSeed && ...
-        options.GoalTimeMode == "earliestArrival"
-    attemptedSeedIndices = compactPrimaryIndex;
-elseif hasExplicitHoldSeed && options.GoalTimeMode == "earliestArrival"
+if hasExplicitHoldSeed && options.GoalTimeMode == "earliestArrival"
     attemptedSeedIndices = find( ...
         [seeds.Source] ~= "directVisibilityEdge");
 else
@@ -101,7 +94,7 @@ for seedIndex = attemptedSeedIndices
         seedIndex == compactPrimaryIndex;
     if usedCompactPrimary
         candidate = compactPrimaryCandidate;
-    elseif geometryIsStatic && size(route_deg, 1) == 2
+    elseif size(route_deg, 1) == 2
         candidate = buildDirectCandidate( ...
             route_deg, obstacles, initialState, goalState, limits, options);
         stageTiming = addStageTiming( ...

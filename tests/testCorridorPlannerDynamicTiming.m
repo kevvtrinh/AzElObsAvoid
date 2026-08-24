@@ -77,6 +77,26 @@ verifyGreaterThan(testCase, summary.SolverDiagnostics.CompactC3.QpCount, 0);
 verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 end
 
+function testOffRouteMoverDoesNotEvictRelevantTimedSeed(testCase)
+% Verify an independently clear mover does not displace the route-shaping timed proposal.
+[nearObstacle, farObstacle, initialState, target, limits, options] = ...
+    twoMoverInterceptRequest(5202);
+base = planAzElMovingTargetIntercept( ...
+    nearObstacle, initialState, target, limits, options);
+added = planAzElMovingTargetIntercept( ...
+    combineAzElObstacles(farObstacle, nearObstacle), ...
+    initialState, target, limits, options);
+
+verifyExperimentalSuccess(testCase, base);
+verifyExperimentalSuccess(testCase, added);
+farValidation = validateAzElTrajectory( ...
+    base, farObstacle, base.Inputs.initialState, ...
+    base.Inputs.goalState, base.Inputs.limits, base.Options);
+verifyTrue(testCase, farValidation.Passed, farValidation.Message);
+verifyGreaterThan(testCase, farValidation.MinimumClearance_deg, 4);
+verifyEqual(testCase, added.position_deg, base.position_deg, "AbsTol", 1e-8);
+end
+
 function testDisconnectedSparseGraphUsesWorkspaceBoundarySupport(testCase)
 % Verify four deterministic moving fields that need spatial detour support.
 caseSeeds = [3275783 3283702 3299540 3315378];
@@ -202,10 +222,61 @@ for obstacleIndex = 1:obstacleCount
     obstacleByIndex{obstacleIndex} = makeAzElObstacleData( ...
         "moving coverage circle " + obstacleIndex, obstacleTime_s, azimuthByTime_deg, elevationByTime_deg, 0.1);
 end
+
 obstacles = combineAzElObstacles(obstacleByIndex{:});
 initialState = restState(0, [-17 0]);
 goalState = restState(missionEndTime_s, [17 0]);
 limits = motionLimits([-19 19], [-12 12]);
+end
+
+function [nearObstacle, farObstacle, initialState, target, limits, options] = ...
+        twoMoverInterceptRequest(randomSeed)
+% Reproduce two similarly sized rotating movers with only one shaping the route.
+stream = RandStream("mt19937ar", "Seed", randomSeed);
+obstacleTime_s = [0; 5; 10; 15; 20];
+unitBoundary_deg = [ ...
+    1 0; 0.4 0.4; 0 1; -0.4 0.4; ...
+    -1 0; -0.4 -0.4; 0 -1; 0.4 -0.4];
+localBoundary_deg = (1.35 + 0.35 * rand(stream)) * unitBoundary_deg;
+nearAzimuth_deg = cell(numel(obstacleTime_s), 1);
+nearElevation_deg = cell(numel(obstacleTime_s), 1);
+farAzimuth_deg = cell(numel(obstacleTime_s), 1);
+farElevation_deg = cell(numel(obstacleTime_s), 1);
+
+for timeIndex = 1:numel(obstacleTime_s)
+    fraction = (timeIndex - 1) / (numel(obstacleTime_s) - 1);
+    angle_rad = deg2rad(180 * fraction + 30 * rand(stream));
+    rotation = [cos(angle_rad) -sin(angle_rad); ...
+        sin(angle_rad) cos(angle_rad)];
+    nearCenter_deg = [3.4 + 1.2 * rand(stream), ...
+        -0.8 + 1.6 * sin(pi * fraction + 2 * pi * rand(stream))];
+    farCenter_deg = [-4 + 16 * fraction, -(7.5 + rand(stream))];
+    nearBoundary_deg = localBoundary_deg * rotation.' + nearCenter_deg;
+    farBoundary_deg = localBoundary_deg * rotation.' + farCenter_deg;
+    nearAzimuth_deg{timeIndex} = nearBoundary_deg(:, 1);
+    nearElevation_deg{timeIndex} = nearBoundary_deg(:, 2);
+    farAzimuth_deg{timeIndex} = farBoundary_deg(:, 1);
+    farElevation_deg{timeIndex} = farBoundary_deg(:, 2);
+end
+nearObstacle = makeAzElObstacleData( ...
+    "route-shaping mover", obstacleTime_s, ...
+    nearAzimuth_deg, nearElevation_deg, 0.2);
+farObstacle = makeAzElObstacleData( ...
+    "off-route similar mover", obstacleTime_s, ...
+    farAzimuth_deg, farElevation_deg, 0.2);
+initialState = restState(0, [0 0]);
+targetTime_s = (0:2:20).';
+target = struct("time_s", targetTime_s, ...
+    "position_deg", [6 + 0.2 * targetTime_s, 1 + 0.02 * targetTime_s], ...
+    "InterpolationMethod", "linear");
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", [2 2]);
+options = struct( ...
+    "InterceptMode", "specifiedTime", "SpecifiedInterceptTime_s", 10, ...
+    "MatchTargetVelocity", false, "MatchTargetAcceleration", false, ...
+    "PlannerOptions", struct( ...
+    "PlannerMethod", "corridorQuintic", "MaximumSeedCount", 5));
 end
 
 function options = plannerOptions(maximumSeedCount, randomSeed)

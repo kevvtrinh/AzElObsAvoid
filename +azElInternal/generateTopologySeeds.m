@@ -143,22 +143,48 @@ end
 % static swept envelope would hide. Work is explicitly bounded by node/layer
 % counts, so diagnostics must preserve when this proposal was suppressed.
 reservedTimedSeedCount = 0;
-timedRoute_deg = zeros(0, 2);
-timedRouteTime_s = zeros(0, 1);
+timedRoutes_deg = cell(0, 1);
+timedRouteTimes_s = cell(0, 1);
 % Add timed search only when geometry changes and the retained seed budget still has room.
 if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
     coverage.ExtendedTimedSearchAttempted = true;
     maximumTimedNodeCount = 24;
     directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
-    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
-        sampledNodes_deg, start_deg, goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
-    timedEdgeCost_deg = hypot( ...
-        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
-    [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
-        azElInternal.timeExpandedVisibilitySearch( ...
-        timedPosition_deg, timedEdgeCost_deg, obstacles, initialState, goalState, limits, sampleTimes_s, options);
-    diagnostics = appendTimeRecord(diagnostics, timeRecord);
-    trialSeeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+    candidateNodeSets_deg = {sampledNodes_deg};
+    if numel(obstacles) > 1
+        obstacleDistance_deg = Inf(numel(obstacles), 1);
+        obstacleNodeSets_deg = cell(numel(obstacles), 1);
+        for obstacleIndex = 1:numel(obstacles)
+            [~, ~, obstacleNodeSets_deg{obstacleIndex}] = sweptObstacleShape( ...
+                obstacles(obstacleIndex), sampleTimes_s);
+            obstacleDistance_deg(obstacleIndex) = minimumRouteDistance( ...
+                obstacleNodeSets_deg{obstacleIndex}, start_deg, goal_deg);
+        end
+        [~, nearestObstacleIndex] = min(obstacleDistance_deg);
+        candidateNodeSets_deg = [ ...
+            obstacleNodeSets_deg(nearestObstacleIndex); candidateNodeSets_deg];
+    end
+    trialSeeds = seeds;
+    for candidateSetIndex = 1:numel(candidateNodeSets_deg)
+        timedPosition_deg = [start_deg; goal_deg; directNode_deg; ...
+            selectCandidateVertices(candidateNodeSets_deg{candidateSetIndex}, ...
+            start_deg, goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
+        timedEdgeCost_deg = hypot( ...
+            timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
+            timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
+        [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
+            azElInternal.timeExpandedVisibilitySearch( ...
+            timedPosition_deg, timedEdgeCost_deg, obstacles, initialState, ...
+            goalState, limits, sampleTimes_s, options);
+        diagnostics = appendTimeRecord(diagnostics, timeRecord);
+        nextTrialSeeds = appendTimedSeed( ...
+            trialSeeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+        if numel(nextTrialSeeds) > numel(trialSeeds)
+            timedRoutes_deg{end + 1, 1} = timedRoute_deg; %#ok<AGROW>
+            timedRouteTimes_s{end + 1, 1} = timedRouteTime_s; %#ok<AGROW>
+            trialSeeds = nextTrialSeeds;
+        end
+    end
     reservedTimedSeedCount = numel(trialSeeds) - numel(seeds);
     if graphRecord.CandidateOffsetRetryCount >= 3 && options.MaximumSeedCount >= 3 && ...
             numel(seeds) + reservedTimedSeedCount >= options.MaximumSeedCount
@@ -190,8 +216,12 @@ for classIndex = 1:numel(nodePaths)
         seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
 end
-if numel(seeds) < options.MaximumSeedCount
-    seeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+for timedSeedIndex = 1:numel(timedRoutes_deg)
+    if numel(seeds) >= options.MaximumSeedCount
+        break;
+    end
+    seeds = appendTimedSeed(seeds, timedSeedTemplate, ...
+        timedRoutes_deg{timedSeedIndex}, timedRouteTimes_s{timedSeedIndex});
 end
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
@@ -354,6 +384,7 @@ if candidateCount <= maximumCount
     selectedPosition_deg = candidatePosition_deg;
     return;
 end
+
 endpointNeighborCount = min(4, floor(maximumCount / 6));
 directionCount = min(16, floor(maximumCount / 3));
 uniformCount = maximumCount - directionCount - 2 * endpointNeighborCount;
@@ -376,6 +407,20 @@ end
 selectedIndex = unique(selectedIndex, "stable");
 selectedIndex = selectedIndex(1:min(maximumCount, numel(selectedIndex)));
 selectedPosition_deg = candidatePosition_deg(selectedIndex, :);
+end
+
+function distance_deg = minimumRouteDistance(position_deg, start_deg, goal_deg)
+% Rank obstacle histories by distance to the direct planning segment.
+if isempty(position_deg)
+    distance_deg = Inf;
+    return;
+end
+routeVector_deg = goal_deg - start_deg;
+routeFraction = ((position_deg - start_deg) * routeVector_deg.') / ...
+    max(sum(routeVector_deg.^2), eps);
+routeProjection_deg = start_deg + min(1, max(0, routeFraction)) .* ...
+    routeVector_deg;
+distance_deg = min(vecnorm(position_deg - routeProjection_deg, 2, 2));
 end
 
 function visible = segmentIsVisible(firstPosition_deg, secondPosition_deg, shape, edgeStart_deg, edgeEnd_deg)

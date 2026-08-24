@@ -205,6 +205,7 @@ secondTriangle = makeAzElObstacleData( "second triangle", [0; 20], [6; 8; 7], [-
     [triangle; secondTriangle], linspace(0, 20, 2000), [-8 8; 12 8], 10000);
 verifyTrue(testCase, usedManyObstacleEnvelope);
 verifyNotEmpty(testCase, manyObstacleShape.Vertices);
+verifyFalse(testCase, isinterior(manyObstacleShape, 5, 0));
 end
 
 function testDeterministicRepeatedRun(testCase, adapter)

@@ -38,7 +38,7 @@ elseif seedHasExplicitHold
     upperDurations_s = seed.EstimatedDuration_s;
     bracketFractions = NaN;
 else
-    bracketFractions = [0.5 0.8];
+    bracketFractions = [0.5 0.8 1.0];
     upperDurations_s = straightMotion.MotionDuration_s + ...
         bracketFractions * ...
         (routeMotion.MotionDuration_s - straightMotion.MotionDuration_s);

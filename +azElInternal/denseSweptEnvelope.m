@@ -57,54 +57,50 @@ if estimatedVertexWork <= vertexWorkBudget
     return;
 end
 
-%% Section 2: Collect All Protected History Vertices
+%% Section 2: Build One Conservative Envelope Per Obstacle
 
-sliceCount = 0;
-for obstacleIndex = 1:numel(obstacles)
-    sliceCount = sliceCount + numel(obstacles(obstacleIndex).az_deg);
-end
-historyVerticesBySlice_deg = cell(sliceCount, 1);
-historySliceIndex = 0;
-
-% Preserve every stored source slice, not only the requested sample times.
+% Separate envelopes cannot bridge free space between unrelated histories.
+directionCounts = [16 24 32 48 64];
+obstacleEnvelopes = cell(numel(obstacles), 1);
+envelopeCount = 0;
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
+    historyVerticesBySlice_deg = cell(numel(obstacle.az_deg), 1);
     for sampleIndex = 1:numel(obstacle.az_deg)
-        historySliceIndex = historySliceIndex + 1;
         position_deg = [obstacle.az_deg{sampleIndex}(:), ...
             obstacle.el_deg{sampleIndex}(:)];
-        position_deg = position_deg(all(isfinite(position_deg), 2), :);
-        historyVerticesBySlice_deg{historySliceIndex} = position_deg;
+        historyVerticesBySlice_deg{sampleIndex} = position_deg( ...
+            all(isfinite(position_deg), 2), :);
     end
+    historyVertices_deg = vertcat(historyVerticesBySlice_deg{:});
+    if size(historyVertices_deg, 1) < 3
+        continue;
+    end
+    trialShape = polyshape();
+    for directionCount = directionCounts
+        candidateShape = directionalSupportHull( ...
+            historyVertices_deg, directionCount);
+        if endpointsAreOutside(candidateShape, endpointPosition_deg)
+            trialShape = candidateShape;
+            break;
+        end
+    end
+    if isempty(trialShape.Vertices)
+        hullIndex = convhull( ...
+            historyVertices_deg(:, 1), historyVertices_deg(:, 2));
+        trialShape = polyshape( ...
+            historyVertices_deg(hullIndex, :), "Simplify", true);
+    end
+    if ~endpointsAreOutside(trialShape, endpointPosition_deg)
+        return;
+    end
+    envelopeCount = envelopeCount + 1;
+    obstacleEnvelopes{envelopeCount} = trialShape;
 end
-historyVertices_deg = vertcat(historyVerticesBySlice_deg{:});
-if size(historyVertices_deg, 1) < 3
+if envelopeCount == 0
     return;
 end
-
-%% Section 3: Build A Conservative Directional Support Hull
-
-% More directions are tried only when a coarse hull captures an endpoint.
-directionCounts = [16 24 32 48 64];
-trialShape = polyshape();
-for directionCount = directionCounts
-    candidateShape = directionalSupportHull( ...
-        historyVertices_deg, directionCount);
-    if endpointsAreOutside(candidateShape, endpointPosition_deg)
-        trialShape = candidateShape;
-        break;
-    end
-end
-if isempty(trialShape.Vertices)
-    hullIndex = convhull( ...
-        historyVertices_deg(:, 1), historyVertices_deg(:, 2));
-    trialShape = polyshape( ...
-        historyVertices_deg(hullIndex, :), "Simplify", true);
-end
-if ~endpointsAreOutside(trialShape, endpointPosition_deg)
-    return;
-end
-envelopeShape = trialShape;
+envelopeShape = union([obstacleEnvelopes{1:envelopeCount}]);
 usedEnvelope = true;
 end
 

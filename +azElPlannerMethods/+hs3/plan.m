@@ -59,6 +59,12 @@ candidates = cell(numel(seeds), 1);
 routePointCount = arrayfun(@(seed) size(seed.position_deg, 1), seeds).';
 detourIndices = find(routePointCount > 2);
 directIndices = find(routePointCount <= 2);
+if numel(detourIndices) > 1
+    topologyEffort = arrayfun(@(seed) seed.EstimatedDuration_s * ...
+        sqrt(size(seed.position_deg, 1) - 1), seeds(detourIndices));
+    [~, effortOrder] = sort(topologyEffort, "ascend");
+    detourIndices = detourIndices(effortOrder);
+end
 if conservativeDirectEdgeAccepted(gridDiagnostics)
     seedOrder = [directIndices(:); detourIndices(:)];
 else
@@ -93,13 +99,22 @@ for orderIndex = 1:numel(seedOrder)
     totalRelinearizationCount = 0;
     meshRelinearizationCount = 0;
     meshRefinementCount = 0;
+    validRelinearizationCount = 0;
+    validatedCandidate = [];
     finalCandidate = [];
-    while remainingPlanningTime(options, planningTimer) > 0.1
-        remaining_s = remainingPlanningTime(options, planningTimer);
+    remainingDetourCount = nnz(routePointCount( ...
+        seedOrder(orderIndex:end)) > 2);
+    seedWorkBudget_s = remainingPlanningTime(options, planningTimer) / ...
+        max(1, remainingDetourCount);
+    seedTimer = tic;
+    while remainingPlanningTime(options, planningTimer) > 0.1 && ...
+            seedWorkBudget_s - toc(seedTimer) > 0.1
+        remaining_s = min(remainingPlanningTime(options, planningTimer), ...
+            seedWorkBudget_s - toc(seedTimer));
         solverOptions = options;
         solverOptions.GoalTimeMode = seedGoalTimeMode;
         solverOptions.CollocationSegmentCount = segmentCount;
-        solverOptions.MaximumSolverTime_s = max(0.05, 0.55 * remaining_s);
+        solverOptions.MaximumSolverTime_s = max(0.05, 0.70 * remaining_s);
         finalCandidate = ...
             azElPlannerMethods.hs3.internal.motion.solveHs3( ...
             obstacles, initialState, solverGoalState, limits, ...
@@ -113,6 +128,25 @@ for orderIndex = 1:numel(seedOrder)
             if isnan(firstValidatedMotionTime_s)
                 firstValidatedMotionTime_s = toc(planningTimer);
             end
+            if isempty(validatedCandidate) || finalCandidate.FinalTime_s < ...
+                    validatedCandidate.FinalTime_s
+                validatedCandidate = finalCandidate;
+            end
+            refinementTime_s = min( ...
+                remainingPlanningTime(options, planningTimer), ...
+                seedWorkBudget_s - toc(seedTimer));
+            if validRelinearizationCount < 1 && refinementTime_s > 0.1
+                validRelinearizationCount = validRelinearizationCount + 1;
+                totalRelinearizationCount = totalRelinearizationCount + 1;
+                trialSeed = seedFromCandidate(finalCandidate, originalSeed);
+                continue;
+            end
+            finalCandidate = validatedCandidate;
+            break;
+        end
+
+        if ~isempty(validatedCandidate)
+            finalCandidate = validatedCandidate;
             break;
         end
 

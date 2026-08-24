@@ -1,56 +1,48 @@
-# Standalone Hermite-Simpson restoration
+# Organic-obstacle planner robustness
 
-## Objective and hard gates
+## Objective
 
-Keep `corridorQuintic` and `hs3` as separate motion methods. HS3 must use an
-actual Hermite-Simpson transcription and must not call, seed from, fall back to,
-merge with, or return the compact planner. HS3-owned production must remain at
-or below 2,000 nonblank, noncomment MATLAB lines. The public standalone HS3 path
-must solve and independently validate the 12-hairpin benchmark in under 120
-seconds while preserving nonzero endpoint velocity and acceleration, moving
-targets, timed waits, and stable expected no-path results.
+Keep compact quintic and standalone HS3 separate while improving deterministic
+convex, concave, rough U-shaped, and moving-obstacle behavior. Preserve complete
+validation, nonzero endpoint support, the 2,000-line HS3 limit, and the two-minute
+hairpin gate.
 
-## Final implementation
+## Retained changes
 
-- `planAzElMotion` dispatches directly to either compact or standalone HS3.
-- HS3 generates neutral input-derived topology seeds, solves third-order
-  Hermite-Simpson NLPs, and accepts only canonical independently validated HS3
-  motion.
-- Exact affine sensitivity and constraint matrices remove decision-variable
-  finite differencing for fixed-time solves and most earliest-arrival columns.
-- Collision-only failures receive at most two relinearizations per mesh and one
-  bounded mesh refinement. Static scenes stop at the first validated topology;
-  changing scenes compare completed timed candidates inside one cooperative
-  planning budget.
-- Nonzero initial and final position, velocity, and acceleration remain part of
-  the transcription and derivative tests.
-- Deleted composition-only improver, old options, and duplicate request and
-  endpoint normalization.
+- Compact tries every bounded topology and includes the full feasible duration
+  bracket, removing the seed-4108 false infeasibility.
+- Two-point seeds use the same exact analytic motion in static and moving scenes.
+- Timed topology generation retains one graph from the route-nearest obstacle's
+  history as well as the combined graph. All edges and final trajectories still
+  check the complete obstacle set.
+- Dense fallback geometry builds and unions one conservative support envelope per
+  obstacle, so unrelated histories cannot bridge free space.
+- HS3 ranks detours by estimated effort, shares remaining work across detours,
+  performs one topology-preserving refinement, and defaults to two mesh passes.
+- The organic benchmark and the reversed-order two-mover regression preserve the
+  motivating evidence.
 
-## Final evidence
+## Verification evidence
 
-- HS3 production: 1,602 noncomment lines across nine MATLAB files; zero compact
-  planner calls, warm starts, fallbacks, merged results, or composition fields.
-- 12 hairpins: actual HS3 success and independent validation in 93.339104 s
-  total, below the 120 s gate; arrival 128.179676226 s versus frozen compact
-  arrival 140.56091613 s.
-- Repeated turns, total wall / arrival: 1 turn 3.776525 / 6.611054 s; 5 turns
-  7.563524 / 18.622669 s; 10 turns 63.799021 / 33.572536 s; 20 turns 64.116174
-  / 114.561540 s. All four independently validated.
-- Maintained examples: 18/18 scenario outcomes passed, including 17 successful
-  HS3 motions and the expected diagnosable no-path result.
-- Automated tests: 137 passed, 0 failed, 0 incomplete in 360.861356 s.
-- Exact HS3 sensitivity tests: 6/6. Changed-source Code Analyzer: zero messages.
-  `git diff --check`: clean.
+- Organic benchmark, seeds 4101:4108: 32/32 compact/HS3 method-runs independently
+  valid; zero compact false infeasibilities; zero HS3 obstacle-addition reversals.
+- Randomized similar-size two-mover campaign, seeds 5201:5208: 8/8 base and added
+  motions valid; maximum route deviation after adding the independently clear
+  mover was 3.52e-11 deg, reduced from 0.430 deg.
+- HS3 hairpin passed twice under two minutes: 112.845 s and 112.882 s wall time,
+  about 138.611 s arrival versus compact's frozen 140.561 s arrival.
+- Full test suite: 141 passed, 0 failed, 0 incomplete, 591.091 s wall time.
 
-## Honest limitations
+## Known limitation
 
-- HS3 is not uniformly better than compact: it is 0.006849 s later on one turn
-  and 46.202735 s later on 20 turns using the frozen compact arrivals.
-- First-valid static selection and fixed-time treatment of timed topology seeds
-  can miss a better local topology or arrival.
-- The planning deadline is cooperative, and difficult earliest-arrival NLPs can
-  still emit conditioning warnings. Independent validation, not optimizer status,
-  remains authoritative.
-- Finite topology search and local nonlinear optimization provide neither a
-  completeness nor a global optimality certificate.
+- Organic seed 4108 still shows a 0.588 s compact arrival improvement when a new
+  obstacle nearly touches the original path. The original path remains valid with
+  only 0.00293 deg clearance; the extra obstacle changes the local sampled-barrier
+  QP basin. Obstacle-independent support nodes, exhaustive visibility, waypoint
+  pruning, and broad static clearance expansion were tested and reverted because
+  they regressed other deterministic cases. This is not the independently clear
+  moving-obstacle regression fixed above.
+
+## Working tree scope
+
+- Preserve unrelated untracked `docs/` and `tmp/`.
