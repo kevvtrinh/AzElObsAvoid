@@ -184,7 +184,8 @@ corridor = azElPlannerMethods.corridor.internal.validation.buildSeedCorridor( se
 for corridorIndex = 1:numel(corridor)
     corridor(corridorIndex).Clearance_deg = options.ClearanceTarget_deg;
 end
-baseInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( baseMotion.Polynomial, corridor);
+baseInequality_deg = azElInternal.seedCorridorInequality( ...
+    baseMotion.Polynomial, corridor);
 stageTiming.CorridorConstructionElapsedTime_s = ...
     stageTiming.CorridorConstructionElapsedTime_s + toc(corridorTimer);
 
@@ -241,7 +242,8 @@ if decisionCount > 0 && ~isempty(corridor)
                 route_deg, initialState, goalState, limits, basisOptions);
             embeddedMotionElapsedTime_s = ...
                 embeddedMotionElapsedTime_s + toc(motionTimer);
-            basisInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( basisMotion.Polynomial, corridor);
+            basisInequality_deg = azElInternal.seedCorridorInequality( ...
+                basisMotion.Polynomial, corridor);
             inequalityMatrix(:, decisionIndex) = basisInequality_deg - baseInequality_deg;
         end
     end
@@ -371,7 +373,8 @@ end
 directCollisionCheckingElapsedTime_s = toc(collisionTimer);
 validation = azElPlannerMethods.corridor.validateTrajectory( candidateMotion, obstacles, initialState, goalState, limits, plannerOptions);
 collisionTimer = tic;
-candidateInequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( candidateMotion.Polynomial, corridor);
+candidateInequality_deg = azElInternal.seedCorridorInequality( ...
+    candidateMotion.Polynomial, corridor);
 envelopeShape = polyshape( seed.CorridorBoundary_deg(:, 1), seed.CorridorBoundary_deg(:, 2), "Simplify", true);
 convexEnvelopeRegions = azElPlannerMethods.corridor.internal.geometry.convexPolygonRegions(envelopeShape);
 expectedRecordCount = candidateMotion.Polynomial.SegmentCount * numel(convexEnvelopeRegions);

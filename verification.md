@@ -2421,3 +2421,63 @@ behavior. No `benchmark.csv` row was added because no maintained example
 benchmark was executed. The first sandboxed MATLAB baseline launch failed
 before startup with Windows `File system inconsistency`; the approved literal
 launch completed the recorded 33-test baseline.
+
+## Shared validation, timed-search, and test-contract cleanup — 2026-08-23
+
+Task baseline: pushed `325-full-suite` commit `625b243`. The unrelated
+untracked `docs/`, `sandbox/explainAzElPlannerWalkthrough.m`, and
+`sandbox/explainSingleUQuinticWalkthrough.m` paths were preserved and excluded
+from the change and static-analysis count.
+
+This cleanup made `+azElInternal` the single owner of three additional exact
+or parameterized invariants: seed-corridor Bernstein inequalities, polynomial
+schema/dynamics/history validation, and time-expanded visibility search. The
+polynomial validator accepts the method's range certificate as a callback, so
+corridor retains exact stationary-point extrema while HS3 retains conservative
+Bernstein bounds. The seed generators retain method-specific graph creation,
+candidate ordering, diagnostics, and top-level policy. Twenty-four
+behavior-identical planner contracts and seven fixture builders moved into
+shared test support; method-specific tests remain in their original suites.
+
+| Scope | Baseline physical / code | Current physical / code | Delta |
+| --- | ---: | ---: | ---: |
+| Production | 14,256 / 10,756 | 13,926 / 10,416 | -330 / -340 |
+| Tests | 3,469 / 2,955 | 3,360 / 2,785 | -109 / -170 |
+| Production and tests | 17,725 / 13,711 | 17,286 / 13,201 | -439 / -510 |
+
+Verification on the retained worktree produced:
+
+- focused post-extraction planner gates: 92/92 after each shared production
+  or contract-suite change;
+- complete regression: 132/132 passed in 245.517 seconds, compared with the
+  pre-change 132/132 baseline in 174.860 seconds. This single wall-time increase
+  is unfavorable but is not attributed to production behavior without a
+  repeated controlled timing comparison;
+- MATLAB Code Analyzer: zero messages across 102 intended MATLAB files;
+- corridor maintained examples: 18/18 in 119.882 seconds, comprising 17
+  independently validated successes and the expected validated
+  `noValidatedSeed` failure;
+- HS3 maintained examples: 18/18 in 304.914 seconds with the same 17-success,
+  one-expected-failure split;
+- every successful example reported collision freedom and passing velocity,
+  acceleration, jerk, and dynamics certificates;
+- visible obstacle-free smoke: success, independent validation, and three
+  visible figures;
+- hidden expected-failure smoke: independently validated `noValidatedSeed`,
+  zero selected seed, and two diagnostic figures without rerunning planning;
+- `git diff --check`: passed with Windows line-ending conversion warnings.
+
+HS3 emitted extensive existing `fmincon` near-singular or singular-matrix
+warnings during several maintained cases, notably the accelerating-circles,
+moving-barrier, and no-path examples. Their returned outcomes still passed the
+independent gates, but the warnings remain adverse numerical-robustness
+evidence and are not suppressed. Two long inline MATLAB launches and one
+earlier nested-Git static launch failed before executing governed work with the
+recorded Windows `File system inconsistency` startup error; short literal
+commands and the temporary serial runner completed. The temporary runner was
+removed after the matrix.
+
+The 36 fresh example rows were appended to `benchmark.csv` under
+`625b243+dedup-worktree`. This checkpoint is a maintainability and deployment-
+size improvement; no planner-runtime, completeness, optimality, or trajectory-
+quality improvement is claimed.

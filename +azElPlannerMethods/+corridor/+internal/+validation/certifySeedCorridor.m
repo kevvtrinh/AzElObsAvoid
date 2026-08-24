@@ -92,7 +92,8 @@ for corridorIndex = 1:numel(corridor)
         return;
     end
 end
-inequality_deg = azElPlannerMethods.corridor.internal.validation.seedCorridorInequality( trajectory.Polynomial, corridor);
+inequality_deg = azElInternal.seedCorridorInequality( ...
+    trajectory.Polynomial, corridor);
 if isempty(inequality_deg) || any(~isfinite(inequality_deg)) || any(inequality_deg > tolerance_deg)
     return;
 end

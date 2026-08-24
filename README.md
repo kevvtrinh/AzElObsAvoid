@@ -259,9 +259,10 @@ failure diagnostics. Plotting does not rerun planning.
 - Is a local nonlinear method; conditioning warnings or local failure can
   occur even when another proposal might be feasible.
 
-Keeping the implementations in separate folders is intentional. Similar
-helpers are duplicated so changing or removing one method cannot silently
-alter the other.
+Keeping the implementations in separate folders is intentional. Shared
+mathematical and search invariants live in `+azElInternal`; method packages
+retain planner policy, solver behavior, certificates, and diagnostics whose
+semantics differ.
 
 ## Repository layout
 
@@ -281,6 +282,8 @@ planAzElMovingTargetIntercept.m     public moving-target dispatcher
             +search/
             +motion/
             +validation/
+
++azElInternal/                     method-independent planner invariants
     +hs3/
         README.md
         plan.m
@@ -410,11 +413,10 @@ results = runtests("tests", "IncludeSubfolders", true);
 assertSuccess(results);
 ```
 
-The combined repository regression suite was not run because tests were
-explicitly prohibited in this session. The source-branch test rows therefore
-remain historical evidence, not a fresh combined-branch test claim. The
-visible interactive sandbox also remains manually unexecuted; its selector is
-covered by static analysis only.
+The source-branch rows remain historical evidence. Fresh verification claims
+for later combined-branch changes are recorded in `verification.md` and
+`branch_assessment.md`; the visible interactive sandbox remains a manual tool
+outside the automated matrix.
 
 ## Known limits
 

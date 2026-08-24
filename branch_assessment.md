@@ -1052,3 +1052,32 @@ certificates, collision policy, and returned schemas were not changed. The
 maintained examples, visible graphics, and complete repository suite were not
 rerun, and no benchmark row was added because no maintained example benchmark
 was executed.
+
+## Shared validation and timed-search ownership checkpoint — 2026-08-23
+
+The strongest measured result is a 510-line reduction in non-comment MATLAB
+across production and tests while preserving all 132 automated contracts and
+both 18-example method matrices. Production owns 340 fewer non-comment lines;
+tests own 170 fewer. The corridor and HS3 packages still retain their distinct
+planner, graph-construction, solver, range-certificate, and diagnostic policy.
+
+Shared ownership now covers seed-corridor Bernstein inequalities, common
+polynomial schema/dynamics/history validation, and time-expanded visibility
+search. Corridor continues to certify exact stationary-point polynomial extrema
+and HS3 continues to use conservative Bernstein bounds through an explicit
+callback. Twenty-four common per-method test contracts and seven fixture
+builders have one implementation with thin method-visible wrappers.
+
+Fresh evidence is 132/132 tests, zero Code Analyzer messages across 102 intended
+MATLAB files, 18/18 corridor examples, and 18/18 HS3 examples. Each matrix has
+17 independently validated successes plus the expected validated no-path
+failure. A visible success created three figures, and the expected failure
+created two hidden diagnostic figures with no selected trajectory.
+
+The largest remaining weakness is HS3 numerical conditioning: maintained runs
+still emit extensive near-singular or singular `fmincon` warnings even when the
+returned motion passes independent validation. The full-suite wall time was
+245.517 seconds versus a 174.860-second pre-change baseline; one run does not
+establish causality, so no runtime improvement is claimed. Method-specific
+envelope, clustering, graph construction, result schemas, and collision
+certificates remain separate where their contracts differ.
