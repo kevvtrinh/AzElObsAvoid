@@ -110,20 +110,27 @@ if motionMode == "static" || missionDuration_s <= 0
     transformed_deg = sourcePosition_deg;
     return;
 end
-phase_rad = 2 * pi * (sampleTime_s - missionStartTime_s) / missionDuration_s;
+missionProgress = ...
+    (sampleTime_s - missionStartTime_s) / missionDuration_s;
+phase_rad = 2 * pi * missionProgress;
 baseLocal_deg = sourcePosition_deg - baseCenter_deg;
 deformedLocal_deg = baseLocal_deg;
 deformedLocal_deg(:, 1) = deformedLocal_deg(:, 1) + ...
-    0.04 * sin(2 * pi * baseLocal_deg(:, 2) / localRange_deg(2) + phase_rad);
+    0.50 * (sin(2 * pi * baseLocal_deg(:, 2) / ...
+    localRange_deg(2) + phase_rad) - ...
+    sin(2 * pi * baseLocal_deg(:, 2) / localRange_deg(2)));
 deformedLocal_deg(:, 2) = deformedLocal_deg(:, 2) + ...
-    0.03 * sin(2 * pi * baseLocal_deg(:, 1) / localRange_deg(1) - 0.7 * phase_rad);
-scaleAzimuth = 0.998 + 0.004 * sin(phase_rad + 0.4);
-scaleElevation = 0.998 + 0.004 * cos(phase_rad - 0.2);
-shear = 0.003 * sin(2 * phase_rad);
-rotation_rad = deg2rad(0.35 * sin(phase_rad + 0.3));
+    0.35 * (sin(2 * pi * baseLocal_deg(:, 1) / ...
+    localRange_deg(1) - 0.7 * phase_rad) - ...
+    sin(2 * pi * baseLocal_deg(:, 1) / localRange_deg(1)));
+scaleAzimuth = 1 + 0.18 * missionProgress + 0.04 * sin(phase_rad);
+scaleElevation = 1 + 0.14 * missionProgress + ...
+    0.035 * (1 - cos(phase_rad));
+shear = 0.025 * sin(2 * phase_rad);
+rotation_rad = deg2rad(12 * missionProgress + 4 * sin(phase_rad));
 deformationMatrix = [scaleAzimuth shear; 0 scaleElevation];
 rotationMatrix = [cos(rotation_rad) -sin(rotation_rad); sin(rotation_rad) cos(rotation_rad)];
-translation_deg = [ 0.35 * sin(phase_rad), 0.25 * cos(phase_rad + 0.5)];
+translation_deg = [1.5 * sin(phase_rad), sin(2 * phase_rad)];
 transformed_deg = deformedLocal_deg * deformationMatrix.' * rotationMatrix.' + baseCenter_deg + translation_deg;
 end
 

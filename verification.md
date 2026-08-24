@@ -2303,3 +2303,80 @@ Verification produced:
 The complete maintained-example, visible-graphics, and full regression matrices
 were not rerun. No `benchmark.csv` row was added because this checkpoint
 executed tests and static audits, not a maintained-example benchmark.
+
+## Input-history collision broad phase and ungrouped feasibility — 2026-08-23
+
+This checkpoint modifies only the corridor validator in production. The
+representative case is `exampleFortyMovingCircleGrid`, headless and serial in
+fresh MATLAB R2024b Update 4 processes, seed 325, with plots and animation
+disabled. Obstacle histories, limits, safety margin, validation, and route
+quality were identical between baseline and candidate.
+
+This is the only maintained example setting `SeedClusterDistance_deg` above
+zero. Its swept input has `SourceRegionCount=1`, so the requested 2-degree
+clustering creates `ClusterGroupCount=0`. A zero-distance run generated the
+same 18 nodes, 62 candidate pairs, 28 visibility edges, 80 rejected
+transitions, 21 expanded states, two seeds, 110.807929685255-degree selected
+polyline, and 62.4777398626363-second validated motion. Ungrouped operation
+was already feasible; clustering was not providing the runtime bound.
+
+Profiling recorded 47,793 calls each to `shapeAtTime` and
+`pointPolygonClearance`, with collision checking dominant. The retained broad
+phase derives a lower bound from every incoming obstacle's supplied
+`InternalPreparation.HistoryBounds_deg` and the caller's velocity limits. It
+assumes no constant speed, rigid shape, fixed size, or named scenario. Only an
+input-derived proof skips exact geometry; near obstacles keep the existing
+shape-at-time query and adaptive certificate.
+
+Three alternating fresh-process pairs produced:
+
+| Metric | Baseline runs | Candidate runs | Median change |
+| --- | --- | --- | ---: |
+| Planner time (s) | 14.3362922 / 14.5753369 / 14.5689666 | 7.1588191 / 7.0040011 / 6.9326244 | -51.925% |
+| Collision stage (s) | 8.2384 / 8.2169 / 8.3139 | 0.5109 / 0.5553 / 0.5085 | -93.799% |
+| Direct example wall (s) | 16.1544479 / 16.5913308 / 16.4316327 | 7.9557515 / 7.7722001 / 7.6849762 | -52.703% |
+| Selected collision checks | 3440 / 3440 / 3440 | 56 / 56 / 56 | -98.372% |
+
+Every pair preserved success, independent validation, termination, graph
+counts, route, sampled path length, duration, minimum clearance, collision
+state, and kinematic certificate. The smallest paired planner reduction was
+50.067%; no averaged result hides a slower pair. The retained default grouped
+option also formed zero groups and completed in 7.3898134 seconds with
+identical physical output.
+
+The user also requested a materially stronger input history for the
+moving/deforming U.S. example. Its transform now starts at the native outline,
+accumulates 12 degrees of rotation, grows nominally by 18% azimuth and 14%
+elevation, and supplies larger nonrigid ripples, shear, and translation at
+every five-second slice. Measured protected extents changed from
+57.9658931-by-24.4877162 degrees to 67.7072812-by-30.1003469 degrees (+16.805%
+and +22.920% after rotation). The changed example returned a
+78.0069578875528-degree polyline, 76.5702550667827-degree sampled motion,
+19.2943308306518-second duration, collision freedom, kinematic validity, and
+independent validation.
+
+Verification on the retained source produced:
+
+- 59/59 focused tests passed in 110.6526933 seconds;
+- all 18 corridor examples passed in literal fresh processes: 17 validated
+  successes and the expected validated `noValidatedSeed` failure;
+- the visible deforming-U.S. smoke succeeded with three visible figures;
+- the complete repository suite passed 132/132 in 133.3061309 seconds;
+- MATLAB Code Analyzer reported zero messages across 106 MATLAB files;
+- `benchmark.csv` retained its original 17-column schema, and `git diff
+  --check` reported only line-ending conversion warnings.
+
+The task adds 35 production MATLAB lines to a 13,978-line production baseline.
+Applying the growth formula to the 35 task-added lines requires a 10.5%
+representative reduction; the smallest paired reduction is 50.067%. The
+14,013-line production tree remains above the 7,000-line target, which is an
+existing repository limitation rather than something hidden by this local
+speedup. Evidence covers the 40-obstacle family plus structurally different
+deforming, static, and no-path checks; it proves no global scaling or
+completeness claim.
+
+Two PowerShell-variable matrix launches and one earlier static-check launch
+hit MATLAB's pre-startup Windows `File system inconsistency` error and executed
+no governed case. Literal commands completed every recorded example. One early
+report used a stale field after a planner run; that incomplete log was excluded
+from benchmark evidence.

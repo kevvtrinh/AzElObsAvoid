@@ -988,3 +988,38 @@ This checkpoint improves ownership and deployment size; it is not a runtime or
 trajectory-quality claim. The complete maintained-example, visible-graphics,
 and full 127-test matrices were not rerun. No benchmark row was appended
 because no maintained example benchmark was executed.
+
+## Ungrouped corridor and stronger U.S. deformation assessment — 2026-08-23
+
+Retain the corridor collision broad phase. In the maintained 40-moving-circle
+case with seed clustering disabled, median planner time improved from 14.5690
+to 7.0040 seconds (-51.925%) and collision time improved from 8.2384 to 0.5109
+seconds (-93.799%). All three fresh-process pairs preserved the exact selected
+route, sampled motion, 62.4777398626363-second duration, minimum clearance,
+success, collision state, and kinematic certificate. The default example's
+2-degree cluster request creates zero groups, so this is genuinely ungrouped
+evidence rather than a reduced-geometry substitute.
+
+The mechanism reads each incoming obstacle's prepared complete-history bounds
+and never assumes fixed speed, rigidity, size, route, or example identity.
+Near-path obstacles still receive exact time-slice polygon queries and adaptive
+certification. The full 132-test suite, all 18 corridor examples, the expected
+no-path result, and a visible three-figure smoke passed.
+
+The moving/deforming U.S. example now supplies visibly stronger growth and
+rotation. Protected extents grow by 16.805% azimuth and 22.920% elevation, and
+the new motion remains independently valid. This is an intentional input
+contract change, so its new route and duration are not presented as a runtime
+speedup against the easier former geometry.
+
+The principal remaining runtime weakness in the 40-circle candidate is
+corridor construction, roughly 4.6 seconds of a 7.0-second median planner run.
+No claim is made that history boxes help when supplied bounds overlap most of
+the path, or that absent evolution may be guessed. Production must receive
+updated histories or caller-supplied uncertainty bounds and replan fail-safely.
+
+Production grew by 35 MATLAB lines and remains at 14,013 lines, above the
+7,000-line target. The smallest paired planner reduction (50.067%) exceeds the
+10.5% task-growth allowance for those 35 lines, but does not erase the
+pre-existing overall size excess. Raw A/B and final example rows are retained
+in `benchmark.csv`.

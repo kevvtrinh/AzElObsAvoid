@@ -426,6 +426,13 @@ minimumClearance_deg = Inf;
 checkCount = 0;
 unresolvedCount = 0;
 pathSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
+obstacleHistoryBounds_deg = zeros(numel(obstacles), 4);
+
+% Hoist input-derived complete-history boxes used by every adaptive interval.
+for obstacleIndex = 1:numel(obstacles)
+    obstacleHistoryBounds_deg(obstacleIndex, :) = ...
+        obstacles(obstacleIndex).InternalPreparation.HistoryBounds_deg;
+end
 
 % Certify collision freedom independently over every polynomial segment.
 for segmentIndex = 1:polynomial.SegmentCount
@@ -452,6 +459,18 @@ for segmentIndex = 1:polynomial.SegmentCount
 
         % Measure the breakpoint position against every obstacle at that exact time.
         for obstacleIndex = 1:numel(obstacles)
+            historyBounds_deg = obstacleHistoryBounds_deg(obstacleIndex, :);
+            axisDistance_deg = max([ ...
+                historyBounds_deg([1 3]) - splitPoint_deg; ...
+                zeros(1, 2); ...
+                splitPoint_deg - historyBounds_deg([2 4])], [], 1);
+            historyClearanceLowerBound_deg = norm(axisDistance_deg);
+            if historyClearanceLowerBound_deg > ...
+                    options.CollisionClearanceTolerance_deg
+                minimumClearance_deg = min(minimumClearance_deg, ...
+                    historyClearanceLowerBound_deg);
+                continue;
+            end
             shape = azElInternal.obstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), splitTimes_s(splitIndex));
             clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, splitPoint_deg);
@@ -480,6 +499,22 @@ for segmentIndex = 1:polynomial.SegmentCount
 
         % Bound relative motion against every obstacle over the current interval.
         for obstacleIndex = 1:numel(obstacles)
+            historyBounds_deg = obstacleHistoryBounds_deg(obstacleIndex, :);
+            axisDistance_deg = max([ ...
+                historyBounds_deg([1 3]) - point_deg; ...
+                zeros(1, 2); ...
+                point_deg - historyBounds_deg([2 4])], [], 1);
+            maximumPathDisplacement_deg = pathSpeedBound_deg_s * ...
+                (intervalEnd_s - intervalStart_s) / 2;
+            historyClearanceLowerBound_deg = ...
+                norm(axisDistance_deg) - maximumPathDisplacement_deg;
+            if historyClearanceLowerBound_deg > ...
+                    options.CollisionClearanceTolerance_deg
+                intervalClearanceLowerBound_deg = min( ...
+                    intervalClearanceLowerBound_deg, ...
+                    historyClearanceLowerBound_deg);
+                continue;
+            end
             [shape, geometry] = azElInternal.obstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), intervalMid_s);
             clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
