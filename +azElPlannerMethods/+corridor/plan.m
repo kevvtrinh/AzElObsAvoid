@@ -81,7 +81,9 @@ if options.AllowAzimuthWrapping
         goalState.targetPosition_deg(:, 1) = goalState.targetPosition_deg(:, 1) + 360 * turnCount;
     end
 end
-[result, summaryTemplate] = azElPlannerMethods.corridor.internal.emptyAzElPlannerResult( obstacles, initialState, goalState, limits, options);
+[result, summaryTemplate] = azElInternal.emptyPlannerResult( ...
+    obstacles, initialState, goalState, limits, options, ...
+    azElPlannerMethods.corridor.validateTrajectory(), "corridorQuintic");
 obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 if options.Verbose
     fprintf("[AzEl] Planning started.\n");
@@ -118,7 +120,7 @@ seedTimer = tic;
 if options.Verbose
     fprintf("[AzEl][seeds] generating topology proposals.\n");
 end
-[seeds, gridDiagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( ...
+[seeds, gridDiagnostics] = azElInternal.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, options);
 gridDiagnostics.ElapsedTime_s = toc(seedTimer);
 result.Seeds = seeds;

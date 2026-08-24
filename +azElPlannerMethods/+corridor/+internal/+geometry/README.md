@@ -1,6 +1,6 @@
-# Corridor geometry
+# Corridor geometry ownership
 
-Corridor-only convex-region decomposition lives here. Canonical boundary
-construction, boundary traversal, and signed clearance are shared through
-`azElInternal.geometry`; the remaining helper stays local because it serves
-corridor seed and certificate construction.
+No corridor-local geometry source remains. Convex decomposition is owned by
+`azElInternal.convexPolygonRegions`; canonical boundary construction, traversal,
+and signed clearance live under `azElInternal.geometry`. Compact motion consumes
+those neutral results without redefining them.

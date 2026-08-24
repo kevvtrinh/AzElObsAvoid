@@ -1,18 +1,27 @@
 # Azimuth/Elevation Obstacle-Avoidance Planner
 
-This branch contains two complete Az/El trajectory planners behind one public
-interface:
+This branch exposes two Az/El planning selections behind one public interface.
+The compact corridor planner is the immutable production baseline. The `hs3`
+selection composes that same baseline with bounded optional nonlinear
+improvement; it is not a second isolated planner:
 
 | Planner | `PlannerMethod` | Default? | Motion strategy |
 | --- | --- | :---: | --- |
-| Compact corridor | `"corridorQuintic"` | Yes | Bounded visibility and timed seeds followed by compact C3/C4 quintic motion and independent validation. It uses no HS3 or nonlinear-programming solve. |
-| HS3 | `"hs3"` | No | Bounded seeds, deterministic analytic first motions when applicable, and optional HS3 finite-jerk nonlinear optimization with `fmincon`. |
+| Compact corridor | `"corridorQuintic"` | Yes | Neutral bounded topology seeds followed by compact C3/C4 quintic motion and canonical independent validation. It uses no HS3 or nonlinear-programming solve. |
+| Compact + HS3 | `"hs3"` | No | First preserves the compact result, then optionally tries bounded HS3 finite-jerk improvement with `fmincon`. Improvement is off by default. |
 
-The methods are genuine alternatives. Both consume the same canonical
-obstacle normalization and time-query layer, while selecting one runs only
-that method's search, motion construction, validation, and result builder.
-The dispatcher never runs both, silently substitutes one for the other, or
-falls back after a selected method fails.
+Both selections consume the same neutral topology, corridor-certificate,
+result-schema, obstacle, query, and validation owners. Selecting `hs3` always
+runs the compact baseline first. A valid baseline is immutable: rejected,
+invalid, equal, or worse HS3 trials remain diagnostic evidence and cannot
+replace it. A strictly improving, independently validated HS3 trial may replace
+the selected trajectory only when improvement is explicitly enabled.
+
+The HS3 package currently owns 1,200 noncomment lines, exactly at its cap,
+but that count does not include its compact baseline or neutral dependencies.
+The present root composition therefore transitively depends on the corridor
+package pending neutral extraction; it is not an independently removable
+HS3 closure and no whole-closure 1,200-line claim is made.
 
 The corridor package originated at `325-less-nlp` commit
 `28526638886b69efdf6d697a942ad2c1207bcc04` and now contains the compact
@@ -20,8 +29,8 @@ replacement documented in its local guide. The HS3 snapshot comes from
 `plan-325` commit `5a067112a9f880d015f52fb97538a99010871478`.
 See the [method-package guide](+azElPlannerMethods/README.md), the
 [corridor guide](+azElPlannerMethods/+corridor/README.md), and the
-[HS3 guide](+azElPlannerMethods/+hs3/README.md) for ownership and unplugging
-details.
+[HS3 guide](+azElPlannerMethods/+hs3/README.md) for current ownership and
+dependency details.
 
 ## Quick start
 
@@ -43,7 +52,7 @@ The explicit form is equivalent:
 options = planAzElMotion("corridorQuintic");
 ```
 
-### HS3 planner
+### Compact + HS3 composition
 
 Ask for the HS3 defaults, then pass them to the same planning function:
 
@@ -52,6 +61,14 @@ options = planAzElMotion("hs3");
 
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, options);
+```
+
+Those defaults set `EnableHs3Improvement=false`, so the selected motion remains
+the validated compact baseline. Opt in explicitly to bounded improvement:
+
+```matlab
+options.EnableHs3Improvement = true;
+options.MaximumHs3ImprovementTime_s = 15;
 ```
 
 A partial options structure can select either method:
@@ -65,7 +82,7 @@ options = struct( ...
 Accepted selector values are exactly `"corridorQuintic"` and `"hs3"`, with
 case normalized by the public dispatcher. An invalid name is an error.
 
-`PlannerMethod` is the public two-planner selector. The corridor snapshot also
+`PlannerMethod` is the public two-composition selector. The corridor snapshot also
 retains `MotionMethod="corridorQuintic"` as a compatibility field. Changing
 `MotionMethod` does not select HS3.
 
@@ -98,7 +115,7 @@ result = planAzElMotion( ...
 ```
 
 Replace the defaults call with `planAzElMotion("hs3")` to run the same
-physical request through HS3.
+physical request through the compact-baseline-plus-HS3 composition.
 
 ## Public planning contract
 
@@ -113,7 +130,7 @@ result = planAzElMotion( ...
 
 Use `makeAzElObstacleData` for static or time-indexed polygon histories and
 `makeMovingAzElObstacleData` for moving shapes. Safety margins are applied by
-the public obstacle constructors exactly once. Both planners retain original
+the public obstacle constructors exactly once. Both selections retain original
 and protected geometry separately.
 
 `obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
@@ -147,9 +164,9 @@ their defaults are `[-180 180]` and `[-90 90]` degrees.
 Call `planAzElMotion("corridorQuintic")` or `planAzElMotion("hs3")` to inspect
 the exact options accepted by that method. Partial override structures are
 accepted, and empty fields retain method defaults. Avoid copying
-method-specific solver options into the other planner.
+HS3-only solver options into the compact selection.
 
-Both methods support fixed-arrival and earliest-arrival requests through
+Both public selections support fixed-arrival and earliest-arrival requests through
 `GoalTimeMode`. They use bounded deterministic proposal sets, so a successful
 result is an independently validated motion found by the selected finite
 search—not a proof of global completeness or global time optimality.
@@ -174,17 +191,12 @@ interceptOptions.InterceptMode = "earliest";
 interceptOptions.PlannerOptions = planAzElMotion("hs3");
 ```
 
-The method-local adapters deliberately preserve different source-branch
-behavior:
-
-- Corridor earliest interception performs a bounded chronological sequence of
-  fixed-arrival trials and refines the first observed feasible bracket.
-- HS3 earliest interception makes one moving-goal earliest-arrival planner
-  call.
-- Specified-time interception supplies the requested fixed arrival to the
-  selected method.
-
-The dispatcher does not blend these policies.
+One root adapter owns interception for both selections. Earliest interception
+performs a bounded chronological sequence of fixed-arrival trials and refines
+the first observed feasible bracket. Specified-time interception performs one
+fixed-arrival trial. Every trial calls `planAzElMotion`, so `PlannerMethod`
+changes the planner composition without changing target interpolation,
+derivative matching, search order, or the `Intercept.Search` schema.
 
 ## Results and diagnostics
 
@@ -198,7 +210,7 @@ fields include:
 - `Validation` and complete input records;
 - `SearchDiagnostics`, including graph and rejection evidence.
 
-Both methods expose the same exclusive wall-time accounting under
+Both selections expose the same exclusive wall-time accounting under
 `result.SearchDiagnostics.StageTiming`:
 
 - `TopologyElapsedTime_s`;
@@ -212,12 +224,19 @@ The five named stages do not overlap. `UnattributedElapsedTime_s` retains
 public-call work outside those stages, and all six contributions add to the
 independently measured total.
 
-The method that actually ran is echoed in both:
+The selected public composition is echoed in both:
 
 ```matlab
 result.Options.PlannerMethod
 result.SearchDiagnostics.PlannerMethod
 ```
+
+`PlannerMethod="hs3"` identifies the requested composition, not necessarily
+the selected trajectory source. `result.SelectedMotionSource` remains
+`"corridorQuintic"` when improvement is disabled, not attempted, rejected, or
+invalid. It becomes `"hs3"` only when a canonical validation pass and the
+monotone arrival/jerk comparison accept an HS3 candidate. Detailed attempted
+and rejected work remains in `result.CompositionDiagnostics.Hs3`.
 
 Moving-target results also restore it under:
 
@@ -227,8 +246,10 @@ result.Intercept.Options.PlannerOptions.PlannerMethod
 
 Expected no-path, work-limit, or dynamic-infeasibility outcomes return
 `Success=false` with a recognized termination reason and retained diagnostic
-data. Invalid input contracts throw errors. A selected method's planning
-failure never causes the dispatcher to try the other method.
+data. Invalid input contracts throw errors. Selecting corridor never invokes
+HS3. Selecting HS3 deliberately starts from the compact result and, only when
+enabled, may try bounded recovery or strict improvement; this is composition,
+not an implicit fallback after an unrelated method fails.
 
 Use `validateAzElTrajectory` for independent complete timed-trajectory
 validation and `plotAzElMotion` to visualize returned motion or preserved
@@ -251,50 +272,54 @@ failure diagnostics. Plotting does not rerun planning.
 ### HS3
 
 - Must be selected explicitly.
-- Preserves deterministic analytic stop-at-waypoint first motions when their
-  certificates apply.
-- Uses HS3 collocation and `fmincon` for bounded nonlinear improvement or
-  recovery.
+- Preserves the complete compact result as an immutable baseline.
+- Defaults `EnableHs3Improvement` to `false`.
+- Uses HS3 collocation and `fmincon` only for explicitly enabled bounded
+  nonlinear improvement or recovery of a failed compact baseline.
 - Exposes method-specific collocation, mesh, iteration, evaluation, and HS3
   time-budget options.
+- Records `MaximumMeshRefinementPasses` for compatibility and diagnostics, but
+  the current composite improver reports `RefinementSupported=false` and does
+  not perform mesh-refinement passes.
+- Enforces time budgets cooperatively through setup checks and the `fmincon`
+  output callback. One solver evaluation may finish after its deadline, so the
+  measured elapsed time can overrun the requested budget.
 - Is a local nonlinear method; conditioning warnings or local failure can
   occur even when another proposal might be feasible.
 
-Keeping the implementations in separate folders is intentional. Shared
-mathematical and search invariants live in `+azElInternal`; method packages
-retain planner policy, solver behavior, certificates, and diagnostics whose
-semantics differ.
+The package currently owns the facade, option resolver, composite improver,
+and HS3 solver internals. Neutral search, corridor certificates, result
+construction, and final validation live outside it. The current noncomment
+package count is stated in the local HS3 guide and is capped at 1,200.
 
 ## Repository layout
 
 ```text
 planAzElMotion.m                    public fixed/moving-goal dispatcher
-planAzElMovingTargetIntercept.m     public moving-target dispatcher
+planAzElMovingTargetIntercept.m     shared chronological intercept adapter
 
 +azElPlannerMethods/
-    README.md                       method selection and unplugging guide
+    README.md                       selection and dependency guide
     +corridor/
         README.md
         plan.m
-        planMovingTargetIntercept.m
         +internal/
-            +geometry/
             +obstacles/
             +search/
             +motion/
-            +validation/
-
-+azElInternal/                     method-independent planner invariants
     +hs3/
         README.md
-        plan.m
-        planMovingTargetIntercept.m
+        plan.m                      compatibility facade
+        resolvePlannerOptions.m
+        improve.m                   bounded composite improvement
         +internal/
-            +geometry/
-            +obstacles/
-            +search/
             +motion/
-            +validation/
+
++azElInternal/                     neutral planner invariants
+    generateTopologySeeds.m
+    buildSeedCorridor.m
+    certifySeedCorridor.m
+    emptyPlannerResult.m
 
 makeAzElObstacleData.m              protected polygon construction
 makeMovingAzElObstacleData.m        moving polygon construction
@@ -366,9 +391,8 @@ headless maintained-example matrix.
 ## Requirements
 
 - MATLAB with `polyshape`, graph, table, string, and current graphics support.
-- Optimization Toolbox for the preserved optimization routines. HS3
-  specifically requires `fmincon`; the corridor method does not use nonlinear
-  programming.
+- Optimization Toolbox only when HS3 improvement is enabled; it uses
+  `fmincon`. The default compact path does not use nonlinear programming.
 - A graphical MATLAB session for visible plots and the interactive sandbox.
   Planning, validation, and noninteractive examples can run headlessly.
 - Geographic-outline examples may require the MATLAB geographic data and
@@ -389,8 +413,8 @@ Historical evidence remains in `benchmark.csv`, `verification.md`, and
   and sandbox-only follow-up were explicitly not rerun in that session.
 
 Those historical rows prove only the source branches at their recorded
-revisions. Fresh combined-branch evidence now covers the new dispatchers,
-package qualification, both selector paths, and physical unplugging:
+revisions. A pre-composition combined-branch run covered the former isolated
+selector paths:
 
 - All 18 noninteractive maintained examples exactly matched the corridor
   source baseline at the gated categorical fields and stable metrics.
@@ -399,10 +423,15 @@ package qualification, both selector paths, and physical unplugging:
 - Each method produced 17 independently validated successes and the expected
   validated `noValidatedSeed` result, for 36 fresh example runs with zero gated
   differences.
-- A corridor-only temporary copy ran and validated with the HS3 folder absent;
-  an HS3-only copy did the same with the corridor folder absent.
+- Historical pre-composition copies demonstrated each former method snapshot
+  in isolation. That evidence does not establish current HS3 removability,
+  because the current HS3 selection first calls the corridor compact baseline.
 - MATLAB Code Analyzer checked all 109 intended MATLAB files and reported zero
   messages. Two unrelated untracked report scripts were deliberately excluded.
+
+That pre-composition evidence does not prove the current default-off composite
+policy, HS3 acceptance rule, timeout diagnostics, or current dependency
+closure. Use the latest test and benchmark records for those claims.
 
 The current compact-corridor cutover supersedes the corridor motion evidence
 above: its final source passed 133/133 tests, all 18 maintained example gates,
@@ -429,17 +458,22 @@ outside the automated matrix.
 
 ## Known limits
 
-- Both planners use finite deterministic proposal sets and are not complete.
+- Both public selections use finite deterministic proposal sets and are not complete.
 - Neither planner proves global minimum arrival or global optimality.
 - A moving obstacle can require topology or timing proposals outside the
   configured finite portfolio.
 - Azimuth wrapping with obstacles or moving goals remains unsupported.
 - HS3 can encounter local minima, infeasible nonlinear iterates, or numerical
   conditioning warnings.
+- HS3 mesh refinement is currently unsupported even though the requested pass
+  count is retained in diagnostics.
+- The cooperative HS3 timeout may overrun while an active solver callback or
+  function evaluation returns.
 - Corridor motion can remain conservative or use small-clearance boundary
   routes even when a different smooth trajectory exists.
-- Removing a method folder without updating both public dispatchers leaves an
-  explicit missing-package error. There is no automatic discovery or fallback.
+- The HS3 composition currently requires the corridor compact package. Removing
+  corridor is therefore unsupported until the baseline is extracted to a
+  neutral owner. There is no automatic discovery or silent fallback.
 
 Keep unfavorable failures and runtime results visible. A successful example
 demonstrates only the exercised case family, not universal feasibility.

@@ -1,9 +1,10 @@
 # HS3 search
 
-This module builds Plan-325's bounded visibility, homology, and timed-search
-seed portfolio. Seeds are topology and timing proposals; they are not valid
-motions and never establish planner success on their own.
+No HS3-local search implementation remains. The compact baseline produces the
+bounded visibility, homology, and timed-search seed portfolio through neutral
+`azElInternal.generateTopologySeeds`. Seeds are proposals and never establish
+planner success.
 
-Candidate ordering, finite work limits, and provenance fields are part of the
-preserved HS3 behavior. Keep them inside this method rather than sharing the
-corridor search implementation.
+When improvement is enabled, `hs3.improve` reuses the immutable baseline's
+seeds in deterministic order. HS3 retains only nonlinear motion work;
+candidate validation and strict improvement comparison use canonical owners.

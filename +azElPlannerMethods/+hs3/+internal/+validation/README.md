@@ -1,9 +1,9 @@
-# HS3 first-motion certificates
+# HS3 validation ownership
 
-This module owns the corridor and obstacle-envelope checks used to determine
-whether an analytic first motion has sufficient independent support. Keeping
-these checks outside search and motion construction prevents a candidate from
-certifying itself solely with its generating assumptions.
+No HS3-local validation or first-motion certificate implementation remains.
+Seed-corridor construction, certification, and obstacle-envelope checks are
+neutral `azElInternal` owners shared with the compact baseline.
 
-The method-level `validateTrajectory.m` remains the final authority for every
-returned timed trajectory, including successful HS3 solutions.
+Root `validateAzElTrajectory` is the final authority for every returned timed
+trajectory. `azElPlannerMethods.hs3.validateTrajectory` is a compatibility
+facade only.

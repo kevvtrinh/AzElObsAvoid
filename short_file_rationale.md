@@ -1,117 +1,92 @@
-# Why production MATLAB files below 100 code lines remain separate
+# Why short production MATLAB files remain separate
 
 This audit counts nonblank, noncomment lines in production MATLAB files. It
-excludes tests, examples, benchmarks, the interactive sandbox, temporary
-verification files, and imported snapshots. Callers are still counted across
-tests, examples, benchmarks, and the sandbox because those calls establish
-real ownership.
+excludes tests, examples, benchmarks, the interactive sandbox, and temporary
+verification artifacts. The current tree has 33 production files below 100
+code lines:
 
-The combined branch has 38 production files below 100 code lines:
-
-| Area | Short files | Result |
+| Area | Short files | Ownership result |
 | --- | ---: | --- |
-| Root public APIs | 5 | All have multiple callers. |
-| Shared root internals | 12 | Eleven have multiple callers; one retains a narrow data contract. |
-| Corridor method | 10 | All are in the corridor closure; four have one caller. |
-| HS3 method | 10 | All are in the HS3 closure; four have one caller. |
-| Shared planner timing | 1 | One consolidated function serves both method closures. |
+| Root public APIs | 3 | Stable construction and dispatch boundaries. |
+| Neutral `azElInternal` | 19 | Shared input, geometry, topology, corridor, result, polynomial, and comparison invariants. |
+| Compact corridor | 5 | Compact-specific motion/adapters plus a validator facade. |
+| HS3 | 5 | Compatibility facades and focused solver primitives. |
+| Shared planner timing | 1 | One timing schema used by the composition. |
 
-No short production file has zero executable callers. A separate reachability
-audit did find 22 obsolete root copies of planner search, motion, and validation
-code; those files were deleted because their complete replacements now live in
-the method folders.
+The earlier audit described method-local moving-target adapters, topology
+generators, corridor certificates, result builders, final validators, and HS3
+stop-motion helpers. Those duplicate owners have been removed. One root
+intercept adapter, neutral topology/corridor/result helpers, and root
+`validateAzElTrajectory` now own those contracts.
 
-## Root public APIs
+## Root public boundaries
 
 | File | Code lines | Why it stays separate |
 | --- | ---: | --- |
-| `combineAzElObstacles.m` | 71 | Public container-normalization contract used by constructors, examples, benchmarks, and the sandbox. |
-| `makeAzElObstacleData.m` | 28 | Public protected-obstacle constructor used by 21 callers. |
-| `planAzElMotion.m` | 80 | Stable planner dispatcher used by 23 callers; merging it would duplicate method selection throughout the repository. |
-| `planAzElMovingTargetIntercept.m` | 43 | Stable moving-target dispatcher used by five examples and public contract checks. |
-| `validateAzElTrajectory.m` | 43 | Public method-aware validation dispatcher used by examples, sandbox, and regression coverage. |
+| `combineAzElObstacles.m` | 71 | Public obstacle-container normalization used before immutable preparation. |
+| `makeAzElObstacleData.m` | 28 | Public protected-obstacle construction and safety-margin boundary. |
+| `planAzElMotion.m` | 84 | Public selector and compact-baseline/HS3 composition owner. |
 
-These files are small because they are interface boundaries. The canonical
-`queryAzElTimeObstacle.m` is no longer in this table: it now owns the complete
-shared 197-code-line query implementation instead of dispatching to two copies.
+The shared `planAzElMovingTargetIntercept.m` and canonical
+`validateAzElTrajectory.m` are no longer short dispatchers; each owns its
+complete policy.
 
-## Shared root internals
+## Neutral shared internals
 
-| Files | Why they stay separate |
+The 19 short neutral files remain separate where they define one mathematical
+or data-contract boundary:
+
+- `resolveOptions` and `normalizeLogicalScalar` own partial-option and logical
+  normalization semantics;
+- `prepareDynamic`, `shapeAtTime`, `boundaryShape`, `boundaryToEdges`, and
+  `pointPolygonClearance` own immutable obstacle and geometry interpretation;
+- `boundedTimeLayers`, `clusterSeedShape`, `convexPolygonRegions`,
+  `buildSeedCorridor`, `certifySeedCorridor`, `seedCorridorInequality`, and
+  `seedEnvelopeContainsObstacles` own bounded search reduction and independent
+  corridor evidence;
+- `goalPositionAtTime`, `evaluatePolynomial`, `powerToBernstein`, and
+  `integratedSquaredPolynomialJerk` own exact shared motion interpretation;
+- `acceptsTrajectoryImprovement` owns the monotone validation/arrival/jerk
+  acceptance rule.
+
+The larger neutral `generateTopologySeeds`, `denseSweptEnvelope`,
+`timeExpandedVisibilitySearch`, `emptyPlannerResult`, and
+`validatePolynomialTrajectory` files remain separate for the same reason but
+are outside this under-100-line table.
+
+## Compact-specific short files
+
+| File or group | Why it stays separate |
 | --- | --- |
-| `resolveOptions.m`, `normalizeLogicalScalar.m` | Shared contract primitives used by constructors, plotting, example setup, and geographic helpers. Merging them would reproduce option semantics in many callers. |
-| `+obstacles/prepareDynamic.m`, `+geometry/boundaryShape.m` | Canonical obstacle preparation and polygon conversion shared by both planners, querying, and plotting. |
-| `+geometry/boundaryToEdges.m`, `+geometry/pointPolygonClearance.m` | One deterministic traversal and vectorized signed-clearance implementation shared by both planners, querying, and validation. |
-| `+obstacles/shapeAtTime.m` | Owns the complete sampled-history interpolation and topology-change policy shared by both planners, querying, and plotting. |
-| `goalPositionAtTime.m` | Owns the fixed-versus-sampled goal adapter shared by both planners and plotting. |
-| `evaluatePolynomial.m`, `powerToBernstein.m` | Shared exact polynomial evaluation and basis conversion used by both planners, solvers, and independent validators. |
-| `boundedTimeLayers.m`, `seedCorridorInequality.m` | Shared timed-search bounds and corridor-certificate inequalities used by both method closures. |
+| `buildFixedDurationAffineModel`, `expandRouteClearance` | Focused affine and clearance algorithms consumed by compact motion construction. |
+| `buildEnvelopeBoundary`, `expandDynamicRoute` | Small adapters for compact envelope and time-local route behavior. |
+| `validateTrajectory` | Compatibility facade over canonical root validation. |
 
-`boundaryShape.m` is the only short shared file with one tracked production
-caller. It remains separate because it owns the canonical conversion used by
-obstacle preparation and is directly covered by the shared geometry contract.
+There are no compact-local topology, convex-decomposition, certificate, result,
+or moving-target owners.
 
-## Corridor method
+## HS3-specific short files
 
-Every corridor file below is reachable from
-`azElPlannerMethods.corridor.plan` or its method-specific validator.
-Most have two to ten direct callers.
+| File or group | Why it stays separate |
+| --- | --- |
+| `emptyHs3SolverDiagnostics` | Stable flat schema for every nonlinear-solver exit. |
+| `integratedSquaredHs3Jerk` | HS3 decision-space objective and gradient. |
+| `linearizeHs3Constraints` | Fixed-time affine constraint/Jacobian extraction. |
+| `plan`, `validateTrajectory` | Compatibility facades over root composition and canonical validation. |
 
-| Category | Short files | Separation reason |
-| --- | --- | --- |
-| Geometry | `convexPolygonRegions` | Corridor-specific convex decomposition used by search and certification. |
-| Obstacles | `buildEnvelopeBoundary` | Corridor-envelope construction remains separate from shared obstacle preparation and time interpolation. |
-| Motion | `buildFixedDurationAffineModel`, `expandRouteClearance` | One fixed-duration affine map and one input-derived route-clearance adjustment used by the compact motion path. |
-| Validation | `buildSeedCorridor`, `certifySeedCorridor`, `seedEnvelopeContainsObstacles` | Certificate construction and checking remain separate from the optimizer they independently check. |
+The former analytic stop-motion, candidate, timing, topology, corridor, result,
+and validation helpers are gone. The complete HS3 package—including files above
+100 lines—currently owns exactly 1,200 noncomment lines at its cap. That
+ownership count excludes the compact baseline and neutral dependencies and is
+not a whole-execution-closure claim.
 
-Four corridor files have one direct caller and need an explicit decision:
+## Shared timing and merge decision
 
-| File | Code lines | Sole caller | Why it is not merged |
-| --- | ---: | --- | --- |
-| `+internal/emptyAzElPlannerResult.m` | 60 | `plan.m` | Owns the stable success/failure schema used by every early return. The planner orchestrator should not duplicate that schema across branches. |
-| `+internal/+search/clusterSeedShape.m` | 75 | `generateTopologySeeds.m` | A self-contained clustering algorithm extracted from an already-large search orchestrator. |
-| `+internal/+search/expandDynamicRoute.m` | 43 | `solveCompactC3Candidate.m` | Owns time-local route expansion and nearest-boundary decisions; its caller assembles one compact candidate. |
-| `+internal/+motion/expandRouteClearance.m` | 34 | `solveCompactC3.m` | Owns the general nearest-boundary clearance adjustment used only by the exact static compact representation. |
+`+azElPlannerMethods/+internal/stageTiming.m` remains separate because its 56
+code lines define, reconcile, and synchronize the exclusive timing schema for
+both public selections.
 
-## HS3 method
-
-Every HS3 short file is reachable from `azElPlannerMethods.hs3.plan` or its
-method-specific validator. Shared option, goal, obstacle, geometry, and query
-infrastructure does not depend on either method folder, preserving physical
-folder removal.
-
-| Category | Short files | Separation reason |
-| --- | --- | --- |
-| Validation | `buildSeedCorridor`, `seedEnvelopeContainsObstacles` | Method-specific certificate construction and obstacle-containment checks remain separate from the optimizer. |
-| Timing and candidate adapters | `emptyHs3SolverDiagnostics`, `addHs3CandidateTiming`, `candidateSeed` | One stable flat solver schema and one aggregate timing owner; the remaining seed adapter keeps collision relinearization semantics consistent. |
-
-Four HS3 files have one direct caller. The jerk objective and corridor
-certificate also have direct regression callers, so they are not included in
-this sole-caller table:
-
-| File | Code lines | Sole caller | Why it is not merged |
-| --- | ---: | --- | --- |
-| `+internal/emptyAzElPlannerResult.m` | 58 | `plan.m` | Owns the stable result schema and keeps every expected failure structurally identical. |
-| `+internal/+motion/linearizeHs3Constraints.m` | 17 | `solveHs3.m` | Owns the sparse HS3 constraint/Jacobian mapping; inlining would obscure the nonlinear solver setup. |
-| `+internal/+search/clusterSeedShape.m` | 89 | `generateTopologySeeds.m` | A distinct clustering algorithm extracted from the largest HS3 search file. |
-| `+internal/candidateSeed.m` | 10 | `plan.m` | Reassociates a failed collision corridor without introducing a new topology; inlining it would expand the 882-line planner. |
-
-## Shared planner timing
-
-One shared timing function is used by both complete method closures:
-
-| File | Code lines | Why it stays separate |
-| --- | ---: | --- |
-| `+internal/stageTiming.m` | 56 | Defines the schema, validates exclusive ownership, reconciles the residual, and synchronizes planner-result elapsed time. |
-
-## Merge decision
-
-No remaining short production file should be merged solely to reduce file
-count. The eight single-caller files own a stable schema, a mathematical or
-geometry algorithm, or a data-interpretation boundary extracted from an
-already-large orchestrator. The other 30 already prevent duplication across
-multiple callers.
-
-A future merge is justified only if the owning algorithm or public boundary is
-removed and the code becomes genuinely caller-local. File length alone is not
-evidence that a boundary is useless.
+No remaining short file should be merged solely to reduce file count. A merge
+is justified only when its mathematical invariant, compatibility boundary, or
+shared ownership disappears. File length by itself is not evidence that a
+boundary is redundant.

@@ -9,9 +9,8 @@ function result = planAzElMotion(obstacles, initialState, goalState, limits, opt
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Select one complete Az/El planner implementation without mixing its
-%     search, motion, collision, validation, or result-building internals
-%     with the other implementation.
+%   - Run the compact planner directly, or preserve it as an immutable
+%     baseline before bounded, independently validated HS3 improvement work.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
@@ -102,7 +101,7 @@ if plannerMethod == "hs3" && isfield(methodOverrides, "MotionMethod")
     methodOverrides = rmfield(methodOverrides, "MotionMethod");
 end
 
-%% Section 3: Run Exactly One Isolated Method
+%% Section 3: Run The Selected Planner Composition
 
 switch plannerMethod
     case "corridorQuintic"
@@ -110,12 +109,16 @@ switch plannerMethod
             obstacles, initialState, goalState, limits, methodOverrides);
 
     case "hs3"
-        result = azElPlannerMethods.hs3.plan( ...
-            obstacles, initialState, goalState, limits, methodOverrides);
+        [hs3Options, compactOverrides] = ...
+            azElPlannerMethods.hs3.resolvePlannerOptions(methodOverrides);
+        compactBaseline = azElPlannerMethods.corridor.plan( ...
+            obstacles, initialState, goalState, limits, compactOverrides);
+        result = azElPlannerMethods.hs3.improve( ...
+            compactBaseline, hs3Options);
 end
 
-% The method engine owns every other resolved option and result field. The
-% dispatcher adds only the public selector needed to reproduce the choice.
+% Echo the selected public composition after its engine has resolved all
+% method-specific controls and retained rejected improvement evidence.
 result.Options.PlannerMethod = plannerMethod;
 result.SearchDiagnostics.PlannerMethod = plannerMethod;
 

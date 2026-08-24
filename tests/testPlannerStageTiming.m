@@ -111,8 +111,8 @@ verifyEqual(testCase, ...
 verifyStageTiming(testCase, result);
 end
 
-function testHs3SuccessAndEndpointFailureShareTimingSchema(testCase)
-% Require one shared planner timing schema on normal and early exits.
+function testDefaultOffHs3CompositeRetainsBaselineTiming(testCase)
+% Require the disabled improver to add no work to either public exit path.
 initialState = state(0, [0 0]);
 goalState = state(8, [4 0]);
 limits = physicalLimits();
@@ -125,42 +125,43 @@ failure = planAzElMotion( ...
 verifyTrue(testCase, success.Success, success.Message);
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
+verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Enabled);
+verifyFalse(testCase, success.CompositionDiagnostics.Hs3.Attempted);
+verifyEqual(testCase, success.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
+verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Enabled);
+verifyFalse(testCase, failure.CompositionDiagnostics.Hs3.Attempted);
+verifyEqual(testCase, failure.CompositionDiagnostics.Hs3.ElapsedTime_s, 0);
 verifyStageTiming(testCase, success);
 verifyStageTiming(testCase, failure);
 end
 
-function testHs3SolverTimeLimitRetainsTimingSchema(testCase)
-% Require complete solver diagnostics when the budget expires before setup.
+function testOptInHs3AttemptReconcilesCompositeTiming(testCase)
+% Keep optional improver work visible without overlapping baseline stages.
 initialState = state(0, [0 0]);
-goalState = state(8, [4 0]);
+goalState = state(3, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
-options.MaximumSolverTime_s = 0;
-seed = struct( ...
-    "Index", 1, ...
-    "Source", "direct", ...
-    "position_deg", [initialState.position_deg; goalState.position_deg], ...
-    "tau", [0; 1], ...
-    "EstimatedDuration_s", goalState.time_s - initialState.time_s, ...
-    "Length_deg", norm(goalState.position_deg - initialState.position_deg), ...
-    "UsesReducedGeometry", false);
+options.EnableHs3Improvement = true;
+options.MaximumHs3ImprovementTime_s = 0.5;
+options.CollocationSegmentCount = 2;
+options.MaximumCollocationSegmentCount = 2;
+result = planAzElMotion([], initialState, goalState, limits, options);
+composition = result.CompositionDiagnostics.Hs3;
 
-candidate = azElPlannerMethods.hs3.internal.motion.solveHs3( ...
-    [], initialState, goalState, limits, options, seed);
-diagnostics = candidate.SolverDiagnostics;
-emptyDiagnostics = ...
-    azElPlannerMethods.hs3.internal.motion.emptyHs3SolverDiagnostics();
-
-verifyFalse(testCase, candidate.OptimizerFeasible);
-verifyEqual(testCase, candidate.TerminationReason, "solverTimeLimit");
-verifyEmpty(testCase, candidate.time_s);
-verifyEqual(testCase, fieldnames(diagnostics), fieldnames(emptyDiagnostics));
-verifyEqual(testCase, diagnostics.ConstraintRepresentation, "notBuilt");
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, composition.Enabled);
+verifyTrue(testCase, composition.Attempted);
+verifyNotEmpty(testCase, composition.Attempts);
+verifyGreaterThan(testCase, composition.ElapsedTime_s, 0);
 verifyEqual(testCase, ...
-    diagnostics.CorridorConstructionElapsedTime_s, 0);
-verifyEqual(testCase, diagnostics.MotionSolvingElapsedTime_s, ...
-    diagnostics.ElapsedTime_s, "AbsTol", ...
-    timingTolerance(diagnostics.ElapsedTime_s));
+    result.SearchDiagnostics.Hs3ElapsedTime_s, ...
+    composition.ElapsedTime_s, "AbsTol", 1e-12);
+verifyStageTiming(testCase, result);
+tolerance_s = timingTolerance(result.ElapsedPlanningTime_s);
+verifyGreaterThanOrEqual(testCase, ...
+    result.SearchDiagnostics.StageTiming.UnattributedElapsedTime_s + ...
+    tolerance_s, composition.ElapsedTime_s);
 end
 
 function testFinalizerRejectsOverAttribution(testCase)
@@ -171,30 +172,6 @@ timing.MotionSolvingElapsedTime_s = 2;
 verifyError(testCase, @() ...
     azElPlannerMethods.internal.stageTiming(timing, 1), ...
     "stageTiming:OverAttributed");
-end
-
-function testHs3CandidateTimingAccumulatesDiscardedWork(testCase)
-% Add every candidate contribution instead of retaining only the winner.
-candidate = ...
-    azElPlannerMethods.hs3.internal.motion.buildStopWaypointMotion();
-candidate.SolverDiagnostics.CorridorConstructionElapsedTime_s = 0.2;
-candidate.SolverDiagnostics.MotionSolvingElapsedTime_s = 0.3;
-candidate.Validation.CollisionCheckingElapsedTime_s = 0.4;
-candidate.Validation.ElapsedTime_s = 0.9;
-timing = azElPlannerMethods.internal.stageTiming();
-
-for attemptIndex = 1:2
-    timing = azElPlannerMethods.hs3.internal.addHs3CandidateTiming( ...
-        timing, candidate);
-end
-verifyEqual(testCase, timing.CorridorConstructionElapsedTime_s, 0.4, ...
-    "AbsTol", 1e-12);
-verifyEqual(testCase, timing.MotionSolvingElapsedTime_s, 0.6, ...
-    "AbsTol", 1e-12);
-verifyEqual(testCase, timing.CollisionCheckingElapsedTime_s, 0.8, ...
-    "AbsTol", 1e-12);
-verifyEqual(testCase, timing.FinalValidationElapsedTime_s, 1.0, ...
-    "AbsTol", 1e-12);
 end
 
 function verifyStageTiming(testCase, result)

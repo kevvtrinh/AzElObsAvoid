@@ -15,7 +15,7 @@ function [value, gradient] = integratedSquaredHs3Jerk( ...
 %**************************************************************************
 % INPUTS
 %   - decision (numeric column)
-%       Interleaved two-axis jerk controls and optional final time.
+%       Axis-major jerk controls and optional final time.
 %   - isEarliestArrival (logical scalar)
 %   - fixedFinalTime_s, startTime_s (finite scalar seconds)
 %   - segmentCount (positive integer scalar)

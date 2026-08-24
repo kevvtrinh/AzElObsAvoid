@@ -106,7 +106,7 @@ plannerOptions.MaximumSeedCount = 3;
 plannerOptions.RandomSeed = controls.RandomSeed;
 rng(controls.RandomSeed, "twister");
 seedTimer = tic;
-[seeds, seedDiagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( ...
+[seeds, seedDiagnostics] = azElInternal.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 seedGenerationTime_s = toc(seedTimer);
 visibilitySeedIndex = find( [seeds.Source] == "visibilityGraph", 1, "first");

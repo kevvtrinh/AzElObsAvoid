@@ -1,7 +1,7 @@
 function corridor = buildSeedCorridor(seed, segmentCount)
 %% Section 0: Header & Readme
 % SYNTAX
-%   corridor = azElPlannerMethods.corridor.internal.validation.buildSeedCorridor(seed, segmentCount)
+%   corridor = azElInternal.buildSeedCorridor(seed, segmentCount)
 %**************************************************************************
 % PURPOSE
 %   - Convert seed-envelope geometry into linear outside-half-space records for
@@ -42,7 +42,7 @@ if any(xor(isfinite(boundary_deg(:, 1)), isfinite(boundary_deg(:, 2))))
         "CorridorBoundary_deg must use paired finite vertices and " + "paired nonfinite separators.");
 end
 corridorShape = polyshape( boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
-corridorRegions = azElPlannerMethods.corridor.internal.geometry.convexPolygonRegions(corridorShape);
+corridorRegions = azElInternal.convexPolygonRegions(corridorShape);
 if isempty(corridorRegions)
     return;
 end

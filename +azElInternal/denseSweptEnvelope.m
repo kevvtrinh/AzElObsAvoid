@@ -2,11 +2,12 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
         obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [envelopeShape, usedEnvelope] = azElPlannerMethods.hs3.internal.search.denseSweptEnvelope( ...
+%   [envelopeShape, usedEnvelope] = azElInternal.denseSweptEnvelope( ...
 %       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
 %**************************************************************************
 % PURPOSE
-%   - Replace an excessive seed-only swept union with a conservative hull.
+%   - Replace an unaffordable exact swept union with a conservative
+%     directional support hull for seed generation only.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
@@ -27,25 +28,27 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
 % UNITS
 %   - Position is degrees. Time is seconds. The work budget is a count.
 %**************************************************************************
+
 %% Section 1: Estimate The Swept Boolean Work
-validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
+
+validateattributes(sampleTimes_s, {'numeric'}, ...
+    {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, ...
     {'real', 'finite', 'size', [2 2]});
 validateattributes(vertexWorkBudget, {'numeric'}, ...
     {'real', 'finite', 'positive', 'scalar'});
 maximumVerticesPerLayer = 0;
 
-% Inspect every obstacle history to find the largest boundary slice that can
-% contribute work at one sampled time layer.
+% Use the largest stored slice from each obstacle so the estimate cannot be
+% optimistic about work at a sampled layer.
 for obstacleIndex = 1:numel(obstacles)
     maximumVertexCount = 0;
-
-    % Retain the largest vertex count from this obstacle's complete history.
     for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
         maximumVertexCount = max(maximumVertexCount, ...
             numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
     end
-    maximumVerticesPerLayer = maximumVerticesPerLayer + maximumVertexCount;
+    maximumVerticesPerLayer = maximumVerticesPerLayer + ...
+        maximumVertexCount;
 end
 estimatedVertexWork = numel(sampleTimes_s) * maximumVerticesPerLayer;
 envelopeShape = polyshape();
@@ -53,38 +56,37 @@ usedEnvelope = false;
 if estimatedVertexWork <= vertexWorkBudget
     return;
 end
+
 %% Section 2: Collect All Protected History Vertices
 
-historyVertices_deg = zeros(0, 2);
+sliceCount = 0;
+for obstacleIndex = 1:numel(obstacles)
+    sliceCount = sliceCount + numel(obstacles(obstacleIndex).az_deg);
+end
+historyVerticesBySlice_deg = cell(sliceCount, 1);
+historySliceIndex = 0;
 
-% Gather finite vertices from every obstacle so the fallback envelope contains
-% the complete protected history rather than only the sampled query times.
+% Preserve every stored source slice, not only the requested sample times.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
-
-    % Append every finite boundary slice belonging to this obstacle.
     for sampleIndex = 1:numel(obstacle.az_deg)
+        historySliceIndex = historySliceIndex + 1;
         position_deg = [obstacle.az_deg{sampleIndex}(:), ...
             obstacle.el_deg{sampleIndex}(:)];
         position_deg = position_deg(all(isfinite(position_deg), 2), :);
-        if isempty(position_deg)
-            continue;
-        end
-        historyVertices_deg = [historyVertices_deg; position_deg]; %#ok<AGROW>
+        historyVerticesBySlice_deg{historySliceIndex} = position_deg;
     end
 end
+historyVertices_deg = vertcat(historyVerticesBySlice_deg{:});
 if size(historyVertices_deg, 1) < 3
     return;
 end
+
 %% Section 3: Build A Conservative Directional Support Hull
-% A fixed set of support directions limits graph size. More directions are
-% tried only when a coarse hull captures an endpoint that the exact convex
-% hull does not capture.
+
+% More directions are tried only when a coarse hull captures an endpoint.
 directionCounts = [16 24 32 48 64];
 trialShape = polyshape();
-
-% Try progressively richer support-direction sets until the conservative hull
-% leaves both request endpoints outside.
 for directionCount = directionCounts
     candidateShape = directionalSupportHull( ...
         historyVertices_deg, directionCount);
@@ -106,14 +108,12 @@ envelopeShape = trialShape;
 usedEnvelope = true;
 end
 
-
 function envelopeShape = directionalSupportHull(vertices_deg, directionCount)
 % Clip a bounding polygon by ordered supports to make a coarse hull.
 angles_rad = (0:directionCount - 1).' * (2 * pi / directionCount);
 normal = [cos(angles_rad), sin(angles_rad)];
 minimum_deg = min(vertices_deg, [], 1);
 maximum_deg = max(vertices_deg, [], 1);
-% This small outward pad makes vertex containment stable at support lines.
 supportPadding_deg = 1e-7 * max(1, max(maximum_deg - minimum_deg));
 offset_deg = max(vertices_deg * normal.', [], 1).' + supportPadding_deg;
 center_deg = 0.5 * (minimum_deg + maximum_deg);
@@ -121,7 +121,6 @@ halfWidth_deg = 2 * max(1, max(maximum_deg - minimum_deg));
 envelopeVertices_deg = center_deg + halfWidth_deg * ...
     [-1 -1; 1 -1; 1 1; -1 1];
 
-% Clip the initial bounding box against every directional support half-plane.
 for directionIndex = 1:directionCount
     envelopeVertices_deg = clipToSupportHalfPlane( ...
         envelopeVertices_deg, normal(directionIndex, :), ...
@@ -140,8 +139,6 @@ clippedVertices_deg = zeros(0, 2);
 previousPoint_deg = vertices_deg(end, :);
 previousInside = previousPoint_deg * normal.' <= offset_deg + 1e-12;
 
-% Walk the ordered polygon once, retaining inside vertices and inserting each
-% boundary crossing at the correct edge position.
 for vertexIndex = 1:size(vertices_deg, 1)
     currentPoint_deg = vertices_deg(vertexIndex, :);
     currentInside = currentPoint_deg * normal.' <= offset_deg + 1e-12;
@@ -169,12 +166,14 @@ end
 
 function vertices_deg = appendDistinctPoint(vertices_deg, point_deg)
 % Omit consecutive duplicate vertices created at support intersections.
-if isempty(vertices_deg) || norm(vertices_deg(end, :) - point_deg) > 1e-7
+if isempty(vertices_deg) || ...
+        norm(vertices_deg(end, :) - point_deg) > 1e-7
     vertices_deg(end + 1, :) = point_deg;
 end
 end
 
-function areOutside = endpointsAreOutside(envelopeShape, endpointPosition_deg)
+function areOutside = endpointsAreOutside( ...
+        envelopeShape, endpointPosition_deg)
 % Reject a seed envelope that contains or touches a request endpoint.
 if isempty(envelopeShape.Vertices)
     areOutside = false;

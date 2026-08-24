@@ -1,7 +1,7 @@
 function convexRegions = convexPolygonRegions(shape)
 %% Section 0: Header & Readme
 % SYNTAX
-%   convexRegions = azElPlannerMethods.corridor.internal.geometry.convexPolygonRegions(shape)
+%   convexRegions = azElInternal.convexPolygonRegions(shape)
 %**************************************************************************
 % PURPOSE
 %   - Decompose occupied polygon geometry into exact convex regions for

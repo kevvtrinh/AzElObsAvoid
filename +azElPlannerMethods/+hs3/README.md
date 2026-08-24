@@ -1,52 +1,58 @@
-# HS3 planner snapshot
+# Bounded HS3 composite improver
 
-This folder is the complete HS3 backend imported from `plan-325` commit
-`5a067112a9f880d015f52fb97538a99010871478`. The last HS3
-algorithm-and-evidence commit on that history is `921b2f7`.
+This folder descends from the Plan-325 HS3 snapshot at commit
+`5a067112a9f880d015f52fb97538a99010871478`, but it is no longer a complete
+isolated planner. The public `PlannerMethod="hs3"` path first builds an
+immutable compact corridor baseline, then passes that result and resolved HS3
+options to this package for optional bounded nonlinear work.
 
-The backend builds bounded topology proposals, constructs deterministic
-analytic first motions when applicable, and may use HS3 nonlinear optimization
-to improve or recover a continuous finite-jerk trajectory. It does not call
-anything inside the sibling `+corridor` folder. HS3 optimization requires
-MATLAB Optimization Toolbox because it uses `fmincon`.
+## Current entry points
 
-## Entry points
-
-- `plan.m` owns HS3 defaults, endpoint checks, seed generation, analytic
-  fallback policy, nonlinear attempts, validation, ranking, and result data.
-- `planMovingTargetIntercept.m` preserves the Plan-325 one-call moving-goal
-  earliest-arrival behavior.
-- `validateTrajectory.m` is this method's independent complete-trajectory
+- `plan.m` preserves the method-qualified compatibility call and defaults
+  request; planning forwards to the root composition.
+- `resolvePlannerOptions.m` owns all HS3 defaults and validation and projects
+  only common fields into the compact baseline call.
+- `improve.m` records bounded attempts, validates every returned trajectory
+  through `validateAzElTrajectory`, and accepts only strict monotone improvement
+  over the immutable baseline.
+- `validateTrajectory.m` is a compatibility facade over the canonical root
   validator.
 
-Canonical combination, normalization, and time queries are shared through
-`combineAzElObstacles`, `normalizeAzElTimeObstacleData`, and
-`queryAzElTimeObstacle`. HS3 does not depend on the corridor folder.
+There is no method-local moving-target adapter, topology search, stop-at-
+waypoint motion family, corridor-certificate stack, result builder, or final
+validator. Neutral topology, geometry, corridor, result, and comparison helpers
+live in `+azElInternal`; interception and validation live at the root.
 
-These are backend integration points. Application code should normally call
-`planAzElMotion` or `planAzElMovingTargetIntercept` at the repository root.
+## Selection and result source
 
-## Internal flow
+`planAzElMotion("hs3")` returns HS3-specific defaults with
+`EnableHs3Improvement=false`. In this default mode the composition returns the
+compact trajectory unchanged, sets `Options.PlannerMethod="hs3"`, and retains
+`SelectedMotionSource="corridorQuintic"`.
 
-```text
-canonical inputs
-    -> prepared obstacle histories
-    -> bounded topology and timing seeds
-    -> analytic first motion and/or HS3 solve
-    -> independent validation and deterministic selection
-```
+With improvement enabled, HS3 uses collocation and `fmincon` on deterministic
+compact seeds. Invalid, equal, slower, rougher, or timed-out attempts remain in
+`CompositionDiagnostics.Hs3.Attempts` and cannot displace a valid baseline.
+Only a canonically validated strict improvement sets
+`SelectedMotionSource="hs3"`.
 
-The `+internal` subpackages separate obstacle preparation, search, motion
-construction, and reusable first-motion certificates. Planner-specific
-algorithms remain local; canonical input and query semantics are shared.
+`MaximumMeshRefinementPasses` is resolved and echoed for compatibility, but
+the current improver explicitly reports `RefinementSupported=false` and does
+not perform mesh refinement. The solver timeout is cooperative: setup checks
+and the `fmincon` output callback stop future work, but one active function
+evaluation can return after the requested deadline, so measured elapsed time
+may exceed `MaximumHs3ImprovementTime_s`.
 
-## Selection and removal
+## Size and dependency boundary
 
-Select this method with `PlannerMethod="hs3"`. Use
-`planAzElMotion("hs3")` when method-specific defaults such as collocation and
-nonlinear-solver limits are needed.
+The HS3 package has a hard 1,200-noncomment-line ownership cap. The current
+recount is **1,200 noncomment lines** across its facade, option owner, improver,
+validation facade, and motion internals. This count excludes tests and also
+excludes the executed compact baseline and neutral shared dependencies. It is
+therefore not a claim that the complete HS3 execution closure is within 1,200
+lines.
 
-Setting `EnableHs3Improvement=false` changes HS3's internal attempt policy; it
-does not select the corridor planner and does not unplug this backend. To omit
-HS3 from a deployment, remove the entire folder and remove the HS3 cases from
-both root dispatchers. No automatic fallback is provided.
+The current root composition transitively depends on `+corridor`. HS3 cannot
+yet be deployed or verified by deleting that folder; neutral extraction of the
+compact baseline remains future work. Optimization Toolbox is required only
+when HS3 improvement is enabled.

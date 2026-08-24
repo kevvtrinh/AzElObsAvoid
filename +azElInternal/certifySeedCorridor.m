@@ -1,7 +1,7 @@
 function [certified, minimumClearance_deg] = certifySeedCorridor(trajectory, obstacles, tolerance_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [certified, minimumClearance_deg] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( ...
+%   [certified, minimumClearance_deg] = azElInternal.certifySeedCorridor( ...
 %       trajectory, obstacles, tolerance_deg)
 %**************************************************************************
 % PURPOSE
@@ -41,7 +41,7 @@ if size(boundary_deg, 2) ~= 2 || any(xor(isfinite(boundary_deg(:, 1)), isfinite(
     return;
 end
 envelopeShape = polyshape( boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
-envelopeRegions = azElPlannerMethods.corridor.internal.geometry.convexPolygonRegions(envelopeShape);
+envelopeRegions = azElInternal.convexPolygonRegions(envelopeShape);
 segmentCount = trajectory.Polynomial.SegmentCount;
 regionCount = numel(envelopeRegions);
 corridor = trajectory.SeedCorridor;
@@ -53,7 +53,7 @@ end
 
 % Corridor supports are useful only if their source envelope truly contains
 % every protected obstacle history used by the planner.
-if ~azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, obstacles, tolerance_deg)
+if ~azElInternal.seedEnvelopeContainsObstacles( boundary_deg, obstacles, tolerance_deg)
     return;
 end
 

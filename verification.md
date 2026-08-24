@@ -2582,6 +2582,68 @@ The compact duration and topology searches remain finite. This evidence proves
 the maintained cases and synthetic scales only; it is not a completeness,
 global-optimality, or uniform wall-time-speedup claim.
 
+## Lean HS3 bounded composite — 2026-08-24
+
+The standalone 3,868-noncomment-line HS3 planner was replaced by a bounded
+composite with exactly 1,200 HS3-owned nonblank, noncomment MATLAB lines. The
+count includes the HS3 facade, option resolver, improvement controller, and
+remaining solver kernel. It excludes shared/public infrastructure and the
+compact baseline that the composite intentionally invokes; it is not a claim
+that the complete transitive execution closure fits in 1,200 lines.
+
+The compact result is immutable unless an opt-in HS3 attempt independently
+validates and is no later, has no greater integrated squared polynomial jerk,
+and strictly improves at least one measure. The default is
+`EnableHs3Improvement=false`, so normal HS3 calls return the validated compact
+motion with composition diagnostics and without nonlinear-solver work. A
+failed compact result may recover to any independently valid HS3 candidate.
+Rejected candidates and cooperative time-limit overruns remain reported.
+Requested mesh refinement is retained in diagnostics but explicitly reports
+`RefinementSupported=false`.
+
+### Final verification matrix
+
+- MATLAB Code Analyzer checked 94 live `.m` files with zero findings.
+- The complete test suite passed 138/138 in 205.211 seconds. New coverage
+  includes exact default-off compact success/failure parity, nonzero start and
+  terminal velocity/acceleration, moving-target terminal derivatives, timed
+  waits, direct-facade recursion safety, optional-improver timing, and
+  compact-failure recovery diagnostics.
+- All 18 maintained examples ran serially in separate MATLAB processes for
+  both `corridorQuintic` and `hs3`. All 36 example contracts passed. The 17
+  successful pairs had identical arrival times and physical trajectories; the
+  no-path pair returned the same `noValidatedSeed` failure and passed its
+  expected-failure contract. The HS3 runs selected `corridorQuintic`, as
+  required by the default-off bounded policy.
+- A second serial HS3 capture produced the complete fresh rows appended to
+  `benchmark.csv` under `hs3-compact-composite-worktree`; no compact metrics
+  were copied into those rows.
+- Graphics gates produced four valid U-shaped success figures with 680
+  graphics objects and two expected-failure diagnostic figures with 342
+  objects. The failure retained `noValidatedSeed` and selected seed zero.
+
+### Scaling and hairpin comparison
+
+Each public-method timing comparison used identical canonical inputs, seed
+325, three interleaved repetitions, and exact comparison of the selected seed,
+sampled position, velocity, acceleration, jerk, and arrival time.
+
+| Case | Duration (s) | Compact median (s) | HS3 median (s) | HS3/compact | Compact max (s) | HS3 max (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 turn | 6.60420575985 | 0.5845021 | 0.4958138 | 0.848267 | 2.3496011 | 0.6624357 |
+| 5 turns | 19.8905274829 | 0.3807402 | 0.3773811 | 0.991177 | 1.0238277 | 0.4704385 |
+| 10 turns | 36.3238796555 | 0.7929697 | 0.7951018 | 1.002689 | 0.8257864 | 0.8282841 |
+| 20 turns | 68.3588042743 | 3.1064024 | 3.0717906 | 0.988858 | 3.1310520 | 3.1094026 |
+| 12 hairpins | 140.56091613 | 1.9999662 | 2.0402493 | 1.020142 | 2.5180664 | 2.2851960 |
+
+All five cases succeeded, passed independent validation, and produced exact
+compact/HS3 physical parity. The 10-turn median was 0.27 percent slower and the
+hairpin median was 2.01 percent slower, both within the predeclared 5 percent
+median allowance; these unfavorable observations are retained. The hairpin
+HS3 maximum was lower in this three-repeat sample. Timing noise and finite
+benchmark topology prevent a claim of uniform speedup, completeness, or global
+optimality.
+
 ### Diff-growth disclosure
 
 The existing `solveCompactC3.m` changes by +382/-58 lines against `8111d0f`.

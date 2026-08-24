@@ -1,35 +1,43 @@
-function [seeds, diagnostics] = generateTopologySeeds( ...
-        obstacles, initialState, goalState, limits, options)
+function [seeds, diagnostics] = generateTopologySeeds(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+%   [seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
 %       obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Generate bounded homology-diverse visibility and timed seeds.
+%   - Generate a small deterministic set of route-topology proposals. The
+%     function tries the direct edge first, summarizes obstacle history into
+%     a spatial graph, adds a bounded timed proposal when geometry moves, and
+%     finally searches distinct homology signatures. Seeds are never treated
+%     as proof that a collision-free timed motion exists.
 %**************************************************************************
 % INPUTS
-%   - obstacles (canonical protected obstacle struct array)
-%   - initialState, goalState (normalized scalar state structs)
-%   - limits (normalized physical limits struct)
-%   - options (resolved planner options)
+%   - obstacles (prepared struct array), protected obstacle histories.
+%   - initialState, goalState (scalar structs), planning endpoints and time.
+%   - limits (scalar struct), workspace and derivative limits.
+%   - options (scalar struct), resolved bounded-search controls.
 %**************************************************************************
 % OUTPUTS
-%   - seeds and diagnostics (struct arrays): Bounded proposals and search trace.
+%   - seeds (struct array), deterministic geometric or timed proposals.
+%   - diagnostics (scalar struct), complete bounded-search evidence.
 %**************************************************************************
 % UNITS
-%   - Position is degrees. Time and duration are seconds.
+%   - Position is degrees; time is seconds; path length is degrees.
 %**************************************************************************
+
 %% Section 1: Create The Direct Visibility Seed
+
+% The direct seed is always retained as the baseline candidate, even when it
+% crosses an obstacle. Later construction and validation reject it honestly.
 start_deg = initialState.position_deg;
 goal_deg = azElInternal.goalPositionAtTime(goalState, goalState.time_s);
+% Move the goal to the nearest equivalent azimuth turn when circular wrapping is enabled.
 if options.AllowAzimuthWrapping
     azimuthTurns = round((start_deg(1) - goal_deg(1)) / 360);
     goal_deg(1) = goal_deg(1) + 360 * azimuthTurns;
 end
 availableDuration_s = goalState.time_s - initialState.time_s;
-directDuration_s = min(availableDuration_s, max(1e-3, ...
-    norm(goal_deg - start_deg) / max(limits.maxVelocity_deg_s)));
+directDuration_s = min(availableDuration_s, max(1e-3, norm(goal_deg - start_deg) / max(limits.maxVelocity_deg_s)));
 seedTemplate = struct( ...
     "Index", 0, "Source", "", "position_deg", zeros(0, 2), ...
     "tau", zeros(0, 1), "CorridorBoundary_deg", zeros(0, 2), ...
@@ -44,18 +52,25 @@ directSeed.Length_deg = norm(goal_deg - start_deg);
 seeds = directSeed;
 diagnostics = emptyDiagnostics(start_deg, goal_deg);
 diagnostics.SeedCluster.Distance_deg = options.SeedClusterDistance_deg;
+% A direct-only request, one-slot budget, or obstacle-free scene needs no topology graph.
 if options.DirectSeedOnly || options.MaximumSeedCount == 1 || isempty(obstacles)
     diagnostics.GeneratedSeedCount = numel(seeds);
     return;
 end
+
 %% Section 2: Build One Protected-Geometry Visibility Graph
+
+% Spatial graph geometry is used only to propose routes. Exact prepared
+% obstacle histories remain authoritative for timed edges and final motion
+% validation, so a reduced envelope cannot make an invalid path succeed.
 sampleTimes_s = obstacleSampleTimes(obstacles, initialState.time_s, goalState.time_s);
-[sweptShape, usedDenseEnvelope] = azElPlannerMethods.hs3.internal.search.denseSweptEnvelope( ...
+[sweptShape, usedDenseEnvelope] = azElInternal.denseSweptEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], 10e3);
 hasChangingObstacles = obstacleHistoryChanges(obstacles, initialState.time_s, goalState.time_s);
 coverage = diagnostics.Coverage;
 coverage.TimedSearchSuppressionReason = "";
 diagnostics.SampleTimes_s = sampleTimes_s;
+% Static histories cannot benefit from the additional time-layer search.
 if ~hasChangingObstacles
     coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
 elseif usedDenseEnvelope
@@ -72,15 +87,16 @@ else
     diagnostics = appendTimeRecord(diagnostics, timeRecord);
     seeds = appendTimedSeed(seeds, seedTemplate, timedRoute_deg, timedRouteTime_s);
 end
+% Record dense-envelope work explicitly because it consumes a different bounded search budget.
 if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
     sampledNodes_deg = sweptShape.Vertices;
 else
-    [sweptShape, sampledShapeCount, sampledNodes_deg] = sweptObstacleShape( ...
-        obstacles, sampleTimes_s);
+    [sweptShape, sampledShapeCount, sampledNodes_deg] = sweptObstacleShape(obstacles, sampleTimes_s);
 end
-[sweptShape, diagnostics.SeedCluster] = azElPlannerMethods.hs3.internal.search.clusterSeedShape( ...
-    sweptShape, options.SeedClusterDistance_deg, [start_deg; goal_deg]);
+[sweptShape, diagnostics.SeedCluster] = azElInternal.clusterSeedShape( ...
+    sweptShape, options.SeedClusterDistance_deg, [start_deg; goal_deg], ...
+    "azElInternal:clusterSeedShape:InvalidShape");
 clusterCreated = diagnostics.SeedCluster.ClusterGroupCount > 0;
 representative_deg = homologyRepresentatives(sweptShape);
 diagnostics.HomologyRepresentative_deg = representative_deg;
@@ -94,11 +110,16 @@ elseif clusterCreated
 end
 spatialSeedTemplate.UsesReducedGeometry = usedDenseEnvelope || clusterCreated;
 [nodePosition_deg, edgeCost_deg, graphRecord] = buildVisibilityGraph( ...
-    sweptShape, start_deg, goal_deg, limits);
+    sweptShape, start_deg, goal_deg, limits, false, 1, 0);
 diagnostics.Bounds_deg = graphRecord.Bounds_deg;
 diagnostics.CandidateOffset_deg = graphRecord.CandidateOffset_deg;
+diagnostics.CandidateOffsetRetryCount = graphRecord.CandidateOffsetRetryCount;
 diagnostics.NodeCount = size(nodePosition_deg, 1);
 diagnostics.NodePosition_deg = nodePosition_deg;
+diagnostics.VisibilityWorkBudget = graphRecord.VisibilityWorkBudget;
+diagnostics.EstimatedExhaustiveVisibilityWork = graphRecord.EstimatedExhaustiveVisibilityWork;
+diagnostics.ExhaustiveVisibilityUsed = graphRecord.ExhaustiveVisibilityUsed;
+diagnostics.ExhaustiveVisibilityFallbackUsed = graphRecord.ExhaustiveVisibilityFallbackUsed;
 diagnostics.VisibilityCandidatePairCount = graphRecord.VisibilityCandidatePairCount;
 diagnostics.VisibilityEdgeCount = graphRecord.VisibilityEdgeCount;
 diagnostics.AcceptedEdges_deg = graphRecord.AcceptedEdges_deg;
@@ -115,10 +136,41 @@ end
 if usedDenseEnvelope
     diagnostics.DenseSeedEnvelope_deg = sweptShape.Vertices;
 end
-%% Section 3: Search Distinct Spatial Visibility Routes
-reservedTimedSeedCount = double(hasChangingObstacles && ~usedDenseEnvelope);
-maximumClassCount = max(0, options.MaximumSeedCount - ...
-    reservedTimedSeedCount - numel(seeds));
+
+%% Section 3: Search One Extended Timed Proposal
+
+% A time-layer graph can represent waits and moving-obstacle passages that a
+% static swept envelope would hide. Work is explicitly bounded by node/layer
+% counts, so diagnostics must preserve when this proposal was suppressed.
+reservedTimedSeedCount = 0;
+timedRoute_deg = zeros(0, 2);
+timedRouteTime_s = zeros(0, 1);
+% Add timed search only when geometry changes and the retained seed budget still has room.
+if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
+    coverage.ExtendedTimedSearchAttempted = true;
+    maximumTimedNodeCount = 24;
+    directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
+    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
+        sampledNodes_deg, start_deg, goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
+    timedEdgeCost_deg = hypot( ...
+        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
+    [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
+        azElInternal.timeExpandedVisibilitySearch( ...
+        timedPosition_deg, timedEdgeCost_deg, obstacles, initialState, goalState, limits, sampleTimes_s, options);
+    diagnostics = appendTimeRecord(diagnostics, timeRecord);
+    trialSeeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+    reservedTimedSeedCount = numel(trialSeeds) - numel(seeds);
+    if graphRecord.CandidateOffsetRetryCount >= 3 && options.MaximumSeedCount >= 3 && ...
+            numel(seeds) + reservedTimedSeedCount >= options.MaximumSeedCount
+        reservedTimedSeedCount = 0;
+    end
+end
+
+%% Section 4: Search Distinct Spatial Visibility Routes
+
+% Homology signatures keep topologically different detours instead of merely
+% returning several small perturbations of the same route.
+maximumClassCount = max(0, options.MaximumSeedCount - reservedTimedSeedCount - numel(seeds));
 [nodePaths, classSignatures, searchRecord] = homologyVisibilityPaths( ...
     edgeCost_deg, nodePosition_deg, representative_deg, maximumClassCount);
 diagnostics = appendSearchRecord(diagnostics, searchRecord);
@@ -128,55 +180,40 @@ diagnostics.HomologyClassCount = size(classSignatures, 1);
 diagnostics.HomologyStateCount = searchRecord.StateCount;
 diagnostics.HomologySearchTruncated = searchRecord.Truncated;
 
-% Convert each distinct homology-class node path into one bounded spatial seed.
+% Convert each discovered homology-class node path into one nonduplicate spatial seed.
 for classIndex = 1:numel(nodePaths)
     route_deg = nodePosition_deg(nodePaths{classIndex}, :);
+    % Keep the visibility route only when it adds spatial diversity beyond existing seeds.
     if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
         seed = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, ...
             route_deg, directDuration_s, availableDuration_s, limits);
         seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
 end
-%% Section 4: Search The Time-Expanded Visibility Graph
-if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
-    coverage.ExtendedTimedSearchAttempted = true;
-    maximumTimedNodeCount = 24;
-    directNode_deg = start_deg + ((1:7).' / 8) .* (goal_deg - start_deg);
-    timedPosition_deg = [start_deg; goal_deg; directNode_deg; selectCandidateVertices( ...
-        sampledNodes_deg, start_deg, ...
-        goal_deg, maximumTimedNodeCount - 2 - size(directNode_deg, 1))];
-    timedEdgeCost_deg = hypot( ...
-        timedPosition_deg(:, 1) - timedPosition_deg(:, 1).', ...
-        timedPosition_deg(:, 2) - timedPosition_deg(:, 2).');
-    [timedRoute_deg, timedRouteTime_s, timeRecord] = ...
-        azElInternal.timeExpandedVisibilitySearch( ...
-        timedPosition_deg, timedEdgeCost_deg, obstacles, ...
-        initialState, goalState, limits, sampleTimes_s, options);
-    diagnostics = appendTimeRecord(diagnostics, timeRecord);
-    seeds = appendTimedSeed( ...
-        seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
+if numel(seeds) < options.MaximumSeedCount
+    seeds = appendTimedSeed(seeds, timedSeedTemplate, timedRoute_deg, timedRouteTime_s);
 end
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
 
 
-function [sweptShape, sampledShapeCount, sampledNodes_deg] = sweptObstacleShape( ...
-        obstacles, sampleTimes_s)
+function [sweptShape, sampledShapeCount, sampledNodes_deg] = sweptObstacleShape(obstacles, sampleTimes_s)
 % Union protected source and midpoint geometry for seed construction.
 maximumShapeCount = numel(sampleTimes_s) * numel(obstacles);
 sampledShapes = cell(maximumShapeCount, 1);
 sampledShapeCount = 0;
 sampledNodes_deg = zeros(0, 2);
 
-% Evaluate every requested source or midpoint time exactly once.
+% Evaluate protected geometry at every selected seed-search time.
 for sampleTimeIndex = 1:numel(sampleTimes_s)
     sampleTime_s = sampleTimes_s(sampleTimeIndex);
 
-    % Add each obstacle's active protected shape at this time to the swept union.
+    % Add the active slice from each obstacle to this time layer's union input.
     for obstacleIndex = 1:numel(obstacles)
         shape = azElInternal.obstacles.shapeAtTime( ...
             obstacles(obstacleIndex), sampleTime_s);
+        % Empty obstacle slices contribute neither geometry nor topology events.
         if isempty(shape.Vertices)
             continue;
         end
@@ -186,6 +223,7 @@ for sampleTimeIndex = 1:numel(sampleTimes_s)
     end
 end
 sampledNodes_deg = sampledNodes_deg(all(isfinite(sampledNodes_deg), 2), :);
+% No sampled geometry means the spatial graph can operate on an empty envelope.
 if sampledShapeCount == 0
     sweptShape = polyshape();
 else
@@ -195,16 +233,16 @@ end
 end
 
 function [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
-        sweptShape, start_deg, goal_deg, limits)
+        sweptShape, start_deg, goal_deg, limits, forceExhaustiveVisibility, ...
+        candidateOffsetMultiplier, candidateOffsetRetryCount)
 % Build one bounded sparse segment-visibility graph around swept geometry.
 allPosition_deg = [start_deg; goal_deg; sweptShape.Vertices];
 minimum_deg = min(allPosition_deg, [], 1);
 maximum_deg = max(allPosition_deg, [], 1);
 coordinateScale_deg = max(1, max(abs(allPosition_deg), [], "all"));
-% This seed-only offset prevents candidate vertices from lying exactly on
-% protected boundaries. It does not alter collision geometry or its margin.
-candidateOffset_deg = max(1e-3, 256 * eps(coordinateScale_deg));
-[edgeStart_deg, edgeEnd_deg] = boundaryEdges(sweptShape);
+% Offset seed vertices only; collision geometry and its margin are unchanged.
+candidateOffset_deg = candidateOffsetMultiplier * max(1e-3, 256 * eps(coordinateScale_deg));
+[edgeStart_deg, edgeEnd_deg] = azElInternal.geometry.boundaryToEdges(sweptShape, 1e-12);
 visibilityWorkBudget = 1e6;
 candidateLimit = floor(sqrt(2 * visibilityWorkBudget / max(1, size(edgeStart_deg, 1)))) - 2;
 candidateLimit = min(96, max(24, candidateLimit));
@@ -218,19 +256,27 @@ insideWorkspace = candidatePosition_deg(:, 1) >= limits.azimuthInterval_deg(1) &
     candidatePosition_deg(:, 2) >= limits.elevationInterval_deg(1) & ...
     candidatePosition_deg(:, 2) <= limits.elevationInterval_deg(2);
 candidatePosition_deg = candidatePosition_deg(insideWorkspace, :);
-candidatePosition_deg = selectCandidateVertices( ...
-    candidatePosition_deg, start_deg, goal_deg, candidateLimit);
-nodePosition_deg = unique([start_deg; goal_deg; candidatePosition_deg], "rows", "stable");
+candidatePosition_deg = selectCandidateVertices( candidatePosition_deg, start_deg, goal_deg, candidateLimit);
+workspaceCorner_deg = zeros(0, 2);
+% After repeated clearance retries, workspace corners provide bounded global detour support.
+if candidateOffsetRetryCount >= 3
+    workspaceCorner_deg = [limits.azimuthInterval_deg([1 1 2 2]).', limits.elevationInterval_deg([1 2 1 2]).'];
+end
+nodePosition_deg = unique([start_deg; goal_deg; workspaceCorner_deg; candidatePosition_deg], "rows", "stable");
 nodeCount = size(nodePosition_deg, 1);
 edgeCost_deg = Inf(nodeCount);
 edgeCost_deg(1:nodeCount + 1:end) = 0;
 candidatePairMask = triu(true(nodeCount), 1);
-if nodeCount >= 4
+maximumPairCount = nodeCount * (nodeCount - 1) / 2;
+estimatedExhaustiveWork = maximumPairCount * max(1, size(edgeStart_deg, 1));
+exhaustiveVisibilityAffordable = estimatedExhaustiveWork <= visibilityWorkBudget;
+exhaustiveVisibilityUsed = nodeCount < 4 || forceExhaustiveVisibility;
+% Delaunay adjacency proposes a sparse graph before the bounded exhaustive fallback is considered.
+if nodeCount >= 4 && ~forceExhaustiveVisibility
     triangulation = delaunayTriangulation(nodePosition_deg);
     candidatePairs = sort(edges(triangulation), 2);
     candidatePairMask = false(nodeCount);
-    candidatePairMask(sub2ind([nodeCount nodeCount], ...
-        candidatePairs(:, 1), candidatePairs(:, 2))) = true;
+    candidatePairMask(sub2ind([nodeCount nodeCount], candidatePairs(:, 1), candidatePairs(:, 2))) = true;
     candidatePairMask(1:2, 3:end) = true;
     candidatePairMask(1, 2) = true;
 end
@@ -240,19 +286,17 @@ maximumRetainedEdgeCount = 2000;
 acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 
-% Visit every possible first node while respecting the bounded candidate-pair
-% mask constructed above.
+% Visit each unordered node pair exactly once.
 for firstNodeIndex = 1:nodeCount - 1
-    % Test each later node once so undirected visibility edges are not repeated.
+
+    % Test all later nodes selected by the sparse visibility candidate mask.
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
         if ~candidatePairMask(firstNodeIndex, secondNodeIndex)
             continue;
         end
         firstPosition_deg = nodePosition_deg(firstNodeIndex, :);
         secondPosition_deg = nodePosition_deg(secondNodeIndex, :);
-        if segmentIsVisible( ...
-                firstPosition_deg, secondPosition_deg, sweptShape, ...
-                edgeStart_deg, edgeEnd_deg)
+        if segmentIsVisible( firstPosition_deg, secondPosition_deg, sweptShape, edgeStart_deg, edgeEnd_deg)
             distance_deg = norm(secondPosition_deg - firstPosition_deg);
             edgeCost_deg(firstNodeIndex, secondNodeIndex) = distance_deg;
             edgeCost_deg(secondNodeIndex, firstNodeIndex) = distance_deg;
@@ -268,20 +312,41 @@ for firstNodeIndex = 1:nodeCount - 1
         end
     end
 end
+componentIndex = conncomp(graph(isfinite(edgeCost_deg), "upper"));
+endpointsConnected = componentIndex(1) == componentIndex(2);
+% Retry all node pairs only when the work estimate is affordable and the sparse graph disconnected the endpoints.
+if ~forceExhaustiveVisibility && exhaustiveVisibilityAffordable && ~endpointsConnected
+    [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
+        sweptShape, start_deg, goal_deg, limits, true, candidateOffsetMultiplier, candidateOffsetRetryCount);
+    record.ExhaustiveVisibilityFallbackUsed = true;
+    return;
+end
+maximumCandidateOffsetMultiplier = 64;
+% Finish a recovered topology's ladder; validation uses original geometry.
+needsClearanceRetry = ~endpointsConnected || candidateOffsetRetryCount > 0;
+% Increase the boundary offset when the graph exists but its route has insufficient protected clearance.
+if needsClearanceRetry && candidateOffsetMultiplier < maximumCandidateOffsetMultiplier
+    [nodePosition_deg, edgeCost_deg, record] = buildVisibilityGraph( ...
+        sweptShape, start_deg, goal_deg, limits, true, 4 * candidateOffsetMultiplier, candidateOffsetRetryCount + 1);
+    return;
+end
 record = struct( ...
     "Bounds_deg", [minimum_deg(1), maximum_deg(1), minimum_deg(2), maximum_deg(2)], ...
     "CandidateOffset_deg", candidateOffset_deg, ...
+    "CandidateOffsetRetryCount", candidateOffsetRetryCount, ...
+    "VisibilityWorkBudget", visibilityWorkBudget, ...
+    "EstimatedExhaustiveVisibilityWork", estimatedExhaustiveWork, ...
+    "ExhaustiveVisibilityUsed", exhaustiveVisibilityUsed, ...
+    "ExhaustiveVisibilityFallbackUsed", false, ...
     "VisibilityCandidatePairCount", nnz(candidatePairMask), ...
     "VisibilityEdgeCount", visibilityEdgeCount, ...
     "AcceptedEdges_deg", acceptedEdges_deg( ...
     1:min(visibilityEdgeCount, maximumRetainedEdgeCount), :), ...
     "RejectedEdges_deg", rejectedEdges_deg( ...
-    1:min(rejectedTransitionCount, maximumRetainedEdgeCount), :), ...
-    "RejectedTransitionCount", rejectedTransitionCount);
+    1:min(rejectedTransitionCount, maximumRetainedEdgeCount), :), "RejectedTransitionCount", rejectedTransitionCount);
 end
 
-function selectedPosition_deg = selectCandidateVertices( ...
-        candidatePosition_deg, start_deg, goal_deg, maximumCount)
+function selectedPosition_deg = selectCandidateVertices(candidatePosition_deg, start_deg, goal_deg, maximumCount)
 % Bound dense polygon input while retaining global and endpoint supports.
 candidatePosition_deg = unique(candidatePosition_deg, "rows", "stable");
 candidateCount = size(candidatePosition_deg, 1);
@@ -296,14 +361,13 @@ selectedIndex = unique(round(linspace(1, candidateCount, uniformCount))).';
 direction_rad = (0:directionCount - 1).' * (2 * pi / directionCount);
 direction = [cos(direction_rad), sin(direction_rad)];
 
-% Retain the strongest boundary support in each fixed compass direction.
+% Retain one extreme obstacle vertex in each evenly spaced support direction.
 for directionIndex = 1:size(direction, 1)
     [~, supportIndex] = max(candidatePosition_deg * direction(directionIndex, :).');
     selectedIndex(end + 1, 1) = supportIndex; %#ok<AGROW>
 end
 
-% Retain boundary vertices nearest to both endpoints so narrow local passages
-% remain represented after global support reduction.
+% Also retain nearby vertices around both endpoints so graph access is not undersampled.
 for reference_deg = [start_deg; goal_deg].'
     distance_deg = vecnorm(candidatePosition_deg - reference_deg.', 2, 2);
     [~, order] = sort(distance_deg, "ascend");
@@ -314,33 +378,7 @@ selectedIndex = selectedIndex(1:min(maximumCount, numel(selectedIndex)));
 selectedPosition_deg = candidatePosition_deg(selectedIndex, :);
 end
 
-function [edgeStart_deg, edgeEnd_deg] = boundaryEdges(shape)
-% Convert polyshape rings to closed boundary-edge pairs.
-[azimuth_deg, elevation_deg] = boundary(shape);
-edgeStart_deg = zeros(0, 2);
-edgeEnd_deg = zeros(0, 2);
-finiteRow = isfinite(azimuth_deg) & isfinite(elevation_deg);
-runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
-runEnd = find(finiteRow & [~finiteRow(2:end); true]);
-
-% Convert every finite ring in the NaN-separated boundary into closed edges.
-for runIndex = 1:numel(runStart)
-    ring_deg = [ ...
-        azimuth_deg(runStart(runIndex):runEnd(runIndex)), ...
-        elevation_deg(runStart(runIndex):runEnd(runIndex))];
-    if size(ring_deg, 1) < 2
-        continue;
-    end
-    if norm(ring_deg(end, :) - ring_deg(1, :)) <= 1e-12
-        ring_deg(end, :) = [];
-    end
-    edgeStart_deg = [edgeStart_deg; ring_deg]; %#ok<AGROW>
-    edgeEnd_deg = [edgeEnd_deg; ring_deg([2:end 1], :)]; %#ok<AGROW>
-end
-end
-
-function visible = segmentIsVisible(firstPosition_deg, secondPosition_deg, shape, ...
-        edgeStart_deg, edgeEnd_deg)
+function visible = segmentIsVisible(firstPosition_deg, secondPosition_deg, shape, edgeStart_deg, edgeEnd_deg)
 % Reject a segment that enters, crosses, or touches protected geometry.
 visible = true;
 if isempty(shape.Vertices)
@@ -354,11 +392,8 @@ end
 segment_deg = secondPosition_deg - firstPosition_deg;
 boundarySegment_deg = edgeEnd_deg - edgeStart_deg;
 offset_deg = edgeStart_deg - firstPosition_deg;
-denominator_deg2 = segment_deg(1) * boundarySegment_deg(:, 2) - ...
-    segment_deg(2) * boundarySegment_deg(:, 1);
-coordinateScale_deg = max(1, max(abs([ ...
-    firstPosition_deg, secondPosition_deg, ...
-    edgeStart_deg(:).', edgeEnd_deg(:).'])));
+denominator_deg2 = segment_deg(1) * boundarySegment_deg(:, 2) - segment_deg(2) * boundarySegment_deg(:, 1);
+coordinateScale_deg = max(1, max(abs([ firstPosition_deg, secondPosition_deg, edgeStart_deg(:).', edgeEnd_deg(:).'])));
 intersectionTolerance_deg2 = 512 * eps(coordinateScale_deg^2);
 nonparallel = abs(denominator_deg2) > intersectionTolerance_deg2;
 firstFraction = Inf(size(denominator_deg2));
@@ -366,16 +401,12 @@ secondFraction = Inf(size(denominator_deg2));
 firstFraction(nonparallel) = ( ...
     offset_deg(nonparallel, 1) .* ...
     boundarySegment_deg(nonparallel, 2) - ...
-    offset_deg(nonparallel, 2) .* ...
-    boundarySegment_deg(nonparallel, 1)) ./ ...
-    denominator_deg2(nonparallel);
+    offset_deg(nonparallel, 2) .* boundarySegment_deg(nonparallel, 1)) ./ denominator_deg2(nonparallel);
 secondFraction(nonparallel) = ( ...
     offset_deg(nonparallel, 1) * segment_deg(2) - ...
-    offset_deg(nonparallel, 2) * segment_deg(1)) ./ ...
-    denominator_deg2(nonparallel);
+    offset_deg(nonparallel, 2) * segment_deg(1)) ./ denominator_deg2(nonparallel);
 crossesBoundary = nonparallel & ...
-    firstFraction >= -1e-12 & firstFraction <= 1 + 1e-12 & ...
-    secondFraction >= -1e-12 & secondFraction <= 1 + 1e-12;
+    firstFraction >= -1e-12 & firstFraction <= 1 + 1e-12 & secondFraction >= -1e-12 & secondFraction <= 1 + 1e-12;
 if any(crossesBoundary)
     visible = false;
     return;
@@ -388,8 +419,7 @@ if any(collinear)
         segment_deg.' / max(segmentLengthSquared_deg2, eps);
     nextProjection = (edgeEnd_deg(collinear, :) - firstPosition_deg) * ...
         segment_deg.' / max(segmentLengthSquared_deg2, eps);
-    overlaps = max(min(projection, nextProjection), 0) <= ...
-        min(max(projection, nextProjection), 1) + 1e-12;
+    overlaps = max(min(projection, nextProjection), 0) <= min(max(projection, nextProjection), 1) + 1e-12;
     visible = ~any(overlaps);
 end
 end
@@ -412,10 +442,9 @@ duplicate = false;
 sampleTau = linspace(0, 1, 101).';
 sampledRoute_deg = interp1(seed.tau, seed.position_deg, sampleTau, "linear");
 
-% Compare the candidate against every retained seed in normalized route time.
+% Compare against every retained seed because timing differences can preserve distinct waits.
 for seedIndex = 1:numel(seeds)
-    sampledSeed_deg = interp1(seeds(seedIndex).tau, ...
-        seeds(seedIndex).position_deg, sampleTau, "linear");
+    sampledSeed_deg = interp1(seeds(seedIndex).tau, seeds(seedIndex).position_deg, sampleTau, "linear");
     priorDuration_s = seeds(seedIndex).EstimatedDuration_s;
     durationTolerance_s = 1e-9 * max([1, abs(seed.EstimatedDuration_s), abs(priorDuration_s)]);
     if abs(seed.EstimatedDuration_s - priorDuration_s) <= durationTolerance_s && ...
@@ -435,8 +464,7 @@ timedSeed = seedTemplate;
 timedSeed.Index = numel(seeds) + 1;
 timedSeed.Source = timedRouteSource(route_deg);
 timedSeed.position_deg = route_deg;
-timedSeed.tau = (routeTime_s - routeTime_s(1)) / ...
-    (routeTime_s(end) - routeTime_s(1));
+timedSeed.tau = (routeTime_s - routeTime_s(1)) / (routeTime_s(end) - routeTime_s(1));
 timedSeed.EstimatedDuration_s = routeTime_s(end) - routeTime_s(1);
 timedSeed.Length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
 if ~temporalSeedDuplicates(timedSeed, seeds)
@@ -453,8 +481,8 @@ representativeCount = size(representative_deg, 1);
 nodePaths = cell(0, 1);
 classSignatures = zeros(0, representativeCount, "int8");
 record = struct("ExpandedCount", 0, "RejectedTransitionCount", 0, ...
-    "ExploredNodes_deg", zeros(0, 2), "FrontierNodes_deg", zeros(0, 2), ...
-    "StateCount", 0, "Truncated", false);
+    "ExploredNodes_deg", zeros(0, 2), "FrontierNodes_deg", zeros(0, 2), "StateCount", 0, "Truncated", false);
+% A zero homology budget disables this optional diversity search without affecting existing seeds.
 if maximumClassCount == 0
     return;
 end
@@ -472,7 +500,7 @@ stateCost_deg(1) = 0;
 stateCount = 1;
 rejectedTransitionCount = 0;
 
-% Expand the lowest-cost unsettled state until each requested route class is found.
+% Expand lowest-cost augmented states until enough homology classes are found or work is exhausted.
 while size(classSignatures, 1) < maximumClassCount
     unsettledCost_deg = stateCost_deg;
     unsettledCost_deg(closed) = Inf;
@@ -485,7 +513,7 @@ while size(classSignatures, 1) < maximumClassCount
     if currentNodeIndex == 2
         statePath = currentStateIndex;
 
-        % Follow state parents back to the start so the completed route is in forward order.
+        % Reconstruct this completed augmented-state path from goal to start.
         while statePath(1) ~= 1
             statePath = [double(parentStateIndex(statePath(1))); statePath]; %#ok<AGROW>
         end
@@ -495,18 +523,15 @@ while size(classSignatures, 1) < maximumClassCount
     end
     neighborNodeIndices = find(isfinite(edgeCost_deg(currentNodeIndex, :)));
 
-    % Evaluate every visible neighbor while carrying the route's homology signature.
+    % Extend the current signature across every visible neighboring graph edge.
     for neighborNodeIndex = reshape(neighborNodeIndices, 1, [])
         if neighborNodeIndex == currentNodeIndex
             rejectedTransitionCount = rejectedTransitionCount + 1;
             continue;
         end
-        phaseStep = principalAngle(phase_rad(neighborNodeIndex, :) - ...
-            phase_rad(currentNodeIndex, :)) / (2 * pi);
-        signatureStep = round(referenceTurn(currentNodeIndex, :) + ...
-            phaseStep - referenceTurn(neighborNodeIndex, :));
-        trialSignature = int8(double(stateSignature(currentStateIndex, :)) + ...
-            signatureStep);
+        phaseStep = principalAngle(phase_rad(neighborNodeIndex, :) - phase_rad(currentNodeIndex, :)) / (2 * pi);
+        signatureStep = round(referenceTurn(currentNodeIndex, :) + phaseStep - referenceTurn(neighborNodeIndex, :));
+        trialSignature = int8(double(stateSignature(currentStateIndex, :)) + signatureStep);
         if any(abs(double(trialSignature)) > 1)
             rejectedTransitionCount = rejectedTransitionCount + 1;
             continue;
@@ -515,6 +540,7 @@ while size(classSignatures, 1) < maximumClassCount
             all(stateSignature(1:stateCount, :) == trialSignature, 2);
         neighborStateIndex = find(sameState, 1);
         if isempty(neighborStateIndex)
+            % Stop creating signature states at the documented work cap and expose truncation in diagnostics.
             if stateCount >= maximumStateCount
                 record.Truncated = true;
                 rejectedTransitionCount = rejectedTransitionCount + 1;
@@ -528,8 +554,7 @@ while size(classSignatures, 1) < maximumClassCount
             rejectedTransitionCount = rejectedTransitionCount + 1;
             continue;
         end
-        trialCost_deg = currentCost_deg + ...
-            edgeCost_deg(currentNodeIndex, neighborNodeIndex);
+        trialCost_deg = currentCost_deg + edgeCost_deg(currentNodeIndex, neighborNodeIndex);
         if trialCost_deg < stateCost_deg(neighborStateIndex) - 1e-12
             stateCost_deg(neighborStateIndex) = trialCost_deg;
             parentStateIndex(neighborStateIndex) = uint16(currentStateIndex);
@@ -549,10 +574,8 @@ function diagnostics = appendSearchRecord(diagnostics, record)
 % Add complete counts and a bounded deterministic diagnostic trace.
 diagnostics.ExpandedCount = diagnostics.ExpandedCount + record.ExpandedCount;
 diagnostics.RejectedTransitionCount = diagnostics.RejectedTransitionCount + record.RejectedTransitionCount;
-diagnostics.ExploredNodes_deg = appendBoundedTrace( ...
-    diagnostics.ExploredNodes_deg, record.ExploredNodes_deg, 2000);
-diagnostics.FrontierNodes_deg = appendBoundedTrace( ...
-    diagnostics.FrontierNodes_deg, record.FrontierNodes_deg, 2000);
+diagnostics.ExploredNodes_deg = appendBoundedTrace( diagnostics.ExploredNodes_deg, record.ExploredNodes_deg, 2000);
+diagnostics.FrontierNodes_deg = appendBoundedTrace( diagnostics.FrontierNodes_deg, record.FrontierNodes_deg, 2000);
 end
 
 function diagnostics = appendTimeRecord(diagnostics, record)
@@ -565,9 +588,7 @@ diagnostics.MotionEdgeCount = diagnostics.MotionEdgeCount + record.MotionEdgeCou
 diagnostics = appendSearchRecord(diagnostics, record);
 end
 
-function seed = createSpatialSeed( ...
-        seedTemplate, seedIndex, route_deg, directDuration_s, ...
-        availableDuration_s, limits)
+function seed = createSpatialSeed( seedTemplate, seedIndex, route_deg, directDuration_s, availableDuration_s, limits)
 % Assemble one spatial visibility route with a length-based time law.
 seed = seedTemplate;
 seed.Index = seedIndex;
@@ -582,23 +603,19 @@ function changing = obstacleHistoryChanges(obstacles, startTime_s, endTime_s)
 % Detect geometry or active-span changes inside the request window.
 changing = false;
 
-% Inspect every obstacle for time-window activation or changing vertex histories.
+% Stop as soon as any obstacle shows timing or geometry variation in the request window.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     hasFiniteActiveSpan = numel(obstacle.time_s) > 1;
-    if hasFiniteActiveSpan && ...
-            (obstacle.time_s(1) > startTime_s || ...
-            obstacle.time_s(end) < endTime_s)
+    if hasFiniteActiveSpan && (obstacle.time_s(1) > startTime_s || obstacle.time_s(end) < endTime_s)
         changing = true;
         return;
     end
 
-    % Compare every later geometry sample with the obstacle's first sample.
+    % Compare adjacent stored slices to detect motion or deformation.
     for sampleIndex = 2:numel(obstacle.time_s)
-        sameAzimuth = isequaln( ...
-            obstacle.az_deg{sampleIndex}, obstacle.az_deg{1});
-        sameElevation = isequaln( ...
-            obstacle.el_deg{sampleIndex}, obstacle.el_deg{1});
+        sameAzimuth = isequaln( obstacle.az_deg{sampleIndex}, obstacle.az_deg{1});
+        sameElevation = isequaln( obstacle.el_deg{sampleIndex}, obstacle.el_deg{1});
         if ~sameAzimuth || ~sameElevation
             changing = true;
             return;
@@ -612,25 +629,22 @@ function sampleTimes_s = obstacleSampleTimes(obstacles, startTime_s, endTime_s)
 sampleTimes_s = [startTime_s; endTime_s];
 verticesPerLayer = 0;
 
-% Gather each obstacle's source times and estimate the per-layer graph size.
+% Collect every obstacle's source times, midpoint times, and worst per-layer vertex count.
 for obstacleIndex = 1:numel(obstacles)
     time_s = obstacles(obstacleIndex).time_s(:);
     midTime_s = (time_s(1:end - 1) + time_s(2:end)) / 2;
     sampleTimes_s = [sampleTimes_s; time_s; midTime_s]; %#ok<AGROW>
     maximumVertexCount = 0;
 
-    % Find this obstacle's largest sampled boundary for the graph-memory budget.
+    % Measure the densest slice for this obstacle when estimating timed-query work.
     for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-        maximumVertexCount = max(maximumVertexCount, ...
-            numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
+        maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
     end
     verticesPerLayer = verticesPerLayer + maximumVertexCount;
 end
-sampleTimes_s = unique(sampleTimes_s( ...
-    sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
+sampleTimes_s = unique(sampleTimes_s( sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
 unionVertexBudget = 50e3;
-maximumLayerCount = min(33, max(9, ...
-    floor(unionVertexBudget / max(1, verticesPerLayer))));
+maximumLayerCount = min(33, max(9, floor(unionVertexBudget / max(1, verticesPerLayer))));
 sampleTimes_s = azElInternal.boundedTimeLayers( ...
     sampleTimes_s, startTime_s, endTime_s, maximumLayerCount);
 end
@@ -640,10 +654,9 @@ function representative_deg = homologyRepresentatives(shape)
 shapeRegions = regions(shape);
 representative_deg = zeros(numel(shapeRegions), 2);
 
-% Choose the center of the largest inscribed triangle circle in every region.
+% Assign one homology reference point to every disconnected occupied region.
 for regionIndex = 1:numel(shapeRegions)
-    [candidate_deg, radius_deg] = incenter( ...
-        triangulation(shapeRegions(regionIndex)));
+    [candidate_deg, radius_deg] = incenter( triangulation(shapeRegions(regionIndex)));
     [~, largestRadiusIndex] = max(radius_deg);
     representative_deg(regionIndex, :) = candidate_deg(largestRadiusIndex, :);
 end
@@ -655,20 +668,16 @@ angle_rad = atan2(sin(angle_rad), cos(angle_rad));
 end
 
 function duplicate = routeDuplicates(route_deg, seeds, tolerance_deg)
-% Reject geometrically indistinguishable bounded graph routes.
+% Compare sampled route geometry so equivalent spatial seeds are removed.
 duplicate = false;
 sampleTau = linspace(0, 1, 101).';
 [parameterizedTau, ~] = routeTau(route_deg);
-sampledRoute_deg = interp1( ...
-    parameterizedTau, route_deg, sampleTau, "linear");
+sampledRoute_deg = interp1( parameterizedTau, route_deg, sampleTau, "linear");
 
-% Compare the candidate route with every accepted seed on a common path parameter.
+% Compare the proposed geometry with every already retained route at common arc-length samples.
 for seedIndex = 1:numel(seeds)
-    sampledSeed_deg = interp1( ...
-        seeds(seedIndex).tau, seeds(seedIndex).position_deg, ...
-        sampleTau, "linear");
-    if max(vecnorm(sampledRoute_deg - sampledSeed_deg, 2, 2)) <= ...
-            max(1e-6, 0.5 * tolerance_deg)
+    sampledSeed_deg = interp1( seeds(seedIndex).tau, seeds(seedIndex).position_deg, sampleTau, "linear");
+    if max(vecnorm(sampledRoute_deg - sampledSeed_deg, 2, 2)) <= max(1e-6, 0.5 * tolerance_deg)
         duplicate = true;
         return;
     end
@@ -687,20 +696,20 @@ end
 end
 
 function values = appendBoundedTrace(values, additions, maximumCount)
-% Retain a deterministic prefix while preserving complete counts.
+% Append diagnostics without exceeding the documented retained-trace cap.
 remainingCount = maximumCount - size(values, 1);
 if remainingCount > 0
-    values = [values; additions(1:min(remainingCount, ...
-        size(additions, 1)), :)];
+    values = [values; additions(1:min(remainingCount, size(additions, 1)), :)];
 end
 end
 
 function diagnostics = emptyDiagnostics(start_deg, goal_deg)
-% Define stable bounded diagnostics before a graph is required.
+% Initialize the stable search-diagnostics schema before any early exit.
 diagnostics = struct( ...
     "GraphType", "timeExpandedVisibilityGraph", ...
     "Bounds_deg", [NaN NaN NaN NaN], "Resolution_deg", NaN, ...
     "CandidateOffset_deg", NaN, "SampleTimes_s", zeros(0, 1), ...
+    "CandidateOffsetRetryCount", 0, ...
     "SampledShapeCount", 0, "DenseSeedEnvelopeUsed", false, ...
     "DenseSeedEnvelope_deg", zeros(0, 2), "Coverage", struct( ...
     "ExactSpatialProposalUsed", false, "ReducedSpatialProposalUsed", false, ...
@@ -710,6 +719,10 @@ diagnostics = struct( ...
     "SeedCluster", struct("Distance_deg", 0, "SourceRegionCount", 0, ...
     "ClusterGroupCount", 0, "ClusteredRegionCount", 0, "ClusterBoundary_deg", zeros(0, 2)), ...
     "NodeCount", 0, "NodePosition_deg", zeros(0, 2), ...
+    "VisibilityWorkBudget", 1e6, ...
+    "EstimatedExhaustiveVisibilityWork", 0, ...
+    "ExhaustiveVisibilityUsed", false, ...
+    "ExhaustiveVisibilityFallbackUsed", false, ...
     "VisibilityCandidatePairCount", 0, ...
     "VisibilityEdgeCount", 0, "AcceptedEdges_deg", zeros(0, 4), ...
     "RejectedEdges_deg", zeros(0, 4), ...

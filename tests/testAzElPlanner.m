@@ -41,6 +41,19 @@ verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
 verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
 end
 
+function testMovingTargetDefaultsPreservePublicSchema(testCase)
+% Verify the shared adapter retains the established default field order.
+options = planAzElMovingTargetIntercept();
+verifyEqual(testCase, string(fieldnames(options)), [ ...
+    "InterceptMode"; "SpecifiedInterceptTime_s"; ...
+    "MaximumSearchDuration_s"; "MatchTargetVelocity"; ...
+    "MatchTargetAcceleration"; "PlannerOptions"]);
+verifyEqual(testCase, string(fieldnames(options.PlannerOptions)), ...
+    "PlannerMethod");
+verifyEqual(testCase, options.PlannerOptions.PlannerMethod, ...
+    "corridorQuintic");
+end
+
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
     testCase, "corridor", "testWorkspaceIntervalsBelongToLimits");
@@ -81,7 +94,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusteredRegionCount, 3);
@@ -110,17 +123,17 @@ function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 10], [-1 1 -1 1], 0);
 boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
 seed = struct( "tau", [0; 1], "position_deg", [-2 2; 2 2], "CorridorBoundary_deg", boundary_deg);
-corridor = azElPlannerMethods.corridor.internal.validation.buildSeedCorridor(seed, 1);
+corridor = azElInternal.buildSeedCorridor(seed, 1);
 positionPower_deg = zeros(1, 2, 6);
 positionPower_deg(1, 1, 1:2) = [-2 4];
 positionPower_deg(1, 2, 1) = 2;
 polynomial = struct( "SegmentCount", 1, "positionPower_deg", positionPower_deg);
 trajectory = struct( "Polynomial", polynomial, "SeedCorridorBoundary_deg", boundary_deg, "SeedCorridor", corridor);
-[certified, clearance_deg] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
+[certified, clearance_deg] = azElInternal.certifySeedCorridor(trajectory, obstacle, 1e-7);
 verifyTrue(testCase, certified);
 verifyGreaterThan(testCase, clearance_deg, 0.5);
 trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
-[certifiedAfterEntry, ~] = azElPlannerMethods.corridor.internal.validation.certifySeedCorridor( trajectory, obstacle, 1e-7);
+[certifiedAfterEntry, ~] = azElInternal.certifySeedCorridor(trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
 
@@ -129,16 +142,79 @@ function testSeedEnvelopeRequiresCompletePolygonContainment(testCase)
 boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
 inside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [-1 1 -1 1], 0);
 outside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
-verifyTrue(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, inside, 0));
-verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, outside, 0));
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles(boundary_deg, inside, 0));
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles(boundary_deg, outside, 0));
 mixedHistory = inside;
 mixedHistory.az_deg{2} = mixedHistory.az_deg{2} + 3;
-verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( boundary_deg, mixedHistory, 0));
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles(boundary_deg, mixedHistory, 0));
+containedTranslation = inside;
+containedTranslation.az_deg{2} = containedTranslation.az_deg{2} + 0.5;
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, containedTranslation, 0));
+containedDeformation = inside;
+containedDeformation.az_deg{2} = 1.25 * containedDeformation.az_deg{2};
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, containedDeformation, 0));
+triangle_deg = [-0.5 -0.5; 0.5 -0.5; 0 0.75];
+containedTopologyChange = makeAzElObstacleData( ...
+    "topologyChange", [0; 2], ...
+    {[-1; 1; 1; -1]; triangle_deg(:, 1)}, ...
+    {[-1; -1; 1; 1]; triangle_deg(:, 2)}, 0);
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
+    boundary_deg, containedTopologyChange, 0));
 concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
-verifyFalse(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( concaveBoundary_deg, inside, 0));
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles(concaveBoundary_deg, inside, 0));
 insideConcaveRegion = testCase.TestData.Fixtures.RectangleObstacle([0 2], [-1.5 -0.5 -1 1], 0);
-verifyTrue(testCase, azElPlannerMethods.corridor.internal.validation.seedEnvelopeContainsObstacles( ...
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     concaveBoundary_deg, insideConcaveRegion, 0));
+end
+
+function testDisconnectedEnvelopeCannotHideTranslatingCollision(testCase)
+% Require a translating history to stay inside one certificate component.
+leftRegion_deg = [-3 -1; -1 -1; -1 1; -3 1];
+rightRegion_deg = [1 -1; 3 -1; 3 1; 1 1];
+boundary_deg = [leftRegion_deg; NaN NaN; rightRegion_deg];
+firstSlice_deg = [-2.5 -0.5; -1.5 -0.5; -1.5 0.5; -2.5 0.5];
+secondSlice_deg = firstSlice_deg + [4 0];
+obstacle = makeAzElObstacleData( ...
+    "crossing", [0; 10], ...
+    {firstSlice_deg(:, 1); secondSlice_deg(:, 1)}, ...
+    {firstSlice_deg(:, 2); secondSlice_deg(:, 2)}, 0);
+seed = struct( ...
+    "tau", [0; 1], "position_deg", zeros(2, 2), ...
+    "CorridorBoundary_deg", boundary_deg);
+corridor = azElInternal.buildSeedCorridor( ...
+    seed, 1);
+
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    10, [0 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [1 1], [1 1], [1 1]);
+polynomial = struct( ...
+    "SegmentCount", 1, "SegmentStartTime_s", 0, ...
+    "SegmentDuration_s", 10, "FinalTime_s", 10, ...
+    "positionPower_deg", zeros(1, 2, 6), ...
+    "velocityPower_deg_s", zeros(1, 2, 5), ...
+    "accelerationPower_deg_s2", zeros(1, 2, 4), ...
+    "jerkPower_deg_s3", zeros(1, 2, 3), ...
+    "TerminalState", goalState);
+trajectory = struct( ...
+    "time_s", [0; 10], "position_deg", zeros(2, 2), ...
+    "velocity_deg_s", zeros(2, 2), ...
+    "acceleration_deg_s2", zeros(2, 2), ...
+    "jerk_deg_s3", zeros(2, 2), "Polynomial", polynomial, ...
+    "SeedCorridorBoundary_deg", boundary_deg, ...
+    "SeedCorridor", corridor);
+
+validation = validateAzElTrajectory( ...
+    trajectory, obstacle, initialState, goalState, limits, fixedOptions());
+verifyFalse(testCase, validation.SeedCorridorCertified);
+verifyFalse(testCase, validation.CollisionFree);
+verifyTrue(testCase, validation.CollisionResolved);
+verifyGreaterThan(testCase, validation.CollisionCheckCount, 0);
+verifyFalse(testCase, validation.Passed);
 end
 
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
@@ -295,7 +371,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 5;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
 verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 2);
@@ -320,7 +396,7 @@ limits.elevationInterval_deg = [0 12];
 options = fixedOptions();
 options.MaximumSeedCount = 3;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacles, initialState, goalState, limits, options);
 visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 
 verifyNotEmpty(testCase, visibilitySeeds);
@@ -439,7 +515,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -458,7 +534,7 @@ initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
-[~, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[~, diagnostics] = azElInternal.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
 end
@@ -473,7 +549,7 @@ goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 5;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 directSeed = seeds([seeds.Source] == "directVisibilityEdge");
 timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
 verifyNotEmpty(testCase, directSeed);
@@ -509,7 +585,7 @@ goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion();
 options.MaximumSeedCount = 2;
-[seeds, diagnostics] = azElPlannerMethods.corridor.internal.search.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
 verifyFalse(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -558,12 +634,15 @@ testSupport.verifySharedPlannerContract( ...
 end
 
 function testExactInteriorVelocityPeakAtLimitPassesValidation(testCase)
-% Verify a conservative coefficient hull does not reject a feasible curve.
+% Verify the canonical exact-root bound accepts a feasible curve even when
+% the caller carries the HS3 method tag formerly routed to Bernstein bounds.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [4 0]);
 goalState = testCase.TestData.Fixtures.State(1, [2 / 3 0], [0 0], [-4 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([1 1], [5 5], [9 9]);
 trajectory = testCase.TestData.Fixtures.InteriorVelocityPeakTrajectory();
-validation = validateAzElTrajectory( trajectory, [], initialState, goalState, limits, fixedOptions());
+options = fixedOptions();
+options.PlannerMethod = "hs3";
+validation = validateAzElTrajectory(trajectory, [], initialState, goalState, limits, options);
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyTrue(testCase, validation.VelocityWithinLimits);
 end

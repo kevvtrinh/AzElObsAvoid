@@ -1,9 +1,10 @@
-# Corridor certificates
+# Corridor validation ownership
 
-This module owns reusable corridor and obstacle-envelope certificates. These
-checks remain separate from search and spline generation so a candidate cannot
-validate itself by repeating only the assumptions used to construct it.
+No corridor-local certificate or final-validation implementation remains.
+`azElInternal.buildSeedCorridor`, `certifySeedCorridor`, and
+`seedEnvelopeContainsObstacles` own reusable corridor evidence outside motion
+construction.
 
-The method-level `validateTrajectory.m` still performs final, complete timed
-trajectory validation. These helpers provide the additional corridor and
-envelope facts used while building and screening candidates.
+Root `validateAzElTrajectory` performs final complete timed-trajectory
+validation. `azElPlannerMethods.corridor.validateTrajectory` is a compatibility
+facade only.

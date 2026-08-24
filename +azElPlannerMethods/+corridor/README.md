@@ -1,52 +1,30 @@
-# Compact corridor-quintic planner
+# Compact corridor-quintic baseline
 
-This folder contains the `corridorQuintic` compatibility backend. It originated
-from `325-less-nlp` commit `28526638886b69efdf6d697a942ad2c1207bcc04`;
-its former multi-path motion stack has been replaced by one compact C3/C4
-candidate path plus a small exact direct quintic.
+This folder owns the `corridorQuintic` compact baseline. It originated from
+`325-less-nlp` commit `28526638886b69efdf6d697a942ad2c1207bcc04`; its former
+multi-path motion stack has been replaced by compact C3/C4 candidate generation
+plus a small exact direct quintic.
 
-The backend builds bounded spatial and timed route proposals, constructs a
-continuous corridor around a selected route, and generates independently
-validated quintic motion. It contains no HS3 solver and does not call anything
-inside the sibling `+hs3` folder.
+`plan.m` resolves compact options, consumes neutral bounded topology seeds,
+constructs compact motion, calls the canonical validator, and selects the
+earliest independently valid candidate. `validateTrajectory.m` is only a
+compatibility facade over root `validateAzElTrajectory`.
 
-## Entry points
+There is no method-local moving-target adapter, topology generator, result
+builder, convex decomposition, seed-corridor certificate, or final validator.
+Those responsibilities are owned by root `planAzElMovingTargetIntercept`,
+`azElInternal`, and root `validateAzElTrajectory`.
 
-- `plan.m` owns defaults, endpoint checks, seed generation, candidate
-  selection, and the stable result record.
-- `planMovingTargetIntercept.m` preserves the corridor branch's bounded
-  chronological search over fixed-arrival planner calls.
-- `validateTrajectory.m` is this method's independent complete-trajectory
-  validator.
-
-Canonical combination, normalization, option handling, obstacle preparation,
-geometry-at-time queries, and time queries are shared through the root
-functions and `azElInternal`. The corridor backend does not depend on the HS3
-folder.
-
-These are backend integration points. Application code should normally call
-`planAzElMotion` or `planAzElMovingTargetIntercept` at the repository root.
-
-## Internal flow
+The remaining internal code owns compact-specific motion construction, one
+dynamic-route expansion adapter, and one obstacle-envelope boundary adapter:
 
 ```text
 canonical inputs
-    -> prepared obstacle histories
-    -> bounded topology and timing seeds
+    -> neutral topology and corridor helpers
     -> compact C3/C4 continuous motion
-    -> independent validation and deterministic selection
+    -> canonical independent validation and deterministic selection
 ```
 
-The `+internal` subpackages separate geometry, obstacle preparation, search,
-motion construction, and reusable certificates. Read their local README files
-before moving a helper across a boundary.
-
-## Selection and removal
-
 Select this method with `PlannerMethod="corridorQuintic"`; it is also the
-current public default. The method-local `MotionMethod` field must remain
-`"corridorQuintic"` and is not the public method selector.
-
-The complete folder can be omitted from a deployment only after the root
-dispatchers stop accepting its selector and choose a different default. No
-automatic fallback is provided.
+public default. `MotionMethod="corridorQuintic"` is a compatibility field, not
+the public method selector. The compact package does not depend on HS3.

@@ -1,26 +1,21 @@
-# Az/El planner methods
+# Az/El planner compositions
 
-This package keeps the two production planning algorithms isolated. Users call
-the public functions at the repository root; those functions normalize shared
-obstacle inputs once, then select one method folder.
+Users call the public functions at the repository root. This package now owns
+one standalone compact planner and one bounded composite improvement layer:
 
-## Source snapshots
+| Folder | `PlannerMethod` | Current responsibility |
+| --- | --- | --- |
+| `+corridor` | `"corridorQuintic"` | Build the validated compact C3/C4 baseline from neutral topology and certificate helpers. |
+| `+hs3` | `"hs3"` | Resolve HS3 controls and optionally improve an immutable compact result with bounded HS3 work. |
 
-| Folder | `PlannerMethod` value | Exact source snapshot | Preserved behavior |
-| --- | --- | --- | --- |
-| `+corridor` | `"corridorQuintic"` | Originated at `325-less-nlp` `28526638886b69efdf6d697a942ad2c1207bcc04` | Visibility and timed seeds followed by compact C3/C4 quintic motion. Its moving-target adapter performs bounded chronological fixed-arrival trials. |
-| `+hs3` | `"hs3"` | `plan-325` at `5a067112a9f880d015f52fb97538a99010871478` | Analytic first motions plus optional HS3 nonlinear improvement. Its moving-target adapter makes one moving-goal earliest-arrival planner call. |
+The source histories remain useful provenance: corridor originated at
+`325-less-nlp` commit `28526638886b69efdf6d697a942ad2c1207bcc04`,
+and HS3 originated at `plan-325` commit
+`5a067112a9f880d015f52fb97538a99010871478`. The current composition no longer
+preserves their former duplicate adapters, search stacks, result builders, or
+validators.
 
-The last planner/evidence commits before those tips were `9dc2530` for the
-corridor snapshot and `921b2f7` for HS3. Integration changes include package
-qualification, mechanically necessary names, shared behavior-equivalent
-contract and obstacle helpers, and the comment and layout style used by
-`325-less-nlp`. Numeric constants, solver decisions, candidate order, and
-validation rules belong to the method packages. The corridor motion stack has
-since been replaced by the compact implementation; the HS3 package retains its
-imported solver until its separate replacement gate is satisfied.
-
-## Select a planner
+## Select a composition
 
 `corridorQuintic` is the backward-compatible default:
 
@@ -29,92 +24,68 @@ options = planAzElMotion();
 result = planAzElMotion(obstacles, initialState, goalState, limits, options);
 ```
 
-Request HS3 explicitly:
+Request the compact-baseline-plus-HS3 composition explicitly:
 
 ```matlab
 options = planAzElMotion("hs3");
 result = planAzElMotion(obstacles, initialState, goalState, limits, options);
 ```
 
-You can also set the selector on a partial options structure:
+`EnableHs3Improvement` defaults to `false`. With those defaults,
+`Options.PlannerMethod` is `"hs3"` while `SelectedMotionSource` remains
+`"corridorQuintic"`. Set the option true to permit bounded HS3 trials;
+`SelectedMotionSource` becomes `"hs3"` only if canonical validation and the
+strict monotone comparison accept a candidate.
 
-```matlab
-options = struct("PlannerMethod", "hs3", "MaximumSeedCount", 3);
-result = planAzElMotion(obstacles, initialState, goalState, limits, options);
-```
+For moving-target interception, put the selector inside `PlannerOptions`.
+The root `planAzElMovingTargetIntercept` owns one bounded chronological
+fixed-time policy for both selections; there are no backend intercept adapters.
 
-For moving-target interception, put the selector inside `PlannerOptions`:
+`PlannerMethod` is the public selector. The compact defaults retain
+`MotionMethod="corridorQuintic"` for compatibility. The root dispatcher removes
+that compatible field when a copied compact defaults record is switched to
+HS3; `MotionMethod` never selects HS3.
 
-```matlab
-interceptOptions = struct( ...
-    "InterceptMode", "earliest", ...
-    "PlannerOptions", struct("PlannerMethod", "hs3"));
-
-result = planAzElMovingTargetIntercept( ...
-    obstacles, initialState, targetMotion, limits, interceptOptions);
-```
-
-The returned `Options.PlannerMethod` and
-`SearchDiagnostics.PlannerMethod` identify the method that actually ran.
-
-`PlannerMethod` is the two-planner selector. The corridor snapshot's
-`MotionMethod="corridorQuintic"` field is retained only for compatibility;
-it does not select HS3.
-
-## Folder map
+## Ownership map
 
 ```text
 +azElPlannerMethods
 |-- +corridor
-|   |-- plan.m                         complete corridor planner
-|   |-- planMovingTargetIntercept.m    corridor target-time policy
-|   |-- validateTrajectory.m           corridor-specific validation
+|   |-- plan.m                         compact baseline orchestrator
+|   |-- validateTrajectory.m           canonical-validator facade
 |   `-- +internal
-|       |-- +geometry
-|       |-- +obstacles
-|       |-- +search
-|       |-- +motion
-|       `-- +validation
+|       |-- +obstacles                 envelope boundary adapter
+|       |-- +search                    dynamic-route adapter
+|       `-- +motion                    compact C3/C4 construction
 `-- +hs3
-    |-- plan.m                         complete HS3 planner
-    |-- planMovingTargetIntercept.m    HS3 moving-goal policy
-    |-- validateTrajectory.m           HS3-specific validation
-    `-- +internal
-        |-- +search
-        |-- +motion
-        `-- +validation
+    |-- plan.m                         compatibility facade
+    |-- resolvePlannerOptions.m         HS3 options + compact projection
+    |-- improve.m                      immutable-baseline improver
+    |-- validateTrajectory.m            canonical-validator facade
+    `-- +internal/+motion              HS3 NLP implementation
 ```
 
-Canonical obstacle combination and normalization live at the repository root.
-Time queries, obstacle preparation and interpolation, boundary traversal,
-signed clearance, option merging, logical normalization, goal interpolation,
-polynomial evaluation, and power-to-Bernstein conversion live in
-`+azElInternal`. A method must not call its sibling's search, solver, validator,
-or result builder. This shares input meaning without coupling either planning
-algorithm to the other method folder.
+`+azElInternal` owns shared topology generation, dense envelopes, clustering,
+convex decomposition, seed-corridor construction and certification, result
+schemas, obstacle queries, polynomial utilities, and improvement comparison.
+The root `validateAzElTrajectory` is the single final validator. Method-qualified
+validation functions are compatibility facades only.
 
-## Safely unplug a method
+## Dependency and removal boundary
 
-There is no automatic method registry and no silent fallback. Removing a
-folder therefore also requires a small explicit dispatcher edit.
+The compact method does not depend on HS3. The reverse is intentionally not yet
+true: selecting HS3 in `planAzElMotion` first calls the corridor compact planner,
+then passes its immutable result to `hs3.improve`. This composition prevents a
+failed or inferior nonlinear attempt from regressing a validated compact result,
+but it means the current HS3 path transitively depends on `+corridor` pending
+neutral extraction of the compact baseline.
 
-To remove HS3:
+The HS3 package is capped at 1,200 noncomment lines and currently owns exactly
+1,200. That count excludes the corridor baseline and neutral shared
+dependencies, so it is not a whole-executed-closure size claim. Do not describe
+HS3 as independently removable or test it by deleting corridor in the current
+composition.
 
-1. Remove or omit the complete `+hs3` folder.
-2. Remove the `"hs3"` normalization and switch cases from both public
-   dispatchers.
-3. Remove HS3-specific tests and documentation from the deployment.
-4. Keep `corridorQuintic` as the default.
-
-To remove the corridor method:
-
-1. Remove or omit the complete `+corridor` folder.
-2. Change both public defaults to `"hs3"`.
-3. Remove the corridor switch cases and its `MotionMethod` compatibility
-   handling.
-4. Update the zero-input moving-target defaults, which currently come from
-   the corridor adapter.
-
-Do not leave a removed method's selector accepted, and do not catch a missing
-method error by running the other planner. An explicit failure is safer than
-silently returning a trajectory from a method the user did not request.
+Removing HS3 still requires deleting its selector, facade, tests, and
+documentation. Removing corridor is unsupported while HS3 composes it. There is
+no automatic discovery or silent fallback.

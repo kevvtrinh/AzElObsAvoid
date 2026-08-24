@@ -32,11 +32,77 @@ options = planAzElMotion("hs3");
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
+verifyFalse(testCase, options.EnableHs3Improvement);
 verifyFalse(testCase, isfield(options, "UseParallel"));
 verifyFalse(testCase, isfield(options, "MaximumVisibilitySnapshotsPerObstacle"));
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
 verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
 verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
+end
+
+function testDirectBackendFacadeUsesCompositeWithoutRecursion(testCase)
+% Verify the method-qualified facade terminates through the public composite.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    8, [4 2], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = fixedOptions();
+directResult = azElPlannerMethods.hs3.plan( ...
+    [], initialState, goalState, limits, options);
+publicResult = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+
+verifyTrue(testCase, directResult.Success, directResult.Message);
+verifyTrue(testCase, directResult.Validation.Passed, ...
+    directResult.Validation.Message);
+verifyEqual(testCase, directResult.Options.PlannerMethod, "hs3");
+verifyEqual(testCase, ...
+    directResult.SearchDiagnostics.PlannerMethod, "hs3");
+verifyFalse(testCase, directResult.CompositionDiagnostics.Hs3.Enabled);
+verifyFalse(testCase, directResult.CompositionDiagnostics.Hs3.Attempted);
+verifyExactCompactMotion(testCase, directResult, publicResult);
+end
+
+function testDefaultOffCompositeExactlyMatchesCompactSuccessAndFailure(testCase)
+% Preserve the immutable compact result for valid and infeasible requests.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0.1 0.05], [0.02 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    8, [4 2], [0.15 -0.05], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 3], [1 1.5], [2 3]);
+hs3Options = fixedOptions();
+compactOptions = compactOptionsFromHs3(hs3Options);
+compactSuccess = planAzElMotion( ...
+    [], initialState, goalState, limits, compactOptions);
+compositeSuccess = planAzElMotion( ...
+    [], initialState, goalState, limits, hs3Options);
+
+verifyTrue(testCase, compactSuccess.Success, compactSuccess.Message);
+verifyTrue(testCase, compositeSuccess.Validation.Passed, ...
+    compositeSuccess.Validation.Message);
+verifyFalse(testCase, ...
+    compositeSuccess.CompositionDiagnostics.Hs3.Attempted);
+verifyExactCompactMotion( ...
+    testCase, compositeSuccess, compactSuccess);
+
+shortGoalState = testCase.TestData.Fixtures.State( ...
+    1, [4 0], [0 0], [0 0]);
+slowLimits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [1 1], [1 1], [1 1]);
+compactFailure = planAzElMotion( ...
+    [], initialState, shortGoalState, slowLimits, compactOptions);
+compositeFailure = planAzElMotion( ...
+    [], initialState, shortGoalState, slowLimits, hs3Options);
+
+verifyFalse(testCase, compactFailure.Success);
+verifyFalse(testCase, compositeFailure.Success);
+verifyFalse(testCase, ...
+    compositeFailure.CompositionDiagnostics.Hs3.Attempted);
+verifyExactCompactMotion( ...
+    testCase, compositeFailure, compactFailure);
 end
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
@@ -82,7 +148,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
@@ -97,6 +163,13 @@ verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
 verifyEqual(testCase, ...
     diagnostics.Coverage.TimedSearchSuppressionReason, "");
 verifyTrue(testCase, diagnostics.Coverage.CompletenessLost);
+verifyGreaterThanOrEqual(testCase, diagnostics.CandidateOffsetRetryCount, 0);
+verifyGreaterThan(testCase, diagnostics.VisibilityWorkBudget, 0);
+verifyGreaterThanOrEqual(testCase, ...
+    diagnostics.EstimatedExhaustiveVisibilityWork, 0);
+verifyTrue(testCase, islogical(diagnostics.ExhaustiveVisibilityUsed));
+verifyTrue(testCase, ...
+    islogical(diagnostics.ExhaustiveVisibilityFallbackUsed));
 visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
 isOccupied = queryAzElTimeObstacle( ...
@@ -115,7 +188,7 @@ boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
 seed = struct( ...
     "tau", [0; 1], "position_deg", [-2 2; 2 2], ...
     "CorridorBoundary_deg", boundary_deg);
-corridor = azElPlannerMethods.hs3.internal.validation.buildSeedCorridor(seed, 1);
+corridor = azElInternal.buildSeedCorridor(seed, 1);
 positionPower_deg = zeros(1, 2, 6);
 positionPower_deg(1, 1, 1:2) = [-2 4];
 positionPower_deg(1, 2, 1) = 2;
@@ -125,30 +198,30 @@ trajectory = struct( ...
     "Polynomial", polynomial, ...
     "SeedCorridorBoundary_deg", boundary_deg, ...
     "SeedCorridor", corridor);
-[certified, clearance_deg] = azElPlannerMethods.hs3.internal.validation.certifySeedCorridor( ...
+[certified, clearance_deg] = azElInternal.certifySeedCorridor( ...
     trajectory, obstacle, 1e-7);
 verifyTrue(testCase, certified);
 verifyGreaterThan(testCase, clearance_deg, 0.5);
 trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
-[certifiedAfterEntry, ~] = azElPlannerMethods.hs3.internal.validation.certifySeedCorridor( ...
+[certifiedAfterEntry, ~] = azElInternal.certifySeedCorridor( ...
     trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
-function testSeedEnvelopeRequiresConvexCompleteContainment(testCase)
-% Verify vectorized membership retains convexity and complete-history rules.
+function testSeedEnvelopeRequiresCompleteContinuousContainment(testCase)
+% Verify complete continuous histories stay inside one envelope region.
 boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
 inside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [-1 1 -1 1], 0);
 outside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
-verifyTrue(testCase, azElPlannerMethods.hs3.internal.validation.seedEnvelopeContainsObstacles( ...
+verifyTrue(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     boundary_deg, inside, 0));
-verifyFalse(testCase, azElPlannerMethods.hs3.internal.validation.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     boundary_deg, outside, 0));
 mixedHistory = inside;
 mixedHistory.az_deg{2} = mixedHistory.az_deg{2} + 3;
-verifyFalse(testCase, azElPlannerMethods.hs3.internal.validation.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     boundary_deg, mixedHistory, 0));
 concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
-verifyFalse(testCase, azElPlannerMethods.hs3.internal.validation.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, azElInternal.seedEnvelopeContainsObstacles( ...
     concaveBoundary_deg, inside, 0));
 end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
@@ -172,6 +245,8 @@ initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0.05 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 2], [0.2 -0.1], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
+options.EnableHs3Improvement = true;
+options.MaximumHs3ImprovementTime_s = 3;
 result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -182,10 +257,7 @@ verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
 verifyEqual(testCase, result.time_s(end), 8, "AbsTol", 1e-7);
 verifyEqual(testCase, result.velocity_deg_s(end, :), ...
     goalState.velocity_deg_s, "AbsTol", 1e-6);
-diagnostics = result.SeedSummaries( ...
-    result.SelectedSeedIndex).Hs3SolverDiagnostics;
-verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
-    "linearFixedTime");
+verifyHs3Attempted(testCase, result, "linearFixedTime");
 end
 function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
 % Verify the exact gradient includes both jerk and final-time decisions.
@@ -209,14 +281,13 @@ goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.GoalTimeMode = "earliestArrival";
+options.EnableHs3Improvement = true;
+options.MaximumHs3ImprovementTime_s = 3;
 result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-diagnostics = result.SeedSummaries( ...
-    result.SelectedSeedIndex).Hs3SolverDiagnostics;
-verifyEqual(testCase, diagnostics.ConstraintRepresentation, ...
-    "nonlinearTimeDecision");
+verifyHs3Attempted(testCase, result, "nonlinearTimeDecision");
 jerkRampTime_s = limits.maxAcceleration_deg_s2(1) / ...
     limits.maxJerk_deg_s3(1);
 constantAccelerationTime_s = (-1.5 + sqrt(16.25)) / 2;
@@ -266,8 +337,8 @@ testSupport.verifySharedPlannerContract( ...
     testCase, "hs3", "testInterceptWrapperRequiresTwoTargetSamples");
 end
 
-function testSelectedCandidateSupportsMeshRefinement(testCase)
-% Verify an HS3-only endpoint state can be re-solved on a denser mesh.
+function testCompositeDeclaresMeshRefinementUnsupported(testCase)
+% Report the current improver limitation instead of claiming a refined result.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0.05 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 2], [0.2 -0.1], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -277,9 +348,13 @@ options.MaximumCollocationSegmentCount = 8;
 options.MaximumMeshRefinementPasses = 1;
 result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
-verifyEqual(testCase, result.Polynomial.SegmentCount, 8);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyFalse(testCase, ...
+    result.CompositionDiagnostics.Hs3.RefinementSupported);
 verifyEqual(testCase, ...
-    result.SearchDiagnostics.MeshRefinementPassCount, 1);
+    result.CompositionDiagnostics.Hs3.RequestedRefinementPasses, 1);
+verifyFalse(testCase, result.CompositionDiagnostics.Hs3.Attempted);
+verifyEqual(testCase, result.SearchDiagnostics.MeshRefinementPassCount, 0);
 end
 function testStaticObstacleProducesOppositeSideSeeds(testCase)
 testSupport.verifySharedPlannerContract( ...
@@ -297,7 +372,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 5;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
@@ -392,7 +467,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion("hs3");
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacle, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
@@ -405,6 +480,22 @@ verifyEqual(testCase, diagnostics.GraphType, ...
     "timeExpandedVisibilityGraph");
 verifyGreaterThan(testCase, diagnostics.TemporalLayerCount, 1);
 verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
+
+% The default-off HS3 composite must retain the same validated timed wait.
+options.GoalTimeMode = "fixedArrival";
+options.EnableHs3Improvement = false;
+compositeResult = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+compactResult = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, ...
+    compactOptionsFromHs3(options));
+verifyTrue(testCase, compositeResult.Success, compositeResult.Message);
+verifyTrue(testCase, compositeResult.Validation.Passed, ...
+    compositeResult.Validation.Message);
+verifyEqual(testCase, ...
+    compositeResult.Seeds(compositeResult.SelectedSeedIndex).Source, ...
+    "directWait");
+verifyExactCompactMotion(testCase, compositeResult, compactResult);
 end
 function testObstacleActivationSpanEnablesTimedSearch(testCase)
 % Verify equal geometry can still change occupancy through its active span.
@@ -413,7 +504,7 @@ initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion("hs3");
-[~, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[~, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
@@ -429,7 +520,7 @@ goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion("hs3");
 options.MaximumSeedCount = 5;
-[seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacle, initialState, goalState, limits, options);
 directSeed = seeds([seeds.Source] == "directVisibilityEdge");
 timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
@@ -445,7 +536,14 @@ result = planAzElMotion( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.SeedSummaries(1).FirstMotionValidationPassed);
-verifyFalse(testCase, any([result.SeedSummaries(2:end).FirstMotionAttempted]));
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.ValidatedCandidateCount, ...
+    nnz([result.SeedSummaries.ValidationPassed]));
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.BestPartialSeedIndex, ...
+    result.SelectedSeedIndex);
+verifyTrue(testCase, isfinite( ...
+    result.SearchDiagnostics.FirstValidatedMotionTime_s));
 end
 function testDenseEnvelopeReportsTimedSearchWorkLimit(testCase)
 % Verify dense timed work is suppressed and reported as incomplete.
@@ -466,7 +564,7 @@ goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = planAzElMotion("hs3");
 options.MaximumSeedCount = 2;
-[seeds, diagnostics] = azElPlannerMethods.hs3.internal.search.generateTopologySeeds( ...
+[seeds, diagnostics] = azElInternal.generateTopologySeeds( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
@@ -612,6 +710,13 @@ result = planAzElMovingTargetIntercept( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.Intercept.Mode, "earliest");
+verifyEqual(testCase, result.Options.PlannerMethod, "hs3");
+verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, "hs3");
+verifyEqual(testCase, ...
+    result.Intercept.Options.PlannerOptions.PlannerMethod, "hs3");
+verifyEqual(testCase, result.Intercept.Search.Method, ...
+    "boundedChronologicalFixedTime");
+verifyGreaterThan(testCase, result.Intercept.Search.TrialCount, 1);
 verifyEqual(testCase, result.position_deg(end, :), ...
     result.Intercept.TargetPosition_deg, "AbsTol", 1e-6);
 plotOptions = struct( ...
@@ -629,6 +734,65 @@ for axesIndex = 1:numel(axesHandles)
     verifyNotEmpty(testCase, targetHandles);
 end
 end
+
+function testMovingTargetSpecifiedTimeMatchesNonzeroDerivatives(testCase)
+% Verify HS3 receives the shared adapter's nonzero terminal target state.
+targetTime_s = (0:2:20).';
+targetPosition_deg = [0.04 * targetTime_s .^ 2, ...
+    0.02 * targetTime_s .^ 2];
+targetMotion = struct( ...
+    "time_s", targetTime_s, ...
+    "position_deg", targetPosition_deg, ...
+    "InterpolationMethod", "pchip");
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+interceptTime_s = 10;
+interceptOptions = struct( ...
+    "InterceptMode", "specifiedTime", ...
+    "SpecifiedInterceptTime_s", interceptTime_s, ...
+    "MatchTargetVelocity", true, ...
+    "MatchTargetAcceleration", true, ...
+    "PlannerOptions", fixedOptions());
+result = planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, interceptOptions);
+
+derivativeStep_s = 0.01;
+lowerPosition_deg = interp1(targetTime_s, targetPosition_deg, ...
+    interceptTime_s - derivativeStep_s, "pchip");
+centerPosition_deg = interp1(targetTime_s, targetPosition_deg, ...
+    interceptTime_s, "pchip");
+upperPosition_deg = interp1(targetTime_s, targetPosition_deg, ...
+    interceptTime_s + derivativeStep_s, "pchip");
+expectedVelocity_deg_s = (upperPosition_deg - lowerPosition_deg) ./ ...
+    (2 * derivativeStep_s);
+expectedAcceleration_deg_s2 = (upperPosition_deg - ...
+    2 * centerPosition_deg + lowerPosition_deg) ./ derivativeStep_s ^ 2;
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, result.Options.PlannerMethod, "hs3");
+verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, "hs3");
+verifyEqual(testCase, result.Intercept.Mode, "specifiedTime");
+verifyEqual(testCase, result.Intercept.Search.Method, "specifiedFixedTime");
+verifyEqual(testCase, result.Intercept.Search.TrialCount, 1);
+verifyEqual(testCase, result.Intercept.TerminalVelocityPolicy, "target");
+verifyEqual(testCase, result.Intercept.TerminalAccelerationPolicy, "target");
+verifyEqual(testCase, result.velocity_deg_s(end, :), ...
+    expectedVelocity_deg_s, "AbsTol", 1e-6);
+verifyEqual(testCase, result.acceleration_deg_s2(end, :), ...
+    expectedAcceleration_deg_s2, "AbsTol", 1e-6);
+
+% The moving-target adapter must feed the identical request to compact mode.
+compactInterceptOptions = interceptOptions;
+compactInterceptOptions.PlannerOptions = ...
+    compactOptionsFromHs3(interceptOptions.PlannerOptions);
+compactResult = planAzElMovingTargetIntercept( ...
+    initialState, targetMotion, limits, compactInterceptOptions);
+verifyExactCompactMotion(testCase, result, compactResult);
+end
+
 function options = fixedOptions()
 % Return fast deterministic settings for focused tests.
 options = planAzElMotion("hs3");
@@ -640,6 +804,69 @@ options.MaximumNlpIterations = 150;
 options.MaximumNlpFunctionEvaluations = 15000;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
+end
+
+function compactOptions = compactOptionsFromHs3(hs3Options)
+% Project the same public inputs onto the immutable compact baseline.
+if isfield(hs3Options, "PlannerMethod")
+    hs3Options = rmfield(hs3Options, "PlannerMethod");
+end
+[~, compactOptions] = ...
+    azElPlannerMethods.hs3.resolvePlannerOptions(hs3Options);
+compactOptions.PlannerMethod = "corridorQuintic";
+end
+
+function verifyExactCompactMotion(testCase, composite, compact)
+% Compare every deterministic status, seed, and physical trajectory field.
+exactFields = { ...
+    'Success', 'Message', 'TerminationReason', 'Seeds', ...
+    'SelectedSeedIndex', 'SelectedMotionSource', 'SelectedSeed_deg', ...
+    'time_s', 'position_deg', 'velocity_deg_s', ...
+    'acceleration_deg_s2', 'jerk_deg_s3', 'Polynomial', ...
+    'SeedCorridorBoundary_deg', 'SeedCorridor', 'ArrivalTime_s', ...
+    'TrajectoryDuration_s', 'GoalHorizon_s', 'RandomSeed', ...
+    'OptimalityStatement'};
+for fieldIndex = 1:numel(exactFields)
+    field = exactFields{fieldIndex};
+    verifyEqual(testCase, composite.(field), compact.(field));
+end
+compositeValidation = rmfield(composite.Validation, ...
+    {'CollisionCheckingElapsedTime_s', 'ElapsedTime_s'});
+compactValidation = rmfield(compact.Validation, ...
+    {'CollisionCheckingElapsedTime_s', 'ElapsedTime_s'});
+verifyEqual(testCase, compositeValidation, compactValidation);
+verifyEqual(testCase, composite.CompositionDiagnostics.Baseline.Success, ...
+    compact.Success);
+verifyEqual(testCase, ...
+    composite.CompositionDiagnostics.Baseline.ValidationPassed, ...
+    compact.Success && compact.Validation.Passed);
+verifyEqual(testCase, ...
+    composite.CompositionDiagnostics.Baseline.SelectedSeedIndex, ...
+    compact.SelectedSeedIndex);
+verifyEqual(testCase, ...
+    composite.CompositionDiagnostics.Baseline.ArrivalTime_s, ...
+    compact.ArrivalTime_s);
+end
+
+function verifyHs3Attempted(testCase, result, representation)
+% Require solver evidence without requiring the optional trial to be selected.
+composition = result.CompositionDiagnostics.Hs3;
+verifyTrue(testCase, composition.Enabled);
+verifyTrue(testCase, composition.Attempted);
+verifyNotEmpty(testCase, composition.Attempts);
+verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
+representationFound = false;
+for attemptIndex = 1:numel(composition.Attempts)
+    diagnostics = composition.Attempts(attemptIndex).SolverDiagnostics;
+    if isfield(diagnostics, "ConstraintRepresentation") && ...
+            diagnostics.ConstraintRepresentation == representation
+        representationFound = true;
+        break;
+    end
+end
+verifyTrue(testCase, representationFound);
+verifyTrue(testCase, any(result.SelectedMotionSource == ...
+    ["corridorQuintic", "hs3"]));
 end
 
 function closeTestFigures(handles)
