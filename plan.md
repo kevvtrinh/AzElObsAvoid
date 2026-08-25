@@ -1,48 +1,50 @@
-# Organic-obstacle planner robustness
+# Quintic solver quality and runtime recovery
 
-## Objective
+## Outcome
 
-Keep compact quintic and standalone HS3 separate while improving deterministic
-convex, concave, rough U-shaped, and moving-obstacle behavior. Preserve complete
-validation, nonzero endpoint support, the 2,000-line HS3 limit, and the two-minute
-hairpin gate.
+Completed a general, input-driven recovery of compact corridor-quintic timing
+quality and runtime. No scenario names, hidden waypoints, geometry changes,
+limit relaxation, validation changes, or HS3 fallback were introduced.
 
-## Retained changes
+## Root causes and retained design
 
-- Compact tries every bounded topology and includes the full feasible duration
-  bracket, removing the seed-4108 false infeasibility.
-- Two-point seeds use the same exact analytic motion in static and moving scenes.
-- Timed topology generation retains one graph from the route-nearest obstacle's
-  history as well as the combined graph. All edges and final trajectories still
-  check the complete obstacle set.
-- Dense fallback geometry builds and unions one conservative support envelope per
-  obstacle, so unrelated histories cannot bridge free space.
-- HS3 ranks detours by estimated effort, shares remaining work across detours,
-  performs one topology-preserving refinement, and defaults to two mesh passes.
-- The organic benchmark and the reversed-order two-mover regression preserve the
-  motivating evidence.
+- Refined exact-C3 routes doubled every interior knot and crossed a dense-QP
+  dimension cliff. Keep exact C3 through 48 decisions and use the existing
+  continuous-C4 exact representation above that bound.
+- Route subdivision incorrectly replaced geometric span weights with equal
+  weights. Always derive timing weights from the actual refined edge lengths.
+- Six earliest-arrival trials left wide feasible/infeasible brackets. Use 14
+  bounded trials for exact earliest-arrival searches; fixed arrival uses one.
 
-## Verification evidence
+Rejected experiments included a larger C3 map, pure length-proportional
+timing, and axis-demand weighting. They either retained the defect or worsened
+path length, jerk, or wall time.
 
-- Organic benchmark, seeds 4101:4108: 32/32 compact/HS3 method-runs independently
-  valid; zero compact false infeasibilities; zero HS3 obstacle-addition reversals.
-- Randomized similar-size two-mover campaign, seeds 5201:5208: 8/8 base and added
-  motions valid; maximum route deviation after adding the independently clear
-  mover was 3.52e-11 deg, reduced from 0.430 deg.
-- HS3 hairpin passed twice under two minutes: 112.845 s and 112.882 s wall time,
-  about 138.611 s arrival versus compact's frozen 140.561 s arrival.
-- Full test suite: 141 passed, 0 failed, 0 incomplete, 591.091 s wall time.
+## Final evidence
 
-## Known limitation
+- `az_el_sandbox_goal_20260824_174716.mat`: identical selected trajectory at
+  37.845175 s; wall time 77.9230141 -> 9.2077994 s (88.18% reduction).
+- `173vs131.mat`: compact arrival 173.25 -> 136.042437744 s; HS3 is
+  131.642423799 s. Compact remains 4.400014 s later but has the shorter
+  smoothed path and lower integrated jerk-squared.
+- Structurally distinct 12-hairpin route: valid 138.455023011 s arrival,
+  8.2178 s wall time, 96 C4 decisions, and 0.02-degree clearance.
+- Maintained compact examples: 18/18 contracts passed, comprising 17 valid
+  successes and the expected valid no-path result.
+- Graphics: visible success created 3 figures/6 axes; expected failure created
+  2 figures/2 axes from returned diagnostics.
+- Automated suite: 144/144 passed in 643.151742 s wall time.
+- Task-only detached push gate: 142/142 passed in 709.815981 s wall time;
+  unrelated dirty source and tests were absent.
+- Code Analyzer: zero messages in the changed production owner and focused
+  regression test. `git diff --check`: no whitespace errors.
 
-- Organic seed 4108 still shows a 0.588 s compact arrival improvement when a new
-  obstacle nearly touches the original path. The original path remains valid with
-  only 0.00293 deg clearance; the extra obstacle changes the local sampled-barrier
-  QP basin. Obstacle-independent support nodes, exhaustive visibility, waypoint
-  pruning, and broad static clearance expansion were tested and reverted because
-  they regressed other deterministic cases. This is not the independently clear
-  moving-obstacle regression fixed above.
+## Files owned by this task
 
-## Working tree scope
+- `+azElPlannerMethods/+corridor/+internal/+motion/solveCompactC3.m`
+- `tests/testCorridorPlannerDynamicTiming.m`
+- `verification.md`, `branch_assessment.md`, `benchmark.csv`, and `plan.md`
 
-- Preserve unrelated untracked `docs/` and `tmp/`.
+The worktree retains unrelated preexisting user edits. Temporary task scripts,
+result MAT files, and the detached baseline worktree are removed at handoff.
+No commit or push was requested.

@@ -53,20 +53,32 @@ useExactCorridor = geometryIsStatic && ~hasExplicitHold && ...
 if ~isempty(obstacles) && useExactCorridor
     seed.position_deg = ...
         azElPlannerMethods.corridor.internal.motion.expandRouteClearance( ...
-        seed.position_deg, obstacles, initialState.time_s, 0.02, 0.02);
+        seed.position_deg, obstacles, initialState.time_s, 0.02, 0.12);
+    seed.position_deg = subdivideLongRouteEdges(seed.position_deg);
 end
 stageTiming.CorridorConstructionElapsedTime_s = toc(corridorTimer);
 motionTimer = tic;
-% Short or dynamic routes use a fixed C3 basis; larger static routes align
-% one compact C4 span and one exact corridor support with each route edge.
-if useExactCorridor || useSeedAnchoredBarrier
+% Short or dynamic routes use a fixed C3 basis. Moderate static routes use
+% doubled interior knots for local C3 freedom. On long routes that doubles
+% the dense QP dimension without changing the exact corridor certificate,
+% so retain one C4 span per route edge once the C3 decision map is no longer
+% compact.
+if useExactCorridor
+    spanCount = size(seed.position_deg, 1) - 1;
+    exactC3ControlCount = 2 * spanCount + 4;
+    exactC3DecisionCount = 2 * (exactC3ControlCount - 6);
+    maximumExactC3DecisionCount = 48;
+    if exactC3DecisionCount <= maximumExactC3DecisionCount
+        controlCount = exactC3ControlCount;
+        representation = "C3ExactCorridor";
+    else
+        controlCount = spanCount + 5;
+        representation = "C4ExactCorridor";
+    end
+elseif useSeedAnchoredBarrier
     spanCount = size(seed.position_deg, 1) - 1;
     controlCount = spanCount + 5;
-    if useExactCorridor
-        representation = "C4ExactCorridor";
-    else
-        representation = "C4SeedAnchoredBarrier";
-    end
+    representation = "C4SeedAnchoredBarrier";
 else
     spanCount = 8;
     controlCount = 2 * spanCount + 4;
@@ -75,6 +87,9 @@ end
 normalizedSampleTime = linspace(0, 1, 257).';
 if useExactCorridor || useSeedAnchoredBarrier
     edgeLength_deg = vecnorm(diff(seed.position_deg), 2, 2);
+    % Base span time on actual post-refinement distance. Equal span times
+    % would make the longest edge set the duration even when adjacent edges
+    % are much shorter.
     normalizedSpanDuration = edgeLength_deg .^ 1.05;
     normalizedSpanDuration = normalizedSpanDuration / ...
         sum(normalizedSpanDuration);
@@ -84,6 +99,7 @@ else
     normalizedSpanDuration = ones(spanCount, 1) / spanCount;
     routeTau = seed.tau;
 end
+
 affineModel = ...
     azElPlannerMethods.corridor.internal.motion.buildFixedDurationAffineModel( ...
     controlCount, 0, normalizedSpanDuration, normalizedSampleTime);
@@ -103,6 +119,7 @@ else
         fitBasis(:, interiorIndex) \ ...
         (desiredPosition_deg - fixedContribution_deg);
 end
+
 straight = azElPlannerMethods.corridor.internal.motion.buildQuinticSpline( ...
     [initialState.position_deg; goalState.position_deg], ...
     initialState, goalState, limits, struct( ...
@@ -126,7 +143,6 @@ stageTiming.CorridorConstructionElapsedTime_s = ...
     stageTiming.CorridorConstructionElapsedTime_s + toc(corridorTimer);
 preparation = struct( ...
     "SpanCount", spanCount, "Representation", representation, ...
-    "UseExactCorridor", useExactCorridor, ...
     "AffineModel", affineModel, "ControlPoint_deg", controlPoint_deg, ...
     "DesiredPosition_deg", desiredPosition_deg, ...
     "PhysicalLowerDuration_s", physicalLowerDuration_s, ...
@@ -140,7 +156,6 @@ preparation = struct( ...
 else
     spanCount = preparation.SpanCount;
     representation = preparation.Representation;
-    useExactCorridor = preparation.UseExactCorridor;
     affineModel = preparation.AffineModel;
     controlPoint_deg = preparation.ControlPoint_deg;
     desiredPosition_deg = preparation.DesiredPosition_deg;
@@ -176,8 +191,6 @@ lastExitFlag = NaN;
 bestExitFlag = NaN;
 if plannerOptions.GoalTimeMode == "fixedArrival"
     maximumTrialCount = 1;
-elseif useExactCorridor
-    maximumTrialCount = 6;
 else
     maximumTrialCount = 14;
 end
@@ -601,6 +614,34 @@ for sliceIndex = 2:numel(obstacle.az_deg)
         deforms = true;
         return;
     end
+end
+end
+
+function refinedRoute_deg = subdivideLongRouteEdges(route_deg)
+% Refine disproportionate edges only while the exact basis remains compact.
+edgeLength_deg = vecnorm(diff(route_deg), 2, 2);
+edgeCount = numel(edgeLength_deg);
+subdivisionCount = ones(size(edgeLength_deg));
+if edgeCount >= 20
+    refinedRoute_deg = route_deg;
+    return;
+end
+targetLength_deg = 2 * median(edgeLength_deg(edgeLength_deg > 1e-12));
+maximumSpanCount = min(2 * edgeCount, edgeCount + 32);
+for refinementIndex = 1:maximumSpanCount - edgeCount
+    [longestSubspan_deg, edgeIndex] = max( ...
+        edgeLength_deg ./ subdivisionCount);
+    if longestSubspan_deg <= targetLength_deg
+        break;
+    end
+    subdivisionCount(edgeIndex) = subdivisionCount(edgeIndex) + 1;
+end
+refinedRoute_deg = route_deg(1, :);
+for edgeIndex = 1:numel(edgeLength_deg)
+    fraction = (1:subdivisionCount(edgeIndex)).' / ...
+        subdivisionCount(edgeIndex);
+    refinedRoute_deg = [refinedRoute_deg; route_deg(edgeIndex, :) + ...
+        fraction .* (route_deg(edgeIndex + 1, :) - route_deg(edgeIndex, :))]; %#ok<AGROW>
 end
 end
 

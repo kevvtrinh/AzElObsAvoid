@@ -1187,3 +1187,22 @@ explicitly rather than presented as cleanup savings. The compensating evidence
 is one implementation boundary, two fewer public files, zero remaining callers
 of the removed names, 140/140 tests, and 18/18 maintained outcomes for each
 separate planner method.
+
+## Corridor-quintic regression recovery — 2026-08-24
+
+The largest newly measured strength is that compact motion construction now
+scales its exact spline representation from route complexity and assigns time
+from actual refined geometry. On the first exported Rogue bundle this preserves
+the selected motion bit-for-bit while cutting wall time from 77.9230 to 9.2078 s.
+On `173vs131`, it removes 37.2076 s of a 41.6076 s arrival regression and also
+beats HS3 on smoothed path length and integrated jerk-squared. The mechanism is
+not scenario keyed: a structurally distinct 12-hairpin route and all 18
+maintained compact examples pass independent validation, and the full suite is
+144/144.
+
+The principal remaining weakness is local arrival quality. Compact still
+arrives 4.400014 s (3.34%) after standalone HS3 on `173vs131`, so this evidence
+does not establish uniform superiority or global optimality. Bounded topology
+enumeration and duration exchange remain finite, and existing HS3 moving-target
+coverage still produces near-singular `fmincon` warnings even when independent
+validation passes.

@@ -152,6 +152,36 @@ verifyEqual(testCase, diagnostics.CompactC3.AffineBasisReuseCount, diagnostics.C
 verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, 22.818548735851);
 end
 
+function testLongStaticRouteBoundsExactCorridorDecisionGrowth(testCase)
+% Bound QP growth while retaining geometric time allocation after refinement.
+azimuth_deg = [(0:10), 20].';
+route_deg = [azimuth_deg, zeros(size(azimuth_deg))];
+seed = struct("position_deg", route_deg, ...
+    "tau", linspace(0, 1, size(route_deg, 1)).', ...
+    "Source", "visibilityGraph");
+initialState = restState(0, route_deg(1, :));
+goalState = restState(60, route_deg(end, :));
+limits = motionLimits([-2 22], [-2 8]);
+obstacle = makeAzElObstacleData( ...
+    "far static obstacle", 0, [4; 6; 6; 4], [4; 4; 6; 6], 0);
+obstacle = azElInternal.obstacles.prepareDynamic(obstacle);
+options = planAzElMotion("corridorQuintic");
+
+[candidate, diagnostics] = ...
+    azElPlannerMethods.corridor.internal.motion.solveCompactC3Candidate( ...
+    seed, obstacle, initialState, goalState, limits, options);
+
+expectedDecisionCount = 2 * (diagnostics.SpanCount - 1);
+spanDurationRatio = max(candidate.Polynomial.SegmentDuration_s) / ...
+    min(candidate.Polynomial.SegmentDuration_s);
+verifyTrue(testCase, candidate.Success, candidate.Message);
+verifyEqual(testCase, diagnostics.Representation, "C4ExactCorridor");
+verifyEqual(testCase, diagnostics.DecisionCount, expectedDecisionCount);
+verifyGreaterThan(testCase, diagnostics.TrialCount, 6);
+verifyLessThanOrEqual(testCase, diagnostics.TrialCount, 14);
+verifyGreaterThan(testCase, spanDurationRatio, 2);
+end
+
 function [obstacles, initialState, goalState, limits] = lateOpeningRequest()
 % Build a concave barrier that changes from closed to open at a known physical time.
 openingTime_s = 12;

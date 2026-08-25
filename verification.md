@@ -2832,3 +2832,69 @@ four figures/seven axes and two figures/two axes respectively, with both
 scenario gates passing. No planner algorithm, obstacle geometry, margin,
 tolerance, seed, or expected result changed, so no new benchmark row or
 performance improvement is claimed.
+
+## Corridor-quintic quality and runtime recovery — 2026-08-24
+
+Two exported Rogue bundles isolated three general regressions in the compact
+motion owner. First, refined exact-C3 routes doubled every interior knot and
+could cross a dense-QP dimension cliff: one unselected 22-point route created
+80 decisions and 2,142 barrier rows, then spent 65.0545 s in its motion solve.
+Second, route refinement replaced span weights with equal weights even though
+the resulting `173vs131` spans ranged from 2.801 to 28.599 degrees. That made
+the equal-time peak velocity demand 629.189 versus 419.656 under geometric
+allocation, a 49.93% inflation. Third, six earliest-arrival trials could leave
+a multi-second feasible/infeasible bracket despite the public 0.001 s arrival
+tolerance.
+
+The retained input-driven rules keep doubled-knot exact C3 only through 48
+decision variables, use continuous-C4 exact motion above that bound, allocate
+refined span time from actual edge lengths, and use 14 trials for exact
+earliest-arrival searches. Obstacle geometry, safety margin, limits, topology
+opportunities, public options, independent validation, and HS3 were unchanged.
+The saved `az_el_sandbox_goal_20260824_174716.mat` trajectory is bit-for-bit
+unchanged in time, position, velocity, acceleration, and jerk at 37.845175 s,
+while wall time fell from 77.9230141 to 9.2077994 s (88.18%). The formerly
+dominant long seed now uses 40-decision C4, completes its motion work in 2.697 s,
+and remains correctly unselected.
+
+For `173vs131.mat`, the saved compact result arrived at 173.25 s with a
+370.353-degree smoothed path. Fresh standalone HS3 arrived at 131.642423799 s
+with a 319.454-degree path and 0.46758 jerk-squared. The retained compact rules
+arrived at 136.042437744 s in 8.1911 s wall time, with a 311.101948-degree path,
+0.02-degree clearance, and 0.0957002 jerk-squared. They recover 37.2076 s of
+the 41.6076 s arrival regression, but compact remains 4.400014 s (3.34%) later
+than HS3 on this case. A larger C3 map, pure length weighting, and axis-demand
+weighting were measured and rejected because they either retained the timing
+defect or worsened path length, jerk, or wall time.
+
+The distinct 12-hairpin scale case passed independent validation with 96 C4
+decisions, 138.455023011 s arrival, 8.2178 s wall time, and 0.02-degree
+clearance; its prior frozen duration was 140.560916 s. All 18 maintained
+compact example contracts passed serially: 17 independently valid successes
+and the expected independently valid `noValidatedSeed` outcome. Plot-enabled
+success produced three figures/six axes; the expected failure produced two
+figures/two axes without rerunning planning. The complete automated suite
+passed 144/144 in 643.151742 s wall time (632.433713 s summed test duration).
+Code Analyzer reported zero messages for the changed production owner and its
+focused regression test, and `git diff --check` found no whitespace errors.
+HS3 moving-target tests still emit existing near-singular `fmincon` warnings;
+those unfavorable diagnostics did not fail validation and were not suppressed.
+
+Before push, the six reviewed task files were applied by themselves to a
+detached `da52da8` worktree so unrelated dirty corridor, HS3, sandbox, and test
+changes could not influence the gate. Code Analyzer again reported zero
+messages, the focused planner suites passed 59/59, and the complete isolated
+suite passed 142/142 with zero failures or incomplete tests in 709.815981 s
+wall time (697.739404 s summed duration). The isolated count is two below the
+dirty-worktree count because preexisting uncommitted tests were deliberately
+excluded. The same expected HS3 near-singular warnings remained visible.
+
+The cumulative dirty-worktree diff for `solveCompactC3.m` is +53/-12 lines;
+reliable history cannot separate all earlier user edits from this task. The
+681-line file now also owns the representation bound, geometric span
+allocation, and bounded duration-search count because all three govern the
+same compact exact-motion construction. Splitting those constants into a new
+owner would add an interface without removing responsibility. The retained
+alternatives and the two supplied bundles, focused regression, hairpin scale
+case, full example matrix, graphics smokes, Code Analyzer, and full suite cover
+that growth; the file remains below the 900-line limit.
