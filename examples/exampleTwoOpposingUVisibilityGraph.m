@@ -70,6 +70,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleTwoOpposingUVisibilityGraph";
 result.ExampleValidation = exampleValidation;
 result.firstUBoundary_deg = firstUBoundary_deg;
 result.secondUBoundary_deg = secondUBoundary_deg;

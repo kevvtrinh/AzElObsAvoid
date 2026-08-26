@@ -200,6 +200,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleStraightTargetAlternatingOcclusion";
 result.ExampleValidation = exampleValidation;
 result.ScenarioValidation = scenarioValidation;
 result.ExampleConfiguration = jerkConfiguration;

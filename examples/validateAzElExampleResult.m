@@ -138,8 +138,18 @@ goalPosition_deg = goalPositionAtTime(goalState, goalState.time_s);
 fraction = linspace(0, 1, sampleCount).';
 position_deg = initialState.position_deg + fraction .* (goalPosition_deg - initialState.position_deg);
 queryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
-occupied = queryAzElTimeObstacle(result.Inputs.obstacles, position_deg(:, 1), position_deg(:, 2), sampleTime_s, queryOptions);
-
+coarseIndex = unique(round(linspace(1, sampleCount, 41))).';
+occupied = queryAzElTimeObstacle( ...
+    result.Inputs.obstacles, position_deg(coarseIndex, 1), ...
+    position_deg(coarseIndex, 2), sampleTime_s(coarseIndex), queryOptions);
+blocked = any(occupied);
+if blocked
+    return;
+end
+remainingIndex = setdiff((1:sampleCount).', coarseIndex, "stable");
+occupied = queryAzElTimeObstacle( ...
+    result.Inputs.obstacles, position_deg(remainingIndex, 1), ...
+    position_deg(remainingIndex, 2), sampleTime_s(remainingIndex), queryOptions);
 blocked = any(occupied);
 end
 

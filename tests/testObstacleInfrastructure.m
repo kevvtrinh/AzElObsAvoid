@@ -139,6 +139,37 @@ datetimeOccupied = queryAzElTimeObstacle( ...
 verifyEqual(testCase, datetimeOccupied, sharedOccupied);
 end
 
+function testShapeQueryReportsOrderedBoundaryProperties(testCase)
+% Compare the lightweight ordered-boundary record with polyshape evidence.
+convexObstacle = rectangleObstacle("convex", [0; 4], [-2 2 -1 1]);
+[convexShape, convexGeometry] = ...
+    azElInternal.obstacles.shapeAtTime(convexObstacle, 2);
+verifyTrue(testCase, convexGeometry.HasOrderedSingleRegion);
+verifyTrue(testCase, convexGeometry.IsConvex);
+vertices_deg = [convexGeometry.azimuth_deg, convexGeometry.elevation_deg];
+edgeDelta_deg = vertices_deg(2, :) - vertices_deg(1, :);
+leftNormal = [-edgeDelta_deg(2), edgeDelta_deg(1)] / norm(edgeDelta_deg);
+probe_deg = 0.5 * sum(vertices_deg(1:2, :), 1) + 1e-6 * leftNormal;
+referenceOutwardSign = 1 - 2 * isinterior( ...
+    convexShape, probe_deg(1), probe_deg(2));
+verifyEqual(testCase, convexGeometry.OutwardSign, referenceOutwardSign);
+
+concaveAzimuth_deg = [0; 2; 2; 1; 1; 0];
+concaveElevation_deg = [0; 0; 1; 1; 2; 2];
+concaveObstacle = makeAzElObstacleData( ...
+    "concave", [0; 4], concaveAzimuth_deg, concaveElevation_deg, 0);
+[~, concaveGeometry] = ...
+    azElInternal.obstacles.shapeAtTime(concaveObstacle, 2, true);
+verifyTrue(testCase, concaveGeometry.HasOrderedSingleRegion);
+verifyFalse(testCase, concaveGeometry.IsConvex);
+multiRegionObstacle = movingMultiRingObstacle();
+[~, multiRegionGeometry] = ...
+    azElInternal.obstacles.shapeAtTime(multiRegionObstacle, 1, true);
+verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
+verifyFalse(testCase, multiRegionGeometry.IsConvex);
+verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));
+end
+
 function obstacle = normalizationFixture()
 % Construct one raw moving, multi-ring record requiring normalization.
 azimuthSlices_deg = {[-3 -1 -1 -3 NaN 1 3 3 1], ...

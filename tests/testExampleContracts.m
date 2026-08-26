@@ -162,3 +162,21 @@ for exampleName = exampleNames
     verifyNotEmpty(testCase, routedMatch, exampleName + " must route MaxJerk_deg_s3 into limits.");
 end
 end
+
+function testEveryMaintainedExampleReturnsItsName(testCase)
+% Keep serial reporting and downstream benchmark identity uniform.
+exampleFolder = fullfile(testCase.TestData.RepositoryRoot, "examples");
+exampleFiles = dir(fullfile(exampleFolder, "example*.m"));
+for fileIndex = 1:numel(exampleFiles)
+    exampleName = erase(string(exampleFiles(fileIndex).name), ".m");
+    if exampleName == "exampleAzElInteractiveSandbox"
+        continue;
+    end
+    sourceText = string(fileread( ...
+        fullfile(exampleFolder, exampleFiles(fileIndex).name)));
+    requiredAssignment = "result.ExampleName = """ + ...
+        exampleName + """;";
+    verifyTrue(testCase, contains(sourceText, requiredAssignment), ...
+        exampleName + " must return its exact ExampleName metadata.");
+end
+end

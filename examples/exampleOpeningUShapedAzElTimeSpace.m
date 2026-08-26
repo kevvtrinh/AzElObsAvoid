@@ -81,6 +81,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleOpeningUShapedAzElTimeSpace";
 result.ExampleConfiguration = displayOptions;
 result.ExampleInputs = struct( ...
     "obstacles", obstacles, "initialState", initialState, "goalState", goalState, "limits", limits, "options", options);

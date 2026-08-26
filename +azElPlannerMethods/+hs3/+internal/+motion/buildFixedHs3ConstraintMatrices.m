@@ -57,19 +57,43 @@ equalityMatrix([2 4 6], controlCount + 1:end) = terminalMap;
 end
 
 function matrix = corridorConstraintMatrix(sensitivity, corridor, normal)
-% Differentiate current support rows while geometry remains fixed in jerk.
-if isempty(corridor)
-    matrix = zeros(0, 2 * sensitivity.ControlCount);
-    return
+% Differentiate each sub-interval hull while geometry remains fixed in jerk.
+controlCount = sensitivity.ControlCount;
+recordCount = numel(corridor);
+coefficientCount = size(sensitivity.positionPowerMap, 2);
+if recordCount == 0
+    matrix = zeros(0, 2 * controlCount);
+    return;
 end
-if size(normal, 1) ~= numel(corridor) || size(normal, 2) ~= 2
+useIntervalHull = [corridor.UseIntervalHull].';
+rowCount = sum(1 + (coefficientCount - 1) * useIntervalHull);
+matrix = zeros(rowCount, 2 * controlCount);
+if size(normal, 1) ~= recordCount || size(normal, 2) ~= 2
     error("buildFixedHs3ConstraintMatrices:InvalidCorridorNormals", ...
         "corridorNormal must contain one two-axis row per association.");
 end
-controlIndex = [corridor.ControlIndex].';
-positionMap = sensitivity.positionAtTauMap(controlIndex, :);
-matrix = [-normal(:, 1) .* positionMap, ...
-    -normal(:, 2) .* positionMap];
+effectiveTauEnd = [corridor.TauEnd];
+effectiveTauEnd(~useIntervalHull.') = [corridor(~useIntervalHull).Tau];
+[segmentIndex, hullMap] = azElInternal.subintervalHullMap( ...
+    [corridor.Tau], effectiveTauEnd, ...
+    size(sensitivity.positionPowerMap, 1), coefficientCount);
+selectedPowerMap = permute( ...
+    sensitivity.positionPowerMap(segmentIndex, :, :), [2 3 1]);
+hullByRecord = permute(pagemtimes(hullMap, selectedPowerMap), [1 3 2]);
+nextRow = 1;
+for associationIndex = 1:recordCount
+    associationRowCount = 1 + ...
+        (coefficientCount - 1) * useIntervalHull(associationIndex);
+    matrixRows = nextRow:nextRow + associationRowCount - 1;
+    nextRow = matrixRows(end) + 1;
+    positionMap = reshape( ...
+        hullByRecord(1:associationRowCount, associationIndex, :), ...
+        associationRowCount, controlCount);
+    matrix(matrixRows, 1:controlCount) = ...
+        -normal(associationIndex, 1) * positionMap;
+    matrix(matrixRows, controlCount + 1:end) = ...
+        -normal(associationIndex, 2) * positionMap;
+end
 end
 
 function matrix = continuousBoundConstraintMatrix( ...
@@ -137,19 +161,15 @@ matrix(:, controlCount + 1:end) = reshape(elevationMap, [], controlCount);
 end
 
 function matrix = frozenCorridorConstraintMatrix(sensitivity, corridor)
-% Differentiate fixed-time obstacle supports at their stored control points.
-controlCount = sensitivity.ControlCount;
-matrix = zeros(numel(corridor), 2 * controlCount);
+% Differentiate fixed-time obstacle supports over their stored sub-intervals.
 if isempty(corridor)
+    matrix = zeros(0, 2 * sensitivity.ControlCount);
     return;
 end
 if any(~[corridor.GeometryIsFixed])
     error("buildFixedHs3ConstraintMatrices:NonfixedCorridor", ...
         "Every fixed-time HS3 corridor association must freeze its geometry.");
 end
-controlIndex = [corridor.ControlIndex].';
-normal = vertcat(corridor.FixedNormal);
-positionMap = sensitivity.positionAtTauMap(controlIndex, :);
-matrix(:, 1:controlCount) = -normal(:, 1) .* positionMap;
-matrix(:, controlCount + 1:end) = -normal(:, 2) .* positionMap;
+matrix = corridorConstraintMatrix( ...
+    sensitivity, corridor, vertcat(corridor.FixedNormal));
 end

@@ -143,15 +143,25 @@ seedCorridor(1).Normal = [0.6 0.8];
 seedCorridor(2).SegmentIndex = 5;
 seedCorridor(2).Normal = [-0.8 0.6];
 corridorTemplate = struct( ...
-    "ControlIndex", 0, "GeometryIsFixed", true, ...
+    "ControlIndex", 0, "Tau", 0, "TauEnd", 0, ...
+    "UseIntervalHull", true, "GeometryIsFixed", true, ...
     "FixedNormal", [0 0], "FixedBoundaryOffset_deg", 0, ...
     "Clearance_deg", 0);
+
+% Each association owns a sub-interval inside one segment, matching the
+% spans that the frozen corridor records.
 corridor = repmat(corridorTemplate, 3, 1);
 corridor(1).ControlIndex = 4;
+corridor(1).Tau = 0.05;
+corridor(1).TauEnd = 0.09;
 corridor(1).FixedNormal = [1 0];
 corridor(2).ControlIndex = 19;
+corridor(2).Tau = 0.44;
+corridor(2).TauEnd = 0.50;
 corridor(2).FixedNormal = [0.3 -sqrt(0.91)];
 corridor(3).ControlIndex = numel(corridorTau);
+corridor(3).Tau = 0.95;
+corridor(3).TauEnd = 1;
 corridor(3).FixedNormal = [-0.4 sqrt(0.84)];
 [inequalityMatrix, equalityMatrix] = ...
     azElPlannerMethods.hs3.internal.motion.buildFixedHs3ConstraintMatrices( ...
@@ -232,7 +242,7 @@ obstacle = makeAzElObstacleData( ...
     {first_deg(:, 1); middle_deg(:, 1); last_deg(:, 1)}, ...
     {first_deg(:, 2); middle_deg(:, 2); last_deg(:, 2)}, 0);
 corridorTau = [0.25; 0.5; 0.75];
-corridor = dynamicSupportAssociation(2, 0.5, [0 1]);
+corridor = dynamicSupportAssociation(2, 0.5, 0.6, [0 1]);
 decision = [0.15 * randn(2 * controlCount, 1); 8];
 reconstructFunction = @(jerk, finalTime_s) reconstructHs3Polynomial( ...
     jerk, initialState, finalTime_s, segmentCount);
@@ -341,11 +351,37 @@ limits = struct( ...
     "elevationInterval_deg", [-20 20]);
 end
 
-function association = dynamicSupportAssociation(controlIndex, tau, normal)
+function restricted = restrictBernstein( ...
+        coefficients, lowerFraction, upperFraction)
+% Restrict Bernstein coefficients to a sub-interval of their own parameter.
+[~, restricted] = deCasteljau(coefficients, lowerFraction);
+innerFraction = 0;
+if lowerFraction < 1
+    innerFraction = (upperFraction - lowerFraction) / (1 - lowerFraction);
+end
+restricted = deCasteljau(restricted, min(1, max(0, innerFraction)));
+end
+
+function [left, right] = deCasteljau(coefficients, fraction)
+% Split one Bernstein polynomial at a fraction of its parameter interval.
+count = numel(coefficients);
+left = zeros(count, 1);
+right = zeros(count, 1);
+work = coefficients(:);
+for level = 1:count
+    left(level) = work(1);
+    right(count - level + 1) = work(end);
+    work = (1 - fraction) * work(1:end - 1) + fraction * work(2:end);
+end
+end
+
+function association = dynamicSupportAssociation( ...
+        controlIndex, tau, tauEnd, normal)
 % Define one frozen association whose support offset follows input geometry.
 association = struct( ...
     "ControlIndex", controlIndex, "ObstacleIndex", 1, "EdgeIndex", 1, ...
-    "Tau", tau, "OutwardSign", 1, "UseSupport", true, ...
+    "Tau", tau, "TauEnd", tauEnd, "OutwardSign", 1, "UseSupport", true, ...
+    "UseIntervalHull", false, ...
     "SupportNormal", normal, "Clearance_deg", 1e-4, ...
     "GeometryIsFixed", false, "FixedNormal", [0 0], ...
     "FixedBoundaryOffset_deg", 0);
@@ -371,7 +407,7 @@ end
 
 function [inequality, equality] = directConstraintValues( ...
         decision, initialState, duration_s, segmentCount, ...
-        seedCorridor, corridor, corridorTau)
+        seedCorridor, corridor, ~)
 % Reconstruct raw fixed-time constraints independently of production maps.
 controlCount = 2 * segmentCount + 1;
 azimuthInitial = struct( ...
@@ -391,15 +427,26 @@ polynomial = combineScalarPolynomials( ...
 continuousInequality = directContinuousBounds(polynomial);
 seedInequality = azElInternal.seedCorridorInequality( ...
     polynomial, seedCorridor);
-[azimuthPosition, ~] = evaluateDirect(azimuthPolynomial, corridorTau);
-[elevationPosition, ~] = evaluateDirect(elevationPolynomial, corridorTau);
-position_deg = [azimuthPosition, elevationPosition];
-controlIndex = [corridor.ControlIndex].';
-normal = vertcat(corridor.FixedNormal);
-offset_deg = [corridor.FixedBoundaryOffset_deg].' + ...
-    [corridor.Clearance_deg].';
-corridorInequality = offset_deg - sum( ...
-    position_deg(controlIndex, :) .* normal, 2);
+corridorInequality = zeros(0, 1);
+
+% Rebuild each sub-interval hull by de Casteljau subdivision, which is
+% independent of the production power-restriction algebra.
+for associationIndex = 1:numel(corridor)
+    association = corridor(associationIndex);
+    scaledTau = segmentCount * association.Tau;
+    segmentIndex = min(segmentCount, floor(scaledTau) + 1);
+    localStart = scaledTau - segmentIndex + 1;
+    localEnd = min(1, segmentCount * association.TauEnd - segmentIndex + 1);
+    projectionPower = association.FixedNormal(1) * reshape( ...
+        polynomial.positionPower_deg(segmentIndex, 1, :), [], 1) + ...
+        association.FixedNormal(2) * reshape( ...
+        polynomial.positionPower_deg(segmentIndex, 2, :), [], 1);
+    hull = restrictBernstein( ...
+        azElInternal.powerToBernstein(projectionPower), localStart, localEnd);
+    corridorInequality = [corridorInequality; ...
+        association.FixedBoundaryOffset_deg + ...
+        association.Clearance_deg - hull]; %#ok<AGROW>
+end
 inequality = [continuousInequality; seedInequality; corridorInequality];
 equality = [ ...
     azimuthPolynomial.terminalState(1); ...

@@ -181,13 +181,27 @@ returned motion or preserved failure diagnostics.
 - Each route leg receives at least one segment when permitted, and configured
   bounded mesh-refinement passes may be attempted.
 - One solver evaluation can finish after the cooperative deadline, so measured
-  elapsed time may overrun `MaximumPlanningTime_s`.
+  elapsed time may overrun `MaximumPlanningTime_s`. Set
+  `DeterministicWorkBudget` to release that budget and keep only the
+  machine-independent caps, so a result reproduces across machines.
 - HS3 is a local nonlinear method. Conditioning warnings, local minima, or
   local failure can occur even when another proposal may be feasible.
+- Stationary-obstacle constraints bound the trajectory continuously between
+  constraint times. Moving and deforming obstacles retain ordered frozen-time
+  associations, with independent adaptive validation authoritative between
+  those times.
 - Static scenes may stop after the first independently validated seed to
-  protect the wall-time budget and can miss a faster unattempted topology.
-- Timed topology proposals in earliest-arrival mode retain their input-derived
-  arrival time and can miss a faster solution on the same topology.
+  protect the wall-time budget and can miss a faster unattempted topology. A
+  motion pinned to the goal horizon never stops that search.
+- Exact exhaustive static searches that reject the direct edge and find no
+  route return failure without spending work on a topology-preserving motion
+  solve. Reduced, truncated, and dynamic searches retain motion attempts.
+- Arrival quality is mesh limited. A coarse `CollocationSegmentCount` reports a
+  later arrival than the limits allow; a finer one arrives earlier at higher
+  integrated jerk and materially more solve time.
+- Timed topology proposals first preserve their causal event timing at the
+  proposed arrival, then use bounded fixed-time feasibility bisection to seek
+  an earlier independently validated arrival on the same topology.
 
 ## Repository layout
 

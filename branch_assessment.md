@@ -4,6 +4,318 @@ The current planner judgment is **HS3-only production cutover — 2026-08-25**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Severe-static fixed-time quality search — 2026-08-26
+
+The retained improvement addresses a severe static-route discretization local
+minimum without encoding example identity. On the first quality decision only,
+an earliest-arrival spatial candidate whose relative sampled-motion inflation
+exceeds `2.5 / segmentCount` is re-solved on the configured maximum mesh as a
+fixed-arrival feasibility problem. Existing timed bisection then shortens the
+horizon while retaining the original topology seed. Dynamic obstacles, timed
+topologies, fixed-arrival requests, later mesh passes, and less-inflated static
+routes keep their previous behavior. No public option or result field was
+added.
+
+Wide U now independently validates at 22.6308876389 seconds, with a
+34.9425880405-degree selected polyline, 41.5363500661-degree sampled motion,
+64 segments, and one mesh pass. Relative to the preceding
+`7661321+slack-quality-worktree` row, arrival improves by 0.4075710153 seconds
+and final wall time improves from 19.117491 to 17.688485 seconds. The sampled
+motion is 0.3257153577 degrees longer, so this is an arrival improvement rather
+than a uniform path-quality claim. The remaining like-for-like 325 gap is
+0.7981520967 seconds; wall time remains 11.9222537 seconds slower and sampled
+motion remains 1.8321728042 degrees longer than 325.
+
+The final `7661321+fixed-quality-worktree` matrix contains 18 fresh serial
+rows: 17 independently validated successes and the independently validated
+expected `noValidatedSeed` result. Two opposing U remains exactly
+21.9090824092 seconds, forty moving circles remains 61.2011842765 seconds,
+extreme U.S. remains 6.3679977362 seconds, and the moving/deforming U.S. remains
+8.75061035156 seconds. Tests pass 82/82 in 50.675781 seconds. Code Analyzer
+reports zero messages across 84 MATLAB files. Visible success and expected
+failure each produce two figures. The two rogue horizon replays remain
+independently valid at 88.2939404925 and 88.2939359679 seconds, a
+4.525-microsecond difference. The HS3 package contains exactly 2,000 nonblank,
+noncomment MATLAB lines, at the hard cap.
+
+Rejected broader variants remain visible. Applying the fixed-time search to
+all static candidates increased two-opposing-U wall time from about 14 to
+20 seconds and only reached 22.996 seconds for wide U. An
+interior-point-convex fixed solve restored feasibility where active-set could
+not, but individual probes took 80--87 seconds and a shorter target exceeded
+12 minutes. A 64-segment extreme-U.S. probe regressed arrival by
+0.00194985 seconds, and 80 segments regressed further. These variants were not
+retained.
+
+Remaining arrival gaps against the same 325 matrix are forty moving circles
++0.8393466878 seconds, wide U +0.7981520967 seconds, and extreme U.S.
++0.3610623598 seconds. Two opposing U is 0.2018852770 seconds earlier than
+325. Moving/deforming U.S. is 0.3892445513 seconds earlier, but its final wall
+time is 56.253798 seconds versus 18.2106663 seconds on 325, a
+38.0431317-second runtime regression. No global optimality, completeness, or
+uniform runtime claim is made.
+
+## Derivative-slack continuation quality pass — 2026-08-26
+
+The retained improvement addresses a time-discretization local minimum without
+encoding obstacle or example identity. After one valid same-mesh
+relinearization, an earliest-arrival spatial candidate receives one 2x
+continuation-seeded mesh pass only when every acceleration and jerk peak is
+below 75% of its applicable limit. The slack is input-derived evidence that
+the coarse motion is velocity-dominated and that a finer time mesh can improve
+arrival without asking for a new topology. Existing length-inflation passes
+continue to start from their original topology seed; this distinction prevents
+the forty-moving-circle and extreme-U.S. regressions observed in rejected
+probes.
+
+Two opposing U obstacles now independently validate at 21.9090824092 seconds,
+with a 24.5077116377-degree selected polyline, 24.4201122273-degree sampled
+motion, 20 segments, and one mesh pass. Two focused repeats and the final
+matrix reproduced the identical arrival. This is 0.9660319268 seconds earlier
+than the preceding `7661321+dynamic-quality-worktree` row and 0.2018852770
+seconds earlier than the like-for-like
+`da52da8+quintic-root-recovery-worktree` 325 row. The final wall time is
+13.972852 seconds, versus 4.6082376 seconds in the preceding worktree and
+8.5152389 seconds on 325, so the arrival gain is not presented as a runtime
+gain.
+
+The final `7661321+slack-quality-worktree` matrix contains 18 fresh serial
+rows: 17 independently validated successes and the independently validated
+expected `noValidatedSeed` result. All other arrival and path metrics match
+the preceding matrix. Tests pass 82/82 in 50.245827 seconds. Code Analyzer
+reports zero messages across 84 MATLAB files. Visible success produces three
+figures; expected failure produces two diagnostic figures. The two rogue
+horizon replays validate at 88.2939404925 and 88.2939359679 seconds, a
+4.525-microsecond difference. The HS3 package contains exactly 2,000 nonblank,
+noncomment MATLAB lines, at the hard cap.
+
+Remaining arrival gaps against the same 325 matrix are wide U
++1.2057231120 seconds, forty moving circles +0.8393466878 seconds, and extreme
+U.S. +0.3610623598 seconds. Moving/deforming U.S. remains 0.3892445513 seconds
+earlier but its final measured wall time is 55.917228 seconds versus
+18.2106663 seconds on 325. No global optimality, completeness, or uniform
+runtime claim is made.
+
+## Dynamic spatial quality pass — 2026-08-26
+
+The largest remaining arrival gap was localized to dynamic spatial mesh
+resolution rather than topology. Forty moving circles already used the same
+110.807922148-degree polyline as the 325 comparator, but the 10-segment HS3
+motion inflated to 126.23121736 degrees and arrived at 64.5557730468 seconds.
+Starting every seed at a finer mesh improved arrival but repaid the failed
+direct seed: 20 segments reached 61.2011842765 seconds in 23.9281868 seconds
+wall, and 30 reached 60.1588345587 seconds in 31.5052284 seconds wall.
+
+The retained rule instead refines only an already validated earliest-arrival
+spatial candidate whose sampled motion is inflated by more than one coarse
+mesh interval. Changing-obstacle spatial routes receive one 2x pass;
+fixed-arrival cases and causal timed topologies are excluded. The authoritative
+default run reaches the same 20-segment, 61.2011842765-second motion in
+18.6109941 seconds wall. Relative to the preceding worktree row, arrival
+improves by 3.3545887703 seconds for 2.1703734 seconds additional wall. The
+like-for-like `da52da8+quintic-root-recovery-worktree` 325 gap falls from
+4.1939354581 to 0.8393466878 seconds. The 30-segment probe is 0.20300303
+seconds earlier than 325 but costs 12.8942343 seconds more wall than the
+retained 20-segment result, so it was rejected as the default.
+
+Structurally different controls preserve scope. Moving circle has only 6.4%
+motion inflation, stays at 10 segments with zero quality passes, and retains
+its 8.64603156476-second arrival. The moving/deforming U.S. result remains a
+`timeExpandedVisibilityGraph` seed at 8.75061035156 seconds with zero mesh
+passes. Fixed-arrival accelerating circles retains its 22-second motion.
+Single dense translating ellipses and circles with timed-search suppression
+measured 5.2%, 8.7%, and 6.7% inflation and correctly did not trigger the pass.
+
+The final `7661321+dynamic-quality-worktree` matrix contains 18 fresh serial
+rows: 17 independently validated successes and the independently validated
+expected `noValidatedSeed` result. Tests pass 82/82 in 50.3745157 seconds.
+Code Analyzer reports zero messages across 84 MATLAB files. Visible success
+produces three figures and 526 objects; expected failure produces two figures
+and 341 objects with 15 rejected transitions and 9 retained rejected edges.
+The HS3 package contains 1,999 nonblank, noncomment MATLAB lines, one below the
+hard cap.
+
+Remaining arrival gaps against the same 325 matrix are now wide U
++1.205723112 seconds, forty moving circles +0.8393466878 seconds, two opposing
+U obstacles +0.7641466498 seconds, and extreme U.S. +0.36106235982 seconds.
+Moving/deforming U.S. remains 0.3892445513 seconds earlier but 31.5077561
+seconds slower wall. No global optimality, completeness, or uniform runtime
+claim is made.
+
+## Ordered-boundary and route-quality Pareto — 2026-08-26
+
+The largest new quality gain is shortest-route-first static proposal ordering.
+The extreme U.S. sequence previously attempted a 22.3733117302-degree,
+five-point route first because waypoint count inflated the ordering score; the
+shorter 22.2394635087-degree, seven-point route was never attempted. Per-seed
+work is already budgeted, so earliest-arrival ordering now uses geometric
+length alone. The final three-region example selects the shorter Philippines
+route and independently validates at 6.3679977362 seconds with a
+24.6064786878-degree sampled motion and 20 segments. This improves the prior
+worktree arrival by 1.85831341561 seconds and reduces the like-for-like
+`da52da8+quintic-root-recovery-worktree` gap on `325-full-suite` to
+0.36106235982 seconds. Its authoritative final wall time is 64.0234264 seconds,
+4.5955795 seconds slower than the preceding worktree row and far slower than
+the 9.8415693-second 325 row, so this is not presented as a uniform runtime
+gain.
+
+Static quality refinement remains one bounded pass. Motions inflated by more
+than one coarse mesh interval receive 2x segments; only severe inflation above
+2.5 intervals receives 3x. The wide-U coarse motion measures 2.586 intervals
+of inflation and therefore preserves its 30-segment, 23.0384586542-second
+validated result. Extreme U stays at 20 segments. The rogue horizon pair also
+uses 20 segments: the 180-second request validates at 88.2939404925 seconds in
+6.9218305 seconds wall, and the 360-second request validates at
+88.2939359679 seconds in 7.5901807 seconds wall, a 4.52-microsecond horizon
+difference. This deliberately gives back about 1.144 seconds versus the
+30-segment rogue result while cutting refinement work; it remains 2.725 seconds
+earlier than the coarse result and fully resolves the original horizon failure.
+
+Moving-obstacle corridor construction no longer rebuilds a `polyshape` merely
+to recover orientation and convexity from a canonical ordered single-region
+boundary. `shapeAtTime` reports those properties directly from the ordered
+vertices; multi-region and degenerate boundaries retain the existing
+`polyshape` fallback. A focused convex, concave, and multi-region regression
+freezes equivalence. Forty moving circles keeps the identical
+64.5557730468-second motion while wall time falls from 20.6046246 to
+16.4406207 seconds. Moving circle falls from 10.3724330 to 9.4004092 seconds,
+four accelerating circles from 28.6209839 to 25.5803952 seconds, and the
+moving/deforming U.S. example from 52.9070181 to 49.4045848 seconds, with all
+physical metrics and certificates unchanged.
+
+The authoritative final matrix under
+`7661321+geometry-fastpath-worktree` contains 18 serial fresh-process rows:
+17 independently validated successes and the independently validated expected
+`noValidatedSeed` failure. The repository suite passes 82/82 in
+49.6429588 seconds. Code Analyzer reports zero messages across 84 MATLAB files.
+Visible success produces three figures and 526 objects; expected failure
+produces two figures and 341 objects with 15 rejected transitions and 9
+retained rejected edges. The HS3 package contains 1,998 nonblank, noncomment
+MATLAB lines, two below its hard cap.
+
+Remaining arrival gaps against the like-for-like 325 matrix are explicit:
+forty moving circles +4.1939354581 seconds, wide U +1.205723112 seconds, two
+opposing U obstacles +0.7641466498 seconds, and extreme U.S. visibility
++0.36106235982 seconds. Moving/deforming U.S. remains 0.3892445513 seconds
+earlier than its 325 row but 31.1939185 seconds slower wall. No global
+optimality, completeness, or uniform runtime claim is made.
+
+## Static quality and time-expanded retiming — 2026-08-26
+
+The largest current arrival gain is on the maintained moving/deforming U.S.
+case. The causal time-expanded topology previously validated at
+30.1605224609 seconds. One bounded alternative now removes zero-length waits,
+distributes that same input-derived topology by arc length, solves it at a
+physical-duration target, and retains it only after the ordinary independent
+validator passes. The final serial run selects that time-expanded seed at
+8.75061035156 seconds, with a 41.5785140688-degree polyline, a
+40.7424283094-degree sampled motion, passing collision and kinematic
+certificates, and 52.9070181 seconds wall. This is 21.4099121093 seconds
+earlier than the immediately preceding worktree result. It is about
+0.3892445513 seconds earlier than the like-for-like
+`da52da8+quintic-root-recovery-worktree` row on `325-full-suite`, while wall
+time is 34.6963518 seconds slower. The earlier commit-only comparator predates
+the extreme 25-slice deformation, so comparisons here use the later recorded
+branch matrix rather than infer parity from that older source state.
+
+The alternative retiming is limited by seed semantics, not an example name.
+Only `timeExpandedVisibilityGraph` seeds are eligible. A `directWait` seed's
+repeated point is its causal law and remains on the absolute-time bisection
+path. An intermediate broad implementation exposed this distinction:
+opening-U selected a physically valid direct-visibility motion that failed the
+example's required waiting demonstration. After the semantic restriction,
+opening-U reproducibly returns the direct-wait seed at 11.8560791016 seconds
+in 13.0011819 seconds wall, and moving barrier returns the direct-wait seed at
+10.2314453125 seconds in 12.4091501 seconds wall. Both independently validate.
+
+Static spatial candidates now receive at most one 3x mesh-quality pass when
+their sampled motion-length inflation exceeds one coarse mesh interval. The
+saved rogue detour improves from the horizon-invariant 91.0189-second result
+to 87.1503426168 seconds at a 180-second horizon and 87.1503401418 seconds at
+360 seconds. Both select seed 2, use 30 segments, and pass independent
+collision and kinematic validation; the horizon difference is about
+2.5 microseconds. The historical saved 86.5088536619-second, 40-segment
+trajectory also passes today's validator, so the remaining roughly
+0.6415-second local-quality gap stays visible. A nonfinite free-time duration
+probe is now mapped to a finite bound, and a nonfinite arrival objective is
+given a finite rejection value, which recovers feasible high-resolution
+iterates without accepting them unless independent validation passes.
+
+The authoritative post-fix matrix ran all 18 maintained examples serially in
+fresh MATLAB processes. Seventeen are independently validated successes and
+the expected no-path case is an independently validated `noValidatedSeed`
+failure. Exact rows are appended to `benchmark.csv` under
+`7661321+timed-retiming-worktree`. The complete repository test suite passes
+81/81 in 52.4952677 seconds. Code Analyzer reports zero messages across all 84
+MATLAB files, and `git diff --check` reports no whitespace errors beyond
+line-ending notices. A visible success creates three figures and 526 graphics
+objects. The expected failure creates two diagnostic figures, reports 15
+rejected transitions, and retains 9 rejected edges for plotting. The HS3
+package contains exactly 2,000 nonblank, noncomment MATLAB lines, so it passes
+but has no remaining size headroom.
+
+Unfavorable arrival gaps remain against the
+`da52da8+quintic-root-recovery-worktree` matrix on `325-full-suite`: forty
+moving circles is 4.1939354581 seconds later, extreme U.S. visibility is
+2.21937577543 seconds later, the wide U is 1.205723112 seconds later, and two
+opposing U obstacles is 0.7641466498 seconds later. Those rows are not hidden
+or reclassified. The moving/deforming U.S. example still spends roughly
+19 seconds in repeated protected-polygon construction (`polybuffer` dominates)
+and remains about 53 seconds wall even after the arrival repair. No global
+optimality, completeness, or uniform runtime claim is made.
+
+## Timed-arrival and exhaustive-failure repair — 2026-08-26
+
+The largest newly measured correctness gain is horizon invariance for a saved
+static detour. A prior edit reused the independent-axis velocity lower bound as
+the HS3 warm-start duration. On identical geometry this made the 180-second
+request lose its best topology and arrive at 98.7494014538 seconds, while the
+360-second request arrived at 88.29393436 seconds. Reachability and incumbent
+pruning now use only the physical per-axis bound; solver initialization uses a
+conservative route-length estimate clamped to the available horizon. Fresh
+serial replays select the same seed and arrive at 91.0188996291 and
+91.0189002025 seconds respectively, a 5.734e-7-second numerical difference.
+Both pass independent collision and kinematic validation. This repair is
+input-driven and has a structurally different tall-detour regression; it does
+not claim global optimality. The consistent 91.019-second result is still
+2.724965 seconds later than the pre-repair 360-second worktree run and
+4.510050 seconds later than the saved historical result, so arrival quality on
+this topology remains an explicit weakness.
+
+All four supplied rogue bundles now replay as independently validated
+successes. The unobstructed and concurrent-axis cases retain arrivals of
+57.5394882088 and 57.5394875671 seconds. The full repository suite passes
+79/79 in 51.045611 seconds, and Code Analyzer reports zero messages across all
+84 MATLAB files. Fresh maintained static, moving, and expected-no-path controls
+preserve their prior physical metrics. The complete 18-example matrix remains
+untested in this worktree, so no uniform suite-runtime claim is made.
+
+The current worktree preserves timed obstacle events while searching earlier
+fixed-time HS3 feasibility with exact QPs. Opening-U improved from 15 seconds
+and 57.61 seconds wall to 11.8560791016 seconds and 12.9626115 seconds wall.
+Moving barrier improved from 10.5 seconds and 25.18 seconds wall to
+10.2314453125 seconds and 12.6557865 seconds wall. Both pass independent
+collision and kinematic validation. Against commit `67bc087` on
+`325-full-suite`, opening-U remains 0.122795 seconds later and 1.20 times
+slower, while moving barrier remains 0.016544 seconds later and 1.75 times
+slower. Those unfavorable gaps remain open.
+
+An exact, exhaustive, untruncated static visibility failure now skips HS3
+instead of refining an impossible direct topology. The maintained no-path
+example retains `noValidatedSeed`, complete search diagnostics, and independent
+failure validation while improving from 53.8261095 seconds to 1.3769188
+seconds wall. Reduced or dynamic graphs do not use this certificate.
+
+The earlier full repository suite passed 78/78 in 44.1178 seconds. A visible successful
+example created three figures and 527 graphics objects; the expected no-path
+case created two diagnostic figures with 15 rejected transitions. Basic static
+planning remains 7.57952069664 seconds and moving circle preserves its earlier
+8.64603156476 seconds arrival, but moving-circle wall time is 10.7064233
+seconds versus the edited pre-repair 9.0140762 seconds. A complete 18-example
+final-source matrix has not been rerun because the user stopped that comparison
+after the focused regressions were identified. The HS3 package contains 1,927
+nonblank, noncomment MATLAB lines, below its 2,000-line ownership cap.
+
 ## Sandbox export recovery — 2026-08-25
 
 Diagnosis export no longer depends exclusively on the save-dialog callback.

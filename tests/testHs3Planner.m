@@ -251,7 +251,7 @@ verifyEqual(testCase, result.velocity_deg_s(end, :), ...
 verifyHs3Solved(testCase, result, "linearFixedTime");
 end
 function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
-% Verify the exact gradient includes both jerk and final-time decisions.
+% Verify the exact variable-time gradient and fixed-time Hessian.
 segmentCount = 3;
 decision = [linspace(-1, 1, 2 * (2 * segmentCount + 1)).'; 8];
 direction = cos((1:numel(decision)).');
@@ -264,6 +264,25 @@ backward = azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
     decision - step * direction, true, 8, segmentCount, 1);
 verifyEqual(testCase, gradient.' * direction, ...
     (forward - backward) / (2 * step), "RelTol", 1e-8);
+
+fixedDecision = decision(1:end - 1);
+fixedDirection = direction(1:end - 1);
+[fixedValue, fixedGradient, fixedHessian] = ...
+    azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
+    fixedDecision, false, 8, segmentCount, 1);
+[~, forwardGradient] = ...
+    azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
+    fixedDecision + step * fixedDirection, false, 8, segmentCount, 1);
+[~, backwardGradient] = ...
+    azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
+    fixedDecision - step * fixedDirection, false, 8, segmentCount, 1);
+verifyEqual(testCase, fixedValue, ...
+    0.5 * fixedDecision.' * fixedHessian * fixedDecision, ...
+    "AbsTol", 1e-12);
+verifyEqual(testCase, fixedGradient, fixedHessian * fixedDecision, ...
+    "AbsTol", 1e-12);
+verifyEqual(testCase, (forwardGradient - backwardGradient) / (2 * step), ...
+    fixedHessian * fixedDirection, "RelTol", 1e-8);
 end
 function testEarliestArrivalIsInsideHorizon(testCase)
 % Verify the two-stage earliest-arrival solve and independent validation.
@@ -374,6 +393,68 @@ verifyEqual(testCase, size(unique( ...
 verifyGreaterThanOrEqual(testCase, ...
     sum([seeds.Source] == "visibilityGraph"), 2);
 verifyFalse(testCase, diagnostics.HomologySearchTruncated);
+end
+function testDetourWarmStartDoesNotDefineReachability(testCase)
+% Keep a reachable multi-axis detour when its conservative warm start is long.
+obstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
+    [0 20], [-1 1 -4 4], 0.1);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-6 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    20, [6 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = fixedOptions();
+options.DirectSeedOnly = false;
+options.MaximumSeedCount = 3;
+[longHorizonSeeds, ~] = azElInternal.generateTopologySeeds( ...
+    obstacle, initialState, goalState, limits, options);
+longDetourSeeds = longHorizonSeeds( ...
+    [longHorizonSeeds.Source] == "visibilityGraph");
+verifyNotEmpty(testCase, longDetourSeeds);
+route_deg = longDetourSeeds(1).position_deg;
+axisTravel_deg = sum(abs(diff(route_deg, 1, 1)), 1);
+minimumDuration_s = max(axisTravel_deg ./ limits.maxVelocity_deg_s);
+warmDuration_s = longDetourSeeds(1).EstimatedDuration_s;
+verifyGreaterThan(testCase, warmDuration_s, ...
+    minimumDuration_s);
+
+shortHorizon_s = 0.5 * (minimumDuration_s + warmDuration_s);
+shortGoalState = goalState;
+shortGoalState.time_s = shortHorizon_s;
+[shortHorizonSeeds, ~] = azElInternal.generateTopologySeeds( ...
+    obstacle, initialState, shortGoalState, limits, options);
+shortDetourSeeds = shortHorizonSeeds( ...
+    [shortHorizonSeeds.Source] == "visibilityGraph");
+verifyNotEmpty(testCase, shortDetourSeeds);
+verifyEqual(testCase, shortDetourSeeds(1).EstimatedDuration_s, ...
+    shortHorizon_s, ...
+    "AbsTol", 1e-12);
+end
+function testStaticLengthInflationTriggersOneQualityMeshPass(testCase)
+% Verify a coarse valid motion receives one bounded, independently kept pass.
+circleAngle_rad = (0:47).' * (2 * pi / 48);
+obstacle = makeAzElObstacleData( ...
+    "neutral circle", [0; 360], ...
+    20 * cos(circleAngle_rad), 20 * sin(circleAngle_rad), 0.2);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-50 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    360, [100 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [0.75 0.75], [2.5 2.5]);
+options = planAzElMotion("hs3");
+options.MaximumSeedCount = 3;
+options.MaximumPlanningTime_s = 30;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, ...
+    result.Validation.Message);
+verifyEqual(testCase, result.Polynomial.SegmentCount, 20);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.MeshRefinementPassCount, 1);
+verifyLessThan(testCase, result.ArrivalTime_s, 82);
 end
 function testMovingObstacleUsesTrajectoryTime(testCase)
 % Verify that the same point changes occupancy as protected geometry moves.
@@ -681,6 +762,29 @@ surfaceHandles = findobj(handles.VisibilityAxes, "Type", "surface");
 if ~isempty(surfaceHandles)
     verifyTrue(testCase, isnumeric(surfaceHandles(1).EdgeColor));
 end
+end
+
+function testExactStaticNoPathSkipsMotionSolve(testCase)
+% Verify an exact exhaustive topology failure does not enter HS3.
+wall = makeAzElObstacleData( ...
+    "full-height wall", [0; 12], [-0.5; 0.5; 0.5; -0.5], ...
+    [-90; -90; 90; 90], 0);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-5 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    12, [5 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+limits.elevationInterval_deg = [-10 10];
+options = fixedOptions();
+options.MaximumSeedCount = 3;
+options.DirectSeedOnly = false;
+result = planAzElMotion(wall, initialState, goalState, limits, options);
+verifyFalse(testCase, result.Success);
+verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.StaticNoPathCertified);
+verifyEqual(testCase, result.SearchDiagnostics.AttemptedSeedCount, 0);
 end
 function testMovingTargetUsesSamePlanner(testCase)
 % Verify the intercept wrapper only adapts target inputs to planAzElMotion.

@@ -37,7 +37,10 @@ if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * azimuthTurns;
 end
 availableDuration_s = goalState.time_s - initialState.time_s;
-directDuration_s = min(availableDuration_s, max(1e-3, norm(goal_deg - start_deg) / max(limits.maxVelocity_deg_s)));
+directRoute_deg = [start_deg; goal_deg];
+directDuration_s = min(availableDuration_s, max( ...
+    routeDurationBound(directRoute_deg, limits), ...
+    norm(goal_deg - start_deg) / max(limits.maxVelocity_deg_s)));
 seedTemplate = struct( ...
     "Index", 0, "Source", "", "position_deg", zeros(0, 2), ...
     "tau", zeros(0, 1), "CorridorBoundary_deg", zeros(0, 2), ...
@@ -211,9 +214,15 @@ for classIndex = 1:numel(nodePaths)
     route_deg = nodePosition_deg(nodePaths{classIndex}, :);
     % Keep the visibility route only when it adds spatial diversity beyond existing seeds.
     if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
-        seed = createSpatialSeed(spatialSeedTemplate, numel(seeds) + 1, ...
-            route_deg, directDuration_s, availableDuration_s, limits);
-        seeds(end + 1, 1) = seed; %#ok<AGROW>
+        [seed, isReachable] = createSpatialSeed(spatialSeedTemplate, ...
+            numel(seeds) + 1, route_deg, directDuration_s, ...
+            availableDuration_s, limits);
+
+        % Propose only routes the axes can actually traverse before the goal
+        % time; an unreachable one would consume budget to prove the obvious.
+        if isReachable
+            seeds(end + 1, 1) = seed; %#ok<AGROW>
+        end
     end
 end
 for timedSeedIndex = 1:numel(timedRoutes_deg)
@@ -633,15 +642,26 @@ diagnostics.MotionEdgeCount = diagnostics.MotionEdgeCount + record.MotionEdgeCou
 diagnostics = appendSearchRecord(diagnostics, record);
 end
 
-function seed = createSpatialSeed( seedTemplate, seedIndex, route_deg, directDuration_s, availableDuration_s, limits)
-% Assemble one spatial visibility route with a length-based time law.
+function [seed, isReachable] = createSpatialSeed(seedTemplate, seedIndex, ...
+        route_deg, directDuration_s, availableDuration_s, limits)
+% Keep physical reachability separate from the conservative solver time law.
 seed = seedTemplate;
 seed.Index = seedIndex;
 seed.Source = "visibilityGraph";
 seed.position_deg = route_deg;
 [seed.tau, seed.Length_deg] = routeTau(route_deg);
+
+minimumDuration_s = routeDurationBound(route_deg, limits);
+isReachable = minimumDuration_s <= availableDuration_s;
+lengthWarmStart_s = seed.Length_deg / max(limits.maxVelocity_deg_s);
 seed.EstimatedDuration_s = min(availableDuration_s, max( ...
-    directDuration_s, seed.Length_deg / max(limits.maxVelocity_deg_s)));
+    [directDuration_s, minimumDuration_s, lengthWarmStart_s]));
+end
+
+function duration_s = routeDurationBound(route_deg, limits)
+% Bound traversal per axis because the velocity limits are independent boxes.
+axisTravel_deg = sum(abs(diff(route_deg, 1, 1)), 1);
+duration_s = max([1e-3, axisTravel_deg ./ limits.maxVelocity_deg_s]);
 end
 
 function changing = obstacleHistoryChanges(obstacles, startTime_s, endTime_s)

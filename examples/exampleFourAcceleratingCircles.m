@@ -179,6 +179,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleFourAcceleratingCircles";
 result.ExampleValidation = exampleValidation;
 result.CircleMotionValidation = circleMotionValidation;
 result.MovingTargetValidation = movingTargetValidation;

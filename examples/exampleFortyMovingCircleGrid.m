@@ -138,6 +138,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleFortyMovingCircleGrid";
 result.ExampleValidation = exampleValidation;
 result.GridValidation = gridValidation;
 result.ExampleConfiguration = jerkConfiguration;

@@ -83,6 +83,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleInterceptMovingTargetAtSetTime";
 result.ExampleValidation = exampleValidation;
 result.obstacles = obstacles;
 result.ExampleConfiguration = jerkConfiguration;

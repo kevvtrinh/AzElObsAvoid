@@ -1,4 +1,4 @@
-function [value, gradient] = integratedSquaredHs3Jerk( ...
+function [value, gradient, hessian] = integratedSquaredHs3Jerk( ...
         decision, isEarliestArrival, fixedFinalTime_s, ...
         segmentCount, startTime_s)
 %% Section 0: Header & Readme
@@ -9,6 +9,9 @@ function [value, gradient] = integratedSquaredHs3Jerk( ...
 %   [value, gradient] = azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
 %       decision, isEarliestArrival, fixedFinalTime_s, ...
 %       segmentCount, startTime_s)
+%   [value, gradient, hessian] = ...
+%       azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
+%       decision, false, fixedFinalTime_s, segmentCount, startTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Integrate squared quadratic HS3 jerk and its exact decision gradient.
@@ -24,6 +27,9 @@ function [value, gradient] = integratedSquaredHs3Jerk( ...
 %   - value (nonnegative scalar)
 %   - gradient (numeric column)
 %       Exact gradient with respect to every supplied decision value.
+%   - hessian (numeric square matrix)
+%       Constant fixed-time jerk Hessian. Requesting it for an earliest-
+%       arrival decision is unsupported because duration then varies.
 %**************************************************************************
 % UNITS
 %   - Value is deg^2/s^5; gradients are deg/s^2 or deg^2/s^6 for time.
@@ -74,4 +80,24 @@ gradient = gradientJerk(:);
 if isEarliestArrival
     gradient(end + 1, 1) = value / (finalTime_s - startTime_s);
 end
+
+if nargout < 3
+    return;
+end
+if isEarliestArrival
+    error("integratedSquaredHs3Jerk:VariableTimeHessian", ...
+        "The constant Hessian is available only for fixed arrival time.");
+end
+
+% Assemble one exact positive-definite quadratic block per axis. Adjacent
+% segments share endpoint jerk ordinates, so their local blocks accumulate.
+axisHessian = zeros(controlCount);
+localHessian = segmentDuration_s / 30 * [ ...
+    8 4 -2; 4 32 4; -2 4 8];
+for segmentIndex = 1:segmentCount
+    controlIndex = 2 * segmentIndex - 1:2 * segmentIndex + 1;
+    axisHessian(controlIndex, controlIndex) = ...
+        axisHessian(controlIndex, controlIndex) + localHessian;
+end
+hessian = blkdiag(axisHessian, axisHessian);
 end

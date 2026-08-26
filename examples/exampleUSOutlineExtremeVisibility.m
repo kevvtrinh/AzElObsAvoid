@@ -119,6 +119,7 @@ end
 %% Section 7: Return Example Metadata
 
 result = regionResults{end};
+result.ExampleName = "exampleUSOutlineExtremeVisibility";
 regionSequencePassed = all(regionPassed);
 result.RegionSequenceResults = regionResults;
 result.RegionSequenceSummary = table( ...

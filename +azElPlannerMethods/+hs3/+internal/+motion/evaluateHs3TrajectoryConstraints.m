@@ -44,10 +44,20 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 
 %% Section 1: Evaluate Values And Exact Jerk Columns
 
+% Interior-point restoration can probe a nonfinite duration after reaching a
+% finite feasible iterate. Map only that observed invalid probe to its bound.
+if isEarliestArrival && ~isfinite(decision(end))
+    if isnan(decision(end))
+        decision(end) = mean([minimumFinalTime_s, maximumFinalTime_s]);
+    else
+        timeBounds_s = [minimumFinalTime_s, maximumFinalTime_s];
+        decision(end) = timeBounds_s(1 + (decision(end) > 0));
+    end
+end
 [inequality, equality, corridorNormal, finalTime_s] = constraintValues( ...
     decision, isEarliestArrival, fixedFinalTime_s, segmentCount, ...
     initialState, goalState, limits, options, obstacles, corridor, ...
-    corridorTau, seedCorridor, reconstructFunction);
+    seedCorridor, reconstructFunction);
 if nargout < 3
     return;
 end
@@ -72,7 +82,7 @@ trialDecision(end) = finalTime_s + differenceDirection * differenceStep_s;
 [trialInequality, trialEquality] = constraintValues( ...
     trialDecision, true, fixedFinalTime_s, segmentCount, ...
     initialState, goalState, limits, options, obstacles, corridor, ...
-    corridorTau, seedCorridor, reconstructFunction);
+    seedCorridor, reconstructFunction);
 if numel(trialInequality) ~= numel(inequality) || ...
         numel(trialEquality) ~= numel(equality)
     error("evaluateHs3TrajectoryConstraints:ConstraintLengthChanged", ...
@@ -92,7 +102,7 @@ end
 function [inequality, equality, corridorNormal, finalTime_s] = ...
         constraintValues(decision, isEarliestArrival, fixedFinalTime_s, ...
         segmentCount, initialState, goalState, limits, options, obstacles, ...
-        corridor, corridorTau, seedCorridor, reconstructFunction)
+        corridor, seedCorridor, reconstructFunction)
 % Evaluate raw values without recursively requesting derivatives.
 controlCount = 2 * segmentCount + 1;
 jerkValueCount = 2 * controlCount;
@@ -102,12 +112,8 @@ if isEarliestArrival
     finalTime_s = decision(end);
 end
 polynomial = reconstructFunction(jerk_deg_s3, finalTime_s);
-controlTime_s = initialState.time_s + ...
-    corridorTau * (finalTime_s - initialState.time_s);
-[~, controlPosition_deg] = azElInternal.evaluatePolynomial( ...
-    polynomial, controlTime_s);
 [corridorInequality, corridorNormal] = corridorConstraints( ...
-    corridor, obstacles, controlTime_s, controlPosition_deg);
+    corridor, obstacles, polynomial, initialState.time_s, finalTime_s);
 inequality = [continuousBoundConstraints(polynomial, limits, options); ...
     azElInternal.seedCorridorInequality(polynomial, seedCorridor); ...
     corridorInequality];
@@ -219,22 +225,45 @@ violations = [bernstein - reshape(upperBound, 1, 2, 1); ...
 end
 
 function [inequality, normalByAssociation] = corridorConstraints( ...
-        corridor, obstacles, controlTime_s, controlPosition_deg)
-% Evaluate each frozen association and retain its current jerk-space normal.
-inequality = zeros(numel(corridor), 1);
-normalByAssociation = zeros(numel(corridor), 2);
-for associationIndex = 1:numel(corridor)
+        corridor, obstacles, polynomial, startTime_s, finalTime_s)
+% Bound each frozen association across the whole sub-interval it owns and
+% retain its current jerk-space normal.
+coefficientCount = size(polynomial.positionPower_deg, 3);
+recordCount = numel(corridor);
+normalByAssociation = zeros(recordCount, 2);
+if recordCount == 0
+    inequality = zeros(0, 1);
+    return;
+end
+useIntervalHull = [corridor.UseIntervalHull].';
+rowCount = sum(1 + (coefficientCount - 1) * useIntervalHull);
+inequality = zeros(rowCount, 1);
+
+% Stationary geometry can constrain a complete Bernstein hull. Changing
+% geometry remains tied to its ordered association time and is certified by
+% the independent adaptive collision validator after each solve.
+effectiveTauEnd = [corridor.TauEnd];
+effectiveTauEnd(~useIntervalHull.') = [corridor(~useIntervalHull).Tau];
+[segmentIndex, hullMap] = azElInternal.subintervalHullMap( ...
+    [corridor.Tau], effectiveTauEnd, polynomial.SegmentCount, ...
+    coefficientCount);
+duration_s = finalTime_s - startTime_s;
+nextRow = 1;
+for associationIndex = 1:recordCount
     association = corridor(associationIndex);
-    controlIndex = association.ControlIndex;
+    associationRowCount = 1 + ...
+        (coefficientCount - 1) * useIntervalHull(associationIndex);
+    hullRows = nextRow:nextRow + associationRowCount - 1;
+    nextRow = hullRows(end) + 1;
     if association.GeometryIsFixed
         outwardNormal = association.FixedNormal;
         boundaryOffset_deg = association.FixedBoundaryOffset_deg;
     else
         [~, geometry] = azElInternal.obstacles.shapeAtTime( ...
             obstacles(association.ObstacleIndex), ...
-            controlTime_s(controlIndex), true);
+            startTime_s + association.Tau * duration_s, true);
         if ~geometry.Active
-            inequality(associationIndex) = -1;
+            inequality(hullRows) = -1;
             continue;
         end
         finiteVertices = isfinite(geometry.azimuth_deg) & ...
@@ -247,13 +276,13 @@ for associationIndex = 1:numel(corridor)
         else
             [edgeStart_deg, edgeEnd_deg] = geometryEdges(geometry);
             if association.EdgeIndex > size(edgeStart_deg, 1)
-                inequality(associationIndex) = 1e3;
+                inequality(hullRows) = 1e3;
                 continue;
             end
             edgeDelta_deg = edgeEnd_deg(association.EdgeIndex, :) - ...
                 edgeStart_deg(association.EdgeIndex, :);
             if norm(edgeDelta_deg) <= eps
-                inequality(associationIndex) = 1e3;
+                inequality(hullRows) = 1e3;
                 continue;
             end
             leftNormal = [-edgeDelta_deg(2), edgeDelta_deg(1)] / ...
@@ -264,9 +293,14 @@ for associationIndex = 1:numel(corridor)
         end
     end
     normalByAssociation(associationIndex, :) = outwardNormal;
-    pointProjection_deg = controlPosition_deg(controlIndex, :) * outwardNormal.';
-    inequality(associationIndex) = boundaryOffset_deg + ...
-        association.Clearance_deg - pointProjection_deg;
+    segmentPower_deg = reshape( ...
+        polynomial.positionPower_deg(segmentIndex(associationIndex), :, :), ...
+        2, coefficientCount);
+    projectionHull_deg = hullMap(:, :, associationIndex) * ...
+        (outwardNormal * segmentPower_deg).';
+    inequality(hullRows) = boundaryOffset_deg + ...
+        association.Clearance_deg - ...
+        projectionHull_deg(1:associationRowCount);
 end
 end
 

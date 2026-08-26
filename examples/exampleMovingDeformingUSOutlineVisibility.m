@@ -142,6 +142,7 @@ end
 
 %% Section 7: Return Example Metadata
 
+result.ExampleName = "exampleMovingDeformingUSOutlineVisibility";
 result.ExampleValidation = exampleValidation;
 result.USHistoryValidation = uSHistoryValidation;
 result.SunMotionValidation = sunMotionValidation;

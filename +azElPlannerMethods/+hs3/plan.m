@@ -56,23 +56,46 @@ candidates = cell(numel(seeds), 1);
 % Prefer a direct route only when the conservative swept-geometry graph
 % certified its endpoint edge. Otherwise try input-derived detours first and
 % retain direct proposals for dynamic cases where timing may make them viable.
-routePointCount = arrayfun(@(seed) size(seed.position_deg, 1), seeds).';
-detourIndices = find(routePointCount > 2);
-directIndices = find(routePointCount <= 2);
+routePointCount = reshape(arrayfun(@(seed) size(seed.position_deg, 1), seeds), [], 1);
+isTimedTopology = any(string({seeds.Source}).' == ["directWait", "timeExpandedVisibilityGraph"], 2);
+timedIndices = find(isTimedTopology);
+detourIndices = find(routePointCount > 2 & ~isTimedTopology);
+directIndices = find(routePointCount <= 2 & ~isTimedTopology);
 if numel(detourIndices) > 1
-    topologyEffort = arrayfun(@(seed) seed.EstimatedDuration_s * ...
-        sqrt(size(seed.position_deg, 1) - 1), seeds(detourIndices));
+    % Earliest-arrival work starts with the shortest geometric proposal.
+    % Per-seed work budgets already account for route complexity.
+    topologyEffort = [seeds(detourIndices).Length_deg];
     [~, effortOrder] = sort(topologyEffort, "ascend");
     detourIndices = detourIndices(effortOrder);
 end
 if conservativeDirectEdgeAccepted(gridDiagnostics)
-    seedOrder = [directIndices(:); detourIndices(:)];
+    spatialOrder = [directIndices(:); detourIndices(:)];
 else
-    seedOrder = [detourIndices(:); directIndices(:)];
+    spatialOrder = [detourIndices(:); directIndices(:)];
+end
+hasChangingObstacles = obstacleHistoryChanges(obstacles, initialState.time_s, goalState.time_s);
+exactSpatialGraphUsed = gridDiagnostics.Coverage.ExactSpatialProposalUsed && ...
+    gridDiagnostics.ExhaustiveVisibilityUsed;
+staticNoPathCertified = ~hasChangingObstacles && exactSpatialGraphUsed && ...
+    ~gridDiagnostics.HomologySearchTruncated && isempty(detourIndices) && ...
+    ~conservativeDirectEdgeAccepted(gridDiagnostics);
+gridDiagnostics.StaticNoPathCertified = staticNoPathCertified;
+result.SearchDiagnostics.Grid = gridDiagnostics;
+if hasChangingObstacles
+    % Temporal search proposals already carry a causal obstacle-time law.
+    % Exercise that information before free-time spatial local minima.
+    seedOrder = [timedIndices(:); spatialOrder(:)];
+else
+    seedOrder = spatialOrder;
+end
+if staticNoPathCertified
+    % A topology-preserving motion solve cannot repair an exact static graph
+    % that exhausted every route and rejected its only direct edge.
+    seedOrder = zeros(0, 1);
 end
 firstValidatedMotionTime_s = NaN;
-stopAtFirstValidatedMotion = ~obstacleHistoryChanges( ...
-    obstacles, initialState.time_s, goalState.time_s);
+stopAtFirstValidatedMotion = ~hasChangingObstacles;
+bestValidatedFinalTime_s = Inf;
 
 %% Section 3: Solve, Validate, And Boundedly Repair HS3 Motions
 
@@ -82,8 +105,33 @@ for orderIndex = 1:numel(seedOrder)
     end
     seedIndex = seedOrder(orderIndex);
     originalSeed = seeds(seedIndex);
+    axisTravel_deg = sum(abs(diff( ...
+        originalSeed.position_deg, 1, 1)), 1);
+    velocityDurationBound_s = max([1e-3, ...
+        axisTravel_deg ./ limits.maxVelocity_deg_s]);
+    spatialArrivalLowerBound_s = initialState.time_s + ...
+        velocityDurationBound_s;
+    isSpatialBoundDominated = ~isTimedTopology(seedIndex) && ...
+        spatialArrivalLowerBound_s >= bestValidatedFinalTime_s - ...
+        options.ArrivalTimeTolerance_s;
+    if isSpatialBoundDominated
+        seedSummaries(seedIndex).SeedIndex = seedIndex;
+        seedSummaries(seedIndex).SeedSource = originalSeed.Source;
+        seedSummaries(seedIndex).TerminationReason = ...
+            "arrivalBoundDominated";
+        seedSummaries(seedIndex).Message = ...
+            "A validated topology already meets this route's arrival bound.";
+        continue;
+    end
     trialSeed = originalSeed;
     solverGoalState = goalState;
+    if options.GoalTimeMode == "earliestArrival" && ...
+            ~isTimedTopology(seedIndex) && isfinite(bestValidatedFinalTime_s)
+        % A later solution cannot win candidate ranking. Tightening only the
+        % free-time horizon preserves every potentially earlier motion.
+        solverGoalState.time_s = min( ...
+            solverGoalState.time_s, bestValidatedFinalTime_s);
+    end
     seedGoalTimeMode = options.GoalTimeMode;
     if options.GoalTimeMode == "earliestArrival" && any( ...
             originalSeed.Source == ["directWait", ...
@@ -100,12 +148,20 @@ for orderIndex = 1:numel(seedOrder)
     meshRelinearizationCount = 0;
     meshRefinementCount = 0;
     validRelinearizationCount = 0;
+    spatialTimingTarget_s = NaN;
+    timedArrivalSearchActive = false;
+    timedInfeasibleTime_s = NaN;
+    timedFeasibleTime_s = NaN;
+    timedArrivalTrialCount = 0;
+    maximumTimedArrivalTrialCount = 14;
     validatedCandidate = [];
     finalCandidate = [];
-    remainingDetourCount = nnz(routePointCount( ...
-        seedOrder(orderIndex:end)) > 2);
+    previousSolve = struct("FinalTime_s", NaN, "MinimumClearance_deg", NaN);
+    % Reserve a bounded share for every retained candidate. Counting only
+    % multi-point detours lets one expensive solve starve a later timed or
+    % direct proposal whose distinct motion law may be the feasible answer.
     seedWorkBudget_s = remainingPlanningTime(options, planningTimer) / ...
-        max(1, remainingDetourCount);
+        (numel(seedOrder) - orderIndex + 1);
     seedTimer = tic;
     while remainingPlanningTime(options, planningTimer) > 0.1 && ...
             seedWorkBudget_s - toc(seedTimer) > 0.1
@@ -115,6 +171,15 @@ for orderIndex = 1:numel(seedOrder)
         solverOptions.GoalTimeMode = seedGoalTimeMode;
         solverOptions.CollocationSegmentCount = segmentCount;
         solverOptions.MaximumSolverTime_s = max(0.05, 0.70 * remaining_s);
+        if isfinite(bestValidatedFinalTime_s) && ...
+                ~options.DeterministicWorkBudget && ...
+                solverOptions.GoalTimeMode == "earliestArrival"
+            % Once feasibility exists, a later candidate is optional
+            % improvement work. Bound its nonlinear long tail while still
+            % giving measured fast improvements a full opportunity.
+            solverOptions.MaximumSolverTime_s = min( ...
+                solverOptions.MaximumSolverTime_s, 3);
+        end
         finalCandidate = ...
             azElPlannerMethods.hs3.internal.motion.solveHs3( ...
             obstacles, initialState, solverGoalState, limits, ...
@@ -135,7 +200,81 @@ for orderIndex = 1:numel(seedOrder)
             refinementTime_s = min( ...
                 remainingPlanningTime(options, planningTimer), ...
                 seedWorkBudget_s - toc(seedTimer));
-            if validRelinearizationCount < 1 && refinementTime_s > 0.1
+            relativeLengthExcess = coarseMotionLengthExcess(finalCandidate, originalSeed);
+            % A 25% derivative reserve distinguishes velocity-dominated
+            % coarse timing from motions already pressing higher derivatives.
+            hasDerivativeSlack = all([ ...
+                finalCandidate.Validation.PeakAcceleration_deg_s2 ./ ...
+                limits.maxAcceleration_deg_s2, ...
+                finalCandidate.Validation.PeakJerk_deg_s3 ./ ...
+                limits.maxJerk_deg_s3] < 0.75);
+            useFixedQualitySearch = meshRefinementCount < 1 && ~hasChangingObstacles && ...
+                relativeLengthExcess > 2.5 / segmentCount;
+            if seedGoalTimeMode == "fixedArrival" && ...
+                    options.GoalTimeMode == "earliestArrival"
+                if ~timedArrivalSearchActive
+                    timedInfeasibleTime_s = initialState.time_s + velocityDurationBound_s;
+                    timedArrivalSearchActive = true;
+                end
+                timedFeasibleTime_s = min( ...
+                    timedFeasibleTime_s, finalCandidate.FinalTime_s, ...
+                    "omitmissing");
+                proposedSpatialTimingTarget_s = initialState.time_s + ...
+                    2 * velocityDurationBound_s;
+                hasSpatialTimingTrial = ~isfinite(spatialTimingTarget_s) && ...
+                    originalSeed.Source == "timeExpandedVisibilityGraph" && ...
+                    proposedSpatialTimingTarget_s < ...
+                    validatedCandidate.FinalTime_s - ...
+                    options.ArrivalTimeTolerance_s && ...
+                    refinementTime_s > 0.1;
+                if hasSpatialTimingTrial
+                    spatialTimingTarget_s = proposedSpatialTimingTarget_s;
+                    totalRelinearizationCount = totalRelinearizationCount + 1;
+                    solverGoalState.time_s = spatialTimingTarget_s;
+                    trialSeed = spatialTimingSeed(originalSeed);
+                    continue;
+                end
+                hasTimedTrial = timedArrivalTrialCount < ...
+                    maximumTimedArrivalTrialCount && refinementTime_s > 0.1 && ...
+                    timedFeasibleTime_s - timedInfeasibleTime_s > ...
+                    options.ArrivalTimeTolerance_s;
+                if hasTimedTrial
+                    timedArrivalTrialCount = timedArrivalTrialCount + 1;
+                    totalRelinearizationCount = totalRelinearizationCount + 1;
+                    solverGoalState.time_s = 0.5 * ...
+                        (timedInfeasibleTime_s + timedFeasibleTime_s);
+                    trialSeed = seedFromCandidate( ...
+                        finalCandidate, originalSeed, ...
+                        solverGoalState.time_s);
+                    continue;
+                end
+            elseif options.GoalTimeMode == "earliestArrival" && ...
+                    ~isTimedTopology(seedIndex) && ...
+                    meshRefinementCount < options.MaximumMeshRefinementPasses && ...
+                    ((validRelinearizationCount < 1 && ...
+                    relativeLengthExcess > 1 / segmentCount) || ...
+                    (validRelinearizationCount == 1 && hasDerivativeSlack) || ...
+                    useFixedQualitySearch) && ...
+                    refinementTime_s > 0.1
+                nextSegmentCount = min(options.MaximumCollocationSegmentCount, ...
+                    2 * segmentCount + useFixedQualitySearch * ...
+                    options.MaximumCollocationSegmentCount);
+                if nextSegmentCount > segmentCount
+                    meshRefinementCount = meshRefinementCount + 1;
+                    totalRelinearizationCount = totalRelinearizationCount + 1;
+                    segmentCount = nextSegmentCount;
+                    trialSeed = originalSeed;
+                    if validRelinearizationCount == 1
+                        trialSeed = seedFromCandidate(finalCandidate, originalSeed);
+                    end
+                    if useFixedQualitySearch
+                        seedGoalTimeMode = "fixedArrival";
+                        solverGoalState.time_s = finalCandidate.FinalTime_s;
+                    end
+                    validRelinearizationCount = 2;
+                    continue;
+                end
+            elseif validRelinearizationCount < 1 && refinementTime_s > 0.1
                 validRelinearizationCount = validRelinearizationCount + 1;
                 totalRelinearizationCount = totalRelinearizationCount + 1;
                 trialSeed = seedFromCandidate(finalCandidate, originalSeed);
@@ -145,15 +284,47 @@ for orderIndex = 1:numel(seedOrder)
             break;
         end
 
+        if timedArrivalSearchActive && ~isempty(validatedCandidate)
+            isSpatialTimingFailure = isfinite(spatialTimingTarget_s) && ...
+                matchesWithin(solverGoalState.time_s, ...
+                spatialTimingTarget_s, options.ArrivalTimeTolerance_s);
+            if ~isSpatialTimingFailure
+                timedInfeasibleTime_s = max( ...
+                    timedInfeasibleTime_s, solverGoalState.time_s);
+            end
+            remaining_s = min(remainingPlanningTime(options, planningTimer), ...
+                seedWorkBudget_s - toc(seedTimer));
+            hasTimedTrial = timedArrivalTrialCount < ...
+                maximumTimedArrivalTrialCount && remaining_s > 0.1 && ...
+                timedFeasibleTime_s - timedInfeasibleTime_s > ...
+                options.ArrivalTimeTolerance_s;
+            if hasTimedTrial
+                timedArrivalTrialCount = timedArrivalTrialCount + 1;
+                totalRelinearizationCount = totalRelinearizationCount + 1;
+                solverGoalState.time_s = 0.5 * ...
+                    (timedInfeasibleTime_s + timedFeasibleTime_s);
+                trialSeed = seedFromCandidate( ...
+                    validatedCandidate, originalSeed, ...
+                    solverGoalState.time_s);
+                continue;
+            end
+        end
         if ~isempty(validatedCandidate)
             finalCandidate = validatedCandidate;
             break;
         end
 
+        % Relinearizing around a motion that reproduced its predecessor only
+        % re-derives the same rejected answer, so refine the mesh instead.
+        repeatsPreviousSolve = reproducesSolve( ...
+            finalCandidate, previousSolve, options);
+        previousSolve.FinalTime_s = finalCandidate.FinalTime_s;
+        previousSolve.MinimumClearance_deg = ...
+            finalCandidate.Validation.MinimumClearance_deg;
         collisionOnly = ~isempty(finalCandidate.time_s) && ...
             ~finalCandidate.Validation.CollisionFree && ...
             finalCandidate.OptimizerFeasible;
-        if collisionOnly && meshRelinearizationCount < 2
+        if collisionOnly && ~repeatsPreviousSolve && meshRelinearizationCount < 2
             meshRelinearizationCount = meshRelinearizationCount + 1;
             totalRelinearizationCount = totalRelinearizationCount + 1;
             trialSeed = seedFromCandidate(finalCandidate, originalSeed);
@@ -179,7 +350,14 @@ for orderIndex = 1:numel(seedOrder)
     seedSummaries(seedIndex) = candidateSummary( ...
         finalCandidate, totalRelinearizationCount, meshRefinementCount, ...
         summaryTemplate);
-    if finalCandidate.Validation.Passed && stopAtFirstValidatedMotion
+    if finalCandidate.Validation.Passed
+        bestValidatedFinalTime_s = min( ...
+            bestValidatedFinalTime_s, finalCandidate.FinalTime_s);
+    end
+    % A motion pinned to the goal horizon is a fallback, not an earliest
+    % arrival, so keep proposing topologies while budget remains.
+    if finalCandidate.Validation.Passed && stopAtFirstValidatedMotion && ...
+            ~finalCandidate.ArrivalAtHorizon
         break;
     end
 end
@@ -188,17 +366,20 @@ end
 
 result.SeedSummaries = seedSummaries;
 result.SearchDiagnostics.SeedSummaries = seedSummaries;
-result.SearchDiagnostics.AttemptedSeedCount = nnz( ...
-    [seedSummaries.Hs3Attempted]);
-result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
-    firstValidatedMotionTime_s;
+result.SearchDiagnostics.AttemptedSeedCount = nnz([seedSummaries.Hs3Attempted]);
+result.SearchDiagnostics.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
 result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
 validatedIndices = find([seedSummaries.ValidationPassed]).';
 result.SearchDiagnostics.ValidatedCandidateCount = numel(validatedIndices);
-result.SearchDiagnostics.Hs3ElapsedTime_s = toc(planningTimer) - ...
-    stageTiming.TopologyElapsedTime_s;
+result.SearchDiagnostics.Hs3ElapsedTime_s = toc(planningTimer) - stageTiming.TopologyElapsedTime_s;
 if isempty(validatedIndices)
-    result.Message = "No attempted HS3 motion passed independent validation.";
+    if gridDiagnostics.StaticNoPathCertified
+        result.Message = "The exact static visibility graph exhausted all " + ...
+            "routes, so no topology-preserving HS3 solve was attempted.";
+    else
+        result.Message = ...
+            "No attempted HS3 motion passed independent validation.";
+    end
     result.TerminationReason = "noValidatedSeed";
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
     result.SearchDiagnostics.BestPartialSeedIndex = ...
@@ -229,9 +410,17 @@ result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.SearchDiagnostics.BestPartialSeedIndex = selectedSeedIndex;
 result.SearchDiagnostics.MeshRefinementPassCount = ...
     seedSummaries(selectedSeedIndex).MeshRefinementPassCount;
-result.OptimalityStatement = "Earliest independently validated HS3 motion " + ...
-    "among the candidates completed within the global work budget; no " + ...
-    "global certificate.";
+if selectedCandidate.ArrivalAtHorizon
+    result.Message = "An independently validated Hermite-Simpson motion " + ...
+        "was selected, but its arrival is pinned to the goal horizon.";
+    result.OptimalityStatement = "Arrival equals the goal horizon, so the " + ...
+        "free-time solve never descended; this motion is feasible but " + ...
+        "carries no earliest-arrival claim.";
+else
+    result.OptimalityStatement = "Earliest independently validated HS3 " + ...
+        "motion among the candidates completed within the global work " + ...
+        "budget; no global certificate.";
+end
 result.SearchDiagnostics.StageTiming = stageTiming;
 result = azElPlannerMethods.internal.stageTiming( ...
     result, planningTimer, stageTiming);
@@ -239,6 +428,13 @@ end
 
 function remaining_s = remainingPlanningTime(options, planningTimer)
 % Apply one cooperative wall-time budget across topology, solve, and validation.
+% Releasing that budget leaves only machine-independent caps -- seed count,
+% relinearizations, mesh passes, and NLP iterations -- so the same request
+% returns the same motion on a slower or busier machine.
+if options.DeterministicWorkBudget
+    remaining_s = Inf;
+    return;
+end
 remaining_s = options.MaximumPlanningTime_s - toc(planningTimer);
 end
 
@@ -317,16 +513,76 @@ stageTiming.FinalValidationElapsedTime_s = ...
     validation.ElapsedTime_s - validation.CollisionCheckingElapsedTime_s);
 end
 
-function seed = seedFromCandidate(candidate, originalSeed)
+function repeats = reproducesSolve(candidate, previousSolve, options)
+% Compare arrival and clearance so a stalled relinearization is not repaid.
+repeats = ~isempty(candidate.time_s) && ...
+    matchesWithin(candidate.FinalTime_s, previousSolve.FinalTime_s, ...
+    options.ArrivalTimeTolerance_s) && ...
+    matchesWithin(candidate.Validation.MinimumClearance_deg, ...
+    previousSolve.MinimumClearance_deg, ...
+    max(options.CollisionClearanceTolerance_deg, 1e-9));
+end
+
+function relativeLengthExcess = coarseMotionLengthExcess(candidate, seed)
+% Measure route inflation so the caller can scale one bounded quality pass.
+if isempty(candidate.position_deg) || ~isfinite(seed.Length_deg) || ...
+        seed.Length_deg <= 0
+    relativeLengthExcess = 0;
+    return;
+end
+motionLength_deg = sum(vecnorm(diff( ...
+    candidate.position_deg, 1, 1), 2, 2));
+relativeLengthExcess = motionLength_deg / seed.Length_deg - 1;
+end
+
+function seed = spatialTimingSeed(seed)
+% Remove waits and distribute a timed topology by geometric arc length.
+edgeLength_deg = vecnorm(diff(seed.position_deg, 1, 1), 2, 2);
+retainedPoint = [true; edgeLength_deg > 1e-12];
+seed.position_deg = seed.position_deg(retainedPoint, :);
+cumulativeLength_deg = [0; cumsum(vecnorm( ...
+    diff(seed.position_deg, 1, 1), 2, 2))];
+seed.tau = cumulativeLength_deg / cumulativeLength_deg(end);
+end
+
+function matches = matchesWithin(current, previous, tolerance)
+% Treat equal nonfinite evidence as unchanged without comparing NaN to NaN.
+matches = (isinf(current) && isequal(current, previous)) || ...
+    abs(current - previous) <= tolerance;
+end
+
+function seed = seedFromCandidate( ...
+        candidate, originalSeed, targetFinalTime_s)
 % Reassociate frozen corridors around HS3 motion without changing topology.
 seed = originalSeed;
-sampleTau = (candidate.time_s - candidate.time_s(1)) / ...
-    candidate.MotionDuration_s;
-[sampleTau, retainedIndex] = unique(sampleTau, "stable");
-seed.tau = candidate.ControlTau;
-seed.position_deg = interp1(sampleTau, ...
-    candidate.position_deg(retainedIndex, :), seed.tau, "linear");
-seed.EstimatedDuration_s = candidate.MotionDuration_s;
+isTimedSeed = any(originalSeed.Source == ["directWait", "timeExpandedVisibilityGraph"]);
+if nargin >= 3 && targetFinalTime_s < candidate.FinalTime_s && ~isTimedSeed
+    return;
+end
+if nargin < 3 || targetFinalTime_s >= candidate.FinalTime_s
+    sampleTau = (candidate.time_s - candidate.time_s(1)) / ...
+        candidate.MotionDuration_s;
+    [sampleTau, retainedIndex] = unique(sampleTau, "stable");
+    seed.tau = candidate.ControlTau;
+    seed.position_deg = interp1(sampleTau, ...
+        candidate.position_deg(retainedIndex, :), seed.tau, "linear");
+    seed.EstimatedDuration_s = candidate.MotionDuration_s;
+    return;
+end
+
+% Shortening a timed motion must preserve absolute event timing. Rescaling
+% its normalized wait would move an already validated crossing earlier.
+controlTime_s = candidate.time_s(1) + ...
+    candidate.ControlTau * candidate.MotionDuration_s;
+retainedControl = controlTime_s < targetFinalTime_s;
+retainedTime_s = controlTime_s(retainedControl);
+retainedPosition_deg = interp1(candidate.time_s, ...
+    candidate.position_deg, retainedTime_s, "linear");
+trialDuration_s = targetFinalTime_s - candidate.time_s(1);
+seed.tau = [(retainedTime_s - candidate.time_s(1)) / ...
+    trialDuration_s; 1];
+seed.position_deg = [retainedPosition_deg; originalSeed.position_deg(end, :)];
+seed.EstimatedDuration_s = trialDuration_s;
 end
 
 function summary = candidateSummary(candidate, relinearizationCount, ...

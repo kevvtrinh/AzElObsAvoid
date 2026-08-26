@@ -4,7 +4,8 @@
 planner. It is the single owner of canonical request normalization, endpoint
 checks, obstacle preparation and interpolation, boundary traversal, signed
 clearance, option merging, logical normalization, goal interpolation,
-polynomial evaluation, and power-to-Bernstein conversion.
+polynomial evaluation, power-to-Bernstein conversion, and the sub-interval
+hull maps that bound a polynomial continuously between constraint times.
 
 Shared ownership also includes:
 
