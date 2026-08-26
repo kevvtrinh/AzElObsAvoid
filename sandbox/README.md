@@ -49,3 +49,16 @@ latest result, independent validation, planner log, environment metadata, and
 copyable reproduction commands. It omits figure handles and callbacks. Send
 that MAT file when asking for failure diagnosis; both successful and failed
 planner calls can be exported.
+
+The returned state also exposes a no-dialog export path. This is useful when
+the save dialog is unavailable or its callback fails:
+
+```matlab
+currentState = sandboxState.ReadState();
+exportInfo = currentState.ExportBundle("diagnosis.mat", "goal");
+```
+
+Use `"free"` for the Free Mode tab. A successful call returns the absolute
+path and nonzero byte count after verifying that the MAT file contains the
+`diagnosisBundle` variable. The UI button now reports a modal error with the
+actual failure reason instead of failing only through the status log.

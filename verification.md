@@ -2927,3 +2927,21 @@ A later single MATLAB process successfully ran the complete post-cutover test
 suite: 75/75 passed, with zero failures or incomplete tests and 366.849286
 seconds summed test duration. The same near-singular HS3 `fmincon` warnings were
 visible and were not suppressed.
+
+## Sandbox export recovery — 2026-08-25
+
+The bundle writer successfully created and reloaded a 318,976-byte MAT file
+from a real guidata-backed sandbox state, establishing that bundle assembly and
+the core save operation were healthy. The remaining weakness was that users
+could export only through the file-dialog callback, whose exceptions were
+reduced to status text.
+
+The public sandbox snapshot now exposes
+`ExportBundle(filePath, modeName)`, the UI button calls the same explicit-path
+owner after its dialog returns, and the writer verifies both a nonempty file
+and the required `diagnosisBundle` MAT variable. UI failures display their
+actual message in an error dialog. The focused export suite passed 4/4 and Code
+Analyzer reported zero messages across the two changed production files and
+focused test. A separate controlled-dialog callback attempt did not reach user
+code because that MATLAB instance failed during startup with `System Error:
+File system inconsistency`.

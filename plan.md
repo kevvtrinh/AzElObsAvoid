@@ -26,3 +26,11 @@ fresh MATLAB process failed during startup, before any example code ran, with
 `System Error: File system inconsistency`. A later single MATLAB process did
 run the complete test suite successfully. Historical benchmark evidence remains
 preserved; no example result was copied or invented for the failed executions.
+
+## Sandbox export follow-up
+
+- Added `sandboxState.ReadState().ExportBundle(filePath, modeName)` so exports
+  can bypass the UI save dialog.
+- Verify that the saved MAT file is nonempty and contains `diagnosisBundle`.
+- Surface UI export errors in a modal dialog.
+- Focused export verification passed 4/4 with zero Code Analyzer messages.

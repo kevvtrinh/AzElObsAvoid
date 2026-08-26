@@ -4,6 +4,23 @@ The current planner judgment is **HS3-only production cutover — 2026-08-25**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Sandbox export recovery — 2026-08-25
+
+Diagnosis export no longer depends exclusively on the save-dialog callback.
+Every live public sandbox snapshot now exposes
+`ExportBundle(filePath, modeName)`, which reads the current guidata-backed
+state and writes the same diagnosis bundle to an explicit path. The writer
+verifies a nonempty file and the required `diagnosisBundle` MAT variable before
+reporting success. UI export errors are surfaced in a modal dialog rather than
+being visible only in the tab log.
+
+The focused export suite passed 4/4, including a real no-dialog file write from
+the public sandbox state, and Code Analyzer reported zero messages in the two
+production files and focused test. A controlled file-dialog callback run was
+not completed because the separate MATLAB instance failed during startup; no
+existing MATLAB processes were touched after the user clarified they were in
+use.
+
 ## HS3-only production cutover — 2026-08-25
 
 The branch now has one production planner implementation and one public

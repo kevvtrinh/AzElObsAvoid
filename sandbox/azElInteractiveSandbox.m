@@ -28,9 +28,9 @@ function sandboxState = azElInteractiveSandbox(sandboxOverrides)
 % OUTPUTS
 %   - sandboxState (scalar struct)
 %       Initial plain-struct state, figure handle, independent mode records,
-%       and ReadState function handle. Call sandboxState.ReadState() after
-%       interaction to inspect the current guidata-backed state. Each mode
-%       can export its exact input/result evidence after a planner call.
+%       ReadState and ExportBundle function handles. Call ReadState() after
+%       interaction to inspect the current guidata-backed state. Call
+%       ExportBundle(filePath, modeName) to save without a file dialog.
 %**************************************************************************
 % UNITS
 %   - Positions and obstacle boundaries are N-by-2 [azimuth elevation] in
@@ -519,6 +519,11 @@ catch exception
     applicationState = setModeState( applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
+    if actionName == "Export" && get(figureHandle, "Visible") == "on"
+        errordlg( ...
+            "Bundle export failed: " + string(exception.message), ...
+            "Sandbox export failed", "modal");
+    end
 end
 end
 
@@ -1721,9 +1726,9 @@ defaultName = "az_el_sandbox_" + modeName + "_" + timestamp + ".mat";
 if isequal(fileName, 0) || isequal(folderName, 0)
     return;
 end
+exportInfo = exportCurrentSandboxDiagnosis( ...
+    figureHandle, fullfile(folderName, fileName), modeName);
 applicationState = guidata(figureHandle);
-exportInfo = exportAzElSandboxDiagnosis( ...
-    fullfile(folderName, fileName), applicationState, modeName);
 modeState = getModeState(applicationState, modeName);
 modeState.Status = "Diagnosis bundle exported: " + exportInfo.FilePath;
 modeState = appendLogLines(modeState, ...
@@ -1733,6 +1738,46 @@ applicationState = setModeState( ...
     applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
+if get(figureHandle, "Visible") == "on"
+    msgbox( ...
+        "Saved " + exportInfo.Bytes + " bytes to:" + newline + ...
+        exportInfo.FilePath, ...
+        "Sandbox bundle exported", "help", "non-modal");
+end
+end
+
+function exportInfo = exportCurrentSandboxDiagnosis( ...
+        figureHandle, filePath, modeName)
+%% Section 0: Header & Readme
+% SYNTAX
+%   exportInfo = exportCurrentSandboxDiagnosis( ...
+%       figureHandle, filePath, modeName)
+%**************************************************************************
+% PURPOSE
+%   - Export the current guidata-backed sandbox state to an explicit path.
+%**************************************************************************
+% INPUTS
+%   - figureHandle (scalar graphics handle)
+%       Live sandbox figure owning the current application state.
+%   - filePath (scalar text)
+%       Destination MAT path; a missing .mat extension is added.
+%   - modeName (scalar text)
+%       Independent sandbox mode, either "goal" or "free".
+%**************************************************************************
+% OUTPUTS
+%   - exportInfo (scalar struct)
+%       Verified path, byte count, planner status, mode, and schema.
+%**************************************************************************
+% UNITS
+%   - Bundle payload units follow exportAzElSandboxDiagnosis.
+%**************************************************************************
+if isempty(figureHandle) || ~isgraphics(figureHandle)
+    error("azElInteractiveSandbox:ClosedFigure", ...
+        "The sandbox figure must remain open while exporting a bundle.");
+end
+applicationState = guidata(figureHandle);
+exportInfo = exportAzElSandboxDiagnosis( ...
+    filePath, applicationState, modeName);
 end
 
 function modeState = getModeState(applicationState, modeName)
@@ -1760,4 +1805,6 @@ if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
 snapshot = guidata(figureHandle);
+snapshot.ExportBundle = @(filePath, modeName) ...
+    exportCurrentSandboxDiagnosis(figureHandle, filePath, modeName);
 end

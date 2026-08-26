@@ -71,7 +71,7 @@ verifyEqual(testCase, reproduced.ArrivalTime_s, ...
 end
 
 function testPersistentSandboxCreatesExportActions(testCase)
-% Verify both independent tabs expose a result-gated export button.
+% Verify both tabs expose an export button and the direct export API.
 sandboxState = azElInteractiveSandbox( ...
     struct("FigureVisible", "off"));
 testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
@@ -86,6 +86,31 @@ verifyEqual(testCase, get( ...
 verifyEqual(testCase, get( ...
     currentState.FreeMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
+verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
+end
+
+function testPublicExportBundleWritesCurrentState(testCase)
+% Verify the public no-dialog hook writes the live guidata-backed result.
+[initialState, goalState, limits, options] = simpleRequest();
+result = planAzElMotion([], initialState, goalState, limits, options);
+validation = validateAzElTrajectory(result);
+sandboxState = azElInteractiveSandbox(struct("FigureVisible", "off"));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.LastPlannerResult = result;
+applicationState.GoalMode.LastValidation = validation;
+guidata(sandboxState.FigureHandle, applicationState);
+currentState = sandboxState.ReadState();
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+
+exportInfo = currentState.ExportBundle(filePath, "goal");
+
+verifyTrue(testCase, isfile(filePath));
+verifyGreaterThan(testCase, exportInfo.Bytes, 0);
+loaded = load(char(filePath), "diagnosisBundle");
+verifyEqual(testCase, loaded.diagnosisBundle.Result.TerminationReason, ...
+    result.TerminationReason);
 end
 
 function testFailedBundleRetainsDiagnosisEvidence(testCase)
