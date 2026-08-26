@@ -4,6 +4,41 @@ The current planner judgment is **HS3-only production cutover — 2026-08-25**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Standalone dimension-neutral HS3 extraction — 2026-08-26
+
+The HS3 polynomial and optimization engine is now available through the root
+`hs3.solve(initialState, terminalState, limits, options, pathConstraints)`
+interface. It supports arbitrary state dimension, fixed and earliest arrival,
+continuous Bernstein position/velocity/acceleration/jerk bounds, and affine
+point or single-segment interval path constraints. Azimuth/elevation obstacle,
+visibility, topology, seed, moving-target, plotting, validation, and planner
+assembly concerns remain outside the engine. Existing production planning
+delegates the shared numerical solve and leaf mathematics to the new package;
+deprecated internal aliases preserve existing callers.
+
+Extraction evidence is frozen against commit `4827e47` and seed 325. The
+three-run scaling matrix passed all 15 candidate cases with independent
+validation and zero behavioral or numeric mismatches. Candidate versus
+baseline median planner times were 1.5928771 versus 1.6185557 seconds for one
+turn, 38.0545350 versus 37.9652044 for five turns, 49.1296070 versus
+49.9628830 for ten turns, 476.9026500 versus 476.8622450 for twenty turns,
+and 154.1580630 versus 154.6614689 for the 12-wall hairpin. The median
+five-case total was 721.395402 seconds versus 723.185449 seconds, within the
+required five-percent aggregate gate. This proves extraction parity only; it
+does not claim a new planning algorithm, broader completeness, or uniform
+speedup.
+
+The exact isolated commit passes 101/101 repository tests, including the 18
+standalone-kernel, 6 affine-sensitivity, 4 option-ownership, and 52 production
+planner tests. Code Analyzer reports zero findings across all 100 MATLAB files.
+All 18 maintained examples were then run serially in fresh headless MATLAB
+processes: 17 returned independently validated success with collision and
+kinematic certificates, and the expected no-path example returned an
+independently validated `noValidatedSeed` failure. A visible success created
+three figures, and the visible expected failure created two search-diagnostic
+figures. The exact per-example metrics and wall times are retained in
+`benchmark.csv` under source `725c91d`.
+
 ## Severe-static fixed-time quality search — 2026-08-26
 
 The retained improvement addresses a severe static-route discretization local

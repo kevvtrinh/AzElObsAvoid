@@ -37,7 +37,7 @@ function [inequalityMatrix, equalityMatrix] = ...
 
 %% Section 1: Assemble Ordered Constraint Blocks
 
-sensitivity = azElPlannerMethods.hs3.internal.motion.hs3AffineSensitivity( ...
+sensitivity = hs3.affineSensitivity( ...
     segmentCount, duration_s, corridorTau);
 continuousMatrix = continuousBoundConstraintMatrix( ...
     sensitivity, allowAzimuthWrapping);
@@ -134,7 +134,7 @@ segmentCount = size(powerMap, 1);
 controlCount = size(powerMap, 3);
 powerMatrix = reshape(permute(powerMap, [2 1 3]), ...
     coefficientCount, []);
-bernsteinMatrix = azElInternal.powerToBernstein(powerMatrix);
+bernsteinMatrix = hs3.powerToBernstein(powerMatrix);
 bernsteinMap = reshape(bernsteinMatrix, ...
     coefficientCount, segmentCount, controlCount);
 gradient = cat(1, bernsteinMap, -bernsteinMap);
@@ -152,7 +152,7 @@ segmentIndex = [corridor.SegmentIndex].';
 normal = vertcat(corridor.Normal);
 selectedPowerMap = sensitivity.positionPowerMap(segmentIndex, :, :);
 powerMatrix = reshape(permute(selectedPowerMap, [2 1 3]), 6, []);
-bernsteinMap = reshape(azElInternal.powerToBernstein(powerMatrix), ...
+bernsteinMap = reshape(hs3.powerToBernstein(powerMatrix), ...
     6, recordCount, controlCount);
 azimuthMap = -reshape(normal(:, 1), 1, recordCount, 1) .* bernsteinMap;
 elevationMap = -reshape(normal(:, 2), 1, recordCount, 1) .* bernsteinMap;

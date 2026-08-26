@@ -4,39 +4,17 @@ function coefficient = powerToBernstein(powerCoefficient)
 %   coefficient = azElInternal.powerToBernstein(powerCoefficient)
 %**************************************************************************
 % PURPOSE
-%   - Convert ascending power coefficients to Bernstein coefficients on [0,1].
-%     The convex-hull property turns continuous polynomial bounds into finite
-%     coefficient inequalities for both planner methods.
+%   - Provide a deprecated compatibility alias to the neutral HS3 basis
+%     conversion while existing callers migrate to hs3.powerToBernstein.
 %**************************************************************************
 % INPUTS
-%   - powerCoefficient (finite numeric vector or N-by-M matrix)
-%       Each column contains ascending coefficients for one polynomial.
+%   - powerCoefficient (N-by-M numeric), ascending-power columns.
 %**************************************************************************
 % OUTPUTS
-%   - coefficient (N-by-M numeric array)
-%       Same-degree Bernstein coefficients for every input column.
+%   - coefficient (N-by-M numeric), Bernstein-basis columns.
 %**************************************************************************
 % UNITS
-%   - Coefficients retain the physical units of the input polynomial.
+%   - Coefficients retain the input's physical units.
 %**************************************************************************
-
-%% Section 1: Apply The Exact Basis Conversion
-
-% The conversion depends only on polynomial degree, so cache its small Pascal
-% matrix while applying it to any number of coefficient columns.
-powerCoefficient = double(powerCoefficient);
-if isvector(powerCoefficient)
-    powerCoefficient = powerCoefficient(:);
-end
-degree = size(powerCoefficient, 1) - 1;
-persistent conversionMatrixByDegree
-if numel(conversionMatrixByDegree) > degree && ...
-        ~isempty(conversionMatrixByDegree{degree + 1})
-    coefficient = conversionMatrixByDegree{degree + 1} * powerCoefficient;
-    return;
-end
-conversionMatrix = pascal(degree + 1, 1);
-conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
-conversionMatrixByDegree{degree + 1} = conversionMatrix;
-coefficient = conversionMatrix * powerCoefficient;
+coefficient = hs3.powerToBernstein(powerCoefficient);
 end
