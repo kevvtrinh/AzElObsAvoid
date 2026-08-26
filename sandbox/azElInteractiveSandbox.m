@@ -1617,8 +1617,13 @@ for modeName = modeNames
         set(modeState.GraphicsHandles.Actions.Undo, "Enable", onOff(~isempty(modeState.WaypointPositions_deg)));
     end
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
+    hasSceneData = ~isempty(modeState.StartPosition_deg) || ...
+        ~isempty(modeState.GoalPosition_deg) || ...
+        ~isempty(modeState.WaypointPositions_deg) || ...
+        ~isempty(modeState.RawObstacleStrokes_deg);
     set(modeState.GraphicsHandles.Actions.Diagnostics, "Enable", onOff(hasResult));
-    set(modeState.GraphicsHandles.Actions.Export, "Enable", onOff(hasResult));
+    set(modeState.GraphicsHandles.Actions.Export, ...
+        "Enable", onOff(hasResult || hasSceneData));
 end
 end
 
@@ -1811,8 +1816,78 @@ if isempty(figureHandle) || ~isgraphics(figureHandle)
         "The sandbox figure must remain open while exporting a bundle.");
 end
 applicationState = guidata(figureHandle);
+applicationState = prepareSandboxStateForExport( ...
+    applicationState, modeName);
 exportInfo = exportAzElSandboxDiagnosis( ...
     filePath, applicationState, modeName);
+end
+
+function applicationState = prepareSandboxStateForExport( ...
+        applicationState, modeName)
+%% Section 0: Header & Readme
+% SYNTAX
+%   applicationState = prepareSandboxStateForExport( ...
+%       applicationState, modeName)
+%**************************************************************************
+% PURPOSE
+%   - Capture current controls and geometry without invoking the planner.
+%**************************************************************************
+% INPUTS
+%   - applicationState (scalar sandbox state struct)
+%       Live guidata state containing both independent mode records.
+%   - modeName (scalar text)
+%       Mode to prepare, either "goal" or "free".
+%**************************************************************************
+% OUTPUTS
+%   - applicationState (scalar sandbox state struct)
+%       Copy with current canonical geometry and a pre-run export request.
+%**************************************************************************
+% UNITS
+%   - Positions are degrees and horizons are seconds.
+%**************************************************************************
+modeState = getModeState(applicationState, modeName);
+controls = readModeControls(applicationState, modeName);
+plannerOptions = applicationState.Options.PlannerOptions;
+plannerOptions.PlannerMethod = controls.PlannerMethod;
+plannerOptions.Verbose = controls.Verbose;
+plannerInputs = struct();
+if modeName == "goal"
+    obstacleEndTime_s = controls.MissionTime_s;
+    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
+        ~isempty(modeState.GoalPosition_deg);
+    plannerOptions.GoalTimeMode = "earliestArrival";
+    if hasCompleteScene
+        [initialState, goalState, limits] = buildPlannerInputs( ...
+            modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
+            0, controls.MissionTime_s, controls);
+        plannerInputs = struct( ...
+            "obstacles", combineAzElObstacles(), ...
+            "initialState", initialState, ...
+            "goalState", goalState, ...
+            "limits", limits);
+    end
+else
+    requestedSegmentCount = size(modeState.WaypointPositions_deg, 1);
+    obstacleEndTime_s = max(1, requestedSegmentCount) * ...
+        controls.MaximumSegmentDuration_s;
+    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
+        requestedSegmentCount > 0;
+end
+canonicalObstacles = buildCanonicalObstacles( ...
+    modeState, [0; obstacleEndTime_s], controls);
+if isfield(plannerInputs, "obstacles")
+    plannerInputs.obstacles = canonicalObstacles;
+end
+modeState.CanonicalObstacles = canonicalObstacles;
+modeState.ResolvedControls = controls;
+modeState.ExportRequest = struct( ...
+    "HasCompleteScene", hasCompleteScene, ...
+    "PlannerInputs", plannerInputs, ...
+    "PlannerOptions", plannerOptions, ...
+    "RequestedStart_deg", modeState.StartPosition_deg, ...
+    "RequestedGoal_deg", modeState.GoalPosition_deg, ...
+    "RequestedWaypoints_deg", modeState.WaypointPositions_deg);
+applicationState = setModeState(applicationState, modeName, modeState);
 end
 
 function modeState = getModeState(applicationState, modeName)

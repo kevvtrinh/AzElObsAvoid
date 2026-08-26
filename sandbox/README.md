@@ -42,13 +42,15 @@ remain visible on the canvas but are intentionally omitted from the legend.
 object, then restarts the guided sequence at the start-position click.
 **Diagnostics** opens the planner diagnostics for the most recent result.
 
-After any planner call, **Export Bundle** saves a diagnosis-ready MAT file for
-the active tab. The bundle contains the raw drawn geometry, canonical protected
-obstacles, exact planner inputs and resolved options, retained segment results,
-latest result, independent validation, planner log, environment metadata, and
-copyable reproduction commands. It omits figure handles and callbacks. Send
-that MAT file when asking for failure diagnosis; both successful and failed
-planner calls can be exported.
+**Export Bundle** becomes available as soon as the active tab contains scene
+data, so the request can be saved before pressing **Run** or **Recalculate**.
+A pre-run bundle records `PlanningState = "notRun"`,
+`HasPlannerResult = false`, the current controls, raw and canonical geometry,
+and exact Goal Mode planner inputs when both endpoints exist. It does not
+fabricate a result or validation outcome. After a planner call, the same button
+also stores the result, independent validation, segment evidence, logs,
+environment metadata, and copyable reproduction commands. Figure handles and
+callbacks are omitted.
 
 The returned state also exposes a no-dialog export path. This is useful when
 the save dialog is unavailable or its callback fails:

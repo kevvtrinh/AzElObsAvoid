@@ -23,6 +23,17 @@ MATLAB strings where that API requires character arrays. The filter, dialog,
 use character arguments. Export failures also report their identifier and
 earliest source line. A final visible rerun remains required.
 
+Pre-run export is now an explicit supported state. Export becomes available
+once a tab contains scene data; the bundle captures current controls and
+canonicalized geometry without invoking HS3. Complete Goal Mode scenes also
+include replayable planner inputs. The bundle reports `PlanningState =
+"notRun"`, `HasPlannerResult = false`, and an empty result rather than
+fabricating success, failure, or validation evidence.
+
+The expanded focused export suite passed 5/5 with zero Code Analyzer messages,
+including a public pre-run Goal Mode export that wrote, reloaded, and checked
+the exact requested endpoints and HS3 options.
+
 ## HS3-only production cutover — 2026-08-25
 
 The branch now has one production planner implementation and one public

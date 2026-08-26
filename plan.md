@@ -34,3 +34,7 @@ preserved; no example result was copied or invented for the failed executions.
 - Verify that the saved MAT file is nonempty and contains `diagnosisBundle`.
 - Surface UI export errors in a modal dialog.
 - Focused export verification passed 4/4 with zero Code Analyzer messages.
+- Allow a scene and its current controls to be exported before planning, with
+  explicit `PlanningState = "notRun"` and no fabricated planner result.
+- Focused pre-run/completed/failed export verification passed 5/5 with zero
+  Code Analyzer messages.

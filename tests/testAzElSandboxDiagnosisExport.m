@@ -4,8 +4,8 @@ function tests = testAzElSandboxDiagnosisExport
 %   tests = testAzElSandboxDiagnosisExport
 %**************************************************************************
 % PURPOSE
-%   - Verify sandbox diagnosis bundles preserve successful and failed
-%     planner calls without graphics handles.
+%   - Verify sandbox diagnosis bundles preserve pre-run requests plus
+%     successful and failed planner calls without graphics handles.
 %   - Verify a reloaded success bundle can reproduce the exact public call.
 %**************************************************************************
 % INPUTS
@@ -48,6 +48,7 @@ loaded = load(char(filePath), "diagnosisBundle");
 bundle = loaded.diagnosisBundle;
 verifyEqual(testCase, exportInfo.Schema, "azElSandboxDiagnosis-v1");
 verifyGreaterThan(testCase, exportInfo.Bytes, 0);
+verifyTrue(testCase, exportInfo.HasPlannerResult);
 verifyEqual(testCase, bundle.Mode, "goal");
 verifyEqual(testCase, bundle.PlannerInputs.initialState, ...
     result.Inputs.initialState);
@@ -87,6 +88,35 @@ verifyEqual(testCase, get( ...
     currentState.FreeMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
 verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
+end
+
+function testPreRunGoalBundlePreservesRequest(testCase)
+% Export a complete Goal Mode request before any planner call occurs.
+sandboxState = azElInteractiveSandbox(struct("FigureVisible", "off"));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.StartPosition_deg = [-3 1];
+applicationState.GoalMode.GoalPosition_deg = [5 -2];
+guidata(sandboxState.FigureHandle, applicationState);
+currentState = sandboxState.ReadState();
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+
+exportInfo = currentState.ExportBundle(filePath, "goal");
+
+loaded = load(char(filePath), "diagnosisBundle");
+bundle = loaded.diagnosisBundle;
+verifyFalse(testCase, exportInfo.HasPlannerResult);
+verifyEqual(testCase, exportInfo.TerminationReason, "notRun");
+verifyEqual(testCase, bundle.PlanningState, "notRun");
+verifyFalse(testCase, bundle.HasPlannerResult);
+verifyEmpty(testCase, fieldnames(bundle.Result));
+verifyEqual(testCase, ...
+    bundle.PlannerInputs.initialState.position_deg, [-3 1]);
+verifyEqual(testCase, ...
+    bundle.PlannerInputs.goalState.position_deg, [5 -2]);
+verifyEqual(testCase, bundle.PlannerOptions.PlannerMethod, "hs3");
+verifyTrue(testCase, bundle.ExportRequest.HasCompleteScene);
 end
 
 function testPublicExportBundleWritesCurrentState(testCase)

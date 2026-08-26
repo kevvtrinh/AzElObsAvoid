@@ -2947,3 +2947,14 @@ file-dialog filter, success notification, `save`, `whos -file`, `version`, and
 compatibility. The focused export suite passed 4/4 and Code Analyzer reported
 zero messages before this visible-only compatibility correction; concurrent
 MATLAB startup failed before a final focused or visible callback rerun.
+
+Pre-run export now prepares a copy of the live mode state by reading current
+controls and rebuilding canonical obstacle geometry without calling the
+planner. Complete Goal Mode scenes retain exact replayable planner inputs;
+partial Goal Mode and Free Mode scenes retain their explicit request geometry
+and controls. Pre-run bundles use `PlanningState = "notRun"`,
+`HasPlannerResult = false`, an empty `Result`, and no validation claim. A new
+focused test exercises the public no-dialog export before any planner call.
+The expanded export suite passed 5/5 with zero failures or incomplete tests,
+and Code Analyzer reported zero messages across the two production files and
+focused test.
