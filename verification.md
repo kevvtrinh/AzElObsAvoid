@@ -2932,16 +2932,19 @@ visible and were not suppressed.
 
 The bundle writer successfully created and reloaded a 318,976-byte MAT file
 from a real guidata-backed sandbox state, establishing that bundle assembly and
-the core save operation were healthy. The remaining weakness was that users
-could export only through the file-dialog callback, whose exceptions were
-reduced to status text.
+the core save operation were healthy. A subsequent visible user run showed the
+file-dialog callback reached the post-save success notification, where `msgbox`
+rejected MATLAB string arguments with `Cell elements must be character arrays`.
+The outer callback then mislabeled that notification failure as an export
+failure even though the writer had completed.
 
 The public sandbox snapshot now exposes
 `ExportBundle(filePath, modeName)`, the UI button calls the same explicit-path
 owner after its dialog returns, and the writer verifies both a nonempty file
 and the required `diagnosisBundle` MAT variable. UI failures display their
-actual message in an error dialog. The focused export suite passed 4/4 and Code
+actual message in an error dialog. The success notification now uses an
+`sprintf` character vector, and `whos -file` also receives character arguments
+for cross-version compatibility. The focused export suite passed 4/4 and Code
 Analyzer reported zero messages across the two changed production files and
-focused test. A separate controlled-dialog callback attempt did not reach user
-code because that MATLAB instance failed during startup with `System Error:
-File system inconsistency`.
+focused test before this visible-only compatibility correction; the focused
+suite and visible callback require a final rerun.

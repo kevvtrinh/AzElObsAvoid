@@ -111,6 +111,8 @@ verifyGreaterThan(testCase, exportInfo.Bytes, 0);
 loaded = load(char(filePath), "diagnosisBundle");
 verifyEqual(testCase, loaded.diagnosisBundle.Result.TerminationReason, ...
     result.TerminationReason);
+savedVariables = whos('-file', char(filePath));
+verifyTrue(testCase, any(string({savedVariables.name}) == "diagnosisBundle"));
 end
 
 function testFailedBundleRetainsDiagnosisEvidence(testCase)

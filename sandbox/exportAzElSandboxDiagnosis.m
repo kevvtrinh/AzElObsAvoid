@@ -154,7 +154,7 @@ if isempty(fileRecord) || fileRecord.bytes <= 0
         "MATLAB returned from save, but no nonempty bundle exists at %s.", ...
         absoluteFilePath);
 end
-savedVariables = whos("-file", char(absoluteFilePath));
+savedVariables = whos('-file', char(absoluteFilePath));
 hasDiagnosisBundle = any(string({savedVariables.name}) == "diagnosisBundle");
 if ~hasDiagnosisBundle
     error("exportAzElSandboxDiagnosis:SaveVerificationFailed", ...

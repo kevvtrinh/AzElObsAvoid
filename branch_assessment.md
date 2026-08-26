@@ -16,10 +16,11 @@ being visible only in the tab log.
 
 The focused export suite passed 4/4, including a real no-dialog file write from
 the public sandbox state, and Code Analyzer reported zero messages in the two
-production files and focused test. A controlled file-dialog callback run was
-not completed because the separate MATLAB instance failed during startup; no
-existing MATLAB processes were touched after the user clarified they were in
-use.
+production files and focused test. A visible user run then isolated a remaining
+compatibility defect in the post-save success dialog: MATLAB string arguments
+caused `msgbox` to throw after the file was written, and the callback mislabeled
+that notification failure as an export failure. The dialog and `whos -file`
+arguments now use character arrays for cross-version compatibility.
 
 ## HS3-only production cutover — 2026-08-25
 
