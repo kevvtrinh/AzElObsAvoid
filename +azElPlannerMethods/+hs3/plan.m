@@ -48,8 +48,7 @@ gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
 stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
-result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
-    gridDiagnostics.ElapsedTime_s;
+result.SearchDiagnostics.SeedGenerationElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 seedSummaries = repmat(summaryTemplate, numel(seeds), 1);
 candidates = cell(numel(seeds), 1);
 
@@ -94,7 +93,6 @@ if staticNoPathCertified
     seedOrder = zeros(0, 1);
 end
 firstValidatedMotionTime_s = NaN;
-stopAtFirstValidatedMotion = ~hasChangingObstacles;
 bestValidatedFinalTime_s = Inf;
 
 %% Section 3: Solve, Validate, And Boundedly Repair HS3 Motions
@@ -143,7 +141,7 @@ for orderIndex = 1:numel(seedOrder)
             initialState.time_s + originalSeed.EstimatedDuration_s);
         seedGoalTimeMode = "fixedArrival";
     end
-    segmentCount = topologyAlignedSegmentCount(originalSeed, options);
+    segmentCount = topologyAlignedSegmentCount(originalSeed, limits, options);
     totalRelinearizationCount = 0;
     meshRelinearizationCount = 0;
     meshRefinementCount = 0;
@@ -356,8 +354,7 @@ for orderIndex = 1:numel(seedOrder)
     end
     % A motion pinned to the goal horizon is a fallback, not an earliest
     % arrival, so keep proposing topologies while budget remains.
-    if finalCandidate.Validation.Passed && stopAtFirstValidatedMotion && ...
-            ~finalCandidate.ArrivalAtHorizon
+    if finalCandidate.Validation.Passed && ~hasChangingObstacles && ~finalCandidate.ArrivalAtHorizon
         break;
     end
 end
@@ -476,11 +473,15 @@ for obstacleIndex = 1:numel(obstacles)
 end
 end
 
-function segmentCount = topologyAlignedSegmentCount(seed, options)
-% Give every geometric route leg at least one HS3 segment when permitted.
-routeSegmentCount = max(2, size(seed.position_deg, 1) - 1);
+function segmentCount = topologyAlignedSegmentCount(seed, limits, options)
+% Refine untimed detours whose base segments span a full acceleration cycle.
+segmentMultiplier = 1 + (size(seed.position_deg, 1) > 3 && ...
+    seed.EstimatedDuration_s > 2 * options.CollocationSegmentCount * ...
+    max(limits.maxVelocity_deg_s ./ limits.maxAcceleration_deg_s2) && ...
+    ~any(seed.Source == ["directWait", "timeExpandedVisibilityGraph"]));
 segmentCount = min(options.MaximumCollocationSegmentCount, ...
-    max(options.CollocationSegmentCount, routeSegmentCount));
+    max(segmentMultiplier * options.CollocationSegmentCount, ...
+    max(2, size(seed.position_deg, 1) - 1)));
 end
 
 function validation = validateCandidate( ...
@@ -547,8 +548,7 @@ end
 
 function matches = matchesWithin(current, previous, tolerance)
 % Treat equal nonfinite evidence as unchanged without comparing NaN to NaN.
-matches = (isinf(current) && isequal(current, previous)) || ...
-    abs(current - previous) <= tolerance;
+matches = (isinf(current) && isequal(current, previous)) || abs(current - previous) <= tolerance;
 end
 
 function seed = seedFromCandidate( ...

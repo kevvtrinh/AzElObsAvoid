@@ -3272,3 +3272,40 @@ focused test exercises the public no-dialog export before any planner call.
 The expanded export suite passed 5/5 with zero failures or incomplete tests,
 and Code Analyzer reported zero messages across the two production files and
 focused test.
+
+## Dynamics-timescale mesh verification — 2026-08-26
+
+Changed `+azElPlannerMethods/+hs3/plan.m` so an untimed spatial detour with
+more than two route legs starts at twice the configured HS3 mesh only when its
+estimated duration per base segment exceeds twice the supplied
+`maxVelocity_deg_s ./ maxAcceleration_deg_s2` time scale. Direct and timed
+seeds retain the configured mesh, and the existing maximum segment count still
+bounds the result. Code Analyzer reported zero findings and the complete HS3
+package remains exactly 2,000 noncomment production lines.
+
+Focused A/B evidence:
+
+- 40 moving circles: 61.2011842765 -> 58.6189853057 s arrival;
+  smoothed length 125.185941203 -> 123.380530717 degrees; current wall
+  18.873958 -> 24.875451 s; independent validation and certificates pass.
+- Rogue 180/360 horizons: 86.5467293065 and 86.5467226767 s, both valid,
+  differing by 0.000006629817 s. The preceding commit reported
+  88.2939404925 and 88.2939359679 s.
+- Static U control: unchanged at 22.6308876389 s. Timed moving-circle
+  control: unchanged at 8.64603156476 s.
+- Rejected blanket-20 diagnostics: static U regressed to 22.6623174130 s;
+  moving circle improved to 8.560546875 s but wall rose to 16.976155 s.
+
+Every maintained example was then run headlessly in its own serial MATLAB
+process. All 18 expected outcomes passed: 17 independently validated successes
+and the independently validated `noValidatedSeed` case. Exact metrics and wall
+times are appended to `benchmark.csv`. A visible `exampleAzElPlanning` run
+created three figures and 526 graphics objects; a hidden plotted no-path run
+created two diagnostic figures with nine rejected edges and no trajectory.
+
+`testHs3Planner` passed 51/51 in 43.414460 seconds. The authoritative complete
+suite passed 82/82 in 50.011338 seconds with warnings enabled. An earlier
+81/82 diagnostic run is invalid as a suite result because its harness disabled
+all warnings, preventing the required unknown-option warning from reaching
+`verifyWarning`; no repository assertion failed in that run. `git diff
+--check` reports only existing LF-to-CRLF conversion notices.

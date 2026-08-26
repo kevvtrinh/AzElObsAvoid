@@ -1395,6 +1395,42 @@ Production grew by 35 MATLAB lines and remains at 14,013 lines, above the
 pre-existing overall size excess. Raw A/B and final example rows are retained
 in `benchmark.csv`.
 
+## Dynamics-timescale HS3 mesh start — 2026-08-26
+
+The largest newly measured arrival improvement is on long multi-leg detours
+whose default HS3 segment duration exceeds a complete acceleration/deceleration
+cycle derived from the supplied velocity and acceleration limits. Starting
+those untimed detours at twice the base mesh reduced the maintained 40-moving-
+circle arrival from 61.2011842765 to 58.6189853057 seconds (-4.219%). This also
+beats the final `325-full-suite` corridor baseline of 60.3618375887 seconds by
+1.7428522830 seconds. The smoothed path shortened from 125.185941203 to
+123.380530717 degrees and independent collision and kinematic validation pass.
+
+The structurally different preserved rogue horizon pair improved from
+88.2939404925/88.2939359679 seconds to 86.5467293065/86.5467226767 seconds.
+Both results independently validate, and their 6.630-microsecond difference
+preserves the repaired horizon-invariance behavior. The mechanism uses only
+route point count, estimated duration, public collocation count, physical
+velocity/acceleration limits, and timed-seed provenance; it does not inspect an
+example, obstacle name, horizon, expected route, or stored outcome.
+
+The cost is visible. A fresh same-session 40-circle control took 18.873958
+seconds before the change and the exact-current rerun took 24.875451 seconds,
+an increase of 6.001493 seconds (+31.798%). A blanket 20-segment start was
+rejected: the static U arrival regressed from 22.6308876389 to 22.6623174130
+seconds, and the short moving-circle runtime rose to 16.976155 seconds. The
+retained dynamics-timescale gate leaves those cases unchanged at
+22.6308876389 and 8.64603156476 seconds respectively.
+
+Fresh evidence is 18/18 maintained outcomes (17 independently validated
+successes plus the expected validated no-path result), 82/82 automated tests,
+zero Code Analyzer findings in the changed planner, a visible three-figure
+success, and a two-figure expected-failure diagnostic. HS3 remains exactly
+2,000 noncomment production lines. The moving/deforming U.S. example still
+takes 49.394024 seconds, with obstacle protection remaining the dominant
+whole-pipeline bottleneck; attempted polygon simplification, batching, shape-
+property skipping, and interval-union caching did not earn retention.
+
 ## Shared helper consolidation checkpoint — 2026-08-23
 
 Both planner methods now use `+azElInternal` as the single owner of option
