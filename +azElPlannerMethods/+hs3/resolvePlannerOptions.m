@@ -1,7 +1,6 @@
 function options = resolvePlannerOptions(optionOverrides)
 %% Section 0: Resolve Standalone Hermite-Simpson Options
-% Compact-planner controls and composition switches deliberately do not
-% belong here. The returned record configures only actual HS3 work.
+% The returned record configures only actual HS3 work.
 
 defaults = struct( ...
     "GoalTimeMode", "earliestArrival", ...

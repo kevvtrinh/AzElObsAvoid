@@ -1,0 +1,7 @@
+interface:
+  display_name: "Engineering Design Report"
+  short_description: "Build a verified Word planner design report"
+  default_prompt: "Use $engineering-design-report to create an evidence-backed Word design report for this planner."
+
+policy:
+  allow_implicit_invocation: false

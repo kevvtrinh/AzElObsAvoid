@@ -21,7 +21,7 @@ options = azElPlannerMethods.hs3.resolvePlannerOptions(optionOverrides);
     obstacles, initialState, goalState, limits, options);
 [result, summaryTemplate] = azElInternal.emptyPlannerResult( ...
     obstacles, initialState, goalState, limits, options, ...
-    validateAzElTrajectory(), "hs3");
+    validateAzElTrajectory());
 obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
 stageTiming = result.SearchDiagnostics.StageTiming;
 

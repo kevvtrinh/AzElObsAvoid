@@ -8,7 +8,8 @@ function report = benchmarkRandomMovingPolygonStress( ...
 %       randomSeeds, benchmarkOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Stress public planners with deterministic large random polygons that
+%   - Stress the public HS3 planner with deterministic large random polygons
+%     that
 %     translate across most of the Az/El frame while rotating at least 180
 %     degrees.
 %   - Preserve exact inputs and returned diagnostics for every failure.
@@ -19,16 +20,15 @@ function report = benchmarkRandomMovingPolygonStress( ...
 %   - randomSeeds (numeric vector, optional; default 1001:1012)
 %       Nonnegative deterministic scenario seeds.
 %   - benchmarkOverrides (scalar struct, optional; default struct())
-%       .Methods is a text vector containing corridorQuintic and/or hs3.
 %       .ObstacleCount is an integer at least two (default 3).
 %       .MissionTime_s is positive (default 60).
 %       .MaximumPlanningTime_s is positive (default 30).
 %       .PrintProgress is logical (default true).
-%       .PlannerOverrides is a scalar option struct (default struct()).
+%       .PlannerOverrides is a scalar HS3 option struct (default struct()).
 %**************************************************************************
 % OUTPUTS
 %   - report (scalar struct)
-%       Controls plus one record per seed/method. Each record retains exact
+%       Controls plus one record per seed. Each record retains exact
 %       inputs, scenario geometry, result, independent validation, wall
 %       time, and the analytic witness-clearance lower bound.
 %**************************************************************************
@@ -48,7 +48,6 @@ end
 validateattributes(randomSeeds, {'numeric'}, ...
     {'real', 'finite', 'vector', 'integer', 'nonnegative'});
 defaults = struct( ...
-    "Methods", ["corridorQuintic" "hs3"], ...
     "ObstacleCount", 3, ...
     "MissionTime_s", 60, ...
     "MaximumPlanningTime_s", 30, ...
@@ -60,12 +59,6 @@ if ~isempty(unknownNames)
     warning("benchmarkRandomMovingPolygonStress:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", ...
         strjoin(unknownNames, ", "));
-end
-controls.Methods = reshape(string(controls.Methods), 1, []);
-if isempty(controls.Methods) || any(~ismember( ...
-        controls.Methods, ["corridorQuintic" "hs3"]))
-    error("benchmarkRandomMovingPolygonStress:InvalidMethods", ...
-        "Methods must contain corridorQuintic and/or hs3.");
 end
 validateattributes(controls.ObstacleCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', '>=', 2});
@@ -83,24 +76,19 @@ if ~isstruct(controls.PlannerOverrides) || ...
 end
 randomSeeds = double(randomSeeds(:));
 
-%% Section 2: Run Every Seed And Public Method
+%% Section 2: Run Every Seed With HS3
 
-recordCount = numel(randomSeeds) * numel(controls.Methods);
+recordCount = numel(randomSeeds);
 records = repmat(emptyRecord(), recordCount, 1);
-recordIndex = 0;
 for seedIndex = 1:numel(randomSeeds)
     randomSeed = randomSeeds(seedIndex);
     [obstacles, initialState, goalState, limits, scenario] = ...
         createStressScenario(randomSeed, controls);
-    for methodIndex = 1:numel(controls.Methods)
-        method = controls.Methods(methodIndex);
-        recordIndex = recordIndex + 1;
-        records(recordIndex) = runStressCase( ...
-            randomSeed, method, obstacles, initialState, goalState, ...
-            limits, scenario, controls);
-        if controls.PrintProgress
-            printRecord(records(recordIndex));
-        end
+    records(seedIndex) = runStressCase( ...
+        randomSeed, obstacles, initialState, goalState, limits, ...
+        scenario, controls);
+    if controls.PrintProgress
+        printRecord(records(seedIndex));
     end
 end
 
@@ -241,16 +229,13 @@ transformed_deg = sourcePosition_deg * rotationMatrix.' + center_deg;
 end
 
 function record = runStressCase( ...
-        randomSeed, method, obstacles, initialState, goalState, ...
+        randomSeed, obstacles, initialState, goalState, ...
         limits, scenario, controls)
-% Run one public method and preserve unsuccessful evidence without retrying.
+% Run HS3 once and preserve unsuccessful evidence without retrying.
 plannerOptions = controls.PlannerOverrides;
-plannerOptions.PlannerMethod = method;
+plannerOptions.PlannerMethod = "hs3";
 plannerOptions.GoalTimeMode = "earliestArrival";
-if method == "hs3"
-    plannerOptions.MaximumPlanningTime_s = ...
-        controls.MaximumPlanningTime_s;
-end
+plannerOptions.MaximumPlanningTime_s = controls.MaximumPlanningTime_s;
 plannerOptions.RandomSeed = randomSeed;
 plannerTimer = tic;
 result = planAzElMotion( ...
@@ -262,7 +247,7 @@ if result.Success
 end
 record = emptyRecord();
 record.RandomSeed = randomSeed;
-record.Method = method;
+record.Method = "hs3";
 record.Success = result.Success;
 record.IndependentValidationPassed = ...
     result.Success && validation.Passed;
@@ -284,7 +269,7 @@ record.IndependentValidation = validation;
 end
 
 function record = emptyRecord()
-% Define stable success/failure evidence for one seed/method pair.
+% Define stable success/failure evidence for one HS3 seed.
 record = struct( ...
     "RandomSeed", NaN, ...
     "Method", "", ...
@@ -302,7 +287,7 @@ record = struct( ...
 end
 
 function printRecord(record)
-% Print compact evidence while retaining complete records in the report.
+% Print concise evidence while retaining complete records in the report.
 fprintf( ...
     "random=%d method=%s success=%d validation=%d wall_s=%.6f " + ...
     "arrival_s=%.6g witness_clearance_deg=%.6g reason=%s\n", ...

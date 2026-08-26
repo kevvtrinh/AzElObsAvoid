@@ -8,8 +8,8 @@ function report = benchmarkStandaloneHs3Scaling( ...
 %       turnCounts, benchmarkOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Measure the public standalone Hermite-Simpson planner on the shared
-%     repeated-turn and hairpin scenarios without compact-planner work.
+%   - Measure the public Hermite-Simpson planner on repeated-turn and
+%     hairpin scenarios.
 %**************************************************************************
 % INPUTS
 %   - turnCounts (numeric vector, optional; default [1 5 10 20])
@@ -144,7 +144,7 @@ plannerTimer = tic;
 result = planAzElMotion( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 plannerWallTime_s = toc(plannerTimer);
-enforceStandaloneHs3(result);
+    enforceHs3Contract(result);
 
 validation = validateAzElTrajectory();
 validationAttempted = false;
@@ -177,12 +177,8 @@ record.PlannerResult = result;
 record.IndependentValidation = validation;
 end
 
-function enforceStandaloneHs3(result)
-% Treat evidence of method composition as a benchmark contract failure.
-if isfield(result, "CompositionDiagnostics")
-    error("benchmarkStandaloneHs3Scaling:CompositionDetected", ...
-        "Standalone HS3 results must not contain CompositionDiagnostics.");
-end
+function enforceHs3Contract(result)
+% Require the public entry point to echo the maintained HS3 method.
 if result.Options.PlannerMethod ~= "hs3" || ...
         result.SearchDiagnostics.PlannerMethod ~= "hs3"
     error("benchmarkStandaloneHs3Scaling:WrongPlannerMethod", ...
@@ -190,7 +186,7 @@ if result.Options.PlannerMethod ~= "hs3" || ...
 end
 if result.Success && result.SelectedMotionSource ~= "hs3"
     error("benchmarkStandaloneHs3Scaling:WrongMotionSource", ...
-        "A successful standalone result must select HS3 motion.");
+        "A successful result must select HS3 motion.");
 end
 end
 

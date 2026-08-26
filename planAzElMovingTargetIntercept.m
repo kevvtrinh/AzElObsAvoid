@@ -8,7 +8,7 @@ function result = planAzElMovingTargetIntercept(varargin)
 %       obstacles, initialState, targetMotion, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Adapt a sampled moving target to the selected planAzElMotion method.
+%   - Adapt a sampled moving target to the maintained HS3 planner.
 %     Specified-time mode makes one planner call; earliest mode makes a
 %     bounded chronological search and then bisects only the first observed
 %     feasible time bracket.
@@ -25,8 +25,8 @@ function result = planAzElMovingTargetIntercept(varargin)
 %       SpecifiedInterceptTime_s is required for specifiedTime.
 %       MaximumSearchDuration_s defaults to 60.
 %       MatchTargetVelocity and MatchTargetAcceleration default false.
-%       PlannerOptions is a partial planAzElMotion option struct, including
-%       PlannerMethod equal to "corridorQuintic" or "hs3".
+%       PlannerOptions is a partial planAzElMotion option struct.
+%       PlannerMethod may be omitted or equal "hs3".
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planAzElMotion result)
@@ -46,7 +46,7 @@ defaults = struct( ...
     "SpecifiedInterceptTime_s", NaN, ...
     "MaximumSearchDuration_s", 60, ...
     "MatchTargetVelocity", false, "MatchTargetAcceleration", false, ...
-    "PlannerOptions", struct("PlannerMethod", "corridorQuintic"));
+    "PlannerOptions", struct("PlannerMethod", "hs3"));
 if nargin == 0
     result = defaults;
     return;
@@ -92,7 +92,7 @@ validateattributes(options.MaximumSearchDuration_s, {'numeric'}, {'real', 'finit
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planAzElMovingTargetIntercept:InvalidPlannerOptions", "PlannerOptions must be a scalar struct.");
 end
-plannerMethod = "corridorQuintic";
+plannerMethod = "hs3";
 plannerOptions = options.PlannerOptions;
 if isfield(plannerOptions, "PlannerMethod") && ~isempty(plannerOptions.PlannerMethod)
     selectedDefaults = planAzElMotion(plannerOptions.PlannerMethod);

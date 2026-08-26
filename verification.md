@@ -2898,3 +2898,32 @@ owner would add an interface without removing responsibility. The retained
 alternatives and the two supplied bundles, focused regression, hairpin scale
 case, full example matrix, graphics smokes, Code Analyzer, and full suite cover
 that growth; the file remains below the 900-line limit.
+
+## HS3-only production cutover — 2026-08-25
+
+At source commit `67bc087` on branch `HS3-planner`, the public dispatcher was
+reduced to HS3 and the complete corridor-quintic implementation and its
+method-specific tests, benchmarks, and spline artifacts were removed. Active
+source and documentation contain no references to `corridorQuintic`,
+`azElPlannerMethods.corridor`, `solveCompactC3`, `compact planner`, or `quintic
+planner`; historical benchmark and verification records remain unchanged.
+
+Code Analyzer reported zero messages across all 83 remaining MATLAB files. A
+direct HS3 planning request succeeded, passed independent validation, returned
+`SelectedMotionSource = "hs3"` and `PlannerMethod = "hs3"`, and produced a
+five-second trajectory. The focused suites passed 67/67 in 388.369877 seconds:
+`testHs3OptionOwner`, `testHs3AffineSensitivity`, `testHs3Planner`,
+`testPlannerStageTiming`, and `testExampleContracts`. Existing near-singular
+`fmincon` warnings were visible in moving-barrier and moving-target coverage.
+
+The maintained examples were then launched serially in separate MATLAB
+processes, but all attempts failed during MATLAB startup before example code
+ran with `System Error: File system inconsistency`. A single-example retry after
+terminating the stale MATLAB process failed identically. Consequently no fresh
+example metrics or benchmark rows were recorded, and the visible-success and
+expected-failure diagnostic-figure checks remain untested in this environment.
+
+A later single MATLAB process successfully ran the complete post-cutover test
+suite: 75/75 passed, with zero failures or incomplete tests and 366.849286
+seconds summed test duration. The same near-singular HS3 `fmincon` warnings were
+visible and were not suppressed.

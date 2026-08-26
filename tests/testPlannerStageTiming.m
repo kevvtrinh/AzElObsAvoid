@@ -1,6 +1,6 @@
 function tests = testPlannerStageTiming
 %% Section 0: Header & Readme
-% Verify exclusive stage timing for both independent planner methods.
+% Verify exclusive stage timing for the maintained HS3 planner.
 tests = functiontests(localfunctions);
 end
 
@@ -10,64 +10,6 @@ repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
 addpath(fullfile(repositoryRoot, "examples"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
-end
-
-function testCorridorSuccessAndEndpointFailureShareTimingSchema(testCase)
-% Require one finite additive public schema on normal and early exits.
-initialState = state(0, [0 0]);
-goalState = state(8, [4 0]);
-limits = physicalLimits();
-options = fixedOptions();
-success = planAzElMotion([], initialState, goalState, limits, options);
-blockingObstacle = rectangleObstacle([0 8], [-1 1 -1 1], 0);
-failure = planAzElMotion( ...
-    blockingObstacle, initialState, goalState, limits, options);
-
-verifyTrue(testCase, success.Success, success.Message);
-verifyFalse(testCase, failure.Success);
-verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
-verifyEqual(testCase, ...
-    fieldnames(success.SearchDiagnostics.StageTiming), ...
-    fieldnames(failure.SearchDiagnostics.StageTiming));
-verifyStageTiming(testCase, success);
-verifyStageTiming(testCase, failure);
-verifyEqual(testCase, ...
-    failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
-end
-
-function testCorridorNoPathRetainsAdditiveTiming(testCase)
-% Exercise a failure after topology and candidate evaluation have run.
-wall = rectangleObstacle([0 12], [-0.5 0.5 -90 90], 0.2);
-initialState = state(0, [-5 0]);
-goalState = state(12, [5 0]);
-limits = physicalLimits();
-limits.elevationInterval_deg = [-10 10];
-options = fixedOptions();
-options.MaximumSeedCount = 3;
-result = planAzElMotion(wall, initialState, goalState, limits, options);
-
-verifyFalse(testCase, result.Success);
-verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
-verifyStageTiming(testCase, result);
-verifyGreaterThan(testCase, ...
-    result.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
-end
-
-function testDirectStaticRouteBypassesZeroVariableAffineModel(testCase)
-% Keep a clear two-point route valid when unrelated static geometry exists.
-initialState = state(0, [0 0]);
-goalState = state(8, [4 0]);
-limits = physicalLimits();
-obstacle = rectangleObstacle([0 8], [10 11 10 11], 0.2);
-result = planAzElMotion( ...
-    obstacle, initialState, goalState, limits, fixedOptions());
-
-verifyTrue(testCase, result.Success, result.Message);
-verifyEqual(testCase, ...
-    result.SeedSummaries(1).SolverDiagnostics.DecisionCount, 0);
-verifyGreaterThan(testCase, ...
-    result.SeedSummaries(1).SolverDiagnostics.ActualCorridorRecordCount, 0);
-verifyStageTiming(testCase, result);
 end
 
 function testValidatorSeparatesCollisionActivity(testCase)
@@ -80,8 +22,8 @@ limits = physicalLimits();
 limits.maxVelocity_deg_s = [3 3];
 trajectory = linearTrajectory(initialState, goalState);
 obstacle = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
-validation = validateAzElTrajectory( ...
-    trajectory, obstacle, initialState, goalState, limits, fixedOptions());
+    validation = validateAzElTrajectory( ...
+    trajectory, obstacle, initialState, goalState, limits, fixedHs3Options());
 
 verifyFalse(testCase, validation.Passed);
 verifyGreaterThanOrEqual(testCase, ...
@@ -91,28 +33,8 @@ verifyLessThanOrEqual(testCase, ...
     validation.ElapsedTime_s + timingTolerance(validation.ElapsedTime_s));
 end
 
-function testCompactC3ReportsAllAttemptedWork(testCase)
-% Verify the bounded compact controller exposes reusable-basis evidence.
-overrides = struct( ...
-    "PlannerMethod", "corridorQuintic", ...
-    "PlotOutputs", false, "FigureVisible", "off", ...
-    "ShowWorkspace", false, "ShowKinematics", false, ...
-    "ShowAnimation", false, "ShowSearchEdges", false, ...
-    "ShowVisibilityGraphs", false, "ShowSweptSurfaces", false, ...
-    "Verbose", false);
-result = exampleUShapedAzElTimeSpace(overrides);
-diagnostics = result.SearchDiagnostics.CompactC3;
-
-verifyTrue(testCase, result.Success, result.Message);
-verifyTrue(testCase, diagnostics.Attempted);
-verifyEqual(testCase, diagnostics.AffineBasisBuildCount, 1);
-verifyEqual(testCase, ...
-    diagnostics.AffineBasisReuseCount, diagnostics.TrialCount);
-verifyStageTiming(testCase, result);
-end
-
-function testStandaloneHs3SuccessAndEndpointFailureShareTiming(testCase)
-% Require standalone HS3 timing on a solved request and critical early exit.
+function testHs3SuccessAndEndpointFailureShareTiming(testCase)
+% Require HS3 timing on a solved request and critical early exit.
 initialState = state(0, [0 0]);
 goalState = state(4, [1 0]);
 limits = physicalLimits();
@@ -127,15 +49,16 @@ verifyTrue(testCase, success.Validation.Passed, success.Validation.Message);
 verifyEqual(testCase, success.SelectedMotionSource, "hs3");
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
-verifyFalse(testCase, isfield(success, "CompositionDiagnostics"));
-verifyFalse(testCase, isfield(failure, "CompositionDiagnostics"));
+verifyEqual(testCase, ...
+    fieldnames(success.SearchDiagnostics.StageTiming), ...
+    fieldnames(failure.SearchDiagnostics.StageTiming));
 verifyStageTiming(testCase, success);
 verifyStageTiming(testCase, failure);
 verifyEqual(testCase, ...
     failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
 end
 
-function testHs3SolverWorkReconcilesStandaloneTiming(testCase)
+function testHs3SolverWorkReconcilesTiming(testCase)
 % Keep actual HS3 solver and validation work visible in exclusive stages.
 initialState = state(0, [0 0]);
 goalState = state(3, [1 0]);
@@ -152,7 +75,6 @@ verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
 verifyGreaterThan(testCase, result.SearchDiagnostics.Hs3ElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
-verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 verifyStageTiming(testCase, result);
 end
 
@@ -211,18 +133,8 @@ function tolerance_s = timingTolerance(totalElapsedTime_s)
 tolerance_s = max(1e-6, 64 * eps(max(1, totalElapsedTime_s)));
 end
 
-function options = fixedOptions()
-% Return deterministic corridor controls for focused timing tests.
-options = planAzElMotion("corridorQuintic");
-options.GoalTimeMode = "fixedArrival";
-options.DirectSeedOnly = true;
-options.MaximumSeedCount = 1;
-options.SampleTime_s = 0.05;
-options.Verbose = false;
-end
-
 function options = fixedHs3Options()
-% Return deterministic standalone HS3 controls for timing tests.
+% Return deterministic HS3 controls for timing tests.
 options = planAzElMotion("hs3");
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;

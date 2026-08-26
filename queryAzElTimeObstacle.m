@@ -23,8 +23,8 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryAzElTimeObstac
 %       BoundaryIsOccupied is logical (default true).
 %       ClearanceTolerance_deg is nonnegative (default 1e-10).
 %       ReferenceTime is a datetime scalar (default Unix epoch).
-%       PlannerMethod is retained for public compatibility; both maintained
-%       planners use this shared query implementation.
+%       PlannerMethod may be omitted or equal "hs3" and is echoed for
+%       request provenance.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied (logical array)
@@ -45,7 +45,7 @@ defaults = struct( ...
     "ClearanceTolerance_deg", 1e-10, "ReferenceTime", datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
 if nargin == 0
     isOccupied = defaults;
-    isOccupied.PlannerMethod = "corridorQuintic";
+    isOccupied.PlannerMethod = "hs3";
     blockingObstacleIndex = [];
     queryDetails = struct();
     return;
@@ -60,7 +60,7 @@ end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("queryAzElTimeObstacle:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
-plannerMethod = "corridorQuintic";
+plannerMethod = "hs3";
 if isfield(optionOverrides, "PlannerMethod") && ...
         ~isempty(optionOverrides.PlannerMethod)
     methodDefaults = planAzElMotion(optionOverrides.PlannerMethod);

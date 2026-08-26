@@ -1,42 +1,37 @@
-function result = planAzElMotion(obstacles, initialState, goalState, limits, optionOverrides)
+function result = planAzElMotion( ...
+        obstacles, initialState, goalState, limits, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = planAzElMotion()
-%   options = planAzElMotion(plannerMethod)
+%   options = planAzElMotion("hs3")
 %   result = planAzElMotion( ...
 %       obstacles, initialState, goalState, limits)
 %   result = planAzElMotion( ...
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Dispatch to either the compact corridor planner or the separate
-%     Hermite-Simpson planner without cross-calls or fallback composition.
+%   - Run the maintained Hermite-Simpson planner through one public entry
+%     point with no alternate motion planner or fallback path.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
 %       Construct safety margins with makeAzElObstacleData exactly once.
 %   - initialState (scalar struct)
-%       time_s and 1-by-2 position_deg are required. Supported derivatives
-%       retain the contract of the selected planner method.
+%       Initial time, position, and supported derivatives.
 %   - goalState (scalar struct)
-%       Fixed or moving-goal state accepted by the selected planner method.
+%       Fixed or moving-goal state accepted by the HS3 planner.
 %   - limits (scalar struct)
-%       Physical and workspace limits accepted by both planner methods.
+%       Physical and workspace limits with units in field names.
 %   - optionOverrides (scalar struct, optional; default struct())
-%       PlannerMethod selects "corridorQuintic" or "hs3". All remaining
-%       fields are forwarded unchanged to that method. Empty PlannerMethod
-%       selects corridorQuintic.
+%       Partial HS3 options. PlannerMethod may be omitted or equal "hs3".
 %   - plannerMethod (scalar text, defaults-only call)
-%       Returns the exact defaults for "corridorQuintic" or "hs3" plus the
-%       normalized PlannerMethod field.
+%       The only supported value is "hs3".
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Selected planner result with the stable public contract. Its Options
-%       record echoes the resolved PlannerMethod.
+%       Stable success-or-failure planner result with HS3 diagnostics.
 %   - options (scalar struct, defaults-only calls)
-%       Method-specific defaults plus PlannerMethod. The zero-input call
-%       returns corridorQuintic defaults for backward compatibility.
+%       Resolved HS3 defaults with PlannerMethod equal "hs3".
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
@@ -45,113 +40,61 @@ function result = planAzElMotion(obstacles, initialState, goalState, limits, opt
 
 %% Section 1: Resolve Defaults Requests
 
-defaultPlannerMethod = "corridorQuintic";
-
 if nargin == 0
-    result = methodDefaults(defaultPlannerMethod);
+    result = azElPlannerMethods.hs3.plan();
+    result.PlannerMethod = "hs3";
     return;
 end
 
 if nargin == 1
-    if ~(ischar(obstacles) || (isstring(obstacles) && isscalar(obstacles)))
+    if ~(ischar(obstacles) || ...
+            (isstring(obstacles) && isscalar(obstacles)))
         error("planAzElMotion:MissingInputs", ...
-            "A one-input call must name a planner method. Planning requires obstacles, initialState, goalState, and limits.");
+            "A one-input call must name 'hs3'. Planning requires " + ...
+            "obstacles, initialState, goalState, and limits.");
     end
-
-    plannerMethod = normalizePlannerMethod(obstacles);
-    result = methodDefaults(plannerMethod);
+    plannerMethod = lower(string(obstacles));
+    if ~isscalar(plannerMethod) || plannerMethod ~= "hs3"
+        error("planAzElMotion:InvalidPlannerMethod", ...
+            "PlannerMethod must be 'hs3'; observed '%s'.", ...
+            plannerMethod);
+    end
+    result = azElPlannerMethods.hs3.plan();
+    result.PlannerMethod = "hs3";
     return;
 end
 
-%% Section 2: Resolve The Selected Planner
+%% Section 2: Resolve The HS3 Request
 
 if nargin < 4
     error("planAzElMotion:MissingInputs", ...
         "obstacles, initialState, goalState, and limits are required.");
 end
-
 if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
-
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("planAzElMotion:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
 end
 
-plannerMethod = defaultPlannerMethod;
 if isfield(optionOverrides, "PlannerMethod") && ...
         ~isempty(optionOverrides.PlannerMethod)
-    plannerMethod = normalizePlannerMethod(optionOverrides.PlannerMethod);
-end
-
-methodOverrides = optionOverrides;
-if isfield(methodOverrides, "PlannerMethod")
-    methodOverrides = rmfield(methodOverrides, "PlannerMethod");
-end
-
-% MotionMethod belongs only to the corridor snapshot. A user can therefore
-% switch a corridor defaults record to HS3 by changing just PlannerMethod.
-if plannerMethod == "hs3" && isfield(methodOverrides, "MotionMethod")
-    motionMethod = string(methodOverrides.MotionMethod);
-    if ~isscalar(motionMethod) || motionMethod ~= "corridorQuintic"
-        error("planAzElMotion:InvalidMotionMethod", ...
-            "MotionMethod is a corridor compatibility field and must remain 'corridorQuintic' when PlannerMethod is 'hs3'.");
-    end
-    methodOverrides = rmfield(methodOverrides, "MotionMethod");
-end
-
-%% Section 3: Run The Selected Planner
-
-switch plannerMethod
-    case "corridorQuintic"
-        result = azElPlannerMethods.corridor.plan( ...
-            obstacles, initialState, goalState, limits, methodOverrides);
-
-    case "hs3"
-        result = azElPlannerMethods.hs3.plan( ...
-            obstacles, initialState, goalState, limits, methodOverrides);
-end
-
-% Echo the selected public method after its engine resolves its own controls.
-result.Options.PlannerMethod = plannerMethod;
-result.SearchDiagnostics.PlannerMethod = plannerMethod;
-
-end
-
-
-function options = methodDefaults(plannerMethod)
-% Return defaults from only the selected folder so the other can be removed.
-switch plannerMethod
-    case "corridorQuintic"
-        options = azElPlannerMethods.corridor.plan();
-
-    case "hs3"
-        options = azElPlannerMethods.hs3.plan();
-end
-
-options.PlannerMethod = plannerMethod;
-end
-
-
-function plannerMethod = normalizePlannerMethod(value)
-% Normalize the public selector while retaining two explicit method names.
-plannerMethod = lower(string(value));
-if ~isscalar(plannerMethod)
-    error("planAzElMotion:InvalidPlannerMethod", ...
-        "PlannerMethod must be scalar text: 'corridorQuintic' or 'hs3'.");
-end
-
-switch plannerMethod
-    case "corridorquintic"
-        plannerMethod = "corridorQuintic";
-
-    case "hs3"
-        plannerMethod = "hs3";
-
-    otherwise
+    plannerMethod = lower(string(optionOverrides.PlannerMethod));
+    if ~isscalar(plannerMethod) || plannerMethod ~= "hs3"
         error("planAzElMotion:InvalidPlannerMethod", ...
-            "PlannerMethod must be 'corridorQuintic' or 'hs3'; observed '%s'.", ...
+            "PlannerMethod must be 'hs3'; observed '%s'.", ...
             plannerMethod);
+    end
 end
+if isfield(optionOverrides, "PlannerMethod")
+    optionOverrides = rmfield(optionOverrides, "PlannerMethod");
+end
+
+%% Section 3: Run The HS3 Planner
+
+result = azElPlannerMethods.hs3.plan( ...
+    obstacles, initialState, goalState, limits, optionOverrides);
+result.Options.PlannerMethod = "hs3";
+result.SearchDiagnostics.PlannerMethod = "hs3";
 end

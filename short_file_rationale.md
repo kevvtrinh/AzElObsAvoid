@@ -1,17 +1,16 @@
 # Why short production MATLAB files remain separate
 
-This audit counts nonblank, noncomment lines in production MATLAB files. It
-excludes tests, examples, benchmarks, the interactive sandbox, and temporary
-verification artifacts. The current tree has 33 production files below 100
-code lines:
+This audit covers production MATLAB files while excluding tests, examples,
+benchmarks, the interactive sandbox, and temporary verification artifacts.
+Short files remain only when they own a distinct contract or mathematical
+invariant:
 
-| Area | Short files | Ownership result |
-| --- | ---: | --- |
-| Root public APIs | 2 | Stable container and dispatch boundaries. |
-| Neutral `azElInternal` | 20 | Shared input, geometry, topology, corridor, result, polynomial, and comparison invariants. |
-| Compact corridor | 5 | Compact-specific motion/adapters plus a validator facade. |
-| HS3 | 5 | Standalone option/validation boundaries and focused Hermite-Simpson primitives. |
-| Shared planner timing | 1 | One timing schema used independently by both methods. |
+| Area | Ownership result |
+| --- | --- |
+| Root public APIs | Stable obstacle, planner, interception, validation, plotting, and query boundaries. |
+| Neutral `azElInternal` | Input, geometry, topology, corridor, result, and polynomial invariants used by HS3. |
+| HS3 | Option, validation, transcription, and solver-diagnostic boundaries. |
+| Planner timing | One exclusive timing schema for the maintained planner. |
 
 The earlier audit described method-local moving-target adapters, topology
 generators, corridor certificates, result builders, final validators, and HS3
@@ -21,15 +20,14 @@ intercept adapter, neutral topology/corridor/result helpers, and root
 
 ## Root public boundaries
 
-| File | Code lines | Why it stays separate |
-| --- | ---: | --- |
-| `combineAzElObstacles.m` | 72 | Public obstacle-container normalization used before immutable preparation. |
-| `planAzElMotion.m` | 80 | Public selector that dispatches to either separate planner without cross-calls. |
+| File | Why it stays separate |
+| --- | --- |
+| `combineAzElObstacles.m` | Public obstacle-container normalization used before immutable preparation. |
+| `planAzElMotion.m` | HS3-only public planner boundary and defaults owner. |
 
-`makeAzElObstacleData.m` is no longer a short boundary. It now owns fresh
-construction, imported-record normalization, and absolute reinflation in one
-576-physical-line implementation; the separate normalizer and inflater were
-removed after all maintained callers migrated.
+`makeAzElObstacleData.m` owns fresh construction, imported-record
+normalization, and absolute reinflation; the separate normalizer and inflater
+were removed after all maintained callers migrated.
 
 The shared `planAzElMovingTargetIntercept.m` and canonical
 `validateAzElTrajectory.m` are no longer short dispatchers; each owns its
@@ -37,8 +35,8 @@ complete policy.
 
 ## Neutral shared internals
 
-The 20 short neutral files remain separate where they define one mathematical
-or data-contract boundary:
+Short neutral files remain separate where they define one mathematical or
+data-contract boundary:
 
 - `resolveOptions`, `normalizeLogicalScalar`, and `validatePlannerEndpoints`
   own partial-option, logical, and shared endpoint-validation semantics;
@@ -55,19 +53,7 @@ or data-contract boundary:
 
 The larger neutral `normalizePlannerRequest`, `generateTopologySeeds`,
 `denseSweptEnvelope`, `timeExpandedVisibilitySearch`, `emptyPlannerResult`,
-and `validatePolynomialTrajectory` files remain separate for the same reason
-but are outside this under-100-line table.
-
-## Compact-specific short files
-
-| File or group | Why it stays separate |
-| --- | --- |
-| `buildFixedDurationAffineModel`, `expandRouteClearance` | Focused affine and clearance algorithms consumed by compact motion construction. |
-| `buildEnvelopeBoundary`, `expandDynamicRoute` | Small adapters for compact envelope and time-local route behavior. |
-| `validateTrajectory` | Compatibility facade over canonical root validation. |
-
-There are no compact-local topology, convex-decomposition, certificate, result,
-or moving-target owners.
+and `validatePolynomialTrajectory` remain separate for the same reason.
 
 ## HS3-specific short files
 
@@ -82,15 +68,12 @@ The standalone `plan.m` orchestrator and the larger `solveHs3`,
 `evaluateHs3TrajectoryConstraints`, and `buildFixedHs3ConstraintMatrices`
 files stay separate because they own planning policy, one NLP transcription,
 hybrid constraint evaluation, and exact fixed-time matrix assembly,
-respectively. The complete HS3 package currently owns 1,602 noncomment lines
-under its 2,000-line cap. That count excludes neutral shared dependencies but
-does not exclude or rely on a compact baseline: HS3 never calls corridor.
+respectively. HS3 never calls an alternate motion planner or fallback.
 
 ## Shared timing ownership decision
 
-`+azElPlannerMethods/+internal/stageTiming.m` remains separate because its 56
-code lines define, reconcile, and synchronize the exclusive timing schema for
-both public methods.
+`+azElPlannerMethods/+internal/stageTiming.m` remains separate because it
+defines, reconciles, and synchronizes the exclusive planner timing schema.
 
 No remaining short file should be merged solely to reduce file count. A merge
 is justified only when its mathematical invariant, compatibility boundary, or

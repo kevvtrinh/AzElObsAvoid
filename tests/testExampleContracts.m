@@ -120,18 +120,18 @@ verifyTrue(testCase, isnan( failureMetrics.KinematicCertificatePassed));
 end
 
 function testExampleResolverMaterializesPlannerDefaults(testCase)
-% Verify examples materialize defaults from only the selected planner.
-[corridorOptions, ~] = resolveAzElExampleOptions( ...
+% Verify examples materialize and override the maintained HS3 defaults.
+[defaultOptions, ~] = resolveAzElExampleOptions( ...
     struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
-verifyFalse(testCase, corridorOptions.Verbose);
-verifyEqual(testCase, corridorOptions.MaximumSeedCount, 2);
-verifyEqual(testCase, corridorOptions.PlannerMethod, "corridorQuintic");
-verifyTrue(testCase, isfield(corridorOptions, "MotionMethod"));
-verifyFalse(testCase, isfield(corridorOptions, "CollocationSegmentCount"));
+verifyFalse(testCase, defaultOptions.Verbose);
+verifyEqual(testCase, defaultOptions.MaximumSeedCount, 2);
+verifyEqual(testCase, defaultOptions.PlannerMethod, "hs3");
+verifyTrue(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
+verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
 
 [hs3Options, ~] = resolveAzElExampleOptions( ...
     struct("Verbose", true), ...
-    struct("PlannerMethod", "hs3", "CollocationSegmentCount", 6));
+    struct("CollocationSegmentCount", 6));
 verifyTrue(testCase, hs3Options.Verbose);
 verifyEqual(testCase, hs3Options.PlannerMethod, "hs3");
 verifyEqual(testCase, hs3Options.CollocationSegmentCount, 6);

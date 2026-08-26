@@ -20,20 +20,20 @@
   for Second and Higher Order Systems." *Autonomous Robots*, 48, Article 2.
   https://doi.org/10.1007/s10514-023-10155-z
 
-  The compact optimizer uses a separated third-order chain. Quadratic jerk
+  The HS3 optimizer uses a separated third-order chain. Quadratic jerk
   ordinates are integrated once to produce acceleration, velocity, and
   position polynomials. This prevents independent state splines from
   violating the shared dynamics.
 
-## Quintic stop profile
+## Scenario smoothstep motion
 
 - Perlin, K. (2002). "Improving Noise." *Proceedings of SIGGRAPH 2002*,
   681-682. https://doi.org/10.1145/566570.566636
 
-  The analytic first-motion constructor uses the quintic blend
-  `10*u^3 - 15*u^4 + 6*u^5`. Its endpoint velocity and acceleration are
-  zero. The planner scales each segment duration from analytic derivative
-  bounds and reports each mandatory waypoint stop.
+  Maintained moving-obstacle examples and stress benchmarks use the smoothstep
+  blend `10*u^3 - 15*u^4 + 6*u^5` to create deterministic scenario motion
+  with zero endpoint velocity and acceleration. This is input construction,
+  not a planner motion method.
 
 ## Bernstein polynomial bounds
 

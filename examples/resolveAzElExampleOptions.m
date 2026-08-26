@@ -108,9 +108,8 @@ end
 
 %% Section 2: Forward Only Public Planner Options
 
-% Resolve the method first so HS3 examples see HS3-specific option names and
-% corridor examples retain the no-NLP defaults without a mixed option record.
-plannerMethod = "corridorQuintic";
+% Materialize the maintained HS3 defaults before applying scenario controls.
+plannerMethod = "hs3";
 if isfield(scenarioDefaults, "PlannerMethod") && ...
         ~isempty(scenarioDefaults.PlannerMethod)
     plannerMethod = scenarioDefaults.PlannerMethod;

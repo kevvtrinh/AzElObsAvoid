@@ -1,9 +1,36 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **Standalone Hermite-Simpson restoration —
-2026-08-24**. The latest scenario assessment is **Extreme deforming U.S.
-scenario — 2026-08-24** at the end of this file. Earlier sections remain as
-historical evidence.
+The current planner judgment is **HS3-only production cutover — 2026-08-25**.
+Earlier sections remain as historical evidence and may name implementations
+that are no longer present.
+
+## HS3-only production cutover — 2026-08-25
+
+The branch now has one production planner implementation and one public
+selection: HS3. The corridor-quintic package, its private motion/search code,
+method-specific tests and benchmarks, and superseded spline benchmark artifacts
+are removed. Maintained examples, the moving-target wrapper, sandbox controls,
+test contracts, benchmark drivers, and active documentation now resolve HS3
+only. The production MATLAB surface decreased from 55 files and 10,346
+physical lines at `67bc087` to 44 files and 7,821 physical lines: 11 files and
+2,525 lines removed.
+
+The strongest current evidence is the complete post-cutover suite: 75/75 tests
+passed in 366.849286 seconds. The focused HS3 verification also passed 67/67 in
+388.369877 seconds, including option ownership, affine sensitivity, planner
+behavior, stage timing, and maintained example contracts. Code Analyzer
+reported zero messages across all 83 remaining MATLAB files, and a direct HS3
+request returned a successful independently validated five-second trajectory
+with `SelectedMotionSource = "hs3"`.
+
+The main remaining weakness is numerical conditioning. Moving-barrier and
+moving-target coverage still emits many near-singular `fmincon` warnings even
+though the returned trajectories pass independent validation. The required
+fresh serial example matrix, visible graphics smoke, and expected-failure
+figure check could not be rerun because their fresh MATLAB processes failed
+before user code with `System Error: File system inconsistency`. No new
+benchmark rows are recorded from those failed startups. Therefore the cutover
+does not claim a fresh full-matrix runtime or graphics result.
 
 ## Current corridor-only assessment — compact C3 duration controller
 

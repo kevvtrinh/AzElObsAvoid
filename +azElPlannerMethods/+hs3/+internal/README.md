@@ -15,5 +15,4 @@ neutral topology proposal -> HS3 transcription and solve -> canonical validation
 - `validateAzElTrajectory`: the one final independent validator.
 
 `hs3.plan` owns proposal ordering, collision relinearization, mesh refinement,
-validation, and candidate selection. No HS3 internal calls the compact corridor
-planner, and no compact result is used as a warm start or fallback.
+validation, and candidate selection.

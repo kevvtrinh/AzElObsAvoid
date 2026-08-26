@@ -11,8 +11,7 @@ derivatives and a bounded one-sided time derivative. Complete polynomial
 motion is returned to `hs3.plan` for canonical independent validation.
 
 The planner may rebuild collision linearizations around an HS3 candidate and
-increase collocation segments within configured mesh limits. These are repairs
-inside the HS3 method, not calls to or fallbacks from the compact planner.
+increase collocation segments within configured mesh limits.
 
 The deadline is cooperative: setup and the solver output callback stop future
 work, while an active function evaluation can finish after its requested time.

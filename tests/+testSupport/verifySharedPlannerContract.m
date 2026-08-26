@@ -4,14 +4,14 @@ function verifySharedPlannerContract(testCase, method, contractName)
 %   testSupport.verifySharedPlannerContract(testCase, method, contractName)
 %**************************************************************************
 % PURPOSE
-%   - Execute one behavior-identical planner contract against a selected
-%     method while retaining method-specific tests in their owning suites.
+%   - Execute one reusable behavioral contract against the maintained HS3
+%     planner while retaining focused solver tests in their owning suite.
 %**************************************************************************
 % INPUTS
 %   - testCase (matlab.unittest.FunctionTestCase)
 %       Active function-based test case with shared fixtures in TestData.
 %   - method (string scalar)
-%       Either "corridor" or "hs3".
+%       Must be "hs3". The argument is retained for readable call sites.
 %   - contractName (string scalar)
 %       Name of one registered shared contract.
 %**************************************************************************
@@ -22,20 +22,14 @@ function verifySharedPlannerContract(testCase, method, contractName)
 %   - Individual contracts document physical units through field suffixes.
 %**************************************************************************
 
-%% Section 1: Resolve Method Adapter
+%% Section 1: Validate The HS3 Adapter
 
 method = string(method);
-switch method
-    case "corridor"
-        adapter = struct( ...
-            "FixedOptions", @() planAzElMotion());
-    case "hs3"
-        adapter = struct( ...
-            "FixedOptions", @() planAzElMotion("hs3"));
-    otherwise
-        error("testSupport:UnknownPlannerMethod", ...
-            "Shared planner contracts support corridor or hs3.");
+if ~isscalar(method) || method ~= "hs3"
+    error("testSupport:UnknownPlannerMethod", ...
+        "Shared planner contracts support only hs3.");
 end
+adapter = struct("FixedOptions", @() planAzElMotion("hs3"));
 
 %% Section 2: Run Named Contract
 

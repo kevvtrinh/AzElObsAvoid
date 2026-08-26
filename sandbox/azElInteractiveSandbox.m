@@ -21,10 +21,9 @@ function sandboxState = azElInteractiveSandbox(sandboxOverrides)
 %       WorkspaceElevationInterval_deg, Verbose,
 %       LatestArrivalCoarseCandidateCount,
 %       LatestArrivalRefinementCandidateCount, and PlannerOptions.
-%       PlannerOptions is a partial planAzElMotion options struct. Its
-%       PlannerMethod initializes each tab's visible planner selector.
-%       Goal-time mode, selected planner, and verbosity are then owned by
-%       the active sandbox tab.
+%       PlannerOptions is a partial HS3 planAzElMotion options struct.
+%       PlannerMethod may be omitted or equal "hs3". Goal-time mode and
+%       verbosity are then owned by the active sandbox tab.
 %**************************************************************************
 % OUTPUTS
 %   - sandboxState (scalar struct)
@@ -184,14 +183,17 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("azElInteractiveSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
 end
 
-% Materialize only the public selector needed to initialize the two dropdowns.
-% The selected planner still resolves every other partial option at plan time.
-plannerMethod = "corridorQuintic";
-if isfield(options.PlannerOptions, "PlannerMethod") && ~isempty(options.PlannerOptions.PlannerMethod)
-    plannerMethod = options.PlannerOptions.PlannerMethod;
+% Keep exported options explicit while leaving all other partial HS3 options
+% for the public planner to resolve at plan time.
+if isfield(options.PlannerOptions, "PlannerMethod") && ...
+        ~isempty(options.PlannerOptions.PlannerMethod)
+    plannerMethod = lower(string(options.PlannerOptions.PlannerMethod));
+    if ~isscalar(plannerMethod) || plannerMethod ~= "hs3"
+        error("azElInteractiveSandbox:InvalidPlannerMethod", ...
+            "PlannerOptions.PlannerMethod must be 'hs3'.");
+    end
 end
-plannerDefaults = planAzElMotion(plannerMethod);
-options.PlannerOptions.PlannerMethod = plannerDefaults.PlannerMethod;
+options.PlannerOptions.PlannerMethod = "hs3";
 end
 
 function value = normalizeLogicalScalar(value, fieldName)
@@ -269,24 +271,8 @@ controls.ObstacleMarginHandle = addScalarControl( ...
     controlPanelHandle, "Polygon safety margin (deg)", 0.04, ...
     options.ObstacleSafetyMargin_deg);
 
-% The narrow strip below the panel keeps the planner choice and verbose flag
-% visible without adding another row to the already compact planning panel.
-uicontrol(tabHandle, ...
-    "Style", "text", ...
-    "String", "Planner", ...
-    "Units", "normalized", ...
-    "Position", [0.71 0.263 0.052 0.03], ...
-    "HorizontalAlignment", "left");
-plannerMethodNames = ["corridorQuintic", "hs3"];
-plannerMethodLabels = {"Corridor quintic", "HS3"};
-selectedPlannerIndex = find(plannerMethodNames == options.PlannerOptions.PlannerMethod, 1);
-controls.PlannerMethodHandle = uicontrol(tabHandle, ...
-    "Style", "popupmenu", ...
-    "String", plannerMethodLabels, ...
-    "UserData", plannerMethodNames, ...
-    "Units", "normalized", ...
-    "Position", [0.762 0.263 0.112 0.032], ...
-    "Value", selectedPlannerIndex);
+% The narrow strip below the panel keeps the verbose flag visible without
+% adding another row to the already compact planning panel.
 controls.VerboseHandle = uicontrol(tabHandle, ...
     "Style", "checkbox", ...
     "String", "Verbose output", ...
@@ -1171,9 +1157,6 @@ function controls = readModeControls(applicationState, modeName)
 % Read and validate one tab's independent physical and geometry controls.
 modeState = getModeState(applicationState, modeName);
 handles = modeState.GraphicsHandles.Controls;
-plannerMethodNames = string(get(handles.PlannerMethodHandle, "UserData"));
-selectedPlannerIndex = get(handles.PlannerMethodHandle, "Value");
-plannerMethod = plannerMethodNames(selectedPlannerIndex);
 workspaceAzimuthInterval_deg = readAxisPairControl( ...
     handles.WorkspaceAzimuthHandles, ...
     "Workspace azimuth interval (deg)", false);
@@ -1195,7 +1178,7 @@ pathObstacleRadius_deg = readScalarControl( handles.PathRadiusHandle, "Line/caps
 pathSafetyMargin_deg = readScalarControl( handles.PathMarginHandle, "Line safety margin (deg)", false);
 obstacleSafetyMargin_deg = readScalarControl( handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
 controls = struct( ...
-    "PlannerMethod", plannerMethod, ...
+    "PlannerMethod", "hs3", ...
     "WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
     "WorkspaceElevationInterval_deg", workspaceElevationInterval_deg, ...
     "MaxVelocity_deg_s", maxVelocity_deg_s, ...
@@ -1238,12 +1221,6 @@ end
 
 function applyDefaultControls(handles, modeName, options)
 % Restore one tab's editable values without touching the other tab.
-plannerMethodNames = string(get(handles.PlannerMethodHandle, "UserData"));
-selectedPlannerIndex = find(plannerMethodNames == options.PlannerOptions.PlannerMethod, 1);
-if isempty(selectedPlannerIndex)
-    error("azElInteractiveSandbox:InvalidPlannerMethod", "PlannerOptions.PlannerMethod is not available in the sandbox selector.");
-end
-set(handles.PlannerMethodHandle, "Value", selectedPlannerIndex);
 writeAxisPair(handles.WorkspaceAzimuthHandles, options.WorkspaceAzimuthInterval_deg);
 writeAxisPair(handles.WorkspaceElevationHandles, options.WorkspaceElevationInterval_deg);
 writeAxisPair(handles.VelocityHandles, options.MaxVelocity_deg_s);
@@ -1585,7 +1562,6 @@ for modeName = modeNames
     end
     controlHandles = findall( modeState.GraphicsHandles.ControlPanel, "Type", "uicontrol");
     set(controlHandles, "Enable", onOff(~isPlanning));
-    set(modeState.GraphicsHandles.Controls.PlannerMethodHandle, "Enable", onOff(~isPlanning));
     set(modeState.GraphicsHandles.Controls.VerboseHandle, "Enable", onOff(~isPlanning));
     if isPlanning
         continue;
