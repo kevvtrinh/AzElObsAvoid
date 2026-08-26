@@ -431,8 +431,8 @@ verifyEqual(testCase, shortDetourSeeds(1).EstimatedDuration_s, ...
     shortHorizon_s, ...
     "AbsTol", 1e-12);
 end
-function testStaticLengthInflationTriggersOneQualityMeshPass(testCase)
-% Verify a coarse valid motion receives one bounded, independently kept pass.
+function testLongStaticDetourUsesDynamicsScaledQualityMesh(testCase)
+% Verify a long detour receives one bounded, dynamics-scaled quality pass.
 circleAngle_rad = (0:47).' * (2 * pi / 48);
 obstacle = makeAzElObstacleData( ...
     "neutral circle", [0; 360], ...
@@ -451,10 +451,10 @@ result = planAzElMotion( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, ...
     result.Validation.Message);
-verifyEqual(testCase, result.Polynomial.SegmentCount, 20);
+verifyEqual(testCase, result.Polynomial.SegmentCount, 40);
 verifyEqual(testCase, ...
     result.SearchDiagnostics.MeshRefinementPassCount, 1);
-verifyLessThan(testCase, result.ArrivalTime_s, 82);
+verifyLessThan(testCase, result.ArrivalTime_s, 79);
 end
 function testMovingObstacleUsesTrajectoryTime(testCase)
 % Verify that the same point changes occupancy as protected geometry moves.

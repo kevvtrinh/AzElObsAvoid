@@ -3309,3 +3309,53 @@ suite passed 82/82 in 50.011338 seconds with warnings enabled. An earlier
 all warnings, preventing the required unknown-option warning from reaching
 `verifyWarning`; no repository assertion failed in that run. `git diff
 --check` reports only existing LF-to-CRLF conversion notices.
+
+## Direct dynamics-mesh jump — 2026-08-26
+
+The pushed dynamics-timescale rule reached its best long-detour results by
+starting at 20 segments and then refining to 40. The retained follow-up keeps
+the ordinary configured 10-segment first solve and, only when the same
+input-derived long untimed multi-leg predicate is true, makes its single
+quality pass jump directly by 4x. Other candidates retain the ordinary 2x
+refinement. This removes a redundant intermediate transcription without a new
+option, scenario identifier, obstacle property, seed, tolerance, or extra
+production line; the complete HS3 package remains exactly 2,000 noncomment
+lines.
+
+Focused evidence preserves the 40-circle result exactly at 58.6189853057
+seconds arrival, 110.807922148-degree polyline, and 123.380530717-degree
+smoothed motion. Final serial wall time was 22.727164 seconds versus 24.875451
+seconds in the pushed 20-to-40 verification. A focused repeat took 22.398936
+seconds. The structurally distinct neutral-circle regression improved from
+80.2105179472 seconds at 20 segments to 78.7444420156 seconds at 40 segments;
+its wall time rose from 4.140629 to 7.139318 seconds. The regression now
+requires one 40-segment quality pass and arrival below 79 seconds.
+
+A direct 10-to-30 alternative was measured and rejected despite its lower
+19.113692-second 40-circle wall time: arrival regressed to 60.1588345587
+seconds and smoothed motion grew to 124.541423742 degrees. The retained 40-
+segment result therefore does not trade away the arrival improvement for the
+lower runtime. No uniform speedup is claimed.
+
+Both rogue horizons reproduce on seed 2 and 40 segments. `failure.mat` at the
+180-second horizon reaches 86.5467293065 seconds in 21.522385 seconds wall;
+`successwhenincreasehorizon.mat` at 360 seconds reaches 86.5467226767 seconds
+in 20.076234 seconds wall. Their 6.630-microsecond arrival difference preserves
+the repaired horizon invariance, and both pass independent collision and all
+derivative certificates.
+
+All 18 maintained examples ran serially in fresh MATLAB processes. Seventeen
+successes and the expected `noValidatedSeed` outcome independently validate;
+their exact metrics are appended to `benchmark.csv`. The moving/deforming U.S.
+case remains the dominant wall-time weakness at 49.573514 seconds. A visible
+success produced three figures and 526 objects. A corrected failure plot probe
+produced two figures, 341 objects, and nine rejected edges; an earlier reporter
+queried the wrong diagnostics nesting after the valid example and is retained
+as a `NaN`-wall benchmark row rather than hidden.
+
+The focused long-detour regression passed in 7.1857 seconds,
+`testHs3Planner` passed 51/51 in 42.668797 seconds, and the warnings-enabled
+complete suite passed 82/82 in 49.490930 seconds. Code Analyzer reported zero
+findings across 84 MATLAB files. `git diff --check` reports only existing
+LF-to-CRLF notices. Two user-owned MATLAB processes, PIDs 8516 and 31968,
+remained alive and were never signaled.

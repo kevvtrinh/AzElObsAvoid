@@ -1611,3 +1611,25 @@ does not establish uniform superiority or global optimality. Bounded topology
 enumeration and duration exchange remain finite, and existing HS3 moving-target
 coverage still produces near-singular `fmincon` warnings even when independent
 validation passes.
+
+## Direct long-detour mesh refinement — 2026-08-26
+
+The strongest current HS3 quality result is retained while the redundant
+mid-resolution transcription is avoided. Long untimed multi-leg routes whose
+base segment time exceeds a complete input-derived acceleration cycle make one
+quality refinement directly from 10 to 40 segments. Forty moving circles
+retain the 58.6189853057-second arrival that beats the final `325-full-suite`
+row by 1.7428522830 seconds; final wall time is 22.727164 seconds rather than
+24.875451 seconds for the pushed 20-to-40 flow. Both supplied 180/360-second
+rogue horizons independently validate at 86.5467293065/86.5467226767 seconds,
+only 6.630 microseconds apart.
+
+This is a bounded local-quality policy, not an optimality or completeness
+claim. The neutral-circle control improves arrival from 80.2105179472 to
+78.7444420156 seconds but costs 7.139318 rather than 4.140629 seconds wall.
+The rejected 30-segment point is faster on the 40-circle case at 19.113692
+seconds but arrives 1.5398492530 seconds later than the retained result. The
+moving/deforming U.S. example still takes 49.573514 seconds, and known
+near-singular `fmincon` warnings remain visible on timed moving-obstacle cases.
+Production size does not grow: the HS3 package remains at its exact 2,000-line
+cap, with 82/82 tests and all 18 maintained outcomes passing.
