@@ -46,12 +46,12 @@ if ~isstruct(options) || ~isscalar(options)
     error("makeMovingAzElObstacleData:InvalidOptions", "options must be a scalar struct.");
 end
 defaultOptions = struct("Verbose", false);
-[resolvedOptions, unknownOptionFields] = azElInternal.resolveOptions(defaultOptions, options);
+[resolvedOptions, unknownOptionFields] = azElInput.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("makeMovingAzElObstacleData:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
 end
-verbose = azElInternal.normalizeLogicalScalar( ...
+verbose = azElInput.normalizeLogicalScalar( ...
     resolvedOptions.Verbose, "Verbose", "makeMovingAzElObstacleData:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 if ~isa(sliceTransform, "function_handle")

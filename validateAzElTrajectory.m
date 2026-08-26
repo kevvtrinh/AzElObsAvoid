@@ -50,7 +50,7 @@ elseif nargin ~= 6
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = combineAzElObstacles(obstacles);
-    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
+    obstacles = azElObstacles.prepareDynamic(obstacles);
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
 if options.AllowAzimuthWrapping && (~isempty(obstacles) || hasMovingGoal)
@@ -87,7 +87,7 @@ initialStateMatched = historyIsFinite && ...
     max(abs(velocity_deg_s(1, :) - initialState.velocity_deg_s)) <= ...
     stateTolerance && max(abs(acceleration_deg_s2(1, :) - initialState.acceleration_deg_s2)) <= stateTolerance;
 if timeIsFinite
-    goalPosition_deg = azElInternal.goalPositionAtTime( ...
+goalPosition_deg = azElInput.goalPositionAtTime( ...
         goalState, time_s(end));
 else
     goalPosition_deg = [NaN NaN];
@@ -103,7 +103,7 @@ else
         time_s(end) <= goalState.time_s + stateTolerance && time_s(end) > initialState.time_s;
 end
 [continuousBounds, dynamics, polynomialChecks] = ...
-    azElInternal.validatePolynomialTrajectory( ...
+    azElPlanner.validatePolynomialTrajectory( ...
     trajectory.Polynomial, time_s, position_deg, velocity_deg_s, ...
     acceleration_deg_s2, jerk_deg_s3, initialState, goalState, limits, ...
     options, stateTolerance, @withinBounds);
@@ -112,7 +112,7 @@ end
 
 collisionTimer = tic;
 if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
-    [seedCorridorCertified, seedCorridorClearance_deg] = azElInternal.certifySeedCorridor( ...
+    [seedCorridorCertified, seedCorridorClearance_deg] = azElSearch.certifySeedCorridor( ...
         trajectory, obstacles, options.CollisionClearanceTolerance_deg);
     if seedCorridorCertified
         collisionFree = true;
@@ -295,7 +295,7 @@ for segmentIndex = 1:polynomial.SegmentCount
 
     % Check each segment or obstacle-history breakpoint explicitly.
     for splitIndex = 1:numel(splitTimes_s)
-        [~, splitPoint_deg] = azElInternal.evaluatePolynomial( ...
+        [~, splitPoint_deg] = azElPlanner.evaluateAzElPolynomial( ...
             polynomial, splitTimes_s(splitIndex), segmentIndex);
 
         % Measure the breakpoint position against every obstacle at that exact time.
@@ -312,9 +312,9 @@ for segmentIndex = 1:polynomial.SegmentCount
                     historyClearanceLowerBound_deg);
                 continue;
             end
-            shape = azElInternal.obstacles.shapeAtTime( ...
+            shape = azElObstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), splitTimes_s(splitIndex));
-            clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, splitPoint_deg);
+            clearance_deg = azElGeometry.pointPolygonClearance( shape, splitPoint_deg);
             checkCount = checkCount + 1;
             minimumClearance_deg = min( minimumClearance_deg, clearance_deg);
             if clearance_deg <= options.CollisionClearanceTolerance_deg
@@ -334,7 +334,7 @@ for segmentIndex = 1:polynomial.SegmentCount
         stackStart_s(end) = [];
         stackEnd_s(end) = [];
         intervalMid_s = (intervalStart_s + intervalEnd_s) / 2;
-        [~, point_deg] = azElInternal.evaluatePolynomial( ...
+        [~, point_deg] = azElPlanner.evaluateAzElPolynomial( ...
             polynomial, intervalMid_s, segmentIndex);
         intervalResolved = true;
         intervalClearanceLowerBound_deg = Inf;
@@ -357,9 +357,9 @@ for segmentIndex = 1:polynomial.SegmentCount
                     historyClearanceLowerBound_deg);
                 continue;
             end
-            [shape, geometry] = azElInternal.obstacles.shapeAtTime( ...
+            [shape, geometry] = azElObstacles.shapeAtTime( ...
                 obstacles(obstacleIndex), intervalMid_s);
-            clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
+            clearance_deg = azElGeometry.pointPolygonClearance( shape, point_deg);
             checkCount = checkCount + 1;
             if clearance_deg <= options.CollisionClearanceTolerance_deg
                 minimumClearance_deg = min( minimumClearance_deg, clearance_deg);

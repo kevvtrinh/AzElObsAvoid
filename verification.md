@@ -6,6 +6,31 @@ the latest example evidence is in
 [Extreme deforming U.S. and moving-sun example — 2026-08-24](#extreme-deforming-us-and-moving-sun-example--2026-08-24).
 Earlier sections are retained as historical checkpoints.
 
+## Flat architecture and frozen HS3 boundary — 2026-08-26
+
+- Environment: `HS3-planner` at
+  `ad3139c+flat-architecture-worktree`, MATLAB R2024b Update 4.
+- Architecture: six flat Az/El packages plus frozen `+hs3`; no nested
+  production package directories, duplicate production MATLAB basenames, or
+  legacy `+azElInternal` / `+azElPlannerMethods` trees remain.
+- Dependency boundary: Az/El seed solving delegates optimization,
+  reconstruction, and evaluation to `hs3`; numerical optimizer calls occur
+  only in `+hs3/optimize.m`; HS3 source remains domain-neutral.
+- Static checks: Code Analyzer reported zero findings. `git diff --check`
+  passed, and `git diff -- +hs3` was empty.
+- Tests: 104/104 passed, zero failed or incomplete, in 52.560 seconds.
+- Examples: all 18 maintained examples ran serially and headlessly in fresh
+  processes in 241.822 seconds. Seventeen independently validated successes
+  passed collision and kinematic certificates; the expected no-path example
+  independently validated `noValidatedSeed`. Exact rows are in
+  `benchmark.csv`.
+- Graphics: a visible obstacle-free success created three figures. The
+  expected no-path case created two hidden diagnostic figures and retained its
+  search grid.
+- Known weakness: moving-barrier and opening-U optimization emitted repeated
+  near-singular or singular working-precision warnings. The returned motions
+  independently validated, but the conditioning issue remains visible.
+
 ## Severe-static fixed-time quality search — 2026-08-26
 
 - Environment: `HS3-planner` at `7661321+fixed-quality-worktree`, MATLAB

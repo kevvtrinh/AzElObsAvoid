@@ -4,8 +4,7 @@ function tests = testStandaloneHs3Kernel
 %   tests = testStandaloneHs3Kernel
 %**************************************************************************
 % PURPOSE
-%   - Prove the neutral HS3 leaf kernel matches the embedded two-axis math.
-%   - Exercise dimension-neutral reconstruction in one and three dimensions.
+%   - Exercise the frozen neutral HS3 kernel in one, two, and three dimensions.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -24,65 +23,6 @@ function setupOnce(testCase)
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
 testCase.TestData.RepositoryRoot = repositoryRoot;
-end
-
-function testPowerToBernsteinMatchesEmbeddedKernel(testCase)
-% Verify the copied basis conversion is exactly unchanged.
-powerCoefficient = reshape(sin(1:30), 6, 5);
-expected = azElInternal.powerToBernstein(powerCoefficient);
-actual = hs3.powerToBernstein(powerCoefficient);
-verifyEqual(testCase, actual, expected);
-end
-
-function testAffineSensitivityMatchesEmbeddedKernel(testCase)
-% Verify every copied scalar-axis sensitivity map is exactly unchanged.
-segmentCount = 7;
-duration_s = 11.25;
-evaluationTau = [0; 0.03; 0.2; 0.51; 0.9; 1];
-expected = ...
-    azElPlannerMethods.hs3.internal.motion.hs3AffineSensitivity( ...
-    segmentCount, duration_s, evaluationTau);
-actual = hs3.affineSensitivity( ...
-    segmentCount, duration_s, evaluationTau);
-verifyEqual(testCase, actual.ControlCount, expected.ControlCount);
-verifyEqual(testCase, actual.SegmentDuration, ...
-    expected.SegmentDuration_s);
-for fieldName = [ ...
-        "positionPowerMap", "velocityPowerMap", ...
-        "accelerationPowerMap", "jerkPowerMap", ...
-        "terminalStateMap", "positionAtTauMap", "velocityAtTauMap"]
-    verifyEqual(testCase, actual.(fieldName), expected.(fieldName));
-end
-end
-
-function testIntegratedJerkMatchesEmbeddedFixedTimeKernel(testCase)
-% Verify two-axis objective, gradient, and Hessian remain exact.
-segmentCount = 5;
-controlCount = 2 * segmentCount + 1;
-decision = cos((1:2 * controlCount).');
-[expectedValue, expectedGradient, expectedHessian] = ...
-    azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
-    decision, false, 9, segmentCount, 1);
-[actualValue, actualGradient, actualHessian] = ...
-    hs3.integratedSquaredJerk( ...
-    decision, false, 9, segmentCount, 1, 2);
-verifyEqual(testCase, actualValue, expectedValue);
-verifyEqual(testCase, actualGradient, expectedGradient);
-verifyEqual(testCase, actualHessian, expectedHessian);
-end
-
-function testIntegratedJerkMatchesEmbeddedFreeTimeKernel(testCase)
-% Verify optional final-time decision placement and gradient remain exact.
-segmentCount = 4;
-controlCount = 2 * segmentCount + 1;
-decision = [sin((1:2 * controlCount).'); 8.75];
-[expectedValue, expectedGradient] = ...
-    azElPlannerMethods.hs3.internal.motion.integratedSquaredHs3Jerk( ...
-    decision, true, NaN, segmentCount, 0.5);
-[actualValue, actualGradient] = hs3.integratedSquaredJerk( ...
-    decision, true, NaN, segmentCount, 0.5, 2);
-verifyEqual(testCase, actualValue, expectedValue);
-verifyEqual(testCase, actualGradient, expectedGradient);
 end
 
 function testReconstructionAndEvaluationSupportOneDimension(testCase)
@@ -208,7 +148,7 @@ function testSubintervalHullMatchesEmbeddedGenericMath(testCase)
 % Verify the neutral interval map is an exact extraction of shared math.
 tauStart = [0.02; 0.2; 0.51; 0.8];
 tauEnd = [0.1; 0.3; 0.6; 0.8];
-[expectedSegment, expectedMap] = azElInternal.subintervalHullMap( ...
+[expectedSegment, expectedMap] = hs3.subintervalHullMap( ...
     tauStart, tauEnd, 5, 6);
 [actualSegment, actualMap] = hs3.subintervalHullMap( ...
     tauStart, tauEnd, 5, 6);

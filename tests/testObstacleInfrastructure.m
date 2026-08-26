@@ -143,7 +143,7 @@ function testShapeQueryReportsOrderedBoundaryProperties(testCase)
 % Compare the lightweight ordered-boundary record with polyshape evidence.
 convexObstacle = rectangleObstacle("convex", [0; 4], [-2 2 -1 1]);
 [convexShape, convexGeometry] = ...
-    azElInternal.obstacles.shapeAtTime(convexObstacle, 2);
+    azElObstacles.shapeAtTime(convexObstacle, 2);
 verifyTrue(testCase, convexGeometry.HasOrderedSingleRegion);
 verifyTrue(testCase, convexGeometry.IsConvex);
 vertices_deg = [convexGeometry.azimuth_deg, convexGeometry.elevation_deg];
@@ -159,12 +159,12 @@ concaveElevation_deg = [0; 0; 1; 1; 2; 2];
 concaveObstacle = makeAzElObstacleData( ...
     "concave", [0; 4], concaveAzimuth_deg, concaveElevation_deg, 0);
 [~, concaveGeometry] = ...
-    azElInternal.obstacles.shapeAtTime(concaveObstacle, 2, true);
+    azElObstacles.shapeAtTime(concaveObstacle, 2, true);
 verifyTrue(testCase, concaveGeometry.HasOrderedSingleRegion);
 verifyFalse(testCase, concaveGeometry.IsConvex);
 multiRegionObstacle = movingMultiRingObstacle();
 [~, multiRegionGeometry] = ...
-    azElInternal.obstacles.shapeAtTime(multiRegionObstacle, 1, true);
+    azElObstacles.shapeAtTime(multiRegionObstacle, 1, true);
 verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
 verifyFalse(testCase, multiRegionGeometry.IsConvex);
 verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));

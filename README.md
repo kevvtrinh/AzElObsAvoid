@@ -1,10 +1,10 @@
 # Azimuth/Elevation Obstacle-Avoidance Planner
 
 This branch provides one public Az/El planner: a third-order
-Hermite-Simpson (HS3) transcription solved with `fmincon`. Neutral request,
-topology, obstacle, result, and validation infrastructure is shared through
-`+azElInternal`; HS3 motion generation is owned by
-`+azElPlannerMethods/+hs3`.
+Hermite-Simpson (HS3) transcription solved with `fmincon`. Production code is
+organized by six one-level responsibilities: input, obstacles, geometry,
+search, planning, and plotting. The dimension-neutral `+hs3` engine is a
+separate frozen package.
 
 A successful result is accepted only after canonical independent validation.
 Successful results have `SelectedMotionSource="hs3"` and echo
@@ -12,8 +12,8 @@ Successful results have `SelectedMotionSource="hs3"` and echo
 
 The HS3 implementation descends from the `plan-325` snapshot at commit
 `5a067112a9f880d015f52fb97538a99010871478`. See the
-[method-package guide](+azElPlannerMethods/README.md) and the
-[HS3 guide](+azElPlannerMethods/+hs3/README.md) for current ownership details.
+[planner guide](+azElPlanner/README.md) and the frozen
+[engine guide](+hs3/README.md) for current ownership details.
 
 ## Quick start
 
@@ -209,27 +209,18 @@ returned motion or preserved failure diagnostics.
 planAzElMotion.m                    public HS3 planning entry point
 planAzElMovingTargetIntercept.m     chronological intercept adapter
 
-+azElPlannerMethods/
-    README.md                       HS3 ownership and dependency guide
-    +hs3/
-        README.md
-        plan.m                      HS3 orchestrator
-        resolvePlannerOptions.m
-        +internal/
-            +motion/                HS3 transcription and NLP solver
-
-+azElInternal/                      neutral planner invariants
-    generateTopologySeeds.m
-    normalizePlannerRequest.m
-    validatePlannerEndpoints.m
-    buildSeedCorridor.m
-    certifySeedCorridor.m
-    emptyPlannerResult.m
++azElInput/                         request, endpoint, and option contracts
++azElObstacles/                     canonical obstacle history and interpolation
++azElGeometry/                      polygon conversion and clearance primitives
++azElSearch/                        topology, visibility, and corridor ownership
++azElPlanner/                       Az/El orchestration and HS3 adaptation
++azElPlotting/                      result-driven plotting implementation
++hs3/                               frozen dimension-neutral motion engine
 
 makeAzElObstacleData.m              construct, normalize, protect obstacles
 makeMovingAzElObstacleData.m        moving polygon construction
 validateAzElTrajectory.m            public independent validation
-plotAzElMotion.m                    result and diagnostics plotting
+plotAzElMotion.m                    stable public plotting facade
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
@@ -240,8 +231,13 @@ branch_assessment.md                strengths, weaknesses, and limitations
 verification.md                     commands and historical evidence
 ```
 
-Package folders are implementation boundaries rather than application entry
-points. Prefer the root public functions.
+Prefer the root public functions for Az/El planning. The frozen generic HS3
+engine is directly callable with dimension-neutral state and limit records:
+
+```matlab
+trajectory = hs3.solve( ...
+    initialState, terminalState, limits, options, pathConstraints);
+```
 
 ## Maintained examples
 

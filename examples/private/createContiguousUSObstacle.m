@@ -38,7 +38,7 @@ if ~isstruct(options) || ~isscalar(options)
     error("createContiguousUSObstacle:InvalidOptions", "options must be a scalar struct.");
 end
 defaultOptions = struct( "MotionMode", "static", "Verbose", false);
-[resolvedOptions, unknownOptionFields] = azElInternal.resolveOptions(defaultOptions, options);
+[resolvedOptions, unknownOptionFields] = azElInput.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createContiguousUSObstacle:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
@@ -47,7 +47,7 @@ motionMode = lower(string(resolvedOptions.MotionMode));
 if ~isscalar(motionMode) || ~any(motionMode == ["static" "movingdeforming"])
     error("createContiguousUSObstacle:InvalidMotionMode", "MotionMode must be static or movingDeforming.");
 end
-verbose = azElInternal.normalizeLogicalScalar( ...
+verbose = azElInput.normalizeLogicalScalar( ...
     resolvedOptions.Verbose, "Verbose", "createContiguousUSObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 

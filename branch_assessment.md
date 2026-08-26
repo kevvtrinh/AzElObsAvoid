@@ -4,6 +4,39 @@ The current planner judgment is **HS3-only production cutover — 2026-08-25**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Flat architecture and frozen HS3 boundary — 2026-08-26
+
+Production code now has six one-level Az/El packages: input, obstacles,
+geometry, search, planner, and plotting. The separate root `+hs3` package is
+unchanged from commit `ad3139c`. The former nested `+azElInternal` and
+`+azElPlannerMethods` trees and their forwarding or duplicate implementations
+are removed. Root public entry points remain stable.
+
+The solver dependency is now explicit and tested. `+azElPlanner` translates
+unit-bearing Az/El state and corridor records into dimension-neutral HS3
+records. Optimization, polynomial reconstruction, and polynomial evaluation
+then run through `hs3.optimize`, `hs3.reconstructPolynomial`, and
+`hs3.evaluatePolynomial`. No Az/El package calls `fmincon`, `quadprog`, or
+`optimoptions`; those calls occur only in frozen `+hs3/optimize.m`. HS3 MATLAB
+source contains no Az/El, obstacle, visibility, topology, corridor, plotting,
+or planner dependency.
+
+Fresh evidence is 104/104 automated tests in 52.560 seconds, including seven
+new architecture-boundary tests, and zero Code Analyzer findings across the
+production and test MATLAB files. All 18 maintained examples ran serially in
+fresh headless processes in 241.822 seconds: 17 independently validated,
+collision-free successes with kinematic certificates and the expected
+independently validated `noValidatedSeed` failure. A visible success created
+three figures; the failure check created two diagnostic figures and retained
+its search grid. Exact rows are in `benchmark.csv` under
+`ad3139c+flat-architecture-worktree`.
+
+The largest remaining weakness is numerical conditioning inside the frozen
+HS3 nonlinear solve: the moving-barrier and opening-U runs emitted repeated
+near-singular or singular working-precision warnings even though their final
+trajectories passed independent collision and kinematic validation. This
+architecture change does not claim a solver-quality or runtime improvement.
+
 ## Standalone dimension-neutral HS3 extraction — 2026-08-26
 
 The HS3 polynomial and optimization engine is now available through the root

@@ -43,12 +43,12 @@ if ~isstruct(options) || ~isscalar(options)
     error("createGeographicRegionObstacle:InvalidOptions", "options must be a scalar struct.");
 end
 defaultOptions = struct("Verbose", false);
-[resolvedOptions, unknownOptionFields] = azElInternal.resolveOptions(defaultOptions, options);
+[resolvedOptions, unknownOptionFields] = azElInput.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createGeographicRegionObstacle:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
 end
-verbose = azElInternal.normalizeLogicalScalar( ...
+verbose = azElInput.normalizeLogicalScalar( ...
     resolvedOptions.Verbose, "Verbose", "createGeographicRegionObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 validateattributes(time_s, {'numeric'}, {'real','finite','nonempty','increasing'});

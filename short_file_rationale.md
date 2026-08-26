@@ -1,81 +1,59 @@
 # Why short production MATLAB files remain separate
 
-This audit covers production MATLAB files while excluding tests, examples,
-benchmarks, the interactive sandbox, and temporary verification artifacts.
-Short files remain only when they own a distinct contract or mathematical
-invariant:
+Production code is organized into six flat, high-level Az/El packages plus the
+frozen, dimension-neutral `+hs3` engine. Root MATLAB files are stable public
+entry points. Tests, examples, benchmarks, the interactive sandbox, and user
+data are outside this ownership audit.
 
-| Area | Ownership result |
+| Package | Single responsibility |
 | --- | --- |
-| Root public APIs | Stable obstacle, planner, interception, validation, plotting, and query boundaries. |
-| Neutral `azElInternal` | Input, geometry, topology, corridor, result, and polynomial invariants used by HS3. |
-| HS3 | Option, validation, transcription, and solver-diagnostic boundaries. |
-| Planner timing | One exclusive timing schema for the maintained planner. |
+| `+azElInput` | Normalize and validate public planner requests and options. |
+| `+azElObstacles` | Prepare and query static or time-varying obstacles. |
+| `+azElGeometry` | Interpret boundaries and perform geometry operations. |
+| `+azElSearch` | Generate topology seeds and certify seed corridors. |
+| `+azElPlanner` | Adapt Az/El requests to HS3 and assemble planner results. |
+| `+azElPlotting` | Render returned results without rerunning planning. |
+| `+hs3` | Solve and validate dimension-neutral polynomial motion problems. |
 
-The earlier audit described method-local moving-target adapters, topology
-generators, corridor certificates, result builders, final validators, and HS3
-stop-motion helpers. Those duplicate owners have been removed. One root
-intercept adapter, neutral topology/corridor/result helpers, and root
-`validateAzElTrajectory` now own those contracts.
+No production package contains another directory. Production MATLAB basenames
+are unique, so a responsibility cannot be reached through duplicate package
+implementations.
 
-## Root public boundaries
+## The HS3 boundary
 
-| File | Why it stays separate |
-| --- | --- |
-| `combineAzElObstacles.m` | Public obstacle-container normalization used before immutable preparation. |
-| `planAzElMotion.m` | HS3-only public planner boundary and defaults owner. |
+`+hs3` is frozen as an independent numerical engine. Its state, limits,
+polynomial, and path-constraint schemas use caller-defined coordinates and
+units. It contains no Az/El, obstacle, visibility, topology, plotting, or
+scenario knowledge.
 
-`makeAzElObstacleData.m` owns fresh construction, imported-record
-normalization, and absolute reinflation; the separate normalizer and inflater
-were removed after all maintained callers migrated.
+`+azElPlanner/solveSeed.m` owns the adapter from an Az/El seed corridor to the
+dimension-neutral HS3 optimization problem. Numerical optimization is invoked
+only through `hs3.optimize`; exact polynomial reconstruction and evaluation
+are invoked through `hs3.reconstructPolynomial` and `hs3.evaluatePolynomial`.
+The adapter restores unit-bearing Az/El field names for the stable planner
+result. It does not duplicate engine mathematics.
 
-The shared `planAzElMovingTargetIntercept.m` and canonical
-`validateAzElTrajectory.m` are no longer short dispatchers; each owns its
-complete policy.
+## Stable public boundaries
 
-## Neutral shared internals
+Root functions remain separate because they are the documented API for
+obstacle construction, planning, interception, validation, plotting, and
+queries. `planAzElMotion.m` remains the single public planner entry point.
+`plotAzElMotion.m` remains a compatibility facade over
+`azElPlotting.plotMotion`, which keeps graphics out of search and solver code.
 
-Short neutral files remain separate where they define one mathematical or
-data-contract boundary:
+## Small internal files
 
-- `resolveOptions`, `normalizeLogicalScalar`, and `validatePlannerEndpoints`
-  own partial-option, logical, and shared endpoint-validation semantics;
-- `prepareDynamic`, `shapeAtTime`, `boundaryShape`, `boundaryToEdges`, and
-  `pointPolygonClearance` own immutable obstacle and geometry interpretation;
-- `boundedTimeLayers`, `clusterSeedShape`, `convexPolygonRegions`,
-  `buildSeedCorridor`, `certifySeedCorridor`, `seedCorridorInequality`, and
-  `seedEnvelopeContainsObstacles` own bounded search reduction and independent
-  corridor evidence;
-- `goalPositionAtTime`, `evaluatePolynomial`, `powerToBernstein`, and
-  `integratedSquaredPolynomialJerk` own exact shared motion interpretation;
-- `acceptsTrajectoryImprovement` owns the monotone validation/arrival/jerk
-  acceptance rule.
+Short files remain when they own one shared contract or mathematical invariant:
 
-The larger neutral `normalizePlannerRequest`, `generateTopologySeeds`,
-`denseSweptEnvelope`, `timeExpandedVisibilitySearch`, `emptyPlannerResult`,
-and `validatePolynomialTrajectory` remain separate for the same reason.
+- input functions own defaults, logical normalization, endpoint checks, and
+  request normalization;
+- obstacle and geometry functions own canonical shape interpretation;
+- search functions own time layers, topology generation, corridor construction,
+  and independent corridor certificates;
+- planner functions own result schemas, stage timing, Az/El constraint
+  translation, and post-solve validation;
+- HS3 functions own generic sensitivities, constraint matrices, optimization,
+  reconstruction, evaluation, and validation.
 
-## HS3-specific short files
-
-| File or group | Why it stays separate |
-| --- | --- |
-| `emptyHs3SolverDiagnostics` | Stable flat schema for every nonlinear-solver exit. |
-| `integratedSquaredHs3Jerk` | HS3 decision-space objective and gradient. |
-| `hs3AffineSensitivity` | Exact Hermite-Simpson coefficient, state, and evaluation sensitivity maps. |
-| `resolvePlannerOptions`, `validateTrajectory` | Standalone HS3 option ownership and a compatibility facade over canonical validation. |
-
-The standalone `plan.m` orchestrator and the larger `solveHs3`,
-`evaluateHs3TrajectoryConstraints`, and `buildFixedHs3ConstraintMatrices`
-files stay separate because they own planning policy, one NLP transcription,
-hybrid constraint evaluation, and exact fixed-time matrix assembly,
-respectively. HS3 never calls an alternate motion planner or fallback.
-
-## Shared timing ownership decision
-
-`+azElPlannerMethods/+internal/stageTiming.m` remains separate because it
-defines, reconciles, and synchronizes the exclusive planner timing schema.
-
-No remaining short file should be merged solely to reduce file count. A merge
-is justified only when its mathematical invariant, compatibility boundary, or
-shared ownership disappears. File length by itself is not evidence that a
-boundary is redundant.
+Merging these files would combine distinct ownership or make a public contract
+local to one caller. File length alone is not a reason to merge them.

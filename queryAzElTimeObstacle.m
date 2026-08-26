@@ -69,12 +69,12 @@ end
 if isfield(optionOverrides, "PlannerMethod")
     optionOverrides = rmfield(optionOverrides, "PlannerMethod");
 end
-[options, unknownNames] = azElInternal.resolveOptions(defaults, optionOverrides);
+[options, unknownNames] = azElInput.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("queryAzElTimeObstacle:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
-options.BoundaryIsOccupied = azElInternal.normalizeLogicalScalar( ...
+options.BoundaryIsOccupied = azElInput.normalizeLogicalScalar( ...
     options.BoundaryIsOccupied, "BoundaryIsOccupied", "queryAzElTimeObstacle:InvalidBoundaryPolicy");
 validateattributes(options.ClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || isnat(options.ReferenceTime)
@@ -83,7 +83,7 @@ end
 options.ReferenceTime.TimeZone = "UTC";
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = combineAzElObstacles(obstacles);
-    obstacles = azElInternal.obstacles.prepareDynamic(obstacles);
+    obstacles = azElObstacles.prepareDynamic(obstacles);
 end
 
 %% Section 2: Broadcast Query Arrays
@@ -122,8 +122,8 @@ for queryIndex = 1:queryCount
 
     % Compare this query point with every obstacle to find its nearest blocker.
     for obstacleIndex = 1:numel(obstacles)
-        shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s(queryIndex));
-        clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, point_deg);
+        shape = azElObstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s(queryIndex));
+        clearance_deg = azElGeometry.pointPolygonClearance( shape, point_deg);
         if clearance_deg < minimumClearance_deg(queryIndex)
             minimumClearance_deg(queryIndex) = clearance_deg;
             nearestObstacleIndex(queryIndex) = uint32(obstacleIndex);
@@ -229,7 +229,7 @@ for timeIndex = 1:numel(uniqueTime_s)
             continue;
         end
         points_deg = [azimuth_deg(candidateIndices), elevation_deg(candidateIndices)];
-        [shape, geometry] = azElInternal.obstacles.shapeAtTime( ...
+        [shape, geometry] = azElObstacles.shapeAtTime( ...
             obstacles(obstacleIndex), uniqueTime_s(timeIndex), true);
         if ~geometry.Active
             continue;
@@ -245,7 +245,7 @@ for timeIndex = 1:numel(uniqueTime_s)
             end
         else
             if isempty(shape)
-                shape = azElInternal.obstacles.shapeAtTime( obstacles(obstacleIndex), uniqueTime_s(timeIndex));
+                shape = azElObstacles.shapeAtTime( obstacles(obstacleIndex), uniqueTime_s(timeIndex));
             end
             blocked = complexShapeOccupancy(shape, points_deg, options);
         end
@@ -260,7 +260,7 @@ blocked = false(pointCount, 1);
 
 % Apply the detailed boundary policy to every point in multi-ring geometry.
 for pointIndex = 1:pointCount
-    clearance_deg = azElInternal.geometry.pointPolygonClearance( shape, points_deg(pointIndex, :));
+    clearance_deg = azElGeometry.pointPolygonClearance( shape, points_deg(pointIndex, :));
     blocked(pointIndex) = clearance_deg < ...
         -options.ClearanceTolerance_deg || ...
         (options.BoundaryIsOccupied && clearance_deg <= options.ClearanceTolerance_deg);

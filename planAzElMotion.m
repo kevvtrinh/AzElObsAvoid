@@ -41,7 +41,7 @@ function result = planAzElMotion( ...
 %% Section 1: Resolve Defaults Requests
 
 if nargin == 0
-    result = azElPlannerMethods.hs3.plan();
+    result = azElPlanner.plan();
     result.PlannerMethod = "hs3";
     return;
 end
@@ -59,7 +59,7 @@ if nargin == 1
             "PlannerMethod must be 'hs3'; observed '%s'.", ...
             plannerMethod);
     end
-    result = azElPlannerMethods.hs3.plan();
+    result = azElPlanner.plan();
     result.PlannerMethod = "hs3";
     return;
 end
@@ -93,7 +93,7 @@ end
 
 %% Section 3: Run The HS3 Planner
 
-result = azElPlannerMethods.hs3.plan( ...
+result = azElPlanner.plan( ...
     obstacles, initialState, goalState, limits, optionOverrides);
 result.Options.PlannerMethod = "hs3";
 result.SearchDiagnostics.PlannerMethod = "hs3";

@@ -178,24 +178,24 @@ function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase, ~)
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 20], [-1 1 -2 2], 0);
 sampleTimes_s = (0:5:20).';
 endpointPosition_deg = [-5 0; 5 0];
-[envelopeShape, usedEnvelope] = azElInternal.denseSweptEnvelope( ...
+[envelopeShape, usedEnvelope] = azElSearch.denseSweptEnvelope( ...
     obstacle, sampleTimes_s, endpointPosition_deg, 10);
 verifyTrue(testCase, usedEnvelope);
 verifyEqual(testCase, min(envelopeShape.Vertices, [], 1), [-1 -2], "AbsTol", 1e-5);
 verifyEqual(testCase, max(envelopeShape.Vertices, [], 1), [1 2], "AbsTol", 1e-5);
-[capturingShape, usedCapturingEnvelope] = azElInternal.denseSweptEnvelope( ...
+[capturingShape, usedCapturingEnvelope] = azElSearch.denseSweptEnvelope( ...
     obstacle, sampleTimes_s, [0 0; 5 0], 10);
 verifyFalse(testCase, usedCapturingEnvelope);
 verifyEmpty(testCase, capturingShape.Vertices);
 triangle = makeAzElObstacleData( "triangle", [0; 20], [-4; 4; 0], [-3; -3; 4], 0);
-[coarseShape, usedCoarseShape] = azElInternal.denseSweptEnvelope( ...
+[coarseShape, usedCoarseShape] = azElSearch.denseSweptEnvelope( ...
     triangle, sampleTimes_s, [-8 0; 8 0], 10);
 verifyTrue(testCase, usedCoarseShape);
 verifyLessThan(testCase, area(coarseShape), 50);
 guardedShape = polybuffer(coarseShape, 1e-9);
 verifyTrue(testCase, all(isinterior( guardedShape, [-4; 4; 0], [-3; -3; 4])));
 secondTriangle = makeAzElObstacleData( "second triangle", [0; 20], [6; 8; 7], [-3; -3; 4], 0);
-[manyObstacleShape, usedManyObstacleEnvelope] = azElInternal.denseSweptEnvelope( ...
+[manyObstacleShape, usedManyObstacleEnvelope] = azElSearch.denseSweptEnvelope( ...
     [triangle; secondTriangle], linspace(0, 20, 2000), [-8 8; 12 8], 10000);
 verifyTrue(testCase, usedManyObstacleEnvelope);
 verifyNotEmpty(testCase, manyObstacleShape.Vertices);
@@ -431,7 +431,7 @@ right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
 open_deg = [left_deg; NaN NaN; right_deg];
 obstacle = makeAzElObstacleData( ...
     "opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
-[shape, geometry] = azElInternal.obstacles.shapeAtTime(obstacle, 1);
+[shape, geometry] = azElObstacles.shapeAtTime(obstacle, 1);
 verifyFalse(testCase, geometry.TopologyIsInterpolated);
 verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
 verifyTrue(testCase, isinterior(shape, 0, 0));

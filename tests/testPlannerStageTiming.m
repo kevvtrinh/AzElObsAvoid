@@ -80,11 +80,11 @@ end
 
 function testFinalizerRejectsOverAttribution(testCase)
 % Reject overlapping stage ownership instead of hiding it in a zero residual.
-timing = azElPlannerMethods.internal.stageTiming();
+timing = azElPlanner.stageTiming();
 timing.MotionSolvingElapsedTime_s = 2;
 
 verifyError(testCase, @() ...
-    azElPlannerMethods.internal.stageTiming(timing, 1), ...
+    azElPlanner.stageTiming(timing, 1), ...
     "stageTiming:OverAttributed");
 end
 
