@@ -16,11 +16,12 @@ being visible only in the tab log.
 
 The focused export suite passed 4/4, including a real no-dialog file write from
 the public sandbox state, and Code Analyzer reported zero messages in the two
-production files and focused test. A visible user run then isolated a remaining
-compatibility defect in the post-save success dialog: MATLAB string arguments
-caused `msgbox` to throw after the file was written, and the callback mislabeled
-that notification failure as an export failure. The dialog and `whos -file`
-arguments now use character arrays for cross-version compatibility.
+production files and focused test. Two visible user runs then isolated a
+cross-version UI defect missed by hidden tests: the `uiputfile` filter cell used
+MATLAB strings where that API requires character arrays. The filter, dialog,
+`save`, `whos -file`, `version`, and `datetime` compatibility boundaries now
+use character arguments. Export failures also report their identifier and
+earliest source line. A final visible rerun remains required.
 
 ## HS3-only production cutover — 2026-08-25
 

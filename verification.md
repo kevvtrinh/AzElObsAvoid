@@ -2918,10 +2918,10 @@ five-second trajectory. The focused suites passed 67/67 in 388.369877 seconds:
 
 The maintained examples were then launched serially in separate MATLAB
 processes, but all attempts failed during MATLAB startup before example code
-ran with `System Error: File system inconsistency`. A single-example retry after
-terminating the stale MATLAB process failed identically. Consequently no fresh
-example metrics or benchmark rows were recorded, and the visible-success and
-expected-failure diagnostic-figure checks remain untested in this environment.
+ran with `System Error: File system inconsistency`. A single-example retry
+failed identically. Consequently no fresh example metrics or benchmark rows
+were recorded, and the visible-success and expected-failure diagnostic-figure
+checks remain untested in this environment.
 
 A later single MATLAB process successfully ran the complete post-cutover test
 suite: 75/75 passed, with zero failures or incomplete tests and 366.849286
@@ -2932,19 +2932,18 @@ visible and were not suppressed.
 
 The bundle writer successfully created and reloaded a 318,976-byte MAT file
 from a real guidata-backed sandbox state, establishing that bundle assembly and
-the core save operation were healthy. A subsequent visible user run showed the
-file-dialog callback reached the post-save success notification, where `msgbox`
-rejected MATLAB string arguments with `Cell elements must be character arrays`.
-The outer callback then mislabeled that notification failure as an export
-failure even though the writer had completed.
+the core save operation were healthy. Two subsequent visible user runs showed
+that converting only the success notification was insufficient. The identical
+`Cell elements must be character arrays` error occurs at the earlier
+`uiputfile` filter boundary because its cell elements were MATLAB strings.
 
 The public sandbox snapshot now exposes
 `ExportBundle(filePath, modeName)`, the UI button calls the same explicit-path
 owner after its dialog returns, and the writer verifies both a nonempty file
 and the required `diagnosisBundle` MAT variable. UI failures display their
-actual message in an error dialog. The success notification now uses an
-`sprintf` character vector, and `whos -file` also receives character arguments
-for cross-version compatibility. The focused export suite passed 4/4 and Code
-Analyzer reported zero messages across the two changed production files and
-focused test before this visible-only compatibility correction; the focused
-suite and visible callback require a final rerun.
+actual message, identifier, and first source location in an error dialog. The
+file-dialog filter, success notification, `save`, `whos -file`, `version`, and
+`datetime` calls now receive character arguments for cross-version
+compatibility. The focused export suite passed 4/4 and Code Analyzer reported
+zero messages before this visible-only compatibility correction; concurrent
+MATLAB startup failed before a final focused or visible callback rerun.

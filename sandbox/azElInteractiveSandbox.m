@@ -514,16 +514,49 @@ catch exception
     cancelInteraction(figureHandle);
     applicationState = guidata(figureHandle);
     modeState = getModeState(applicationState, modeName);
-    modeState.Status = "Input or planning error: " + string(exception.message);
-    modeState = appendLogLines(modeState, "[Sandbox error] " + string(exception.message));
+    exceptionText = formatSandboxException(exception);
+    modeState.Status = "Input or planning error: " + string(exceptionText);
+    modeState = appendLogLines( ...
+        modeState, "[Sandbox error] " + string(exceptionText));
     applicationState = setModeState( applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
     if actionName == "Export" && get(figureHandle, "Visible") == "on"
         errordlg( ...
-            "Bundle export failed: " + string(exception.message), ...
-            "Sandbox export failed", "modal");
+            ['Bundle export failed: ' exceptionText], ...
+            'Sandbox export failed', 'modal');
     end
+end
+end
+
+function exceptionText = formatSandboxException(exception)
+%% Section 0: Header & Readme
+% SYNTAX
+%   exceptionText = formatSandboxException(exception)
+%**************************************************************************
+% PURPOSE
+%   - Preserve the identifier and earliest source location of a UI failure.
+%**************************************************************************
+% INPUTS
+%   - exception (MException scalar)
+%       Exception caught by the shared sandbox action callback.
+%**************************************************************************
+% OUTPUTS
+%   - exceptionText (character vector)
+%       Actionable message with identifier and first stack location.
+%**************************************************************************
+% UNITS
+%   - Not applicable.
+%**************************************************************************
+exceptionText = char(exception.message);
+if strlength(string(exception.identifier)) > 0
+    exceptionText = sprintf( ...
+        '%s [%s]', exceptionText, char(exception.identifier));
+end
+if ~isempty(exception.stack)
+    exceptionText = sprintf( ...
+        '%s at %s:%d', exceptionText, ...
+        exception.stack(1).name, exception.stack(1).line);
 end
 end
 
@@ -1718,11 +1751,11 @@ end
 
 function exportModeDiagnosis(figureHandle, modeName)
 % Save exact retained scene, input, result, and validation evidence.
-timestamp = string(datetime("now", "Format", "yyyyMMdd_HHmmss"));
+timestamp = string(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
 defaultName = "az_el_sandbox_" + modeName + "_" + timestamp + ".mat";
 [fileName, folderName] = uiputfile( ...
-    {"*.mat", "MATLAB diagnosis bundle (*.mat)"}, ...
-    "Export sandbox input and result", char(defaultName));
+    {'*.mat', 'MATLAB diagnosis bundle (*.mat)'}, ...
+    'Export sandbox input and result', char(defaultName));
 if isequal(fileName, 0) || isequal(folderName, 0)
     return;
 end
