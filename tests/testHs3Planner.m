@@ -96,6 +96,31 @@ verifyFalse(testCase, isfield(success, "CompositionDiagnostics"));
 verifyFalse(testCase, isfield(failure, "CompositionDiagnostics"));
 verifyEqual(testCase, fieldnames(success), fieldnames(failure));
 end
+function testObstacleFreeEarliestUsesBoundedFixedSearch(testCase)
+% Verify a distinct direct request uses the finer convex arrival bracket.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-3 1], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    12, [5 -2], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [3 2], [1.2 0.8], [2.4 1.6]);
+options = planAzElMotion("hs3");
+options.MaximumSeedCount = 1;
+options.DirectSeedOnly = true;
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, ...
+    result.Validation.Message);
+verifyEqual(testCase, result.Polynomial.SegmentCount, ...
+    2 * options.CollocationSegmentCount);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyEqual(testCase, ...
+    summary.Hs3SolverDiagnostics.ConstraintRepresentation, ...
+    "linearFixedTime");
+verifyLessThanOrEqual(testCase, summary.RelinearizationCount, 14);
+verifyLessThan(testCase, result.ArrivalTime_s, 5.72);
+end
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
     testCase, "hs3", "testWorkspaceIntervalsBelongToLimits");
@@ -285,7 +310,7 @@ verifyEqual(testCase, (forwardGradient - backwardGradient) / (2 * step), ...
     fixedHessian * fixedDirection, "RelTol", 1e-8);
 end
 function testEarliestArrivalIsInsideHorizon(testCase)
-% Verify the two-stage earliest-arrival solve and independent validation.
+% Verify the bounded convex arrival bracket and independent validation.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -295,7 +320,7 @@ result = planAzElMotion([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyHs3Solved(testCase, result, "nonlinearTimeDecision");
+verifyHs3Solved(testCase, result, "linearFixedTime");
 jerkRampTime_s = limits.maxAcceleration_deg_s2(1) / ...
     limits.maxJerk_deg_s3(1);
 constantAccelerationTime_s = (-1.5 + sqrt(16.25)) / 2;

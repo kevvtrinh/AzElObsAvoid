@@ -1633,3 +1633,47 @@ moving/deforming U.S. example still takes 49.573514 seconds, and known
 near-singular `fmincon` warnings remain visible on timed moving-obstacle cases.
 Production size does not grow: the HS3 package remains at its exact 2,000-line
 cap, with 82/82 tests and all 18 maintained outcomes passing.
+
+## Deforming-outline runtime localization — 2026-08-26
+
+The largest current stage-level weakness remains the moving/deforming U.S.
+example. Profiling attributes 20.669104 of 51.619861 seconds to scenario
+construction and 26.1176 seconds to planning; exact polygon buffering alone
+costs 16.556995 seconds. A classification micro-optimization was rejected
+because its 57% isolated gain produced contradictory end-to-end measurements
+of 52.626923 seconds profiled and 49.326170 seconds fresh. No production code
+or geometry change was retained. Exact translated-shape reuse already covers
+the sun, while nonlinear deformation and varying scale prevent exact U.S.
+buffer reuse. This bottleneck remains measured and visible rather than being
+hidden through reduced geometry or a coarser obstacle history.
+
+## Obstacle-free bounded arrival search — 2026-08-26
+
+The largest current strength is that a single compact HS3 implementation now
+uses its existing convex fixed-time feasibility search for obstacle-free
+earliest-arrival requests. It starts that bracket at twice the configured mesh
+and remains capped by `MaximumCollocationSegmentCount`; nonempty obstacles,
+timed seeds, fixed-arrival requests, public options, and result fields are
+unchanged. The maintained obstacle-free example improves from 4.60777936881 to
+4.5458984375 seconds while wall time improves from 3.882538 to 2.956477
+seconds. A structurally different direct request independently validates at
+5.70751953125 seconds on 20 segments. The implementation removes the former
+segment-count helper while inlining the input-driven bound, so the nine-file
+HS3 package remains exactly 2,000 nonblank, noncomment lines.
+
+Against the isolated `67bc087` 325-full-suite baseline, current obstacle-free
+arrival remains 0.01476956335 seconds later but wall time is 1.631599 seconds
+lower. Wide U remains 0.7981520967 seconds later than its isolated 325 result;
+80 segments recovered only 0.0511143 seconds while raising wall time from
+13.019699 to 18.815125 seconds, so that broader mesh increase was rejected.
+The rogue 180- and 360-second inputs remain independently valid at
+86.5467293065 and 86.5467226767 seconds, a 6.630-microsecond difference.
+
+All 18 maintained outcomes pass in fresh serial processes, the warnings-enabled
+suite passes 83/83, and Code Analyzer reports zero findings across 84 MATLAB
+files. The dominant weakness remains the 49--51-second moving/deforming U.S.
+case, split between exact scenario construction and planning. No global
+optimality, completeness, or uniform runtime claim is made. Further generic
+mesh tuning is not justified by the measured arrival/runtime tradeoff; the
+next improvement should target a newly localized invariant rather than extend
+this search.

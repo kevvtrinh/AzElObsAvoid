@@ -3359,3 +3359,120 @@ complete suite passed 82/82 in 49.490930 seconds. Code Analyzer reported zero
 findings across 84 MATLAB files. `git diff --check` reports only existing
 LF-to-CRLF notices. Two user-owned MATLAB processes, PIDs 8516 and 31968,
 remained alive and were never signaled.
+
+## Deforming-outline stage diagnosis — 2026-08-26
+
+An end-to-end profile at local commit `6427ce9` separated the 51.619861-second
+moving/deforming U.S. example into 20.669104 seconds of scenario construction
+and 26.1176 seconds of planning. Construction spent 16.556995 seconds in 60
+`polybuffer` calls. Planning reported 8.3759 seconds topology, 3.4312 seconds
+corridor construction, 11.0734 seconds motion solving, 1.0686 seconds
+collision checking, and 0.3503 seconds final validation. This establishes that
+the largest remaining runtime is shared between exact obstacle construction
+and planning rather than being solely an HS3 solver issue.
+
+A boundary-classification opt-out reduced an isolated 14,000-vertex geometry
+microbenchmark from 0.898543 to 0.386355 seconds with identical coordinates,
+but failed the end-to-end retention gate. Its profiled example took 52.626923
+seconds versus 51.619861 seconds, and a fresh run's 49.326170 seconds was only
+0.247344 seconds below the preceding 49.573514-second matrix row. The extra
+interface was reverted. The focused obstacle suite remained 6/6, and no
+production code from this diagnostic is retained.
+
+Exact buffer reuse is already active for the translated sun. It cannot be
+applied to the U.S. history because every interior slice independently changes
+scale and applies coordinate-coupled nonlinear deformation before rotation.
+Exact duplicate and collinear removal was previously measured as negligible,
+and vectorized buffering improved only about 1.5%. Geometry reduction,
+coarser history, parallel-toolbox dependence, and affine reuse were therefore
+not presented as safe runtime improvements. The 49-second unfavorable runtime
+remains explicit.
+
+## Obstacle-free bounded fixed-time search — 2026-08-26
+
+### Retention gate and implementation
+
+The baseline was local commit `6427ce9` on `HS3-planner`, with only the
+documented runtime-profile records dirty. The primary metric was independently
+validated obstacle-free earliest arrival; collision, workspace, endpoint,
+velocity, acceleration, jerk, stable API, diagnostic schema, package size, and
+representative runtime were hard invariants. The retained change reuses the
+existing bounded fixed-arrival feasibility search for an obstacle-free
+earliest-arrival request and begins that search at twice the configured
+collocation mesh, still capped by `MaximumCollocationSegmentCount`. The
+condition is determined only by empty obstacle input and goal-time policy.
+Nonempty-obstacle and fixed-arrival paths do not enter it.
+
+The maintained example improves from 4.60777936881 to 4.5458984375 seconds,
+0.06188093131 seconds or 1.343% earlier. Final wall time improves from
+3.882538 to 2.956477 seconds, a 23.85% reduction. A distinct direct request
+from `[-3, 1]` to `[5, -2]` with asymmetric velocity, acceleration, and jerk
+limits independently validates at 5.70751953125 seconds on 20 segments using
+the linear fixed-time constraint representation. The former local
+`topologyAlignedSegmentCount` helper was removed and the bounded expression
+was kept in the owning execution sequence. The complete nine-file HS3 package
+remains exactly 2,000 nonblank, noncomment lines.
+
+An isolated detached worktree at `67bc087` supplied the requested
+325-full-suite comparison. Its obstacle-free example reached 4.53112887415
+seconds in 4.588076 seconds wall; current remains 0.01476956335 seconds later
+but runs 1.631599 seconds faster. Its identical wide-U input reached
+21.8327355422 seconds in 6.057014 seconds, versus current 22.6308876389 seconds.
+Current fixed-time attempts at the 325 duration remained collision-unresolved,
+including a solve seeded from the 325 trajectory. An 80-segment current solve
+reached only 22.5797733 seconds and raised wall time from 13.019699 to
+18.815125 seconds. Warm-start, doubled corridor sampling, and doubled reserve
+experiments were neutral or regressive and were fully reverted. These results
+do not support broadening the obstacle-free rule to obstacle cases.
+
+### Final serial maintained matrix
+
+Every maintained example ran in its own fresh MATLAB process with figures and
+animation disabled. Jerk was enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.060439635 | 16.7100287566 | 11.1855739606 | 1 / 1 | 7.340792 | `goalReached` |
+| `exampleAzElPlanning` | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 4.887374 | `goalReached` |
+| `exampleDenseConcaveAzElMotion` | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.618792 | `goalReached` |
+| `exampleFortyMovingCircleGrid` | 1 / 1 | 110.807922148 | 123.380530717 | 58.6189853057 | 1 / 1 | 22.624950 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 24.3633026735 | 27.8702009821 | 22 | 1 / 1 | 25.939702 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.334870 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 5.975042 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 13.101632 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 9.562227 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 41.5785140688 | 40.7424283094 | 8.75061035156 | 1 / 1 | 50.142665 | `goalReached` |
+| `exampleNoPathAzElMotion` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.434626 | `noValidatedSeed` |
+| `exampleObstacleFreeAzElMotion` | 1 / 1 | 4.472135955 | 4.47285938216 | 4.5458984375 | 1 / 1 | 2.956477 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 16.487221 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 21.4031702791 | 14.2200520815 | 20.8695652174 | 1 / 1 | 9.071585 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1815464898 | 21.3509241121 | 24 | 1 / 1 | 8.791014 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.5077116377 | 24.4201122273 | 21.9090824092 | 1 / 1 | 12.949268 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 16.447739 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 48.172937 | `goalReached` |
+
+The 40-circle, static-U, moving-circle, moving/deforming-U.S., and extreme-U.S.
+arrival values match the preceding committed behavior. The final matrix has 17
+independently validated successes plus the independently validated expected
+`noValidatedSeed` result. Existing near-singular solver warnings remained
+visible on timed cases.
+
+### Rogue, graphics, tests, and static gates
+
+With seed 2 and a 40-segment cap, `failure.mat` at a 180-second horizon reaches
+86.5467293065 seconds in 20.844898 seconds wall. The 360-second
+`successwhenincreasehorizon.mat` reaches 86.5467226767 seconds in 20.803370
+seconds wall. Both independently pass collision and every derivative
+certificate; their arrival difference is 6.630 microseconds.
+
+A visible `exampleAzElPlanning` run produced three figures, six axes, and 530
+graphics objects. A hidden plotted expected failure produced two diagnostic
+figures, two axes, 344 objects, and no trajectory. The warnings-enabled
+complete suite passed 83/83 with zero failures or incomplete tests in
+51.100108 seconds wall and 44.390953 seconds summed duration. Code Analyzer
+reported zero findings across all 84 MATLAB files. `git diff --check` reported
+only the existing LF-to-CRLF notices. User-owned MATLAB PIDs 8516 and 31968
+remained alive and were never signaled. A final two-file Code Analyzer retry
+passed with zero findings after one preceding MATLAB process failed during
+startup with `System Error: File system inconsistency`; that failed process
+did not execute repository code.

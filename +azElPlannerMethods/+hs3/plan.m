@@ -131,17 +131,22 @@ for orderIndex = 1:numel(seedOrder)
             solverGoalState.time_s, bestValidatedFinalTime_s);
     end
     seedGoalTimeMode = options.GoalTimeMode;
-    if options.GoalTimeMode == "earliestArrival" && any( ...
+    if options.GoalTimeMode == "earliestArrival" && (isempty(obstacles) || any( ...
             originalSeed.Source == ["directWait", ...
-            "timeExpandedVisibilityGraph"])
-        % A timed topology already owns a physical arrival proposal. Solve
-        % that HS3 transcription at its input-derived time instead of
-        % discarding the wait law inside a free-time local minimum.
-        solverGoalState.time_s = min(goalState.time_s, ...
-            initialState.time_s + originalSeed.EstimatedDuration_s);
+            "timeExpandedVisibilityGraph"]))
+        % Timed topologies own an arrival proposal, while obstacle-free
+        % motion has a convex fixed-time representation. Both avoid the
+        % corresponding free-time local minimum through bounded bisection.
+        solverGoalState.time_s = goalState.time_s;
+        if ~isempty(obstacles)
+            solverGoalState.time_s = min(goalState.time_s, ...
+                initialState.time_s + originalSeed.EstimatedDuration_s);
+        end
         seedGoalTimeMode = "fixedArrival";
     end
-    segmentCount = topologyAlignedSegmentCount(originalSeed, options);
+    segmentCount = min(options.MaximumCollocationSegmentCount, max( ...
+        (1 + (isempty(obstacles) && options.GoalTimeMode == "earliestArrival")) * ...
+        options.CollocationSegmentCount, max(2, size(originalSeed.position_deg, 1) - 1)));
     % Skip the midpoint solve when base segments span acceleration cycles.
     meshGrowthFactor = 2 + 2 * (size(originalSeed.position_deg, 1) > 3 && ...
         originalSeed.EstimatedDuration_s > 2 * options.CollocationSegmentCount * ...
@@ -476,12 +481,6 @@ for obstacleIndex = 1:numel(obstacles)
         end
     end
 end
-end
-
-function segmentCount = topologyAlignedSegmentCount(seed, options)
-routeSegmentCount = max(2, size(seed.position_deg, 1) - 1);
-segmentCount = min(options.MaximumCollocationSegmentCount, ...
-    max(options.CollocationSegmentCount, routeSegmentCount));
 end
 
 function validation = validateCandidate( ...
