@@ -1206,3 +1206,46 @@ does not establish uniform superiority or global optimality. Bounded topology
 enumeration and duration exchange remain finite, and existing HS3 moving-target
 coverage still produces near-singular `fmincon` warnings even when independent
 validation passes.
+
+## Static earliest-arrival window bracket — 2026-08-25
+
+The newly measured strength is that a static earliest-arrival request no longer
+depends on its route length being a usable proxy for its allowed arrival. The
+compact planner derives duration brackets from route length, and that ladder can
+sit entirely above the latest arrival the request permits. Previously only
+moving geometry retained the request's own arrival window as a final bracket, so
+a static request in that state returned `noValidatedSeed` while a validated
+motion existed inside the window. The third exported Rogue bundle recovers from
+that failure to a validated 141.959235 s arrival with 0.4288-degree clearance,
+and a structurally different 120-vertex arc request recovers at 40 s and 42 s
+windows to 24.3272814 s and 24.35277 s.
+
+The mechanism is not scenario keyed and is strictly additive. The window bracket
+runs only after every route-derived bracket has failed. The other two Rogue
+bundles reproduce 37.845175 s and 28.1564956 s unchanged, all 18 maintained
+corridor examples match their frozen recorded rows exactly on every gated field
+and metric, and a focused regression asserts that a wide window still accepts a
+route-derived bracket.
+
+The principal remaining weakness is unchanged and now better quantified.
+Recovering the Rogue bundle closed a failure, not the quality gap: compact
+corridor arrives at 141.959235 s against 127.835079 s for standalone HS3 on the
+identical seed-2 route, a 14.124156 s (11.05%) deficit attributable to the
+compact C4 exact-corridor representation rather than to topology search. Two of
+the four seeds on that request still fail compact validation entirely. Bounded
+topology enumeration and duration exchange remain finite, and no global
+optimality or completeness claim is made.
+
+A second measured weakness is that the duration ladder is a warm-start
+continuation rather than a monotone feasibility bracket. A trial above the
+arrival window still anneals the control polygon even though the public goal-
+time check can never accept it, so a duration that fails from a cold start can
+validate later from a better warm start. A bisection rewrite that treated
+failures as proof of infeasibility regressed three maintained examples, worst
+of all `exampleUSOutlineExtremeVisibility` at 6.00693538 -> 7.46744965 s, and
+was reverted. That path dependence means the returned arrival is the earliest
+this bounded search reached, not the earliest the representation admits.
+
+Runtime cost is small and visible: the serial 18-example corridor matrix moved
+from 159.1349 to 167.8276 s because seeds that previously gave up now spend
+their remaining duration trials.

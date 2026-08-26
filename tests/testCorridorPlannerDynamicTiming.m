@@ -182,6 +182,43 @@ verifyLessThanOrEqual(testCase, diagnostics.TrialCount, 14);
 verifyGreaterThan(testCase, spanDurationRatio, 2);
 end
 
+function testStaticArrivalWindowRetainsFinalDurationBracket(testCase)
+% Verify a static request whose route-derived brackets all exceed the allowed
+% arrival still searches the window the request itself permits.
+windowEnd_s = 40;
+[obstacles, initialState, goalState, limits] = staticArcRequest(windowEnd_s);
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, plannerOptions(5));
+
+verifyExperimentalSuccess(testCase, result);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.TimedSearchSuppressionReason, ...
+    "staticObstacleHistory");
+verifyLessThanOrEqual(testCase, result.ArrivalTime_s, windowEnd_s);
+compact = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics.CompactC3;
+verifyTrue(testCase, compact.Accepted);
+
+% Every route-length bracket must have been exhausted, leaving the request's
+% own arrival window as the bracket that produced the accepted motion.
+verifyGreaterThan(testCase, numel(compact.BracketAttempts), 1);
+verifyTrue(testCase, isnan(compact.BracketFraction));
+verifyEqual(testCase, compact.InitialDuration_s, ...
+    goalState.time_s - initialState.time_s, "AbsTol", 1e-9);
+end
+
+function testStaticWideArrivalWindowKeepsRouteDerivedBracket(testCase)
+% Verify the added window bracket stays unused when a route-derived bracket
+% already produces an accepted motion.
+[obstacles, initialState, goalState, limits] = staticArcRequest(50);
+result = planAzElMotion( ...
+    obstacles, initialState, goalState, limits, plannerOptions(5));
+
+verifyExperimentalSuccess(testCase, result);
+compact = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics.CompactC3;
+verifyTrue(testCase, compact.Accepted);
+verifyFalse(testCase, isnan(compact.BracketFraction));
+end
+
 function [obstacles, initialState, goalState, limits] = lateOpeningRequest()
 % Build a concave barrier that changes from closed to open at a known physical time.
 openingTime_s = 12;
@@ -307,6 +344,26 @@ options = struct( ...
     "MatchTargetVelocity", false, "MatchTargetAcceleration", false, ...
     "PlannerOptions", struct( ...
     "PlannerMethod", "corridorQuintic", "MaximumSeedCount", 5));
+end
+
+function [obstacles, initialState, goalState, limits] = staticArcRequest(windowEnd_s)
+% Build a thick many-vertex static arc with one narrow opening. The dense
+% boundary makes the visibility route stop at many vertices, so every
+% route-length duration bracket lands above a tight requested arrival while a
+% smooth compact traversal of the same topology stays inside it.
+openingHalfAngle_rad = deg2rad(16);
+arcAngle_rad = linspace(openingHalfAngle_rad, ...
+    2 * pi - openingHalfAngle_rad, 60).';
+innerRadius_deg = 7.5;
+outerRadius_deg = 10.5;
+boundary_deg = [ ...
+    innerRadius_deg * [cos(arcAngle_rad), sin(arcAngle_rad)]; ...
+    outerRadius_deg * [cos(flipud(arcAngle_rad)), sin(flipud(arcAngle_rad))]];
+obstacles = makeAzElObstacleData("thick static arc", 0, ...
+    boundary_deg(:, 1), boundary_deg(:, 2), 0.2);
+initialState = restState(0, [0 0]);
+goalState = restState(windowEnd_s, [-14 0]);
+limits = motionLimits([-16 16], [-16 16]);
 end
 
 function options = plannerOptions(maximumSeedCount, randomSeed)

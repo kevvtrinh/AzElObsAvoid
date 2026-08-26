@@ -43,7 +43,12 @@ else
         bracketFractions * ...
         (routeMotion.MotionDuration_s - straightMotion.MotionDuration_s);
 end
-if ~geometryIsStatic && options.GoalTimeMode ~= "fixedArrival"
+if options.GoalTimeMode ~= "fixedArrival"
+    % Every route-derived bracket can be infeasible while a longer duration
+    % inside the request's own arrival window is not, so retain that window
+    % as the final bracket. Static geometry needs this for the same reason
+    % moving geometry does: the ladder above is derived from route length,
+    % not from the latest arrival the request actually allows.
     upperDurations_s(end + 1) = ...
         goalState.time_s - initialState.time_s;
     bracketFractions(end + 1) = NaN;

@@ -2898,3 +2898,97 @@ owner would add an interface without removing responsibility. The retained
 alternatives and the two supplied bundles, focused regression, hairpin scale
 case, full example matrix, graphics smokes, Code Analyzer, and full suite cover
 that growth; the file remains below the 900-line limit.
+
+## Static earliest-arrival window bracket — 2026-08-25
+
+The third exported Rogue bundle,
+`Rogue Examples/az_el_sandbox_goal_20260824_174639.mat`, was a static two-
+polygon request that the default compact planner could not solve at all. It
+returned `noValidatedSeed` while standalone HS3 solved the same request on the
+same seed-2 route at 127.835079 s.
+
+The cause was general and input-driven. `solveCompactC3Candidate` derives its
+earliest-arrival duration brackets only from route length, as
+`straight + [0.5 0.8 1.0] * (route - straight)`. On this request that ladder was
+212.13 / 300.36 / 359.17 s while the request's own latest arrival is 180 s, so
+every bracket's upper end failed the public `goal time` check by construction.
+Each bracket then reached `nextDuration_s == duration_s` and stopped after 2 of
+its 14 permitted trials, so the 143-to-180 s region was never probed. Fixed-
+arrival probes on the unchanged solver confirmed a solution exists there: 142 s
+fails and 143 s validates.
+
+The file already appended the request's arrival window as a final bracket, but
+only under `~geometryIsStatic`. Static geometry needs that bracket for the same
+reason moving geometry does, because the ladder above it is derived from route
+length rather than from the latest arrival the request allows. Removing the
+static exclusion is the whole production change: six added lines in one file.
+
+Evidence on the three exported Rogue bundles, all independently validated:
+
+- `az_el_sandbox_goal_20260824_174639.mat`: `noValidatedSeed` ->
+  141.959235 s, clearance 0.4288 deg, wall time 19.5288 -> 18.7342 s.
+- `az_el_sandbox_goal_20260824_174716.mat`: 37.845175 s before and after.
+- `az_el_sandbox_goal_20260824_174824.mat`: 28.1564956 s before and after.
+
+The change is additive. The added bracket runs only after every route-derived
+bracket has failed, so a request that already produced an accepted motion is
+unaffected. All 18 maintained corridor examples matched the frozen
+`da52da8+quintic-root-recovery-worktree` rows exactly on planner success,
+example validation, applicable certificate, polyline length, smoothed length,
+motion duration, and termination reason. Suite wall time for the serial matrix
+was 159.1349 -> 167.8276 s.
+
+Generality was checked on a structurally different static request: one thick
+120-vertex circular arc with a single narrow opening, a 14-degree traverse, and
+a start inside the enclosed pocket. That geometry has a different obstacle
+count, topology, and scale from the two hand-drawn Rogue polygons but the same
+bracket relationship. Baseline versus changed behavior:
+
+- 40 s window: `noValidatedSeed` -> 24.3272814 s validated.
+- 42 s window: `noValidatedSeed` -> 24.35277 s validated.
+- 45 s and 50 s windows: 24.4301369 s before and after.
+
+Two focused regressions were added to
+`tests/testCorridorPlannerDynamicTiming.m`. The first asserts that the tight
+static window succeeds, arrives inside the window, and that the accepted
+bracket is the window bracket (`isnan(BracketFraction)` and
+`InitialDuration_s == goalState.time_s - initialState.time_s`). The second
+asserts that a wide window still accepts a route-derived bracket, so the added
+bracket cannot silently take over cases that already worked. The first test
+fails on the unchanged source and passes on the changed source; the second
+passes on both.
+
+Tests were run per file because one earlier combined run was terminated by the
+environment partway through `testHs3Planner` at exit code 127 with no MATLAB
+crash dump. The per-file totals are 71/71 in 341.218571 s
+(`testAzElPlanner`, `testAzElSandboxDiagnosisExport`,
+`testCorridorPlannerDynamicTiming`, `testExampleContracts`,
+`testFixedDurationAffineModel`), 23/23 in 12.206151 s
+(`testHs3AffineSensitivity`, `testHs3OptionOwner`,
+`testObstacleInfrastructure`, `testPlannerStageTiming`), and 48/48 in
+316.217561 s (`testHs3Planner`), for 142/142 with zero failures and zero
+incomplete tests. `testCorridorPlannerDynamicTiming` was rerun after the two
+added regressions and passed 11/11 in 327.029886 s. Expected HS3 near-singular
+`fmincon` warnings remained visible and were not suppressed.
+
+Code Analyzer reported zero messages for the changed production file and the
+changed test file. `git diff --check` found no whitespace errors. Plot-enabled
+`exampleAzElPlanning` produced four figures and seven axes; plot-enabled
+`exampleNoPathAzElMotion` produced two figures and two axes from returned
+diagnostics without rerunning planning.
+
+The unfavorable result is that this closes a failure, not the quality gap.
+Compact corridor still arrives at 141.959235 s on the recovered Rogue bundle
+against 127.835079 s for standalone HS3, a 14.124156 s (11.05%) deficit on the
+identical seed-2 route. Because the topology is the same, the remaining
+difference is the compact C4 exact-corridor representation and its 28
+decisions, not the search. No global optimality or completeness claim is made.
+
+A larger rewrite of the bracket search was measured and rejected. Replacing the
+existing descent with a bisection over the admissible window recovered the
+Rogue bundle but regressed three maintained examples, including
+`exampleUSOutlineExtremeVisibility` at 6.00693538 -> 7.46744965 s. The existing
+0.85 geometric descent is a warm-start continuation, and trials above the
+arrival window still anneal the control polygon even though the public goal-
+time check can never accept them. Clamping or replacing that ladder therefore
+destroys solutions. That experiment was reverted in full.
