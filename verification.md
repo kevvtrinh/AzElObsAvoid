@@ -6,7 +6,7 @@ Earlier sections are retained as historical checkpoints.
 
 ## Prepared dynamic boundary-edge queries — 2026-08-27
 
-- Source: `HS3-planner` at `750e9c7+prepared-edge-worktree`.
+- Source: `HS3-planner` at `8059595`.
 - Baseline: detached exact commit `750e9c7` under MATLAB R2024b with unchanged
   examples, planner options, obstacle geometry, limits, and validation.
 - Retained mechanism: dynamic non-support corridor rows query one canonical
@@ -18,21 +18,35 @@ Earlier sections are retained as historical checkpoints.
   inactive-time, and missing-edge cases matched the complete canonical oracle.
   A deforming-edge constraint test matched complete inequality, equality, and
   both gradient matrices exactly.
-- Three-pair primary A/B: baseline wall times were 179.5093499, 179.4877722,
-  and 180.0643631 seconds; initial candidate times were 148.7280267,
-  147.6009931, and 148.5100961 seconds. Median reduction was 17.27%. The final
-  safeguarded worktree ran in 165.7597307 seconds, 7.66% below the exact
-  baseline median. All result metrics and solver iteration/objective evidence
-  remained exact.
+- Historical three-pair A/B evidence compares exact baseline `750e9c7` wall
+  times of 179.5093499, 179.4877722, and 180.0643631 seconds with the initial
+  fast-path candidate at 148.7280267, 147.6009931, and 148.5100961 seconds.
+  That candidate's median reduction was 17.27%. The later safeguarded worktree
+  ran once at 165.7597307 seconds in a different session. It retained exact
+  route, arrival, solver, and validation evidence, but it was not paired with a
+  contemporaneous baseline; the previously reported 7.66% comparison is
+  therefore historical context, not a causal final-implementation claim.
+- A post-push, counterbalanced comparison at exact parent `8059595` evaluated
+  a proposed removal of repeated public-query validation. Parent wall times
+  were 167.9463006 and 165.2065477 seconds; candidate times were 165.7019183
+  and 163.1769446 seconds. Median wall time decreased only 1.28%, from
+  166.57642415 to 164.43943145 seconds, and median reported planner time
+  decreased 1.08%, from 139.30012795 to 137.80243725 seconds. Exact path,
+  arrival, collision, kinematic, and validation outputs were unchanged. The
+  candidate missed the declared 5% retention threshold and was reverted.
 - Focused tests passed 21/21; the complete suite passed 128/128 in 93.8577066
   seconds. Code Analyzer reported zero findings across 87 maintained MATLAB
   files.
 - Visible gates: `exampleObstacleFree` created three figures and six axes;
   `exampleNoPath` returned the expected failure and created two diagnostic
   figures with two axes.
-- Production growth is 205 net lines and focused tests add 173 net lines. This
-  is retained for the measured worst-case dynamic improvement, while the size
-  debt remains explicit.
+- Production growth is 205 net lines and focused tests add 173 net lines. The
+  production tree has 11,715 physical lines, 4,215 above the 7,500-line target.
+  The size allowance formula is `0.25 * 4215 / 100 = 10.5375`, requiring a
+  1053.75% reduction; no possible wall-time result can satisfy that literal
+  gate. Production plus tests is 16,169 lines, above the independent 12,000-line
+  limit. The retained commit therefore has unresolved size debt and is not
+  justified by the repository's performance-based size allowance.
 
 Every maintained example ran headlessly in its own fresh MATLAB process with
 plots and animation disabled. Jerk was enabled in every case.

@@ -20,13 +20,22 @@ that complete path.
 At exact baseline `750e9c7`, three moving/deforming U.S. runs had wall times of
 179.5093499, 179.4877722, and 180.0643631 seconds. The initial exact fast-path
 candidate measured 148.7280267, 147.6009931, and 148.5100961 seconds, a 17.27%
-median reduction. After adding defensive public-input and stale-cache checks,
-the final worktree measured 165.7597307 seconds, still 7.66% below the baseline
-median and 7.65% below its best run. Every run retained the exact 40-degree
-selected route, 43.0751355347-degree smoothed motion, 7.96286899667-second
-duration, solver iteration/objective sequence, and validation certificates.
-Structurally different opening-U, accelerating-circle, moving-circle, and
-static-outline controls retained their exact path and arrival metrics.
+median reduction. The later safeguarded worktree's 165.7597307-second run was
+collected in a different session without a contemporaneous baseline, so the
+former 7.66% comparison does not establish the final implementation's causal
+gain. Every recorded run retained the exact 40-degree selected route,
+43.0751355347-degree smoothed motion, 7.96286899667-second duration, solver
+evidence, and validation certificates. Structurally different opening-U,
+accelerating-circle, moving-circle, and static-outline controls retained their
+exact path and arrival metrics.
+
+A post-push experiment moved defensive cache validation outside the selected-
+edge hot loop. Against exact parent `8059595`, counterbalanced parent wall times
+were 167.9463006 and 165.2065477 seconds and candidate times were 165.7019183
+and 163.1769446 seconds. The 1.28% median wall reduction and 1.08% median
+reported-planner reduction missed the declared 5% retention gate; the code was
+reverted. This localizes repeated public-query validation as a real but minor
+cost rather than the remaining dominant bottleneck.
 
 The complete suite passed 128/128. All 17 maintained examples ran serially in
 fresh headless processes: 16 independently validated successes and the
@@ -39,12 +48,14 @@ figures with six axes; a visible expected failure created two diagnostic
 figures with two axes.
 
 The retained diff adds 205 net production lines and 173 net test lines. The
-production tree is 11,715 physical lines and production plus tests is 16,169,
-above the repository's 7,500- and 12,000-line targets. That size increase is a
-real maintainability cost. The benefit is localized to dynamic selected-edge
-constraints; support constraints and solver factorization remain dominant in
-other cases, and this optimization does not establish global path or
-arrival-time optimality.
+production tree is 11,715 physical lines, so the 4,215-line overage requires
+`0.25 * 4215 / 100 = 10.5375`, or a 1053.75% wall-time reduction under the
+repository formula. That literal size gate is unsatisfied. Production plus
+tests is 16,169 lines, also above the independent 12,000-line limit. The size
+increase is a real maintainability cost. The benefit is localized to dynamic
+selected-edge constraints; support constraints and solver factorization remain
+dominant in other cases, and this optimization does not establish global path
+or arrival-time optimality.
 
 ## Convex arrival search for certified static direct routes — 2026-08-27
 
