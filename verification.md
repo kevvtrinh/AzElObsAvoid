@@ -3953,3 +3953,63 @@ two diagnostic figures and two axes and returned `noValidatedSeed`.
 
 No MATLAB process that predated this work was stopped or signaled. The retained
 change does not claim global optimality, completeness, or uniform runtime gain.
+
+## Batched occupancy and deferred shape allocation — 2026-08-27
+
+Source under test was `HS3-planner` at
+`2cc0988+batched-occupancy-worktree`. Multi-ring occupancy batches points into
+the existing signed-clearance helper, and active shape queries no longer create
+empty geometry or `polyshape` placeholders that are immediately replaced.
+
+### Matched profile and focused gates
+
+The exact Opening-U profile baseline at `2cc0988` was 41.1939427 seconds. The
+final matched profile was 40.2238949 seconds with exact output parity:
+10 degrees selected, 10.0912159691 degrees smoothed, and 11.8560791016 seconds
+duration. Targeted profile reductions were:
+
+- `queryObstacleOccupancyAtTime`: 1.63920621 to 1.24773731 seconds;
+- `occupancyOnly`: 1.16577671 to 0.913307407 seconds;
+- `complexShapeOccupancy`: 0.627571103 to 0.546502604 seconds;
+- `shapeAtTime`: 0.880268904 to 0.580085704 seconds over 8,075 calls;
+- `pointPolygonClearance`: 1,972 to 1,782 calls with the same decisions.
+
+Code Analyzer reported zero findings for both changed production files, the
+focused obstacle test, and the temporary serial-example harness. The focused
+obstacle suite passed 10/10. It compares batched and pointwise multi-ring
+queries under both boundary policies and freezes full/geometry-only return
+types for inactive, interpolated, single-slice, and topology-changing cases.
+The complete repository suite passed 122/122 with zero failed or incomplete
+tests in 48.6476833 seconds.
+
+### Final serial maintained matrix
+
+Every example ran headlessly in its own fresh MATLAB process with plots and
+animation disabled. Jerk was enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / kinematic / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 / 1 | 6.1661358 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 / 1 | 4.7708265 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / 1 | 3.6128053 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / 1 | 1.7547402 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 / 1 | 5.1434321 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 / 1 | 16.2283167 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 / 1 | 8.002814 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 / 1 | 178.568018 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / 1 | 0.8864936 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 / 1 | 4.3293132 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 / 1 | 2.3133985 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 / 1 | 38.4144474 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 / 1 | 11.4157737 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 / 1 | 4.8174658 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 / 1 | 5.167399 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 / 1 | 6.0696728 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 / 1 | 38.7741662 | `goalReached` |
+
+All 16 successes independently passed collision, continuous kinematic, and
+collision-resolution certificates. Their path lengths and arrival times match
+the preceding `0534edb+constraint-layout-worktree` matrix exactly. The expected
+no-path result independently validated its stable failure diagnostics. A
+visible no-path run took 4.5840717 seconds and created two diagnostic figures
+with two axes. No pre-existing MATLAB process was stopped or signaled.

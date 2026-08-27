@@ -5,6 +5,51 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Batched occupancy and deferred query allocation — 2026-08-27
+
+Multi-ring occupancy now passes every point at one obstacle/time group through
+the existing vectorized signed-clearance query. This reuses one boundary-edge
+traversal while preserving the same interior, boundary-tolerance, and first-
+blocker policies. `shapeAtTime` now constructs the stable empty geometry and
+empty `polyshape` only on inactive returns; active cached and interpolated
+queries no longer allocate placeholders that are immediately overwritten.
+Moving, deforming, topology-changing, single-slice, and out-of-range activity
+semantics are unchanged.
+
+Against exact commit `2cc0988`, an identical instrumented Opening-U run kept
+the exact 10-degree seed, 10.0912159691-degree trajectory, and
+11.8560791016-second duration. Occupancy-query time decreased from 1.63920621
+to 1.24773731 seconds (23.9%), its occupancy-only block from 1.16577671 to
+0.913307407 seconds (21.7%), multi-ring occupancy from 0.627571103 to
+0.546502604 seconds (12.9%), and 8,075 `shapeAtTime` calls from 0.880268904 to
+0.580085704 seconds (34.1%). Profiled wall time decreased from 41.1939427 to
+40.2238949 seconds (2.36%). The proprietary augmented-matrix factorization
+still dominates the optimizer and was not changed.
+
+The final serial moving/deforming U.S. example retained exactly its 40-degree
+seed, 43.0751355347-degree motion, and 7.96286899667-second duration while wall
+time decreased from the preceding 182.935442-second run to 178.568018 seconds
+(2.39%). Opening-U decreased from 38.9261867 to 38.4144474 seconds and the
+extreme U.S. outline from 39.5964486 to 38.7741662 seconds, with exact path and
+arrival parity. These are individual fresh-process observations rather than a
+claim of uniform speedup.
+
+The complete suite passed 122/122. All 17 maintained examples ran serially in
+fresh headless processes: 16 independently validated successes and the
+independently validated expected `noValidatedSeed` failure. Every successful
+result passed collision, continuous kinematic, and collision-resolution
+certificates without path-length or arrival-time regression. A visible failure
+run created two diagnostic figures with two axes. Ten focused obstacle tests
+cover batched-versus-pointwise multi-ring decisions and every allocation-
+sensitive return type, including inactive, interpolated, single-slice, and
+topology-changing queries.
+
+The retained production change adds two net lines; the focused tests add 86
+lines of boundary-policy and return-type evidence. It removes repeated work
+but introduces no cache lifetime, new option, tolerance, or planner heuristic.
+The moving/deforming example at 178.568018 seconds remains the largest runtime
+weakness.
+
 ## Time-invariant obstacle geometry cache — 2026-08-27
 
 Prepared obstacles now retain one complete shape and geometry record only when

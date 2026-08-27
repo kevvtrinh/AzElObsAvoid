@@ -142,6 +142,37 @@ datetimeOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
 verifyEqual(testCase, datetimeOccupied, sharedOccupied);
 end
 
+function testBatchedMultiRingOccupancyMatchesPointwiseQueries(testCase)
+% Verify batched multi-ring clearance preserves pointwise boundary decisions.
+obstacle = movingMultiRingObstacle();
+azimuth_deg = [-3.5 -2.5 -1.5 -0.5 0.5 1.5 2.5 3.5 4.5];
+elevation_deg = zeros(size(azimuth_deg));
+queryTime_s = 1;
+
+for boundaryIsOccupied = [false true]
+    options = struct( ...
+        "BoundaryIsOccupied", boundaryIsOccupied, ...
+        "ClearanceTolerance_deg", 1e-10);
+    batchedOccupied = ...
+        obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacle, azimuth_deg, elevation_deg, queryTime_s, options);
+    pointwiseOccupied = false(size(azimuth_deg));
+    for pointIndex = 1:numel(azimuth_deg)
+        pointwiseOccupied(pointIndex) = ...
+            obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+            obstacle, azimuth_deg(pointIndex), ...
+            elevation_deg(pointIndex), queryTime_s, options);
+    end
+    verifyEqual(testCase, batchedOccupied, pointwiseOccupied);
+
+    [detailedOccupied, ~, details] = ...
+        obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacle, azimuth_deg, elevation_deg, queryTime_s, options);
+    verifyEqual(testCase, batchedOccupied, detailedOccupied);
+    verifyTrue(testCase, all(isfinite(details.MinimumClearance_deg)));
+end
+end
+
 function testShapeQueryReportsOrderedBoundaryProperties(testCase)
 % Compare the lightweight ordered-boundary record with polyshape evidence.
 convexObstacle = rectangleObstacle("convex", [0; 4], [-2 2 -1 1]);
@@ -183,6 +214,50 @@ verifyFalse(testCase, ...
 verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
 verifyFalse(testCase, multiRegionGeometry.IsConvex);
 verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));
+end
+
+function testShapeQueryPreservesOutputTypesAcrossControlPaths(testCase)
+% Verify deferred allocation retains inactive, interpolated, and union outputs.
+movingObstacle = movingMultiRingObstacle();
+[inactiveShape, inactiveGeometry] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(movingObstacle, -1, false);
+verifyClass(testCase, inactiveShape, "polyshape");
+verifyEmpty(testCase, inactiveShape.Vertices);
+verifyFalse(testCase, inactiveGeometry.Active);
+verifyEqual(testCase, inactiveGeometry.LowerSampleIndex, 0);
+verifyEqual(testCase, inactiveGeometry.UpperSampleIndex, 0);
+
+[geometryOnlyShape, geometryOnlyRecord] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(movingObstacle, 5, true);
+verifyEqual(testCase, geometryOnlyShape, []);
+verifyEqual(testCase, geometryOnlyRecord, inactiveGeometry);
+
+[interpolatedShape, interpolatedGeometry] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(movingObstacle, 1, false);
+verifyClass(testCase, interpolatedShape, "polyshape");
+verifyNotEmpty(testCase, interpolatedShape.Vertices);
+verifyTrue(testCase, interpolatedGeometry.Active);
+verifyTrue(testCase, interpolatedGeometry.TopologyIsInterpolated);
+
+singleSliceObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "single slice", 0, [-1; 1; 1; -1], [-1; -1; 1; 1], 0);
+[singleSliceShape, singleSliceGeometry] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(singleSliceObstacle, 100, false);
+verifyClass(testCase, singleSliceShape, "polyshape");
+verifyTrue(testCase, singleSliceGeometry.Active);
+verifyEqual(testCase, singleSliceGeometry.LowerSampleIndex, 1);
+verifyEqual(testCase, singleSliceGeometry.UpperSampleIndex, 1);
+
+topologyObstacle = topologyChangingObstacle();
+[unionShape, unionGeometry] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(topologyObstacle, 1, false);
+[geometryOnlyUnionShape, geometryOnlyUnion] = ...
+    obstacleAvoidance.obstacles.shapeAtTime(topologyObstacle, 1, true);
+verifyClass(testCase, geometryOnlyUnionShape, "polyshape");
+verifyEqual(testCase, geometryOnlyUnionShape.Vertices, unionShape.Vertices, ...
+    "AbsTol", 0);
+verifyEqual(testCase, geometryOnlyUnion, unionGeometry);
+verifyFalse(testCase, unionGeometry.TopologyIsInterpolated);
 end
 
 function testChangingHistoryClassifiesSpanAndGeometry(testCase)
@@ -243,6 +318,17 @@ inputData = normalizationFixture();
 inputData.targetName = "moving multi-ring";
 inputData.safetyMargin_deg = 0;
 obstacle = obstacleAvoidance.obstacles.createObstacle(inputData);
+end
+
+function obstacle = topologyChangingObstacle()
+% Construct one protected region that splits into two rings between samples.
+closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
+left_deg = [-2 -1; -0.5 -1; -0.5 1; -2 1];
+right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
+open_deg = [left_deg; NaN NaN; right_deg];
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, ...
+    {closed_deg(:, 2); open_deg(:, 2)}, 0);
 end
 
 function obstacle = rectangleObstacle(name, time_s, bounds_deg)

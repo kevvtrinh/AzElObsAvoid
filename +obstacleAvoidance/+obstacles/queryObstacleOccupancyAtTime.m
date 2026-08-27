@@ -288,14 +288,12 @@ end
 end
 function blocked = complexShapeOccupancy(shape, points_deg, options)
 % Preserve the detailed boundary policy for multi-ring geometry.
-pointCount = size(points_deg, 1);
-blocked = false(pointCount, 1);
-
-% Apply the detailed boundary policy to every point in multi-ring geometry.
-for pointIndex = 1:pointCount
-    clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( shape, points_deg(pointIndex, :));
-    blocked(pointIndex) = clearance_deg < ...
-        -options.ClearanceTolerance_deg || ...
-        (options.BoundaryIsOccupied && clearance_deg <= options.ClearanceTolerance_deg);
-end
+% The clearance helper already batches points while reusing one edge traversal.
+% Passing the complete block avoids rediscovering identical ring edges for
+% every point without changing the signed-distance or boundary policy.
+clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( ...
+    shape, points_deg);
+blocked = clearance_deg < -options.ClearanceTolerance_deg | ...
+    (options.BoundaryIsOccupied & ...
+    clearance_deg <= options.ClearanceTolerance_deg);
 end

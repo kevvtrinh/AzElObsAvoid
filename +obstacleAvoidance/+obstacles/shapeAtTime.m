@@ -48,15 +48,12 @@ queryTime_s = double(queryTime_s);
 obstacle = obstacleAvoidance.obstacles.prepareDynamic(obstacle);
 preparation = obstacle.InternalPreparation;
 time_s = double(obstacle.time_s(:));
-geometry = createEmptyGeometry();
-% Start from an inactive result so empty histories and out-of-range queries can
-% return early without leaving any output field undefined.
-if geometryOnly
-    shape = [];
-else
-    shape = polyshape();
-end
+shape = [];
 if isempty(time_s)
+    geometry = createEmptyGeometry();
+    if ~geometryOnly
+        shape = polyshape();
+    end
     return;
 end
 
@@ -76,6 +73,13 @@ if isscalar(time_s)
     upperIndex = 1;
     fraction = 0;
 elseif queryTime_s < time_s(1) || queryTime_s > time_s(end)
+    % Only inactive queries need the empty record. Active queries overwrite
+    % every geometry field below, so constructing it eagerly adds repeated
+    % allocation to dense collision and visibility checks.
+    geometry = createEmptyGeometry();
+    if ~geometryOnly
+        shape = polyshape();
+    end
     return;
 else
     upperIndex = find(time_s >= queryTime_s, 1, "first");
@@ -149,7 +153,7 @@ end
 
 azimuth_deg(~isfinite(azimuth_deg)) = NaN;
 elevation_deg(~isfinite(elevation_deg)) = NaN;
-if ~geometryOnly && isempty(shape.Vertices)
+if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg);
 end
 active = nnz(isfinite(azimuth_deg) & isfinite(elevation_deg)) >= 3;
