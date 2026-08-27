@@ -1,8 +1,30 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Prepared dynamic boundary-edge queries — 2026-08-27](#prepared-dynamic-boundary-edge-queries--2026-08-27).
+[Route-candidate file-cap cleanup — 2026-08-27](#route-candidate-file-cap-cleanup--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Route-candidate file-cap cleanup — 2026-08-27
+
+- Source: `HS3-planner` at `01505f4+route-file-cap-worktree`.
+- Repository-health scope removed 33 duplicate narrative-comment or blank lines
+  from `createRouteCandidates.m`. A zero-context Git-diff audit found zero
+  executable lines added, removed, or changed.
+- The file decreased from 924 to 891 physical lines. Production decreased from
+  11,715 to 11,682 lines, and no production file now exceeds the hard 900-line
+  limit; `solveRouteCandidate.m` is the largest at 899 lines.
+- The cleanup does not reduce McCabe complexity: the route-candidate owner
+  remains 27 and its visibility-graph helper remains 18. Consolidating its two
+  seed-equivalence implementations is a separate behavior-bearing candidate.
+- Production remains 4,182 lines above target. The size formula is
+  `0.25 * 4182 / 100 = 10.455`, requiring a 1045.5% reduction, and production
+  plus tests remains 16,136 lines. The cleanup narrows but does not resolve the
+  repository-wide size debt.
+- MATLAB R2024b failed during process startup with `System Error: File system
+  inconsistency` on four attempts, including isolated preferences and `-nojvm`.
+  Existing MATLAB processes were left running. Code Analyzer and the planned
+  eight route-search tests therefore did not execute after this comment-only
+  cleanup; no example or performance claim is attached to it.
 
 ## Prepared dynamic boundary-edge queries — 2026-08-27
 
@@ -34,6 +56,15 @@ Earlier sections are retained as historical checkpoints.
   decreased 1.08%, from 139.30012795 to 137.80243725 seconds. Exact path,
   arrival, collision, kinematic, and validation outputs were unchanged. The
   candidate missed the declared 5% retention threshold and was reverted.
+- A second counterbalanced experiment exposed sparse nonlinear Jacobians only
+  at the neutral HS3 `fmincon` boundary. On Opening-U, parent wall times were
+  43.0839846 and 43.8874203 seconds and candidate times were 42.6435272 and
+  42.3384344 seconds. Median wall time decreased 2.29%, from 43.48570245 to
+  42.4909808 seconds, and reported planner time decreased 2.07%. The exact
+  19-iteration objective, residuals, route, arrival, collision, and validation
+  evidence were unchanged. The candidate missed the 5% gate and was reverted.
+- Limited-memory BFGS was rejected after one Opening-U run increased wall time
+  to 69.5511834 seconds while preserving the same 19-iteration solution.
 - Focused tests passed 21/21; the complete suite passed 128/128 in 93.8577066
   seconds. Code Analyzer reported zero findings across 87 maintained MATLAB
   files.

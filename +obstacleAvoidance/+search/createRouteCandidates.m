@@ -27,14 +27,10 @@ function [seeds, diagnostics] = createRouteCandidates(obstacles, initialState, g
 
 %% Section 1: Create The Direct Visibility Seed
 
-% Test the direct route first. Keep it only when protected geometry does not
-% block the segment. Final validation checks the timed motion again.
-
 % The direct seed is always retained as the baseline candidate, even when it
 % crosses an obstacle. Later construction and validation reject it honestly.
 start_deg = initialState.position_deg;
 goal_deg = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
-% Move the goal to the nearest equivalent azimuth turn when circular wrapping is enabled.
 if options.AllowAzimuthWrapping
     azimuthTurns = round((start_deg(1) - goal_deg(1)) / 360);
     goal_deg(1) = goal_deg(1) + 360 * azimuthTurns;
@@ -67,10 +63,6 @@ end
 
 %% Section 2: Build One Protected-Geometry Visibility Graph
 
-% Use the start, goal, and obstacle vertices as graph nodes. Connect two nodes
-% only when their segment stays outside protected geometry. This graph keeps
-% the shortest polygonal detours around obstacle boundaries.
-
 % Spatial graph geometry is used only to propose routes. Exact prepared
 % obstacle histories remain authoritative for timed edges and final motion
 % validation, so a reduced envelope cannot make an invalid path succeed.
@@ -82,7 +74,6 @@ hasChangingObstacles = obstacleAvoidance.obstacles.hasChangingHistory( ...
 coverage = diagnostics.Coverage;
 coverage.TimedSearchSuppressionReason = "";
 diagnostics.SampleTimes_s = sampleTimes_s;
-% Static histories cannot benefit from the additional time-layer search.
 if ~hasChangingObstacles
     coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
 elseif usedDenseEnvelope
@@ -151,17 +142,12 @@ end
 
 %% Section 3: Search One Extended Timed Proposal
 
-% Moving obstacles can require a wait. Copy graph nodes at selected times.
-% Add wait and motion edges that move forward in time. Check each edge against
-% the obstacle position during that edge.
-
 % A time-layer graph can represent waits and moving-obstacle passages that a
 % static swept envelope would hide. Work is explicitly bounded by node/layer
 % counts, so diagnostics must preserve when this proposal was suppressed.
 reservedTimedSeedCount = 0;
 timedRoutes_deg = cell(0, 1);
 timedRouteTimes_s = cell(0, 1);
-% Add timed search only when geometry changes and the retained seed budget still has room.
 if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumSeedCount
     coverage.ExtendedTimedSearchAttempted = true;
     maximumTimedNodeCount = 24;
@@ -210,10 +196,6 @@ end
 
 %% Section 4: Search Distinct Spatial Visibility Routes
 
-% Find route families on different sides of obstacles. Track winding around
-% obstacle reference points. This prevents small changes to one route from
-% using all candidate slots.
-
 % Homology signatures keep topologically different detours instead of merely
 % returning several small perturbations of the same route.
 maximumClassCount = max(0, options.MaximumSeedCount - reservedTimedSeedCount - numel(seeds));
@@ -226,14 +208,12 @@ diagnostics.HomologyClassCount = size(classSignatures, 1);
 diagnostics.HomologyStateCount = searchRecord.StateCount;
 diagnostics.HomologySearchTruncated = searchRecord.Truncated;
 
-% Convert each discovered homology-class node path into one nonduplicate spatial seed.
 for classIndex = 1:numel(nodePaths)
     route_deg = nodePosition_deg(nodePaths{classIndex}, :);
     [route_deg, cleanupRecord] = cleanupSpatialVisibilityRoute( ...
         route_deg, sweptShape, representative_deg, ...
         classSignatures(classIndex, :));
     diagnostics = appendRouteCleanupRecord(diagnostics, cleanupRecord);
-    % Keep the visibility route only when it adds spatial diversity beyond existing seeds.
     if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
         [seed, isReachable] = createSpatialSeed(spatialSeedTemplate, ...
             numel(seeds) + 1, route_deg, directDuration_s, ...
@@ -256,20 +236,14 @@ end
 diagnostics.Coverage = coverage;
 diagnostics.GeneratedSeedCount = numel(seeds);
 end
-
-
 function [sweptShape, sampledShapeCount, sampledNodes_deg] = sweptObstacleShape(obstacles, sampleTimes_s)
 % Union protected source and midpoint geometry for seed construction.
 maximumShapeCount = numel(sampleTimes_s) * numel(obstacles);
 sampledShapes = cell(maximumShapeCount, 1);
 sampledShapeCount = 0;
 sampledNodes_deg = zeros(0, 2);
-
-% Evaluate protected geometry at every selected seed-search time.
 for sampleTimeIndex = 1:numel(sampleTimes_s)
     sampleTime_s = sampleTimes_s(sampleTimeIndex);
-
-    % Add the active slice from each obstacle to this time layer's union input.
     for obstacleIndex = 1:numel(obstacles)
         shape = obstacleAvoidance.obstacles.shapeAtTime( ...
             obstacles(obstacleIndex), sampleTime_s);
@@ -283,7 +257,6 @@ for sampleTimeIndex = 1:numel(sampleTimes_s)
     end
 end
 sampledNodes_deg = sampledNodes_deg(all(isfinite(sampledNodes_deg), 2), :);
-% No sampled geometry means the spatial graph can operate on an empty envelope.
 if sampledShapeCount == 0
     sweptShape = polyshape();
 else
@@ -345,11 +318,7 @@ rejectedTransitionCount = 0;
 maximumRetainedEdgeCount = 2000;
 acceptedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
 rejectedEdges_deg = zeros(maximumRetainedEdgeCount, 4);
-
-% Visit each unordered node pair exactly once.
 for firstNodeIndex = 1:nodeCount - 1
-
-    % Test all later nodes selected by the sparse visibility candidate mask.
     for secondNodeIndex = firstNodeIndex + 1:nodeCount
         if ~candidatePairMask(firstNodeIndex, secondNodeIndex)
             continue;
@@ -516,8 +485,6 @@ function duplicate = temporalSeedDuplicates(seed, seeds)
 duplicate = false;
 sampleTau = linspace(0, 1, 101).';
 sampledRoute_deg = interp1(seed.tau, seed.position_deg, sampleTau, "linear");
-
-% Compare against every retained seed because timing differences can preserve distinct waits.
 for seedIndex = 1:numel(seeds)
     sampledSeed_deg = interp1(seeds(seedIndex).tau, seeds(seedIndex).position_deg, sampleTau, "linear");
     priorDuration_s = seeds(seedIndex).EstimatedDuration_s;

@@ -1,9 +1,26 @@
 # Plan 325 branch assessment
 
 The current planner judgment is **HS3-only planning with prepared dynamic
-boundary-edge queries — 2026-08-27**.
+boundary-edge queries and no production file above 900 lines — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Route-candidate file-cap cleanup — 2026-08-27
+
+`createRouteCandidates.m` decreased from 924 to 891 physical lines by removing
+33 duplicate narrative-comment or blank lines. Mechanical diff inspection
+confirms that no executable line changed. Production is now 11,682 lines, and
+the largest production file is `solveRouteCandidate.m` at 899 lines, so the
+hard per-file limit is currently satisfied.
+
+This is a file-cap and readability cleanup, not a cyclomatic-complexity claim.
+McCabe complexity remains 27 for the main route-candidate owner and 18 for its
+visibility-graph helper. Production plus tests remains 16,136 lines, and the
+4,182-line production overage still requires an impossible 1045.5% wall-time
+reduction under the literal formula. Four MATLAB R2024b verification launches
+failed before code execution with a host file-system inconsistency while
+existing processes were preserved, so focused post-cleanup tests remain
+unexecuted.
 
 ## Prepared dynamic boundary-edge queries — 2026-08-27
 
@@ -36,6 +53,17 @@ and 163.1769446 seconds. The 1.28% median wall reduction and 1.08% median
 reported-planner reduction missed the declared 5% retention gate; the code was
 reverted. This localizes repeated public-query validation as a real but minor
 cost rather than the remaining dominant bottleneck.
+
+Sparse nonlinear Jacobians were also tested only at the neutral HS3 `fmincon`
+boundary. The counterbalanced Opening-U median improved 2.29%, from
+43.48570245 to 42.4909808 seconds, while solver iterations, objective,
+residuals, route, arrival, and validation remained exact. Because the result
+missed the declared 5% wall-time gate and required production growth, it was
+reverted. Sparse conversion is therefore not the next retained optimization at
+the current 43-variable problem scale.
+
+Limited-memory BFGS was also rejected: one identical Opening-U run increased
+wall time to 69.5511834 seconds without changing the 19-iteration solution.
 
 The complete suite passed 128/128. All 17 maintained examples ran serially in
 fresh headless processes: 16 independently validated successes and the
