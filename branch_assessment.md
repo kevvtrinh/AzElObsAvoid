@@ -5,6 +5,22 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Documentation and interactive-example cleanup — 2026-08-26
+
+Eight redundant subfolder `README.md` files and the manual
+`exampleAzElInteractiveSandbox` entry were removed. The repository-level
+`README.md` remains the single documentation entry and no longer links to the
+deleted guides or advertises the removed example. The example-contract test no
+longer carries a sandbox-specific exclusion; all 18 maintained examples are
+now covered uniformly by the file-level metadata check.
+
+This cleanup removes nine files without changing planner, obstacle, validation,
+plotting, or HS3 behavior. The focused example-contract suite passes 6/6 and
+Code Analyzer reports zero findings for the modified test. No maintained
+example was executed, so `benchmark.csv` correctly retains its last measured
+rows without a fabricated cleanup measurement. Historical verification text
+that records when the interactive example existed remains unchanged.
+
 ## Same-homology spatial route cleanup — 2026-08-26
 
 The spatial visibility product now removes avoidable consecutive route edges

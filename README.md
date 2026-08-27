@@ -11,9 +11,8 @@ Successful results have `SelectedMotionSource="hs3"` and echo
 `PlannerMethod="hs3"` in their resolved options and search diagnostics.
 
 The HS3 implementation descends from the `plan-325` snapshot at commit
-`5a067112a9f880d015f52fb97538a99010871478`. See the
-[planner guide](planAzElMotion/+azElPlanner/README.md) and
-[engine guide](hs3/README.md) for current ownership details.
+`5a067112a9f880d015f52fb97538a99010871478`. Planner and engine ownership is
+summarized below in this repository-level guide.
 
 ## Quick start
 
@@ -284,14 +283,14 @@ result = exampleAzElPlanning(struct( ...
 The maintained examples cover static, moving, and deforming obstacles;
 concave and geographic geometry; waiting; dense fields; moving targets;
 azimuth wrapping; fixed and earliest arrival; and expected no-path
-diagnostics. `exampleAzElInteractiveSandbox` and the persistent scene builder
-under `sandbox/` are manual tools outside the headless example matrix.
+diagnostics. The persistent scene builder under `sandbox/` is a manual tool
+outside the headless example matrix.
 
 ## Requirements
 
 - MATLAB with `polyshape`, graph, table, string, and current graphics support.
 - Optimization Toolbox for `fmincon`.
-- A graphical MATLAB session for visible plots and the interactive sandbox.
+- A graphical MATLAB session for visible plots and the persistent scene builder.
   Planning, validation, and noninteractive examples can run headlessly.
 - Geographic-outline examples may require their MATLAB geographic data and
   toolbox dependencies.

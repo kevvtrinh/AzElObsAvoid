@@ -4,6 +4,20 @@ Current worktree evidence is summarized in
 [Same-homology spatial route cleanup — 2026-08-26](#same-homology-spatial-route-cleanup--2026-08-26).
 Earlier sections are retained as historical checkpoints.
 
+## Documentation and interactive-example cleanup — 2026-08-26
+
+- Source: `HS3-planner` after `13c3553`.
+- Removed eight tracked subfolder `README.md` files while retaining the root
+  `README.md` as the single current guide.
+- Removed `examples/exampleAzElInteractiveSandbox.m`; 18 maintained example
+  functions remain.
+- Removed the root guide's stale links and interactive-example requirement, and
+  removed the now-dead sandbox exclusion from `testExampleContracts`.
+- `testExampleContracts` passed 6/6 in 0.731870 seconds, its modified source
+  had zero Code Analyzer findings, and `git diff --check` passed.
+- No maintained example was executed for this documentation/manual-tool
+  cleanup, so no row was appended to `benchmark.csv`.
+
 ## Same-homology spatial route cleanup — 2026-08-26
 
 - Source: `HS3-planner` at `de372d5+spatial-route-cleanup-worktree`.

@@ -171,9 +171,6 @@ exampleFolder = fullfile(testCase.TestData.RepositoryRoot, "examples");
 exampleFiles = dir(fullfile(exampleFolder, "example*.m"));
 for fileIndex = 1:numel(exampleFiles)
     exampleName = erase(string(exampleFiles(fileIndex).name), ".m");
-    if exampleName == "exampleAzElInteractiveSandbox"
-        continue;
-    end
     sourceText = string(fileread( ...
         fullfile(exampleFolder, exampleFiles(fileIndex).name)));
     requiredAssignment = "result.ExampleName = """ + ...
