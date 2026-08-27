@@ -188,6 +188,40 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyGreaterThan(testCase, max(abs(result.position_deg(:, 2))), 1e-4);
 end
+function testBackwardEndpointVelocityRetainsRequiredReversal(testCase)
+% Do not impose monotonic progress when the requested initial motion is backward.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [-0.2 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    8, [4 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = fixedOptions();
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, options);
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyLessThan(testCase, min(result.position_deg(:, 1)), -1e-4);
+verifyGreaterThan(testCase, motionLength_deg, 4 + 1e-4);
+end
+function testHighForwardEndpointVelocityRetainsRequiredReversal(testCase)
+% Large nonzero endpoint speed can require reversal over a short displacement.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [10 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    1, [1 0], [10 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [11 11], [60 60], [600 600]);
+options = fixedOptions();
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, options);
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyLessThan(testCase, min(result.velocity_deg_s(:, 1)), -1e-3);
+verifyGreaterThan(testCase, motionLength_deg, 1 + 1e-3);
+end
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
     testCase, "testWorkspaceIntervalsBelongToLimits");
@@ -731,6 +765,8 @@ waitIndex = find([result.Seeds.Source] == "directWait", 1);
 verifyNotEmpty(testCase, waitIndex);
 verifyTrue(testCase, result.SeedSummaries(waitIndex).Hs3Attempted);
 verifyTrue(testCase, result.SeedSummaries(waitIndex).ValidationPassed);
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+verifyEqual(testCase, motionLength_deg, 10, "AbsTol", 1e-8);
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
 function testObstacleActivationSpanEnablesTimedSearch(testCase)

@@ -1,9 +1,55 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **two-product architecture with HS3-only
-planning — 2026-08-26**.
+The current planner judgment is **HS3-only planning with certified monotonic
+direct-line progress — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Certified monotonic direct-line progress — 2026-08-27
+
+Ordered, collinear, geometry-certified seeds now receive a continuous
+nonnegative-progress constraint only when both endpoint velocity and
+acceleration are zero within floating-point tolerance. The route tangent is
+projected onto every segment's complete velocity polynomial, converted to
+Bernstein form, and every coefficient is constrained nonnegative. This makes
+the returned motion advance or wait along the certified direct line rather
+than reverse along it. Detours, unordered collinear seeds, moving targets,
+nonparallel endpoint derivatives, and every non-rest endpoint request retain
+the original unrestricted behavior.
+
+The Bernstein coefficient condition is a conservative sufficient certificate,
+not a necessary characterization of every nonnegative polynomial. Restricting
+activation to certified rest-to-rest lines bounds that conservatism, but the
+planner remains a bounded candidate search and this change does not establish
+global path or arrival-time optimality. Focused tests verify value/Jacobian row
+parity, reject an interior backward velocity, preserve partial-layout rows, and
+retain required reversals for both backward initial velocity and a short move
+with large positive endpoint speeds.
+
+Against exact commit `36b854f`, Opening U retained its 10-degree selected
+route and 11.8560791016-second arrival while motion length decreased from
+10.0912159691 to exactly 10 degrees. The final fresh retention run took
+39.0340602 seconds versus the 38.5046175-second three-run baseline median;
+this 1.38% difference is treated as run noise rather than a speedup. Every
+other maintained example retained exact selected-route, smoothed-motion, and
+duration metrics from the preceding matrix. The longest moving/deforming U.S.
+case retained its 40-degree route, 43.0751355347-degree motion, and
+7.96286899667-second duration at 179.707168 seconds.
+
+The complete suite passed 125/125. All 17 maintained examples ran serially in
+fresh headless processes: 16 independently validated successes and the
+independently validated expected `noValidatedSeed` failure. Every successful
+result passed collision and continuous kinematic checks. A visible
+obstacle-free run created three figures with six axes, and a visible expected
+failure created two diagnostic figures with two axes.
+
+The retained diff adds 79 net production lines and 81 net test lines.
+`solveRouteCandidate.m` is 899 physical lines, below the 900-line changed-file
+cap, but existing `createRouteCandidates.m` remains 924 lines. The production
+tree is 11,486 physical lines and production plus tests is 15,736, still above
+the repository's 7,500- and 12,000-line targets. That pre-existing size debt
+remains a maintainability weakness; the moving/deforming case remains the
+largest runtime weakness.
 
 ## Batched occupancy and deferred query allocation — 2026-08-27
 

@@ -127,6 +127,8 @@ seedCorridor = obstacleAvoidance.search.createSeedCorridor(seed, segmentCount);
 constraintLayout = createConstraintLayout( ...
     segmentCount, initialState.time_s, minimumFinalTime_s, ...
     latestFinalTime_s, goalState, obstacles, corridor);
+constraintLayout.MonotonicityDirection = monotonicityDirection( ...
+    collinearityDirection, initialState, goalState);
 corridorConstructionElapsedTime_s = toc(corridorConstructionTimer);
 if toc(solverTimer) >= maximumSolverTime_s
     candidate.Message = "HS3 reached its solver time limit during setup.";
@@ -391,6 +393,27 @@ else
 end
 end
 
+function direction = monotonicityDirection( ...
+        collinearityDirection, initialState, goalState)
+% Restrict certified direct motion only for rest-to-rest endpoint states.
+% Nonzero endpoint derivatives can physically require a reversal, so those
+% requests retain the original unrestricted collinear solve.
+direction = zeros(0, 2);
+if isempty(collinearityDirection)
+    return;
+end
+velocity_deg_s = [initialState.velocity_deg_s; goalState.velocity_deg_s];
+acceleration_deg_s2 = [initialState.acceleration_deg_s2; goalState.acceleration_deg_s2];
+velocityTolerance_deg_s = 64 * eps(max( ...
+    1, max(abs(velocity_deg_s), [], "all")));
+accelerationTolerance_deg_s2 = 64 * eps(max( ...
+    1, max(abs(acceleration_deg_s2), [], "all")));
+if all(abs(velocity_deg_s) <= velocityTolerance_deg_s, "all") && ...
+        all(abs(acceleration_deg_s2) <= ...
+        accelerationTolerance_deg_s2, "all")
+    direction = collinearityDirection(:).';
+end
+end
 function layout = createConstraintLayout(segmentCount, startTime_s, ...
         minimumFinalTime_s, maximumFinalTime_s, goalState, obstacles, corridor)
 % Freeze corridor row topology and final-time events for one solver attempt.
