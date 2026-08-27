@@ -7,8 +7,8 @@ input, obstacles, geometry, search, planning, and plotting. The
 dimension-neutral engine remains a separate normal `hs3/` product folder.
 
 A successful result is accepted only after canonical independent validation.
-Successful results have `SelectedMotionSource="hs3"` and echo
-`PlannerMethod="hs3"` in their resolved options and search diagnostics.
+The resolved options and search diagnostics describe the single maintained
+planner without a dispatch selector or alternate-motion provenance field.
 
 The HS3 implementation descends from the `plan-325` snapshot at commit
 `5a067112a9f880d015f52fb97538a99010871478`. Planner and engine ownership is
@@ -25,21 +25,12 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
-The explicit defaults request is equivalent:
-
-```matlab
-options = obstacleAvoidance.planTrajectory("hs3");
-```
-
-A partial options structure may omit `PlannerMethod` or set it to `"hs3"`:
+A partial options structure can override only the controls it needs:
 
 ```matlab
 options = struct( ...
-    "PlannerMethod", "hs3", ...
     "MaximumSeedCount", 3);
 ```
-
-No other planner selector value is supported.
 
 ## Minimal fixed-goal example
 
@@ -176,14 +167,13 @@ returned motion or preserved failure diagnostics.
 - HS3 uses an actual third-order Hermite-Simpson finite-jerk transcription
   with `fmincon`.
 - It preserves supported nonzero endpoint velocity and acceleration states.
-- It exposes collocation, mesh, iteration, evaluation, collision
-  relinearization, and cooperative planning-budget controls.
+- It exposes collocation, mesh, iteration, evaluation, and collision
+  relinearization controls.
 - Each route leg receives at least one segment when permitted, and configured
   bounded mesh-refinement passes may be attempted.
-- One solver evaluation can finish after the cooperative deadline, so measured
-  elapsed time may overrun `MaximumPlanningTime_s`. Set
-  `DeterministicWorkBudget` to release that budget and keep only the
-  machine-independent caps, so a result reproduces across machines.
+- Candidate count, mesh passes, relinearizations, solver iterations, and
+  function evaluations bound planner work independently of machine speed. The
+  HS3 engine retains its own per-solve safety stop.
 - HS3 is a local nonlinear method. Conditioning warnings, local minima, or
   local failure can occur even when another proposal may be feasible.
 - Stationary-obstacle constraints bound the trajectory continuously between
@@ -283,7 +273,6 @@ Run a headless example with HS3:
 
 ```matlab
 result = exampleObstacleAvoidance(struct( ...
-    "PlannerMethod", "hs3", ...
     "PlotOutputs", false, ...
     "FigureVisible", "off"));
 ```

@@ -7,8 +7,8 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %       trajectory, obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Independently validate one complete polynomial motion and geometry.
-%   - Fail unresolved continuous-collision intervals instead of accepting them.
+%   - Check one complete polynomial motion independently of planner status.
+%   - Report failure when a continuous-collision interval cannot be resolved.
 %**************************************************************************
 % INPUTS
 %   - trajectory (scalar candidate or planner-result struct)
@@ -20,13 +20,16 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %**************************************************************************
 % OUTPUTS
 %   - validation (scalar struct)
-%       Stable checks, clearance, message, collision time, and total time.
+%       The result contains checks, clearance, a message, collision time, and
+%       total validation time.
 %**************************************************************************
 % UNITS
 %   - Position and clearance are degrees. Derivatives use deg/s, deg/s^2,
 %     and deg/s^3. Time is seconds.
 %**************************************************************************
 if nargin == 0
+    % Return all normal validation fields when no trajectory is supplied.
+    % Callers and plotters can read the result without separate field checks.
     validation = createEmptyValidation();
     return;
 end
@@ -35,6 +38,9 @@ validationTimer = tic;
 %% Section 1: Resolve Inputs And Basic History Checks
 
 if nargin == 1
+    % A planner result contains the normalized inputs and options that created
+    % its trajectory. Use those same values for validation. This prevents a
+    % check against a different planning problem.
     requiredResultFields = {'Inputs', 'Options', 'Polynomial'};
     if ~isstruct(trajectory) || ~isscalar(trajectory) || ~all(isfield(trajectory, requiredResultFields))
         error("validateTrajectory:InvalidResult", ...
@@ -49,15 +55,24 @@ elseif nargin ~= 6
     error("validateTrajectory:InvalidCall", "Use one planner result or all six explicit validation inputs.");
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
+    % A six-input call can supply ordinary obstacle records. Pack and prepare
+    % them one time. All collision checks then use protected geometry and
+    % obstacle time data in the same format as the planner.
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
     obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 end
 hasMovingGoal = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
+% Azimuth wrapping makes values near -180 and 180 degrees close to each other.
+% Straight coordinate subtraction treats them as far apart. Moving geometry
+% does not yet support this mixed interpretation. Reject it to prevent an
+% incorrect collision result.
 if options.AllowAzimuthWrapping && (~isempty(obstacles) || hasMovingGoal)
     error("validateTrajectory:UnsupportedWrappedGeometry", ...
         "Wrapped validation is supported only for obstacle-free " + "fixed-position goals.");
 end
 requiredFields = {'time_s', 'position_deg', 'velocity_deg_s', 'acceleration_deg_s2', 'jerk_deg_s3', 'Polynomial'};
+% Sampled histories support reports and plots. Polynomial data supports checks
+% between samples. Require both forms and require them to agree.
 hasRequiredFields = isstruct(trajectory) && isscalar(trajectory) && all(isfield(trajectory, requiredFields));
 if ~hasRequiredFields
     error("validateTrajectory:InvalidTrajectory", "trajectory must contain sampled histories and Polynomial data.");
@@ -80,6 +95,9 @@ historyIsFinite = sampleCount > 0 && historySizesMatch && ...
 
 %% Section 2: Validate Endpoints And Continuous Polynomial Bounds
 
+% Numerical optimization and polynomial evaluation cause small round-off
+% differences. Use the configured constraint tolerance and a small absolute
+% lower limit. This prevents numerical noise from causing an endpoint failure.
 stateTolerance = max(10 * options.ConstraintTolerance, 1e-7);
 initialStateMatched = historyIsFinite && ...
     max(abs(position_deg(1, :) - initialState.position_deg)) <= ...
@@ -87,6 +105,8 @@ initialStateMatched = historyIsFinite && ...
     max(abs(velocity_deg_s(1, :) - initialState.velocity_deg_s)) <= ...
     stateTolerance && max(abs(acceleration_deg_s2(1, :) - initialState.acceleration_deg_s2)) <= stateTolerance;
 if timeIsFinite
+    % Evaluate a moving goal at the returned final time. A fixed goal returns
+    % the same position for all query times.
 goalPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
         goalState, time_s(end));
 else
@@ -97,6 +117,9 @@ terminalStateMatched = historyIsFinite && ...
     max(abs(velocity_deg_s(end, :) - goalState.velocity_deg_s)) <= ...
     stateTolerance && max(abs(acceleration_deg_s2(end, :) - goalState.acceleration_deg_s2)) <= stateTolerance;
 if options.GoalTimeMode == "fixedArrival"
+    % A fixed-arrival result must match the requested time. A free-arrival
+    % result must have a finite positive duration in the permitted range. The
+    % polynomial and continuous-bound checks verify that range.
     goalTimeSatisfied = timeIsFinite && abs(time_s(end) - goalState.time_s) <= stateTolerance;
 else
     goalTimeSatisfied = timeIsFinite && ...
@@ -111,16 +134,25 @@ end
 %% Section 3: Certify Continuous Collision Freedom
 
 collisionTimer = tic;
+% Do not check geometry if history or physical-bound checks fail. Geometry
+% checks require a valid polynomial and ordered time data.
 if timeIsStrictlyIncreasing && historyIsFinite && continuousBounds.Valid
     [seedCorridorCertified, seedCorridorClearance_deg] = obstacleAvoidance.search.certifySeedCorridor( ...
         trajectory, obstacles, options.CollisionClearanceTolerance_deg);
     if seedCorridorCertified
+        % A certified corridor is a set of obstacle-free linear regions. The
+        % corridor proves that the complete polynomial stays in those regions.
+        % Use this proof instead of a second adaptive collision check.
         collisionFree = true;
         collisionResolved = true;
         minimumClearance_deg = seedCorridorClearance_deg;
         collisionCheckCount = 0;
         unresolvedIntervalCount = 0;
     else
+        % Without a corridor proof, divide polynomial time into smaller
+        % intervals. Continue until each interval is clear, a collision is
+        % found, or the resolution limit is reached. An unresolved interval
+        % causes validation failure.
         [collisionFree, collisionResolved, minimumClearance_deg, ...
             collisionCheckCount, unresolvedIntervalCount] = certifyCollision( ...
             trajectory.Polynomial, obstacles, limits, options);
@@ -136,7 +168,9 @@ end
 collisionCheckingElapsedTime_s = toc(collisionTimer);
 safetyMarginPolicySatisfied = true;
 
-% Verify every protected obstacle retains original-boundary and margin provenance.
+% Verify the source data for each protected obstacle. Keep the original
+% boundary and the applied safety margin. This check detects a margin applied
+% two times. It also links displayed geometry to collision geometry.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     obstacleHasProvenance = isfield(obstacle, "originalAz_deg") && ...
@@ -147,6 +181,9 @@ azimuthWrapPolicySatisfied = options.AllowAzimuthWrapping || continuousBounds.Po
 
 %% Section 4: Assemble The Stable Validation Record
 
+% A plan passes only when all check groups pass. The groups cover history,
+% endpoint state, time rules, polynomial consistency, physical limits,
+% collision clearance, safety margins, and azimuth handling.
 passed = historySizesMatch && timeIsStrictlyIncreasing && ...
     historyIsFinite && initialStateMatched && terminalStateMatched && ...
     goalTimeSatisfied && polynomialChecks.Valid && ...
@@ -172,7 +209,10 @@ checkValues = [ ...
     polynomialChecks.HistoryConsistent, continuousBounds.Valid, ...
     dynamics.Consistent, collisionFree, collisionResolved, safetyMarginPolicySatisfied, azimuthWrapPolicySatisfied];
 
-% Collect every failed check name for the public validation message.
+% Collect the name of each failed check. Report all failed groups in one
+% message. One incorrect trajectory can fail several related checks.
+% Start investigation with PolynomialConsistency and Time checks. Later
+% collision and limit checks depend on correct polynomial time data.
 for checkIndex = 1:numel(checkNames)
     if ~checkValues(checkIndex)
         issues(end + 1, 1) = checkNames(checkIndex); %#ok<AGROW>
@@ -235,11 +275,15 @@ end
 
 
 function within = withinBounds(powerCoefficient, lower, upper, tolerance)
-% Check the exact low-degree polynomial range on normalized [0, 1].
+% Check the exact polynomial range on normalized time [0,1]. A polynomial can
+% cross a limit between its endpoints. A minimum or maximum occurs at an
+% endpoint or where the derivative is zero. Check all these finite candidates.
 derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* powerCoefficient(2:end);
 lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");
 candidateTau = [0; 1];
 if ~isempty(lastDerivativeIndex)
+    % Coefficients use ascending powers. roots and polyval require descending
+    % powers. flip changes only this coefficient order.
     stationaryRoot = roots(flip( derivativeCoefficient(1:lastDerivativeIndex)));
     rootTolerance = 1e-9;
     stationaryTau = real(stationaryRoot);
@@ -252,7 +296,11 @@ end
 
 function [collisionFree, resolved, minimumClearance_deg, ...
         checkCount, unresolvedCount] = certifyCollision( polynomial, obstacles, limits, options)
-% Certify moving-obstacle clearance with conservative adaptive intervals.
+% Check moving-obstacle clearance over complete time intervals. Use spatial
+% bounds for the polynomial and swept bounds for each obstacle. A swept bound
+% contains all obstacle positions during an interval. Divide an interval when
+% the bounds overlap. Stop when the interval is clear, colliding, or too small
+% to resolve.
 if isempty(obstacles)
     collisionFree = true;
     resolved = true;
@@ -269,13 +317,17 @@ unresolvedCount = 0;
 pathSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
 obstacleHistoryBounds_deg = zeros(numel(obstacles), 4);
 
-% Hoist input-derived complete-history boxes used by every adaptive interval.
+% Create broad boxes for the complete histories one time. Each interval reuses
+% these boxes for a fast first check. Separated boxes prove clearance. Overlap
+% does not prove collision. It means that a more precise check is necessary.
 for obstacleIndex = 1:numel(obstacles)
     obstacleHistoryBounds_deg(obstacleIndex, :) = ...
         obstacles(obstacleIndex).InternalPreparation.HistoryBounds_deg;
 end
 
-% Certify collision freedom independently over every polynomial segment.
+% Check each polynomial segment independently. One polynomial expression
+% applies inside a segment. The segment also has one fixed conversion from
+% normalized time to seconds. Thus, segment boundaries are initial split points.
 for segmentIndex = 1:polynomial.SegmentCount
     segmentStart_s = polynomial.SegmentStartTime_s(segmentIndex);
     if isscalar(polynomial.SegmentDuration_s)
@@ -285,7 +337,8 @@ for segmentIndex = 1:polynomial.SegmentCount
     end
     splitTimes_s = [segmentStart_s; segmentEnd_s];
 
-    % Insert every obstacle history time that falls inside the current segment.
+    % Insert each obstacle history time inside the segment. Obstacle motion can
+    % change direction or shape at these times.
     for obstacleIndex = 1:numel(obstacles)
         obstacleTimes_s = obstacles(obstacleIndex).time_s(:);
         splitTimes_s = [splitTimes_s; obstacleTimes_s( ...
@@ -293,12 +346,12 @@ for segmentIndex = 1:polynomial.SegmentCount
     end
     splitTimes_s = unique(splitTimes_s);
 
-    % Check each segment or obstacle-history breakpoint explicitly.
+    % Check each segment boundary and obstacle-history boundary directly.
     for splitIndex = 1:numel(splitTimes_s)
         [~, splitPoint_deg] = obstacleAvoidance.planner.evaluatePlannerPolynomial( ...
             polynomial, splitTimes_s(splitIndex), segmentIndex);
 
-        % Measure the breakpoint position against every obstacle at that exact time.
+        % Measure clearance from each obstacle at the exact boundary time.
         for obstacleIndex = 1:numel(obstacles)
             historyBounds_deg = obstacleHistoryBounds_deg(obstacleIndex, :);
             axisDistance_deg = max([ ...
@@ -327,7 +380,8 @@ for segmentIndex = 1:polynomial.SegmentCount
     stackStart_s = splitTimes_s(1:end - 1);
     stackEnd_s = splitTimes_s(2:end);
 
-    % Bisect unresolved intervals until clearance is certified or resolution is exhausted.
+    % Divide unresolved intervals into halves. Continue until clearance is
+    % proved or the minimum time resolution is reached.
     while ~isempty(stackStart_s)
         intervalStart_s = stackStart_s(end);
         intervalEnd_s = stackEnd_s(end);
@@ -339,7 +393,9 @@ for segmentIndex = 1:polynomial.SegmentCount
         intervalResolved = true;
         intervalClearanceLowerBound_deg = Inf;
 
-        % Bound relative motion against every obstacle over the current interval.
+        % Compare trajectory bounds with each obstacle sweep for this interval.
+        % If an interval remains unresolved, inspect its time range, obstacle
+        % history breakpoints, and configured collision time resolution.
         for obstacleIndex = 1:numel(obstacles)
             historyBounds_deg = obstacleHistoryBounds_deg(obstacleIndex, :);
             axisDistance_deg = max([ ...
@@ -391,7 +447,8 @@ end
 end
 
 function peak = maximumAbsolute(values)
-% Return per-axis sampled peaks with stable NaNs for empty histories.
+% Return the largest absolute sampled value for each coordinate. Return NaN
+% values when no history is available.
 if isempty(values)
     peak = [NaN NaN];
 else
@@ -400,7 +457,7 @@ end
 end
 
 function validation = createEmptyValidation()
-% Define the stable public validation schema for unavailable checks.
+% Define all validation fields and their values before checks are available.
 validation = struct( ...
     "Passed", false, "Message", "No trajectory was validated.", ...
     "HistorySizesMatch", false, "TimeIsFinite", false, ...

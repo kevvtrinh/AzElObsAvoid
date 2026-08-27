@@ -26,6 +26,9 @@ function result = exampleFortyMovingCircleGrid(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use earliest-arrival mode. The large obstacle count stresses dynamic geometry
+% queries and visibility search work.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -42,6 +45,9 @@ end
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
+
+% Create an 8-by-5 grid of equal circles. Each row has vertical motion. The
+% diagonal request must use gaps that change with time.
 
 missionEndTime_s = 200;
 obstacleTime_s = [0; 15; 30; 45; 60; missionEndTime_s];
@@ -61,10 +67,10 @@ centerAzimuth_deg = zeros(obstacleCount, 1);
 centerElevation_deg = zeros(numel(obstacleTime_s), obstacleCount);
 obstacleIndex = 0;
 
-% Walk the grid row by row so every moving circle receives a stable deterministic index.
+% Visit grid rows in order. This gives each circle a stable index.
 for rowIndex = 1:numel(rowElevation_deg)
 
-    % Pair every column with the current row and reuse that row's vertical motion history.
+    % Pair each column with the current row. Reuse that row's motion history.
     for columnIndex = 1:numel(columnAzimuth_deg)
         obstacleIndex = obstacleIndex + 1;
         centerAzimuth_deg(obstacleIndex) = columnAzimuth_deg(columnIndex);
@@ -73,7 +79,7 @@ for rowIndex = 1:numel(rowElevation_deg)
         obstacleAzimuthByTime_deg = cell(numel(obstacleTime_s), 1);
         obstacleElevationByTime_deg = cell(numel(obstacleTime_s), 1);
 
-        % Rebuild the circle at every time sample so its translation is explicit to the planner.
+        % Create the full circle at each time. This makes its motion explicit.
         for sampleIndex = 1:numel(obstacleTime_s)
             center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(sampleIndex, obstacleIndex)];
             circlePosition_deg = center_deg + circleRadius_deg * unitCircle;
@@ -89,6 +95,9 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleByIndex{:});
 
 %% Section 3: Create Planner Inputs
 
+% Put the endpoints across the grid diagonal. The route must stay smooth and
+% within motion limits while the circles move.
+
 initialState = struct( "time_s", 0, "position_deg", [-36 -24], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [36 24], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
@@ -98,9 +107,14 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run one maintained planner call for the complete moving grid.
+
 result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Run common checks and grid-specific checks. If this case fails, inspect
+% dynamic collision counts and search limits first.
 
 exampleValidation = validateExampleResult( result, "40-circle moving grid");
 
@@ -134,6 +148,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Animation shows which moving gaps the selected route uses.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

@@ -22,6 +22,8 @@ function result = exampleNoPath(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use normal planner controls. This scenario expects a reported failure.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -31,12 +33,18 @@ end
 
 %% Section 2: Create Obstacles
 
+% The protected barrier spans the usable workspace. No route can go around it.
+% This is an expected no-path case, not invalid input.
+
 obstacleTime_s = [0; 20];
 obstacleAzimuth_deg = [-0.5; 0.5; 0.5; -0.5];
 obstacleElevation_deg = [-90; -90; 90; 90];
 obstacles = obstacleAvoidance.obstacles.createObstacle( "full-height wall", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, 0);
 
 %% Section 3: Create Planner Inputs
+
+% Put the endpoints on opposite sides of the complete barrier. The workspace
+% bounds prevent an escape outside the demonstrated region.
 
 initialState = struct("time_s", 0, "position_deg", [-5 0]);
 goalState = struct("time_s", 12, "position_deg", [5 0]);
@@ -47,9 +55,15 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% The planner must return a failure result. It must not stop the example with an
+% error for this expected planning outcome.
+
 result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Check the failure reason, search counts, and diagnostic arrays. These outputs
+% help a junior engineer find where and why the search ended.
 
 recognizedReason = result.TerminationReason == "noValidatedSeed";
 diagnosticsPresent = isfield(result.SearchDiagnostics, "Grid") && ...
@@ -67,6 +81,9 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Plot explored states, rejected transitions, and the best partial route. No
+% final trajectory is available in this case.
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

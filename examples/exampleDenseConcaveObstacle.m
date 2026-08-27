@@ -22,6 +22,8 @@ function result = exampleDenseConcaveObstacle(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Resolve shared display controls and planner options before scenario setup.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -29,6 +31,10 @@ end
     exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2), [2 2]);
 
 %% Section 2: Create Obstacles
+
+% The boundary has many vertices and inward corners. An inward corner makes the
+% polygon concave. This case checks that dense concave geometry does not need
+% manually selected waypoints.
 
 vertexCount = 80;
 angle_rad = (0:vertexCount - 1).' * (2 * pi / vertexCount);
@@ -42,6 +48,9 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
 
 %% Section 3: Create Planner Inputs
 
+% Put the start and goal on opposite sides of the protected polygon. The direct
+% line is blocked, so the planner must select a collision-free outer route.
+
 initialState = struct("time_s", 0, "position_deg", [-6 0]);
 goalState = struct("time_s", 15, "position_deg", [6 0]);
 limits = struct( ...
@@ -49,9 +58,14 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the public planner with the visible inputs defined above.
+
 result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Check the complete timed trajectory. Do not accept success from route geometry
+% alone because smoothing can move a trajectory toward the obstacle.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
@@ -60,6 +74,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Show protected geometry, the selected route, and motion limits when enabled.
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

@@ -14,8 +14,6 @@ function result = exampleTargetExitsObstacle(exampleOverrides)
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
 %       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
-%       RandomSeed selects the deterministic
-%       post-wait target path (default 17).
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar planner-result struct)
@@ -29,19 +27,14 @@ function result = exampleTargetExitsObstacle(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use fixed arrival. The target must leave its containing obstacle before a
+% valid intercept can occur.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 
-randomSeed = 17;
-if isfield(exampleOverrides, "RandomSeed") && ~isempty(exampleOverrides.RandomSeed)
-    randomSeed = exampleOverrides.RandomSeed;
-end
-validateattributes(randomSeed, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'nonnegative'});
 plannerOverrides = exampleOverrides;
-if isfield(plannerOverrides, "RandomSeed")
-    plannerOverrides = rmfield(plannerOverrides, "RandomSeed");
-end
 
 [options, jerkConfiguration] = resolveExampleOptions( ...
     plannerOverrides, struct( ...
@@ -53,6 +46,9 @@ end
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
+
+% One circle contains the target at the start. A second circle blocks the gimbal
+% route. This separates target visibility from route obstacle avoidance.
 
 missionEndTime_s = 24;
 obstacleTime_s = [0; missionEndTime_s];
@@ -83,21 +79,19 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(transitCircle, containi
 
 %% Section 3: Create Planner Inputs
 
+% The target waits at the circle center and then moves outward. Positive azimuth
+% motion gives a deterministic exit from occupied space.
+
 initialState = struct( "time_s", 0, "position_deg", [-8 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 
 targetTime_s = (0:4:missionEndTime_s).';
 targetWaitSampleCount = 3;
 postWaitSampleCount = numel(targetTime_s) - targetWaitSampleCount;
-previousRandomState = rng;
-restoreRandomState = onCleanup(@() rng(previousRandomState));
-rng(randomSeed, "twister");
 
-% The target waits at the containing circle's center, then takes seeded
-% outward steps with randomized progress and elevation. Positive azimuth
-% progress guarantees that every seed eventually leaves the obstacle while
-% retaining a different reproducible path.
-postWaitAzimuthStep_deg = 0.85 + 0.35 * rand(postWaitSampleCount, 1);
-postWaitElevationStep_deg = 0.20 + 0.20 * rand(postWaitSampleCount, 1);
+% The target first stays at the circle center. It then follows the given outward
+% path. Positive azimuth motion makes the exit deterministic.
+postWaitAzimuthStep_deg = linspace(0.90, 1.15, postWaitSampleCount).';
+postWaitElevationStep_deg = linspace(0.22, 0.38, postWaitSampleCount).';
 postWaitStep_deg = [postWaitAzimuthStep_deg, postWaitElevationStep_deg];
 postWaitPosition_deg = containingCircleCenter_deg + cumsum(postWaitStep_deg, 1);
 targetPosition_deg = [ repmat(containingCircleCenter_deg, targetWaitSampleCount, 1); postWaitPosition_deg];
@@ -112,13 +106,18 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the specified-time moving-target planner.
+
 result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
+% Confirm that the target starts blocked and ends clear. Confirm that the gimbal
+% avoids both circles and reaches the target at the set time.
+
 exampleValidation = validateExampleResult( ...
     result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
-obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+obstacleQueryOptions = struct();
 
 targetOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     result.Inputs.obstacles, targetPosition_deg(:, 1), targetPosition_deg(:, 2), targetTime_s, obstacleQueryOptions);
@@ -162,6 +161,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Show the target exit and the gimbal detour on one time axis.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

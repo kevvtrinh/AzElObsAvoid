@@ -24,6 +24,14 @@ function solution = solveFreeTime( ...
 
 %% Section 1: Build A Deterministic Feasible-Horizon Start
 
+% Earliest arrival adds final time after the coordinate-major jerk controls.
+% Because duration powers multiply jerk, the resulting constraints are
+% nonlinear. First solve the fixed problem at the largest allowed time: this
+% gives fmincon a repeatable starting jerk profile. More time usually makes
+% the physical limits easier to satisfy.
+% If this starting solve is poor, the free-time solve also starts poorly.
+% Inspect initialFixed diagnostics before changing the nonlinear solver.
+
 solverTimer = tic;
 segmentCount = options.SegmentCount;
 dimensionCount = numel(initialState.position);
@@ -35,6 +43,9 @@ initialFixed = hs3Internal.solver.solveFixedTime( ...
 decision0 = [initialFixed.Decision; maximumFinalTime];
 lowerBound = [reshape(repmat( ...
     limits.jerkLower, controlCount, 1), [], 1); minimumFinalTime];
+% Control bounds apply to each coordinate. The last two bounds limit absolute
+% final time. minimumFinalTime is a velocity-based lower bound. The public
+% function computes this bound. maximumFinalTime is the caller's search limit.
 upperBound = [reshape(repmat( ...
     limits.jerkUpper, controlCount, 1), [], 1); maximumFinalTime];
 typicalDecision = max(1, abs(decision0));
@@ -59,9 +70,17 @@ problem = struct( ...
 
 %% Section 2: Minimize Arrival Time And Recover Feasibility
 
+% The primary objective is only final time. optimize may run a second,
+% feasibility solve near the same final time if the first stage has residual
+% violations. This second solve repairs numerical feasibility.
+
 core = hs3Internal.solver.optimize(problem, options);
 
 %% Section 3: Assemble The Solver Record
+
+% Report a feasible point at the maximum horizon separately. This point
+% proves motion at the boundary but does not establish an earlier arrival
+% inside the requested interval, so the public Success flag remains false.
 
 finalTime = core.Decision(end);
 if strlength(core.StageOneErrorIdentifier) > 0
@@ -108,6 +127,8 @@ end
 
 function [value, gradient] = arrivalTimeObjective(decision)
 % Return the appended final-time decision and its exact gradient.
+% All jerk components have zero direct objective derivative. They affect the
+% result only through the feasibility constraints.
 value = decision(end);
 gradient = zeros(size(decision));
 gradient(end) = 1;
@@ -116,6 +137,8 @@ end
 function stop = progress( ...
         ~, solverValues, state, solverTimer, maximumTime, verbose)
 % Enforce the solver time budget and optionally report iteration state.
+% A true value stops fmincon at the next callback. Nonverbose use prints no
+% progress information. Verbose output does not change solver decisions.
 stop = toc(solverTimer) >= maximumTime;
 if verbose && any(string(state) == ["iter", "done"])
     iteration = NaN;

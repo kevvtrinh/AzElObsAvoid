@@ -27,6 +27,9 @@ function [seeds, diagnostics] = createRouteCandidates(obstacles, initialState, g
 
 %% Section 1: Create The Direct Visibility Seed
 
+% Test the direct route first. Keep it only when protected geometry does not
+% block the segment. Final validation checks the timed motion again.
+
 % The direct seed is always retained as the baseline candidate, even when it
 % crosses an obstacle. Later construction and validation reject it honestly.
 start_deg = initialState.position_deg;
@@ -55,13 +58,18 @@ directSeed.Length_deg = norm(goal_deg - start_deg);
 seeds = directSeed;
 diagnostics = createEmptyDiagnostics(start_deg, goal_deg);
 diagnostics.SeedCluster.Distance_deg = options.SeedClusterDistance_deg;
-% A direct-only request, one-slot budget, or obstacle-free scene needs no topology graph.
-if options.DirectSeedOnly || options.MaximumSeedCount == 1 || isempty(obstacles)
+% A one-slot budget or obstacle-free scene needs no topology graph. The
+% direct seed is already present and therefore cannot be disabled.
+if options.MaximumSeedCount == 1 || isempty(obstacles)
     diagnostics.GeneratedSeedCount = numel(seeds);
     return;
 end
 
 %% Section 2: Build One Protected-Geometry Visibility Graph
+
+% Use the start, goal, and obstacle vertices as graph nodes. Connect two nodes
+% only when their segment stays outside protected geometry. This graph keeps
+% the shortest polygonal detours around obstacle boundaries.
 
 % Spatial graph geometry is used only to propose routes. Exact prepared
 % obstacle histories remain authoritative for timed edges and final motion
@@ -143,6 +151,10 @@ end
 
 %% Section 3: Search One Extended Timed Proposal
 
+% Moving obstacles can require a wait. Copy graph nodes at selected times.
+% Add wait and motion edges that move forward in time. Check each edge against
+% the obstacle position during that edge.
+
 % A time-layer graph can represent waits and moving-obstacle passages that a
 % static swept envelope would hide. Work is explicitly bounded by node/layer
 % counts, so diagnostics must preserve when this proposal was suppressed.
@@ -197,6 +209,10 @@ if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumS
 end
 
 %% Section 4: Search Distinct Spatial Visibility Routes
+
+% Find route families on different sides of obstacles. Track winding around
+% obstacle reference points. This prevents small changes to one route from
+% using all candidate slots.
 
 % Homology signatures keep topologically different detours instead of merely
 % returning several small perturbations of the same route.
@@ -561,6 +577,8 @@ rejectedTransitionCount = 0;
 
 % Expand lowest-cost augmented states until enough homology classes are found or work is exhausted.
 while size(classSignatures, 1) < maximumClassCount
+    % A search state contains a graph node and a winding value. Two states can
+    % use the same node and remain different if their winding values differ.
     unsettledCost_deg = stateCost_deg;
     unsettledCost_deg(closed) = Inf;
     [currentCost_deg, currentStateIndex] = min(unsettledCost_deg);
@@ -592,6 +610,8 @@ while size(classSignatures, 1) < maximumClassCount
         signatureStep = round(referenceTurn(currentNodeIndex, :) + phaseStep - referenceTurn(neighborNodeIndex, :));
         trialSignature = int8(double(stateSignature(currentStateIndex, :)) + signatureStep);
         if any(abs(double(trialSignature)) > 1)
+            % Reject repeated turns around one obstacle. These loops add length
+            % and do not provide a useful simple route.
             rejectedTransitionCount = rejectedTransitionCount + 1;
             continue;
         end
@@ -763,6 +783,9 @@ end
 
 % Select the greatest valid reduction, then repeat until no shortcut remains.
 while size(cleanedRoute_deg, 1) >= 3
+    % Replace a multi-edge section with a visible chord when it is shorter.
+    % Keep the original winding value. Repeat because one removal can expose
+    % another valid shortcut.
     currentLength_deg = routeLength(cleanedRoute_deg);
     lengthTolerance_deg = max(1e-12, 1e-12 * currentLength_deg);
     bestReduction_deg = 0;
@@ -861,7 +884,7 @@ end
 end
 
 function diagnostics = createEmptyDiagnostics(start_deg, goal_deg)
-% Initialize the stable search-diagnostics schema before any early exit.
+% Initialize the stable search-diagnostics fields before any early exit.
 diagnostics = struct( ...
     "GraphType", "timeExpandedVisibilityGraph", ...
     "Bounds_deg", [NaN NaN NaN NaN], "Resolution_deg", NaN, ...
@@ -872,7 +895,7 @@ diagnostics = struct( ...
     "ExactSpatialProposalUsed", false, "ReducedSpatialProposalUsed", false, ...
     "TimedSearchAttempted", false, "ExtendedTimedSearchAttempted", false, ...
     "TimedSearchUsesExactObstacles", false, "TimedSearchSuppressionReason", "graphNotBuilt", ...
-    "CompletenessLost", true, "CompletenessLossReason", "directSeedOnly"), ...
+    "CompletenessLost", true, "CompletenessLossReason", "graphNotBuilt"), ...
     "SeedCluster", struct("Distance_deg", 0, "SourceRegionCount", 0, ...
     "ClusterGroupCount", 0, "ClusteredRegionCount", 0, "ClusterBoundary_deg", zeros(0, 2)), ...
     "NodeCount", 0, "NodePosition_deg", zeros(0, 2), ...

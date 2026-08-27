@@ -16,16 +16,17 @@ function trajectory = solveTrajHS3( ...
 %   - initialState (scalar struct)
 %       Fields time, position, velocity, and acceleration use 1-by-D rows.
 %   - terminalState (scalar struct)
-%       Position, velocity, and acceleration use 1-by-D rows; maximumTime is
-%       required for earliest arrival and may supply fixed final time.
+%       Position, velocity, and acceleration use 1-by-D rows. maximumTime is
+%       required for earliest arrival. It can also supply a fixed final time.
 %   - limits (scalar struct)
 %       Required maximumVelocity, maximumAcceleration, and maximumJerk are
 %       positive scalar or 1-by-D values. Optional lower/upper fields support
 %       asymmetric coordinate and derivative bounds.
 %   - optionOverrides (scalar struct, optional; default struct())
-%       Partial hs3Internal.defaultOptions overrides; empty fields use defaults.
+%       These values override hs3Internal.defaultOptions. Empty fields use
+%       default values.
 %   - pathConstraints (scalar struct, optional; default empty)
-%       Tau, optional TauEnd, and LowerBound are M-by-1; Normal is M-by-D.
+%       Tau, optional TauEnd, and LowerBound are M-by-1. Normal is M-by-D.
 %       A point row enforces Normal*position(Tau) >= LowerBound. TauEnd>Tau
 %       enforces the same affine half-space over the complete interval.
 %**************************************************************************
@@ -33,7 +34,7 @@ function trajectory = solveTrajHS3( ...
 %   - trajectory (scalar struct)
 %       Zero inputs return defaults. Planning calls return one stable
 %       success-or-failure record with motion, polynomial, validation, and
-%       diagnostics. Invalid contracts throw identified errors.
+%       diagnostics. Invalid inputs throw identified errors.
 %**************************************************************************
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
@@ -56,9 +57,28 @@ end
 
 %% Section 1: Validate Inputs And Apply Defaults
 
+% HS3 represents jerk with one value at every segment boundary and one at
+% every segment midpoint. A quadratic passes through those three values on
+% each segment. Integrating that quadratic gives cubic acceleration,
+% quartic velocity, and quintic position. Adjacent segments share their
+% boundary jerk value, while integration carries position, velocity, and
+% acceleration forward continuously from the initial state.
+%
+% This public function controls the full workflow. It normalizes the inputs.
+% It selects the fixed-time solve or the earliest-arrival solve. It creates
+% sampled motion from the optimized jerk values. It then checks the motion.
+% The internal functions do not depend on the number of coordinates. The same
+% equations apply to one coordinate, two coordinates, or more coordinates.
+% If this function returns no motion, first read TerminationReason and
+% MaximumConstraintViolation. For input errors, check state vector lengths,
+% bound order, path interval placement, and the available time range.
+
 options = resolveOptions(optionOverrides);
 [initialState, terminalState, limits, pathConstraints] = normalizeInputs(initialState, terminalState, limits, pathConstraints);
 scaledPathStart = options.SegmentCount * pathConstraints.Tau;
+% Interval constraints use a Bernstein bound within one polynomial segment.
+% An interval across two segments needs two separate bounds. Reject this input.
+% This prevents a check of only one part of the requested interval.
 pathSegmentIndex = min( ...
     options.SegmentCount, floor(scaledPathStart) + 1);
 pathSegmentEndTau = pathSegmentIndex / options.SegmentCount;
@@ -86,6 +106,9 @@ else
     validateattributes(maximumFinalTime, {'numeric'}, ...
         {'real', 'finite', 'scalar', '>', startTime});
     displacement = abs(terminalState.position - initialState.position);
+    % Distance divided by maximum speed gives a necessary duration bound.
+    % This bound does not prove feasibility. Acceleration limits can require
+    % more time. Jerk limits and endpoint conditions can also require more time.
     minimumDuration = max([ ...
         1e-3, displacement ./ limits.maximumVelocity]);
     minimumFinalTime = startTime + minimumDuration;
@@ -101,6 +124,12 @@ end
 
 %% Section 2: Solve The Requested Time Mode
 
+% With final time fixed, every state and path constraint is affine in the
+% jerk values and integrated squared jerk is quadratic, so quadprog solves a
+% convex quadratic program. When final time is free, powers of duration
+% multiply the jerk values. The problem then becomes nonlinear. fmincon
+% minimizes the final-time decision.
+
 if options.TimeMode == "fixed"
     solverResult = hs3Internal.solver.solveFixedTime( ...
         initialState, terminalState, limits, options, ...
@@ -112,6 +141,11 @@ else
 end
 
 %% Section 3: Reconstruct And Validate The Motion
+
+% Copy solver diagnostics before motion reconstruction. A failed solve then
+% keeps its reason, elapsed time, and measured violation. Reconstruct a motion
+% when the solver returns jerk values. Report success only after the independent
+% continuous check passes.
 
 trajectory = createEmptyTrajectory( ...
     initialState, terminalState, limits, options, pathConstraints);
@@ -126,11 +160,19 @@ if isempty(solverResult.Decision)
     return;
 end
 controlCount = 2 * options.SegmentCount + 1;
+% MATLAB reshapes column-major. The decision is stored coordinate by
+% coordinate, with all 2*N+1 jerk controls for coordinate 1 first.
 controlJerk = reshape( ...
     solverResult.Decision, controlCount, dimensionCount);
 polynomial = hs3Internal.polynomial.createTrajectoryPolynomial( ...
     controlJerk, initialState, solverResult.FinalTime, options.SegmentCount);
 uniformTime = (startTime:options.SampleTime:solverResult.FinalTime).';
+% Include every segment boundary and the exact final time in addition to the
+% display sampling grid. The returned data then shows segment boundaries and
+% endpoints. Polynomial bounds check continuous limits. Samples do not check
+% continuous limits.
+% If sampled values look different from solver values, inspect the decision
+% reshape, segment boundary times, and Polynomial.TerminalState first.
 sampleTime = unique([uniformTime; polynomial.SegmentStartTime; ...
     solverResult.FinalTime]);
 [sampleTime, position, velocity, acceleration, jerk] = ...
@@ -148,7 +190,8 @@ trajectory.IntegratedSquaredJerk = hs3Internal.polynomial.evaluateIntegratedSqua
 trajectory.Validation = hs3Internal.validate(trajectory);
 trajectory.Success = solverResult.Success && trajectory.Validation.Passed;
 if trajectory.Success
-    trajectory.Message = "HS3 returned an independently valid trajectory.";
+    trajectory.Message = ...
+        "A kinematically constrained trajectory was found and independently validated.";
     trajectory.TerminationReason = "goalReached";
 elseif solverResult.Success && ~trajectory.Validation.Passed
     trajectory.Message = trajectory.Validation.Message;
@@ -160,6 +203,8 @@ end
 
 function options = resolveOptions(overrides)
 % Merge, normalize, and validate standalone HS3 option overrides.
+% Empty values select the default. Report unknown names once. Ignore unknown
+% names so that they do not change the numerical method.
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("solveTrajHS3:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -210,6 +255,9 @@ end
 function [initialState, terminalState, limits, pathConstraints] = ...
         normalizeInputs(initialState, terminalState, limits, pathConstraints)
 % Normalize one dimension-neutral HS3 boundary-value problem.
+% Public inputs may use row or column vectors, but all internal state vectors
+% are 1-by-D rows. Scalar symmetric limits are expanded to one value per
+% coordinate before asymmetric lower and upper bounds are resolved.
 requiredInitial = ["time", "position", "velocity", "acceleration"];
 requiredTerminal = [ ...
     "position", "velocity", "acceleration", "maximumTime"];
@@ -316,6 +364,9 @@ end
 function pathConstraints = normalizePathConstraints( ...
         pathConstraints, dimensionCount)
 % Normalize optional coordinate-space affine path constraints.
+% Each row means Normal*position >= LowerBound. Equal Tau endpoints describe
+% a point check. A nonzero interval applies the inequality at all points in
+% that interval. Bernstein control values enforce the interval inequality.
 if ~isstruct(pathConstraints) || ~isscalar(pathConstraints)
     error("solveTrajHS3:InvalidPathConstraints", ...
         "pathConstraints must be a scalar struct or empty.");
@@ -361,7 +412,9 @@ end
 
 function trajectory = createEmptyTrajectory( ...
         initialState, terminalState, limits, options, pathConstraints)
-% Define one stable standalone HS3 success-or-failure schema.
+% Define one stable standalone HS3 success-or-failure result structure.
+% Keep the same fields for success and failure. Callers can then read the
+% diagnostics without separate field checks.
 dimensionCount = numel(initialState.position);
 trajectory = struct( ...
     "Success", false, ...

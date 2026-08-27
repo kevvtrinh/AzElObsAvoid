@@ -19,6 +19,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Add only paths needed by the independent HS3 kernel. These tests check
+% reconstruction, solving, bounds, and failure output in several dimensions.
+% A planner dependency means the numerical engine is no longer reusable.
 % Add the HS3 product folder for direct test runs.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(fullfile(repositoryRoot, "hs3"));

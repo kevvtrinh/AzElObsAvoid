@@ -27,6 +27,9 @@ function diagnostics = createEmptySolverDiagnostics( ...
 %**************************************************************************
 
 if nargin == 0
+    % NaN marks quantities that were never measured; zero marks measured work
+    % with no events or elapsed time. This distinction helps failure reports
+    % tell "solver not started" from "solver started and did no iterations."
     diagnostics = struct( ...
         "Identifier", "", ...
         "ConstraintRepresentation", "notBuilt", ...
@@ -47,6 +50,8 @@ if nargin == 0
 end
 
 diagnostics.CorridorConstructionElapsedTime_s = corridorElapsedTime_s;
+% Corridor time is measured inside the solver call. Subtract it from the
+% total so aggregate stage timing does not count the same work twice.
 diagnostics.MotionSolvingElapsedTime_s = max( ...
     0, totalElapsedTime_s - corridorElapsedTime_s);
 diagnostics.ElapsedTime_s = totalElapsedTime_s;

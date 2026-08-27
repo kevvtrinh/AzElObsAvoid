@@ -37,6 +37,9 @@ function [route_deg, routeTime_s, record] = timeExpandedVisibilitySearch( ...
 %**************************************************************************
 
 %% Section 1: Search Time Layers
+% A state contains one graph node and one absolute time. The search moves only
+% forward in time. Parent arrays store the selected prior state. They preserve
+% waits when the function rebuilds the route.
 layerTimes_s = obstacleAvoidance.search.boundedTimeLayers( ...
     sampleTimes_s, initialState.time_s, goalState.time_s, 17);
 layerCount = numel(layerTimes_s);
@@ -45,6 +48,7 @@ nodeIsFree = false(layerCount, nodeCount);
 
 % Precompute whether every graph node is free at every retained time layer.
 for layerIndex = 1:layerCount
+    % Calculate node occupancy once for each layer. Many edges reuse it.
     queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, ...
         nodePosition_deg(:, 1), nodePosition_deg(:, 2), queryTime_s).';
@@ -73,6 +77,8 @@ for layerIndex = 1:layerCount - 1
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
+        % A same-position edge is a wait. The position must stay clear for the
+        % full wait interval.
         if nodeIsFree(layerIndex + 1, currentNodeIndex) && ...
                 motionEdgeIsClear( ...
                 obstacles, nodePosition_deg(currentNodeIndex, :), ...
@@ -92,6 +98,8 @@ for layerIndex = 1:layerCount - 1
 
         % The same-node wait edge is handled separately.
         for targetNodeIndex = reshape(targetNodeIndices, 1, [])
+            % Calculate lower bounds from speed and acceleration. Skip time
+            % layers that no limited motion can reach.
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
                 nodePosition_deg(currentNodeIndex, :);
             speedDuration_s = abs(displacement_deg) ./ limits.maxVelocity_deg_s;
@@ -104,6 +112,7 @@ for layerIndex = 1:layerCount - 1
                 layerTimes_s > earliestTargetTime_s, 1, "first");
             % Reject unavailable destinations before paying for a swept-edge collision query.
             if isempty(targetLayerIndex) || ~nodeIsFree(targetLayerIndex, targetNodeIndex)
+                % Skip the costly edge check when the arrival is unavailable.
                 rejectedTransitionCount = rejectedTransitionCount + 1;
                 continue;
             end
@@ -153,6 +162,8 @@ function clear = motionEdgeIsClear( ...
         obstacles, firstPosition_deg, secondPosition_deg, ...
         firstTime_s, secondTime_s)
 % Check a moving seed edge at deterministic trajectory-time samples.
+% This check guides proposal search. It does not certify final safety. The
+% final trajectory uses adaptive collision validation on original obstacles.
 sampleCount = 13;
 sampleFraction = linspace(0, 1, sampleCount).';
 samplePosition_deg = firstPosition_deg + sampleFraction .* (secondPosition_deg - firstPosition_deg);
@@ -168,6 +179,8 @@ function [reachable, spatialCost_deg, parentLayerIndex, ...
         reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex, ...
         sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_deg)
 % Apply deterministic shortest-distance tie breaking at one timed state.
+% The target layer fixes arrival time. Use spatial distance as the cost in a
+% layer. For the final layer, prefer a later equal-cost departure.
 trialCost_deg = spatialCost_deg( sourceLayerIndex, sourceNodeIndex) + edgeLength_deg;
 storedCost_deg = spatialCost_deg(targetLayerIndex, targetNodeIndex);
 costIsEqual = abs(trialCost_deg - storedCost_deg) <= 1e-12;

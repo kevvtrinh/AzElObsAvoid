@@ -27,6 +27,9 @@ function corridor = createSeedCorridor(seed, segmentCount)
 
 %% Section 1: Validate Inputs & Resolve Geometry
 
+% The seed corridor is optional evidence. Return an empty corridor when its
+% geometry is absent or invalid. Do not reduce the final collision checks.
+
 % An empty boundary means the caller intentionally requested exact obstacle
 % validation without a static corridor certificate.
 validateattributes(segmentCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
@@ -49,6 +52,10 @@ end
 
 %% Section 2: Select One Convex Support Per Segment And Region
 
+% Select one support line for each segment and each convex region. Point the
+% normal toward the seed segment. The solver keeps all position coefficients
+% beyond this line. This keeps the full segment outside the region.
+
 % For a convex occupied region, the closest boundary point defines an outward
 % normal toward the seed. Requiring the whole polynomial projection to stay
 % beyond that support keeps the span on the same free side continuously.
@@ -69,6 +76,8 @@ for segmentIndex = 1:segmentCount
         [distance_deg, nearestPoint_deg] = obstacleAvoidance.geometry.pointPolygonClearance( ...
             corridorRegions(regionIndex), point_deg);
         if distance_deg <= 1e-12
+            % A seed that touches the region has no reliable outward direction.
+            % Omit this optional evidence instead of selecting a direction.
             % A seed midpoint inside or on a region cannot define a safe
             % exterior support and therefore produces no certificate record.
             continue;

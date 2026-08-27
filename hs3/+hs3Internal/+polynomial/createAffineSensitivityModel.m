@@ -23,6 +23,11 @@ function model = createAffineSensitivityModel(segmentCount, duration, evaluation
 
 %% Section 1: Propagate Exact Segment Sensitivities
 
+% This function creates the linear maps for one coordinate. Each map gives the
+% change in one coefficient for a change in one jerk control. The maps do not
+% include initial position, velocity, or acceleration. These values are constant
+% offsets and do not change with the jerk controls.
+
 validateattributes(segmentCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
 validateattributes(duration, {'numeric'}, ...
@@ -39,11 +44,16 @@ midpointSelection = sparse(segmentIndex, 2 * segmentIndex, 1, ...
     segmentCount, controlCount);
 endSelection = sparse(segmentIndex, 2 * segmentIndex + 1, 1, ...
     segmentCount, controlCount);
+% Consecutive segments select the same shared boundary control. The three
+% selection matrices expose each segment's start, midpoint, and end jerk.
 jerkConstantMap = startSelection;
 jerkLinearMap = -3 * startSelection + 4 * midpointSelection - endSelection;
 jerkQuadraticMap = 2 * startSelection - ...
     4 * midpointSelection + 2 * endSelection;
 priorSegmentSum = sparse(tril(ones(segmentCount), -1));
+% Integrating within a segment gives its state increment. Multiplication by
+% the strict lower-triangular matrix adds all earlier increments. This operation
+% propagates continuous acceleration, velocity, and position to each start.
 accelerationIncrementMap = segmentDuration * ( ...
     jerkConstantMap + jerkLinearMap / 2 + jerkQuadraticMap / 3);
 accelerationStartMap = priorSegmentSum * accelerationIncrementMap;
@@ -79,6 +89,11 @@ terminalStateMap = full([sum(positionIncrementMap, 1); ...
     sum(velocityIncrementMap, 1); sum(accelerationIncrementMap, 1)]);
 
 %% Section 2: Evaluate Requested Global Coordinates
+
+% Global tau spans the whole trajectory. Convert it to an owning segment and
+% local tau in [0,1], then evaluate the same integrated powers used to create
+% position and velocity. These maps support point and path calculations while
+% preserving exact affine dependence on jerk at fixed duration.
 
 scaledTau = segmentCount * evaluationTau;
 evaluationSegmentIndex = min(segmentCount, floor(scaledTau) + 1);

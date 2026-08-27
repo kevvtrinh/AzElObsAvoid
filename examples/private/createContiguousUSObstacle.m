@@ -31,6 +31,10 @@ function [obstacle, history] = createContiguousUSObstacle( time_s, safetyMargin_
 
 %% Section 1: Validate Inputs & Apply Defaults
 
+% Check the time history, margin, and motion mode before map data is loaded.
+% Static mode repeats one outline. Moving mode applies a known transform at each
+% time so the generic moving-obstacle function can validate every slice.
+
 if nargin < 3 || isempty(options)
     options = struct();
 end
@@ -53,6 +57,10 @@ resolvedOptions.Verbose = verbose;
 
 %% Section 2: Load One Dense Exterior Boundary
 
+% Read state boundaries from Mapping Toolbox data. Keep the contiguous mainland
+% states and combine them into one polygon. The largest exterior ring removes
+% islands and holes that are not part of this example.
+
 boundaryFile = which("usastatehi.shp");
 if isempty(boundaryFile)
     error("createContiguousUSObstacle:MappingToolboxRequired", "Mapping Toolbox file usastatehi.shp was not found.");
@@ -68,7 +76,7 @@ if isempty(stateBoundary)
 end
 mainlandUS = polyshape( stateBoundary(1).Lon, stateBoundary(1).Lat, "Simplify", false, "KeepCollinearPoints", true);
 
-% Union every remaining contiguous-state polygon into one mainland boundary.
+% Join each remaining state polygon to the mainland polygon.
 for stateIndex = 2:numel(stateBoundary)
     statePolygon = polyshape( ...
         stateBoundary(stateIndex).Lon, stateBoundary(stateIndex).Lat, "Simplify", false, "KeepCollinearPoints", true);
@@ -81,6 +89,9 @@ end
 [baseLongitude_deg, baseLatitude_deg] = largestFiniteRing( allLongitude_deg, allLatitude_deg);
 
 %% Section 3: Delegate All Slice Work To The Generic Constructor
+
+% The generic constructor calls the transform for each requested time. It owns
+% slice validation, history metrics, and safety-margin protection.
 
 time_s = double(time_s(:));
 missionStartTime_s = time_s(1);
@@ -111,7 +122,7 @@ end
 function transformed_deg = transformUSSlice( ...
         sourcePosition_deg, sampleTime_s, ~, motionMode, ...
         missionStartTime_s, missionDuration_s, baseCenter_deg, localRange_deg)
-% Return one U.S. slice while generic code owns iteration and execution.
+% Return one U.S. slice. The generic constructor owns the time loop.
 if motionMode == "static" || missionDuration_s <= 0
     transformed_deg = sourcePosition_deg;
     return;
@@ -137,7 +148,7 @@ end
 
 function profile = extremeUSProfile( ...
         sampleTime_s, missionStartTime_s, missionDuration_s)
-% Resolve one smooth input-time profile shared by geometry and diagnostics.
+% Create one smooth time profile for geometry and diagnostics.
 if missionDuration_s <= 0
     missionProgress = zeros(size(sampleTime_s));
 else
@@ -157,7 +168,7 @@ profile = struct( ...
 end
 
 function [largestX, largestY] = largestFiniteRing(x, y)
-% Extract the largest finite boundary ring and discard holes/islands.
+% Keep the largest finite boundary ring. Discard holes and islands.
 x = double(x(:));
 y = double(y(:));
 finiteRows = isfinite(x) & isfinite(y);
@@ -169,7 +180,7 @@ if isempty(ringStart)
 end
 ringArea = zeros(numel(ringStart), 1);
 
-% Measure every finite boundary ring so the largest mainland outline can be retained.
+% Measure each finite boundary ring. Keep the largest mainland outline.
 for ringIndex = 1:numel(ringStart)
     rows = ringStart(ringIndex):ringStop(ringIndex);
     ringArea(ringIndex) = abs(polyarea(x(rows), y(rows)));

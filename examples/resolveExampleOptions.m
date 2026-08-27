@@ -27,6 +27,9 @@ function [plannerOptions, displayOptions] = resolveExampleOptions( ...
 
 %% Section 1: Resolve Uniform Display Controls
 
+% Keep display controls separate from planner controls. Display choices must not
+% change route selection, collision checks, or motion feasibility.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -59,14 +62,14 @@ normalizedOverrides = normalizeDisplayAliases(exampleOverrides);
 displayOptions = displayDefaults;
 displayNames = string(fieldnames(displayDefaults));
 
-% Apply display controls supplied by the scenario defaults before caller overrides.
+% Apply scenario display defaults first. Caller values can replace them later.
 for name = intersect(string(fieldnames(scenarioDefaults)), displayNames, "stable").'
     if ~isempty(scenarioDefaults.(name))
         displayOptions.(name) = scenarioDefaults.(name);
     end
 end
 
-% Let explicit caller overrides replace each recognized display control.
+% Apply each recognized caller display control.
 for name = displayNames.'
     if isfield(normalizedOverrides, name) && ~isempty(normalizedOverrides.(name))
         displayOptions.(name) = normalizedOverrides.(name);
@@ -88,7 +91,7 @@ logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", ...
     "ShowSweptSurfaces", "SaveAnimationGif"];
 
-% Normalize every display toggle through the shared scalar-logical contract.
+% Convert each display toggle to one true or false value.
 for name = logicalNames
     displayOptions.(name) = obstacleAvoidance.input.normalizeLogicalScalar( ...
         displayOptions.(name), name, "resolveExampleOptions:InvalidLogicalOption");
@@ -113,27 +116,21 @@ validateattributes(displayOptions.AnimationGifDelay_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'});
 displayCountNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
 
-% Validate both bounded display-count controls as positive integer limits.
+% Require positive integer limits for both displayed-slice controls.
 for name = displayCountNames
     validateattributes(displayOptions.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 
 %% Section 2: Forward Only Public Planner Options
 
-% Materialize the maintained HS3 defaults before applying scenario controls.
-plannerMethod = "hs3";
-if isfield(scenarioDefaults, "PlannerMethod") && ...
-        ~isempty(scenarioDefaults.PlannerMethod)
-    plannerMethod = scenarioDefaults.PlannerMethod;
-end
-if isfield(normalizedOverrides, "PlannerMethod") && ...
-        ~isempty(normalizedOverrides.PlannerMethod)
-    plannerMethod = normalizedOverrides.PlannerMethod;
-end
-plannerOptions = obstacleAvoidance.planTrajectory(plannerMethod);
+% Get the maintained planner defaults before scenario values are applied.
+% A list of public field names prevents display-only values from reaching the
+% planner and producing an unknown-option warning.
+plannerOptions = obstacleAvoidance.planTrajectory();
+plannerOptions.Verbose = true;
 plannerNames = string(fieldnames(plannerOptions));
 
-% Apply recognized scenario planner defaults without forwarding display-only fields.
+% Apply recognized scenario planner defaults. Ignore display-only fields here.
 for name = intersect(string(fieldnames(scenarioDefaults)), plannerNames, "stable").'
     if ~isempty(scenarioDefaults.(name))
         plannerOptions.(name) = scenarioDefaults.(name);
@@ -150,7 +147,7 @@ if ~isempty(unknownNames)
         "Ignoring unknown example fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 
-% Forward each recognized caller planner override after scenario defaults are resolved.
+% Apply recognized caller planner values after scenario defaults.
 for name = intersect(overrideNames, plannerNames, "stable").'
     if ~isempty(normalizedOverrides.(name))
         plannerOptions.(name) = normalizedOverrides.(name);
@@ -165,12 +162,12 @@ end
 
 
 function normalized = normalizeDisplayAliases(overrides)
-% Map maintained example aliases to one plot-option vocabulary.
+% Map maintained example names to the names used by the plotting function.
 normalized = overrides;
 aliases = [ ...
     "ShowKinematicPlot", "ShowKinematics"; "AnimationFrameStride", "FrameStride"; "AnimationPause_s", "Pause_s"];
 
-% Translate every supported legacy display name into its current canonical field.
+% Translate each supported old display name to its current field name.
 for aliasIndex = 1:size(aliases, 1)
     oldName = aliases(aliasIndex, 1);
     newName = aliases(aliasIndex, 2);

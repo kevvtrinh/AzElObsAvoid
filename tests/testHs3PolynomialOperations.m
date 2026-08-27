@@ -5,6 +5,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
+% Add polynomial and planner helpers. These tests compare analytic maps and
+% gradients with independent calculations. A mismatch often points to
+% coefficient order, axis order, duration scaling, or constraint row order.
 % Add the HS3 product folder for package-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(fullfile(repositoryRoot, "hs3"));
@@ -44,6 +47,9 @@ end
 end
 
 function testDirectionalFiniteDifferenceParity(testCase)
+% Perturb controls in one known direction. Compare the measured coefficient
+% change with the analytic map. The mismatch identifies a state derivative,
+% segment, or control index.
 % Verify every coefficient and sampled map as a decision-space derivative.
 rng(1325, "twister");
 for segmentCount = [1 2 5 10]
@@ -591,7 +597,7 @@ end
 end
 
 function value = applyMap(coefficientMap, control)
-% Contract a segment-by-power-by-control map with one control column.
+% Multiply the coefficient map by one control column.
 value = reshape(sum(coefficientMap .* ...
     reshape(control, 1, 1, []), 3), ...
     size(coefficientMap, 1), size(coefficientMap, 2));

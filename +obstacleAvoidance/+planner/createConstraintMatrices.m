@@ -46,15 +46,25 @@ function [inequalityMatrix, equalityMatrix] = ...
 
 %% Section 1: Assemble Ordered Constraint Blocks
 
+% The optimizer stores one jerk value per HS3 control point and axis. The
+% polynomial sensitivity model tells how changing any jerk value changes
+% position, velocity, and acceleration throughout the motion. Each helper
+% converts that common sensitivity into rows matching the inequality values.
+% This row order is essential because fmincon pairs values and derivatives
+% by row number rather than by physical meaning.
+
 sensitivity = hs3Internal.polynomial.createAffineSensitivityModel( ...
     segmentCount, duration_s, corridorTau);
 continuousMatrix = continuousBoundConstraintMatrix( ...
     sensitivity, allowAzimuthWrapping);
 seedMatrix = seedCorridorConstraintMatrix(sensitivity, seedCorridor);
 if nargin >= 7 && ~isempty(corridorNormal)
+    % Moving-obstacle normals depend on the current trial motion, so use the
+    % normals evaluated during the same constraint call.
     corridorMatrix = corridorConstraintMatrix( ...
         sensitivity, corridor, corridorNormal);
 else
+    % Fixed geometry carries its own normal and needs no time reevaluation.
     corridorMatrix = frozenCorridorConstraintMatrix(sensitivity, corridor);
 end
 inequalityMatrix = [continuousMatrix; seedMatrix; corridorMatrix];
@@ -64,6 +74,9 @@ equalityMatrix = zeros(6, 2 * controlCount);
 equalityMatrix([1 3 5], 1:controlCount) = terminalMap;
 equalityMatrix([2 4 6], controlCount + 1:end) = terminalMap;
 if nargin >= 8 && ~isempty(collinearityDirection)
+    % For a certified straight route, constrain terminal motion along the
+    % tangent and every jerk control along the normal. Endpoint equations
+    % alone would not prevent sideways motion between the endpoints.
     tangent = collinearityDirection(:).';
     normal = [-tangent(2), tangent(1)];
     tangentMatrix = zeros(3, 2 * controlCount);
@@ -105,6 +118,8 @@ selectedPowerMap = permute( ...
 hullByRecord = permute(pagemtimes(hullMap, selectedPowerMap), [1 3 2]);
 nextRow = 1;
 for associationIndex = 1:recordCount
+    % One row checks a single instant. An interval association uses all
+    % Bernstein coefficients to cover its complete time interval.
     associationRowCount = 1 + ...
         (coefficientCount - 1) * useIntervalHull(associationIndex);
     matrixRows = nextRow:nextRow + associationRowCount - 1;
@@ -122,6 +137,8 @@ end
 function matrix = continuousBoundConstraintMatrix( ...
         sensitivity, allowAzimuthWrapping)
 % Preserve the existing per-segment, per-axis Bernstein constraint order.
+% A polynomial stays inside the range of its Bernstein coefficients. This
+% enforces a continuous bound without relying on point samples to find peaks.
 positionGradient = bernsteinViolationGradient( ...
     sensitivity.positionPowerMap);
 velocityGradient = bernsteinViolationGradient( ...
@@ -152,6 +169,7 @@ end
 
 function gradient = bernsteinViolationGradient(powerMap)
 % Convert every coefficient sensitivity through the exact Bernstein basis.
+% Positive and negative rows represent upper and lower c <= 0 inequalities.
 coefficientCount = size(powerMap, 2);
 segmentCount = size(powerMap, 1);
 controlCount = size(powerMap, 3);
@@ -165,6 +183,8 @@ end
 
 function matrix = seedCorridorConstraintMatrix(sensitivity, corridor)
 % Differentiate each six-coefficient exterior support projection.
+% Projecting all six position coefficients onto an outward normal keeps the
+% complete segment on the certified side of the supporting line.
 controlCount = sensitivity.ControlCount;
 recordCount = numel(corridor);
 matrix = zeros(6 * recordCount, 2 * controlCount);

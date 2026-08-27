@@ -6,7 +6,7 @@ function value = stageTiming(value, totalOrTimer, timing)
 %   result = obstacleAvoidance.planner.stageTiming(result, planningTimer, timing)
 %**************************************************************************
 % PURPOSE
-%   - Define the shared seven-field planner-stage schema.
+%   - Define the shared seven-field planner-stage format.
 %   - Reconcile exclusive stages to an independently measured total.
 %   - Apply finalized timing consistently at a public planner boundary.
 %**************************************************************************
@@ -23,6 +23,8 @@ function value = stageTiming(value, totalOrTimer, timing)
 %**************************************************************************
 
 if nargin == 0
+    % Start every exclusive stage at zero. Unattributed time later captures
+    % validation, setup, or overhead that was not measured by a named timer.
     value = struct( ...
         "TopologyElapsedTime_s", 0, ...
         "CorridorConstructionElapsedTime_s", 0, ...
@@ -34,9 +36,11 @@ if nargin == 0
     return;
 end
 if nargin == 2
+    % Two inputs reconcile an existing timing record to a measured total.
     timing = value;
     totalElapsedTime_s = totalOrTimer;
 elseif nargin == 3
+    % Three inputs finalize a public result using the original planning timer.
     result = value;
     totalElapsedTime_s = toc(totalOrTimer);
 else
@@ -57,11 +61,13 @@ exclusiveNames = requiredNames(1:end - 2);
 exclusiveElapsedTime_s = 0;
 
 for name = reshape(exclusiveNames, 1, [])
+    % Sum only exclusive stages; the final two fields are derived totals.
     elapsedTime_s = timing.(name);
     validateattributes(elapsedTime_s, {'numeric'}, ...
         {'real', 'finite', 'scalar', 'nonnegative'});
     exclusiveElapsedTime_s = exclusiveElapsedTime_s + elapsedTime_s;
 end
+% Permit only clock-resolution and floating-point accumulation noise.
 accountingTolerance_s = max(1e-6, ...
     64 * eps(max(1, totalElapsedTime_s)));
 if exclusiveElapsedTime_s > totalElapsedTime_s + accountingTolerance_s

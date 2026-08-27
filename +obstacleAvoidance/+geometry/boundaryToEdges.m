@@ -24,6 +24,10 @@ function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_
 
 %% Section 1: Validate And Split NaN-Separated Boundary Rings
 
+% A ring is one closed polygon boundary. NaN rows separate multiple rings in
+% one array. Split them before edge creation. Check unexpected empty rings or
+% mismatched coordinate lengths here.
+
 if ~isa(shape, "polyshape") || ~isscalar(shape)
     error("boundaryToEdges:InvalidShape", ...
         "shape must be a scalar polyshape.");
@@ -32,10 +36,16 @@ validateattributes(closureTolerance_deg, {'numeric'}, {'scalar', 'real', 'finite
 [azimuth_deg, elevation_deg] = boundary(shape);
 boundaryPosition_deg = [double(azimuth_deg(:)), double(elevation_deg(:))];
 finiteRow = all(isfinite(boundaryPosition_deg), 2);
+% A finite run is one polygon ring. The padded logical comparisons detect each
+% false-to-true start and true-to-false end without a special case at either
+% end of the vector.
 runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
 runEnd = find(finiteRow & [~finiteRow(2:end); true]);
 
 %% Section 2: Close Every Valid Ring Into Matched Edge Rows
+
+% Create one edge from each vertex to the next vertex. Connect the last vertex
+% back to the first. Output row N in both arrays describes the same edge.
 
 % polyshape may repeat a ring's first point at the end. Remove only that
 % representation duplicate, then connect the final unique point to the first.
@@ -45,6 +55,7 @@ edgeEndByRing_deg = repmat({emptyEdges_deg}, numel(runStart), 1);
 
 % Convert each finite boundary run into one explicitly closed edge ring.
 for runIndex = 1:numel(runStart)
+    % Rings with fewer than two distinct vertices cannot produce a segment.
     ring_deg = boundaryPosition_deg( runStart(runIndex):runEnd(runIndex), :);
     if size(ring_deg, 1) < 2
         continue;
@@ -56,6 +67,8 @@ for runIndex = 1:numel(runStart)
         continue;
     end
     edgeStartByRing_deg{runIndex} = ring_deg;
+    % Circular indexing pairs vertex i with i+1 and pairs the last vertex with
+    % the first, explicitly closing the ring exactly once.
     edgeEndByRing_deg{runIndex} = ring_deg([2:end 1], :);
 end
 edgeStart_deg = vertcat(edgeStartByRing_deg{:});

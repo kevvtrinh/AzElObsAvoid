@@ -39,6 +39,13 @@ function [obstacleData, history] = createMovingObstacle( ...
 
 %% Section 1: Validate Inputs & Apply Defaults
 
+% Check that source geometry, time samples, and motion values have compatible
+% sizes. Each output slice represents the obstacle at one absolute time.
+
+% The callback is intentionally the only description of how the source
+% boundary moves. This helper samples it in a predictable order, validates each
+% returned polygon, and then passes the complete history to createObstacle for
+% safety-margin processing.
 if nargin < 7 || isempty(options)
     options = struct();
 end
@@ -58,6 +65,9 @@ if ~isa(sliceTransform, "function_handle")
     error("createMovingObstacle:InvalidTransform", "sliceTransform must be a function handle.");
 end
 time_s = double(time_s(:));
+% A column time vector gives every history quantity the same sample-by-row
+% orientation. Strict increase prevents duplicate or backward interpolation
+% intervals.
 validateattributes(time_s, {'numeric'}, {'real','finite','nonempty','increasing'});
 sourceAzimuth_deg = double(sourceAzimuth_deg(:));
 sourceElevation_deg = double(sourceElevation_deg(:));
@@ -66,6 +76,8 @@ if numel(sourceAzimuth_deg) ~= numel(sourceElevation_deg)
         "sourceAzimuth_deg and sourceElevation_deg must have equal size.");
 end
 if any(isfinite(sourceAzimuth_deg) ~= isfinite(sourceElevation_deg))
+    % A separator occupies one row across both coordinates. Pairing prevents a
+    % nonfinite azimuth from being mistaken for a real vertex elevation.
     error("createMovingObstacle:UnpairedNonfiniteBoundary", ...
         "Source boundary separators must be paired in azimuth and elevation.");
 end
@@ -73,9 +85,15 @@ validateattributes(safetyMargin_deg, {'numeric'}, {'real','finite','scalar','non
 
 %% Section 2: Generate Independent Source Slices
 
+% Transform the original geometry separately at each time. Do not transform a
+% previous slice because repeated rotation and translation would accumulate
+% numerical error.
+
 sourcePosition_deg = [sourceAzimuth_deg, sourceElevation_deg];
 sliceCount = numel(time_s);
 progressStride = max(1, ceil(sliceCount / 10));
+% Progress is limited to roughly ten intermediate updates so verbose output
+% remains useful even when a history contains thousands of slices.
 azimuthBySlice_deg = cell(sliceCount, 1);
 elevationBySlice_deg = cell(sliceCount, 1);
 vertexCount = zeros(sliceCount, 1);
@@ -87,6 +105,9 @@ bounds_deg = zeros(sliceCount, 4);
 % Evaluate the user transform at each requested time and retain both the
 % boundary and diagnostics needed to audit that independently generated slice.
 for sampleIndex = 1:sliceCount
+    % Each call starts from the unchanged source boundary. The callback may
+    % translate, rotate, deform, add rings, or change vertex count without any
+    % hidden dependence on the previous slice.
     [azimuthBySlice_deg{sampleIndex}, ...
         elevationBySlice_deg{sampleIndex}, vertexCount(sampleIndex), ...
         area_deg2(sampleIndex), aspectRatio(sampleIndex), ...
@@ -102,6 +123,13 @@ end
 
 %% Section 3: Construct The Canonical Protected History
 
+% Pass all slices to the common constructor. It stores original geometry and
+% applies the safety margin once. If protected geometry is wrong, compare the
+% source slices before inspecting interpolation.
+
+% createObstacle owns normalization and applies the safety margin exactly once.
+% The separate history output retains unprotected source geometry and simple
+% metrics for inspection; it does not modify the planner obstacle record.
 constructionOptions = struct("Verbose", verbose);
 obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
     obstacleName, time_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg, constructionOptions);
@@ -117,7 +145,8 @@ end
 function [azimuth_deg, elevation_deg, vertexCount, area_deg2, ...
         aspectRatio, centroid_deg, bounds_deg] = generateOneSlice( ...
         sliceTransform, sourcePosition_deg, sampleTime_s, sampleIndex)
-% Evaluate and validate one independent moving-obstacle slice.
+% Evaluate and validate one independent moving-obstacle slice. sampleIndex is
+% included in errors so a bad callback result can be reproduced directly.
 position_deg = sliceTransform( sourcePosition_deg, sampleTime_s, sampleIndex);
 validateattributes(position_deg, {'numeric'}, {'real','2d','ncols',2,'nonempty'});
 position_deg = double(position_deg);
@@ -133,6 +162,9 @@ end
 azimuth_deg = position_deg(:, 1);
 elevation_deg = position_deg(:, 2);
 finitePosition_deg = position_deg(finiteRows, :);
+% Metrics intentionally ignore separator rows. Their purpose is to describe the
+% finite geometry, while the returned coordinate vectors retain separators for
+% disconnected rings or holes.
 vertexCount = size(finitePosition_deg, 1);
 minimum_deg = min(finitePosition_deg, [], 1);
 maximum_deg = max(finitePosition_deg, [], 1);
@@ -141,6 +173,8 @@ size_deg = maximum_deg - minimum_deg;
 if size_deg(2) > 0
     aspectRatio = size_deg(1) / size_deg(2);
 else
+    % A zero elevation span makes width/height undefined as a finite ratio.
+    % Infinity states that degeneracy explicitly instead of dividing by zero.
     aspectRatio = Inf;
 end
 centroid_deg = mean(finitePosition_deg, 1);
@@ -149,6 +183,8 @@ boundaryElevation_deg = elevation_deg;
 boundaryAzimuth_deg(~finiteRows) = NaN;
 boundaryElevation_deg(~finiteRows) = NaN;
 sliceShape = polyshape( boundaryAzimuth_deg, boundaryElevation_deg, "Simplify", false);
+% Converting every nonfinite separator to NaN gives polyshape one consistent
+% ring delimiter even if the callback used positive or negative infinity.
 area_deg2 = area(sliceShape);
 end
 

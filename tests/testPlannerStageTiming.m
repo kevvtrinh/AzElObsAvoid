@@ -5,6 +5,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Create common planner inputs for timing checks. Named stages must be
+% nonnegative, exclusive, and consistent with total elapsed time. An over-count
+% points to nested timers. Missing time points to an unrecorded branch.
 % Add production and maintained example entry points.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -47,7 +50,7 @@ failure = obstacleAvoidance.planTrajectory( ...
 
 verifyTrue(testCase, success.Success, success.Message);
 verifyTrue(testCase, success.Validation.Passed, success.Validation.Message);
-verifyEqual(testCase, success.SelectedMotionSource, "hs3");
+verifyFalse(testCase, isfield(success, "SelectedMotionSource"));
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
 verifyEqual(testCase, ...
@@ -71,7 +74,7 @@ result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, o
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
+verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
 verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
 verifyGreaterThan(testCase, result.SearchDiagnostics.Hs3ElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
@@ -136,14 +139,12 @@ end
 
 function options = fixedHs3Options()
 % Return deterministic HS3 controls for timing tests.
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
-options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
 options.CollocationSegmentCount = 3;
 options.MaximumCollocationSegmentCount = 3;
 options.MaximumMeshRefinementPasses = 0;
-options.MaximumPlanningTime_s = 6;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end

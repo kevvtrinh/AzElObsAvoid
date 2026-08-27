@@ -9,7 +9,7 @@ function obstacleField = combineObstacles(varargin)
 %**************************************************************************
 % PURPOSE
 %   - Flatten and validate canonical obstacle inputs in caller order.
-%   - Return a schema-preserving empty array for obstacle-free planning.
+%   - Return a field-preserving empty array for obstacle-free planning.
 %**************************************************************************
 % INPUTS
 %   - varargin (struct arrays, nested cell arrays, or empty numeric input)
@@ -25,6 +25,9 @@ function obstacleField = combineObstacles(varargin)
 
 %% Section 1: Validate Inputs
 
+% Accept obstacle records, arrays, and nested cells. Reject unrelated values
+% before flattening because an error later would not identify the bad input.
+
 if nargin == 0
     obstacleField = createEmptyObstacleArray();
     return;
@@ -32,9 +35,15 @@ end
 
 %% Section 2: Flatten Nested Inputs
 
+% Walk nested inputs in their original order. Preserve obstacle order because
+% diagnostics and corridor records refer to obstacles by numeric index.
+
 % The stack carries each top-level argument number so a malformed nested
 % value still identifies the public input that contained it. Reversing each
 % push makes the next pop match the caller's original order.
+% An explicit stack avoids recursion, which could overflow for deeply nested
+% cells. Storage grows geometrically, so large collections do not repeatedly
+% copy the entire working list for every newly discovered obstacle.
 pendingCapacity = max(16, nargin);
 pendingValues = cell(pendingCapacity, 1);
 pendingInputIndices = zeros(pendingCapacity, 1);
@@ -53,8 +62,12 @@ while pendingCount > 0
     pendingValues{pendingCount} = [];
     pendingCount = pendingCount - 1;
     if isnumeric(pendingInputValue) && isempty(pendingInputValue)
+        % Empty numeric values are the documented way to say "no obstacles."
+        % They may appear at any nesting depth without creating a record.
         continue;
     elseif isstruct(pendingInputValue)
+        % Convert a structure array into scalar items. Later normalization then
+        % checks every record independently and preserves the caller's order.
         flattenedStructItems = num2cell(pendingInputValue(:));
         addedObstacleCount = numel(flattenedStructItems);
         requiredObstacleCapacity = obstacleCount + addedObstacleCount;
@@ -66,6 +79,8 @@ while pendingCount > 0
         obstacleItems(obstacleWriteRows) = flattenedStructItems;
         obstacleCount = requiredObstacleCapacity;
     elseif iscell(pendingInputValue)
+        % Push children in reverse because this is a last-in, first-out stack.
+        % They will therefore be popped in their original left-to-right order.
         nestedValueCount = numel(pendingInputValue);
         reversedNestedValues = flipud(pendingInputValue(:));
         requiredPendingCapacity = pendingCount + nestedValueCount;
@@ -90,14 +105,17 @@ if obstacleCount == 0
     return;
 end
 
-%% Section 3: Normalize The Public Schema
+%% Section 3: Normalize The Public Format
+
+% Send the combined array through the common obstacle normalizer. This applies
+% the same field checks and safety-margin rules as direct construction.
 
 % Validation occurs after flattening so all accepted container forms reach
-% one schema gate. A bad obstacle therefore cannot survive merely because
+% one format check. A bad obstacle therefore cannot survive merely because
 % it arrived inside a cell or struct array.
 normalizedObstacles = cell(size(obstacleItems));
 
-% Send every collected obstacle through the same canonical schema gate before
+% Send every collected obstacle through the same canonical format check before
 % concatenating them into the single array returned to the planner.
 for obstacleIndex = 1:numel(obstacleItems)
     normalizedObstacles{obstacleIndex} = ...
@@ -108,7 +126,9 @@ obstacleField = vertcat(normalizedObstacles{:});
 end
 
 function obstacleField = createEmptyObstacleArray()
-% Define canonical obstacle field order for an empty collection.
+% Define canonical obstacle field order for an empty collection. repmat with a
+% zero row count preserves those fields, allowing downstream concatenation and
+% field access without special handling for obstacle-free requests.
 template = struct( ...
     "targetName", "", ...
     "time_s", zeros(0, 1), ...

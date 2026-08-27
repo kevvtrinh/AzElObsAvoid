@@ -22,6 +22,8 @@ function result = exampleObstacleAvoidance(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Resolve common options before the scenario defines its physical inputs.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -29,6 +31,9 @@ end
     exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 3), [2 2]);
 
 %% Section 2: Create Obstacles
+
+% One protected rectangle blocks the direct line. Symmetric route choices test
+% deterministic side selection from identical inputs.
 
 obstacleTime_s = [0; 20];
 obstacleAzimuth_deg = [-1; 1; 1; -1];
@@ -39,6 +44,9 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
 
 %% Section 3: Create Planner Inputs
 
+% The start and goal lie on opposite sides of the rectangle. The safety margin
+% belongs to obstacle construction and is not added again by the planner.
+
 initialState = struct("time_s", 0, "position_deg", [-5 0]);
 goalState = struct("time_s", 12, "position_deg", [5 0]);
 limits = struct( ...
@@ -46,9 +54,13 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the maintained planner without waypoints or a preferred detour side.
+
 result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Verify endpoint agreement, limits, workspace bounds, and collision freedom.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
@@ -57,6 +69,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Show the original obstacle, protected obstacle, route, and timed motion.
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

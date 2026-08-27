@@ -32,6 +32,11 @@ function [value, gradient, hessian] = evaluateIntegratedSquaredJerk( ...
 
 %% Section 1: Integrate The Quadratic Jerk Records
 
+% Squared quadratic jerk has degree four. The closed-form expression below is
+% its exact integral over local tau, multiplied by segment duration to convert
+% back to physical time. Adjacent segments both contribute to a shared boundary
+% jerk control, which is why gradient entries at end controls are accumulated.
+
 controlCount = 2 * segmentCount + 1;
 jerkValueCount = dimensionCount * controlCount;
 controlJerk = reshape( ...
@@ -62,6 +67,8 @@ gradientJerk(3:2:end, :) = gradientJerk(3:2:end, :) + ...
     (8 * endJerk - 2 * startJerk + 4 * midpointJerk) / 30;
 gradient = gradientJerk(:);
 if isFreeTime
+    % Holding jerk controls fixed makes the total cost proportional to total
+    % duration, so d(cost)/d(finalTime) is cost/duration.
     gradient(end + 1, 1) = value / (finalTime - startTime);
 end
 if nargout < 3
@@ -73,6 +80,11 @@ if isFreeTime
 end
 
 %% Section 2: Assemble The Fixed-Time Hessian
+
+% Each segment contributes a 3-by-3 positive-semidefinite quadratic block for
+% its start/mid/end controls. Overlapping blocks couple neighboring segments at
+% their shared boundary. Coordinates remain independent, producing identical
+% diagonal blocks in the full Hessian.
 
 coordinateHessian = zeros(controlCount);
 localHessian = segmentDuration / 30 * [8 4 -2; 4 32 4; -2 4 8];

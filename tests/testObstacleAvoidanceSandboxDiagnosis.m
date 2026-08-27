@@ -21,6 +21,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Create temporary output paths for saved diagnosis data. These tests check
+% export, import, replay, request preservation, and result preservation. The
+% failed test name identifies which transfer step to inspect.
 % Add production, examples, and sandbox folders for public-call tests.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -117,7 +120,7 @@ verifyEqual(testCase, ...
     bundle.PlannerInputs.initialState.position_deg, [-3 1]);
 verifyEqual(testCase, ...
     bundle.PlannerInputs.goalState.position_deg, [5 -2]);
-verifyEqual(testCase, bundle.PlannerOptions.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(bundle.PlannerOptions, "PlannerMethod"));
 verifyTrue(testCase, bundle.ExportRequest.HasCompleteScene);
 end
 
@@ -190,12 +193,11 @@ limits = struct( ...
     "maxJerk_deg_s3", [2 2]);
 options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
-options.RandomSeed = 325;
 end
 
 function sandboxState = syntheticSandboxState( ...
         result, validation, initialState, goalState, obstacles)
-% Build the handle-free portion of the stable persistent-sandbox schema.
+% Build the stable saved sandbox data without graphics handles.
 modeState = struct( ...
     "StartPosition_deg", initialState.position_deg, ...
     "GoalPosition_deg", goalState.position_deg, ...

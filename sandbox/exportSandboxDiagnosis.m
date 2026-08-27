@@ -6,10 +6,10 @@ function exportInfo = exportSandboxDiagnosis( ...
 %       filePath, sandboxState, modeName)
 %**************************************************************************
 % PURPOSE
-%   - Save one diagnosis-ready MAT bundle from the persistent sandbox.
-%   - Preserve a pre-run request or completed planner evidence, retained scene
-%     geometry, controls, logs, and applicable reproduction guidance.
-%   - Exclude graphics handles and callbacks that cannot aid diagnosis.
+%   - Save sandbox data in one MAT file for later fault investigation.
+%   - Preserve a request before planning or evidence after planning.
+%   - Preserve scene geometry, controls, logs, and reproduction commands.
+%   - Exclude graphics handles and callbacks. They cannot reproduce a plan.
 %**************************************************************************
 % INPUTS
 %   - filePath (scalar text)
@@ -18,19 +18,24 @@ function exportInfo = exportSandboxDiagnosis( ...
 %   - sandboxState (scalar struct)
 %       Current value returned by sandboxState.ReadState().
 %   - modeName (scalar text)
-%       "goal" or "free"; selects the independent tab record to export.
+%       "goal" or "free" selects the independent tab record to export.
 %**************************************************************************
 % OUTPUTS
 %   - exportInfo (scalar struct)
 %       Absolute path, byte count, mode, HasPlannerResult, planner status,
-%       termination reason, and schema. A pre-run export reports notRun.
+%       termination reason, and file-format version. An export before planning
+%       reports notRun.
 %**************************************************************************
 % UNITS
-%   - Preserved positions are degrees, time is seconds, and derivatives use
-%     deg/s, deg/s^2, and deg/s^3.
+%   - Preserved positions are in degrees. Time is in seconds.
+%   - Derivatives use deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
 
 %% Section 1: Validate Destination And Sandbox State
+
+% Validate the path before collecting a large bundle. Add .mat only when the
+% caller omitted an extension. Do not create a missing folder because a typing
+% error could otherwise save evidence in an unintended location.
 
 filePath = string(filePath);
 if ~isscalar(filePath) || ismissing(filePath) || strlength(filePath) == 0
@@ -72,6 +77,10 @@ absoluteFilePath = string(fullfile( ...
 
 %% Section 2: Build A Handle-Free Diagnosis Bundle
 
+% Select one tab. Goal Mode and Free Mode keep independent scene and planner
+% data. Exporting only the selected mode prevents unrelated work in the other
+% tab from hiding the failure under investigation.
+
 if modeName == "goal"
     modeState = sandboxState.GoalMode;
 else
@@ -98,6 +107,8 @@ if hasPlannerResult && ...
         "The retained planner result must contain Inputs and Options.");
 end
 if hasPlannerResult
+    % A completed plan contains the exact normalized inputs and resolved
+    % options. These values are the preferred reproduction data.
     planningState = "completed";
     plannerInputs = result.Inputs;
     plannerOptions = result.Options;
@@ -116,6 +127,8 @@ elseif isfield(modeState, "ExportRequest") && ...
     plannerSuccess = false;
     terminationReason = "notRun";
 else
+    % Older or incomplete state can contain neither result nor request. Export
+    % the available scene, but leave reproduction inputs empty and visible.
     planningState = "notRun";
     exportRequest = struct();
     plannerInputs = struct();
@@ -125,6 +138,8 @@ else
     terminationReason = "notRun";
 end
 
+% Keep raw strokes, simplified geometry, and protected obstacles. Compare
+% these levels to find drawing simplification or safety-margin errors.
 scene = struct( ...
     "StartPosition_deg", modeState.StartPosition_deg, ...
     "GoalPosition_deg", modeState.GoalPosition_deg, ...
@@ -136,6 +151,8 @@ scene = struct( ...
         {modeState.PolygonObstaclePositions_deg}, ...
     "CanonicalObstacles", modeState.CanonicalObstacles, ...
     "ResolvedControls", modeState.ResolvedControls);
+% Record the MATLAB environment. Geometry and optimization behavior can differ
+% across MATLAB releases and operating systems.
 environment = struct( ...
     "MATLABVersion", string(version), ...
     "MATLABRelease", string(version('-release')), ...
@@ -146,6 +163,8 @@ hasReplayableInputs = all(isfield(plannerInputs, ...
 plannerCommand = "";
 validationCommand = "";
 if hasReplayableInputs
+    % Store commands as guidance only. The exporter does not run the planner.
+    % A developer can load the file and use these commands in a clean session.
     plannerCommand = ...
         "reproduced = obstacleAvoidance.planTrajectory(" + ...
         "diagnosisBundle.PlannerInputs.obstacles, " + ...
@@ -161,6 +180,9 @@ reproduction = struct( ...
         "loaded = load(filePath, 'diagnosisBundle');", ...
     "PlannerCommand", plannerCommand, ...
     "ValidationCommand", validationCommand);
+% Keep related data in named groups. First inspect PlanningState,
+% Result.TerminationReason, IndependentValidation, and PlannerLog. Then use
+% Scene and PlannerInputs to reproduce the exact request.
 diagnosisBundle = struct( ...
     "Schema", "obstacleAvoidanceSandboxDiagnosis-v1", ...
     "CreatedUTC", string(datetime( ...
@@ -185,6 +207,10 @@ diagnosisBundle = struct( ...
 
 %% Section 3: Save And Report The Export
 
+% Use MAT-file version 7.3 because obstacle histories and diagnostics can be
+% large. Verify both a nonempty file and the expected top-level variable. A
+% successful return from save alone does not prove that useful data was written.
+
 save(char(absoluteFilePath), 'diagnosisBundle', '-v7.3');
 fileRecord = dir(char(absoluteFilePath));
 if isempty(fileRecord) || fileRecord.bytes <= 0
@@ -208,3 +234,6 @@ exportInfo = struct( ...
     "TerminationReason", terminationReason, ...
     "Schema", diagnosisBundle.Schema);
 end
+    % A request can be exported before planning. Keep the prepared inputs and
+    % options, and mark the planner state as notRun. This supports diagnosis of
+    % UI input preparation without claiming that a planner result exists.

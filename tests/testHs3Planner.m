@@ -20,6 +20,10 @@ function tests = testHs3Planner
 tests = functiontests(localfunctions);
 end
 function setupOnce(testCase)
+% Load shared fixtures and source paths once. This file tests the full planner
+% flow from request checks through search, solve, independent validation, and
+% failure diagnostics. Use the failed test name to select the first stage to
+% inspect.
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -29,12 +33,12 @@ testCase.TestData.Fixtures = testSupport.plannerFixtures();
 end
 function testDefaultsExposeStandaloneHs3Planner(testCase)
 % Verify that zero-input defaults expose only standalone HS3 controls.
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
-verifyEqual(testCase, options.MaximumPlanningTime_s, 115);
-verifyEqual(testCase, options.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
+verifyFalse(testCase, isfield(options, "PlannerMethod"));
 verifyFalse(testCase, isfield(options, "MotionMethod"));
 verifyFalse(testCase, isfield(options, "UseParallel"));
 verifyFalse(testCase, isfield(options, "MaximumVisibilitySnapshotsPerObstacle"));
@@ -51,7 +55,7 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
 options = fixedOptions();
-directOptions = rmfield(options, "PlannerMethod");
+directOptions = options;
 directResult = obstacleAvoidance.planner.plan( ...
     [], initialState, goalState, limits, directOptions);
 publicResult = obstacleAvoidance.planTrajectory( ...
@@ -62,18 +66,16 @@ verifyTrue(testCase, directResult.Validation.Passed, ...
 verifyTrue(testCase, publicResult.Success, publicResult.Message);
 verifyTrue(testCase, publicResult.Validation.Passed, ...
     publicResult.Validation.Message);
-verifyEqual(testCase, directResult.SelectedMotionSource, "hs3");
-verifyEqual(testCase, publicResult.SelectedMotionSource, "hs3");
 verifyFalse(testCase, isfield(directResult, "CompositionDiagnostics"));
 verifyFalse(testCase, isfield(publicResult, "CompositionDiagnostics"));
 verifyEqual(testCase, directResult.position_deg, ...
     publicResult.position_deg, "AbsTol", 1e-10);
-verifyEqual(testCase, publicResult.Options.PlannerMethod, "hs3");
-verifyEqual(testCase, publicResult.SearchDiagnostics.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(publicResult, "SelectedMotionSource"));
+verifyFalse(testCase, isfield(publicResult.Options, "PlannerMethod"));
 end
 
 function testStandaloneSuccessAndFailureHaveNoCompactComposition(testCase)
-% Preserve a stable HS3 result schema on success and endpoint failure.
+% Check that success and endpoint failure return the same result fields.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [0 0], [0.1 0.05], [0.02 0]);
 goalState = testCase.TestData.Fixtures.State( ...
@@ -89,7 +91,7 @@ failure = obstacleAvoidance.planTrajectory( ...
 
 verifyTrue(testCase, success.Success, success.Message);
 verifyTrue(testCase, success.Validation.Passed, success.Validation.Message);
-verifyEqual(testCase, success.SelectedMotionSource, "hs3");
+verifyFalse(testCase, isfield(success, "SelectedMotionSource"));
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
 verifyFalse(testCase, isfield(success, "CompositionDiagnostics"));
@@ -104,9 +106,8 @@ goalState = testCase.TestData.Fixtures.State( ...
     12, [5 -2], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [3 2], [1.2 0.8], [2.4 1.6]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 1;
-options.DirectSeedOnly = true;
 result = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
@@ -129,9 +130,8 @@ goalState = testCase.TestData.Fixtures.State( ...
     180, [52.8770492 -61.045082], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 1;
-options.DirectSeedOnly = true;
 result = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 displacement_deg = goalState.position_deg - initialState.position_deg;
@@ -158,9 +158,7 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
 options = fixedOptions();
-options.DirectSeedOnly = false;
 options.MaximumSeedCount = 2;
-options.MaximumPlanningTime_s = 15;
 result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 displacement_deg = goalState.position_deg - initialState.position_deg;
@@ -192,12 +190,12 @@ verifyGreaterThan(testCase, max(abs(result.position_deg(:, 2))), 1e-4);
 end
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testWorkspaceIntervalsBelongToLimits");
+    testCase, "testWorkspaceIntervalsBelongToLimits");
 end
 
 function testOldWorkspaceOptionGivesMigrationError(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testOldWorkspaceOptionGivesMigrationError");
+    testCase, "testOldWorkspaceOptionGivesMigrationError");
 end
 
 function testVerboseOutputUsesOnePrefixFamily(testCase)
@@ -232,7 +230,6 @@ initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(20, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
@@ -260,12 +257,12 @@ verifyTrue(testCase, ...
 visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
 isOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-    obstacles, 0, 0.75, 10, struct("PlannerMethod", "hs3"));
+    obstacles, 0, 0.75, 10, struct());
 verifyFalse(testCase, isOccupied);
 end
 function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints");
+    testCase, "testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints");
 end
 
 function testSeedCorridorCertificateChecksCompletePolynomial(testCase)
@@ -313,17 +310,17 @@ verifyFalse(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ..
 end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testConstantJerkPolynomialPassesIndependentDynamics");
+    testCase, "testConstantJerkPolynomialPassesIndependentDynamics");
 end
 
 function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testUnrelatedPolynomialCannotValidateSampledHistory");
+    testCase, "testUnrelatedPolynomialCannotValidateSampledHistory");
 end
 
 function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testShiftedPolynomialTimeCannotHideInitialTime");
+    testCase, "testShiftedPolynomialTimeCannotHideInitialTime");
 end
 
 function testFixedArrivalEnforcesTerminalState(testCase)
@@ -335,7 +332,6 @@ options = fixedOptions();
 result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyEqual(testCase, result.velocity_deg_s(1, :), ...
     initialState.velocity_deg_s, "AbsTol", 1e-10);
 verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
@@ -401,7 +397,7 @@ verifyEqual(testCase, result.time_s(end), independentMinimumTime_s, ...
 end
 function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testEarliestGoalIsNotRejectedByHorizonOccupancy");
+    testCase, "testEarliestGoalIsNotRejectedByHorizonOccupancy");
 end
 
 function testIntegerWorkLimitsRejectFractionalValues(testCase)
@@ -422,22 +418,22 @@ verifyTrue(testCase, didThrow);
 end
 function testMovingGoalInterpolationMethodMustBeScalar(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testMovingGoalInterpolationMethodMustBeScalar");
+    testCase, "testMovingGoalInterpolationMethodMustBeScalar");
 end
 
 function testMovingGoalHistoryRequiresTwoSamples(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testMovingGoalHistoryRequiresTwoSamples");
+    testCase, "testMovingGoalHistoryRequiresTwoSamples");
 end
 
 function testInterceptWrapperTextOptionsMustBeScalar(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testInterceptWrapperTextOptionsMustBeScalar");
+    testCase, "testInterceptWrapperTextOptionsMustBeScalar");
 end
 
 function testInterceptWrapperRequiresTwoTargetSamples(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testInterceptWrapperRequiresTwoTargetSamples");
+    testCase, "testInterceptWrapperRequiresTwoTargetSamples");
 end
 
 function testMeshOptionsAreHonestlyReflected(testCase)
@@ -452,7 +448,6 @@ options.MaximumMeshRefinementPasses = 1;
 result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyGreaterThanOrEqual(testCase, result.Polynomial.SegmentCount, 4);
 verifyLessThanOrEqual(testCase, result.Polynomial.SegmentCount, 8);
 verifyEqual(testCase, result.Polynomial.SegmentCount, ...
@@ -461,7 +456,7 @@ verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
 function testStaticObstacleProducesOppositeSideSeeds(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testStaticObstacleProducesOppositeSideSeeds");
+    testCase, "testStaticObstacleProducesOppositeSideSeeds");
 end
 
 function testFixedArrivalSelectsShortestValidatedStaticMotion(testCase)
@@ -475,9 +470,7 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
-options.DeterministicWorkBudget = true;
 result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 validated = find([result.SeedSummaries.ValidationPassed]);
@@ -502,7 +495,6 @@ goalState = testCase.TestData.Fixtures.State(20, [6 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 5;
-options.DirectSeedOnly = false;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
@@ -582,7 +574,6 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
 options = fixedOptions();
-options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 [longHorizonSeeds, ~] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
@@ -620,9 +611,8 @@ goalState = testCase.TestData.Fixtures.State( ...
     360, [100 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 3;
-options.MaximumPlanningTime_s = 30;
 result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
@@ -643,7 +633,7 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "moving", time_s, azimuth_deg, elevation_deg, 0);
 occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, [0; 0], [0; 0], [0; 4], ...
-    struct("PlannerMethod", "hs3"));
+    struct());
 verifyEqual(testCase, occupied, [true; false]);
 end
 function testOccupancyOnlyMatchesDetailedQuery(testCase)
@@ -658,7 +648,7 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
 queryAzimuth_deg = [0; 1; 3];
 queryElevation_deg = [0; 0; 0];
 queryTime_s = [0; 0; 2];
-queryOptions = struct("PlannerMethod", "hs3");
+queryOptions = struct();
 fastOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, queryAzimuth_deg, queryElevation_deg, ...
     queryTime_s, queryOptions);
@@ -680,17 +670,17 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     {first_deg(:, 2); second_deg(:, 2)}, 0);
 occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, [1.5; 1.5], [0; 0], [0; 2], ...
-    struct("PlannerMethod", "hs3"));
+    struct());
 verifyEqual(testCase, occupied, [false; true]);
 end
 function testDeformingObstacleUsesThePlannerPath(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testDeformingObstacleUsesThePlannerPath");
+    testCase, "testDeformingObstacleUsesThePlannerPath");
 end
 
 function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testTopologyChangeUsesAStationaryConservativeUnion");
+    testCase, "testTopologyChangeUsesAStationaryConservativeUnion");
 end
 
 function testMovingBarrierGeneratesWaitingSeed(testCase)
@@ -711,7 +701,7 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
@@ -732,7 +722,6 @@ verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
 % independently valid topology may be selected when it has lower jerk at
 % the same fixed arrival.
 options.GoalTimeMode = "fixedArrival";
-options.MaximumPlanningTime_s = 15;
 result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
@@ -742,7 +731,6 @@ waitIndex = find([result.Seeds.Source] == "directWait", 1);
 verifyNotEmpty(testCase, waitIndex);
 verifyTrue(testCase, result.SeedSummaries(waitIndex).Hs3Attempted);
 verifyTrue(testCase, result.SeedSummaries(waitIndex).ValidationPassed);
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
 function testObstacleActivationSpanEnablesTimedSearch(testCase)
@@ -751,7 +739,7 @@ obstacle = testCase.TestData.Fixtures.RectangleObstacle([3 6], [-0.5 0.5 -2 2], 
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 [~, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
@@ -766,7 +754,7 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 5;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
@@ -783,7 +771,6 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, any([result.SeedSummaries.Hs3ValidationPassed]));
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyGreaterThan(testCase, numel(result.Seeds), 1);
 verifyEqual(testCase, result.SearchDiagnostics.AttemptedSeedCount, 1);
 verifyEqual(testCase, ...
@@ -816,7 +803,7 @@ obstacle = obstacleAvoidance.obstacles.createObstacle( ...
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 2;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
@@ -857,7 +844,7 @@ verifyGreaterThan(testCase, ...
 end
 
 function testEarlySolverFailureRetainsMotionLengthSchema(testCase)
-% Verify fixed-quality diagnostics keep one schema before optimization.
+% Check that early failures keep all fixed-quality diagnostic fields.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State( ...
@@ -879,59 +866,60 @@ end
 
 function testAzimuthWrappingChangesThePhysicalRequest(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testAzimuthWrappingChangesThePhysicalRequest");
+    testCase, "testAzimuthWrappingChangesThePhysicalRequest");
 end
 
 function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry");
+    testCase, "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry");
 end
 
-function testPlanningTimeOptionIsResolved(testCase)
-% Verify the standalone planner owns one positive end-to-end wall-time budget.
-options = obstacleAvoidance.planTrajectory("hs3");
-options.MaximumPlanningTime_s = 7;
-resolved = obstacleAvoidance.input.resolveHs3Options( ...
-    rmfield(options, "PlannerMethod"));
-verifyEqual(testCase, resolved.MaximumPlanningTime_s, 7);
+function testPlanningTimeOptionIsRemoved(testCase)
+% Verify the removed wall-clock option is ignored with one clear warning.
+verifyWarning(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
+    struct("MaximumPlanningTime_s", 7)), ...
+    "planTrajectory:UnknownOptions");
 end
 
 function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testEarlyPlannerFailureKeepsValidationFieldOrder");
+    testCase, "testEarlyPlannerFailureKeepsValidationFieldOrder");
 end
 
 function testBetweenNodeCollisionFailsValidation(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testBetweenNodeCollisionFailsValidation");
+    testCase, "testBetweenNodeCollisionFailsValidation");
 end
 
 function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testObstacleActivationAtTerminalTimeFailsValidation");
+    testCase, "testObstacleActivationAtTerminalTimeFailsValidation");
 end
 
 function testBetweenNodeVelocityViolationFailsValidation(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testBetweenNodeVelocityViolationFailsValidation");
+    testCase, "testBetweenNodeVelocityViolationFailsValidation");
 end
 
 function testSafetyMarginIsAppliedExactlyOnce(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testSafetyMarginIsAppliedExactlyOnce");
+    testCase, "testSafetyMarginIsAppliedExactlyOnce");
 end
 
 function testTranslatedHistoryReusesExactProtectedShape(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testTranslatedHistoryReusesExactProtectedShape");
+    testCase, "testTranslatedHistoryReusesExactProtectedShape");
 end
 
 function testDeterministicRepeatedRun(testCase)
 testSupport.verifySharedPlannerContract( ...
-    testCase, "hs3", "testDeterministicRepeatedRun");
+    testCase, "testDeterministicRepeatedRun");
 end
 
 function testNoPathReturnsStableDiagnostics(testCase)
+% Create an expected blocked problem. Check search counts, frontier data, and
+% the failure reason. Missing data points to result assembly rather than the
+% search decision.
 % Verify expected no-path failure returns diagnostics instead of an error.
 wall = testCase.TestData.Fixtures.RectangleObstacle([0 12], [-0.5 0.5 -90 90], 0.2);
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
@@ -983,7 +971,6 @@ limits = testCase.TestData.Fixtures.PhysicalLimits( ...
 limits.elevationInterval_deg = [-10 10];
 options = fixedOptions();
 options.MaximumSeedCount = 3;
-options.DirectSeedOnly = false;
 result = obstacleAvoidance.planTrajectory(wall, initialState, goalState, limits, options);
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
@@ -1013,11 +1000,8 @@ result = obstacleAvoidance.planMovingTargetIntercept( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.Intercept.Mode, "earliest");
-verifyEqual(testCase, result.Options.PlannerMethod, "hs3");
-verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, "hs3");
-verifyEqual(testCase, ...
-    result.Intercept.Options.PlannerOptions.PlannerMethod, "hs3");
-verifyEqual(testCase, result.Intercept.Search.Method, ...
+verifyFalse(testCase, isfield(result.Options, "PlannerMethod"));
+verifyEqual(testCase, result.Intercept.Search.Policy, ...
     "boundedChronologicalFixedTime");
 verifyGreaterThan(testCase, result.Intercept.Search.TrialCount, 1);
 verifyEqual(testCase, result.position_deg(end, :), ...
@@ -1078,11 +1062,9 @@ expectedAcceleration_deg_s2 = (upperPosition_deg - ...
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyEqual(testCase, result.Options.PlannerMethod, "hs3");
-verifyEqual(testCase, result.SearchDiagnostics.PlannerMethod, "hs3");
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
+verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
 verifyEqual(testCase, result.Intercept.Mode, "specifiedTime");
-verifyEqual(testCase, result.Intercept.Search.Method, "specifiedFixedTime");
+verifyEqual(testCase, result.Intercept.Search.Policy, "specifiedFixedTime");
 verifyEqual(testCase, result.Intercept.Search.TrialCount, 1);
 verifyEqual(testCase, result.Intercept.TerminalVelocityPolicy, "target");
 verifyEqual(testCase, result.Intercept.TerminalAccelerationPolicy, "target");
@@ -1090,20 +1072,17 @@ verifyEqual(testCase, result.velocity_deg_s(end, :), ...
     expectedVelocity_deg_s, "AbsTol", 1e-6);
 verifyEqual(testCase, result.acceleration_deg_s2(end, :), ...
     expectedAcceleration_deg_s2, "AbsTol", 1e-6);
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
 
 function options = fixedOptions()
 % Return fast deterministic settings for focused tests.
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
-options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
 options.CollocationSegmentCount = 5;
 options.MaximumNlpIterations = 150;
 options.MaximumNlpFunctionEvaluations = 15000;
-options.MaximumPlanningTime_s = 8;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end
@@ -1129,9 +1108,8 @@ goalState = testCase.TestData.Fixtures.State( ...
     40, [12 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
-options = obstacleAvoidance.planTrajectory("hs3");
+options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
-options.DirectSeedOnly = false;
 options.MaximumSeedCount = 5;
 [seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
@@ -1186,7 +1164,6 @@ end
 
 function verifyHs3Solved(testCase, result, representation)
 % Require selected standalone solver evidence for the requested formulation.
-verifyEqual(testCase, result.SelectedMotionSource, "hs3");
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 summary = result.SeedSummaries(result.SelectedSeedIndex);
 verifyTrue(testCase, summary.Hs3Attempted);

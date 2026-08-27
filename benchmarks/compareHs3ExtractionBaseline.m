@@ -30,6 +30,9 @@ function comparison = compareHs3ExtractionBaseline( ...
 
 %% Section 1: Load The Frozen Baseline And Candidate
 
+% Load the saved reference before running current code. Check version and case
+% labels first. A mismatch here means the two data sets are not comparable.
+
 if nargin < 1 || isempty(baselinePath)
     baselinePath = fullfile(fileparts(mfilename("fullpath")), ...
         "hs3_extraction_baseline.mat");
@@ -70,6 +73,10 @@ end
 
 %% Section 2: Compare Discrete And Numerical Behavior
 
+% Compare exact text and logical values without tolerance. Compare floating-
+% point values with named tolerances. A mismatch path identifies the result
+% field or polynomial value that changed.
+
 allMismatches = strings(0, 1);
 runCasePassed = true(numel(candidateReports), caseCount);
 for runIndex = 1:numel(candidateReports)
@@ -89,6 +96,9 @@ kernelMismatches = compareExtractedKernel(referenceReport);
 allMismatches = [allMismatches; kernelMismatches];
 
 %% Section 3: Compare Serial Runtime Medians
+
+% Use serial repeats and medians to reduce timing noise. Review behavior
+% mismatches before runtime. Faster code is not acceptable if results changed.
 
 baselineRuntime_s = runtimeMatrix(baselineReports, caseCount);
 candidateRuntime_s = runtimeMatrix(candidateReports, caseCount);
@@ -119,6 +129,9 @@ end
 
 %% Section 4: Assemble The Comparison Record
 
+% Keep baseline and candidate summaries beside all mismatch details. This lets
+% a developer separate expected timing variation from a functional change.
+
 if isempty(allMismatches)
     firstMismatch = "";
 else
@@ -138,8 +151,8 @@ comparison = struct( ...
     "BaselineTotalMedianRuntime_s", baselineTotalMedian_s, ...
     "CandidateTotalMedianRuntime_s", candidateTotalMedian_s, ...
     "CandidateReports", candidateReports);
-fprintf("HS3 extraction parity: passed=%d, mismatches=%d.\n", ...
-    comparison.Passed, numel(allMismatches));
+fprintf("HS3 extraction parity: passed=%s, mismatches=%d.\n", ...
+    logicalText(comparison.Passed), numel(allMismatches));
 if ~comparison.Passed
     fprintf("First mismatch: %s\n", comparison.FirstMismatch);
 end
@@ -151,9 +164,7 @@ function reports = runCandidateReports()
 % Run the frozen scaling matrix three times with deterministic work.
 controls = struct( ...
     "PrintProgress", true, ...
-    "RandomSeed", 325, ...
-    "MaximumPlanningTime_s", 115, ...
-    "PlannerOverrides", struct("DeterministicWorkBudget", true));
+    "PlannerOverrides", struct());
 firstReport = benchmarkStandaloneHs3Scaling([1 5 10 20], controls);
 reports = repmat(firstReport, 3, 1);
 for runIndex = 2:3
@@ -250,10 +261,8 @@ mismatches = strings(0, 1);
 exactPaths = [ ...
     "Success", "IndependentValidationAttempted", ...
     "IndependentValidationPassed", "TerminationReason", ...
-    "SelectedMotionSource", "RouteVertexCount", ...
+    "RouteVertexCount", ...
     "PlannerResult.SelectedSeedIndex", ...
-    "PlannerResult.SelectedMotionSource", ...
-    "PlannerResult.RandomSeed", ...
     "PlannerResult.Options.GoalTimeMode", ...
     "PlannerResult.Polynomial.SegmentCount", ...
     "SolverDiagnostics.StageOneExitFlag", ...
@@ -262,6 +271,7 @@ for fieldPath = exactPaths
     mismatches = appendExactMismatch(mismatches, referenceCase, ...
         candidateCase, fieldPath, caseLabel);
 end
+
 mismatches = appendNumericMismatch(mismatches, referenceCase.Route_deg, ...
     candidateCase.Route_deg, 1e-10, 1e-10, caseLabel + ".Route_deg");
 referenceResult = referenceCase.PlannerResult;
@@ -504,5 +514,14 @@ function values_s = runtimeMatrix(reports, caseCount)
 values_s = zeros(numel(reports), caseCount);
 for runIndex = 1:numel(reports)
     values_s(runIndex, :) = [reports(runIndex).Cases.TotalWallTime_s];
+end
+end
+
+function text = logicalText(value)
+% Render scalar logical comparison status as true or false.
+if logical(value)
+    text = "true";
+else
+    text = "false";
 end
 end

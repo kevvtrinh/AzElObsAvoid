@@ -22,17 +22,26 @@ function result = exampleObstacleFree(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Select earliest-arrival mode and resolve shared display controls.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "DirectSeedOnly", true, "MaximumSeedCount", 1), [2 2]);
+    exampleOverrides, struct( ...
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 1), [2 2]);
 
 %% Section 2: Create Obstacles
+
+% Use the standard empty obstacle array. This case gives a simple baseline for
+% motion timing and smoothing without collision constraints.
 
 obstacles = [];
 
 %% Section 3: Create Planner Inputs
+
+% Define rest-to-rest endpoint states and axis motion limits. The shortest path
+% is the direct line because no obstacle blocks it.
 
 initialState = struct( "time_s", 0, "position_deg", [0 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 goalState = struct( "time_s", 8, "position_deg", [4 2], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
@@ -41,9 +50,14 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the public planner and let it find the minimum feasible arrival time.
+
 result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Validate timing and kinematics. A failure here usually points to motion
+% profiling or endpoint handling rather than obstacle geometry.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
@@ -52,6 +66,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Use this plot as the simplest reference for more complex example plots.
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

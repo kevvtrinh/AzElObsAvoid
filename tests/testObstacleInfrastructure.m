@@ -20,6 +20,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Prepare canonical obstacle fixtures. These tests check normalization, history
+% interpolation, boundary order, and occupancy queries. Investigate obstacle
+% preparation before planner search when one of these checks fails.
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -122,14 +125,13 @@ fastOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
 verifyEqual(testCase, fastOccupied, sharedOccupied);
 
 hs3Options = options;
-hs3Options.PlannerMethod = "hs3";
 [hs3Occupied, hs3Blocker, hs3Details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacles, azimuth_deg, elevation_deg, time_s, hs3Options);
 verifyEqual(testCase, hs3Occupied, sharedOccupied);
 verifyEqual(testCase, hs3Blocker, sharedBlocker);
 verifyEqual(testCase, hs3Details.MinimumClearance_deg, ...
     sharedDetails.MinimumClearance_deg, "AbsTol", 1e-12);
-verifyEqual(testCase, hs3Details.Options.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(hs3Details.Options, "PlannerMethod"));
 
 referenceTime = datetime(2026, 1, 1, "TimeZone", "UTC");
 datetimeOptions = options;

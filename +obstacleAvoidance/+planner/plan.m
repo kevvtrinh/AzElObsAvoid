@@ -27,6 +27,11 @@ stageTiming = result.SearchDiagnostics.StageTiming;
 
 %% Section 1: Reject Physically Invalid Endpoints
 
+% Validate the request before spending time on graph search or nonlinear
+% optimization. Endpoint checks include workspace limits, obstacle occupancy,
+% and terminal motion. A blocked endpoint is an expected planning failure and
+% returns a populated result with diagnostics.
+
 [endpointFeasible, endpointMessage, endpointReason] = ...
     obstacleAvoidance.input.validatePlannerEndpoints( ...
     obstacles, initialState, goalState, limits, options);
@@ -36,11 +41,18 @@ if ~endpointFeasible
     result.SearchDiagnostics.TerminationReason = endpointReason;
     result = obstacleAvoidance.planner.stageTiming( ...
         result, planningTimer, stageTiming);
+    printPlannerProgress(options.Verbose, 1, 1, "endpoint rejected");
     return;
 end
 
 %% Section 2: Generate Input-Driven Topology Proposals
 
+% Search protected obstacle geometry for several geometrically distinct ways
+% to connect start and goal. These polylines are starting suggestions: they
+% identify which side of obstacles to use, while HS3 later produces a
+% continuous motion satisfying the physical limits.
+
+printPlannerProgress(options.Verbose, 0, 1, "creating route candidates");
 topologyTimer = tic;
 [seeds, gridDiagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
@@ -49,6 +61,7 @@ stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = gridDiagnostics.ElapsedTime_s;
+printPlannerProgress(options.Verbose, 1, 1, "route candidates ready");
 seedSummaries = repmat(summaryTemplate, numel(seeds), 1);
 candidates = cell(numel(seeds), 1);
 
@@ -61,6 +74,7 @@ timedIndices = find(isTimedTopology);
 detourIndices = find(routePointCount > 2 & ~isTimedTopology);
 directIndices = find(routePointCount <= 2 & ~isTimedTopology);
 if numel(detourIndices) > 1
+    % Prefer shorter proposals but preserve deterministic order for ties.
     % Earliest-arrival work starts with the shortest geometric proposal.
     % Per-seed work budgets already account for route complexity.
     topologyEffort = [seeds(detourIndices).Length_deg];
@@ -68,6 +82,8 @@ if numel(detourIndices) > 1
     detourIndices = detourIndices(effortOrder);
 end
 if conservativeDirectEdgeAccepted(gridDiagnostics)
+    % Put a certified direct route first because it has a strong length lower
+    % bound and normally requires the least nonlinear work.
     spatialOrder = [directIndices(:); detourIndices(:)];
 else
     spatialOrder = [detourIndices(:); directIndices(:)];
@@ -112,11 +128,19 @@ lengthLowerBoundTolerance_deg = max( ...
 
 %% Section 3: Solve, Validate, And Boundedly Repair HS3 Motions
 
+% Each seed is solved independently. A failed coarse mesh may be refined or
+% relinearized within explicit limits, but every success must pass independent
+% continuous-motion validation. Retain both the best valid candidate and the
+% most informative failed partial candidate.
+
+hs3Defaults = solveTrajHS3();
+maximumSolverTimePerAttempt_s = hs3Defaults.MaximumSolveTime;
 for orderIndex = 1:numel(seedOrder)
-    if remainingPlanningTime(options, planningTimer) <= 0.1
-        break;
-    end
+    % Order affects runtime, not the acceptance rules. Valid candidates are
+    % compared under the same goal-time policy after validation.
     seedIndex = seedOrder(orderIndex);
+    printPlannerProgress(options.Verbose, orderIndex - 1, ...
+        numel(seedOrder), "solving candidate " + seedIndex);
     originalSeed = seeds(seedIndex);
     axisTravel_deg = sum(abs(diff( ...
         originalSeed.position_deg, 1, 1)), 1);
@@ -134,6 +158,8 @@ for orderIndex = 1:numel(seedOrder)
             "arrivalBoundDominated";
         seedSummaries(seedIndex).Message = ...
             "A validated topology already meets this route's arrival bound.";
+        printPlannerProgress(options.Verbose, orderIndex, ...
+            numel(seedOrder), "candidate skipped by arrival bound");
         continue;
     end
     originalSeed.CollinearityDirection = directCollinearityDirection( ...
@@ -181,36 +207,21 @@ for orderIndex = 1:numel(seedOrder)
     timedArrivalTrialCount = 0;
     maximumTimedArrivalTrialCount = 14;
     validatedCandidate = [];
-    finalCandidate = [];
     previousSolve = struct("FinalTime_s", NaN, "MinimumClearance_deg", NaN);
-    % Reserve a bounded share for every retained candidate. Counting only
-    % multi-point detours lets one expensive solve starve a later timed or
-    % direct proposal whose distinct motion law may be the feasible answer.
-    seedWorkBudget_s = remainingPlanningTime(options, planningTimer) / ...
-        (numel(seedOrder) - orderIndex + 1);
-    seedTimer = tic;
-    while remainingPlanningTime(options, planningTimer) > 0.1 && ...
-            seedWorkBudget_s - toc(seedTimer) > 0.1
-        remaining_s = min(remainingPlanningTime(options, planningTimer), ...
-            seedWorkBudget_s - toc(seedTimer));
+    % Count-based caps below make planning decisions independent of machine
+    % speed. The engine retains its own per-solve safety stop.
+    while true
+        % One pass solves the current mesh and frozen corridor. Later passes
+        % may update obstacle associations or add segments where continuous
+        % validation found a violation.
         solverOptions = options;
         solverOptions.GoalTimeMode = seedGoalTimeMode;
         solverOptions.CollocationSegmentCount = segmentCount;
-        solverOptions.MaximumSolverTime_s = max(0.05, 0.70 * remaining_s);
-        if isfinite(bestValidatedFinalTime_s) && ...
-                ~options.DeterministicWorkBudget && ...
-                solverOptions.GoalTimeMode == "earliestArrival"
-            % Once feasibility exists, a later candidate is optional
-            % improvement work. Bound its nonlinear long tail while still
-            % giving measured fast improvements a full opportunity.
-            solverOptions.MaximumSolverTime_s = min( ...
-                solverOptions.MaximumSolverTime_s, 3);
-        end
+        solverOptions.MaximumSolverTime_s = maximumSolverTimePerAttempt_s;
         finalCandidate = ...
             obstacleAvoidance.planner.solveRouteCandidate( ...
             obstacles, initialState, solverGoalState, limits, ...
             solverOptions, trialSeed);
-        finalCandidate.MotionSource = "hs3";
         finalCandidate.Validation = validateCandidate( ...
             finalCandidate, obstacles, initialState, goalState, ...
             limits, options);
@@ -224,9 +235,6 @@ for orderIndex = 1:numel(seedOrder)
                     options.GoalTimeMode)
                 validatedCandidate = finalCandidate;
             end
-            refinementTime_s = min( ...
-                remainingPlanningTime(options, planningTimer), ...
-                seedWorkBudget_s - toc(seedTimer));
             relativeLengthExcess = coarseMotionLengthExcess(finalCandidate, originalSeed);
             % A 25% derivative reserve distinguishes velocity-dominated
             % coarse timing from motions already pressing higher derivatives.
@@ -252,8 +260,7 @@ for orderIndex = 1:numel(seedOrder)
                     originalSeed.Source == "timeExpandedVisibilityGraph" && ...
                     proposedSpatialTimingTarget_s < ...
                     validatedCandidate.FinalTime_s - ...
-                    options.ArrivalTimeTolerance_s && ...
-                    refinementTime_s > 0.1;
+                    options.ArrivalTimeTolerance_s;
                 if hasSpatialTimingTrial
                     spatialTimingTarget_s = proposedSpatialTimingTarget_s;
                     totalRelinearizationCount = totalRelinearizationCount + 1;
@@ -262,7 +269,7 @@ for orderIndex = 1:numel(seedOrder)
                     continue;
                 end
                 hasTimedTrial = timedArrivalTrialCount < ...
-                    maximumTimedArrivalTrialCount && refinementTime_s > 0.1 && ...
+                    maximumTimedArrivalTrialCount && ...
                     timedFeasibleTime_s - timedInfeasibleTime_s > ...
                     options.ArrivalTimeTolerance_s;
                 if hasTimedTrial
@@ -281,8 +288,7 @@ for orderIndex = 1:numel(seedOrder)
                     ((validRelinearizationCount < 1 && ...
                     relativeLengthExcess > 1 / segmentCount) || ...
                     (validRelinearizationCount == 1 && hasDerivativeSlack) || ...
-                    useFixedQualitySearch) && ...
-                    refinementTime_s > 0.1
+                    useFixedQualitySearch)
                 nextSegmentCount = min(options.MaximumCollocationSegmentCount, ...
                     meshGrowthFactor * segmentCount + useFixedQualitySearch * ...
                     options.MaximumCollocationSegmentCount);
@@ -301,7 +307,7 @@ for orderIndex = 1:numel(seedOrder)
                     validRelinearizationCount = 2;
                     continue;
                 end
-            elseif validRelinearizationCount < 1 && refinementTime_s > 0.1
+            elseif validRelinearizationCount < 1
                 validRelinearizationCount = validRelinearizationCount + 1;
                 totalRelinearizationCount = totalRelinearizationCount + 1;
                 trialSeed = seedFromCandidate(finalCandidate, originalSeed);
@@ -319,10 +325,8 @@ for orderIndex = 1:numel(seedOrder)
                 timedInfeasibleTime_s = max( ...
                     timedInfeasibleTime_s, solverGoalState.time_s);
             end
-            remaining_s = min(remainingPlanningTime(options, planningTimer), ...
-                seedWorkBudget_s - toc(seedTimer));
             hasTimedTrial = timedArrivalTrialCount < ...
-                maximumTimedArrivalTrialCount && remaining_s > 0.1 && ...
+                maximumTimedArrivalTrialCount && ...
                 timedFeasibleTime_s - timedInfeasibleTime_s > ...
                 options.ArrivalTimeTolerance_s;
             if hasTimedTrial
@@ -352,6 +356,9 @@ for orderIndex = 1:numel(seedOrder)
             ~finalCandidate.Validation.CollisionFree && ...
             finalCandidate.OptimizerFeasible;
         if collisionOnly && ~repeatsPreviousSolve && meshRelinearizationCount < 2
+            % A collision-only failure can mean locally linear obstacle
+            % supports are stale. Rebuild them around the new motion before
+            % increasing mesh size, with a cap that prevents cycling.
             meshRelinearizationCount = meshRelinearizationCount + 1;
             totalRelinearizationCount = totalRelinearizationCount + 1;
             trialSeed = seedFromCandidate(finalCandidate, originalSeed);
@@ -371,6 +378,8 @@ for orderIndex = 1:numel(seedOrder)
         end
     end
     if isempty(finalCandidate)
+        printPlannerProgress(options.Verbose, orderIndex, ...
+            numel(seedOrder), "candidate work complete");
         continue;
     end
     candidates{seedIndex} = finalCandidate;
@@ -398,9 +407,15 @@ for orderIndex = 1:numel(seedOrder)
             options.GoalTimeMode == "earliestArrival"
         break;
     end
+    printPlannerProgress(options.Verbose, orderIndex, ...
+        numel(seedOrder), "candidate work complete");
 end
 
 %% Section 4: Select Or Return Diagnosable Failure
+
+% Selection never trusts solver exit status alone. Only independently
+% validated candidates are eligible. If none qualify, retain search and solve
+% evidence and choose a specific reason so callers can see what stopped work.
 
 result.SeedSummaries = seedSummaries;
 result.SearchDiagnostics.SeedSummaries = seedSummaries;
@@ -425,6 +440,7 @@ if isempty(validatedIndices)
     result.SearchDiagnostics.StageTiming = stageTiming;
     result = obstacleAvoidance.planner.stageTiming( ...
         result, planningTimer, stageTiming);
+    printPlannerProgress(options.Verbose, 1, 1, "planning complete");
     return;
 end
 
@@ -433,10 +449,9 @@ selectedSeedIndex = selectValidatedCandidate( ...
     options.ArrivalTimeTolerance_s);
 selectedCandidate = candidates{selectedSeedIndex};
 result.Success = true;
-result.Message = "An independently validated Hermite-Simpson motion was selected.";
+result.Message = "A kinematically constrained, collision-free path was found.";
 result.TerminationReason = "goalReached";
 result.SelectedSeedIndex = selectedSeedIndex;
-result.SelectedMotionSource = "hs3";
 result.SelectedSeed_deg = seeds(selectedSeedIndex).position_deg;
 for fieldName = ["time_s", "position_deg", "velocity_deg_s", ...
         "acceleration_deg_s2", "jerk_deg_s3", "Polynomial", ...
@@ -449,36 +464,10 @@ result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.SearchDiagnostics.BestPartialSeedIndex = selectedSeedIndex;
 result.SearchDiagnostics.MeshRefinementPassCount = ...
     seedSummaries(selectedSeedIndex).MeshRefinementPassCount;
-if options.GoalTimeMode == "fixedArrival"
-    result.OptimalityStatement = "Shortest independently validated sampled " + ...
-        "motion among the fixed-arrival candidates completed within the " + ...
-        "global work budget; no global certificate.";
-elseif selectedCandidate.ArrivalAtHorizon
-    result.Message = "An independently validated Hermite-Simpson motion " + ...
-        "was selected, but its arrival is pinned to the goal horizon.";
-    result.OptimalityStatement = "Arrival equals the goal horizon, so the " + ...
-        "free-time solve never descended; this motion is feasible but " + ...
-        "carries no earliest-arrival claim.";
-else
-    result.OptimalityStatement = "Earliest independently validated HS3 " + ...
-        "motion among the candidates completed within the global work " + ...
-        "budget; no global certificate.";
-end
 result.SearchDiagnostics.StageTiming = stageTiming;
 result = obstacleAvoidance.planner.stageTiming( ...
     result, planningTimer, stageTiming);
-end
-
-function remaining_s = remainingPlanningTime(options, planningTimer)
-% Apply one cooperative wall-time budget across topology, solve, and validation.
-% Releasing that budget leaves only machine-independent caps -- seed count,
-% relinearizations, mesh passes, and NLP iterations -- so the same request
-% returns the same motion on a slower or busier machine.
-if options.DeterministicWorkBudget
-    remaining_s = Inf;
-    return;
-end
-remaining_s = options.MaximumPlanningTime_s - toc(planningTimer);
+printPlannerProgress(options.Verbose, 1, 1, "planning complete");
 end
 
 function accepted = conservativeDirectEdgeAccepted(gridDiagnostics)
@@ -496,6 +485,27 @@ forward = max(abs(edges_deg(:, 1:2) - start_deg), [], 2) <= tolerance_deg & ...
 reverse = max(abs(edges_deg(:, 1:2) - goal_deg), [], 2) <= tolerance_deg & ...
     max(abs(edges_deg(:, 3:4) - start_deg), [], 2) <= tolerance_deg;
 accepted = any(forward | reverse);
+end
+
+function printPlannerProgress(verbose, completedCount, totalCount, label)
+% Print a truthful Unicode bar for completed bounded planner work.
+if ~verbose
+    return;
+end
+barWidth = 12;
+fraction = min(1, max(0, completedCount / max(1, totalCount)));
+filledCount = floor(barWidth * fraction);
+barCells = repmat("░", 1, barWidth);
+barCells(1:filledCount) = "█";
+scaledWidth = barWidth * fraction;
+hasPartialCell = filledCount < barWidth && ...
+    scaledWidth - filledCount > 10 * eps(max(1, scaledWidth));
+if hasPartialCell
+    barCells(filledCount + 1) = "▒";
+end
+bar = join(barCells, "");
+fprintf("[Planner] [%s] %3.0f%% %s\n", ...
+    char(bar), 100 * fraction, char(label));
 end
 
 function validation = validateCandidate( ...
@@ -627,9 +637,6 @@ summary.Hs3SolverDiagnostics = candidate.SolverDiagnostics;
 summary.TerminationReason = candidate.TerminationReason;
 summary.Message = candidate.Message + " " + candidate.Validation.Message;
 summary.SolverDiagnostics = candidate.SolverDiagnostics;
-if candidate.Validation.Passed
-    summary.SelectedMotionSource = "hs3";
-end
 end
 
 function index = bestPartialSeed(summaries)

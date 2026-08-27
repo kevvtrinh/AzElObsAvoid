@@ -23,8 +23,20 @@ function position_deg = goalPositionAtTime(goalState, time_s)
 
 %% Section 1: Evaluate The Selected Goal Representation
 
-% Moving goals carry their interpolation method in the normalized goal state.
-% Fixed goals deliberately ignore query time and preserve a 1-by-2 row shape.
+% A fixed goal has one position for all times. A moving goal stores sampled
+% positions and times. Interpolate only for the moving case. If this function
+% gives an unexpected point, inspect the goal time history and interpolation
+% method before you inspect the planner.
+
+% A moving goal is stored as a time history of [azimuth elevation] samples.
+% interp1 evaluates both coordinate columns together. One query gives one row.
+% A query vector gives one row for each requested time. Linear interpolation
+% gives straight motion between samples. Pchip gives a smooth curve through all
+% supplied samples.
+%
+% A fixed goal has no time history. In that case query time has no effect and
+% the function returns the original 1-by-2 position. This function handles the
+% goal type. Other planner functions do not need to handle the goal type.
 if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
     position_deg = interp1( ...
         goalState.targetTime_s, goalState.targetPosition_deg, time_s, goalState.InterpolationMethod);

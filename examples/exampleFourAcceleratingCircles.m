@@ -28,6 +28,9 @@ function result = exampleFourAcceleratingCircles(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use fixed arrival and disable wrapping. This keeps the center route inside the
+% stated workspace.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -39,11 +42,14 @@ end
         "AllowAzimuthWrapping", false, ...
         "FigureVisible", "on", "Title", "Moving target among four accelerating circles"), [2.5 2.5]);
 
-% This example demonstrates interval-constrained motion. Custom search and
-% display controls remain valid, but wrapping would change its meaning.
+% This example demonstrates motion with time limits. Display and search
+% overrides remain valid. Azimuth wrapping would change the scenario meaning.
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
+
+% Four tangent circles move vertically. Two move up and two move down. Their
+% centers use smooth acceleration and deceleration.
 
 missionEndTime_s = 22;
 obstacleMotionDuration_s = 42;
@@ -56,13 +62,11 @@ circleCenterAzimuth_deg = [-4.5 -1.5 1.5 4.5];
 circleDirection = [1 1 -1 -1];
 circleTravel_deg = 7.0;
 
-% Closing the center line later leaves enough dynamics-limited time to pass
-% all four circles directly, arrive at the target, and absorb the remaining
-% fixed-arrival slack without adding geometric distance.
+% Close the center line late enough for a direct pass. The remaining fixed-time
+% slack lets the mechanism reach the target without extra path length.
 
-% A quintic smoothstep has zero velocity and acceleration at both ends.
-% The circles accelerate into the scene, reach maximum speed halfway,
-% decelerate out, and then remain at their terminal elevations.
+% A quintic smoothstep has zero velocity and acceleration at both ends. The
+% circles accelerate and then decelerate. They stay at their final elevations.
 normalizedTime = min(obstacleTime_s / obstacleMotionDuration_s, 1);
 travelFraction = 10 * normalizedTime.^3 - 15 * normalizedTime.^4 + 6 * normalizedTime.^5;
 travelAcceleration_1_s2 = (60 * normalizedTime - ...
@@ -79,12 +83,12 @@ circleAngle_rad = (0:71).' * (2 * pi / 72);
 unitCircle = [cos(circleAngle_rad), sin(circleAngle_rad)];
 obstacleByCircle = cell(1, numel(circleCenterAzimuth_deg));
 
-% Build a separate sampled boundary history for each independently accelerating circle.
+% Build one sampled boundary history for each circle.
 for circleIndex = 1:numel(circleCenterAzimuth_deg)
     circleAzimuthByTime_deg = cell(numel(obstacleTime_s), 1);
     circleElevationByTime_deg = cell(numel(obstacleTime_s), 1);
 
-    % Translate the shared circular outline to this circle's center at every sample time.
+    % Move the shared circle outline to its center at each sample time.
     for sampleIndex = 1:numel(obstacleTime_s)
         center_deg = [circleCenterAzimuth_deg(circleIndex), circleCenterElevation_deg(sampleIndex, circleIndex)];
         circlePosition_deg = center_deg + circleRadius_deg * unitCircle;
@@ -100,12 +104,13 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleByCircle{:});
 
 %% Section 3: Create Planner Inputs
 
+% The target has a curved path beyond the obstacle field. Position-only capture
+% lets the target keep moving when the gimbal reaches its position.
+
 initialState = struct( "time_s", 0, "position_deg", [-10 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 
-% The target remains to the right of the obstacle field while following a
-% visibly curved sampled trajectory. Position-only capture is intentional:
-% the target is still moving at interception, while the gimbal request ends
-% at rest after reaching the same azimuth/elevation point.
+% The target stays to the right of the obstacle field. It follows a curved path.
+% The target can move at interception. The gimbal stops at the same position.
 targetTime_s = [0; 4; 8; 12; 16; 20; missionEndTime_s];
 targetPosition_deg = [ 8.0 -1.5; 8.3 -1.0; 8.8 0.2; 9.2 0.8; 9.5 0.5; 9.8 -0.4; 10.0 0.0];
 targetMotion = struct( "time_s", targetTime_s, "position_deg", targetPosition_deg, "InterpolationMethod", "pchip");
@@ -118,9 +123,14 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the moving-target planner with the full obstacle history.
+
 result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
+
+% Check the intercept, circle tangency, center motion, collision freedom, and
+% gimbal limits. These checks separate setup errors from planner errors.
 
 exampleValidation = validateExampleResult( ...
     result, "four accelerating circles");
@@ -213,6 +223,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Show the gimbal, target, and circles on one time base.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

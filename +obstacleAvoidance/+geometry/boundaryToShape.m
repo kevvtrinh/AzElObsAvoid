@@ -23,6 +23,10 @@ function shape = boundaryToShape(azimuth_deg, elevation_deg)
 
 %% Section 1: Construct The Shape Without Reinterpreting Geometry
 
+% Build a MATLAB polyshape from the given boundary order. Do not reorder rings
+% or repair geometry here. If the result differs from input, inspect boundary
+% separators and upstream obstacle normalization.
+
 % Fewer than three finite vertices cannot enclose occupied area. Returning an
 % empty polyshape gives callers one consistent inactive-geometry value.
 finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
@@ -32,5 +36,8 @@ if nnz(finiteVertex) < 3
 end
 % Simplification stays disabled because vertex correspondence across dynamic
 % slices is needed to interpolate matching obstacle topology safely.
+% Keeping collinear vertices is equally important: those vertices may identify
+% corresponding material points in adjacent time samples even though MATLAB
+% could remove them without changing the static polygon outline.
 shape = polyshape(azimuth_deg, elevation_deg, "Simplify", false, "KeepCollinearPoints", true);
 end

@@ -22,10 +22,21 @@ function [segmentIndex, hullMap] = createSubintervalBernsteinMap( ...
 %   - hullMap (P-by-P-by-M numeric), restricted power-to-Bernstein maps.
 %**************************************************************************
 % UNITS
-%   - Inputs and maps are dimensionless; mapped values retain source units.
+%   - Inputs and maps are dimensionless.
+%   - Mapped values retain the source units.
 %**************************************************************************
 
 %% Section 1: Validate And Locate Every Interval
+
+% local coordinate from zero to one. A start exactly on the final endpoint is
+% assigned to the last segment. Callers verify that nonzero intervals do not
+% cross a segment boundary before asking this routine for one segment hull.
+% tau is normalized over the complete motion. Each polynomial uses a local
+% coordinate from zero to one. Assign the final endpoint to the last segment.
+% Callers verify that an interval does not cross a segment boundary.
+% local coordinate from zero to one. A start exactly on the final endpoint is
+% assigned to the last segment. Callers verify that nonzero intervals do not
+% cross a segment boundary before asking this routine for one segment hull.
 
 validateattributes(tauStart, {'numeric'}, ...
     {'real', 'finite', 'vector'});
@@ -49,7 +60,15 @@ localStart = min(1, max(0, scaledStart - segmentIndex + 1));
 localEnd = min(1, max(0, segmentCount * tauEnd - segmentIndex + 1));
 localSpan = max(0, localEnd - localStart);
 
+% The substitution tau_local = localStart + localSpan*u maps u in [0,1]
+% onto the requested part of the segment. For a point constraint localSpan is
+% zero, so every restricted coefficient reduces to the value at that point.
+
 %% Section 2: Restrict The Power Basis And Convert To Bernstein
+
+% Apply the binomial expansion of (localStart + localSpan*u)^k to obtain
+% ascending powers of u, then change that restricted polynomial to Bernstein
+% form. hullMap therefore performs both operations with one matrix multiply.
 
 degree = coefficientCount - 1;
 sourceExponent = 0:degree;

@@ -25,6 +25,9 @@ function result = exampleMovingDeformingUSOutlineVisibility(options)
 
 %% Section 1: Resolve Example Controls
 
+% Set display and planner options before loading the large outline. A finite
+% jerk limit requires smooth physical motion.
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -39,12 +42,15 @@ end
 
 %% Section 2: Create Obstacles
 
+% Build two dynamic obstacles. The U.S. outline changes scale, shape, angle, and
+% position. A star-shaped sun moves across the lower area.
+
 missionEndTime_s = 5 * 60;
 obstacleTimeStep_s = 5;
 uSDisappearTime_s = 4 * 60;
 uSTime_s = (0:obstacleTimeStep_s:uSDisappearTime_s).';
-% The private geometry helper is retained because shapefile union and
-% 14,000-plus outline vertices would obscure the visible scenario flow.
+% The private helper loads and joins more than 14,000 outline vertices. Keeping
+% this work in the helper makes the scenario sequence easier to read.
 [uSObstacle, uSHistory] = createContiguousUSObstacle( ...
     uSTime_s, 0.10, struct( ...
     "MotionMode", "movingDeforming", "Verbose", options.Verbose));
@@ -69,6 +75,9 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(uSObstacle, sunObstacle
 
 %% Section 3: Create Planner Inputs
 
+% Put the start and goal across the moving shapes. This request tests visibility
+% candidates while dense geometry deforms and disappears.
+
 routeAzimuth_deg = uSHistory.centroid_deg(1, 1);
 initialState = struct( ...
     "time_s", 0, "position_deg", [routeAzimuth_deg 18]);
@@ -80,10 +89,15 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the public planner with both obstacle histories.
+
 result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Check the full trajectory and the outline history. For a failure, inspect
+% topology-change diagnostics and collision subdivisions.
 
 exampleValidation = validateExampleResult( ...
     result, "extreme moving/deforming U.S. with moving sun", ...
@@ -137,6 +151,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Plot and animate the returned result with the supplied obstacle histories.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

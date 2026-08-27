@@ -1,19 +1,17 @@
-function verifySharedPlannerContract(testCase, method, contractName)
+function verifySharedPlannerContract(testCase, contractName)
 %% Section 0: Header & Readme
 % SYNTAX
-%   testSupport.verifySharedPlannerContract(testCase, method, contractName)
+%   testSupport.verifySharedPlannerContract(testCase, contractName)
 %**************************************************************************
 % PURPOSE
-%   - Execute one reusable behavioral contract against the maintained HS3
+%   - Run one reusable behavior check against the maintained HS3
 %     planner while retaining focused solver tests in their owning suite.
 %**************************************************************************
 % INPUTS
 %   - testCase (matlab.unittest.FunctionTestCase)
 %       Active function-based test case with shared fixtures in TestData.
-%   - method (string scalar)
-%       Must be "hs3". The argument is retained for readable call sites.
 %   - contractName (string scalar)
-%       Name of one registered shared contract.
+%       Name of one registered shared behavior check.
 %**************************************************************************
 % OUTPUTS
 %   - None. Verification failures are reported through testCase.
@@ -22,16 +20,17 @@ function verifySharedPlannerContract(testCase, method, contractName)
 %   - Individual contracts document physical units through field suffixes.
 %**************************************************************************
 
-%% Section 1: Validate The HS3 Adapter
+%% Section 1: Create The Planner Adapter
 
-method = string(method);
-if ~isscalar(method) || method ~= "hs3"
-    error("testSupport:UnknownPlannerMethod", ...
-        "Shared planner contracts support only hs3Internal.");
-end
-adapter = struct("FixedOptions", @() obstacleAvoidance.planTrajectory("hs3"));
+% The adapter gives each shared check one way to call the maintained planner.
+% This separates tested behavior from package names and wrapper code.
 
-%% Section 2: Run Named Contract
+adapter = struct("FixedOptions", @() obstacleAvoidance.planTrajectory());
+
+%% Section 2: Run Named Behavior Check
+
+% Select one check by its registered name. An unknown name is a test setup
+% error. A failed selected check names the physical behavior to investigate.
 
 contracts = struct( ...
     "testAzimuthWrappingChangesThePhysicalRequest", ...
@@ -82,7 +81,7 @@ contract = contracts.(contractName);
 contract(testCase, adapter);
 end
 
-%% Section 3: Local Contract Functions
+%% Section 3: Local Behavior Check Functions
 
 function testAzimuthWrappingChangesThePhysicalRequest(testCase, adapter)
 % Verify wrapping selects the short move and disabled wrapping keeps the long move.
@@ -237,7 +236,7 @@ verifyTrue(testCase, result.Validation.CollisionFree);
 end
 
 function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase, adapter)
-% Verify endpoint failure and success use one public validation schema.
+% Check that endpoint failure and success use the same validation fields.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -337,8 +336,9 @@ goalState = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = adapter.FixedOptions();
 options.MaximumPlanningTime_s = 1;
-verifyError(testCase, @() obstacleAvoidance.planTrajectory( ...
-    [], initialState, goalState, limits, options), "planTrajectory:RemovedMaximumPlanningTime");
+verifyWarning(testCase, @() obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, options), ...
+    "planTrajectory:UnknownOptions");
 end
 
 function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
@@ -377,7 +377,6 @@ goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = adapter.FixedOptions();
 options.MaximumSeedCount = 3;
-options.DirectSeedOnly = false;
 result = obstacleAvoidance.planTrajectory( obstacle, initialState, goalState, limits, options);
 verifyGreaterThanOrEqual(testCase, numel(result.Seeds), 3);
 verifyTrue(testCase, any([result.Seeds.Source] == "visibilityGraph"));
@@ -477,7 +476,7 @@ verifyFalse(testCase, validation.PolynomialHistoryConsistent);
 end
 
 function testWorkspaceIntervalsBelongToLimits(testCase, adapter)
-% Verify omitted and explicit workspace intervals use the limits contract.
+% Check that omitted and explicit workspace intervals use the limits input.
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
 limits = rmfield( ...

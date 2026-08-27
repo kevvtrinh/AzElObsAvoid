@@ -21,6 +21,11 @@ function convexRegions = convexPolygonRegions(shape)
 
 %% Section 1: Validate And Decompose Every Connected Region
 
+% A convex polygon contains every straight segment between its points. Support
+% lines and continuous corridor checks need this property. Split each connected
+% shape into convex pieces. If decomposition fails, inspect self-intersections,
+% repeated vertices, and NaN ring separators.
+
 % A convex region needs only one supporting half-space for a query direction.
 % Nonconvex regions are triangulated so corridor construction never assumes a
 % concave polygon has a globally valid single support plane.
@@ -38,6 +43,9 @@ for regionIndex = 1:numel(connectedRegions)
     hullIndex = convhull(finiteVertex_deg(:, 1), finiteVertex_deg(:, 2));
     hull = polyshape(finiteVertex_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
     areaTolerance_deg2 = 256 * eps(max(1, area(hull)));
+    % Convex hull and original area agree for a convex region. The tolerance is
+    % scaled to polygon area and floating-point precision so harmless roundoff
+    % does not trigger triangulation or alter an already suitable boundary.
     if abs(area(hull) - area(connectedRegion)) <= areaTolerance_deg2
         % Preserve an already-convex region instead of replacing its exact
         % boundary with a numerically reconstructed hull.
@@ -45,6 +53,9 @@ for regionIndex = 1:numel(connectedRegions)
         continue;
     end
     regionTriangulation = triangulation(connectedRegion);
+    % MATLAB triangulates the occupied polygon itself, including holes and
+    % concavities. Every retained triangle is convex, and their union therefore
+    % reconstructs the original occupied region without filling empty space.
     point_deg = regionTriangulation.Points;
     triangleIndex = regionTriangulation.ConnectivityList;
 

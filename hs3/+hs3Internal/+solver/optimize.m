@@ -28,7 +28,15 @@ function solution = optimize(problem, options)
 %   - Decision, objective, constraint, and time units are caller-defined.
 %**************************************************************************
 
-%% Section 1: Validate The Numerical Contract
+%% Section 1: Validate The Numerical Problem
+
+% Both solve modes share result handling but use different numerical tools.
+% Fixed time supplies a quadratic Hessian and linear constraint matrices for
+% quadprog. Free time supplies nonlinear functions and an upper time horizon
+% for fmincon. Validate the common decision layout before either branch. Input
+% errors then identify the incorrect data before the solver starts.
+% A Hessian describes the curvature of the quadratic jerk cost. The linear
+% matrices describe how jerk controls change each fixed-time constraint.
 
 requiredProblemFields = [ ...
     "Decision0", "LowerBound", "UpperBound", "TypicalDecision", ...
@@ -82,11 +90,19 @@ elseif ~isFreeTime && ~all(isfield(problem, fixedFields))
         "A fixed-time problem requires matrices, bounds, and Hessian.");
 end
 solverTimer = tic;
+% Free-time setup may already have spent time on its fixed-horizon starting
+% solve. Reusing the supplied timer makes MaximumSolveTime cover the complete
+% operation rather than only the final fmincon call.
 if isfield(problem, "SolverTimer") && ~isempty(problem.SolverTimer)
     solverTimer = problem.SolverTimer;
 end
 
 %% Section 2: Execute The Primary Solve
+
+% Stage one performs the requested optimization. Interior-point fmincon handles
+% duration-dependent nonlinear constraints and receives exact objective and
+% jerk gradients plus a safeguarded numerical time column. The fixed-time
+% branch is a convex quadratic program with exact linear constraints.
 
 subproblemAlgorithm = "cg";
 if isfield(problem, "SubproblemAlgorithm") && ...
@@ -133,6 +149,9 @@ try
             lowerBound, upperBound, decision0, quadraticOptions);
     end
 catch exception
+    % Numerical-tool errors become diagnostics instead of escaping as expected
+    % planning failures. Keep the initial decision so constraint residuals can
+    % still be measured and reported below.
     stageOneDecision = decision0;
     stageOneObjective = Inf;
     stageOneExitFlag = NaN;
@@ -142,6 +161,11 @@ catch exception
 end
 
 %% Section 3: Recover Feasibility When Requested
+
+% A time-minimizing nonlinear solve can stop with an unacceptable residual.
+% For free time, stage two limits arrival time to a narrow range above the
+% stage-one result. Stage two minimizes zero or a supplied recovery objective.
+% This stage searches for feasibility without a large increase in arrival time.
 
 selectedDecision = stageOneDecision;
 stageTwoExitFlag = NaN;
@@ -154,6 +178,9 @@ stageTwoErrorMessage = "";
 stageOneViolation = max( ...
     [0; finalInequality(:); abs(finalEquality(:))]);
 feasibilityTolerance = max(10 * options.ConstraintTolerance, 1e-7);
+% Solver exit flags differ among algorithms and do not by themselves prove
+% physical feasibility. Base acceptance on the largest independently evaluated
+% residual, with a small numerical guard matching final trajectory validation.
 if isFreeTime && stageOneViolation > feasibilityTolerance && ...
         toc(solverTimer) < options.MaximumSolveTime
     stageTwoUpperBound = upperBound;
@@ -175,6 +202,9 @@ if isFreeTime && stageOneViolation > feasibilityTolerance && ...
         trialViolation = max( ...
             [0; trialInequality(:); abs(trialEquality(:))]);
         if trialViolation <= max(options.ConstraintTolerance, stageOneViolation)
+            % Select recovery only when it is feasible at the requested level
+            % or improves the original violation. Keep a worse trial only in
+            % the stage-two diagnostics. Do not use it as the selected result.
             selectedDecision = trialDecision;
             finalInequality = trialInequality;
             finalEquality = trialEquality;
@@ -187,6 +217,13 @@ end
 
 %% Section 4: Assemble The Stable Outcome
 
+% Distinguish numerical feasibility, arrival at the horizon, time exhaustion,
+% and solver exceptions. This detail lets upstream code explain why no earlier
+% motion was returned instead of reducing every outcome to a Boolean flag.
+% For an infeasible result, inspect the maximum inequality and equality
+% violations first. Then inspect both stage outputs and error messages. Do not
+% treat a favorable exit flag as proof that the physical limits passed.
+
 maximumInequalityViolation = max([0; finalInequality(:)]);
 maximumEqualityViolation = max([0; abs(finalEquality(:))]);
 maximumViolation = max( ...
@@ -194,6 +231,9 @@ maximumViolation = max( ...
 isFeasible = maximumViolation <= feasibilityTolerance;
 arrivalAtHorizon = false;
 if isFreeTime
+    % ArrivalTimeTolerance treats values numerically indistinguishable from the
+    % upper horizon as boundary results. Such a point may be feasible but does
+    % not demonstrate an earliest arrival strictly inside the search interval.
     arrivalAtHorizon = isFeasible && selectedDecision(end) >= ...
         problem.MaximumFinalTime - options.ArrivalTimeTolerance;
 end

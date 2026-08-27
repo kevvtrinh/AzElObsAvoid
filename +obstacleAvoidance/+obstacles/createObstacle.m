@@ -43,6 +43,14 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 
 %% Section 1: Select The Supported Construction Operation
 
+% A zero-input call returns defaults. Other calls create or normalize obstacle
+% data. This dispatch keeps all public construction paths on one implementation.
+
+% This function supports three related operations through one public entry
+% point: create a record from raw coordinates, normalize an existing record, or
+% rebuild existing protected geometry with a new absolute margin. Classifying
+% the first input here keeps those paths separate and prevents a structure from
+% being mistaken for an obstacle name.
 if nargin == 0
     error("createObstacle:MissingInput", ...
         "Obstacle construction or canonical obstacle input is required.");
@@ -60,6 +68,7 @@ elseif isCanonicalContainer && nargin >= 2 && nargin <= 3
     else
         constructionOptions = varargin{2};
     end
+    % Rebuild means replace the previous margin, not add another layer.
     obstacleData = rebuildProtectedObstacles( ...
         obstacleInput, safetyMargin_deg, constructionOptions);
     return;
@@ -71,6 +80,9 @@ if nargin < 4 || nargin > 6
 end
 
 %% Section 2: Construct One Raw Canonical Record
+
+% Collect name, time, boundary history, active spans, and safety margin in one
+% raw record. Do not apply protection in this step. The next step owns that work.
 
 obstacleName = obstacleInput;
 time_s = double(varargin{1}(:));
@@ -90,6 +102,8 @@ validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
 sampleCount = numel(time_s);
 if ~iscell(azimuthBoundary_deg)
+    % A numeric boundary describes a static shape. Replicate it across all
+    % supplied times so static and changing obstacles share one history format.
     azimuthBoundary_deg = repmat( ...
         {double(azimuthBoundary_deg(:))}, sampleCount, 1);
 end
@@ -97,6 +111,9 @@ if ~iscell(elevationBoundary_deg)
     elevationBoundary_deg = repmat( ...
         {double(elevationBoundary_deg(:))}, sampleCount, 1);
 end
+% Both protected and original fields initially contain the source geometry.
+% Protection below changes only az_deg and el_deg, preserving an uninflated
+% copy for future absolute-margin rebuilds.
 rawObstacle = struct( ...
     "targetName", string(obstacleName), ...
     "time_s", time_s, ...
@@ -109,7 +126,10 @@ rawObstacle = struct( ...
 
 %% Section 3: Normalize And Protect The Constructed Record
 
-% Construction and imported canonical data share the same schema gate.
+% Validate the raw record, preserve original boundaries, and create protected
+% boundaries. Protected boundaries include the margin used by collision checks.
+
+% Construction and imported canonical data share the same format check.
 % Absolute reconstruction always starts from original geometry so repeated
 % calls cannot accumulate a safety margin.
 obstacleData = normalizeCanonicalObstacle(rawObstacle);
@@ -123,6 +143,9 @@ function obstacleData = normalizeCanonicalObstacle(inputData)
 % normalization identifiers remain stable for malformed imported records.
 
 %% Section 1: Validate Structure And Sample Time
+
+% Require increasing finite sample times and one boundary slice per time. A
+% failure here usually means history arrays were assembled with different sizes.
 
 requiredFields = ["targetName", "time_s", "az_deg", "el_deg", "status"];
 hasRequiredStructure = isstruct(inputData) && isscalar(inputData);
@@ -143,6 +166,8 @@ end
 validateattributes(inputData.time_s, ...
     {'numeric'}, {'vector', 'real', 'finite'});
 time_s = double(inputData.time_s(:));
+% Time is stored as a column to align cell row i with time row i. Strict
+% increase guarantees every later interpolation interval has positive length.
 sampleCount = numel(time_s);
 if sampleCount == 0 || any(diff(time_s) <= 0)
     error("createObstacle:InvalidTime", ...
@@ -151,6 +176,11 @@ end
 
 %% Section 2: Validate Protected Boundary Slices
 
+% Check each boundary ring before polygon operations. Remove no valid geometry
+% silently. Warnings identify a sample that lost an invalid or tiny region.
+
+% az_deg and el_deg are parallel cell histories. Each cell contains one full
+% polygon boundary, including paired nonfinite separators between rings.
 hasCellBoundaries = iscell(inputData.az_deg) && ...
     iscell(inputData.el_deg);
 hasMatchingSampleCounts = numel(inputData.az_deg) == sampleCount && ...
@@ -166,6 +196,13 @@ end
 
 %% Section 3: Preserve Original Geometry And Margin
 
+% Keep original and protected boundaries as separate data. Apply the safety
+% margin once to original geometry. Double margins often start in this section
+% or in a caller that supplied already protected vertices as original data.
+
+% Protected and original histories must either both be available or both be
+% absent. Keeping the source boundary is what makes changing an existing safety
+% margin an absolute operation instead of cumulative geometric inflation.
 hasOriginalBoundaries = isfield(inputData, "originalAz_deg") && ...
     isfield(inputData, "originalEl_deg");
 hasOnlyOneOriginalBoundary = xor( ...
@@ -200,6 +237,9 @@ end
 removedRegionCount = removedProtectedRegionCount + ...
     removedOriginalRegionCount;
 if removedRegionCount > 0
+    % Two points define a line segment, not occupied area. Removing such rings
+    % is visible through one summary warning; one-point rings remain errors
+    % because they more strongly suggest malformed input.
     removalBySample = protectedRemovalBySample | originalRemovalBySample;
     warning("createObstacle:RemovedTwoVertexRegions", ...
         "Obstacle '%s' removed %d protected and %d original " + ...
@@ -217,6 +257,8 @@ validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
 safetyMargin_deg = double(safetyMargin_deg);
 if safetyMargin_deg > 0 && ~hasOriginalBoundaries
+    % Without source geometry there is no reliable way to determine whether the
+    % stored protected boundary has already been inflated once or many times.
     error("createObstacle:MissingOriginalBoundary", ...
         "A positive safetyMargin_deg requires originalAz_deg and " + ...
         "originalEl_deg. Construct protected obstacles with " + ...
@@ -225,6 +267,11 @@ end
 
 %% Section 4: Normalize Status And Assemble Output
 
+% Normalize active time spans and write fields in stable order. Active spans
+% control when an obstacle exists. They do not change its stored boundary data.
+
+% A scalar status applies to the whole history. A vector can describe visibility
+% or source state independently at each time sample.
 statusBySample = string(inputData.status);
 if isscalar(statusBySample)
     statusBySample = repmat(statusBySample, sampleCount, 1);
@@ -248,13 +295,16 @@ end
 function [azimuthSlices_deg, elevationSlices_deg, removedRegionCount, ...
         removalBySample] = normalizeBoundaryHistory( ...
         azimuthInput_deg, elevationInput_deg, sampleCount, boundaryRole)
-% Normalize one protected or original boundary history uniformly.
+% Normalize one protected or original boundary history uniformly. boundaryRole
+% selects field-specific error identifiers while the geometry rules stay equal.
 
 azimuthSlices_deg = reshape(azimuthInput_deg, [], 1);
 elevationSlices_deg = reshape(elevationInput_deg, [], 1);
 removedRegionCount = 0;
 removalBySample = false(sampleCount, 1);
 roleIndex = 1 + (boundaryRole == "original");
+% Logical comparison yields 0 or 1; adding one selects the protected or original
+% row from the paired identifier and field-name tables.
 mismatchIdentifiers = [ ...
     "createObstacle:BoundarySizeMismatch", ...
     "createObstacle:OriginalBoundarySizeMismatch"];
@@ -264,6 +314,8 @@ allFieldNames = [ ...
 mismatchIdentifier = mismatchIdentifiers(roleIndex);
 fieldNames = allFieldNames(roleIndex, :);
 for sampleIndex = 1:sampleCount
+    % Process slices independently so diagnostics identify the exact bad sample
+    % and dynamic histories may legitimately use different vertex counts.
     validateattributes(azimuthSlices_deg{sampleIndex}, ...
         {'numeric'}, {'vector', 'real'});
     validateattributes(elevationSlices_deg{sampleIndex}, ...
@@ -296,6 +348,10 @@ function [azimuth_deg, elevation_deg, removedRegionCount] = ...
 
 %% Section 1: Classify Boundary Regions
 
+% Classify each ring by area and nesting. Outer rings add occupied area. Inner
+% rings can describe holes. Check ring direction and containment when a hole is
+% interpreted as a separate obstacle.
+
 boundaryRoleText = char(boundaryRole);
 azimuthIsFinite = isfinite(azimuth_deg);
 elevationIsFinite = isfinite(elevation_deg);
@@ -307,6 +363,8 @@ if any(xor(azimuthIsFinite, elevationIsFinite))
         messageFormat, boundaryRoleText, sampleIndex);
 end
 regionChanges = diff([false; azimuthIsFinite; false]);
+% Each consecutive run of finite coordinate pairs is one ring. Padding with
+% false values lets the same transition logic detect rings at both ends.
 regionStarts = find(regionChanges == 1);
 regionStops = find(regionChanges == -1) - 1;
 regionVertexCount = regionStops - regionStarts + 1;
@@ -318,12 +376,18 @@ if ~isempty(oneVertexRegionIndex)
         boundaryRoleText, oneVertexRegionIndex, sampleIndex);
 end
 removeRegion = regionVertexCount == 2;
+% A two-vertex ring encloses zero area and is safe to remove explicitly. A ring
+% with three or more vertices is retained here; its actual area is checked when
+% polygon operations require it.
 removedRegionCount = nnz(removeRegion);
 if removedRegionCount == 0
     return;
 end
 
 %% Section 2: Rebuild Retained Regions
+
+% Rebuild only valid classified regions. Preserve NaN separators so later edge
+% and shape functions keep disconnected parts separate.
 
 retainedRegionIndex = find(~removeRegion);
 if isempty(retainedRegionIndex)
@@ -340,6 +404,8 @@ for retainedIndex = 1:numel(retainedRegionIndex)
     retainedElevation_deg{retainedIndex} = elevation_deg(rows);
 end
 separatorCount = numel(retainedRegionIndex) - 1;
+% Exactly one NaN row is inserted between retained rings and none after the last
+% ring. Preallocation makes the output size and separator placement explicit.
 outputVertexCount = sum(regionVertexCount(~removeRegion)) + separatorCount;
 azimuth_deg = NaN(outputVertexCount, 1);
 elevation_deg = NaN(outputVertexCount, 1);
@@ -352,6 +418,7 @@ for retainedIndex = 1:numel(retainedRegionIndex)
     azimuth_deg(outputRows) = retainedAzimuth_deg{retainedIndex};
     elevation_deg(outputRows) = retainedElevation_deg{retainedIndex};
     outputIndex = outputRows(end) + 2;
+    % Skip one preinitialized NaN row before writing the next region.
 end
 end
 
@@ -359,6 +426,8 @@ function rebuiltObstacles = rebuildProtectedObstacles( ...
         obstacleInput, safetyMargin_deg, optionOverrides)
 % Normalize an arbitrary canonical container and rebuild protected geometry
 % from retained original boundaries using one absolute margin.
+% combineObstacles first normalizes every supported nested input form. Protection
+% then starts from each record's originalAz_deg/originalEl_deg history.
 
 validateattributes(safetyMargin_deg, {'numeric'}, ...
     {'scalar', 'real', 'finite', 'nonnegative'});
@@ -396,10 +465,13 @@ function protectedObstacles = protectCanonicalObstacles( ...
 
 protectedObstacles = canonicalObstacles;
 for obstacleIndex = 1:numel(protectedObstacles)
+    % Obstacles may use unrelated time histories and shapes, so process and
+    % normalize each record independently.
     obstacle = protectedObstacles(obstacleIndex);
     obstacle.safetyMargin_deg = double(safetyMargin_deg);
     sampleCount = numel(obstacle.time_s);
     progressStride = max(1, ceil(sampleCount / 10));
+    % At most about ten periodic messages are printed for long histories.
     if verbose
         fprintf("[az/el protect] obstacle %d/%d '%s': %d slices.\n", ...
             obstacleIndex, numel(protectedObstacles), ...
@@ -409,6 +481,8 @@ for obstacleIndex = 1:numel(protectedObstacles)
     protectedElevationBySlice_deg = cell(sampleCount, 1);
     originalAzimuthBySlice_deg = obstacle.originalAz_deg;
     originalElevationBySlice_deg = obstacle.originalEl_deg;
+    % Buffer the first slice once. A pure translation of that slice can move
+    % this protected template exactly, avoiding repeated polygon buffering.
     [templateProtectedAzimuth_deg, ...
         templateProtectedElevation_deg, templateSourceCount, ...
         templateProtectedCount] = protectOneSlice( ...
@@ -421,6 +495,9 @@ for obstacleIndex = 1:numel(protectedObstacles)
             originalAzimuthBySlice_deg{sampleIndex}, ...
             originalElevationBySlice_deg{sampleIndex});
         if isTranslatedCopy
+            % Translation commutes with a fixed-distance outward buffer: moving
+            % the protected template gives the same geometry as buffering the
+            % moved source polygon.
             protectedAzimuthBySlice_deg{sampleIndex} = ...
                 templateProtectedAzimuth_deg + translation_deg(1);
             protectedElevationBySlice_deg{sampleIndex} = ...
@@ -428,6 +505,8 @@ for obstacleIndex = 1:numel(protectedObstacles)
             sourceCount = templateSourceCount;
             protectedCount = templateProtectedCount;
         else
+            % Rotation, deformation, topology changes, and vertex reordering all
+            % require independent protection of the current source slice.
             [protectedAzimuthBySlice_deg{sampleIndex}, ...
                 protectedElevationBySlice_deg{sampleIndex}, ...
                 sourceCount, protectedCount] = protectOneSlice( ...
@@ -472,16 +551,21 @@ end
 templateFinite = all(isfinite(templatePosition_deg), 2);
 sampleFinite = all(isfinite(samplePosition_deg), 2);
 isTranslatedCopy = isequal(templateFinite, sampleFinite);
+% Equal separator locations preserve the same ring and vertex correspondence.
 if ~isTranslatedCopy || ~any(templateFinite)
     return;
 end
 offset_deg = samplePosition_deg(templateFinite, :) - ...
     templatePosition_deg(templateFinite, :);
 translation_deg = offset_deg(1, :);
+% A rigid translation gives every finite vertex the same two-axis offset. Use
+% the first vertex as the candidate and compare all remaining offsets to it.
 coordinateScale_deg = max(1, max(abs([ ...
     templatePosition_deg(templateFinite, :); ...
     samplePosition_deg(sampleFinite, :)]), [], "all"));
 translationTolerance_deg = 256 * eps(coordinateScale_deg);
+% Scale the floating-point tolerance to coordinate magnitude. It recognizes
+% arithmetic roundoff without treating genuine deformation as translation.
 isTranslatedCopy = max(abs( ...
     offset_deg - translation_deg), [], "all") <= ...
     translationTolerance_deg;
@@ -491,6 +575,7 @@ function [protectedAzimuth_deg, protectedElevation_deg, ...
         sourceVertexCount, protectedVertexCount] = protectOneSlice( ...
         originalAzimuth_deg, originalElevation_deg, safetyMargin_deg)
 % Protect one polygon slice and retain before/after vertex counts.
+% Counts help verbose reporting show how buffering changed geometric complexity.
 
 originalAzimuth_deg = double(originalAzimuth_deg(:));
 originalElevation_deg = double(originalElevation_deg(:));
@@ -531,15 +616,21 @@ azimuth_deg = double(azimuth_deg);
 elevation_deg = double(elevation_deg);
 safetyMargin_deg = double(safetyMargin_deg);
 if safetyMargin_deg == 0
+    % Preserve the source coordinates exactly when no protection is requested;
+    % even a harmless polygon round trip could reorder rings or vertices.
     protectedAzimuth_deg = azimuth_deg;
     protectedElevation_deg = elevation_deg;
     return;
 end
 pairedNonfinite = ~isfinite(azimuth_deg) & ~isfinite(elevation_deg);
+% Normalize any paired Inf/-Inf separators to NaN before handing the boundary
+% to polyshape, whose multi-ring representation uses NaN delimiters.
 azimuth_deg(pairedNonfinite) = NaN;
 elevation_deg(pairedNonfinite) = NaN;
 pairedFinite = isfinite(azimuth_deg) & isfinite(elevation_deg);
 if nnz(pairedFinite) < 3
+    % No polygonal area can be formed. Return the standard empty boundary rather
+    % than asking polyshape to interpret a degenerate slice.
     protectedAzimuth_deg = zeros(0, 1);
     protectedElevation_deg = zeros(0, 1);
     return;
@@ -548,15 +639,21 @@ sourcePolygon = polyshape( ...
     azimuth_deg, elevation_deg, ...
     "Simplify", true, "KeepCollinearPoints", true);
 if isempty(sourcePolygon.Vertices) || area(sourcePolygon) <= 0
+    % Three input vertices may still be collinear or self-canceling. Area is the
+    % final check that the boundary truly describes occupied space.
     error("createObstacle:DegeneratePolygon", ...
         "The boundary slice does not define a nonzero-area polygon.");
 end
+% A square joint keeps corners outside the requested Euclidean margin and
+% avoids rounding them inward relative to sharp source vertices.
 protectedPolygon = polybuffer( ...
     sourcePolygon, safetyMargin_deg, "JointType", "square");
 [protectedAzimuth_deg, protectedElevation_deg] = ...
     boundary(protectedPolygon);
 protectedAzimuth_deg = double(protectedAzimuth_deg(:));
 protectedElevation_deg = double(protectedElevation_deg(:));
+% MATLAB may return one or more trailing separators. They separate nothing
+% and can confuse topology comparisons, so remove only trailing pairs.
 while ~isempty(protectedAzimuth_deg) && ...
         ~isfinite(protectedAzimuth_deg(end)) && ...
         ~isfinite(protectedElevation_deg(end))

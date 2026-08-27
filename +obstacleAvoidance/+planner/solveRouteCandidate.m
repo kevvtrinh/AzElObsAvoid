@@ -25,6 +25,11 @@ function candidate = solveRouteCandidate( ...
 %   - Position is degrees; derivatives use deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
 %% Section 1: Build The Decision Layout And Initial Guess
+
+% HS3 represents each axis by jerk values at knot and midpoint controls.
+% Integrating those controls from the initial state determines position,
+% velocity, and acceleration. Earliest-arrival mode appends final time to the
+% decision vector; fixed-arrival mode leaves duration constant.
 solverTimer = tic;
 corridorConstructionElapsedTime_s = 0;
 maximumSolverTime_s = options.MaximumSolverTime_s;
@@ -63,6 +68,8 @@ if maximumSolverTime_s <= 0
     return;
 end
 if minimumFinalTime_s > latestFinalTime_s + options.ConstraintTolerance
+    % Even the optimistic lower bound misses the allowed arrival window, so
+    % no nonlinear iterate can make this seed feasible.
     candidate.Message = "The goal time is below a physical duration bound.";
     candidate.TerminationReason = "timeWindowInfeasible";
     candidate.SolverDiagnostics = ...
@@ -86,6 +93,8 @@ controlTau = linspace(0, 1, controlCount).';
     initialState, goalState, limits, seed, finalTimeGuess_s, ...
     segmentCount, controlTau);
 if isEarliestArrival && ~isTimedSeed && initialJerkLimitRatio > 1
+    % Stretch an untimed guess enough to bring initial jerk near the physical
+    % limit. The stretched motion is a starting point, not a claimed solution.
     durationScale = initialJerkLimitRatio^(1 / 3);
     durationSafetyFactor = 1.05;
     if isfield(seed, "UsesReducedGeometry") && seed.UsesReducedGeometry
@@ -144,6 +153,10 @@ if isEarliestArrival
         abs(minimumFinalTime_s), abs(finalTimeGuess_s)]);
 end
 %% Section 2: Minimize Arrival Time Or Fixed-Time Jerk
+
+% Nonlinear constraints cover continuous kinematic bounds, terminal state,
+% and obstacle separation. Earliest-arrival minimizes final time. At fixed
+% arrival, integrated squared jerk chooses a smoother feasible motion.
 % Timed and exact multi-obstacle systems converge faster when factorized.
 useFactorization = isEarliestArrival && (isTimedSeed || ...
     (numel(obstacles) > 1 && ~seed.UsesReducedGeometry));
@@ -203,7 +216,8 @@ problem = struct( ...
     "ObjectiveFunction", stageOneObjective, ...
     "ProgressFunction", @(decision, solverValues, state) ...
     hs3Progress(decision, solverValues, state, solverTimer, ...
-    maximumSolverTime_s, options.Verbose, seed.Index), ...
+    maximumSolverTime_s, options.MaximumNlpIterations, ...
+    options.Verbose, seed.Index), ...
     "SubproblemAlgorithm", subproblemAlgorithm, ...
     "MaximumFinalTime", latestFinalTime_s, ...
     "RecoveryObjectiveFunction", @(~) 0, ...
@@ -246,6 +260,10 @@ finalInequality = core.MaximumInequalityViolation;
 finalEquality = core.MaximumEqualityViolation;
 feasibilityTolerance = max(10 * options.ConstraintTolerance, 1e-7);
 %% Section 4: Reconstruct The Candidate
+
+% Solver output is only a proposal. Reconstruct the complete polynomial and
+% preserve raw solver evidence; the caller independently validates collision
+% and kinematic limits before accepting the candidate.
 [jerk_deg_s3, finalTime_s] = unpackDecision( ...
     selectedDecision, isEarliestArrival, latestFinalTime_s, controlCount);
 polynomial = createPlannerPolynomial( ...
@@ -323,23 +341,44 @@ candidate.SolverDiagnostics = ...
     corridorConstructionElapsedTime_s);
 end
 function stop = hs3Progress(~, solverValues, state, solverTimer, ...
-        maximumTime_s, verbose, seedIndex)
-% Stop optional solver work and report deterministic progress intervals.
+        maximumTime_s, maximumIterationCount, verbose, seedIndex)
+% Stop optional work and report only sparse, durable progress checkpoints.
 stop = toc(solverTimer) >= maximumTime_s;
 if ~verbose
     return;
 end
 iteration = outputValue(solverValues, "iteration");
-if state == "init" || state == "done" || ...
-        (state == "iter" && mod(iteration, 10) == 0)
-        fprintf("[ObstacleAvoidance][HS3][seed %d] state=%s, iteration=%g, " + ...
-        "evaluations=%g, objective=%.6g, violation=%.3g.\n", ...
-        seedIndex, state, iteration, ...
+reportCheckpoint = state == "iter" && iteration > 0 && ...
+    mod(iteration, 100) == 0;
+if state == "done" || reportCheckpoint
+    barWidth = 12;
+    fraction = min(1, max(0, iteration / maximumIterationCount));
+    bar = progressBarText(fraction, barWidth);
+    fprintf( ...
+        "[Planner][candidate %d] [%s] %3.0f%% work cap; " + ...
+        "state=%s, iteration=%g, evaluations=%g, objective=%.6g, " + ...
+        "violation=%.3g.\n", seedIndex, char(bar), 100 * fraction, ...
+        state, iteration, ...
         outputValue(solverValues, "funccount"), ...
         outputValue(solverValues, "fval"), ...
         outputValue(solverValues, "constrviolation"));
 end
 end
+
+function bar = progressBarText(fraction, barWidth)
+% Create a fixed-width Unicode bar with a partial leading cell.
+scaledWidth = barWidth * fraction;
+filledCount = floor(scaledWidth);
+hasPartialCell = filledCount < barWidth && ...
+    scaledWidth - filledCount > 10 * eps(max(1, scaledWidth));
+barCells = repmat("░", 1, barWidth);
+barCells(1:filledCount) = "█";
+if hasPartialCell
+    barCells(filledCount + 1) = "▒";
+end
+bar = join(barCells, "");
+end
+
 function value = outputValue(output, fieldName)
 % Read one optional fmincon output value for stable verbose messages.
 if isstruct(output) && isfield(output, fieldName)
@@ -670,7 +709,7 @@ end
 function polynomial = createPlannerPolynomial( ...
         jerk_deg_s3, initialState, finalTime_s, segmentCount)
 % Adapt unit-bearing Az/El state fields to the dimension-neutral HS3
-% reconstruction contract and restore the planner's public schema.
+% required reconstruction fields and restore the planner's public format.
 engineInitialState = struct( ...
     "time", initialState.time_s, ...
     "position", initialState.position_deg, ...
@@ -755,7 +794,7 @@ duration_s = max([duration_s, initialDistance_deg ./ closingSpeedBound_deg_s]);
 end
 
 function candidate = createEmptyCandidate(seed, segmentCount)
-% Define the same candidate schema for early solver failures.
+% Define the same candidate fields for early solver failures.
 candidate = struct( ...
     "OptimizerFeasible", false, ...
     "ArrivalAtHorizon", false, ...

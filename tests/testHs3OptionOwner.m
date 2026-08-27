@@ -5,6 +5,8 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
+% Add source folders before option tests. These checks isolate default values,
+% overrides, warnings, and invalid input from trajectory generation.
 % Add the repository and Az/El product paths for direct test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -14,12 +16,12 @@ end
 function testDefaultsMatchPublicHs3Contract(testCase)
 % Keep one source of truth between the package and public defaults calls.
 options = obstacleAvoidance.input.resolveHs3Options();
-expected = obstacleAvoidance.planTrajectory("hs3");
-expected = rmfield(expected, "PlannerMethod");
+expected = obstacleAvoidance.planTrajectory();
 
 verifyEqual(testCase, options, expected);
-verifyEqual(testCase, options.MaximumPlanningTime_s, 115);
 verifyFalse(testCase, isfield(options, "MotionMethod"));
+verifyFalse(testCase, isfield(options, "RandomSeed"));
+verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
 end
 
 function testPartialOverridesResolveAndNormalize(testCase)
@@ -28,18 +30,19 @@ overrides = struct( ...
     "GoalTimeMode", 'fixedArrival', ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
-    "MaximumPlanningTime_s", 9, ...
     "Verbose", 1);
 options = obstacleAvoidance.input.resolveHs3Options(overrides);
 
 verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
-verifyEqual(testCase, options.MaximumPlanningTime_s, 9);
 verifyTrue(testCase, options.Verbose);
 end
 
 function testUnknownFieldsWarnOnceAndRemainIgnored(testCase)
+% Unknown options must give one warning and must not change output. Multiple
+% warnings show repeated parsing. Changed output shows an unsupported field
+% reached algorithm code.
 % Aggregate all ignored names into the established warning identifier.
 overrides = struct("UnknownFirst", 1, "UnknownSecond", 2);
 verifyWarning(testCase, @() ...
@@ -61,9 +64,9 @@ verifyError(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
 verifyError(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
     struct("GoalTimeMode", "invalid")), ...
     "planTrajectory:InvalidGoalTimeMode");
-verifyError(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
-    struct("DirectSeedOnly", 2)), ...
-    "planTrajectory:InvalidLogicalOption");
+verifyWarning(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
+    struct("DirectSeedOnly", true)), ...
+    "planTrajectory:UnknownOptions");
 end
 
 function options = callWithoutWarning(overrides)

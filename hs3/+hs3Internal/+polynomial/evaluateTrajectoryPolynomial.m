@@ -15,7 +15,7 @@ function [time, position, velocity, acceleration, jerk] = ...
 %       Coefficient arrays use segment-by-coordinate-by-power ordering.
 %   - time (numeric vector), absolute evaluation times.
 %   - segmentIndex (numeric scalar or vector, optional; default [])
-%       Exact segment selection; empty selects from segment start times.
+%       This input selects exact segments. An empty input uses segment times.
 %**************************************************************************
 % OUTPUTS
 %   - time (N-by-1 numeric column), normalized requested times.
@@ -26,6 +26,11 @@ function [time, position, velocity, acceleration, jerk] = ...
 %**************************************************************************
 
 %% Section 1: Select Polynomial Segments
+
+% Returned rows always follow the requested time order. When the caller does
+% not specify segments, each time is assigned by the latest segment start not
+% exceeding it. Clamping assigns an out-of-range value to an endpoint segment.
+% Nonfinite input intentionally returns the preallocated NaNs for diagnostics.
 
 time = double(time(:));
 sampleCount = numel(time);
@@ -53,6 +58,10 @@ else
 end
 
 %% Section 2: Evaluate Ascending-Power Records
+
+% Convert absolute time to local tau. Clamping protects against tiny roundoff
+% outside [0,1] at shared boundaries. Each derivative has its own coefficient
+% count but uses the same segment and local coordinate.
 
 if isscalar(polynomial.SegmentDuration)
     selectedDuration = polynomial.SegmentDuration;
@@ -85,6 +94,8 @@ end
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
 % Evaluate selected coordinate records without per-sample dispatch.
+% Broadcasting multiplies each selected coefficient by tau^power, and the sum
+% over the third dimension evaluates all samples and coordinates together.
 coefficientCount = size(coefficientArray, 3);
 power = reshape(localTau .^ (0:coefficientCount - 1), ...
     [], 1, coefficientCount);

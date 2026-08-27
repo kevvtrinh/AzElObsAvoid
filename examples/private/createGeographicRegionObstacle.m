@@ -36,6 +36,9 @@ function [obstacle, history, scenario] = createGeographicRegionObstacle( regionN
 
 %% Section 1: Validate Inputs & Apply Defaults
 
+% Accept only the maintained region names. Each name selects a map window and
+% setup values. These values describe source data and do not select a route.
+
 if nargin < 4 || isempty(options)
     options = struct();
 end
@@ -67,6 +70,9 @@ if ~any(regionName == supportedRegions)
 end
 
 %% Section 2: Load & Clip Full-Resolution Geographic Boundaries
+
+% Read land polygons whose bounds overlap the region window. Clip their union to
+% the window. Then increase edge sample density without changing occupied area.
 
 if regionName == "hawaii"
     sourceFile = which("usastatehi.shp");
@@ -100,7 +106,7 @@ else
     regionShape = polyshape();
     selectedRecordCount = 0;
 
-    % Union every land-boundary record whose bounding box overlaps the requested window.
+    % Join each land polygon whose bounding box overlaps the requested window.
     for boundaryIndex = 1:numel(landBoundaries)
         boundaryBounds_deg = landBoundaries(boundaryIndex).BoundingBox;
         overlapsWindow = boundaryBounds_deg(2, 1) >= ...
@@ -136,14 +142,17 @@ if nnz(finiteBoundary) < 3
         "The %s source boundary has fewer than three finite vertices.", regionName);
 end
 nativeVertexCount = nnz(finiteBoundary);
-% Match the planner's default collision-check spacing so a single long
-% source edge cannot make this density regression easier than the returned
-% trajectory validation that it is intended to exercise.
+% Use the planner collision-check spacing. A long source edge must not make this
+% dense-boundary example easier than trajectory validation.
 maximumBoundarySpacing_deg = 0.02;
 [longitude_deg, latitude_deg] = densifyBoundaryRings( longitude_deg, latitude_deg, maximumBoundarySpacing_deg);
 finiteBoundary = isfinite(longitude_deg) & isfinite(latitude_deg);
 
 %% Section 3: Derive A Directly Blocked Request
+
+% Test candidate horizontal lines through the protected polygon. Select the line
+% with the most interior samples. Put endpoints outside the polygon on that line.
+% This method guarantees a blocked direct request without selecting a detour.
 
 finiteLongitude_deg = longitude_deg(finiteBoundary);
 finiteLatitude_deg = latitude_deg(finiteBoundary);
@@ -155,7 +164,7 @@ longitudeCandidates_deg = linspace( minimumLongitude_deg, maximumLongitude_deg, 
 latitudeProbe_deg = linspace( minimumLatitude_deg, maximumLatitude_deg, 321);
 insideCount = zeros(size(longitudeCandidates_deg));
 
-% Probe each candidate longitude to choose the line that crosses the most interior samples.
+% Test each candidate longitude. Keep the line with the most interior samples.
 for longitudeIndex = 1:numel(longitudeCandidates_deg)
     probeLongitude_deg = repmat( longitudeCandidates_deg(longitudeIndex), size(latitudeProbe_deg));
     insideCount(longitudeIndex) = nnz(isinterior( regionShape, probeLongitude_deg, latitudeProbe_deg));
@@ -172,6 +181,9 @@ initialPosition_deg = [ routeLongitude_deg, minimumLatitude_deg - endpointCleara
 goalPosition_deg = [ routeLongitude_deg, maximumLatitude_deg + endpointClearance_deg];
 
 %% Section 4: Construct The Canonical Protected Obstacle
+
+% Pass the unprotected boundary and margin to the public obstacle constructor.
+% Keep source files, clipping bounds, and vertex counts in the history output.
 
 displayName = upper(extractBefore(regionName, 2)) + extractAfter(regionName, 1);
 constructionOptions = struct("Verbose", verbose);
@@ -201,12 +213,13 @@ end
 
 
 function shape = rectanglePolyshape(bounds_deg)
-% Construct the geographic clipping rectangle for one region window.
+% Create the clipping rectangle for one geographic region.
 shape = polyshape( bounds_deg([1 2 2 1]), bounds_deg([3 3 4 4]), "Simplify", false, "KeepCollinearPoints", true);
 end
 
 function [denseX_deg, denseY_deg] = densifyBoundaryRings( x_deg, y_deg, maximumSpacing_deg)
-% Add collinear edge samples without changing polygon occupancy so each geographic case also stresses dense-boundary packing and validation.
+% Add collinear edge samples. Do not change polygon occupancy. The extra samples
+% stress dense-boundary storage and validation.
 x_deg = double(x_deg(:));
 y_deg = double(y_deg(:));
 finiteRows = isfinite(x_deg) & isfinite(y_deg);
@@ -216,7 +229,7 @@ ringStop = find(ringTransition == -1) - 1;
 denseXByRing_deg = cell(numel(ringStart), 1);
 denseYByRing_deg = cell(numel(ringStart), 1);
 
-% Densify every finite boundary ring independently so separators remain intact.
+% Add samples to each finite boundary ring. Keep ring separators unchanged.
 for ringIndex = 1:numel(ringStart)
     ringRows = ringStart(ringIndex):ringStop(ringIndex);
     ringX_deg = x_deg(ringRows);
@@ -234,7 +247,7 @@ for ringIndex = 1:numel(ringStart)
     denseRingY_deg = zeros(denseVertexCount, 1);
     nextWriteIndex = 1;
 
-    % Subdivide each closed-ring edge according to its angular length.
+    % Subdivide each closed-ring edge based on its angular length.
     for edgeIndex = 1:numel(ringX_deg)
         edgeFraction = (0:subdivisionCount(edgeIndex) - 1).' ./ subdivisionCount(edgeIndex);
         writeCount = numel(edgeFraction);

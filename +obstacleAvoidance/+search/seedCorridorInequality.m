@@ -24,6 +24,10 @@ function inequality = seedCorridorInequality(polynomial, corridor)
 
 %% Section 1: Convert Continuous Projection Bounds
 
+% Project each segment on its corridor normal. Convert the power coefficients
+% to Bernstein coefficients. A polynomial stays in the convex hull of these
+% coefficients. Nonpositive values therefore cover the full segment.
+
 if isempty(corridor)
     inequality = zeros(0, 1);
     return;

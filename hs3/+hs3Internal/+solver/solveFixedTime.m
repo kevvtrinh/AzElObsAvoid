@@ -24,6 +24,14 @@ function solution = solveFixedTime( ...
 
 %% Section 1: Assemble The Exact Affine QP
 
+% Once duration is fixed, all integrated states depend affinely on jerk and
+% integrated squared jerk is a convex quadratic. Evaluate constraints at zero
+% jerk to obtain constant offsets, then pair those offsets with exact Jacobian
+% matrices to form the standard A*x<=b and Aeq*x=beq equations for quadprog.
+% If the row-count check fails, evaluateConstraints and
+% createFixedConstraintMatrices no longer add constraints in the same order.
+% Compare their dimension, quantity, upper-bound, lower-bound, and path loops.
+
 solverTimer = tic;
 segmentCount = options.SegmentCount;
 dimensionCount = numel(initialState.position);
@@ -44,6 +52,8 @@ if size(inequalityMatrix, 1) ~= numel(zeroInequality) || ...
 end
 inequalityBound = -zeroInequality;
 equalityBound = -zeroEquality;
+% If c(x)=A*x+c(0), then c(x)<=0 becomes A*x<=-c(0). The same subtraction
+% converts terminal residual equalities into their right-hand side.
 [~, ~, jerkHessian] = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     zeroDecision, false, finalTime, segmentCount, ...
     initialState.time, dimensionCount);
@@ -51,10 +61,16 @@ lowerBound = reshape(repmat( ...
     limits.jerkLower, controlCount, 1), [], 1);
 upperBound = reshape(repmat( ...
     limits.jerkUpper, controlCount, 1), [], 1);
+% Start from the smallest Euclidean-norm jerk vector satisfying terminal
+% equalities. It may violate inequality limits, which quadprog then resolves.
 initialDecision = minimumNormEqualityPoint( ...
     equalityMatrix, equalityBound, decisionCount);
 
 %% Section 2: Solve And Measure Feasibility
+
+% Jerk controls are also bounded directly. Bernstein inequalities cover the
+% complete quadratic jerk curve, while these simple bounds keep the actual
+% optimization variables within the same physical range.
 
 problem = struct( ...
     "Decision0", initialDecision, ...
@@ -112,6 +128,8 @@ end
 function decision = minimumNormEqualityPoint( ...
         equalityMatrix, equalityBound, decisionCount)
 % Construct a deterministic terminal-state-feasible QP starting point.
+% A'*inv(A*A')*b is the minimum-norm solution when the equality rows are
+% independent. The backslash avoids forming an explicit matrix inverse.
 if isempty(equalityMatrix)
     decision = zeros(decisionCount, 1);
     return;

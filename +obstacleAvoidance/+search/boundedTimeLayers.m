@@ -27,6 +27,10 @@ function layerTimes_s = boundedTimeLayers( ...
 
 %% Section 1: Select Bounded Layers
 
+% Time-expanded search grows in proportion to retained layers. Keep the start
+% and end exactly, then choose a deterministic spread of interior obstacle
+% event times so changing geometry remains represented within a fixed budget.
+
 uniformTime_s = linspace(startTime_s, endTime_s, 9).';
 candidateTime_s = unique( ...
     [startTime_s; sampleTimes_s(:); uniformTime_s; endTime_s]);

@@ -26,6 +26,9 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obst
 
 %% Section 1: Validate Optional Envelope Geometry
 
+% This function checks optional planning evidence. Return false for malformed
+% or incomplete boundaries. Do not use unverified evidence in optimization.
+
 % Invalid optional certificate data returns false rather than throwing because
 % the planner can report an ordinary candidate-validation failure.
 validateattributes(tolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
@@ -46,6 +49,9 @@ end
 
 %% Section 2: Buffer Each Connected Certificate Region
 
+% Add the comparison tolerance to each region. This allows small errors from
+% polygon operations. It does not allow a significant uncovered area.
+
 % The small outward buffer absorbs polygon Boolean roundoff only; protected
 % obstacle margins were already applied by public obstacle construction.
 containmentTolerance_deg = max(1e-9, tolerance_deg);
@@ -56,6 +62,10 @@ for regionIndex = 1:regionCount
 end
 
 %% Section 3: Verify Every Complete Continuous History
+
+% Check each recorded shape. Also check motion between adjacent history times.
+% Use vertex interpolation when topology matches. Otherwise, use the prepared
+% conservative interval shape.
 
 % Matching vertices interpolate linearly, so the convex hull of adjacent
 % slices contains every polygon occupied during that interval. Topology-change
@@ -70,6 +80,7 @@ for obstacleIndex = 1:numel(obstacles)
 
     % Source shapes protect exact history times and stationary requests.
     for sampleIndex = 1:sampleCount
+        % One failed sample disproves full-history containment.
         sampleShape = preparation.SampleShapes{sampleIndex};
         if isempty(sampleShape.Vertices)
             return;
@@ -80,6 +91,8 @@ for obstacleIndex = 1:numel(obstacles)
 
     % Add a conservative occupied shape for every interval between samples.
     for intervalIndex = 1:intervalCount
+        % Check the open interval and its endpoints. An obstacle can leave the
+        % envelope and return between two recorded times.
         if preparation.MatchingTopology(intervalIndex)
             position_deg = [ ...
                 obstacle.az_deg{intervalIndex}(:), ...

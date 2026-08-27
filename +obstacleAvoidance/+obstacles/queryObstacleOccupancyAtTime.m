@@ -25,8 +25,6 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryObstacleOccupa
 %       BoundaryIsOccupied is logical (default true).
 %       ClearanceTolerance_deg is nonnegative (default 1e-10).
 %       ReferenceTime is a datetime scalar (default Unix epoch).
-%       PlannerMethod may be omitted or equal "hs3" and is echoed for
-%       request provenance.
 %**************************************************************************
 % OUTPUTS
 %   - isOccupied (logical array)
@@ -42,12 +40,18 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryObstacleOccupa
 
 %% Section 1: Resolve Options And Obstacles
 
+% Resolve query options and normalize obstacle inputs first. Use protected
+% geometry by default because planner collision checks must include the safety
+% margin. An original-geometry query is for reporting or independent inspection.
+
+% Boundary policy is explicit because a zero-clearance point can be treated as
+% blocked for conservative planning or clear for specialized diagnostics. The
+% tiny default tolerance absorbs polygon arithmetic roundoff in degree units.
 defaults = struct( ...
     "BoundaryIsOccupied", true, ...
     "ClearanceTolerance_deg", 1e-10, "ReferenceTime", datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
 if nargin == 0
     isOccupied = defaults;
-    isOccupied.PlannerMethod = "hs3";
     blockingObstacleIndex = [];
     queryDetails = struct();
     return;
@@ -62,15 +66,6 @@ end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("queryObstacleOccupancyAtTime:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
-plannerMethod = "hs3";
-if isfield(optionOverrides, "PlannerMethod") && ...
-        ~isempty(optionOverrides.PlannerMethod)
-    methodDefaults = obstacleAvoidance.planTrajectory(optionOverrides.PlannerMethod);
-    plannerMethod = methodDefaults.PlannerMethod;
-end
-if isfield(optionOverrides, "PlannerMethod")
-    optionOverrides = rmfield(optionOverrides, "PlannerMethod");
-end
 [options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("queryObstacleOccupancyAtTime:UnknownOptions", ...
@@ -84,13 +79,22 @@ if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || isn
 end
 options.ReferenceTime.TimeZone = "UTC";
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
+    % Normalize arbitrary supported containers, then cache the dynamic geometry
+    % needed by repeated time queries. Already prepared arrays are reused.
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
     obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 end
 
 %% Section 2: Broadcast Query Arrays
 
+% Allow scalar coordinates or times to apply to every query. Expand them to a
+% common size. A size error here means azimuth, elevation, and time cannot form
+% matching query points.
+
 if isdatetime(queryTime)
+    % Convert absolute datetimes to seconds relative to one UTC reference so
+    % geometry interpolation uses the same numeric time representation as the
+    % rest of the planner.
     queryTime.TimeZone = "UTC";
     queryTime_s = seconds(queryTime - options.ReferenceTime);
 elseif isnumeric(queryTime)
@@ -103,6 +107,8 @@ queryCount = numel(queryTime_s);
 isOccupied = false(queryCount, 1);
 blockingObstacleIndex = zeros(queryCount, 1, "uint32");
 if nargout < 2
+    % Occupancy-only callers do not need nearest points or obstacle names. The
+    % specialized path groups equal times and uses broad bounds for less work.
     isOccupied = occupancyOnly( obstacles, queryAzimuth_deg, queryElevation_deg, queryTime_s, options);
     isOccupied = reshape(isOccupied, outputSize);
     return;
@@ -112,11 +118,17 @@ nearestObstacleIndex = zeros(queryCount, 1, "uint32");
 
 %% Section 3: Query Interpolated Protected Geometry
 
+% For each obstacle and query time, get the active shape and test whether the
+% point is inside or on its boundary. Stop early in occupancy-only mode after
+% any obstacle contains the point. Detailed mode keeps per-obstacle evidence.
+
 clearanceTolerance_deg = double(options.ClearanceTolerance_deg);
 
 % Evaluate each caller query independently so invalid samples retain stable diagnostics.
 for queryIndex = 1:queryCount
     if ~all(isfinite([queryAzimuth_deg(queryIndex), queryElevation_deg(queryIndex), queryTime_s(queryIndex)]))
+        % Nonfinite samples are not considered occupied, but NaN clearance makes
+        % their invalidity visible in the detailed output.
         minimumClearance_deg(queryIndex) = NaN;
         continue;
     end
@@ -127,12 +139,16 @@ for queryIndex = 1:queryCount
         shape = obstacleAvoidance.obstacles.shapeAtTime( obstacles(obstacleIndex), queryTime_s(queryIndex));
         clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( shape, point_deg);
         if clearance_deg < minimumClearance_deg(queryIndex)
+            % Signed clearance is smallest inside an obstacle and otherwise
+            % selects the closest exterior boundary.
             minimumClearance_deg(queryIndex) = clearance_deg;
             nearestObstacleIndex(queryIndex) = uint32(obstacleIndex);
         end
         isBoundaryBlocked = options.BoundaryIsOccupied && clearance_deg <= clearanceTolerance_deg;
         isInteriorBlocked = clearance_deg < -clearanceTolerance_deg;
         if blockingObstacleIndex(queryIndex) == 0 && (isBoundaryBlocked || isInteriorBlocked)
+            % Preserve the first blocker in caller obstacle order for a stable,
+            % reproducible result even if several obstacles overlap the point.
             isOccupied(queryIndex) = true;
             blockingObstacleIndex(queryIndex) = uint32(obstacleIndex);
         end
@@ -140,6 +156,10 @@ for queryIndex = 1:queryCount
 end
 
 %% Section 4: Assemble Outputs
+
+% Combine per-obstacle occupancy with logical OR. Preserve detailed clearance
+% and obstacle indices when requested. If occupancy and details disagree,
+% inspect this reduction before inspecting shape interpolation.
 
 isOccupied = reshape(isOccupied, outputSize);
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
@@ -159,12 +179,12 @@ queryDetails = struct( ...
     "ObstacleSafetyMargins_deg", reshape( ...
         [obstacles.safetyMargin_deg], [], 1), ...
     "Options", options);
-queryDetails.Options.PlannerMethod = plannerMethod;
 end
 
 
 function [azimuth_deg, elevation_deg, time_s, outputSize] = broadcastQueries(azimuth_deg, elevation_deg, time_s)
-% Apply scalar expansion while preserving one caller-provided shape.
+% Apply scalar expansion while preserving one caller-provided shape. This lets
+% a scalar time query an entire position grid or one position query many times.
 values = {double(azimuth_deg), double(elevation_deg), double(time_s)};
 elementCounts = zeros(1, 3);
 
@@ -177,6 +197,8 @@ if isempty(nonScalarCounts)
     outputSize = size(values{1});
     queryCount = 1;
 elseif any(nonScalarCounts ~= nonScalarCounts(1))
+    % Equal element counts are sufficient; inputs need not begin with identical
+    % row/column shapes because the first non-scalar input defines output shape.
     error("queryObstacleOccupancyAtTime:SizeMismatch", ...
         "Non-scalar azimuth, elevation, and time inputs must have " + "equal element counts.");
 else
@@ -203,6 +225,8 @@ queryCount = numel(time_s);
 isOccupied = false(queryCount, 1);
 finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & isfinite(time_s);
 uniqueTime_s = unique(time_s(finiteQuery));
+% Grouping by time evaluates each obstacle shape once per distinct instant
+% instead of once per point, which is important for dense collision grids.
 if isempty(obstacles)
     obstacleBounds_deg = zeros(0, 4);
 else
@@ -227,6 +251,9 @@ for timeIndex = 1:numel(uniqueTime_s)
             elevation_deg(remainingIndices) >= bound_deg(3) - tolerance_deg & ...
             elevation_deg(remainingIndices) <= bound_deg(4) + tolerance_deg;
         candidateIndices = remainingIndices(canIntersect);
+        % The whole-history axis-aligned bound is a cheap conservative filter.
+        % Passing it does not imply occupancy; failing it proves the point cannot
+        % touch this obstacle at any stored time.
         if isempty(candidateIndices)
             continue;
         end
@@ -239,6 +266,8 @@ for timeIndex = 1:numel(uniqueTime_s)
         finiteBoundary = isfinite(geometry.azimuth_deg) & isfinite(geometry.elevation_deg);
         hasOneRing = all(finiteBoundary);
         if hasOneRing
+            % inpolygon handles a single ordered ring in vectorized form and
+            % separately reports points exactly on its boundary.
             [inside, onBoundary] = inpolygon( ...
                 points_deg(:, 1), points_deg(:, 2), geometry.azimuth_deg, geometry.elevation_deg);
             blocked = inside;
@@ -246,6 +275,8 @@ for timeIndex = 1:numel(uniqueTime_s)
                 blocked(onBoundary) = false;
             end
         else
+            % Multi-ring shapes need signed polygon clearance to preserve holes
+            % and apply the requested boundary rule consistently.
             if isempty(shape)
                 shape = obstacleAvoidance.obstacles.shapeAtTime( obstacles(obstacleIndex), uniqueTime_s(timeIndex));
             end

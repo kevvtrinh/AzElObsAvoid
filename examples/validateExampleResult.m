@@ -23,7 +23,11 @@ function validation = validateExampleResult( result, scenarioLabel, requirements
 %   - Direct-route collision probes use degrees and seconds.
 %**************************************************************************
 
-%% Section 1: Resolve The Example Contract
+%% Section 1: Resolve The Example Requirements
+
+% Requirements state what this example expects. ExpectedSuccess separates a
+% valid no-path result from an unexpected planner failure. RequireDirectBlocked
+% checks that an obstacle example does not accidentally have a clear direct line.
 
 if nargin < 3 || isempty(requirements)
     requirements = struct();
@@ -47,6 +51,10 @@ schemaIsStable = all(isfield(result, requiredFields));
 
 %% Section 2: Validate Motion Or Expected Failure
 
+% A successful plan receives full trajectory validation. An expected failure
+% receives diagnostic validation instead. Both paths return one validation
+% record with a clear message for the example warning.
+
 trajectoryValidation = createEmptyTrajectoryValidation();
 if schemaIsStable && result.Success
     trajectoryValidation = obstacleAvoidance.validateTrajectory(result);
@@ -63,6 +71,9 @@ end
 
 %% Section 3: Validate The Direct-Route Requirement
 
+% Probe the timed straight line independently. This check confirms that planner
+% success did not come from an unintentionally easy scenario setup.
+
 directRouteBlocked = false;
 if schemaIsStable && requireDirectBlocked
     directRouteBlocked = directRouteHasCollision(result);
@@ -78,9 +89,18 @@ if passed
     message = scenarioLabel + " passed independent example validation.";
 else
     message = scenarioLabel + " failed example validation. " + ...
-        "Success=" + string(result.Success) + ...
+        "Success=" + logicalText(result.Success) + ...
         ", reason=" + string(result.TerminationReason) + ...
         ", diagnostics=" + string(diagnosticsAreConsistent) + ", directBlocked=" + string(directRouteBlocked) + ".";
+end
+
+function text = logicalText(value)
+% Convert one logical status to the text true or false.
+if logical(value)
+    text = "true";
+else
+    text = "false";
+end
 end
 validation = struct( ...
     "Passed", passed, ...
@@ -94,7 +114,7 @@ end
 
 
 function value = fieldOrDefault(record, fieldName, defaultValue)
-% Read one optional validation requirement.
+% Read one optional validation requirement. Use its default when it is absent.
 value = defaultValue;
 if isfield(record, fieldName) && ~isempty(record.(fieldName))
     value = record.(fieldName);
@@ -102,7 +122,8 @@ end
 end
 
 function valid = diagnosticCountsAreValid(searchDiagnostics)
-% Check bounded trace arrays and complete search counts.
+% Check stored trace arrays and complete search counts. A trace can be shortened
+% for display, but its total count must still describe the complete search.
 valid = isstruct(searchDiagnostics) && isscalar(searchDiagnostics) && ...
     isfield(searchDiagnostics, "Grid") && isfield(searchDiagnostics, "TerminationReason");
 if ~valid
@@ -111,7 +132,7 @@ end
 gridRecord = searchDiagnostics.Grid;
 countNames = ["NodeCount", "VisibilityEdgeCount", "ExpandedCount", "RejectedTransitionCount", "GeneratedSeedCount"];
 
-% Check every available search count for a finite, nonnegative scalar value.
+% Require a finite nonnegative scalar for each available search count.
 for name = countNames
     if isfield(gridRecord, name)
         value = gridRecord.(name);
@@ -129,7 +150,7 @@ end
 end
 
 function blocked = directRouteHasCollision(result)
-% Probe the complete timed direct line independently of seed selection.
+% Probe the complete timed direct line. Do not use the selected planner seed.
 sampleCount = 401;
 initialState = result.Inputs.initialState;
 goalState = result.Inputs.goalState;
@@ -138,7 +159,7 @@ goalPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
     goalState, goalState.time_s);
 fraction = linspace(0, 1, sampleCount).';
 position_deg = initialState.position_deg + fraction .* (goalPosition_deg - initialState.position_deg);
-queryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+queryOptions = struct();
 coarseIndex = unique(round(linspace(1, sampleCount, 41))).';
 occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     result.Inputs.obstacles, position_deg(coarseIndex, 1), ...
@@ -155,6 +176,6 @@ blocked = any(occupied);
 end
 
 function validation = createEmptyTrajectoryValidation()
-% Provide an explicit empty value when no trajectory can be validated.
+% Return an explicit empty value when no trajectory is available.
 validation = struct( "Passed", false, "Message", "No successful trajectory was available.");
 end

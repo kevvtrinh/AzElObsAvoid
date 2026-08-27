@@ -62,12 +62,21 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 
 %% Section 1: Evaluate Values And Exact Jerk Columns
 
+% The decision vector is axis-major jerk followed, for earliest-arrival
+% planning, by final time. Constraint values are evaluated first. Their jerk
+% derivatives are exact because HS3 state histories are affine functions of
+% jerk when duration is fixed. Only the final-time derivative needs a finite
+% difference, since changing duration changes both polynomial scaling and the
+% physical time at which moving obstacles are queried.
+
 if nargin < 16
     collinearityDirection = zeros(0, 2);
 end
 % Interior-point restoration can probe a nonfinite duration after reaching a
 % finite feasible iterate. Map only that observed invalid probe to its bound.
 if isEarliestArrival && ~isfinite(decision(end))
+    % Return a finite value to the optimizer's restoration step. Clamping
+    % only this invalid probe avoids contaminating ordinary feasible iterates.
     if isnan(decision(end))
         decision(end) = mean([minimumFinalTime_s, maximumFinalTime_s]);
     else
@@ -95,6 +104,11 @@ if ~isEarliestArrival
 end
 
 %% Section 2: Append One Safeguarded Final-Time Column
+
+% Geometry changes at obstacle or moving-goal event times. A difference that
+% crosses one of those events could compare two different constraint layouts
+% and would not approximate a local derivative. Select a one-sided step that
+% remains inside the current event interval, then confirm row counts agree.
 
 [differenceDirection, differenceStep_s] = timeDifferenceStep( ...
     finalTime_s, minimumFinalTime_s, maximumFinalTime_s, ...
@@ -127,6 +141,9 @@ function [inequality, equality, corridorNormal, finalTime_s] = ...
         corridor, seedCorridor, reconstructFunction, ...
         collinearityDirection)
 % Evaluate raw values without recursively requesting derivatives.
+% Jerk values are reshaped into one column per physical axis. Reconstruction
+% integrates them from the supplied initial position, velocity, and
+% acceleration to obtain the continuous piecewise-polynomial motion.
 controlCount = 2 * segmentCount + 1;
 jerkValueCount = 2 * controlCount;
 jerk_deg_s3 = reshape(decision(1:jerkValueCount), controlCount, 2);
@@ -147,8 +164,13 @@ terminalResidual = [ ...
     terminalState.velocity_deg_s - goalState.velocity_deg_s; ...
     terminalState.acceleration_deg_s2 - goalState.acceleration_deg_s2];
 if isempty(collinearityDirection)
+    % General routes require both axes of terminal position, velocity, and
+    % acceleration to match the requested terminal state.
     equality = reshape(terminalResidual.', [], 1);
 else
+    % A certified direct route uses tangent endpoint residuals and zero
+    % normal jerk. This removes redundant endpoint equations while keeping
+    % the entire motion on the straight line.
     tangent = collinearityDirection(:);
     normal = [-tangent(2); tangent(1)];
     equality = [terminalResidual * tangent; jerk_deg_s3 * normal];
@@ -158,6 +180,8 @@ function [direction, step_s] = timeDifferenceStep( ...
         finalTime_s, minimumFinalTime_s, maximumFinalTime_s, ...
         startTime_s, goalState, obstacles, corridor)
 % Stay within decision bounds and one side of every known geometry event.
+% Solving t_event = start + tau*(final-start) gives the final times at which
+% a normalized association time tau lands exactly on obstacle history data.
 eventTime_s = zeros(0, 1);
 if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
     eventTime_s = double(goalState.targetTime_s(:));
@@ -183,6 +207,8 @@ nextEvent_s = min([maximumFinalTime_s; ...
 backwardRoom_s = max(0, finalTime_s - previousEvent_s);
 forwardRoom_s = max(0, nextEvent_s - finalTime_s);
 baseStep_s = eps^(1 / 3) * scale_s;
+% eps^(1/3) balances truncation and roundoff for a first derivative when the
+% evaluated constraints contain several layers of floating-point geometry.
 atEvent = any(abs(eventTime_s - finalTime_s) <= eventTolerance_s);
 if ~atEvent && forwardRoom_s >= baseStep_s
     direction = 1;
@@ -208,6 +234,9 @@ end
 
 function inequality = continuousBoundConstraints(polynomial, limits, options)
 % Use Bernstein convex-hull bounds over every complete HS3 segment.
+% For each quantity, coefficients above the upper limit and below the lower
+% limit become positive violations. Feasibility therefore always means that
+% every returned element is less than or equal to zero.
 positionViolation = bernsteinBoundViolations( ...
     polynomial.positionPower_deg, ...
     [limits.azimuthInterval_deg(1), limits.elevationInterval_deg(1)], ...
@@ -257,6 +286,9 @@ function [inequality, normalByAssociation] = corridorConstraints( ...
         corridor, obstacles, polynomial, startTime_s, finalTime_s)
 % Bound each frozen association across the whole sub-interval it owns and
 % retain its current jerk-space normal.
+% Each association identifies an obstacle boundary feature and the side on
+% which the seed route lies. The resulting inequality keeps the optimized
+% motion at least Clearance_deg beyond that same feature.
 coefficientCount = size(polynomial.positionPower_deg, 3);
 recordCount = numel(corridor);
 normalByAssociation = zeros(recordCount, 2);
@@ -285,13 +317,19 @@ for associationIndex = 1:recordCount
     hullRows = nextRow:nextRow + associationRowCount - 1;
     nextRow = hullRows(end) + 1;
     if association.GeometryIsFixed
+        % Reuse the stored support line so the nonlinear solve sees a fixed,
+        % differentiable half-plane for stationary geometry.
         outwardNormal = association.FixedNormal;
         boundaryOffset_deg = association.FixedBoundaryOffset_deg;
     else
+        % Reevaluate moving geometry at the trial duration because normalized
+        % time maps to a different absolute obstacle time as duration changes.
         [~, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
             obstacles(association.ObstacleIndex), ...
             startTime_s + association.Tau * duration_s, true);
         if ~geometry.Active
+            % An inactive obstacle imposes no restriction. A negative value
+            % marks these rows strictly feasible without changing row count.
             inequality(hullRows) = -1;
             continue;
         end
@@ -300,9 +338,12 @@ for associationIndex = 1:recordCount
         vertices_deg = [geometry.azimuth_deg(finiteVertices), ...
             geometry.elevation_deg(finiteVertices)];
         if association.UseSupport
+            % A support normal describes an extreme side of the full shape.
             outwardNormal = association.SupportNormal;
             boundaryOffset_deg = max(vertices_deg * outwardNormal.');
         else
+            % Edge associations track one boundary edge. Degenerate or missing
+            % edges receive a large violation so they cannot yield false success.
             [edgeStart_deg, edgeEnd_deg] = ...
                 obstacleAvoidance.geometry.canonicalBoundaryToEdges(geometry);
             if association.EdgeIndex > size(edgeStart_deg, 1)
@@ -328,6 +369,8 @@ for associationIndex = 1:recordCount
         2, coefficientCount);
     projectionHull_deg = hullMap(:, :, associationIndex) * ...
         (outwardNormal * segmentPower_deg).';
+    % Positive means the motion entered the clearance side of the line;
+    % nonpositive means its full projected hull remains safely outside.
     inequality(hullRows) = boundaryOffset_deg + ...
         association.Clearance_deg - ...
         projectionHull_deg(1:associationRowCount);

@@ -34,6 +34,9 @@ function [obstacles, initialState, goalState, limits, constants] = ...
 
 %% Section 1: Validate Benchmark Controls
 
+% Reject invalid dimensions and timing values before obstacle construction.
+% An error in this section points to benchmark setup, not planner behavior.
+
 validateattributes(turnCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 if nargin < 2 || isempty(constants)
     constants = defaultConstants();
@@ -51,7 +54,7 @@ positiveScalarNames = [ ...
     "barrierSpacing_deg", "barrierHalfWidth_deg", ...
     "barrierCenterMagnitude_deg", "barrierHalfHeight_deg", "goalTimePerStage_s"];
 
-% Apply the same finite-positive contract to every scalar geometry and timing constant.
+% Apply the same finite and positive check to each geometry and timing value.
 for fieldName = positiveScalarNames
     validateattributes(constants.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 end
@@ -66,6 +69,10 @@ validateattributes(constants.elevationInterval_deg, {'numeric'}, ...
     {'real', 'finite', 'vector', 'numel', 2, 'increasing'});
 
 %% Section 2: Construct Alternating Protected Geometry
+
+% Alternate obstacles above and below the centerline. This forces repeated
+% turns as obstacle count grows. The layout measures scaling without changing
+% the type of planning problem between cases.
 
 barrierIndices = (1:turnCount).';
 centerAzimuth_deg = constants.barrierSpacing_deg * (barrierIndices - (turnCount + 1) / 2);
@@ -93,6 +100,9 @@ for obstacleIndex = 1:turnCount
 end
 
 %% Section 3: Assemble Planner-Role Inputs
+
+% Return the same input roles used by the public planner. Keep scenario values
+% outside planner logic so the benchmark cannot influence route decisions.
 
 initialState = struct( ...
     "time_s", 0, "position_deg", [startAzimuth_deg 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);

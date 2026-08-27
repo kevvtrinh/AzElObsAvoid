@@ -33,6 +33,10 @@ function [clusteredShape, record] = clusterSeedShape( ...
 
 %% Section 1: Validate Inputs & Initialize Diagnostics
 
+% Clustering changes only search guidance. Physical obstacles and final
+% collision checks still use their original geometry, so a conservative hull
+% may reduce route variety but can never hide an obstacle from validation.
+
 if ~isa(sweptShape, "polyshape") || ~isscalar(sweptShape)
     error(invalidShapeIdentifier, ...
         "sweptShape must be one scalar polyshape.");
@@ -55,6 +59,11 @@ if clusterDistance_deg == 0 || sourceRegionCount < 3
 end
 
 %% Section 2: Find Connected Groups Of Nearby Regions
+
+% Expanding every region by half the requested gap makes two regions touch
+% when their original separation is no greater than the full gap. Connected
+% expanded components therefore identify nearby source regions without
+% requiring a pairwise distance matrix.
 
 expandedShape = polybuffer(sweptShape, clusterDistance_deg / 2);
 expandedRegions = regions(expandedShape);
@@ -81,6 +90,8 @@ for expandedRegionIndex = 1:numel(expandedRegions)
     end
     memberRegionIndices = find(isMember);
     if numel(memberRegionIndices) < 3
+        % Merging only one or two regions provides little complexity benefit
+        % and can needlessly erase a useful passage between obstacles.
         continue;
     end
     memberVertices = cell(numel(memberRegionIndices), 1);
@@ -118,6 +129,9 @@ for expandedRegionIndex = 1:numel(expandedRegions)
 end
 
 %% Section 3: Assemble The Conservative Seed Geometry
+
+% Replace each accepted group with its convex hull and retain all remaining
+% source regions unchanged. The union is used only to construct seed routes.
 
 if clusterGroupCount == 0
     return;

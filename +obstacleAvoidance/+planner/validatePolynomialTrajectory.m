@@ -11,7 +11,7 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %       options, tolerance, rangeCheck)
 %**************************************************************************
 % PURPOSE
-%   - Validate the shared polynomial schema, time base, derivative dynamics,
+%   - Validate the shared polynomial fields, time base, derivative dynamics,
 %     segment continuity, endpoints, sampled histories, and continuous bounds.
 %**************************************************************************
 % INPUTS
@@ -28,7 +28,7 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %**************************************************************************
 % OUTPUTS
 %   - bounds, dynamics, checks (scalar structs)
-%       Stable continuous-bound, derivative, schema, and history checks.
+%       Stable continuous-bound, derivative, field, and history checks.
 %**************************************************************************
 % UNITS
 %   - Position is degrees. Derivatives use deg/s, deg/s^2, and deg/s^3.
@@ -36,6 +36,12 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %**************************************************************************
 
 %% Section 1: Validate Polynomial Motion
+
+% Work from the continuous polynomial rather than the displayed samples.
+% Bernstein bounds cover each full segment for position and derivatives,
+% while adaptive collision checking examines motion between samples against
+% time-varying geometry. Reject a solver success if any independent check
+% exceeds its named tolerance.
 checks = createEmptyPolynomialChecks();
 bounds = boundsRecord(false, false, false, false);
 dynamics = struct("Consistent", false, "MaximumResidual", Inf);
@@ -207,7 +213,7 @@ end
 %% Section 2: Local Functions
 
 function checks = createEmptyPolynomialChecks()
-% Define stable polynomial-consistency checks for every invalid schema.
+% Define stable polynomial checks for every invalid data format.
 checks = struct( ...
     "Valid", false, "SchemaValid", false, ...
     "InitialTimeMatched", false, ...

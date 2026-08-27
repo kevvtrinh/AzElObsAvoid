@@ -22,6 +22,9 @@ function result = exampleOpeningUShapedObstacle(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use earliest arrival. The planner can wait for the opening and then finish as
+% soon as the motion limits permit.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -31,6 +34,10 @@ end
     "MaximumSeedCount", 5, "FigureVisible", "on", "Title", "U-shaped obstacle opening after 7 seconds"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
+
+% Early samples contain one closed U boundary. Later samples contain two rings
+% with a gap between them. The narrow time transition gives a clear opening
+% event without a scenario-specific planner rule.
 
 missionEndTime_s = 120;
 openingTime_s = 7;
@@ -51,6 +58,10 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
 
 %% Section 3: Create Planner Inputs
 
+% Start inside the cavity and place the goal below it. The closed bottom blocks
+% every early exit. The final time supplies a planning horizon, not a required
+% arrival time.
+
 initialState = struct( "time_s", 0, "position_deg", [0 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 goalState = struct( ...
     "time_s", missionEndTime_s, "position_deg", [0 -10], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
@@ -59,8 +70,8 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-% These expected interior-point conditioning warnings are extremely repetitive
-% for the intentional wait seed. Validation below still rejects bad motion.
+% The wait seed can produce repeated solver conditioning warnings. Hide only
+% these expected warnings. Validation still rejects invalid motion.
 warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
@@ -69,6 +80,9 @@ result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, l
 clear warningCleanup;
 
 %% Section 5: Validate Result
+
+% Run common trajectory checks. Then confirm that the selected seed waits and
+% crosses the gap only after it opens.
 
 exampleValidation = validateExampleResult( result, "opening U-shaped obstacle");
 openingValidation = validateOpeningUse( result, openingTime_s, gapHalfWidth_deg, safetyMargin_deg);
@@ -83,6 +97,8 @@ end
 
 %% Section 6: Plot Diagnostics And Motion
 
+% Animation shows the opening event and the later crossing on one time axis.
+
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
         result, displayOptions.PlotOptions);
@@ -91,7 +107,7 @@ end
 end
 
 function validation = validateOpeningUse( result, openingTime_s, gapHalfWidth_deg, safetyMargin_deg)
-% Verify that the returned seed waits and crosses the protected gap.
+% Verify that the selected seed waits and then crosses the protected gap.
 waitSeedSelected = false;
 stayedBeforeClosedBarrier = false;
 crossedOpenGap = false;
@@ -121,8 +137,18 @@ if passed
     message = "The selected seed waited for and crossed the timed gap.";
 else
     message = sprintf( ...
-        "Opening use failed: success=%d, wait=%d, stayed=%d, crossed=%d.", ...
-        result.Success, waitSeedSelected, stayedBeforeClosedBarrier, crossedOpenGap);
+        "Opening use failed: success=%s, wait=%s, stayed=%s, crossed=%s.", ...
+        logicalText(result.Success), logicalText(waitSeedSelected), ...
+        logicalText(stayedBeforeClosedBarrier), logicalText(crossedOpenGap));
+end
+
+function text = logicalText(value)
+% Render scalar logical validation status as true or false.
+if logical(value)
+    text = "true";
+else
+    text = "false";
+end
 end
 validation = struct( ...
     "Passed", passed, ...

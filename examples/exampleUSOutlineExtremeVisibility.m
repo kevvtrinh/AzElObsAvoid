@@ -25,6 +25,8 @@ function result = exampleUSOutlineExtremeVisibility(options)
 
 %% Section 1: Resolve Example Controls
 
+% Resolve one set of limits and display controls for all geographic regions.
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -38,6 +40,9 @@ end
 
 %% Section 2: Create Obstacles
 
+% Load each region at full available resolution. Each dense outline becomes an
+% independent static planning case.
+
 missionEndTime_s = 120;
 regionNames = ["Hawaii" "Croatia" "Philippines"];
 regionCount = numel(regionNames);
@@ -45,9 +50,8 @@ obstacles = cell(regionCount, 1);
 obstacleHistories = cell(regionCount, 1);
 regionScenarios = cell(regionCount, 1);
 
-% The private geometry helper is retained because source-shapefile
-% selection, clipping, and thousands of coastline vertices would obscure
-% the visible scenario flow.
+% The private helper selects and clips source map data. It also processes many
+% coastline vertices. Keeping this work separate makes the scenario flow clear.
 for regionIndex = 1:regionCount
     [obstacles{regionIndex}, obstacleHistories{regionIndex}, ...
         regionScenarios{regionIndex}] = createGeographicRegionObstacle( ...
@@ -56,6 +60,9 @@ end
 
 %% Section 3: Create Planner Inputs
 
+% Use equal physical limits for each region. The helper derives endpoints from
+% occupancy tests and does not store a preferred detour.
+
 limits = struct( ...
     "maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
@@ -63,7 +70,7 @@ limits = struct( ...
 
 regionResults = cell(regionCount, 1);
 
-% Plan each named geographic region independently under the same physical limits.
+% Plan each geographic region independently. Use the same physical limits.
 for regionIndex = 1:regionCount
     scenario = regionScenarios{regionIndex};
     initialState = struct( "time_s", 0, "position_deg", scenario.initialPosition_deg);
@@ -77,7 +84,7 @@ end
 
 regionPassed = false(regionCount, 1);
 
-% Validate every regional result and collect comparable geometry-size evidence.
+% Validate every region. Record geometry size for a fair comparison.
 for regionIndex = 1:regionCount
     resultForRegion = regionResults{regionIndex};
     exampleValidation = validateExampleResult( ...
@@ -94,7 +101,7 @@ end
 
 if jerkConfiguration.PlotOutputs
 
-    % Plot each regional result in its own figure with a region-specific title.
+    % Plot each region in a separate figure. Put the region name in the title.
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);

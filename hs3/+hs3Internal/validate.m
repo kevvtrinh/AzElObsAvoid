@@ -22,6 +22,10 @@ function validation = validate(trajectory)
 
 %% Section 1: Validate Histories And Endpoints
 
+% Start validation from the returned data. Do not use the solver exit flag as
+% proof. Downstream processing requires finite histories. It also requires
+% increasing time. Measure endpoint errors from the reconstructed samples.
+
 requiredFields = [ ...
     "time", "position", "velocity", "acceleration", "jerk", ...
     "ControlJerk", "Polynomial", "Inputs", "Options", "FinalTime"];
@@ -67,6 +71,12 @@ end
 
 %% Section 2: Reevaluate Complete Continuous Constraints
 
+% Re-run the same mathematical constraints from the reconstructed jerk
+% controls. This catches reshaping, reconstruction, or reporting mistakes
+% between optimization and output assembly. The bound checks are continuous:
+% Bernstein coefficients enclose each complete polynomial segment, so passing
+% does not depend on the display sample spacing.
+
 decision = trajectory.ControlJerk(:);
 [inequality, equality] = hs3Internal.constraints.evaluateConstraints( ...
     decision, false, trajectory.FinalTime, trajectory.FinalTime, ...
@@ -75,6 +85,8 @@ decision = trajectory.ControlJerk(:);
 maximumInequalityViolation = max([0; inequality(:)]);
 maximumEqualityViolation = max([0; abs(equality(:))]);
 tolerance = max(10 * options.ConstraintTolerance, 1e-7);
+% Use a guard above the optimizer tolerance for floating-point errors. The
+% absolute lower limit prevents a tolerance that is too small for computation.
 endpointErrors = [ ...
     initialPositionError, initialVelocityError, initialAccelerationError, ...
     terminalPositionError, terminalVelocityError, ...

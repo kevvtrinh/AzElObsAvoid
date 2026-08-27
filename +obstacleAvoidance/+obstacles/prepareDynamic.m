@@ -29,8 +29,15 @@ end
 
 %% Section 1: Prepare Each Complete Dynamic History
 
+% Prepare data that many time queries reuse. For each adjacent time pair, note
+% whether vertex topology matches. Matching topology means the same ordered
+% vertices can move continuously. Otherwise, create a conservative interval
+% shape that covers the topology change.
+
 % Build one immutable cache record for each independently timed obstacle.
 for obstacleIndex = 1:numel(obstacles)
+    % A history with N samples has N-1 time intervals. Separate cell arrays
+    % retain either interpolation deltas or conservative unions for each one.
     obstacle = obstacles(obstacleIndex);
     sampleCount = numel(obstacle.time_s);
     intervalCount = max(0, sampleCount - 1);
@@ -43,6 +50,9 @@ for obstacleIndex = 1:numel(obstacles)
     matchingTopology = false(intervalCount, 1);
     intervalSpeedBound_deg_s = Inf(intervalCount, 1);
     historyBounds_deg = [Inf -Inf Inf -Inf];
+    % Bounds use [minimum azimuth, maximum azimuth, minimum elevation,
+    % maximum elevation]. Starting from infinities makes the first finite
+    % vertex establish each bound naturally.
 
     % Convert every source slice once and accumulate a cheap whole-history bound.
     for sampleIndex = 1:sampleCount
@@ -61,6 +71,8 @@ for obstacleIndex = 1:numel(obstacles)
         sampleShapes{sampleIndex} = obstacleAvoidance.geometry.boundaryToShape( azimuth_deg, elevation_deg);
     end
     intervalDuration_s = diff(obstacle.time_s(:));
+    % Input normalization guarantees strictly increasing times, so every
+    % duration is positive before it is used to convert displacement to speed.
 
     % Classify each adjacent pair as safely interpolable or conservatively unioned.
     for intervalIndex = 1:intervalCount
@@ -77,6 +89,9 @@ for obstacleIndex = 1:numel(obstacles)
             deltaAzimuth_deg{intervalIndex} = upperAzimuth_deg - lowerAzimuth_deg;
             deltaElevation_deg{intervalIndex} = upperElevation_deg - lowerElevation_deg;
             finiteVertex = isfinite(lowerAzimuth_deg) & isfinite(lowerElevation_deg);
+            % hypot computes each corresponding vertex's Euclidean angular
+            % travel. The largest speed is a safe bound for how quickly any
+            % part of this linearly interpolated boundary can move.
             speed_deg_s = hypot( ...
                 deltaAzimuth_deg{intervalIndex}(finiteVertex), ...
                 deltaElevation_deg{intervalIndex}(finiteVertex)) / intervalDuration_s(intervalIndex);
@@ -86,6 +101,9 @@ for obstacleIndex = 1:numel(obstacles)
             % ambiguous. The endpoint union is conservative and reports an
             % infinite source speed at adjacent samples to force safe splitting.
             intervalUnionShapes{intervalIndex} = union( sampleShapes{intervalIndex}, sampleShapes{intervalIndex + 1});
+            % The union occupies every point covered at either endpoint. It may
+            % be conservative between samples, but it never invents a vertex
+            % pairing that could make occupied space disappear.
             [intervalUnionAzimuth_deg{intervalIndex}, ...
                 intervalUnionElevation_deg{intervalIndex}] = boundary( intervalUnionShapes{intervalIndex});
         end
@@ -97,14 +115,21 @@ for obstacleIndex = 1:numel(obstacles)
     % can be certified without further subdivision.
     % Visit every source sample because the first and last have only one adjacent interval.
     for sampleIndex = 1:sampleCount
+        % A sample can border the interval before it, after it, or both. Filter
+        % the candidate indices so endpoint samples remain valid.
         adjacentInterval = [sampleIndex - 1, sampleIndex];
         adjacentInterval = adjacentInterval( adjacentInterval >= 1 & adjacentInterval <= intervalCount);
         if any(~matchingTopology(adjacentInterval))
+            % Infinite speed signals that ordinary motion-based certification
+            % cannot bridge a topology change and must split at the source time.
             sampleSpeedBound_deg_s(sampleIndex) = Inf;
         elseif ~isempty(adjacentInterval)
             sampleSpeedBound_deg_s(sampleIndex) = max( intervalSpeedBound_deg_s(adjacentInterval));
         end
     end
+    % This cached information is derived only from protected geometry. All
+    % later query paths reuse it so collision checking and plotting observe
+    % the same interpolation and topology decisions.
     obstacles(obstacleIndex).InternalPreparation = struct( ...
         "HistoryBounds_deg", historyBounds_deg, ...
         "SampleShapes", {sampleShapes}, ...

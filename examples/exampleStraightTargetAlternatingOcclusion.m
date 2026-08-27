@@ -27,6 +27,9 @@ function result = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
+% Use earliest arrival. Shared controls make this case comparable with other
+% moving-target examples.
+
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
@@ -41,6 +44,10 @@ end
 options.AllowAzimuthWrapping = false;
 
 %% Section 2: Create Obstacles
+
+% Put four different shapes on the target line. The target enters and exits
+% occupied regions many times. This tests convex, curved, star, and concave
+% boundaries.
 
 missionEndTime_s = 60;
 obstacleTime_s = [0; missionEndTime_s];
@@ -90,6 +97,9 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles( squareObstacle, circle
 
 %% Section 3: Create Planner Inputs
 
+% Move the target at constant speed on a straight sampled track. The gimbal
+% starts behind it and moves faster. The intercept must occur in a clear gap.
+
 initialState = struct( "time_s", 0, "position_deg", [-14 3], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
 
 targetTime_s = [0; missionEndTime_s];
@@ -108,13 +118,18 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the moving-target planner without a stored intercept choice.
+
 result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
+% Check the trajectory and independently sample target occupancy. Extra probes
+% show whether each shape blocks the intended part of the track.
+
 exampleValidation = validateExampleResult( ...
     result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true));
-obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
+obstacleQueryOptions = struct();
 
 occupancySampleCount = 1201;
 occupancyTime_s = linspace(0, missionEndTime_s, occupancySampleCount).';
@@ -196,6 +211,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Show the target track, blocked intervals, and selected intercept.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

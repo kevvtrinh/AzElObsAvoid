@@ -6,10 +6,10 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %   sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Open one persistent azimuth/elevation planning UI with independent
-%     Goal Mode and Free Mode tabs.
-%   - Keep interactive scene construction and bounded latest-tested-arrival
-%     search outside the maintained production planner.
+%   - Open one azimuth/elevation planning UI.
+%   - Keep Goal Mode and Free Mode data independent.
+%   - Keep drawing and latest-tested-arrival search outside the production
+%     planner.
 %**************************************************************************
 % INPUTS
 %   - sandboxOverrides (scalar struct, optional; default struct())
@@ -22,23 +22,24 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %       LatestArrivalCoarseCandidateCount,
 %       LatestArrivalRefinementCandidateCount, and PlannerOptions.
 %       PlannerOptions is a partial HS3 planTrajectory options struct.
-%       PlannerMethod may be omitted or equal "hs3". Goal-time mode and
-%       verbosity are then owned by the active sandbox tab.
+%       Goal-time mode and verbosity are owned by the active sandbox tab.
 %**************************************************************************
 % OUTPUTS
 %   - sandboxState (scalar struct)
-%       Initial plain-struct state, figure handle, independent mode records,
+%       Initial data structure, figure handle, and independent mode records.
 %       ReadState and ExportBundle function handles. Call ReadState() after
 %       interaction to inspect the current guidata-backed state. Call
 %       ExportBundle(filePath, modeName) to save without a file dialog.
 %**************************************************************************
 % UNITS
-%   - Positions and obstacle boundaries are N-by-2 [azimuth elevation] in
-%     degrees. Time is seconds and derivatives use deg/s, deg/s^2, and
-%     deg/s^3.
+%   - Positions and boundaries are N-by-2 [azimuth elevation] in degrees.
+%   - Time is in seconds. Derivatives use deg/s, deg/s^2, and deg/s^3.
 %**************************************************************************
 
 %% Section 1: Resolve Sandbox Defaults
+
+% Resolve all options before creating graphics. Invalid limits or workspace
+% ranges then fail before callbacks and partial UI state exist.
 
 if nargin < 1 || isempty(sandboxOverrides)
     sandboxOverrides = struct();
@@ -46,6 +47,10 @@ end
 options = resolveSandboxOptions(sandboxOverrides);
 
 %% Section 2: Create Figure And Tabs
+
+% Create one shared figure and two independent tabs. The figure stores the
+% current application data in guidata. Callbacks always read the latest guidata
+% value instead of keeping stale copies in nested functions.
 
 figureHandle = figure( ...
     "Name", "Az/El Interactive Sandbox", ...
@@ -67,10 +72,17 @@ freeHandles = createModeTab(freeTabHandle, "free", options);
 
 %% Section 3: Initialize Goal Mode
 
+% Goal Mode plans one motion from a start point to one goal point. It keeps its
+% own controls, obstacles, result, validation, status, and log.
+
 applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles);
 guidata(figureHandle, applicationState);
 
 %% Section 4: Initialize Free Mode
+
+% Free Mode plans an ordered chain of requested endpoints. Each successful
+% segment starts where the previous segment ended. A failed segment stops the
+% chain and keeps earlier validated segments.
 
 applyDefaultControls(goalHandles.Controls, "goal", options);
 applyDefaultControls(freeHandles.Controls, "free", options);
@@ -78,6 +90,10 @@ refreshApplication(figureHandle);
 beginGuidedScene(figureHandle, "goal");
 
 %% Section 5: Return Initial Sandbox State
+
+% Return a plain snapshot plus functions that read current state and export a
+% diagnosis file. The initial snapshot does not update after UI interaction.
+% Use ReadState to get current values.
 
 sandboxState = publicStateSnapshot(figureHandle);
 sandboxState.ReadState = @() publicStateSnapshot(figureHandle);
@@ -87,7 +103,7 @@ end
 % --- Defaults And UI Construction ---------------------------------------
 
 function defaults = sandboxDefaults()
-% Define the single source of argument-independent sandbox defaults.
+% Define all sandbox default values in one location.
 defaults = struct( ...
     "FigureVisible", "on", ...
     "FigurePosition", [60 60 1460 860], ...
@@ -108,7 +124,8 @@ defaults = struct( ...
 end
 
 function options = resolveSandboxOptions(overrides)
-% Merge partial overrides, warn once about unknown fields, and validate.
+% Merge partial option values. Report unknown fields one time. Validate all
+% values before UI creation.
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("obstacleAvoidanceSandbox:InvalidOverrides", "sandboxOverrides must be a scalar struct or empty.");
 end
@@ -123,7 +140,7 @@ if ~isempty(unknownNames)
         strjoin(unknownNames, ", "));
 end
 
-% Apply only recognized, nonempty overrides so empty fields preserve defaults.
+% Apply only known, nonempty values. An empty field keeps its default value.
 for name = reshape(intersect(overrideNames, knownNames, "stable"), 1, [])
     if ~isempty(overrides.(name))
         options.(name) = overrides.(name);
@@ -146,7 +163,7 @@ for name = positiveScalarNames
 end
 nonnegativeScalarNames = ["PathSafetyMargin_deg", "ObstacleSafetyMargin_deg"];
 
-% Safety margins may be zero, but never negative or nonfinite.
+% A safety margin can be zero. It cannot be negative or nonfinite.
 for name = nonnegativeScalarNames
     validateattributes(options.(name), {'numeric'}, ...
         {'real', 'finite', 'scalar', 'nonnegative'}, ...
@@ -172,7 +189,7 @@ for name = intervalNames
 end
 countNames = ["LatestArrivalCoarseCandidateCount", "LatestArrivalRefinementCandidateCount"];
 
-% Candidate counts bound the finite latest-tested-arrival search work.
+% Candidate counts limit the number of latest-arrival planner calls.
 for name = countNames
     validateattributes(options.(name), {'numeric'}, ...
         {'real', 'finite', 'scalar', 'integer', 'nonnegative'}, ...
@@ -185,24 +202,14 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("obstacleAvoidanceSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
 end
 
-% Keep exported options explicit while leaving all other partial HS3 options
-% for the public planner to resolve at plan time.
-if isfield(options.PlannerOptions, "PlannerMethod") && ...
-        ~isempty(options.PlannerOptions.PlannerMethod)
-    plannerMethod = lower(string(options.PlannerOptions.PlannerMethod));
-    if ~isscalar(plannerMethod) || plannerMethod ~= "hs3"
-        error("obstacleAvoidanceSandbox:InvalidPlannerMethod", ...
-            "PlannerOptions.PlannerMethod must be 'hs3'.");
-    end
-end
-options.PlannerOptions.PlannerMethod = "hs3";
 end
 
 function handles = createModeTab(tabHandle, modeName, options)
-% Build one complete tab with canvas, controls, actions, status, and log.
+% Create one complete tab. Each tab has a canvas, controls, action buttons,
+% status text, and a planner log.
 
-% Reserve the complete outer rectangle for ticks and labels. Using Position
-% here lets the azimuth label extend into the action-button row and disappear.
+% Reserve the complete outer rectangle for axes ticks and labels. A smaller
+% Position can move the azimuth label under the action-button row.
 axesHandle = axes( ...
     tabHandle, ...
     "Units", "normalized", ...
@@ -221,8 +228,8 @@ controlPanelHandle = uipanel(tabHandle, ...
     "Position", [0.71 0.30 0.275 0.66]);
 controls = struct();
 
-% Shared column headings avoid repeating two extra label rows for every pair.
-% This grid stays readable when Windows display scaling increases text height.
+% Use shared column headings for paired values. This saves vertical space and
+% remains readable when Windows display scaling increases text height.
 addControlSectionLabel(controlPanelHandle, "Workspace", 0.89);
 addPairColumnLabels(controlPanelHandle, "Lower", "Upper", 0.835);
 controls.WorkspaceAzimuthHandles = addCompactPairControl( ...
@@ -415,7 +422,8 @@ applicationState = struct( ...
 end
 
 function modeState = emptyModeState(modeName, graphicsHandles)
-% Define the stable mode schema used by initialization and Reset.
+% Define all fields in one mode record. Initialization and Reset use the same
+% field set so callbacks can read state without optional-field branches.
 if modeName == "goal"
     instruction = "Click the start, click the goal, draw obstacles, then Run.";
 else
@@ -446,7 +454,8 @@ modeState = struct( ...
 end
 
 function trajectory = emptyCombinedTrajectory()
-% Define a sandbox-owned combined trajectory without planner-result claims.
+% Define an empty combined trajectory for Free Mode. This is sandbox data. It
+% is not a result from one global planner call.
 trajectory = struct( ...
     "time_s", zeros(0, 1), ...
     "position_deg", zeros(0, 2), ...
@@ -457,7 +466,7 @@ trajectory = struct( ...
 end
 
 function segment = emptySegmentRecord()
-% Define one stable independently planned Free Mode segment record.
+% Define all fields for one independently planned Free Mode segment.
 segment = struct( ...
     "RequestedStart_deg", [NaN NaN], ...
     "RequestedStop_deg", [NaN NaN], ...
@@ -477,7 +486,9 @@ end
 % --- Interaction State And Callbacks ------------------------------------
 
 function handleAction(sourceHandle, ~)
-% Dispatch every action while converting UI input errors into status text.
+% Send each button action to one callback branch. Convert UI input errors into
+% status text. Unexpected programmer errors keep their identifier and location
+% in the retained log.
 figureHandle = ancestor(sourceHandle, "figure");
 request = get(sourceHandle, "UserData");
 modeName = string(request.Mode);
@@ -521,7 +532,8 @@ end
 end
 
 function exceptionText = formatSandboxException(exception)
-% Preserve the identifier and earliest source location of a UI failure.
+% Preserve the error identifier and first source location. Start debugging at
+% this location instead of the shared callback dispatcher.
 exceptionText = char(exception.message);
 if strlength(string(exception.identifier)) > 0
     exceptionText = sprintf( ...
@@ -535,7 +547,8 @@ end
 end
 
 function activateInteraction(figureHandle, modeName, requestedState)
-% Give one mouse-driven interaction exclusive ownership of callbacks.
+% Allow only one mouse interaction at a time. Store old callbacks before a draw
+% starts. Restore them when the draw finishes or is canceled.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
 modeState = getModeState(applicationState, modeName);
@@ -566,7 +579,8 @@ refreshApplication(figureHandle);
 end
 
 function beginGuidedScene(figureHandle, modeName)
-% Resume the next unfinished step in the automatic start-to-obstacle sequence.
+% Continue the guided setup at its next unfinished step. The order is start
+% point, first obstacle, and goal or waypoint input.
 applicationState = guidata(figureHandle);
 modeState = getModeState(applicationState, modeName);
 
@@ -593,7 +607,8 @@ end
 end
 
 function handleFigureMouseDown(figureHandle, ~)
-% Begin a trace or commit one requested point on the active tab canvas.
+% Start a freehand trace or store one requested point on the active axes.
+% Ignore clicks outside the configured workspace.
 applicationState = guidata(figureHandle);
 if applicationState.InteractionState == "idle" || applicationState.InteractionState == "planning"
     return;
@@ -688,7 +703,9 @@ drawnow("limitrate");
 end
 
 function handleFigureMouseUp(figureHandle, ~)
-% Finish one trace, classify it as line or polygon, and replan if needed.
+% Finish one trace and classify it as a line or polygon. Simplify retained
+% geometry before obstacle construction. Replan only when the active mode has
+% enough request data.
 applicationState = guidata(figureHandle);
 if ~contains(applicationState.InteractionState, "drawing")
     return;
@@ -736,7 +753,8 @@ end
 end
 
 function cancelInteraction(figureHandle)
-% Restore deterministic idle callbacks and discard any unfinished trace.
+% Restore idle callbacks and discard an unfinished trace. This prevents a tab
+% change or Reset from leaving mouse callbacks active.
 if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
@@ -791,7 +809,9 @@ end
 % --- Planner Calls And Segment Composition ------------------------------
 
 function executeGoalPlan(figureHandle)
-% Build Goal Mode inputs, call the public planner, and validate the result.
+% Read Goal Mode controls and create protected obstacles. Build planner inputs.
+% Call the public planner once. Then run independent validation on its result.
+% On failure, inspect the planner termination reason before validation details.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
 modeState = applicationState.GoalMode;
@@ -805,7 +825,6 @@ canonicalObstacles = buildCanonicalObstacles( modeState, obstacleTime_s, control
     modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
     0, controls.MissionTime_s, controls);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.PlannerMethod = controls.PlannerMethod;
 plannerOptions.GoalTimeMode = "earliestArrival";
 plannerOptions.Verbose = controls.Verbose;
 modeState = clearModeSolution(modeState);
@@ -836,7 +855,9 @@ refreshApplication(figureHandle);
 end
 
 function executeFreePlan(figureHandle, reasonText)
-% Replan every requested segment from the start and stop at first failure.
+% Replan all requested Free Mode segments from the original start. Stop at the
+% first failed segment. Keep earlier validated segments and report the first
+% failure separately.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
 modeState = applicationState.FreeMode;
@@ -861,7 +882,7 @@ drawnow;
 currentStart_deg = modeState.StartPosition_deg;
 currentStartTime_s = 0;
 
-% Solve requested free-mode segments in order because each arrival starts the next segment.
+% Solve Free Mode segments in order. Each arrival is the next segment start.
 for segmentIndex = 1:requestedSegmentCount
     applicationState = guidata(figureHandle);
     modeState = applicationState.FreeMode;
@@ -921,21 +942,21 @@ end
 function [segment, logLines] = solveLatestValidatedSegment( ...
         obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
         controls, sandboxOptions, segmentIndex)
-% Find the latest independently validated tested arrival in a finite span.
+% Find the latest tested arrival that passes independent validation. This is a
+% bounded numerical search. It is not proof of the globally latest arrival.
 segment = emptySegmentRecord();
 segment.RequestedStart_deg = startPosition_deg;
 segment.RequestedStop_deg = stopPosition_deg;
 segment.StartTime_s = startTime_s;
 latestAllowedTime_s = startTime_s + controls.MaximumSegmentDuration_s;
 plannerOptions = sandboxOptions.PlannerOptions;
-plannerOptions.PlannerMethod = controls.PlannerMethod;
 plannerOptions.Verbose = controls.Verbose;
 logLines = "[Free Mode Segment " + segmentIndex + "]";
 testedTimes_s = zeros(0, 1);
 testedSuccess = false(0, 1);
 
-% The finite upper-bound test is decisive when it validates: no arrival
-% later than the user-supplied segment horizon is allowed by the sandbox.
+% Test the user-supplied segment time first. If it passes, it is the latest
+% allowed time in this sandbox search.
 [upperResult, upperValidation, upperLog] = runSegmentCandidate( ...
     obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
     latestAllowedTime_s, controls, plannerOptions, "fixedArrival", ...
@@ -951,9 +972,9 @@ if testedSuccess(end)
     return;
 end
 
-% Drawn sandbox obstacles are static across the finite planning horizon. An
-% endpointBlocked result at the upper bound therefore applies to every
-% candidate arrival, so retrying the same endpoint cannot add evidence.
+% Drawn sandbox obstacles are static during planning. If the endpoint is inside
+% an obstacle at the upper time, it is blocked at all candidate times. Do not
+% repeat the same endpoint test.
 if upperResult.TerminationReason == "endpointBlocked"
     segment.PlannerResult = upperResult;
     segment.Validation = upperValidation;
@@ -970,8 +991,9 @@ bestValidation = obstacleAvoidance.validateTrajectory();
 failureResult = upperResult;
 failureValidation = upperValidation;
 
-% Earliest arrival supplies a validated fallback when the fixed-time samples
-% miss a feasible time. It is not treated as a global earliest certificate.
+% Earliest-arrival planning provides a fallback if fixed-time samples all fail.
+% Treat this result as one validated candidate. Do not label it as proof of the
+% globally earliest arrival.
 [earliestResult, earliestValidation, earliestLog] = runSegmentCandidate( ...
     obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
     latestAllowedTime_s, controls, plannerOptions, "earliestArrival", ...
@@ -993,7 +1015,8 @@ fixedResult = struct();
 fixedValidation = obstacleAvoidance.validateTrajectory();
 fixedTime_s = NaN;
 
-% Test coarse arrival candidates from latest to earliest and keep the first validated result.
+% Test coarse arrival times from latest to earliest. Keep the first result that
+% passes independent validation.
 for candidateIndex = 1:numel(coarseDurations_s)
     candidateTime_s = startTime_s + coarseDurations_s(candidateIndex);
     [candidateResult, candidateValidation, candidateLog] = runSegmentCandidate( ...
@@ -1026,7 +1049,8 @@ if ~isempty(fieldnames(fixedResult))
         refinementTimes_s = refinementTimes_s(2:end - 1);
         searchResolution_s = (previousFailedTime_s - fixedTime_s) / (refinementCount + 1);
 
-        % Refine only inside the failed-to-passed bracket established by the coarse search.
+        % Refine only between one failed time and one passed time from the coarse
+        % search. This interval limits extra planner calls.
         for candidateIndex = 1:numel(refinementTimes_s)
             candidateTime_s = refinementTimes_s(candidateIndex);
             [candidateResult, candidateValidation, candidateLog] = runSegmentCandidate( ...
@@ -1072,7 +1096,8 @@ end
 function [result, validation, logLines] = runSegmentCandidate( ...
         obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
         goalTime_s, controls, plannerOptions, goalTimeMode, labelText)
-% Run one explicitly labeled segment candidate through public interfaces.
+% Run one labeled segment candidate through public planner and validation
+% functions. Keep the label in logs to identify the failing candidate.
 [initialState, goalState, limits] = buildPlannerInputs( ...
     startPosition_deg, stopPosition_deg, startTime_s, goalTime_s, controls);
 plannerOptions.GoalTimeMode = goalTimeMode;
@@ -1085,7 +1110,8 @@ end
 function segment = populateSuccessfulSegment( ...
         segment, result, validation, resolution_s, testedTimes_s, ...
         testedSuccess, statement)
-% Assemble one successful segment without relabeling it as a global solve.
+% Store one successful segment. Do not present it as one global multi-segment
+% planner result.
 segment.ArrivalTime_s = result.ArrivalTime_s;
 segment.PlannerResult = result;
 segment.Validation = validation;
@@ -1099,7 +1125,8 @@ segment.SearchStatement = statement;
 end
 
 function [result, validation, logLines] = callPlanner( obstacles, initialState, goalState, limits, options, labelText)
-% Capture optional verbose output without suppressing planner diagnostics.
+% Capture optional verbose text for the sandbox log. Keep structured planner
+% diagnostics in the returned result.
 result = struct();
 plannerText = "";
 if options.Verbose
@@ -1119,14 +1146,16 @@ if ~isempty(capturedLines)
     logLines = [logLines; capturedLines];
 end
 logLines(end + 1, 1) = sprintf( ...
-    "Result: success=%d, validation=%d, reason=%s, arrival=%.6g s", ...
-    result.Success, validation.Passed, result.TerminationReason, ...
+    "Result: success=%s, validation=%s, reason=%s, arrival=%.6g s", ...
+    logicalText(result.Success), logicalText(validation.Passed), ...
+    result.TerminationReason, ...
     result.ArrivalTime_s);
 end
 
 function [initialState, goalState, limits] = buildPlannerInputs( ...
         startPosition_deg, stopPosition_deg, startTime_s, goalTime_s, controls)
-% Build rest-to-rest endpoint states and explicit physical/workspace limits.
+% Build initial and goal states with zero endpoint velocity and acceleration.
+% Build explicit physical limits and workspace bounds from current controls.
 initialState = struct( ...
     "time_s", startTime_s, ...
     "position_deg", reshape(startPosition_deg, 1, 2), ...
@@ -1146,7 +1175,8 @@ limits = struct( ...
 end
 
 function combined = appendSegmentTrajectory(combined, result)
-% Stitch validated sampled histories while removing duplicate knot samples.
+% Join validated segment histories. Remove the repeated sample at each shared
+% segment endpoint. A knot is the shared endpoint between two segments.
 if isempty(combined.time_s)
     firstRetainedIndex = 1;
     segmentStartIndex = 1;
@@ -1166,7 +1196,8 @@ end
 % --- Controls And Obstacle Canonicalization -----------------------------
 
 function controls = readModeControls(applicationState, modeName)
-% Read and validate one tab's independent physical and geometry controls.
+% Read physical and geometry controls from one tab. Validate them before any
+% obstacle construction or planner call.
 modeState = getModeState(applicationState, modeName);
 handles = modeState.GraphicsHandles.Controls;
 workspaceAzimuthInterval_deg = readAxisPairControl( ...
@@ -1190,7 +1221,6 @@ pathObstacleRadius_deg = readScalarControl( handles.PathRadiusHandle, "Line/caps
 pathSafetyMargin_deg = readScalarControl( handles.PathMarginHandle, "Line safety margin (deg)", false);
 obstacleSafetyMargin_deg = readScalarControl( handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
 controls = struct( ...
-    "PlannerMethod", "hs3", ...
     "WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
     "WorkspaceElevationInterval_deg", workspaceElevationInterval_deg, ...
     "MaxVelocity_deg_s", maxVelocity_deg_s, ...
@@ -1257,10 +1287,12 @@ set(handles.SecondHandle, "String", sprintf("%.8g", values(2)));
 end
 
 function obstacles = buildCanonicalObstacles( modeState, obstacleTime_s, controls)
-% Rebuild protected obstacles from retained raw-derived geometry once.
+% Rebuild protected obstacles from retained geometry. Apply each safety margin
+% one time during canonical obstacle construction.
 pathObstacleData = cell(numel(modeState.LineObstaclePositions_deg), 1);
 
-% Convert every drawn line into one buffered capsule obstacle.
+% Convert each drawn line to a capsule obstacle. A capsule is the area within a
+% fixed radius of the line, with rounded ends.
 for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
     pathObstacleData{lineIndex} = pathToObstacleData( ...
         modeState.LineObstaclePositions_deg{lineIndex}, obstacleTime_s, ...
@@ -1274,7 +1306,8 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(pathObstacleData, polyg
 end
 
 function obstacleData = pathToObstacleData( path_deg, time_s, radius_deg, safetyMargin_deg, lineIndex)
-% Convert one simplified freehand line into a continuous low-vertex capsule.
+% Convert one simplified freehand line into a continuous capsule with few
+% vertices. Fewer vertices reduce planning cost.
 path_deg = double(path_deg);
 path_deg = path_deg(all(isfinite(path_deg), 2), :);
 if size(path_deg, 1) > 1
@@ -1297,11 +1330,11 @@ obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
 end
 
 function pathShape = buildPathCapsuleShape(path_deg, radius_deg)
-% Union conservative low-vertex segment capsules without geometry gaps.
+% Combine segment capsules into one shape without gaps.
 endCapSegmentCount = 3;
 arcIncrement_rad = pi / endCapSegmentCount;
-% Enlarging the construction radius makes every polygonal cap contain the
-% requested circular radius between cap vertices.
+% Increase the construction radius to account for straight polygon edges. The
+% polygonal end cap then contains the requested circular radius.
 constructionRadius_deg = radius_deg / cos(arcIncrement_rad / 2);
 pathShape = polyshape();
 hasSegment = false;
@@ -1348,7 +1381,8 @@ end
 end
 
 function simplified_deg = simplifyFreehandBoundary(points_deg, tolerance_deg)
-% Retain shape-defining turns while removing mouse-event oversampling.
+% Keep points that define turns. Remove dense mouse-event samples along nearly
+% straight parts. If geometry loses an important corner, inspect this tolerance.
 if size(points_deg, 1) <= 2
     simplified_deg = points_deg;
     return;
@@ -1378,7 +1412,7 @@ end
 % --- Rendering, Status, Reset, And State Access -------------------------
 
 function refreshApplication(figureHandle)
-% Render both independent tabs and synchronize status and control states.
+% Redraw both tabs. Update status text and enabled controls from current state.
 if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
@@ -1391,16 +1425,15 @@ updateControlEnablement(applicationState);
 end
 
 function redrawMode(applicationState, modeName)
-% Redraw one tab exclusively from its retained mode and result state.
+% Redraw one tab from retained data only. Do not call the planner during redraw.
 modeState = getModeState(applicationState, modeName);
 axesHandle = modeState.GraphicsHandles.Axes;
 if ~isgraphics(axesHandle)
     return;
 end
 
-% Raw strokes and temporary traces deliberately hide their handles from the
-% legend. Delete every child explicitly because plain cla can preserve those
-% hidden objects and leave a stale obstacle outline after Reset.
+% Hide raw strokes and temporary traces from the legend. Delete every axes child
+% explicitly. cla can preserve hidden objects and leave old obstacle outlines.
 delete(allchild(axesHandle));
 cla(axesHandle, "reset");
 hold(axesHandle, "on");
@@ -1436,7 +1469,8 @@ for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
         "HandleVisibility", "off");
 end
 
-% Overlay polygon boundaries before rendering their canonical protected geometry.
+% Draw user polygon boundaries before protected obstacle geometry. This shows
+% how canonicalization and safety margin change the drawn shape.
 for polygonIndex = 1:numel(modeState.PolygonObstaclePositions_deg)
     polygon_deg = modeState.PolygonObstaclePositions_deg{polygonIndex};
     fill(axesHandle, polygon_deg(:, 1), polygon_deg(:, 2), ...
@@ -1468,7 +1502,8 @@ end
 end
 
 function redrawGoalRequest(axesHandle, modeState)
-% Show requested Goal Mode geometry, result, or retained partial route.
+% Show Goal Mode request geometry. Show the result or retained partial route
+% when available.
 if ~isempty(modeState.GoalPosition_deg)
     plot(axesHandle, modeState.GoalPosition_deg(1), ...
         modeState.GoalPosition_deg(2), "ro", ...
@@ -1498,7 +1533,8 @@ end
 end
 
 function redrawFreeRequest(axesHandle, modeState)
-% Distinguish requested endpoints, solved chain, and first failed segment.
+% Use different graphics for requested endpoints, the solved segment chain, and
+% the first failed segment.
 if ~isempty(modeState.StartPosition_deg)
     request_deg = [ modeState.StartPosition_deg; modeState.WaypointPositions_deg];
     if size(request_deg, 1) > 1
@@ -1544,7 +1580,7 @@ end
 end
 
 function updateModeStatusDisplay(modeState)
-% Present concise status and the complete retained mode-specific log.
+% Show a short status above the complete retained log for this mode.
 statusLines = splitlines(string(modeState.Status));
 statusLines = statusLines(strlength(statusLines) > 0);
 if isempty(statusLines)
@@ -1559,11 +1595,12 @@ set(modeState.GraphicsHandles.LogHandle, "String", cellstr(logLines), "Value", 1
 end
 
 function updateControlEnablement(applicationState)
-% Disable invalid actions and all geometry edits during synchronous plans.
+% Disable actions that are not valid for current state. Disable all geometry
+% edits during a synchronous planner call.
 isPlanning = applicationState.InteractionState == "planning";
 modeNames = ["goal" "free"];
 
-% Synchronize both tabs so a synchronous plan disables every competing edit.
+% Update both tabs together. A plan in one tab blocks competing edits in both.
 for modeName = modeNames
     modeState = getModeState(applicationState, modeName);
     actionNames = string(fieldnames(modeState.GraphicsHandles.Actions));
@@ -1611,19 +1648,19 @@ end
 end
 
 function status = formatGoalStatus(result, validation)
-% Report Goal Mode success/failure without hiding unavailable quantities.
+% Report Goal Mode success or failure. Show unavailable values as unavailable.
 status = [ ...
-    "Success: " + result.Success; ...
+    "Success: " + logicalText(result.Success); ...
     "TerminationReason: " + result.TerminationReason; ...
     "ArrivalTime_s: " + sprintf("%.6g", result.ArrivalTime_s); ...
     "TrajectoryDuration_s: " + ...
         sprintf("%.6g", result.TrajectoryDuration_s); ...
-    "SelectedMotionSource: " + result.SelectedMotionSource; ...
-    "Independent validation: " + validation.Passed];
+    "Independent validation: " + logicalText(validation.Passed)];
 end
 
 function status = formatFreeStatus(modeState, requestedSegmentCount)
-% Report cumulative Free Mode results and the bounded-search limitation.
+% Report cumulative Free Mode results. State that latest-arrival results come
+% from a bounded set of tested times.
 if isempty(modeState.CombinedTrajectory.time_s)
     totalElapsedTime_s = NaN;
     currentEnd_deg = [NaN NaN];
@@ -1662,7 +1699,8 @@ modeState.PlannerLog = [modeState.PlannerLog; lines];
 end
 
 function modeState = clearModeSolution(modeState)
-% Invalidate solved data after requested geometry or controls can change.
+% Clear solved data after geometry or controls change. An old plan is not valid
+% for a changed request.
 modeState.CanonicalObstacles = obstacleAvoidance.obstacles.combineObstacles();
 modeState.SegmentResults = repmat(emptySegmentRecord(), 0, 1);
 modeState.CombinedTrajectory = emptyCombinedTrajectory();
@@ -1677,7 +1715,7 @@ modeState.LatestArrivalSearchResolution_s = zeros(0, 1);
 end
 
 function resetMode(figureHandle, modeName)
-% Restore one tab to a fresh state while leaving the other tab untouched.
+% Reset one tab. Do not change the other tab.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
 modeState = getModeState(applicationState, modeName);
@@ -1712,7 +1750,8 @@ end
 end
 
 function openDiagnostics(figureHandle, modeName)
-% Plot retained planner diagnostics without rerunning any planner call.
+% Plot retained planner diagnostics. Do not run the planner again. If no result
+% exists, explain that status instead of creating replacement data.
 applicationState = guidata(figureHandle);
 modeState = getModeState(applicationState, modeName);
 result = modeState.LastPlannerResult;
@@ -1729,7 +1768,7 @@ guidata(figureHandle, applicationState);
 end
 
 function exportModeDiagnosis(figureHandle, modeName)
-% Save exact retained scene, input, result, and validation evidence.
+% Save retained scene, input, result, and validation data for diagnosis.
 timestamp = string(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
 defaultName = "az_el_sandbox_" + modeName + "_" + timestamp + ".mat";
 [fileName, folderName] = uiputfile( ...
@@ -1776,11 +1815,11 @@ end
 
 function applicationState = prepareSandboxStateForExport( ...
         applicationState, modeName)
-% Capture current controls and geometry without invoking the planner.
+% Capture current controls and geometry. Do not call the planner. This permits
+% export before a run when input preparation itself is under investigation.
 modeState = getModeState(applicationState, modeName);
 controls = readModeControls(applicationState, modeName);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.PlannerMethod = controls.PlannerMethod;
 plannerOptions.Verbose = controls.Verbose;
 plannerInputs = struct();
 if modeName == "goal"
@@ -1841,7 +1880,8 @@ end
 end
 
 function snapshot = publicStateSnapshot(figureHandle)
-% Return current plain state without copying callbacks into guidata.
+% Return current state without callback functions. This snapshot is safe for
+% inspection and diagnosis export.
 if isempty(figureHandle) || ~isgraphics(figureHandle)
     snapshot = struct( "FigureHandle", gobjects(0), "Status", "The sandbox figure is closed.");
     return;
@@ -1849,4 +1889,13 @@ end
 snapshot = guidata(figureHandle);
 snapshot.ExportBundle = @(filePath, modeName) ...
     exportCurrentSandboxDiagnosis(figureHandle, filePath, modeName);
+end
+
+function text = logicalText(value)
+% Render scalar logical status as true or false for user-facing output.
+if logical(value)
+    text = "true";
+else
+    text = "false";
+end
 end

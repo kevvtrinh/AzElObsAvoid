@@ -31,6 +31,9 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
 
 %% Section 1: Estimate The Swept Boolean Work
 
+% A union of all history polygons can use much time and memory. Estimate this
+% work first. Use the full union when the estimate stays within the limit.
+
 validateattributes(sampleTimes_s, {'numeric'}, ...
     {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, ...
@@ -54,10 +57,15 @@ estimatedVertexWork = numel(sampleTimes_s) * maximumVerticesPerLayer;
 envelopeShape = polyshape();
 usedEnvelope = false;
 if estimatedVertexWork <= vertexWorkBudget
+    % Keep all sampled geometry when the polygon work is small enough.
     return;
 end
 
 %% Section 2: Build One Conservative Envelope Per Obstacle
+
+% Enclose the full vertex history with support half-planes. More directions
+% make a tighter polygon. Add directions when a coarse polygon covers the
+% start or goal.
 
 % Separate envelopes cannot bridge free space between unrelated histories.
 directionCounts = [16 24 32 48 64];
@@ -78,6 +86,7 @@ for obstacleIndex = 1:numel(obstacles)
     end
     trialShape = polyshape();
     for directionCount = directionCounts
+        % Start with the lowest cost. Increase detail only when necessary.
         candidateShape = directionalSupportHull( ...
             historyVertices_deg, directionCount);
         if endpointsAreOutside(candidateShape, endpointPosition_deg)
@@ -118,6 +127,8 @@ envelopeVertices_deg = center_deg + halfWidth_deg * ...
     [-1 -1; 1 -1; 1 1; -1 1];
 
 for directionIndex = 1:directionCount
+    % The largest dot product gives a support offset. The related half-plane
+    % contains all input vertices.
     envelopeVertices_deg = clipToSupportHalfPlane( ...
         envelopeVertices_deg, normal(directionIndex, :), ...
         offset_deg(directionIndex));

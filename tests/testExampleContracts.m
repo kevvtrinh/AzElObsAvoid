@@ -5,7 +5,7 @@ function tests = testExampleContracts
 %**************************************************************************
 % PURPOSE
 %   - Protect the maintained physical contracts of three large examples.
-%   - Verify that examples return the normal planner result schema.
+%   - Verify that examples return the normal planner result fields.
 %   - Verify that every maintained example applies the shared jerk override.
 %**************************************************************************
 % INPUTS
@@ -15,12 +15,15 @@ function tests = testExampleContracts
 %   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Contract positions are degrees and contract times are seconds.
+%   - Test positions are degrees and test times are seconds.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Locate maintained examples and reference text once. These checks do not run
+% long plans. A failure points to the example file or required input that no
+% longer follows the common example pattern.
 % Add the repository and example folders for source and metric checks.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
@@ -41,7 +44,7 @@ expectedHashes = [ ...
     "a9981c42761f02c030148d513f5e2cbbb962a46db7514f3b2c8611339633fef3", ...
     "dd2639cf289376b372a915cc10ce7e45196ad552007a7532507d62eb686ee6c1"];
 
-% Read every contract fixture and compare its normalized source hash or required text.
+% Read each fixture. Compare its normalized source hash or required text.
 for contractIndex = 1:numel(relativePaths)
     contractPath = fullfile( testCase.TestData.RepositoryRoot, relativePaths(contractIndex));
     sourceText = string(fileread(contractPath));
@@ -97,9 +100,9 @@ function testExampleResolverMaterializesPlannerDefaults(testCase)
 % Verify examples materialize and override the maintained HS3 defaults.
 [defaultOptions, ~] = resolveExampleOptions( ...
     struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
-verifyFalse(testCase, defaultOptions.Verbose);
+verifyTrue(testCase, defaultOptions.Verbose);
 verifyEqual(testCase, defaultOptions.MaximumSeedCount, 2);
-verifyEqual(testCase, defaultOptions.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(defaultOptions, "PlannerMethod"));
 verifyTrue(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
 verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
 
@@ -107,7 +110,7 @@ verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
     struct("Verbose", true), ...
     struct("CollocationSegmentCount", 6));
 verifyTrue(testCase, hs3Options.Verbose);
-verifyEqual(testCase, hs3Options.PlannerMethod, "hs3");
+verifyFalse(testCase, isfield(hs3Options, "PlannerMethod"));
 verifyEqual(testCase, hs3Options.CollocationSegmentCount, 6);
 verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
 end
@@ -138,6 +141,8 @@ end
 end
 
 function testEveryMaintainedExampleReturnsPlannerSchema(testCase)
+% Read each maintained example. Confirm that it returns the planner result
+% directly. This prevents examples from adding private result fields.
 % Prevent examples from appending demo-only fields to planner results.
 exampleFolder = fullfile(testCase.TestData.RepositoryRoot, "examples");
 exampleFiles = dir(fullfile(exampleFolder, "example*.m"));

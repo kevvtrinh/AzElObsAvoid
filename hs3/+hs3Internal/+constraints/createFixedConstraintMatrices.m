@@ -29,6 +29,12 @@ function [inequalityMatrix, equalityMatrix] = ...
 
 %% Section 1: Assemble Ordered Constraint Blocks
 
+% For a fixed duration, position through jerk are affine functions of the
+% jerk controls. This routine creates only the derivatives of those functions.
+% evaluateConstraints supplies the constant offsets from the initial state and
+% the limits. The row order must match the row order in evaluateConstraints.
+% quadprog uses both parts to form A*x <= b and Aeq*x = beq.
+
 sensitivity = hs3Internal.polynomial.createAffineSensitivityModel( ...
     segmentCount, duration, pathConstraints.Tau);
 controlCount = sensitivity.ControlCount;
@@ -43,9 +49,15 @@ upperFields = [ ...
     "positionUpper", "velocityUpper", ...
     "accelerationUpper", "jerkUpper"];
 for dimensionIndex = 1:dimensionCount
+    % Coordinates are independent until a path-plane normal combines them.
+    % Place each scalar-coordinate map in its coordinate-major decision block.
     columnIndex = (dimensionIndex - 1) * controlCount + (1:controlCount);
     for quantityIndex = 1:numel(mapFields)
         bernsteinMap = mapToBernstein(sensitivity.(mapFields(quantityIndex)));
+        % Every Bernstein coefficient lies on the same side of a bound only
+        % if the complete polynomial segment does. This test can reject a
+        % feasible polynomial. It prevents an unchecked limit crossing between
+        % samples.
         upperBounds = limits.(upperFields(quantityIndex));
         lowerBounds = limits.(lowerFields(quantityIndex));
         upperBound = upperBounds(dimensionIndex);
@@ -68,6 +80,8 @@ pathMatrix = pathConstraintMatrix( ...
     sensitivity, pathConstraints, dimensionCount);
 inequalityMatrix = [inequalityMatrix; pathMatrix];
 terminalMap = sensitivity.terminalStateMap;
+% Terminal position, velocity, and acceleration are equalities. Initial-state
+% contributions are constants and therefore do not appear in this Jacobian.
 equalityMatrix = zeros(3 * dimensionCount, dimensionCount * controlCount);
 for dimensionIndex = 1:dimensionCount
     columnIndex = (dimensionIndex - 1) * controlCount + (1:controlCount);
@@ -80,6 +94,8 @@ end
 
 function bernsteinMap = mapToBernstein(powerMap)
 % Convert coefficient sensitivities through the exact Bernstein basis.
+% The first reshape batches every segment/control combination as a polynomial
+% column. The final reshape restores one constraint row per Bernstein value.
 coefficientCount = size(powerMap, 2);
 segmentCount = size(powerMap, 1);
 controlCount = size(powerMap, 3);
@@ -93,6 +109,9 @@ end
 function matrix = pathConstraintMatrix( ...
         sensitivity, pathConstraints, dimensionCount)
 % Differentiate point or complete-interval affine path half-spaces.
+% A point contributes one row. An interval contributes one row per Bernstein
+% coefficient of the restricted position polynomial. The leading minus sign
+% changes Normal*position >= LowerBound into the solver form c(x) <= 0.
 controlCount = sensitivity.ControlCount;
 coefficientCount = size(sensitivity.positionPowerMap, 2);
 constraintCount = numel(pathConstraints.Tau);

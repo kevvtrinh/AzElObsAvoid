@@ -19,6 +19,9 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
+% Locate the repository once for all source-layout checks. These tests inspect
+% file ownership and dependency direction. A failure usually means that code
+% moved into the wrong package or gained a higher-level dependency.
 % Record the two production roots and add their public path parents.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 productRoot = fullfile(repositoryRoot, "+obstacleAvoidance");
@@ -100,6 +103,8 @@ end
 end
 
 function testProductionFunctionBasenamesAreUnique(testCase)
+% Duplicate base names make stack traces and searches ambiguous. This check
+% reports the repeated name so a developer can rename or consolidate its owner.
 % Verify one production function basename owns each responsibility.
 productRoot = testCase.TestData.ProductRoot;
 hs3Root = testCase.TestData.Hs3Root;
@@ -115,6 +120,8 @@ verifyEmpty(testCase, duplicateNames, sprintf( ...
 end
 
 function testNumericalSolversAreOwnedByHs3(testCase)
+% Keep numerical solver calls in HS3. A failure identifies planner code that
+% bypasses the shared motion engine.
 % Verify numerical optimizer calls cannot leak into avoidance packages.
 productRoot = testCase.TestData.ProductRoot;
 packageRecords = dir(fullfile(productRoot, "+*"));

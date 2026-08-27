@@ -31,7 +31,11 @@ function [time_s, position_deg, velocity_deg_s, ...
 %   - Position is degrees; time is seconds; derivatives use deg/s powers.
 %**************************************************************************
 
-%% Section 1: Translate The Polynomial Schema
+%% Section 1: Translate The Polynomial Data
+
+% HS3 stores coefficients by segment, axis, and power. The shared evaluator
+% uses a dimension-neutral record. This block only rearranges fields; it does
+% not resample or approximate the continuous motion.
 
 enginePolynomial = struct( ...
     "SegmentCount", polynomial.SegmentCount, ...
@@ -44,6 +48,9 @@ enginePolynomial = struct( ...
     "jerkPower", polynomial.jerkPower_deg_s3);
 
 %% Section 2: Evaluate Through The Dimension-Neutral Engine
+
+% Explicit query times evaluate the same polynomial at caller-selected
+% instants. Omitting them uses the standard grid including segment boundaries.
 
 if nargin < 3
     segmentIndex = [];

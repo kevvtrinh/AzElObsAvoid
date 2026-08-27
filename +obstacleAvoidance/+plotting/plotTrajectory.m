@@ -18,7 +18,8 @@ function handles = plotTrajectory(result, optionOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - handles (scalar struct)
-%       Stable workspace, visibility, kinematic, and animation handles.
+%       The result contains workspace, visibility, kinematic, and animation
+%       graphics handles.
 %**************************************************************************
 % UNITS
 %   - Axes show degrees, seconds, deg/s, deg/s^2, and deg/s^3.
@@ -26,6 +27,10 @@ function handles = plotTrajectory(result, optionOverrides)
 
 %% Section 1: Resolve Display Controls
 
+% Plot only data in the planner result. Do not run route search or motion
+% optimization again. Each plot then shows the same data that validation uses.
+% If a plot looks incorrect, inspect the related result field before changing
+% plotting code.
 defaults = struct( ...
     "FigureVisible", "on", ...
     "Title", "Az/El motion plan", ...
@@ -74,7 +79,8 @@ logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", ...
     "SaveAnimationGif"];
 
-% Normalize every display switch through the same strict logical-scalar rule.
+% Convert each display switch to one logical value. Reject arrays and other
+% values so each display branch has one clear state.
 for name = logicalNames
     options.(name) = obstacleAvoidance.input.normalizeLogicalScalar( options.(name), name, "plotTrajectory:InvalidLogicalOption");
 end
@@ -84,15 +90,20 @@ validateattributes(options.AnimationGifDelay_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'});
 countNames = ["MaximumDisplayedSlicesPerObstacle", "MaximumDisplayedVisibilitySnapshots"];
 
-% Validate the two display caps before they are used to subsample graphics.
+% Validate display limits before graphics use them. These limits reduce only
+% drawing work. They do not remove planner diagnostics.
 for name = countNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
 end
 handles = createEmptyHandles(options);
+% Prepare a local copy of obstacle histories for time queries. Workspace plots
+% and animation frames use this copy. The planner result does not change.
 obstacles = obstacleAvoidance.obstacles.prepareDynamic(result.Inputs.obstacles);
 
 %% Section 2: Plot Workspace And Failure Diagnostics
 
+% The workspace view shows protected geometry, explored search data, and the
+% selected route. A failed result can show a best partial route instead.
 if options.ShowWorkspace
     workspaceFigure = figure( "Name", options.Title, "Visible", options.FigureVisible);
     workspaceAxes = axes(workspaceFigure);
@@ -100,6 +111,8 @@ if options.ShowWorkspace
     displayTime_s = result.Inputs.initialState.time_s;
     drawObstacles(workspaceAxes, obstacles, displayTime_s, true);
     gridRecord = result.SearchDiagnostics.Grid;
+    % Draw search edges before nodes and final motion. Search detail then stays
+    % behind the important route data.
     if options.ShowSearchEdges
         drawSearchEdges(workspaceAxes, gridRecord);
     end
@@ -114,20 +127,24 @@ if options.ShowWorkspace
             18, [0.95 0.65 0.15], "filled", "DisplayName", "Final search frontier");
     end
 
-    % Draw every candidate seed as context before emphasizing the selected
-    % successful route or the best partial route from a failed search.
+    % Draw candidate seed routes first. Then emphasize the selected route or
+    % the best partial route from a failed search.
     for seedIndex = 1:numel(result.Seeds)
         route_deg = result.Seeds(seedIndex).position_deg;
         plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
             "-", "Color", [0.75 0.75 0.75], "HandleVisibility", "off");
     end
     if result.Success
+        % Show both successful planning stages. Search selects a piecewise
+        % linear seed. HS3 returns a smooth polynomial with time data.
         plot(workspaceAxes, result.SelectedSeed_deg(:, 1), ...
             result.SelectedSeed_deg(:, 2), "--", "Color", [0.15 0.35 0.8], ...
             "LineWidth", 1.2, "DisplayName", "Selected geometric route");
         plot(workspaceAxes, result.position_deg(:, 1), ...
             result.position_deg(:, 2), "k-", "LineWidth", 2, "DisplayName", "Timed motion");
     elseif result.SearchDiagnostics.BestPartialSeedIndex > 0
+        % A failed search can keep the route closest to the goal. Plot this
+        % route to show search progress. Do not display it as a successful path.
         partialSeed = result.Seeds( result.SearchDiagnostics.BestPartialSeedIndex).position_deg;
         plot(workspaceAxes, partialSeed(:, 1), partialSeed(:, 2), ...
             "--", "Color", [0.15 0.35 0.8], "LineWidth", 1.2, "DisplayName", "Best partial seed");
@@ -147,6 +164,9 @@ end
 
 %% Section 3: Plot Time-Expanded Visibility Diagnostics
 
+% Use time as the vertical axis for moving-obstacle diagnostics. The same
+% position at two times represents two different search states. An obstacle can
+% occupy the position at one time and leave it clear at another time.
 if options.ShowVisibilityGraphs
     visibilityFigure = figure( "Name", options.Title + " visibility diagnostics", "Visible", options.FigureVisible);
     visibilityAxes = axes(visibilityFigure);
@@ -156,6 +176,8 @@ if options.ShowVisibilityGraphs
     gridRecord = result.SearchDiagnostics.Grid;
     layerTimes_s = visibilityLayerTimes(gridRecord, result.Inputs);
     layerIndices = sampledIndices(numel(layerTimes_s), options.MaximumDisplayedVisibilitySnapshots);
+    % Display sampling reduces graphics work only. Search statistics and the
+    % result still describe all retained search states.
     if options.ShowSweptSurfaces
         drawObstacleLayers(visibilityAxes, obstacles, ...
             layerTimes_s(layerIndices), options.MaximumDisplayedSlicesPerObstacle);
@@ -163,8 +185,8 @@ if options.ShowVisibilityGraphs
     if isfield(gridRecord, "NodePosition_deg") && ~isempty(gridRecord.NodePosition_deg)
         nodePosition_deg = gridRecord.NodePosition_deg;
 
-        % Repeat the spatial graph nodes at each retained time layer so the
-        % three-dimensional view exposes how the search evolves over time.
+        % Repeat spatial graph nodes at each displayed time layer. This shows
+        % how available search states change with time.
         for layerIndex = reshape(layerIndices, 1, [])
             scatter3(visibilityAxes, nodePosition_deg(:, 1), ...
                 nodePosition_deg(:, 2), ...
@@ -173,8 +195,8 @@ if options.ShowVisibilityGraphs
         end
     end
 
-    % Plot each seed with its own estimated time coordinates to show the
-    % complete set of candidate space-time trajectories.
+    % Plot each seed with its estimated times. This shows candidate routes in
+    % both space and time.
     for seedIndex = 1:numel(result.Seeds)
         seed = result.Seeds(seedIndex);
         seedTime_s = result.Inputs.initialState.time_s + seed.tau * seed.EstimatedDuration_s;
@@ -199,6 +221,8 @@ end
 
 %% Section 4: Plot Returned Kinematics
 
+% Use one time axis for position, velocity, acceleration, and jerk. A reader can
+% compare continuity and physical limits at the same times.
 if options.ShowKinematics && result.Success
     kinematicFigure = figure( "Name", options.Title + " kinematics", "Visible", options.FigureVisible);
     tiledLayout = tiledlayout(kinematicFigure, 4, 1, "TileSpacing", "compact", "Padding", "compact");
@@ -208,8 +232,8 @@ if options.ShowKinematics && result.Success
         result.Inputs.limits.maxAcceleration_deg_s2, result.Inputs.limits.maxJerk_deg_s3};
     axesHandles = gobjects(4, 1);
 
-    % Build one aligned panel for position and each modeled derivative so a
-    % reader can compare the returned histories without changing time axes.
+    % Create one aligned panel for position and each derivative. Keep all time
+    % axes aligned.
     for quantityIndex = 1:4
         axesHandles(quantityIndex) = nexttile(tiledLayout);
         axesHandle = axesHandles(quantityIndex);
@@ -221,12 +245,12 @@ if options.ShowKinematics && result.Success
         plot(axesHandle, result.time_s, values(:, 2), "DisplayName", "Elevation");
         if ~isempty(limitValues{quantityIndex})
 
-            % Keep each derivative panel twenty percent beyond its largest
-            % configured positive or negative per-axis physical limit.
+            % Extend each derivative axis 20 percent beyond its largest limit.
+            % This keeps limit lines and motion data visible.
             plotLimit = 1.20 * max(abs(limitValues{quantityIndex}));
 
-            % Add positive and negative limits for azimuth and elevation to
-            % make per-axis certificate boundaries visible in each panel.
+            % Draw positive and negative limits for both coordinates. These
+            % lines show the permitted range in each derivative panel.
             for axisIndex = 1:2
                 yline(axesHandle, limitValues{quantityIndex}(axisIndex), ...
                     "--", "Color", "r", "LineWidth", 3, ...
@@ -252,6 +276,9 @@ end
 
 %% Section 5: Animate Returned Motion
 
+% Animation uses the returned sample history. Query obstacles and moving targets
+% at the same time as the trajectory marker. All displayed motion then uses the
+% planner time instead of computer clock time.
 if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     animationFigureVisibility = options.FigureVisible;
     if options.SaveAnimationGif
@@ -279,8 +306,8 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     motionColors = [0.00 0.45 0.74; 0.85 0.33 0.10];
     timeLimits_s = [result.time_s(1), result.time_s(end)];
 
-    % Prepare the synchronized histories once. Every animation frame advances
-    % the traces, current-state markers, and time cursor together.
+    % Prepare synchronized histories one time. Each frame advances traces,
+    % current-state markers, and the time cursor to the same sample.
     for quantityIndex = 1:4
         animationKinematicAxes(quantityIndex) = ...
             nexttile(animationLayout, 2 * quantityIndex);
@@ -327,8 +354,8 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     end
     xlabel(animationKinematicAxes(end), "Time (s)");
 
-    % A figure annotation remains fixed above the right-hand panels when the
-    % tiled layout changes during drawnow.
+    % Use a figure annotation for time text. It stays above the right panels
+    % when drawnow updates the tiled layout.
     legendText = "\color[rgb]{0 0.45 0.74}Azimuth" + ...
         "     \color[rgb]{0.85 0.33 0.10}Elevation";
     animationLegend = annotation(animationFigure, "textbox", ...
@@ -346,8 +373,8 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     animationGifFile = char(options.AnimationGifFile);
     gifFrameCount = 0;
 
-    % Rebuild each selected animation frame from the same returned motion and
-    % obstacle histories; animation never asks the planner to run again.
+    % Build each frame from returned motion and obstacle histories. Animation
+    % does not call the planner.
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes);
@@ -365,8 +392,7 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
         ylabel(animationAxes, "Elevation (deg)");
         title(animationAxes, sprintf("%s | t = %.3f s", options.Title, result.time_s(frameIndex)));
 
-        % Advance every kinematic quantity to the same returned sample shown
-        % in the spatial animation.
+        % Advance each kinematic plot to the sample in the spatial animation.
         for quantityIndex = 1:4
             values = result.(animationQuantityNames(quantityIndex));
             for axisIndex = 1:2
@@ -381,8 +407,8 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
         end
         drawnow;
 
-        % Capture the complete dashboard so exported frames keep spatial and
-        % kinematic state synchronized.
+        % Capture the complete dashboard. Exported spatial and kinematic views
+        % then show the same time.
         if options.SaveAnimationGif
             capturedFrame = getframe(animationFigure);
             rgbImage = frame2im(capturedFrame);
@@ -425,15 +451,16 @@ end
 end
 
 function options = normalizePlotAliases(options)
-% Forward deprecated display spellings through one compatibility map.
+% Convert old display option names in one location. Plotting sections can then
+% use only current option names.
 if ~isstruct(options) || ~isscalar(options)
     error("plotTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
 aliases = [ ...
     "AnimationFrameStride", "FrameStride"; "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
 
-% Translate each deprecated display name once while allowing the current name
-% to win when callers provide both spellings.
+% Translate each old display name one time. If both names are present, use the
+% current name.
 for aliasIndex = 1:size(aliases, 1)
     oldName = aliases(aliasIndex, 1);
     newName = aliases(aliasIndex, 2);
@@ -446,8 +473,8 @@ for aliasIndex = 1:size(aliases, 1)
 end
 compatibilityNames = ["JerkConstraintEnabled", "MaxJerk_deg_s3", "ConfiguredFiniteMaxJerk_deg_s3", "PlotOptions"];
 
-% Remove example-reporting fields that are not actual plotter options before
-% the remaining names are checked against the public display contract.
+% Remove example-reporting fields before plot option validation. These fields
+% do not control plotting.
 for name = compatibilityNames
     if isfield(options, name)
         options = rmfield(options, name);
@@ -465,6 +492,8 @@ end
 
 function drawSearchEdges(axesHandle, gridRecord)
 % Draw retained accepted and collision-rejected visibility tests.
+% Accepted edges show moves that search can use. Rejected edges show moves that
+% protected geometry blocks.
 if isfield(gridRecord, "DenseSeedEnvelopeUsed") && ...
         gridRecord.DenseSeedEnvelopeUsed && ~isempty(gridRecord.DenseSeedEnvelope_deg)
     boundary_deg = gridRecord.DenseSeedEnvelope_deg;
@@ -494,17 +523,19 @@ end
 
 function [azimuth_deg, elevation_deg] = edgeLineData(edges_deg)
 % Convert N-by-4 edge endpoints to NaN-separated plot vectors.
+% Insert NaN between independent edges. MATLAB can then draw many edges with
+% one graphics call without connecting adjacent edge records.
 edgeCount = size(edges_deg, 1);
 azimuth_deg = reshape([ edges_deg(:, 1), edges_deg(:, 3), nan(edgeCount, 1)].', [], 1);
 elevation_deg = reshape([ edges_deg(:, 2), edges_deg(:, 4), nan(edgeCount, 1)].', [], 1);
 end
 
 function drawObstacles(axesHandle, obstacles, time_s, showOriginal)
-% Draw original and protected geometry from one canonical source.
+% Draw original and protected geometry from the same obstacle data.
 obstacleColors = lines(max(1, numel(obstacles)));
 
-% Render each obstacle with a stable color so its original and protected
-% boundaries remain visually associated.
+% Use one color for both boundaries of an obstacle. A reader can then associate
+% the original boundary with its safety-protected boundary.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     obstacleColor = obstacleColors(obstacleIndex, :);
@@ -512,9 +543,9 @@ for obstacleIndex = 1:numel(obstacles)
         originalObstacle = obstacle;
         originalObstacle.az_deg = obstacle.originalAz_deg;
         originalObstacle.el_deg = obstacle.originalEl_deg;
-        % The prepared data describes the protected boundary. Remove it
-        % before the original boundary is prepared because inflation can
-        % change the vertex count and the interval correspondence.
+        % Prepared data describes the protected boundary. Remove it before
+        % preparing the original boundary. Safety inflation can change vertex
+        % count and time-interval correspondence.
         if isfield(originalObstacle, "InternalPreparation")
             originalObstacle = rmfield( originalObstacle, "InternalPreparation");
         end
@@ -538,20 +569,22 @@ end
 
 function drawObstacleLayers(axesHandle, obstacles, times_s, maximumCount)
 % Draw colored obstacle slices and compatible swept surfaces.
+% Each slice is a protected boundary at one time. Connect matching vertices at
+% adjacent times to show a swept surface. This surface is for explanation only.
+% Collision validation does not use it.
 timeIndices = sampledIndices(numel(times_s), maximumCount);
 obstacleColors = lines(max(1, numel(obstacles)));
 isFirstShape = true;
 
-% Build a separate swept surface for every moving obstacle so disconnected
-% histories do not become one misleading graphics object.
+% Build a separate swept surface for each moving obstacle. Do not connect the
+% histories of different obstacles.
 for obstacleIndex = 1:numel(obstacles)
     obstacleColor = obstacleColors(obstacleIndex, :);
     previousAzimuth_deg = zeros(0, 1);
     previousElevation_deg = zeros(0, 1);
     previousTime_s = NaN;
 
-    % Walk the retained history times in order and connect only consecutive
-    % nonempty shapes into the displayed swept surface.
+    % Process retained times in order. Connect only adjacent nonempty shapes.
     for timeIndex = reshape(timeIndices, 1, [])
         shape = obstacleAvoidance.obstacles.shapeAtTime( obstacles(obstacleIndex), times_s(timeIndex));
         if isempty(shape.Vertices)
@@ -636,6 +669,8 @@ end
 
 function indices = sampledIndices(count, maximumCount)
 % Retain evenly distributed display indices without changing counts.
+% Keep the first and last indices. Select the other indices at even intervals.
+% This preserves the displayed span and limits interactive graphics work.
 if count <= 0
     indices = zeros(0, 1);
 elseif count <= maximumCount
@@ -646,7 +681,8 @@ end
 end
 
 function titleText = diagnosticTitle(result, prefix)
-% Include the termination reason and complete key search counts.
+% Include the termination reason and the main search counts. For a confusing
+% failure plot, compare this title with result.SearchDiagnostics.
 gridRecord = result.SearchDiagnostics.Grid;
 expanded = fieldOrZero(gridRecord, "ExpandedCount");
 rejected = fieldOrZero(gridRecord, "RejectedTransitionCount");
@@ -655,7 +691,7 @@ titleText = sprintf("%s | %s | seeds %d | expanded %d | rejected %d", ...
 end
 
 function value = fieldOrZero(record, fieldName)
-% Read one optional diagnostic count without plot-time reconstruction.
+% Read an optional diagnostic count. Return zero when it is not available.
 value = 0;
 if isfield(record, fieldName)
     value = record.(fieldName);
@@ -663,7 +699,7 @@ end
 end
 
 function handles = createEmptyHandles(options)
-% Define stable empty graphics output for every display combination.
+% Define all graphics output fields before any display is created.
 handles = struct( ...
     "WorkspaceFigure", gobjects(0), ...
     "WorkspaceAxes", gobjects(0), ...

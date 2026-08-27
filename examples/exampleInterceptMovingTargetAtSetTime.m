@@ -27,6 +27,9 @@ function result = exampleInterceptMovingTargetAtSetTime( interceptTime_s, option
 
 %% Section 1: Resolve Example Controls
 
+% Accept a custom intercept time or an options structure. Fixed-arrival mode
+% requires the gimbal to reach the target at exactly interceptTime_s.
+
 if nargin < 1 || isempty(interceptTime_s)
     interceptTime_s = 12;
     options = struct();
@@ -44,9 +47,14 @@ validateattributes(interceptTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'p
 
 %% Section 2: Create Obstacles
 
+% Use no obstacles. This isolates target interpolation and specified-time motion.
+
 obstacles = [];
 
 %% Section 3: Create Planner Inputs
+
+% The sampled target follows a curved track. The intercept time must be inside
+% this history. The planner does not estimate unknown target motion.
 
 targetTime_s = linspace(0, max(30, interceptTime_s + 5), 7).';
 targetMotion = struct( ...
@@ -63,10 +71,15 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
+% Evaluate the target at the set time and plan one position-only intercept.
+
 result = obstacleAvoidance.planMovingTargetIntercept( ...
     obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
+
+% Confirm that the final gimbal position equals the target position. Also check
+% velocity, acceleration, and jerk limits.
 
 exampleValidation = validateExampleResult( result, "specified-time moving-target intercept");
 specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && ...
@@ -79,6 +92,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Plot the full target track and mark the requested meeting point.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

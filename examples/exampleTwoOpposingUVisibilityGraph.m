@@ -22,6 +22,8 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 
 %% Section 1: Resolve Example Controls
 
+% Resolve the same public options that all maintained examples use.
+
 if nargin < 1 || isempty(options)
     options = struct();
 end
@@ -32,7 +34,9 @@ end
 
 %% Section 2: Create Obstacles
 
-% Keep the physical request independent of solver initialization choices.
+% Two U shapes face in opposite directions. Their concave cavities create
+% several visibility choices. No solver initialization changes the physical
+% request.
 missionEndTime_s = 180;
 safetyMargin_deg = 0.10;
 firstUBoundary_deg = [ -10, 8; 0, 8; 0, 5; -7, 5; -7,-5; 0,-5; 0,-8; -10,-8];
@@ -47,6 +51,9 @@ obstacles = [ ...
 
 %% Section 3: Create Planner Inputs
 
+% Put the endpoints beyond the two obstacles. The direct line is blocked by the
+% protected shapes, so the visibility search must connect safe boundary views.
+
 initialState = struct("time_s", 0, "position_deg", [-4 0]);
 goalState = struct( "time_s", missionEndTime_s, "position_deg", [9 20]);
 limits = struct( ...
@@ -55,9 +62,13 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
+% Run the automatic visibility planner. Do not supply route directions.
+
 result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
+
+% Check that smoothing preserves the collision-free geometric route.
 
 exampleValidation = validateExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true));
 if ~exampleValidation.Passed
@@ -66,6 +77,8 @@ if ~exampleValidation.Passed
 end
 
 %% Section 6: Plot Diagnostics And Motion
+
+% Plot visibility search data and the selected trajectory when enabled.
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...

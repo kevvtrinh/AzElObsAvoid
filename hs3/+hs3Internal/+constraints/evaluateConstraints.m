@@ -36,7 +36,18 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 
 %% Section 1: Evaluate Values And Exact Jerk Columns
 
+% Constraint convention follows fmincon: every inequality is feasible when
+% c <= 0, while terminal-state equalities must be exactly zero. The jerk
+% columns are analytic because duration is held fixed while differentiating
+% them. This avoids finite-difference noise in the large control portion.
+% When the optimizer reports a large residual, compare the largest entries in
+% inequality and equality. Inequality rows point to continuous bounds or path
+% planes. Equality rows point to terminal position, velocity, or acceleration.
+
 if isFreeTime && ~isfinite(decision(end))
+    % A solver can request a nonfinite time during a line search. Replace this
+    % value with a finite value in the permitted range. The decision bounds
+    % prevent the solver from accepting the replacement as a solution.
     if isnan(decision(end))
         decision(end) = mean([minimumFinalTime, maximumFinalTime]);
     else
@@ -61,6 +72,13 @@ if ~isFreeTime
 end
 
 %% Section 2: Append One Safeguarded Final-Time Column
+
+% Duration appears through powers up to five, so the time derivative is more
+% complex than the affine jerk derivatives. Use a one-sided finite difference.
+% Keep the difference point inside the permitted time range. eps^(1/3) balances
+% truncation error and round-off error for a first derivative.
+% If free-time iterations are unstable, inspect this time column and the time
+% bounds before changing solver tolerances.
 
 scale = max(1, abs(finalTime));
 baseStep = eps^(1 / 3) * scale;
@@ -106,6 +124,9 @@ function [inequality, equality, finalTime] = constraintValues( ...
         decision, isFreeTime, fixedFinalTime, segmentCount, initialState, ...
         terminalState, limits, pathConstraints)
 % Reconstruct one decision and evaluate raw constraint values.
+% The final-time decision is appended after all coordinate-major jerk values.
+% Rebuilding the polynomial here keeps every constraint tied to the same exact
+% integration equations used later for returned trajectory reconstruction.
 dimensionCount = numel(initialState.position);
 controlCount = 2 * segmentCount + 1;
 jerkValueCount = dimensionCount * controlCount;
@@ -131,6 +152,9 @@ end
 
 function inequality = affinePathConstraints(polynomial, pathConstraints)
 % Evaluate point or complete-interval coordinate half-space bounds.
+% Projecting a vector polynomial onto a normal produces a scalar polynomial.
+% Bounding that scalar's Bernstein values proves the requested half-space over
+% the complete normalized interval, including points between output samples.
 coefficientCount = size(polynomial.positionPower, 3);
 [segmentIndex, hullMap] = hs3Internal.polynomial.createSubintervalBernsteinMap( ...
     pathConstraints.Tau, pathConstraints.TauEnd, ...
@@ -154,6 +178,9 @@ end
 
 function inequality = continuousBoundConstraints(polynomial, limits)
 % Convert complete-segment derivative bounds into Bernstein violations.
+% Bounds are appended in the same dimension/quantity/upper/lower order used by
+% createFixedConstraintMatrices. Infinite bounds add no row because they place
+% no physical restriction on that coordinate and derivative.
 coefficientFields = [ ...
     "positionPower", "velocityPower", ...
     "accelerationPower", "jerkPower"];
@@ -186,6 +213,8 @@ end
 
 function bernstein = coordinateBernstein(coefficientArray, dimensionIndex)
 % Convert every segment of one coordinate while preserving row order.
+% Coefficient arrays are segment-by-coordinate-by-ascending-power. Conversion
+% expects one polynomial per column, and linear indexing then stacks segments.
 segmentCount = size(coefficientArray, 1);
 coefficientCount = size(coefficientArray, 3);
 powerMatrix = reshape(permute( ...
