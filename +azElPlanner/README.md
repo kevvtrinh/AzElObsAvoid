@@ -37,6 +37,16 @@ polynomial evaluation to `hs3`. No numerical solver is called by an Az/El
 package.
 The root `validateAzElTrajectory` remains the single final validator.
 
+For `GoalTimeMode="fixedArrival"`, every completed candidate keeps the exact
+requested arrival time. The planner retains the shortest independently
+validated sampled motion within each seed and selects the shortest among all
+validated seeds completed inside the existing global work budget. Integrated
+squared jerk breaks only path-length ties. This is a bounded candidate-quality
+policy, not a global shortest-path certificate. Moving-obstacle fixed-arrival
+requests evaluate input-derived seeds in increasing geometric length. Search
+stops when an independently validated motion attains the Euclidean start-goal
+distance, because no spatially shorter trajectory can exist.
+
 ## Dependency and size boundary
 
 The Az/El planner depends inward on the five supporting packages and frozen

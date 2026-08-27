@@ -87,6 +87,16 @@ if hasChangingObstacles
 else
     seedOrder = spatialOrder;
 end
+if hasChangingObstacles && options.GoalTimeMode == "fixedArrival" && ...
+        ~isempty(seedOrder)
+    % Fixed arrival ranks valid motions by spatial length. Trying the
+    % shortest input-derived proposals first can prove the geometric lower
+    % bound before spending work on longer topologies.
+    orderedLength_deg = reshape( ...
+        [seeds(seedOrder).Length_deg], [], 1);
+    [~, lengthOrder] = sort(orderedLength_deg, "ascend");
+    seedOrder = seedOrder(lengthOrder);
+end
 if staticNoPathCertified
     % A topology-preserving motion solve cannot repair an exact static graph
     % that exhausted every route and rejected its only direct edge.
@@ -94,6 +104,10 @@ if staticNoPathCertified
 end
 firstValidatedMotionTime_s = NaN;
 bestValidatedFinalTime_s = Inf;
+straightLineLowerBound_deg = norm( ...
+    goalState.position_deg - initialState.position_deg);
+lengthLowerBoundTolerance_deg = max( ...
+    1e-10, 1e-10 * max(1, straightLineLowerBound_deg));
 
 %% Section 3: Solve, Validate, And Boundedly Repair HS3 Motions
 
@@ -201,8 +215,9 @@ for orderIndex = 1:numel(seedOrder)
             if isnan(firstValidatedMotionTime_s)
                 firstValidatedMotionTime_s = toc(planningTimer);
             end
-            if isempty(validatedCandidate) || finalCandidate.FinalTime_s < ...
-                    validatedCandidate.FinalTime_s
+            if isempty(validatedCandidate) || candidateImproves( ...
+                    finalCandidate, validatedCandidate, ...
+                    options.GoalTimeMode)
                 validatedCandidate = finalCandidate;
             end
             refinementTime_s = min( ...
@@ -362,9 +377,21 @@ for orderIndex = 1:numel(seedOrder)
         bestValidatedFinalTime_s = min( ...
             bestValidatedFinalTime_s, finalCandidate.FinalTime_s);
     end
+    fixedLengthLowerBoundReached = ...
+        options.GoalTimeMode == "fixedArrival" && ...
+        finalCandidate.Validation.Passed && ...
+        finalCandidate.MotionLength_deg <= ...
+        straightLineLowerBound_deg + lengthLowerBoundTolerance_deg;
+    if fixedLengthLowerBoundReached
+        % Euclidean displacement is a global spatial lower bound. Once an
+        % independently valid motion attains it, no later seed can be shorter.
+        break;
+    end
     % A motion pinned to the goal horizon is a fallback, not an earliest
     % arrival, so keep proposing topologies while budget remains.
-    if finalCandidate.Validation.Passed && ~hasChangingObstacles && ~finalCandidate.ArrivalAtHorizon
+    if finalCandidate.Validation.Passed && ~hasChangingObstacles && ...
+            ~finalCandidate.ArrivalAtHorizon && ...
+            options.GoalTimeMode == "earliestArrival"
         break;
     end
 end
@@ -398,7 +425,8 @@ if isempty(validatedIndices)
 end
 
 selectedSeedIndex = selectValidatedCandidate( ...
-    seedSummaries, validatedIndices, options.ArrivalTimeTolerance_s);
+    seedSummaries, validatedIndices, options.GoalTimeMode, ...
+    options.ArrivalTimeTolerance_s);
 selectedCandidate = candidates{selectedSeedIndex};
 result.Success = true;
 result.Message = "An independently validated Hermite-Simpson motion was selected.";
@@ -417,7 +445,11 @@ result.SearchDiagnostics.TerminationReason = result.TerminationReason;
 result.SearchDiagnostics.BestPartialSeedIndex = selectedSeedIndex;
 result.SearchDiagnostics.MeshRefinementPassCount = ...
     seedSummaries(selectedSeedIndex).MeshRefinementPassCount;
-if selectedCandidate.ArrivalAtHorizon
+if options.GoalTimeMode == "fixedArrival"
+    result.OptimalityStatement = "Shortest independently validated sampled " + ...
+        "motion among the fixed-arrival candidates completed within the " + ...
+        "global work budget; no global certificate.";
+elseif selectedCandidate.ArrivalAtHorizon
     result.Message = "An independently validated Hermite-Simpson motion " + ...
         "was selected, but its arrival is pinned to the goal horizon.";
     result.OptimalityStatement = "Arrival equals the goal horizon, so the " + ...
@@ -598,6 +630,7 @@ summary.MinimumClearance_deg = candidate.Validation.MinimumClearance_deg;
 summary.UnresolvedIntervalCount = candidate.Validation.UnresolvedIntervalCount;
 summary.ArrivalTime_s = candidate.FinalTime_s;
 summary.MotionDuration_s = candidate.MotionDuration_s;
+summary.MotionLength_deg = candidate.MotionLength_deg;
 summary.IntegratedSquaredJerk_deg2_s5 = ...
     candidate.IntegratedSquaredJerk_deg2_s5;
 summary.MaximumConstraintViolation = candidate.MaximumConstraintViolation;
@@ -633,11 +666,63 @@ end
 end
 
 function selectedIndex = selectValidatedCandidate( ...
-        summaries, validatedIndices, arrivalTolerance_s)
-% Rank by arrival, then integrated jerk, then stable seed index.
+        summaries, validatedIndices, goalTimeMode, arrivalTolerance_s)
+% Rank fixed arrivals by motion length and free arrivals by time.
+if goalTimeMode == "fixedArrival"
+    motionLength_deg = ...
+        [summaries(validatedIndices).MotionLength_deg].';
+    lengthTolerance_deg = max(1e-10, ...
+        1e-10 * max(1, min(motionLength_deg)));
+    lengthEquivalent = validatedIndices( ...
+        motionLength_deg <= min(motionLength_deg) + lengthTolerance_deg);
+    jerk = ...
+        [summaries(lengthEquivalent).IntegratedSquaredJerk_deg2_s5].';
+    selectedIndex = min( ...
+        lengthEquivalent(jerk <= min(jerk) + 1e-12));
+    return;
+end
 arrival = [summaries(validatedIndices).ArrivalTime_s].';
 timeEquivalent = validatedIndices( ...
     arrival <= min(arrival) + arrivalTolerance_s);
 jerk = [summaries(timeEquivalent).IntegratedSquaredJerk_deg2_s5].';
 selectedIndex = min(timeEquivalent(jerk <= min(jerk) + 1e-12));
+end
+
+function improves = candidateImproves( ...
+        candidate, incumbent, goalTimeMode)
+%% Section 0: Header & Readme
+% SYNTAX
+%   improves = candidateImproves( ...
+%       candidate, incumbent, goalTimeMode)
+%**************************************************************************
+% PURPOSE
+%   - Compare independently valid candidates using the public time policy.
+%**************************************************************************
+% INPUTS
+%   - candidate, incumbent (scalar candidate structs)
+%       Both records contain final time, sampled length, and jerk cost.
+%   - goalTimeMode (scalar string)
+%       fixedArrival prioritizes length; earliestArrival prioritizes time.
+%**************************************************************************
+% OUTPUTS
+%   - improves (logical scalar)
+%       True only when candidate strictly improves the active quality order.
+%**************************************************************************
+% UNITS
+%   - Length is degrees and arrival tolerance is seconds.
+%**************************************************************************
+if goalTimeMode == "fixedArrival"
+    lengthTolerance_deg = max(1e-10, ...
+        1e-10 * max(1, incumbent.MotionLength_deg));
+    lengthImproves = candidate.MotionLength_deg < ...
+        incumbent.MotionLength_deg - lengthTolerance_deg;
+    lengthEquivalent = abs(candidate.MotionLength_deg - ...
+        incumbent.MotionLength_deg) <= lengthTolerance_deg;
+    jerkImproves = candidate.IntegratedSquaredJerk_deg2_s5 < ...
+        incumbent.IntegratedSquaredJerk_deg2_s5 - 1e-12;
+    improves = lengthImproves || (lengthEquivalent && jerkImproves);
+    return;
+end
+% Preserve the established earliest-arrival refinement rule exactly.
+improves = candidate.FinalTime_s < incumbent.FinalTime_s;
 end

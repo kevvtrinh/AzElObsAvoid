@@ -6,6 +6,76 @@ the latest example evidence is in
 [Extreme deforming U.S. and moving-sun example — 2026-08-24](#extreme-deforming-us-and-moving-sun-example--2026-08-24).
 Earlier sections are retained as historical checkpoints.
 
+## Fixed-arrival geometric lower-bound proof — 2026-08-26
+
+- Environment: `HS3-planner` at
+  `855a569+fixed-lower-bound-worktree`, MATLAB R2024b Update 4, AMD64 Family
+  23 Model 113, no Parallel Computing Toolbox or worker pool.
+- Baseline diagnosis: the 42-second four-circle history contained 421 slices.
+  With plots disabled, wall time was 62.021637 seconds and planner time was
+  60.0989 seconds. Stage timing was 34.9519 seconds corridor construction,
+  21.6022 collision checking, 2.1221 motion solving, 0.4585 topology, 0.2055
+  final validation, and 0.7587 unattributed.
+- Profiler: 41 `polyshape.union` calls consumed 48.2364 inclusive seconds;
+  `seedEnvelopeContainsObstacles` consumed 54.4786 seconds. The selected
+  direct seed's HS3 call used only 0.4489 seconds.
+- Retained changes: the example supplies obstacle samples only through its
+  requested 22-second planning horizon while independently checking the full
+  conceptual 42-second profile endpoints. Dynamic fixed-arrival seed order is
+  shortest-geometric-first, and search stops after an independently validated
+  motion reaches the Euclidean start-goal lower bound.
+- Focused result: clipping history alone reduced wall time to 26.148349
+  seconds. The complete change reached 5.722992 seconds in the focused run and
+  5.634472 seconds in the final serial matrix. The result remained exactly 20
+  degrees at exactly 22 seconds with collision, velocity, acceleration, jerk,
+  dynamics, endpoint, and example shortest-route validation passing.
+- Structural regression: a distinct far-moving-obstacle fixed-arrival test
+  exposes multiple seeds, attempts one, reaches its computed geometric lower
+  bound, and passes. The moving-barrier waiting regression also passes.
+- Static analysis and tests: Code Analyzer reported zero findings in the
+  changed files. The complete suite passed 106/106 in 69.471882 seconds.
+- Examples: 18 fresh serial `PlotOutputs=false` processes completed in
+  297.286362 seconds. Seventeen successes passed independent collision and
+  kinematic certificates; the expected no-path case independently validated
+  `noValidatedSeed`. Exact rows are in `benchmark.csv` under
+  `855a569+fixed-lower-bound-worktree`.
+- Graphics: the visible four-circle success produced two figures and retained
+  the shortest-route certificate. The hidden expected failure produced two
+  diagnostic figures and retained nine rejected edges.
+- Unfavorable evidence: `exampleMovingCircleNoAzimuthWrap` independently
+  validated at 8.707031 seconds, 0.0609997 seconds later than its preceding
+  row. The changed ordering applies only to fixed arrival, so no causal
+  improvement or regression claim is made for this timing-sensitive case.
+
+## Fixed-arrival length-first candidate quality — 2026-08-26
+
+- Baseline: clean `855a569`, `HS3-planner`, identical scenario inputs and
+  deterministic focused controls.
+- Retained rule: fixed-arrival candidates keep the requested terminal time and
+  rank by independently validated sampled motion length, then integrated jerk
+  and stable seed index. Earliest-arrival behavior is unchanged.
+- Focused benefit: four accelerating circles shortened from 27.8702009821 to
+  25.9348981999 degrees (6.943986%) at exactly 22 seconds.
+- Structural fixed cases: alternating occlusion shortened 3.809973%; target
+  exits obstacle shortened 4.772009%; the already-straight specified-time
+  intercept remained unchanged at 9.53894054682 degrees and 12 seconds.
+- Physical validity: every improved result retained independent collision,
+  velocity, acceleration, jerk, dynamics, endpoint, and fixed-time checks.
+- Center-line diagnosis: the four protected circles block elevation zero from
+  7.3664844164 to 12.6335155836 seconds. Both early and late direct passages
+  violate the time/dynamics bounds; the direct seed was attempted and returned
+  `optimizerInfeasible`.
+- Tests: the focused planner suite passes 54/54, including stable early-failure
+  diagnostics and static multi-route shortest-selection coverage.
+- Examples: all 18 maintained examples ran serially in fresh headless
+  processes in 254.1345943 seconds; exact rows are in `benchmark.csv` under
+  `855a569+fixed-length-worktree`.
+- Graphics: the improved fixed-arrival four-circle result independently
+  validated and created three visible figures.
+- Runtime tradeoff: static fixed-arrival planning may now attempt every retained
+  seed, bounded by `MaximumSeedCount` and `MaximumPlanningTime_s`, rather than
+  stopping after the first validated seed.
+
 ## Flat architecture and frozen HS3 boundary — 2026-08-26
 
 - Environment: `HS3-planner` at

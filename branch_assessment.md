@@ -4,6 +4,75 @@ The current planner judgment is **HS3-only production cutover — 2026-08-25**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Fixed-arrival geometric lower-bound proof — 2026-08-26
+
+Dynamic fixed-arrival requests now evaluate retained topology seeds in
+increasing geometric length and stop only when an independently validated
+motion attains the Euclidean start-goal distance within numerical tolerance.
+This is an input-derived global spatial lower bound, not a scenario-specific
+route heuristic. If the bound is not attained, bounded multi-seed length-first
+selection remains active. Earliest-arrival behavior and frozen `+hs3` code are
+unchanged.
+
+The four-accelerating-circle demo now uses a 42-second conceptual smooth
+rest-to-rest obstacle profile but supplies only the 0--22-second planning
+history relevant to its fixed arrival. It independently validates the exact
+20-degree center-line motion at 22 seconds with collision and every derivative
+certificate passing. One of three available seeds is attempted because the
+first valid seed attains the geometric lower bound.
+
+Before retention, the same demo supplied 421 history slices and took
+62.021637 seconds with plots disabled. Exclusive planner timing attributed
+34.9519 seconds to corridor construction, 21.6022 seconds to collision
+checking, and only 2.1221 seconds to HS3 motion solving. `polyshape.union`
+accounted for 48.2364 profiled seconds. Clipping post-arrival history alone
+reduced wall time to 26.148349 seconds; lower-bound seed ordering and stopping
+reduced the final serial wall time to 5.634472 seconds, an 11.01x speedup.
+
+Fresh verification passes 106/106 tests and all 18 maintained examples. The
+matrix has 17 independently validated successes and the expected validated
+`noValidatedSeed` result. The final matrix used 297.286362 seconds. The
+earliest-arrival moving-circle case returned a valid 8.707031-second motion,
+0.0609997 seconds later than the preceding record; because the retained rule
+is fixed-arrival-only, this is reported as existing wall-budget variability,
+not hidden as an improvement.
+
+## Fixed-arrival length-first candidate quality — 2026-08-26
+
+Fixed-arrival planning now retains the shortest independently validated
+sampled motion within each HS3 seed and selects the shortest across every
+validated seed completed within the existing global work budget. Integrated
+squared jerk is only a path-length tie-breaker. Earliest-arrival ranking and
+refinement are unchanged. The dimension-neutral `+hs3` engine remains frozen;
+this policy uses only its returned motions and independent Az/El validation.
+
+Against clean commit `855a569`, the focused four-accelerating-circle case
+kept its exact 22-second arrival and shortened from 27.8702009821 to
+25.9348981999 degrees, a 1.9353027822-degree or 6.943986% improvement.
+The fixed alternating-occlusion intercept shortened from 14.2200520815 to
+13.6782719080 degrees (3.809973%), and target-exits-obstacle shortened from
+21.3509241121 to 20.3320561588 degrees (4.772009%). The straight specified-time
+intercept remained at its geometric lower bound of 9.53894054682 degrees.
+Every fixed arrival time, collision certificate, and kinematic certificate
+remained unchanged.
+
+The apparent 20-degree center-line route in the four-circle case is not
+physically feasible at 22 seconds. Protected geometry blocks the complete
+center line from 7.3664844164 through 12.6335155836 seconds. Early clearance
+needs at least 8.075 seconds even without acceleration. After reopening, an
+optimistic state already at the left protected boundary with maximum forward
+speed still fails the HS3 limits by 0.0880882; the jerk-limited cruise-and-stop
+lower bound is about 9.558 seconds versus 9.366 seconds available.
+
+Fresh verification contains 18/18 maintained outcomes in 254.1345943 seconds:
+17 independently validated, collision-free successes with passing kinematic
+certificates and the expected validated `noValidatedSeed` result. The focused
+planner suite passes 54/54. Fixed static multi-route coverage now asserts that
+all retained seeds are attempted and the minimum validated motion length is
+selected. The tradeoff is bounded extra work for static fixed-arrival requests:
+instead of stopping after the first valid seed, planning may evaluate up to
+`MaximumSeedCount` candidates within `MaximumPlanningTime_s`.
+
 ## Flat architecture and frozen HS3 boundary — 2026-08-26
 
 Production code now has six one-level Az/El packages: input, obstacles,

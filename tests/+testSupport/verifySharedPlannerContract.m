@@ -416,10 +416,18 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.CollisionFree);
 validated = find([result.SeedSummaries.ValidationPassed]);
 if result.Success
-    arrival_s = [result.SeedSummaries(validated).ArrivalTime_s];
-    verifyLessThanOrEqual(testCase, ...
-        result.SeedSummaries(result.SelectedSeedIndex).ArrivalTime_s, ...
-        min(arrival_s) + options.ArrivalTimeTolerance_s);
+    selectedSummary = result.SeedSummaries(result.SelectedSeedIndex);
+    if options.GoalTimeMode == "fixedArrival"
+        motionLength_deg = ...
+            [result.SeedSummaries(validated).MotionLength_deg];
+        verifyLessThanOrEqual(testCase, ...
+            selectedSummary.MotionLength_deg, min(motionLength_deg) + 1e-9);
+    else
+        arrival_s = [result.SeedSummaries(validated).ArrivalTime_s];
+        verifyLessThanOrEqual(testCase, ...
+            selectedSummary.ArrivalTime_s, ...
+            min(arrival_s) + options.ArrivalTimeTolerance_s);
+    end
 end
 end
 

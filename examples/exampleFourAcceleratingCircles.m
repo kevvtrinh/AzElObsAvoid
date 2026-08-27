@@ -7,6 +7,7 @@ function result = exampleFourAcceleratingCircles(exampleOverrides)
 % PURPOSE
 %   - Plan through four vertically moving circles: two rise and two fall.
 %   - Intercept a sampled target trajectory while those obstacles move.
+%   - Demonstrate the shortest center-line route before the circles close it.
 %   - Use a smooth rest-to-rest center profile instead of constant speed.
 %   - Keep neighboring original circles tangent at their shared midpoint.
 %**************************************************************************
@@ -45,7 +46,7 @@ options.AllowAzimuthWrapping = false;
 %% Section 2: Create Obstacles
 
 missionEndTime_s = 22;
-obstacleMotionDuration_s = 20;
+obstacleMotionDuration_s = 42;
 obstacleSampleTime_s = 0.10;
 obstacleTime_s = (0:obstacleSampleTime_s:missionEndTime_s).';
 
@@ -54,6 +55,10 @@ safetyMargin_deg = 0.15;
 circleCenterAzimuth_deg = [-4.5 -1.5 1.5 4.5];
 circleDirection = [1 1 -1 -1];
 circleTravel_deg = 7.0;
+
+% Closing the center line later leaves enough dynamics-limited time to pass
+% all four circles directly, arrive at the target, and absorb the remaining
+% fixed-arrival slack without adding geometric distance.
 
 % A quintic smoothstep has zero velocity and acceleration at both ends.
 % The circles accelerate into the scene, reach maximum speed halfway,
@@ -121,10 +126,9 @@ result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, l
 %% Section 5: Validate Result
 
 exampleValidation = validateAzElExampleResult( ...
-    result, "four accelerating circles", struct("RequireDirectBlocked", true));
+    result, "four accelerating circles");
 
 midpointIndex = find( obstacleTime_s == 0.5 * obstacleMotionDuration_s, 1, "first");
-motionEndIndex = find( obstacleTime_s == obstacleMotionDuration_s, 1, "first");
 pairCenterDistance_deg = [ ...
     circleCenterAzimuth_deg(2) - circleCenterAzimuth_deg(1), circleCenterAzimuth_deg(4) - circleCenterAzimuth_deg(3)];
 midpointCenterStep_deg = hypot( diff(circleCenterAzimuth_deg), diff(circleCenterElevation_deg(midpointIndex, :)));
@@ -132,10 +136,25 @@ tangencyTolerance_deg = 1e-12;
 
 pairsRemainTangent = all(abs( pairCenterDistance_deg - 2 * circleRadius_deg) <= tangencyTolerance_deg);
 allCirclesTangentAtMidpoint = all(abs( midpointCenterStep_deg - 2 * circleRadius_deg) <= tangencyTolerance_deg);
-zeroEndpointVelocity = all(abs( circleCenterVelocity_deg_s([1 motionEndIndex], :)) <= 1e-12, "all");
-zeroEndpointAcceleration = all(abs( circleCenterAcceleration_deg_s2([1 motionEndIndex], :)) <= 1e-12, "all");
+profileEndpointNormalizedTime = [0; 1];
+profileEndpointRate_1_s = (30 * profileEndpointNormalizedTime .^ 2 - ...
+    60 * profileEndpointNormalizedTime .^ 3 + ...
+    30 * profileEndpointNormalizedTime .^ 4) / obstacleMotionDuration_s;
+profileEndpointAcceleration_1_s2 = ( ...
+    60 * profileEndpointNormalizedTime - ...
+    180 * profileEndpointNormalizedTime .^ 2 + ...
+    120 * profileEndpointNormalizedTime .^ 3) / ...
+    obstacleMotionDuration_s ^ 2;
+profileEndpointVelocity_deg_s = ...
+    circleTravel_deg * profileEndpointRate_1_s .* circleDirection;
+profileEndpointAcceleration_deg_s2 = ...
+    circleTravel_deg * profileEndpointAcceleration_1_s2 .* circleDirection;
+zeroEndpointVelocity = all( ...
+    abs(profileEndpointVelocity_deg_s) <= 1e-12, "all");
+zeroEndpointAcceleration = all( ...
+    abs(profileEndpointAcceleration_deg_s2) <= 1e-12, "all");
 hasAccelerationAndDeceleration = any(circleCenterAcceleration_deg_s2(2:midpointIndex - 1, 1) > 0) && ...
-    any(circleCenterAcceleration_deg_s2( midpointIndex + 1:motionEndIndex - 1, 1) < 0);
+    any(circleCenterAcceleration_deg_s2(midpointIndex + 1:end, 1) < 0);
 
 circleMotionValidation = struct( ...
     "Passed", pairsRemainTangent && allCirclesTangentAtMidpoint && ...
@@ -161,6 +180,23 @@ movingTargetValidation = struct( ...
     "TargetSpeedAtIntercept_deg_s", targetSpeedAtIntercept_deg_s, ...
     "PositionOnlyCapture", ~result.Intercept.Options.MatchTargetVelocity);
 
+shortestRouteLength_deg = norm( ...
+    targetPosition_deg(end, :) - initialState.position_deg);
+sampledRouteLength_deg = sum(vecnorm( ...
+    diff(result.position_deg, 1, 1), 2, 2));
+maximumCenterLineError_deg = max(abs( ...
+    result.position_deg(:, 2) - initialState.position_deg(2)));
+shortestRouteTolerance_deg = 1e-6;
+shortestRouteValidation = struct( ...
+    "Passed", result.Success && ...
+        abs(sampledRouteLength_deg - shortestRouteLength_deg) <= ...
+        shortestRouteTolerance_deg && ...
+        maximumCenterLineError_deg <= shortestRouteTolerance_deg, ...
+    "TheoreticalMinimumLength_deg", shortestRouteLength_deg, ...
+    "SampledRouteLength_deg", sampledRouteLength_deg, ...
+    "MaximumCenterLineError_deg", maximumCenterLineError_deg, ...
+    "Tolerance_deg", shortestRouteTolerance_deg);
+
 if ~circleMotionValidation.Passed
     exampleValidation.Passed = false;
     exampleValidation.Message = "Circle motion or tangency validation failed.";
@@ -168,6 +204,11 @@ end
 if ~movingTargetValidation.Passed
     exampleValidation.Passed = false;
     exampleValidation.Message = "Moving-target intercept validation failed.";
+end
+if ~shortestRouteValidation.Passed
+    exampleValidation.Passed = false;
+    exampleValidation.Message = ...
+        "The selected motion is not the shortest center-line route.";
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -183,6 +224,7 @@ result.ExampleName = "exampleFourAcceleratingCircles";
 result.ExampleValidation = exampleValidation;
 result.CircleMotionValidation = circleMotionValidation;
 result.MovingTargetValidation = movingTargetValidation;
+result.ShortestRouteValidation = shortestRouteValidation;
 result.ExampleConfiguration = jerkConfiguration;
 result.ExampleInputs = struct( ...
     "obstacles", obstacles, ...
