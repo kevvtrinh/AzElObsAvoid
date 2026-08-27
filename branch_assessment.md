@@ -5,6 +5,42 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Same-homology spatial route cleanup — 2026-08-26
+
+The spatial visibility product now removes avoidable consecutive route edges
+after homology-augmented search and before HS3. A replacement is retained only
+when the direct segment is visible in the same protected swept geometry, the
+existing winding signature matches the searched class, and the route becomes
+strictly shorter beyond a scale-aware numerical tolerance. The original route
+is the fallback. Direct and timed seeds are not rewritten, visibility search
+still discovers the topology, and the dimension-neutral `hs3/` engine remains
+unchanged and Az/El-agnostic.
+
+The primary six-rectangle gate reduced the aggregate length of four homology
+routes by 0.0065005233 degrees with two accepted shortcuts. A structurally
+different four-circle case accepted eight shortcuts, rejected 172 visible
+candidates for changing homology, and reduced aggregate route length by
+86.1926109665 degrees. Independent tests recomputed every retained signature,
+route length, and protected-geometry clearance. An existing two-rectangle case
+accepted no shortcut and retained its original lengths, demonstrating the
+no-benefit fallback.
+
+The strongest maintained-example benefit is the two-opposing-U selected seed,
+which decreased from 24.5077116377 to 24.0357847150 degrees while the final
+motion remained independently collision-free and kinematically certified.
+Alternating slalom also decreased from 16.0604396350 to 16.0193197983 degrees.
+All 18 maintained examples completed serially: 17 validated successes and the
+validated expected no-path result. The focused planner suite passed 59/59 and
+the complete suite passed 114/114. Search diagnostics expose candidate,
+rejection, acceptance, and length-reduction counts.
+
+This cleanup proves neither global shortestness nor homotopy completeness; it
+only reaches a deterministic direct-shortcut fixed point within each route's
+searched homology signature. The most unfavorable fresh maintained wall time
+was 61.034329 seconds for the extreme outline, above its preceding 56.218460
+seconds, so no runtime benefit is claimed. Existing singular-solver warning
+floods and the moving/deforming-outline runtime remain current weaknesses.
+
 ## Certified direct-path collinearity — 2026-08-26
 
 The Az/El adapter now preserves the Euclidean path for a certified direct

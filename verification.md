@@ -1,8 +1,59 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Two-product normal-folder architecture — 2026-08-26](#two-product-normal-folder-architecture--2026-08-26).
+[Same-homology spatial route cleanup — 2026-08-26](#same-homology-spatial-route-cleanup--2026-08-26).
 Earlier sections are retained as historical checkpoints.
+
+## Same-homology spatial route cleanup — 2026-08-26
+
+- Source: `HS3-planner` at `de372d5+spatial-route-cleanup-worktree`.
+- Baseline state: commit `de372d5`, with only the user-owned untracked
+  `Rogue Examples/` directory present. The baseline command called
+  `azElSearch.generateTopologySeeds` directly with deterministic fixed-arrival
+  inputs, so it measured spatial search without HS3 timing noise.
+- Retained mechanism: after homology-augmented visibility search returns a
+  spatial route, the cleanup evaluates nonadjacent route vertices as direct
+  replacement edges. It accepts the largest reduction, repeats to a fixed
+  point, and retains the original route unless the direct edge is visible in
+  the protected swept geometry, the repository's winding signature is
+  unchanged, and length decreases by more than the named floating-point
+  tolerance. Direct seeds, timed routes, visibility search, and `hs3/` are
+  unchanged.
+- Primary rectangle gate: four searched classes decreased from an aggregate
+  101.0883439161 to 101.0818433928 degrees, a 0.0065005233-degree reduction.
+  Two shortcuts were accepted. Independent tests recomputed route lengths,
+  winding signatures, and positive protected-geometry clearance.
+- Structurally different curved-obstacle gate: four 16-sided protected circles
+  accepted eight shortcuts and reduced aggregate class-route length by
+  86.1926109665 degrees. The homology guard rejected 172 otherwise eligible
+  direct replacements; every retained route independently matched its original
+  searched signature and remained outside protected geometry.
+- No-improvement gate: the existing two-rectangle homology case evaluated 62
+  candidates, accepted none, and returned bit-identical route lengths.
+- Diagnostics: search output now records cleanup route/candidate counts,
+  visibility and homology rejections, accepted replacements, and total length
+  reduction. Work scales with bounded spatial route point count and homology
+  class count; the visibility graph remains capped at 96 candidate vertices.
+- Tests: the focused three-case gate passed 3/3; `testHs3Planner` passed 59/59
+  in 45.865558 seconds; the complete repository suite passed 114/114 in
+  58.503675 seconds. Code Analyzer reported zero findings on both modified
+  MATLAB files.
+- Maintained examples: all 18 ran serially in separate fresh MATLAB processes.
+  Seventeen independently validated successes passed collision and kinematic
+  certificates, and the expected no-path case independently validated
+  `noValidatedSeed`. `exampleAlternatingSlalom` shortened its selected spatial
+  seed from 16.0604396350 to 16.0193197983 degrees;
+  `exampleTwoOpposingUVisibilityGraph` shortened from 24.5077116377 to
+  24.0357847150 degrees. Exact rows, including unchanged and unfavorable wall
+  times, are appended to `benchmark.csv`.
+- Graphics: a visible success produced three figures and six axes. The visible
+  expected failure produced two diagnostic figures and two axes with 15
+  rejected transitions.
+- Known limitations: this is a deterministic local shortcut cleanup, not a
+  globally shortest-path proof. Existing moving-barrier/opening-U singular
+  solver warning floods remain, and the extreme-outline wall time measured
+  61.034329 seconds versus the preceding 56.218460-second observation; no
+  runtime improvement is claimed.
 
 ## Certified direct-path collinearity — 2026-08-26
 

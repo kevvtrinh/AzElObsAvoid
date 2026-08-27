@@ -516,7 +516,61 @@ verifyEqual(testCase, size(unique( ...
 verifyGreaterThanOrEqual(testCase, ...
     sum([seeds.Source] == "visibilityGraph"), 2);
 verifyFalse(testCase, diagnostics.HomologySearchTruncated);
+verifyEqual(testCase, diagnostics.RouteCleanupAcceptedCount, 0);
+verifyEqual(testCase, diagnostics.RouteCleanupLengthReduction_deg, 0);
 end
+
+function testSpatialVisibilityCleanupShortensSameClassRectangleRoutes(testCase)
+% Shorten sparse-graph routes without changing their searched classes.
+boxBounds_deg = [ ...
+    3.273967634778897, 4.759475100110320, ...
+    -1.969302583911333, 0.257700798227361; ...
+    -7.682661487978057, -5.689347269083195, ...
+    -2.237331933064558, -1.182829800806282; ...
+    1.113286443533166, 4.319563635550832, ...
+    -0.413471964608378, 1.614712841485502; ...
+    0.168516682050331, 1.597232839656645, ...
+    -0.588545920496329, 3.198791926371235; ...
+    2.921431145758944, 5.447043764515808, ...
+    -2.967092353311103, -1.589963711268966; ...
+    -7.835366233841265, -4.538291473771393, ...
+    1.343538998087866, 2.511566406533022];
+obstacles = rectangleObstacles(testCase, boxBounds_deg);
+[seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles);
+verifyGreaterThanOrEqual(testCase, diagnostics.RouteCleanupAcceptedCount, 1);
+verifyGreaterThan(testCase, ...
+    diagnostics.RouteCleanupLengthReduction_deg, 1e-3);
+verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles);
+end
+
+function testSpatialVisibilityCleanupRejectsCircleHomologyChanges(testCase)
+% Exercise accepted and rejected shortcuts on curved protected regions.
+circleSpecification_deg = [ ...
+    -2.271964379198359, 0.072286638808674, 1.098394723514003; ...
+    -5.081942780381125, -1.713565819393793, 0.601134406621426; ...
+    -6.074659165988352, 0.924717840817177, 1.637047106355157; ...
+    2.752016845588681, -2.118818969422467, 1.738329825222016];
+angle_rad = (0:15).' * (2 * pi / 16);
+obstacleTemplate = azElObstacles.makeAzElObstacleData( ...
+    "circle", [0; 40], cos(angle_rad), sin(angle_rad), 0.05);
+obstacles = repmat(obstacleTemplate, size(circleSpecification_deg, 1), 1);
+for obstacleIndex = 1:numel(obstacles)
+    center_deg = circleSpecification_deg(obstacleIndex, 1:2);
+    radius_deg = circleSpecification_deg(obstacleIndex, 3);
+    obstacles(obstacleIndex) = azElObstacles.makeAzElObstacleData( ...
+        "circle", [0; 40], ...
+        center_deg(1) + radius_deg * cos(angle_rad), ...
+        center_deg(2) + radius_deg * sin(angle_rad), 0.05);
+end
+[seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles);
+verifyGreaterThanOrEqual(testCase, diagnostics.RouteCleanupAcceptedCount, 1);
+verifyGreaterThan(testCase, ...
+    diagnostics.RouteCleanupLengthReduction_deg, 10);
+verifyGreaterThan(testCase, ...
+    diagnostics.RouteCleanupHomologyRejectedCount, 0);
+verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles);
+end
+
 function testDetourWarmStartDoesNotDefineReachability(testCase)
 % Keep a reachable multi-axis detour when its conservative warm start is long.
 obstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
@@ -1049,6 +1103,164 @@ options.MaximumNlpFunctionEvaluations = 15000;
 options.MaximumPlanningTime_s = 8;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
+end
+
+function obstacles = rectangleObstacles(testCase, boxBounds_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   obstacles = rectangleObstacles(testCase, boxBounds_deg)
+%**************************************************************************
+% PURPOSE
+%   - Construct static protected rectangles for route-cleanup tests.
+%**************************************************************************
+% INPUTS
+%   - testCase (matlab.unittest.FunctionTestCase scalar)
+%       Test fixture owner containing canonical obstacle constructors.
+%   - boxBounds_deg (N-by-4 finite numeric matrix)
+%       Rows are [minimum azimuth, maximum azimuth, minimum elevation,
+%       maximum elevation].
+%**************************************************************************
+% OUTPUTS
+%   - obstacles (N-by-1 struct array)
+%       Canonical protected obstacle histories over [0, 40] seconds.
+%**************************************************************************
+% UNITS
+%   - Bounds and the applied safety margin are degrees; time is seconds.
+%**************************************************************************
+obstacleCount = size(boxBounds_deg, 1);
+obstacleTemplate = testCase.TestData.Fixtures.RectangleObstacle( ...
+    [0 40], boxBounds_deg(1, :), 0.05);
+obstacles = repmat(obstacleTemplate, obstacleCount, 1);
+for obstacleIndex = 1:obstacleCount
+    obstacles(obstacleIndex) = ...
+        testCase.TestData.Fixtures.RectangleObstacle( ...
+        [0 40], boxBounds_deg(obstacleIndex, :), 0.05);
+end
+end
+
+function [seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles)
+%**************************************************************************
+% PURPOSE
+%   - Run deterministic spatial visibility search without invoking HS3.
+%**************************************************************************
+% INPUTS
+%   - testCase (matlab.unittest.FunctionTestCase scalar)
+%       Test fixture owner containing canonical state and limit constructors.
+%   - obstacles (N-by-1 canonical obstacle struct array)
+%       Static protected geometry used by visibility search and cleanup.
+%**************************************************************************
+% OUTPUTS
+%   - seeds (struct array)
+%       Direct baseline followed by searched spatial visibility routes.
+%   - diagnostics (scalar struct)
+%       Visibility, homology, and route-cleanup evidence.
+%**************************************************************************
+% UNITS
+%   - Position is degrees, time is seconds, and derivatives use degree units.
+%**************************************************************************
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-12 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    40, [12 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = planAzElMotion("hs3");
+options.GoalTimeMode = "fixedArrival";
+options.DirectSeedOnly = false;
+options.MaximumSeedCount = 5;
+[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+    obstacles, initialState, goalState, limits, options);
+end
+
+function verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles)
+%% Section 0: Header & Readme
+% SYNTAX
+%   verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles)
+%**************************************************************************
+% PURPOSE
+%   - Independently check length, sampled clearance, and homology signatures.
+%**************************************************************************
+% INPUTS
+%   - testCase (matlab.unittest.FunctionTestCase scalar)
+%       Test assertion owner.
+%   - seeds (struct array)
+%       Direct and spatial route proposals.
+%   - diagnostics (scalar struct)
+%       Searched homology signatures and cleanup evidence.
+%   - obstacles (N-by-1 canonical obstacle struct array)
+%       Static protected geometry used to independently check clearance.
+%**************************************************************************
+% OUTPUTS
+%   - None. Verification failures throw through the test framework.
+%**************************************************************************
+% UNITS
+%   - Position, clearance, and path length are degrees.
+%**************************************************************************
+spatialSeeds = seeds([seeds.Source] == "visibilityGraph");
+verifyEqual(testCase, numel(spatialSeeds), diagnostics.HomologyClassCount);
+verifyEqual(testCase, diagnostics.RouteCleanupAttemptedCount, ...
+    diagnostics.HomologyClassCount);
+protectedShape = polyshape();
+for obstacleIndex = 1:numel(obstacles)
+    protectedShape = union(protectedShape, ...
+        azElObstacles.shapeAtTime(obstacles(obstacleIndex), 0));
+end
+for seedIndex = 1:numel(spatialSeeds)
+    route_deg = spatialSeeds(seedIndex).position_deg;
+    measuredLength_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
+    verifyEqual(testCase, spatialSeeds(seedIndex).Length_deg, ...
+        measuredLength_deg, "AbsTol", 1e-12);
+    signature = independentRouteSignature( ...
+        route_deg, diagnostics.HomologyRepresentative_deg);
+    verifyEqual(testCase, signature, ...
+        diagnostics.HomologyClassSignatures(seedIndex, :));
+    for edgeIndex = 1:size(route_deg, 1) - 1
+        fraction = linspace(0, 1, 1001).';
+        sample_deg = route_deg(edgeIndex, :) + fraction .* ...
+            (route_deg(edgeIndex + 1, :) - route_deg(edgeIndex, :));
+        clearance_deg = azElGeometry.pointPolygonClearance( ...
+            protectedShape, sample_deg);
+        verifyGreaterThan(testCase, min(clearance_deg), 0);
+    end
+end
+end
+
+function signature = independentRouteSignature(route_deg, representative_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   signature = independentRouteSignature(route_deg, representative_deg)
+%**************************************************************************
+% PURPOSE
+%   - Recompute open-route winding classes independently from search state.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 finite numeric matrix)
+%       Polyline in [azimuth elevation] order.
+%   - representative_deg (R-by-2 finite numeric matrix)
+%       Interior reference points for occupied regions.
+%**************************************************************************
+% OUTPUTS
+%   - signature (1-by-R int8 row)
+%       Integer branch-crossing signature for the open polyline.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; angular winding and signature are dimensionless.
+%**************************************************************************
+representativeCount = size(representative_deg, 1);
+signature = zeros(1, representativeCount, "int8");
+for representativeIndex = 1:representativeCount
+    offset_deg = route_deg - representative_deg(representativeIndex, :);
+    phase_rad = atan2(offset_deg(:, 2), offset_deg(:, 1));
+    wrappedStep_rad = atan2(sin(diff(phase_rad)), cos(diff(phase_rad)));
+    endpointStep_rad = atan2( ...
+        sin(phase_rad(end) - phase_rad(1)), ...
+        cos(phase_rad(end) - phase_rad(1)));
+    signature(representativeIndex) = int8(round( ...
+        (sum(wrappedStep_rad) - endpointStep_rad) / (2 * pi)));
+end
 end
 
 function verifyHs3Solved(testCase, result, representation)

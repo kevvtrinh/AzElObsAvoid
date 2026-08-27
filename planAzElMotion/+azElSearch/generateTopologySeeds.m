@@ -212,6 +212,10 @@ diagnostics.HomologySearchTruncated = searchRecord.Truncated;
 % Convert each discovered homology-class node path into one nonduplicate spatial seed.
 for classIndex = 1:numel(nodePaths)
     route_deg = nodePosition_deg(nodePaths{classIndex}, :);
+    [route_deg, cleanupRecord] = cleanupSpatialVisibilityRoute( ...
+        route_deg, sweptShape, representative_deg, ...
+        classSignatures(classIndex, :));
+    diagnostics = appendRouteCleanupRecord(diagnostics, cleanupRecord);
     % Keep the visibility route only when it adds spatial diversity beyond existing seeds.
     if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
         [seed, isReachable] = createSpatialSeed(spatialSeedTemplate, ...
@@ -760,6 +764,199 @@ else
 end
 end
 
+function [cleanedRoute_deg, record] = cleanupSpatialVisibilityRoute( ...
+        route_deg, protectedShape, representative_deg, originalSignature)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [cleanedRoute_deg, record] = cleanupSpatialVisibilityRoute( ...
+%       route_deg, protectedShape, representative_deg, originalSignature)
+%**************************************************************************
+% PURPOSE
+%   - Remove avoidable consecutive spatial edges only when the replacement
+%     is visible, remains in the searched homology class, and is shorter.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric matrix)
+%       Spatial visibility route in [azimuth elevation] order.
+%   - protectedShape (scalar polyshape)
+%       Protected geometry used by the spatial visibility search.
+%   - representative_deg (R-by-2 numeric matrix)
+%       Interior reference point for each occupied region.
+%   - originalSignature (1-by-R int8 row)
+%       Homology signature assigned by the visibility search.
+%**************************************************************************
+% OUTPUTS
+%   - cleanedRoute_deg (M-by-2 numeric matrix)
+%       Original route or a strictly shorter route satisfying every gate.
+%   - record (scalar struct)
+%       Candidate, rejection, acceptance, and length-reduction counts.
+%**************************************************************************
+% UNITS
+%   - Position and length are degrees; signatures are dimensionless.
+%**************************************************************************
+cleanedRoute_deg = route_deg;
+originalLength_deg = routeLength(route_deg);
+record = struct( ...
+    "CandidateCount", 0, "VisibilityRejectedCount", 0, ...
+    "HomologyRejectedCount", 0, "AcceptedCount", 0, ...
+    "OriginalLength_deg", originalLength_deg, ...
+    "CleanedLength_deg", originalLength_deg);
+if size(route_deg, 1) < 3
+    return;
+end
+[edgeStart_deg, edgeEnd_deg] = azElGeometry.boundaryToEdges( ...
+    protectedShape, 1e-12);
+computedSignature = routeHomologySignature(route_deg, representative_deg);
+if ~isequal(computedSignature, originalSignature)
+    return;
+end
+
+% Select the greatest valid reduction, then repeat until no shortcut remains.
+while size(cleanedRoute_deg, 1) >= 3
+    currentLength_deg = routeLength(cleanedRoute_deg);
+    lengthTolerance_deg = max(1e-12, 1e-12 * currentLength_deg);
+    bestReduction_deg = 0;
+    bestRoute_deg = cleanedRoute_deg;
+    routePointCount = size(cleanedRoute_deg, 1);
+    for firstPointIndex = 1:routePointCount - 2
+        for secondPointIndex = firstPointIndex + 2:routePointCount
+            record.CandidateCount = record.CandidateCount + 1;
+            firstPosition_deg = cleanedRoute_deg(firstPointIndex, :);
+            secondPosition_deg = cleanedRoute_deg(secondPointIndex, :);
+            replacedLength_deg = routeLength( ...
+                cleanedRoute_deg(firstPointIndex:secondPointIndex, :));
+            directLength_deg = norm(secondPosition_deg - firstPosition_deg);
+            reduction_deg = replacedLength_deg - directLength_deg;
+            if reduction_deg <= lengthTolerance_deg || ...
+                    reduction_deg <= bestReduction_deg + lengthTolerance_deg
+                continue;
+            end
+            if ~segmentIsVisible(firstPosition_deg, secondPosition_deg, ...
+                    protectedShape, edgeStart_deg, edgeEnd_deg)
+                record.VisibilityRejectedCount = ...
+                    record.VisibilityRejectedCount + 1;
+                continue;
+            end
+            candidateRoute_deg = [ ...
+                cleanedRoute_deg(1:firstPointIndex, :); ...
+                cleanedRoute_deg(secondPointIndex:end, :)];
+            candidateSignature = routeHomologySignature( ...
+                candidateRoute_deg, representative_deg);
+            if ~isequal(candidateSignature, originalSignature)
+                record.HomologyRejectedCount = ...
+                    record.HomologyRejectedCount + 1;
+                continue;
+            end
+            bestReduction_deg = reduction_deg;
+            bestRoute_deg = candidateRoute_deg;
+        end
+    end
+    if bestReduction_deg <= lengthTolerance_deg
+        break;
+    end
+    cleanedRoute_deg = bestRoute_deg;
+    record.AcceptedCount = record.AcceptedCount + 1;
+end
+record.CleanedLength_deg = routeLength(cleanedRoute_deg);
+end
+
+function signature = routeHomologySignature(route_deg, representative_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   signature = routeHomologySignature(route_deg, representative_deg)
+%**************************************************************************
+% PURPOSE
+%   - Evaluate a polyline with the same winding signature used by search.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric matrix)
+%       Polyline in [azimuth elevation] order.
+%   - representative_deg (R-by-2 numeric matrix)
+%       Interior reference point for each occupied region.
+%**************************************************************************
+% OUTPUTS
+%   - signature (1-by-R int8 row)
+%       Integer winding signature relative to the route start.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; angular winding and signature are dimensionless.
+%**************************************************************************
+representativeCount = size(representative_deg, 1);
+signature = zeros(1, representativeCount, "int8");
+if representativeCount == 0
+    return;
+end
+phase_rad = atan2(route_deg(:, 2) - representative_deg(:, 2).', ...
+    route_deg(:, 1) - representative_deg(:, 1).');
+referenceTurn = principalAngle(phase_rad - phase_rad(1, :)) / (2 * pi);
+for edgeIndex = 1:size(route_deg, 1) - 1
+    phaseStep = principalAngle( ...
+        phase_rad(edgeIndex + 1, :) - phase_rad(edgeIndex, :)) / (2 * pi);
+    signatureStep = round(referenceTurn(edgeIndex, :) + phaseStep - ...
+        referenceTurn(edgeIndex + 1, :));
+    signature = int8(double(signature) + signatureStep);
+end
+end
+
+function length_deg = routeLength(route_deg)
+%% Section 0: Header & Readme
+% SYNTAX
+%   length_deg = routeLength(route_deg)
+%**************************************************************************
+% PURPOSE
+%   - Measure Euclidean polyline length for strict cleanup comparisons.
+%**************************************************************************
+% INPUTS
+%   - route_deg (N-by-2 numeric matrix)
+%       Polyline in [azimuth elevation] order.
+%**************************************************************************
+% OUTPUTS
+%   - length_deg (nonnegative finite scalar)
+%       Sum of consecutive segment lengths.
+%**************************************************************************
+% UNITS
+%   - Position and returned length are degrees.
+%**************************************************************************
+length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
+end
+
+function diagnostics = appendRouteCleanupRecord(diagnostics, record)
+%% Section 0: Header & Readme
+% SYNTAX
+%   diagnostics = appendRouteCleanupRecord(diagnostics, record)
+%**************************************************************************
+% PURPOSE
+%   - Accumulate bounded route-cleanup evidence without changing decisions.
+%**************************************************************************
+% INPUTS
+%   - diagnostics (scalar struct)
+%       Search diagnostics containing route-cleanup counters.
+%   - record (scalar struct)
+%       Counters and lengths for one searched spatial route.
+%**************************************************************************
+% OUTPUTS
+%   - diagnostics (scalar struct)
+%       Search diagnostics with the route-cleanup evidence accumulated.
+%**************************************************************************
+% UNITS
+%   - Length reduction is degrees; counts are dimensionless.
+%**************************************************************************
+diagnostics.RouteCleanupAttemptedCount = ...
+    diagnostics.RouteCleanupAttemptedCount + 1;
+diagnostics.RouteCleanupCandidateCount = ...
+    diagnostics.RouteCleanupCandidateCount + record.CandidateCount;
+diagnostics.RouteCleanupVisibilityRejectedCount = ...
+    diagnostics.RouteCleanupVisibilityRejectedCount + ...
+    record.VisibilityRejectedCount;
+diagnostics.RouteCleanupHomologyRejectedCount = ...
+    diagnostics.RouteCleanupHomologyRejectedCount + record.HomologyRejectedCount;
+diagnostics.RouteCleanupAcceptedCount = ...
+    diagnostics.RouteCleanupAcceptedCount + record.AcceptedCount;
+diagnostics.RouteCleanupLengthReduction_deg = ...
+    diagnostics.RouteCleanupLengthReduction_deg + ...
+    record.OriginalLength_deg - record.CleanedLength_deg;
+end
+
 function values = appendBoundedTrace(values, additions, maximumCount)
 % Append diagnostics without exceeding the documented retained-trace cap.
 remainingCount = maximumCount - size(values, 1);
@@ -796,6 +993,11 @@ diagnostics = struct( ...
     "HomologySearchAttempted", false, "HomologyRepresentative_deg", zeros(0, 2), ...
     "HomologyClassSignatures", zeros(0, 0, "int8"), ...
     "HomologyClassCount", 0, "HomologyStateCount", 0, "HomologySearchTruncated", false, ...
+    "RouteCleanupAttemptedCount", 0, "RouteCleanupCandidateCount", 0, ...
+    "RouteCleanupVisibilityRejectedCount", 0, ...
+    "RouteCleanupHomologyRejectedCount", 0, ...
+    "RouteCleanupAcceptedCount", 0, ...
+    "RouteCleanupLengthReduction_deg", 0, ...
     "ExpandedCount", 0, "RejectedTransitionCount", 0, ...
     "GeneratedSeedCount", 1, "ExploredNodes_deg", zeros(0, 2), ...
     "FrontierNodes_deg", zeros(0, 2), "Start_deg", start_deg, ...
