@@ -3714,3 +3714,70 @@ remained alive and were never signaled. A final two-file Code Analyzer retry
 passed with zero findings after one preceding MATLAB process failed during
 startup with `System Error: File system inconsistency`; that failed process
 did not execute repository code.
+
+## Shared helpers and HS3 internal subpackages — 2026-08-26
+
+Source under test was `HS3-planner` at
+`0302439+helper-and-hs3-subpackage-worktree`. Each example ran in its own fresh
+MATLAB R2024b batch process with `PlotOutputs=false`,
+`FigureVisible="off"`, `ShowAnimation=false`, and `ShowKinematics=false`.
+
+| Example | Jerk | Planner / independent validation | Polyline (deg) | Smoothed (deg) | Duration (s) | Collision / certificate | Wall (s) | Termination |
+| --- | ---: | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleMovingCircleNoAzimuthWrap` | 1 | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 13.708932 | `goalReached` |
+| `exampleOpeningUShapedAzElTimeSpace` | 1 | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 14.261098 | `goalReached` |
+| `exampleUShapedAzElTimeSpace` | 1 | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 15.192708 | `goalReached` |
+
+All three trajectory metrics exactly match the preceding
+`de372d5+spatial-route-cleanup-worktree` records. The opening-U run retained
+the known repeated singular or badly scaled optimizer warnings, but its final
+trajectory independently passed collision and every applicable derivative
+certificate. No broader tests, other examples, visible graphics, or Code
+Analyzer checks were run in this focused pass.
+
+## High-level namespace, plotting dashboard, and result-schema verification
+
+Source under test was HS3-planner at
+0302439+namespace-and-schema-worktree on 2026-08-27. Production source moved
+to +obstacleAvoidance; HS3 remained the separate normal hs3 product.
+
+- Code Analyzer: 0 findings across 93 maintained MATLAB files.
+- Unit tests: 117 passed, 0 failed, 0 incomplete.
+- Plot dashboard/GIF smoke test: 4 synchronized kinematic axes and a
+  95,507-byte GIF.
+- Actual example result: 27 normal planner fields, with no Example-prefixed or
+  PlotHandles fields.
+- Visible exampleObstacleFree: success and validation passed; 3 figures.
+- Expected exampleNoPath: independently validated noValidatedSeed;
+  workspace and visibility diagnostic figures both created.
+- git diff --check: no whitespace errors; only Git's existing LF/CRLF
+  conversion notices.
+
+Every maintained example ran headlessly in its own fresh MATLAB process with
+plots and animation disabled. Jerk was enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| exampleAlternatingSlalom | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 7.570137 | goalReached |
+| exampleDenseConcaveObstacle | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.618033 | goalReached |
+| exampleFortyMovingCircleGrid | 1 / 1 | 110.807922148 | 123.380530717 | 58.6189853057 | 1 / 1 | 23.641960 | goalReached |
+| exampleFourAcceleratingCircles | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 4.484687 | goalReached |
+| exampleInterceptMovingTargetAtSetTime | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.338153 | goalReached |
+| exampleInterceptMovingTargetEarliest | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 7.346781 | goalReached |
+| exampleMovingBarrierWait | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 13.920832 | goalReached |
+| exampleMovingCircleNoAzimuthWrap | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 12.392204 | goalReached |
+| exampleMovingDeformingUSOutlineVisibility | 1 / 1 | 41.5785140688 | 40.7424283094 | 8.75061035156 | 1 / 1 | 54.129820 | goalReached |
+| exampleNoPath | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.466201 | noValidatedSeed |
+| exampleObstacleAvoidance | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 5.193712 | goalReached |
+| exampleObstacleFree | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 3.260685 | goalReached |
+| exampleOpeningUShapedObstacle | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 13.700528 | goalReached |
+| exampleStaticUShapedObstacle | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 17.295045 | goalReached |
+| exampleStraightTargetAlternatingOcclusion | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 8.449397 | goalReached |
+| exampleTargetExitsObstacle | 1 / 1 | 20.1815464898 | 20.3320561588 | 24 | 1 / 1 | 7.184225 | goalReached |
+| exampleTwoOpposingUVisibilityGraph | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 8.649243 | goalReached |
+| exampleUSOutlineExtremeVisibility | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 55.227758 | goalReached |
+
+The moving-barrier and opening-U rows were rerun after their local warning
+suppression was added; both produced concise output and retained identical
+trajectory metrics and independent certificates. The warning state is restored
+immediately after each planner call.

@@ -13,7 +13,7 @@ function result = exampleAlternatingSlalom(exampleOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Planner result, independent validation, plots, and example metrics.
+%       Unmodified public planner result.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
@@ -25,7 +25,7 @@ function result = exampleAlternatingSlalom(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveAzElExampleOptions( ...
+[options, displayOptions] = resolveExampleOptions( ...
     exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 3), [2 2]);
 
 %% Section 2: Create Obstacles
@@ -33,15 +33,15 @@ end
 obstacleTime_s = [0; 30];
 centerAzimuth_deg = [-4; 0; 4];
 centerElevation_deg = [2.5; -2.5; 2.5];
-obstacles = azElObstacles.combineAzElObstacles();
+obstacles = obstacleAvoidance.obstacles.combineObstacles();
 
 % Center each vertical barrier at its configured offset to form the alternating slalom.
 for obstacleIndex = 1:numel(centerAzimuth_deg)
     center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
     rectangle_deg = center_deg + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
-    obstacle = azElObstacles.makeAzElObstacleData( ...
+    obstacle = obstacleAvoidance.obstacles.createObstacle( ...
         "barrier " + obstacleIndex, obstacleTime_s, rectangle_deg(:, 1), rectangle_deg(:, 2), 0.1);
-    obstacles = azElObstacles.combineAzElObstacles(obstacles, obstacle);
+    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles, obstacle);
 end
 
 %% Section 3: Create Planner Inputs
@@ -54,25 +54,21 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( obstacles, initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-result.ExampleValidation = validateAzElTrajectory(result);
+exampleValidation = obstacleAvoidance.validateTrajectory(result);
+if ~exampleValidation.Passed
+    warning("exampleAlternatingSlalom:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, displayOptions.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleAlternatingSlalom";
-result.ExampleMetrics = computeAzElExampleMetrics(result);
-result.ExampleControls = displayOptions;
-result.ExampleGeometry = struct( ...
-    "obstacleTime_s", obstacleTime_s, ...
-    "centerAzimuth_deg", centerAzimuth_deg, "centerElevation_deg", centerElevation_deg);
 end

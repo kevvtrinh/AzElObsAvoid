@@ -13,7 +13,7 @@ function result = exampleMovingBarrierWait(exampleOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Planner result, independent validation, plots, and example metrics.
+%       Unmodified public planner result.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
@@ -25,7 +25,7 @@ function result = exampleMovingBarrierWait(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveAzElExampleOptions( ...
+[options, displayOptions] = resolveExampleOptions( ...
     exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5), [2 2]);
 
 %% Section 2: Create Obstacles
@@ -43,7 +43,7 @@ for sampleIndex = 1:numel(obstacleTime_s)
     elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
 end
 safetyMargin_deg = 0.1;
-obstacles = azElObstacles.makeAzElObstacleData( ...
+obstacles = obstacleAvoidance.obstacles.createObstacle( ...
     "translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
@@ -57,34 +57,36 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( obstacles, initialState, goalState, limits, options);
+% These expected interior-point conditioning warnings are extremely repetitive
+% for the intentional wait seed. Validation below still rejects bad motion.
+warningState = warning;
+warning("off", "MATLAB:nearlySingularMatrix");
+warning("off", "MATLAB:singularMatrix");
+warningCleanup = onCleanup(@() warning(warningState));
+result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+clear warningCleanup;
 
 %% Section 5: Validate Result
 
-result.ExampleValidation = validateAzElTrajectory(result);
+exampleValidation = obstacleAvoidance.validateTrajectory(result);
 waitSeedSelected = result.Success && result.SelectedSeedIndex > 0 && ...
     result.Seeds(result.SelectedSeedIndex).Source == "directWait";
-result.ExampleValidation.WaitSeedSelected = waitSeedSelected;
-result.ExampleValidation.Passed = result.ExampleValidation.Passed && waitSeedSelected;
+exampleValidation.WaitSeedSelected = waitSeedSelected;
+exampleValidation.Passed = exampleValidation.Passed && waitSeedSelected;
 if ~waitSeedSelected
-    result.ExampleValidation.Message = result.ExampleValidation.Message + ...
+    exampleValidation.Message = exampleValidation.Message + ...
         " The planner did not select the direct waiting seed.";
+end
+if ~exampleValidation.Passed
+    warning("exampleMovingBarrierWait:ValidationFailed", ...
+        "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, displayOptions.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleMovingBarrierWait";
-result.ExampleMetrics = computeAzElExampleMetrics(result);
-result.ExampleControls = displayOptions;
-result.ExampleGeometry = struct( ...
-    "obstacleTime_s", obstacleTime_s, ...
-    "barrierCenterElevation_deg", barrierCenterElevation_deg, ...
-    "sourcePosition_deg", sourcePosition_deg, "safetyMargin_deg", safetyMargin_deg);
 end

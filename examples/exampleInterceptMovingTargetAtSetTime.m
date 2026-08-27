@@ -19,8 +19,7 @@ function result = exampleInterceptMovingTargetAtSetTime( interceptTime_s, option
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Validated fixed-time intercept, target track, plots, and kinematic
-%       diagnostics.
+%       Unmodified public moving-target planner result.
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
@@ -38,7 +37,7 @@ elseif nargin < 2 || isempty(options)
     options = struct();
 end
 validateattributes(interceptTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     options, struct( ...
     "Verbose", true, ...
     "FigureVisible", "on", "Title", sprintf( "Moving-target intercept at t = %.3f s", interceptTime_s)), [2.5 2.5]);
@@ -64,28 +63,26 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMovingTargetIntercept( initialState, targetMotion, limits, interceptOptions);
+result = obstacleAvoidance.planMovingTargetIntercept( ...
+    obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( result, "specified-time moving-target intercept");
+exampleValidation = validateExampleResult( result, "specified-time moving-target intercept");
 specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && ...
     result.Validation.Passed && abs(result.Intercept.Time_s - interceptTime_s) <= 1e-8;
 exampleValidation.SpecifiedTimeSatisfied = specifiedTimeSatisfied;
 exampleValidation.Passed = exampleValidation.Passed && specifiedTimeSatisfied;
+if ~exampleValidation.Passed
+    warning("exampleInterceptMovingTargetAtSetTime:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, jerkConfiguration.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleInterceptMovingTargetAtSetTime";
-result.ExampleValidation = exampleValidation;
-result.obstacles = obstacles;
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

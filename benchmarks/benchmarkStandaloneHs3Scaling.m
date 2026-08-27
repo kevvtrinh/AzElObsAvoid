@@ -53,17 +53,17 @@ defaults = struct( ...
     "PrintProgress", true, ...
     "RandomSeed", 325, ...
     "PlannerOverrides", struct());
-[controls, unknownNames] = azElInput.resolveOptions( ...
+[controls, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
     defaults, benchmarkOverrides);
 if ~isempty(unknownNames)
     warning("benchmarkStandaloneHs3Scaling:UnknownOptions", ...
         "Ignoring unknown fields: %s. No behavior changed.", ...
         strjoin(unknownNames, ", "));
 end
-controls.IncludeHairpin = azElInput.normalizeLogicalScalar( ...
+controls.IncludeHairpin = obstacleAvoidance.input.normalizeLogicalScalar( ...
     controls.IncludeHairpin, "IncludeHairpin", ...
     "benchmarkStandaloneHs3Scaling:InvalidHairpinControl");
-controls.PrintProgress = azElInput.normalizeLogicalScalar( ...
+controls.PrintProgress = obstacleAvoidance.input.normalizeLogicalScalar( ...
     controls.PrintProgress, "PrintProgress", ...
     "benchmarkStandaloneHs3Scaling:InvalidPrintControl");
 validateattributes(controls.HairpinCount, {'numeric'}, ...
@@ -141,17 +141,17 @@ function record = runCase( ...
 % Run only the public HS3 path and preserve unsuccessful evidence.
 rng(plannerOptions.RandomSeed, "twister");
 plannerTimer = tic;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 plannerWallTime_s = toc(plannerTimer);
     enforceHs3Contract(result);
 
-validation = validateAzElTrajectory();
+validation = obstacleAvoidance.validateTrajectory();
 validationAttempted = false;
 validationWallTime_s = 0;
 if result.Success
     validationTimer = tic;
-    validation = validateAzElTrajectory(result);
+    validation = obstacleAvoidance.validateTrajectory(result);
     validationWallTime_s = toc(validationTimer);
     validationAttempted = true;
 end
@@ -276,28 +276,7 @@ end
 
 function [obstacles, initialState, goalState, limits] = ...
         createHairpinBenchmarkScenario(hairpinCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [obstacles, initialState, goalState, limits] = ...
-%       createHairpinBenchmarkScenario(hairpinCount)
-%**************************************************************************
-% PURPOSE
-%   - Build the benchmark's deterministic alternating-end maze.
-%**************************************************************************
-% INPUTS
-%   - hairpinCount (positive integer scalar)
-%       Number of alternating horizontal walls.
-%**************************************************************************
-% OUTPUTS
-%   - obstacles (canonical protected obstacle struct array)
-%   - initialState (scalar rest initial state)
-%   - goalState (scalar rest latest-arrival goal state)
-%   - limits (scalar workspace and physical-limit struct)
-%**************************************************************************
-% UNITS
-%   - Geometry and clearance are degrees; time is seconds; derivatives use
-%     deg/s powers. Histories use [azimuth elevation].
-%**************************************************************************
+% Build the benchmark's deterministic alternating-end maze.
 
 wallSpacing_deg = 4;
 wallHalfThickness_deg = 0.35;
@@ -321,12 +300,12 @@ for wallIndex = 1:hairpinCount
     wallAzimuth_deg = wallAzimuthInterval_deg([1 2 2 1]).';
     wallElevationBoundary_deg = wallElevation_deg + ...
         wallHalfThickness_deg * [-1 -1 1 1].';
-    obstacleCells{wallIndex} = azElObstacles.makeAzElObstacleData( ...
+    obstacleCells{wallIndex} = obstacleAvoidance.obstacles.createObstacle( ...
         "alternating wall " + wallIndex, 0, wallAzimuth_deg, ...
         wallElevationBoundary_deg, safetyMargin_deg);
 end
 obstacles = [obstacleCells{:}].';
-obstacles = azElObstacles.prepareDynamic(obstacles);
+obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 
 initialState = struct( ...
     "time_s", 0, ...

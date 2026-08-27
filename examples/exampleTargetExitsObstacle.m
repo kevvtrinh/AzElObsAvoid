@@ -43,7 +43,7 @@ if isfield(plannerOverrides, "RandomSeed")
     plannerOverrides = rmfield(plannerOverrides, "RandomSeed");
 end
 
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     plannerOverrides, struct( ...
         "GoalTimeMode", "fixedArrival", ...
         "SampleTime_s", 0.05, ...
@@ -64,7 +64,7 @@ safetyMargin_deg = 0.15;
 transitCircleCenter_deg = [0 0];
 transitCircleRadius_deg = 2.0;
 transitCirclePosition_deg = transitCircleCenter_deg + transitCircleRadius_deg * unitCircle;
-transitCircle = azElObstacles.makeAzElObstacleData( ...
+transitCircle = obstacleAvoidance.obstacles.createObstacle( ...
     "Transit circle", obstacleTime_s, ...
     {transitCirclePosition_deg(:, 1); ...
         transitCirclePosition_deg(:, 1)}, ...
@@ -73,13 +73,13 @@ transitCircle = azElObstacles.makeAzElObstacleData( ...
 containingCircleCenter_deg = [8 0];
 containingCircleRadius_deg = 2.0;
 containingCirclePosition_deg = containingCircleCenter_deg + containingCircleRadius_deg * unitCircle;
-containingCircle = azElObstacles.makeAzElObstacleData( ...
+containingCircle = obstacleAvoidance.obstacles.createObstacle( ...
     "Target containment circle", obstacleTime_s, ...
     {containingCirclePosition_deg(:, 1); ...
         containingCirclePosition_deg(:, 1)}, ...
     {containingCirclePosition_deg(:, 2); containingCirclePosition_deg(:, 2)}, safetyMargin_deg);
 
-obstacles = azElObstacles.combineAzElObstacles(transitCircle, containingCircle);
+obstacles = obstacleAvoidance.obstacles.combineObstacles(transitCircle, containingCircle);
 
 %% Section 3: Create Planner Inputs
 
@@ -112,15 +112,15 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( ...
+exampleValidation = validateExampleResult( ...
     result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
 obstacleQueryOptions = struct("PlannerMethod", result.Options.PlannerMethod);
 
-targetOccupied = azElObstacles.queryAzElTimeObstacle( ...
+targetOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     result.Inputs.obstacles, targetPosition_deg(:, 1), targetPosition_deg(:, 2), targetTime_s, obstacleQueryOptions);
 firstClearSampleIndex = find(~targetOccupied, 1, "first");
 targetStartsInside = targetOccupied(1);
@@ -130,7 +130,7 @@ targetWaitedInside = all(targetOccupied(1:targetWaitSampleCount)) && ...
 
 targetIsClearAtIntercept = false;
 if result.Success && all(isfinite(result.Intercept.TargetPosition_deg))
-    targetIsClearAtIntercept = ~azElObstacles.queryAzElTimeObstacle( ...
+    targetIsClearAtIntercept = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         result.Inputs.obstacles, result.Intercept.TargetPosition_deg(1), ...
         result.Intercept.TargetPosition_deg(2), result.Intercept.Time_s, obstacleQueryOptions);
 end
@@ -156,31 +156,16 @@ if ~scenarioValidation.Passed
     exampleValidation.Passed = false;
     exampleValidation.Message = "Target containment or obstacle-placement validation failed.";
 end
+if ~exampleValidation.Passed
+    warning("exampleTargetExitsObstacle:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, jerkConfiguration.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleTargetExitsObstacle";
-result.ExampleValidation = exampleValidation;
-result.ScenarioValidation = scenarioValidation;
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleInputs = struct( ...
-    "obstacles", obstacles, ...
-    "initialState", initialState, "targetMotion", targetMotion, "limits", limits, "interceptOptions", interceptOptions);
-result.targetTime_s = targetTime_s;
-result.targetPosition_deg = targetPosition_deg;
-result.randomSeed = randomSeed;
-result.postWaitStep_deg = postWaitStep_deg;
-result.transitCircleCenter_deg = transitCircleCenter_deg;
-result.transitCircleRadius_deg = transitCircleRadius_deg;
-result.containingCircleCenter_deg = containingCircleCenter_deg;
-result.containingCircleRadius_deg = containingCircleRadius_deg;
-result.safetyMargin_deg = safetyMargin_deg;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

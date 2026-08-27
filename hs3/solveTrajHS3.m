@@ -57,8 +57,7 @@ end
 %% Section 1: Validate Inputs And Apply Defaults
 
 options = resolveOptions(optionOverrides);
-[initialState, terminalState, limits, pathConstraints] = ...
-    normalizeInputs(initialState, terminalState, limits, pathConstraints);
+[initialState, terminalState, limits, pathConstraints] = normalizeInputs(initialState, terminalState, limits, pathConstraints);
 scaledPathStart = options.SegmentCount * pathConstraints.Tau;
 pathSegmentIndex = min( ...
     options.SegmentCount, floor(scaledPathStart) + 1);
@@ -69,7 +68,7 @@ if any(pathConstraints.TauEnd > ...
     error("solveTrajHS3:CrossSegmentPathInterval", ...
         "Each path-constraint interval must lie inside one HS3 segment.");
 end
-hs3Internal.subintervalHullMap(pathConstraints.Tau, pathConstraints.TauEnd, ...
+hs3Internal.polynomial.createSubintervalBernsteinMap(pathConstraints.Tau, pathConstraints.TauEnd, ...
     options.SegmentCount, 1);
 dimensionCount = numel(initialState.position);
 startTime = initialState.time;
@@ -91,7 +90,7 @@ else
         1e-3, displacement ./ limits.maximumVelocity]);
     minimumFinalTime = startTime + minimumDuration;
     if minimumFinalTime >= maximumFinalTime
-        trajectory = emptyTrajectory( ...
+        trajectory = createEmptyTrajectory( ...
             initialState, terminalState, limits, options, pathConstraints);
         trajectory.Message = ...
             "The time horizon is no longer than the velocity lower bound.";
@@ -103,18 +102,18 @@ end
 %% Section 2: Solve The Requested Time Mode
 
 if options.TimeMode == "fixed"
-    solverResult = hs3Internal.solveFixedTime( ...
+    solverResult = hs3Internal.solver.solveFixedTime( ...
         initialState, terminalState, limits, options, ...
         pathConstraints, finalTime);
 else
-    solverResult = hs3Internal.solveFreeTime( ...
+    solverResult = hs3Internal.solver.solveFreeTime( ...
         initialState, terminalState, limits, options, pathConstraints, ...
         minimumFinalTime, maximumFinalTime);
 end
 
 %% Section 3: Reconstruct And Validate The Motion
 
-trajectory = emptyTrajectory( ...
+trajectory = createEmptyTrajectory( ...
     initialState, terminalState, limits, options, pathConstraints);
 trajectory.Message = solverResult.Message;
 trajectory.TerminationReason = solverResult.TerminationReason;
@@ -129,13 +128,13 @@ end
 controlCount = 2 * options.SegmentCount + 1;
 controlJerk = reshape( ...
     solverResult.Decision, controlCount, dimensionCount);
-polynomial = hs3Internal.reconstructPolynomial( ...
+polynomial = hs3Internal.polynomial.createTrajectoryPolynomial( ...
     controlJerk, initialState, solverResult.FinalTime, options.SegmentCount);
 uniformTime = (startTime:options.SampleTime:solverResult.FinalTime).';
 sampleTime = unique([uniformTime; polynomial.SegmentStartTime; ...
     solverResult.FinalTime]);
 [sampleTime, position, velocity, acceleration, jerk] = ...
-    hs3Internal.evaluatePolynomial(polynomial, sampleTime);
+    hs3Internal.polynomial.evaluateTrajectoryPolynomial(polynomial, sampleTime);
 trajectory.time = sampleTime;
 trajectory.position = position;
 trajectory.velocity = velocity;
@@ -143,7 +142,7 @@ trajectory.acceleration = acceleration;
 trajectory.jerk = jerk;
 trajectory.ControlJerk = controlJerk;
 trajectory.Polynomial = polynomial;
-trajectory.IntegratedSquaredJerk = hs3Internal.integratedSquaredJerk( ...
+trajectory.IntegratedSquaredJerk = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     solverResult.Decision, false, solverResult.FinalTime, ...
     options.SegmentCount, startTime, dimensionCount);
 trajectory.Validation = hs3Internal.validate(trajectory);
@@ -160,22 +159,7 @@ end
 %% Section 4: Local Functions
 
 function options = resolveOptions(overrides)
-%% Section 0: Header & Readme
-% SYNTAX
-%   options = resolveOptions(overrides)
-%**************************************************************************
-% PURPOSE
-%   - Merge, normalize, and validate standalone HS3 option overrides.
-%**************************************************************************
-% INPUTS
-%   - overrides (scalar struct), partial option values.
-%**************************************************************************
-% OUTPUTS
-%   - options (scalar struct), fully resolved engine options.
-%**************************************************************************
-% UNITS
-%   - Time fields use caller-defined consistent time units.
-%**************************************************************************
+% Merge, normalize, and validate standalone HS3 option overrides.
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("solveTrajHS3:InvalidOptions", ...
         "optionOverrides must be a scalar struct.");
@@ -225,23 +209,7 @@ end
 
 function [initialState, terminalState, limits, pathConstraints] = ...
         normalizeInputs(initialState, terminalState, limits, pathConstraints)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [initialState, terminalState, limits, pathConstraints] = ...
-%       normalizeInputs(initialState, terminalState, limits, pathConstraints)
-%**************************************************************************
-% PURPOSE
-%   - Normalize one dimension-neutral HS3 boundary-value problem.
-%**************************************************************************
-% INPUTS
-%   - initialState, terminalState, limits, pathConstraints (scalar structs)
-%**************************************************************************
-% OUTPUTS
-%   - Normalized scalar structs with row-oriented coordinate values.
-%**************************************************************************
-% UNITS
-%   - Values retain caller-defined consistent units.
-%**************************************************************************
+% Normalize one dimension-neutral HS3 boundary-value problem.
 requiredInitial = ["time", "position", "velocity", "acceleration"];
 requiredTerminal = [ ...
     "position", "velocity", "acceleration", "maximumTime"];
@@ -290,23 +258,7 @@ pathConstraints = normalizePathConstraints(pathConstraints, dimensionCount);
 end
 
 function state = normalizeStateRows(state, stateName)
-%% Section 0: Header & Readme
-% SYNTAX
-%   state = normalizeStateRows(state, stateName)
-%**************************************************************************
-% PURPOSE
-%   - Validate and row-normalize position and supported motion derivatives.
-%**************************************************************************
-% INPUTS
-%   - state (scalar struct), boundary state.
-%   - stateName (text scalar), diagnostic input name.
-%**************************************************************************
-% OUTPUTS
-%   - state (scalar struct), finite row-oriented state.
-%**************************************************************************
-% UNITS
-%   - Values retain caller-defined consistent units.
-%**************************************************************************
+% Validate and row-normalize position and supported motion derivatives.
 for fieldName = ["position", "velocity", "acceleration"]
     value = state.(fieldName);
     validateattributes(value, {'numeric'}, ...
@@ -323,25 +275,7 @@ end
 end
 
 function value = expandLimit(value, dimensionCount, fieldName, isPositive)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = expandLimit(value, dimensionCount, fieldName, isPositive)
-%**************************************************************************
-% PURPOSE
-%   - Expand a scalar limit or validate one value per modeled coordinate.
-%**************************************************************************
-% INPUTS
-%   - value (numeric scalar or vector), supplied limit.
-%   - dimensionCount (positive integer scalar), modeled coordinates.
-%   - fieldName (text scalar), diagnostic name.
-%   - isPositive (logical scalar), requires strictly positive values.
-%**************************************************************************
-% OUTPUTS
-%   - value (1-by-D double), normalized limit.
-%**************************************************************************
-% UNITS
-%   - Values retain the supplied limit's physical units.
-%**************************************************************************
+% Expand a scalar limit or validate one value per modeled coordinate.
 validateattributes(value, {'numeric'}, {'real', 'vector', 'nonempty'});
 value = double(value(:).');
 if isscalar(value)
@@ -357,26 +291,7 @@ end
 
 function limits = resolveBoundPair( ...
         limits, prefix, defaultLower, defaultUpper, dimensionCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   limits = resolveBoundPair(limits, prefix, defaultLower, ...
-%       defaultUpper, dimensionCount)
-%**************************************************************************
-% PURPOSE
-%   - Resolve optional lower and upper coordinate-wise bounds.
-%**************************************************************************
-% INPUTS
-%   - limits (scalar struct), partial limit record.
-%   - prefix (text scalar), bound field prefix.
-%   - defaultLower, defaultUpper (1-by-D numeric), symmetric defaults.
-%   - dimensionCount (positive integer scalar), modeled coordinates.
-%**************************************************************************
-% OUTPUTS
-%   - limits (scalar struct), normalized lower and upper bound fields.
-%**************************************************************************
-% UNITS
-%   - Bounds retain prefix-specific physical units.
-%**************************************************************************
+% Resolve optional lower and upper coordinate-wise bounds.
 lowerName = prefix + "Lower";
 upperName = prefix + "Upper";
 lower = defaultLower;
@@ -400,24 +315,7 @@ end
 
 function pathConstraints = normalizePathConstraints( ...
         pathConstraints, dimensionCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   pathConstraints = normalizePathConstraints( ...
-%       pathConstraints, dimensionCount)
-%**************************************************************************
-% PURPOSE
-%   - Normalize optional coordinate-space affine path constraints.
-%**************************************************************************
-% INPUTS
-%   - pathConstraints (scalar struct), partial Tau/Normal/LowerBound record.
-%   - dimensionCount (positive integer scalar), modeled coordinates.
-%**************************************************************************
-% OUTPUTS
-%   - pathConstraints (scalar struct), dimensionally consistent rows.
-%**************************************************************************
-% UNITS
-%   - Tau is dimensionless; normals and bounds use caller-defined units.
-%**************************************************************************
+% Normalize optional coordinate-space affine path constraints.
 if ~isstruct(pathConstraints) || ~isscalar(pathConstraints)
     error("solveTrajHS3:InvalidPathConstraints", ...
         "pathConstraints must be a scalar struct or empty.");
@@ -461,26 +359,9 @@ if size(pathConstraints.Normal, 1) ~= constraintCount || ...
 end
 end
 
-function trajectory = emptyTrajectory( ...
+function trajectory = createEmptyTrajectory( ...
         initialState, terminalState, limits, options, pathConstraints)
-%% Section 0: Header & Readme
-% SYNTAX
-%   trajectory = emptyTrajectory(initialState, terminalState, limits, ...
-%       options, pathConstraints)
-%**************************************************************************
-% PURPOSE
-%   - Define one stable standalone HS3 success-or-failure schema.
-%**************************************************************************
-% INPUTS
-%   - initialState, terminalState, limits, options, pathConstraints
-%       Fully resolved engine inputs.
-%**************************************************************************
-% OUTPUTS
-%   - trajectory (scalar struct), documented empty failure record.
-%**************************************************************************
-% UNITS
-%   - Fields retain caller-defined consistent units.
-%**************************************************************************
+% Define one stable standalone HS3 success-or-failure schema.
 dimensionCount = numel(initialState.position);
 trajectory = struct( ...
     "Success", false, ...

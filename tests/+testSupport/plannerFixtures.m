@@ -52,7 +52,7 @@ function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)
 % Construct a static rectangle from [minAz maxAz minEl maxEl].
 azimuth_deg = bounds_deg([1 2 2 1]).';
 elevation_deg = bounds_deg([3 3 4 4]).';
-obstacle = azElObstacles.makeAzElObstacleData( "rectangle", time_s(:), azimuth_deg, elevation_deg, margin_deg);
+obstacle = obstacleAvoidance.obstacles.createObstacle( "rectangle", time_s(:), azimuth_deg, elevation_deg, margin_deg);
 end
 
 function trajectory = constantJerkTrajectory(duration_s)

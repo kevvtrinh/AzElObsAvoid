@@ -14,7 +14,7 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Validated planner result and scenario geometry.
+%       Unmodified public planner result.
 %**************************************************************************
 % UNITS
 %   - Angles are degrees and time is seconds.
@@ -25,7 +25,7 @@ function result = exampleTwoOpposingUVisibilityGraph(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     options, struct( ...
     "FigureVisible", "on", ...
     "GoalTimeMode", "earliestArrival", "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
@@ -39,10 +39,10 @@ firstUBoundary_deg = [ -10, 8; 0, 8; 0, 5; -7, 5; -7,-5; 0,-5; 0,-8; -10,-8];
 secondUBoundary_deg = [ 5,28; 15,28; 15,12; 5,12; 5,15; 12,15; 12,25; 5,25];
 time_s = [0; missionEndTime_s];
 obstacles = [ ...
-    azElObstacles.makeAzElObstacleData("Right-opening U", time_s, ...
+    obstacleAvoidance.obstacles.createObstacle("Right-opening U", time_s, ...
         firstUBoundary_deg(:, 1), firstUBoundary_deg(:, 2), ...
         safetyMargin_deg); ...
-    azElObstacles.makeAzElObstacleData("Left-opening U", time_s, ...
+    obstacleAvoidance.obstacles.createObstacle("Left-opening U", time_s, ...
         secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2), safetyMargin_deg)];
 
 %% Section 3: Create Planner Inputs
@@ -55,25 +55,21 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion( obstacles, initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true));
+exampleValidation = validateExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true));
+if ~exampleValidation.Passed
+    warning("exampleTwoOpposingUVisibilityGraph:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, jerkConfiguration.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleTwoOpposingUVisibilityGraph";
-result.ExampleValidation = exampleValidation;
-result.firstUBoundary_deg = firstUBoundary_deg;
-result.secondUBoundary_deg = secondUBoundary_deg;
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

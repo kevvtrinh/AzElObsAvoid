@@ -23,14 +23,13 @@ function setupOnce(testCase)
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "planAzElMotion"));
 addpath(fullfile(repositoryRoot, "hs3"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 testCase.TestData.Fixtures = testSupport.plannerFixtures();
 end
 function testDefaultsExposeStandaloneHs3Planner(testCase)
 % Verify that zero-input defaults expose only standalone HS3 controls.
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
@@ -53,9 +52,9 @@ limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
 options = fixedOptions();
 directOptions = rmfield(options, "PlannerMethod");
-directResult = azElPlanner.plan( ...
+directResult = obstacleAvoidance.planner.plan( ...
     [], initialState, goalState, limits, directOptions);
-publicResult = planAzElMotion( ...
+publicResult = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 verifyTrue(testCase, directResult.Success, directResult.Message);
 verifyTrue(testCase, directResult.Validation.Passed, ...
@@ -82,10 +81,10 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 3], [1 1.5], [2 3]);
 options = fixedOptions();
-success = planAzElMotion([], initialState, goalState, limits, options);
+success = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 blockingObstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
     [0 8], [-1 1 -1 1], 0);
-failure = planAzElMotion( ...
+failure = obstacleAvoidance.planTrajectory( ...
     blockingObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, success.Success, success.Message);
@@ -105,10 +104,10 @@ goalState = testCase.TestData.Fixtures.State( ...
     12, [5 -2], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [3 2], [1.2 0.8], [2.4 1.6]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 1;
 options.DirectSeedOnly = true;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, ...
@@ -130,10 +129,10 @@ goalState = testCase.TestData.Fixtures.State( ...
     180, [52.8770492 -61.045082], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 1;
 options.DirectSeedOnly = true;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 displacement_deg = goalState.position_deg - initialState.position_deg;
 direction = displacement_deg / norm(displacement_deg);
@@ -162,7 +161,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 2;
 options.MaximumPlanningTime_s = 15;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 displacement_deg = goalState.position_deg - initialState.position_deg;
 direction = displacement_deg / norm(displacement_deg);
@@ -185,7 +184,7 @@ goalState = testCase.TestData.Fixtures.State( ...
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
 options = fixedOptions();
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     [], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -208,11 +207,12 @@ initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]); %#ok<NA
 goalState = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]); %#ok<NASGU>
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]); %#ok<NASGU>
 options = fixedOptions();
-quietText = evalc("planAzElMotion([], initialState, goalState, limits, options);");
+quietText = evalc("obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);");
 verifyEmpty(testCase, strtrim(quietText));
 options.Verbose = true;
-verboseText = evalc("planAzElMotion([], initialState, goalState, limits, options);");
-verifyNotEmpty(testCase, regexp(verboseText, '\[AzEl\]', 'once'));
+verboseText = evalc("obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);");
+verifyNotEmpty(testCase, ...
+    regexp(verboseText, '\[ObstacleAvoidance\]', 'once'));
 verifyEmpty(testCase, regexp(verboseText, ...
     '(?m)^\[HS3\]|^\[first motion', 'once'));
 end
@@ -220,7 +220,7 @@ function testNearbyObstacleClusteringChangesOnlySeedGeometry(testCase)
 % Verify that three nearby regions form one seed hull without physical edits.
 movingSource_deg = [-1 -4; 1 -4; 1 -2; -1 -2];
 movingTarget_deg = movingSource_deg + [0 0.25];
-movingObstacle = azElObstacles.makeAzElObstacleData( ...
+movingObstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "moving rectangle", [0; 20], ...
     {movingSource_deg(:, 1); movingTarget_deg(:, 1)}, ...
     {movingSource_deg(:, 2); movingTarget_deg(:, 2)}, 0);
@@ -235,7 +235,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.SourceRegionCount, 3);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 1);
@@ -259,7 +259,7 @@ verifyTrue(testCase, ...
     islogical(diagnostics.ExhaustiveVisibilityFallbackUsed));
 visibilitySeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyTrue(testCase, all([visibilitySeeds.UsesReducedGeometry]));
-isOccupied = azElObstacles.queryAzElTimeObstacle( ...
+isOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacles, 0, 0.75, 10, struct("PlannerMethod", "hs3"));
 verifyFalse(testCase, isOccupied);
 end
@@ -275,7 +275,7 @@ boundary_deg = [-1 -1; 1 -1; 1 1; -1 1];
 seed = struct( ...
     "tau", [0; 1], "position_deg", [-2 2; 2 2], ...
     "CorridorBoundary_deg", boundary_deg);
-corridor = azElSearch.buildSeedCorridor(seed, 1);
+corridor = obstacleAvoidance.search.createSeedCorridor(seed, 1);
 positionPower_deg = zeros(1, 2, 6);
 positionPower_deg(1, 1, 1:2) = [-2 4];
 positionPower_deg(1, 2, 1) = 2;
@@ -285,12 +285,12 @@ trajectory = struct( ...
     "Polynomial", polynomial, ...
     "SeedCorridorBoundary_deg", boundary_deg, ...
     "SeedCorridor", corridor);
-[certified, clearance_deg] = azElSearch.certifySeedCorridor( ...
+[certified, clearance_deg] = obstacleAvoidance.search.certifySeedCorridor( ...
     trajectory, obstacle, 1e-7);
 verifyTrue(testCase, certified);
 verifyGreaterThan(testCase, clearance_deg, 0.5);
 trajectory.Polynomial.positionPower_deg(1, 2, 1) = 0.5;
-[certifiedAfterEntry, ~] = azElSearch.certifySeedCorridor( ...
+[certifiedAfterEntry, ~] = obstacleAvoidance.search.certifySeedCorridor( ...
     trajectory, obstacle, 1e-7);
 verifyFalse(testCase, certifiedAfterEntry);
 end
@@ -299,16 +299,16 @@ function testSeedEnvelopeRequiresCompleteContinuousContainment(testCase)
 boundary_deg = [-2 -2; 2 -2; 2 2; -2 2];
 inside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [-1 1 -1 1], 0);
 outside = testCase.TestData.Fixtures.RectangleObstacle([0 2], [2.5 3.5 -1 1], 0);
-verifyTrue(testCase, azElSearch.seedEnvelopeContainsObstacles( ...
+verifyTrue(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ...
     boundary_deg, inside, 0));
-verifyFalse(testCase, azElSearch.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ...
     boundary_deg, outside, 0));
 mixedHistory = inside;
 mixedHistory.az_deg{2} = mixedHistory.az_deg{2} + 3;
-verifyFalse(testCase, azElSearch.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ...
     boundary_deg, mixedHistory, 0));
 concaveBoundary_deg = [-2 -2; 2 -2; 0 0; 2 2; -2 2];
-verifyFalse(testCase, azElSearch.seedEnvelopeContainsObstacles( ...
+verifyFalse(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ...
     concaveBoundary_deg, inside, 0));
 end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
@@ -332,7 +332,7 @@ initialState = testCase.TestData.Fixtures.State(0, [0 0], [0.1 0], [0.05 0]);
 goalState = testCase.TestData.Fixtures.State(8, [4 2], [0.2 -0.1], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
-result = planAzElMotion([], initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.SelectedMotionSource, "hs3");
@@ -350,12 +350,12 @@ function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
 segmentCount = 3;
 decision = [linspace(-1, 1, 2 * (2 * segmentCount + 1)).'; 8];
 direction = cos((1:numel(decision)).');
-[~, gradient] = hs3Internal.integratedSquaredJerk( ...
+[~, gradient] = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     decision, true, 8, segmentCount, 1, 2);
 step = 1e-6;
-forward = hs3Internal.integratedSquaredJerk( ...
+forward = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     decision + step * direction, true, 8, segmentCount, 1, 2);
-backward = hs3Internal.integratedSquaredJerk( ...
+backward = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     decision - step * direction, true, 8, segmentCount, 1, 2);
 verifyEqual(testCase, gradient.' * direction, ...
     (forward - backward) / (2 * step), "RelTol", 1e-8);
@@ -363,13 +363,13 @@ verifyEqual(testCase, gradient.' * direction, ...
 fixedDecision = decision(1:end - 1);
 fixedDirection = direction(1:end - 1);
 [fixedValue, fixedGradient, fixedHessian] = ...
-    hs3Internal.integratedSquaredJerk( ...
+    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision, false, 8, segmentCount, 1, 2);
 [~, forwardGradient] = ...
-    hs3Internal.integratedSquaredJerk( ...
+    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision + step * fixedDirection, false, 8, segmentCount, 1, 2);
 [~, backwardGradient] = ...
-    hs3Internal.integratedSquaredJerk( ...
+    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision - step * fixedDirection, false, 8, segmentCount, 1, 2);
 verifyEqual(testCase, fixedValue, ...
     0.5 * fixedDecision.' * fixedHessian * fixedDecision, ...
@@ -386,7 +386,7 @@ goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.GoalTimeMode = "earliestArrival";
-result = planAzElMotion([], initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -413,7 +413,7 @@ options = fixedOptions();
 options.MaximumNlpIterations = 1.5;
 didThrow = false;
 try
-    planAzElMotion([], initialState, goalState, limits, options);
+    obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 catch exception
     didThrow = true;
     verifyTrue(testCase, contains(exception.message, "integer"));
@@ -449,7 +449,7 @@ options = fixedOptions();
 options.CollocationSegmentCount = 4;
 options.MaximumCollocationSegmentCount = 8;
 options.MaximumMeshRefinementPasses = 1;
-result = planAzElMotion([], initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.SelectedMotionSource, "hs3");
@@ -478,7 +478,7 @@ options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
 options.DeterministicWorkBudget = true;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 validated = find([result.SeedSummaries.ValidationPassed]);
 motionLength_deg = [result.SeedSummaries(validated).MotionLength_deg];
@@ -503,7 +503,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = fixedOptions();
 options.MaximumSeedCount = 5;
 options.DirectSeedOnly = false;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
 verifySize(testCase, diagnostics.HomologyRepresentative_deg, [2 2]);
 verifyEqual(testCase, size(diagnostics.HomologyClassSignatures, 2), 2);
@@ -551,13 +551,13 @@ circleSpecification_deg = [ ...
     -6.074659165988352, 0.924717840817177, 1.637047106355157; ...
     2.752016845588681, -2.118818969422467, 1.738329825222016];
 angle_rad = (0:15).' * (2 * pi / 16);
-obstacleTemplate = azElObstacles.makeAzElObstacleData( ...
+obstacleTemplate = obstacleAvoidance.obstacles.createObstacle( ...
     "circle", [0; 40], cos(angle_rad), sin(angle_rad), 0.05);
 obstacles = repmat(obstacleTemplate, size(circleSpecification_deg, 1), 1);
 for obstacleIndex = 1:numel(obstacles)
     center_deg = circleSpecification_deg(obstacleIndex, 1:2);
     radius_deg = circleSpecification_deg(obstacleIndex, 3);
-    obstacles(obstacleIndex) = azElObstacles.makeAzElObstacleData( ...
+    obstacles(obstacleIndex) = obstacleAvoidance.obstacles.createObstacle( ...
         "circle", [0; 40], ...
         center_deg(1) + radius_deg * cos(angle_rad), ...
         center_deg(2) + radius_deg * sin(angle_rad), 0.05);
@@ -584,7 +584,7 @@ limits = testCase.TestData.Fixtures.PhysicalLimits( ...
 options = fixedOptions();
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 3;
-[longHorizonSeeds, ~] = azElSearch.generateTopologySeeds( ...
+[longHorizonSeeds, ~] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 longDetourSeeds = longHorizonSeeds( ...
     [longHorizonSeeds.Source] == "visibilityGraph");
@@ -599,7 +599,7 @@ verifyGreaterThan(testCase, warmDuration_s, ...
 shortHorizon_s = 0.5 * (minimumDuration_s + warmDuration_s);
 shortGoalState = goalState;
 shortGoalState.time_s = shortHorizon_s;
-[shortHorizonSeeds, ~] = azElSearch.generateTopologySeeds( ...
+[shortHorizonSeeds, ~] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, shortGoalState, limits, options);
 shortDetourSeeds = shortHorizonSeeds( ...
     [shortHorizonSeeds.Source] == "visibilityGraph");
@@ -611,7 +611,7 @@ end
 function testLongStaticDetourUsesDynamicsScaledQualityMesh(testCase)
 % Verify a long detour receives one bounded, dynamics-scaled quality pass.
 circleAngle_rad = (0:47).' * (2 * pi / 48);
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "neutral circle", [0; 360], ...
     20 * cos(circleAngle_rad), 20 * sin(circleAngle_rad), 0.2);
 initialState = testCase.TestData.Fixtures.State( ...
@@ -620,10 +620,10 @@ goalState = testCase.TestData.Fixtures.State( ...
     360, [100 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 3;
 options.MaximumPlanningTime_s = 30;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, ...
@@ -639,9 +639,9 @@ time_s = [0; 4];
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
 azimuth_deg = {source_deg(:, 1); source_deg(:, 1)};
 elevation_deg = {source_deg(:, 2); source_deg(:, 2) + 4};
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "moving", time_s, azimuth_deg, elevation_deg, 0);
-occupied = azElObstacles.queryAzElTimeObstacle( ...
+occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, [0; 0], [0; 0], [0; 4], ...
     struct("PlannerMethod", "hs3"));
 verifyEqual(testCase, occupied, [true; false]);
@@ -651,7 +651,7 @@ function testOccupancyOnlyMatchesDetailedQuery(testCase)
 time_s = [0; 2];
 first_deg = [-1 -1; 1 -1; 1 1; -1 1];
 second_deg = first_deg + [2 0];
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "moving", time_s, ...
     {first_deg(:, 1); second_deg(:, 1)}, ...
     {first_deg(:, 2); second_deg(:, 2)}, 0);
@@ -659,10 +659,10 @@ queryAzimuth_deg = [0; 1; 3];
 queryElevation_deg = [0; 0; 0];
 queryTime_s = [0; 0; 2];
 queryOptions = struct("PlannerMethod", "hs3");
-fastOccupied = azElObstacles.queryAzElTimeObstacle( ...
+fastOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, queryAzimuth_deg, queryElevation_deg, ...
     queryTime_s, queryOptions);
-[detailedOccupied, ~, details] = azElObstacles.queryAzElTimeObstacle( ...
+[detailedOccupied, ~, details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, queryAzimuth_deg, queryElevation_deg, ...
     queryTime_s, queryOptions);
 verifyEqual(testCase, fastOccupied, detailedOccupied);
@@ -674,11 +674,11 @@ function testDeformingObstacleInterpolatesAtTrajectoryTime(testCase)
 time_s = [0; 2];
 first_deg = [-1 -1; 1 -1; 1 1; -1 1];
 second_deg = [-2 -0.5; 2 -0.5; 2 0.5; -2 0.5];
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "deforming", time_s, ...
     {first_deg(:, 1); second_deg(:, 1)}, ...
     {first_deg(:, 2); second_deg(:, 2)}, 0);
-occupied = azElObstacles.queryAzElTimeObstacle( ...
+occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
     obstacle, [1.5; 1.5], [0; 0], [0; 2], ...
     struct("PlannerMethod", "hs3"));
 verifyEqual(testCase, occupied, [false; true]);
@@ -706,15 +706,15 @@ for sampleIndex = 1:4
     azimuth_deg{sampleIndex} = translated_deg(:, 1);
     elevation_deg{sampleIndex} = translated_deg(:, 2);
 end
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "barrier", time_s, azimuth_deg, elevation_deg, 0);
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 5;
 options.SeedClusterDistance_deg = 0.6;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 verifyEqual(testCase, diagnostics.SeedCluster.ClusterGroupCount, 0);
 verifyTrue(testCase, any([seeds.Source] == "directWait"));
@@ -733,7 +733,7 @@ verifyGreaterThan(testCase, diagnostics.WaitEdgeCount, 0);
 % the same fixed arrival.
 options.GoalTimeMode = "fixedArrival";
 options.MaximumPlanningTime_s = 15;
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, ...
@@ -751,8 +751,8 @@ obstacle = testCase.TestData.Fixtures.RectangleObstacle([3 6], [-0.5 0.5 -2 2], 
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = planAzElMotion("hs3");
-[~, diagnostics] = azElSearch.generateTopologySeeds( ...
+options = obstacleAvoidance.planTrajectory("hs3");
+[~, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchUsesExactObstacles);
@@ -761,14 +761,14 @@ function testTimedSeedKeepsDistinctAbsoluteDuration(testCase)
 % Verify equal spatial routes keep distinct moving-obstacle time guesses.
 azimuth_deg = repmat({[-1; 1; 1; -1]}, 2, 1);
 elevation_deg = {[9; 9; 11; 11]; [11; 11; 13; 13]};
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "far moving obstacle", [0; 20], azimuth_deg, elevation_deg, 0);
 initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(20, [4 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 5;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 directSeed = seeds([seeds.Source] == "directVisibilityEdge");
 timedSeed = seeds([seeds.Source] == "timeExpandedVisibilityGraph");
@@ -779,7 +779,7 @@ verifyGreaterThan(testCase, timedSeed(1).EstimatedDuration_s, ...
     directSeed(1).EstimatedDuration_s);
 verifyTrue(testCase, diagnostics.Coverage.TimedSearchAttempted);
 options.GoalTimeMode = "fixedArrival";
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, any([result.SeedSummaries.Hs3ValidationPassed]));
@@ -811,14 +811,14 @@ elevation_deg = cell(4, 1);
 for sampleIndex = 1:4
     elevation_deg{sampleIndex} = source_deg(:, 2) + centerElevation_deg(sampleIndex);
 end
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "dense moving barrier", time_s, azimuth_deg, elevation_deg, 0);
 initialState = testCase.TestData.Fixtures.State(0, [-5 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumSeedCount = 2;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, diagnostics.DenseSeedEnvelopeUsed);
 verifyTrue(testCase, diagnostics.Coverage.ReducedSpatialProposalUsed);
@@ -844,7 +844,7 @@ seed = struct( ...
     "position_deg", [0 0; 0 0; 4 0], ...
     "tau", [0; 0.4; 1], "EstimatedDuration_s", 8, ...
     "Length_deg", 4, "UsesReducedGeometry", false);
-candidate = azElPlanner.solveSeed( ...
+candidate = obstacleAvoidance.planner.solveRouteCandidate( ...
     [], initialState, goalState, limits, options, seed);
 cornerTime_s = 0.4 * goalState.time_s;
 [~, sampleIndex] = min(abs(candidate.time_s - cornerTime_s));
@@ -871,7 +871,7 @@ seed = struct( ...
     "position_deg", [0 0; 4 0], "tau", [0; 1], ...
     "EstimatedDuration_s", 8, "Length_deg", 4, ...
     "UsesReducedGeometry", false);
-candidate = azElPlanner.solveSeed( ...
+candidate = obstacleAvoidance.planner.solveRouteCandidate( ...
     [], initialState, goalState, limits, options, seed);
 verifyTrue(testCase, isfield(candidate, "MotionLength_deg"));
 verifyEqual(testCase, candidate.MotionLength_deg, Inf);
@@ -889,9 +889,9 @@ end
 
 function testPlanningTimeOptionIsResolved(testCase)
 % Verify the standalone planner owns one positive end-to-end wall-time budget.
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.MaximumPlanningTime_s = 7;
-resolved = azElInput.resolveHs3Options( ...
+resolved = obstacleAvoidance.input.resolveHs3Options( ...
     rmfield(options, "PlannerMethod"));
 verifyEqual(testCase, resolved.MaximumPlanningTime_s, 7);
 end
@@ -941,7 +941,7 @@ options = fixedOptions();
 options.MaximumSeedCount = 3;
 options.MaximumNlpIterations = 40;
 limits.elevationInterval_deg = [-10 10];
-result = planAzElMotion(wall, initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory(wall, initialState, goalState, limits, options);
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyEqual(testCase, numel(result.SeedSummaries), numel(result.Seeds));
@@ -955,7 +955,7 @@ plotOptions = struct( ...
     "ShowVisibilityGraphs", true, ...
     "ShowKinematics", false, ...
     "ShowAnimation", false);
-handles = azElPlotting.plotMotion(result, plotOptions);
+handles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions);
 figureCleanup = onCleanup(@() closeTestFigures(handles));
 verifyTrue(testCase, isgraphics(handles.WorkspaceFigure, "figure"));
 verifyTrue(testCase, isgraphics(handles.VisibilityFigure, "figure"));
@@ -971,7 +971,7 @@ end
 
 function testExactStaticNoPathSkipsMotionSolve(testCase)
 % Verify an exact exhaustive topology failure does not enter HS3.
-wall = azElObstacles.makeAzElObstacleData( ...
+wall = obstacleAvoidance.obstacles.createObstacle( ...
     "full-height wall", [0; 12], [-0.5; 0.5; 0.5; -0.5], ...
     [-90; -90; 90; 90], 0);
 initialState = testCase.TestData.Fixtures.State( ...
@@ -984,7 +984,7 @@ limits.elevationInterval_deg = [-10 10];
 options = fixedOptions();
 options.MaximumSeedCount = 3;
 options.DirectSeedOnly = false;
-result = planAzElMotion(wall, initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory(wall, initialState, goalState, limits, options);
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyTrue(testCase, ...
@@ -992,7 +992,7 @@ verifyTrue(testCase, ...
 verifyEqual(testCase, result.SearchDiagnostics.AttemptedSeedCount, 0);
 end
 function testMovingTargetUsesSamePlanner(testCase)
-% Verify the intercept wrapper only adapts target inputs to planAzElMotion.
+% Verify the intercept wrapper only adapts target inputs to planTrajectory.
 targetTime_s = (0:5:20).';
 targetPosition_deg = [6 + 0.1 * targetTime_s, ...
     ones(size(targetTime_s))];
@@ -1008,7 +1008,7 @@ interceptOptions = struct( ...
     "InterceptMode", "earliest", ...
     "MaximumSearchDuration_s", 20, ...
     "PlannerOptions", plannerOptions);
-result = planAzElMovingTargetIntercept( ...
+result = obstacleAvoidance.planMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -1026,8 +1026,11 @@ plotOptions = struct( ...
     "FigureVisible", "off", "ShowWorkspace", true, ...
     "ShowVisibilityGraphs", true, "ShowKinematics", false, ...
     "ShowAnimation", true, "FrameStride", numel(result.time_s));
-handles = azElPlotting.plotMotion(result, plotOptions);
+handles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions);
 figureCleanup = onCleanup(@() closeTestFigures(handles));
+verifyEqual(testCase, numel(handles.AnimationKinematicAxes), 4);
+verifyTrue(testCase, all(isgraphics(handles.AnimationKinematicAxes, "axes")));
+verifyTrue(testCase, isgraphics(handles.AnimationLegend));
 axesHandles = [handles.WorkspaceAxes, handles.VisibilityAxes, ...
     handles.AnimationAxes];
 % Check each rendered view so none can silently omit the moving-target trace.
@@ -1058,7 +1061,7 @@ interceptOptions = struct( ...
     "MatchTargetVelocity", true, ...
     "MatchTargetAcceleration", true, ...
     "PlannerOptions", fixedOptions());
-result = planAzElMovingTargetIntercept( ...
+result = obstacleAvoidance.planMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 
 derivativeStep_s = 0.01;
@@ -1093,7 +1096,7 @@ end
 
 function options = fixedOptions()
 % Return fast deterministic settings for focused tests.
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
@@ -1106,27 +1109,7 @@ options.Verbose = false;
 end
 
 function obstacles = rectangleObstacles(testCase, boxBounds_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   obstacles = rectangleObstacles(testCase, boxBounds_deg)
-%**************************************************************************
-% PURPOSE
-%   - Construct static protected rectangles for route-cleanup tests.
-%**************************************************************************
-% INPUTS
-%   - testCase (matlab.unittest.FunctionTestCase scalar)
-%       Test fixture owner containing canonical obstacle constructors.
-%   - boxBounds_deg (N-by-4 finite numeric matrix)
-%       Rows are [minimum azimuth, maximum azimuth, minimum elevation,
-%       maximum elevation].
-%**************************************************************************
-% OUTPUTS
-%   - obstacles (N-by-1 struct array)
-%       Canonical protected obstacle histories over [0, 40] seconds.
-%**************************************************************************
-% UNITS
-%   - Bounds and the applied safety margin are degrees; time is seconds.
-%**************************************************************************
+% Construct static protected rectangles for route-cleanup tests.
 obstacleCount = size(boxBounds_deg, 1);
 obstacleTemplate = testCase.TestData.Fixtures.RectangleObstacle( ...
     [0 40], boxBounds_deg(1, :), 0.05);
@@ -1139,66 +1122,23 @@ end
 end
 
 function [seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [seeds, diagnostics] = spatialCleanupSeeds(testCase, obstacles)
-%**************************************************************************
-% PURPOSE
-%   - Run deterministic spatial visibility search without invoking HS3.
-%**************************************************************************
-% INPUTS
-%   - testCase (matlab.unittest.FunctionTestCase scalar)
-%       Test fixture owner containing canonical state and limit constructors.
-%   - obstacles (N-by-1 canonical obstacle struct array)
-%       Static protected geometry used by visibility search and cleanup.
-%**************************************************************************
-% OUTPUTS
-%   - seeds (struct array)
-%       Direct baseline followed by searched spatial visibility routes.
-%   - diagnostics (scalar struct)
-%       Visibility, homology, and route-cleanup evidence.
-%**************************************************************************
-% UNITS
-%   - Position is degrees, time is seconds, and derivatives use degree units.
-%**************************************************************************
+% Run deterministic spatial visibility search without invoking HS3.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [-12 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State( ...
     40, [12 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [1 1], [2 2]);
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = false;
 options.MaximumSeedCount = 5;
-[seeds, diagnostics] = azElSearch.generateTopologySeeds( ...
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
     obstacles, initialState, goalState, limits, options);
 end
 
 function verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles)
-%% Section 0: Header & Readme
-% SYNTAX
-%   verifyCleanedSpatialSeeds(testCase, seeds, diagnostics, obstacles)
-%**************************************************************************
-% PURPOSE
-%   - Independently check length, sampled clearance, and homology signatures.
-%**************************************************************************
-% INPUTS
-%   - testCase (matlab.unittest.FunctionTestCase scalar)
-%       Test assertion owner.
-%   - seeds (struct array)
-%       Direct and spatial route proposals.
-%   - diagnostics (scalar struct)
-%       Searched homology signatures and cleanup evidence.
-%   - obstacles (N-by-1 canonical obstacle struct array)
-%       Static protected geometry used to independently check clearance.
-%**************************************************************************
-% OUTPUTS
-%   - None. Verification failures throw through the test framework.
-%**************************************************************************
-% UNITS
-%   - Position, clearance, and path length are degrees.
-%**************************************************************************
+% Independently check length, sampled clearance, and homology signatures.
 spatialSeeds = seeds([seeds.Source] == "visibilityGraph");
 verifyEqual(testCase, numel(spatialSeeds), diagnostics.HomologyClassCount);
 verifyEqual(testCase, diagnostics.RouteCleanupAttemptedCount, ...
@@ -1206,7 +1146,7 @@ verifyEqual(testCase, diagnostics.RouteCleanupAttemptedCount, ...
 protectedShape = polyshape();
 for obstacleIndex = 1:numel(obstacles)
     protectedShape = union(protectedShape, ...
-        azElObstacles.shapeAtTime(obstacles(obstacleIndex), 0));
+        obstacleAvoidance.obstacles.shapeAtTime(obstacles(obstacleIndex), 0));
 end
 for seedIndex = 1:numel(spatialSeeds)
     route_deg = spatialSeeds(seedIndex).position_deg;
@@ -1221,7 +1161,7 @@ for seedIndex = 1:numel(spatialSeeds)
         fraction = linspace(0, 1, 1001).';
         sample_deg = route_deg(edgeIndex, :) + fraction .* ...
             (route_deg(edgeIndex + 1, :) - route_deg(edgeIndex, :));
-        clearance_deg = azElGeometry.pointPolygonClearance( ...
+        clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( ...
             protectedShape, sample_deg);
         verifyGreaterThan(testCase, min(clearance_deg), 0);
     end
@@ -1229,26 +1169,7 @@ end
 end
 
 function signature = independentRouteSignature(route_deg, representative_deg)
-%% Section 0: Header & Readme
-% SYNTAX
-%   signature = independentRouteSignature(route_deg, representative_deg)
-%**************************************************************************
-% PURPOSE
-%   - Recompute open-route winding classes independently from search state.
-%**************************************************************************
-% INPUTS
-%   - route_deg (N-by-2 finite numeric matrix)
-%       Polyline in [azimuth elevation] order.
-%   - representative_deg (R-by-2 finite numeric matrix)
-%       Interior reference points for occupied regions.
-%**************************************************************************
-% OUTPUTS
-%   - signature (1-by-R int8 row)
-%       Integer branch-crossing signature for the open polyline.
-%**************************************************************************
-% UNITS
-%   - Position is degrees; angular winding and signature are dimensionless.
-%**************************************************************************
+% Recompute open-route winding classes independently from search state.
 representativeCount = size(representative_deg, 1);
 signature = zeros(1, representativeCount, "int8");
 for representativeIndex = 1:representativeCount

@@ -8,7 +8,6 @@ function setupOnce(testCase)
 % Add production and maintained example entry points.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "planAzElMotion"));
 addpath(fullfile(repositoryRoot, "hs3"));
 addpath(fullfile(repositoryRoot, "examples"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
@@ -24,7 +23,7 @@ limits = physicalLimits();
 limits.maxVelocity_deg_s = [3 3];
 trajectory = linearTrajectory(initialState, goalState);
 obstacle = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
-    validation = validateAzElTrajectory( ...
+    validation = obstacleAvoidance.validateTrajectory( ...
     trajectory, obstacle, initialState, goalState, limits, fixedHs3Options());
 
 verifyFalse(testCase, validation.Passed);
@@ -41,9 +40,9 @@ initialState = state(0, [0 0]);
 goalState = state(4, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
-success = planAzElMotion([], initialState, goalState, limits, options);
+success = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 blockingObstacle = rectangleObstacle([0 4], [-1 1 -1 1], 0);
-failure = planAzElMotion( ...
+failure = obstacleAvoidance.planTrajectory( ...
     blockingObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, success.Success, success.Message);
@@ -68,7 +67,7 @@ limits = physicalLimits();
 options = fixedHs3Options();
 options.CollocationSegmentCount = 2;
 options.MaximumCollocationSegmentCount = 2;
-result = planAzElMotion([], initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -82,11 +81,11 @@ end
 
 function testFinalizerRejectsOverAttribution(testCase)
 % Reject overlapping stage ownership instead of hiding it in a zero residual.
-timing = azElPlanner.stageTiming();
+timing = obstacleAvoidance.planner.stageTiming();
 timing.MotionSolvingElapsedTime_s = 2;
 
 verifyError(testCase, @() ...
-    azElPlanner.stageTiming(timing, 1), ...
+    obstacleAvoidance.planner.stageTiming(timing, 1), ...
     "stageTiming:OverAttributed");
 end
 
@@ -137,7 +136,7 @@ end
 
 function options = fixedHs3Options()
 % Return deterministic HS3 controls for timing tests.
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 options.GoalTimeMode = "fixedArrival";
 options.DirectSeedOnly = true;
 options.MaximumSeedCount = 1;
@@ -170,7 +169,7 @@ function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)
 % Construct a static rectangle from [minAz maxAz minEl maxEl].
 azimuth_deg = bounds_deg([1 2 2 1]).';
 elevation_deg = bounds_deg([3 3 4 4]).';
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "rectangle", time_s(:), azimuth_deg, elevation_deg, margin_deg);
 end
 

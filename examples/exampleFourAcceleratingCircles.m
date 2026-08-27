@@ -32,7 +32,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     exampleOverrides, struct( ...
         "GoalTimeMode", "fixedArrival", ...
         "SampleTime_s", 0.05, ...
@@ -65,17 +65,14 @@ circleTravel_deg = 7.0;
 % decelerate out, and then remain at their terminal elevations.
 normalizedTime = min(obstacleTime_s / obstacleMotionDuration_s, 1);
 travelFraction = 10 * normalizedTime.^3 - 15 * normalizedTime.^4 + 6 * normalizedTime.^5;
-travelRate_1_s = (30 * normalizedTime.^2 - 60 * normalizedTime.^3 + 30 * normalizedTime.^4) / obstacleMotionDuration_s;
 travelAcceleration_1_s2 = (60 * normalizedTime - ...
     180 * normalizedTime.^2 + 120 * normalizedTime.^3) / obstacleMotionDuration_s^2;
 
 motionIsComplete = obstacleTime_s >= obstacleMotionDuration_s;
-travelRate_1_s(motionIsComplete) = 0;
 travelAcceleration_1_s2(motionIsComplete) = 0;
 
 initialCenterElevation_deg = -0.5 * circleTravel_deg .* circleDirection;
 circleCenterElevation_deg = initialCenterElevation_deg + circleTravel_deg * travelFraction .* circleDirection;
-circleCenterVelocity_deg_s = circleTravel_deg * travelRate_1_s .* circleDirection;
 circleCenterAcceleration_deg_s2 = circleTravel_deg * travelAcceleration_1_s2 .* circleDirection;
 
 circleAngle_rad = (0:71).' * (2 * pi / 72);
@@ -94,12 +91,12 @@ for circleIndex = 1:numel(circleCenterAzimuth_deg)
         circleAzimuthByTime_deg{sampleIndex} = circlePosition_deg(:, 1);
         circleElevationByTime_deg{sampleIndex} = circlePosition_deg(:, 2);
     end
-    obstacleByCircle{circleIndex} = azElObstacles.makeAzElObstacleData( ...
+    obstacleByCircle{circleIndex} = obstacleAvoidance.obstacles.createObstacle( ...
         "Accelerating circle " + circleIndex, obstacleTime_s, ...
         circleAzimuthByTime_deg, circleElevationByTime_deg, safetyMargin_deg);
 end
 
-obstacles = azElObstacles.combineAzElObstacles(obstacleByCircle{:});
+obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleByCircle{:});
 
 %% Section 3: Create Planner Inputs
 
@@ -121,11 +118,11 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( ...
+exampleValidation = validateExampleResult( ...
     result, "four accelerating circles");
 
 midpointIndex = find( obstacleTime_s == 0.5 * obstacleMotionDuration_s, 1, "first");
@@ -210,34 +207,16 @@ if ~shortestRouteValidation.Passed
     exampleValidation.Message = ...
         "The selected motion is not the shortest center-line route.";
 end
+if ~exampleValidation.Passed
+    warning("exampleFourAcceleratingCircles:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, jerkConfiguration.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleFourAcceleratingCircles";
-result.ExampleValidation = exampleValidation;
-result.CircleMotionValidation = circleMotionValidation;
-result.MovingTargetValidation = movingTargetValidation;
-result.ShortestRouteValidation = shortestRouteValidation;
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleInputs = struct( ...
-    "obstacles", obstacles, ...
-    "initialState", initialState, "targetMotion", targetMotion, "limits", limits, "interceptOptions", interceptOptions);
-result.obstacleTime_s = obstacleTime_s;
-result.obstacleMotionDuration_s = obstacleMotionDuration_s;
-result.circleRadius_deg = circleRadius_deg;
-result.safetyMargin_deg = safetyMargin_deg;
-result.circleCenterAzimuth_deg = circleCenterAzimuth_deg;
-result.circleCenterElevation_deg = circleCenterElevation_deg;
-result.circleCenterVelocity_deg_s = circleCenterVelocity_deg_s;
-result.circleCenterAcceleration_deg_s2 = circleCenterAcceleration_deg_s2;
-result.targetTime_s = targetTime_s;
-result.targetPosition_deg = targetPosition_deg;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

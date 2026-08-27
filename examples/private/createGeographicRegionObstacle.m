@@ -43,12 +43,12 @@ if ~isstruct(options) || ~isscalar(options)
     error("createGeographicRegionObstacle:InvalidOptions", "options must be a scalar struct.");
 end
 defaultOptions = struct("Verbose", false);
-[resolvedOptions, unknownOptionFields] = azElInput.resolveOptions(defaultOptions, options);
+[resolvedOptions, unknownOptionFields] = obstacleAvoidance.input.resolveOptions(defaultOptions, options);
 if ~isempty(unknownOptionFields)
     warning("createGeographicRegionObstacle:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownOptionFields, ", "));
 end
-verbose = azElInput.normalizeLogicalScalar( ...
+verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
     resolvedOptions.Verbose, "Verbose", "createGeographicRegionObstacle:InvalidVerbose");
 resolvedOptions.Verbose = verbose;
 validateattributes(time_s, {'numeric'}, {'real','finite','nonempty','increasing'});
@@ -175,7 +175,7 @@ goalPosition_deg = [ routeLongitude_deg, maximumLatitude_deg + endpointClearance
 
 displayName = upper(extractBefore(regionName, 2)) + extractAfter(regionName, 1);
 constructionOptions = struct("Verbose", verbose);
-obstacle = azElObstacles.makeAzElObstacleData( ...
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     displayName + " geographic region", time_s, longitude_deg, latitude_deg, safetyMargin_deg, constructionOptions);
 history = struct( ...
     "RegionName", displayName, ...

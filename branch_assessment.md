@@ -5,6 +5,51 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## High-level public namespace and normal example results — 2026-08-27
+
+Production code is now exposed through the high-level +obstacleAvoidance
+package and the separate normal hs3 product. The public planner calls are
+obstacleAvoidance.planTrajectory,
+obstacleAvoidance.planMovingTargetIntercept, and
+obstacleAvoidance.validateTrajectory. Input, obstacle, geometry, search,
+planner, and plotting ownership is visible in matching subpackages. The
+dimension-neutral HS3 engine still has one public solveTrajHS3 entry and is
+source-checked against Az/El domain dependencies.
+
+Construction vocabulary now consistently uses create; query, combine,
+convert, evaluate, solve, and validate remain distinct behavioral verbs.
+HS3 polynomial helpers state their mathematical result, including
+createTrajectoryPolynomial, evaluateTrajectoryPolynomial,
+createAffineSensitivityModel, createSubintervalBernsteinMap, and
+evaluateIntegratedSquaredJerk. Architecture tests reject the removed nested
+product and legacy packages, require unique production basenames, and verify
+that numerical optimization stays in HS3.
+
+Examples no longer append names, controls, geometry, metrics, plot handles, or
+sequence summaries to planner results. The deleted example-metrics generator
+is replaced by external benchmark calculation, so every example returns the
+normal public planner schema. Independent validation and plotting remain local.
+The moving-barrier and opening-U examples locally suppress only MATLAB's
+nearlySingularMatrix and singularMatrix warnings during their expected
+wait-seed solves, restore the caller's warning state, and still warn if
+independent validation fails.
+
+The plotting API now provides a synchronized spatial/position/velocity/
+acceleration/jerk dashboard, fixed derivative limits, and optional GIF export.
+A focused run produced a 95,507-byte two-frame GIF and four live kinematic
+axes. The complete unit suite passes 117/117 and Code Analyzer reports zero
+findings. All 18 maintained examples ran serially in fresh MATLAB processes:
+17 independently validated successes and the independently validated expected
+noValidatedSeed failure. A visible success created three figures, and the
+expected failure created both workspace and time-expanded diagnostic figures.
+
+No planner algorithm changed in this namespace/output refactor. Representative
+trajectory metrics match the preceding route-cleanup evidence, including the
+20-degree center-line accelerating-circle motion and 24.035784715-degree
+two-opposing-U seed. The largest measured example wall time remains
+55.227758 seconds for the extreme U.S. outline, so runtime remains the largest
+current weakness and no performance improvement is claimed.
+
 ## Documentation and interactive-example cleanup — 2026-08-26
 
 Eight redundant subfolder `README.md` files and the manual
@@ -1945,3 +1990,26 @@ optimality, completeness, or uniform runtime claim is made. Further generic
 mesh tuning is not justified by the measured arrival/runtime tradeoff; the
 next improvement should target a newly localized invariant rather than extend
 this search.
+
+## Shared helpers and HS3 internal subpackages — 2026-08-26
+
+The current worktree removes four duplicated local invariants and organizes
+the neutral HS3 implementation into `polynomial`, `constraints`, and `solver`
+subpackages. Dependency inspection shows solver code depending on constraints
+and polynomial mechanics, constraint code depending on polynomial mechanics,
+and no higher-layer dependency from the polynomial package. HS3 remains free
+of Az/El domain terminology, and the Az/El adapter uses the qualified neutral
+engine functions rather than owning numerical solver calls.
+
+Focused fresh-process evidence covers a moving circle, an opening U, and a
+static U. All three planner results and independent example validations pass,
+including collision and jerk/kinematic certificates. Their polyline lengths,
+smoothed lengths, and durations exactly match the preceding
+`de372d5+spatial-route-cleanup-worktree` records. Wall times were 13.708932,
+14.261098, and 15.192708 seconds respectively; they are single runs and do not
+support a performance claim. The opening-U case retains its known repeated
+ill-conditioned `fmincon` warning flood despite producing a validated result.
+
+This is only a focused architecture smoke test. The remaining maintained
+examples, expected failure visualization, visible graphics, complete unit
+suite, and Code Analyzer have not yet been rerun against this worktree.

@@ -148,23 +148,7 @@ end
 %% Section 5: Local Functions
 
 function reports = runCandidateReports()
-%% Section 0: Header & Readme
-% SYNTAX
-%   reports = runCandidateReports()
-%**************************************************************************
-% PURPOSE
-%   - Run the frozen scaling matrix three times with deterministic work.
-%**************************************************************************
-% INPUTS
-%   - None.
-%**************************************************************************
-% OUTPUTS
-%   - reports (3-by-1 struct array)
-%       Serial benchmark reports from the current worktree.
-%**************************************************************************
-% UNITS
-%   - Runtime fields use seconds.
-%**************************************************************************
+% Run the frozen scaling matrix three times with deterministic work.
 controls = struct( ...
     "PrintProgress", true, ...
     "RandomSeed", 325, ...
@@ -180,22 +164,7 @@ end
 end
 
 function mismatches = compareExtractedKernel(referenceReport)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mismatches = compareExtractedKernel(referenceReport)
-%**************************************************************************
-% PURPOSE
-%   - Reconstruct frozen production polynomials through the neutral kernel.
-%**************************************************************************
-% INPUTS
-%   - referenceReport (scalar benchmark report), frozen baseline cases.
-%**************************************************************************
-% OUTPUTS
-%   - mismatches (string column), leaf-math extraction parity failures.
-%**************************************************************************
-% UNITS
-%   - Values retain the units of the frozen planner result fields.
-%**************************************************************************
+% Reconstruct frozen production polynomials through the neutral kernel.
 mismatches = strings(0, 1);
 for caseIndex = 1:numel(referenceReport.Cases)
     result = referenceReport.Cases(caseIndex).PlannerResult;
@@ -211,7 +180,7 @@ for caseIndex = 1:numel(referenceReport.Cases)
         "position", result.Inputs.initialState.position_deg, ...
         "velocity", result.Inputs.initialState.velocity_deg_s, ...
         "acceleration", result.Inputs.initialState.acceleration_deg_s2);
-    extracted = hs3Internal.reconstructPolynomial( ...
+    extracted = hs3Internal.polynomial.createTrajectoryPolynomial( ...
         controlJerk, initialState, polynomial.FinalTime_s, segmentCount);
     caseLabel = sprintf("kernel %s scale %g", ...
         referenceReport.Cases(caseIndex).ScenarioFamily, ...
@@ -232,7 +201,7 @@ for caseIndex = 1:numel(referenceReport.Cases)
             1e-12, 1e-10, caseLabel + "." + extractedName);
     end
     [~, position, velocity, acceleration, jerk] = ...
-        hs3Internal.evaluatePolynomial(extracted, result.time_s);
+        hs3Internal.polynomial.evaluateTrajectoryPolynomial(extracted, result.time_s);
     histories = {position, velocity, acceleration, jerk};
     historyNames = [ ...
         "position_deg", "velocity_deg_s", ...
@@ -248,7 +217,7 @@ for caseIndex = 1:numel(referenceReport.Cases)
     else
         objectiveDecision = controlJerk(:);
     end
-    extractedObjective = hs3Internal.integratedSquaredJerk( ...
+    extractedObjective = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
         objectiveDecision, isFreeTime, polynomial.FinalTime_s, ...
         segmentCount, initialState.time, dimensionCount);
     [selectedSummary, ~] = selectedSummaries(result, result);
@@ -259,22 +228,7 @@ end
 end
 
 function controlJerk = controlsFromPolynomial(jerkPower)
-%% Section 0: Header & Readme
-% SYNTAX
-%   controlJerk = controlsFromPolynomial(jerkPower)
-%**************************************************************************
-% PURPOSE
-%   - Recover shared start, midpoint, and end ordinates from power records.
-%**************************************************************************
-% INPUTS
-%   - jerkPower (N-by-D-by-3 numeric), ascending local-tau coefficients.
-%**************************************************************************
-% OUTPUTS
-%   - controlJerk ((2N+1)-by-D numeric), HS3 jerk ordinates.
-%**************************************************************************
-% UNITS
-%   - Values retain the jerk units of the input coefficients.
-%**************************************************************************
+% Recover shared start, midpoint, and end ordinates from power records.
 segmentCount = size(jerkPower, 1);
 dimensionCount = size(jerkPower, 2);
 controlJerk = zeros(2 * segmentCount + 1, dimensionCount);
@@ -291,25 +245,7 @@ end
 end
 
 function mismatches = compareCase(referenceCase, candidateCase, caseLabel)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mismatches = compareCase(referenceCase, candidateCase, caseLabel)
-%**************************************************************************
-% PURPOSE
-%   - Apply every discrete and numerical extraction parity gate to one case.
-%**************************************************************************
-% INPUTS
-%   - referenceCase (scalar benchmark case struct)
-%   - candidateCase (scalar benchmark case struct)
-%   - caseLabel (text scalar)
-%**************************************************************************
-% OUTPUTS
-%   - mismatches (string column)
-%       Empty on parity; otherwise one actionable message per failed field.
-%**************************************************************************
-% UNITS
-%   - Field-specific tolerances retain the units documented by the planner.
-%**************************************************************************
+% Apply every discrete and numerical extraction parity gate to one case.
 mismatches = strings(0, 1);
 exactPaths = [ ...
     "Success", "IndependentValidationAttempted", ...
@@ -428,26 +364,7 @@ end
 
 function mismatches = appendExactMismatch( ...
         mismatches, reference, candidate, fieldPath, caseLabel)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mismatches = appendExactMismatch( ...
-%       mismatches, reference, candidate, fieldPath, caseLabel)
-%**************************************************************************
-% PURPOSE
-%   - Append an exact discrete-field mismatch without hiding missing fields.
-%**************************************************************************
-% INPUTS
-%   - mismatches (string column), accumulated mismatch messages.
-%   - reference, candidate (scalar structs), compared records.
-%   - fieldPath (text scalar), dot-separated field path.
-%   - caseLabel (text scalar), reproducible case identity.
-%**************************************************************************
-% OUTPUTS
-%   - mismatches (string column), possibly extended mismatch messages.
-%**************************************************************************
-% UNITS
-%   - Not applicable.
-%**************************************************************************
+% Append an exact discrete-field mismatch without hiding missing fields.
 [referenceValue, referenceFound] = nestedField(reference, fieldPath);
 [candidateValue, candidateFound] = nestedField(candidate, fieldPath);
 if ~referenceFound || ~candidateFound
@@ -463,26 +380,7 @@ end
 function mismatches = appendNumericMismatch( ...
         mismatches, reference, candidate, absoluteTolerance, ...
         relativeTolerance, fieldLabel)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mismatches = appendNumericMismatch(mismatches, reference, candidate, ...
-%       absoluteTolerance, relativeTolerance, fieldLabel)
-%**************************************************************************
-% PURPOSE
-%   - Append a shape, finiteness, or numerical-tolerance mismatch.
-%**************************************************************************
-% INPUTS
-%   - mismatches (string column), accumulated mismatch messages.
-%   - reference, candidate (numeric arrays), compared values.
-%   - absoluteTolerance, relativeTolerance (nonnegative scalars)
-%   - fieldLabel (text scalar), complete diagnostic field identity.
-%**************************************************************************
-% OUTPUTS
-%   - mismatches (string column), possibly extended mismatch messages.
-%**************************************************************************
-% UNITS
-%   - Tolerances use the compared field's documented units.
-%**************************************************************************
+% Append a shape, finiteness, or numerical-tolerance mismatch.
 if ~isnumeric(reference) || ~isnumeric(candidate) || ...
         ~isequal(size(reference), size(candidate))
     mismatches(end + 1, 1) = fieldLabel + " has a type or shape mismatch";
@@ -516,26 +414,7 @@ end
 function mismatches = appendNumericTreeMismatches( ...
         mismatches, reference, candidate, fieldLabel, ...
         absoluteTolerance, relativeTolerance)
-%% Section 0: Header & Readme
-% SYNTAX
-%   mismatches = appendNumericTreeMismatches(mismatches, reference, ...
-%       candidate, fieldLabel, absoluteTolerance, relativeTolerance)
-%**************************************************************************
-% PURPOSE
-%   - Recursively compare every numeric polynomial field and discrete leaf.
-%**************************************************************************
-% INPUTS
-%   - mismatches (string column), accumulated mismatch messages.
-%   - reference, candidate (values), compared tree nodes.
-%   - fieldLabel (text scalar), current diagnostic path.
-%   - absoluteTolerance, relativeTolerance (nonnegative scalars)
-%**************************************************************************
-% OUTPUTS
-%   - mismatches (string column), possibly extended mismatch messages.
-%**************************************************************************
-% UNITS
-%   - Numeric leaves retain their polynomial field units.
-%**************************************************************************
+% Recursively compare every numeric polynomial field and discrete leaf.
 if isstruct(reference) && isstruct(candidate) && ...
         isscalar(reference) && isscalar(candidate)
     referenceNames = string(fieldnames(reference));
@@ -559,24 +438,7 @@ end
 end
 
 function [value, found] = nestedField(record, fieldPath)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [value, found] = nestedField(record, fieldPath)
-%**************************************************************************
-% PURPOSE
-%   - Read one dot-separated scalar-structure field path safely.
-%**************************************************************************
-% INPUTS
-%   - record (scalar struct), root record.
-%   - fieldPath (text scalar), dot-separated field names.
-%**************************************************************************
-% OUTPUTS
-%   - value (any), field value or empty when missing.
-%   - found (logical scalar), true only when every path component exists.
-%**************************************************************************
-% UNITS
-%   - Not applicable.
-%**************************************************************************
+% Read one dot-separated scalar-structure field path safely.
 value = record;
 found = true;
 for fieldName = split(string(fieldPath), ".").'
@@ -590,22 +452,7 @@ end
 end
 
 function length_deg = selectedRouteLength(result)
-%% Section 0: Header & Readme
-% SYNTAX
-%   length_deg = selectedRouteLength(result)
-%**************************************************************************
-% PURPOSE
-%   - Read the selected seed's stored geometric length.
-%**************************************************************************
-% INPUTS
-%   - result (scalar planner result), candidate result.
-%**************************************************************************
-% OUTPUTS
-%   - length_deg (scalar), selected route length or NaN on failure.
-%**************************************************************************
-% UNITS
-%   - Degrees.
-%**************************************************************************
+% Read the selected seed's stored geometric length.
 length_deg = NaN;
 if result.SelectedSeedIndex >= 1 && ...
         result.SelectedSeedIndex <= numel(result.Seeds)
@@ -614,22 +461,7 @@ end
 end
 
 function length_deg = trajectoryLength(result)
-%% Section 0: Header & Readme
-% SYNTAX
-%   length_deg = trajectoryLength(result)
-%**************************************************************************
-% PURPOSE
-%   - Compute the sampled trajectory path length without planner shortcuts.
-%**************************************************************************
-% INPUTS
-%   - result (scalar planner result), candidate result.
-%**************************************************************************
-% OUTPUTS
-%   - length_deg (scalar), sampled path length or NaN on failure.
-%**************************************************************************
-% UNITS
-%   - Degrees.
-%**************************************************************************
+% Compute the sampled trajectory path length without planner shortcuts.
 length_deg = NaN;
 if result.Success
     length_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
@@ -638,23 +470,7 @@ end
 
 function [referenceSummary, candidateSummary] = ...
         selectedSummaries(referenceResult, candidateResult)
-%% Section 0: Header & Readme
-% SYNTAX
-%   [referenceSummary, candidateSummary] = ...
-%       selectedSummaries(referenceResult, candidateResult)
-%**************************************************************************
-% PURPOSE
-%   - Return matching selected-seed summaries when both results have them.
-%**************************************************************************
-% INPUTS
-%   - referenceResult, candidateResult (scalar planner results)
-%**************************************************************************
-% OUTPUTS
-%   - referenceSummary, candidateSummary (scalar structs or empty)
-%**************************************************************************
-% UNITS
-%   - Fields retain planner-defined units.
-%**************************************************************************
+% Return matching selected-seed summaries when both results have them.
 referenceSummary = [];
 candidateSummary = [];
 referenceIndex = referenceResult.SelectedSeedIndex;
@@ -668,23 +484,7 @@ end
 end
 
 function value = fieldOrNaN(record, fieldName)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = fieldOrNaN(record, fieldName)
-%**************************************************************************
-% PURPOSE
-%   - Read an optional scalar solver-output field for exact comparison.
-%**************************************************************************
-% INPUTS
-%   - record (scalar struct), solver output.
-%   - fieldName (text scalar), requested field.
-%**************************************************************************
-% OUTPUTS
-%   - value (numeric scalar), stored value or NaN when absent.
-%**************************************************************************
-% UNITS
-%   - Not applicable.
-%**************************************************************************
+% Read an optional scalar solver-output field for exact comparison.
 value = NaN;
 if isstruct(record) && isscalar(record) && isfield(record, fieldName)
     value = record.(fieldName);
@@ -692,23 +492,7 @@ end
 end
 
 function value = fieldOrText(record, fieldName)
-%% Section 0: Header & Readme
-% SYNTAX
-%   value = fieldOrText(record, fieldName)
-%**************************************************************************
-% PURPOSE
-%   - Read an optional solver-output text field for exact comparison.
-%**************************************************************************
-% INPUTS
-%   - record (scalar struct), solver output.
-%   - fieldName (text scalar), requested field.
-%**************************************************************************
-% OUTPUTS
-%   - value (string scalar), stored value or an empty string when absent.
-%**************************************************************************
-% UNITS
-%   - Not applicable.
-%**************************************************************************
+% Read an optional solver-output text field for exact comparison.
 value = "";
 if isstruct(record) && isscalar(record) && isfield(record, fieldName)
     value = string(record.(fieldName));
@@ -716,23 +500,7 @@ end
 end
 
 function values_s = runtimeMatrix(reports, caseCount)
-%% Section 0: Header & Readme
-% SYNTAX
-%   values_s = runtimeMatrix(reports, caseCount)
-%**************************************************************************
-% PURPOSE
-%   - Collect total serial case runtimes without changing report ordering.
-%**************************************************************************
-% INPUTS
-%   - reports (struct array), scaling benchmark reports.
-%   - caseCount (positive integer scalar), expected cases per report.
-%**************************************************************************
-% OUTPUTS
-%   - values_s (run-by-case numeric), total wall times.
-%**************************************************************************
-% UNITS
-%   - Seconds.
-%**************************************************************************
+% Collect total serial case runtimes without changing report ordering.
 values_s = zeros(numel(reports), caseCount);
 for runIndex = 1:numel(reports)
     values_s(runIndex, :) = [reports(runIndex).Cases.TotalWallTime_s];

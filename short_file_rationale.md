@@ -1,23 +1,25 @@
 # Why short production MATLAB files remain separate
 
-Production code is organized into the `planAzElMotion/` and `hs3/` product
-folders. The Az/El product contains six flat packages; the HS3 product contains
-one public entry and one neutral internal package. Tests, examples, benchmarks,
-the interactive sandbox, and user data are outside this ownership audit.
+Production code is organized into the `+obstacleAvoidance/` namespace and the
+`hs3/` engine folder. The obstacle-avoidance product contains six responsibility
+subpackages; HS3 contains one public entry and three neutral implementation
+subpackages. Tests, examples, benchmarks, the interactive sandbox, and user
+data are outside this ownership audit.
 
 | Package | Single responsibility |
 | --- | --- |
-| `+azElInput` | Normalize and validate public planner requests and options. |
-| `+azElObstacles` | Construct, combine, prepare, and query obstacles. |
-| `+azElGeometry` | Interpret boundaries and perform geometry operations. |
-| `+azElSearch` | Generate topology seeds and certify seed corridors. |
-| `+azElPlanner` | Adapt Az/El requests to HS3 and assemble planner results. |
-| `+azElPlotting` | Render returned results without rerunning planning. |
-| `hs3/+hs3Internal` | Implement dimension-neutral polynomial motion. |
+| `+obstacleAvoidance/+input` | Normalize public requests and options. |
+| `+obstacleAvoidance/+obstacles` | Create, combine, prepare, and query obstacles. |
+| `+obstacleAvoidance/+geometry` | Interpret boundaries and perform geometry operations. |
+| `+obstacleAvoidance/+search` | Create route candidates and certify corridors. |
+| `+obstacleAvoidance/+planner` | Adapt requests to HS3 and assemble results. |
+| `+obstacleAvoidance/+plotting` | Render results without rerunning planning. |
+| `hs3/+hs3Internal/+polynomial` | Own neutral trajectory-polynomial mathematics. |
+| `hs3/+hs3Internal/+constraints` | Own neutral continuous constraints. |
+| `hs3/+hs3Internal/+solver` | Own fixed- and free-time optimization. |
 
-Each product has only one package level. Production MATLAB basenames are
-unique, so a responsibility cannot be reached through duplicate
-implementations.
+Production MATLAB basenames are unique, so a responsibility cannot be reached
+through duplicate implementations.
 
 ## The HS3 boundary
 
@@ -26,20 +28,22 @@ polynomial, and path-constraint schemas use caller-defined coordinates and
 units. It contains no Az/El, obstacle, visibility, topology, plotting, or
 scenario knowledge.
 
-`+azElPlanner/solveSeed.m` owns the adapter from an Az/El seed corridor to the
-dimension-neutral HS3 optimization problem. Numerical optimization is invoked
-only through `hs3Internal.optimize`; exact polynomial reconstruction and
-evaluation are invoked through `hs3Internal.reconstructPolynomial` and
-`hs3Internal.evaluatePolynomial`.
-The adapter restores unit-bearing Az/El field names for the stable planner
-result. It does not duplicate engine mathematics.
+`+obstacleAvoidance/+planner/solveRouteCandidate.m` owns the adapter from a
+route corridor to the dimension-neutral HS3 optimization problem. Numerical
+optimization is invoked through `hs3Internal.solver.optimize`; exact
+polynomial creation and evaluation use
+`hs3Internal.polynomial.createTrajectoryPolynomial` and
+`hs3Internal.polynomial.evaluateTrajectoryPolynomial`. The adapter restores
+unit-bearing coordinate fields for the stable result without duplicating
+engine mathematics.
 
 ## Stable public boundaries
 
-`planAzElMotion/planAzElMotion.m` remains the single public Az/El planner entry
-point. Obstacle construction and queries are qualified `azElObstacles.*`
-package calls, plotting uses `azElPlotting.plotMotion`, and
-`hs3/solveTrajHS3.m` is the single public neutral engine entry.
+`obstacleAvoidance.planTrajectory` is the single public obstacle-avoidance
+planner entry. Obstacle construction and queries are qualified
+`obstacleAvoidance.obstacles.*` calls, plotting uses
+`obstacleAvoidance.plotting.plotTrajectory`, and `hs3/solveTrajHS3.m` remains
+the single public neutral engine entry.
 
 ## Small internal files
 

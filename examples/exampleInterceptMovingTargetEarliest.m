@@ -13,7 +13,7 @@ function result = exampleInterceptMovingTargetEarliest(exampleOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Planner result, independent validation, plots, and example metrics.
+%       Unmodified public moving-target planner result.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
@@ -25,7 +25,7 @@ function result = exampleInterceptMovingTargetEarliest(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[plannerOptions, displayOptions] = resolveAzElExampleOptions( ...
+[plannerOptions, displayOptions] = resolveExampleOptions( ...
     exampleOverrides, struct( "DirectSeedOnly", true, "MaximumSeedCount", 1), [2 2]);
 
 %% Section 2: Create Obstacles
@@ -47,24 +47,21 @@ interceptOptions = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
-result.ExampleValidation = validateAzElTrajectory(result);
+exampleValidation = obstacleAvoidance.validateTrajectory(result);
+if ~exampleValidation.Passed
+    warning("exampleInterceptMovingTargetEarliest:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, displayOptions.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleInterceptMovingTargetEarliest";
-result.ExampleMetrics = computeAzElExampleMetrics(result);
-result.ExampleControls = displayOptions;
-result.ExampleInputs = struct( ...
-    "targetTime_s", targetTime_s, "targetPosition_deg", targetPosition_deg, "interceptOptions", interceptOptions);
 end

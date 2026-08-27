@@ -1,10 +1,10 @@
-# Azimuth/Elevation Obstacle-Avoidance Planner
+# Obstacle-Avoidance Trajectory Planner
 
-This branch provides one public Az/El planner: a third-order
-Hermite-Simpson (HS3) transcription solved with `fmincon`. Production code is
-organized by six one-level responsibilities: input, obstacles, geometry,
-search, planning, and plotting. The dimension-neutral engine is a separate
-normal `hs3/` product folder.
+This branch provides one public obstacle-avoidance planner for trajectories in
+the azimuth/elevation frame. It uses a third-order Hermite-Simpson (HS3)
+transcription solved with `fmincon`. The `obstacleAvoidance` namespace owns
+input, obstacles, geometry, search, planning, and plotting. The
+dimension-neutral engine remains a separate normal `hs3/` product folder.
 
 A successful result is accepted only after canonical independent validation.
 Successful results have `SelectedMotionSource="hs3"` and echo
@@ -19,16 +19,16 @@ summarized below in this repository-level guide.
 The zero-input call returns HS3 defaults:
 
 ```matlab
-options = planAzElMotion();
+options = obstacleAvoidance.planTrajectory();
 
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
 The explicit defaults request is equivalent:
 
 ```matlab
-options = planAzElMotion("hs3");
+options = obstacleAvoidance.planTrajectory("hs3");
 ```
 
 A partial options structure may omit `PlannerMethod` or set it to `"hs3"`:
@@ -44,7 +44,7 @@ No other planner selector value is supported.
 ## Minimal fixed-goal example
 
 ```matlab
-obstacles = azElObstacles.makeAzElObstacleData( ...
+obstacles = obstacleAvoidance.obstacles.createObstacle( ...
     "protected rectangle", ...
     [0; 20], ...
     [-1; 1; 1; -1], ...
@@ -64,8 +64,8 @@ limits = struct( ...
     "maxAcceleration_deg_s2", [1 1], ...
     "maxJerk_deg_s3", [2 2]);
 
-options = planAzElMotion();
-result = planAzElMotion( ...
+options = obstacleAvoidance.planTrajectory();
+result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
@@ -74,14 +74,14 @@ result = planAzElMotion( ...
 The public fixed-goal interface is:
 
 ```matlab
-result = planAzElMotion( ...
+result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
 ### Obstacles
 
-Use `azElObstacles.makeAzElObstacleData` for static or time-indexed polygon
-histories and `azElObstacles.makeMovingAzElObstacleData` for moving shapes.
+Use `obstacleAvoidance.obstacles.createObstacle` for static or time-indexed polygon
+histories and `obstacleAvoidance.obstacles.createMovingObstacle` for moving shapes.
 Safety margins are applied by the package constructors exactly once, and
 original and protected geometry remain separate.
 
@@ -113,7 +113,7 @@ their defaults are `[-180 180]` and `[-90 90]` degrees.
 
 ### Options
 
-Call `planAzElMotion()` or `planAzElMotion("hs3")` to inspect the exact HS3
+Call `obstacleAvoidance.planTrajectory()` or `obstacleAvoidance.planTrajectory("hs3")` to inspect the exact HS3
 options. Partial override structures are accepted, and empty fields retain
 their defaults.
 
@@ -127,19 +127,19 @@ finite search. It is not a proof of global completeness or optimality.
 The public call forms are:
 
 ```matlab
-result = planAzElMovingTargetIntercept( ...
+result = obstacleAvoidance.planMovingTargetIntercept( ...
     initialState, targetMotion, limits, interceptOptions);
 
-result = planAzElMovingTargetIntercept( ...
+result = obstacleAvoidance.planMovingTargetIntercept( ...
     obstacles, initialState, targetMotion, limits, interceptOptions);
 ```
 
 Configure HS3 inside `PlannerOptions`:
 
 ```matlab
-interceptOptions = planAzElMovingTargetIntercept();
+interceptOptions = obstacleAvoidance.planMovingTargetIntercept();
 interceptOptions.InterceptMode = "earliest";
-interceptOptions.PlannerOptions = planAzElMotion();
+interceptOptions.PlannerOptions = obstacleAvoidance.planTrajectory();
 ```
 
 Earliest interception performs a bounded chronological sequence of
@@ -166,9 +166,10 @@ measured total.
 
 Expected no-path, work-limit, and dynamic-infeasibility outcomes return
 `Success=false` with a recognized termination reason and retained diagnostics.
-Invalid input contracts throw errors. Use `validateAzElTrajectory` for
-independent full-trajectory validation and `azElPlotting.plotMotion` to
-visualize a returned motion or preserved failure diagnostics.
+Invalid input contracts throw errors. Use
+`obstacleAvoidance.validateTrajectory` for independent full-trajectory
+validation and `obstacleAvoidance.plotting.plotTrajectory` to visualize a
+returned motion or preserved failure diagnostics.
 
 ## HS3 behavior and limitations
 
@@ -205,20 +206,25 @@ visualize a returned motion or preserved failure diagnostics.
 ## Repository layout
 
 ```text
-planAzElMotion/                     complete Az/El planning product
-|-- planAzElMotion.m                public HS3 planning entry point
-|-- planAzElMovingTargetIntercept.m chronological intercept adapter
-|-- validateAzElTrajectory.m        public independent validation
-|-- +azElInput/                     request, endpoint, and option contracts
-|-- +azElObstacles/                 public construction, queries, and history
-|-- +azElGeometry/                  polygon conversion and clearance primitives
-|-- +azElSearch/                    topology, visibility, and corridor ownership
-|-- +azElPlanner/                   Az/El orchestration and HS3 adaptation
-`-- +azElPlotting/                  public result-driven plotting
++obstacleAvoidance/                 obstacle-avoidance product namespace
+|-- planTrajectory.m                public HS3 planning entry point
+|-- planMovingTargetIntercept.m     chronological intercept adapter
+|-- validateTrajectory.m            public independent validation
+|-- +input/                         request, endpoint, and option contracts
+|-- +obstacles/                     construction, queries, and history
+|-- +geometry/                      boundary and clearance primitives
+|-- +search/                        topology, visibility, and corridors
+|-- +planner/                       orchestration and HS3 adaptation
+`-- +plotting/                      public result-driven plotting
 
 hs3/                                dimension-neutral motion product
 |-- solveTrajHS3.m                  public trajectory entry point
-`-- +hs3Internal/                   numerical and polynomial implementation
+`-- +hs3Internal/                   neutral implementation ownership
+    |-- +polynomial/                reconstruction, evaluation, and basis math
+    |-- +constraints/               continuous and fixed constraint assembly
+    |-- +solver/                    fixed/free-time optimization orchestration
+    |-- defaultOptions.m            engine-wide option defaults
+    `-- validate.m                  independent engine-result validation
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
@@ -229,12 +235,12 @@ branch_assessment.md                strengths, weaknesses, and limitations
 verification.md                     commands and historical evidence
 ```
 
-Add the two product folders once:
+Add the repository root for `obstacleAvoidance` and the neutral HS3 folder:
 
 ```matlab
 repositoryRoot = pwd;
 addpath( ...
-    fullfile(repositoryRoot, "planAzElMotion"), ...
+    repositoryRoot, ...
     fullfile(repositoryRoot, "hs3"));
 ```
 
@@ -253,11 +259,14 @@ callers as follows:
 
 | Previous call | Current call |
 | --- | --- |
-| `makeAzElObstacleData(...)` | `azElObstacles.makeAzElObstacleData(...)` |
-| `makeMovingAzElObstacleData(...)` | `azElObstacles.makeMovingAzElObstacleData(...)` |
-| `combineAzElObstacles(...)` | `azElObstacles.combineAzElObstacles(...)` |
-| `queryAzElTimeObstacle(...)` | `azElObstacles.queryAzElTimeObstacle(...)` |
-| `plotAzElMotion(...)` | `azElPlotting.plotMotion(...)` |
+| `planAzElMotion(...)` | `obstacleAvoidance.planTrajectory(...)` |
+| `planAzElMovingTargetIntercept(...)` | `obstacleAvoidance.planMovingTargetIntercept(...)` |
+| `validateAzElTrajectory(...)` | `obstacleAvoidance.validateTrajectory(...)` |
+| `azElObstacles.makeAzElObstacleData(...)` | `obstacleAvoidance.obstacles.createObstacle(...)` |
+| `azElObstacles.makeMovingAzElObstacleData(...)` | `obstacleAvoidance.obstacles.createMovingObstacle(...)` |
+| `azElObstacles.combineAzElObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
+| `azElObstacles.queryAzElTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
+| `plotAzElMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
 | `hs3.solve(...)` | `solveTrajHS3(...)` |
 
 ## Maintained examples
@@ -266,7 +275,6 @@ Add the example folder alongside the two production paths:
 
 ```matlab
 addpath(repositoryRoot, ...
-    fullfile(repositoryRoot, "planAzElMotion"), ...
     fullfile(repositoryRoot, "hs3"), ...
     fullfile(repositoryRoot, "examples"));
 ```
@@ -274,7 +282,7 @@ addpath(repositoryRoot, ...
 Run a headless example with HS3:
 
 ```matlab
-result = exampleAzElPlanning(struct( ...
+result = exampleObstacleAvoidance(struct( ...
     "PlannerMethod", "hs3", ...
     "PlotOutputs", false, ...
     "FigureVisible", "off"));

@@ -180,7 +180,7 @@ function result = exampleScenario(exampleOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Stable planner result plus validation and example metadata.
+%       Unmodified public planner result.
 %**************************************************************************
 % UNITS
 %   - Position is degrees, time is seconds, velocity is degrees per second,
@@ -191,7 +191,7 @@ function result = exampleScenario(exampleOverrides)
 % Merge display/runtime overrides with documented defaults.
 
 %% Section 2: Create Obstacles
-% Build only canonical obstacle data through public constructors.
+% Create only canonical obstacle data through public constructors.
 
 %% Section 3: Create Planner Inputs
 % Define initialState, goalState, limits, and options explicitly.
@@ -202,17 +202,15 @@ result = planner(obstacles, initialState, goalState, limits, options);
 %% Section 5: Validate Result
 validation = validatePlannerResult( ...
     result, obstacles, initialState, goalState, limits, options);
-result.Validation = validation;
+if ~validation.Passed
+    warning("exampleScenario:ValidationFailed", "%s", validation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 if result.Success
     % Plot the workspace, selected path, animation, and kinematics.
 else
     % Plot the propagated search space and failure diagnostics.
-end
-
-%% Section 7: Return Example Metadata
-% Store scenario geometry and validation results needed for inspection.
 end
 ```
 
@@ -224,6 +222,11 @@ Every example must visibly and locally define:
 - limits;
 - planner options;
 - example display/runtime controls.
+
+Examples validate and plot with local variables. They do not append example
+names, metrics, controls, geometry, plot handles, or other demo-only fields to
+the returned planner result. Benchmark reporting computes its measurements
+outside that result.
 
 Do not bury these inputs in unrelated helpers. Fold one-call state and default
 constructors into the visible progression. Retain a geometry helper only when
@@ -405,10 +408,13 @@ Header requirements:
   detached notes section.
 - Document failure behavior in `OUTPUTS`, including whether invalid input throws
   and expected planning failure returns `Success = false`.
-- A short local helper still receives the `Section 0` contract, but its body
-  needs no additional executable sections when it reads as one idea.
-- Function-based local test cases are the one exception: a descriptive test
-  function name and a concise purpose comment are sufficient.
+- A local function defined after the primary function does not receive the
+  full `Section 0` contract. Put one to five concise comment lines immediately
+  below its declaration to state its purpose, important contract, or invariant.
+  Continue to explain non-obvious decisions inside the function where they
+  occur.
+- Function-based local test cases follow the same concise-comment rule; a
+  descriptive test function name and one purpose line are normally sufficient.
 
 ### Executable sections
 
@@ -417,8 +423,8 @@ function uses:
 
 ```matlab
 %% Section 1: Validate Inputs & Apply Defaults
-%% Section 2: Build The Planning Representation
-%% Section 3: Generate Candidate Routes
+%% Section 2: Create The Planning Representation
+%% Section 3: Create Candidate Routes
 %% Section 4: Retime & Validate Candidates
 %% Section 5: Assemble The Output
 %% Section 6: Local Functions
@@ -438,8 +444,14 @@ or `Miscellaneous`. Renumber sections whenever their execution order changes.
 ### Naming and units
 
 - Use descriptive lower-camel-case names for functions and local variables.
-  Preserve the established `AzEl` acronym casing in names such as
-  `planAzElMotion` and `azElData`.
+  The product namespace already establishes obstacle avoidance, so do not add
+  redundant `AzEl` prefixes to function or package names. Retain explicit
+  azimuth and elevation words where a coordinate quantity or policy requires
+  them.
+- Use `create` as the sole verb for construction. Do not use `build`, `make`,
+  or `generate` as synonyms in function names. Keep distinct verbs such as
+  `combine`, `convert`, `evaluate`, `query`, `solve`, and `validate` when they
+  describe a different operation.
 - Spell words out: use `maximumVertices`, not `maxVerts`, and
   `neighborElevationIndex`, not `nbrElIdx`.
 - Use singular names for one record and plural names for collections. End
@@ -528,8 +540,8 @@ document the exact behavior at the point of use.
 Errors and warnings use the emitting function plus a Pascal-case problem name:
 
 ```matlab
-error("buildAzElTimeObstacleField:BoundaryCountMismatch", ...)
-warning("planAzElMotion:UnknownOptions", ...)
+error("createObstacleField:BoundaryCountMismatch", ...)
+warning("planTrajectory:UnknownOptions", ...)
 ```
 
 Messages are actionable. Name the affected input or field, expected type or

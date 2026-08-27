@@ -30,7 +30,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     exampleOverrides, struct( ...
         "GoalTimeMode", "earliestArrival", ...
         "SampleTime_s", 0.05, ...
@@ -80,12 +80,12 @@ for rowIndex = 1:numel(rowElevation_deg)
             obstacleAzimuthByTime_deg{sampleIndex} = circlePosition_deg(:, 1);
             obstacleElevationByTime_deg{sampleIndex} = circlePosition_deg(:, 2);
         end
-        obstacleByIndex{obstacleIndex} = azElObstacles.makeAzElObstacleData( ...
+        obstacleByIndex{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle( ...
             "Moving grid circle " + obstacleIndex, obstacleTime_s, ...
             obstacleAzimuthByTime_deg, obstacleElevationByTime_deg, safetyMargin_deg);
     end
 end
-obstacles = azElObstacles.combineAzElObstacles(obstacleByIndex{:});
+obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleByIndex{:});
 
 %% Section 3: Create Planner Inputs
 
@@ -98,11 +98,11 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = planAzElMotion(obstacles, initialState, goalState, limits, options);
+result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
-exampleValidation = validateAzElExampleResult( result, "40-circle moving grid");
+exampleValidation = validateExampleResult( result, "40-circle moving grid");
 
 spacingTolerance_deg = 1e-12;
 equalColumnSpacing = all(abs(diff(columnAzimuth_deg) - gridSpacing_deg) <= spacingTolerance_deg);
@@ -128,27 +128,16 @@ if ~gridValidation.Passed
     exampleValidation.Passed = false;
     exampleValidation.Message = "The 40-circle grid geometry or motion validation failed.";
 end
+if ~exampleValidation.Passed
+    warning("exampleFortyMovingCircleGrid:ValidationFailed", ...
+        "%s", exampleValidation.Message);
+end
 
 %% Section 6: Plot Diagnostics And Motion
 
-result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
+    obstacleAvoidance.plotting.plotTrajectory( ...
+        result, jerkConfiguration.PlotOptions);
 end
 
-%% Section 7: Return Example Metadata
-
-result.ExampleName = "exampleFortyMovingCircleGrid";
-result.ExampleValidation = exampleValidation;
-result.GridValidation = gridValidation;
-result.ExampleConfiguration = jerkConfiguration;
-result.ExampleInputs = struct( ...
-    "obstacles", obstacles, "initialState", initialState, "goalState", goalState, "limits", limits, "options", options);
-result.obstacleTime_s = obstacleTime_s;
-result.centerAzimuth_deg = centerAzimuth_deg;
-result.centerElevation_deg = centerElevation_deg;
-result.gridSpacing_deg = gridSpacing_deg;
-result.circleRadius_deg = circleRadius_deg;
-result.safetyMargin_deg = safetyMargin_deg;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
 end

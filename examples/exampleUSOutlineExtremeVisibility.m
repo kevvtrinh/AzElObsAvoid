@@ -15,9 +15,7 @@ function result = exampleUSOutlineExtremeVisibility(options)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Final-region planner result plus independent ExampleValidation,
-%       RegionSequenceResults, RegionSequenceSummary, ObstacleHistory, and
-%       ExampleConfiguration metadata for the complete sequence.
+%       Unmodified public planner result for the final region.
 %**************************************************************************
 % UNITS
 %   - Position is degrees, time is seconds, velocity is degrees per second,
@@ -30,7 +28,7 @@ function result = exampleUSOutlineExtremeVisibility(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-[options, jerkConfiguration] = resolveAzElExampleOptions( ...
+[options, jerkConfiguration] = resolveExampleOptions( ...
     options, struct( ...
     "GoalTimeMode", "earliestArrival", ...
     "MaximumSeedCount", 5, ...
@@ -71,36 +69,24 @@ for regionIndex = 1:regionCount
     initialState = struct( "time_s", 0, "position_deg", scenario.initialPosition_deg);
     goalState = struct( "time_s", missionEndTime_s, "position_deg", scenario.goalPosition_deg);
     regionOptions = options;
-    regionResults{regionIndex} = planAzElMotion( ...
+    regionResults{regionIndex} = obstacleAvoidance.planTrajectory( ...
         obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
 %% Section 5: Validate Result
 
 regionPassed = false(regionCount, 1);
-regionArrivalTime_s = nan(regionCount, 1);
-regionRouteLength_deg = nan(regionCount, 1);
-regionNativeVertexCount = zeros(regionCount, 1);
-regionTestVertexCount = zeros(regionCount, 1);
 
 % Validate every regional result and collect comparable geometry-size evidence.
 for regionIndex = 1:regionCount
     resultForRegion = regionResults{regionIndex};
-    exampleValidation = validateAzElExampleResult( ...
+    exampleValidation = validateExampleResult( ...
         resultForRegion, ...
         "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true));
-    resultForRegion.ExampleValidation = exampleValidation;
-    resultForRegion.ObstacleHistory = obstacleHistories{regionIndex};
-    resultForRegion.ExampleConfiguration = jerkConfiguration;
-    resultForRegion.ExampleConfiguration.RegionName = regionNames(regionIndex);
-    resultForRegion.ExampleConfiguration.RegionScenario = regionScenarios{regionIndex};
-    regionResults{regionIndex} = resultForRegion;
     regionPassed(regionIndex) = exampleValidation.Passed;
-    regionNativeVertexCount(regionIndex) = obstacleHistories{regionIndex}.nativeSourceVertexCount;
-    regionTestVertexCount(regionIndex) = obstacleHistories{regionIndex}.sourceVertexCount;
-    if resultForRegion.Success
-        regionArrivalTime_s(regionIndex) = resultForRegion.time_s(end);
-        regionRouteLength_deg(regionIndex) = sum(vecnorm(diff( resultForRegion.SelectedSeed_deg, 1, 1), 2, 2));
+    if ~exampleValidation.Passed
+        warning("exampleUSOutlineExtremeVisibility:ValidationFailed", ...
+            "%s: %s", regionNames(regionIndex), exampleValidation.Message);
     end
 end
 
@@ -112,24 +98,14 @@ if jerkConfiguration.PlotOutputs
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);
-        regionResults{regionIndex}.PlotHandles = azElPlotting.plotMotion( regionResults{regionIndex}, plotOptions);
+        obstacleAvoidance.plotting.plotTrajectory( ...
+            regionResults{regionIndex}, plotOptions);
     end
 end
 
-%% Section 7: Return Example Metadata
-
 result = regionResults{end};
-result.ExampleName = "exampleUSOutlineExtremeVisibility";
-regionSequencePassed = all(regionPassed);
-result.RegionSequenceResults = regionResults;
-result.RegionSequenceSummary = table( ...
-    regionNames.', regionPassed, regionArrivalTime_s, ...
-    regionRouteLength_deg, regionNativeVertexCount, ...
-    regionTestVertexCount, ...
-    'VariableNames', {'Region', 'Passed', 'ArrivalTime_s', 'RouteLength_deg', 'NativeVertexCount', 'TestVertexCount'});
-result.RegionSequencePassed = regionSequencePassed;
-result.ExampleValidation.RegionSequencePassed = regionSequencePassed;
-result.ExampleValidation.Passed = result.ExampleValidation.Passed && regionSequencePassed;
-result.ExampleConfiguration.RegionSequence = regionNames;
-result.ExampleMetrics = computeAzElExampleMetrics(result);
+if ~all(regionPassed)
+    warning("exampleUSOutlineExtremeVisibility:SequenceValidationFailed", ...
+        "One or more regional planning results failed independent validation.");
+end
 end
