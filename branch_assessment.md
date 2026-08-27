@@ -1,10 +1,58 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only planning with unified seed
-equivalence, prepared dynamic boundary-edge queries, and no production file
-above 900 lines — 2026-08-27**.
+The current planner judgment is **HS3-only planning with certified scalar
+progress for eligible direct multi-axis motion, unified seed equivalence,
+prepared dynamic boundary-edge queries, and no production file above 900
+lines — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Certified multi-axis direct progress — 2026-08-27
+
+The dimension-neutral public HS3 engine now reduces an eligible obstacle-free,
+rest-to-rest direct motion to one monotone scalar progress polynomial, then
+lifts the validated jerk controls back to every input dimension. Effective
+velocity, acceleration, and jerk limits are the intersection of the
+displacement-normalized limits from every active axis. Fixed-time requests use
+the reduction only when the direct line is feasible. Earliest-arrival requests
+additionally require one axis, including ties, to own all three normalized
+derivative limits; that axis supplies a lower bound on every unrestricted
+multi-axis motion, so the reduction cannot sacrifice arrival time. Asymmetric
+bounds, path constraints, non-rest endpoints, mixed limiting axes, and
+one-dimensional inputs retain the preceding general solve.
+
+Against exact baseline `e72957c`, three structurally different 3-D/4-D
+earliest-arrival cases kept arrival within 0.0000386 seconds of the same-mesh
+convex fixed-time feasibility boundary. Their spatial excess above the direct
+endpoint distance decreased from 0.00364763382, 0.00495067325, and
+0.00239304950 to magnitudes below `6.82e-9`. A three-axis moving-target
+fixed-time sweep decreased spatial excess from 0.000188808074 to floating-point
+zero while preserving every trial time. The warmed three-case median free-time
+wall time decreased from 1.6038312 to 0.5261287 seconds (67.20%). The first
+balanced solve remained dominated by cold Optimization Toolbox startup at
+3.1921851 seconds. The moving-target sweep changed from 0.2210358 to
+0.2851910 seconds; this single 0.064-second unfavorable observation is retained
+and no moving-sweep speedup is claimed.
+
+The focused standalone suite passed 17/17. The complete suite passed 131/131
+in 79.596835 seconds. Code Analyzer reported zero findings in the changed
+engine file. All 17 maintained examples ran serially in fresh MATLAB processes:
+16 successes passed independent continuous validation and the expected
+`noValidatedSeed` result passed its failure-diagnostic checks. Every maintained
+path and arrival metric matched `e72957c`. A visible success created three
+figures with six axes; a visible expected failure created two diagnostic
+figures with two axes.
+
+This is an exact shortest-path and minimum-time result only for the declared
+direct-progress gate, not a global optimality claim for constrained paths or
+mixed axis bottlenecks. Explicit parallel workers were not added: the accepted
+case is now one small scalar solve, for which pool startup and serialization
+would dominate; MATLAB remains free to use native threaded linear algebra.
+The change adds 147 production lines and 82 test lines. Production is 11,823
+lines, so the 4,323-line overage requires
+`0.25 * 4323 / 100 = 10.8075`, or a 1080.75% wall-time reduction, under the
+repository formula. That literal size gate remains impossible and unsatisfied.
+Production plus tests is 16,359 lines, also above its 12,000-line target.
 
 ## Unified spatial and timed seed equivalence — 2026-08-27
 

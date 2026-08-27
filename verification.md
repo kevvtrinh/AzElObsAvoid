@@ -1,8 +1,56 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Unified spatial and timed seed equivalence — 2026-08-27](#unified-spatial-and-timed-seed-equivalence--2026-08-27).
+[Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Certified multi-axis direct progress — 2026-08-27
+
+- Source: `HS3-planner` at `e72957c+direct-progress-worktree`.
+- Only `hs3/solveTrajHS3.m` and its standalone tests changed. Existing
+  user/Claude line-ending changes and untracked files were not staged.
+- Code Analyzer reported zero findings for `solveTrajHS3.m`.
+- Focused standalone HS3 tests passed 17/17. The complete warnings-enabled
+  repository suite passed 131/131, with zero failures or incomplete tests, in
+  79.596835 seconds wall and 69.4810232 seconds summed duration. Existing
+  singular-matrix warnings remained confined to unrestricted fallback cases.
+- Exact pre-change and candidate measurements used MATLAB R2024b, the same
+  segment count, sample time, inputs, limits, and current machine. The
+  three-case warmed median changed from 1.6038312 to 0.5261287 seconds.
+
+| Neutral case | Baseline / candidate arrival | Convex boundary | Baseline / candidate path excess | Baseline / candidate wall s |
+| --- | ---: | ---: | ---: | ---: |
+| balanced 3-D | 3.96604572064 / 3.96604532423 | 3.96605623245 | 0.00364763382 / -6.81e-9 | 3.6527880 / 3.1921851 |
+| anisotropic 3-D | 4.94413658256 / 4.94413624303 | 4.94417476654 | 0.00495067325 / -5.27e-9 | 0.8584585 / 0.5261287 |
+| anisotropic 4-D | 6.35746001936 / 6.35745949091 | 6.35746944809 | 0.00239304950 / -4.86e-9 | 1.6038312 / 0.4151296 |
+| moving target 3-D fixed sweep | 4.09937101364 / 4.09937101364 | 4.09937101364 | 0.000188808074 / 1.78e-15 | 0.2210358 / 0.2851910 |
+
+Every maintained example ran headlessly in a separate fresh MATLAB process.
+Jerk constraints were enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / kinematic | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 7.9936153 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 6.4177555 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 5.7958533 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.7723482 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 7.6548894 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 20.3673764 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 10.1046380 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 180.1148022 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.3979389 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 5.5272338 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 3.2776348 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.8560791016 | 1 / 1 | 47.7892301 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 16.6033839 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 6.5797566 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 7.8621671 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 8.2008795 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 50.3206416 | `goalReached` |
+
+A visible successful run created three figures with six axes. A visible
+expected failure created two diagnostic figures with two axes and retained
+`noValidatedSeed`. No pre-existing MATLAB process was stopped or signaled.
 
 ## Unified spatial and timed seed equivalence — 2026-08-27
 
