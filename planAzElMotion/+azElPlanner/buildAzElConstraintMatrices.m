@@ -1,7 +1,8 @@
 function [inequalityMatrix, equalityMatrix] = ...
         buildAzElConstraintMatrices( ...
         segmentCount, duration_s, allowAzimuthWrapping, ...
-        seedCorridor, corridor, corridorTau, corridorNormal)
+        seedCorridor, corridor, corridorTau, corridorNormal, ...
+        collinearityDirection)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [inequalityMatrix, equalityMatrix] = ...
@@ -12,6 +13,11 @@ function [inequalityMatrix, equalityMatrix] = ...
 %       azElPlanner.buildAzElConstraintMatrices( ...
 %       segmentCount, duration_s, allowAzimuthWrapping, ...
 %       seedCorridor, corridor, corridorTau, corridorNormal)
+%   [inequalityMatrix, equalityMatrix] = ...
+%       azElPlanner.buildAzElConstraintMatrices( ...
+%       segmentCount, duration_s, allowAzimuthWrapping, ...
+%       seedCorridor, corridor, corridorTau, corridorNormal, ...
+%       collinearityDirection)
 %**************************************************************************
 % PURPOSE
 %   - Assemble exact fixed-duration HS3 jerk Jacobians in the raw constraint
@@ -26,10 +32,13 @@ function [inequalityMatrix, equalityMatrix] = ...
 %   - corridorTau (numeric column), normalized obstacle constraint times.
 %   - corridorNormal (M-by-2 numeric, optional)
 %       Active normals evaluated at the current variable-duration geometry.
+%   - collinearityDirection (1-by-2 numeric row, optional)
+%       Replaces redundant normal endpoint rows with normal-jerk equations.
 %**************************************************************************
 % OUTPUTS
 %   - inequalityMatrix (M-by-D numeric), exact dc/djerk matrix.
-%   - equalityMatrix (6-by-D numeric), terminal P/V/A Jacobian.
+%   - equalityMatrix (numeric matrix), terminal P/V/A Jacobian and optional
+%       direct-path normal-jerk equations.
 %**************************************************************************
 % UNITS
 %   - Rows retain the heterogeneous physical units of their constraints.
@@ -42,7 +51,7 @@ sensitivity = hs3Internal.affineSensitivity( ...
 continuousMatrix = continuousBoundConstraintMatrix( ...
     sensitivity, allowAzimuthWrapping);
 seedMatrix = seedCorridorConstraintMatrix(sensitivity, seedCorridor);
-if nargin >= 7
+if nargin >= 7 && ~isempty(corridorNormal)
     corridorMatrix = corridorConstraintMatrix( ...
         sensitivity, corridor, corridorNormal);
 else
@@ -54,6 +63,20 @@ terminalMap = sensitivity.terminalStateMap;
 equalityMatrix = zeros(6, 2 * controlCount);
 equalityMatrix([1 3 5], 1:controlCount) = terminalMap;
 equalityMatrix([2 4 6], controlCount + 1:end) = terminalMap;
+if nargin >= 8 && ~isempty(collinearityDirection)
+    tangent = collinearityDirection(:).';
+    normal = [-tangent(2), tangent(1)];
+    tangentMatrix = zeros(3, 2 * controlCount);
+    for stateIndex = 1:3
+        stateMap = terminalMap(stateIndex, :);
+        tangentMatrix(stateIndex, 1:controlCount) = tangent(1) * stateMap;
+        tangentMatrix(stateIndex, controlCount + 1:end) = ...
+            tangent(2) * stateMap;
+    end
+    normalJerkMatrix = [ ...
+        normal(1) * eye(controlCount), normal(2) * eye(controlCount)];
+    equalityMatrix = [tangentMatrix; normalJerkMatrix];
+end
 end
 
 function matrix = corridorConstraintMatrix(sensitivity, corridor, normal)

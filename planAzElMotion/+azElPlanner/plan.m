@@ -135,6 +135,9 @@ for orderIndex = 1:numel(seedOrder)
             "A validated topology already meets this route's arrival bound.";
         continue;
     end
+    originalSeed.CollinearityDirection = directCollinearityDirection( ...
+        originalSeed, obstacles, gridDiagnostics, initialState, ...
+        goalState, limits);
     trialSeed = originalSeed;
     solverGoalState = goalState;
     if options.GoalTimeMode == "earliestArrival" && ...
@@ -725,4 +728,98 @@ if goalTimeMode == "fixedArrival"
 end
 % Preserve the established earliest-arrival refinement rule exactly.
 improves = candidate.FinalTime_s < incumbent.FinalTime_s;
+end
+
+function direction = directCollinearityDirection( ...
+        seed, obstacles, gridDiagnostics, initialState, goalState, limits)
+%% Section 0: Header & Readme
+% SYNTAX
+%   direction = directCollinearityDirection( ...
+%       seed, obstacles, gridDiagnostics, initialState, goalState, limits)
+%**************************************************************************
+% PURPOSE
+%   - Identify direct motions whose shortest spatial path can be imposed
+%     without tightening their axis-limited earliest-arrival bound.
+%**************************************************************************
+% INPUTS
+%   - seed (scalar topology-seed struct)
+%       position_deg is the proposed N-by-2 [azimuth elevation] route.
+%   - obstacles (canonical protected obstacle struct array)
+%       Empty scenes certify direct geometry without a visibility graph.
+%   - gridDiagnostics (scalar struct)
+%       Contains accepted spatial edges and timed-search provenance.
+%   - initialState, goalState (normalized scalar state structs)
+%       Endpoint velocity and acceleration must be parallel to the route;
+%       sampled moving goals are excluded.
+%   - limits (normalized scalar limits struct)
+%       Per-axis velocity, acceleration, and jerk limits determine whether
+%       one axis governs every finite normalized derivative bound.
+%**************************************************************************
+% OUTPUTS
+%   - direction (1-by-2 numeric row or explicit 0-by-2 empty)
+%       Unit direct-path direction when collinearity is safe to impose.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; derivative limits use degrees and seconds.
+%**************************************************************************
+
+direction = zeros(0, 2);
+hasMovingGoal = isfield(goalState, "targetTime_s") && ...
+    ~isempty(goalState.targetTime_s);
+if hasMovingGoal || size(seed.position_deg, 1) < 2
+    return;
+end
+displacement_deg = goalState.position_deg - initialState.position_deg;
+distance_deg = norm(displacement_deg);
+if distance_deg <= 1e-12
+    return;
+end
+candidateDirection = displacement_deg / distance_deg;
+normal = [-candidateDirection(2), candidateDirection(1)];
+routeOffset_deg = (seed.position_deg - initialState.position_deg) * normal.';
+routeProgress_deg = (seed.position_deg - initialState.position_deg) * ...
+    candidateDirection.';
+lineTolerance_deg = max(1e-10, 1e-10 * distance_deg);
+routeIsDirect = max(abs(routeOffset_deg)) <= lineTolerance_deg && ...
+    min(routeProgress_deg) >= -lineTolerance_deg && ...
+    max(routeProgress_deg) <= distance_deg + lineTolerance_deg;
+sourceIsTimedDirect = any(seed.Source == [ ...
+    "directWait", "timeExpandedVisibilityGraph"]);
+geometryIsCertified = isempty(obstacles) || ...
+    conservativeDirectEdgeAccepted(gridDiagnostics) || sourceIsTimedDirect;
+if ~routeIsDirect || ~geometryIsCertified
+    return;
+end
+derivativeTolerance = 1e-10;
+endpointDerivative = [ ...
+    initialState.velocity_deg_s; goalState.velocity_deg_s; ...
+    initialState.acceleration_deg_s2; goalState.acceleration_deg_s2];
+derivativesAreParallel = all(abs(endpointDerivative * normal.') <= ...
+    derivativeTolerance * max(1, vecnorm(endpointDerivative, 2, 2)));
+if ~derivativesAreParallel
+    return;
+end
+
+axisTravel_deg = abs(displacement_deg);
+activeAxis = axisTravel_deg > lineTolerance_deg;
+commonBottleneck = activeAxis;
+derivativeLimits = [ ...
+    limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; ...
+    limits.maxJerk_deg_s3];
+for derivativeIndex = 1:size(derivativeLimits, 1)
+    normalizedLimit = inf(1, 2);
+    normalizedLimit(activeAxis) = ...
+        derivativeLimits(derivativeIndex, activeAxis) ./ ...
+        axisTravel_deg(activeAxis);
+    minimumLimit = min(normalizedLimit);
+    if ~isfinite(minimumLimit)
+        continue;
+    end
+    comparisonTolerance = max(1e-12, 1e-12 * minimumLimit);
+    commonBottleneck = commonBottleneck & ...
+        normalizedLimit <= minimumLimit + comparisonTolerance;
+end
+if any(commonBottleneck)
+    direction = candidateDirection;
+end
 end

@@ -122,6 +122,75 @@ verifyEqual(testCase, ...
 verifyLessThanOrEqual(testCase, summary.RelinearizationCount, 14);
 verifyLessThan(testCase, result.ArrivalTime_s, 5.72);
 end
+function testObstacleFreeDirectMotionPreservesShortestLine(testCase)
+% Reproduce the saved diagonal direct case without accepting axis-phase bend.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-18.6803279 0.553278689], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    180, [52.8770492 -61.045082], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [0.75 0.75], [2.5 2.5]);
+options = planAzElMotion("hs3");
+options.MaximumSeedCount = 1;
+options.DirectSeedOnly = true;
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+displacement_deg = goalState.position_deg - initialState.position_deg;
+direction = displacement_deg / norm(displacement_deg);
+normal = [-direction(2), direction(1)];
+deviation_deg = abs( ...
+    (result.position_deg - initialState.position_deg) * normal.');
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyLessThanOrEqual(testCase, max(deviation_deg), 1e-8);
+verifyEqual(testCase, motionLength_deg, norm(displacement_deg), ...
+    "AbsTol", 1e-8);
+verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 39.54);
+end
+function testCertifiedDirectObstacleMotionPreservesShortestLine(testCase)
+% Exercise the same invariant when irrelevant protected geometry is present.
+obstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
+    [0 45], [-120 -110 70 80], 0.2);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-18.6803279 0.553278689], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    45, [52.8770492 -61.045082], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [0.75 0.75], [2.5 2.5]);
+options = fixedOptions();
+options.DirectSeedOnly = false;
+options.MaximumSeedCount = 2;
+options.MaximumPlanningTime_s = 15;
+result = planAzElMotion( ...
+    obstacle, initialState, goalState, limits, options);
+displacement_deg = goalState.position_deg - initialState.position_deg;
+direction = displacement_deg / norm(displacement_deg);
+normal = [-direction(2), direction(1)];
+deviation_deg = abs( ...
+    (result.position_deg - initialState.position_deg) * normal.');
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyLessThanOrEqual(testCase, max(deviation_deg), 1e-8);
+verifyEqual(testCase, motionLength_deg, norm(displacement_deg), ...
+    "AbsTol", 1e-8);
+end
+function testNonparallelEndpointDerivativeDoesNotForceDirectLine(testCase)
+% Preserve feasible lateral endpoint motion when collinearity is incompatible.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0 0.2], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    8, [4 0], [0 0.2], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = fixedOptions();
+result = planAzElMotion( ...
+    [], initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyGreaterThan(testCase, max(abs(result.position_deg(:, 2))), 1e-4);
+end
 function testWorkspaceIntervalsBelongToLimits(testCase)
 testSupport.verifySharedPlannerContract( ...
     testCase, "hs3", "testWorkspaceIntervalsBelongToLimits");

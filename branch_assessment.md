@@ -5,6 +5,47 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Certified direct-path collinearity — 2026-08-26
+
+The Az/El adapter now preserves the Euclidean path for a certified direct
+fixed-position request when endpoint velocity and acceleration are parallel to
+that path and one axis governs every finite normalized velocity, acceleration,
+and jerk limit. The common-bottleneck condition prevents a spatial preference
+from tightening the earliest-arrival bound in mixed-axis cases. Obstacle-free
+requests are certified directly; obstacle-present requests require the spatial
+visibility certificate, while collinear timed-search seeds retain their
+time-aware provenance. Moving targets and incompatible endpoint derivatives
+remain unrestricted. The dimension-neutral `hs3/` product is unchanged.
+
+The saved `Rogue Examples/Bend2.mat` request is the primary measured gate. At
+baseline `69cef57`, its straight 94.4183046111-degree seed became a
+95.3959651184-degree motion with 2.47268757136 degrees of line deviation. The
+retained implementation returns 94.4183046111 degrees with
+2.91322521662e-13-degree deviation. Arrival is unchanged at
+39.5285834641 seconds, and independent collision, velocity, acceleration,
+jerk, dynamics, and endpoint validation all pass. The measured planner time
+increased from the saved 0.8398472 seconds to 3.0007202 seconds because the
+fixed-time active-set QPs carry additional normal-jerk equations. This is an
+explicit correctness/shortest-path tradeoff, not a runtime improvement.
+
+A structurally different diagonal request with irrelevant protected geometry
+also attained its exact Euclidean lower bound after the visibility graph
+certified the direct edge. A nonparallel endpoint-velocity request remained
+unrestricted and valid. Exact directional-gradient coverage verifies the
+reduced terminal equations and normal-jerk rows. Code Analyzer reports zero
+findings for all six changed production/test files; the affected suites pass
+64/64 and the complete repository suite passes 112/112 in 62.332678 seconds.
+
+All 18 maintained examples ran serially in fresh MATLAB processes: 17 returned
+independently validated success and the expected no-path case returned an
+independently validated `noValidatedSeed` failure. Every successful result
+passed collision and kinematic certificates. The obstacle-free example and
+four-accelerating-circle demo both retained exact Euclidean motion length. A
+visible success created three figures, and the visible expected failure
+created two diagnostic figures. Existing near-singular `fmincon` warning
+floods remain visible in moving-barrier and opening-U; they are not caused or
+hidden by this change.
+
 ## Two-product normal-folder architecture — 2026-08-26
 
 Production source now has two top-level ownership roots: `planAzElMotion/` and

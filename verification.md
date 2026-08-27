@@ -4,6 +4,44 @@ Current worktree evidence is summarized in
 [Two-product normal-folder architecture — 2026-08-26](#two-product-normal-folder-architecture--2026-08-26).
 Earlier sections are retained as historical checkpoints.
 
+## Certified direct-path collinearity — 2026-08-26
+
+- Source: `HS3-planner` at `69cef57+direct-collinearity-worktree`.
+- Scope: Az/El eligibility, terminal/jerk constraint assembly, and tests only;
+  no file under the dimension-neutral `hs3/` product changed.
+- Primary baseline: saved `Rogue Examples/Bend2.mat`, fixed random seed and
+  exported options. Baseline success/validation were 1/1, arrival
+  39.5285834641 seconds, sampled length 95.3959651184 degrees, maximum direct
+  line deviation 2.47268757136 degrees, and saved planner time 0.8398472
+  seconds.
+- Retained result: success/validation 1/1, identical 39.5285834641-second
+  arrival, exact 94.4183046111-degree Euclidean motion within sampling
+  precision, 2.91322521662e-13-degree line deviation, and 3.0007202 seconds
+  planner time. Collision and every applicable kinematic/dynamics certificate
+  passed. The 3.57-times saved-runtime increase is accepted as the measured
+  cost of the requested shortest-path correctness; no speedup is claimed.
+- Eligibility: fixed-position goal, collinear seed with obstacle-free,
+  visibility-graph, or timed-search provenance, line-compatible endpoint
+  derivatives, and a common limiting axis across all finite normalized
+  derivative limits. Moving goals and incompatible endpoint states are
+  deliberately excluded.
+- Focused gates: exact saved-case geometry, a direct certified obstacle case,
+  incompatible endpoint derivatives, and exact constraint-gradient parity all
+  passed. The two affected suites passed 64/64 in 50.026257 seconds.
+- Static analysis: `checkcode` reported zero findings across the four changed
+  production files and two changed test files.
+- Full tests: 112/112 passed in 62.332678 seconds.
+- Maintained examples: all 18 ran headlessly and serially in separate MATLAB
+  processes. Seventeen independently validated successes passed collision and
+  kinematic certificates; the expected no-path result independently validated
+  `noValidatedSeed`. Fresh rows are appended to `benchmark.csv`.
+- Graphics: visible obstacle-free success created three figures; visible
+  expected failure created two diagnostic figures.
+- Known limitation: moving-barrier and opening-U retain the pre-existing
+  near-singular/singular `fmincon` warning flood. The warning volume explains
+  the oversized sandbox log observed in the rogue failure bundle and remains
+  separate follow-up work.
+
 ## Two-product normal-folder architecture — 2026-08-26
 
 - Source: `main` at `64d0935+two-product-layout-worktree`.
