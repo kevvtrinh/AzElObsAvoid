@@ -1,8 +1,62 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Route-candidate file-cap cleanup — 2026-08-27](#route-candidate-file-cap-cleanup--2026-08-27).
+[Unified spatial and timed seed equivalence — 2026-08-27](#unified-spatial-and-timed-seed-equivalence--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Unified spatial and timed seed equivalence — 2026-08-27
+
+- Source: `HS3-planner` at `5cf2d87+seed-equivalence-worktree`.
+- `temporalSeedDuplicates` and `routeDuplicates` are replaced by one local
+  `seedDuplicates` helper. Spatial comparison receives an empty duration;
+  timed comparison retains the exact `1e-9` relative duration tolerance.
+- Exact detached-baseline comparisons on a static concave U and moving barrier
+  found complete seeds and diagnostics `isequaln` in both cases.
+- Static route-search median changed from 0.0536149 to 0.0545641 seconds
+  (-1.77%). Moving route-search median changed from 0.6353544 to 0.6119082
+  seconds (+3.69%). Both miss the 5% gate; no runtime improvement is claimed.
+- Eight focused route-search tests passed 8/8 with zero Code Analyzer findings.
+  The complete repository suite passed 128/128 with zero failures or incomplete
+  tests in 80.343082 seconds. Known `fmincon` conditioning warnings remained
+  visible during the complete suite.
+- Every maintained example ran serially in its own fresh headless MATLAB
+  process with jerk enabled. Sixteen successes and the expected
+  `noValidatedSeed` failure passed independent validation. Collision and
+  continuous kinematic certificates passed for every success. The 17-run wall
+  sum was 349.9932267 seconds. The headless harness suppressed only MATLAB's
+  near-singular and singular warning IDs to prevent repeated console stacks;
+  planner decisions and validation were unchanged.
+- Visible `exampleObstacleFree` produced three visible figures and six axes.
+  Visible `exampleNoPath` produced two visible diagnostic figures and two axes.
+- The file changes from 891 to 885 physical lines, 749 to 746 executable lines,
+  97 to 96 comment lines, and 45 to 43 blank lines. The main McCabe value stays
+  27 and `createVisibilityGraph` stays 18. The prior equivalence helpers totaled
+  McCabe 7; the shared helper is 5.
+- Production decreases from 11,682 to 11,676 lines; production plus tests
+  decreases from 16,136 to 16,130. The unresolved 4,176-line overage requires
+  `0.25 * 4176 / 100 = 10.44`, or 1044%, under the literal allowance formula.
+
+Maintained headless example results:
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| exampleAlternatingSlalom | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 8.0186437 | goalReached |
+| exampleDenseConcaveObstacle | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.5049454 | goalReached |
+| exampleFourAcceleratingCircles | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 4.3457098 | goalReached |
+| exampleInterceptMovingTargetAtSetTime | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.2709324 | goalReached |
+| exampleInterceptMovingTargetEarliest | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 6.5677632 | goalReached |
+| exampleMovingBarrierWait | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 18.8965414 | goalReached |
+| exampleMovingCircleNoAzimuthWrap | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.7721664 | goalReached |
+| exampleMovingDeformingUSOutlineVisibility | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 163.8578868 | goalReached |
+| exampleNoPath | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.2503210 | noValidatedSeed |
+| exampleObstacleAvoidance | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 5.0406538 | goalReached |
+| exampleObstacleFree | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 2.6825200 | goalReached |
+| exampleOpeningUShapedObstacle | 1 / 1 | 10 | 10 | 11.8560791016 | 1 / 1 | 43.8988849 | goalReached |
+| exampleStaticUShapedObstacle | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 13.3978099 | goalReached |
+| exampleStraightTargetAlternatingOcclusion | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 6.3422684 | goalReached |
+| exampleTargetExitsObstacle | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 6.7491033 | goalReached |
+| exampleTwoOpposingUVisibilityGraph | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 7.7847060 | goalReached |
+| exampleUSOutlineExtremeVisibility | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 44.6123703 | goalReached |
 
 ## Route-candidate file-cap cleanup — 2026-08-27
 

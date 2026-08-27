@@ -1,9 +1,40 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only planning with prepared dynamic
-boundary-edge queries and no production file above 900 lines — 2026-08-27**.
+The current planner judgment is **HS3-only planning with unified seed
+equivalence, prepared dynamic boundary-edge queries, and no production file
+above 900 lines — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Unified spatial and timed seed equivalence — 2026-08-27
+
+The route search now owns one sampled seed-equivalence helper instead of
+separate spatial and timed implementations. Spatial routes reuse the complete
+seed's arc-length parameterization, while timed routes additionally preserve
+the existing relative duration comparison. Position tolerances, seed order,
+reachability decisions, and diagnostics are unchanged.
+
+Exact A/B checks against `5cf2d87` compared complete seeds and diagnostics for
+a static concave U and a translating barrier. Both were `isequaln`. Eight
+focused duration, waiting, homology, cleanup, reachability, clustering, and
+dense-envelope tests passed 8/8. The complete suite passed 128/128 in
+80.343082 seconds, and Code Analyzer reported zero findings in the changed
+file. All 17 maintained examples then ran serially in fresh headless MATLAB
+processes: 16 successes and the expected `noValidatedSeed` failure all passed
+independent validation with unchanged path and arrival metrics. Their wall-time
+sum was 349.9932267 seconds. A visible success created three figures with six
+axes; the visible failure created two diagnostic figures with two axes.
+
+The matched route-search timings do not establish a speedup. Static-U median
+time changed from 0.0536149 to 0.0545641 seconds (-1.77%), while moving-barrier
+median time changed from 0.6353544 to 0.6119082 seconds (+3.69%). Both are
+below the 5% runtime gate, so the change is retained only for removing one
+duplicate implementation, three executable lines, and six physical lines.
+The main route owner remains McCabe 27 and its visibility helper remains 18;
+the two old equivalence helpers totaled complexity 7, versus 5 for the shared
+helper. `createRouteCandidates.m` is now 885 lines. Production is 11,676 lines
+and production plus tests is 16,130. The 4,176-line production overage still
+requires an impossible 1044% wall-time reduction under the literal formula.
 
 ## Route-candidate file-cap cleanup — 2026-08-27
 

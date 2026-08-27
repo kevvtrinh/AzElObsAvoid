@@ -207,6 +207,7 @@ diagnostics.HomologyClassSignatures = classSignatures;
 diagnostics.HomologyClassCount = size(classSignatures, 1);
 diagnostics.HomologyStateCount = searchRecord.StateCount;
 diagnostics.HomologySearchTruncated = searchRecord.Truncated;
+positionTolerance_deg = max(1e-6, 0.5 * graphRecord.CandidateOffset_deg);
 
 for classIndex = 1:numel(nodePaths)
     route_deg = nodePosition_deg(nodePaths{classIndex}, :);
@@ -214,16 +215,15 @@ for classIndex = 1:numel(nodePaths)
         route_deg, sweptShape, representative_deg, ...
         classSignatures(classIndex, :));
     diagnostics = appendRouteCleanupRecord(diagnostics, cleanupRecord);
-    if ~routeDuplicates(route_deg, seeds, graphRecord.CandidateOffset_deg)
-        [seed, isReachable] = createSpatialSeed(spatialSeedTemplate, ...
-            numel(seeds) + 1, route_deg, directDuration_s, ...
-            availableDuration_s, limits);
+    [seed, isReachable] = createSpatialSeed(spatialSeedTemplate, ...
+        numel(seeds) + 1, route_deg, directDuration_s, ...
+        availableDuration_s, limits);
 
-        % Propose only routes the axes can actually traverse before the goal
-        % time; an unreachable one would consume budget to prove the obvious.
-        if isReachable
-            seeds(end + 1, 1) = seed; %#ok<AGROW>
-        end
+    % Propose only routes the axes can actually traverse before the goal
+    % time; an unreachable one would consume budget to prove the obvious.
+    if isReachable && ~seedDuplicates( ...
+            seed.position_deg, seed.tau, [], seeds, positionTolerance_deg)
+        seeds(end + 1, 1) = seed; %#ok<AGROW>
     end
 end
 for timedSeedIndex = 1:numel(timedRoutes_deg)
@@ -480,17 +480,27 @@ else
 end
 end
 
-function duplicate = temporalSeedDuplicates(seed, seeds)
-% Compare both geometry and time law so distinct waits remain available.
+function duplicate = seedDuplicates( ...
+        position_deg, tau, duration_s, seeds, positionTolerance_deg)
+% Compare routes at common samples; optionally require equal durations.
+% Empty duration means geometry alone defines equivalence.
 duplicate = false;
 sampleTau = linspace(0, 1, 101).';
-sampledRoute_deg = interp1(seed.tau, seed.position_deg, sampleTau, "linear");
+sampledRoute_deg = interp1(tau, position_deg, sampleTau, "linear");
 for seedIndex = 1:numel(seeds)
-    sampledSeed_deg = interp1(seeds(seedIndex).tau, seeds(seedIndex).position_deg, sampleTau, "linear");
-    priorDuration_s = seeds(seedIndex).EstimatedDuration_s;
-    durationTolerance_s = 1e-9 * max([1, abs(seed.EstimatedDuration_s), abs(priorDuration_s)]);
-    if abs(seed.EstimatedDuration_s - priorDuration_s) <= durationTolerance_s && ...
-            max(vecnorm(sampledRoute_deg - sampledSeed_deg, 2, 2)) <= 1e-6
+    if ~isempty(duration_s)
+        priorDuration_s = seeds(seedIndex).EstimatedDuration_s;
+        durationTolerance_s = 1e-9 * max( ...
+            [1, abs(duration_s), abs(priorDuration_s)]);
+        if ~(abs(duration_s - priorDuration_s) <= durationTolerance_s)
+            continue;
+        end
+    end
+    sampledSeed_deg = interp1( ...
+        seeds(seedIndex).tau, seeds(seedIndex).position_deg, ...
+        sampleTau, "linear");
+    if max(vecnorm(sampledRoute_deg - sampledSeed_deg, 2, 2)) <= ...
+            positionTolerance_deg
         duplicate = true;
         return;
     end
@@ -509,7 +519,8 @@ timedSeed.position_deg = route_deg;
 timedSeed.tau = (routeTime_s - routeTime_s(1)) / (routeTime_s(end) - routeTime_s(1));
 timedSeed.EstimatedDuration_s = routeTime_s(end) - routeTime_s(1);
 timedSeed.Length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
-if ~temporalSeedDuplicates(timedSeed, seeds)
+if ~seedDuplicates(timedSeed.position_deg, timedSeed.tau, ...
+        timedSeed.EstimatedDuration_s, seeds, 1e-6)
     seeds(end + 1, 1) = timedSeed;
 end
 end
@@ -697,23 +708,6 @@ end
 function angle_rad = principalAngle(angle_rad)
 % Map angular change to the deterministic principal interval.
 angle_rad = atan2(sin(angle_rad), cos(angle_rad));
-end
-
-function duplicate = routeDuplicates(route_deg, seeds, tolerance_deg)
-% Compare sampled route geometry so equivalent spatial seeds are removed.
-duplicate = false;
-sampleTau = linspace(0, 1, 101).';
-[parameterizedTau, ~] = routeTau(route_deg);
-sampledRoute_deg = interp1( parameterizedTau, route_deg, sampleTau, "linear");
-
-% Compare the proposed geometry with every already retained route at common arc-length samples.
-for seedIndex = 1:numel(seeds)
-    sampledSeed_deg = interp1( seeds(seedIndex).tau, seeds(seedIndex).position_deg, sampleTau, "linear");
-    if max(vecnorm(sampledRoute_deg - sampledSeed_deg, 2, 2)) <= max(1e-6, 0.5 * tolerance_deg)
-        duplicate = true;
-        return;
-    end
-end
 end
 
 function [tau, length_deg] = routeTau(route_deg)
