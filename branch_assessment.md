@@ -5,6 +5,37 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Time-invariant obstacle geometry cache — 2026-08-27
+
+Prepared obstacles now retain one complete shape and geometry record only when
+their input history proves exact time invariance: either one source slice, or
+matching topology with zero corresponding-vertex speed across every interval.
+Out-of-range activity rules and source-slice indices are still evaluated per
+query. Moving, deforming, and topology-changing histories keep the original
+interpolation path.
+
+Against exact commit `81f2f8b`, 20,000 varying-time static geometry queries
+decreased from 0.9724214 to 0.4832129 seconds (50.3%) with the same checksum.
+Static-U profiler time across 8,317 `shapeAtTime` calls decreased from
+0.7005765 to 0.4038666 seconds. A warmed, counterbalanced Static-U comparison
+decreased median wall time from 10.56790325 to 10.1591988 seconds (3.87%).
+Success, validation, selected route, sampled motion, duration, and the complete
+polynomial were exactly equal.
+
+The complete suite passed 119/119. All 17 maintained examples ran serially in
+fresh headless processes: 16 independently validated successes and the
+independently validated expected no-path result. Every successful result passed
+collision and kinematic certificates with no path-length or arrival-time drift.
+The moving-circle control retained its exact trajectory and reported the
+time-invariant flag false. A visible Static-U run created three figures; the
+expected no-path run created two diagnostic figures with two axes.
+
+The cache adds 29 net production lines and retains one additional shape plus
+one geometry record per exactly static obstacle; focused tests add 12 net
+lines. This bounded memory cost is retained for the measured repeated-query
+and planner-level gains. The 183.495223-second moving/deforming U.S. example
+remains the largest runtime weakness and receives no shortcut.
+
 ## Dimension-neutral polynomial map caches — 2026-08-27
 
 Two one-entry caches now reuse HS3 polynomial structure that is invariant

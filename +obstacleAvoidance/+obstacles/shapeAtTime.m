@@ -92,6 +92,15 @@ else
         % the upper sample.
     end
 end
+if preparation.IsTimeInvariant
+    geometry = preparation.StaticGeometry;
+    geometry.LowerSampleIndex = lowerIndex;
+    geometry.UpperSampleIndex = upperIndex;
+    if ~geometryOnly
+        shape = preparation.StaticShape;
+    end
+    return;
+end
 lowerAzimuth_deg = double(obstacle.az_deg{lowerIndex}(:));
 lowerElevation_deg = double(obstacle.el_deg{lowerIndex}(:));
 if lowerIndex == upperIndex

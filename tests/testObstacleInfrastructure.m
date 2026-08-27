@@ -145,8 +145,12 @@ end
 function testShapeQueryReportsOrderedBoundaryProperties(testCase)
 % Compare the lightweight ordered-boundary record with polyshape evidence.
 convexObstacle = rectangleObstacle("convex", [0; 4], [-2 2 -1 1]);
+preparedConvexObstacle = ...
+    obstacleAvoidance.obstacles.prepareDynamic(convexObstacle);
+verifyTrue(testCase, ...
+    preparedConvexObstacle.InternalPreparation.IsTimeInvariant);
 [convexShape, convexGeometry] = ...
-    obstacleAvoidance.obstacles.shapeAtTime(convexObstacle, 2);
+    obstacleAvoidance.obstacles.shapeAtTime(preparedConvexObstacle, 2);
 verifyTrue(testCase, convexGeometry.HasOrderedSingleRegion);
 verifyTrue(testCase, convexGeometry.IsConvex);
 vertices_deg = [convexGeometry.azimuth_deg, convexGeometry.elevation_deg];
@@ -156,6 +160,9 @@ probe_deg = 0.5 * sum(vertices_deg(1:2, :), 1) + 1e-6 * leftNormal;
 referenceOutwardSign = 1 - 2 * isinterior( ...
     convexShape, probe_deg(1), probe_deg(2));
 verifyEqual(testCase, convexGeometry.OutwardSign, referenceOutwardSign);
+[~, repeatedGeometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
+    preparedConvexObstacle, 3, true);
+verifyEqual(testCase, repeatedGeometry, convexGeometry);
 
 concaveAzimuth_deg = [0; 2; 2; 1; 1; 0];
 concaveElevation_deg = [0; 0; 1; 1; 2; 2];
@@ -166,8 +173,13 @@ concaveObstacle = obstacleAvoidance.obstacles.createObstacle( ...
 verifyTrue(testCase, concaveGeometry.HasOrderedSingleRegion);
 verifyFalse(testCase, concaveGeometry.IsConvex);
 multiRegionObstacle = movingMultiRingObstacle();
+preparedMultiRegionObstacle = ...
+    obstacleAvoidance.obstacles.prepareDynamic(multiRegionObstacle);
+verifyFalse(testCase, ...
+    preparedMultiRegionObstacle.InternalPreparation.IsTimeInvariant);
 [~, multiRegionGeometry] = ...
-    obstacleAvoidance.obstacles.shapeAtTime(multiRegionObstacle, 1, true);
+    obstacleAvoidance.obstacles.shapeAtTime( ...
+    preparedMultiRegionObstacle, 1, true);
 verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
 verifyFalse(testCase, multiRegionGeometry.IsConvex);
 verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));

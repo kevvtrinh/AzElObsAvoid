@@ -1,8 +1,58 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Dimension-neutral polynomial map caches — 2026-08-27](#dimension-neutral-polynomial-map-caches--2026-08-27).
+[Time-invariant obstacle geometry cache — 2026-08-27](#time-invariant-obstacle-geometry-cache--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Time-invariant obstacle geometry cache — 2026-08-27
+
+- Source: `HS3-planner` at `81f2f8b+static-geometry-worktree`.
+- Baseline: immutable archive of exact commit `81f2f8b` under the same MATLAB
+  R2024b installation and unchanged example inputs, options, and validation.
+- Retained mechanism: prepared obstacle records cache one complete shape and
+  geometry record only when one slice or exact zero vertex speed proves that
+  every active-time boundary is identical. Moving and topology-changing
+  histories retain the original query path.
+- Direct benchmark: 20,000 varying-time static queries decreased from
+  0.9724214 to 0.4832129 seconds with checksum 100000 in both variants.
+- Profiler evidence: 8,317 Static-U `shapeAtTime` calls decreased from
+  0.7005765 to 0.4038666 seconds.
+- Warmed, counterbalanced Static-U A/B: baseline runs were 10.6829540 and
+  10.4528525 seconds; changed runs were 10.2648969 and 10.0535007 seconds.
+  Median wall time decreased 3.87%, from 10.56790325 to 10.1591988 seconds.
+  Success, validation, selected seed, sampled position, duration, and the
+  complete polynomial were exactly equal.
+- The moving-circle control retained its exact prior trajectory and reported
+  `IsTimeInvariant=false`, proving that dynamic interpolation was not bypassed.
+- Code Analyzer reported zero findings for the three changed MATLAB files.
+  The focused obstacle suite passed 8/8 and the complete suite passed 119/119.
+- A visible Static-U run created three figures. A hidden plotted expected
+  no-path run created two diagnostic figures and two axes.
+- Production growth is 29 net lines and retains one additional shape and
+  geometry record per exactly static obstacle; focused tests add 12 net lines.
+
+Every maintained example ran headlessly in its own fresh MATLAB process with
+plots and animation disabled. Jerk was enabled in every case.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| exampleAlternatingSlalom | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 6.2118336 | goalReached |
+| exampleDenseConcaveObstacle | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 4.6918363 | goalReached |
+| exampleFourAcceleratingCircles | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 3.5876624 | goalReached |
+| exampleInterceptMovingTargetAtSetTime | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 1.7641874 | goalReached |
+| exampleInterceptMovingTargetEarliest | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 5.1296778 | goalReached |
+| exampleMovingBarrierWait | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 16.1420977 | goalReached |
+| exampleMovingCircleNoAzimuthWrap | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.6384737 | goalReached |
+| exampleMovingDeformingUSOutlineVisibility | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 183.4952231 | goalReached |
+| exampleNoPath | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.0251391 | noValidatedSeed |
+| exampleObstacleAvoidance | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 4.1951049 | goalReached |
+| exampleObstacleFree | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 2.2140933 | goalReached |
+| exampleOpeningUShapedObstacle | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 38.9154151 | goalReached |
+| exampleStaticUShapedObstacle | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 11.5817246 | goalReached |
+| exampleStraightTargetAlternatingOcclusion | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 5.3855974 | goalReached |
+| exampleTargetExitsObstacle | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 5.4040393 | goalReached |
+| exampleTwoOpposingUVisibilityGraph | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 6.0280702 | goalReached |
+| exampleUSOutlineExtremeVisibility | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 39.1583268 | goalReached |
 
 ## Dimension-neutral polynomial map caches — 2026-08-27
 
