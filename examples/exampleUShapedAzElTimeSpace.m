@@ -35,7 +35,7 @@ missionEndTime_s = 120;
 obstacleTime_s = [0; missionEndTime_s];
 obstaclePosition_deg = [ -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
 safetyMargin_deg = 0.20;
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "Static U-shaped obstacle", obstacleTime_s, ...
     obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), safetyMargin_deg);
 
@@ -58,7 +58,7 @@ result.ExampleValidation = validateAzElExampleResult( result, "single U", struct
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

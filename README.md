@@ -3,8 +3,8 @@
 This branch provides one public Az/El planner: a third-order
 Hermite-Simpson (HS3) transcription solved with `fmincon`. Production code is
 organized by six one-level responsibilities: input, obstacles, geometry,
-search, planning, and plotting. The dimension-neutral `+hs3` engine is a
-separate frozen package.
+search, planning, and plotting. The dimension-neutral engine is a separate
+normal `hs3/` product folder.
 
 A successful result is accepted only after canonical independent validation.
 Successful results have `SelectedMotionSource="hs3"` and echo
@@ -12,8 +12,8 @@ Successful results have `SelectedMotionSource="hs3"` and echo
 
 The HS3 implementation descends from the `plan-325` snapshot at commit
 `5a067112a9f880d015f52fb97538a99010871478`. See the
-[planner guide](+azElPlanner/README.md) and the frozen
-[engine guide](+hs3/README.md) for current ownership details.
+[planner guide](planAzElMotion/+azElPlanner/README.md) and
+[engine guide](hs3/README.md) for current ownership details.
 
 ## Quick start
 
@@ -45,7 +45,7 @@ No other planner selector value is supported.
 ## Minimal fixed-goal example
 
 ```matlab
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "protected rectangle", ...
     [0; 20], ...
     [-1; 1; 1; -1], ...
@@ -81,10 +81,10 @@ result = planAzElMotion( ...
 
 ### Obstacles
 
-Use `makeAzElObstacleData` for static or time-indexed polygon histories and
-`makeMovingAzElObstacleData` for moving shapes. Safety margins are applied by
-the public obstacle constructors exactly once, and original and protected
-geometry remain separate.
+Use `azElObstacles.makeAzElObstacleData` for static or time-indexed polygon
+histories and `azElObstacles.makeMovingAzElObstacleData` for moving shapes.
+Safety margins are applied by the package constructors exactly once, and
+original and protected geometry remain separate.
 
 `obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
 Obstacle coordinates use degrees and history times use seconds.
@@ -168,8 +168,8 @@ measured total.
 Expected no-path, work-limit, and dynamic-infeasibility outcomes return
 `Success=false` with a recognized termination reason and retained diagnostics.
 Invalid input contracts throw errors. Use `validateAzElTrajectory` for
-independent full-trajectory validation and `plotAzElMotion` to visualize a
-returned motion or preserved failure diagnostics.
+independent full-trajectory validation and `azElPlotting.plotMotion` to
+visualize a returned motion or preserved failure diagnostics.
 
 ## HS3 behavior and limitations
 
@@ -206,21 +206,20 @@ returned motion or preserved failure diagnostics.
 ## Repository layout
 
 ```text
-planAzElMotion.m                    public HS3 planning entry point
-planAzElMovingTargetIntercept.m     chronological intercept adapter
+planAzElMotion/                     complete Az/El planning product
+|-- planAzElMotion.m                public HS3 planning entry point
+|-- planAzElMovingTargetIntercept.m chronological intercept adapter
+|-- validateAzElTrajectory.m        public independent validation
+|-- +azElInput/                     request, endpoint, and option contracts
+|-- +azElObstacles/                 public construction, queries, and history
+|-- +azElGeometry/                  polygon conversion and clearance primitives
+|-- +azElSearch/                    topology, visibility, and corridor ownership
+|-- +azElPlanner/                   Az/El orchestration and HS3 adaptation
+`-- +azElPlotting/                  public result-driven plotting
 
-+azElInput/                         request, endpoint, and option contracts
-+azElObstacles/                     canonical obstacle history and interpolation
-+azElGeometry/                      polygon conversion and clearance primitives
-+azElSearch/                        topology, visibility, and corridor ownership
-+azElPlanner/                       Az/El orchestration and HS3 adaptation
-+azElPlotting/                      result-driven plotting implementation
-+hs3/                               frozen dimension-neutral motion engine
-
-makeAzElObstacleData.m              construct, normalize, protect obstacles
-makeMovingAzElObstacleData.m        moving polygon construction
-validateAzElTrajectory.m            public independent validation
-plotAzElMotion.m                    stable public plotting facade
+hs3/                                dimension-neutral motion product
+|-- solveTrajHS3.m                  public trajectory entry point
+`-- +hs3Internal/                   numerical and polynomial implementation
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
@@ -231,20 +230,46 @@ branch_assessment.md                strengths, weaknesses, and limitations
 verification.md                     commands and historical evidence
 ```
 
-Prefer the root public functions for Az/El planning. The frozen generic HS3
-engine is directly callable with dimension-neutral state and limit records:
+Add the two product folders once:
 
 ```matlab
-trajectory = hs3.solve( ...
+repositoryRoot = pwd;
+addpath( ...
+    fullfile(repositoryRoot, "planAzElMotion"), ...
+    fullfile(repositoryRoot, "hs3"));
+```
+
+The generic HS3 engine is directly callable with dimension-neutral state and
+limit records:
+
+```matlab
+trajectory = solveTrajHS3( ...
     initialState, terminalState, limits, options, pathConstraints);
 ```
 
+### API migration
+
+The folder refactor removes redundant compatibility facades. Update existing
+callers as follows:
+
+| Previous call | Current call |
+| --- | --- |
+| `makeAzElObstacleData(...)` | `azElObstacles.makeAzElObstacleData(...)` |
+| `makeMovingAzElObstacleData(...)` | `azElObstacles.makeMovingAzElObstacleData(...)` |
+| `combineAzElObstacles(...)` | `azElObstacles.combineAzElObstacles(...)` |
+| `queryAzElTimeObstacle(...)` | `azElObstacles.queryAzElTimeObstacle(...)` |
+| `plotAzElMotion(...)` | `azElPlotting.plotMotion(...)` |
+| `hs3.solve(...)` | `solveTrajHS3(...)` |
+
 ## Maintained examples
 
-Add the example folder once:
+Add the example folder alongside the two production paths:
 
 ```matlab
-addpath("examples");
+addpath(repositoryRoot, ...
+    fullfile(repositoryRoot, "planAzElMotion"), ...
+    fullfile(repositoryRoot, "hs3"), ...
+    fullfile(repositoryRoot, "examples"));
 ```
 
 Run a headless example with HS3:

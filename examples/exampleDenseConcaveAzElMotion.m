@@ -37,7 +37,7 @@ obstacleAzimuth_deg = radius_deg .* cos(angle_rad);
 obstacleElevation_deg = radius_deg .* sin(angle_rad);
 obstacleTime_s = [0; 20];
 safetyMargin_deg = 0.1;
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "dense concave polygon", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
@@ -59,7 +59,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

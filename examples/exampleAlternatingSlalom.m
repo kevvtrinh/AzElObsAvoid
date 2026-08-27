@@ -33,15 +33,15 @@ end
 obstacleTime_s = [0; 30];
 centerAzimuth_deg = [-4; 0; 4];
 centerElevation_deg = [2.5; -2.5; 2.5];
-obstacles = combineAzElObstacles();
+obstacles = azElObstacles.combineAzElObstacles();
 
 % Center each vertical barrier at its configured offset to form the alternating slalom.
 for obstacleIndex = 1:numel(centerAzimuth_deg)
     center_deg = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
     rectangle_deg = center_deg + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
-    obstacle = makeAzElObstacleData( ...
+    obstacle = azElObstacles.makeAzElObstacleData( ...
         "barrier " + obstacleIndex, obstacleTime_s, rectangle_deg(:, 1), rectangle_deg(:, 2), 0.1);
-    obstacles = combineAzElObstacles(obstacles, obstacle);
+    obstacles = azElObstacles.combineAzElObstacles(obstacles, obstacle);
 end
 
 %% Section 3: Create Planner Inputs
@@ -64,7 +64,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

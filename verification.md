@@ -1,10 +1,50 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Standalone Hermite-Simpson restoration — 2026-08-24](#standalone-hermite-simpson-restoration--2026-08-24);
-the latest example evidence is in
-[Extreme deforming U.S. and moving-sun example — 2026-08-24](#extreme-deforming-us-and-moving-sun-example--2026-08-24).
+[Two-product normal-folder architecture — 2026-08-26](#two-product-normal-folder-architecture--2026-08-26).
 Earlier sections are retained as historical checkpoints.
+
+## Two-product normal-folder architecture — 2026-08-26
+
+- Source: `main` at `64d0935+two-product-layout-worktree`.
+- Layout: root production MATLAB entries changed from six Az/El packages,
+  `+hs3`, and eight loose public functions to two normal folders:
+  `planAzElMotion/` and `hs3/`. The repository root now has zero `.m` files
+  and zero `+*` packages.
+- Az/El API: planning, interception, and independent validation remain the
+  three unqualified public functions in `planAzElMotion/`. Obstacle calls are
+  now `azElObstacles.*`; plotting is `azElPlotting.plotMotion`. The redundant
+  plotting facade was removed.
+- HS3 API: `hs3/solveTrajHS3.m` is the single public neutral entry;
+  `hs3/+hs3Internal/` owns all generic numerical and polynomial helpers. The
+  Az/El solver continues to route through those dimension-neutral helpers.
+- Path setup: add `planAzElMotion/` and `hs3/`; add `examples/` or `sandbox/`
+  only when those tools are needed.
+- Static analysis: `checkcode` reported zero findings across both production
+  trees and `tests/testArchitectureBoundaries.m`. `which` resolved the public
+  planner, obstacle constructor, plotter, and `solveTrajHS3` from their new
+  owners.
+- Focused tests: architecture, obstacle infrastructure, and standalone HS3
+  passed 29/29. Example-contract tests passed 6/6 after updating hashes for
+  package-qualified calls; protected scenario geometry was not changed.
+- Full tests: 108/108 passed in 63.545976 seconds.
+- Headless examples: all 18 maintained examples ran serially in one MATLAB
+  process in 185.535980 seconds. Seventeen successes passed independent
+  example validation, collision checks, and kinematic certificates. The
+  expected no-path example returned `noValidatedSeed` and passed independent
+  failure validation. Exact rows are in `benchmark.csv` under
+  `64d0935+two-product-layout-worktree`.
+- Graphics: visible `exampleAzElPlanning` created three figures and passed;
+  hidden `exampleNoPathAzElMotion` created two failure-diagnostic figures,
+  retained search diagnostics, and passed with `noValidatedSeed`.
+- Environment limitation: repeated fresh MATLAB launches intermittently
+  failed with a MathWorks launcher `File system inconsistency` before any
+  repository code executed. The existing user MATLAB process was not stopped
+  or modified; the matrix therefore used one process with strictly serial
+  example calls.
+- Unfavorable evidence: existing near-singular `fmincon` warnings remain in
+  the moving-barrier and opening-U examples. Both final motions independently
+  validated, but the warnings were not hidden or reclassified.
 
 ## Fixed-arrival geometric lower-bound proof — 2026-08-26
 

@@ -80,12 +80,12 @@ for rowIndex = 1:numel(rowElevation_deg)
             obstacleAzimuthByTime_deg{sampleIndex} = circlePosition_deg(:, 1);
             obstacleElevationByTime_deg{sampleIndex} = circlePosition_deg(:, 2);
         end
-        obstacleByIndex{obstacleIndex} = makeAzElObstacleData( ...
+        obstacleByIndex{obstacleIndex} = azElObstacles.makeAzElObstacleData( ...
             "Moving grid circle " + obstacleIndex, obstacleTime_s, ...
             obstacleAzimuthByTime_deg, obstacleElevationByTime_deg, safetyMargin_deg);
     end
 end
-obstacles = combineAzElObstacles(obstacleByIndex{:});
+obstacles = azElObstacles.combineAzElObstacles(obstacleByIndex{:});
 
 %% Section 3: Create Planner Inputs
 
@@ -133,7 +133,7 @@ end
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, jerkConfiguration.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

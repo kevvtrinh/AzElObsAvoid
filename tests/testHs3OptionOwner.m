@@ -5,8 +5,11 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(~)
-% Add the repository root for path-based test execution.
-addpath(fileparts(fileparts(mfilename("fullpath"))));
+% Add the repository and Az/El product paths for direct test execution.
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(repositoryRoot);
+addpath(fullfile(repositoryRoot, "planAzElMotion"));
+addpath(fullfile(repositoryRoot, "hs3"));
 end
 
 function testDefaultsMatchPublicHs3Contract(testCase)

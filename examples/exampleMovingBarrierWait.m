@@ -43,7 +43,7 @@ for sampleIndex = 1:numel(obstacleTime_s)
     elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
 end
 safetyMargin_deg = 0.1;
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
@@ -75,7 +75,7 @@ end
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

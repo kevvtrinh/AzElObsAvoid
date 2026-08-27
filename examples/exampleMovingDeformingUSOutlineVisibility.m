@@ -62,11 +62,11 @@ sunEndCenter_deg = [uSHistory.centroid_deg(1, 1) + 16, 12];
 sunTransform = @(sourcePosition_deg, sampleTime_s, sampleIndex) ...
     moveSunSlice(sourcePosition_deg, sampleTime_s, sampleIndex, ...
     missionEndTime_s, sunStartCenter_deg, sunEndCenter_deg);
-[sunObstacle, sunHistory] = makeMovingAzElObstacleData( ...
+[sunObstacle, sunHistory] = azElObstacles.makeMovingAzElObstacleData( ...
     "Moving sun", sunTime_s, sunSource_deg(:, 1), ...
     sunSource_deg(:, 2), sunTransform, 0.10, ...
     struct("Verbose", options.Verbose));
-obstacles = combineAzElObstacles(uSObstacle, sunObstacle);
+obstacles = azElObstacles.combineAzElObstacles(uSObstacle, sunObstacle);
 
 %% Section 3: Create Planner Inputs
 
@@ -137,7 +137,7 @@ end
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, jerkConfiguration.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

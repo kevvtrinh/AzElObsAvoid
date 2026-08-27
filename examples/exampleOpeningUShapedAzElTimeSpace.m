@@ -46,7 +46,7 @@ azimuthByTime_deg = { ...
     closedBoundary_deg(:, 1); closedBoundary_deg(:, 1); openBoundary_deg(:, 1); openBoundary_deg(:, 1)};
 elevationByTime_deg = { ...
     closedBoundary_deg(:, 2); closedBoundary_deg(:, 2); openBoundary_deg(:, 2); openBoundary_deg(:, 2)};
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "U-shaped obstacle with timed gap", obstacleTime_s, azimuthByTime_deg, elevationByTime_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
@@ -76,7 +76,7 @@ result.OpeningValidation = openingValidation;
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

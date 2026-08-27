@@ -1,8 +1,46 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only production cutover — 2026-08-25**.
+The current planner judgment is **two-product architecture with HS3-only
+planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Two-product normal-folder architecture — 2026-08-26
+
+Production source now has two top-level ownership roots: `planAzElMotion/` and
+`hs3/`. The repository root contains no MATLAB functions or package folders.
+The Az/El product exposes three unqualified entry points for planning,
+interception, and independent validation; its obstacle and plotting APIs are
+owned directly by `azElObstacles.*` and `azElPlotting.plotMotion`. This removes
+the redundant plotting facade and four loose obstacle files.
+
+The dimension-neutral engine is now a normal `hs3/` folder with one public
+`solveTrajHS3.m` entry and a single `+hs3Internal/` implementation package.
+Az/El constraint adaptation still delegates optimization, polynomial
+reconstruction, evaluation, sensitivity, and Bernstein operations to that
+neutral engine. Architecture tests continue to reject numerical solver calls
+from the Az/El product and Az/El domain language from every HS3 source file.
+
+This is an intentional API migration: callers must add both product folders,
+use qualified obstacle and plotting functions, and replace `hs3.solve` with
+`solveTrajHS3`. No compatibility wrappers remain. The migration table is in
+`README.md`.
+
+Code Analyzer reports zero findings across both production products and the
+architecture test. Focused architecture, obstacle, and standalone-HS3 tests
+pass 29/29; example-contract tests pass 6/6; and the complete suite passes
+108/108 in 63.545976 seconds. All 18 maintained examples ran serially and
+completed in 185.535980 seconds: 17 independently validated successes and the
+expected independently validated `noValidatedSeed` failure. Every successful
+motion passed collision and kinematic certificates. A visible success created
+three figures, and the hidden expected failure created two diagnostic figures.
+
+The example matrix used one MATLAB process because repeated fresh launches
+intermittently failed in the MathWorks launcher before repository code ran.
+Consequently its wall times are verification evidence, not a runtime
+comparison against earlier fresh-process matrices. Existing `fmincon`
+conditioning warnings remain visible in the moving-barrier and opening-U
+cases; independent validation passed both.
 
 ## Fixed-arrival geometric lower-bound proof — 2026-08-26
 

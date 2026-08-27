@@ -4,7 +4,11 @@
 planning Az/El scenes. Launch it from the repository root:
 
 ```matlab
-addpath("sandbox");
+repositoryRoot = pwd;
+addpath(repositoryRoot, ...
+    fullfile(repositoryRoot, "planAzElMotion"), ...
+    fullfile(repositoryRoot, "hs3"), ...
+    fullfile(repositoryRoot, "sandbox"));
 sandboxState = azElInteractiveSandbox();
 ```
 

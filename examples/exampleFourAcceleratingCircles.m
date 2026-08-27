@@ -94,12 +94,12 @@ for circleIndex = 1:numel(circleCenterAzimuth_deg)
         circleAzimuthByTime_deg{sampleIndex} = circlePosition_deg(:, 1);
         circleElevationByTime_deg{sampleIndex} = circlePosition_deg(:, 2);
     end
-    obstacleByCircle{circleIndex} = makeAzElObstacleData( ...
+    obstacleByCircle{circleIndex} = azElObstacles.makeAzElObstacleData( ...
         "Accelerating circle " + circleIndex, obstacleTime_s, ...
         circleAzimuthByTime_deg, circleElevationByTime_deg, safetyMargin_deg);
 end
 
-obstacles = combineAzElObstacles(obstacleByCircle{:});
+obstacles = azElObstacles.combineAzElObstacles(obstacleByCircle{:});
 
 %% Section 3: Create Planner Inputs
 
@@ -215,7 +215,7 @@ end
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, jerkConfiguration.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

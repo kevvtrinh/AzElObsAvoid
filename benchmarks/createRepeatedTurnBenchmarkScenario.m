@@ -74,7 +74,7 @@ startAzimuth_deg = centerAzimuth_deg(1) - constants.barrierSpacing_deg;
 goalAzimuth_deg = centerAzimuth_deg(end) + constants.barrierSpacing_deg;
 goalTime_s = constants.goalTimePerStage_s * (turnCount + 1);
 obstacleTime_s = [0; goalTime_s];
-obstacles = combineAzElObstacles();
+obstacles = azElObstacles.combineAzElObstacles();
 
 % Build one protected barrier at each alternating center to create the requested turn count.
 for obstacleIndex = 1:turnCount
@@ -86,10 +86,10 @@ for obstacleIndex = 1:turnCount
         -constants.barrierHalfHeight_deg; ...
         constants.barrierHalfWidth_deg, ...
         constants.barrierHalfHeight_deg; -constants.barrierHalfWidth_deg, constants.barrierHalfHeight_deg];
-    obstacle = makeAzElObstacleData( ...
+    obstacle = azElObstacles.makeAzElObstacleData( ...
         "alternating barrier " + obstacleIndex, obstacleTime_s, ...
         rectangle_deg(:, 1), rectangle_deg(:, 2), constants.safetyMargin_deg);
-    obstacles = combineAzElObstacles(obstacles, obstacle);
+    obstacles = azElObstacles.combineAzElObstacles(obstacles, obstacle);
 end
 
 %% Section 3: Assemble Planner-Role Inputs

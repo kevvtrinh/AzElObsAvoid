@@ -34,7 +34,7 @@ end
 obstacleTime_s = [0; 20];
 obstacleAzimuth_deg = [-0.5; 0.5; 0.5; -0.5];
 obstacleElevation_deg = [-90; -90; 90; 90];
-obstacles = makeAzElObstacleData( "full-height wall", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, 0);
+obstacles = azElObstacles.makeAzElObstacleData( "full-height wall", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, 0);
 
 %% Section 3: Create Planner Inputs
 
@@ -66,7 +66,7 @@ result.ExampleValidation = struct( ...
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

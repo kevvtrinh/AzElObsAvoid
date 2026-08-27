@@ -8,6 +8,8 @@ function setupOnce(testCase)
 % Add production and maintained example entry points.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
+addpath(fullfile(repositoryRoot, "planAzElMotion"));
+addpath(fullfile(repositoryRoot, "hs3"));
 addpath(fullfile(repositoryRoot, "examples"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
@@ -168,7 +170,7 @@ function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)
 % Construct a static rectangle from [minAz maxAz minEl maxEl].
 azimuth_deg = bounds_deg([1 2 2 1]).';
 elevation_deg = bounds_deg([3 3 4 4]).';
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     "rectangle", time_s(:), azimuth_deg, elevation_deg, margin_deg);
 end
 

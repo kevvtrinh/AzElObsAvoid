@@ -27,7 +27,7 @@ function verifySharedPlannerContract(testCase, method, contractName)
 method = string(method);
 if ~isscalar(method) || method ~= "hs3"
     error("testSupport:UnknownPlannerMethod", ...
-        "Shared planner contracts support only hs3.");
+        "Shared planner contracts support only hs3Internal.");
 end
 adapter = struct("FixedOptions", @() planAzElMotion("hs3"));
 
@@ -160,7 +160,7 @@ function testDeformingObstacleUsesThePlannerPath(testCase, adapter)
 time_s = [0; 8];
 first_deg = [-1 4; 1 4; 1 6; -1 6];
 second_deg = [-2 4.5; 2 4.5; 2 5.5; -2 5.5];
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     "deforming", time_s, ...
     {first_deg(:, 1); second_deg(:, 1)}, ...
     {first_deg(:, 2); second_deg(:, 2)}, 0.1);
@@ -187,14 +187,14 @@ verifyEqual(testCase, max(envelopeShape.Vertices, [], 1), [1 2], "AbsTol", 1e-5)
     obstacle, sampleTimes_s, [0 0; 5 0], 10);
 verifyFalse(testCase, usedCapturingEnvelope);
 verifyEmpty(testCase, capturingShape.Vertices);
-triangle = makeAzElObstacleData( "triangle", [0; 20], [-4; 4; 0], [-3; -3; 4], 0);
+triangle = azElObstacles.makeAzElObstacleData( "triangle", [0; 20], [-4; 4; 0], [-3; -3; 4], 0);
 [coarseShape, usedCoarseShape] = azElSearch.denseSweptEnvelope( ...
     triangle, sampleTimes_s, [-8 0; 8 0], 10);
 verifyTrue(testCase, usedCoarseShape);
 verifyLessThan(testCase, area(coarseShape), 50);
 guardedShape = polybuffer(coarseShape, 1e-9);
 verifyTrue(testCase, all(isinterior( guardedShape, [-4; 4; 0], [-3; -3; 4])));
-secondTriangle = makeAzElObstacleData( "second triangle", [0; 20], [6; 8; 7], [-3; -3; 4], 0);
+secondTriangle = azElObstacles.makeAzElObstacleData( "second triangle", [0; 20], [6; 8; 7], [-3; -3; 4], 0);
 [manyObstacleShape, usedManyObstacleEnvelope] = azElSearch.denseSweptEnvelope( ...
     [triangle; secondTriangle], linspace(0, 20, 2000), [-8 8; 12 8], 10000);
 verifyTrue(testCase, usedManyObstacleEnvelope);
@@ -221,7 +221,7 @@ function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase, adapter)
 source_deg = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
 initialObstacle_deg = source_deg + [20 20];
 finalObstacle_deg = source_deg + [5 0];
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     "late goal blocker", [0; 10], ...
     {initialObstacle_deg(:, 1); finalObstacle_deg(:, 1)}, ...
     {initialObstacle_deg(:, 2); finalObstacle_deg(:, 2)}, 0);
@@ -344,8 +344,8 @@ end
 function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
 % Verify absolute reconstruction from original geometry is idempotent.
 source_deg = [-1 -1; 1 -1; 1 1; -1 1];
-obstacle = makeAzElObstacleData( "margin", [0; 1], source_deg(:, 1), source_deg(:, 2), 0.2);
-reinflated = makeAzElObstacleData(obstacle, 0.2);
+obstacle = azElObstacles.makeAzElObstacleData( "margin", [0; 1], source_deg(:, 1), source_deg(:, 2), 0.2);
+reinflated = azElObstacles.makeAzElObstacleData(obstacle, 0.2);
 verifyEqual(testCase, reinflated.az_deg, obstacle.az_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
 verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
@@ -437,7 +437,7 @@ closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
 left_deg = [-2 -1; -0.5 -1; -0.5 1; -2 1];
 right_deg = [0.5 -1; 2 -1; 2 1; 0.5 1];
 open_deg = [left_deg; NaN NaN; right_deg];
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     "opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
 [shape, geometry] = azElObstacles.shapeAtTime(obstacle, 1);
 verifyFalse(testCase, geometry.TopologyIsInterpolated);
@@ -451,7 +451,7 @@ source_deg = [-1 -1; 1 -1; 1 1; -1 1];
 translation_deg = [3 2];
 azimuth_deg = {source_deg(:, 1); source_deg(:, 1) + translation_deg(1)};
 elevation_deg = {source_deg(:, 2); source_deg(:, 2) + translation_deg(2)};
-obstacle = makeAzElObstacleData( "translated", [0; 1], azimuth_deg, elevation_deg, 0.2);
+obstacle = azElObstacles.makeAzElObstacleData( "translated", [0; 1], azimuth_deg, elevation_deg, 0.2);
 verifyEqual(testCase, obstacle.az_deg{2}, obstacle.az_deg{1} + translation_deg(1), "AbsTol", 1e-12);
 verifyEqual(testCase, obstacle.el_deg{2}, obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
 end

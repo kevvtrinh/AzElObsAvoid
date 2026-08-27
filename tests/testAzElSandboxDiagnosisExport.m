@@ -24,6 +24,8 @@ function setupOnce(testCase)
 % Add production, examples, and sandbox folders for public-call tests.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
+addpath(fullfile(repositoryRoot, "planAzElMotion"));
+addpath(fullfile(repositoryRoot, "hs3"));
 addpath(fullfile(repositoryRoot, "examples"));
 addpath(fullfile(repositoryRoot, "sandbox"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
@@ -38,7 +40,7 @@ verifyTrue(testCase, result.Success, result.Message);
 validation = validateAzElTrajectory(result);
 verifyTrue(testCase, validation.Passed, validation.Message);
 sandboxState = syntheticSandboxState( ...
-    result, validation, initialState, goalState, combineAzElObstacles());
+    result, validation, initialState, goalState, azElObstacles.combineAzElObstacles());
 filePath = string(tempname) + ".mat";
 testCase.addTeardown(@() deleteIfPresent(filePath));
 
@@ -148,7 +150,7 @@ end
 function testFailedBundleRetainsDiagnosisEvidence(testCase)
 % Preserve endpoint-blocked failure inputs, diagnostics, and validation.
 [initialState, goalState, limits, options] = simpleRequest();
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     "start enclosure", [0; goalState.time_s], ...
     [-1; 1; 1; -1], [-1; -1; 1; 1], 0);
 result = planAzElMotion( ...

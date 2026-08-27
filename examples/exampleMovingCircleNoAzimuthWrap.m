@@ -45,7 +45,7 @@ for sampleIndex = 1:2
         circleRadius_deg * sin(circleAngle_rad);
 end
 safetyMargin_deg = 0.1;
-obstacles = makeAzElObstacleData( ...
+obstacles = azElObstacles.makeAzElObstacleData( ...
     "rising circle", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
@@ -67,7 +67,7 @@ result.ExampleValidation = validateAzElTrajectory(result);
 
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

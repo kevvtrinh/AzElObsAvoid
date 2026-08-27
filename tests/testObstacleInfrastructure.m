@@ -23,6 +23,8 @@ function setupOnce(testCase)
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
+addpath(fullfile(repositoryRoot, "planAzElMotion"));
+addpath(fullfile(repositoryRoot, "hs3"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
 
@@ -32,19 +34,19 @@ firstObstacle = rectangleObstacle("first", [0; 4], [-2 0 -1 1]);
 secondObstacle = rectangleObstacle("second", [0; 4], [1 3 -2 2]);
 nestedInputs = {[], {firstObstacle, {[], secondObstacle}}};
 
-rootResult = combineAzElObstacles(nestedInputs);
+rootResult = azElObstacles.combineAzElObstacles(nestedInputs);
 verifyEqual(testCase, size(rootResult), [2 1]);
 verifyEqual(testCase, [rootResult.targetName].', ["first"; "second"]);
 
-rootEmpty = combineAzElObstacles();
-verifyEqual(testCase, combineAzElObstacles([]), rootEmpty);
+rootEmpty = azElObstacles.combineAzElObstacles();
+verifyEqual(testCase, azElObstacles.combineAzElObstacles([]), rootEmpty);
 verifyEqual(testCase, fieldnames(rootEmpty), fieldnames(rootResult));
 end
 
 function testUnifiedOwnerNormalizesCanonicalValues(testCase)
 % Verify the unified owner establishes stable values, shapes, and fields.
 inputData = normalizationFixture();
-rootResult = makeAzElObstacleData(inputData);
+rootResult = azElObstacles.makeAzElObstacleData(inputData);
 verifyEqual(testCase, rootResult.time_s, [0; 2]);
 verifyEqual(testCase, rootResult.status, ["visible"; "visible"]);
 verifyEqual(testCase, size(rootResult.az_deg), [2 1]);
@@ -77,7 +79,7 @@ for caseIndex = 1:size(cases, 1)
     inputData = cases{caseIndex, 1}();
     expectedIdentifier = cases{caseIndex, 2};
     actualIdentifier = captureErrorIdentifier( ...
-        @makeAzElObstacleData, inputData);
+        @azElObstacles.makeAzElObstacleData, inputData);
     verifyEqual(testCase, actualIdentifier, expectedIdentifier);
 end
 end
@@ -90,7 +92,7 @@ inputData.el_deg{1} = [0; 1; NaN; -1; -1; 1; 1];
 inputData.originalAz_deg = inputData.az_deg;
 inputData.originalEl_deg = inputData.el_deg;
 lastwarn("");
-output = makeAzElObstacleData(inputData);
+output = azElObstacles.makeAzElObstacleData(inputData);
 [~, warningIdentifier] = lastwarn();
 verifyEqual(testCase, string(warningIdentifier), ...
     "normalizeAzElTimeObstacleData:RemovedTwoVertexRegions");
@@ -101,7 +103,7 @@ function testSharedQueryPreservesGeometryAndCompatibility(testCase)
 % Verify shared moving, multi-ring, broadcast, and diagnostic query behavior.
 movingObstacle = movingMultiRingObstacle();
 staticObstacle = rectangleObstacle("static", [0; 4], [-0.5 0.5 -0.5 0.5]);
-obstacles = combineAzElObstacles(movingObstacle, staticObstacle);
+obstacles = azElObstacles.combineAzElObstacles(movingObstacle, staticObstacle);
 azimuth_deg = [-3 0 3; -2 NaN 2];
 elevation_deg = [0 0 0; 1 0 -1];
 time_s = [0 0 0; 2 2 4];
@@ -109,20 +111,20 @@ options = struct( ...
     "BoundaryIsOccupied", false, ...
     "ClearanceTolerance_deg", 1e-10);
 
-[sharedOccupied, sharedBlocker, sharedDetails] = queryAzElTimeObstacle( ...
+[sharedOccupied, sharedBlocker, sharedDetails] = azElObstacles.queryAzElTimeObstacle( ...
     obstacles, azimuth_deg, elevation_deg, time_s, options);
 verifyClass(testCase, sharedBlocker, "uint32");
 verifyEqual(testCase, size(sharedOccupied), size(azimuth_deg));
 verifyEqual(testCase, size(sharedDetails.MinimumClearance_deg), ...
     size(azimuth_deg));
 
-fastOccupied = queryAzElTimeObstacle( ...
+fastOccupied = azElObstacles.queryAzElTimeObstacle( ...
     obstacles, azimuth_deg, elevation_deg, time_s, options);
 verifyEqual(testCase, fastOccupied, sharedOccupied);
 
 hs3Options = options;
 hs3Options.PlannerMethod = "hs3";
-[hs3Occupied, hs3Blocker, hs3Details] = queryAzElTimeObstacle( ...
+[hs3Occupied, hs3Blocker, hs3Details] = azElObstacles.queryAzElTimeObstacle( ...
     obstacles, azimuth_deg, elevation_deg, time_s, hs3Options);
 verifyEqual(testCase, hs3Occupied, sharedOccupied);
 verifyEqual(testCase, hs3Blocker, sharedBlocker);
@@ -133,7 +135,7 @@ verifyEqual(testCase, hs3Details.Options.PlannerMethod, "hs3");
 referenceTime = datetime(2026, 1, 1, "TimeZone", "UTC");
 datetimeOptions = options;
 datetimeOptions.ReferenceTime = referenceTime;
-datetimeOccupied = queryAzElTimeObstacle( ...
+datetimeOccupied = azElObstacles.queryAzElTimeObstacle( ...
     obstacles, azimuth_deg, elevation_deg, ...
     referenceTime + seconds(time_s), datetimeOptions);
 verifyEqual(testCase, datetimeOccupied, sharedOccupied);
@@ -156,7 +158,7 @@ verifyEqual(testCase, convexGeometry.OutwardSign, referenceOutwardSign);
 
 concaveAzimuth_deg = [0; 2; 2; 1; 1; 0];
 concaveElevation_deg = [0; 0; 1; 1; 2; 2];
-concaveObstacle = makeAzElObstacleData( ...
+concaveObstacle = azElObstacles.makeAzElObstacleData( ...
     "concave", [0; 4], concaveAzimuth_deg, concaveElevation_deg, 0);
 [~, concaveGeometry] = ...
     azElObstacles.shapeAtTime(concaveObstacle, 2, true);
@@ -192,14 +194,14 @@ function obstacle = movingMultiRingObstacle()
 inputData = normalizationFixture();
 inputData.targetName = "moving multi-ring";
 inputData.safetyMargin_deg = 0;
-obstacle = makeAzElObstacleData(inputData);
+obstacle = azElObstacles.makeAzElObstacleData(inputData);
 end
 
 function obstacle = rectangleObstacle(name, time_s, bounds_deg)
 % Construct one canonical static rectangle.
 azimuth_deg = bounds_deg([1 2 2 1]).';
 elevation_deg = bounds_deg([3 3 4 4]).';
-obstacle = makeAzElObstacleData( ...
+obstacle = azElObstacles.makeAzElObstacleData( ...
     name, time_s, azimuth_deg, elevation_deg, 0);
 end
 

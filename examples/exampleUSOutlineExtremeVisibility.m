@@ -112,7 +112,7 @@ if jerkConfiguration.PlotOutputs
     for regionIndex = 1:regionCount
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);
-        regionResults{regionIndex}.PlotHandles = plotAzElMotion( regionResults{regionIndex}, plotOptions);
+        regionResults{regionIndex}.PlotHandles = azElPlotting.plotMotion( regionResults{regionIndex}, plotOptions);
     end
 end
 

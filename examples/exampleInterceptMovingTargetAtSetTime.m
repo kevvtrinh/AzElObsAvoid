@@ -78,7 +78,7 @@ exampleValidation.Passed = exampleValidation.Passed && specifiedTimeSatisfied;
 
 result.PlotHandles = struct();
 if jerkConfiguration.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, jerkConfiguration.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, jerkConfiguration.PlotOptions);
 end
 
 %% Section 7: Return Example Metadata

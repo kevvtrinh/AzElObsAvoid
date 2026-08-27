@@ -106,7 +106,7 @@ for lineIndex = 1:numel(drawnLineCollection_deg)
 end
 userObstacleData = obstaclePolygonsToData( ...
     polygonObstaclePositions_deg, time_s, sandboxControls.ObstacleSafetyMargin_deg);
-obstacles = combineAzElObstacles(pathObstacleData, userObstacleData);
+obstacles = azElObstacles.combineAzElObstacles(pathObstacleData, userObstacleData);
 
 initialState = struct( ...
     "time_s", 0, "position_deg", startPosition_deg, "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
@@ -120,7 +120,7 @@ if ~result.Success
 end
 result.PlotHandles = struct();
 if displayOptions.PlotOutputs
-    result.PlotHandles = plotAzElMotion( result, displayOptions.PlotOptions);
+    result.PlotHandles = azElPlotting.plotMotion( result, displayOptions.PlotOptions);
 end
 
 %% Section 4: Return Sandbox Metadata
@@ -521,7 +521,7 @@ if size(bufferVertices_deg, 1) < 3
     pathObstacleData = cell(0, 1);
     return;
 end
-pathObstacleData = {makeAzElObstacleData( ...
+pathObstacleData = {azElObstacles.makeAzElObstacleData( ...
     "drawn path obstacle", time_s, bufferVertices_deg(:, 1), bufferVertices_deg(:, 2), safetyMargin_deg)};
 end
 
@@ -569,7 +569,7 @@ for polygonIndex = 1:numel(polygonCollection_deg)
         % Closing one user polygon adds exactly one bounded row.
         polygon_deg = vertcat( polygon_deg, polygon_deg(1, :)); %#ok<AGROW>
     end
-    obstacleData{polygonIndex} = makeAzElObstacleData( ...
+    obstacleData{polygonIndex} = azElObstacles.makeAzElObstacleData( ...
         "drawn polygon obstacle " + polygonIndex, time_s, polygon_deg(:, 1), polygon_deg(:, 2), safetyMargin_deg);
 end
 end
