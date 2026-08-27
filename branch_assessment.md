@@ -5,6 +5,40 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Dimension-neutral polynomial map caches — 2026-08-27
+
+Two one-entry caches now reuse HS3 polynomial structure that is invariant
+across optimizer callbacks. `createAffineSensitivityModel` caches mesh
+incidence and prior-segment integration ordering by segment count.
+`createSubintervalBernsteinMap` caches one complete interval restriction map
+by exact segment count, coefficient count, and normalized interval endpoints.
+Both remain dimension-neutral; obstacle, Az/El, and planner concepts are absent.
+Keys are published only with complete values, and one-entry replacement bounds
+persistent memory.
+
+On identical inputs, 600 affine-map calls decreased from 0.6946311 to
+0.4367565 seconds (37.1%), and 10,000 repeated subinterval-map calls decreased
+from 1.5852113 to 0.1228665 seconds (92.2%). A warmed, counterbalanced
+Static-U comparison against exact commit `e1db1ed` decreased median wall time
+from 10.4040084 to 10.35779345 seconds (0.44%). Success, validation, selected
+route, sampled motion, duration, and the complete polynomial were exactly
+equal. The modest end-to-end gain is reported as measured; fmincon factorization
+still dominates total wall time.
+
+The complete unit suite passed 119/119. All 17 maintained examples then ran
+serially in fresh headless MATLAB processes: 16 independently validated
+successes and the independently validated expected `noValidatedSeed` result.
+Every successful trajectory passed collision and kinematic certificates, with
+no path-length or arrival-time drift from the preceding `9ba28f4` matrix. The
+moving/deforming U.S. case remained the largest weakness at 183.354475 seconds.
+A visible obstacle-free run created three figures, and the expected no-path run
+created two diagnostic figures with two axes.
+
+The implementation adds 30 net production lines across the two neutral
+polynomial helpers and seven net focused-test lines. That size is retained for
+the measured repeated-call reductions and exact-output evidence, not as a claim
+of a material solver-wide acceleration.
+
 ## Independent-validation complexity refactor — 2026-08-27
 
 `obstacleAvoidance.validateTrajectory` now delegates sampled-history checks,
@@ -30,8 +64,9 @@ moving/deforming U.S. path is 43.0751355347 degrees at 7.96286899667 seconds,
 and the target-exit path is 20.6764423274 degrees at its fixed 24-second
 arrival. Clean detached runs at exact pre-refactor commit `9ba28f4` reproduced
 both values exactly, proving that this refactor introduced neither path-length
-nor arrival-time drift. The older regression remains visible and is not
-treated as an improvement here.
+nor arrival-time drift. The older target-exit difference came from replacing
+the example's seeded random target history with deterministic evenly spaced
+steps; it is an input change, not a same-input planner regression.
 
 The largest remaining production-function complexities are 85 in planner
 orchestration, 53 in trajectory plotting, and 49 in polynomial trajectory

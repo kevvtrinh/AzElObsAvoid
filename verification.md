@@ -1,8 +1,62 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Same-homology spatial route cleanup — 2026-08-26](#same-homology-spatial-route-cleanup--2026-08-26).
+[Dimension-neutral polynomial map caches — 2026-08-27](#dimension-neutral-polynomial-map-caches--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Dimension-neutral polynomial map caches — 2026-08-27
+
+- Source: `HS3-planner` at `e1db1ed+hs3-map-cache-worktree`.
+- Baseline: immutable archive of exact commit `e1db1ed` under the same MATLAB
+  R2024b installation. No solver options, example inputs, geometry, limits, or
+  validation policy changed.
+- Retained mechanism: one-entry exact caches for duration-independent affine
+  mesh structure and repeated subinterval Bernstein restriction maps. Both
+  changes are inside `hs3Internal.polynomial` and remain independent of
+  coordinate dimension and obstacle-planner semantics.
+- Direct affine-map benchmark: 600 varying-duration calls at 40 segments and
+  161 evaluation coordinates decreased from 0.6946311 to 0.4367565 seconds;
+  the checksum remained 1301.1856152604162.
+- Direct subinterval-map benchmark: 10,000 identical 40-interval calls at 40
+  segments decreased from 1.5852113 to 0.1228665 seconds; the checksum remained
+  20000.
+- Warmed, counterbalanced Static-U A/B: baseline runs were 10.4545751 and
+  10.3534417 seconds; changed runs were 10.3299481 and 10.3856388 seconds.
+  Median wall time decreased 0.44%, from 10.4040084 to 10.35779345 seconds.
+  Success, validation, selected seed, sampled position history, duration, and
+  the complete polynomial were exactly equal.
+- Code Analyzer reported zero findings for both changed production helpers.
+- Focused polynomial and standalone HS3 suites passed 21/21. The complete
+  suite passed 119/119 with zero failures or incomplete tests.
+- A visible `exampleObstacleFree` run created three figures. A hidden plotted
+  `exampleNoPath` run created two diagnostic figures and two axes, and its
+  expected `noValidatedSeed` result passed independent failure validation.
+- Production growth is 30 net lines across two helpers; focused tests add
+  seven net lines. The full-planner gain is deliberately reported as small
+  because nonlinear solver factorization remains dominant.
+
+Every maintained example ran headlessly in its own fresh MATLAB process with
+plots and animation disabled. Jerk was enabled in every case.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| exampleAlternatingSlalom | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 6.4578554 | goalReached |
+| exampleDenseConcaveObstacle | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.4847187 | goalReached |
+| exampleFourAcceleratingCircles | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 4.5913123 | goalReached |
+| exampleInterceptMovingTargetAtSetTime | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 1.7342782 | goalReached |
+| exampleInterceptMovingTargetEarliest | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 5.1683023 | goalReached |
+| exampleMovingBarrierWait | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 16.327504 | goalReached |
+| exampleMovingCircleNoAzimuthWrap | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.8122815 | goalReached |
+| exampleMovingDeformingUSOutlineVisibility | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 183.3544747 | goalReached |
+| exampleNoPath | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.0338079 | noValidatedSeed |
+| exampleObstacleAvoidance | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 4.2712838 | goalReached |
+| exampleObstacleFree | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 2.2288032 | goalReached |
+| exampleOpeningUShapedObstacle | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 39.2150586 | goalReached |
+| exampleStaticUShapedObstacle | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 11.7281417 | goalReached |
+| exampleStraightTargetAlternatingOcclusion | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 5.6900266 | goalReached |
+| exampleTargetExitsObstacle | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 5.6179184 | goalReached |
+| exampleTwoOpposingUVisibilityGraph | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 6.1385721 | goalReached |
+| exampleUSOutlineExtremeVisibility | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 39.8016126 | goalReached |
 
 ## Documentation and interactive-example cleanup — 2026-08-26
 

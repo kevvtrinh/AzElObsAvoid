@@ -1,7 +1,8 @@
 function model = createAffineSensitivityModel(segmentCount, duration, evaluationTau)
 %% Section 0: Header & Readme
 % SYNTAX
-%   model = hs3Internal.polynomial.createAffineSensitivityModel(segmentCount, duration, evaluationTau)
+%   model = hs3Internal.polynomial.createAffineSensitivityModel( ...
+%       segmentCount, duration, evaluationTau)
 %**************************************************************************
 % PURPOSE
 %   - Build exact scalar-coordinate HS3 coefficient, terminal-state, and
@@ -37,20 +38,35 @@ validateattributes(evaluationTau, {'numeric'}, ...
 evaluationTau = double(evaluationTau(:));
 controlCount = 2 * segmentCount + 1;
 segmentDuration = double(duration) / segmentCount;
-segmentIndex = (1:segmentCount).';
-startSelection = sparse(segmentIndex, 2 * segmentIndex - 1, 1, ...
-    segmentCount, controlCount);
-midpointSelection = sparse(segmentIndex, 2 * segmentIndex, 1, ...
-    segmentCount, controlCount);
-endSelection = sparse(segmentIndex, 2 * segmentIndex + 1, 1, ...
-    segmentCount, controlCount);
-% Consecutive segments select the same shared boundary control. The three
-% selection matrices expose each segment's start, midpoint, and end jerk.
-jerkConstantMap = startSelection;
-jerkLinearMap = -3 * startSelection + 4 * midpointSelection - endSelection;
-jerkQuadraticMap = 2 * startSelection - ...
-    4 * midpointSelection + 2 * endSelection;
-priorSegmentSum = sparse(tril(ones(segmentCount), -1));
+persistent cachedSegmentCount cachedJerkConstantMap ...
+    cachedJerkLinearMap cachedJerkQuadraticMap cachedPriorSegmentSum
+if isempty(cachedSegmentCount) || cachedSegmentCount ~= segmentCount
+    segmentIndex = (1:segmentCount).';
+    startSelection = sparse(segmentIndex, 2 * segmentIndex - 1, 1, ...
+        segmentCount, controlCount);
+    midpointSelection = sparse(segmentIndex, 2 * segmentIndex, 1, ...
+        segmentCount, controlCount);
+    endSelection = sparse(segmentIndex, 2 * segmentIndex + 1, 1, ...
+        segmentCount, controlCount);
+    % Consecutive segments select the same shared boundary control. The
+    % three selection matrices expose each segment's start, midpoint, and
+    % end jerk.
+    % Mesh incidence and integration ordering do not depend on duration or
+    % evaluation coordinates. Reuse them across optimizer iterations.
+    cachedJerkConstantMap = startSelection;
+    cachedJerkLinearMap = ...
+        -3 * startSelection + 4 * midpointSelection - endSelection;
+    cachedJerkQuadraticMap = ...
+        2 * startSelection - 4 * midpointSelection + 2 * endSelection;
+    cachedPriorSegmentSum = sparse(tril(ones(segmentCount), -1));
+    % Publish the key last so an interrupted rebuild cannot validate
+    % partially replaced cache values.
+    cachedSegmentCount = segmentCount;
+end
+jerkConstantMap = cachedJerkConstantMap;
+jerkLinearMap = cachedJerkLinearMap;
+jerkQuadraticMap = cachedJerkQuadraticMap;
+priorSegmentSum = cachedPriorSegmentSum;
 % Integrating within a segment gives its state increment. Multiplication by
 % the strict lower-triangular matrix adds all earlier increments. This operation
 % propagates continuous acceleration, velocity, and position to each start.

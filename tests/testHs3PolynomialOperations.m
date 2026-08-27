@@ -16,7 +16,7 @@ end
 function testRandomizedCoefficientAndTerminalParity(testCase)
 % Cover requested mesh sizes, randomized jerk, and nonzero endpoint bases.
 rng(325, "twister");
-for segmentCount = [1 2 5 10]
+for segmentCount = [1 2 5 10 2]
     duration_s = 1.7 + 0.31 * segmentCount;
     evaluationTau = unique([linspace(0, 1, 47).'; ...
         (0:segmentCount).' / segmentCount]);

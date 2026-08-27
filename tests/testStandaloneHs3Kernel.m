@@ -147,8 +147,8 @@ verifyGreaterThanOrEqual(testCase, ...
     pathConstraints.LowerBound - 1e-7);
 end
 
-function testSubintervalHullMatchesEmbeddedGenericMath(testCase)
-% Verify the neutral interval map is an exact extraction of shared math.
+function testSubintervalHullCachePreservesExactMaps(testCase)
+% Verify warm and rebuilt cache entries preserve the exact neutral map.
 tauStart = [0.02; 0.2; 0.51; 0.8];
 tauEnd = [0.1; 0.3; 0.6; 0.8];
 [expectedSegment, expectedMap] = hs3Internal.polynomial.createSubintervalBernsteinMap( ...
@@ -157,6 +157,13 @@ tauEnd = [0.1; 0.3; 0.6; 0.8];
     tauStart, tauEnd, 5, 6);
 verifyEqual(testCase, actualSegment, expectedSegment);
 verifyEqual(testCase, actualMap, expectedMap);
+hs3Internal.polynomial.createSubintervalBernsteinMap( ...
+    [0.1; 0.4], [0.2; 0.6], 3, 4);
+[rebuiltSegment, rebuiltMap] = ...
+    hs3Internal.polynomial.createSubintervalBernsteinMap( ...
+    tauStart, tauEnd, 5, 6);
+verifyEqual(testCase, rebuiltSegment, expectedSegment);
+verifyEqual(testCase, rebuiltMap, expectedMap);
 end
 
 function testAffineIntervalConstraintUsesCompleteHull(testCase)
