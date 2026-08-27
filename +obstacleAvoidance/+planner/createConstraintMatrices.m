@@ -2,7 +2,7 @@ function [inequalityMatrix, equalityMatrix] = ...
         createConstraintMatrices( ...
         segmentCount, duration_s, allowAzimuthWrapping, ...
         seedCorridor, corridor, corridorTau, corridorNormal, ...
-        collinearityDirection)
+        collinearityDirection, constraintLayout)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [inequalityMatrix, equalityMatrix] = ...
@@ -18,6 +18,11 @@ function [inequalityMatrix, equalityMatrix] = ...
 %       segmentCount, duration_s, allowAzimuthWrapping, ...
 %       seedCorridor, corridor, corridorTau, corridorNormal, ...
 %       collinearityDirection)
+%   [inequalityMatrix, equalityMatrix] = ...
+%       obstacleAvoidance.planner.createConstraintMatrices( ...
+%       segmentCount, duration_s, allowAzimuthWrapping, ...
+%       seedCorridor, corridor, corridorTau, corridorNormal, ...
+%       collinearityDirection, constraintLayout)
 %**************************************************************************
 % PURPOSE
 %   - Assemble exact fixed-duration HS3 jerk Jacobians in the raw constraint
@@ -34,6 +39,8 @@ function [inequalityMatrix, equalityMatrix] = ...
 %       Active normals evaluated at the current variable-duration geometry.
 %   - collinearityDirection (1-by-2 numeric row, optional)
 %       Replaces redundant normal endpoint rows with normal-jerk equations.
+%   - constraintLayout (scalar struct, optional; default empty)
+%       Precomputed corridor maps and row offsets for one solver attempt.
 %**************************************************************************
 % OUTPUTS
 %   - inequalityMatrix (M-by-D numeric), exact dc/djerk matrix.
@@ -53,8 +60,18 @@ function [inequalityMatrix, equalityMatrix] = ...
 % This row order is essential because fmincon pairs values and derivatives
 % by row number rather than by physical meaning.
 
+hasPreparedLayout = nargin >= 9 && ...
+    isfield(constraintLayout, "CorridorRowOffset");
+if hasPreparedLayout
+    % Coefficient Jacobians do not consume sampled position/velocity maps.
+    % Avoid creating those unused maps when the corridor layout is prepared.
+    sensitivityTau = zeros(0, 1);
+else
+    sensitivityTau = corridorTau;
+    constraintLayout = struct();
+end
 sensitivity = hs3Internal.polynomial.createAffineSensitivityModel( ...
-    segmentCount, duration_s, corridorTau);
+    segmentCount, duration_s, sensitivityTau);
 continuousMatrix = continuousBoundConstraintMatrix( ...
     sensitivity, allowAzimuthWrapping);
 seedMatrix = seedCorridorConstraintMatrix(sensitivity, seedCorridor);
@@ -62,10 +79,11 @@ if nargin >= 7 && ~isempty(corridorNormal)
     % Moving-obstacle normals depend on the current trial motion, so use the
     % normals evaluated during the same constraint call.
     corridorMatrix = corridorConstraintMatrix( ...
-        sensitivity, corridor, corridorNormal);
+        sensitivity, corridor, corridorNormal, constraintLayout);
 else
     % Fixed geometry carries its own normal and needs no time reevaluation.
-    corridorMatrix = frozenCorridorConstraintMatrix(sensitivity, corridor);
+    corridorMatrix = frozenCorridorConstraintMatrix( ...
+        sensitivity, corridor, constraintLayout);
 end
 inequalityMatrix = [continuousMatrix; seedMatrix; corridorMatrix];
 controlCount = sensitivity.ControlCount;
@@ -92,7 +110,8 @@ if nargin >= 8 && ~isempty(collinearityDirection)
 end
 end
 
-function matrix = corridorConstraintMatrix(sensitivity, corridor, normal)
+function matrix = corridorConstraintMatrix( ...
+        sensitivity, corridor, normal, constraintLayout)
 % Differentiate each sub-interval hull while geometry remains fixed in jerk.
 controlCount = sensitivity.ControlCount;
 recordCount = numel(corridor);
@@ -101,29 +120,40 @@ if recordCount == 0
     matrix = zeros(0, 2 * controlCount);
     return;
 end
-useIntervalHull = [corridor.UseIntervalHull].';
-rowCount = sum(1 + (coefficientCount - 1) * useIntervalHull);
-matrix = zeros(rowCount, 2 * controlCount);
 if size(normal, 1) ~= recordCount || size(normal, 2) ~= 2
     error("createConstraintMatrices:InvalidCorridorNormals", ...
         "corridorNormal must contain one two-axis row per association.");
 end
-effectiveTauEnd = [corridor.TauEnd];
-effectiveTauEnd(~useIntervalHull.') = [corridor(~useIntervalHull).Tau];
-[segmentIndex, hullMap] = hs3Internal.polynomial.createSubintervalBernsteinMap( ...
-    [corridor.Tau], effectiveTauEnd, ...
-    size(sensitivity.positionPowerMap, 1), coefficientCount);
+if isfield(constraintLayout, "CorridorRowOffset")
+    if constraintLayout.PositionCoefficientCount ~= coefficientCount || ...
+            numel(constraintLayout.CorridorRowOffset) ~= recordCount + 1
+        error("createConstraintMatrices:InvalidConstraintLayout", ...
+            "The prepared corridor layout does not match the sensitivity model.");
+    end
+    segmentIndex = constraintLayout.CorridorSegmentIndex;
+    hullMap = constraintLayout.CorridorHullMap;
+    rowOffset = constraintLayout.CorridorRowOffset;
+else
+    useIntervalHull = [corridor.UseIntervalHull].';
+    effectiveTauEnd = [corridor.TauEnd];
+    effectiveTauEnd(~useIntervalHull.') = [corridor(~useIntervalHull).Tau];
+    [segmentIndex, hullMap] = ...
+        hs3Internal.polynomial.createSubintervalBernsteinMap( ...
+        [corridor.Tau], effectiveTauEnd, ...
+        size(sensitivity.positionPowerMap, 1), coefficientCount);
+    rowOffset = [0; cumsum(1 + ...
+        (coefficientCount - 1) * useIntervalHull)];
+end
+matrix = zeros(rowOffset(end), 2 * controlCount);
 selectedPowerMap = permute( ...
     sensitivity.positionPowerMap(segmentIndex, :, :), [2 3 1]);
 hullByRecord = permute(pagemtimes(hullMap, selectedPowerMap), [1 3 2]);
-nextRow = 1;
 for associationIndex = 1:recordCount
     % One row checks a single instant. An interval association uses all
     % Bernstein coefficients to cover its complete time interval.
-    associationRowCount = 1 + ...
-        (coefficientCount - 1) * useIntervalHull(associationIndex);
-    matrixRows = nextRow:nextRow + associationRowCount - 1;
-    nextRow = matrixRows(end) + 1;
+    matrixRows = rowOffset(associationIndex) + 1: ...
+        rowOffset(associationIndex + 1);
+    associationRowCount = numel(matrixRows);
     positionMap = reshape( ...
         hullByRecord(1:associationRowCount, associationIndex, :), ...
         associationRowCount, controlCount);
@@ -203,7 +233,8 @@ matrix(:, 1:controlCount) = reshape(azimuthMap, [], controlCount);
 matrix(:, controlCount + 1:end) = reshape(elevationMap, [], controlCount);
 end
 
-function matrix = frozenCorridorConstraintMatrix(sensitivity, corridor)
+function matrix = frozenCorridorConstraintMatrix( ...
+        sensitivity, corridor, constraintLayout)
 % Differentiate fixed-time obstacle supports over their stored sub-intervals.
 if isempty(corridor)
     matrix = zeros(0, 2 * sensitivity.ControlCount);
@@ -214,5 +245,5 @@ if any(~[corridor.GeometryIsFixed])
         "Every fixed-time HS3 corridor association must freeze its geometry.");
 end
 matrix = corridorConstraintMatrix( ...
-    sensitivity, corridor, vertcat(corridor.FixedNormal));
+    sensitivity, corridor, vertcat(corridor.FixedNormal), constraintLayout);
 end

@@ -2137,3 +2137,41 @@ ill-conditioned `fmincon` warning flood despite producing a validated result.
 This is only a focused architecture smoke test. The remaining maintained
 examples, expected failure visualization, visible graphics, complete unit
 suite, and Code Analyzer have not yet been rerun against this worktree.
+
+## Prepared constraint-layout reuse — 2026-08-27
+
+The largest newly measured runtime strength is that one HS3 solve now prepares
+its immutable corridor interval maps, constraint-row offsets, and safeguarded
+final-time event locations once. Constraint callbacks continue to reevaluate
+the polynomial and every moving-geometry value; only topology that cannot change
+during that solve is reused. The neutral HS3 sensitivity builder also skips its
+sampled position and velocity maps when the obstacle adapter needs coefficient
+Jacobians only.
+
+On the identical Opening-U input, a matched MATLAB profile improved from
+41.5774063 to 40.2039387 seconds, or 3.30%. Time attributed to
+`evaluateTrajectoryConstraints` fell from 5.45811353 to 4.13240582 seconds
+(24.3%), `createConstraintMatrices` fell from 2.31449291 to 1.83661551
+seconds (20.6%), and corridor constraint evaluation fell from 1.25470921 to
+0.641739103 seconds (48.8%). The selected 10-degree polyline,
+10.0912159691-degree smoothed path, and 11.8560791016-second duration are
+unchanged. A direct dynamic-geometry test proves prepared and unprepared value
+and gradient outputs are exactly equal.
+
+Every maintained example ran serially in a fresh MATLAB process. All 16
+expected successes and the expected `noValidatedSeed` result passed independent
+validation with unchanged path and arrival metrics. The moving/deforming U.S.
+case first measured an unfavorable 200.066640 seconds, then repeated at
+182.935442 seconds against the 183.4952231-second baseline with identical
+trajectory metrics; the first result is retained here as visible runtime noise,
+not hidden. The complete suite passes 120/120. A visible success produced three
+figures and six axes, while the expected failure produced two diagnostic figures
+and two axes.
+
+The dominant weakness remains nonlinear solver factorization: it consumes
+22.1272051 of the 40.2039387 profiled Opening-U seconds. Timed-seed conjugate
+gradient was not retried because repository evidence already records a
+24.8248-to-28.2319-second Moving-Barrier regression. The retained refactor adds
+layout plumbing and compatibility fallbacks, so its source-size and branching
+cost are real. It is retained for measured callback reduction, not as an
+optimality, completeness, or uniform wall-time claim.

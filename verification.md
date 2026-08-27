@@ -3885,3 +3885,71 @@ The moving-barrier and opening-U rows were rerun after their local warning
 suppression was added; both produced concise output and retained identical
 trajectory metrics and independent certificates. The warning state is restored
 immediately after each planner call.
+
+## Prepared constraint-layout verification — 2026-08-27
+
+Source under test was `HS3-planner` at
+`0534edb+constraint-layout-worktree`. The retained adapter change prepares
+corridor interval maps, row offsets, and final-time event locations once per
+solver attempt, then passes them through the existing HS3 constraint callback.
+Moving geometry values, polynomial values, collision checking, and validation
+remain evaluated at every required time.
+
+### Matched profile and focused gates
+
+The identical headless Opening-U profile improved from 41.5774063 to
+40.2039387 seconds (3.30%). `evaluateTrajectoryConstraints` improved from
+5.45811353 to 4.13240582 seconds, `createConstraintMatrices` from 2.31449291
+to 1.83661551 seconds, and its corridor value block from 1.25470921 to
+0.641739103 seconds. The solver still spent 22.1272051 seconds in augmented
+matrix factorization. Output remained exactly 10 / 10.0912159691 degrees and
+11.8560791016 seconds.
+
+Code Analyzer reported zero findings for the three edited production files and
+the edited test. The clean-path focused suites passed 8/8 polynomial and
+constraint tests, 59/59 planner tests, and 24/24 standalone/architecture tests.
+The new dynamic-geometry test compares prepared and unprepared inequality,
+equality, and both gradient matrices exactly. The complete suite passed 120/120
+with zero failures or incomplete tests in 41.9212 seconds summed test time.
+
+The first focused invocation omitted the repository package path and therefore
+reported five unresolved-package errors before exercising those tests. A later
+`genpath` invocation exposed an untracked `.claude` worktree test file and
+reported only the older seven-test inventory. Both environment mistakes were
+diagnosed; authoritative reruns used only the repository root, `hs3`,
+`examples`, and `tests` paths, and `which` confirmed the edited checkout.
+
+### Final serial maintained matrix
+
+Each example ran in its own fresh MATLAB process with plots and animation
+disabled. Jerk was enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / kinematic | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 6.459507 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.1187829 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 3.9738544 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.0905206 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 5.8297634 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 16.1610637 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.8386864 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 182.935442 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.4162175 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 4.5816492 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 2.6313584 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10.0912159691 | 11.8560791016 | 1 / 1 | 38.9261867 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 11.7993308 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 5.7791864 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 5.7329698 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 6.4064281 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 39.5964486 | `goalReached` |
+
+The first moving/deforming run measured 200.066640 seconds, then repeated at
+182.935442 seconds against the 183.4952231-second baseline. Its path and arrival
+metrics were identical in both runs, so the unfavorable first wall time remains
+documented as noise rather than omitted. A visible `exampleObstacleFree` run
+created three figures and six axes. A hidden plotted `exampleNoPath` run created
+two diagnostic figures and two axes and returned `noValidatedSeed`.
+
+No MATLAB process that predated this work was stopped or signaled. The retained
+change does not claim global optimality, completeness, or uniform runtime gain.
