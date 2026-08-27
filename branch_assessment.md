@@ -5,6 +5,29 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Interactive polygon motion editing — 2026-08-27
+
+The sandbox now creates polygon obstacles from explicit left-clicked vertices.
+A right-click closes and retains the polygon after at least three non-collinear
+vertices are present. The Set Motion action selects a retained polygon by an
+interior click and previews an arrow from its centroid to a second click. Each
+polygon stores its own motion vector and one of four profiles: immediate
+constant velocity, acceleration from zero velocity, trapezoidal
+accelerate-cruise-decelerate motion, or one oscillating out-and-back cycle.
+
+Motion profiles are sampled into the same time-varying obstacle format used by
+the production planner. Focused tests verify the midpoint and endpoint position
+of every profile and confirm that the constant-velocity history produces the
+expected query-time polygon centroid. A visible UI smoke test confirmed one
+rendered sandbox figure, four profile choices, and the Set Motion action.
+Code Analyzer reports zero findings for the four changed MATLAB files.
+
+The vector defines total displacement over the active planning horizon. The
+oscillating choice completes one full cycle during that horizon. The sandbox
+does not yet expose a separate speed, acceleration time, cycle count, or phase
+control. Existing freehand line data remains readable, but new obstacle input
+through the UI is polygon-vertex based.
+
 ## High-level public namespace and normal example results — 2026-08-27
 
 Production code is now exposed through the high-level +obstacleAvoidance

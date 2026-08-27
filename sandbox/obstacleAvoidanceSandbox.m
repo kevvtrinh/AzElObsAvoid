@@ -278,18 +278,32 @@ controls.VerboseHandle = uicontrol(tabHandle, ...
     "Position", [0.882 0.263 0.103 0.03], ...
     "Value", options.Verbose, ...
     "HorizontalAlignment", "left");
+controls.MotionProfileHandle = uicontrol(tabHandle, ...
+    "Style", "popupmenu", ...
+    "String", { ...
+        "Non-zero velocity from start", ...
+        "Zero velocity from start", ...
+        "Trapezoidal", ...
+        "Oscillating"}, ...
+    "Units", "normalized", ...
+    "Position", [0.71 0.263 0.165 0.03], ...
+    "Value", 1, ...
+    "TooltipString", ...
+        "Motion profile used by Set Motion for the selected polygon.");
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", "Units", "normalized", "Position", [0.045 0.275 0.64 0.052]);
 if modeName == "goal"
     actionNames = [ ...
-        "AddObstacle", "Run", "Reset", "Diagnostics", "Export"];
+        "AddObstacle", "SetMotion", "Run", "Reset", ...
+        "Diagnostics", "Export"];
     actionLabels = [ ...
-        "Add Obstacle", "Run", "Reset", "Diagnostics", "Export Bundle"];
+        "Add Polygon", "Set Motion", "Run", "Reset", ...
+        "Diagnostics", "Export Bundle"];
 else
     actionNames = [ ...
-        "AddObstacle", "AddSegment", "Recalculate", "Undo", ...
+        "AddObstacle", "SetMotion", "AddSegment", "Recalculate", "Undo", ...
         "Reset", "Diagnostics", "Export"];
     actionLabels = [ ...
-        "Add Obstacle", "Add Segment", "Recalculate", "Undo Point", ...
+        "Add Polygon", "Set Motion", "Add Segment", "Recalculate", "Undo Point", ...
         "Reset", "Diagnostics", "Export Bundle"];
 end
 actions = createActionButtons( actionPanelHandle, modeName, actionNames, actionLabels);
@@ -425,9 +439,13 @@ function modeState = emptyModeState(modeName, graphicsHandles)
 % Define all fields in one mode record. Initialization and Reset use the same
 % field set so callbacks can read state without optional-field branches.
 if modeName == "goal"
-    instruction = "Click the start, click the goal, draw obstacles, then Run.";
+    instruction = ...
+        "Click the start and goal. Add polygon vertices with left-clicks. " + ...
+        "Right-click to finish each polygon, then Run.";
 else
-    instruction = "Click the start, click the first endpoint, draw obstacles, then recalculate.";
+    instruction = ...
+        "Click the start and first endpoint. Add polygon vertices with " + ...
+        "left-clicks and right-click to finish, then recalculate.";
 end
 modeState = struct( ...
     "StartPosition_deg", zeros(0, 2), ...
@@ -436,6 +454,9 @@ modeState = struct( ...
     "RawObstacleStrokes_deg", {cell(0, 1)}, ...
     "LineObstaclePositions_deg", {cell(0, 1)}, ...
     "PolygonObstaclePositions_deg", {cell(0, 1)}, ...
+    "PolygonMotionVectors_deg", zeros(0, 2), ...
+    "PolygonMotionProfiles", strings(0, 1), ...
+    "SelectedPolygonIndex", 0, ...
     "CanonicalObstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
     "SegmentResults", repmat(emptySegmentRecord(), 0, 1), ...
     "CombinedTrajectory", emptyCombinedTrajectory(), ...
@@ -496,7 +517,9 @@ actionName = string(request.Action);
 try
     switch actionName
         case "AddObstacle"
-            activateInteraction(figureHandle, modeName, "drawingObstacle");
+            activateInteraction(figureHandle, modeName, "addingPolygon");
+        case "SetMotion"
+            activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
         case "AddSegment"
             activateInteraction(figureHandle, modeName, "placingWaypoint");
         case "Run"
@@ -566,9 +589,18 @@ switch requestedState
     case "placingInitialGoal"
         interactionState = "placingFreeGoal";
         modeState.Status = "Place the first requested endpoint with one left click.";
-    case "drawingObstacle"
-        interactionState = "drawing" + upperFirst(modeName) + "Obstacle";
-        modeState.Status = "Hold the left mouse button, trace one obstacle, then release.";
+    case "addingPolygon"
+        interactionState = "adding" + upperFirst(modeName) + "Polygon";
+        modeState.Status = ...
+            "Left-click each polygon vertex. " + ...
+            "Right-click to close and add the polygon.";
+    case "selectingObstacleMotion"
+        interactionState = "selecting" + upperFirst(modeName) + ...
+            "ObstacleMotion";
+        modeState.SelectedPolygonIndex = 0;
+        modeState.Status = ...
+            "Click inside a polygon. Then click the arrow endpoint " + ...
+            "to set its motion vector.";
 end
 applicationState.InteractionState = interactionState;
 modeState.InteractionState = interactionState;
@@ -590,8 +622,8 @@ elseif modeName == "goal" && isempty(modeState.GoalPosition_deg)
     requestedState = "placingGoal";
 elseif modeName == "free" && isempty(modeState.WaypointPositions_deg)
     requestedState = "placingInitialGoal";
-elseif isempty(modeState.RawObstacleStrokes_deg)
-    requestedState = "drawingObstacle";
+elseif isempty(modeState.PolygonObstaclePositions_deg)
+    requestedState = "addingPolygon";
 else
     requestedState = "";
 end
@@ -607,8 +639,8 @@ end
 end
 
 function handleFigureMouseDown(figureHandle, ~)
-% Start a freehand trace or store one requested point on the active axes.
-% Ignore clicks outside the configured workspace.
+% Process one click for point placement, polygon creation, or motion editing.
+% Ignore clicks outside the active mode axes.
 applicationState = guidata(figureHandle);
 if applicationState.InteractionState == "idle" || applicationState.InteractionState == "planning"
     return;
@@ -620,7 +652,17 @@ clickedAxes = ancestor(clickedHandle, "axes");
 if isempty(clickedAxes) || ~isequal(clickedAxes, modeState.GraphicsHandles.Axes)
     return;
 end
-if string(get(figureHandle, "SelectionType")) ~= "normal"
+selectionType = string(get(figureHandle, "SelectionType"));
+if contains(applicationState.InteractionState, "adding") && ...
+        endsWith(applicationState.InteractionState, "Polygon")
+    if selectionType == "alt"
+        finishPolygonInteraction(figureHandle);
+    elseif selectionType == "normal"
+        addPolygonVertex(figureHandle);
+    end
+    return;
+end
+if selectionType ~= "normal"
     return;
 end
 point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
@@ -630,6 +672,46 @@ if ~pointInWorkspace(point_deg, controls)
     applicationState = setModeState(applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
+    return;
+end
+if contains(applicationState.InteractionState, ...
+        "selecting") && endsWith( ...
+        applicationState.InteractionState, "ObstacleMotion")
+    polygonIndex = polygonIndexAtPoint( ...
+        modeState.PolygonObstaclePositions_deg, point_deg);
+    if polygonIndex == 0
+        modeState.Status = "No polygon contains the selected point.";
+    else
+        polygon_deg = modeState.PolygonObstaclePositions_deg{polygonIndex};
+        [centroidAzimuth_deg, centroidElevation_deg] = ...
+            centroid(polyshape(polygon_deg));
+        modeState.SelectedPolygonIndex = polygonIndex;
+        modeState.InteractionState = ...
+            "placing" + upperFirst(modeName) + "ObstacleMotionEnd";
+        modeState.Status = ...
+            "Polygon " + polygonIndex + " selected. " + ...
+            "Click the arrow endpoint.";
+        applicationState.InteractionState = modeState.InteractionState;
+        applicationState.ActiveStroke_deg = [ ...
+            centroidAzimuth_deg, centroidElevation_deg];
+        applicationState.ActiveTraceHandle = quiver( ...
+            modeState.GraphicsHandles.Axes, centroidAzimuth_deg, ...
+            centroidElevation_deg, 0, 0, 0, ...
+            "Color", [0.15 0.55 0.15], "LineWidth", 2, ...
+            "MaxHeadSize", 0.35, "HandleVisibility", "off");
+        set(figureHandle, "WindowButtonMotionFcn", ...
+            @handleObstacleMotionPreview);
+    end
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+if contains(applicationState.InteractionState, ...
+        "placing") && endsWith( ...
+        applicationState.InteractionState, "ObstacleMotionEnd")
+    finishObstacleMotionInteraction(figureHandle, point_deg);
     return;
 end
 if contains(applicationState.InteractionState, "drawing")
@@ -678,6 +760,177 @@ elseif shouldRecalculateFree
 else
     refreshApplication(figureHandle);
 end
+end
+
+function handleObstacleMotionPreview(figureHandle, ~)
+% Update the temporary arrow while the user selects its endpoint.
+applicationState = guidata(figureHandle);
+if ~endsWith(applicationState.InteractionState, "ObstacleMotionEnd") || ...
+        isempty(applicationState.ActiveTraceHandle) || ...
+        ~isgraphics(applicationState.ActiveTraceHandle)
+    return;
+end
+modeState = getModeState(applicationState, applicationState.ActiveMode);
+endpoint_deg = cursorPoint(modeState.GraphicsHandles.Axes);
+origin_deg = applicationState.ActiveStroke_deg(1, :);
+motionVector_deg = endpoint_deg - origin_deg;
+set(applicationState.ActiveTraceHandle, ...
+    "UData", motionVector_deg(1), "VData", motionVector_deg(2));
+drawnow("limitrate");
+end
+
+function addPolygonVertex(figureHandle)
+% Add one distinct vertex to the active polygon preview.
+applicationState = guidata(figureHandle);
+modeName = applicationState.ActiveMode;
+modeState = getModeState(applicationState, modeName);
+point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
+controls = readModeControls(applicationState, modeName);
+if ~pointInWorkspace(point_deg, controls)
+    modeState.Status = "The polygon vertex is outside the workspace limits.";
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+minimumVertexSpacing_deg = 1e-6;
+if ~isempty(applicationState.ActiveStroke_deg) && ...
+        norm(point_deg - applicationState.ActiveStroke_deg(end, :)) <= ...
+        minimumVertexSpacing_deg
+    modeState.Status = "That polygon vertex duplicates the previous vertex.";
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+applicationState.ActiveStroke_deg(end + 1, :) = point_deg;
+if isempty(applicationState.ActiveTraceHandle) || ...
+        ~isgraphics(applicationState.ActiveTraceHandle)
+    applicationState.ActiveTraceHandle = plot( ...
+        modeState.GraphicsHandles.Axes, ...
+        applicationState.ActiveStroke_deg(:, 1), ...
+        applicationState.ActiveStroke_deg(:, 2), ...
+        "bo-", "LineWidth", 1.4, "MarkerFaceColor", "b", ...
+        "HandleVisibility", "off");
+else
+    set(applicationState.ActiveTraceHandle, ...
+        "XData", applicationState.ActiveStroke_deg(:, 1), ...
+        "YData", applicationState.ActiveStroke_deg(:, 2));
+end
+modeState.Status = ...
+    "Polygon has " + size(applicationState.ActiveStroke_deg, 1) + ...
+    " vertices. Right-click to finish.";
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+updateModeStatusDisplay(modeState);
+drawnow("limitrate");
+end
+
+function finishPolygonInteraction(figureHandle)
+% Validate and store the active polygon after a right-click.
+applicationState = guidata(figureHandle);
+modeName = applicationState.ActiveMode;
+modeState = getModeState(applicationState, modeName);
+polygon_deg = applicationState.ActiveStroke_deg;
+if size(polygon_deg, 1) < 3
+    modeState.Status = ...
+        "A polygon needs at least three vertices. Continue with left-clicks.";
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+polygonShape = polyshape(polygon_deg);
+if area(polygonShape) <= eps
+    modeState.Status = ...
+        "The polygon has no enclosed area. Add non-collinear vertices.";
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
+modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
+modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
+modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
+modeState = clearModeSolution(modeState);
+modeState.Status = ...
+    "Polygon added. Use Set Motion to move it, or add another polygon.";
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+cancelInteraction(figureHandle);
+if modeName == "free" && wasPreviouslySolved
+    executeFreePlan( ...
+        figureHandle, "Polygon completed; recalculating the full chain");
+else
+    refreshApplication(figureHandle);
+end
+end
+
+function polygonIndex = polygonIndexAtPoint(polygonCollection_deg, point_deg)
+% Return the last drawn polygon that contains the selected point.
+polygonIndex = 0;
+for candidateIndex = numel(polygonCollection_deg):-1:1
+    polygonShape = polyshape(polygonCollection_deg{candidateIndex});
+    if isinterior(polygonShape, point_deg(1), point_deg(2))
+        polygonIndex = candidateIndex;
+        return;
+    end
+end
+end
+
+function finishObstacleMotionInteraction(figureHandle, endpoint_deg)
+% Store one polygon motion vector and the selected motion profile.
+applicationState = guidata(figureHandle);
+modeName = applicationState.ActiveMode;
+modeState = getModeState(applicationState, modeName);
+polygonIndex = modeState.SelectedPolygonIndex;
+if polygonIndex < 1 || ...
+        polygonIndex > numel(modeState.PolygonObstaclePositions_deg)
+    error("obstacleAvoidanceSandbox:InvalidMotionSelection", ...
+        "Select a polygon before setting its motion vector.");
+end
+origin_deg = applicationState.ActiveStroke_deg(1, :);
+motionVector_deg = endpoint_deg - origin_deg;
+if norm(motionVector_deg) <= 1e-9
+    modeState.Status = "The motion vector must have nonzero length.";
+    applicationState = setModeState( ...
+        applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
+profile = selectedMotionProfile( ...
+    modeState.GraphicsHandles.Controls.MotionProfileHandle);
+modeState.PolygonMotionVectors_deg(polygonIndex, :) = motionVector_deg;
+modeState.PolygonMotionProfiles(polygonIndex, 1) = profile;
+modeState.SelectedPolygonIndex = 0;
+modeState = clearModeSolution(modeState);
+modeState.Status = ...
+    "Motion set for polygon " + polygonIndex + ": " + profile + ".";
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+cancelInteraction(figureHandle);
+if modeName == "free" && wasPreviouslySolved
+    executeFreePlan( ...
+        figureHandle, "Obstacle motion changed; recalculating the full chain");
+else
+    refreshApplication(figureHandle);
+end
+end
+
+function profile = selectedMotionProfile(profileHandle)
+% Convert the popup selection to the stored profile name.
+profileNames = [ ...
+    "nonzeroVelocity", "zeroStart", "trapezoidal", "oscillating"];
+selectedIndex = get(profileHandle, "Value");
+profile = profileNames(selectedIndex);
 end
 
 function handleFigureMouseMotion(figureHandle, ~)
@@ -1278,6 +1531,7 @@ set(handles.PathRadiusHandle, "String", sprintf("%.8g", options.PathObstacleRadi
 set(handles.PathMarginHandle, "String", sprintf("%.8g", options.PathSafetyMargin_deg));
 set(handles.ObstacleMarginHandle, "String", sprintf("%.8g", options.ObstacleSafetyMargin_deg));
 set(handles.VerboseHandle, "Value", options.Verbose);
+set(handles.MotionProfileHandle, "Value", 1);
 end
 
 function writeAxisPair(handles, values)
@@ -1301,7 +1555,9 @@ for lineIndex = 1:numel(modeState.LineObstaclePositions_deg)
 end
 polygonObstacleData = obstaclePolygonsToData( ...
     modeState.PolygonObstaclePositions_deg, obstacleTime_s, ...
-    controls.ObstacleSafetyMargin_deg);
+    controls.ObstacleSafetyMargin_deg, ...
+    modeState.PolygonMotionVectors_deg, ...
+    modeState.PolygonMotionProfiles);
 obstacles = obstacleAvoidance.obstacles.combineObstacles(pathObstacleData, polygonObstacleData);
 end
 
@@ -1364,8 +1620,10 @@ for segmentIndex = 1:size(path_deg, 1) - 1
 end
 end
 
-function obstacleData = obstaclePolygonsToData( polygonCollection_deg, time_s, safetyMargin_deg)
-% Construct canonical protected polygons while applying margin once.
+function obstacleData = obstaclePolygonsToData( ...
+        polygonCollection_deg, time_s, safetyMargin_deg, ...
+        motionVectors_deg, motionProfiles)
+% Construct protected static or moving polygons. Apply the margin once.
 obstacleData = cell(numel(polygonCollection_deg), 1);
 
 % Close and canonicalize every user-drawn polygon independently.
@@ -1374,9 +1632,22 @@ for polygonIndex = 1:numel(polygonCollection_deg)
     if ~isequal(polygon_deg(1, :), polygon_deg(end, :))
         polygon_deg = [polygon_deg; polygon_deg(1, :)]; %#ok<AGROW>
     end
-    obstacleData{polygonIndex} = obstacleAvoidance.obstacles.createObstacle( ...
-        "drawn polygon obstacle " + polygonIndex, time_s, ...
-        polygon_deg(:, 1), polygon_deg(:, 2), safetyMargin_deg);
+    motionVector_deg = [0 0];
+    motionProfile = "stationary";
+    if polygonIndex <= size(motionVectors_deg, 1)
+        motionVector_deg = motionVectors_deg(polygonIndex, :);
+    end
+    if polygonIndex <= numel(motionProfiles) && ...
+            strlength(motionProfiles(polygonIndex)) > 0
+        motionProfile = motionProfiles(polygonIndex);
+    end
+    [profileTime_s, azimuthBySlice_deg, elevationBySlice_deg] = ...
+        createSandboxPolygonMotionHistory( ...
+            polygon_deg, time_s, motionVector_deg, motionProfile);
+    obstacleData{polygonIndex} = ...
+        obstacleAvoidance.obstacles.createObstacle( ...
+            "drawn polygon obstacle " + polygonIndex, profileTime_s, ...
+            azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 end
 end
 
@@ -1477,6 +1748,28 @@ for polygonIndex = 1:numel(modeState.PolygonObstaclePositions_deg)
         [0.25 0.35 0.85], "FaceAlpha", 0.10, ...
         "EdgeColor", [0.25 0.35 0.85], "LineStyle", ":", ...
         "HandleVisibility", "off");
+    if polygonIndex <= size(modeState.PolygonMotionVectors_deg, 1)
+        motionVector_deg = ...
+            modeState.PolygonMotionVectors_deg(polygonIndex, :);
+        if norm(motionVector_deg) > 1e-12
+            [centroidAzimuth_deg, centroidElevation_deg] = ...
+                centroid(polyshape(polygon_deg));
+            quiver(axesHandle, centroidAzimuth_deg, ...
+                centroidElevation_deg, motionVector_deg(1), ...
+                motionVector_deg(2), 0, "Color", [0.15 0.55 0.15], ...
+                "LineWidth", 2, "MaxHeadSize", 0.35, ...
+                "HandleVisibility", "off");
+            if polygonIndex <= numel(modeState.PolygonMotionProfiles)
+                profileLabel = motionProfileLabel( ...
+                    modeState.PolygonMotionProfiles(polygonIndex));
+                text(axesHandle, ...
+                    centroidAzimuth_deg + motionVector_deg(1), ...
+                    centroidElevation_deg + motionVector_deg(2), ...
+                    "  " + profileLabel, "Color", [0.10 0.40 0.10], ...
+                    "FontSize", 8, "HandleVisibility", "off");
+            end
+        end
+    end
 end
 renderCanonicalObstacles(axesHandle, modeState.CanonicalObstacles);
 
@@ -1498,6 +1791,22 @@ if modeName == "goal"
     title(axesHandle, "Goal Mode: requested geometry and solved motion");
 else
     title(axesHandle, "Free Mode: latest validated tested arrivals, not a global optimum");
+end
+end
+
+function label = motionProfileLabel(profile)
+% Convert an internal profile name to concise display text.
+switch string(profile)
+    case "nonzeroVelocity"
+        label = "constant velocity";
+    case "zeroStart"
+        label = "zero-start acceleration";
+    case "trapezoidal"
+        label = "trapezoidal";
+    case "oscillating"
+        label = "oscillating";
+    otherwise
+        label = "stationary";
 end
 end
 
@@ -1612,17 +1921,23 @@ for modeName = modeNames
     controlHandles = findall( modeState.GraphicsHandles.ControlPanel, "Type", "uicontrol");
     set(controlHandles, "Enable", onOff(~isPlanning));
     set(modeState.GraphicsHandles.Controls.VerboseHandle, "Enable", onOff(~isPlanning));
+    set(modeState.GraphicsHandles.Controls.MotionProfileHandle, ...
+        "Enable", onOff(~isPlanning));
     if isPlanning
         continue;
     end
     if modeName == "goal"
         canRun = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
         set(modeState.GraphicsHandles.Actions.AddObstacle, "Enable", onOff(canRun));
+        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
+            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
         set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
     else
         hasStart = ~isempty(modeState.StartPosition_deg);
         hasSegments = hasStart && ~isempty(modeState.WaypointPositions_deg);
         set(modeState.GraphicsHandles.Actions.AddObstacle, "Enable", onOff(hasSegments));
+        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
+            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
         set(modeState.GraphicsHandles.Actions.AddSegment, "Enable", onOff(hasStart));
         set(modeState.GraphicsHandles.Actions.Recalculate, "Enable", onOff(hasSegments));
         set(modeState.GraphicsHandles.Actions.Undo, "Enable", onOff(~isempty(modeState.WaypointPositions_deg)));
