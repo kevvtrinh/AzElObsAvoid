@@ -5,6 +5,41 @@ planning — 2026-08-26**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Independent-validation complexity refactor — 2026-08-27
+
+`obstacleAvoidance.validateTrajectory` now delegates sampled-history checks,
+endpoint agreement, complete collision certification, and safety-margin
+provenance to focused local helpers. The primary function's measured
+cyclomatic complexity decreased from 62 to 19. Complexity for the complete
+file decreased from 85 to 77 rather than merely moving intact into helpers;
+the largest new helper is 14 and the largest retained helper is 18. The public
+schema, issue ordering, pass/fail decisions, exceptions, and collision evidence
+are unchanged.
+
+The retention gate compared normalized success and deliberately perturbed
+failure records exactly and passed all nine focused collision, dynamics, and
+timing tests. The complete unit suite passed 119/119 before the user-requested
+removal of `exampleFortyMovingCircleGrid`; the reduced maintained inventory is
+17 examples. All 17 ran serially headlessly: 16 independently validated
+successes and the independently validated expected `noValidatedSeed` failure.
+A default-options visible obstacle-free run also passed and created the normal
+plots. Every successful run passed collision and kinematic certificates.
+
+Two fresh metrics differ from the older `0302439` benchmark: the
+moving/deforming U.S. path is 43.0751355347 degrees at 7.96286899667 seconds,
+and the target-exit path is 20.6764423274 degrees at its fixed 24-second
+arrival. Clean detached runs at exact pre-refactor commit `9ba28f4` reproduced
+both values exactly, proving that this refactor introduced neither path-length
+nor arrival-time drift. The older regression remains visible and is not
+treated as an improvement here.
+
+The largest remaining production-function complexities are 85 in planner
+orchestration, 53 in trajectory plotting, and 49 in polynomial trajectory
+validation. The moving/deforming U.S. example took 184.596685 seconds in this
+run, so runtime remains a major weakness. The removed 40-circle grid had still
+not completed after roughly six minutes; historical measurements remain in
+`benchmark.csv`, but it is no longer a maintained runnable example.
+
 ## Interactive polygon motion editing — 2026-08-27
 
 The sandbox now creates polygon obstacles from explicit left-clicked vertices.
