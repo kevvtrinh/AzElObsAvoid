@@ -71,17 +71,13 @@ end
 
 %% Section 2: Reevaluate Complete Continuous Constraints
 
-% Re-run the same mathematical constraints from the reconstructed jerk
-% controls. This catches reshaping, reconstruction, or reporting mistakes
-% between optimization and output assembly. The bound checks are continuous:
-% Bernstein coefficients enclose each complete polynomial segment, so passing
-% does not depend on the display sample spacing.
+% Re-run the mathematical constraints directly from the returned polynomial.
+% This catches reconstruction or reporting mistakes and also supports valid
+% variable-duration segments without depending on solver decision layout.
 
-decision = trajectory.ControlJerk(:);
-[inequality, equality] = hs3Internal.constraints.evaluateConstraints( ...
-    decision, false, trajectory.FinalTime, trajectory.FinalTime, ...
-    trajectory.FinalTime, options.SegmentCount, initialState, ...
-    terminalState, limits, pathConstraints);
+[inequality, equality] = ...
+    hs3Internal.constraints.evaluatePolynomialConstraints( ...
+    trajectory.Polynomial, terminalState, limits, pathConstraints);
 maximumInequalityViolation = max([0; inequality(:)]);
 maximumEqualityViolation = max([0; abs(equality(:))]);
 tolerance = max(10 * options.ConstraintTolerance, 1e-7);

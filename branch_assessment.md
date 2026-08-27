@@ -1,11 +1,70 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only planning with certified scalar
-progress for eligible direct multi-axis motion, unified seed equivalence,
-prepared dynamic boundary-edge queries, and no production file above 900
-lines — 2026-08-27**.
+The current planner judgment is **HS3-only planning with exact dimension-neutral
+third-order switching profiles, certified direct multi-axis motion, prepared
+dynamic boundary-edge queries, and no production file above 900 lines —
+2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Exact dimension-neutral third-order switching — 2026-08-27
+
+The public HS3 engine now solves symmetric third-order position limits with a
+pure-MATLAB adaptation of the Ruckig v0.19.4 switching equations. Each axis is
+solved independently for its certified minimum time, faster axes are
+synchronized to the limiting duration, and equal-duration candidates are
+ranked by dense spatial length before integrated jerk. Eligible rest-to-rest
+multi-axis moves retain the certified scalar-progress path so a direct motion
+is exactly straight. Every constructed polynomial still passes the existing
+continuous HS3 constraint evaluator and independent public validation. Path
+constraints, asymmetric derivative bounds, and unsupported numerical families
+retain the existing general optimizer. The engine consumes only arbitrary-
+dimension states, derivative bounds, time policy, and optional path
+constraints; it has no knowledge of obstacles, azimuth/elevation, targets, or
+planner examples. The MIT attribution is retained in
+`hs3/THIRD_PARTY_NOTICES.txt`.
+
+Against exact baseline `e3596a3`, the final serial 21-case shared reference run
+matched 19 of the 20 published success arrival values within 0.00005 seconds;
+the largest absolute difference was 0.00004514 seconds. All 21 wall-time gates
+passed. Summed measured solver wall time decreased from 32.068521 to 1.1144582
+seconds (96.52%), while the 19 matched successful arrivals improved by a
+combined 2.0775845 seconds. The retained reference script, input table,
+benchmark harness, and final measurements make the comparison reproducible.
+
+The unmatched published-success row is not treated as a solver failure to be
+hidden. Its initial velocity is exactly at the lower bound while its initial
+acceleration points farther outward. Any finite continuous jerk therefore
+violates the velocity bound immediately. HS3 now returns
+`kinematicallyInfeasibleBoundaryState` in 0.0037 seconds rather than claiming
+the published 31.9573-second motion is feasible. The other published failure
+is rejected as `fixedTimeBelowMinimum` in 0.027 seconds.
+
+Minimum arrival remains the primary objective and spatial length is the
+secondary objective at that duration. Relative to the slower baseline, 16 of
+19 successful paths were equal or shorter and three were longer while reaching
+the endpoint earlier. The largest reduction was 16.7155 coordinate units for
+the reordered case. The mixed case-2/fixed-case-8 path was 21.7015 units at
+7.91695 seconds versus 21.3863 at 8.39679 seconds; its direct distance is
+21.2843. This is a real time-versus-length tradeoff, and the switching-family
+tie-break does not establish global shortestness for non-rest endpoint states.
+
+The focused standalone HS3 suite passed 18/18. The complete repository suite
+passed 132/132 in 68.757 seconds. All 17 maintained examples then ran serially
+in fresh headless MATLAB processes: 16 successes passed independent collision
+and continuous position, velocity, acceleration, jerk, and dynamics checks;
+the expected `noValidatedSeed` result passed its failure-diagnostic checks. A
+visible success created three figures, and a visible expected failure created
+two diagnostic figures with retained search data. Every maintained example
+kept its preceding selected route, smoothed-path length, and duration.
+
+The exact solver adds substantial implementation size: production is 13,674
+physical lines and production plus tests is 18,250, above the repository's
+7,500- and 12,000-line targets. The largest production file remains 899 lines.
+This size cost is the main maintainability weakness. Explicit `parfor` was not
+added because each accepted axis solve is normally only a few milliseconds and
+pool startup would dominate these cases; the axis decomposition remains ready
+for a caller-owned parallel strategy if much higher dimensions justify it.
 
 ## Certified multi-axis direct progress — 2026-08-27
 
