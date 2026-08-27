@@ -1,8 +1,61 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Time-invariant obstacle geometry cache — 2026-08-27](#time-invariant-obstacle-geometry-cache--2026-08-27).
+[Prepared dynamic boundary-edge queries — 2026-08-27](#prepared-dynamic-boundary-edge-queries--2026-08-27).
 Earlier sections are retained as historical checkpoints.
+
+## Prepared dynamic boundary-edge queries — 2026-08-27
+
+- Source: `HS3-planner` at `750e9c7+prepared-edge-worktree`.
+- Baseline: detached exact commit `750e9c7` under MATLAB R2024b with unchanged
+  examples, planner options, obstacle geometry, limits, and validation.
+- Retained mechanism: dynamic non-support corridor rows query one canonical
+  prepared boundary edge. Support rows and final independent validation retain
+  complete geometry. Stale/partial caches and unsafe extreme interpolation use
+  the complete-boundary fallback.
+- Exact parity: 178 direct queries across closed, query-time closure,
+  multi-ring, topology-union, single-slice, exact-time, interpolated-time,
+  inactive-time, and missing-edge cases matched the complete canonical oracle.
+  A deforming-edge constraint test matched complete inequality, equality, and
+  both gradient matrices exactly.
+- Three-pair primary A/B: baseline wall times were 179.5093499, 179.4877722,
+  and 180.0643631 seconds; initial candidate times were 148.7280267,
+  147.6009931, and 148.5100961 seconds. Median reduction was 17.27%. The final
+  safeguarded worktree ran in 165.7597307 seconds, 7.66% below the exact
+  baseline median. All result metrics and solver iteration/objective evidence
+  remained exact.
+- Focused tests passed 21/21; the complete suite passed 128/128 in 93.8577066
+  seconds. Code Analyzer reported zero findings across 87 maintained MATLAB
+  files.
+- Visible gates: `exampleObstacleFree` created three figures and six axes;
+  `exampleNoPath` returned the expected failure and created two diagnostic
+  figures with two axes.
+- Production growth is 205 net lines and focused tests add 173 net lines. This
+  is retained for the measured worst-case dynamic improvement, while the size
+  debt remains explicit.
+
+Every maintained example ran headlessly in its own fresh MATLAB process with
+plots and animation disabled. Jerk was enabled in every case.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / certificate | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| exampleAlternatingSlalom | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 7.5219106 | goalReached |
+| exampleDenseConcaveObstacle | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.6663066 | goalReached |
+| exampleFourAcceleratingCircles | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 4.3017149 | goalReached |
+| exampleInterceptMovingTargetAtSetTime | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 3.0141734 | goalReached |
+| exampleInterceptMovingTargetEarliest | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 6.5378950 | goalReached |
+| exampleMovingBarrierWait | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 18.1116314 | goalReached |
+| exampleMovingCircleNoAzimuthWrap | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.5957080 | goalReached |
+| exampleMovingDeformingUSOutlineVisibility | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 165.7597307 | goalReached |
+| exampleNoPath | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.3331914 | noValidatedSeed |
+| exampleObstacleAvoidance | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 5.1689199 | goalReached |
+| exampleObstacleFree | 1 / 1 | 4.472135955 | 4.472135955 | 4.5458984375 | 1 / 1 | 2.8408890 | goalReached |
+| exampleOpeningUShapedObstacle | 1 / 1 | 10 | 10 | 11.8560791016 | 1 / 1 | 42.2203932 | goalReached |
+| exampleStaticUShapedObstacle | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 13.4359407 | goalReached |
+| exampleStraightTargetAlternatingOcclusion | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 6.3886567 | goalReached |
+| exampleTargetExitsObstacle | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 6.9468265 | goalReached |
+| exampleTwoOpposingUVisibilityGraph | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 7.3445507 | goalReached |
+| exampleUSOutlineExtremeVisibility | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 44.5641943 | goalReached |
 
 ## Time-invariant obstacle geometry cache — 2026-08-27
 

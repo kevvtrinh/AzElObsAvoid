@@ -384,36 +384,39 @@ for associationIndex = 1:recordCount
         outwardNormal = association.FixedNormal;
         boundaryOffset_deg = association.FixedBoundaryOffset_deg;
     else
-        % Reevaluate moving geometry at the trial duration because normalized
-        % time maps to a different absolute obstacle time as duration changes.
-        [~, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
-            obstacles(association.ObstacleIndex), ...
-            startTime_s + association.Tau * duration_s, true);
-        if ~geometry.Active
-            % An inactive obstacle imposes no restriction. A negative value
-            % marks these rows strictly feasible without changing row count.
-            inequality(hullRows) = -1;
-            continue;
-        end
-        finiteVertices = isfinite(geometry.azimuth_deg) & ...
-            isfinite(geometry.elevation_deg);
-        vertices_deg = [geometry.azimuth_deg(finiteVertices), ...
-            geometry.elevation_deg(finiteVertices)];
+        queryTime_s = startTime_s + association.Tau * duration_s;
         if association.UseSupport
             % A support normal describes an extreme side of the full shape.
+            [~, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
+                obstacles(association.ObstacleIndex), queryTime_s, true);
+            if ~geometry.Active
+                % An inactive obstacle imposes no restriction. A negative
+                % value preserves row count while marking strict feasibility.
+                inequality(hullRows) = -1;
+                continue;
+            end
+            finiteVertices = isfinite(geometry.azimuth_deg) & ...
+                isfinite(geometry.elevation_deg);
+            vertices_deg = [geometry.azimuth_deg(finiteVertices), ...
+                geometry.elevation_deg(finiteVertices)];
             outwardNormal = association.SupportNormal;
             boundaryOffset_deg = max(vertices_deg * outwardNormal.');
         else
-            % Edge associations track one boundary edge. Degenerate or missing
-            % edges receive a large violation so they cannot yield false success.
-            [edgeStart_deg, edgeEnd_deg] = ...
-                obstacleAvoidance.geometry.canonicalBoundaryToEdges(geometry);
-            if association.EdgeIndex > size(edgeStart_deg, 1)
+            % Edge associations need only their selected canonical row. Ring
+            % bounds preserve ordering without rebuilding the full boundary.
+            [active, hasEdge, edgeStart_deg, edgeEnd_deg] = ...
+                obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
+                obstacles(association.ObstacleIndex), queryTime_s, ...
+                association.EdgeIndex);
+            if ~active
+                inequality(hullRows) = -1;
+                continue;
+            end
+            if ~hasEdge
                 inequality(hullRows) = 1e3;
                 continue;
             end
-            edgeDelta_deg = edgeEnd_deg(association.EdgeIndex, :) - ...
-                edgeStart_deg(association.EdgeIndex, :);
+            edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
             if norm(edgeDelta_deg) <= eps
                 inequality(hullRows) = 1e3;
                 continue;
@@ -421,8 +424,7 @@ for associationIndex = 1:recordCount
             leftNormal = [-edgeDelta_deg(2), edgeDelta_deg(1)] / ...
                 norm(edgeDelta_deg);
             outwardNormal = association.OutwardSign * leftNormal;
-            boundaryOffset_deg = edgeStart_deg(association.EdgeIndex, :) * ...
-                outwardNormal.';
+            boundaryOffset_deg = edgeStart_deg * outwardNormal.';
         end
     end
     normalByAssociation(associationIndex, :) = outwardNormal;

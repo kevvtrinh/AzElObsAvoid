@@ -1,9 +1,50 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only planning with convex arrival search
-for certified static direct routes — 2026-08-27**.
+The current planner judgment is **HS3-only planning with prepared dynamic
+boundary-edge queries — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Prepared dynamic boundary-edge queries — 2026-08-27
+
+Dynamic non-support corridor constraints now interpolate only the selected
+canonical boundary edge. Preparation caches finite ring bounds and the
+topology-change union ring bounds, so each solver callback avoids rebuilding
+every boundary edge. Support constraints, fixed obstacles, final collision
+validation, and the spatial visibility search are unchanged. Exact source-time
+selection, query-time closure, multi-ring edge order, and conservative topology
+unions remain shared invariants with the complete geometry path. Old or partial
+caches and finite endpoints whose interpolation delta overflows fall back to
+that complete path.
+
+At exact baseline `750e9c7`, three moving/deforming U.S. runs had wall times of
+179.5093499, 179.4877722, and 180.0643631 seconds. The initial exact fast-path
+candidate measured 148.7280267, 147.6009931, and 148.5100961 seconds, a 17.27%
+median reduction. After adding defensive public-input and stale-cache checks,
+the final worktree measured 165.7597307 seconds, still 7.66% below the baseline
+median and 7.65% below its best run. Every run retained the exact 40-degree
+selected route, 43.0751355347-degree smoothed motion, 7.96286899667-second
+duration, solver iteration/objective sequence, and validation certificates.
+Structurally different opening-U, accelerating-circle, moving-circle, and
+static-outline controls retained their exact path and arrival metrics.
+
+The complete suite passed 128/128. All 17 maintained examples ran serially in
+fresh headless processes: 16 independently validated successes and the
+independently validated expected `noValidatedSeed` failure. Every successful
+result passed collision and continuous kinematic checks. Code Analyzer reported
+zero findings across all 87 maintained MATLAB files. Focused obstacle and HS3
+tests passed 21/21, including exact fast-path versus complete-boundary values
+and gradients for a deforming edge. A visible successful run created three
+figures with six axes; a visible expected failure created two diagnostic
+figures with two axes.
+
+The retained diff adds 205 net production lines and 173 net test lines. The
+production tree is 11,715 physical lines and production plus tests is 16,169,
+above the repository's 7,500- and 12,000-line targets. That size increase is a
+real maintainability cost. The benefit is localized to dynamic selected-edge
+constraints; support constraints and solver factorization remain dominant in
+other cases, and this optimization does not establish global path or
+arrival-time optimality.
 
 ## Convex arrival search for certified static direct routes — 2026-08-27
 

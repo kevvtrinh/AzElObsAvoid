@@ -45,9 +45,12 @@ for obstacleIndex = 1:numel(obstacles)
     intervalUnionShapes = cell(intervalCount, 1);
     intervalUnionAzimuth_deg = cell(intervalCount, 1);
     intervalUnionElevation_deg = cell(intervalCount, 1);
+    sampleBoundaryRunBounds = cell(sampleCount, 1);
+    intervalUnionBoundaryRunBounds = cell(intervalCount, 1);
     deltaAzimuth_deg = cell(intervalCount, 1);
     deltaElevation_deg = cell(intervalCount, 1);
     matchingTopology = false(intervalCount, 1);
+    selectedEdgeQueryIsExact = true;
     intervalSpeedBound_deg_s = Inf(intervalCount, 1);
     historyBounds_deg = [Inf -Inf Inf -Inf];
     % Bounds use [minimum azimuth, maximum azimuth, minimum elevation,
@@ -69,6 +72,8 @@ for obstacleIndex = 1:numel(obstacles)
                 max(historyBounds_deg(4), max(elevation_deg(finiteVertex)))];
         end
         sampleShapes{sampleIndex} = obstacleAvoidance.geometry.boundaryToShape( azimuth_deg, elevation_deg);
+        sampleBoundaryRunBounds{sampleIndex} = ...
+            createBoundaryRunBounds(azimuth_deg, elevation_deg);
     end
     intervalDuration_s = diff(obstacle.time_s(:));
     % Input normalization guarantees strictly increasing times, so every
@@ -89,6 +94,9 @@ for obstacleIndex = 1:numel(obstacles)
             deltaAzimuth_deg{intervalIndex} = upperAzimuth_deg - lowerAzimuth_deg;
             deltaElevation_deg{intervalIndex} = upperElevation_deg - lowerElevation_deg;
             finiteVertex = isfinite(lowerAzimuth_deg) & isfinite(lowerElevation_deg);
+            selectedEdgeQueryIsExact = selectedEdgeQueryIsExact && ...
+                all(isfinite(deltaAzimuth_deg{intervalIndex}(finiteVertex))) && ...
+                all(isfinite(deltaElevation_deg{intervalIndex}(finiteVertex)));
             % hypot computes each corresponding vertex's Euclidean angular
             % travel. The largest speed is a safe bound for how quickly any
             % part of this linearly interpolated boundary can move.
@@ -106,6 +114,10 @@ for obstacleIndex = 1:numel(obstacles)
             % pairing that could make occupied space disappear.
             [intervalUnionAzimuth_deg{intervalIndex}, ...
                 intervalUnionElevation_deg{intervalIndex}] = boundary( intervalUnionShapes{intervalIndex});
+            intervalUnionBoundaryRunBounds{intervalIndex} = ...
+                createBoundaryRunBounds( ...
+                intervalUnionAzimuth_deg{intervalIndex}, ...
+                intervalUnionElevation_deg{intervalIndex});
         end
     end
     sampleSpeedBound_deg_s = zeros(sampleCount, 1);
@@ -136,6 +148,10 @@ for obstacleIndex = 1:numel(obstacles)
         "IntervalUnionShapes", {intervalUnionShapes}, ...
         "IntervalUnionAzimuth_deg", {intervalUnionAzimuth_deg}, ...
         "IntervalUnionElevation_deg", {intervalUnionElevation_deg}, ...
+        "SampleBoundaryRunBounds", {sampleBoundaryRunBounds}, ...
+        "IntervalUnionBoundaryRunBounds", ...
+        {intervalUnionBoundaryRunBounds}, ...
+        "SelectedEdgeQueryIsExact", selectedEdgeQueryIsExact, ...
         "DeltaAzimuth_deg", {deltaAzimuth_deg}, ...
         "DeltaElevation_deg", {deltaElevation_deg}, ...
         "MatchingTopology", matchingTopology, ...
@@ -161,4 +177,13 @@ for obstacleIndex = 1:numel(obstacles)
         obstacles(obstacleIndex).InternalPreparation = preparation;
     end
 end
+end
+
+function runBounds = createBoundaryRunBounds(azimuth_deg, elevation_deg)
+% Record finite ring starts and stops once for selected-edge queries.
+% The paired finite mask exactly matches canonicalBoundaryToEdges.
+finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
+boundaryChange = diff([false; finiteVertex(:); false]);
+runBounds = [find(boundaryChange == 1), ...
+    find(boundaryChange == -1) - 1];
 end
