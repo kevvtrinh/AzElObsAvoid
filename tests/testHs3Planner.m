@@ -148,7 +148,7 @@ verifyEqual(testCase, motionLength_deg, norm(displacement_deg), ...
 verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 39.54);
 end
 function testCertifiedDirectObstacleMotionPreservesShortestLine(testCase)
-% Exercise the same invariant when irrelevant protected geometry is present.
+% Use the exact fixed-time search for a certified static direct route.
 obstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
     [0 45], [-120 -110 70 80], 0.2);
 initialState = testCase.TestData.Fixtures.State( ...
@@ -157,8 +157,9 @@ goalState = testCase.TestData.Fixtures.State( ...
     45, [52.8770492 -61.045082], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits( ...
     [2 2], [0.75 0.75], [2.5 2.5]);
-options = fixedOptions();
+options = obstacleAvoidance.planTrajectory();
 options.MaximumSeedCount = 2;
+options.Verbose = false;
 result = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, options);
 displacement_deg = goalState.position_deg - initialState.position_deg;
@@ -172,6 +173,36 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyLessThanOrEqual(testCase, max(deviation_deg), 1e-8);
 verifyEqual(testCase, motionLength_deg, norm(displacement_deg), ...
     "AbsTol", 1e-8);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyEqual(testCase, ...
+    summary.Hs3SolverDiagnostics.ConstraintRepresentation, ...
+    "linearFixedTime");
+verifyLessThan(testCase, result.ArrivalTime_s, 39.526);
+end
+function testAxisAlignedStaticDirectSearchImprovesArrival(testCase)
+% Exercise the same convex search on a structurally different direct line.
+obstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
+    [0 30], [0 2 10 12], 0.2);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-10 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    30, [10 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = obstacleAvoidance.planTrajectory();
+options.MaximumSeedCount = 2;
+options.Verbose = false;
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, options);
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, motionLength_deg, 20, "AbsTol", 1e-8);
+verifyLessThan(testCase, result.ArrivalTime_s, 12.7);
+verifyEqual(testCase, ...
+    summary.Hs3SolverDiagnostics.ConstraintRepresentation, ...
+    "linearFixedTime");
 end
 function testNonparallelEndpointDerivativeDoesNotForceDirectLine(testCase)
 % Preserve feasible lateral endpoint motion when collinearity is incompatible.

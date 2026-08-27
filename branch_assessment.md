@@ -1,9 +1,50 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **HS3-only planning with certified monotonic
-direct-line progress — 2026-08-27**.
+The current planner judgment is **HS3-only planning with convex arrival search
+for certified static direct routes — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## Convex arrival search for certified static direct routes — 2026-08-27
+
+A static, geometry-certified direct seed with rest-to-rest endpoint velocity
+and acceleration now uses the existing fixed-time linear HS3 formulation and
+a bounded feasibility bisection for earliest arrival. The trial count is
+derived from the initial time bracket and `ArrivalTimeTolerance_s`, so the
+reported arrival resolves the public tolerance rather than an unrelated
+internal cap. Empty obstacle fields retain their existing branch. Detours,
+changing obstacles, moving goals, non-direct routes, and non-rest endpoint
+states retain the free-time or timed-topology behavior they had before.
+
+Against exact commit `db58000`, a diagonal 94.4183046713-degree direct case
+with irrelevant static geometry kept the exact shortest spatial length.
+Arrival changed by only 0.0000915641 seconds, within the 0.001-second public
+tolerance, while the warmed five-run median decreased from 1.5234749 to
+0.8456878 seconds (44.5%); every candidate run was faster than its baseline
+counterpart. A structurally different 20-degree axis-aligned case improved
+arrival from 12.8082788069 to 12.6129150391 seconds and decreased its warmed
+five-run median from 0.73225 to 0.6630497 seconds (9.45%). The exact fixed-time
+formulation removed the latter case's 7.45e-8-degree spatial drift.
+
+The complete suite passed 126/126. All 17 maintained examples ran serially in
+fresh headless processes: 16 independently validated successes and the
+independently validated expected `noValidatedSeed` failure. Every successful
+result passed collision and continuous kinematic checks, and all selected
+routes, smoothed lengths, and durations matched `db58000`. Code Analyzer
+reported zero findings across all 86 maintained MATLAB files, and the six
+example-contract tests passed on a clean repository-only path. A visible
+obstacle-free run created three figures with six axes, and a visible expected
+failure created two diagnostic figures with two axes. The moving/deforming
+U.S. case retained its 40-degree route, 43.0751355347-degree motion, and
+7.96286899667-second duration at 179.1714178 seconds.
+
+The retained diff adds 24 net production lines and 31 net test lines.
+`plan.m` is 789 physical lines. The production tree is 11,510 physical lines
+and production plus tests is 15,791, still above the repository's 7,500- and
+12,000-line targets. The planner remains a bounded candidate search: this
+convex timing result applies only after a direct spatial route has been
+certified and does not establish global path or arrival-time optimality. The
+moving/deforming case remains the largest measured runtime weakness.
 
 ## Certified monotonic direct-line progress — 2026-08-27
 
