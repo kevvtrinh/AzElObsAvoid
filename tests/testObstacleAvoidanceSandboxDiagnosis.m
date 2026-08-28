@@ -27,7 +27,7 @@ function setupOnce(testCase)
 % Add production, examples, and sandbox folders for public-call tests.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "hs3"));
+addpath(fullfile(repositoryRoot, "trajectory"));
 addpath(fullfile(repositoryRoot, "examples"));
 addpath(fullfile(repositoryRoot, "sandbox"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
@@ -50,7 +50,7 @@ exportInfo = exportSandboxDiagnosis( ...
     filePath, sandboxState, "goal");
 loaded = load(char(filePath), "diagnosisBundle");
 bundle = loaded.diagnosisBundle;
-verifyEqual(testCase, exportInfo.Schema, ...
+verifyEqual(testCase, exportInfo.Format, ...
     "obstacleAvoidanceSandboxDiagnosis-v1");
 verifyGreaterThan(testCase, exportInfo.Bytes, 0);
 verifyTrue(testCase, exportInfo.HasPlannerResult);

@@ -47,7 +47,7 @@ requireDirectBlocked = obstacleAvoidance.input.normalizeLogicalScalar( ...
     requireDirectBlocked, "RequireDirectBlocked", "validateExampleResult:InvalidRequireDirectBlocked");
 requiredFields = {'Success', 'Message', 'TerminationReason', 'Inputs', ...
     'Options', 'Seeds', 'SeedSummaries', 'SearchDiagnostics'};
-schemaIsStable = all(isfield(result, requiredFields));
+formatIsStable = all(isfield(result, requiredFields));
 
 %% Section 2: Validate Motion Or Expected Failure
 
@@ -56,13 +56,13 @@ schemaIsStable = all(isfield(result, requiredFields));
 % record with a clear message for the example warning.
 
 trajectoryValidation = createEmptyTrajectoryValidation();
-if schemaIsStable && result.Success
+if formatIsStable && result.Success
     trajectoryValidation = obstacleAvoidance.validateTrajectory(result);
 end
-diagnosticsAreConsistent = schemaIsStable && ...
+diagnosticsAreConsistent = formatIsStable && ...
     numel(result.SeedSummaries) == numel(result.Seeds) && diagnosticCountsAreValid(result.SearchDiagnostics);
 recognizedFailure = false;
-if schemaIsStable && ~result.Success
+if formatIsStable && ~result.Success
     recognizedReasons = ["endpointBlocked", "dynamicEndpointInfeasible", ...
         "endpointOutsideWorkspace", "noValidatedSeed", "targetLeftAzElFrame"];
     recognizedFailure = any(result.TerminationReason == recognizedReasons) && ...
@@ -75,15 +75,15 @@ end
 % success did not come from an unintentionally easy scenario setup.
 
 directRouteBlocked = false;
-if schemaIsStable && requireDirectBlocked
+if formatIsStable && requireDirectBlocked
     directRouteBlocked = directRouteHasCollision(result);
 end
 directRequirementPassed = ~requireDirectBlocked || directRouteBlocked;
 if expectedSuccess
-    passed = schemaIsStable && result.Success && ...
+    passed = formatIsStable && result.Success && ...
         trajectoryValidation.Passed && diagnosticsAreConsistent && directRequirementPassed;
 else
-    passed = schemaIsStable && ~result.Success && recognizedFailure && directRequirementPassed;
+    passed = formatIsStable && ~result.Success && recognizedFailure && directRequirementPassed;
 end
 if passed
     message = scenarioLabel + " passed independent example validation.";
@@ -106,7 +106,7 @@ validation = struct( ...
     "Passed", passed, ...
     "Message", message, ...
     "ExpectedSuccess", expectedSuccess, ...
-    "SchemaIsStable", schemaIsStable, ...
+    "FormatIsStable", formatIsStable, ...
     "DiagnosticsAreConsistent", diagnosticsAreConsistent, ...
     "RecognizedFailure", recognizedFailure, ...
     "DirectRouteBlocked", directRouteBlocked, "TrajectoryValidation", trajectoryValidation);

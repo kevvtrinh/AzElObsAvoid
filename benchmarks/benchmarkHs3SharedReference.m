@@ -38,12 +38,13 @@ referenceTable = readtable( ...
     fullfile(referenceFolder, "hs3_slew_reference.csv"), ...
     "TextType", "string", "VariableNamingRule", "preserve");
 
-hs3Folder = fullfile(repositoryRoot, "hs3");
-pathWasPresent = contains(path, hs3Folder);
+trajectoryFolder = fullfile(repositoryRoot, "trajectory");
+pathWasPresent = contains(path, trajectoryFolder);
 if ~pathWasPresent
-    addpath(hs3Folder);
+    addpath(trajectoryFolder);
 end
-pathCleanup = onCleanup(@() restoreHs3Path(hs3Folder, pathWasPresent));
+pathCleanup = onCleanup(@() restoreTrajectoryPath( ...
+    trajectoryFolder, pathWasPresent));
 
 %% Section 2: Run The Shared Cases Serially
 
@@ -67,7 +68,7 @@ for repeatIndex = 1:repeatCount
         "Verbose", false); %#ok<NASGU>
 
     % Initialize script outputs so Code Analyzer can verify the post-run
-    % contract. The script overwrites all three values before they are read.
+    % requirement. The script overwrites all three values before they are read.
     hs3Results = cell(0, 1);
     selectedCases = cell(0, 1);
     summary = strings(0, 8);
@@ -129,7 +130,7 @@ sampleCount = max(1001, ceil(trajectory.Duration / 0.002) + 1);
 denseTime_s = linspace( ...
     trajectory.time(1), trajectory.time(end), sampleCount).';
 [~, densePosition] = ...
-    hs3Internal.polynomial.evaluateTrajectoryPolynomial( ...
+    hs3Engine.polynomial.evaluateTrajectoryPolynomial( ...
     trajectory.Polynomial, denseTime_s);
 positionDelta = diff(densePosition, 1, 1);
 axisVariation = sum(abs(positionDelta), 1);
@@ -179,9 +180,9 @@ function value = parseBoolean(textValue)
 value = strcmpi(string(textValue), "true");
 end
 
-function restoreHs3Path(hs3Folder, pathWasPresent)
+function restoreTrajectoryPath(trajectoryFolder, pathWasPresent)
 % Remove only the temporary benchmark path entry that this function added.
 if ~pathWasPresent
-    rmpath(hs3Folder);
+    rmpath(trajectoryFolder);
 end
 end

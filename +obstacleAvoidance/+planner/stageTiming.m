@@ -54,8 +54,8 @@ template = obstacleAvoidance.planner.stageTiming();
 requiredNames = string(fieldnames(template));
 if ~isstruct(timing) || ~isscalar(timing) || ...
         ~isequal(string(fieldnames(timing)), requiredNames)
-    error("stageTiming:InvalidSchema", ...
-        "timing must use the shared Az/El stage-timing schema.");
+    error("stageTiming:InvalidFormat", ...
+        "timing must use the shared Az/El stage-timing format.");
 end
 exclusiveNames = requiredNames(1:end - 2);
 exclusiveElapsedTime_s = 0;

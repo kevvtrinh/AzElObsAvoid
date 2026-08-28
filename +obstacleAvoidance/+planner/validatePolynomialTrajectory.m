@@ -24,7 +24,7 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %   - tolerance (nonnegative finite scalar)
 %       Absolute state and polynomial consistency tolerance.
 %   - rangeCheck (function handle)
-%       Method-specific continuous polynomial range certificate.
+%       Continuous polynomial range certificate from the active engine.
 %**************************************************************************
 % OUTPUTS
 %   - bounds, dynamics, checks (scalar structs)
@@ -85,8 +85,8 @@ for arrayIndex = 1:numel(coefficientArrays)
         isequal(size(array), expectedSizes{arrayIndex}) && ...
         all(isfinite(array), "all");
 end
-checks.SchemaValid = timeArrayIsValid && coefficientArraysAreValid;
-if ~checks.SchemaValid
+checks.FormatValid = timeArrayIsValid && coefficientArraysAreValid;
+if ~checks.FormatValid
     return;
 end
 expectedStartTime_s = segmentStartTime_s(1) + [0; cumsum(segmentDuration_s(1:end - 1))];
@@ -205,7 +205,7 @@ if historySizesMatch
         jerk_deg_s3 - polynomialJerk_deg_s3]), [], "all");
     checks.HistoryConsistent = checks.MaximumHistoryResidual <= tolerance;
 end
-checks.Valid = checks.SchemaValid && checks.InitialTimeMatched && ...
+checks.Valid = checks.FormatValid && checks.InitialTimeMatched && ...
     checks.TimeBaseConsistent && checks.SegmentContinuity && ...
     checks.EndpointStatesMatched && checks.HistoryConsistent;
 end
@@ -215,7 +215,7 @@ end
 function checks = createEmptyPolynomialChecks()
 % Define stable polynomial checks for every invalid data format.
 checks = struct( ...
-    "Valid", false, "SchemaValid", false, ...
+    "Valid", false, "FormatValid", false, ...
     "InitialTimeMatched", false, ...
     "TimeBaseConsistent", false, "SegmentContinuity", false, ...
     "EndpointStatesMatched", false, "HistoryConsistent", false, ...

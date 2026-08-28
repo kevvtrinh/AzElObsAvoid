@@ -1,10 +1,10 @@
 function result = plan(obstacles, initialState, goalState, limits, optionOverrides)
-%% Section 0: Standalone Hermite-Simpson Planner
-% Generate neutral topology proposals, solve each selected proposal with the
-% HS3 transcription, and accept only canonical independently valid motion.
+%% Section 0: Obstacle-Avoidance Planner
+% Use exact state-to-state switching motion when geometry does not constrain
+% the path. Otherwise search spatial topology and solve it with HS3.
 
 if nargin == 0
-    result = obstacleAvoidance.input.resolveHs3Options();
+    result = obstacleAvoidance.input.resolvePlannerOptions();
     return;
 end
 if nargin < 4
@@ -15,7 +15,7 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 planningTimer = tic;
-options = obstacleAvoidance.input.resolveHs3Options(optionOverrides);
+options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
 [obstacles, initialState, goalState, limits] = ...
     obstacleAvoidance.input.normalizePlannerRequest( ...
     obstacles, initialState, goalState, limits, options);
@@ -45,7 +45,30 @@ if ~endpointFeasible
     return;
 end
 
-%% Section 2: Generate Input-Driven Topology Proposals
+%% Section 2: Solve Eligible Obstacle-Free Motion With Ruckig
+
+% Obstacle awareness belongs here, not inside either trajectory engine. A
+% fixed-position request with no obstacles has no spatial path constraints,
+% so the exact switching engine can solve it directly. Unsupported switching
+% families continue to the more general HS3 path below.
+
+[result, stageTiming, ruckigHandled] = tryObstacleFreeRuckig( ...
+    result, summaryTemplate, obstacles, initialState, goalState, limits, ...
+    options, stageTiming);
+if ruckigHandled
+    if result.Success
+        result.FirstValidatedMotionTime_s = toc(planningTimer);
+        result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
+            result.FirstValidatedMotionTime_s;
+    end
+    result.SearchDiagnostics.StageTiming = stageTiming;
+    result = obstacleAvoidance.planner.stageTiming( ...
+        result, planningTimer, stageTiming);
+    printPlannerProgress(options.Verbose, 1, 1, "planning complete");
+    return;
+end
+
+%% Section 3: Create Input-Driven Topology Proposals
 
 % Search protected obstacle geometry for several geometrically distinct ways
 % to connect start and goal. These polylines are starting suggestions: they
@@ -126,14 +149,14 @@ straightLineLowerBound_deg = norm( ...
 lengthLowerBoundTolerance_deg = max( ...
     1e-10, 1e-10 * max(1, straightLineLowerBound_deg));
 
-%% Section 3: Solve, Validate, And Boundedly Repair HS3 Motions
+%% Section 4: Solve, Validate, And Boundedly Repair HS3 Motions
 
 % Each seed is solved independently. A failed coarse mesh may be refined or
 % relinearized within explicit limits, but every success must pass independent
 % continuous-motion validation. Retain both the best valid candidate and the
 % most informative failed partial candidate.
 
-hs3Defaults = solveTrajHS3();
+hs3Defaults = hs3Engine.defaultOptions();
 maximumSolverTimePerAttempt_s = hs3Defaults.MaximumSolveTime;
 for orderIndex = 1:numel(seedOrder)
     % Order affects runtime, not the acceptance rules. Valid candidates are
@@ -425,7 +448,7 @@ for orderIndex = 1:numel(seedOrder)
         numel(seedOrder), "candidate work complete");
 end
 
-%% Section 4: Select Or Return Diagnosable Failure
+%% Section 5: Select Or Return Diagnosable Failure
 
 % Selection never trusts solver exit status alone. Only independently
 % validated candidates are eligible. If none qualify, retain search and solve
@@ -438,7 +461,9 @@ result.SearchDiagnostics.FirstValidatedMotionTime_s = firstValidatedMotionTime_s
 result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
 validatedIndices = find([seedSummaries.ValidationPassed]).';
 result.SearchDiagnostics.ValidatedCandidateCount = numel(validatedIndices);
-result.SearchDiagnostics.Hs3ElapsedTime_s = toc(planningTimer) - stageTiming.TopologyElapsedTime_s;
+result.SearchDiagnostics.Hs3ElapsedTime_s = max(0, ...
+    stageTiming.MotionSolvingElapsedTime_s - ...
+    result.SearchDiagnostics.RuckigElapsedTime_s);
 if isempty(validatedIndices)
     if gridDiagnostics.StaticNoPathCertified
         result.Message = "The exact static visibility graph exhausted all " + ...
@@ -484,8 +509,190 @@ result = obstacleAvoidance.planner.stageTiming( ...
 printPlannerProgress(options.Verbose, 1, 1, "planning complete");
 end
 
+%% Section 6: Local Functions
+
+function [result, stageTiming, handled] = tryObstacleFreeRuckig( ...
+        result, summaryTemplate, obstacles, initialState, goalState, ...
+        limits, options, stageTiming)
+% Route only obstacle-free, fixed-position requests to the exact engine.
+% Unsupported switching families remain eligible for the HS3 path.
+
+handled = false;
+hasMovingGoal = isfield(goalState, "targetTime_s") && ...
+    ~isempty(goalState.targetTime_s);
+if ~isempty(obstacles) || hasMovingGoal
+    return;
+end
+
+engineInitialState = struct( ...
+    "time", initialState.time_s, ...
+    "position", initialState.position_deg, ...
+    "velocity", initialState.velocity_deg_s, ...
+    "acceleration", initialState.acceleration_deg_s2);
+engineTerminalState = struct( ...
+    "position", goalState.position_deg, ...
+    "velocity", goalState.velocity_deg_s, ...
+    "acceleration", goalState.acceleration_deg_s2, ...
+    "maximumTime", goalState.time_s);
+positionLower_deg = [limits.azimuthInterval_deg(1), ...
+    limits.elevationInterval_deg(1)];
+positionUpper_deg = [limits.azimuthInterval_deg(2), ...
+    limits.elevationInterval_deg(2)];
+if options.AllowAzimuthWrapping
+    % The normalized goal may lie one turn outside the numeric interval. The
+    % canonical planner validator owns this explicit periodic-axis exception.
+    positionLower_deg(1) = -Inf;
+    positionUpper_deg(1) = Inf;
+end
+engineLimits = struct( ...
+    "maximumVelocity", limits.maxVelocity_deg_s, ...
+    "maximumAcceleration", limits.maxAcceleration_deg_s2, ...
+    "maximumJerk", limits.maxJerk_deg_s3, ...
+    "positionLower", positionLower_deg, ...
+    "positionUpper", positionUpper_deg);
+engineOptions = struct( ...
+    "TimeMode", options.GoalTimeMode, ...
+    "FinalTime", [], ...
+    "SampleTime", options.SampleTime_s, ...
+    "ConstraintTolerance", options.ConstraintTolerance, ...
+    "ArrivalTimeTolerance", options.ArrivalTimeTolerance_s, ...
+    "Verbose", options.Verbose);
+if options.GoalTimeMode == "fixedArrival"
+    engineOptions.TimeMode = "fixed";
+    engineOptions.FinalTime = goalState.time_s;
+end
+
+solveTimer = tic;
+engineResult = ruckigEngine.solve( ...
+    engineInitialState, engineTerminalState, engineLimits, engineOptions);
+ruckigElapsedTime_s = toc(solveTimer);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + ruckigElapsedTime_s;
+result.SearchDiagnostics.RuckigElapsedTime_s = ruckigElapsedTime_s;
+
+if engineResult.TerminationReason == "unsupportedSwitchingFamily"
+    return;
+end
+
+handled = true;
+result.SearchDiagnostics.AttemptedSeedCount = 1;
+result.SearchDiagnostics.ValidatedCandidateCount = 0;
+result.SearchDiagnostics.TerminationReason = engineResult.TerminationReason;
+seed = createDirectSeed(initialState, goalState, engineResult.Duration);
+result.Seeds = seed;
+summary = summaryTemplate;
+summary.SeedIndex = 1;
+summary.SeedSource = seed.Source;
+summary.RuckigAttempted = true;
+summary.RuckigValidationPassed = false;
+summary.RuckigTerminationReason = engineResult.TerminationReason;
+summary.RuckigDiagnostics = engineResult.Diagnostics;
+summary.TerminationReason = engineResult.TerminationReason;
+summary.Message = engineResult.Message;
+summary.SolverDiagnostics = engineResult.Diagnostics;
+summary.MaximumConstraintViolation = ...
+    engineResult.MaximumConstraintViolation;
+
+if ~engineResult.Success
+    result.Message = engineResult.Message;
+    result.TerminationReason = engineResult.TerminationReason;
+    result.SeedSummaries = summary;
+    result.SearchDiagnostics.SeedSummaries = summary;
+    result.SearchDiagnostics.BestPartialSeedIndex = 1;
+    return;
+end
+
+result.time_s = engineResult.time;
+result.position_deg = engineResult.position;
+result.velocity_deg_s = engineResult.velocity;
+result.acceleration_deg_s2 = engineResult.acceleration;
+result.jerk_deg_s3 = engineResult.jerk;
+result.Polynomial = convertRuckigPolynomial(engineResult.Polynomial);
+validationTimer = tic;
+result.Validation = obstacleAvoidance.validateTrajectory( ...
+    result, obstacles, initialState, goalState, limits, options);
+validationElapsedTime_s = toc(validationTimer);
+stageTiming.CollisionCheckingElapsedTime_s = ...
+    result.Validation.CollisionCheckingElapsedTime_s;
+stageTiming.FinalValidationElapsedTime_s = max(0, ...
+    validationElapsedTime_s - ...
+    result.Validation.CollisionCheckingElapsedTime_s);
+motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
+summary.OptimizerFeasible = true;
+summary.ValidationPassed = result.Validation.Passed;
+summary.CollisionFree = result.Validation.CollisionFree;
+summary.CollisionResolved = result.Validation.CollisionResolved;
+summary.MinimumClearance_deg = result.Validation.MinimumClearance_deg;
+summary.UnresolvedIntervalCount = ...
+    result.Validation.UnresolvedIntervalCount;
+summary.ArrivalTime_s = engineResult.FinalTime;
+summary.MotionDuration_s = engineResult.Duration;
+summary.MotionLength_deg = motionLength_deg;
+summary.IntegratedSquaredJerk_deg2_s5 = ...
+    engineResult.IntegratedSquaredJerk;
+summary.RuckigValidationPassed = result.Validation.Passed;
+
+if result.Validation.Passed
+    result.Success = true;
+    result.Message = ...
+        "A kinematically constrained, collision-free path was found.";
+    result.TerminationReason = "goalReached";
+    result.ArrivalTime_s = engineResult.FinalTime;
+    result.TrajectoryDuration_s = engineResult.Duration;
+    result.SelectedSeedIndex = 1;
+    result.SelectedSeed_deg = seed.position_deg;
+    result.SearchDiagnostics.ValidatedCandidateCount = 1;
+    result.SearchDiagnostics.BestPartialSeedIndex = 1;
+else
+    result.Message = "The exact obstacle-free motion failed independent " + ...
+        "planner validation. " + result.Validation.Message;
+    result.TerminationReason = "ruckigValidationFailed";
+    summary.TerminationReason = result.TerminationReason;
+    summary.Message = result.Message;
+    result.SearchDiagnostics.BestPartialSeedIndex = 1;
+end
+summary.RuckigTerminationReason = result.TerminationReason;
+summary.TerminationReason = result.TerminationReason;
+result.SeedSummaries = summary;
+result.SearchDiagnostics.SeedSummaries = summary;
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+end
+
+function seed = createDirectSeed(initialState, goalState, duration_s)
+% Create the obstacle planner's ordinary two-endpoint route record.
+position_deg = [initialState.position_deg; goalState.position_deg];
+seed = struct( ...
+    "Index", 1, ...
+    "Source", "ruckigDirect", ...
+    "position_deg", position_deg, ...
+    "tau", [0; 1], ...
+    "CorridorBoundary_deg", zeros(0, 2), ...
+    "UsesReducedGeometry", false, ...
+    "EstimatedDuration_s", duration_s, ...
+    "Length_deg", norm(diff(position_deg, 1, 1)));
+end
+
+function polynomial = convertRuckigPolynomial(enginePolynomial)
+% Translate exact-engine coefficient names at the obstacle-planner boundary.
+terminalState = enginePolynomial.TerminalState;
+polynomial = struct( ...
+    "SegmentCount", enginePolynomial.SegmentCount, ...
+    "SegmentStartTime_s", enginePolynomial.SegmentStartTime, ...
+    "SegmentDuration_s", enginePolynomial.SegmentDuration, ...
+    "FinalTime_s", enginePolynomial.FinalTime, ...
+    "positionPower_deg", enginePolynomial.positionPower, ...
+    "velocityPower_deg_s", enginePolynomial.velocityPower, ...
+    "accelerationPower_deg_s2", ...
+    enginePolynomial.accelerationPower, ...
+    "jerkPower_deg_s3", enginePolynomial.jerkPower, ...
+    "TerminalState", struct( ...
+    "position_deg", terminalState.position, ...
+    "velocity_deg_s", terminalState.velocity, ...
+    "acceleration_deg_s2", terminalState.acceleration));
+end
+
 function accepted = conservativeDirectEdgeAccepted(gridDiagnostics)
-% Read the search-owned swept-envelope certificate without querying a method.
+% Read the search-owned swept-envelope certificate without repeating geometry.
 accepted = false;
 edges_deg = gridDiagnostics.AcceptedEdges_deg;
 if isempty(edges_deg)

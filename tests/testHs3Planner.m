@@ -4,8 +4,8 @@ function tests = testHs3Planner
 %   tests = testHs3Planner
 %**************************************************************************
 % PURPOSE
-%   - Verify the standalone Hermite-Simpson planner, geometry interpolation,
-%     validation, deterministic seed behavior, moving targets, and failures.
+%   - Verify engine routing, geometry interpolation, validation, deterministic
+%     seed behavior, moving targets, and failures.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -27,12 +27,12 @@ function setupOnce(testCase)
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "hs3"));
+addpath(fullfile(repositoryRoot, "trajectory"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 testCase.TestData.Fixtures = testSupport.plannerFixtures();
 end
-function testDefaultsExposeStandaloneHs3Planner(testCase)
-% Verify that zero-input defaults expose only standalone HS3 controls.
+function testDefaultsExposeObstaclePlannerControls(testCase)
+% Verify zero-input defaults expose only maintained planner controls.
 options = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
@@ -46,8 +46,8 @@ verifyFalse(testCase, isfield(options, "AzimuthInterval_deg"));
 verifyFalse(testCase, isfield(options, "ElevationInterval_deg"));
 end
 
-function testRootAndDirectPackageCallsRunStandaloneHs3(testCase)
-% Verify the public dispatcher and its one package implementation agree.
+function testPublicAndInternalPlannerCallsAgree(testCase)
+% Verify the public entry point and its package implementation agree.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State( ...
@@ -72,6 +72,9 @@ verifyEqual(testCase, directResult.position_deg, ...
     publicResult.position_deg, "AbsTol", 1e-10);
 verifyFalse(testCase, isfield(publicResult, "SelectedMotionSource"));
 verifyFalse(testCase, isfield(publicResult.Options, "PlannerMethod"));
+verifyEqual(testCase, publicResult.Seeds(1).Source, "ruckigDirect");
+verifyTrue(testCase, publicResult.SeedSummaries(1).RuckigAttempted);
+verifyFalse(testCase, publicResult.SeedSummaries(1).Hs3Attempted);
 end
 
 function testStandaloneSuccessAndFailureHaveNoCompactComposition(testCase)
@@ -98,8 +101,8 @@ verifyFalse(testCase, isfield(success, "CompositionDiagnostics"));
 verifyFalse(testCase, isfield(failure, "CompositionDiagnostics"));
 verifyEqual(testCase, fieldnames(success), fieldnames(failure));
 end
-function testObstacleFreeEarliestUsesBoundedFixedSearch(testCase)
-% Verify a distinct direct request uses the finer convex arrival bracket.
+function testObstacleFreeEarliestUsesRuckig(testCase)
+% Verify exact switching owns a fixed-target request without obstacles.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [-3 1], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State( ...
@@ -113,14 +116,33 @@ result = obstacleAvoidance.planTrajectory( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, ...
     result.Validation.Message);
-verifyEqual(testCase, result.Polynomial.SegmentCount, ...
-    2 * options.CollocationSegmentCount);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyEqual(testCase, ...
-    summary.Hs3SolverDiagnostics.ConstraintRepresentation, ...
-    "linearFixedTime");
-verifyLessThanOrEqual(testCase, summary.RelinearizationCount, 14);
+verifyEqual(testCase, result.Seeds(result.SelectedSeedIndex).Source, ...
+    "ruckigDirect");
+verifyTrue(testCase, summary.RuckigAttempted);
+verifyTrue(testCase, summary.RuckigValidationPassed);
+verifyFalse(testCase, summary.Hs3Attempted);
 verifyLessThan(testCase, result.ArrivalTime_s, 5.72);
+end
+function testObstacleFreeInfeasibleArrivalDoesNotSelectSeed(testCase)
+% Keep an attempted direct seed diagnostic without presenting it as selected.
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [0 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    1, [1 -2], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [10 20], [10 20], [1 2]);
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, fixedOptions());
+
+verifyFalse(testCase, result.Success);
+verifyEqual(testCase, result.TerminationReason, "fixedTimeBelowMinimum");
+verifyEqual(testCase, result.SelectedSeedIndex, 0);
+verifyEmpty(testCase, result.SelectedSeed_deg);
+verifyEqual(testCase, numel(result.Seeds), 1);
+verifyTrue(testCase, result.SeedSummaries(1).RuckigAttempted);
+verifyFalse(testCase, result.SeedSummaries(1).RuckigValidationPassed);
+verifyFalse(testCase, result.SeedSummaries(1).Hs3Attempted);
 end
 function testObstacleFreeDirectMotionPreservesShortestLine(testCase)
 % Reproduce the saved diagonal direct case without accepting axis-phase bend.
@@ -146,6 +168,8 @@ verifyLessThanOrEqual(testCase, max(deviation_deg), 1e-8);
 verifyEqual(testCase, motionLength_deg, norm(displacement_deg), ...
     "AbsTol", 1e-8);
 verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 39.54);
+verifyEqual(testCase, result.Seeds(result.SelectedSeedIndex).Source, ...
+    "ruckigDirect");
 end
 function testCertifiedDirectObstacleMotionPreservesShortestLine(testCase)
 % Use the exact fixed-time search for a certified static direct route.
@@ -254,12 +278,12 @@ verifyLessThan(testCase, min(result.velocity_deg_s(:, 1)), -1e-3);
 verifyGreaterThan(testCase, motionLength_deg, 1 + 1e-3);
 end
 function testWorkspaceIntervalsBelongToLimits(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testWorkspaceIntervalsBelongToLimits");
 end
 
 function testOldWorkspaceOptionGivesMigrationError(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testOldWorkspaceOptionGivesMigrationError");
 end
 
@@ -275,7 +299,7 @@ verifyEmpty(testCase, strtrim(quietText));
 options.Verbose = true;
 verboseText = evalc("obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);");
 verifyNotEmpty(testCase, ...
-    regexp(verboseText, '\[ObstacleAvoidance\]', 'once'));
+    regexp(verboseText, '\[Planner\]', 'once'));
 verifyEmpty(testCase, regexp(verboseText, ...
     '(?m)^\[HS3\]|^\[first motion', 'once'));
 end
@@ -326,7 +350,7 @@ isOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
 verifyFalse(testCase, isOccupied);
 end
 function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints");
 end
 
@@ -374,17 +398,17 @@ verifyFalse(testCase, obstacleAvoidance.search.seedEnvelopeContainsObstacles( ..
     concaveBoundary_deg, inside, 0));
 end
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testConstantJerkPolynomialPassesIndependentDynamics");
 end
 
 function testUnrelatedPolynomialCannotValidateSampledHistory(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testUnrelatedPolynomialCannotValidateSampledHistory");
 end
 
 function testShiftedPolynomialTimeCannotHideInitialTime(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testShiftedPolynomialTimeCannotHideInitialTime");
 end
 
@@ -404,19 +428,21 @@ verifyEqual(testCase, result.acceleration_deg_s2(1, :), ...
 verifyEqual(testCase, result.time_s(end), 8, "AbsTol", 1e-7);
 verifyEqual(testCase, result.velocity_deg_s(end, :), ...
     goalState.velocity_deg_s, "AbsTol", 1e-6);
-verifyHs3Solved(testCase, result, "linearFixedTime");
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyTrue(testCase, summary.RuckigAttempted);
+verifyFalse(testCase, summary.Hs3Attempted);
 end
 function testIntegratedJerkGradientMatchesDirectionalDifference(testCase)
 % Verify the exact variable-time gradient and fixed-time Hessian.
 segmentCount = 3;
 decision = [linspace(-1, 1, 2 * (2 * segmentCount + 1)).'; 8];
 direction = cos((1:numel(decision)).');
-[~, gradient] = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+[~, gradient] = hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     decision, true, 8, segmentCount, 1, 2);
 step = 1e-6;
-forward = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+forward = hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     decision + step * direction, true, 8, segmentCount, 1, 2);
-backward = hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+backward = hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     decision - step * direction, true, 8, segmentCount, 1, 2);
 verifyEqual(testCase, gradient.' * direction, ...
     (forward - backward) / (2 * step), "RelTol", 1e-8);
@@ -424,13 +450,13 @@ verifyEqual(testCase, gradient.' * direction, ...
 fixedDecision = decision(1:end - 1);
 fixedDirection = direction(1:end - 1);
 [fixedValue, fixedGradient, fixedHessian] = ...
-    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+    hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision, false, 8, segmentCount, 1, 2);
 [~, forwardGradient] = ...
-    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+    hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision + step * fixedDirection, false, 8, segmentCount, 1, 2);
 [~, backwardGradient] = ...
-    hs3Internal.polynomial.evaluateIntegratedSquaredJerk( ...
+    hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
     fixedDecision - step * fixedDirection, false, 8, segmentCount, 1, 2);
 verifyEqual(testCase, fixedValue, ...
     0.5 * fixedDecision.' * fixedHessian * fixedDecision, ...
@@ -451,7 +477,9 @@ result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, o
 verifyTrue(testCase, result.Success, result.Message);
 verifyLessThan(testCase, result.time_s(end), goalState.time_s);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyHs3Solved(testCase, result, "linearFixedTime");
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyTrue(testCase, summary.RuckigAttempted);
+verifyFalse(testCase, summary.Hs3Attempted);
 jerkRampTime_s = limits.maxAcceleration_deg_s2(1) / ...
     limits.maxJerk_deg_s3(1);
 constantAccelerationTime_s = (-1.5 + sqrt(16.25)) / 2;
@@ -461,7 +489,7 @@ verifyEqual(testCase, result.time_s(end), independentMinimumTime_s, ...
     "AbsTol", 0.25);
 end
 function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testEarliestGoalIsNotRejectedByHorizonOccupancy");
 end
 
@@ -482,22 +510,22 @@ end
 verifyTrue(testCase, didThrow);
 end
 function testMovingGoalInterpolationMethodMustBeScalar(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testMovingGoalInterpolationMethodMustBeScalar");
 end
 
 function testMovingGoalHistoryRequiresTwoSamples(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testMovingGoalHistoryRequiresTwoSamples");
 end
 
 function testInterceptWrapperTextOptionsMustBeScalar(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testInterceptWrapperTextOptionsMustBeScalar");
 end
 
 function testInterceptWrapperRequiresTwoTargetSamples(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testInterceptWrapperRequiresTwoTargetSamples");
 end
 
@@ -510,7 +538,10 @@ options = fixedOptions();
 options.CollocationSegmentCount = 4;
 options.MaximumCollocationSegmentCount = 8;
 options.MaximumMeshRefinementPasses = 1;
-result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+farObstacle = testCase.TestData.Fixtures.RectangleObstacle( ...
+    [0 8], [-100 -90 70 80], 0);
+result = obstacleAvoidance.planTrajectory( ...
+    farObstacle, initialState, goalState, limits, options);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyGreaterThanOrEqual(testCase, result.Polynomial.SegmentCount, 4);
@@ -520,7 +551,7 @@ verifyEqual(testCase, result.Polynomial.SegmentCount, ...
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
 function testStaticObstacleProducesOppositeSideSeeds(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testStaticObstacleProducesOppositeSideSeeds");
 end
 
@@ -739,12 +770,12 @@ occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
 verifyEqual(testCase, occupied, [false; true]);
 end
 function testDeformingObstacleUsesThePlannerPath(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testDeformingObstacleUsesThePlannerPath");
 end
 
 function testTopologyChangeUsesAStationaryConservativeUnion(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testTopologyChangeUsesAStationaryConservativeUnion");
 end
 
@@ -910,7 +941,7 @@ verifyGreaterThan(testCase, ...
     seed.position_deg(2, :)), 0.1);
 end
 
-function testEarlySolverFailureRetainsMotionLengthSchema(testCase)
+function testEarlySolverFailureRetainsMotionLengthFormat(testCase)
 % Check that early failures keep all fixed-quality diagnostic fields.
 initialState = testCase.TestData.Fixtures.State( ...
     0, [0 0], [0 0], [0 0]);
@@ -932,54 +963,54 @@ verifyEqual(testCase, candidate.MotionLength_deg, Inf);
 end
 
 function testAzimuthWrappingChangesThePhysicalRequest(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testAzimuthWrappingChangesThePhysicalRequest");
 end
 
 function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry");
 end
 
 function testPlanningTimeOptionIsRemoved(testCase)
 % Verify the removed wall-clock option is ignored with one clear warning.
-verifyWarning(testCase, @() obstacleAvoidance.input.resolveHs3Options( ...
+verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
     struct("MaximumPlanningTime_s", 7)), ...
     "planTrajectory:UnknownOptions");
 end
 
 function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testEarlyPlannerFailureKeepsValidationFieldOrder");
 end
 
 function testBetweenNodeCollisionFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testBetweenNodeCollisionFailsValidation");
 end
 
 function testObstacleActivationAtTerminalTimeFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testObstacleActivationAtTerminalTimeFailsValidation");
 end
 
 function testBetweenNodeVelocityViolationFailsValidation(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testBetweenNodeVelocityViolationFailsValidation");
 end
 
 function testSafetyMarginIsAppliedExactlyOnce(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testSafetyMarginIsAppliedExactlyOnce");
 end
 
 function testTranslatedHistoryReusesExactProtectedShape(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testTranslatedHistoryReusesExactProtectedShape");
 end
 
 function testDeterministicRepeatedRun(testCase)
-testSupport.verifySharedPlannerContract( ...
+testSupport.verifySharedPlannerRequirement( ...
     testCase, "testDeterministicRepeatedRun");
 end
 

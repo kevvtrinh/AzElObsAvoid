@@ -8,7 +8,7 @@ function [obstacles, initialState, goalState, limits] = ...
 %       obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
-%   - Normalize the planner request once for every motion method while
+%   - Normalize the planner request once before route or motion work while
 %     preserving the public planTrajectory input rules and error behavior.
 %**************************************************************************
 % INPUTS
@@ -33,7 +33,7 @@ function [obstacles, initialState, goalState, limits] = ...
 %   - goalState (normalized scalar struct)
 %   - limits (normalized scalar struct)
 %       Numeric vectors have stable orientation and double precision.
-%       Invalid contracts throw the established planTrajectory errors.
+%       Invalid requirements throw the established planTrajectory errors.
 %**************************************************************************
 % UNITS
 %   - Position and workspace intervals are degrees; time is seconds;
@@ -46,8 +46,8 @@ function [obstacles, initialState, goalState, limits] = ...
 % state vectors use one row per physical axis. Check sizes and finite values
 % here so later errors do not appear inside search or optimization.
 
-% All supported obstacle container forms are flattened before any planner
-% method sees them. Endpoint processing then uses the same loop for the start
+% All supported obstacle container forms are flattened before planning.
+% Endpoint processing then uses the same loop for the start
 % and goal. Thus, both states use the same normalization rules.
 obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 states = {initialState, goalState};

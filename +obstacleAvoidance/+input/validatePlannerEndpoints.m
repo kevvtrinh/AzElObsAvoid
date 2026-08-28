@@ -8,7 +8,7 @@ function [feasible, message, reason] = validatePlannerEndpoints( ...
 %**************************************************************************
 % PURPOSE
 %   - Reject endpoint geometry, dynamics, timing, or workspace failures
-%     before a motion method performs search or optimization.
+%     before route search or trajectory optimization begins.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected-obstacle array)

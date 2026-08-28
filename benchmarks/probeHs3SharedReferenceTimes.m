@@ -37,12 +37,13 @@ referenceTable = readtable( ...
     fullfile(referenceFolder, "hs3_slew_reference.csv"), ...
     "TextType", "string", "VariableNamingRule", "preserve");
 
-hs3Folder = fullfile(repositoryRoot, "hs3");
-pathWasPresent = contains(path, hs3Folder);
+trajectoryFolder = fullfile(repositoryRoot, "trajectory");
+pathWasPresent = contains(path, trajectoryFolder);
 if ~pathWasPresent
-    addpath(hs3Folder);
+    addpath(trajectoryFolder);
 end
-pathCleanup = onCleanup(@() restoreHs3Path(hs3Folder, pathWasPresent));
+pathCleanup = onCleanup(@() restoreTrajectoryPath( ...
+    trajectoryFolder, pathWasPresent));
 
 manuallyRun = false; %#ok<NASGU>
 caseToRun = "defineOnly"; %#ok<NASGU>
@@ -141,7 +142,7 @@ limits = struct( ...
     "positionUpper", reshape( ...
     testCase.PositionBounds(:, 2), 1, dimensionCount));
 options.FinalTime = finalTime_s;
-trajectory = solveTrajHS3(initialState, terminalState, limits, options);
+trajectory = hs3Engine.solve(initialState, terminalState, limits, options);
 end
 
 function maximumViolation = measureDenseViolation(trajectory, testCase)
@@ -153,7 +154,7 @@ end
 denseTime_s = linspace( ...
     trajectory.time(1), trajectory.time(end), 20001).';
 [~, position, velocity, acceleration, jerk] = ...
-    hs3Internal.polynomial.evaluateTrajectoryPolynomial( ...
+    hs3Engine.polynomial.evaluateTrajectoryPolynomial( ...
     trajectory.Polynomial, denseTime_s);
 positionLower = reshape(testCase.PositionBounds(:, 1), 1, []);
 positionUpper = reshape(testCase.PositionBounds(:, 2), 1, []);
@@ -170,9 +171,9 @@ endpointError = [ ...
 maximumViolation = max([0; violation(:); abs(endpointError(:))]);
 end
 
-function restoreHs3Path(hs3Folder, pathWasPresent)
+function restoreTrajectoryPath(trajectoryFolder, pathWasPresent)
 % Remove only the temporary engine path entry added by this diagnostic.
 if ~pathWasPresent
-    rmpath(hs3Folder);
+    rmpath(trajectoryFolder);
 end
 end

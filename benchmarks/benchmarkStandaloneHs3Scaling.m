@@ -141,7 +141,7 @@ plannerTimer = tic;
 result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, plannerOptions);
 plannerWallTime_s = toc(plannerTimer);
-enforcePlannerContract(result);
+enforcePlannerRequirement(result);
 
 validation = obstacleAvoidance.validateTrajectory();
 validationAttempted = false;
@@ -173,7 +173,7 @@ record.PlannerResult = result;
 record.IndependentValidation = validation;
 end
 
-function enforcePlannerContract(result)
+function enforcePlannerRequirement(result)
 % Reject obsolete dispatch and alternate-motion provenance fields.
 if isfield(result, "SelectedMotionSource") || ...
         isfield(result.Options, "PlannerMethod")

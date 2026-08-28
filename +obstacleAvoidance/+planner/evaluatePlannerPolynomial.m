@@ -56,5 +56,5 @@ if nargin < 3
     segmentIndex = [];
 end
 [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3] = ...
-    hs3Internal.polynomial.evaluateTrajectoryPolynomial(enginePolynomial, time_s, segmentIndex);
+    hs3Engine.polynomial.evaluateTrajectoryPolynomial(enginePolynomial, time_s, segmentIndex);
 end

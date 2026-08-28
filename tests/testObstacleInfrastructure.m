@@ -26,11 +26,11 @@ function setupOnce(testCase)
 % Add the repository root for path-based test execution.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "hs3"));
+addpath(fullfile(repositoryRoot, "trajectory"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
 
-function testCombinePreservesCanonicalOrderAndSchema(testCase)
+function testCombinePreservesCanonicalOrderAndFormat(testCase)
 % Verify every supported container form has one canonical interpretation.
 firstObstacle = rectangleObstacle("first", [0; 4], [-2 0 -1 1]);
 secondObstacle = rectangleObstacle("second", [0; 4], [1 3 -2 2]);

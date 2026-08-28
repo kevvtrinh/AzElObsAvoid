@@ -5,7 +5,7 @@ function inequality = seedCorridorInequality(polynomial, corridor)
 %**************************************************************************
 % PURPOSE
 %   - Convert continuous outside-corridor requirements into finite
-%     inequalities shared by all planner methods.
+%     inequalities used by topology-constrained motion solves.
 %**************************************************************************
 % INPUTS
 %   - polynomial (scalar planner polynomial struct)
@@ -47,7 +47,7 @@ projectionPower_deg = normal(:, 1) .* azimuthPower_deg + ...
 
 % Bernstein coefficients bound the complete continuous projection on each
 % segment, so this is deliberately stronger than sampled feasibility.
-projectionBernstein_deg = hs3Internal.polynomial.convertPowerToBernstein( ...
+projectionBernstein_deg = hs3Engine.polynomial.convertPowerToBernstein( ...
     projectionPower_deg.');
 offset_deg = [corridor.BoundaryOffset_deg] + [corridor.Clearance_deg];
 inequalityMatrix = offset_deg - projectionBernstein_deg;

@@ -1,14 +1,15 @@
 # Obstacle-Avoidance Trajectory Planner
 
 This branch provides one public obstacle-avoidance planner for trajectories in
-the azimuth/elevation frame. It uses a third-order Hermite-Simpson (HS3)
-transcription solved with `fmincon`. The `obstacleAvoidance` namespace owns
-input, obstacles, geometry, search, planning, and plotting. The
-dimension-neutral engine remains a separate normal `hs3/` product folder.
+the azimuth/elevation frame. The `obstacleAvoidance` namespace owns inputs,
+obstacles, geometry, search, engine selection, validation, and plotting.
+Dimension-neutral Ruckig-derived and Hermite-Simpson (HS3) engines live as
+independent packages under `trajectory/`.
 
 A successful result is accepted only after canonical independent validation.
-The resolved options and search diagnostics describe the single maintained
-planner without a dispatch selector or alternate-motion provenance field.
+The obstacle planner calls Ruckig directly for eligible obstacle-free fixed
+targets. Obstacle-constrained and moving-target requests use topology search
+and HS3. Neither trajectory engine contains Az/El or obstacle knowledge.
 
 The HS3 implementation descends from the `plan-325` snapshot at commit
 `5a067112a9f880d015f52fb97538a99010871478`. Planner and engine ownership is
@@ -16,7 +17,7 @@ summarized below in this repository-level guide.
 
 ## Quick start
 
-The zero-input call returns HS3 defaults:
+The zero-input call returns obstacle-planner defaults:
 
 ```matlab
 options = obstacleAvoidance.planTrajectory();
@@ -60,7 +61,7 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
-## Public planning contract
+## Public planning requirement
 
 The public fixed-goal interface is:
 
@@ -104,12 +105,13 @@ their defaults are `[-180 180]` and `[-90 90]` degrees.
 
 ### Options
 
-Call `obstacleAvoidance.planTrajectory()` or `obstacleAvoidance.planTrajectory("hs3")` to inspect the exact HS3
-options. Partial override structures are accepted, and empty fields retain
-their defaults.
+Call `obstacleAvoidance.planTrajectory()` to inspect the exact planner options.
+Partial override structures are accepted, and empty fields retain their
+defaults.
 
-HS3 supports fixed-arrival and earliest-arrival requests through
-`GoalTimeMode`. It uses bounded deterministic topology proposals, so success
+Fixed-arrival and earliest-arrival requests use `GoalTimeMode`. The obstacle
+planner uses bounded deterministic topology proposals when geometry is present,
+so success
 means that an independently validated motion was found by the configured
 finite search. It is not a proof of global completeness or optimality.
 
@@ -125,7 +127,7 @@ result = obstacleAvoidance.planMovingTargetIntercept( ...
     obstacles, initialState, targetMotion, limits, interceptOptions);
 ```
 
-Configure HS3 inside `PlannerOptions`:
+Configure obstacle planning inside `PlannerOptions`:
 
 ```matlab
 interceptOptions = obstacleAvoidance.planMovingTargetIntercept();
@@ -157,12 +159,20 @@ measured total.
 
 Expected no-path, work-limit, and dynamic-infeasibility outcomes return
 `Success=false` with a recognized termination reason and retained diagnostics.
-Invalid input contracts throw errors. Use
+Invalid input requirements throw errors. Use
 `obstacleAvoidance.validateTrajectory` for independent full-trajectory
 validation and `obstacleAvoidance.plotting.plotTrajectory` to visualize a
 returned motion or preserved failure diagnostics.
 
-## HS3 behavior and limitations
+## Engine routing and limitations
+
+- Ruckig is selected only for an obstacle-free fixed-position target. It
+  creates exact jerk-switching state-to-state motion without route search.
+- A request outside the Ruckig switching family continues through the HS3 path.
+  Physical infeasibility and independent-validation failures remain visible.
+- Moving targets and every nonempty obstacle field use topology search and HS3.
+- Routing and Ruckig-to-Az/El result translation are local to the obstacle
+  planner; no neutral trajectory wrapper exists.
 
 - HS3 uses an actual third-order Hermite-Simpson finite-jerk transcription
   with `fmincon`.
@@ -197,48 +207,52 @@ returned motion or preserved failure diagnostics.
 
 ```text
 +obstacleAvoidance/                 obstacle-avoidance product namespace
-|-- planTrajectory.m                public HS3 planning entry point
+|-- planTrajectory.m                public obstacle-planning entry point
 |-- planMovingTargetIntercept.m     chronological intercept adapter
 |-- validateTrajectory.m            public independent validation
-|-- +input/                         request, endpoint, and option contracts
+|-- +input/                         request, endpoint, and option requirements
 |-- +obstacles/                     construction, queries, and history
 |-- +geometry/                      boundary and clearance primitives
 |-- +search/                        topology, visibility, and corridors
-|-- +planner/                       orchestration and HS3 adaptation
+|-- +planner/                       engine routing and result assembly
 `-- +plotting/                      public result-driven plotting
 
-hs3/                                dimension-neutral motion product
-|-- solveTrajHS3.m                  public trajectory entry point
-`-- +hs3Internal/                   neutral implementation ownership
-    |-- +polynomial/                reconstruction, evaluation, and basis math
-    |-- +constraints/               continuous and fixed constraint assembly
-    |-- +solver/                    fixed/free-time optimization orchestration
-    |-- defaultOptions.m            engine-wide option defaults
-    `-- validate.m                  independent engine-result validation
+trajectory/                         independent dimension-neutral engines
+|-- +ruckigEngine/                  exact jerk-switching implementation
+|   |-- solve.m                     direct Ruckig-derived entry point
+|   `-- +internal/                  Ruckig normalization and validation
+|-- +hs3Engine/                     collocation implementation
+|   |-- solve.m                     direct HS3 entry point
+|   |-- +polynomial/                reconstruction and basis math
+|   `-- +constraints/               continuous constraint assembly
+`-- THIRD_PARTY_NOTICES.txt         source and publication notices
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
-tests/                              automated contracts and regressions
+tests/                              automated requirements and regressions
 benchmarks/                         focused scaling evidence
 benchmark.csv                       chronological measured example records
 branch_assessment.md                strengths, weaknesses, and limitations
 verification.md                     commands and historical evidence
 ```
 
-Add the repository root for `obstacleAvoidance` and the neutral HS3 folder:
+Add the repository root and the trajectory package parent:
 
 ```matlab
 repositoryRoot = pwd;
 addpath( ...
     repositoryRoot, ...
-    fullfile(repositoryRoot, "hs3"));
+    fullfile(repositoryRoot, "trajectory"));
 ```
 
-The generic HS3 engine is directly callable with dimension-neutral state and
-limit records:
+Both engines are directly callable with dimension-neutral state and limit
+records:
 
 ```matlab
-trajectory = solveTrajHS3( ...
+ruckigTrajectory = ruckigEngine.solve( ...
+    initialState, terminalState, limits, ruckigOptions);
+
+hs3Trajectory = hs3Engine.solve( ...
     initialState, terminalState, limits, options, pathConstraints);
 ```
 
@@ -257,7 +271,7 @@ callers as follows:
 | `azElObstacles.combineAzElObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
 | `azElObstacles.queryAzElTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
 | `plotAzElMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
-| `hs3.solve(...)` | `solveTrajHS3(...)` |
+| `hs3.solve(...)` | `hs3Engine.solve(...)` |
 
 ## Maintained examples
 
@@ -265,11 +279,11 @@ Add the example folder alongside the two production paths:
 
 ```matlab
 addpath(repositoryRoot, ...
-    fullfile(repositoryRoot, "hs3"), ...
+    fullfile(repositoryRoot, "trajectory"), ...
     fullfile(repositoryRoot, "examples"));
 ```
 
-Run a headless example with HS3:
+Run a headless obstacle-avoidance example:
 
 ```matlab
 result = exampleObstacleAvoidance(struct( ...
@@ -298,7 +312,7 @@ No network service, learned model, or external planner process is required.
 
 Exact measurements, source revisions, and known limitations remain in
 `benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical
-records predate the HS3-only branch and therefore name implementations that
+records predate the separated-engine architecture and therefore name implementations that
 are no longer active. Treat those rows only as evidence for the recorded
 revision; they do not describe the current public interface or prove current
 correctness or performance.

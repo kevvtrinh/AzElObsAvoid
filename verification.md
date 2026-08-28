@@ -316,8 +316,8 @@ plots and animation disabled. Jerk was enabled in every case.
 - Removed `examples/exampleAzElInteractiveSandbox.m`; 18 maintained example
   functions remain.
 - Removed the root guide's stale links and interactive-example requirement, and
-  removed the now-dead sandbox exclusion from `testExampleContracts`.
-- `testExampleContracts` passed 6/6 in 0.731870 seconds, its modified source
+  removed the now-dead sandbox exclusion from `testExampleRequirements`.
+- `testExampleRequirements` passed 6/6 in 0.731870 seconds, its modified source
   had zero Code Analyzer findings, and `git diff --check` passed.
 - No maintained example was executed for this documentation/manual-tool
   cleanup, so no row was appended to `benchmark.csv`.
@@ -432,7 +432,7 @@ plots and animation disabled. Jerk was enabled in every case.
   planner, obstacle constructor, plotter, and `solveTrajHS3` from their new
   owners.
 - Focused tests: architecture, obstacle infrastructure, and standalone HS3
-  passed 29/29. Example-contract tests passed 6/6 after updating hashes for
+  passed 29/29. Example-requirement tests passed 6/6 after updating hashes for
   package-qualified calls; protected scenario geometry was not changed.
 - Full tests: 108/108 passed in 63.545976 seconds.
 - Headless examples: all 18 maintained examples ran serially in one MATLAB
@@ -621,7 +621,7 @@ plots and animation disabled. Jerk was enabled in every case.
   mesh pass, and their arrival difference is 4.525 microseconds.
 - Full tests: 82/82 passed, zero failed or incomplete, in 50.245827 seconds.
   An earlier 81/82 invocation intentionally does not count because its harness
-  suppressed the warning required by the sole failing warning-contract test.
+  suppressed the warning required by the sole failing warning-requirement test.
 - Maintained examples: all 18 ran serially in fresh MATLAB processes after the
   final ordering fix. Exact rows are appended under
   `7661321+slack-quality-worktree` in `benchmark.csv`; 17 successes and the
@@ -761,7 +761,7 @@ plots and animation disabled. Jerk was enabled in every case.
   encode. Final serial runs preserve moving barrier at 10.2314453125 seconds
   and opening-U at 11.8560791016 seconds; both select direct-wait seeds and pass
   independent validation.
-- Full maintained matrix: 18/18 example outcomes match their contracts in
+- Full maintained matrix: 18/18 example outcomes match their requirements in
   separate serial MATLAB processes: 17 validated successes plus the validated
   expected no-path result. Exact per-example geometry, duration, certificates,
   termination, and wall time are appended to `benchmark.csv` under
@@ -769,7 +769,7 @@ plots and animation disabled. Jerk was enabled in every case.
 - Test command: `runtests('tests')` with only MATLAB's singular-matrix warning
   IDs suppressed. Result: 81/81 passed, zero failed or incomplete, in
   52.4952677 seconds. A prior run with all warnings disabled produced one
-  expected test-harness failure because the unknown-option warning contract
+  expected test-harness failure because the unknown-option warning requirement
   was intentionally hidden; that run is not counted as code evidence.
 - Static command: recursive `checkcode(..., '-id')` over all MATLAB sources.
   Result: zero messages across 84 files. The three modified HS3 solver files
@@ -874,7 +874,7 @@ plots and animation disabled. Jerk was enabled in every case.
 Each maintained example ran in its own MATLAB process. Runs were serial.
 Headless controls disabled plots, animation, and pauses.
 
-## Implemented contract changes
+## Implemented requirement changes
 
 - Workspace bounds moved from planner options to
   `limits.azimuthInterval_deg` and `limits.elevationInterval_deg`.
@@ -984,7 +984,7 @@ increase was accepted.
 - Code Analyzer: 54 MATLAB files and 0 messages.
 - `git diff --check`: passed.
 - MATLAB source lines longer than 100 characters: 0.
-- Focused jerk-contract tests: 4 passed, 0 failed.
+- Focused jerk-requirement tests: 4 passed, 0 failed.
 
 ## Superseded audit artifacts and cleanup decisions
 
@@ -997,7 +997,7 @@ now reflect the maintained implementation rather than that historical audit.
 
 `certifySeedCorridor` remains because the production validator calls it.
 `RandomSeed` remains for public compatibility because removing it would break
-the result schema. Polynomial sampling remains a measurement-first cleanup
+the result format. Polynomial sampling remains a measurement-first cleanup
 candidate. The repository-owned `repository-cleanup` skill remains under the
 parent workspace guidance directory rather than inside this project tree.
 
@@ -1287,7 +1287,7 @@ objective is already integrated squared jerk.
 | `exampleUSOutlineExtremeVisibility` | earliest | 1/1 | 22.239463508699 | 26.617251754385 | 6.683971648809 | 1/1 | 36.7603481 | `goalReached` |
 
 Every successful row passed collision and applicable kinematic certificates.
-The no-path row retained its independently validated failure schema and two
+The no-path row retained its independently validated failure format and two
 rejected transitions. Earliest selected HS3 solutions are about one
 millisecond earlier than the preceding jerk-relaxed results. Some are wider:
 dense motion increases 4.86 percent, 40 circles 2.57 percent, wide U 1.18
@@ -1353,7 +1353,7 @@ metric was bit exact to the preceding feasibility-recovery sweep. The full
 rows are appended to `benchmark.csv` under source tag
 `2074c14+linear-fixed-constraints-worktree`.
 
-The sweep initially exposed a pre-planning example-contract failure:
+The sweep initially exposed a pre-planning example-requirement failure:
 `exampleMovingDeformingUSOutlineVisibility` read `Verbose` from a partial
 planner-options structure. The shared example resolver now materializes the
 single public planner default structure before applying scenario and user
@@ -1562,7 +1562,7 @@ Research-only prototypes covered straight, 45-degree, 90-degree, S-turn,
 horseshoe, and five-alternation routes. Both were exactly C3 in their scoped
 checks. The quintic B-spline passed the maintained polynomial validator. The
 fixed-stop septic Bezier interpolated every route vertex but was incompatible
-with that quintic schema and forced zero velocity, acceleration, and jerk at
+with that quintic format and forced zero velocity, acceleration, and jerk at
 every vertex.
 
 Across five warm repeats, quintic motion durations ranged from 8.944 to 18.257
@@ -1611,7 +1611,7 @@ or optimality claim is made.
 - Code Analyzer returned zero messages for both benchmark harnesses, the
   shared scenario constructor, the quintic constructor and optimizer, and all
   retained research tests.
-- The focused HS3 diagnostic schema test passed 1 of 1 in 5.4625 seconds.
+- The focused HS3 diagnostic format test passed 1 of 1 in 5.4625 seconds.
 - The retained optimizer tests passed 3 of 3 in 3.9494 seconds after one test
   exposed and caused correction of a non-monotone route-size assumption.
 - A maintained alternating-slalom headless run passed planner and independent
@@ -1667,7 +1667,7 @@ MATLAB processes too rapidly; every process failed during MATLAB startup with
 `File system inconsistency` before executing example code. Two later reporting
 wrappers also used stale result/diagnostic field names after the example ran;
 the affected forty-circle and no-path cases were rerun successfully with the
-current schema. These environment/reporting failures are not counted as
+current format. These environment/reporting failures are not counted as
 example passes or planner failures.
 
 `exampleFourAcceleratingCircles` emitted extensive `Matrix is close to
@@ -1723,8 +1723,8 @@ continuous clearance, and less than 95.4536 seconds total wall time.
 | `MaximumNormalOffset_deg=5` | 14 | 12 | 145 | 98.0729 | -0.353568844 | fail | reject: worse clearance/runtime |
 
 The initially proposed `DurationWeight=0` call was rejected by input
-validation before planning because the option contract requires a positive
-weight. It was corrected once to the contract-valid 0.01 value; no parameter
+validation before planning because the option requirement requires a positive
+weight. It was corrected once to the requirement-valid 0.01 value; no parameter
 sweep followed.
 
 The exact default recovery command then reproduced 14 reduced vertices,
@@ -2257,7 +2257,7 @@ Repeated nearest-boundary projection was consolidated through the maintained
 `pointPolygonClearance` invariant in static corridor construction, dynamic
 seed expansion, and route-clearance expansion. One-use maximum, empty-record,
 best-partial, and static-geometry helpers were inlined without changing their
-contracts. Focused U, hairpin, moving/deforming, obstacle-free, and no-path
+requirements. Focused U, hairpin, moving/deforming, obstacle-free, and no-path
 runs remained independently valid; U recovered at
 `23.801121658982 s`, and the hairpin remained
 `164.828287993153 s` with `0.02 deg` certified clearance.
@@ -2312,7 +2312,7 @@ machine load.
 
 All 18 maintained examples ran in fresh processes with plots disabled. The
 17 successes passed independent example validation, the expected no-path
-case returned `noValidatedSeed` and passed its failure contract, and every
+case returned `noValidatedSeed` and passed its failure requirement, and every
 row recorded zero HS3/NLP execution. Durations were unchanged from the prior
 matrix except the U improvement.
 
@@ -2607,7 +2607,7 @@ All 17 expected successes passed the examples' independent validation,
 continuous collision checks, and kinematic certificates. Every success
 selected `corridorQuintic`; no production HS3 implementation exists. The
 expected no-path case returned `noValidatedSeed` and passed its stable failure
-contract. Exact CSV rows are under source
+requirement. Exact CSV rows are under source
 `working-tree-batched-c3-final`.
 
 | Example | Frozen main duration (s) | Current duration (s) | Wall (s) |
@@ -2691,7 +2691,7 @@ visible; this is a focused coverage gain, not a completeness claim.
 
 The complete 18-example headless gate passed: 17 independently validated,
 collision-free and kinematically certified successes plus the expected
-`noValidatedSeed` contract. All 17 motion durations exactly match the frozen
+`noValidatedSeed` requirement. All 17 motion durations exactly match the frozen
 `working-tree-batched-c3-final` rows within `1e-6 s`; the measured wall sum was
 `124.039315 s` in one warmed MATLAB process and is not compared with the prior
 fresh-process wall sum. Exact rows are recorded in `benchmark.csv` under
@@ -2756,7 +2756,7 @@ fresh extreme-outline rerun restores the exact baseline metrics.
 The final 18-example gate used one fresh serial MATLAB process per example.
 All 17 expected successes passed independent validation, collision checks, and
 kinematic certificates; the expected no-path result passed its stable failure
-contract. Every successful polyline length, smoothed length, and duration is
+requirement. Every successful polyline length, smoothed length, and duration is
 exact to the pushed topology-slot evidence. The fresh-process wall sum is
 `172.6919951 s`; the moving/deforming outline remains the unfavorable wall
 outlier at `53.2656011 s`. Exact rows are in `benchmark.csv` under
@@ -2821,7 +2821,7 @@ independent continuous clearance for all four formerly failing cases.
 
 The definitive 18-example gate used one fresh serial MATLAB process per
 example. All 17 expected successes passed independent collision and kinematic
-validation, and the expected no-path result passed its stable failure contract.
+validation, and the expected no-path result passed its stable failure requirement.
 Every successful polyline length, smoothed length, and duration is exact to the
 pushed `working-tree-residual-feedback-final` rows within `1e-6`; exact new
 rows are appended to `benchmark.csv` under
@@ -2831,7 +2831,7 @@ improvement is claimed. The moving/deforming outline and extreme outline were
 the largest walls at `61.1979723 s` and `39.7610225 s`.
 
 A visible U-shaped success passed and created three figures with 522 graphics
-objects. The visible expected failure passed its example contract and created
+objects. The visible expected failure passed its example requirement and created
 two returned-diagnostic figures with 342 objects, three expanded states, and
 15 rejected transitions. MATLAB then returned Windows graphics teardown code
 `1073807364` after printing those results; a hidden retry failed before startup
@@ -2915,14 +2915,14 @@ four largest motion/search files.
 
 All 22 production MATLAB files below 100 nonblank, noncomment code lines were
 audited for textual callers. None is uncalled. Eighteen have multiple callers;
-the four single-caller files own a stable result schema or a distinct algorithm
+the four single-caller files own a stable result format or a distinct algorithm
 extracted from an already-large orchestrator. The complete rationale is in
 `short_file_rationale.md`.
 
 Text-only checks found zero local Section 0 headers, missing local-function
 purpose comments, unexplained internal loops, bare assignment continuations,
 code continuations at or below 120 characters, trailing whitespace, or
-physical-contract hash mismatches. `git diff --check` passed. Per the user's
+physical-requirement hash mismatches. `git diff --check` passed. Per the user's
 explicit instruction for this session, MATLAB tests, Code Analyzer, and
 examples were not rerun after this comments-only pass. The earlier 59/59 and
 18-example results above predate the latest comment changes and are not claimed
@@ -3049,7 +3049,7 @@ selector received static and Code Analyzer checks only.
 
 This checkpoint compares branch `325-full-suite` with the frozen
 `27070ac5fac6f90624731a753d4b029e7ecea8e5` (`27070ac`) baseline. The public
-`SearchDiagnostics.StageTiming` contract contains exactly these seven fields:
+`SearchDiagnostics.StageTiming` requirement contains exactly these seven fields:
 
 1. `TopologyElapsedTime_s`
 2. `CorridorConstructionElapsedTime_s`
@@ -3221,7 +3221,7 @@ Verification on the retained source produced:
 - the visible deforming-U.S. smoke succeeded with three visible figures;
 - the complete repository suite passed 132/132 in 133.3061309 seconds;
 - MATLAB Code Analyzer reported zero messages across 106 MATLAB files;
-- `benchmark.csv` retained its original 17-column schema, and `git diff
+- `benchmark.csv` retained its original 17-column format, and `git diff
   --check` reported only line-ending conversion warnings.
 
 The task adds 35 production MATLAB lines to a 13,978-line production baseline.
@@ -3245,7 +3245,7 @@ Task baseline: local `325-full-suite` at `a51f6e9`. The existing untracked
 `docs/` directory was preserved and excluded from the change.
 
 Three corridor helpers and seven HS3-local helpers were executable copies or
-behavior-equivalent variants of neutral `azElInternal` contracts. All callers
+behavior-equivalent variants of neutral `azElInternal` requirements. All callers
 were redirected to shared option, logical, goal, obstacle, polynomial, and
 Bernstein implementations before the private files were removed. The shared
 shape-at-time implementation retains the same interpolation and conservative
@@ -3280,7 +3280,7 @@ benchmark was executed. The first sandboxed MATLAB baseline launch failed
 before startup with Windows `File system inconsistency`; the approved literal
 launch completed the recorded 33-test baseline.
 
-## Shared validation, timed-search, and test-contract cleanup — 2026-08-23
+## Shared validation, timed-search, and test-requirement cleanup — 2026-08-23
 
 Task baseline: pushed `325-full-suite` commit `625b243`. The unrelated
 untracked `docs/`, `sandbox/explainAzElPlannerWalkthrough.m`, and
@@ -3289,12 +3289,12 @@ from the change and static-analysis count.
 
 This cleanup made `+azElInternal` the single owner of three additional exact
 or parameterized invariants: seed-corridor Bernstein inequalities, polynomial
-schema/dynamics/history validation, and time-expanded visibility search. The
+format/dynamics/history validation, and time-expanded visibility search. The
 polynomial validator accepts the method's range certificate as a callback, so
 corridor retains exact stationary-point extrema while HS3 retains conservative
 Bernstein bounds. The seed generators retain method-specific graph creation,
 candidate ordering, diagnostics, and top-level policy. Twenty-four
-behavior-identical planner contracts and seven fixture builders moved into
+behavior-identical planner requirements and seven fixture builders moved into
 shared test support; method-specific tests remain in their original suites.
 
 | Scope | Baseline physical / code | Current physical / code | Delta |
@@ -3306,7 +3306,7 @@ shared test support; method-specific tests remain in their original suites.
 Verification on the retained worktree produced:
 
 - focused post-extraction planner gates: 92/92 after each shared production
-  or contract-suite change;
+  or requirement-suite change;
 - complete regression: 132/132 passed in 245.517 seconds, compared with the
   pre-change 132/132 baseline in 174.860 seconds. This single wall-time increase
   is unfavorable but is not attributed to production behavior without a
@@ -3468,10 +3468,10 @@ Requested mesh refinement is retained in diagnostics but explicitly reports
   waits, direct-facade recursion safety, optional-improver timing, and
   compact-failure recovery diagnostics.
 - All 18 maintained examples ran serially in separate MATLAB processes for
-  both `corridorQuintic` and `hs3`. All 36 example contracts passed. The 17
+  both `corridorQuintic` and `hs3`. All 36 example requirements passed. The 17
   successful pairs had identical arrival times and physical trajectories; the
   no-path pair returned the same `noValidatedSeed` failure and passed its
-  expected-failure contract. The HS3 runs selected `corridorQuintic`, as
+  expected-failure requirement. The HS3 runs selected `corridorQuintic`, as
   required by the default-off bounded policy.
 - A second serial HS3 capture produced the complete fresh rows appended to
   `benchmark.csv` under `hs3-compact-composite-worktree`; no compact metrics
@@ -3600,7 +3600,7 @@ wall time. Standalone HS3 used the same polyline, a 42.4287030058-degree
 smoothed motion, 75 s duration, and 108.428247 s wall time. The longer HS3
 duration and wall time are retained as unfavorable evidence. Code Analyzer
 reported zero messages for both modified source files, the maintained
-example-contract suite passed 5/5, and a plot-enabled run created three figures
+example-requirement suite passed 5/5, and a plot-enabled run created three figures
 with six axes while scenario validation remained passing.
 
 The existing example changes by +109/-12 lines. Its net growth owns the second
@@ -3611,7 +3611,7 @@ history. Keeping those assertions in a test-only duplicate was rejected because
 the maintained example result must remain self-verifying. The private U.S.
 helper changes by +39/-17 lines to centralize one transformation profile shared
 by geometry generation and diagnostics. Both paths are covered by Code Analyzer,
-the 5/5 contract suite, compact and HS3 headless runs, and the graphics smoke.
+the 5/5 requirement suite, compact and HS3 headless runs, and the graphics smoke.
 
 ## Interactive export and randomized moving-polygon stress — 2026-08-24
 
@@ -3662,7 +3662,7 @@ fresh static or sampled construction, normalization of one imported canonical
 record, and absolute reinflation of canonical arrays or nested cells. The
 separate `normalizeAzElTimeObstacleData.m` and `inflateAzElObstacleData.m`
 implementations were removed. `combineAzElObstacles`, focused tests, public
-documentation, and the safety-margin idempotence contract now call the single
+documentation, and the safety-margin idempotence requirement now call the single
 owner. Established normalization and inflation error/warning identifiers were
 preserved so malformed-input diagnostics did not change silently.
 
@@ -3671,7 +3671,7 @@ The three former owners contained 533 physical / 339 nonblank, noncomment
 lines; the unified owner contains 576 / 464. Including the one-line caller
 expansion in `combineAzElObstacles`, production changes by +44 physical / +126
 noncomment lines while removing two public files. The added code is the
-input-type dispatch and explicit local contracts needed to expose three
+input-type dispatch and explicit local requirements needed to expose three
 unambiguous call forms in one public function. Thin compatibility wrappers
 were considered but rejected because the requested outcome was one owner and
 all repository callers are migrated. The file remains below the 900-line
@@ -3726,7 +3726,7 @@ defect or worsened path length, jerk, or wall time.
 The distinct 12-hairpin scale case passed independent validation with 96 C4
 decisions, 138.455023011 s arrival, 8.2178 s wall time, and 0.02-degree
 clearance; its prior frozen duration was 140.560916 s. All 18 maintained
-compact example contracts passed serially: 17 independently valid successes
+compact example requirements passed serially: 17 independently valid successes
 and the expected independently valid `noValidatedSeed` outcome. Plot-enabled
 success produced three figures/six axes; the expected failure produced two
 figures/two axes without rerunning planning. The complete automated suite
@@ -3769,7 +3769,7 @@ direct HS3 planning request succeeded, passed independent validation, returned
 `SelectedMotionSource = "hs3"` and `PlannerMethod = "hs3"`, and produced a
 five-second trajectory. The focused suites passed 67/67 in 388.369877 seconds:
 `testHs3OptionOwner`, `testHs3AffineSensitivity`, `testHs3Planner`,
-`testPlannerStageTiming`, and `testExampleContracts`. Existing near-singular
+`testPlannerStageTiming`, and `testExampleRequirements`. Existing near-singular
 `fmincon` warnings were visible in moving-barrier and moving-target coverage.
 
 The maintained examples were then launched serially in separate MATLAB
@@ -3937,7 +3937,7 @@ remains explicit.
 The baseline was local commit `6427ce9` on `HS3-planner`, with only the
 documented runtime-profile records dirty. The primary metric was independently
 validated obstacle-free earliest arrival; collision, workspace, endpoint,
-velocity, acceleration, jerk, stable API, diagnostic schema, package size, and
+velocity, acceleration, jerk, stable API, diagnostic format, package size, and
 representative runtime were hard invariants. The retained change reuses the
 existing bounded fixed-arrival feasibility search for an obstacle-free
 earliest-arrival request and begins that search at twice the configured
@@ -4039,10 +4039,10 @@ trajectory independently passed collision and every applicable derivative
 certificate. No broader tests, other examples, visible graphics, or Code
 Analyzer checks were run in this focused pass.
 
-## High-level namespace, plotting dashboard, and result-schema verification
+## High-level namespace, plotting dashboard, and result-format verification
 
 Source under test was HS3-planner at
-0302439+namespace-and-schema-worktree on 2026-08-27. Production source moved
+0302439+namespace-and-format-worktree on 2026-08-27. Production source moved
 to +obstacleAvoidance; HS3 remained the separate normal hs3 product.
 
 - Code Analyzer: 0 findings across 93 maintained MATLAB files.
@@ -4213,3 +4213,71 @@ the preceding `0534edb+constraint-layout-worktree` matrix exactly. The expected
 no-path result independently validated its stable failure diagnostics. A
 visible no-path run took 4.5840717 seconds and created two diagnostic figures
 with two axes. No pre-existing MATLAB process was stopped or signaled.
+
+## Independent engines and obstacle-owned routing — 2026-08-27
+
+Source under test was `HS3-planner` at checkpoint
+`6e15a36+separated-engine-worktree`. The neutral trajectory dispatcher and its
+shared internal package were removed. Direct calls are now
+`ruckigEngine.solve(...)` and `hs3Engine.solve(...)`; obstacle-aware selection
+occurs inside `obstacleAvoidance.planner.plan`.
+
+### Static and focused verification
+
+- `git diff --check` reported no whitespace errors.
+- `testRuckigEngine` and `testArchitectureBoundaries` passed 21/21.
+- `testStandaloneHs3Kernel` passed 18/18.
+- `testPlannerStageTiming` and `testPlannerOptions` passed 8/8.
+- `testHs3Planner` passed 62/62 after an azimuth-wrapping regression was fixed
+  by preserving the existing periodic-axis exemption in the Ruckig request.
+- The complete `tests` tree passed 144/144 with zero failed or incomplete tests
+  in 55.099274 summed test seconds.
+
+The full suite used only the repository, `tests`, `trajectory`, and `examples`
+paths. Matrix-conditioning warnings were suppressed in the runner output only;
+no planner tolerance or assertion was weakened.
+
+### Warm routing cost
+
+Thirty alternating repetitions of the same two-axis rest-to-rest request gave:
+
+| Call | Median ms | p10 ms | p90 ms |
+| --- | ---: | ---: | ---: |
+| `ruckigEngine.solve` | 1.8168 | 1.4375 | 2.77175 |
+| `obstacleAvoidance.planTrajectory` | 7.0647 | 6.27895 | 8.2675 |
+
+The 5.2479 ms median difference includes obstacle-planner input normalization,
+endpoint checks, local result translation, and canonical independent
+continuous validation. It excludes the removed neutral dispatcher, previously
+measured at approximately 0.4--0.6 ms of duplicate routing work.
+
+### Final serial maintained matrix
+
+Each example ran in a fresh MATLAB process with plots and animation disabled.
+Jerk was enabled in every row.
+
+| Example | Planner / validation | Polyline deg | Smoothed deg | Duration s | Collision / kinematic | Wall s | Termination |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.8275815277 | 11.1855739607 | 1 / 1 | 7.253537 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.9293484742 | 8.64603162385 | 1 / 1 | 5.645959 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 4.494188 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 2.309880 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.31007759339 | 7.31051404817 | 6.11702719116 | 1 / 1 | 6.218571 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.2314453125 | 1 / 1 | 17.242832 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12 | 12.7689032232 | 8.64603156476 | 1 / 1 | 8.991519 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40 | 43.0751355347 | 7.96286899667 | 1 / 1 | 166.070652 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 1.292197 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 4.717992 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 | 0.976784 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.8560791016 | 1 / 1 | 41.859897 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 13.717231 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 21.4031702791 | 13.678271908 | 20.8695652174 | 1 / 1 | 5.744790 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.5244479986 | 20.6764423274 | 24 | 1 / 1 | 5.910711 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 6.724818 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6064786878 | 6.3679977362 | 1 / 1 | 43.421555 | `goalReached` |
+
+A visible `exampleObstacleFree` run routed through `ruckigDirect`, passed
+canonical validation, and created three figures with six axes in 7.490440
+seconds. A visible `exampleNoPath` run returned `noValidatedSeed` and created
+two diagnostic figures with two axes in 7.564985 seconds. No pre-existing
+MATLAB process was stopped or signaled.

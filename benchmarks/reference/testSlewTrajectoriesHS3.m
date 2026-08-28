@@ -1,6 +1,6 @@
 %% HS3 Slew Engine Examples And Regression Cases
-% Add the repository root or its hs3 folder to the MATLAB path before running.
-% This script replaces calcSlewTrajToStateJerkConst calls with solveTrajHS3.
+% Add the repository root or trajectory folder to the MATLAB path before running.
+% This script replaces calcSlewTrajToStateJerkConst calls with hs3Engine.solve.
 %
 % HS3 always enforces velocity, acceleration, and jerk constraints. There is
 % therefore no acceleration-only constraintType branch in this version.
@@ -29,22 +29,15 @@ if ~exist("hs3Options", "var")
         "Verbose", false);
 end
 
-% When this file is placed in the repository root or examples folder, find
-% the standalone engine automatically. An already configured path is retained.
-if exist("solveTrajHS3", "file") ~= 2
+% Find the trajectory package from this maintained benchmark location when the
+% caller has not already configured the repository path.
+if exist("hs3Engine.solve", "file") ~= 2
     scriptFolder = fileparts(mfilename("fullpath"));
-    hs3Candidates = [ ...
-        string(fullfile(scriptFolder, "hs3")), ...
-        string(fullfile(fileparts(scriptFolder), "hs3"))];
-    for hs3Folder = hs3Candidates
-        if isfile(fullfile(hs3Folder, "solveTrajHS3.m"))
-            addpath(hs3Folder);
-            break;
-        end
-    end
+    repositoryRoot = fileparts(fileparts(scriptFolder));
+    addpath(fullfile(repositoryRoot, "trajectory"));
 end
-assert(exist("solveTrajHS3", "file") == 2, ...
-    "solveTrajHS3 is not on the MATLAB path. Add <repo>/hs3 first.");
+assert(exist("hs3Engine.solve", "file") == 2, ...
+    "hs3Engine.solve is unavailable. Add <repo>/trajectory first.");
 if compareAnalyticalSolver
     assert(exist("calcSlewTrajToStateJerkConst", "file") == 2, ...
         "calcSlewTrajToStateJerkConst is not on the MATLAB path.");
@@ -373,7 +366,7 @@ result = struct("Success", false, "Duration", NaN, "FinalTime", NaN, ...
 end
 
 function trajectory = runHs3Case(testCase, commonOptions)
-% Translate one reference case into the public dimension-neutral HS3 contract.
+% Translate one reference case into the public dimension-neutral HS3 requirement.
 warningState = warning;
 warningCleanup = onCleanup(@() warning(warningState));
 warning("off", "MATLAB:singularMatrix");
@@ -409,7 +402,7 @@ terminalState = struct( ...
     "velocity", testCase.TerminalVelocity, ...
     "acceleration", testCase.TerminalAcceleration, ...
     "maximumTime", maximumTime);
-trajectory = solveTrajHS3(initialState, terminalState, limits, options);
+trajectory = hs3Engine.solve(initialState, terminalState, limits, options);
 end
 
 function maximumTime = estimateTimeHorizon(testCase)
@@ -492,7 +485,7 @@ terminalState = struct( ...
 options = commonOptions;
 options.TimeMode = "fixed";
 options.FinalTime = interceptTime;
-trajectory = solveTrajHS3(initialState, terminalState, limits, options);
+trajectory = hs3Engine.solve(initialState, terminalState, limits, options);
 end
 
 function trajectory = createUnattemptedResult()

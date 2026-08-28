@@ -9,8 +9,9 @@ function result = planTrajectory( ...
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %**************************************************************************
 % PURPOSE
-%   - Run the maintained Hermite-Simpson planner through one public entry
-%     point with no alternate motion planner or fallback path.
+%   - Plan collision-free Az/El motion through one public entry point.
+%   - Use exact Ruckig switching for eligible obstacle-free motion and HS3
+%     after obstacle topology constrains the path.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
@@ -19,7 +20,7 @@ function result = planTrajectory( ...
 %   - initialState (scalar struct)
 %       Initial time, position, and supported derivatives.
 %   - goalState (scalar struct)
-%       Fixed or moving-goal state accepted by the HS3 planner.
+%       Fixed or moving-goal state accepted by the obstacle planner.
 %   - limits (scalar struct)
 %       Physical and workspace limits with units in field names.
 %   - optionOverrides (scalar struct, optional; default struct())
@@ -27,7 +28,7 @@ function result = planTrajectory( ...
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       The result contains success or failure data and HS3 diagnostics.
+%       The result contains success or failure data, motion, and diagnostics.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
 %**************************************************************************
@@ -54,7 +55,7 @@ if nargin == 1
         "Planning requires obstacles, initialState, goalState, and limits.");
 end
 
-%% Section 2: Resolve The HS3 Request
+%% Section 2: Resolve The Planner Request
 
 % Keep the four physical inputs in one fixed order. They describe the
 % environment, initial motion, required final motion, and physical limits.
@@ -72,12 +73,12 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
         "optionOverrides must be a scalar struct.");
 end
 
-%% Section 3: Run The HS3 Planner
+%% Section 3: Run The Obstacle Planner
 
 % This public function contains no planning decisions. It provides one public
 % entry point. The internal planner performs route search, polynomial motion
 % optimization, collision checks, and result assembly.
-% If a plan fails, inspect result.TerminationReason and result.Diagnostics.
+% If a plan fails, inspect result.TerminationReason and SearchDiagnostics.
 % Follow the reported stage into search, optimization, or final validation.
 result = obstacleAvoidance.planner.plan( ...
     obstacles, initialState, goalState, limits, optionOverrides);

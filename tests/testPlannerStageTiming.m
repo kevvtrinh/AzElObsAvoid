@@ -1,6 +1,6 @@
 function tests = testPlannerStageTiming
 %% Section 0: Header & Readme
-% Verify exclusive stage timing for the maintained HS3 planner.
+% Verify exclusive stage timing for the maintained obstacle planner.
 tests = functiontests(localfunctions);
 end
 
@@ -11,7 +11,7 @@ function setupOnce(testCase)
 % Add production and maintained example entry points.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "hs3"));
+addpath(fullfile(repositoryRoot, "trajectory"));
 addpath(fullfile(repositoryRoot, "examples"));
 testCase.TestData.RepositoryRoot = repositoryRoot;
 end
@@ -37,8 +37,8 @@ verifyLessThanOrEqual(testCase, ...
     validation.ElapsedTime_s + timingTolerance(validation.ElapsedTime_s));
 end
 
-function testHs3SuccessAndEndpointFailureShareTiming(testCase)
-% Require HS3 timing on a solved request and critical early exit.
+function testSuccessAndEndpointFailureShareTiming(testCase)
+% Require timing on a solved request and critical early exit.
 initialState = state(0, [0 0]);
 goalState = state(4, [1 0]);
 limits = physicalLimits();
@@ -70,7 +70,9 @@ limits = physicalLimits();
 options = fixedHs3Options();
 options.CollocationSegmentCount = 2;
 options.MaximumCollocationSegmentCount = 2;
-result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+farObstacle = rectangleObstacle([0 3], [-100 -90 70 80], 0);
+result = obstacleAvoidance.planTrajectory( ...
+    farObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);

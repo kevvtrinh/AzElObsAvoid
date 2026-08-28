@@ -59,7 +59,7 @@ violation, fallback, substitution, or unfavorable result inside the code.
 - Example code may define a specific scenario, but reusable helpers and public
   interfaces must remain scenario-independent.
 
-## Required Planner Contract
+## Required Planner Requirement
 
 The public planner should accept these conceptual inputs in this order:
 
@@ -95,10 +95,10 @@ result.TerminationReason = "openSetExhausted";
 
 Expected outcomes include an exhausted search, unreachable goal, time-budget
 limit, iteration limit, and dynamically infeasible routes. Reserve errors for
-invalid inputs, violated API contracts, corrupt internal state, or unsupported
+invalid inputs, violated API requirements, corrupt internal state, or unsupported
 configurations.
 
-The result schema must remain stable on success and failure. Fields without a
+The result format must remain stable on success and failure. Fields without a
 value should contain a documented empty value rather than disappear.
 
 Do not trick the user into thinking a requirement passed by hiding a limit,
@@ -384,7 +384,7 @@ function result = functionName(requiredInput, optionOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
-%       Describe the stable success-or-failure schema and important fields.
+%       Describe the stable success-or-failure format and important fields.
 %**************************************************************************
 % UNITS
 %   - State every physical unit and array ordering used by the interface.
@@ -409,8 +409,8 @@ Header requirements:
 - Document failure behavior in `OUTPUTS`, including whether invalid input throws
   and expected planning failure returns `Success = false`.
 - A local function defined after the primary function does not receive the
-  full `Section 0` contract. Put one to five concise comment lines immediately
-  below its declaration to state its purpose, important contract, or invariant.
+  full `Section 0` requirement. Put one to five concise comment lines immediately
+  below its declaration to state its purpose, important requirement, or invariant.
   Continue to explain non-obvious decisions inside the function where they
   occur.
 - Function-based local test cases follow the same concise-comment rule; a
@@ -482,7 +482,7 @@ for integrated squared jerk. Dimensionless quantities have no suffix.
 
 The canonical packed container name is `obstacleField`, with plural record
 members such as `obstacleField.Obstacles`. Existing public fields are API
-contracts and keep their current spelling. In particular:
+requirements and keep their current spelling. In particular:
 
 - planner status/control fields remain Pascal case, for example `Success`,
   `Message`, `TerminationReason`, `Options`, `Validation`, and
@@ -523,7 +523,7 @@ below when a rename has functional value.
 Validate conditions whose failure would otherwise be silent or appear far
 downstream, including:
 
-- required fields and scalar-structure contracts;
+- required fields and scalar-structure requirements;
 - numeric type, shape, finiteness, and orientation;
 - strictly increasing time bases;
 - workspace and algorithm-dependent domains;
@@ -546,8 +546,8 @@ warning("planTrajectory:UnknownOptions", ...)
 
 Messages are actionable. Name the affected input or field, expected type or
 shape, unit when relevant, and observed value or count when useful. Errors are
-reserved for invalid contracts, unsupported configurations, and corrupt
-internal state. Expected planning outcomes return the stable failure schema.
+reserved for invalid requirements, unsupported configurations, and corrupt
+internal state. Expected planning outcomes return the stable failure format.
 
 Warn when requested behavior, samples, or geometry are reduced, dropped, or
 ignored and the returned value alone would not reveal it. Accumulate counts
@@ -567,7 +567,7 @@ defect.
 - Keep `%#ok<...>` suppressions local. Explain intentional growth or another
   non-obvious suppression beside the affected block.
 
-### Return schemas and structure arrays
+### Return formats and structure arrays
 
 - Every exit path returns the same public fields in the same order.
 - Construct success, failure, and empty results from one stable template helper.
@@ -654,7 +654,7 @@ violation, fallback, substitution, or unfavorable result inside the code.
   Never regenerate a case merely because planning failed.
 - Benchmarks report the seed or input scale and the evidence needed to reproduce
   the result.
-- Public test entry points use the complete `Section 0` header contract.
+- Public test entry points use the complete `Section 0` header requirement.
   Individual local test cases remain ordinary function-based tests whose
   descriptive names serve as their headers.
 
