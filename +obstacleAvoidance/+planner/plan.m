@@ -235,6 +235,9 @@ for orderIndex = 1:numel(seedOrder)
     timedInfeasibleTime_s = NaN;
     timedFeasibleTime_s = NaN;
     timedArrivalTrialCount = 0;
+    shapePolishAttempted = false;
+    shapePolishAccepted = false;
+    prePolishMotionLength_deg = NaN;
     maximumTimedArrivalTrialCount = 14;
     if useStaticDirectTimeSearch
         bracketWidth_s = goalState.time_s - spatialArrivalLowerBound_s;
@@ -267,12 +270,34 @@ for orderIndex = 1:numel(seedOrder)
             if isnan(firstValidatedMotionTime_s)
                 firstValidatedMotionTime_s = toc(planningTimer);
             end
+            relativeLengthExcess = coarseMotionLengthExcess( ...
+                finalCandidate, originalSeed);
+            % A five-percent spatial excess is large enough to be visible and
+            % materially affect route quality. Hold arrival fixed and spend
+            % one bounded convex cleanup rather than accepting an NLP loop.
+            shapePolishThreshold = 0.05;
+            shouldPolishShape = ~shapePolishAttempted && ...
+                seedGoalTimeMode == "earliestArrival" && ...
+                relativeLengthExcess > shapePolishThreshold;
+            if shouldPolishShape
+                shapePolishAttempted = true;
+                prePolishMotionLength_deg = finalCandidate.MotionLength_deg;
+                [polishedCandidate, stageTiming] = polishEarliestMotionShape( ...
+                    finalCandidate, originalSeed, obstacles, initialState, ...
+                    goalState, limits, options, stageTiming);
+                if candidateImproves( ...
+                        polishedCandidate, finalCandidate, "fixedArrival")
+                    finalCandidate = polishedCandidate;
+                    shapePolishAccepted = true;
+                end
+            end
             if isempty(validatedCandidate) || candidateImproves( ...
                     finalCandidate, validatedCandidate, ...
                     options.GoalTimeMode)
                 validatedCandidate = finalCandidate;
             end
-            relativeLengthExcess = coarseMotionLengthExcess(finalCandidate, originalSeed);
+            relativeLengthExcess = coarseMotionLengthExcess( ...
+                finalCandidate, originalSeed);
             % A 25% derivative reserve distinguishes velocity-dominated
             % coarse timing from motions already pressing higher derivatives.
             hasDerivativeSlack = all([ ...
@@ -422,7 +447,8 @@ for orderIndex = 1:numel(seedOrder)
     candidates{seedIndex} = finalCandidate;
     seedSummaries(seedIndex) = candidateSummary( ...
         finalCandidate, totalRelinearizationCount, meshRefinementCount, ...
-        summaryTemplate);
+        shapePolishAttempted, shapePolishAccepted, ...
+        prePolishMotionLength_deg, summaryTemplate);
     if finalCandidate.Validation.Passed
         bestValidatedFinalTime_s = min( ...
             bestValidatedFinalTime_s, finalCandidate.FinalTime_s);
@@ -796,6 +822,35 @@ function matches = matchesWithin(current, previous, tolerance)
 matches = (isinf(current) && isequal(current, previous)) || abs(current - previous) <= tolerance;
 end
 
+function [polishedCandidate, stageTiming] = polishEarliestMotionShape( ...
+        candidate, seed, obstacles, initialState, goalState, limits, ...
+        options, stageTiming)
+% Hold an independently valid earliest arrival fixed and minimize integrated
+% squared jerk on the same input-derived topology. Accepting this candidate is
+% owned by the caller, which also requires a strictly shorter valid motion.
+polishGoalState = goalState;
+polishGoalState.time_s = candidate.FinalTime_s;
+polishOptions = options;
+polishOptions.GoalTimeMode = "fixedArrival";
+polishOptions.MaximumSolverTime_s = ...
+    hs3Engine.defaultOptions().MaximumSolveTime;
+polishSeed = seed;
+polishSeed.EstimatedDuration_s = ...
+    candidate.FinalTime_s - initialState.time_s;
+polishedCandidate = obstacleAvoidance.planner.solveRouteCandidate( ...
+    obstacles, initialState, polishGoalState, limits, ...
+    polishOptions, polishSeed);
+polishedCandidate.Validation = validateCandidate( ...
+    polishedCandidate, obstacles, initialState, polishGoalState, ...
+    limits, polishOptions);
+stageTiming = addCandidateTiming(stageTiming, polishedCandidate);
+if ~polishedCandidate.Validation.Passed || ~matchesWithin( ...
+        polishedCandidate.FinalTime_s, candidate.FinalTime_s, ...
+        options.ArrivalTimeTolerance_s)
+    polishedCandidate = candidate;
+end
+end
+
 function seed = seedFromCandidate( ...
         candidate, originalSeed, targetFinalTime_s)
 % Reassociate frozen corridors around HS3 motion without changing topology.
@@ -831,7 +886,8 @@ seed.EstimatedDuration_s = trialDuration_s;
 end
 
 function summary = candidateSummary(candidate, relinearizationCount, ...
-        meshRefinementCount, template)
+        meshRefinementCount, shapePolishAttempted, shapePolishAccepted, ...
+        prePolishMotionLength_deg, template)
 % Retain full failure evidence without duplicating trajectory arrays.
 summary = template;
 summary.SeedIndex = candidate.SeedIndex;
@@ -850,6 +906,9 @@ summary.IntegratedSquaredJerk_deg2_s5 = ...
 summary.MaximumConstraintViolation = candidate.MaximumConstraintViolation;
 summary.RelinearizationCount = relinearizationCount;
 summary.MeshRefinementPassCount = meshRefinementCount;
+summary.ShapePolishAttempted = shapePolishAttempted;
+summary.ShapePolishAccepted = shapePolishAccepted;
+summary.PrePolishMotionLength_deg = prePolishMotionLength_deg;
 summary.Hs3Attempted = true;
 summary.Hs3OptimizerFeasible = candidate.OptimizerFeasible;
 summary.Hs3ValidationPassed = candidate.Validation.Passed;

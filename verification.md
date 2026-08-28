@@ -4281,3 +4281,98 @@ canonical validation, and created three figures with six axes in 7.490440
 seconds. A visible `exampleNoPath` run returned `noValidatedSeed` and created
 two diagnostic figures with two axes in 7.564985 seconds. No pre-existing
 MATLAB process was stopped or signaled.
+
+## Bounded interactive sandbox planning — 2026-08-27
+
+Source under test was `HS3-planner` at `dbdb9ae+sandbox-worktree`. The focused
+benchmark approximated the reported screenshot with start `[-35 -2]` degrees,
+goal `[-7 -75]` degrees, one four-corner polygon, a 180-second horizon, and the
+shown `[95 -25]` degree zero-start obstacle translation. Plotting and animation
+were absent and both comparisons used earliest arrival plus the same limits,
+geometry, safety margin, and public independent validation.
+
+The production-default baseline succeeded in 123.0002 seconds at 40.7616
+seconds arrival. Exclusive stage timing was 1.5332 seconds topology, 0.6203
+seconds corridor construction, 119.3994 seconds motion solving, 0.5740 seconds
+collision checking, 0.2596 seconds final validation, and 0.5618 seconds
+unattributed. Thus HS3 motion solving accounted for 97.1% of total time.
+
+The retained sandbox-only defaults use two seeds, 8 initial and 16 maximum
+collocation segments, no mesh-refinement pass, 80 NLP iterations, 5,000
+function evaluations, and 0.05-second arrival tolerance. The identical request
+succeeded and independently validated in 4.3057 seconds at 51.7410 seconds
+arrival. Stage timing was 0.5784 seconds topology, 0.1580 seconds corridor
+construction, 2.8452 seconds motion solving, 0.1025 seconds collision checking,
+0.0991 seconds final validation, and 0.4687 seconds unattributed. This is a
+28.57x wall-time improvement with a documented 26.93% arrival-time penalty.
+Production planner defaults were not changed.
+
+The same polygon without motion provided the second declared case. Production
+defaults succeeded in 14.0421 seconds at 41.7830 seconds arrival. The retained
+sandbox defaults succeeded and independently validated in 5.2767 seconds at
+43.9204 seconds arrival: 2.66x faster with a 5.12% later arrival.
+
+Code Analyzer reported zero findings for the sandbox and focused test files.
+The focused sandbox-diagnosis suite passed 8/8, including a new contract test
+that freezes the UI work limits and confirms the production defaults remain at
+five seeds and two mesh-refinement passes. `git diff --check` reported no
+whitespace errors. No maintained examples were executed for this sandbox-only
+change.
+
+The subsequent Run-animation addition was exercised through the actual Goal
+Mode Run-button callback in a visible sandbox. An obstacle-free request
+succeeded, passed independent validation, and produced live animation figure
+and axes handles. The smoke runner then closed only the two figures it created.
+Automatic animation is conditional on success, independent validation,
+`AnimateOnRun=true`, and a visible sandbox; hidden tests do not create or pause
+for animation. Code Analyzer again reported zero sandbox findings, and the
+focused sandbox-diagnosis suite passed 8/8 before the visible callback smoke.
+
+## Rogue sandbox visibility-route correction — 2026-08-27
+
+Saved input: `Rogue Examples/az_el_sandbox_goal_20260826_192542.mat`.
+
+The saved result was independently valid but contained only
+`directVisibilityEdge` and `directWait` seeds. Its selected geometric seed was
+87.6756595117 degrees while the returned motion was 112.432758778 degrees.
+A fixed-arrival diagnostic replay shortened that motion to 90.3707367692
+degrees, localizing the loop to motion construction rather than collision
+validation. Separately, the two-candidate limit localized the absent geometric
+route to candidate-budget allocation.
+
+The retained replay used three sandbox candidates, selected seed 3 from
+`visibilityGraph`, and passed independent validation. Reported metrics were:
+
+- selected polyline: 90.1324376889 degrees;
+- pre-cleanup motion: 99.8503182971 degrees;
+- returned motion: 90.3025879374 degrees;
+- arrival: 50.9444849555 seconds;
+- collision-free and kinematic certificate: true;
+- wall time: approximately 7.42 seconds.
+
+Code Analyzer reported zero findings in all six modified MATLAB files. The
+focused `testHs3Planner` plus `testObstacleAvoidanceSandboxDiagnosis` run passed
+72/72. The solver emitted its existing ill-conditioned-matrix warning flood in
+the deforming-obstacle test; no test failed or was incomplete.
+
+Two structurally different maintained examples were run serially and headless:
+
+| Example | Jerk | Planner / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / certificate | Wall (s) |
+| --- | ---: | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleMovingCircleNoAzimuthWrap` | 1 | 1 / 1 | 12 | 12.7171175863 | 8.64603261241 | 1 / 1 | 11.8788 |
+| `exampleObstacleAvoidance` | 1 | 1 / 1 | 11.152119519 | 11.4464747617 | 7.57952069664 | 1 / 1 | 5.71515 |
+
+The first two attempts to report the moving example used one unsupported
+override and then one nonexistent validation field. Planning completed in both
+attempts, but only the third command above is an authoritative recorded run.
+The complete maintained-example matrix and complete repository test tree were
+not rerun for this focused route-quality correction.
+
+## Sandbox Add panel — 2026-08-27
+
+`obstacleAvoidanceSandbox.m` now exposes four working constructor controls in a
+left-side `Add` panel: Polygon, Circle, Hand Drawn, and Square. The sandbox UI
+contract test verifies the panel title, all four action handles, and their
+labels. The full focused sandbox suite passed 8/8, Code Analyzer reported zero
+findings, and `git diff --check` reported no whitespace errors. No planner
+algorithm or maintained example changed for this UI addition.

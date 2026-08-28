@@ -188,6 +188,14 @@ if hasChangingObstacles && ~usedDenseEnvelope && numel(seeds) < options.MaximumS
         end
     end
     reservedTimedSeedCount = numel(trialSeeds) - numel(seeds);
+    % Keep one slot for the spatial visibility search. If that search returns
+    % no reachable route, the timed proposal is appended after it and reuses
+    % the unfilled slot. This prevents a bounded timed portfolio from silently
+    % suppressing every geometric detour.
+    maximumTimedReservation = max( ...
+        0, options.MaximumSeedCount - numel(seeds) - 1);
+    reservedTimedSeedCount = min( ...
+        reservedTimedSeedCount, maximumTimedReservation);
     if graphRecord.CandidateOffsetRetryCount >= 3 && options.MaximumSeedCount >= 3 && ...
             numel(seeds) + reservedTimedSeedCount >= options.MaximumSeedCount
         reservedTimedSeedCount = 0;

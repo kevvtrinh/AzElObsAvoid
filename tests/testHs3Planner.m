@@ -831,6 +831,37 @@ motionLength_deg = sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2));
 verifyEqual(testCase, motionLength_deg, 10, "AbsTol", 1e-8);
 verifyFalse(testCase, isfield(result, "CompositionDiagnostics"));
 end
+
+function testTimedPortfolioPreservesSpatialVisibilitySlot(testCase)
+% A bounded moving-obstacle portfolio must not consume every non-direct slot
+% before the geometric visibility search can return one reachable detour.
+time_s = [0; 6; 8; 12];
+source_deg = [-0.5 -2; 0.5 -2; 0.5 2; -0.5 2];
+centerElevation_deg = [0; 0; 6; 6];
+azimuth_deg = cell(4, 1);
+elevation_deg = cell(4, 1);
+for sampleIndex = 1:4
+    translated_deg = source_deg + [0 centerElevation_deg(sampleIndex)];
+    azimuth_deg{sampleIndex} = translated_deg(:, 1);
+    elevation_deg{sampleIndex} = translated_deg(:, 2);
+end
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "barrier", time_s, azimuth_deg, elevation_deg, 0);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-5 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    12, [5 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+options = obstacleAvoidance.planTrajectory();
+options.MaximumSeedCount = 3;
+[seeds, diagnostics] = obstacleAvoidance.search.createRouteCandidates( ...
+    obstacle, initialState, goalState, limits, options);
+verifyTrue(testCase, any([seeds.Source] == "directWait"));
+verifyTrue(testCase, any([seeds.Source] == "visibilityGraph"));
+verifyEqual(testCase, numel(seeds), 3);
+verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 1);
+end
 function testObstacleActivationSpanEnablesTimedSearch(testCase)
 % Verify equal geometry can still change occupancy through its active span.
 obstacle = testCase.TestData.Fixtures.RectangleObstacle([3 6], [-0.5 0.5 -2 2], 0);

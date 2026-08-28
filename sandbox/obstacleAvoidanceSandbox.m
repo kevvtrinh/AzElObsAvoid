@@ -18,10 +18,13 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %       MaxVelocity_deg_s, MaxAcceleration_deg_s2, MaxJerk_deg_s3,
 %       PathObstacleRadius_deg, PathSafetyMargin_deg,
 %       ObstacleSafetyMargin_deg, WorkspaceAzimuthInterval_deg,
-%       WorkspaceElevationInterval_deg, Verbose,
+%       WorkspaceElevationInterval_deg, Verbose, AnimateOnRun,
+%       AnimationFrameStride, AnimationPause_s,
 %       LatestArrivalCoarseCandidateCount,
 %       LatestArrivalRefinementCandidateCount, and PlannerOptions.
-%       PlannerOptions is a partial HS3 planTrajectory options struct.
+%       PlannerOptions is a partial planTrajectory options struct. Its
+%       sandbox defaults bound interactive HS3 work and favor responsiveness
+%       over the production planner's finer earliest-arrival search.
 %       Goal-time mode and verbosity are owned by the active sandbox tab.
 %**************************************************************************
 % OUTPUTS
@@ -118,9 +121,27 @@ defaults = struct( ...
     "WorkspaceAzimuthInterval_deg", [-180 180], ...
     "WorkspaceElevationInterval_deg", [-90 90], ...
     "Verbose", true, ...
+    "AnimateOnRun", true, ...
+    "AnimationFrameStride", 5, ...
+    "AnimationPause_s", 0.01, ...
     "LatestArrivalCoarseCandidateCount", 5, ...
     "LatestArrivalRefinementCandidateCount", 3, ...
-    "PlannerOptions", struct());
+    "PlannerOptions", interactivePlannerDefaults());
+end
+
+function options = interactivePlannerDefaults()
+% Bound nonlinear work for an interactive preview. Returned motions still pass
+% the public planner's collision, kinematic, and independent validation gates.
+% Callers can replace these values through sandboxOverrides.PlannerOptions when
+% finer arrival-time quality is more important than UI response time.
+options = struct( ...
+    "MaximumSeedCount", 3, ...
+    "CollocationSegmentCount", 8, ...
+    "MaximumCollocationSegmentCount", 16, ...
+    "MaximumMeshRefinementPasses", 0, ...
+    "MaximumNlpIterations", 80, ...
+    "MaximumNlpFunctionEvaluations", 5000, ...
+    "ArrivalTimeTolerance_s", 0.05);
 end
 
 function options = resolveSandboxOptions(overrides)
@@ -152,6 +173,9 @@ if ~isscalar(options.FigureVisible) || ~any(options.FigureVisible == ["on", "off
 end
 options.Verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
     options.Verbose, "Verbose", ...
+    "obstacleAvoidanceSandbox:InvalidLogicalOption");
+options.AnimateOnRun = obstacleAvoidance.input.normalizeLogicalScalar( ...
+    options.AnimateOnRun, "AnimateOnRun", ...
     "obstacleAvoidanceSandbox:InvalidLogicalOption");
 validateattributes(options.FigurePosition, {'numeric'}, {'real', 'finite', 'vector', 'numel', 4});
 options.FigurePosition = reshape(double(options.FigurePosition), 1, 4);
@@ -187,7 +211,8 @@ for name = intervalNames
         "obstacleAvoidanceSandbox", name);
     options.(name) = reshape(double(options.(name)), 1, 2);
 end
-countNames = ["LatestArrivalCoarseCandidateCount", "LatestArrivalRefinementCandidateCount"];
+countNames = ["LatestArrivalCoarseCandidateCount", ...
+    "LatestArrivalRefinementCandidateCount", "AnimationFrameStride"];
 
 % Candidate counts limit the number of latest-arrival planner calls.
 for name = countNames
@@ -201,7 +226,9 @@ end
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("obstacleAvoidanceSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
 end
-
+validateattributes(options.AnimationPause_s, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'nonnegative'}, ...
+    "obstacleAvoidanceSandbox", "AnimationPause_s");
 end
 
 function handles = createModeTab(tabHandle, modeName, options)
@@ -290,23 +317,37 @@ controls.MotionProfileHandle = uicontrol(tabHandle, ...
     "Value", 1, ...
     "TooltipString", ...
         "Motion profile used by Set Motion for the selected polygon.");
-actionPanelHandle = uipanel(tabHandle, "BorderType", "none", "Units", "normalized", "Position", [0.045 0.275 0.64 0.052]);
+addPanelHandle = uipanel(tabHandle, ...
+    "Title", "Add", ...
+    "Units", "normalized", ...
+    "Position", [0.01 0.268 0.24 0.095]);
+addNames = ["AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
+addLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
+actions = createAddButtons(addPanelHandle, modeName, addNames, addLabels);
+actionPanelHandle = uipanel(tabHandle, "BorderType", "none", ...
+    "Units", "normalized", "Position", [0.265 0.275 0.42 0.052]);
 if modeName == "goal"
     actionNames = [ ...
-        "AddObstacle", "SetMotion", "Run", "Reset", ...
+        "SetMotion", "Run", "Reset", ...
         "Diagnostics", "Export"];
     actionLabels = [ ...
-        "Add Polygon", "Set Motion", "Run", "Reset", ...
+        "Set Motion", "Run", "Reset", ...
         "Diagnostics", "Export Bundle"];
 else
     actionNames = [ ...
-        "AddObstacle", "SetMotion", "AddSegment", "Recalculate", "Undo", ...
+        "SetMotion", "AddSegment", "Recalculate", "Undo", ...
         "Reset", "Diagnostics", "Export"];
     actionLabels = [ ...
-        "Add Polygon", "Set Motion", "Add Segment", "Recalculate", "Undo Point", ...
+        "Set Motion", "Add Segment", "Recalculate", "Undo Point", ...
         "Reset", "Diagnostics", "Export Bundle"];
 end
-actions = createActionButtons( actionPanelHandle, modeName, actionNames, actionLabels);
+actionButtons = createActionButtons( ...
+    actionPanelHandle, modeName, actionNames, actionLabels);
+actionFields = fieldnames(actionButtons);
+for actionIndex = 1:numel(actionFields)
+    actionName = actionFields{actionIndex};
+    actions.(actionName) = actionButtons.(actionName);
+end
 statusPanelHandle = uipanel(tabHandle, ...
     "Title", "Mode status and planner log", ...
     "Units", "normalized", ...
@@ -330,12 +371,14 @@ handles = struct( ...
     "Axes", axesHandle, ...
     "ControlPanel", controlPanelHandle, ...
     "Controls", controls, ...
+    "AddPanel", addPanelHandle, ...
     "ActionPanel", actionPanelHandle, ...
     "Actions", actions, ...
     "StatusPanel", statusPanelHandle, ...
     "StatusHandle", statusHandle, ...
     "LogHandle", logHandle, ...
-    "DiagnosticPlotHandles", struct());
+    "DiagnosticPlotHandles", struct(), ...
+    "AnimationPlotHandles", struct());
 end
 
 function addControlSectionLabel(panelHandle, labelText, rowPosition)
@@ -422,6 +465,24 @@ for actionIndex = 1:buttonCount
 end
 end
 
+function actions = createAddButtons(panelHandle, modeName, actionNames, actionLabels)
+% Place four obstacle constructors in a compact two-by-two panel at the left.
+actions = struct();
+for actionIndex = 1:numel(actionNames)
+    columnIndex = mod(actionIndex - 1, 2);
+    rowIndex = floor((actionIndex - 1) / 2);
+    actions.(actionNames(actionIndex)) = uicontrol(panelHandle, ...
+        "Style", "pushbutton", ...
+        "String", actionLabels(actionIndex), ...
+        "Units", "normalized", ...
+        "Position", [0.02 + 0.50 * columnIndex, ...
+            0.52 - 0.48 * rowIndex, 0.46, 0.42], ...
+        "UserData", struct( ...
+            "Mode", modeName, "Action", actionNames(actionIndex)), ...
+        "Callback", @handleAction);
+end
+end
+
 function applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles)
 % Create stable independent tab records and application interaction state.
 applicationState = struct( ...
@@ -440,13 +501,14 @@ function modeState = emptyModeState(modeName, graphicsHandles)
 % field set so callbacks can read state without optional-field branches.
 if modeName == "goal"
     instruction = ...
-        "Click the start and goal. Add polygon vertices with left-clicks. " + ...
-        "Right-click to finish each polygon, then Run.";
+        "Click the start and goal. Choose an obstacle from the Add panel, " + ...
+        "then Run.";
 else
     instruction = ...
-        "Click the start and first endpoint. Add polygon vertices with " + ...
-        "left-clicks and right-click to finish, then recalculate.";
+        "Click the start and first endpoint. Choose an obstacle from the " + ...
+        "Add panel, then recalculate.";
 end
+
 modeState = struct( ...
     "StartPosition_deg", zeros(0, 2), ...
     "GoalPosition_deg", zeros(0, 2), ...
@@ -516,8 +578,14 @@ modeName = string(request.Mode);
 actionName = string(request.Action);
 try
     switch actionName
-        case "AddObstacle"
+        case "AddPolygon"
             activateInteraction(figureHandle, modeName, "addingPolygon");
+        case "AddCircle"
+            activateInteraction(figureHandle, modeName, "addingCircle");
+        case "AddHandDrawn"
+            activateInteraction(figureHandle, modeName, "addingHandDrawn");
+        case "AddSquare"
+            activateInteraction(figureHandle, modeName, "addingSquare");
         case "SetMotion"
             activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
         case "AddSegment"
@@ -594,6 +662,18 @@ switch requestedState
         modeState.Status = ...
             "Left-click each polygon vertex. " + ...
             "Right-click to close and add the polygon.";
+    case "addingCircle"
+        interactionState = "placing" + upperFirst(modeName) + "CircleCenter";
+        modeState.Status = ...
+            "Click the circle center, then click a point on its edge.";
+    case "addingHandDrawn"
+        interactionState = "drawing" + upperFirst(modeName) + "Obstacle";
+        modeState.Status = ...
+            "Press and drag to draw an obstacle, then release to add it.";
+    case "addingSquare"
+        interactionState = "placing" + upperFirst(modeName) + "SquareCorner";
+        modeState.Status = ...
+            "Click one square corner, then click toward the opposite corner.";
     case "selectingObstacleMotion"
         interactionState = "selecting" + upperFirst(modeName) + ...
             "ObstacleMotion";
@@ -622,8 +702,6 @@ elseif modeName == "goal" && isempty(modeState.GoalPosition_deg)
     requestedState = "placingGoal";
 elseif modeName == "free" && isempty(modeState.WaypointPositions_deg)
     requestedState = "placingInitialGoal";
-elseif isempty(modeState.PolygonObstaclePositions_deg)
-    requestedState = "addingPolygon";
 else
     requestedState = "";
 end
@@ -672,6 +750,87 @@ if ~pointInWorkspace(point_deg, controls)
     applicationState = setModeState(applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
+    return;
+end
+interactionState = applicationState.InteractionState;
+if endsWith(interactionState, "CircleCenter") || ...
+        endsWith(interactionState, "SquareCorner")
+    applicationState.ActiveStroke_deg = point_deg;
+    if endsWith(interactionState, "CircleCenter")
+        nextState = "placing" + upperFirst(modeName) + "CircleEdge";
+        modeState.Status = "Circle center set. Click a point on its edge.";
+    else
+        nextState = "placing" + upperFirst(modeName) + "SquareOpposite";
+        modeState.Status = ...
+            "Square corner set. Click toward the opposite corner.";
+    end
+    applicationState.InteractionState = nextState;
+    modeState.InteractionState = nextState;
+    applicationState = setModeState(applicationState, modeName, modeState);
+    guidata(figureHandle, applicationState);
+    updateModeStatusDisplay(modeState);
+    return;
+end
+if endsWith(interactionState, "CircleEdge")
+    center_deg = applicationState.ActiveStroke_deg(1, :);
+    radius_deg = norm(point_deg - center_deg);
+    if radius_deg <= 1e-6
+        modeState.Status = "The circle radius must have nonzero length.";
+        applicationState = setModeState(applicationState, modeName, modeState);
+        guidata(figureHandle, applicationState);
+        updateModeStatusDisplay(modeState);
+        return;
+    end
+    angle_rad = linspace(0, 2 * pi, 25).';
+    circle_deg = center_deg + radius_deg * [ ...
+        cos(angle_rad(1:end - 1)), sin(angle_rad(1:end - 1))];
+    isInsideWorkspace = true;
+    for vertexIndex = 1:size(circle_deg, 1)
+        isInsideWorkspace = isInsideWorkspace && ...
+            pointInWorkspace(circle_deg(vertexIndex, :), controls);
+    end
+    if ~isInsideWorkspace
+        modeState.Status = "The circle extends outside the workspace limits.";
+        applicationState = setModeState(applicationState, modeName, modeState);
+        guidata(figureHandle, applicationState);
+        updateModeStatusDisplay(modeState);
+        return;
+    end
+    completeCreatedPolygon(figureHandle, circle_deg, "Circle");
+    return;
+end
+if endsWith(interactionState, "SquareOpposite")
+    firstCorner_deg = applicationState.ActiveStroke_deg(1, :);
+    cornerOffset_deg = point_deg - firstCorner_deg;
+    sideLength_deg = max(abs(cornerOffset_deg));
+    if sideLength_deg <= 1e-6
+        modeState.Status = "The square side must have nonzero length.";
+        applicationState = setModeState(applicationState, modeName, modeState);
+        guidata(figureHandle, applicationState);
+        updateModeStatusDisplay(modeState);
+        return;
+    end
+    direction = sign(cornerOffset_deg);
+    direction(direction == 0) = 1;
+    oppositeCorner_deg = firstCorner_deg + direction * sideLength_deg;
+    square_deg = [ ...
+        firstCorner_deg; ...
+        oppositeCorner_deg(1), firstCorner_deg(2); ...
+        oppositeCorner_deg; ...
+        firstCorner_deg(1), oppositeCorner_deg(2)];
+    isInsideWorkspace = true;
+    for cornerIndex = 1:4
+        isInsideWorkspace = isInsideWorkspace && ...
+            pointInWorkspace(square_deg(cornerIndex, :), controls);
+    end
+    if ~isInsideWorkspace
+        modeState.Status = "The square extends outside the workspace limits.";
+        applicationState = setModeState(applicationState, modeName, modeState);
+        guidata(figureHandle, applicationState);
+        updateModeStatusDisplay(modeState);
+        return;
+    end
+    completeCreatedPolygon(figureHandle, square_deg, "Square");
     return;
 end
 if contains(applicationState.InteractionState, ...
@@ -739,13 +898,13 @@ switch applicationState.InteractionState
     case "placingGoalStop"
         modeState.GoalPosition_deg = point_deg;
         modeState = clearModeSolution(modeState);
-        modeState.Status = "Goal point set. Draw obstacles, then click Run.";
-        nextInteraction = "drawingObstacle";
+        modeState.Status = ...
+            "Goal point set. Choose a shape from the Add panel, or Run.";
     case "placingFreeGoal"
         modeState.WaypointPositions_deg = point_deg;
         modeState = clearModeSolution(modeState);
-        modeState.Status = "First endpoint set. Draw obstacles, then click Recalculate.";
-        nextInteraction = "drawingObstacle";
+        modeState.Status = ...
+            "First endpoint set. Choose a shape from the Add panel.";
     case "placingFreeWaypoint"
         modeState.WaypointPositions_deg(end + 1, :) = point_deg;
         shouldRecalculateFree = true;
@@ -872,6 +1031,30 @@ else
 end
 end
 
+function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
+% Store a circle or square through the same canonical polygon representation.
+applicationState = guidata(figureHandle);
+modeName = applicationState.ActiveMode;
+modeState = getModeState(applicationState, modeName);
+wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
+modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
+modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
+modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
+modeState = clearModeSolution(modeState);
+modeState.Status = shapeName + ...
+    " added. Use Set Motion to move it, or add another obstacle.";
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+cancelInteraction(figureHandle);
+if modeName == "free" && wasPreviouslySolved
+    executeFreePlan( ...
+        figureHandle, shapeName + " completed; recalculating the full chain");
+else
+    refreshApplication(figureHandle);
+end
+end
+
 function polygonIndex = polygonIndexAtPoint(polygonCollection_deg, point_deg)
 % Return the last drawn polygon that contains the selected point.
 polygonIndex = 0;
@@ -978,6 +1161,8 @@ if size(simplifiedStroke_deg, 1) >= 2
         geometryDescription = "line/capsule";
     else
         modeState.PolygonObstaclePositions_deg{end + 1, 1} = simplifiedStroke_deg;
+        modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
+        modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
         geometryDescription = "polygon";
     end
     modeState = clearModeSolution(modeState);
@@ -1103,6 +1288,54 @@ modeState.Status = formatGoalStatus(result, validation);
 modeState.InteractionState = "idle";
 applicationState.GoalMode = modeState;
 applicationState.InteractionState = "idle";
+guidata(figureHandle, applicationState);
+refreshApplication(figureHandle);
+playGoalAnimationAfterRun(figureHandle, result, validation);
+end
+
+function playGoalAnimationAfterRun(figureHandle, result, validation)
+% Play a validated returned trajectory without rerunning planning. The public
+% plotter owns obstacle-time queries and synchronized motion visualization.
+applicationState = guidata(figureHandle);
+options = applicationState.Options;
+if ~result.Success || ~validation.Passed || ~options.AnimateOnRun || ...
+        options.FigureVisible ~= "on" || ~isgraphics(figureHandle)
+    return;
+end
+modeState = applicationState.GoalMode;
+finalStatus = modeState.Status;
+modeState.Status = "Plan validated. Playing solved-motion animation...";
+applicationState.GoalMode = modeState;
+guidata(figureHandle, applicationState);
+updateModeStatusDisplay(modeState);
+drawnow;
+plotOptions = struct( ...
+    "FigureVisible", "on", ...
+    "Title", "Goal Mode solved motion", ...
+    "ShowWorkspace", false, ...
+    "ShowKinematics", false, ...
+    "ShowAnimation", true, ...
+    "ShowSearchEdges", false, ...
+    "ShowVisibilityGraphs", false, ...
+    "ShowSweptSurfaces", false, ...
+    "FrameStride", options.AnimationFrameStride, ...
+    "Pause_s", options.AnimationPause_s);
+try
+    animationHandles = obstacleAvoidance.plotting.plotTrajectory( ...
+        result, plotOptions);
+    applicationState = guidata(figureHandle);
+    modeState = applicationState.GoalMode;
+    modeState.GraphicsHandles.AnimationPlotHandles = animationHandles;
+    modeState.Status = finalStatus;
+catch exception
+    applicationState = guidata(figureHandle);
+    modeState = applicationState.GoalMode;
+    modeState.Status = finalStatus + newline + ...
+        "Animation could not be played: " + string(exception.message);
+    modeState = appendLogLines(modeState, ...
+        "[Animation error] " + string(formatSandboxException(exception)));
+end
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
 end
@@ -1928,14 +2161,14 @@ for modeName = modeNames
     end
     if modeName == "goal"
         canRun = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
-        set(modeState.GraphicsHandles.Actions.AddObstacle, "Enable", onOff(canRun));
+        setObstacleConstructorAvailability(modeState, canRun);
         set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
             onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
         set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
     else
         hasStart = ~isempty(modeState.StartPosition_deg);
         hasSegments = hasStart && ~isempty(modeState.WaypointPositions_deg);
-        set(modeState.GraphicsHandles.Actions.AddObstacle, "Enable", onOff(hasSegments));
+        setObstacleConstructorAvailability(modeState, hasSegments);
         set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
             onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
         set(modeState.GraphicsHandles.Actions.AddSegment, "Enable", onOff(hasStart));
@@ -2204,6 +2437,16 @@ end
 snapshot = guidata(figureHandle);
 snapshot.ExportBundle = @(filePath, modeName) ...
     exportCurrentSandboxDiagnosis(figureHandle, filePath, modeName);
+end
+
+function setObstacleConstructorAvailability(modeState, isEnabled)
+% Keep every constructor in the Add panel synchronized with scene readiness.
+constructorNames = [ ...
+    "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
+for constructorName = constructorNames
+    set(modeState.GraphicsHandles.Actions.(constructorName), ...
+        "Enable", onOff(isEnabled));
+end
 end
 
 function text = logicalText(value)

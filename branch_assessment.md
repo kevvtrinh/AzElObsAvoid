@@ -6,6 +6,31 @@ trajectory wrapper — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Bounded interactive sandbox planning — 2026-08-27
+
+The sandbox now owns a smaller, explicitly documented HS3 work portfolio while
+the production planner defaults remain unchanged. On a screenshot-matched
+one-polygon moving-obstacle request, the production-default baseline required
+123.0002 seconds; 119.3994 seconds, or 97.1%, was motion solving. The bounded
+sandbox configuration returned an independently validated, collision-free and
+kinematically valid motion in 4.3057 seconds, a 28.57x wall-time reduction.
+
+The responsiveness gain has a visible quality cost: moving-case earliest
+arrival changed from 40.7616 to 51.7410 seconds, a 26.93% later result. The
+matched stationary case improved from 14.0421 to 5.2767 seconds (2.66x), with
+arrival changing from 41.7830 to 43.9204 seconds (5.12% later); both runs were
+independently valid. The sandbox result is an interactive preview, not a global
+or production-quality optimum. Callers may replace
+`sandboxOverrides.PlannerOptions` when finer arrival quality is worth the
+additional nonlinear work. These two cases do not establish broad scaling.
+
+Successful, independently validated Goal Mode runs now automatically launch
+the maintained result-driven animation dashboard. It advances the returned
+motion, time-varying obstacles, elapsed path, and four kinematic histories from
+the same planner result; it does not rerun planning. Hidden sessions skip the
+animation and pause entirely. `AnimateOnRun`, `AnimationFrameStride`, and
+`AnimationPause_s` remain sandbox-level display controls.
+
 ## Independent engines and obstacle-owned routing — 2026-08-27
 
 The largest architectural strength is now enforceable ownership. The
@@ -2572,3 +2597,49 @@ gradient was not retried because repository evidence already records a
 layout plumbing and compatibility fallbacks, so its source-size and branching
 cost are real. It is retained for measured callback reduction, not as an
 optimality, completeness, or uniform wall-time claim.
+
+## Rogue sandbox route-quality correction — 2026-08-27
+
+The saved `az_el_sandbox_goal_20260826_192542.mat` case exposed two distinct
+failures. A two-seed sandbox budget was completely consumed by the direct and
+direct-wait candidates, so the visibility search could not return a spatial
+detour. The earliest-arrival nonlinear solve then returned a valid but visibly
+looping 112.432758778-degree motion for an 87.6756595117-degree direct seed.
+
+The sandbox now permits three seeds, and timed-candidate reservation leaves one
+slot for spatial visibility search whenever the budget can represent all three
+roles. This is an input-driven portfolio invariant rather than a waypoint or
+scenario-specific preference. If spatial search finds nothing, the timed seed
+can still reuse the slot. A validated earliest-arrival motion whose length
+exceeds its seed by more than five percent receives one bounded fixed-arrival
+shape cleanup. The cleanup is retained only when it independently validates,
+keeps the same arrival, and strictly shortens the motion.
+
+On the saved case, the corrected run selected a 90.1324376889-degree
+`visibilityGraph` seed. The initial motion was 99.8503182971 degrees and the
+accepted cleanup returned 90.3025879374 degrees at 50.9444849555 seconds. This
+is 19.683% shorter and 4.9035 seconds earlier than the saved valid loop. It does
+not establish global shortest-path or global earliest-arrival optimality.
+
+The focused HS3 and sandbox suites pass 72/72. Structurally different moving
+and static maintained examples also passed independent validation:
+`exampleMovingCircleNoAzimuthWrap` returned 12.7171175863 degrees in
+8.64603261241 seconds, and `exampleObstacleAvoidance` returned
+11.4464747617 degrees in 7.57952069664 seconds. Two earlier moving-example
+invocations completed planning but their reporting commands referenced invalid
+display/validation fields; those harness errors are not counted as test passes.
+
+## Sandbox obstacle-constructor panel — 2026-08-27
+
+The sandbox now places a titled `Add` panel at the far left of each mode. Its
+Polygon, Circle, Hand Drawn, and Square controls all feed the existing line or
+polygon obstacle representation, so planning, safety-margin application,
+motion assignment, validation, and plotting remain centralized. Circle uses a
+center and edge click, Square uses one corner and an equal-length opposite
+direction, Polygon retains vertex clicks plus right-click completion, and Hand
+Drawn uses press-drag-release. Endpoint placement no longer forces Polygon
+mode, allowing the user to choose the constructor explicitly.
+
+The focused sandbox suite passes 8/8 and Code Analyzer reports zero findings.
+Interactive mouse geometry was covered by the existing callback paths and UI
+contract checks; an automated pixel-level layout test was not added.

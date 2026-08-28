@@ -90,6 +90,21 @@ verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "SetMotion"));
 verifyTrue(testCase, isfield( ...
     currentState.FreeMode.GraphicsHandles.Actions, "SetMotion"));
+constructorNames = [ ...
+    "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
+constructorLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
+verifyTrue(testCase, isgraphics( ...
+    currentState.GoalMode.GraphicsHandles.AddPanel));
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.AddPanel, "Title"), 'Add');
+for constructorIndex = 1:numel(constructorNames)
+    constructorName = constructorNames(constructorIndex);
+    verifyTrue(testCase, isfield( ...
+        currentState.GoalMode.GraphicsHandles.Actions, constructorName));
+    verifyEqual(testCase, string(get( ...
+        currentState.GoalMode.GraphicsHandles.Actions.(constructorName), ...
+        "String")), constructorLabels(constructorIndex));
+end
 verifyTrue(testCase, isgraphics( ...
     currentState.GoalMode.GraphicsHandles.Controls.MotionProfileHandle));
 verifyEqual(testCase, ...
@@ -103,6 +118,26 @@ verifyEqual(testCase, get( ...
     currentState.FreeMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
 verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
+end
+
+function testSandboxDefaultsBoundInteractivePlannerWork(testCase)
+% Keep the UI-specific work limits separate from production planner defaults.
+sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+plannerOptions = sandboxState.Options.PlannerOptions;
+verifyTrue(testCase, sandboxState.Options.AnimateOnRun);
+verifyEqual(testCase, sandboxState.Options.AnimationFrameStride, 5);
+verifyEqual(testCase, sandboxState.Options.AnimationPause_s, 0.01);
+verifyEqual(testCase, plannerOptions.MaximumSeedCount, 3);
+verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
+verifyEqual(testCase, plannerOptions.MaximumCollocationSegmentCount, 16);
+verifyEqual(testCase, plannerOptions.MaximumMeshRefinementPasses, 0);
+verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
+verifyEqual(testCase, plannerOptions.MaximumNlpFunctionEvaluations, 5000);
+verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
+productionOptions = obstacleAvoidance.planTrajectory();
+verifyEqual(testCase, productionOptions.MaximumSeedCount, 5);
+verifyEqual(testCase, productionOptions.MaximumMeshRefinementPasses, 2);
 end
 
 function testPreRunGoalBundlePreservesRequest(testCase)
