@@ -12,7 +12,7 @@ function handles = plotTrajectory(result, optionOverrides)
 % INPUTS
 %   - result (scalar planTrajectory result)
 %   - optionOverrides (scalar struct, optional; default struct())
-%       Controls workspace, search-edge, visibility, kinematic,
+%       Controls workspace, all-seed-path, search-edge, visibility, kinematic,
 %       swept-surface, animation displays, and synchronized GIF export.
 %       Hidden figures never pause.
 %**************************************************************************
@@ -37,6 +37,7 @@ defaults = struct( ...
     "ShowWorkspace", true, ...
     "ShowKinematics", true, ...
     "ShowAnimation", true, ...
+    "ShowSeedPaths", false, ...
     "ShowSearchEdges", true, ...
     "ShowVisibilityGraphs", true, ...
     "FrameStride", 5, ...
@@ -61,6 +62,11 @@ if ~isempty(unknownNames)
     warning("plotTrajectory:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
+if isfield(result.Options, "CollectAllSeedCandidates") && ...
+        result.Options.CollectAllSeedCandidates && ...
+        ~isfield(optionOverrides, "ShowSeedPaths")
+    options.ShowSeedPaths = true;
+end
 options.FigureVisible = lower(string(options.FigureVisible));
 options.Title = string(options.Title);
 options.AnimationGifFile = string(options.AnimationGifFile);
@@ -76,7 +82,8 @@ if ~isscalar(options.AnimationGifFile) || ...
         "AnimationGifFile must be nonempty scalar text.");
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", ...
-    "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", ...
+    "ShowSeedPaths", "ShowSearchEdges", "ShowVisibilityGraphs", ...
+    "ShowSweptSurfaces", ...
     "SaveAnimationGif"];
 
 % Convert each display switch to one logical value. Reject arrays and other
@@ -129,10 +136,24 @@ if options.ShowWorkspace
 
     % Draw candidate seed routes first. Then emphasize the selected route or
     % the best partial route from a failed search.
+    seedColors = lines(max(1, numel(result.Seeds)));
     for seedIndex = 1:numel(result.Seeds)
         route_deg = result.Seeds(seedIndex).position_deg;
-        plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
-            "-", "Color", [0.75 0.75 0.75], "HandleVisibility", "off");
+        if options.ShowSeedPaths
+            [route_deg, seedLabel] = displayedSeedPath(result, seedIndex);
+            plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
+                "-o", "Color", seedColors(seedIndex, :), ...
+                "LineWidth", 1.6, "MarkerSize", 4, ...
+                "DisplayName", seedLabel);
+            labelPoint_deg = route_deg(ceil(size(route_deg, 1) / 2), :);
+            text(workspaceAxes, labelPoint_deg(1), labelPoint_deg(2), ...
+                "  " + seedIndex, "Color", seedColors(seedIndex, :), ...
+                "FontWeight", "bold", "HandleVisibility", "off");
+        else
+            plot(workspaceAxes, route_deg(:, 1), route_deg(:, 2), ...
+                "-", "Color", [0.75 0.75 0.75], ...
+                "HandleVisibility", "off");
+        end
     end
     if result.Success
         % Show both successful planning stages. Search selects a piecewise
@@ -200,8 +221,21 @@ if options.ShowVisibilityGraphs
     for seedIndex = 1:numel(result.Seeds)
         seed = result.Seeds(seedIndex);
         seedTime_s = result.Inputs.initialState.time_s + seed.tau * seed.EstimatedDuration_s;
-        plot3(visibilityAxes, seed.position_deg(:, 1), ...
-            seed.position_deg(:, 2), seedTime_s, ":", "Color", [0.45 0.45 0.45], "DisplayName", "Seed " + seedIndex);
+        seedPosition_deg = seed.position_deg;
+        seedColor = [0.45 0.45 0.45];
+        lineStyle = ":";
+        if options.ShowSeedPaths
+            seedColor = seedColors(seedIndex, :);
+            lineStyle = "-o";
+            [seedPosition_deg, seedLabel, seedTime_s] = ...
+                displayedSeedPath(result, seedIndex);
+        else
+            seedLabel = "Seed " + seedIndex + ": " + seed.Source;
+        end
+        plot3(visibilityAxes, seedPosition_deg(:, 1), ...
+            seedPosition_deg(:, 2), seedTime_s, lineStyle, ...
+            "Color", seedColor, "DisplayName", ...
+            seedLabel);
     end
     if result.Success
         plot3(visibilityAxes, result.position_deg(:, 1), ...
@@ -488,6 +522,33 @@ hold(axesHandle, "on");
 grid(axesHandle, "on");
 box(axesHandle, "on");
 axis(axesHandle, "equal");
+end
+
+function [position_deg, label, time_s] = displayedSeedPath(result, seedIndex)
+% Prefer a retained completed candidate; otherwise show its geometric seed.
+seed = result.Seeds(seedIndex);
+position_deg = seed.position_deg;
+time_s = result.Inputs.initialState.time_s + ...
+    seed.tau * seed.EstimatedDuration_s;
+summary = result.SeedSummaries(seedIndex);
+label = sprintf( ...
+    "Seed %d: %s | seed %.3f deg | arrival %.3f s | " + ...
+    "motion %.3f deg | valid %d", ...
+    seedIndex, seed.Source, seed.Length_deg, summary.ArrivalTime_s, ...
+    summary.MotionLength_deg, summary.ValidationPassed);
+if ~isfield(result, "CandidatePaths") || isempty(result.CandidatePaths)
+    return;
+end
+candidateIndex = find( ...
+    [result.CandidatePaths.SeedIndex] == seedIndex, 1, "first");
+if isempty(candidateIndex)
+    return;
+end
+candidatePath = result.CandidatePaths(candidateIndex);
+if ~isempty(candidatePath.position_deg)
+    position_deg = candidatePath.position_deg;
+    time_s = candidatePath.time_s;
+end
 end
 
 function drawSearchEdges(axesHandle, gridRecord)

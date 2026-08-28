@@ -2643,3 +2643,50 @@ mode, allowing the user to choose the constructor explicitly.
 The focused sandbox suite passes 8/8 and Code Analyzer reports zero findings.
 Interactive mouse geometry was covered by the existing callback paths and UI
 contract checks; an automated pixel-level layout test was not added.
+
+## Named trajectory entry points — 2026-08-27
+
+The trajectory root now exposes `planTrajHs3` and `planTrajRuckig` as the two
+maintained public motion-planning names. Engine packages retain ownership of
+their numerical implementations, polynomial utilities, constraints, and
+validation. Their existing `solve` functions remain deprecated compatibility
+paths for one release, avoiding a breaking namespace migration.
+
+The obstacle planner now routes eligible direct motion through
+`planTrajRuckig`. HS3 obstacle-corridor planning still calls engine-owned
+optimization and polynomial primitives because it constructs a specialized
+constrained problem rather than invoking the generic state-to-state entry.
+Architecture tests pass 14/14, Ruckig tests pass 8/8, and a named HS3
+fixed-time solve passes independent engine validation. This is an interface
+clarification, not a planner-quality or runtime change.
+
+The sandbox Run animation now advances twenty samples per frame with a
+0.001-second inter-frame pause by default, replacing five samples and a
+0.01-second pause. User overrides remain supported, and hidden figures still
+do not sleep for animation.
+
+## Completed multi-seed diagnostic mode — 2026-08-28
+
+`CollectAllSeedCandidates=true` now disables normal arrival-bound and
+first-success pruning, retains each attempted candidate's completed timed path,
+and automatically enables the labeled seed-path overlay. Labels report seed
+source, geometric seed length, final motion length, arrival time, and
+independent validation status. Ordinary planning retains its existing pruning,
+result selection, and runtime behavior.
+
+The diagnostic mode gives each seed a wall budget of `30 + 15 * obstacleCount`
+seconds. A two-second internal reserve leaves time for independent continuous
+validation and result assembly. On the two-obstacle gate, the three 60-second
+budgets measured 58.297863, 5.806901, and 45.916104 seconds. All three paths
+were retained; two validated and one remained explicitly
+`optimizerInfeasible`. The selected overall trajectory independently validated.
+
+For `exampleMovingCircleNoAzimuthWrap`, the normal three-seed comparison proves
+the direct seed was selected correctly: its 8.64603261240521-second arrival is
+0.00000076226416 seconds earlier than the visibility candidate, its motion is
+12.7171175863 versus 12.9249981707 degrees, and its integrated squared jerk is
+6.84138672765 versus 7.38459816076 deg^2/s^5. A five-seed diagnostic also
+exercised the upper visibility route; it arrived at 8.61481291141 seconds with
+a 13.5662813685-degree final motion, while the direct candidate arrived at
+8.50652835070 seconds. This establishes ranking only among attempted validated
+candidates, not global optimality.

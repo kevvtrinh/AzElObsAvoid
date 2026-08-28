@@ -4376,3 +4376,53 @@ contract test verifies the panel title, all four action handles, and their
 labels. The full focused sandbox suite passed 8/8, Code Analyzer reported zero
 findings, and `git diff --check` reported no whitespace errors. No planner
 algorithm or maintained example changed for this UI addition.
+
+## Named trajectory entry points — 2026-08-27
+
+Added `trajectory/planTrajHs3.m` and `trajectory/planTrajRuckig.m`, each with
+zero-input defaults and three-, four-, and five-input planning calls. Updated
+the obstacle planner's direct-motion routing and README examples to use the new
+names. The engine-qualified solve functions remain compatibility APIs.
+
+- Code Analyzer: 0 findings across both entries, the planner, and architecture
+  test.
+- `testArchitectureBoundaries`: 14/14 passed.
+- `testRuckigEngine`: 8/8 passed, including a solve through
+  `planTrajRuckig`.
+- Named HS3 fixed-time focused test: 1/1 passed through `planTrajHs3`.
+
+No maintained example was executed because this change forwards identical
+inputs to the existing engines and does not alter their algorithms.
+
+The sandbox animation default was subsequently accelerated from frame stride
+5 and pause 0.01 seconds to frame stride 20 and pause 0.001 seconds. The
+focused sandbox option contract was updated to preserve these defaults.
+
+## Completed multi-seed diagnostics — 2026-08-28
+
+Failure class for the reported moving-circle selection: `RANKING` investigated,
+no defect found. The deterministic default run generated direct, direct-wait,
+and lower visibility seeds. All three passed independent continuous validation.
+The direct candidate arrived at 8.64603261240521 seconds; the visibility
+candidate arrived at 8.64603337466937 seconds; direct-wait arrived at
+12.48486328125 seconds. Direct also beat visibility in motion length and
+integrated squared jerk. The cyan lines in the screenshot were accepted graph
+edges, not complete selected routes.
+
+Added `CollectAllSeedCandidates`, stable `CandidatePaths`, per-seed elapsed and
+limit diagnostics, and `ShowSeedPaths`. Completed-path labels include seed and
+motion length, arrival, source, and validation. Normal planning defaults both
+new modes off. Focused default-option test passed 1/1, sandbox suite passed 8/8,
+and Code Analyzer reported zero findings. The initial combined Code Analyzer
+command incorrectly passed a cell array to `checkcode` and reported six harness
+findings; the corrected per-file run reported zero.
+The complete focused HS3 planner file passed 64/64, giving 72/72 across HS3
+and sandbox diagnostics with no failed or incomplete tests.
+
+The moving-circle one-obstacle mode resolved to 45 seconds per seed and retained
+3/3 paths in 10.746203 seconds. The two-obstacle mode resolved to 60 seconds per
+seed. Its first gate exposed normal arrival pruning still active in collection
+mode (2/3 retained), which was corrected. The next gate exposed a 0.308685-second
+post-solver overrun, which led to the retained two-second finalization reserve.
+The final gate retained 3/3 paths with every per-seed elapsed time below 60
+seconds and an independently valid selected result.

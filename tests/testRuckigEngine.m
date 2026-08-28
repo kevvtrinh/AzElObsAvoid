@@ -28,7 +28,7 @@ end
 function testExactMotionMatchesIndependentMinimum(testCase)
 % Verify exact switching remains independently callable and certified.
 [initialState, terminalState, limits] = restToRestFixture();
-result = ruckigEngine.solve(initialState, terminalState, limits, ...
+result = planTrajRuckig(initialState, terminalState, limits, ...
     struct("SampleTime", 0.01));
 expectedDuration = 4 * nthroot(1 / 2, 3);
 verifyTrue(testCase, result.Success, result.Message);

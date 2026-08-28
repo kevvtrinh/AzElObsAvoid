@@ -218,11 +218,13 @@ returned motion or preserved failure diagnostics.
 `-- +plotting/                      public result-driven plotting
 
 trajectory/                         independent dimension-neutral engines
+|-- planTrajRuckig.m                public Ruckig planning entry point
+|-- planTrajHs3.m                   public HS3 planning entry point
 |-- +ruckigEngine/                  exact jerk-switching implementation
-|   |-- solve.m                     direct Ruckig-derived entry point
+|   |-- solve.m                     deprecated compatibility entry point
 |   `-- +internal/                  Ruckig normalization and validation
 |-- +hs3Engine/                     collocation implementation
-|   |-- solve.m                     direct HS3 entry point
+|   |-- solve.m                     deprecated compatibility entry point
 |   |-- +polynomial/                reconstruction and basis math
 |   `-- +constraints/               continuous constraint assembly
 `-- THIRD_PARTY_NOTICES.txt         source and publication notices
@@ -249,17 +251,17 @@ Both engines are directly callable with dimension-neutral state and limit
 records:
 
 ```matlab
-ruckigTrajectory = ruckigEngine.solve( ...
+ruckigTrajectory = planTrajRuckig( ...
     initialState, terminalState, limits, ruckigOptions);
 
-hs3Trajectory = hs3Engine.solve( ...
+hs3Trajectory = planTrajHs3( ...
     initialState, terminalState, limits, options, pathConstraints);
 ```
 
 ### API migration
 
-The folder refactor removes redundant compatibility facades. Update existing
-callers as follows:
+Use the named planning entry points in new code. Existing engine-qualified
+solve calls remain compatibility paths for one release:
 
 | Previous call | Current call |
 | --- | --- |
@@ -271,7 +273,9 @@ callers as follows:
 | `azElObstacles.combineAzElObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
 | `azElObstacles.queryAzElTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
 | `plotAzElMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
-| `hs3.solve(...)` | `hs3Engine.solve(...)` |
+| `hs3.solve(...)` | `planTrajHs3(...)` |
+| `ruckigEngine.solve(...)` | `planTrajRuckig(...)` |
+| `hs3Engine.solve(...)` | `planTrajHs3(...)` |
 
 ## Maintained examples
 

@@ -74,12 +74,13 @@ verifyTrue(testCase, isfolder(fullfile(hs3Root, "+constraints")));
 verifyTrue(testCase, isfolder(fullfile(hs3Root, "+polynomial")));
 end
 
-function testTrajectoryRootContainsOnlyIndependentEngines(testCase)
-% Verify no neutral wrapper remains above the two engine packages.
+function testTrajectoryRootExposesNamedPlanningEntries(testCase)
+% Verify the trajectory root exposes only the two named public entry points.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
 sourceRecords = dir(fullfile(trajectoryRoot, "*.m"));
 actualSources = sort(string({sourceRecords.name}));
-verifyEmpty(testCase, actualSources);
+verifyEqual(testCase, actualSources, ...
+    sort(["planTrajHs3.m", "planTrajRuckig.m"]));
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
 actualPackages = sort(string({packageRecords([packageRecords.isdir]).name}));
 expectedPackages = sort(["+ruckigEngine", "+hs3Engine"]);
@@ -181,7 +182,7 @@ solverText = string(fileread(fullfile( ...
 evaluatorText = string(fileread(fullfile( ...
     productRoot, "+planner", "evaluatePlannerPolynomial.m")));
 verifyNotEmpty(testCase, regexp( ...
-    plannerText, "ruckigEngine\.solve\s*\(", "once"));
+    plannerText, "planTrajRuckig\s*\(", "once"));
 verifyNotEmpty(testCase, regexp( ...
     solverText, "hs3Engine\.optimize\s*\(", "once"));
 verifyNotEmpty(testCase, regexp( ...
@@ -190,6 +191,23 @@ verifyNotEmpty(testCase, regexp( ...
 verifyNotEmpty(testCase, regexp( ...
     evaluatorText, ...
     "hs3Engine\.polynomial\.evaluateTrajectoryPolynomial\s*\(", "once"));
+end
+
+function testNamedTrajectoryEntriesPreserveEngineContracts(testCase)
+% Verify the new public names preserve zero-input defaults and one simple solve.
+verifyEqual(testCase, planTrajHs3(), hs3Engine.defaultOptions());
+verifyEqual(testCase, planTrajRuckig(), ruckigEngine.defaultOptions());
+
+initialState = struct( ...
+    "time", 0, "position", 0, "velocity", 0, "acceleration", 0);
+terminalState = struct( ...
+    "position", 1, "velocity", 0, "acceleration", 0, "maximumTime", 5);
+limits = struct( ...
+    "maximumVelocity", 2, ...
+    "maximumAcceleration", 2, ...
+    "maximumJerk", 4);
+result = planTrajRuckig(initialState, terminalState, limits);
+verifyTrue(testCase, result.Success, result.Message);
 end
 
 function testHs3SourceIsAzElAgnostic(testCase)
