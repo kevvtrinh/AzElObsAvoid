@@ -50,14 +50,46 @@ verifyEqual(testCase, result.TerminationReason, ...
     "unsupportedAsymmetricBounds");
 end
 
-function testPathConstraintsAreRejected(testCase)
-% Verify a path row cannot be silently ignored by the switching engine.
+function testSatisfiedPathConstraintIsCertified(testCase)
+% Verify a satisfied affine row participates in continuous certification.
 [initialState, terminalState, limits] = restToRestFixture();
 result = ruckigEngine.solve(initialState, terminalState, limits, ...
     struct(), pointConstraint());
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.ConstraintPassed);
+end
+
+function testViolatedPathConstraintIsReported(testCase)
+% Verify exact profile construction never hides an affine path violation.
+[initialState, terminalState, limits] = restToRestFixture();
+pathConstraints = pointConstraint();
+pathConstraints.LowerBound = 2;
+result = ruckigEngine.solve(initialState, terminalState, limits, ...
+    struct(), pathConstraints);
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, ...
-    "unsupportedPathConstraints");
+    "pathConstraintViolation");
+verifyGreaterThan(testCase, ...
+    result.Validation.MaximumInequalityViolation, 0);
+end
+
+function testIntervalPathConstraintUsesContinuousHull(testCase)
+% Verify one interval row constrains the complete projected subtrajectory.
+[initialState, terminalState, limits] = restToRestFixture();
+pathConstraints = struct( ...
+    "Tau", 0.2, ...
+    "TauEnd", 0.8, ...
+    "Normal", [1, 0], ...
+    "LowerBound", 0.01);
+result = ruckigEngine.solve(initialState, terminalState, limits, ...
+    struct(), pathConstraints);
+verifyTrue(testCase, result.Success, result.Message);
+pathConstraints.LowerBound = 0.9;
+violatingResult = ruckigEngine.solve( ...
+    initialState, terminalState, limits, struct(), pathConstraints);
+verifyFalse(testCase, violatingResult.Success);
+verifyEqual(testCase, violatingResult.TerminationReason, ...
+    "pathConstraintViolation");
 end
 
 function testFixedTimeBelowMinimumIsIdentified(testCase)

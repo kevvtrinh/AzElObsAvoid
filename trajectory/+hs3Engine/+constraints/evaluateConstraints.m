@@ -1,7 +1,7 @@
 function [inequality, equality, inequalityGradient, equalityGradient] = ...
         evaluateConstraints(decision, isFreeTime, fixedFinalTime, ...
         minimumFinalTime, maximumFinalTime, segmentCount, initialState, ...
-        terminalState, limits, pathConstraints)
+        terminalState, limits, pathConstraints, segmentBreakTau)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [inequality, equality] = hs3Engine.constraints.evaluateConstraints(decision, ...
@@ -11,6 +11,10 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 %       hs3Engine.constraints.evaluateConstraints(decision, isFreeTime, fixedFinalTime, ...
 %       minimumFinalTime, maximumFinalTime, segmentCount, initialState, ...
 %       terminalState, limits, pathConstraints)
+%   [inequality, equality] = hs3Engine.constraints.evaluateConstraints( ...
+%       decision, isFreeTime, fixedFinalTime, minimumFinalTime, ...
+%       maximumFinalTime, segmentCount, initialState, terminalState, limits, ...
+%       pathConstraints, segmentBreakTau)
 %**************************************************************************
 % PURPOSE
 %   - Evaluate dimension-neutral continuous kinematic and affine path bounds.
@@ -24,6 +28,8 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 %   - pathConstraints (scalar struct)
 %       Tau/TauEnd are M-by-1, Normal is M-by-D, and LowerBound is M-by-1.
 %       Nonzero intervals constrain their complete Bernstein hull.
+%   - segmentBreakTau ((N+1)-element vector, optional)
+%       Strictly increasing normalized boundaries; [] selects a uniform mesh.
 %**************************************************************************
 % OUTPUTS
 %   - inequality, equality (numeric columns), feasible at c<=0 and ceq=0.
@@ -44,6 +50,9 @@ function [inequality, equality, inequalityGradient, equalityGradient] = ...
 % inequality and equality. Inequality rows point to continuous bounds or path
 % planes. Equality rows point to terminal position, velocity, or acceleration.
 
+if nargin < 11
+    segmentBreakTau = [];
+end
 if isFreeTime && ~isfinite(decision(end))
     % A solver can request a nonfinite time during a line search. Replace this
     % value with a finite value in the permitted range. The decision bounds
@@ -57,14 +66,15 @@ if isFreeTime && ~isfinite(decision(end))
 end
 [inequality, equality, finalTime] = constraintValues( ...
     decision, isFreeTime, fixedFinalTime, segmentCount, initialState, ...
-    terminalState, limits, pathConstraints);
+    terminalState, limits, pathConstraints, segmentBreakTau);
 if nargout < 3
     return;
 end
 dimensionCount = numel(initialState.position);
 duration = finalTime - initialState.time;
 [inequalityMatrix, equalityMatrix] = hs3Engine.constraints.createFixedConstraintMatrices( ...
-    segmentCount, duration, dimensionCount, limits, pathConstraints);
+    segmentCount, duration, dimensionCount, limits, pathConstraints, ...
+    segmentBreakTau);
 inequalityGradient = inequalityMatrix.';
 equalityGradient = equalityMatrix.';
 if ~isFreeTime
@@ -104,7 +114,7 @@ trialDecision = decision;
 trialDecision(end) = finalTime + direction * differenceStep;
 [trialInequality, trialEquality] = constraintValues( ...
     trialDecision, true, fixedFinalTime, segmentCount, initialState, ...
-    terminalState, limits, pathConstraints);
+    terminalState, limits, pathConstraints, segmentBreakTau);
 if direction > 0
     timeInequalityGradient = ...
         (trialInequality - inequality) / differenceStep;
@@ -122,7 +132,7 @@ end
 
 function [inequality, equality, finalTime] = constraintValues( ...
         decision, isFreeTime, fixedFinalTime, segmentCount, initialState, ...
-        terminalState, limits, pathConstraints)
+        terminalState, limits, pathConstraints, segmentBreakTau)
 % Reconstruct one decision and evaluate raw constraint values.
 % The final-time decision is appended after all coordinate-major jerk values.
 % Rebuilding the polynomial here keeps every constraint tied to the same exact
@@ -137,7 +147,7 @@ if isFreeTime
     finalTime = decision(end);
 end
 polynomial = hs3Engine.polynomial.createTrajectoryPolynomial( ...
-    controlJerk, initialState, finalTime, segmentCount);
+    controlJerk, initialState, finalTime, segmentCount, segmentBreakTau);
 [inequality, equality] = ...
     hs3Engine.constraints.evaluatePolynomialConstraints( ...
     polynomial, terminalState, limits, pathConstraints);

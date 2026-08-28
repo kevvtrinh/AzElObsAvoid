@@ -1,6 +1,6 @@
 function [value, gradient, hessian] = evaluateIntegratedSquaredJerk( ...
         decision, isFreeTime, fixedFinalTime, segmentCount, ...
-        startTime, dimensionCount)
+        startTime, dimensionCount, segmentBreakTau)
 %% Section 0: Header & Readme
 % SYNTAX
 %   value = hs3Engine.polynomial.evaluateIntegratedSquaredJerk(decision, isFreeTime, ...
@@ -10,6 +10,9 @@ function [value, gradient, hessian] = evaluateIntegratedSquaredJerk( ...
 %   [value, gradient, hessian] = hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
 %       decision, false, fixedFinalTime, segmentCount, startTime, ...
 %       dimensionCount)
+%   [value, gradient, hessian] = hs3Engine.polynomial.evaluateIntegratedSquaredJerk( ...
+%       decision, false, fixedFinalTime, segmentCount, startTime, ...
+%       dimensionCount, segmentBreakTau)
 %**************************************************************************
 % PURPOSE
 %   - Integrate squared quadratic HS3 jerk and its exact decision gradient.
@@ -18,8 +21,10 @@ function [value, gradient, hessian] = evaluateIntegratedSquaredJerk( ...
 %   - decision (numeric column), coordinate-major jerk and optional time.
 %   - isFreeTime (logical scalar), true when decision ends in final time.
 %   - fixedFinalTime, startTime (finite scalar), caller-defined time unit.
-%   - segmentCount (positive integer scalar), equal-duration segments.
+%   - segmentCount (positive integer scalar), polynomial segment count.
 %   - dimensionCount (positive integer scalar), modeled coordinates.
+%   - segmentBreakTau ((N+1)-element vector, optional)
+%       Strictly increasing normalized boundaries; [] selects uniform timing.
 %**************************************************************************
 % OUTPUTS
 %   - value (nonnegative scalar), integrated squared jerk.
@@ -45,7 +50,12 @@ finalTime = fixedFinalTime;
 if isFreeTime
     finalTime = decision(end);
 end
-segmentDuration = (finalTime - startTime) / segmentCount;
+if nargin < 7
+    segmentBreakTau = [];
+end
+[~, segmentDuration, isUniformMesh] = ...
+    hs3Engine.polynomial.resolveSegmentMesh( ...
+    segmentCount, finalTime - startTime, segmentBreakTau);
 startJerk = controlJerk(1:2:end - 2, :);
 midpointJerk = controlJerk(2:2:end - 1, :);
 endJerk = controlJerk(3:2:end, :);
@@ -53,17 +63,21 @@ normalizedIntegral = (4 * startJerk.^2 + ...
     16 * midpointJerk.^2 + 4 * endJerk.^2 + ...
     4 * startJerk .* midpointJerk - 2 * startJerk .* endJerk + ...
     4 * midpointJerk .* endJerk) / 30;
-value = segmentDuration * sum(normalizedIntegral, "all");
+if isUniformMesh
+    value = segmentDuration * sum(normalizedIntegral, "all");
+else
+    value = sum(segmentDuration .* sum(normalizedIntegral, 2));
+end
 if nargout < 2
     return;
 end
 gradientJerk = zeros(controlCount, dimensionCount);
-gradientJerk(1:2:end - 2, :) = segmentDuration * ...
+gradientJerk(1:2:end - 2, :) = segmentDuration .* ...
     (8 * startJerk + 4 * midpointJerk - 2 * endJerk) / 30;
-gradientJerk(2:2:end - 1, :) = segmentDuration * ...
+gradientJerk(2:2:end - 1, :) = segmentDuration .* ...
     (32 * midpointJerk + 4 * startJerk + 4 * endJerk) / 30;
 gradientJerk(3:2:end, :) = gradientJerk(3:2:end, :) + ...
-    segmentDuration * ...
+    segmentDuration .* ...
     (8 * endJerk - 2 * startJerk + 4 * midpointJerk) / 30;
 gradient = gradientJerk(:);
 if isFreeTime
@@ -87,8 +101,13 @@ end
 % diagonal blocks in the full Hessian.
 
 coordinateHessian = zeros(controlCount);
-localHessian = segmentDuration / 30 * [8 4 -2; 4 32 4; -2 4 8];
 for segmentIndex = 1:segmentCount
+    localDuration = segmentDuration;
+    if ~isUniformMesh
+        localDuration = segmentDuration(segmentIndex);
+    end
+    localHessian = localDuration / 30 * ...
+        [8 4 -2; 4 32 4; -2 4 8];
     controlIndex = 2 * segmentIndex - 1:2 * segmentIndex + 1;
     coordinateHessian(controlIndex, controlIndex) = ...
         coordinateHessian(controlIndex, controlIndex) + localHessian;

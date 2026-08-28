@@ -4426,3 +4426,260 @@ mode (2/3 retained), which was corrected. The next gate exposed a 0.308685-secon
 post-solver overrun, which led to the retained two-second finalization reserve.
 The final gate retained 3/3 paths with every per-seed elapsed time below 60
 seconds and an independently valid selected result.
+
+## Optional non-stopping waypoint warm start — 2026-08-28
+
+Source under test was `HS3-planner` at
+`f0d12f8+pass-through-worktree`. MATLAB Code Analyzer reported zero findings
+in the option resolver, planner, pass-through helper, and HS3 candidate solver.
+Focused tests passed: `testPlannerOptions` 4/4, `testRuckigEngine` 10/10,
+`testPassThroughWaypointWarmStart` 1/1, and `testHs3Planner` 64/64 in
+64.569466 test seconds. One earlier HS3 suite attempt produced 63/64 only
+because the test harness disabled all warnings while a test expected an
+unknown-option warning; rerunning with normal warning state passed 64/64.
+
+Serial headless A/B evidence with jerk enabled:
+
+| Example / mode | Planner / validation | Polyline deg | Motion deg | Duration s | Collision / certificate | Wall s |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle`, default | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 13.717231 |
+| `exampleStaticUShapedObstacle`, pass-through | 1 / 1 | 34.9425880405 | 41.2461615078 | 21.9798565134 | 1 / 1 | 16.139615 |
+| `exampleTwoOpposingUVisibilityGraph`, default | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 5.977472 |
+| `exampleTwoOpposingUVisibilityGraph`, pass-through | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 9.375114 |
+
+The separately recorded four-sweep experiment reached the best validated
+single-U arrival of 21.4038773205 seconds with a 41.056539875-degree motion,
+but required 34.3518164 seconds for the full profile, repair, polish, and
+validation pipeline. It remains benchmark evidence rather than a default.
+
+## Nonuniform segment-placement gate — 2026-08-28
+
+Focused verification passed `testNonuniformHs3Mesh` 6/6,
+`testHs3PolynomialOperations` 10/10,
+`testPassThroughWaypointWarmStart` 1/1, the Ruckig signature/mesh tests 4/4,
+and `testHs3Planner` 64/64. The first combined polynomial-test command omitted
+the repository root from MATLAB's path and produced package-resolution harness
+errors. A fresh process with both package roots passed all 10 tests.
+
+Single-U placement results, all independently valid:
+
+| Mesh | Segments | Duration (s) | Gap from uniform 20 (s) |
+| --- | ---: | ---: | ---: |
+| Uniform | 20 | 21.4038773205 | 0 |
+| Ruckig signature | 19 | 21.4852160195 | 0.0813386990 |
+| Uniform | 19 | 21.6190328443 | 0.2151555238 |
+| Ruckig signature | 14 | 21.8372833147 | 0.4334059942 |
+| Jerk-fit coarsened | 14 | 21.8814530191 | 0.4775756986 |
+
+Placement carries useful information, but no tested 14- or 19-segment mesh
+reproduced the 21.4038773205-second reference. The adaptive placement policy
+was removed from the pass-through pipeline; the general nonuniform HS3
+representation and its tests remain.
+
+Fresh headless static gates used `WaypointWarmStartMode="passThrough"` and
+finite jerk limits:
+
+| Example | Jerk | Planner / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / certificate | Wall (s) |
+| --- | ---: | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle` | 1 | 1 / 1 | 34.9425880405 | 41.2433751280 | 21.9798547914 | 1 / 1 | 17.4851590 |
+| `exampleTwoOpposingUVisibilityGraph` | 1 | 1 / 1 | 24.0357847150 | 24.4189852783 | 21.9090835611 | 1 / 1 | 9.4036758 |
+| `exampleDenseConcaveObstacle` | 1 | 1 / 1 | 12.7007215595 | 14.0108528198 | 8.60599186623 | 1 / 1 | 11.0079427 |
+
+## Adaptive static hybrid verification — 2026-08-28
+
+Source under test was `HS3-planner` at
+`f0d12f8+adaptive-hybrid-worktree`. The retained decisions are based only on
+route geometry, resolved options, a Ruckig timing profile, validated HS3
+activity, and continuous-motion validation. The rejected 40-segment dense
+probe (8.50653509124-second arrival, 95.5607259-second wall) and the rejected
+Single-U clustered shortcut (21.8151192504 seconds, 29.5015091-second wall)
+remain recorded here because neither meets the bounded runtime objective.
+
+Retained serial record gates, jerk enabled:
+
+| Example | Planner / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.4882254189 | 21.2540286325 | 1 / 1 | 10.4296843 warm; 17.7360472 cold |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 23.8537208838 | 24.4031321189 | 21.7254621235 | 1 / 1 | 20.2258638 |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.7561799502 | 8.55509702317 | 1 / 1 | 9.9209119 warm; 17.9190903 cold |
+
+These improve the declared prior hybrid records: Single U
+21.4038773205 seconds / 34.3518164 seconds wall, Two U
+21.7309195016 seconds / 67.482064 seconds wall, and dense concave
+8.5551003021 seconds / approximately 13.5 seconds wall. The warm/cold labels
+are intentional; process startup and first-use solver work are not hidden.
+
+Deterministic random static A/B gates:
+
+| Seed / obstacles | Pass-through duration / wall (s) | Ordinary duration / wall (s) | Outcome |
+| --- | ---: | ---: | --- |
+| 101 / 2 | 15.8643105795 / 11.2243794 | 16.5995347238 / 5.3768225 | 0.735224-second gain for 5.847557 seconds extra work |
+| 303 / 3 | 15.7631244134 / 10.5809183 | 15.7631244134 / 6.9965109 | measured-potential gate skipped repair/polish |
+| 404 / 3 | 16.0903836179 / 3.2277611 | 16.0903836179 / 5.0975473 | measured-potential gate skipped repair/polish |
+
+All six random trajectories above passed independent collision and kinematic
+validation. Seed 202 also matched ordinary arrival, path, and 20-segment mesh;
+its earlier serial walls were 7.719 seconds pass-through and 9.588 seconds
+ordinary and are treated only as order-sensitive generalization evidence.
+
+The broader maintained static-family pass-through sweep produced:
+
+| Example | Success / example validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleAlternatingSlalom` | 1 / 1 | 16 | 17.2251036845 | 12.1510445858 | 1 / 1 | 13.0849257 |
+| `exampleNoPath` | 0 / 1 expected failure | NaN | NaN | NaN | NaN | 5.8366406 |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4466826495 | 7.57952066338 | 1 / 1 | 10.7509637 |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 | 4.946881 |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6373466428 | 6.3679977502 | 1 / 1 | 55.740453 |
+
+Pass-through matched the current ordinary trajectory on alternating slalom,
+the basic obstacle, obstacle free, and the extreme static outline. It does not
+beat the older `325-full-suite` alternating-slalom and extreme-outline records,
+so no all-history/all-branch record claim is made.
+
+Verification commands and outcomes:
+
+- Code Analyzer: zero findings in the modified planner, pass-through solver,
+  search classifier, activity mesh, HS3 candidate solver, and HS3 engine.
+- `testHs3Planner`: 64/64 passed.
+- Pass-through classification, warm-start, activity-mesh, nonuniform-mesh,
+  and Ruckig signature/refinement suites: 18/18 passed.
+- `testPlannerOptions` and `testRuckigEngine`: 14/14 passed.
+- Total focused result: 96/96 passed.
+- The complete HS3 suite's deforming-obstacle case emitted extensive
+  near-singular `fmincon` warnings but completed successfully. This remains a
+  visible conditioning weakness rather than a suppressed or passing claim.
+
+## Certified continuation and random HS3 milestone — 2026-08-28
+
+The broad near-direct shortcut was rejected after it returned an intermediate
+25.92-second Two-U result instead of reaching its declared final duration.
+The retained condition is narrower and input-driven: one active endpoint axis,
+monotone progress on that axis, route length within 2% of direct displacement,
+and at least two lateral sign reversals. An incomplete continuation ladder is
+now rejected rather than silently promoting its last feasible intermediate.
+
+Fresh serial static gates, jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Planner wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.0904389848 | 10.7625 | 1 / 1 | 4.7953407 |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.4882254189 | 21.2540286325 | 1 / 1 | 11.7809874; 19.8996114 fresh post-cleanup |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 23.8537208838 | 24.4031321189 | 21.7254621235 | 1 / 1 | 17.0938997 |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.7561799502 | 8.55509702317 | 1 / 1 | 12.9727886 |
+
+The alternating result is an HS3 fixed-time solution, not a Ruckig-only
+fallback. It improves the current ordinary/hybrid 12.1510445858-second arrival,
+17.2251036845-degree motion, and 13.0849257-second wall record. The other three
+protected static results remain numerically unchanged. Single-U fresh-process
+runtime is still variable and is not claimed below ten seconds.
+
+Three predeclared deterministic random static A/B cases prove the first
+milestone reaches HS3 without unbounded work:
+
+| Seed / obstacles | Hybrid arrival / wall (s) | Ordinary arrival / wall (s) | Hybrid overhead (s) | Selected HS3 |
+| --- | ---: | ---: | ---: | ---: |
+| 101 / 2 | 15.8643105795 / 11.4773750 | 16.5995347238 / 5.1656831 | +6.3116919 | attempted / feasible / validated |
+| 303 / 3 | 15.7631244134 / 12.7055879 | 15.7631244134 / 8.5891386 | +4.1164493 | attempted / feasible / validated |
+| 404 / 3 | 16.0903836179 / 3.9028172 | 16.0903836179 / 6.2603182 | -2.3575010 | attempted / feasible / validated |
+
+All six random trajectories passed independent collision and kinematic
+validation. Hybrid overhead stayed below the declared 10--15 second ceiling in
+all three cases; seed 101 improved arrival by 0.7352241443 seconds, while 303
+and 404 matched the ordinary HS3 solution exactly.
+
+Post-cleanup verification reported zero Code Analyzer findings in the six
+hybrid planner files, 16/16 hybrid/nonuniform focused tests, 14/14 option and
+Ruckig tests, and 64/64 HS3 planner tests. The full HS3 run took 169.75339
+seconds and again exposed the deforming-obstacle near-singular warning flood.
+Against `f0d12f8`, production growth is 2,123 physical added lines and 131
+removed lines (1,992 net); excluding blank and comment-only additions gives
+1,795 executable physical lines. This is below two thousand net lines but is
+still a material implementation-size cost, so no small-change claim is made.
+
+## Bounded moving/deforming runtime closeout — 2026-08-28
+
+The final retained source contains none of the runtime experiments below:
+
+- exact obstacle-query caching had only a 9.0167% theoretical hit fraction;
+- failed stage-two recovery cost 0.307568 seconds and remained infeasible;
+- initial 20-segment topology escalation took 192.026619 seconds and reached
+  40 segments, despite returning a valid 7.941370833-second motion;
+- a 50-iteration coarse pass returned a fully valid 7.962868741-second motion
+  in 56.098832 planner seconds, but its 43.132171247-degree smooth length was
+  0.059904737 degree longer than the clean 43.072266510-degree reference.
+
+The last candidate was rejected because its 8.3% apparent runtime improvement
+was below a robust retention threshold under the observed process variance and
+regressed path length by 0.139%. The production hunk was removed before final
+verification.
+
+Post-removal checks:
+
+- Code Analyzer reported zero findings for `plan.m`.
+- The seven focused planner/hybrid/mesh/option test files passed 93/93 in
+  137.442642 seconds. The deforming test again emitted the known near-singular
+  `fmincon` warning flood; no warning was suppressed.
+- `exampleStaticUShapedObstacle`, jerk enabled: success/validation 1/1,
+  34.942588041-degree polyline, 40.520436104-degree motion,
+  21.254028732-second arrival, collision/kinematic 1/1, 30.260707-second wall.
+- `exampleTwoOpposingUVisibilityGraph`, jerk enabled: success/validation 1/1,
+  23.853720884-degree polyline, 24.403132126-degree motion,
+  21.725462124-second arrival, collision/kinematic 1/1, 30.073726-second wall.
+- Visible `exampleObstacleFree`, jerk enabled: success/validation 1/1,
+  4.472135955-degree polyline and motion, 4.531128874-second arrival,
+  collision/kinematic 1/1, four figures, frame stride 20.
+- `exampleNoPath`, jerk enabled: expected success 0 / validation 1,
+  unavailable path and arrival metrics, `noValidatedSeed`, and two search-
+  diagnostic figures.
+
+The final production line audit after consolidation is +2,132/-133 physical
+lines versus `f0d12f8`, or +1,999 net, with 1,807 nonblank/non-comment
+additions. Duplicate validation in the one-caller activity-mesh policy and two
+derivable classification/activity diagnostic fields were removed. The
+activity decision, nonuniform mesh, and HS3 candidate behavior remain intact.
+
+Post-consolidation verification:
+
+- 3/3 activity-mesh tests, then 8/8 activity/classification/pass-through tests;
+- all 17 maintained examples run serially: 16 independently validated
+  successes and one independently validated expected no-path result;
+- exact retained moving/deforming result: 40-degree selected polyline,
+  43.0722665096-degree motion, 7.96286792066-second arrival, collision and
+  kinematic certificates passed, 55.7054096-second planner time;
+- visible obstacle-free smoke: 4.472135955-degree path and motion,
+  4.53112887415-second arrival, four figures, frame stride 20;
+- no-path smoke: `noValidatedSeed`, three expanded states, two diagnostic
+  figures;
+- final focused suite: 93/93 passed in 115.924289 seconds. This duplicate run
+  suppressed only the already-recorded near-singular MATLAB console flood;
+  the prior unsuppressed 93/93 run passed in 137.442642 seconds.
+
+Post-consolidation random A/B evidence, all selected hybrid results explicitly
+HS3-attempted, optimizer-feasible, independently validated, collision-free,
+and kinematically certified:
+
+| Seed | Hybrid arrival / wall (s) | Ordinary arrival / wall (s) | Hybrid wall delta (s) |
+| ---: | ---: | ---: | ---: |
+| 101 | 15.8643105795 / 17.7135074 | 16.5995347238 / 8.4561331 | +9.2573743 |
+| 303 | 15.7631244134 / 15.9672482 | 15.7631244134 / 10.8656958 | +5.1015524 |
+| 404 | 16.0903840021 / 5.2379460 | 16.0903840021 / 8.3214712 | -3.0835252 |
+
+Thus the current worktree proves the first milestone on three deterministic
+random static fields without exceeding the 10--15-second hybrid overhead cap.
+Seed 101 also proves the second milestone with a 0.7352241443-second arrival
+gain for 9.2573743 seconds of additional wall work. This is bounded evidence,
+not a claim of global path or time optimality.
+
+The final post-consolidation Single-U A/B directly proves simultaneous metric
+improvement on the same physical request:
+
+| Mode | Arrival (s) | Motion length (deg) | Wall (s) | HS3/validation |
+| --- | ---: | ---: | ---: | --- |
+| Ruckig/HS3 hybrid | 21.2540287320 | 40.5204361036 | 28.7366170 | attempted, feasible, passed |
+| Ordinary HS3 | 22.6308871020 | 41.5367249083 | 40.8732228 | attempted, feasible, passed |
+
+The hybrid delta is -1.3768583700 seconds arrival, -1.0162888047 degrees
+motion length, and -12.1366058 seconds wall. Both rows used the same maintained
+example, finite jerk limits, and independent validation. The ordinary solve's
+near-singular warnings remain visible in the execution record.

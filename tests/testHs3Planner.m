@@ -37,6 +37,7 @@ options = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
+verifyEqual(testCase, options.WaypointWarmStartMode, "none");
 verifyFalse(testCase, options.CollectAllSeedCandidates);
 plotOptions = obstacleAvoidance.plotting.plotTrajectory();
 verifyFalse(testCase, plotOptions.ShowSeedPaths);
@@ -864,6 +865,56 @@ verifyTrue(testCase, any([seeds.Source] == "directWait"));
 verifyTrue(testCase, any([seeds.Source] == "visibilityGraph"));
 verifyEqual(testCase, numel(seeds), 3);
 verifyGreaterThanOrEqual(testCase, diagnostics.HomologyClassCount, 1);
+end
+
+function testConvergedTimedMinimumLengthRouteSuppressesDuplicateSolve(testCase)
+% Reuse one converged timed HS3 topology instead of rerunning it as free time.
+time_s = [0; 6; 6.5; 12];
+source_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+centerElevation_deg = [0; 0; 8; 8];
+azimuth_deg = cell(numel(time_s), 1);
+elevation_deg = cell(numel(time_s), 1);
+for sampleIndex = 1:numel(time_s)
+    translated_deg = source_deg + [0 centerElevation_deg(sampleIndex)];
+    azimuth_deg{sampleIndex} = translated_deg(:, 1);
+    elevation_deg{sampleIndex} = translated_deg(:, 2);
+end
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "clearing barrier", time_s, azimuth_deg, elevation_deg, 0.1);
+initialState = testCase.TestData.Fixtures.State( ...
+    0, [-5 0], [0 0], [0 0]);
+goalState = testCase.TestData.Fixtures.State( ...
+    12, [5 0], [0 0], [0 0]);
+limits = testCase.TestData.Fixtures.PhysicalLimits( ...
+    [2 2], [1 1], [2 2]);
+limits.azimuthInterval_deg = [-6 6];
+limits.elevationInterval_deg = [-3 3];
+options = obstacleAvoidance.planTrajectory();
+options.GoalTimeMode = "earliestArrival";
+options.MaximumSeedCount = 3;
+options.Verbose = false;
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, options);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, ...
+    result.Validation.Message);
+waitIndex = find([result.Seeds.Source] == "directWait", 1);
+directIndex = find([result.Seeds.Source] == "directVisibilityEdge", 1);
+verifyNotEmpty(testCase, waitIndex);
+verifyNotEmpty(testCase, directIndex);
+verifyTrue(testCase, ...
+    result.SeedSummaries(waitIndex).TimedArrivalSearchConverged);
+verifyEqual(testCase, ...
+    result.SeedSummaries(directIndex).EquivalentTimedSeedIndex, waitIndex);
+verifyFalse(testCase, result.SeedSummaries(directIndex).Hs3Attempted);
+verifyEqual(testCase, ...
+    result.SeedSummaries(directIndex).TerminationReason, ...
+    "equivalentTimedTopologySolved");
+verifyEqual(testCase, result.SelectedSeedIndex, waitIndex);
+verifyEqual(testCase, result.ArrivalTime_s, 10.2314453125, ...
+    "AbsTol", options.ArrivalTimeTolerance_s);
+verifyEqual(testCase, sum(vecnorm( ...
+    diff(result.position_deg, 1, 1), 2, 2)), 10, "AbsTol", 1e-8);
 end
 function testObstacleActivationSpanEnablesTimedSearch(testCase)
 % Verify equal geometry can still change occupancy through its active span.

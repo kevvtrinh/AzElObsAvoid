@@ -25,6 +25,18 @@
   position polynomials. This prevents independent state splines from
   violating the shared dynamics.
 
+## Non-stopping waypoint-state refinement
+
+- Koskela, P. `rsruckig`, MIT-licensed Rust motion-planning library.
+  https://github.com/petrikosk/rsruckig
+
+  The optional `passThrough` waypoint warm start is a MATLAB adaptation of
+  the local waypoint-state search in `calculator_waypoints.rs`. It estimates
+  nonzero interior velocities, chains exact jerk-limited state-to-state
+  sections, and boundedly refines shared waypoint velocity and acceleration.
+  This repository does not embed or call the Rust implementation. HS3 and the
+  independent obstacle validator remain authoritative for feasibility.
+
 ## Scenario smoothstep motion
 
 - Perlin, K. (2002). "Improving Noise." *Proceedings of SIGGRAPH 2002*,

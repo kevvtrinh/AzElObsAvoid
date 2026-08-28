@@ -19,7 +19,8 @@ function result = solve( ...
 %   - options (scalar struct, optional; default struct())
 %       Direct Ruckig-engine overrides. Empty fields use engine defaults.
 %   - pathConstraints (scalar struct, optional; default empty)
-%       Nonempty affine constraints return unsupportedPathConstraints.
+%       Affine rows continuously certify the constructed exact profile. They
+%       reject a violating profile but do not steer profile construction.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -148,8 +149,14 @@ if result.Success
         "A kinematically constrained trajectory was found and independently validated.";
     result.TerminationReason = "goalReached";
 else
-    result.Message = result.Validation.Message;
-    result.TerminationReason = "exactProfileValidationFailed";
+    if ~isempty(pathConstraints.Tau)
+        result.Message = "The exact switching profile violates an affine " + ...
+            "path constraint. " + result.Validation.Message;
+        result.TerminationReason = "pathConstraintViolation";
+    else
+        result.Message = result.Validation.Message;
+        result.TerminationReason = "exactProfileValidationFailed";
+    end
 end
 end
 

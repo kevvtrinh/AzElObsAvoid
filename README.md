@@ -33,6 +33,19 @@ options = struct( ...
     "MaximumSeedCount", 3);
 ```
 
+For static earliest-arrival detours, the optional non-stopping waypoint warm
+start compares a Ruckig-derived multi-section proposal against ordinary HS3
+and returns only an independently validated winner:
+
+```matlab
+options = struct( ...
+    "WaypointWarmStartMode", "passThrough");
+```
+
+The default is `"none"`. Use `"passThrough"` to force the comparison. The
+per-seed Ruckig and HS3 evidence is retained in
+`result.SearchDiagnostics.SeedSummaries`.
+
 ## Minimal fixed-goal example
 
 ```matlab

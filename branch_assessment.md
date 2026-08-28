@@ -6,6 +6,37 @@ trajectory wrapper — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Optional non-stopping Ruckig-to-HS3 warm start — 2026-08-28
+
+The planner now exposes an opt-in `WaypointWarmStartMode="passThrough"` for
+static earliest-arrival detours. A native MATLAB adaptation of the
+MIT-licensed `rsruckig` waypoint search estimates shared nonzero interior
+velocity and acceleration, chains exact jerk-limited state-to-state sections,
+then supplies the sampled profile to a fixed-time HS3 repair and a 14-segment
+free-time HS3 polish. Ordinary HS3 still runs, and only independently validated
+candidates participate in the existing arrival-time ranking. The default mode
+remains `"none"`.
+
+On `exampleStaticUShapedObstacle`, the retained one-sweep configuration passed
+independent collision and kinematic validation at 21.9798565134 seconds and
+41.2461615078 degrees, versus the default 22.6308876389 seconds and
+41.5363500661 degrees. The measured integrated run used 16.139615 seconds wall
+time, so no runtime improvement is claimed against the earlier 13.717231-second
+default record. The best experimental four-sweep combination remains recorded
+separately at 21.4038773205 seconds and 41.056539875 degrees, but its full
+34.3518164-second pipeline is too slow to use as the maintained configuration.
+
+The structurally different `exampleTwoOpposingUVisibilityGraph` demonstrates
+the selection guard. Default HS3 and the opt-in comparison both returned the
+same independently validated 21.9090835611-second, 24.4189853364-degree
+candidate. The opt-in run took 9.375114 seconds versus 5.977472 seconds for the
+default, so the hybrid adds approximately 3.40 seconds when it does not win.
+These two cases do not establish global time or path optimality.
+
+Focused evidence currently includes 4/4 planner-option tests, 10/10 Ruckig
+engine tests, 1/1 non-stopping waypoint test, and 64/64 full HS3 planner tests.
+The source credit and adaptation boundary are documented in `citation.md`.
+
 ## Bounded interactive sandbox planning — 2026-08-27
 
 The sandbox now owns a smaller, explicitly documented HS3 work portfolio while
@@ -2690,3 +2721,161 @@ exercised the upper visibility route; it arrived at 8.61481291141 seconds with
 a 13.5662813685-degree final motion, while the direct candidate arrived at
 8.50652835070 seconds. This establishes ranking only among attempted validated
 candidates, not global optimality.
+
+## Nonuniform HS3 mesh design gate — 2026-08-28
+
+HS3 now supports explicit normalized segment breakpoints throughout exact
+state propagation, integrated-jerk derivatives, affine fixed-time constraints,
+obstacle corridors, reconstruction, and independent validation. Omitting the
+option preserves the legacy uniform mesh. This general capability is retained
+to make segment-placement experiments certificate-safe; it is not evidence
+that a particular adaptive policy is beneficial.
+
+The Single-U sweep separated segment count from placement. Uniform 19 segments
+reached 21.6190328443 seconds. Ruckig-signature placement with the same count
+reached 21.4852160195 seconds, but remained 0.0813386990 seconds slower than
+the validated uniform-20 reference of 21.4038773205 seconds. Signature-derived
+14 segments reached 21.8372833147 seconds, while jerk-fit coarsening of the
+20-segment solution to 14 reached 21.8814530191 seconds. Thus 20 is the
+smallest tested mesh to reproduce 21.4038773205 seconds, not a proven minimum.
+Neither Ruckig section savings nor low jerk-fit error is an absolute segment-
+redundancy certificate.
+
+The adaptive 14-segment policy was removed from the pass-through pipeline. It
+improved Single U relative to uniform 14, but increased wall time and did not
+improve the selected Two-U or dense-concave result. The retained candidate is
+one Ruckig sweep followed by uniform fixed-time repair and uniform 14-segment
+free-time polish. Fresh serial static gates independently passed: Single U
+21.9798547914 seconds, Two U 21.9090835611 seconds, and dense concave
+8.60599186623 seconds.
+
+## Adaptive static hybrid records — 2026-08-28
+
+The largest current strength is an input-driven static hybrid that improves
+the three declared record cases in both arrival and warm serial wall time.
+Coupled/reversing waypoint chains retain one refined non-stopping Ruckig
+profile; scalar chains first compare a zero-sweep timing probe with an actual
+valid coarse HS3 motion; two-point routes refine only endpoint intervals when
+HS3 acceleration/jerk activity dominates a velocity-limited interior. Scalar
+visibility seeds containing a sub-one-percent geometry edge bypass Ruckig and
+reuse the valid coarse HS3 polynomial on one 20-segment mesh. No example name,
+obstacle shape, expected route, or preferred detour is present in those rules.
+
+| Static case | Previous arrival / wall (s) | Retained arrival / warm wall (s) |
+| --- | ---: | ---: |
+| Single U | 21.4038773205 / 34.3518164 | 21.2540286325 / 10.4296843 |
+| Two opposing U | 21.7309195016 / 67.482064 | 21.7254621235 / 20.2258638 |
+| Dense concave | 8.5551003021 / about 13.5 | 8.55509702317 / 9.9209119 |
+
+The Single-U cold process remained variable at 17.7--19.4 seconds, while an
+immediately repeated serial run was 10.4296843 seconds and planner-attributed
+time was 9.5504081 seconds. This warm/cold distinction is visible and the
+10-second result is not presented as a guaranteed fresh-process bound.
+
+Four deterministic random static fields remained collision-free and
+kinematically valid. Seed 101 retained a 0.735224-second arrival improvement
+for 5.847557 seconds of additional wall work. Seeds 303 and 404 skipped the
+expensive repair/polish after their measured timing potential was below 0.5
+seconds; seed 303 matched the ordinary 15.7631244134-second result, and seed
+404 matched the ordinary 16.0903836179-second result. A failed fixed-time
+repair is no longer used merely because it returned samples; only canonical
+validation can promote it to the next warm start.
+
+The principal weakness is that the three declared records do not imply every
+historical row from unrelated older branches has been beaten. A broader static
+audit matched current ordinary quality on alternating slalom and the extreme
+U.S. outline, but returned 12.1510445858 and 6.3679977502 seconds versus older
+`325-full-suite` records of 10.7822098011 and 6.00693537638 seconds. The hybrid
+therefore remains optional (`WaypointWarmStartMode="none"` is still the
+default) until that cross-branch gap and cold-start runtime variability are
+resolved. The complete focused verification passed 96/96 tests (82 planner,
+mesh, and signature tests plus 14 option/Ruckig tests); modified production
+files reported zero Code Analyzer findings. The deforming-obstacle planner
+test passed but emitted extensive near-singular `fmincon` warnings, which
+remain an unfavorable conditioning diagnostic.
+
+## Certified hybrid milestone update — 2026-08-28
+
+The strongest new result is the certified alternating-slalom continuation:
+10.7625-second arrival, 16.0904389848-degree motion, and 4.7953407-second
+planner wall, all independently valid. The trigger is an axis-aligned,
+monotone, near-direct route with repeated lateral reversals; it does not encode
+an example name or obstacle shape. A broader near-direct trigger was rejected
+because it degraded Two U to 25.92 seconds and accepted an incomplete ladder.
+
+The first runtime milestone generalizes across three predeclared random static
+fields. Every selected hybrid result was an actual HS3 attempt that was
+optimizer-feasible and independently validated. Relative to ordinary HS3,
+hybrid wall deltas were +6.3116919, +4.1164493, and -2.3575010 seconds. Seed
+101 improved arrival by 0.7352241443 seconds; seeds 303 and 404 matched ordinary
+arrival and path exactly. These cases establish bounded behavior for two- and
+three-obstacle random rectangles, not global behavior for arbitrary geometry.
+
+The principal remaining weaknesses are cold-runtime variability and code size.
+Single U reproduced the exact 21.2540286325-second solution after cleanup, but
+fresh wall was 19.8996114 seconds, so a sub-ten-second cold guarantee has not
+been achieved. The worktree adds 2,123 and removes 131 production physical
+lines versus `f0d12f8` (1,992 net; 1,795 nonblank, non-comment added lines).
+That is a material cost even though the default mode remains `"none"`. The
+three protected wins currently rely on distinct mechanisms, so deleting the
+pass-through solver, activity mesh, or certified continuation would remove a
+measured result rather than neutral experimental scaffolding.
+
+## Final bounded runtime gate — 2026-08-28
+
+The moving/deforming runtime investigation retained no new production shortcut.
+Profiling localized most nonlinear time below `fmincon` constraint evaluation,
+but an exact time-query trace showed only a 9.02% theoretical cache hit rate.
+The failed free-time recovery stage used 0.308 seconds, so neither caching nor
+recovery suppression could explain the material wall time. Starting directly
+at 20 segments was rejected after escalating to 40 segments and taking 192.03
+seconds; this proves the invalid 10-segment result is useful basin information.
+
+A 50-iteration 10-segment pass followed by the normal 20-segment solve remained
+independently valid in the complete planner. It used 56.10 seconds of planner
+time versus a 61.20-second clean median, but changed the smooth length from
+43.0722665 to 43.1321712 degrees. The apparent 8.3% saving is smaller than the
+observed run variance and accompanied by a 0.139% path regression, so the cap
+was removed. The retained deforming result remains 7.9628679 seconds arrival
+and about 43.0723 degrees smooth length; no stronger runtime claim is made.
+
+Post-removal verification passed 93/93 focused tests in 137.44 seconds. A
+visible obstacle-free run produced four figures with frame stride 20, and the
+expected no-path run returned `noValidatedSeed` with two diagnostic figures.
+Fresh Single-U and Two-U runs remained independently valid at 21.2540287320
+and 21.7254621235 seconds. The deforming test still emits the known extensive
+near-singular `fmincon` warning stream.
+
+The post-consolidation production diff versus `f0d12f8` is 2,132 added and
+133 removed physical lines, or 1,999 net; 1,807 added lines are nonblank and
+non-comment. The cleanup removed duplicate validation already owned by the
+public planner and two derivable internal diagnostic fields. It did not remove
+the reachable activity/nonuniform behavior used by the Two-U endpoint
+refinement. This clears the literal two-thousand-net objective by one line,
+but remains a material implementation-size cost rather than a small change.
+
+After that consolidation, all 17 maintained examples ran serially with finite
+jerk limits: 16 independently validated successes and the expected validated
+`noValidatedSeed` failure. The moving/deforming result remained exactly
+7.96286792066 seconds arrival and 43.0722665096 degrees smooth length. The
+Single-U and Two-U results remained 21.2540287320 and 21.7254621235 seconds.
+A visible obstacle-free smoke created four figures at frame stride 20, and the
+no-path diagnostic smoke created two figures.
+
+The three deterministic random A/B gates also remain valid HS3 answers.
+Hybrid overheads versus ordinary HS3 were +9.2573743 seconds for seed 101,
++5.1015524 seconds for seed 303, and -3.0835252 seconds for seed 404. Seed 101
+improved arrival by 0.7352241443 seconds; the other two matched ordinary arrival.
+The final focused suite passed 93/93 in 115.924289 seconds. Only the duplicate
+final suite suppressed the already-recorded `MATLAB:nearlySingularMatrix`
+console flood; the preceding unsuppressed 93/93 run remains the diagnostic
+evidence for that conditioning weakness.
+
+The final fresh-process Single-U A/B provides one scenario where the retained
+hybrid improves all three requested metrics while returning actual validated
+HS3 output. Pass-through used 21.2540287320 seconds arrival,
+40.5204361036 degrees motion, and 28.7366170 seconds wall. Ordinary HS3 used
+22.6308871020 seconds arrival, 41.5367249083 degrees motion, and 40.8732228
+seconds wall. The hybrid was therefore 1.3768583700 seconds earlier,
+1.0162888047 degrees shorter, and 12.1366058 seconds faster. This is a bounded
+Single-U result, not a global-optimality claim.

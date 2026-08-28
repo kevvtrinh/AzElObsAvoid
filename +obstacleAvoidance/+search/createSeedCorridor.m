@@ -1,7 +1,9 @@
-function corridor = createSeedCorridor(seed, segmentCount)
+function corridor = createSeedCorridor(seed, segmentCount, segmentBreakTau)
 %% Section 0: Header & Readme
 % SYNTAX
 %   corridor = obstacleAvoidance.search.createSeedCorridor(seed, segmentCount)
+%   corridor = obstacleAvoidance.search.createSeedCorridor( ...
+%       seed, segmentCount, segmentBreakTau)
 %**************************************************************************
 % PURPOSE
 %   - Convert seed-envelope geometry into linear outside-half-space records for
@@ -14,7 +16,9 @@ function corridor = createSeedCorridor(seed, segmentCount)
 %       position_deg, tau, and CorridorBoundary_deg define the route and
 %       optional conservative seed geometry.
 %   - segmentCount (positive integer scalar)
-%       Number of uniform trajectory polynomial segments.
+%       Number of trajectory polynomial segments.
+%   - segmentBreakTau ((N+1)-element vector, optional)
+%       Strictly increasing normalized boundaries; omission selects uniform.
 %**************************************************************************
 % OUTPUTS
 %   - corridor (structure array)
@@ -33,6 +37,20 @@ function corridor = createSeedCorridor(seed, segmentCount)
 % An empty boundary means the caller intentionally requested exact obstacle
 % validation without a static corridor certificate.
 validateattributes(segmentCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+if nargin < 3 || isempty(segmentBreakTau)
+    segmentBreakTau = (0:segmentCount).' / segmentCount;
+end
+validateattributes(segmentBreakTau, {'numeric'}, ...
+    {'real', 'finite', 'vector', 'numel', segmentCount + 1});
+segmentBreakTau = double(segmentBreakTau(:));
+if abs(segmentBreakTau(1)) > 32 * eps || ...
+        abs(segmentBreakTau(end) - 1) > 32 * eps || ...
+        any(diff(segmentBreakTau) <= 0)
+    error("createSeedCorridor:InvalidSegmentBreakTau", ...
+        "segmentBreakTau must strictly increase from zero to one.");
+end
+segmentBreakTau(1) = 0;
+segmentBreakTau(end) = 1;
 template = struct( "SegmentIndex", 0, "RegionIndex", 0, "Normal", [0 0], "BoundaryOffset_deg", 0, "Clearance_deg", 0);
 corridor = repmat(template, 0, 1);
 if ~isstruct(seed) || ~isscalar(seed) || ~isfield(seed, "CorridorBoundary_deg") || isempty(seed.CorridorBoundary_deg)
@@ -59,7 +77,8 @@ end
 % For a convex occupied region, the closest boundary point defines an outward
 % normal toward the seed. Requiring the whole polynomial projection to stay
 % beyond that support keeps the span on the same free side continuously.
-segmentMidpointTau = ((1:segmentCount).' - 0.5) / segmentCount;
+segmentMidpointTau = ...
+    (segmentBreakTau(1:end - 1) + segmentBreakTau(2:end)) / 2;
 seedMidpoint_deg = interp1( seed.tau, seed.position_deg, segmentMidpointTau, "linear");
 maximumRecordCount = segmentCount * numel(corridorRegions);
 corridor = repmat(template, maximumRecordCount, 1);

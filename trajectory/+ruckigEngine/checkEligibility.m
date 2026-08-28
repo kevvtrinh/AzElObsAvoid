@@ -15,7 +15,7 @@ function eligibility = checkEligibility( ...
 %   - options (resolved scalar struct)
 %       Direct time and numerical options for this engine.
 %   - pathConstraints (normalized scalar struct)
-%       Nonempty affine rows are unsupported by this engine.
+%       Affine rows certify the exact constructed profile after solving.
 %**************************************************************************
 % OUTPUTS
 %   - eligibility (scalar struct)
@@ -32,11 +32,8 @@ eligibility = struct( ...
     "TerminationReason", "eligible", ...
     "Message", "The request is eligible for exact switching profiles.");
 if ~isempty(pathConstraints.Tau)
-    eligibility.Supported = false;
-    eligibility.TerminationReason = "unsupportedPathConstraints";
-    eligibility.Message = ...
-        "The Ruckig-derived engine does not support affine path constraints.";
-    return;
+    eligibility.Message = "The request is eligible; affine path rows will " + ...
+        "be certified against the exact constructed profile.";
 end
 if ~hasSymmetricDerivativeBounds(limits)
     eligibility.Supported = false;

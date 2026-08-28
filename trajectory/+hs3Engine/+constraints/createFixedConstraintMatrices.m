@@ -1,11 +1,15 @@
 function [inequalityMatrix, equalityMatrix] = ...
         createFixedConstraintMatrices( ...
-        segmentCount, duration, dimensionCount, limits, pathConstraints)
+        segmentCount, duration, dimensionCount, limits, pathConstraints, ...
+        segmentBreakTau)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [inequalityMatrix, equalityMatrix] = ...
 %       hs3Engine.constraints.createFixedConstraintMatrices(segmentCount, duration, ...
 %       dimensionCount, limits, pathConstraints)
+%   [inequalityMatrix, equalityMatrix] = ...
+%       hs3Engine.constraints.createFixedConstraintMatrices(segmentCount, ...
+%       duration, dimensionCount, limits, pathConstraints, segmentBreakTau)
 %**************************************************************************
 % PURPOSE
 %   - Assemble exact fixed-time HS3 jerk Jacobians for continuous kinematic
@@ -18,6 +22,8 @@ function [inequalityMatrix, equalityMatrix] = ...
 %   - limits (resolved scalar limit struct), finite or infinite bounds.
 %   - pathConstraints (scalar struct)
 %       Normalized Tau/TauEnd/Normal/LowerBound point or interval rows.
+%   - segmentBreakTau ((N+1)-element vector, optional)
+%       Strictly increasing normalized boundaries; [] selects a uniform mesh.
 %**************************************************************************
 % OUTPUTS
 %   - inequalityMatrix (M-by-V numeric), exact dc/djerk matrix.
@@ -35,8 +41,11 @@ function [inequalityMatrix, equalityMatrix] = ...
 % the limits. The row order must match the row order in evaluateConstraints.
 % quadprog uses both parts to form A*x <= b and Aeq*x = beq.
 
+if nargin < 6
+    segmentBreakTau = [];
+end
 sensitivity = hs3Engine.polynomial.createAffineSensitivityModel( ...
-    segmentCount, duration, pathConstraints.Tau);
+    segmentCount, duration, pathConstraints.Tau, segmentBreakTau);
 controlCount = sensitivity.ControlCount;
 inequalityMatrix = zeros(0, dimensionCount * controlCount);
 mapFields = [ ...
@@ -121,7 +130,8 @@ if constraintCount == 0
 end
 [segmentIndex, hullMap] = hs3Engine.polynomial.createSubintervalBernsteinMap( ...
     pathConstraints.Tau, pathConstraints.TauEnd, ...
-    size(sensitivity.positionPowerMap, 1), coefficientCount);
+    size(sensitivity.positionPowerMap, 1), coefficientCount, ...
+    sensitivity.SegmentBreakTau);
 isInterval = pathConstraints.TauEnd > pathConstraints.Tau;
 rowCounts = 1 + (coefficientCount - 1) * isInterval;
 matrix = zeros(sum(rowCounts), dimensionCount * controlCount);
