@@ -44,7 +44,13 @@ options = struct( ...
 
 The default is `"none"`. Use `"passThrough"` to force the comparison. The
 per-seed Ruckig and HS3 evidence is retained in
-`result.SearchDiagnostics.SeedSummaries`.
+`result.SearchDiagnostics.SeedSummaries`. The optional feature has one
+installation boundary:
+`+obstacleAvoidance/+planner/ruckigWarmStart.m`. Deleting that file disables
+the warm start; omitted or future defaults resolve to `"none"`, and an
+explicit `"passThrough"` request warns once before continuing with ordinary
+HS3. Direct Ruckig motion and the exact rest-to-rest waypoint fallback are
+separate planner capabilities and remain available.
 
 ## Minimal fixed-goal example
 

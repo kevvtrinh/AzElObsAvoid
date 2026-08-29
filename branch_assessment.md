@@ -3113,3 +3113,21 @@ jerk limits: 16 independently validated successes and the expected validated
 gate. A visible obstacle-free success created two figures, and the visible
 no-path diagnostic gate created two figures. The existing near-singular HS3
 warning flood remains visible and is not caused or repaired by this change.
+
+## Deletable Ruckig warm-start boundary — 2026-08-29
+
+The Ruckig-derived HS3 warm start now has one optional planner-call boundary:
+`+obstacleAvoidance/+planner/ruckigWarmStart.m`. The configured default remains
+`"none"`, but option resolution checks the file after applying defaults, so a
+future `"passThrough"` default also degrades to ordinary HS3 if that one file
+is deleted. Explicit unavailable requests warn once and the result echoes the
+resolved `"none"` mode. Direct Ruckig motion and the exact rest-to-rest
+waypoint fallback are intentionally unaffected.
+
+The deletion gate copied the repository, removed only that boundary file, and
+ran Single U with an explicit pass-through request. It succeeded with
+independent validation and collision checks, 34.9425880405 degrees selected
+polyline length, 41.5367249083 degrees smoothed length, and
+22.630887102 seconds motion duration. This exactly reproduces the recorded
+ordinary-HS3 solution; it does not claim warm-start quality or runtime after
+the optional component is removed.

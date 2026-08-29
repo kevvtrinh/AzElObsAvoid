@@ -23,17 +23,20 @@ end
 
 %% Section 1: Local Functions
 
-function setupOnce(~)
+function setupOnce(testCase)
 % Add the repository root for isolated package-function test runs.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
+assumeTrue(testCase, isfile(fullfile(repositoryRoot, ...
+    "+obstacleAvoidance", "+planner", "ruckigWarmStart.m")), ...
+    "The optional Ruckig warm-start module is not installed.");
 end
 
 function testScalarAxisRoute(testCase)
 % One globally monotone axis selects the bounded scalar search.
 classification = ...
-    obstacleAvoidance.planner.classifyPassThroughSearch( ...
-    [0, 0; 1, 1; 2, 0], 1e-8);
+    obstacleAvoidance.planner.ruckigWarmStart( ...
+    "classifySearch", [0, 0; 1, 1; 2, 0], 1e-8);
 verifyEqual(testCase, classification.Mode, ...
     "oneDimensionalScalar");
 verifyEqual(testCase, classification.ActiveAxisIndex, [1, 2]);
@@ -42,8 +45,8 @@ end
 function testCoupledMonotoneRoute(testCase)
 % Two globally monotone axes require synchronized vector-state probes.
 classification = ...
-    obstacleAvoidance.planner.classifyPassThroughSearch( ...
-    [0, 0; 1, 2; 3, 3], 1e-8);
+    obstacleAvoidance.planner.ruckigWarmStart( ...
+    "classifySearch", [0, 0; 1, 2; 3, 3], 1e-8);
 verifyEqual(testCase, classification.Mode, "coupledMonotone");
 verifyEqual(testCase, classification.ActiveAxisIndex, [1, 2]);
 end
@@ -51,8 +54,8 @@ end
 function testCoupledReversingRoute(testCase)
 % No globally monotone active axis selects the reversing vector search.
 classification = ...
-    obstacleAvoidance.planner.classifyPassThroughSearch( ...
-    [0, 0; 1, 1; 0, 0], 1e-8);
+    obstacleAvoidance.planner.ruckigWarmStart( ...
+    "classifySearch", [0, 0; 1, 1; 0, 0], 1e-8);
 verifyEqual(testCase, classification.Mode, "coupledReversing");
 verifyEqual(testCase, classification.ActiveAxisIndex, [1, 2]);
 end

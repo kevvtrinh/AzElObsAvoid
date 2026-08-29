@@ -21,19 +21,22 @@ function tests = testHybridActivityMesh
 tests = functiontests(localfunctions);
 end
 
-function setupOnce(~)
+function setupOnce(testCase)
 % Add the repository and trajectory package roots for isolated test runs.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot);
 addpath(fullfile(repositoryRoot, "trajectory"));
+assumeTrue(testCase, isfile(fullfile(repositoryRoot, ...
+    "+obstacleAvoidance", "+planner", "ruckigWarmStart.m")), ...
+    "The optional Ruckig warm-start module is not installed.");
 end
 
 function testRefinesOnlyEndpointIntervals(testCase)
 % Preserve every coarse break while resolving two active endpoint intervals.
 [candidate, profile, limits] = createInputs();
 
-mesh = obstacleAvoidance.planner.createHybridActivityMesh( ...
-    candidate, profile, limits, 6);
+mesh = obstacleAvoidance.planner.ruckigWarmStart( ...
+    "createActivityMesh", candidate, profile, limits, 6);
 
 verifyTrue(testCase, mesh.Applied);
 verifyEqual(testCase, mesh.Reason, "endpointSwitchingResolved");
@@ -49,8 +52,8 @@ function testSegmentCapReturnsStableNoOp(testCase)
 % Respect a caller cap rather than silently dropping coarse mesh intervals.
 [candidate, profile, limits] = createInputs();
 
-mesh = obstacleAvoidance.planner.createHybridActivityMesh( ...
-    candidate, profile, limits, 4);
+mesh = obstacleAvoidance.planner.ruckigWarmStart( ...
+    "createActivityMesh", candidate, profile, limits, 4);
 
 verifyFalse(testCase, mesh.Applied);
 verifyEqual(testCase, mesh.Reason, "segmentLimitReached");
@@ -64,8 +67,8 @@ function testInteriorActivityDoesNotTrigger(testCase)
 candidate.Polynomial.accelerationPower_deg_s2(:, 1, 1) = 0.9;
 candidate.Polynomial.jerkPower_deg_s3(:, 1, 1) = 0.8;
 
-mesh = obstacleAvoidance.planner.createHybridActivityMesh( ...
-    candidate, profile, limits, 10);
+mesh = obstacleAvoidance.planner.ruckigWarmStart( ...
+    "createActivityMesh", candidate, profile, limits, 10);
 
 verifyFalse(testCase, mesh.Applied);
 verifyEqual(testCase, mesh.Reason, "activityNotSeparated");

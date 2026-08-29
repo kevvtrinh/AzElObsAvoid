@@ -35,7 +35,13 @@ overrides = struct( ...
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 
 verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, options.WaypointWarmStartMode, "passThrough");
+expectedWarmStartMode = "none";
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+if isfile(fullfile(repositoryRoot, "+obstacleAvoidance", ...
+        "+planner", "ruckigWarmStart.m"))
+    expectedWarmStartMode = "passThrough";
+end
+verifyEqual(testCase, options.WaypointWarmStartMode, expectedWarmStartMode);
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyTrue(testCase, options.Verbose);

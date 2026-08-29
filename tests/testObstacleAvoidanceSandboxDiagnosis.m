@@ -182,7 +182,14 @@ runCallback(runHandle, []);
 currentState = sandboxState.ReadState();
 result = currentState.GoalMode.LastPlannerResult;
 verifyTrue(testCase, result.Success, result.Message);
-verifyEqual(testCase, result.Options.WaypointWarmStartMode, "passThrough");
+expectedWarmStartMode = "none";
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+if isfile(fullfile(repositoryRoot, "+obstacleAvoidance", ...
+        "+planner", "ruckigWarmStart.m"))
+    expectedWarmStartMode = "passThrough";
+end
+verifyEqual(testCase, result.Options.WaypointWarmStartMode, ...
+    expectedWarmStartMode);
 verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
 verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
 verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);

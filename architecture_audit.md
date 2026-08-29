@@ -48,6 +48,7 @@ Key audit conclusions:
 | `+obstacleAvoidance/+planner/evaluatePlannerPolynomial.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/evaluateTrajectoryConstraints.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/plan.m` | Retain, consolidated | Active planner orchestration, corridor, solve, validation, or result owner. |
+| `+obstacleAvoidance/+planner/ruckigWarmStart.m` | Retain, optional boundary | Sole planner-call boundary for deletable Ruckig-derived HS3 warm-start behavior. Its absence resolves the mode to ordinary HS3. |
 | `+obstacleAvoidance/+planner/solvePassThroughSeedCandidate.m` | Retain | Owns measured Single-U/Two-U quality and runtime wins; covered by focused tests. |
 | `+obstacleAvoidance/+planner/solveRouteCandidate.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/solveWaypointSeedCandidate.m` | Retain | Exact Ruckig composition fallback for failed multi-edge visibility seeds; covered by independent static-detour and Rogue-case validation. |
@@ -169,3 +170,20 @@ The sandbox remains one Goal Mode workflow; its new planner-options panel
 exposes three existing public choices and preserves them in both Run and Export.
 The complete test tree passes 166/166, the focused fixed-arrival fallback check
 passes, and the visible sandbox layout was inspected.
+
+## Optional Ruckig warm-start boundary
+
+The main planner now reaches pass-through classification, exact waypoint-state
+search, and activity-mesh refinement only through
+`+obstacleAvoidance/+planner/ruckigWarmStart.m`. Option resolution checks for
+that exact file before planner execution. If it is absent, a selected or future
+default `"passThrough"` mode becomes resolved mode `"none"`; an explicit
+request receives one warning and the stable result echoes the fallback.
+
+A copied-repository deletion gate removed only that file and then ran the
+maintained Single-U example with an explicit pass-through request. Ordinary
+HS3 returned success, independent validation and collision checks passed,
+arrival was 22.630887102 seconds, selected polyline length was
+34.9425880405 degrees, and smoothed length was 41.5367249083 degrees. Direct
+Ruckig motion, the trajectory engine, and the exact rest-to-rest waypoint
+fallback remain deliberately outside this optional boundary.
