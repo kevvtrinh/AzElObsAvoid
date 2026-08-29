@@ -167,8 +167,8 @@ sandboxState = obstacleAvoidanceSandbox(struct( ...
     "FigureVisible", "off", "MissionTime_s", 6));
 testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
 applicationState = guidata(sandboxState.FigureHandle);
-applicationState.GoalMode.StartPosition_deg = [0 0];
-applicationState.GoalMode.GoalPosition_deg = [4 0];
+applicationState.GoalMode.StartPosition_deg = [179 0];
+applicationState.GoalMode.GoalPosition_deg = [-179 0];
 guidata(sandboxState.FigureHandle, applicationState);
 controls = applicationState.GoalMode.GraphicsHandles.Controls;
 set(controls.WaypointWarmStartHandle, "Value", 2);
@@ -186,6 +186,16 @@ verifyEqual(testCase, result.Options.WaypointWarmStartMode, "passThrough");
 verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
 verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
 verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
+verifyEqual(testCase, result.position_deg(end, 1), 181, "AbsTol", 1e-9);
+solvedMotionHandle = findobj( ...
+    currentState.GoalMode.GraphicsHandles.Axes, ...
+    "DisplayName", "Solved motion");
+verifyNotEmpty(testCase, solvedMotionHandle);
+verifyTrue(testCase, any(isnan(solvedMotionHandle.XData)));
+verifyGreaterThanOrEqual(testCase, ...
+    min(solvedMotionHandle.XData, [], "omitnan"), -180);
+verifyLessThanOrEqual(testCase, ...
+    max(solvedMotionHandle.XData, [], "omitnan"), 180);
 end
 
 function testPreRunGoalBundlePreservesRequest(testCase)

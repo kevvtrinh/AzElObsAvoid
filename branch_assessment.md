@@ -3080,3 +3080,36 @@ That assertion then passed in the focused 1/1 test. All 17 maintained examples
 had already run serially after the planner change: 16 independently validated
 successes and the expected validated `noValidatedSeed` failure. A visible
 sandbox check confirmed the options panel and status log remain readable.
+
+## Periodic azimuth visualization — 2026-08-29
+
+The saved `azimuthplotting.mat` result was already physically valid and ended
+exactly at -202.659563476 degrees, equivalent to 157.340436524 degrees in the
+configured [-180, 180] display interval. The earliest failure was display
+mapping: the sandbox canvas clipped the unwrapped result after -180 degrees,
+and the shared animation did not reappear at the equivalent positive edge.
+
+One display-only transform now wraps continuous spatial histories into the
+declared interval, inserts exact seam endpoints plus a NaN line break, and
+retains source indices for synchronized animation time. It is shared by the
+sandbox canvas, workspace plot, visibility plot, moving-target display, and
+animation. Returned positions and kinematic plots remain unwrapped. Whenever
+a successful wrapped trajectory actually crosses the seam, the plotter also
+creates a continuous-azimuth figure with the unchanged path and equivalent
+workspace seams marked.
+
+The saved Rogue case now displays -153.583052965 to -180 degrees on one side,
+reappears at +180 degrees, and reaches the plotted goal at 157.340436524
+degrees. Its companion figure shows the unchanged continuous motion from
+-153.583052965 to -202.659563476 degrees. The opposite 179-to-181-degree seam
+direction is independently covered. Code Analyzer reports zero findings in
+all five changed MATLAB files; focused plotting and sandbox tests passed
+12/12, and the complete test tree passed 168/168 in 60.9368865 aggregate test
+seconds.
+
+All 17 maintained examples ran serially after the display change with finite
+jerk limits: 16 independently validated successes and the expected validated
+`noValidatedSeed` result. Their route lengths and durations match the previous
+gate. A visible obstacle-free success created two figures, and the visible
+no-path diagnostic gate created two figures. The existing near-singular HS3
+warning flood remains visible and is not caused or repaired by this change.

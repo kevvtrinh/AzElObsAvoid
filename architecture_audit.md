@@ -53,7 +53,8 @@ Key audit conclusions:
 | `+obstacleAvoidance/+planner/solveWaypointSeedCandidate.m` | Retain | Exact Ruckig composition fallback for failed multi-edge visibility seeds; covered by independent static-detour and Rogue-case validation. |
 | `+obstacleAvoidance/+planner/stageTiming.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/validatePolynomialTrajectory.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
-| `+obstacleAvoidance/+plotting/plotTrajectory.m` | Retain, consolidated | Reusable result-only success/failure visualization owner. |
+| `+obstacleAvoidance/+plotting/createWrappedSpatialPath.m` | Retain | Shared periodic display transform for sandbox, diagnostics, and animation; preserves unwrapped planner output. |
+| `+obstacleAvoidance/+plotting/plotTrajectory.m` | Retain, consolidated | Reusable result-only success/failure visualization owner, including periodic and continuous-azimuth views. |
 | `+obstacleAvoidance/+search/boundedTimeLayers.m` | Retain | Input-derived route/search diagnostics owner. |
 | `+obstacleAvoidance/+search/certifySeedCorridor.m` | Retain | Input-derived route/search diagnostics owner. |
 | `+obstacleAvoidance/+search/clusterSeedShape.m` | Retain | Input-derived route/search diagnostics owner. |
@@ -102,6 +103,7 @@ Key audit conclusions:
 | `tests/+testSupport/plannerFixtures.m` | Retain | Shared deterministic planner fixture/requirement support. |
 | `tests/+testSupport/verifySharedPlannerRequirement.m` | Retain | Shared deterministic planner fixture/requirement support. |
 | `tests/testArchitectureBoundaries.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
+| `tests/testAzimuthWrappingPlotting.m` | Retain | Covers both seam directions, wrapped animation, and the continuous-azimuth companion figure. |
 | `tests/testExampleInvariants.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
 | `tests/testHs3Planner.m` | Retain, consolidated | Active unit, integration, architecture, or diagnostic regression coverage. |
 | `tests/testHs3PolynomialOperations.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
