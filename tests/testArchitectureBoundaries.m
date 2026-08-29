@@ -4,7 +4,7 @@ function tests = testArchitectureBoundaries
 %   tests = testArchitectureBoundaries
 %**************************************************************************
 % PURPOSE
-%   - Protect obstacle avoidance and the two independent trajectory engines.
+%   - Protect one-way ownership between obstacle planning and BMTP motion.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -19,42 +19,34 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
-% Locate the repository once for all source-layout checks. These tests inspect
-% file ownership and dependency direction. A failure usually means that code
-% moved into the wrong package or gained a higher-level dependency.
-% Record the two production roots and add their public path parents.
+% Locate both production roots once for source-layout and dependency checks.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
-productRoot = fullfile(repositoryRoot, "+obstacleAvoidance");
 trajectoryRoot = fullfile(repositoryRoot, "trajectory");
-hs3Root = fullfile(trajectoryRoot, "+hs3Engine");
-addpath(repositoryRoot);
-addpath(trajectoryRoot);
+addpath(repositoryRoot, trajectoryRoot);
 testCase.TestData.RepositoryRoot = repositoryRoot;
-testCase.TestData.ProductRoot = productRoot;
-testCase.TestData.Hs3Root = hs3Root;
+testCase.TestData.ProductRoot = fullfile(repositoryRoot, "+obstacleAvoidance");
 testCase.TestData.TrajectoryRoot = trajectoryRoot;
+testCase.TestData.EngineRoot = fullfile(trajectoryRoot, "+bmtpEngine");
 end
 
-function testRootContainsOnlyHighLevelProductionRoots(testCase)
-% Keep obstacle avoidance and trajectory engines as visible product roots.
+function testHighLevelProductionRootsAreExplicit(testCase)
+% Keep the public planner and dimension-neutral trajectory engine visible.
 repositoryRoot = testCase.TestData.RepositoryRoot;
-directoryRecords = dir(fullfile(repositoryRoot, "+*"));
-actualNames = sort(string({directoryRecords([directoryRecords.isdir]).name}));
-verifyEqual(testCase, actualNames, "+obstacleAvoidance");
-verifyEmpty(testCase, dir(fullfile(repositoryRoot, "*.m")), ...
-    "Production MATLAB functions must not accumulate at the root.");
-verifyFalse(testCase, isfolder(fullfile(repositoryRoot, "hs3")));
-verifyTrue(testCase, isfolder(fullfile(repositoryRoot, "trajectory")));
+packageRecords = dir(fullfile(repositoryRoot, "+*"));
+packageNames = string({packageRecords([packageRecords.isdir]).name});
+verifyEqual(testCase, sort(packageNames), "+obstacleAvoidance");
+verifyTrue(testCase, isfolder(testCase.TestData.TrajectoryRoot));
+verifyEmpty(testCase, dir(fullfile(repositoryRoot, "*.m")));
 end
 
-function testObstacleAvoidancePackagesMatchHighLevelArchitecture(testCase)
-% Verify the product contains six responsibility-oriented subpackages.
+function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
+% Require one shallow package for each planner-owned responsibility.
 productRoot = testCase.TestData.ProductRoot;
-directoryRecords = dir(fullfile(productRoot, "+*"));
-actualNames = sort(string({directoryRecords([directoryRecords.isdir]).name}));
+packageRecords = dir(fullfile(productRoot, "+*"));
+actualNames = sort(string({packageRecords([packageRecords.isdir]).name}));
 expectedNames = sort([ ...
-    "+geometry", "+input", "+obstacles", ...
-    "+planner", "+plotting", "+search"]);
+    "+geometry", "+input", "+obstacles", "+planner", ...
+    "+plotting", "+search", "+validation"]);
 verifyEqual(testCase, actualNames, expectedNames);
 publicSources = sort(string({dir(fullfile(productRoot, "*.m")).name}));
 expectedSources = sort(["planTrajectory.m", ...
@@ -62,97 +54,79 @@ expectedSources = sort(["planTrajectory.m", ...
 verifyEqual(testCase, publicSources, expectedSources);
 end
 
-function testHs3ImplementationLivesInsideTrajectoryEngine(testCase)
-% Protect the complete collocation implementation under its engine package.
-hs3Root = testCase.TestData.Hs3Root;
-actualSources = sort(string({dir(fullfile(hs3Root, "*.m")).name}));
-expectedSources = sort([ ...
-    "defaultOptions.m", "optimize.m", "solve.m", ...
-    "solveFixedTime.m", "solveFreeTime.m", "validate.m"]);
-verifyEqual(testCase, actualSources, expectedSources);
-verifyTrue(testCase, isfolder(fullfile(hs3Root, "+constraints")));
-verifyTrue(testCase, isfolder(fullfile(hs3Root, "+polynomial")));
-end
-
-function testTrajectoryRootExposesNamedPlanningEntries(testCase)
-% Verify the trajectory root exposes only the two named public entry points.
+function testTrajectoryRootContainsOnlyBmtpEngine(testCase)
+% Exclude deleted legacy engines and root-level forwarding wrappers.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
-sourceRecords = dir(fullfile(trajectoryRoot, "*.m"));
-actualSources = sort(string({sourceRecords.name}));
-verifyEqual(testCase, actualSources, ...
-    sort(["planTrajHs3.m", "planTrajRuckig.m"]));
+verifyEmpty(testCase, dir(fullfile(trajectoryRoot, "*.m")));
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
-actualPackages = sort(string({packageRecords([packageRecords.isdir]).name}));
-expectedPackages = sort(["+ruckigEngine", "+hs3Engine"]);
-verifyEqual(testCase, actualPackages, expectedPackages);
+actualNames = string({packageRecords([packageRecords.isdir]).name});
+verifyEqual(testCase, actualNames, "+bmtpEngine");
+actualSources = sort(string({dir(fullfile( ...
+    testCase.TestData.EngineRoot, "*.m")).name}));
+expectedSources = sort([ ...
+    "createDelayedMotion.m", "createDirectMotion.m", ...
+    "createMotionRecord.m", ...
+    "createOffsetSplineMotion.m", "evaluatePolynomial.m", ...
+    "maximumRestToRestDistance.m", "solve.m"]);
+verifyEqual(testCase, actualSources, expectedSources);
 end
 
-function testRuckigWarmStartUsesOneOptionalBoundary(testCase)
-% Keep the main planner dependent on one deletable warm-start entry file.
+function testBmtpEngineHasNoObstaclePlannerDependency(testCase)
+% Enforce the one-way dependency from obstacle avoidance into trajectory math.
+sourceRecords = dir(fullfile(testCase.TestData.EngineRoot, "**", "*.m"));
+for sourceIndex = 1:numel(sourceRecords)
+    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
+        sourceRecords(sourceIndex).name);
+    sourceText = string(fileread(sourcePath));
+    verifyFalse(testCase, contains(sourceText, "obstacleAvoidance."), ...
+        sprintf("BMTP source depends on obstacle planning: %s", sourcePath));
+end
+end
+
+function testNumericalSolverCallsRemainInsideEngine(testCase)
+% Prevent obstacle packages from absorbing the BMTP conic optimizer again.
+sourceRecords = dir(fullfile(testCase.TestData.ProductRoot, "**", "*.m"));
+solverPattern = "(?<![A-Za-z0-9_])" + ...
+    "(coneprog|fmincon|quadprog|optimoptions)\s*\(";
+offendingPaths = strings(0, 1);
+for sourceIndex = 1:numel(sourceRecords)
+    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
+        sourceRecords(sourceIndex).name);
+    if ~isempty(regexp(string(fileread(sourcePath)), solverPattern, "once"))
+        offendingPaths(end + 1, 1) = string(sourcePath); %#ok<AGROW>
+    end
+end
+verifyEmpty(testCase, offendingPaths, sprintf( ...
+    "Numerical solver call outside BMTP engine: %s", ...
+    strjoin(offendingPaths, ", ")));
+end
+
+function testPlannerUsesOnlyNamedEngineEntries(testCase)
+% Verify obstacle-aware adapters call the engine rather than duplicating it.
 plannerRoot = fullfile(testCase.TestData.ProductRoot, "+planner");
-plannerText = string(fileread(fullfile(plannerRoot, "plan.m")));
-resolverText = string(fileread(fullfile( ...
-    testCase.TestData.ProductRoot, "+input", ...
-    "resolvePlannerOptions.m")));
-
-verifyTrue(testCase, contains(plannerText, ...
-    "obstacleAvoidance.planner.ruckigWarmStart("));
-verifyTrue(testCase, contains(resolverText, ...
-    '"ruckigWarmStart.m"'));
-for implementationName = [ ...
-        "classifyPassThroughSearch", ...
-        "createHybridActivityMesh", ...
-        "solvePassThroughSeedCandidate"]
-    verifyFalse(testCase, contains(plannerText, ...
-        "obstacleAvoidance.planner." + implementationName + "("), ...
-        "The main planner bypasses the optional warm-start boundary.");
-end
-end
-
-function testProductionPackageNestingMatchesArchitecture(testCase)
-% Allow one product namespace level and cohesive engine-owned HS3 packages.
-productRoot = testCase.TestData.ProductRoot;
-hs3Root = testCase.TestData.Hs3Root;
-productPackages = dir(fullfile(productRoot, "+*"));
-for packageIndex = 1:numel(productPackages)
-    packagePath = fullfile(productPackages(packageIndex).folder, ...
-        productPackages(packageIndex).name);
-    nestedRecords = dir(fullfile(packagePath, "**", "*"));
-    nestedRecords = nestedRecords([nestedRecords.isdir]);
-    nestedNames = string({nestedRecords.name});
-    nestedNames = nestedNames(nestedNames ~= "." & nestedNames ~= "..");
-    verifyEmpty(testCase, nestedNames, sprintf( ...
-        "Production package %s contains nested directories.", ...
-        productPackages(packageIndex).name));
-end
-
-internalPackages = dir(fullfile(hs3Root, "+*"));
-actualNames = sort(string({internalPackages([internalPackages.isdir]).name}));
-expectedNames = sort(["+constraints", "+polynomial"]);
-verifyEqual(testCase, actualNames, expectedNames);
-for packageIndex = 1:numel(internalPackages)
-    packagePath = fullfile(internalPackages(packageIndex).folder, ...
-        internalPackages(packageIndex).name);
-    nestedRecords = dir(fullfile(packagePath, "**", "*"));
-    nestedRecords = nestedRecords([nestedRecords.isdir]);
-    nestedNames = string({nestedRecords.name});
-    nestedNames = nestedNames(nestedNames ~= "." & nestedNames ~= "..");
-    verifyEmpty(testCase, nestedNames, sprintf( ...
-        "HS3 internal package %s contains deeper directories.", ...
-        internalPackages(packageIndex).name));
-end
+adapterText = string(fileread(fullfile( ...
+    plannerRoot, "solveBmtpTrajectory.m")));
+plannerText = string(fileread(fullfile( ...
+    plannerRoot, "planCorridorQuintic.m")));
+fixedClockText = string(fileread(fullfile( ...
+    plannerRoot, "createFixedClockLateralExcursion.m")));
+validatorText = string(fileread(fullfile( ...
+    testCase.TestData.ProductRoot, "validateTrajectory.m")));
+verifyTrue(testCase, contains(adapterText, "bmtpEngine.solve("));
+verifyTrue(testCase, contains(plannerText, "bmtpEngine.createDirectMotion("));
+verifyTrue(testCase, contains(fixedClockText, ...
+    "bmtpEngine.createOffsetSplineMotion("));
+verifyTrue(testCase, contains(validatorText, ...
+    "bmtpEngine.evaluatePolynomial("));
 end
 
 function testProductionFunctionBasenamesAreUnique(testCase)
-% Duplicate base names make stack traces and searches ambiguous. This check
-% reports the repeated name so a developer can rename or consolidate its owner.
-% Verify one production function basename owns each responsibility.
-productRoot = testCase.TestData.ProductRoot;
-hs3Root = testCase.TestData.Hs3Root;
-sourceRecords = [dir(fullfile(productRoot, "**", "*.m")); ...
-    dir(fullfile(hs3Root, "**", "*.m"))];
-sourceNames = string({sourceRecords.name});
-[uniqueNames, ~, nameGroup] = unique(lower(sourceNames));
+% Keep stack traces and repository searches unambiguous across both roots.
+sourceRecords = [ ...
+    dir(fullfile(testCase.TestData.ProductRoot, "**", "*.m")); ...
+    dir(fullfile(testCase.TestData.EngineRoot, "**", "*.m"))];
+sourceNames = lower(string({sourceRecords.name}));
+[uniqueNames, ~, nameGroup] = unique(sourceNames);
 nameCounts = accumarray(nameGroup(:), 1);
 duplicateNames = uniqueNames(nameCounts > 1);
 verifyEmpty(testCase, duplicateNames, sprintf( ...
@@ -160,161 +134,11 @@ verifyEmpty(testCase, duplicateNames, sprintf( ...
     strjoin(duplicateNames, ", ")));
 end
 
-function testNumericalSolversAreOwnedByHs3(testCase)
-% Keep numerical solver calls in HS3. A failure identifies planner code that
-% bypasses the shared motion engine.
-% Verify numerical optimizer calls cannot leak into avoidance packages.
-productRoot = testCase.TestData.ProductRoot;
-packageRecords = dir(fullfile(productRoot, "+*"));
-offendingFiles = strings(0, 1);
-solverPattern = "(?<![A-Za-z0-9_])(fmincon|quadprog|optimoptions)\s*\(";
-sourceRecords = dir(fullfile(productRoot, "*.m"));
-for sourceIndex = 1:numel(sourceRecords)
-    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-        sourceRecords(sourceIndex).name);
-    sourceText = string(fileread(sourcePath));
-    if ~isempty(regexp(sourceText, solverPattern, "once"))
-        offendingFiles(end + 1, 1) = string(sourcePath); %#ok<AGROW>
-    end
-end
-for packageIndex = 1:numel(packageRecords)
-    sourceRecords = dir(fullfile( ...
-        productRoot, packageRecords(packageIndex).name, "*.m"));
-    for sourceIndex = 1:numel(sourceRecords)
-        sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-            sourceRecords(sourceIndex).name);
-        sourceText = string(fileread(sourcePath));
-        if ~isempty(regexp(sourceText, solverPattern, "once"))
-            offendingFiles(end + 1, 1) = string(sourcePath); %#ok<AGROW>
-        end
-    end
-end
-verifyEmpty(testCase, offendingFiles, sprintf( ...
-    "Numerical solver calls outside the HS3 product: %s", ...
-    strjoin(offendingFiles, ", ")));
-end
-
-function testObstaclePlannerOwnsEngineRouting(testCase)
-% Verify obstacle context selects Ruckig while constrained routes use HS3.
-productRoot = testCase.TestData.ProductRoot;
-plannerText = string(fileread(fullfile( ...
-    productRoot, "+planner", "plan.m")));
-solverText = string(fileread(fullfile( ...
-    productRoot, "+planner", "solveRouteCandidate.m")));
-evaluatorText = string(fileread(fullfile( ...
-    productRoot, "+planner", "evaluatePlannerPolynomial.m")));
-verifyNotEmpty(testCase, regexp( ...
-    plannerText, "planTrajRuckig\s*\(", "once"));
-verifyNotEmpty(testCase, regexp( ...
-    solverText, "hs3Engine\.optimize\s*\(", "once"));
-verifyNotEmpty(testCase, regexp( ...
-    solverText, ...
-    "hs3Engine\.polynomial\.createTrajectoryPolynomial\s*\(", "once"));
-verifyNotEmpty(testCase, regexp( ...
-    evaluatorText, ...
-    "hs3Engine\.polynomial\.evaluateTrajectoryPolynomial\s*\(", "once"));
-end
-
-function testNamedTrajectoryEntriesPreserveEngineContracts(testCase)
-% Verify the new public names preserve zero-input defaults and one simple solve.
-verifyEqual(testCase, planTrajHs3(), hs3Engine.defaultOptions());
-verifyEqual(testCase, planTrajRuckig(), ruckigEngine.defaultOptions());
-
-initialState = struct( ...
-    "time", 0, "position", 0, "velocity", 0, "acceleration", 0);
-terminalState = struct( ...
-    "position", 1, "velocity", 0, "acceleration", 0, "maximumTime", 5);
-limits = struct( ...
-    "maximumVelocity", 2, ...
-    "maximumAcceleration", 2, ...
-    "maximumJerk", 4);
-result = planTrajRuckig(initialState, terminalState, limits);
-verifyTrue(testCase, result.Success, result.Message);
-end
-
-function testHs3SourceIsAzElAgnostic(testCase)
-% Verify the engine source contains no Az/El domain dependency.
-hs3Root = testCase.TestData.Hs3Root;
-sourceRecords = dir(fullfile(hs3Root, "**", "*.m"));
-for sourceIndex = 1:numel(sourceRecords)
-    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-        sourceRecords(sourceIndex).name);
-    sourceText = lower(string(fileread(sourcePath)));
-    forbiddenPattern = ...
-        "azel|azimuth|elevation|obstacle|visibility|topology|" + ...
-        "corridor|seedroute|plotazel|planner";
-    verifyEmpty(testCase, regexp(sourceText, forbiddenPattern, "once"), ...
-        sprintf("HS3 source contains domain language: %s", sourcePath));
-end
-end
-
-function testRuckigEngineHasNoHs3OptimizerOrPlannerDependency(testCase)
-% Keep exact switching ownership independent of HS3 and obstacle planning.
-ruckigRoot = fullfile( ...
-    testCase.TestData.TrajectoryRoot, "+ruckigEngine");
-sourceRecords = dir(fullfile(ruckigRoot, "**", "*.m"));
-for sourceIndex = 1:numel(sourceRecords)
-    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-        sourceRecords(sourceIndex).name);
-    sourceText = lower(string(fileread(sourcePath)));
-    forbiddenPattern = ...
-        "hs3|fmincon|quadprog|optimoptions|obstacle|visibility|planner";
-    verifyEmpty(testCase, regexp(sourceText, forbiddenPattern, "once"), ...
-        sprintf("Ruckig-derived source crosses its boundary: %s", sourcePath));
-end
-end
-
-function testHs3ContainsNoSwitchingShortcut(testCase)
-% Verify pure collocation cannot regain the extracted switching entry points.
-hs3Root = testCase.TestData.Hs3Root;
-sourceRecords = dir(fullfile(hs3Root, "**", "*.m"));
-for sourceIndex = 1:numel(sourceRecords)
-    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-        sourceRecords(sourceIndex).name);
-    sourceText = string(fileread(sourcePath));
-    forbiddenPattern = ...
-        "createMinimumTimeAxisProfile|createFixedTimeAxisProfile|" + ...
-        "createRestToRestJerkProfile|createSynchronizedJerkProfile|" + ...
-        "evaluateAxisSwitchingProfile";
-    verifyEmpty(testCase, regexp(sourceText, forbiddenPattern, "once"), ...
-        sprintf("HS3 source contains an extracted switching call: %s", ...
-        sourcePath));
-end
-end
-
-function testHs3DependenciesPointTowardPolynomialCore(testCase)
-% Prevent polynomial or constraint code from depending on higher layers.
-hs3Root = testCase.TestData.Hs3Root;
-polynomialSources = dir(fullfile(hs3Root, "+polynomial", "*.m"));
-constraintSources = dir(fullfile(hs3Root, "+constraints", "*.m"));
-verifySourcesExclude(testCase, polynomialSources, ...
-    ["hs3Engine.constraints.", "hs3Engine.optimize("]);
-verifySourcesExclude(testCase, constraintSources, ...
-    "hs3Engine.optimize(");
-end
-
-function testLegacyNestedPackagesAreAbsent(testCase)
-% Verify removed ownership trees do not return as compatibility copies.
-productRoot = testCase.TestData.ProductRoot;
-repositoryRoot = testCase.TestData.RepositoryRoot;
-verifyFalse(testCase, isfolder(fullfile(repositoryRoot, "planAzElMotion")));
-verifyFalse(testCase, isfolder(fullfile(repositoryRoot, "hs3")));
-verifyFalse(testCase, isfolder(fullfile(productRoot, "+azElInternal")));
-verifyFalse(testCase, isfolder(fullfile( ...
-    productRoot, "+azElPlannerMethods")));
-end
-
-function verifySourcesExclude(testCase, sourceRecords, forbiddenText)
-% Verify a source collection contains none of the forbidden dependencies.
-for sourceIndex = 1:numel(sourceRecords)
-    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
-        sourceRecords(sourceIndex).name);
-    sourceText = string(fileread(sourcePath));
-    for forbiddenIndex = 1:numel(forbiddenText)
-        verifyFalse(testCase, contains( ...
-            sourceText, forbiddenText(forbiddenIndex)), sprintf( ...
-            "Forbidden dependency %s in %s.", ...
-            forbiddenText(forbiddenIndex), sourcePath));
-    end
-end
+function testLegacyEngineTreesAreAbsent(testCase)
+% Do not retain empty or forwarding copies of the deleted implementations.
+trajectoryRoot = testCase.TestData.TrajectoryRoot;
+verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+hs3Engine")));
+verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+ruckigEngine")));
+verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajHs3.m")));
+verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajRuckig.m")));
 end

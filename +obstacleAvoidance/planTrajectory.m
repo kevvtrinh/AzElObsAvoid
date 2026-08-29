@@ -10,8 +10,8 @@ function result = planTrajectory( ...
 %**************************************************************************
 % PURPOSE
 %   - Plan collision-free Az/El motion through one public entry point.
-%   - Use exact Ruckig switching for eligible obstacle-free motion and HS3
-%     after obstacle topology constrains the path.
+%   - Prefer certified physical arrival floors, then path length and runtime,
+%     while retaining independently validated topology fallback behavior.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
@@ -44,7 +44,7 @@ function result = planTrajectory( ...
 % for this request. This keeps the reported defaults equal to the values that
 % the planner uses for a normal request.
 if nargin == 0
-    result = obstacleAvoidance.planner.plan();
+    result = obstacleAvoidance.planner.planCorridorQuintic();
     return;
 end
 
@@ -80,6 +80,6 @@ end
 % optimization, collision checks, and result assembly.
 % If a plan fails, inspect result.TerminationReason and SearchDiagnostics.
 % Follow the reported stage into search, optimization, or final validation.
-result = obstacleAvoidance.planner.plan( ...
+result = obstacleAvoidance.planner.planCorridorQuintic( ...
     obstacles, initialState, goalState, limits, optionOverrides);
 end

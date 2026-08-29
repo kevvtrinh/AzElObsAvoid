@@ -2,24 +2,25 @@
 
 This branch provides one public obstacle-avoidance planner for trajectories in
 the azimuth/elevation frame. The `obstacleAvoidance` namespace owns inputs,
-obstacles, geometry, search, engine selection, validation, and plotting.
-Dimension-neutral Ruckig-derived and Hermite-Simpson (HS3) engines live as
-independent packages under `trajectory/`.
+obstacles, geometry, topology search, candidate selection, validation, and
+plotting. Dimension-neutral motion generation lives independently under
+`trajectory/+bmtpEngine`.
 
 A successful result is accepted only after canonical independent validation.
-The obstacle planner calls Ruckig directly for eligible obstacle-free fixed
-targets. Obstacle-constrained and moving-target requests use topology search
-and HS3. Neither trajectory engine contains Az/El or obstacle knowledge.
-
-The HS3 implementation descends from the `plan-325` snapshot at commit
-`5a067112a9f880d015f52fb97538a99010871478`. Planner and engine ownership is
-summarized below in this repository-level guide.
+The planner converts static protected geometry to numeric convex exclusion
+regions before calling BMTP; the engine never imports obstacle or planner
+packages. Exact jerk switching, event-word integration, quintic offset splines,
+polynomial evaluation, and the static-region SOCP/Bezier generator share that
+one engine-owned representation.
 
 ## Quick start
 
-The zero-input call returns obstacle-planner defaults:
+Add both production parents. The zero-input call then returns obstacle-planner
+defaults:
 
 ```matlab
+addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
+
 options = obstacleAvoidance.planTrajectory();
 
 result = obstacleAvoidance.planTrajectory( ...
@@ -33,24 +34,9 @@ options = struct( ...
     "MaximumSeedCount", 3);
 ```
 
-For static earliest-arrival detours, the optional non-stopping waypoint warm
-start compares a Ruckig-derived multi-section proposal against ordinary HS3
-and returns only an independently validated winner:
-
-```matlab
-options = struct( ...
-    "WaypointWarmStartMode", "passThrough");
-```
-
-The default is `"none"`. Use `"passThrough"` to force the comparison. The
-per-seed Ruckig and HS3 evidence is retained in
-`result.SearchDiagnostics.SeedSummaries`. The optional feature has one
-installation boundary:
-`+obstacleAvoidance/+planner/ruckigWarmStart.m`. Deleting that file disables
-the warm start; omitted or future defaults resolve to `"none"`, and an
-explicit `"passThrough"` request warns once before continuing with ordinary
-HS3. Direct Ruckig motion and the exact rest-to-rest waypoint fallback are
-separate planner capabilities and remain available.
+Planner options select work and display policy; they do not expose internal
+engine constants. Per-seed engine and independent-validation evidence is
+retained in `result.SearchDiagnostics.SeedSummaries`.
 
 ## Minimal fixed-goal example
 
@@ -185,42 +171,21 @@ returned motion or preserved failure diagnostics.
 
 ## Engine routing and limitations
 
-- Ruckig is selected only for an obstacle-free fixed-position target. It
-  creates exact jerk-switching state-to-state motion without route search.
-- A request outside the Ruckig switching family continues through the HS3 path.
-  Physical infeasibility and independent-validation failures remain visible.
-- Moving targets and every nonempty obstacle field use topology search and HS3.
-- Routing and Ruckig-to-Az/El result translation are local to the obstacle
-  planner; no neutral trajectory wrapper exists.
-
-- HS3 uses an actual third-order Hermite-Simpson finite-jerk transcription
-  with `fmincon`.
-- It preserves supported nonzero endpoint velocity and acceleration states.
-- It exposes collocation, mesh, iteration, evaluation, and collision
-  relinearization controls.
-- Each route leg receives at least one segment when permitted, and configured
-  bounded mesh-refinement passes may be attempted.
-- Candidate count, mesh passes, relinearizations, solver iterations, and
-  function evaluations bound planner work independently of machine speed. The
-  HS3 engine retains its own per-solve safety stop.
-- HS3 is a local nonlinear method. Conditioning warnings, local minima, or
-  local failure can occur even when another proposal may be feasible.
-- Stationary-obstacle constraints bound the trajectory continuously between
-  constraint times. Moving and deforming obstacles retain ordered frozen-time
-  associations, with independent adaptive validation authoritative between
-  those times.
-- Static scenes may stop after the first independently validated seed to
-  protect the wall-time budget and can miss a faster unattempted topology. A
-  motion pinned to the goal horizon never stops that search.
-- Exact exhaustive static searches that reject the direct edge and find no
-  route return failure without spending work on a topology-preserving motion
-  solve. Reduced, truncated, and dynamic searches retain motion attempts.
-- Arrival quality is mesh limited. A coarse `CollocationSegmentCount` reports a
-  later arrival than the limits allow; a finer one arrives earlier at higher
-  integrated jerk and materially more solve time.
-- Timed topology proposals first preserve their causal event timing at the
-  proposed arrival, then use bounded fixed-time feasibility bisection to seek
-  an earlier independently validated arrival on the same topology.
+- Obstacle-free rest-to-rest requests use the exact synchronized switching
+  kernel. Fixed arrival stretches the same law without increasing derivatives.
+- Static topology seeds are converted by the planner to convex numeric regions;
+  BMTP alternates time-power and separating-plane SOCPs over composite Bezier
+  curves. Plane witnesses certify only those supplied regions.
+- Input-driven cavity, timed-opening, and fixed-clock lateral constructions
+  remain planner-owned because they interpret obstacle geometry and timing.
+  Their event words and quintic polynomials are generated by BMTP.
+- The public validator remains authoritative for obstacle coverage, continuous
+  collision freedom, workspace, endpoints, velocity, acceleration, and jerk.
+- A validated candidate is not a general global-optimality proof. Exact or
+  bounded arrival claims are returned only when a request-wide physical lower
+  certificate applies; other results remain feasible incumbents.
+- Work limits, exhausted topology search, unsupported dynamic families, and
+  physical infeasibility remain visible as stable failure results.
 
 ## Repository layout
 
@@ -234,19 +199,18 @@ returned motion or preserved failure diagnostics.
 |-- +geometry/                      boundary and clearance primitives
 |-- +search/                        topology, visibility, and corridors
 |-- +planner/                       engine routing and result assembly
+|-- +validation/                    planner-domain continuous certificates
 `-- +plotting/                      public result-driven plotting
 
-trajectory/                         independent dimension-neutral engines
-|-- planTrajRuckig.m                public Ruckig planning entry point
-|-- planTrajHs3.m                   public HS3 planning entry point
-|-- +ruckigEngine/                  exact jerk-switching implementation
-|   |-- solve.m                     deprecated compatibility entry point
-|   `-- +internal/                  Ruckig normalization and validation
-|-- +hs3Engine/                     collocation implementation
-|   |-- solve.m                     deprecated compatibility entry point
-|   |-- +polynomial/                reconstruction and basis math
-|   `-- +constraints/               continuous constraint assembly
-`-- THIRD_PARTY_NOTICES.txt         source and publication notices
+trajectory/                         independent dimension-neutral motion
+`-- +bmtpEngine/
+    |-- solve.m                     numeric-region SOCP/Bezier generator
+    |-- createDelayedMotion.m       dwell and event-time repartitioning
+    |-- createDirectMotion.m        exact synchronized jerk switching
+    |-- createMotionRecord.m        event-word integration and sampling
+    |-- createOffsetSplineMotion.m  fixed-clock quintic composition
+    |-- maximumRestToRestDistance.m exact scalar reachability bound
+    `-- evaluatePolynomial.m        shared polynomial evaluator
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
@@ -266,21 +230,17 @@ addpath( ...
     fullfile(repositoryRoot, "trajectory"));
 ```
 
-Both engines are directly callable with dimension-neutral state and limit
-records:
+The engine is directly callable for dimension-neutral rest-to-rest motion:
 
 ```matlab
-ruckigTrajectory = planTrajRuckig( ...
-    initialState, terminalState, limits, ruckigOptions);
-
-hs3Trajectory = planTrajHs3( ...
-    initialState, terminalState, limits, options, pathConstraints);
+motion = bmtpEngine.createDirectMotion( ...
+    initialState, goalState, limits, options);
 ```
 
 ### API migration
 
-Use the named planning entry points in new code. Existing engine-qualified
-solve calls remain compatibility paths for one release:
+Use the named product entry points in new code. Historical product-level names
+map as follows; removed engine implementations have no forwarding shims:
 
 | Previous call | Current call |
 | --- | --- |
@@ -292,9 +252,6 @@ solve calls remain compatibility paths for one release:
 | `azElObstacles.combineAzElObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
 | `azElObstacles.queryAzElTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
 | `plotAzElMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
-| `hs3.solve(...)` | `planTrajHs3(...)` |
-| `ruckigEngine.solve(...)` | `planTrajRuckig(...)` |
-| `hs3Engine.solve(...)` | `planTrajHs3(...)` |
 
 ## Maintained examples
 
@@ -323,7 +280,7 @@ outside the headless example matrix.
 ## Requirements
 
 - MATLAB with `polyshape`, graph, table, string, and current graphics support.
-- Optimization Toolbox for `fmincon`.
+- Optimization Toolbox for `coneprog` in the static-region BMTP generator.
 - A graphical MATLAB session for visible plots and the persistent scene builder.
   Planning, validation, and noninteractive examples can run headlessly.
 - Geographic-outline examples may require their MATLAB geographic data and
@@ -350,7 +307,8 @@ assertSuccess(results);
 ## Known limits
 
 - The bounded deterministic proposal set is not complete.
-- HS3 does not prove global minimum arrival or global optimality.
+- BMTP and the bounded candidate portfolio do not prove global minimum arrival
+  or global optimality.
 - Moving obstacles can require topology or timing proposals outside the
   configured finite portfolio.
 - Azimuth wrapping with obstacles or moving goals remains unsupported.

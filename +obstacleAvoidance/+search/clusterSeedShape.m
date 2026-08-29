@@ -1,154 +1,85 @@
 function [clusteredShape, record] = clusterSeedShape( ...
-        sweptShape, clusterDistance_deg, protectedPoints_deg, ...
-        invalidShapeIdentifier)
+        sweptShape, clusterDistance_deg, protectedPoints_deg, invalidShapeIdentifier)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [clusteredShape, record] = obstacleAvoidance.search.clusterSeedShape( ...
+%   [clusteredShape, record] = ...
+%       obstacleAvoidance.search.clusterSeedShape( ...
 %       sweptShape, clusterDistance_deg, protectedPoints_deg, ...
 %       invalidShapeIdentifier)
 %**************************************************************************
 % PURPOSE
-%   - Replace nearby groups of at least three swept obstacle regions with
-%     conservative convex hulls for topology-seed generation only.
+%   - Conservatively replace connected groups of at least three nearby
+%     proposal regions with endpoint-safe convex hulls.
 %**************************************************************************
 % INPUTS
 %   - sweptShape (scalar polyshape)
-%       Union of protected obstacle geometry sampled across planning time.
+%       Protected proposal geometry.
 %   - clusterDistance_deg (nonnegative numeric scalar)
-%       Maximum connected region gap. Zero disables clustering.
-%   - protectedPoints_deg (N-by-2 finite numeric array)
-%       Start and goal points that a cluster hull must not contain.
+%       Maximum connected gap; zero disables clustering.
+%   - protectedPoints_deg (N-by-2 numeric array)
+%       Request points that no hull may contain or touch.
 %   - invalidShapeIdentifier (string scalar)
-%       Caller-owned compatibility identifier for an invalid swept shape.
+%       Caller-owned invalid-shape error identifier.
 %**************************************************************************
 % OUTPUTS
 %   - clusteredShape (scalar polyshape)
-%       Seed-only geometry. Physical obstacle records are not changed.
+%       Seed-only conservative geometry.
 %   - record (scalar struct)
-%       Distance, region counts, group counts, and cluster boundaries.
+%       Source, group, absorbed-region, and boundary diagnostics.
 %**************************************************************************
 % UNITS
-%   - Polygon vertices, distances, and protected points are degrees.
+%   - Geometry and distance are degrees.
 %**************************************************************************
 
-%% Section 1: Validate Inputs & Initialize Diagnostics
-
-% Clustering changes only search guidance. Physical obstacles and final
-% collision checks still use their original geometry, so a conservative hull
-% may reduce route variety but can never hide an obstacle from validation.
+%% Section 1: Find Endpoint-Safe Connected Hulls
 
 if ~isa(sweptShape, "polyshape") || ~isscalar(sweptShape)
-    error(invalidShapeIdentifier, ...
-        "sweptShape must be one scalar polyshape.");
+    error(invalidShapeIdentifier, "sweptShape must be one scalar polyshape.");
 end
 validateattributes(clusterDistance_deg, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'});
-validateattributes(protectedPoints_deg, {'numeric'}, ...
-    {'real', 'finite', '2d', 'ncols', 2});
+validateattributes(protectedPoints_deg, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2});
 sourceRegions = regions(sweptShape);
-sourceRegionCount = numel(sourceRegions);
-record = struct( ...
-    "Distance_deg", double(clusterDistance_deg), ...
-    "SourceRegionCount", sourceRegionCount, ...
-    "ClusterGroupCount", 0, ...
-    "ClusteredRegionCount", 0, ...
-    "ClusterBoundary_deg", zeros(0, 2));
+record = struct("Distance_deg", clusterDistance_deg, ...
+    "SourceRegionCount", numel(sourceRegions), "ClusterGroupCount", 0, ...
+    "ClusteredRegionCount", 0, "ClusterBoundary_deg", zeros(0, 2));
 clusteredShape = sweptShape;
-if clusterDistance_deg == 0 || sourceRegionCount < 3
+if clusterDistance_deg == 0 || numel(sourceRegions) < 3
     return;
 end
-
-%% Section 2: Find Connected Groups Of Nearby Regions
-
-% Expanding every region by half the requested gap makes two regions touch
-% when their original separation is no greater than the full gap. Connected
-% expanded components therefore identify nearby source regions without
-% requiring a pairwise distance matrix.
-
-expandedShape = polybuffer(sweptShape, clusterDistance_deg / 2);
-expandedRegions = regions(expandedShape);
-regionIsClustered = false(sourceRegionCount, 1);
-clusterShapes = cell(numel(expandedRegions), 1);
-clusterGroupCount = 0;
-
-% Examine each connected expanded component as one possible conservative
-% cluster group.
-for expandedRegionIndex = 1:numel(expandedRegions)
-    isMember = false(sourceRegionCount, 1);
-
-    % Test every source region that has not already been committed to an
-    % earlier cluster against this expanded component.
-    for sourceRegionIndex = 1:sourceRegionCount
-        if regionIsClustered(sourceRegionIndex)
-            continue;
-        end
-        vertices_deg = sourceRegions(sourceRegionIndex).Vertices;
+expandedRegions = regions(polybuffer(sweptShape, clusterDistance_deg / 2));
+isClustered = false(numel(sourceRegions), 1);
+hulls = cell(numel(expandedRegions), 1);
+for expandedIndex = 1:numel(expandedRegions)
+    isMember = false(numel(sourceRegions), 1);
+    for sourceIndex = find(~isClustered).'
+        vertices_deg = sourceRegions(sourceIndex).Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-        isMember(sourceRegionIndex) = any(isinterior( ...
-            expandedRegions(expandedRegionIndex), ...
-            vertices_deg(:, 1), vertices_deg(:, 2)));
+        isMember(sourceIndex) = any(isinterior( ...
+            expandedRegions(expandedIndex), vertices_deg(:, 1), vertices_deg(:, 2)));
     end
-    memberRegionIndices = find(isMember);
-    if numel(memberRegionIndices) < 3
-        % Merging only one or two regions provides little complexity benefit
-        % and can needlessly erase a useful passage between obstacles.
+    members = find(isMember);
+    if numel(members) < 3
         continue;
     end
-    memberVertices = cell(numel(memberRegionIndices), 1);
-
-    % Collect finite vertices before forming their conservative convex hull.
-    for memberIndex = 1:numel(memberRegionIndices)
-        vertices_deg = sourceRegions( ...
-            memberRegionIndices(memberIndex)).Vertices;
-        memberVertices{memberIndex} = vertices_deg( ...
-            all(isfinite(vertices_deg), 2), :);
-    end
-    memberVertices_deg = vertcat(memberVertices{:});
-    hullIndex = convhull( ...
-        memberVertices_deg(:, 1), memberVertices_deg(:, 2));
-    hullShape = polyshape( ...
-        memberVertices_deg(hullIndex, 1), ...
-        memberVertices_deg(hullIndex, 2), "Simplify", false);
-    hullContainsProtectedPoint = false;
-
-    % Reject a hull that would cover either protected endpoint.
-    for pointIndex = 1:size(protectedPoints_deg, 1)
-        clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( ...
-            hullShape, protectedPoints_deg(pointIndex, :));
-        if clearance_deg <= 1e-12
-            hullContainsProtectedPoint = true;
-            break;
-        end
-    end
-    if hullContainsProtectedPoint
+    vertices_deg = vertcat(sourceRegions(members).Vertices);
+    vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
+    hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
+    hull = polyshape(vertices_deg(hullIndex(1:end - 1), :), "Simplify", false);
+    if any(obstacleAvoidance.geometry.pointPolygonClearance( ...
+            hull, protectedPoints_deg) <= 1e-12)
         continue;
     end
-    clusterGroupCount = clusterGroupCount + 1;
-    clusterShapes{clusterGroupCount} = hullShape;
-    regionIsClustered(memberRegionIndices) = true;
+    record.ClusterGroupCount = record.ClusterGroupCount + 1;
+    hulls{record.ClusterGroupCount} = hull;
+    isClustered(members) = true;
 end
-
-%% Section 3: Assemble The Conservative Seed Geometry
-
-% Replace each accepted group with its convex hull and retain all remaining
-% source regions unchanged. The union is used only to construct seed routes.
-
-if clusterGroupCount == 0
+if record.ClusterGroupCount == 0
     return;
 end
-unclusteredRegionIndices = find(~regionIsClustered);
-partCount = clusterGroupCount + numel(unclusteredRegionIndices);
-shapeParts = cell(partCount, 1);
-shapeParts(1:clusterGroupCount) = clusterShapes(1:clusterGroupCount);
-
-% Retain every region that was not absorbed into a cluster.
-for unclusteredIndex = 1:numel(unclusteredRegionIndices)
-    shapeParts{clusterGroupCount + unclusteredIndex} = sourceRegions( ...
-        unclusteredRegionIndices(unclusteredIndex));
-end
-clusteredShape = union([shapeParts{:}]);
-clusterHulls = union([clusterShapes{1:clusterGroupCount}]);
-record.ClusterGroupCount = clusterGroupCount;
-record.ClusteredRegionCount = nnz(regionIsClustered);
-record.ClusterBoundary_deg = clusterHulls.Vertices;
+parts = [hulls(1:record.ClusterGroupCount); num2cell(sourceRegions(~isClustered))];
+clusteredShape = union([parts{:}]);
+hullShape = union([hulls{1:record.ClusterGroupCount}]);
+record.ClusteredRegionCount = nnz(isClustered);
+record.ClusterBoundary_deg = hullShape.Vertices;
 end

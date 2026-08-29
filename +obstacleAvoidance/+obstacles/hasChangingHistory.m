@@ -35,29 +35,16 @@ function changing = hasChangingHistory(obstacles, startTime_s, endTime_s)
 changing = false;
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
-    hasFiniteActiveSpan = numel(obstacle.time_s) > 1;
-    if hasFiniteActiveSpan && ...
-            (obstacle.time_s(1) > startTime_s || ...
+    if numel(obstacle.time_s) > 1 && (obstacle.time_s(1) > startTime_s || ...
             obstacle.time_s(end) < endTime_s)
         changing = true;
-        % The obstacle appears or disappears inside the planning interval.
-        % Even identical stored polygons therefore form a time-varying scene.
         return;
     end
-
     for sampleIndex = 2:numel(obstacle.time_s)
-        % isequaln treats matching NaN ring separators as equal. Ordinary
-        % element comparison would call an unchanged multi-ring boundary
-        % different merely because NaN is not equal to itself.
-        sameAzimuth = isequaln( ...
-            obstacle.az_deg{sampleIndex}, obstacle.az_deg{1});
-        sameElevation = isequaln( ...
-            obstacle.el_deg{sampleIndex}, obstacle.el_deg{1});
-        if ~sameAzimuth || ~sameElevation
+        % isequaln treats corresponding NaN ring separators as equal.
+        if ~isequaln(obstacle.az_deg{sampleIndex}, obstacle.az_deg{1}) || ...
+                ~isequaln(obstacle.el_deg{sampleIndex}, obstacle.el_deg{1})
             changing = true;
-            % One coordinate difference is enough to require dynamic handling;
-            % stop as soon as that fact is known because only a Boolean result
-            % is requested.
             return;
         end
     end

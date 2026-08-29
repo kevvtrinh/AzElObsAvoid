@@ -1,10 +1,61 @@
 # Plan 325 branch assessment
 
-The current planner judgment is **independent Ruckig-derived and HS3 trajectory
-engines, with obstacle-aware routing owned by the Az/El planner and no neutral
-trajectory wrapper — 2026-08-27**.
+The current planner judgment is **one public obstacle planner with an
+independent BMTP trajectory engine, exact direct and certified special-case
+motions, and no retained HS3 or Ruckig implementation — 2026-08-29**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
+
+## BMTP cutover and dense-outline record — 2026-08-29
+
+The largest current strength is physical arrival evidence checked outside the
+trajectory generator. The maintained Extreme example returns a Philippines
+motion at `5.79283069332816 s`, a `22.0706430850003 deg` selected polyline,
+and a `23.3621082521826 deg` sampled smooth-path length. This improves the
+previous `6.00693537638 s` physical record by `0.214104683052 s`; its smoothed
+path is `0.144771751783 deg` longer. The public validator independently passes
+continuous dynamics, collision freedom, and the static plane certificate.
+The certificate proves every output span against eight convex solver regions
+only after independently proving that their union covers all 116 exact convex
+cells of the protected obstacle geometry.
+
+The dense-outline reduction is input-driven: outlines with at least 65 total
+triangulation cells receive exact adjacent-cell convex merging, and more than
+64 exact regions receive eight deterministic conservative convex hulls for
+the solver. A structurally different synthetic comb test exercises the same
+rule and validates against its original geometry. The authoritative geometry
+is never replaced for public collision validation. The winning Philippines
+seed took about `11.88 s` in the focused kernel measurement, within the
+accepted `13.7 s` bound. The final maintained run took `19.1376366 s` in the
+returned Philippines public planner result and `137.9799328 s` for the whole
+three-region example including geographic obstacle construction. The previous
+record was `9.8415693 s` for the Philippines planner and `30.8614459 s` for the
+whole example, so no runtime-record claim is made.
+
+The BMTP trajectory implementation now lives under `trajectory/+bmtpEngine`
+and the public planner calls it through one thin adapter. The unverified
+Parallel Computing Toolbox path was removed: all retained plane solves are
+deterministic scalar solves with direct verification and fail-fast behavior.
+Obstacle-free and several certified structural cases retain exact or tightly
+bracketed arrival evidence, including `4.53112887414927 s` obstacle-free,
+`20.71244778497153 s` Static-U, `8.5 s` dense-concave and moving-circle,
+and `55/9 s` affine earliest intercept results.
+
+The largest weaknesses remain explicit. The frozen production-size audit is
+`8,549` nonblank, noncomment lines across 52 files, exceeding the required
+`4,999` ceiling by `3,550`; deletion of HS3 and Ruckig was not sufficient.
+The eight-region conservative grouping can also fill a narrow free corridor
+that exists between exact cells; the independent validator prevents a false
+success, but the bounded solver can still miss a feasible route.
+The Extreme result is the best validated candidate in the bounded deterministic
+portfolio, not a global optimum: its free-space lower bound is about
+`5.20494 s`, leaving an approximately `0.58789 s` unclosed gap. Fixed-arrival
+Straight Target and Target Exits and earliest-arrival Two Opposing U currently
+take about 45--49 seconds because several high-degree BMTP seed basins are
+solved before quality ranking. A fixed-clock convex quality solve is the next
+bounded runtime experiment; seed pruning remains disabled without an
+admissible class bound. These unfavorable size, proof, and runtime limits must
+remain visible.
 
 ## Direct Ruckig trial before obstacle topology — 2026-08-28
 

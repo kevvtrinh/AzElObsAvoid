@@ -78,10 +78,9 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
 summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyTrue(testCase, summary.RuckigAttempted || summary.Hs3Attempted);
-engineElapsedTime_s = result.SearchDiagnostics.RuckigElapsedTime_s + ...
-    result.SearchDiagnostics.Hs3ElapsedTime_s;
-verifyGreaterThan(testCase, engineElapsedTime_s, 0);
+verifyTrue(testCase, isstruct(summary.SolverDiagnostics));
+verifyTrue(testCase, isfield(summary.SolverDiagnostics, "ElapsedTime_s"));
+verifyGreaterThan(testCase, summary.SeedPlanningElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
 verifyStageTiming(testCase, result);

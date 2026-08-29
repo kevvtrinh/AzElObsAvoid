@@ -1,225 +1,175 @@
-function [route_deg, routeTime_s, record] = timeExpandedVisibilitySearch( ...
-        nodePosition_deg, edgeCost_deg, obstacles, initialState, goalState, ...
-        limits, sampleTimes_s, options)
+function [route_deg, routeTime_s, record] = ...
+        timeExpandedVisibilitySearch(nodePosition_deg, edgeCost_deg, ...
+        obstacles, initialState, goalState, limits, sampleTimes_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [route_deg, routeTime_s, record] = ...
 %       obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-%       nodePosition_deg, edgeCost_deg, obstacles, initialState, goalState, ...
-%       limits, sampleTimes_s, options)
+%       nodePosition_deg, edgeCost_deg, obstacles, initialState, ...
+%       goalState, limits, sampleTimes_s, options)
 %**************************************************************************
 % PURPOSE
-%   - Search a shared forward time-layer visibility graph with waiting and
-%     collision-checked motion edges.
+%   - Search deterministic forward reachability over complete input-derived
+%     time layers using waits and exact-history motion queries.
 %**************************************************************************
 % INPUTS
 %   - nodePosition_deg (N-by-2 numeric matrix)
-%       Visibility-graph nodes with start first and goal second.
+%       Search nodes with start first and goal second.
 %   - edgeCost_deg (N-by-N numeric matrix)
-%       Finite entries identify spatially visible neighbor edges.
-%   - obstacles (canonical protected obstacle array)
-%       Static or time-varying geometry queried at trajectory time.
+%       Finite entries enable candidate motion edges.
+%   - obstacles (canonical protected obstacle struct array)
+%       Exact prepared histories queried at trajectory time.
 %   - initialState, goalState, limits, options (scalar structs)
-%       Resolved request, physical limits, and goal-time policy.
+%       Resolved request, limits, and goal-time policy.
 %   - sampleTimes_s (numeric vector)
-%       Source-aware candidate time layers.
+%       Complete source-aware request times; no layer cap is applied.
 %**************************************************************************
 % OUTPUTS
 %   - route_deg (M-by-2 numeric matrix)
-%       Timed route geometry, or zeros(0, 2) when no route is found.
+%       Selected timed route, or zeros(0,2) on exhaustion.
 %   - routeTime_s (M-by-1 numeric vector)
-%       Absolute time associated with each route point.
+%       Absolute route times.
 %   - record (scalar struct)
-%       Complete temporal-search counts and bounded diagnostic geometry.
+%       Generated edges, reached states, frontier, and best partial ancestry.
 %**************************************************************************
 % UNITS
-%   - Position and edge costs are degrees. Time is seconds.
+%   - Position and edge cost are degrees; time is seconds.
 %**************************************************************************
 
-%% Section 1: Search Time Layers
-% A state contains one graph node and one absolute time. The search moves only
-% forward in time. Parent arrays store the selected prior state. They preserve
-% waits when the function rebuilds the route.
-layerTimes_s = obstacleAvoidance.search.boundedTimeLayers( ...
-    sampleTimes_s, initialState.time_s, goalState.time_s, 17);
+%% Section 1: Create The Forward Layer Graph
+
+layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); ...
+    linspace(initialState.time_s, goalState.time_s, 9).'; goalState.time_s]);
+layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & ...
+    layerTimes_s <= goalState.time_s);
 layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
-
-% Precompute whether every graph node is free at every retained time layer.
 for layerIndex = 1:layerCount
-    % Calculate node occupancy once for each layer. Many edges reuse it.
-    queryTime_s = repmat(layerTimes_s(layerIndex), nodeCount, 1);
-    nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, ...
-        nodePosition_deg(:, 1), nodePosition_deg(:, 2), queryTime_s).';
+    nodeIsFree(layerIndex, :) = ...
+        ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
+        repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
-reachable = false(layerCount, nodeCount);
-spatialCost_deg = Inf(layerCount, nodeCount);
-parentLayerIndex = zeros(layerCount, nodeCount, "uint16");
-parentNodeIndex = zeros(layerCount, nodeCount, "uint16");
-reachable(1, 1) = nodeIsFree(1, 1);
-spatialCost_deg(1, 1) = 0;
-waitEdgeCount = 0;
-motionEdgeCount = 0;
-rejectedTransitionCount = 0;
-expandedCount = 0;
-exploredNodes_deg = zeros(0, 2);
-
-% Propagate reachability forward only; timed routes may wait but never travel backward in time.
+sourceState = zeros(0, 1);
+targetState = zeros(0, 1);
+edgeLength_deg = zeros(0, 1);
+waitCount = 0;
+motionCount = 0;
+rejectedCount = 0;
 for layerIndex = 1:layerCount - 1
-    % Earliest-arrival search can stop at the first time layer that reaches the goal.
-    if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
-        break;
-    end
-    currentNodeIndices = find(reachable(layerIndex, :));
-
-    % Expand every node reached at the current time layer.
-    for currentNodeIndex = reshape(currentNodeIndices, 1, [])
-        expandedCount = expandedCount + 1;
-        exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
-        % A same-position edge is a wait. The position must stay clear for the
-        % full wait interval.
-        if nodeIsFree(layerIndex + 1, currentNodeIndex) && ...
-                motionEdgeIsClear( ...
-                obstacles, nodePosition_deg(currentNodeIndex, :), ...
-                nodePosition_deg(currentNodeIndex, :), ...
-                layerTimes_s(layerIndex), layerTimes_s(layerIndex + 1))
-            [reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex] = updateTemporalState( ...
-                reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex, layerIndex, currentNodeIndex, layerIndex + 1, currentNodeIndex, 0);
-            waitEdgeCount = waitEdgeCount + 1;
+    for sourceNode = reshape(find(nodeIsFree(layerIndex, :)), 1, [])
+        nextState = sub2ind([layerCount nodeCount], layerIndex + 1, sourceNode);
+        waitIsClear = nodeIsFree(layerIndex + 1, sourceNode) && ...
+            edgeIsClear(obstacles, nodePosition_deg(sourceNode, :), ...
+            nodePosition_deg(sourceNode, :), layerTimes_s(layerIndex), ...
+            layerTimes_s(layerIndex + 1));
+        if waitIsClear
+            [sourceState, targetState, edgeLength_deg] = appendEdge( ...
+                sourceState, targetState, edgeLength_deg, ...
+                sub2ind([layerCount nodeCount], layerIndex, sourceNode), ...
+                nextState, 0);
+            waitCount = waitCount + 1;
         else
-            rejectedTransitionCount = rejectedTransitionCount + 1;
+            rejectedCount = rejectedCount + 1;
         end
-        visibleNeighbor = find(isfinite(edgeCost_deg(currentNodeIndex, :)));
-        targetNodeIndices = unique([1, 2, visibleNeighbor]);
-        targetNodeIndices(targetNodeIndices == currentNodeIndex) = [];
-
-        % The same-node wait edge is handled separately.
-        for targetNodeIndex = reshape(targetNodeIndices, 1, [])
-            % Calculate lower bounds from speed and acceleration. Skip time
-            % layers that no limited motion can reach.
-            displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
-                nodePosition_deg(currentNodeIndex, :);
-            speedDuration_s = abs(displacement_deg) ./ limits.maxVelocity_deg_s;
-            accelerationDuration_s = 2 * sqrt( ...
-                abs(displacement_deg) ./ limits.maxAcceleration_deg_s2);
-            minimumDuration_s = max([speedDuration_s, accelerationDuration_s]);
-            earliestTargetTime_s = layerTimes_s(layerIndex) + ...
-                minimumDuration_s - 1e-12;
-            targetLayerIndex = find( ...
-                layerTimes_s > earliestTargetTime_s, 1, "first");
-            % Reject unavailable destinations before paying for a swept-edge collision query.
-            if isempty(targetLayerIndex) || ~nodeIsFree(targetLayerIndex, targetNodeIndex)
-                % Skip the costly edge check when the arrival is unavailable.
-                rejectedTransitionCount = rejectedTransitionCount + 1;
+        targets = find(isfinite(edgeCost_deg(sourceNode, :)));
+        targets(targets == sourceNode) = [];
+        for targetNode = reshape(targets, 1, [])
+            displacement_deg = nodePosition_deg(targetNode, :) - ...
+                nodePosition_deg(sourceNode, :);
+            minimumDuration_s = max([abs(displacement_deg) ./ ...
+                limits.maxVelocity_deg_s, 2 * sqrt(abs(displacement_deg) ./ ...
+                limits.maxAcceleration_deg_s2)]);
+            targetLayer = find(layerTimes_s > layerTimes_s(layerIndex) + ...
+                minimumDuration_s - 1e-12, 1, "first");
+            motionIsClear = ~isempty(targetLayer) && nodeIsFree(targetLayer, targetNode);
+            if motionIsClear
+                motionIsClear = edgeIsClear(obstacles, nodePosition_deg(sourceNode, :), ...
+                    nodePosition_deg(targetNode, :), layerTimes_s(layerIndex), ...
+                    layerTimes_s(targetLayer));
+            end
+            if ~motionIsClear
+                rejectedCount = rejectedCount + 1;
                 continue;
             end
-            isClear = motionEdgeIsClear( ...
-                obstacles, nodePosition_deg(currentNodeIndex, :), ...
-                nodePosition_deg(targetNodeIndex, :), ...
-                layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
-            if ~isClear
-                rejectedTransitionCount = rejectedTransitionCount + 1;
-                continue;
-            end
-            [reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex] = updateTemporalState( ...
-                reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex, layerIndex, currentNodeIndex, ...
-                targetLayerIndex, targetNodeIndex, norm(displacement_deg));
-            motionEdgeCount = motionEdgeCount + 1;
+            [sourceState, targetState, edgeLength_deg] = appendEdge( ...
+                sourceState, targetState, edgeLength_deg, ...
+                sub2ind([layerCount nodeCount], layerIndex, sourceNode), ...
+                sub2ind([layerCount nodeCount], targetLayer, targetNode), ...
+                norm(displacement_deg));
+            motionCount = motionCount + 1;
         end
     end
 end
-deepestLayerIndex = find(any(reachable, 2), 1, "last");
-frontierNodes_deg = zeros(0, 2);
-if ~isempty(deepestLayerIndex)
-    frontierNodes_deg = nodePosition_deg(reachable(deepestLayerIndex, :), :);
+searchGraph = digraph(sourceState, targetState, edgeLength_deg, layerCount * nodeCount);
+
+%% Section 2: Select Goal And Best-Partial Paths
+
+reachedState = zeros(0, 1);
+if nodeIsFree(1, 1)
+    reachedState = bfsearch(searchGraph, 1);
 end
-if options.GoalTimeMode == "earliestArrival"
-    goalLayerIndex = find(reachable(:, 2), 1, "first");
+goalStates = sub2ind([layerCount nodeCount], (1:layerCount).', 2 * ones(layerCount, 1));
+reachedGoal = find(ismember(goalStates, reachedState));
+if options.GoalTimeMode == "earliestArrival" && ~isempty(reachedGoal)
+    goalStateIndex = goalStates(reachedGoal(1));
+elseif options.GoalTimeMode ~= "earliestArrival" && ...
+        ismember(goalStates(end), reachedState)
+    goalStateIndex = goalStates(end);
 else
-    goalLayerIndex = layerCount;
-    if ~reachable(goalLayerIndex, 2)
-        goalLayerIndex = [];
-    end
+    goalStateIndex = [];
 end
-[route_deg, routeTime_s] = reconstructTimedRoute( ...
-    nodePosition_deg, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex);
+[route_deg, routeTime_s] = statePath(searchGraph, goalStateIndex, ...
+    nodePosition_deg, layerTimes_s);
+[reachedLayer, reachedNode] = ind2sub([layerCount nodeCount], reachedState);
+frontier_deg = zeros(0, 2);
+bestPartial_deg = zeros(0, 2);
+if ~isempty(reachedState)
+    deepestLayer = max(reachedLayer);
+    frontierState = reachedState(reachedLayer == deepestLayer);
+    [~, frontierNode] = ind2sub([layerCount nodeCount], frontierState);
+    frontier_deg = nodePosition_deg(frontierNode, :);
+    [~, bestIndex] = min(vecnorm(frontier_deg - nodePosition_deg(2, :), 2, 2));
+    [bestPartial_deg, ~] = statePath(searchGraph, frontierState(bestIndex), ...
+        nodePosition_deg, layerTimes_s);
+end
 record = struct("LayerTimes_s", layerTimes_s, "NodeCount", nodeCount, ...
-    "WaitEdgeCount", waitEdgeCount, "MotionEdgeCount", motionEdgeCount, ...
-    "RejectedTransitionCount", rejectedTransitionCount, ...
-    "ExpandedCount", expandedCount, ...
-    "ExploredNodes_deg", exploredNodes_deg, ...
-    "FrontierNodes_deg", frontierNodes_deg);
+    "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
+    "RejectedTransitionCount", rejectedCount, ...
+    "ExpandedCount", numel(reachedState), ...
+    "ExploredNodes_deg", nodePosition_deg(reachedNode, :), ...
+    "FrontierNodes_deg", frontier_deg, "BestPartialRoute_deg", bestPartial_deg);
 end
 
-%% Section 2: Local Functions
+%% Section 3: Local Functions
 
-function clear = motionEdgeIsClear( ...
-        obstacles, firstPosition_deg, secondPosition_deg, ...
-        firstTime_s, secondTime_s)
-% Check a moving seed edge at deterministic trajectory-time samples.
-% This check guides proposal search. It does not certify final safety. The
-% final trajectory uses adaptive collision validation on original obstacles.
-sampleCount = 13;
-sampleFraction = linspace(0, 1, sampleCount).';
-samplePosition_deg = firstPosition_deg + sampleFraction .* (secondPosition_deg - firstPosition_deg);
-sampleTime_s = firstTime_s + sampleFraction * (secondTime_s - firstTime_s);
-occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-    obstacles, samplePosition_deg(:, 1), ...
-    samplePosition_deg(:, 2), sampleTime_s);
-clear = ~any(occupied);
+function [source, target, length_deg] = appendEdge( ...
+        source, target, length_deg, newSource, newTarget, newLength_deg)
+% Append one generated transition without changing deterministic loop order.
+source(end + 1, 1) = newSource;
+target(end + 1, 1) = newTarget;
+length_deg(end + 1, 1) = newLength_deg;
 end
 
-function [reachable, spatialCost_deg, parentLayerIndex, ...
-        parentNodeIndex] = updateTemporalState( ...
-        reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex, ...
-        sourceLayerIndex, sourceNodeIndex, targetLayerIndex, targetNodeIndex, edgeLength_deg)
-% Apply deterministic shortest-distance tie breaking at one timed state.
-% The target layer fixes arrival time. Use spatial distance as the cost in a
-% layer. For the final layer, prefer a later equal-cost departure.
-trialCost_deg = spatialCost_deg( sourceLayerIndex, sourceNodeIndex) + edgeLength_deg;
-storedCost_deg = spatialCost_deg(targetLayerIndex, targetNodeIndex);
-costIsEqual = abs(trialCost_deg - storedCost_deg) <= 1e-12;
-isLaterFinalTransition = targetLayerIndex == size(reachable, 1) && edgeLength_deg > 0 && ...
-    sourceLayerIndex > double(parentLayerIndex( targetLayerIndex, targetNodeIndex));
-% Retain the cheaper state, with a deterministic exception for a later final transition.
-if trialCost_deg > storedCost_deg + 1e-12 || (costIsEqual && ~isLaterFinalTransition)
-    return;
-end
-reachable(targetLayerIndex, targetNodeIndex) = true;
-spatialCost_deg(targetLayerIndex, targetNodeIndex) = trialCost_deg;
-parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceLayerIndex);
-parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
+function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s)
+% Sample proposal edges; final public validation remains adaptive.
+fraction = linspace(0, 1, 13).';
+position_deg = first_deg + fraction .* (second_deg - first_deg);
+time_s = first_s + fraction * (second_s - first_s);
+clear = ~any(obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    obstacles, position_deg(:, 1), position_deg(:, 2), time_s));
 end
 
-function [route_deg, routeTime_s] = reconstructTimedRoute( ...
-        nodePosition_deg, layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex)
-% Reconstruct one forward time-layer path without losing wait states.
+function [route_deg, routeTime_s] = statePath(graph, targetState, positions_deg, times_s)
+% Map one stored graph path back to position/time samples.
 route_deg = zeros(0, 2);
 routeTime_s = zeros(0, 1);
-% An empty goal layer is the normal bounded-search no-path outcome.
-if isempty(goalLayerIndex)
+if isempty(targetState)
     return;
 end
-layerPath = goalLayerIndex;
-nodePath = 2;
-
-% Follow temporal parent pointers backward until the start state is reached.
-while ~(layerPath(1) == 1 && nodePath(1) == 1)
-    priorLayerIndex = double(parentLayerIndex( layerPath(1), nodePath(1)));
-    priorNodeIndex = double(parentNodeIndex( layerPath(1), nodePath(1)));
-    if priorLayerIndex == 0 || priorNodeIndex == 0
-        route_deg = zeros(0, 2);
-        routeTime_s = zeros(0, 1);
-        return;
-    end
-    layerPath = [priorLayerIndex; layerPath]; %#ok<AGROW>
-    nodePath = [priorNodeIndex; nodePath]; %#ok<AGROW>
-end
-route_deg = nodePosition_deg(nodePath, :);
-routeTime_s = layerTimes_s(layerPath);
+state = shortestpath(graph, 1, targetState);
+[layer, node] = ind2sub([numel(times_s) size(positions_deg, 1)], state);
+route_deg = positions_deg(node, :);
+routeTime_s = times_s(layer);
 end

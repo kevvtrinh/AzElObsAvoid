@@ -1,0 +1,642 @@
+function result = planCorridorQuintic( ...
+        obstacles, initialState, goalState, limits, optionOverrides)
+%% Section 0: Header & Readme
+% SYNTAX
+%   options = obstacleAvoidance.planner.planCorridorQuintic()
+%   result = obstacleAvoidance.planner.planCorridorQuintic( ...
+%       obstacles, initialState, goalState, limits)
+%   result = obstacleAvoidance.planner.planCorridorQuintic( ...
+%       obstacles, initialState, goalState, limits, optionOverrides)
+%**************************************************************************
+% PURPOSE
+%   - Try exact direct and fixed-clock motions before topology work.
+%   - Accept timed-opening or cavity motion early only when its request-wide
+%     physical lower bound is within 0.1 microsecond of its validated upper.
+%   - Exhaust deterministic topology seeds through the static BMTP fallback.
+%   - Promote only motions that pass independent public validation.
+%**************************************************************************
+% INPUTS
+%   - obstacles (supported obstacle input or [])
+%       Static or time-varying protected geometry.
+%   - initialState, goalState (scalar structs)
+%       Normalized endpoint motion states and goal-time policy.
+%   - limits (scalar struct)
+%       Two-axis physical and workspace limits with units in field names.
+%   - optionOverrides (scalar struct, optional; default struct())
+%       Partial public options; omitted and empty fields use defaults.
+%**************************************************************************
+% OUTPUTS
+%   - result (scalar struct)
+%       Stable success-or-failure record. Invalid inputs throw; expected
+%       planning failures return Success=false with retained search evidence.
+%**************************************************************************
+% UNITS
+%   - Position is degrees and time is seconds. Histories are N-by-2
+%     [azimuth elevation]; derivative units are deg/s, deg/s^2, and deg/s^3.
+%**************************************************************************
+
+%% Section 1: Normalize The Request
+
+if nargin == 0
+    result = obstacleAvoidance.input.resolvePlannerOptions();
+    return;
+end
+if nargin < 4
+    error("planCorridorQuintic:MissingInputs", ...
+        "obstacles, initialState, goalState, and limits are required.");
+end
+if nargin < 5 || isempty(optionOverrides)
+    optionOverrides = struct();
+end
+planningTimer = tic;
+options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
+[obstacles, initialState, goalState, limits] = ...
+    obstacleAvoidance.input.normalizePlannerRequest( ...
+    obstacles, initialState, goalState, limits, options);
+[result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
+    obstacles, initialState, goalState, limits, options, ...
+    obstacleAvoidance.validateTrajectory());
+preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
+useStaticKernel = supportsStaticHorizon( ...
+    preparedObstacles, initialState.time_s, goalState.time_s);
+stageTiming = result.SearchDiagnostics.StageTiming;
+result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
+[~, result.SearchDiagnostics.FixedClockExcursion] = ...
+    obstacleAvoidance.planner.createFixedClockLateralExcursion();
+[~, result.SearchDiagnostics.TimedOpening] = ...
+    obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion();
+result.SearchDiagnostics.OrthogonalCavity = ...
+    obstacleAvoidance.planner.evaluateArrivalCertificatePortfolio();
+maximumInfimumGap_s = 1e-7;
+firstValidatedMotionTime_s = NaN;
+
+%% Section 2: Reject Physically Invalid Endpoints
+
+[endpointFeasible, result.Message, result.TerminationReason] = ...
+    obstacleAvoidance.input.validatePlannerEndpoints( ...
+    preparedObstacles, initialState, goalState, limits, options);
+if ~endpointFeasible
+    result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+    result = obstacleAvoidance.planner.stageTiming( ...
+        result, planningTimer, stageTiming);
+    return;
+end
+
+%% Section 3: Try Exact Physical-Time Motions
+
+motionTimer = tic;
+directCandidate = bmtpEngine.createDirectMotion( ...
+    initialState, goalState, limits, options);
+directElapsedTime_s = toc(motionTimer);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
+[directCandidate, directValidation, directValidationTime_s, stageTiming] = ...
+    validateCandidate(directCandidate, preparedObstacles, initialState, ...
+    goalState, limits, options, stageTiming, "");
+directAttempt = recordDirectAttempt(directCandidate, directValidation, ...
+    directElapsedTime_s, directValidationTime_s);
+result.SearchDiagnostics.DirectAttempt = directAttempt;
+if directValidation.Passed
+    result = finishFastPath(result, directCandidate, directValidation, ...
+        directAttempt, directElapsedTime_s, ...
+        createDirectSeed(initialState, goalState, ...
+        directCandidate.MotionDuration_s), summaryTemplate, ...
+        "An exact direct rest-to-rest motion passed independent validation.", ...
+        planningTimer, stageTiming);
+    return;
+end
+result.SearchDiagnostics.DirectAttempt.FallbackContinued = true;
+
+motionTimer = tic;
+[excursionCandidate, excursionDiagnostics] = ...
+    obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
+    directCandidate, preparedObstacles, initialState, goalState, ...
+    limits, options);
+excursionElapsedTime_s = toc(motionTimer);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + excursionElapsedTime_s;
+result.SearchDiagnostics.FixedClockExcursion = excursionDiagnostics;
+if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
+    excursionSeed = createDirectSeed(initialState, goalState, ...
+        excursionCandidate.MotionDuration_s);
+    excursionSeed.Source = "fixedClockLateralExcursion";
+    result = finishFastPath(result, excursionCandidate, ...
+        excursionCandidate.Validation, excursionDiagnostics, ...
+        excursionElapsedTime_s, excursionSeed, summaryTemplate, ...
+        "A fixed-clock lateral excursion attained the physical time floor.", ...
+        planningTimer, stageTiming);
+    return;
+end
+
+%% Section 4: Try A Certified Timed Opening
+
+motionTimer = tic;
+[openingCandidate, openingDiagnostics] = ...
+    obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion( ...
+    obstacles, initialState, goalState, limits, options);
+openingElapsedTime_s = toc(motionTimer);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + openingElapsedTime_s;
+openingIsValidated = openingDiagnostics.Success && ...
+    openingCandidate.Validation.Passed;
+if openingIsValidated
+    firstValidatedMotionTime_s = toc(planningTimer);
+end
+if openingIsValidated && openingDiagnostics.AllRouteCertificatePassed
+    if openingDiagnostics.InfimumGap_s < 0
+        error("planCorridorQuintic:InconsistentOpeningBounds", ...
+            "The opening upper is below its request-wide lower bound.");
+    end
+    openingDiagnostics.InfimumGapWithinPolicy = ...
+        openingDiagnostics.InfimumGap_s <= maximumInfimumGap_s;
+end
+result.SearchDiagnostics.TimedOpening = openingDiagnostics;
+if openingIsValidated && openingDiagnostics.InfimumGapWithinPolicy
+    openingSeed = createDirectSeed(initialState, goalState, ...
+        openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
+    openingSeed.Source = "timedOrthogonalOpening";
+    result = finishFastPath(result, openingCandidate, ...
+        openingCandidate.Validation, openingDiagnostics, ...
+        openingElapsedTime_s, openingSeed, summaryTemplate, ...
+        "A timed opening motion met the physical infimum-gap policy.", ...
+        planningTimer, stageTiming);
+    return;
+end
+
+%% Section 5: Exhaust Deterministic Topology Seeds
+
+topologyTimer = tic;
+[seeds, gridDiagnostics] = ...
+    obstacleAvoidance.search.createRouteCandidates( ...
+    preparedObstacles, initialState, goalState, limits, options);
+gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
+stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
+result.Seeds = seeds;
+result.SearchDiagnostics.Grid = gridDiagnostics;
+result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
+    gridDiagnostics.ElapsedTime_s;
+seedCount = numel(seeds);
+seedSummaries = repmat(summaryTemplate, seedCount, 1);
+candidates = cell(seedCount, 1);
+cavityAttempts = cell(seedCount, 1);
+cavityCandidates = cell(seedCount, 1);
+cavityLowerBounds_s = NaN(seedCount, 1);
+cavityUpperDurations_s = NaN(seedCount, 1);
+cavityMotionLengths_deg = NaN(seedCount, 1);
+for seedIndex = 1:seedCount
+    motionTimer = tic;
+    [candidate, cavityDiagnostics] = ...
+        obstacleAvoidance.planner.createOrthogonalCavityMotion( ...
+        seeds(seedIndex), preparedObstacles, initialState, goalState, ...
+        limits, options);
+    elapsedTime_s = toc(motionTimer);
+    stageTiming.MotionSolvingElapsedTime_s = ...
+        stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
+    [candidate, validation, ~, stageTiming] = validateCandidate( ...
+        candidate, preparedObstacles, initialState, goalState, limits, ...
+        options, stageTiming, "");
+    candidate.SeedIndex = seedIndex;
+    lowerCertificate = struct("Passed", false, ...
+        "TerminationReason", "candidateNotConstructed", ...
+        "LowerBound_s", NaN, "UpperGap_s", NaN);
+    if ~isempty(candidate.time_s)
+        lowerCertificate = ...
+            obstacleAvoidance.planner.certifyOrthogonalCavityLowerBound( ...
+            cavityDiagnostics, candidate, preparedObstacles, initialState, ...
+            goalState, limits, options);
+    end
+    attempt = struct("Diagnostics", cavityDiagnostics, ...
+        "AllRouteCertificate", lowerCertificate, ...
+        "Validation", validation, "ElapsedTime_s", elapsedTime_s);
+    cavityAttempts{seedIndex} = attempt;
+    if validation.Passed
+        candidate = acceptValidatedCandidate(candidate, initialState.time_s, ...
+            "A cavity motion passed independent public validation.");
+        cavityCandidates{seedIndex} = candidate;
+        cavityUpperDurations_s(seedIndex) = candidate.MotionDuration_s;
+        cavityMotionLengths_deg(seedIndex) = candidate.MotionLength_deg;
+        if lowerCertificate.Passed
+            cavityLowerBounds_s(seedIndex) = lowerCertificate.LowerBound_s;
+        end
+        candidates{seedIndex} = candidate;
+        seedSummaries(seedIndex) = summarizeCandidate(candidate, validation, ...
+            attempt, elapsedTime_s, summaryTemplate);
+        if isnan(firstValidatedMotionTime_s)
+            firstValidatedMotionTime_s = toc(planningTimer);
+        end
+    end
+end
+cavityPortfolio = ...
+    obstacleAvoidance.planner.evaluateArrivalCertificatePortfolio( ...
+    cavityUpperDurations_s, cavityMotionLengths_deg, ...
+    cavityLowerBounds_s, maximumInfimumGap_s);
+cavityPortfolio.Attempts = cavityAttempts;
+result.SearchDiagnostics.OrthogonalCavity = cavityPortfolio;
+if cavityPortfolio.InfimumGapWithinPolicy
+    selectedIndex = cavityPortfolio.SelectedSeedIndex;
+    selectedCandidate = cavityCandidates{selectedIndex};
+    selectedCandidate.SeedIndex = 1;
+    selectedSeed = seeds(selectedIndex);
+    selectedSeed.Index = 1;
+    result = finishFastPath(result, selectedCandidate, ...
+        selectedCandidate.Validation, cavityAttempts{selectedIndex}, ...
+        cavityAttempts{selectedIndex}.ElapsedTime_s, selectedSeed, ...
+        summaryTemplate, ...
+        "A cavity motion met the fixed-goal physical infimum-gap policy.", ...
+        planningTimer, stageTiming);
+    return;
+end
+
+for seedIndex = 1:seedCount
+    motionTimer = tic;
+    if useStaticKernel
+        kernelGoalState = createFixedKernelGoalState(goalState, options);
+        [candidate, solverDiagnostics] = ...
+            obstacleAvoidance.planner.solveBmtpTrajectory( ...
+            seeds(seedIndex), preparedObstacles, initialState, kernelGoalState, ...
+            limits, options);
+    else
+        [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
+            seeds(seedIndex), initialState, goalState, limits, options);
+    end
+    elapsedTime_s = toc(motionTimer);
+    stageTiming.MotionSolvingElapsedTime_s = ...
+        stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
+    [candidate, validation, ~, stageTiming] = validateCandidate( ...
+        candidate, preparedObstacles, initialState, goalState, limits, ...
+        options, stageTiming, "The motion kernel returned no trajectory.");
+    summary = summarizeCandidate(candidate, validation, ...
+        solverDiagnostics, elapsedTime_s, summaryTemplate);
+    if ~seedSummaries(seedIndex).ValidationPassed || ...
+            (validation.Passed && isBetterSummary( ...
+            summary, seedSummaries(seedIndex), options.GoalTimeMode))
+        candidates{seedIndex} = candidate;
+        seedSummaries(seedIndex) = summary;
+    end
+    if validation.Passed && isnan(firstValidatedMotionTime_s)
+        firstValidatedMotionTime_s = toc(planningTimer);
+    end
+end
+
+% A route-class upper without a request-wide lower must not suppress BMTP.
+if openingIsValidated
+    openingCandidate.SeedIndex = seedCount + 1;
+    openingSeed = createDirectSeed(initialState, goalState, ...
+        openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
+    openingSeed.Index = openingCandidate.SeedIndex;
+    openingSeed.Source = "timedOrthogonalOpening";
+    seeds(end + 1) = openingSeed;
+    candidates{end + 1, 1} = openingCandidate;
+    seedSummaries(end + 1, 1) = summarizeCandidate(openingCandidate, ...
+        openingCandidate.Validation, openingDiagnostics, ...
+        openingElapsedTime_s, summaryTemplate);
+end
+
+%% Section 6: Select A Valid Motion Or Return Evidence
+
+result.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
+result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
+    firstValidatedMotionTime_s;
+result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
+validatedIndices = find([seedSummaries.ValidationPassed]).';
+result.SearchDiagnostics.ValidatedCandidateCount = numel(validatedIndices);
+if isempty(validatedIndices)
+    result.Message = "No compact motion passed independent validation.";
+    result.TerminationReason = "noValidatedSeed";
+    result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+    bestIndex = bestPartialSeed(seedSummaries);
+    result.SearchDiagnostics.BestPartialSeedIndex = bestIndex;
+    if bestIndex > 0 && strlength(seedSummaries(bestIndex).Message) > 0
+        result.Message = result.Message + " Best attempt: " + ...
+            seedSummaries(bestIndex).Message;
+    end
+    result = obstacleAvoidance.planner.stageTiming( ...
+        result, planningTimer, stageTiming);
+    return;
+end
+selectedIndex = selectValidatedCandidate( ...
+    seedSummaries, validatedIndices, options.GoalTimeMode);
+selectedCandidate = candidates{selectedIndex};
+result.Success = true;
+result.Message = "A validated motion was found.";
+result.TerminationReason = "goalReached";
+result.SelectedSeedIndex = selectedIndex;
+result.SelectedSeed_deg = seeds(selectedIndex).position_deg;
+result = copyMotion(result, selectedCandidate);
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+result.SearchDiagnostics.BestPartialSeedIndex = selectedIndex;
+result = obstacleAvoidance.planner.stageTiming( ...
+    result, planningTimer, stageTiming);
+end
+
+%% Section 7: Local Functions
+
+function record = directAttemptTemplate()
+% Define stable exact-direct evidence before the attempt runs.
+record = struct("Identifier", "analyticRestToRest", ...
+    "Attempted", false, "ProfileCreated", false, ...
+    "ValidationAttempted", false, "ValidationPassed", false, ...
+    "CollisionFree", false, "CollisionResolved", false, ...
+    "FallbackContinued", false, "KernelTerminationReason", "notRun", ...
+    "TerminationReason", "notRun", ...
+    "Message", "The exact direct motion was not attempted.", ...
+    "ElapsedTime_s", 0, "ValidationElapsedTime_s", 0, ...
+    "MotionDuration_s", NaN, "MotionLength_deg", NaN, ...
+    "MinimumAxisDuration_s", [NaN NaN], ...
+    "StraightProgressMinimumDuration_s", NaN, ...
+    "UsedStraightProgress", false);
+end
+
+function record = recordDirectAttempt(candidate, validation, elapsedTime_s, ...
+        validationElapsedTime_s)
+% Fill exact-direct kernel and authoritative-validation evidence.
+record = directAttemptTemplate();
+record.Attempted = true;
+record.ProfileCreated = ~isempty(candidate.time_s);
+record.ValidationAttempted = record.ProfileCreated;
+record.ValidationPassed = validation.Passed;
+record.CollisionFree = validation.CollisionFree;
+record.CollisionResolved = validation.CollisionResolved;
+record.KernelTerminationReason = candidate.TerminationReason;
+record.TerminationReason = candidate.TerminationReason;
+record.Message = candidate.Message;
+record.ElapsedTime_s = elapsedTime_s;
+record.ValidationElapsedTime_s = validationElapsedTime_s;
+for name = ["MotionDuration_s", "MotionLength_deg", ...
+        "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", ...
+        "UsedStraightProgress"]
+    record.(name) = candidate.(name);
+end
+if record.ValidationAttempted && ~validation.Passed
+    record.TerminationReason = "directValidationFailed";
+    record.Message = strtrim(candidate.Message + " " + validation.Message);
+elseif validation.Passed
+    record.TerminationReason = "goalReached";
+    record.Message = validation.Message;
+end
+end
+
+function [candidate, validation, elapsedTime_s, stageTiming] = ...
+        validateCandidate(candidate, obstacles, initialState, goalState, ...
+        limits, options, stageTiming, emptyMessage)
+% Run and time the sole authoritative acceptance check for one candidate.
+validation = obstacleAvoidance.validateTrajectory();
+elapsedTime_s = 0;
+if isempty(candidate.time_s)
+    if strlength(emptyMessage) > 0
+        validation.Message = emptyMessage;
+    end
+else
+    validationTimer = tic;
+    validation = obstacleAvoidance.validateTrajectory(candidate, obstacles, ...
+        initialState, goalState, limits, options);
+    elapsedTime_s = toc(validationTimer);
+    stageTiming.CollisionCheckingElapsedTime_s = ...
+        stageTiming.CollisionCheckingElapsedTime_s + ...
+        validation.CollisionCheckingElapsedTime_s;
+    stageTiming.FinalValidationElapsedTime_s = ...
+        stageTiming.FinalValidationElapsedTime_s + max(0, elapsedTime_s - ...
+        validation.CollisionCheckingElapsedTime_s);
+end
+candidate.Validation = validation;
+end
+
+function candidate = acceptValidatedCandidate(candidate, initialTime_s, message)
+% Normalize authoritative final-time fields after validation passes.
+candidate.FinalTime_s = double(candidate.Polynomial.FinalTime_s);
+candidate.ArrivalTime_s = candidate.FinalTime_s;
+candidate.MotionDuration_s = candidate.FinalTime_s - initialTime_s;
+candidate.Success = true;
+candidate.TerminationReason = "goalReached";
+candidate.Message = message;
+end
+
+function seed = createDirectSeed(initialState, goalState, duration_s, wait_s)
+% Create the ordinary endpoint seed, adding a truthful waiting vertex if used.
+position_deg = [initialState.position_deg; goalState.position_deg];
+tau = [0; 1];
+if nargin >= 4 && wait_s > 0
+    position_deg = [initialState.position_deg; position_deg];
+    tau = [0; wait_s / duration_s; 1];
+end
+seed = struct("Index", 1, "Source", "directRestToRest", ...
+    "position_deg", position_deg, "tau", tau, ...
+    "CorridorBoundary_deg", zeros(0, 2), ...
+    "UsesReducedGeometry", false, "EstimatedDuration_s", duration_s, ...
+    "Length_deg", norm(diff(position_deg, 1, 1)));
+end
+
+function summary = summarizeCandidate(candidate, validation, diagnostics, ...
+        elapsedTime_s, template)
+% Copy solve and independent-validation evidence into the stable summary.
+summary = template;
+names = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
+    "FinalTime_s", "MotionDuration_s", "MotionLength_deg", ...
+    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
+    "TerminationReason"];
+targets = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
+    "ArrivalTime_s", "MotionDuration_s", "MotionLength_deg", ...
+    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
+    "TerminationReason"];
+for fieldIndex = 1:numel(names)
+    summary.(targets(fieldIndex)) = candidate.(names(fieldIndex));
+end
+summary.ValidationPassed = validation.Passed;
+summary.CollisionFree = validation.CollisionFree;
+summary.CollisionResolved = validation.CollisionResolved;
+summary.MinimumClearance_deg = validation.MinimumClearance_deg;
+summary.UnresolvedIntervalCount = validation.UnresolvedIntervalCount;
+summary.SeedPlanningElapsedTime_s = elapsedTime_s;
+summary.Message = strtrim(string(candidate.Message) + " " + validation.Message);
+summary.SolverDiagnostics = diagnostics;
+if ~validation.Passed && ~isempty(candidate.time_s)
+    summary.TerminationReason = "independentValidationFailed";
+end
+end
+
+function result = finishFastPath(result, candidate, validation, diagnostics, ...
+        elapsedTime_s, seed, summaryTemplate, message, timer, stageTiming)
+% Assemble each independently accepted fast-path through one owner.
+summary = summarizeCandidate(candidate, validation, diagnostics, ...
+    elapsedTime_s, summaryTemplate);
+result.Success = true;
+result.Message = message;
+result.TerminationReason = "goalReached";
+result.Seeds = seed;
+result.SeedSummaries = summary;
+result.SelectedSeedIndex = seed.Index;
+result.SelectedSeed_deg = seed.position_deg;
+result = copyMotion(result, candidate);
+result.FirstValidatedMotionTime_s = toc(timer);
+result.SearchDiagnostics.SeedSummaries = summary;
+result.SearchDiagnostics.AttemptedSeedCount = 1;
+result.SearchDiagnostics.ValidatedCandidateCount = 1;
+result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
+    result.FirstValidatedMotionTime_s;
+result.SearchDiagnostics.BestPartialSeedIndex = seed.Index;
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+result = obstacleAvoidance.planner.stageTiming(result, timer, stageTiming);
+end
+
+function result = copyMotion(result, candidate)
+% Copy the stable public motion payload and authoritative arrival fields.
+for name = ["time_s", "position_deg", "velocity_deg_s", ...
+        "acceleration_deg_s2", "jerk_deg_s3", "Polynomial", ...
+        "SeedCorridorBoundary_deg", "SeedCorridor", ...
+        "PlaneCertificate", "Validation"]
+    result.(name) = candidate.(name);
+end
+result.ArrivalTime_s = candidate.FinalTime_s;
+result.TrajectoryDuration_s = candidate.MotionDuration_s;
+end
+
+function supported = supportsStaticHorizon(obstacles, startTime_s, endTime_s)
+% Admit BMTP only when every obstacle is constant and active on the horizon.
+supported = true;
+for obstacleIndex = 1:numel(obstacles)
+    sourceTime_s = double(obstacles(obstacleIndex).time_s(:));
+    isActive = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && ...
+        startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
+    supported = obstacles(obstacleIndex).InternalPreparation.IsTimeInvariant && ...
+        isActive;
+    if ~supported
+        return;
+    end
+end
+end
+
+function kernelGoalState = createFixedKernelGoalState(goalState, options)
+% Remove moving-goal evidence only after a fixed trial has frozen its endpoint.
+kernelGoalState = goalState;
+hasTargetHistory = isfield(goalState, "targetTime_s") && ...
+    ~isempty(goalState.targetTime_s);
+if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
+    return;
+end
+targetPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
+    goalState, goalState.time_s);
+coordinateScale_deg = max([1, abs(targetPosition_deg), ...
+    abs(goalState.position_deg)]);
+if max(abs(targetPosition_deg - goalState.position_deg)) > ...
+        256 * eps(max(coordinateScale_deg))
+    return;
+end
+metadataFields = intersect(fieldnames(kernelGoalState), ...
+    {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
+kernelGoalState = rmfield(kernelGoalState, metadataFields);
+end
+
+function [candidate, diagnostics] = createTimedSeedCandidate( ...
+        seed, initialState, goalState, limits, options)
+% Realize a timed direct-wait seed without sending dynamics to static BMTP.
+timer = tic;
+    candidate = bmtpEngine.createMotionRecord( ...
+    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
+candidate.SeedIndex = seed.Index;
+diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
+    "TerminationReason", "unsupportedTimedTopology", ...
+    "WaitTime_s", NaN, "EstimatedDuration_s", seed.EstimatedDuration_s);
+if string(seed.Source) ~= "directWait"
+    candidate.Message = ...
+        "The compact dynamic kernel currently requires a direct-wait seed.";
+    candidate.TerminationReason = diagnostics.TerminationReason;
+    candidate.SolverDiagnostics = diagnostics;
+    diagnostics.ElapsedTime_s = toc(timer);
+    return;
+end
+
+coordinateScale_deg = max([1; abs(seed.position_deg(:)); ...
+    abs(initialState.position_deg(:)); abs(goalState.position_deg(:))]);
+positionTolerance_deg = 256 * eps(coordinateScale_deg);
+isInitialPosition = vecnorm( ...
+    seed.position_deg - initialState.position_deg, 2, 2) <= ...
+    positionTolerance_deg;
+firstMotionIndex = find(~isInitialPosition, 1, "first");
+isDirectWait = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && ...
+    all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - ...
+    goalState.position_deg, 2, 2) <= positionTolerance_deg);
+if ~isDirectWait
+    diagnostics.TerminationReason = "invalidDirectWaitSeed";
+    candidate.Message = "The timed seed is not a dwell followed by a direct edge.";
+    candidate.TerminationReason = diagnostics.TerminationReason;
+    candidate.SolverDiagnostics = diagnostics;
+    diagnostics.ElapsedTime_s = toc(timer);
+    return;
+end
+
+duration_s = double(seed.EstimatedDuration_s);
+waitTime_s = duration_s * double(seed.tau(firstMotionIndex - 1));
+delayedInitialState = initialState;
+delayedInitialState.time_s = initialState.time_s + waitTime_s;
+delayedGoalState = goalState;
+delayedGoalState.time_s = initialState.time_s + duration_s;
+fixedOptions = options;
+fixedOptions.GoalTimeMode = "fixedArrival";
+direct = bmtpEngine.createDirectMotion( ...
+    delayedInitialState, delayedGoalState, limits, fixedOptions);
+if ~direct.Success
+    candidate = direct;
+    candidate.SeedIndex = seed.Index;
+    candidate.SeedSource = string(seed.Source);
+    diagnostics.TerminationReason = direct.TerminationReason;
+    diagnostics.ElapsedTime_s = toc(timer);
+    candidate.SolverDiagnostics = diagnostics;
+    return;
+end
+
+directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
+    direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
+directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, ...
+    direct.Polynomial.SegmentCount, numel(initialState.position_deg));
+relativeBreak_s = [0; waitTime_s + directBreak_s];
+segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); ...
+    directJerk_deg_s3];
+candidate = bmtpEngine.createMotionRecord( ...
+    direct, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
+    options.SampleTime_s, seed.Source);
+candidate.SeedIndex = seed.Index;
+candidate.Message = "An exact direct motion was realized after the timed dwell.";
+[candidate.Success, candidate.OptimizerFeasible] = deal(true);
+candidate.TerminationReason = "goalReached";
+diagnostics.Accepted = true;
+diagnostics.TerminationReason = candidate.TerminationReason;
+diagnostics.WaitTime_s = waitTime_s;
+diagnostics.ElapsedTime_s = toc(timer);
+candidate.SolverDiagnostics = diagnostics;
+end
+
+function index = selectValidatedCandidate(summaries, indices, goalTimeMode)
+% Rank fixed arrivals by length then jerk, and free arrivals by time first.
+ranking = [[summaries(indices).MotionLength_deg].', ...
+    [summaries(indices).IntegratedSquaredJerk_deg2_s5].', indices];
+if goalTimeMode ~= "fixedArrival"
+    ranking = [[summaries(indices).ArrivalTime_s].', ranking];
+end
+[~, order] = sortrows(ranking, 1:size(ranking, 2));
+index = indices(order(1));
+end
+
+function isBetter = isBetterSummary(candidate, incumbent, goalTimeMode)
+% Compare passing summaries using the public selection priority.
+isBetter = selectValidatedCandidate([incumbent, candidate], [1; 2], ...
+    goalTimeMode) == 2;
+end
+
+function index = bestPartialSeed(summaries)
+% Prefer resolved collision evidence, small residual, and large clearance.
+if isempty(summaries)
+    index = 0;
+    return;
+end
+violation = [summaries.MaximumConstraintViolation].';
+violation(~isfinite(violation)) = Inf;
+clearance_deg = [summaries.MinimumClearance_deg].';
+clearance_deg(~isfinite(clearance_deg)) = -Inf;
+collisionRank = 2 * ~[summaries.CollisionResolved].' + ...
+    ~[summaries.CollisionFree].';
+[~, order] = sortrows([collisionRank, violation, -clearance_deg, ...
+    (1:numel(summaries)).']);
+index = order(1);
+end
