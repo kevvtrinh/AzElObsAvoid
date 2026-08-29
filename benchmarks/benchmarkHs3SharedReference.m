@@ -5,8 +5,8 @@ function measurements = benchmarkHs3SharedReference(repeatCount)
 %   measurements = benchmarkHs3SharedReference(repeatCount)
 %**************************************************************************
 % PURPOSE
-%   - Measure HS3 on the 21 state-to-state cases retrieved from the shared
-%     reference script and compare arrival, wall time, and spatial length.
+%   - Measure HS3 on the shared 21-case state-to-state corpus and compare
+%     arrival, wall time, and spatial length.
 %**************************************************************************
 % INPUTS
 %   - repeatCount (positive integer scalar, optional; default 1)
@@ -33,7 +33,6 @@ validateattributes(repeatCount, {'numeric'}, ...
 benchmarkFolder = fileparts(mfilename("fullpath"));
 repositoryRoot = fileparts(benchmarkFolder);
 referenceFolder = fullfile(benchmarkFolder, "reference");
-referenceScript = fullfile(referenceFolder, "testSlewTrajectoriesHS3.m");
 referenceTable = readtable( ...
     fullfile(referenceFolder, "hs3_slew_reference.csv"), ...
     "TextType", "string", "VariableNamingRule", "preserve");
@@ -49,48 +48,37 @@ pathCleanup = onCleanup(@() restoreTrajectoryPath( ...
 %% Section 2: Run The Shared Cases Serially
 
 caseCount = height(referenceTable);
+cases = createHs3ReferenceCases();
+assert(numel(cases) == caseCount, ...
+    "benchmarkHs3SharedReference:CaseCountMismatch", ...
+    "Reference table has %d cases but the fixture defines %d.", ...
+    caseCount, numel(cases));
 rowCount = repeatCount * caseCount;
 rows = repmat(createEmptyMeasurement(), rowCount, 1);
 rowIndex = 0;
 
 for repeatIndex = 1:repeatCount
-    % The reference remains a runnable script. These named values are its
-    % documented caller-owned controls, so assignments are consumed by run.
-    manuallyRun = false; %#ok<NASGU>
-    caseToRun = "stateCases"; %#ok<NASGU>
-    plotLastCase = false; %#ok<NASGU>
-    compareAnalyticalSolver = false; %#ok<NASGU>
     hs3Options = struct( ...
         "SegmentCount", 10, ...
         "SampleTime", 0.05, ...
         "MaximumSolveTime", 30, ...
         "MaximumIterations", 300, ...
-        "Verbose", false); %#ok<NASGU>
-
-    % Initialize script outputs so Code Analyzer can verify the post-run
-    % requirement. The script overwrites all three values before they are read.
-    hs3Results = cell(0, 1);
-    selectedCases = cell(0, 1);
-    summary = strings(0, 8);
-
-    run(referenceScript);
-    assert(numel(hs3Results) == caseCount, ...
-        "benchmarkHs3SharedReference:CaseCountMismatch", ...
-        "Reference table has %d cases but the script ran %d.", ...
-        caseCount, numel(hs3Results));
+        "Verbose", false);
 
     for caseIndex = 1:caseCount
         rowIndex = rowIndex + 1;
-        trajectory = hs3Results{caseIndex};
-        testCase = selectedCases{caseIndex};
+        testCase = cases{caseIndex};
         referenceCaseName = referenceTable.Case(caseIndex);
         assert(testCase.Name == referenceCaseName, ...
             "benchmarkHs3SharedReference:CaseOrderMismatch", ...
             "Script case %d is '%s' while the table names '%s'.", ...
             caseIndex, testCase.Name, referenceCaseName);
 
+        solveTimer = tic;
+        trajectory = runHs3Case(testCase, hs3Options);
+        wallTime_s = toc(solveTimer);
         rows(rowIndex) = createMeasurement( ...
-            repeatIndex, testCase, trajectory, summary(caseIndex, :), ...
+            repeatIndex, testCase, trajectory, wallTime_s, ...
             referenceTable(caseIndex, :));
     end
 end
@@ -103,7 +91,7 @@ end
 %% Section 4: Local Functions
 
 function measurement = createMeasurement( ...
-        repeatIndex, testCase, trajectory, summaryRow, referenceRow)
+        repeatIndex, testCase, trajectory, wallTime_s, referenceRow)
 % Create one benchmark row and measure spatial quality on a dense time grid.
 measurement = createEmptyMeasurement();
 measurement.Repeat = repeatIndex;
@@ -113,7 +101,7 @@ measurement.Success = trajectory.Success;
 measurement.ValidationPassed = trajectory.Validation.Passed;
 measurement.TerminationReason = string(trajectory.TerminationReason);
 measurement.ArrivalTime_s = trajectory.Duration;
-measurement.WallTime_s = str2double(summaryRow(7));
+measurement.WallTime_s = wallTime_s;
 measurement.ReferenceArrival_s = referenceRow.AnalyticalArrival_s;
 measurement.ReferenceWall_s = referenceRow.AnalyticalWall_s;
 measurement.ArrivalMargin_s = ...
@@ -148,6 +136,53 @@ if numel(axisVariation) >= 2
     measurement.Axis2Variation = axisVariation(2);
     measurement.Axis2Excess = axisVariation(2) - endpointDisplacement(2);
 end
+end
+
+function trajectory = runHs3Case(testCase, options)
+% Translate one fixture record into the direct HS3 engine contract.
+dimensionCount = numel(testCase.InitialPosition);
+initialState = struct( ...
+    "time", 0, ...
+    "position", testCase.InitialPosition, ...
+    "velocity", testCase.InitialVelocity, ...
+    "acceleration", testCase.InitialAcceleration);
+limits = struct( ...
+    "maximumVelocity", testCase.MaximumVelocity, ...
+    "maximumAcceleration", testCase.MaximumAcceleration, ...
+    "maximumJerk", testCase.MaximumJerk, ...
+    "positionLower", reshape( ...
+        testCase.PositionBounds(:, 1), 1, dimensionCount), ...
+    "positionUpper", reshape( ...
+        testCase.PositionBounds(:, 2), 1, dimensionCount));
+if isempty(testCase.FixedDuration)
+    timeMode = "earliestArrival";
+    finalTime = [];
+    maximumTime = estimateTimeHorizon(testCase);
+else
+    timeMode = "fixed";
+    finalTime = testCase.FixedDuration;
+    maximumTime = testCase.FixedDuration;
+end
+terminalState = struct( ...
+    "position", testCase.TerminalPosition, ...
+    "velocity", testCase.TerminalVelocity, ...
+    "acceleration", testCase.TerminalAcceleration, ...
+    "maximumTime", maximumTime);
+options.TimeMode = timeMode;
+options.FinalTime = finalTime;
+trajectory = hs3Engine.solve(initialState, terminalState, limits, options);
+end
+
+function maximumTime = estimateTimeHorizon(testCase)
+% Preserve the reference corpus's input-derived finite search horizon.
+distanceTime = max(abs(testCase.TerminalPosition - ...
+    testCase.InitialPosition) ./ testCase.MaximumVelocity);
+velocityTime = max(abs(testCase.TerminalVelocity - ...
+    testCase.InitialVelocity) ./ testCase.MaximumAcceleration);
+accelerationTime = max(abs(testCase.TerminalAcceleration - ...
+    testCase.InitialAcceleration) ./ testCase.MaximumJerk);
+maximumTime = max( ...
+    1, 8 * max([distanceTime, velocityTime, accelerationTime]) + 10);
 end
 
 function measurement = createEmptyMeasurement()

@@ -17,7 +17,7 @@ Key audit conclusions:
 - `CollectAllSeedCandidates` and completed-candidate trajectory retention were comparison-only planner surface and are removed.
 - Sandbox Free Mode was already unreachable; its segment-search and state machinery are removed.
 - The moving-target wrapper and geographic example family are the next meaningful consolidation candidates, but both still own maintained coverage.
-- The legacy 21-case script should be split into a neutral fixture before its old analytical runner is retired.
+- The legacy 21-case script was replaced by a neutral fixture; active benchmarks now call the maintained engines directly.
 
 | File | Decision | Behavioral ownership / evidence |
 | --- | --- | --- |
@@ -70,9 +70,10 @@ Key audit conclusions:
 | `benchmarks/benchmarkStandaloneHs3Scaling.m` | Retain | Active reproducible engine, scaling, or stress benchmark. |
 | `benchmarks/benchmarkTrajectoryEngines.m` | Retain | Active reproducible engine, scaling, or stress benchmark. |
 | `benchmarks/compareHs3ExtractionBaseline.m` | Retain | Frozen behavior/runtime parity gate used during extraction and consolidation. |
+| `benchmarks/createHs3ReferenceCases.m` | Retain, consolidated | Single deterministic owner of the 21-case trajectory-engine benchmark corpus. |
 | `benchmarks/createRepeatedTurnBenchmarkScenario.m` | Retain | Shared deterministic benchmark fixture. |
 | `benchmarks/probeHs3SharedReferenceTimes.m` | Removed | No callers; one-off published-arrival feasibility investigation. |
-| `benchmarks/reference/testSlewTrajectoriesHS3.m` | Defer consolidation | Still supplies the 21-case corpus to two active benchmarks; runnable legacy comparison code is separable. |
+| `benchmarks/reference/testSlewTrajectoriesHS3.m` | Removed | Legacy script mixed fixtures, analytical comparison, moving-target solving, plotting, and workspace-variable outputs; active benchmarks now use the neutral fixture. |
 | `examples/exampleAlternatingSlalom.m` | Retain | Distinct executable scenario contract in the 17-example serial gate. |
 | `examples/exampleDenseConcaveObstacle.m` | Retain | Distinct executable scenario contract in the 17-example serial gate. |
 | `examples/exampleFourAcceleratingCircles.m` | Retain | Distinct executable scenario contract in the 17-example serial gate. |
@@ -154,4 +155,3 @@ Key audit conclusions:
 - Failure diagnostics: `exampleNoPath` created two diagnostic figures.
 - Retained hybrid score: Single-U pass-through 21.2540287320 s arrival, 40.5204361036 deg motion, 15.542280 s fresh wall.
 - Known incomplete gate: the frozen three-repeat scaling comparator was interrupted after its 10-turn case took 137.6659266 s and later work flooded existing near-singular solver warnings.
-

@@ -3023,3 +3023,25 @@ near-singular solver warnings. No failed comparison result is being hidden:
 the harness did not finish. Focused benchmark records and the complete example
 matrix above provide the retained quality evidence; the noisy large-scale
 factorization remains the principal runtime weakness.
+
+## Reference benchmark fixture consolidation — 2026-08-28
+
+The 638-line `testSlewTrajectoriesHS3.m` legacy script was removed after its
+active responsibility was isolated. Two benchmarks had executed the script
+through `run` to obtain 21 state-to-state case records, while also carrying
+unused analytical-solver, moving-target, interactive plotting, and
+caller-workspace branches. `createHs3ReferenceCases.m` now owns the exact case
+corpus, and both benchmarks call the maintained Ruckig or HS3 engines directly.
+The coherent change reduces the three affected benchmark sources from 956 to
+493 physical lines, a net reduction of 463 lines.
+
+Code Analyzer reported zero findings in the three changed benchmark functions.
+The fixture count and all 21 ordered names exactly match
+`hs3_slew_reference.csv`. The Ruckig sweep exercised every case and preserved
+19 validated successes plus the two intentional failures:
+`fixedTimeBelowMinimum` and `kinematicallyInfeasibleBoundaryState`. The direct
+HS3 reference sweep also completed all 21 rows with 19 validated successes and
+two failures. Its existing near-singular `fmincon` warning flood remains a
+visible numerical-conditioning weakness; this consolidation does not claim to
+repair or hide it. The focused architecture suite passed 14/14, and the full
+MATLAB test tree passed 163/163 in 57.4683699 aggregate test seconds.

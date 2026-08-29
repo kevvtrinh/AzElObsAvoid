@@ -41,16 +41,8 @@ validateattributes(repeatCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
 benchmarkFolder = fileparts(mfilename("fullpath"));
 repositoryRoot = fileparts(benchmarkFolder);
-referenceScript = fullfile( ...
-    benchmarkFolder, "reference", "testSlewTrajectoriesHS3.m");
 addpath(fullfile(repositoryRoot, "trajectory"));
-manuallyRun = false; %#ok<NASGU>
-caseToRun = "defineOnly"; %#ok<NASGU>
-plotLastCase = false; %#ok<NASGU>
-compareAnalyticalSolver = false; %#ok<NASGU>
-hs3Options = createHs3Options(); %#ok<NASGU>
-cases = cell(0, 1);
-run(referenceScript);
+cases = createHs3ReferenceCases();
 
 %% Section 2: Run Every Forced Engine Serially
 
