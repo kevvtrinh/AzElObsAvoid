@@ -35,11 +35,9 @@ function mesh = createHybridActivityMesh( ...
 % This is an internal policy helper with one production caller. The public
 % planner already normalizes these records, and solveRouteCandidate owns the
 % polynomial invariant. Revalidating them here duplicated boundary ownership.
-maximumVelocity_deg_s = reshape( ...
-    double(limits.maxVelocity_deg_s), 1, []);
-maximumAcceleration_deg_s2 = reshape( ...
-    double(limits.maxAcceleration_deg_s2), 1, []);
-maximumJerk_deg_s3 = reshape(double(limits.maxJerk_deg_s3), 1, []);
+maximumVelocity_deg_s = double(limits.maxVelocity_deg_s(:).');
+maximumAcceleration_deg_s2 = double(limits.maxAcceleration_deg_s2(:).');
+maximumJerk_deg_s3 = double(limits.maxJerk_deg_s3(:).');
 
 polynomial = candidate.Polynomial;
 segmentCount = double(polynomial.SegmentCount);
@@ -121,20 +119,18 @@ mesh = struct( ...
     "VelocityCruiseFraction", cruiseFraction);
 if ~hasEndpointDynamics || cruiseFraction < 0.5
     return;
-end
-if ~hasValidSwitchingScale
+elseif ~hasValidSwitchingScale
     mesh.Reason = "missingRuckigSwitchingScale";
     return;
-end
-if maximumSegmentCount <= segmentCount
+elseif maximumSegmentCount <= segmentCount
     mesh.Reason = "segmentLimitReached";
     return;
 end
 
 %% Section 4: Create A Bounded Symmetric Refinement
 
-endpointWidthTau = max([diff(segmentBreakTau(1:2)), ...
-    diff(segmentBreakTau(end - 1:end))]);
+endpointWidthTau = max( ...
+    segmentBreakTau([2 end]) - segmentBreakTau([1 end - 1]));
 % The smallest whole count whose local width does not exceed the shortest
 % Ruckig switching phase is the discrete knee. A denser guard subdivision
 % was valid in the bounded comparison but bought only a few milliseconds.
@@ -149,12 +145,12 @@ if subdivisionCount < 2
     return;
 end
 
-startInteriorTau = linspace(segmentBreakTau(1), ...
-    segmentBreakTau(2), subdivisionCount + 1).';
-endInteriorTau = linspace(segmentBreakTau(end - 1), ...
-    segmentBreakTau(end), subdivisionCount + 1).';
-refinedBreakTau = sort([segmentBreakTau; ...
-    startInteriorTau(2:end - 1); endInteriorTau(2:end - 1)]);
+endpointInteriorTau = [ ...
+    linspace(segmentBreakTau(1), segmentBreakTau(2), subdivisionCount + 1); ...
+    linspace(segmentBreakTau(end - 1), segmentBreakTau(end), ...
+    subdivisionCount + 1)].';
+refinedBreakTau = sort([segmentBreakTau; reshape( ...
+    endpointInteriorTau(2:end - 1, :), [], 1)]);
 mesh.Applied = true;
 mesh.Reason = "endpointSwitchingResolved";
 mesh.SegmentCount = numel(refinedBreakTau) - 1;

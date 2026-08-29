@@ -4683,3 +4683,43 @@ The hybrid delta is -1.3768583700 seconds arrival, -1.0162888047 degrees
 motion length, and -12.1366058 seconds wall. Both rows used the same maintained
 example, finite jerk limits, and independent validation. The ordinary solve's
 near-singular warnings remain visible in the execution record.
+
+## Four-File Hybrid Cleanup Verification
+
+The cleanup scope was limited to:
+
+- `+obstacleAvoidance/+planner/classifyPassThroughSearch.m`;
+- `+obstacleAvoidance/+planner/createHybridActivityMesh.m`;
+- `+obstacleAvoidance/+planner/solvePassThroughSeedCandidate.m`;
+- `trajectory/+hs3Engine/+polynomial/resolveSegmentMesh.m`.
+
+Measured size changed from 815 to 758 physical lines and from 629 to 574
+nonblank, non-comment lines. No public option, result field, diagnostic, or
+validation rule was removed.
+
+The complete production diff versus `main` is +2,075/-133 physical lines, or
++1,942 net. No replacement production file was introduced by the cleanup.
+
+Verification performed after the final refactor:
+
+- MATLAB `checkcode(..., "-id")`: zero messages on all four files;
+- focused activity, classification, pass-through, and nonuniform-mesh tests:
+  14/14 passed;
+- full `tests` tree with subfolders: 164/164 passed, zero failed or incomplete,
+  84.9595026 aggregate test seconds;
+- all 17 maintained examples in separate serial MATLAB processes with plots
+  and animation disabled: 16 validated successes and the expected validated
+  `noValidatedSeed` result;
+- exact Single-U result: 34.9425880405-degree polyline,
+  40.5204361036-degree motion, 21.2540287320-second duration;
+- exact Two-U result: 23.8537208838-degree polyline,
+  24.4031321261-degree motion, 21.7254621235-second duration;
+- exact moving/deforming result: 40-degree polyline,
+  43.0722665096-degree motion, 7.96286792066-second duration;
+- default visible obstacle-free run: validation passed and four figures;
+- expected no-path diagnostic run: validation passed, three expanded states,
+  and two figures.
+
+Every successful example passed collision, workspace, velocity, acceleration,
+and jerk checks. The cleanup preserves observed behavior; it does not prove
+global optimality or a wall-time improvement.

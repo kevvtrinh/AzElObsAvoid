@@ -60,7 +60,5 @@ elseif isempty(globallyMonotoneAxisIndex)
 else
     mode = "coupledMonotone";
 end
-classification = struct( ...
-    "Mode", mode, ...
-    "ActiveAxisIndex", activeAxisIndex);
+classification = struct("Mode", mode, "ActiveAxisIndex", activeAxisIndex);
 end

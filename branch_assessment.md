@@ -2879,3 +2879,30 @@ HS3 output. Pass-through used 21.2540287320 seconds arrival,
 seconds wall. The hybrid was therefore 1.3768583700 seconds earlier,
 1.0162888047 degrees shorter, and 12.1366058 seconds faster. This is a bounded
 Single-U result, not a global-optimality claim.
+
+## Four-File Hybrid Cleanup
+
+The behavior-preserving cleanup after `2958303` reduced the four new hybrid
+implementation files from 815 to 758 physical lines and from 629 to 574
+nonblank, non-comment lines. The pass-through waypoint solver now shares one
+candidate-probe loop across vector and scalar searches, constructs invariant
+probe groups outside the sweep, and assembles section histories during the
+existing final solve pass. The mesh and classification helpers received only
+small representation simplifications; their separate invariant ownership was
+retained.
+
+The complete production diff versus `main` is now 2,075 added and 133 removed
+physical lines, or 1,942 net. The cleanup therefore removes 57 production
+lines from the committed hybrid without shifting them into another file.
+
+Static analysis reported zero messages on all four files. The four focused
+test files passed 14/14, and the complete MATLAB test tree passed 164/164 in
+84.9595026 aggregate test seconds. All 17 maintained examples then ran
+serially with finite jerk limits: 16 independently validated successes and
+the expected validated `noValidatedSeed` failure. Single-U, Two-U, and the
+moving/deforming case remained exactly 21.2540287320, 21.7254621235, and
+7.96286792066 seconds, respectively. Their smooth lengths remained exactly
+40.5204361036, 24.4031321261, and 43.0722665096 degrees. A default visible
+obstacle-free run created four figures, and the no-path diagnostic run created
+two figures with three expanded states. No runtime improvement is claimed from
+this structural cleanup because fresh-process wall time remains noisy.

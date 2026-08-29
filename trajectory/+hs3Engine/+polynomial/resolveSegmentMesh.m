@@ -55,8 +55,7 @@ if hasInvalidEndpoint || any(diff(segmentBreakTau) <= 0)
     error("resolveSegmentMesh:InvalidSegmentBreakTau", ...
         "segmentBreakTau must strictly increase from zero to one.");
 end
-segmentBreakTau(1) = 0;
-segmentBreakTau(end) = 1;
+segmentBreakTau([1 end]) = [0; 1];
 isUniformMesh = isequal(segmentBreakTau, uniformBreakTau);
 if isUniformMesh
     % Multiplying duration by diff of a nominally uniform vector is not
