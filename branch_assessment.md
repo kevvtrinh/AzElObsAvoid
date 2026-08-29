@@ -6,6 +6,29 @@ trajectory wrapper — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## HS3 optimizer complexity split — 2026-08-28
+
+The shared HS3 optimizer now delegates its numerical-problem contract to one
+local validation owner. MATLAB's McCabe complexity for `hs3Engine.optimize`
+decreased from 43 to 21, while the extracted validation function measures 23;
+the file maximum therefore decreased 46.5%, from 43 to 23. Solver selection,
+recovery, termination classification, tolerances, and returned diagnostics are
+unchanged. Code Analyzer reported zero findings, and 99 focused standalone
+kernel, planner, polynomial, and nonuniform-mesh tests passed. The deforming
+obstacle test retained its known near-singular `fmincon` warning stream. No
+runtime or trajectory-quality improvement is claimed for this structural
+refactor.
+
+## Branch hygiene cleanup — 2026-08-28
+
+Generated `output/`, scratch `tmp/`, and local `.claude/` worktree state are
+now excluded from version-control status. No artifacts were deleted, and the
+untracked `Rogue Examples/` directory remains visible because it is not a
+recognized reproducible build or benchmark output. This cleanup changes no
+planner behavior. MATLAB Code Analyzer reported zero findings for the four
+new hybrid classification, activity-mesh, pass-through, and mesh-resolution
+owners before the hygiene-only change.
+
 ## Optional non-stopping Ruckig-to-HS3 warm start — 2026-08-28
 
 The planner now exposes an opt-in `WaypointWarmStartMode="passThrough"` for
