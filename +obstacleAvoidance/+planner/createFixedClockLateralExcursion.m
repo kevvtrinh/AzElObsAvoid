@@ -13,6 +13,8 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %     additive coordinate-axis rest-to-rest collision detours.
 %   - On a static sequence of boundary-attached barriers, construct an
 %     input-driven minimum-jerk lateral spline on that same exact clock.
+%   - Try an endpoint-flat alternating progress polynomial when its complete
+%     continuous workspace and kinematic amplitude interval is nonempty.
 %**************************************************************************
 % INPUTS
 %   - directCandidate (scalar planner candidate struct)
@@ -136,7 +138,33 @@ if sequenceReport.CandidateCreated
     diagnostics.BarrierSequence.Message = sequenceValidation.Message;
 end
 
-%% Section 3: Enumerate Input-Scaled Axis Excursions
+%% Section 3: Try An Alternating Progress Polynomial
+
+[progressCandidate, progressReport] = createAlternatingProgressExcursion( ...
+    directCandidate, obstacles, initialState, goalState, limits, ...
+    options, clockTolerance_s);
+diagnostics.ProgressPolynomial = progressReport;
+diagnostics.ScreeningCount = diagnostics.ScreeningCount + ...
+    progressReport.ScreeningCount;
+diagnostics.ValidationCount = diagnostics.ValidationCount + ...
+    progressReport.ValidationCount;
+if progressReport.Success
+    candidate = progressCandidate;
+    diagnostics.Success = true;
+    diagnostics.SelectedMode = "alternatingProgressPolynomial";
+    diagnostics.Message = ...
+        "An alternating progress polynomial attained the physical time floor.";
+    diagnostics.TerminationReason = "goalReached";
+    diagnostics.SelectedAxisIndex = progressReport.LateralAxisIndex;
+    diagnostics.SelectedDirection = sign(progressReport.SelectedAmplitude_deg);
+    diagnostics.RetainedAmplitude_deg = progressReport.SelectedAmplitude_deg;
+    diagnostics.MotionLength_deg = candidate.MotionLength_deg;
+    diagnostics.SelectedValidation = candidate.Validation;
+    diagnostics.ElapsedTime_s = toc(timer);
+    return;
+end
+
+%% Section 4: Enumerate Input-Scaled Axis Excursions
 
 workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
     double(limits.elevationInterval_deg(:).')];
@@ -233,7 +261,7 @@ for axisIndex = 1:dimensionCount
     end
 end
 
-%% Section 4: Return The Shortest Independently Passing Excursion
+%% Section 5: Return The Shortest Independently Passing Excursion
 
 diagnostics.AxisReports = axisReports;
 hasScreenedCandidate = false(size(screenedCandidates));
@@ -285,7 +313,247 @@ diagnostics.SelectedValidation = candidate.Validation;
 diagnostics.ElapsedTime_s = toc(timer);
 end
 
-%% Section 5: Local Functions
+%% Section 6: Local Functions
+
+function [candidate, report] = createAlternatingProgressExcursion( ...
+        directCandidate, obstacles, initialState, goalState, limits, ...
+        options, clockTolerance_s)
+% Search a bounded endpoint-flat family on an exact direct progress clock.
+candidate = directCandidate;
+report = createProgressReport();
+report.Attempted = true;
+hasMovingGoal = isfield(goalState, "targetTime_s") && ...
+    ~isempty(goalState.targetTime_s);
+hasStraightProgress = isfield(directCandidate, "UsedStraightProgress") && ...
+    directCandidate.UsedStraightProgress;
+hasRestEndpoints = max(abs([initialState.velocity_deg_s, ...
+    goalState.velocity_deg_s, initialState.acceleration_deg_s2, ...
+    goalState.acceleration_deg_s2])) <= clockTolerance_s;
+if hasMovingGoal || obstacleAvoidance.obstacles.hasChangingHistory( ...
+        obstacles, initialState.time_s, directCandidate.FinalTime_s)
+    report = progressFailure(report, "unsupportedChangingRequest", ...
+        "The progress polynomial requires a fixed goal and static obstacles.");
+    return;
+end
+if ~hasStraightProgress || ~hasRestEndpoints
+    report = progressFailure(report, "unsupportedBaseMotion", ...
+        "A straight-progress motion with rest endpoints is required.");
+    return;
+end
+if isfield(options, "AllowAzimuthWrapping") && options.AllowAzimuthWrapping
+    report = progressFailure(report, "unsupportedAzimuthWrapping", ...
+        "The progress polynomial requires an unwrapped workspace.");
+    return;
+end
+axisMinimum_s = double(directCandidate.MinimumAxisDuration_s(:).');
+governingAxes = find(abs(axisMinimum_s - ...
+    directCandidate.MotionDuration_s) <= clockTolerance_s);
+if numel(governingAxes) ~= 1
+    report = progressFailure(report, "unsupportedClockOwnership", ...
+        "Exactly one coordinate must own the physical clock.");
+    return;
+end
+progressAxisIndex = governingAxes(1);
+lateralAxisIndex = 3 - progressAxisIndex;
+progressDelta_deg = goalState.position_deg(progressAxisIndex) - ...
+    initialState.position_deg(progressAxisIndex);
+if progressDelta_deg == 0
+    report = progressFailure(report, "zeroProgress", ...
+        "The clock-owning coordinate requires nonzero displacement.");
+    return;
+end
+report.Eligible = true;
+report.ProgressAxisIndex = progressAxisIndex;
+report.LateralAxisIndex = lateralAxisIndex;
+
+unitCandidate = bmtpEngine.createProgressPolynomialMotion( ...
+    directCandidate, initialState, goalState, progressAxisIndex, 1, ...
+    options.SampleTime_s, "fixedClockProgressPolynomialUnit");
+[lowerAmplitude_deg, upperAmplitude_deg] = ...
+    createContinuousAmplitudeInterval( ...
+    directCandidate, unitCandidate, lateralAxisIndex, limits);
+report.LowerAmplitude_deg = lowerAmplitude_deg;
+report.UpperAmplitude_deg = upperAmplitude_deg;
+if ~isfinite(lowerAmplitude_deg) || ~isfinite(upperAmplitude_deg) || ...
+        lowerAmplitude_deg >= 0 || upperAmplitude_deg <= 0
+    report = progressFailure(report, "noBoundedPhysicalAmplitude", ...
+        "Continuous workspace and derivative bounds left no signed interval.");
+    return;
+end
+
+% The levels are proposals only. Sampled occupancy can reject a motion, but
+% only the unchanged continuous validator can accept one. Retaining every
+% sampled-clear level avoids assuming that collision clearance is monotone.
+levelCount = 8;
+levelFraction = (1:levelCount).' / levelCount;
+candidateAmplitude_deg = [ ...
+    -(-lowerAmplitude_deg) * levelFraction; ...
+    upperAmplitude_deg * levelFraction];
+workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
+    double(limits.elevationInterval_deg(:).')];
+workspaceScale_deg = diff(workspaceInterval_deg(lateralAxisIndex, :));
+amplitudeResolution_deg = max( ...
+    8 * double(options.CollisionClearanceTolerance_deg), ...
+    sqrt(eps) * max(1, workspaceScale_deg));
+candidateAmplitude_deg = candidateAmplitude_deg( ...
+    abs(candidateAmplitude_deg) > amplitudeResolution_deg);
+candidateCount = numel(candidateAmplitude_deg);
+report.CandidateAmplitude_deg = candidateAmplitude_deg;
+if candidateCount == 0
+    report = progressFailure(report, "noResolvedAmplitude", ...
+        "The continuous amplitude interval is below numeric resolution.");
+    return;
+end
+trialCandidates = cell(candidateCount, 1);
+motionLength_deg = zeros(candidateCount, 1);
+for candidateIndex = 1:candidateCount
+    trialCandidates{candidateIndex} = ...
+        bmtpEngine.createProgressPolynomialMotion( ...
+        directCandidate, initialState, goalState, progressAxisIndex, ...
+        candidateAmplitude_deg(candidateIndex), options.SampleTime_s, ...
+        "fixedClockProgressPolynomial");
+    motionLength_deg(candidateIndex) = ...
+        trialCandidates{candidateIndex}.MotionLength_deg;
+end
+sampledClear = sampledCandidatesAreClear( ...
+    trialCandidates, obstacles, options);
+sampledClear = logical(sampledClear(:));
+report.MotionLength_deg = motionLength_deg;
+report.SampledClear = sampledClear;
+report.ScreeningCount = candidateCount;
+report.ValidationPassed = false(candidateCount, 1);
+report.ValidationMessage = strings(candidateCount, 1);
+screenedIndex = find(sampledClear);
+if isempty(screenedIndex)
+    report = progressFailure(report, "noSampledClearAmplitude", ...
+        "No bounded progress-polynomial proposal passed sampled occupancy.");
+    return;
+end
+[~, order] = sort(motionLength_deg(screenedIndex));
+for candidateIndex = reshape(screenedIndex(order), 1, [])
+    trial = trialCandidates{candidateIndex};
+    validation = obstacleAvoidance.validateTrajectory( ...
+        trial, obstacles, initialState, goalState, limits, options);
+    report.ValidationCount = report.ValidationCount + 1;
+    report.ValidationPassed(candidateIndex) = validation.Passed;
+    report.ValidationMessage(candidateIndex) = validation.Message;
+    if validation.Passed
+        trial.Validation = validation;
+        candidate = trial;
+        report.Success = true;
+        report.Message = ...
+            "A bounded progress polynomial passed independent validation.";
+        report.TerminationReason = "goalReached";
+        report.SelectedAmplitude_deg = ...
+            candidateAmplitude_deg(candidateIndex);
+        report.SelectedMotionLength_deg = trial.MotionLength_deg;
+        report.Validation = validation;
+        return;
+    end
+end
+report = progressFailure(report, "noValidatedProgressPolynomial", ...
+    "No sampled-clear progress polynomial passed independent validation.");
+end
+
+function [lowerAmplitude_deg, upperAmplitude_deg] = ...
+        createContinuousAmplitudeInterval( ...
+        baseCandidate, unitCandidate, lateralAxisIndex, limits)
+% Intersect sufficient Bernstein workspace and P/V/A/J amplitude bounds.
+fieldNames = {'positionPower_deg', 'velocityPower_deg_s', ...
+    'accelerationPower_deg_s2', 'jerkPower_deg_s3'};
+workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
+    double(limits.elevationInterval_deg(:).')];
+lowerBound = [workspaceInterval_deg(lateralAxisIndex, 1), ...
+    -double(limits.maxVelocity_deg_s(lateralAxisIndex)), ...
+    -double(limits.maxAcceleration_deg_s2(lateralAxisIndex)), ...
+    -double(limits.maxJerk_deg_s3(lateralAxisIndex))];
+upperBound = [workspaceInterval_deg(lateralAxisIndex, 2), ...
+    double(limits.maxVelocity_deg_s(lateralAxisIndex)), ...
+    double(limits.maxAcceleration_deg_s2(lateralAxisIndex)), ...
+    double(limits.maxJerk_deg_s3(lateralAxisIndex))];
+lowerAmplitude_deg = -Inf;
+upperAmplitude_deg = Inf;
+segmentCount = unitCandidate.Polynomial.SegmentCount;
+for fieldIndex = 1:numel(fieldNames)
+    fieldName = fieldNames{fieldIndex};
+    unitRecords = unitCandidate.Polynomial.(fieldName);
+    baseRecords = baseCandidate.Polynomial.(fieldName);
+    coefficientCount = size(unitRecords, 3);
+    for segmentIndex = 1:segmentCount
+        unitPower = reshape( ...
+            unitRecords(segmentIndex, lateralAxisIndex, :), 1, []);
+        basePower = zeros(1, coefficientCount);
+        originalBasePower = reshape( ...
+            baseRecords(segmentIndex, lateralAxisIndex, :), 1, []);
+        basePower(1:numel(originalBasePower)) = originalBasePower;
+        baseControl = createMidpointBernsteinControls(basePower);
+        unitControl = createMidpointBernsteinControls(unitPower);
+        amplitudeControl = unitControl - baseControl;
+        [lowerAmplitude_deg, upperAmplitude_deg] = intersectAmplitudeBounds( ...
+            lowerAmplitude_deg, upperAmplitude_deg, baseControl, ...
+            amplitudeControl, lowerBound(fieldIndex), upperBound(fieldIndex));
+        if lowerAmplitude_deg >= upperAmplitude_deg
+            return;
+        end
+    end
+end
+% Pull the proposal cap a few ULPs into the sufficient control-point set.
+intervalScale_deg = max([1, abs(lowerAmplitude_deg), ...
+    abs(upperAmplitude_deg)]);
+amplitudeReserve_deg = 512 * eps(intervalScale_deg);
+lowerAmplitude_deg = lowerAmplitude_deg + amplitudeReserve_deg;
+upperAmplitude_deg = upperAmplitude_deg - amplitudeReserve_deg;
+end
+
+function control = createMidpointBernsteinControls(power)
+% Convert ascending powers and exactly subdivide the control polygon at 1/2.
+degree = numel(power) - 1;
+bernstein = zeros(1, degree + 1);
+for controlIndex = 0:degree
+    for powerIndex = 0:controlIndex
+        bernstein(controlIndex + 1) = bernstein(controlIndex + 1) + ...
+            nchoosek(controlIndex, powerIndex) / ...
+            nchoosek(degree, powerIndex) * power(powerIndex + 1);
+    end
+end
+leftControl = zeros(size(bernstein));
+rightControl = zeros(size(bernstein));
+leftControl(1) = bernstein(1);
+rightControl(end) = bernstein(end);
+work = bernstein;
+for levelIndex = 1:degree
+    work = 0.5 * (work(1:end - 1) + work(2:end));
+    leftControl(levelIndex + 1) = work(1);
+    rightControl(end - levelIndex) = work(end);
+end
+control = [leftControl, rightControl];
+end
+
+function [lowerAmplitude_deg, upperAmplitude_deg] = intersectAmplitudeBounds( ...
+        lowerAmplitude_deg, upperAmplitude_deg, baseControl, ...
+        amplitudeControl, lowerBound, upperBound)
+% Intersect scalar affine control-point inequalities without sign assumptions.
+controlScale = max(1, max(abs([baseControl, amplitudeControl])));
+zeroTolerance = 256 * eps(controlScale);
+for controlIndex = 1:numel(baseControl)
+    slope = amplitudeControl(controlIndex);
+    base = baseControl(controlIndex);
+    if abs(slope) <= zeroTolerance
+        if base < lowerBound || base > upperBound
+            lowerAmplitude_deg = Inf;
+            upperAmplitude_deg = -Inf;
+            return;
+        end
+        continue;
+    end
+    firstIntersection = (lowerBound - base) / slope;
+    secondIntersection = (upperBound - base) / slope;
+    lowerAmplitude_deg = max(lowerAmplitude_deg, ...
+        min(firstIntersection, secondIntersection));
+    upperAmplitude_deg = min(upperAmplitude_deg, ...
+        max(firstIntersection, secondIntersection));
+end
+end
 
 function [candidate, report] = createBarrierSequence(directCandidate, obstacles, ...
         initialState, goalState, limits, options, clockTolerance_s)
@@ -541,6 +809,31 @@ report = struct( ...
     "Validation", obstacleAvoidance.validateTrajectory());
 end
 
+function report = createProgressReport()
+% Define stable bounded-family proposal and independent validation evidence.
+report = struct( ...
+    "Attempted", false, "Eligible", false, "Success", false, ...
+    "Message", "The progress polynomial was not attempted.", ...
+    "TerminationReason", "notAttempted", ...
+    "ProgressAxisIndex", 0, "LateralAxisIndex", 0, ...
+    "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
+    "CandidateAmplitude_deg", zeros(0, 1), ...
+    "MotionLength_deg", zeros(0, 1), ...
+    "SampledClear", false(0, 1), ...
+    "ValidationPassed", false(0, 1), ...
+    "ValidationMessage", strings(0, 1), ...
+    "ScreeningCount", 0, "ValidationCount", 0, ...
+    "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
+    "Validation", obstacleAvoidance.validateTrajectory());
+end
+
+function report = progressFailure(report, reason, message)
+% Preserve an explicit fail-closed eligibility, bound, or validation result.
+report.Success = false;
+report.TerminationReason = reason;
+report.Message = message;
+end
+
 function report = barrierFailure(report, reason, message)
 % Preserve an explicit fail-closed barrier classifier or construction result.
 report.TerminationReason = reason;
@@ -575,6 +868,7 @@ diagnostics = struct( ...
     "DirectValidation", obstacleAvoidance.validateTrajectory(), ...
     "SelectedValidation", obstacleAvoidance.validateTrajectory(), ...
     "BarrierSequence", createBarrierReport(), ...
+    "ProgressPolynomial", createProgressReport(), ...
     "AxisReports", repmat(createAxisReport(), 0, 1), ...
     "ElapsedTime_s", 0);
 end

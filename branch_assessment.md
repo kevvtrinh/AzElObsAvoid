@@ -6,6 +6,66 @@ motions, and no retained HS3 or Ruckig implementation — 2026-08-29**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Exact Two-U physical floor and runtime cutover — 2026-08-29
+
+The strongest current result is a proved global minimum arrival for the Two
+Opposing U request. Its elevation coordinate must move 20 degrees from rest to
+rest under `1 deg/s`, `0.75 deg/s^2`, and `2.5 deg/s^3` limits. The independent
+one-axis switching lower bound is therefore exactly `649/30`, or
+`21.633333333333336 s`; every feasible two-coordinate motion must obey that
+bound. The retained degree-15 motion attains it exactly and passes the public
+continuous collision, workspace, endpoint, polynomial, velocity,
+acceleration, jerk, and dynamics checks. This proves global minimum arrival
+for this request. It does not prove globally shortest spatial path at that
+arrival time.
+
+The latest fresh-process maintained-example run reports `1.9101322 s` planner
+time and `3.0005152 s` full wall time, versus the committed BMTP milestone's
+`101.8476137 s` planner time and `102.8172086 s` wall time. The validated
+motion is `24.0968121271875 deg`, versus `24.2730047934627 deg` at that
+milestone, and its minimum protected-obstacle clearance is
+`0.00618966852407 deg`. The earlier best arrival record was
+`21.681274648 s`, so the exact-floor witness improves it by about `47.9413 ms`.
+
+The construction is input-driven rather than fixture-driven. It composes the
+endpoint-flat basis
+`q(s) = 4s + 4s^2 - 56s^3 + 80s^4 - 32s^5` with the exact cubic direct-motion
+progress spans. A midpoint-subdivided Bernstein control hull intersects the
+complete continuous workspace, velocity, acceleration, and jerk inequalities
+to obtain a sufficient signed-amplitude interval. Sixteen deterministic
+amplitudes are sampled only as collision-rejection proposals; the unchanged
+continuous validator is the sole acceptance gate, and no monotone-clearance
+assumption is made. A structurally different test reverses the first progress
+axis and uses two floating convex barriers rather than concave U geometry.
+
+The release audit also corrected fixed-clock result provenance. A curved
+accepted motion now publishes its sampled validated route as
+`SelectedSeed_deg`, rather than labeling the collision-blocked endpoint chord
+as the selected polyline. This makes the reported Two-U selected polyline and
+smoothed-path length both `24.0968121271875 deg`; the same truthfulness rule
+applies to every fixed-clock fast path.
+
+Verification covered 91 maintained MATLAB sources with zero Code Analyzer
+messages and all 66 repository tests. All 17 maintained examples then ran
+headlessly in separate fresh MATLAB processes: 16 successes passed independent
+validation and `exampleNoPath` returned its expected validated
+`noValidatedSeed` failure. After the provenance correction, every affected
+fixed-clock example was rerun separately. A visible Two-U success produced two
+figures and five axes, and a visible no-path failure produced one diagnostic
+figure and one axes object with retained expanded-state evidence.
+
+The branch is still not beta-ready under the declared feasibility gates. The
+current production-size audit is `8,952` nonblank, noncomment lines across 53
+files, exceeding the required `4,999` ceiling by `3,953`. Straight Target
+still takes `52.0803077 s` of planner time, Target Exits takes `21.9396096 s`,
+and the Extreme example takes `20.5615572 s` of returned planner time plus
+geographic setup. The current `exampleObstacleAvoidance` arrival is about
+`46.57 ms` later than its earlier `7.527972 s` record. The Extreme arrival is
+about `1.179 ms` later than its `5.79283069332816 s` record, within the user's
+explicit `2.07 ms` acceptance but not itself a new record. These remaining
+runtime, arrival, path, and size gaps prevent a claim that every historical
+record has been met or beaten.
+
 ## BMTP cutover and dense-outline record — 2026-08-29
 
 The largest current strength is physical arrival evidence checked outside the

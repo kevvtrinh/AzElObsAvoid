@@ -21,8 +21,8 @@ function [candidate, terminalState] = createMotionRecord( ...
 %       Requires one-by-D position, velocity, and acceleration fields.
 %   - relativeBreak_s (N-plus-one vector, scalar polynomial struct, or empty)
 %       Exact relative event times from zero through the motion duration,
-%       or an already assembled degree-five-or-less polynomial. Empty returns
-%       only the stable record.
+%       or an already assembled finite polynomial. Empty returns only the
+%       stable record.
 %   - segmentJerk_deg_s3 (N-by-D numeric)
 %       Constant jerk on each corresponding event interval.
 %   - sampleStep_s (positive scalar)
@@ -79,10 +79,18 @@ if isstruct(relativeBreak_s)
     polynomial = relativeBreak_s;
     requiredFields = {'Degree', 'SegmentCount', 'SegmentStartTime_s', ...
         'SegmentDuration_s', 'FinalTime_s', 'jerkPower_deg_s3', 'TerminalState'};
-    if ~isscalar(polynomial) || ~all(isfield(polynomial, requiredFields)) || ...
-            polynomial.Degree > 5
+    polynomialIsComplete = isscalar(polynomial) && ...
+        all(isfield(polynomial, requiredFields));
+    if polynomialIsComplete
+        degree = polynomial.Degree;
+        degreeIsValid = isnumeric(degree) && isscalar(degree) && ...
+            isfinite(degree) && degree >= 0 && degree == floor(degree);
+    else
+        degreeIsValid = false;
+    end
+    if ~polynomialIsComplete || ~degreeIsValid
         error("createMotionRecord:InvalidPolynomial", ...
-            "An assembled polynomial must be scalar, complete, and degree at most five.");
+            "An assembled polynomial must be scalar, complete, and have finite degree.");
     end
     segmentCount = polynomial.SegmentCount;
     segmentDuration_s = polynomial.SegmentDuration_s;
@@ -162,15 +170,20 @@ if polynomial.Degree <= 3
     candidate.IntegratedSquaredJerk_deg2_s5 = sum(segmentDuration_s .* ...
         sum(jerk .^ 2, 2));
 else
-    gaussTau = [0.5 - sqrt(15) / 10, 0.5, 0.5 + sqrt(15) / 10];
-    gaussWeight = [5 / 18; 4 / 9; 5 / 18];
-    gaussTime_s = polynomial.SegmentStartTime_s + segmentDuration_s .* gaussTau;
-    [~, ~, ~, ~, gaussJerk_deg_s3] = ...
-        bmtpEngine.evaluatePolynomial( ...
-        polynomial, gaussTime_s(:));
-    jerkSquared = reshape(sum(gaussJerk_deg_s3 .^ 2, 2), segmentCount, []);
-    candidate.IntegratedSquaredJerk_deg2_s5 = sum( ...
-        segmentDuration_s .* (jerkSquared * gaussWeight));
+    integratedSquaredJerk_deg2_s5 = 0;
+    for segmentIndex = 1:segmentCount
+        for axisIndex = 1:dimensionCount
+            jerkPower = reshape( ...
+                polynomial.jerkPower_deg_s3(segmentIndex, axisIndex, :), 1, []);
+            squaredPower = conv(jerkPower, jerkPower);
+            integratedSquaredJerk_deg2_s5 = ...
+                integratedSquaredJerk_deg2_s5 + ...
+                segmentDuration_s(segmentIndex) * ...
+                sum(squaredPower ./ (1:numel(squaredPower)));
+        end
+    end
+    candidate.IntegratedSquaredJerk_deg2_s5 = ...
+        integratedSquaredJerk_deg2_s5;
 end
 end
 

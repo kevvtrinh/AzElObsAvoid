@@ -98,6 +98,45 @@ verifyGreaterThan(testCase, ...
     sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
 end
 
+function testReflectedProgressAxisUsesValidatedPolynomial(testCase)
+% Exercise negative first-axis progress through two floating convex barriers.
+obstacleTime_s = [0; 30];
+firstObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "first floating barrier", obstacleTime_s, ...
+    [4.4 5.6 5.6 4.4], [-0.45 -0.45 0.45 0.45], 0.1);
+secondObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "second floating barrier", obstacleTime_s, ...
+    [-5.6 -4.4 -4.4 -5.6], [-0.45 -0.45 0.45 0.45], 0.1);
+obstacles = obstacleAvoidance.obstacles.combineObstacles( ...
+    firstObstacle, secondObstacle);
+initialState = restState(0, [10 0]);
+goalState = restState(30, [-10 0]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-12 12];
+limits.elevationInterval_deg = [-4 4];
+result = obstacleAvoidance.planTrajectory( ...
+    obstacles, initialState, goalState, limits, ...
+    plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, result.Validation.CollisionFree);
+verifyTrue(testCase, result.Validation.CollisionResolved);
+diagnostics = result.SearchDiagnostics.FixedClockExcursion;
+verifyTrue(testCase, diagnostics.Success, diagnostics.Message);
+verifyEqual(testCase, diagnostics.SelectedMode, ...
+    "alternatingProgressPolynomial");
+verifyEqual(testCase, ...
+    diagnostics.ProgressPolynomial.ProgressAxisIndex, 1);
+verifyEqual(testCase, ...
+    diagnostics.ProgressPolynomial.LateralAxisIndex, 2);
+verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, ...
+    "AbsTol", 1e-9);
+verifyEqual(testCase, result.SelectedSeed_deg, result.position_deg);
+verifyEqual(testCase, result.Seeds(1).Length_deg, ...
+    sum(vecnorm(diff(result.position_deg), 2, 2)), "AbsTol", 1e-12);
+end
+
 function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)
 % An infeasible clock is an expected result rather than a thrown error.
 initialState = restState(0, [0 0]);
