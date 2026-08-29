@@ -50,6 +50,7 @@ Key audit conclusions:
 | `+obstacleAvoidance/+planner/plan.m` | Retain, consolidated | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/solvePassThroughSeedCandidate.m` | Retain | Owns measured Single-U/Two-U quality and runtime wins; covered by focused tests. |
 | `+obstacleAvoidance/+planner/solveRouteCandidate.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
+| `+obstacleAvoidance/+planner/solveWaypointSeedCandidate.m` | Retain | Exact Ruckig composition fallback for failed multi-edge visibility seeds; covered by independent static-detour and Rogue-case validation. |
 | `+obstacleAvoidance/+planner/stageTiming.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+planner/validatePolynomialTrajectory.m` | Retain | Active planner orchestration, corridor, solve, validation, or result owner. |
 | `+obstacleAvoidance/+plotting/plotTrajectory.m` | Retain, consolidated | Reusable result-only success/failure visualization owner. |
@@ -97,7 +98,7 @@ Key audit conclusions:
 | `examples/validateExampleResult.m` | Retain | Shared maintained-example option or independent-validation infrastructure. |
 | `sandbox/createSandboxPolygonMotionHistory.m` | Retain | Goal Mode moving-polygon profile constructor with direct tests. |
 | `sandbox/exportSandboxDiagnosis.m` | Retain, consolidated | Maintained Goal Mode UI or diagnosis export path. |
-| `sandbox/obstacleAvoidanceSandbox.m` | Retain, consolidated | Maintained Goal Mode UI or diagnosis export path. |
+| `sandbox/obstacleAvoidanceSandbox.m` | Retain, consolidated | Maintained Goal Mode UI with public planner-option controls and reproducible diagnosis export. |
 | `tests/+testSupport/plannerFixtures.m` | Retain | Shared deterministic planner fixture/requirement support. |
 | `tests/+testSupport/verifySharedPlannerRequirement.m` | Retain | Shared deterministic planner fixture/requirement support. |
 | `tests/testArchitectureBoundaries.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
@@ -113,6 +114,7 @@ Key audit conclusions:
 | `tests/testPlannerOptions.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
 | `tests/testPlannerStageTiming.m` | Retain, consolidated | Active unit, integration, architecture, or diagnostic regression coverage. |
 | `tests/testRuckigEngine.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
+| `tests/testRuckigWaypointFallback.m` | Retain | Independent earliest- and fixed-arrival coverage for exact multi-edge Ruckig composition. |
 | `tests/testStandaloneHs3Kernel.m` | Retain | Active unit, integration, architecture, or diagnostic regression coverage. |
 | `trajectory/+hs3Engine/+constraints/createFixedConstraintMatrices.m` | Retain | Dimension-neutral HS3 kernel, polynomial, constraint, solve, or validation owner. |
 | `trajectory/+hs3Engine/+constraints/evaluateConstraints.m` | Retain | Dimension-neutral HS3 kernel, polynomial, constraint, solve, or validation owner. |
@@ -155,3 +157,13 @@ Key audit conclusions:
 - Failure diagnostics: `exampleNoPath` created two diagnostic figures.
 - Retained hybrid score: Single-U pass-through 21.2540287320 s arrival, 40.5204361036 deg motion, 15.542280 s fresh wall.
 - Known incomplete gate: the frozen three-repeat scaling comparator was interrupted after its 10-turn case took 137.6659266 s and later work flooded existing near-singular solver warnings.
+
+## 2026-08-29 additions
+
+The audit now includes the exact Ruckig waypoint fallback and its focused test.
+They are retained because the saved Rogue case becomes independently valid
+without replacing the preferred HS3 path or adding a scenario-specific route.
+The sandbox remains one Goal Mode workflow; its new planner-options panel
+exposes three existing public choices and preserves them in both Run and Export.
+The complete test tree passes 166/166, the focused fixed-arrival fallback check
+passes, and the visible sandbox layout was inspected.

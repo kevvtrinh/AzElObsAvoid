@@ -7,6 +7,7 @@ function tests = testObstacleAvoidanceSandboxDiagnosis
 %   - Verify sandbox diagnosis bundles preserve pre-run requests plus
 %     successful and failed planner calls without graphics handles.
 %   - Verify a reloaded success bundle can reproduce the exact public call.
+%   - Verify visible planner choices drive the same options saved for replay.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -104,6 +105,8 @@ for constructorIndex = 1:numel(constructorNames)
 end
 verifyTrue(testCase, isgraphics( ...
     currentState.GoalMode.GraphicsHandles.Controls.MotionProfileHandle));
+verifyTrue(testCase, isgraphics( ...
+    currentState.GoalMode.GraphicsHandles.PlannerOptionsPanel));
 verifyEqual(testCase, ...
     currentState.GoalMode.PolygonMotionVectors_deg, zeros(0, 2));
 verifyEqual(testCase, ...
@@ -129,9 +132,60 @@ verifyEqual(testCase, plannerOptions.MaximumMeshRefinementPasses, 0);
 verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
 verifyEqual(testCase, plannerOptions.MaximumNlpFunctionEvaluations, 5000);
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
+verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "none");
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
+verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, productionOptions.MaximumSeedCount, 5);
 verifyEqual(testCase, productionOptions.MaximumMeshRefinementPasses, 2);
+end
+
+function testPlannerOptionControlsDriveExport(testCase)
+% Preserve the three user-facing planner choices in a pre-run replay bundle.
+sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+currentState = sandboxState.ReadState();
+controls = currentState.GoalMode.GraphicsHandles.Controls;
+set(controls.WaypointWarmStartHandle, "Value", 2);
+set(controls.GoalTimeModeHandle, "Value", 2);
+set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+
+currentState.ExportBundle(filePath, "goal");
+
+loaded = load(char(filePath), "diagnosisBundle");
+plannerOptions = loaded.diagnosisBundle.PlannerOptions;
+verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "passThrough");
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
+verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
+end
+
+function testPlannerOptionControlsDriveRun(testCase)
+% Pass the selected options through the Run action into the public result.
+sandboxState = obstacleAvoidanceSandbox(struct( ...
+    "FigureVisible", "off", "MissionTime_s", 6));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.StartPosition_deg = [0 0];
+applicationState.GoalMode.GoalPosition_deg = [4 0];
+guidata(sandboxState.FigureHandle, applicationState);
+controls = applicationState.GoalMode.GraphicsHandles.Controls;
+set(controls.WaypointWarmStartHandle, "Value", 2);
+set(controls.GoalTimeModeHandle, "Value", 2);
+set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
+runCallback = get(runHandle, "Callback");
+
+runCallback(runHandle, []);
+
+currentState = sandboxState.ReadState();
+result = currentState.GoalMode.LastPlannerResult;
+verifyTrue(testCase, result.Success, result.Message);
+verifyEqual(testCase, result.Options.WaypointWarmStartMode, "passThrough");
+verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
+verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
+verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
 end
 
 function testPreRunGoalBundlePreservesRequest(testCase)

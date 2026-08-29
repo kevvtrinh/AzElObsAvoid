@@ -3045,3 +3045,38 @@ two failures. Its existing near-singular `fmincon` warning flood remains a
 visible numerical-conditioning weakness; this consolidation does not claim to
 repair or hide it. The focused architecture suite passed 14/14, and the full
 MATLAB test tree passed 163/163 in 57.4683699 aggregate test seconds.
+
+## Exact waypoint fallback and sandbox planner options — 2026-08-29
+
+The simplest retained repair for the saved Rogue failure is an exact Ruckig
+composition along a failed multi-edge visibility seed. HS3 remains preferred;
+the fallback runs only after the HS3 attempt fails independent validation. It
+excludes timed-topology seeds and stops at each
+intermediate waypoint, so it preserves the spatial route without inventing a
+new corridor heuristic. A swept-envelope HS3 experiment was rejected: it
+created 1,568 constraints and remained infeasible with about 21.8 maximum
+constraint violation.
+
+The saved Rogue request changed from `noValidatedSeed` to an independently
+validated result using visibility seed 2. Its route length is
+151.763279238 degrees, arrival is 84.1362271051 seconds, wall time was
+21.685271 seconds, and protected clearance is 0.000196647538 degrees. The
+small clearance and intermediate stops remain visible limitations; this is a
+complete fallback for the exercised route, not a general optimality claim.
+
+The maintained Single-U pass-through quality gate remains
+21.254028732 seconds and 40.520436104 degrees. The ordinary default remains
+22.630887102 seconds and 41.536724908 degrees. The sandbox now exposes the
+public choices that distinguish those runs: waypoint warm start (`none` or
+Ruckig `passThrough`), earliest versus fixed arrival, and azimuth wrapping.
+Run and diagnosis export consume the same selected values, while `none`,
+earliest arrival, and no wrapping remain the defaults.
+
+Code Analyzer reports zero findings in the changed MATLAB files. The focused
+sandbox suite passed 10/10, the waypoint fallback test passed both earliest-
+and fixed-arrival checks, and the complete test tree passed 166/166 in
+62.397245 aggregate test seconds before the added fixed-arrival assertion.
+That assertion then passed in the focused 1/1 test. All 17 maintained examples
+had already run serially after the planner change: 16 independently validated
+successes and the expected validated `noValidatedSeed` failure. A visible
+sandbox check confirmed the options panel and status log remain readable.

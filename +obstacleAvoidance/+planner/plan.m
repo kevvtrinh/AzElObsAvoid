@@ -853,6 +853,38 @@ for orderIndex = 1:numel(seedOrder)
             trialSeed = seedFromCandidate(finalCandidate, originalSeed);
         end
     end
+    waypointFallbackAttempted = false;
+    hs3CandidateBeforeFallback = [];
+    canTryWaypointFallback = ~isempty(finalCandidate) && ...
+        ~finalCandidate.Validation.Passed && ...
+        originalSeed.Source == "visibilityGraph" && ...
+        size(originalSeed.position_deg, 1) > 2;
+    if canTryWaypointFallback
+        % Preserve the spatial topology exactly only after the smoother HS3
+        % attempt fails. Rest-to-rest switching segments are slower, but they
+        % cannot cut across the visibility route between waypoints.
+        waypointFallbackAttempted = true;
+        hs3CandidateBeforeFallback = finalCandidate;
+        waypointCandidate = ...
+            obstacleAvoidance.planner.solveWaypointSeedCandidate( ...
+            initialState, goalState, limits, options, originalSeed);
+        waypointCandidate.Validation = validateCandidate( ...
+            waypointCandidate, obstacles, initialState, goalState, ...
+            limits, options);
+        stageTiming = addCandidateTiming(stageTiming, waypointCandidate);
+        ruckigElapsedTime_s = ruckigElapsedTime_s + ...
+            waypointCandidate.SolverDiagnostics.ElapsedTime_s;
+        ruckigAttempted = true;
+        ruckigValidationPassed = waypointCandidate.Validation.Passed;
+        ruckigTerminationReason = waypointCandidate.TerminationReason;
+        ruckigDiagnostics = waypointCandidate.SolverDiagnostics;
+        if waypointCandidate.Validation.Passed
+            finalCandidate = waypointCandidate;
+            if isnan(firstValidatedMotionTime_s)
+                firstValidatedMotionTime_s = toc(planningTimer);
+            end
+        end
+    end
     if isempty(finalCandidate)
         if useStaticDurationContinuation
             seedSummaries(seedIndex).SeedIndex = seedIndex;
@@ -911,6 +943,17 @@ for orderIndex = 1:numel(seedOrder)
     seedSummaries(seedIndex).RuckigTerminationReason = ...
         ruckigTerminationReason;
     seedSummaries(seedIndex).RuckigDiagnostics = ruckigDiagnostics;
+    if waypointFallbackAttempted
+        seedSummaries(seedIndex).Hs3Attempted = true;
+        seedSummaries(seedIndex).Hs3OptimizerFeasible = ...
+            hs3CandidateBeforeFallback.OptimizerFeasible;
+        seedSummaries(seedIndex).Hs3ValidationPassed = ...
+            hs3CandidateBeforeFallback.Validation.Passed;
+        seedSummaries(seedIndex).Hs3TerminationReason = ...
+            hs3CandidateBeforeFallback.TerminationReason;
+        seedSummaries(seedIndex).Hs3SolverDiagnostics = ...
+            hs3CandidateBeforeFallback.SolverDiagnostics;
+    end
     if finalCandidate.Validation.Passed
         bestValidatedFinalTime_s = min( ...
             bestValidatedFinalTime_s, finalCandidate.FinalTime_s);
