@@ -6,6 +6,50 @@ motions, and no retained HS3 or Ruckig implementation — 2026-08-29**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Pause-point reduction and compact replacement research — 2026-08-29
+
+This pause-point commit removes only
+`+obstacleAvoidance/+planner/createSeedCorridor.m`. A complete production and
+test-tree reference scan found zero callers. After the deletion, a fresh
+noninteractive MATLAB R2024b process passed all 66 tests with zero failures or
+incomplete tests in `41.3109654 s`. The deletion reduces the non-plotting core
+by 60 nonblank, noncomment lines and does not change planner behavior.
+
+The required maintained-example rerun did not execute after this deletion.
+The first example process and every subsequent isolated-preference attempt
+failed before repository code loaded with MATLAB's fatal startup message
+`System Error: File system inconsistency`. The already running user MATLAB
+process was not attached to, stopped, or modified. Consequently, this commit
+is an explicit tested reduction checkpoint, not a completed release gate; the
+last complete 17-example matrix remains the evidence from commit `944a738`.
+
+The plotting package is now frozen by user direction and excluded from the
+core-size target. It remains untouched at 425 noncomment lines across two
+files. The current counted core is 8,467 lines across 50 files. Input,
+obstacle, geometry, validation, intercept, and public-API owners consume about
+2,695 of those lines, leaving a 2,304-line budget for a replacement planner,
+search, and trajectory generator under the 4,999-line ceiling.
+
+Internet and local experiment review rejected a full fixed-corridor Bezier QP:
+on the saved Static-U request it produced a `30.047333018 s`, approximately
+`45.6554866 deg` candidate versus the retained `20.712447785 s`,
+`40.2550285 deg` baseline. Its QP residual was below `5.5e-12` and neither
+sampled points nor Bezier controls entered protected geometry, but it omitted
+the complete plane certificate needed for independent continuous acceptance.
+Because the candidate was already 9.3349 seconds later and 5.4005 degrees
+longer, the ignored implementation and generated artifacts were removed
+rather than rescued.
+
+The next bounded experiment is prepared only under `tmp/novel-rep` and is not
+part of this commit. It extends the previously validated seven-coefficient
+endpoint-null path formulation from physical-floor clocks to prescribed
+fixed-arrival clocks. Its declared gates are the two measured BMTP outliers:
+Straight Target must retain `20.8695652173913 s`, beat the
+`13.678271908 deg` path record, and run below 10 seconds; Target Exits must
+retain `24 s`, beat `20.6764423274 deg`, and also run below 10 seconds. No
+result is claimed until MATLAB starts and the unchanged public validator
+passes each case in a separate process.
+
 ## Exact Two-U physical floor and runtime cutover — 2026-08-29
 
 The strongest current result is a proved global minimum arrival for the Two
@@ -54,9 +98,14 @@ fixed-clock example was rerun separately. A visible Two-U success produced two
 figures and five axes, and a visible no-path failure produced one diagnostic
 figure and one axes object with retained expanded-state evidence.
 
-The branch is still not beta-ready under the declared feasibility gates. The
-current production-size audit is `8,952` nonblank, noncomment lines across 53
-files, exceeding the required `4,999` ceiling by `3,953`. Straight Target
+The branch is still not beta-ready under the declared feasibility gates. Per
+the user's scope, the plotting module is frozen and excluded from the core
+size gate. The current non-plotting production-core audit is `8,467` nonblank,
+noncomment lines across 50 files, exceeding the required `4,999` ceiling by
+`3,468`; the untouched plotting module contains another 425 lines across two
+files. One orphaned
+60-line seed-corridor constructor was removed after zero references and 66/66
+tests confirmed that it was not part of the maintained planner. Straight Target
 still takes `52.0803077 s` of planner time, Target Exits takes `21.9396096 s`,
 and the Extreme example takes `20.5615572 s` of returned planner time plus
 geographic setup. The current `exampleObstacleAvoidance` arrival is about
