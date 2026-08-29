@@ -7,9 +7,7 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Open one azimuth/elevation planning UI.
-%   - Keep Goal Mode and Free Mode data independent.
-%   - Keep drawing and latest-tested-arrival search outside the production
-%     planner.
+%   - Keep interactive drawing outside the production planner.
 %**************************************************************************
 % INPUTS
 %   - sandboxOverrides (scalar struct, optional; default struct())
@@ -29,7 +27,7 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - sandboxState (scalar struct)
-%       Initial data structure, figure handle, and independent mode records.
+%       Initial data structure, figure handle, and Goal Mode record.
 %       ReadState and ExportBundle function handles. Call ReadState() after
 %       interaction to inspect the current guidata-backed state. Call
 %       ExportBundle(filePath, modeName) to save without a file dialog.
@@ -49,9 +47,9 @@ if nargin < 1 || isempty(sandboxOverrides)
 end
 options = resolveSandboxOptions(sandboxOverrides);
 
-%% Section 2: Create Figure And Tabs
+%% Section 2: Create The Goal-Mode Figure
 
-% Create one shared figure and two independent tabs. The figure stores the
+% Create one Goal Mode tab. The figure stores the
 % current application data in guidata. Callbacks always read the latest guidata
 % value instead of keeping stale copies in nested functions.
 
@@ -69,30 +67,22 @@ tabGroupHandle = uitabgroup(figureHandle, ...
     "Position", [0 0 1 1], ...
     "SelectionChangedFcn", @handleTabSelection);
 goalTabHandle = uitab(tabGroupHandle, "Title", "Goal Mode", "Tag", "goal");
-freeTabHandle = uitab(tabGroupHandle, "Title", "Free Mode", "Tag", "free");
 goalHandles = createModeTab(goalTabHandle, "goal", options);
-freeHandles = createModeTab(freeTabHandle, "free", options);
 
 %% Section 3: Initialize Goal Mode
 
 % Goal Mode plans one motion from a start point to one goal point. It keeps its
 % own controls, obstacles, result, validation, status, and log.
 
-applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles);
+applicationState = initializeApplicationState( ...
+    figureHandle, options, goalHandles);
 guidata(figureHandle, applicationState);
 
-%% Section 4: Initialize Free Mode
-
-% Free Mode plans an ordered chain of requested endpoints. Each successful
-% segment starts where the previous segment ended. A failed segment stops the
-% chain and keeps earlier validated segments.
-
 applyDefaultControls(goalHandles.Controls, "goal", options);
-applyDefaultControls(freeHandles.Controls, "free", options);
 refreshApplication(figureHandle);
 beginGuidedScene(figureHandle, "goal");
 
-%% Section 5: Return Initial Sandbox State
+%% Section 4: Return Initial Sandbox State
 
 % Return a plain snapshot plus functions that read current state and export a
 % diagnosis file. The initial snapshot does not update after UI interaction.
@@ -483,8 +473,9 @@ for actionIndex = 1:numel(actionNames)
 end
 end
 
-function applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles)
-% Create stable independent tab records and application interaction state.
+function applicationState = initializeApplicationState( ...
+        figureHandle, options, goalHandles)
+% Create the stable Goal Mode record and application interaction state.
 applicationState = struct( ...
     "FigureHandle", figureHandle, ...
     "Options", options, ...
@@ -492,8 +483,7 @@ applicationState = struct( ...
     "InteractionState", "idle", ...
     "ActiveStroke_deg", zeros(0, 2), ...
     "ActiveTraceHandle", gobjects(0), ...
-    "GoalMode", emptyModeState("goal", goalHandles), ...
-    "FreeMode", emptyModeState("free", freeHandles));
+    "GoalMode", emptyModeState("goal", goalHandles));
 end
 
 function modeState = emptyModeState(modeName, graphicsHandles)
@@ -1916,15 +1906,13 @@ end
 % --- Rendering, Status, Reset, And State Access -------------------------
 
 function refreshApplication(figureHandle)
-% Redraw both tabs. Update status text and enabled controls from current state.
+% Redraw Goal Mode and update status text and enabled controls.
 if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
 applicationState = guidata(figureHandle);
 redrawMode(applicationState, "goal");
-redrawMode(applicationState, "free");
 updateModeStatusDisplay(applicationState.GoalMode);
-updateModeStatusDisplay(applicationState.FreeMode);
 updateControlEnablement(applicationState);
 end
 
@@ -2140,11 +2128,7 @@ function updateControlEnablement(applicationState)
 % Disable actions that are not valid for current state. Disable all geometry
 % edits during a synchronous planner call.
 isPlanning = applicationState.InteractionState == "planning";
-modeNames = ["goal" "free"];
-
-% Update both tabs together. A plan in one tab blocks competing edits in both.
-for modeName = modeNames
-    modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
     actionNames = string(fieldnames(modeState.GraphicsHandles.Actions));
 
     % Start from the common planning lock before applying mode-specific availability.
@@ -2157,33 +2141,21 @@ for modeName = modeNames
     set(modeState.GraphicsHandles.Controls.MotionProfileHandle, ...
         "Enable", onOff(~isPlanning));
     if isPlanning
-        continue;
+        return;
     end
-    if modeName == "goal"
-        canRun = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
-        setObstacleConstructorAvailability(modeState, canRun);
-        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
-            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
-        set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
-    else
-        hasStart = ~isempty(modeState.StartPosition_deg);
-        hasSegments = hasStart && ~isempty(modeState.WaypointPositions_deg);
-        setObstacleConstructorAvailability(modeState, hasSegments);
-        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
-            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
-        set(modeState.GraphicsHandles.Actions.AddSegment, "Enable", onOff(hasStart));
-        set(modeState.GraphicsHandles.Actions.Recalculate, "Enable", onOff(hasSegments));
-        set(modeState.GraphicsHandles.Actions.Undo, "Enable", onOff(~isempty(modeState.WaypointPositions_deg)));
-    end
+    canRun = ~isempty(modeState.StartPosition_deg) && ...
+        ~isempty(modeState.GoalPosition_deg);
+    setObstacleConstructorAvailability(modeState, canRun);
+    set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
+        onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
+    set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
     hasSceneData = ~isempty(modeState.StartPosition_deg) || ...
         ~isempty(modeState.GoalPosition_deg) || ...
-        ~isempty(modeState.WaypointPositions_deg) || ...
         ~isempty(modeState.RawObstacleStrokes_deg);
     set(modeState.GraphicsHandles.Actions.Diagnostics, "Enable", onOff(hasResult));
     set(modeState.GraphicsHandles.Actions.Export, ...
         "Enable", onOff(hasResult || hasSceneData));
-end
 end
 
 function value = onOff(condition)
@@ -2371,27 +2343,19 @@ controls = readModeControls(applicationState, modeName);
 plannerOptions = applicationState.Options.PlannerOptions;
 plannerOptions.Verbose = controls.Verbose;
 plannerInputs = struct();
-if modeName == "goal"
-    obstacleEndTime_s = controls.MissionTime_s;
-    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
-        ~isempty(modeState.GoalPosition_deg);
-    plannerOptions.GoalTimeMode = "earliestArrival";
-    if hasCompleteScene
-        [initialState, goalState, limits] = buildPlannerInputs( ...
-            modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
-            0, controls.MissionTime_s, controls);
-        plannerInputs = struct( ...
-            "obstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
-            "initialState", initialState, ...
-            "goalState", goalState, ...
-            "limits", limits);
-    end
-else
-    requestedSegmentCount = size(modeState.WaypointPositions_deg, 1);
-    obstacleEndTime_s = max(1, requestedSegmentCount) * ...
-        controls.MaximumSegmentDuration_s;
-    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
-        requestedSegmentCount > 0;
+obstacleEndTime_s = controls.MissionTime_s;
+hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
+    ~isempty(modeState.GoalPosition_deg);
+plannerOptions.GoalTimeMode = "earliestArrival";
+if hasCompleteScene
+    [initialState, goalState, limits] = buildPlannerInputs( ...
+        modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
+        0, controls.MissionTime_s, controls);
+    plannerInputs = struct( ...
+        "obstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
+        "initialState", initialState, ...
+        "goalState", goalState, ...
+        "limits", limits);
 end
 canonicalObstacles = buildCanonicalObstacles( ...
     modeState, [0; obstacleEndTime_s], controls);
@@ -2411,21 +2375,22 @@ applicationState = setModeState(applicationState, modeName, modeState);
 end
 
 function modeState = getModeState(applicationState, modeName)
-% Read one named mode without duplicating dynamic-field spelling.
-if modeName == "goal"
-    modeState = applicationState.GoalMode;
-else
-    modeState = applicationState.FreeMode;
+% Read Goal Mode and reject removed mode identifiers.
+if modeName ~= "goal"
+    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
+        "Only Goal Mode is supported.");
 end
+modeState = applicationState.GoalMode;
 end
 
-function applicationState = setModeState( applicationState, modeName, modeState)
-% Write one named mode while preserving the independent peer record.
-if modeName == "goal"
-    applicationState.GoalMode = modeState;
-else
-    applicationState.FreeMode = modeState;
+function applicationState = setModeState( ...
+        applicationState, modeName, modeState)
+% Write Goal Mode and reject removed mode identifiers.
+if modeName ~= "goal"
+    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
+        "Only Goal Mode is supported.");
 end
+applicationState.GoalMode = modeState;
 end
 
 function snapshot = publicStateSnapshot(figureHandle)

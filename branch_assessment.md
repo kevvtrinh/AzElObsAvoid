@@ -6,6 +6,57 @@ trajectory wrapper — 2026-08-27**.
 Earlier sections remain as historical evidence and may name implementations
 that are no longer present.
 
+## Direct Ruckig trial before obstacle topology — 2026-08-28
+
+Fixed-position requests now receive one exact Ruckig direct-motion trial before
+topology search. The public independent validator checks that motion against the
+actual static or time-varying obstacles; a valid direct motion is returned, and
+a collision or other validation failure continues through the ordinary
+topology/HS3 path. This removes the former axis-bottleneck collinearity
+classifier and its special fixed-time HS3 search without weakening collision,
+endpoint, workspace, velocity, acceleration, or jerk gates.
+
+The diagonal static-obstacle case retained its validated Euclidean-shortest
+motion and sub-39.526-second arrival while its test runtime changed from 5.7523
+to 1.2929 seconds. The structurally different axis-aligned case retained its
+20-degree path and sub-12.7-second arrival while changing from 1.2474 to 0.2424
+seconds. A direct-path-blocked static-obstacle case continued through HS3 and
+passed in 5.3844 seconds. Removing the HS3 monotonicity restriction changed the
+validated moving-barrier path from exactly 10 degrees to 10.09282573 degrees
+(0.93% longer); this bounded quality cost was explicitly accepted. These
+focused cases establish neither global runtime improvement nor optimality
+outside validated direct motions.
+
+The follow-up cleanup removed the now-unreachable monotonicity inequality,
+Jacobian builder, layout field, and dedicated unit test. General collision,
+corridor, visibility, homology, clearance, and obstacle-shape geometry remains
+unchanged. Code Analyzer reported zero findings in the four affected MATLAB
+files, and the remaining nine polynomial/constraint parity tests passed.
+
+## Goal-only sandbox and loaded-engine compatibility — 2026-08-28
+
+The interactive sandbox now exposes only Goal Mode; Free Mode is absent from
+the tab group, public state, control refresh, and diagnosis-export contract.
+The HS3 planner adapter also preserves the legacy uniform-mesh signatures for
+polynomial reconstruction, affine sensitivity, subinterval Bernstein maps,
+and integrated squared jerk. It reconstructs the derivable uniform
+`SegmentBreakTau` when a loaded older engine result does not publish that
+field. Current nonuniform meshes still use the newer optional mesh arguments
+and returned break vector. The squared-jerk adapter also preserves requested
+output arity so a variable-time value evaluation does not request the
+fixed-time-only constant Hessian.
+
+Code Analyzer reported zero findings in the changed sandbox, export, planner
+adapter, and sandbox test files. The sandbox diagnosis suite passed 8/8 and
+the nonuniform-mesh suite passed 6/6. The maintained headless
+`exampleObstacleAvoidance` remained independently valid at
+7.5795206425 seconds, with 11.152119519-degree selected polyline and
+11.4463590552-degree motion. Repeated attempts to automate the complete UI
+Run callback were interrupted before MATLAB code execution by the host's
+intermittent filesystem-startup fault; the direct maintained planner path and
+the sandbox construction/export path are verified, but that automated callback
+remains unexecuted in a clean process.
+
 ## HS3 optimizer complexity split — 2026-08-28
 
 The shared HS3 optimizer now delegates its numerical-problem contract to one

@@ -45,7 +45,7 @@ function [inequalityMatrix, equalityMatrix] = ...
 %   - collinearityDirection (1-by-2 numeric row, optional)
 %       Replaces redundant normal endpoint rows with normal-jerk equations.
 %   - constraintLayout (scalar struct, optional; default empty)
-%       Precomputed corridor maps, row offsets, and direct-progress direction.
+%       Precomputed corridor maps and row offsets.
 %   - segmentBreakTau ((N+1)-element vector, optional)
 %       Strictly increasing normalized boundaries; omission selects uniform.
 %**************************************************************************
@@ -67,10 +67,6 @@ function [inequalityMatrix, equalityMatrix] = ...
 % This row order is essential because fmincon pairs values and derivatives
 % by row number rather than by physical meaning.
 
-monotonicityDirection = zeros(0, 2);
-if nargin >= 9 && isfield(constraintLayout, "MonotonicityDirection")
-    monotonicityDirection = constraintLayout.MonotonicityDirection;
-end
 hasPreparedLayout = nargin >= 9 && ...
     isfield(constraintLayout, "CorridorRowOffset");
 if hasPreparedLayout
@@ -79,8 +75,7 @@ if hasPreparedLayout
     sensitivityTau = zeros(0, 1);
 else
     sensitivityTau = corridorTau;
-    constraintLayout = struct( ...
-        "MonotonicityDirection", monotonicityDirection);
+    constraintLayout = struct();
 end
 if nargin < 10 || isempty(segmentBreakTau)
     if isfield(constraintLayout, "SegmentBreakTau")
@@ -89,12 +84,16 @@ if nargin < 10 || isempty(segmentBreakTau)
         segmentBreakTau = [];
     end
 end
-sensitivity = hs3Engine.polynomial.createAffineSensitivityModel( ...
-    segmentCount, duration_s, sensitivityTau, segmentBreakTau);
+uniformBreakTau = (0:segmentCount).' / segmentCount;
+if isempty(segmentBreakTau) || isequal(segmentBreakTau, uniformBreakTau)
+    sensitivity = hs3Engine.polynomial.createAffineSensitivityModel( ...
+        segmentCount, duration_s, sensitivityTau);
+else
+    sensitivity = hs3Engine.polynomial.createAffineSensitivityModel( ...
+        segmentCount, duration_s, sensitivityTau, segmentBreakTau);
+end
 continuousMatrix = continuousBoundConstraintMatrix( ...
     sensitivity, allowAzimuthWrapping);
-monotonicityMatrix = monotonicityConstraintMatrix( ...
-    sensitivity, constraintLayout);
 seedMatrix = seedCorridorConstraintMatrix(sensitivity, seedCorridor);
 if nargin >= 7 && ~isempty(corridorNormal)
     % Moving-obstacle normals depend on the current trial motion, so use the
@@ -107,7 +106,7 @@ else
         sensitivity, corridor, constraintLayout);
 end
 inequalityMatrix = [ ...
-    continuousMatrix; monotonicityMatrix; seedMatrix; corridorMatrix];
+    continuousMatrix; seedMatrix; corridorMatrix];
 controlCount = sensitivity.ControlCount;
 terminalMap = sensitivity.terminalStateMap;
 equalityMatrix = zeros(6, 2 * controlCount);
@@ -159,11 +158,20 @@ else
     useIntervalHull = [corridor.UseIntervalHull].';
     effectiveTauEnd = [corridor.TauEnd];
     effectiveTauEnd(~useIntervalHull.') = [corridor(~useIntervalHull).Tau];
-    [segmentIndex, hullMap] = ...
-        hs3Engine.polynomial.createSubintervalBernsteinMap( ...
-        [corridor.Tau], effectiveTauEnd, ...
-        size(sensitivity.positionPowerMap, 1), coefficientCount, ...
-        sensitivity.SegmentBreakTau);
+    segmentCount = size(sensitivity.positionPowerMap, 1);
+    uniformBreakTau = (0:segmentCount).' / segmentCount;
+    if ~isfield(sensitivity, "SegmentBreakTau") || ...
+            isequal(sensitivity.SegmentBreakTau, uniformBreakTau)
+        [segmentIndex, hullMap] = ...
+            hs3Engine.polynomial.createSubintervalBernsteinMap( ...
+            [corridor.Tau], effectiveTauEnd, segmentCount, ...
+            coefficientCount);
+    else
+        [segmentIndex, hullMap] = ...
+            hs3Engine.polynomial.createSubintervalBernsteinMap( ...
+            [corridor.Tau], effectiveTauEnd, segmentCount, ...
+            coefficientCount, sensitivity.SegmentBreakTau);
+    end
     rowOffset = [0; cumsum(1 + ...
         (coefficientCount - 1) * useIntervalHull)];
 end
@@ -232,30 +240,6 @@ bernsteinMatrix = hs3Engine.polynomial.convertPowerToBernstein(powerMatrix);
 bernsteinMap = reshape(bernsteinMatrix, ...
     coefficientCount, segmentCount, controlCount);
 gradient = cat(1, bernsteinMap, -bernsteinMap);
-end
-
-function matrix = monotonicityConstraintMatrix(sensitivity, constraintLayout)
-% Differentiate continuous nonnegative progress along a certified direct line.
-controlCount = sensitivity.ControlCount;
-if ~isfield(constraintLayout, "MonotonicityDirection") || ...
-        isempty(constraintLayout.MonotonicityDirection)
-    matrix = zeros(0, 2 * controlCount);
-    return;
-end
-powerMap = sensitivity.velocityPowerMap;
-coefficientCount = size(powerMap, 2);
-segmentCount = size(powerMap, 1);
-powerMatrix = reshape(permute(powerMap, [2 1 3]), ...
-    coefficientCount, []);
-bernsteinMap = reshape( ...
-    hs3Engine.polynomial.convertPowerToBernstein(powerMatrix), ...
-    coefficientCount, segmentCount, controlCount);
-tangent = constraintLayout.MonotonicityDirection(:).';
-matrix = zeros(coefficientCount * segmentCount, 2 * controlCount);
-matrix(:, 1:controlCount) = ...
-    -tangent(1) * reshape(bernsteinMap, [], controlCount);
-matrix(:, controlCount + 1:end) = ...
-    -tangent(2) * reshape(bernsteinMap, [], controlCount);
 end
 
 function matrix = seedCorridorConstraintMatrix(sensitivity, corridor)

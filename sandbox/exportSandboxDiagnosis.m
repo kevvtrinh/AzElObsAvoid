@@ -18,7 +18,7 @@ function exportInfo = exportSandboxDiagnosis( ...
 %   - sandboxState (scalar struct)
 %       Current value returned by sandboxState.ReadState().
 %   - modeName (scalar text)
-%       "goal" or "free" selects the independent tab record to export.
+%       Only "goal" is supported.
 %**************************************************************************
 % OUTPUTS
 %   - exportInfo (scalar struct)
@@ -43,18 +43,18 @@ if ~isscalar(filePath) || ismissing(filePath) || strlength(filePath) == 0
         "filePath must be nonempty scalar text.");
 end
 modeName = lower(string(modeName));
-if ~isscalar(modeName) || ~any(modeName == ["goal" "free"])
+if ~isscalar(modeName) || modeName ~= "goal"
     error("exportSandboxDiagnosis:InvalidMode", ...
-        "modeName must be 'goal' or 'free'.");
+        "modeName must be 'goal'.");
 end
 if ~isstruct(sandboxState) || ~isscalar(sandboxState)
     error("exportSandboxDiagnosis:InvalidState", ...
         "sandboxState must be the scalar struct returned by ReadState().");
 end
-requiredStateFields = {'Options', 'GoalMode', 'FreeMode'};
+requiredStateFields = {'Options', 'GoalMode'};
 if ~all(isfield(sandboxState, requiredStateFields))
     error("exportSandboxDiagnosis:InvalidState", ...
-        "sandboxState must contain Options, GoalMode, and FreeMode.");
+        "sandboxState must contain Options and GoalMode.");
 end
 
 [destinationFolder, destinationName, destinationExtension] = ...
@@ -77,15 +77,8 @@ absoluteFilePath = string(fullfile( ...
 
 %% Section 2: Build A Handle-Free Diagnosis Bundle
 
-% Select one tab. Goal Mode and Free Mode keep independent scene and planner
-% data. Exporting only the selected mode prevents unrelated work in the other
-% tab from hiding the failure under investigation.
-
-if modeName == "goal"
-    modeState = sandboxState.GoalMode;
-else
-    modeState = sandboxState.FreeMode;
-end
+% Goal Mode is the sandbox's only supported workflow.
+modeState = sandboxState.GoalMode;
 requiredModeFields = { ...
     'StartPosition_deg', 'GoalPosition_deg', ...
     'WaypointPositions_deg', 'RawObstacleStrokes_deg', ...
