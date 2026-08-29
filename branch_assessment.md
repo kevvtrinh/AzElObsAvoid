@@ -2980,3 +2980,46 @@ moving/deforming case remained exactly 21.2540287320, 21.7254621235, and
 obstacle-free run created four figures, and the no-path diagnostic run created
 two figures with three expanded states. No runtime improvement is claimed from
 this structural cleanup because fresh-process wall time remains noisy.
+## Repository-wide necessity audit and first reconsolidation — 2026-08-28
+
+Every one of the 123 maintained MATLAB sources was read and classified against
+the current Ruckig-direct/HS3-corridor architecture before this cleanup. The
+largest verified removal was not numerical code: Goal Mode was already the
+only reachable sandbox workflow, but 300+ lines of Free Mode segment search,
+latest-arrival probing, composition state, export fields, and callback branches
+remained in the same file. Those unreachable paths and their obsolete options
+are now removed. The public `CollectAllSeedCandidates` diagnostic mode and its
+completed-candidate trajectory payload are also removed; normal seed ranking,
+pruning, plotting on explicit request, and planner diagnostics remain.
+
+One caller-free historical benchmark, `probeHs3SharedReferenceTimes.m`, was
+deleted. It answered a completed feasibility investigation and supplied no
+fixture or regression gate. The much larger legacy analytical comparison
+script is retained for now because two active benchmarks still use its 21-case
+corpus. Extracting that corpus into a neutral fixture is the next safe seam;
+deleting the script first would remove active benchmark coverage.
+
+The audit rejected deletion of the pass-through/hybrid and nonuniform-HS3
+files. Although optional and materially large, they own measured benchmark
+wins. The post-cleanup Single-U pass-through result exactly reproduced
+21.2540287320 seconds and 40.5204361036 degrees; its fresh wall time was
+15.542280 seconds. Ordinary Single-U remained 22.6308871020 seconds and
+41.5367249083 degrees. Two-U remained 21.9090835611 seconds and dense concave
+remained 8.6460314877 seconds, all independently valid. Removing the hybrid
+would therefore worsen declared scoring rather than merely delete dead code.
+
+All 17 maintained examples ran serially in fresh MATLAB processes: 16 returned
+independently validated successes and `exampleNoPath` returned the expected
+`noValidatedSeed` failure. The full-resolution moving/deforming outline
+reproduced 7.96286792066 seconds and 43.0722665096 degrees. A visible
+obstacle-free run created three figures, and the expected failure created two
+diagnostic figures. The complete test tree passes 163/163 in 57.965065 test
+seconds, and Code Analyzer reports zero findings in every changed MATLAB file.
+
+The frozen three-repeat extraction comparator was started but deliberately
+interrupted during its first large scaling run after the 10-turn case consumed
+137.6659266 seconds and the later case emitted tens of thousands of existing
+near-singular solver warnings. No failed comparison result is being hidden:
+the harness did not finish. Focused benchmark records and the complete example
+matrix above provide the retained quality evidence; the noisy large-scale
+factorization remains the principal runtime weakness.

@@ -62,11 +62,6 @@ if ~isempty(unknownNames)
     warning("plotTrajectory:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
-if isfield(result.Options, "CollectAllSeedCandidates") && ...
-        result.Options.CollectAllSeedCandidates && ...
-        ~isfield(optionOverrides, "ShowSeedPaths")
-    options.ShowSeedPaths = true;
-end
 options.FigureVisible = lower(string(options.FigureVisible));
 options.Title = string(options.Title);
 options.AnimationGifFile = string(options.AnimationGifFile);
@@ -525,7 +520,7 @@ axis(axesHandle, "equal");
 end
 
 function [position_deg, label, time_s] = displayedSeedPath(result, seedIndex)
-% Prefer a retained completed candidate; otherwise show its geometric seed.
+% Show one geometric seed with its retained solve summary.
 seed = result.Seeds(seedIndex);
 position_deg = seed.position_deg;
 time_s = result.Inputs.initialState.time_s + ...
@@ -536,19 +531,6 @@ label = sprintf( ...
     "motion %.3f deg | valid %d", ...
     seedIndex, seed.Source, seed.Length_deg, summary.ArrivalTime_s, ...
     summary.MotionLength_deg, summary.ValidationPassed);
-if ~isfield(result, "CandidatePaths") || isempty(result.CandidatePaths)
-    return;
-end
-candidateIndex = find( ...
-    [result.CandidatePaths.SeedIndex] == seedIndex, 1, "first");
-if isempty(candidateIndex)
-    return;
-end
-candidatePath = result.CandidatePaths(candidateIndex);
-if ~isempty(candidatePath.position_deg)
-    position_deg = candidatePath.position_deg;
-    time_s = candidatePath.time_s;
-end
 end
 
 function drawSearchEdges(axesHandle, gridRecord)

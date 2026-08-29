@@ -38,7 +38,7 @@ verifyEqual(testCase, options.MaximumSeedCount, 5);
 verifyEqual(testCase, options.SeedClusterDistance_deg, 0);
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
 verifyEqual(testCase, options.WaypointWarmStartMode, "none");
-verifyFalse(testCase, options.CollectAllSeedCandidates);
+verifyFalse(testCase, isfield(options, "CollectAllSeedCandidates"));
 plotOptions = obstacleAvoidance.plotting.plotTrajectory();
 verifyFalse(testCase, plotOptions.ShowSeedPaths);
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));

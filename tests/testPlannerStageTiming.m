@@ -62,8 +62,8 @@ verifyEqual(testCase, ...
     failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
 end
 
-function testHs3SolverWorkReconcilesTiming(testCase)
-% Keep actual HS3 solver and validation work visible in exclusive stages.
+function testMotionSolverWorkReconcilesTiming(testCase)
+% Keep selected-engine solver and validation work visible in exclusive stages.
 initialState = state(0, [0 0]);
 goalState = state(3, [1 0]);
 limits = physicalLimits();
@@ -77,8 +77,11 @@ result = obstacleAvoidance.planTrajectory( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
-verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
-verifyGreaterThan(testCase, result.SearchDiagnostics.Hs3ElapsedTime_s, 0);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyTrue(testCase, summary.RuckigAttempted || summary.Hs3Attempted);
+engineElapsedTime_s = result.SearchDiagnostics.RuckigElapsedTime_s + ...
+    result.SearchDiagnostics.Hs3ElapsedTime_s;
+verifyGreaterThan(testCase, engineElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
 verifyStageTiming(testCase, result);
