@@ -79,25 +79,30 @@ end
 function inequality = affinePathConstraints(polynomial, pathConstraints)
 % Restrict each requested interval and certify its projected Bernstein hull.
 coefficientCount = size(polynomial.positionPower, 3);
-[segmentIndex, hullMap] = createSubintervalBernsteinMap( ...
-    pathConstraints.Tau, pathConstraints.TauEnd, ...
-    polynomial.SegmentCount, coefficientCount);
-isInterval = pathConstraints.TauEnd > pathConstraints.Tau;
-rowCounts = 1 + (coefficientCount - 1) * isInterval;
-inequality = zeros(sum(rowCounts), 1);
-nextRow = 1;
+segmentCount = polynomial.SegmentCount;
+inequality = zeros(0, 1);
 for constraintIndex = 1:numel(pathConstraints.Tau)
-    rowCount = rowCounts(constraintIndex);
-    rows = nextRow:nextRow + rowCount - 1;
-    nextRow = rows(end) + 1;
-    segmentPower = reshape(polynomial.positionPower( ...
-        segmentIndex(constraintIndex), :, :), [], coefficientCount);
-    projectedPower = ...
-        pathConstraints.Normal(constraintIndex, :) * segmentPower;
-    projectionHull = ...
-        hullMap(:, :, constraintIndex) * projectedPower.';
-    inequality(rows) = pathConstraints.LowerBound(constraintIndex) - ...
-        projectionHull(1:rowCount);
+    scaledStart = segmentCount * pathConstraints.Tau(constraintIndex);
+    scaledEnd = segmentCount * pathConstraints.TauEnd(constraintIndex);
+    firstSegmentIndex = min(segmentCount, floor(scaledStart) + 1);
+    lastSegmentIndex = firstSegmentIndex;
+    if scaledEnd > scaledStart
+        lastSegmentIndex = min(segmentCount, ceil(scaledEnd));
+    end
+    for segmentIndex = firstSegmentIndex:lastSegmentIndex
+        localStart = min(1, max(0, scaledStart - segmentIndex + 1));
+        localEnd = min(1, max(0, scaledEnd - segmentIndex + 1));
+        hullMap = createSubintervalBernsteinMap( ...
+            localStart, localEnd, coefficientCount);
+        segmentPower = reshape(polynomial.positionPower( ...
+            segmentIndex, :, :), [], coefficientCount);
+        projectedPower = ...
+            pathConstraints.Normal(constraintIndex, :) * segmentPower;
+        projectionHull = hullMap * projectedPower.';
+        rowCount = 1 + (coefficientCount - 1) * (scaledEnd > scaledStart);
+        inequality = [inequality; pathConstraints.LowerBound( ...
+            constraintIndex) - projectionHull(1:rowCount)]; %#ok<AGROW>
+    end
 end
 end
 
@@ -133,13 +138,9 @@ conversionMatrixByDegree{degree + 1} = conversionMatrix;
 coefficient = conversionMatrix * powerCoefficient;
 end
 
-function [segmentIndex, hullMap] = createSubintervalBernsteinMap( ...
-        tauStart, tauEnd, segmentCount, coefficientCount)
+function hullMap = createSubintervalBernsteinMap( ...
+        localStart, localEnd, coefficientCount)
 % Combine interval restriction with power-to-Bernstein basis conversion.
-scaledStart = segmentCount * tauStart;
-segmentIndex = min(segmentCount, floor(scaledStart) + 1);
-localStart = min(1, max(0, scaledStart - segmentIndex + 1));
-localEnd = min(1, max(0, segmentCount * tauEnd - segmentIndex + 1));
 localSpan = max(0, localEnd - localStart);
 degree = coefficientCount - 1;
 sourceExponent = 0:degree;
@@ -153,10 +154,7 @@ for targetIndex = 0:degree
     end
 end
 restriction = binomialWeight .* ...
-    reshape(localStart, 1, 1, []) .^ max(shiftExponent, 0) .* ...
-    reshape(localSpan, 1, 1, []) .^ targetExponent;
-conversion = convertPowerToBernstein(eye(coefficientCount));
-hullMap = reshape( ...
-    conversion * reshape(restriction, coefficientCount, []), ...
-    coefficientCount, coefficientCount, numel(tauStart));
+    localStart .^ max(shiftExponent, 0) .* ...
+    localSpan .^ targetExponent;
+hullMap = convertPowerToBernstein(eye(coefficientCount)) * restriction;
 end

@@ -1,4 +1,4 @@
-function certificate = certifyTimedOpeningRequestLowerBound( ...
+function [certificate, preparedObstacles] = certifyTimedOpeningRequestLowerBound( ...
         openingDiagnostics, obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -30,6 +30,8 @@ function certificate = certifyTimedOpeningRequestLowerBound( ...
 %       Stable success-or-rejection record. LowerBound_s is a duration, not
 %       an absolute time. Invalid record structure throws; an unsupported or
 %       geometrically ambiguous request returns Passed = false.
+%   - preparedObstacles (canonical prepared obstacle struct array)
+%       Reusable obstacle data after authoritative source preparation.
 %**************************************************************************
 % UNITS
 %   - Position and clearance are degrees. Time is seconds. Derivatives use
@@ -39,6 +41,7 @@ function certificate = certifyTimedOpeningRequestLowerBound( ...
 %% Section 1: Validate The Fixed Rest Request
 
 certificate = certificateTemplate();
+preparedObstacles = [];
 if nargin == 0
     return;
 end
@@ -81,10 +84,10 @@ requireProof(all(isfinite(derivatives)) && all(derivatives == 0), ...
 
 %% Section 2: Recover The Exact Source-Time Event
 
-obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
-requireProof(isscalar(obstacles), "unsupportedObstacleCount");
-obstacle = obstacles(1);
+preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic( ...
+    obstacleAvoidance.obstacles.combineObstacles(obstacles));
+requireProof(isscalar(preparedObstacles), "unsupportedObstacleCount");
+obstacle = preparedObstacles(1);
 time_s = double(obstacle.time_s(:));
 preparation = obstacle.InternalPreparation;
 mismatchIndex = find(~preparation.MatchingTopology);

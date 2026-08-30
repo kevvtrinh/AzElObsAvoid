@@ -50,7 +50,7 @@ if nargin ~= 5
 end
 timer = tic;
 try
-requestCertificate = ...
+    [requestCertificate, obstacles] = ...
     obstacleAvoidance.planner.certifyTimedOpeningRequestLowerBound( ...
     diagnostics, obstacles, initialState, goalState, limits, options);
 if ~requestCertificate.Passed
@@ -61,8 +61,6 @@ motionAxis = find(abs(delta_deg) > 32 * requestCertificate.CoordinateGuard_deg);
 motionAxis = motionAxis(1);
 motionSign = sign(delta_deg(motionAxis));
 totalProgress_deg = abs(delta_deg(motionAxis));
-obstacles = obstacleAvoidance.obstacles.prepareDynamic( ...
-    obstacleAvoidance.obstacles.combineObstacles(obstacles));
 
 %% Section 2: Detect The Persistent Opening Event
 

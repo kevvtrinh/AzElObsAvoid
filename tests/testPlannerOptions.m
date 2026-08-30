@@ -45,6 +45,12 @@ if isfile(fullfile(repositoryRoot, "+obstacleAvoidance", ...
     expectedWarmStartMode = "passThrough";
 end
 verifyEqual(testCase, options.WaypointWarmStartMode, expectedWarmStartMode);
+verifyEqual(testCase, options.RequestedWaypointWarmStartMode, "passThrough");
+verifyEqual(testCase, options.IsWaypointWarmStartAvailable, ...
+    expectedWarmStartMode == "passThrough");
+replayedOptions = obstacleAvoidance.input.resolvePlannerOptions(options);
+verifyEqual(testCase, ...
+    replayedOptions.RequestedWaypointWarmStartMode, "passThrough");
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);

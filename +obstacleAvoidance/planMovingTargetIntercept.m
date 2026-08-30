@@ -89,6 +89,8 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planMovingTargetIntercept:InvalidPlannerOptions", ...
         "PlannerOptions must be a scalar struct.");
 end
+initialState = obstacleAvoidance.input.normalizePlannerState( ...
+    initialState, "initialState");
 
 %% Section 2: Normalize The Sampled Target
 

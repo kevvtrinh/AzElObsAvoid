@@ -37,8 +37,8 @@ function [obstacles, initialState, goalState, limits] = ...
 %% Section 1: Normalize Obstacles And Endpoint States
 
 obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-initialState = normalizeEndpoint(initialState, "initialState");
-goalState = normalizeEndpoint(goalState, "goalState");
+initialState = obstacleAvoidance.input.normalizePlannerState(initialState, "initialState");
+goalState = obstacleAvoidance.input.normalizePlannerState(goalState, "goalState");
 
 %% Section 2: Normalize A Sampled Moving Goal
 
@@ -120,31 +120,5 @@ if options.AllowAzimuthWrapping
     turnCount = round((initialState.position_deg(1) - ...
         goalState.position_deg(1)) / 360);
     goalState.position_deg(1) = goalState.position_deg(1) + 360 * turnCount;
-end
-end
-
-%% Section 5: Local Functions
-
-function state = normalizeEndpoint(state, stateName)
-% Normalize one endpoint while preserving extra caller-supplied fields.
-if ~isstruct(state) || ~isscalar(state) || ...
-        ~all(isfield(state, {'time_s', 'position_deg'}))
-    error("planTrajectory:InvalidState", ...
-        "%s must be a scalar struct with time_s and position_deg.", stateName);
-end
-validateattributes(state.time_s, {'numeric'}, ...
-    {'real', 'finite', 'scalar'});
-validateattributes(state.position_deg, {'numeric'}, ...
-    {'real', 'finite', 'vector', 'numel', 2});
-state.time_s = double(state.time_s);
-state.position_deg = double(state.position_deg(:).');
-for fieldName = ["velocity_deg_s", "acceleration_deg_s2"]
-    if ~isfield(state, fieldName) || isempty(state.(fieldName))
-        state.(fieldName) = [0 0];
-    else
-        validateattributes(state.(fieldName), {'numeric'}, ...
-            {'real', 'finite', 'vector', 'numel', 2});
-        state.(fieldName) = double(state.(fieldName)(:).');
-    end
 end
 end

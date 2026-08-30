@@ -192,7 +192,6 @@ topologyTimer = tic;
     preparedObstacles, initialState, goalState, limits, options);
 gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
 stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
-result.Seeds = seeds;
 result.SearchDiagnostics.Grid = gridDiagnostics;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
     gridDiagnostics.ElapsedTime_s;
@@ -360,6 +359,7 @@ if openingIsValidated
         openingCandidate.Validation, openingDiagnostics, ...
         openingElapsedTime_s, summaryTemplate);
 end
+result.Seeds = seeds;
 
 %% Section 6: Select A Valid Motion Or Return Evidence
 

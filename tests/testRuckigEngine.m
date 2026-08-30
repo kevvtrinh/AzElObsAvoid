@@ -92,6 +92,21 @@ verifyEqual(testCase, violatingResult.TerminationReason, ...
     "pathConstraintViolation");
 end
 
+function testIntervalPathConstraintSpansPolynomialSegments(testCase)
+% Detect a violation after the first boundary of one requested interval.
+[initialState, terminalState, limits] = restToRestFixture();
+pathConstraints = struct( ...
+    "Tau", 0.1, "TauEnd", 0.8, ...
+    "Normal", [-1, 0], "LowerBound", -0.2);
+result = ruckigEngine.solve(initialState, terminalState, limits, ...
+    struct(), pathConstraints);
+verifyFalse(testCase, result.Success);
+verifyEqual(testCase, result.TerminationReason, ...
+    "pathConstraintViolation");
+verifyGreaterThan(testCase, ...
+    result.Validation.MaximumInequalityViolation, 0);
+end
+
 function testFixedTimeBelowMinimumIsIdentified(testCase)
 % Verify an impossible fixed duration remains an expected engine failure.
 [initialState, terminalState, limits] = restToRestFixture();
@@ -99,6 +114,30 @@ options = struct("TimeMode", "fixed", "FinalTime", 1);
 result = ruckigEngine.solve(initialState, terminalState, limits, options);
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, "fixedTimeBelowMinimum");
+end
+
+function testEarliestArrivalAcceptsExactAndInsideHorizon(testCase)
+% Accept profiles at the horizon and within one arrival tolerance before it.
+[initialState, terminalState, limits] = restToRestFixture();
+minimumDuration = 4 * nthroot(1 / 2, 3);
+arrivalTolerance = 1e-6;
+options = struct("ArrivalTimeTolerance", arrivalTolerance);
+terminalState.maximumTime = minimumDuration;
+exactResult = ruckigEngine.solve( ...
+    initialState, terminalState, limits, options);
+terminalState.maximumTime = minimumDuration + arrivalTolerance / 2;
+insideResult = ruckigEngine.solve( ...
+    initialState, terminalState, limits, options);
+verifyTrue(testCase, exactResult.Success, exactResult.Message);
+verifyTrue(testCase, insideResult.Success, insideResult.Message);
+end
+
+function testWrapperRejectsUnsupportedArities(testCase)
+% Return the public InvalidCall error before referencing missing arguments.
+verifyError(testCase, @() planTrajRuckig(struct()), ...
+    "planTrajRuckig:InvalidCall");
+verifyError(testCase, @() planTrajRuckig(struct(), struct()), ...
+    "planTrajRuckig:InvalidCall");
 end
 
 function testColumnStatesAndScalarLimitsNormalizeIdentically(testCase)

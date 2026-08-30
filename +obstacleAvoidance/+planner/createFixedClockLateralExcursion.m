@@ -7,9 +7,6 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %       obstacleAvoidance.planner.createFixedClockLateralExcursion()
 %   [candidate, diagnostics] = ...
 %       obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
-%       directCandidate, obstacles, initialState, goalState, limits, options)
-%   [candidate, diagnostics] = ...
-%       obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
 %       directCandidate, obstacles, initialState, goalState, limits, options, ...
 %       directValidation)
 %**************************************************************************
@@ -33,9 +30,9 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %       Per-axis physical limits and azimuth/elevation workspace intervals.
 %   - options (resolved scalar planner-options struct)
 %       Supplies sampling, collision, constraint, and goal-time policies.
-%   - directValidation (scalar validation record, optional)
-%       The caller's authoritative validation of directCandidate. When supplied,
-%       it avoids repeating the identical full-trajectory validation.
+%   - directValidation (scalar validation record)
+%       The caller's authoritative validation of directCandidate avoids
+%       repeating the identical full-trajectory validation.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar planner candidate struct)
@@ -57,9 +54,9 @@ if nargin == 0
     diagnostics = createDiagnostics();
     return;
 end
-if nargin ~= 6 && nargin ~= 7
+if nargin ~= 7
     error("createFixedClockLateralExcursion:InvalidCall", ...
-        "Use six inputs or additionally supply directValidation.");
+        "Use zero inputs or all seven documented inputs.");
 end
 timer = tic;
 candidate = directCandidate;
@@ -99,30 +96,12 @@ if ~diagnostics.ClockMatched
         "The direct duration does not equal its componentwise physical lower bound.", timer);
     return;
 end
-if nargin == 7
-    if ~isstruct(directValidation) || ~isscalar(directValidation) || ...
-            ~isfield(directValidation, "Passed")
-        error("createFixedClockLateralExcursion:InvalidDirectValidation", ...
-            "directValidation must be the scalar public validation record.");
-    end
-else
-    validationTimer = tic;
-    directValidation = obstacleAvoidance.validateTrajectory( ...
-        directCandidate, obstacles, initialState, goalState, limits, options);
-    diagnostics = addValidationTiming(diagnostics, directValidation, ...
-        toc(validationTimer));
+if ~isstruct(directValidation) || ~isscalar(directValidation) || ...
+        ~isfield(directValidation, "Passed")
+    error("createFixedClockLateralExcursion:InvalidDirectValidation", ...
+        "directValidation must be the scalar public validation record.");
 end
 diagnostics.DirectValidation = directValidation;
-if nargin == 6 && directValidation.Passed
-    candidate.Validation = directValidation;
-    diagnostics.Success = true;
-    diagnostics.SelectedMode = "direct";
-    diagnostics.Message = "The zero-amplitude direct motion already passes validation.";
-    diagnostics.TerminationReason = "directAlreadyValid";
-    diagnostics.SelectedValidation = directValidation;
-    diagnostics.ElapsedTime_s = toc(timer);
-    return;
-end
 if ~directMotionIsPhysical(directValidation)
     diagnostics = finishFailure(diagnostics, "directMotionInvalid", ...
         "The direct motion failed a non-collision invariant.", timer);
