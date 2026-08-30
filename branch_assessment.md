@@ -6,6 +6,28 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Ruckig-to-BMTP warm-start experiment, step 1 — 2026-08-30
+
+The standalone equal-duration converter is implemented but remains unreachable
+from the planner. It fits each requested Bernstein span at Chebyshev-Lobatto
+times and reports independently sampled position error; it does not claim that
+the converted curve is collision-free or suitable for BMTP yet.
+
+On one exact six-phase Ruckig rest-to-rest profile, degree 7 with 64 uniform
+spans reproduced spans containing no interior jerk switch to
+`4.96506830649455e-15 deg`; the maximum over all 64 spans was
+`4.97014121608466e-9 deg`. With two uniform spans, each containing two
+interior switches, the measured maximum was `0.000534264339868523 deg` at
+degree 7 and `3.52475369970282e-5 deg` at degree 16. These are sampled errors
+for one fixture, not general bounds.
+
+The final step-1 edit passed the fast sentinel gate, the two converter tests,
+and all nine architecture-boundary tests; Code Analyzer reported no findings
+in the three changed MATLAB files. The production audit moved from the exact
+branch baseline of 11,524 to 11,652 nonblank, noncomment lines: the unwired
+converter adds 128 counted lines. Retention therefore remains conditional on
+the later collision-survival and first-feasibility iteration gates.
+
 ## Static earliest-arrival horizon monotonicity — 2026-08-30
 
 The frozen `180bad360good` request disproved the suspected seed-admission

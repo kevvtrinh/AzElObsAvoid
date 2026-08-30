@@ -4,6 +4,34 @@ Current worktree evidence is summarized in
 [Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
 Earlier sections are retained as historical checkpoints.
 
+## Ruckig-to-BMTP warm-start conversion, step 1 — 2026-08-30
+
+- Source before the experiment: `novel-rep` at `e842356`.
+- The converter is standalone and has no planner caller. It uses a scalar
+  equal-span time, Chebyshev-Lobatto least-squares fits, and a denser error
+  grid augmented with source switching times.
+- The final `gate(1)` run retained Two-U at `21.6333333333333 s`, the README
+  quick start at `7.5745417663213 s`, and `exampleNoPath` as
+  `noValidatedSeed`.
+- `testBmtpWarmStartConversion` passed 2/2 and
+  `testArchitectureBoundaries` passed 9/9. MATLAB Code Analyzer reported zero
+  findings in the converter, its test, and the updated architecture test.
+- One six-phase Ruckig fixture measured a `4.96506830649455e-15 deg`
+  single-phase-span maximum at degree 7. The same degree with two uniform
+  multi-break spans measured `0.000534264339868523 deg`; degree 16 measured
+  `3.52475369970282e-5 deg`. No unmeasured error bound is asserted.
+- `auditProductionSize(20000)` reported 74 files and 11,652 counted lines.
+  Removing the new converter's 128 counted lines reproduces the exact 11,524
+  branch baseline. Against the literal 7,500-line target, the current excess
+  is 4,152 lines and the allowance formula is
+  `0.25 * 4152 / 100 = 10.38`, or 1,038%. No runtime reduction has yet been
+  measured, so this experimental commit does not claim size compliance.
+- Two sandboxed MATLAB startups failed before loading code with the documented
+  filesystem-inconsistency error despite isolated preferences. Fresh isolated
+  preference directories outside the sandbox completed every result above.
+- `benchmark.csv` was not changed because the converter is not planner-wired
+  and no warm-start planner benchmark was executed.
+
 ## Certified multi-axis direct progress — 2026-08-27
 
 - Source: `HS3-planner` at `e72957c+direct-progress-worktree`.
