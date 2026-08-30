@@ -4,6 +4,119 @@ Current worktree evidence is summarized in
 [Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
 Earlier sections are retained as historical checkpoints.
 
+## BMTP conic profiler baseline - 2026-08-30
+
+Source was `novel-rep` at `cf6733d` plus a temporary observational ledger in
+`trajectory/+bmtpEngine/solve.m`. The ledger timed calls and retained exit
+flags; it did not change a matrix, solver option, tolerance, stopping rule,
+candidate, or selection decision. It is excluded from the measurement commit.
+
+MATLAB R2024b Update 4 ran in one process with a fresh `MATLAB_PREFDIR`.
+Plots, animation, and kinematic figures were disabled. Each case received one
+discarded warm-up, then three recorded repetitions. Default and `1e-4 deg`
+Target Exits runs were interleaved A/B, B/A, A/B. Profiled runs were separate
+because profiler overhead is not a wall-time baseline.
+
+| Case and mode | Raw wall times (s) | Min / median (s) | BMTP solves / outer iterations / `coneprog` calls | `coneprog` min / median total (s) |
+| --- | --- | ---: | ---: | ---: |
+| Target Exits, maintained BMTP `1e-7 deg` | 19.2216859, 17.6795313, 17.6197381 | 17.6197381 / 17.6795313 | 3 / 17 / 138 on every run | 9.9852706 / 10.0226759 |
+| Target Exits, diagnostic BMTP `1e-4 deg` | 49.1185155, 48.2423766, 51.4278263 | 48.2423766 / 49.1185155 | 3 / 42 / 433 on every run | 33.4553216 / 34.7197311 |
+| Straight Target, maintained Ruckig waypoint | 5.6869915, 5.2936647, 5.4580266 | 5.2936647 / 5.4580266 | 0 / 0 / 0 on every run | 0 / 0 |
+| Straight Target, diagnostic BMTP override | 21.2219000, 20.9824146, 21.2279523 | 20.9824146 / 21.2219000 | 5 / 31 / 195 on every measured run | 14.4342698 / 14.5378415 |
+
+The maintained Straight Target example explicitly uses
+`TrajectoryMethod="ruckigWaypoint"`. Its reported 5.5--6 second runtime is not
+inside `bmtpEngine.solve`; all three measured runs and its profile contained
+zero BMTP solves and zero `coneprog` calls. The BMTP row is an explicitly
+labeled diagnostic override, not a substitute maintained result.
+
+Every recorded result passed planner and independent validation. Exact result
+metrics were stable within each mode:
+
+| Case and mode | Arrival (s) | Selected polyline (deg) | Smoothed path (deg) |
+| --- | ---: | ---: | ---: |
+| Target Exits, `1e-7 deg` | 24 | 32.5940497846889 | 22.5540060420224 |
+| Target Exits, `1e-4 deg` | 24 | 32.5940497846889 | 22.5551638893269 |
+| Straight Target, maintained Ruckig waypoint | 20.8695652173913 | 20.7720160748463 | 20.7720160748463 |
+| Straight Target, BMTP override | 20.8695652173913 | 20.7720160748463 | 13.9954554403792 |
+
+### Decisive clearance comparison
+
+The median-wall representatives prove the slow mode takes a longer bounded
+alternation path; it is not a caller restart, a horizon retry, or one unusually
+slow `coneprog` call.
+
+| Target Exits seed | Default outer / calls / conic s | `1e-4` outer / calls / conic s | First collision-free iteration | Horizon expansions | Exit flags |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1, blocked direct edge | 1 / 2 / 0.0671718 | 1 / 2 / 0.0784015 | unavailable | 0 / 0 | all `+1` |
+| 2, visibility route | 5 / 45 / 3.8770388 | 35 / 385 / 31.1791465 | 2 / 2 | 0 / 0 | all `+1` |
+| 3, visibility route | 11 / 91 / 6.0410600 | 6 / 46 / 3.4621831 | 2 / 2 | 0 / 0 | all `+1` |
+
+Seed 2 is the entire adverse mechanism. At default clearance, its feasible
+trial durations were
+`15.2541832934, 13.0243197240, 12.9792492794, 12.9785763379 s` and the fifth
+outer iteration met the existing improvement tolerance. At `1e-4 deg`, it
+remained collision-free from iteration 2 onward but its duration oscillated
+between `12.9627946391` and `12.9825425646 s` after the initial descent. The
+one-sided consecutive-improvement test never fired, so the solve reached the
+hard 35-iteration cap. That added 30 trajectory calls and 310 maximum-margin
+plane calls. There is no caller restart loop; the third `restart` output is
+ignored by the adapter.
+
+Representative seed-2 per-iteration wall times were:
+
+- default: `1.0539504, 1.0535098, 1.0472976, 0.9020167, 1.0033996 s`;
+- `1e-4`: `1.1079259, 1.0703438, 1.0944885, 1.0700774,
+  1.0324632, 1.1893641, 1.0355548, 1.1546870, 1.2635565,
+  1.1751728, 1.1279355, 1.0952053, 1.1217369, 1.2456730,
+  1.1184008, 1.1314867, 1.0896716, 1.2302039, 1.1178210,
+  1.1632448, 1.0601267, 1.1149967, 1.2208972, 1.1131718,
+  1.0875190, 1.0931486, 1.1452155, 1.1337634, 1.2251764,
+  1.1707898, 1.0737866, 1.2017295, 1.1583726, 1.0717253,
+  1.0363081 s`.
+
+All 35 slow seed-2 trajectory calls exited `+1`; their per-call times ranged
+from `0.6240110` to `0.8759522 s` with `0.7168136 s` median. Its 350 plane
+calls all exited `+1`, ranged from `0.0110804` to `0.0297394 s`, and had
+`0.01594915 s` median. The default seed-2 trajectory and plane medians were
+`0.6687750 s` and `0.01448765 s`. Individual calls were therefore only
+modestly slower; the 8.56-times call-count increase dominates the 2.78-times
+wall increase.
+
+### MATLAB profiler self time inside `trajectory/+bmtpEngine`
+
+| Target Exits function | Default self / calls (s) | `1e-4` self / calls (s) |
+| --- | ---: | ---: |
+| `solve>solveTrajectorySocp` | 2.882206656 / 17 | 7.664537344 / 42 |
+| `solve>evaluateBezier` | 0.596560112 / 402 | 1.228873507 / 1017 |
+| `createCoordinateTolerances>updateScale` | 0.506126410 / 102858 | 0.516137303 / 103668 |
+| `createCoordinateTolerances` | 0.237270705 / 25761 | 0.246332501 / 26031 |
+| `solve>controlIndexOf` | 0.147970703 / 41536 | 0.318927702 / 115466 |
+| `solve` | 0.068327601 / 3 | 0.079272500 / 3 |
+| `solve>verifyPlane` | 0.053696001 / 301 | 0.107748601 / 571 |
+| `solve>findSampledCollisionPairs` | 0.042231701 / 20 | 0.060788000 / 45 |
+| `solve>fixedPlaneRows` | 0.038245901 / 120 | 0.090562401 / 380 |
+| `solve>solveMaximumMarginPlane` | 0.028016301 / 121 | 0.071504100 / 391 |
+
+The default profile made 138 conic calls totaling `11.6722840 s`; the `1e-4`
+profile made 433 totaling `32.7149386 s`. `solveTrajectorySocp` self time is
+the largest engine-owned cost outside `coneprog` and scales with rebuilding
+the same endpoint, continuity, derivative, bound, and cone structures on each
+outer iteration. This supports one bounded behavior-preserving experiment:
+reuse only that immutable per-seed SOCP template while rebuilding the
+plane-dependent rows and horizon bounds exactly as before. The change must be
+reverted if any maintained-example arrival or either path length moves by more
+than `1e-9`, if solver call/exit structure changes, or if warmed repeated wall
+time does not improve without a regression in the representative BMTP cases.
+
+Measurement verification before the profile session: MATLAB Code Analyzer
+reported zero findings in the temporary ledger and harness, and
+`testBmtpEngine` passed 7/7. The measurement commit changes no production
+code, so the recorded production size remains 11,975 counted lines, 4,475
+above 7,500. The unchanged allowance formula is
+`0.25 * 4475 / 100 = 11.1875`, or 1,118.75%; this measurement milestone makes
+no size-compliance claim.
+
 ## Ruckig-to-BMTP collision gate, step 2 — 2026-08-30
 
 - The standalone certificate first tries an exact constant separator, then

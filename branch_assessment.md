@@ -6,6 +6,37 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## BMTP conic runtime localization - 2026-08-30
+
+Fresh warmed, repeated profiling corrects two runtime attributions. Maintained
+Straight Target is a Ruckig waypoint case: its three-run wall was
+`5.2936647 s` minimum and `5.4580266 s` median with zero BMTP and zero
+`coneprog` calls. Its 5.5--6 second runtime must not be used as evidence about
+the conic solver. An explicitly labeled BMTP override measured `20.9824146 s`
+minimum and `21.2219000 s` median.
+
+Maintained Target Exits at the default `1e-7 deg` clearance measured
+`17.6197381 s` minimum and `17.6795313 s` median. The otherwise identical
+`1e-4 deg` diagnostic measured `48.2423766 s` minimum and `49.1185155 s`
+median. The slow regime was reproduced in every recorded repetition.
+
+The adverse mechanism is now measured. Both modes reached the seed-2 first
+collision-free iterate at outer iteration 2 and used no horizon expansion or
+caller restart. Default seed 2 converged in 5 iterations; `1e-4` stayed
+collision-free but its objective oscillated until the 35-iteration cap. The
+total therefore changed from 17 outer iterations and 138 conic calls to 42 and
+433. All Target Exits calls exited `+1`. Individual seed-2 trajectory-call
+medians changed only from `0.6687750` to `0.7168136 s`; repeated calls, not a
+single pathological solve, dominate the near-threefold wall swing.
+
+MATLAB profiler self time identifies immutable trajectory-SOCP reconstruction
+as the largest engine-owned cost outside `coneprog`: `2.882206656 s` over 17
+calls at default clearance and `7.664537344 s` over 42 calls at `1e-4`.
+The next bounded experiment may reuse only those immutable per-seed matrices,
+bounds, and cones. Plane-dependent rows and horizon limits must remain fresh;
+all solver tolerances, acceptance rules, and outputs remain frozen. A movement
+over `1e-9` in any maintained arrival or path length is an immediate revert.
+
 ## Ruckig-to-BMTP warm-start experiment stopped at step 2 — 2026-08-30
 
 The approach failed its predeclared collision-survival gate and is not wired
