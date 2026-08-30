@@ -1,0 +1,37 @@
+{
+  "mode": "trajectory",
+  "obstacles": [
+    {
+      "name": "static rectangle",
+      "time_s": [0, 20],
+      "safetyMargin_deg": 0.2,
+      "slices": [
+        {"vertices_deg": [[-1, -1], [1, -1], [1, 1], [-1, 1]]},
+        {"vertices_deg": [[-1, -1], [1, -1], [1, 1], [-1, 1]]}
+      ]
+    }
+  ],
+  "initialState": {
+    "time_s": 0,
+    "position_deg": [-8, 0],
+    "velocity_deg_s": [0, 0],
+    "acceleration_deg_s2": [0, 0]
+  },
+  "goalState": {
+    "time_s": 20,
+    "position_deg": [8, 0],
+    "velocity_deg_s": [0, 0],
+    "acceleration_deg_s2": [0, 0]
+  },
+  "limits": {
+    "maxVelocity_deg_s": [2, 2],
+    "maxAcceleration_deg_s2": [0.75, 0.75],
+    "maxJerk_deg_s3": [2.5, 2.5],
+    "azimuthInterval_deg": [-20, 20],
+    "elevationInterval_deg": [-10, 10]
+  },
+  "plannerOptions": {
+    "GoalTimeMode": "fixedArrival",
+    "MaximumSeedCount": 3
+  }
+}
