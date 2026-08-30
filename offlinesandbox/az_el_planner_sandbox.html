@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Az/El Offline Planner Sandbox</title>
+  <title>Az/El Planner Sandbox</title>
   <style>
     :root {
       color-scheme: dark;
@@ -140,7 +140,7 @@
       font-size: 0.78rem;
     }
 
-    .offline-badge {
+    .mode-badge {
       display: flex;
       align-items: center;
       gap: 0.48rem;
@@ -155,13 +155,35 @@
       letter-spacing: 0.08em;
     }
 
-    .offline-badge::before {
+    .mode-badge::before {
       width: 7px;
       height: 7px;
       border-radius: 50%;
       background: var(--green);
       box-shadow: 0 0 11px rgba(115, 217, 154, 0.75);
       content: "";
+    }
+
+    .mode-badge[data-mode="checking"] {
+      border-color: rgba(106, 169, 255, 0.35);
+      color: #c9ddff;
+      background: rgba(106, 169, 255, 0.08);
+    }
+
+    .mode-badge[data-mode="checking"]::before {
+      background: var(--blue);
+      box-shadow: 0 0 11px rgba(106, 169, 255, 0.75);
+    }
+
+    .mode-badge[data-mode="offline"] {
+      border-color: rgba(255, 189, 105, 0.4);
+      color: #ffe0b7;
+      background: rgba(255, 189, 105, 0.09);
+    }
+
+    .mode-badge[data-mode="offline"]::before {
+      background: var(--orange);
+      box-shadow: 0 0 11px rgba(255, 189, 105, 0.72);
     }
 
     .app-shell {
@@ -386,6 +408,39 @@
     .workflow-steps {
       display: grid;
       gap: 0.55rem;
+    }
+
+    .mode-description,
+    .offline-mode-note {
+      margin: 0 0 0.65rem;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.45;
+    }
+
+    .offline-mode-note {
+      margin: 0.65rem 0 0;
+      color: var(--quiet);
+    }
+
+    .offline-mode-note code {
+      color: #bfd0dc;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .live-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem;
+    }
+
+    .live-actions .workflow-button {
+      min-width: 0;
+    }
+
+    .live-actions .cancel-button {
+      width: auto;
+      color: #ffc3c7;
     }
 
     .workflow-button,
@@ -800,7 +855,7 @@
       }
 
       .brand p,
-      .offline-badge {
+      .mode-badge {
         display: none;
       }
 
@@ -849,11 +904,12 @@
     <div class="brand">
       <div class="brand-mark" aria-hidden="true">AZ/EL</div>
       <div>
-        <h1>Offline Planner Sandbox</h1>
+        <h1>Planner Sandbox</h1>
         <p>Draw in degrees, solve in MATLAB, inspect here.</p>
       </div>
     </div>
-    <div class="offline-badge">LOCAL FILE · OFFLINE</div>
+    <div id="modeBadge" class="mode-badge" data-mode="checking"
+      role="status" aria-live="polite">CHECKING · LOCAL MATLAB</div>
   </header>
 
   <div class="app-shell">
@@ -922,29 +978,47 @@
         <section class="panel card">
           <div class="card-title-row">
             <div>
-              <div class="eyebrow">File handoff</div>
-              <h2>Plan without a server</h2>
+              <div id="workflowEyebrow" class="eyebrow">Connection</div>
+              <h2 id="workflowTitle">Checking local MATLAB</h2>
             </div>
           </div>
-          <div class="workflow-steps">
-            <button id="downloadRequestButton"
-              class="workflow-button primary" type="button">
-              <span class="step-number">1</span>Download request JSON
-            </button>
-            <div id="matlabCommand" class="matlab-command"
-              aria-label="MATLAB command"></div>
-            <button id="copyCommandButton" class="copy-button" type="button">
-              Copy MATLAB command
-            </button>
-            <label class="file-button" for="resultFileInput">
-              <span class="step-number">3</span>Load result JSON
-              <input id="resultFileInput" type="file"
-                accept="application/json,.json">
-            </label>
-            <div id="statusBox" class="status-box" data-tone="info"
-              role="status" aria-live="polite">
-              Place a start, a goal, and any polygon obstacles.
+          <p id="modeDescription" class="mode-description">
+            Probing the MATLAB loopback server.
+          </p>
+          <div id="liveWorkflow" hidden>
+            <div class="live-actions">
+              <button id="planButton" class="workflow-button primary"
+                type="button">Plan in MATLAB</button>
+              <button id="cancelPlanButton"
+                class="workflow-button cancel-button" type="button"
+                disabled>Cancel</button>
             </div>
+          </div>
+          <div id="offlineWorkflow" hidden>
+            <div class="workflow-steps">
+              <button id="downloadRequestButton"
+                class="workflow-button primary" type="button">
+                <span class="step-number">1</span>Download request JSON
+              </button>
+              <div id="matlabCommand" class="matlab-command"
+                aria-label="MATLAB command"></div>
+              <button id="copyCommandButton" class="copy-button" type="button">
+                Copy MATLAB command
+              </button>
+              <label class="file-button" for="resultFileInput">
+                <span class="step-number">3</span>Load result JSON
+                <input id="resultFileInput" type="file"
+                  accept="application/json,.json">
+              </label>
+            </div>
+            <p id="offlineModeNote" class="offline-mode-note">
+              Live mode needs <code>offlineSandbox.serveSandbox</code>
+              running in MATLAB.
+            </p>
+          </div>
+          <div id="statusBox" class="status-box" data-tone="info"
+            role="status" aria-live="polite">
+            Place a start, a goal, and any polygon obstacles.
           </div>
         </section>
 
@@ -1139,7 +1213,7 @@
             </div>
           </div>
           <div id="resultEmpty" class="empty-state">
-            Load an offlineSandboxResult/v1 JSON file to inspect a plan.
+            Run or load an offlineSandboxResult/v1 response to inspect a plan.
           </div>
           <div id="resultContent" hidden>
             <div class="result-grid">
@@ -1228,9 +1302,9 @@
     </section>
 
     <p class="page-note">
-      This file makes no network requests. Browsers cannot open arbitrary local
-      paths, so request download and result file selection are intentionally
-      explicit steps.
+      This page makes no external network requests. Live mode talks only to
+      MATLAB on 127.0.0.1; offline request download and result selection remain
+      available when that loopback server is absent.
     </p>
   </div>
 
@@ -1240,6 +1314,10 @@
     (() => {
       const REQUEST_SCHEMA = "offlineSandboxRequest/v1";
       const RESULT_SCHEMA = "offlineSandboxResult/v1";
+      const TRANSPORT_SCHEMA = "offlineSandboxTransport/v1";
+      const DEFAULT_SERVER_ORIGIN = "http://127.0.0.1:52731";
+      const PROBE_TIMEOUT_MS = 800;
+      const HEALTH_POLL_MS = 3000;
       const defaultControls = Object.freeze({
         azimuthMin: -180,
         azimuthMax: 180,
@@ -1282,7 +1360,14 @@
         lastRequestId: "",
         showSearchOverlay: true,
         importedSceneIsReadOnly: false,
-        applyingResult: false
+        applyingResult: false,
+        connectionMode: "checking",
+        serverOrigin: "",
+        sandboxFolder: "",
+        isPlanning: false,
+        activeRequestId: "",
+        cancellationRequested: false,
+        probeInProgress: false
       };
 
       const canvas = document.getElementById("workspaceCanvas");
@@ -1320,6 +1405,134 @@
       function setStatus(message, tone = "info") {
         statusBox.textContent = message;
         statusBox.dataset.tone = tone;
+      }
+
+      function candidateServerOrigin() {
+        const isServedLoopback = window.location.protocol === "http:" &&
+          window.location.hostname === "127.0.0.1";
+        return isServedLoopback ? window.location.origin :
+          DEFAULT_SERVER_ORIGIN;
+      }
+
+      function updatePlanningControls() {
+        const isLive = state.connectionMode === "live";
+        const editingDisabled = state.isPlanning ||
+          state.importedSceneIsReadOnly;
+        setRequestEditingDisabled(editingDisabled);
+        element("planButton").disabled = !isLive || editingDisabled;
+        element("cancelPlanButton").disabled = !isLive ||
+          !state.isPlanning || state.cancellationRequested;
+        element("resetButton").disabled = state.isPlanning;
+        element("resultFileInput").disabled = state.isPlanning;
+        document.querySelectorAll(".obstacle-row").forEach((button) => {
+          button.disabled = state.isPlanning;
+        });
+      }
+
+      function setConnectionMode(mode, reason = "", announce = true) {
+        const labels = {
+          checking: "CHECKING · LOCAL MATLAB",
+          live: "LIVE · MATLAB CONNECTED",
+          offline: "OFFLINE · FILE HANDOFF"
+        };
+        const descriptions = {
+          checking: "Checking for MATLAB on the local loopback interface.",
+          live: "Live mode: planning requests go directly to local MATLAB.",
+          offline: "Offline mode: use the request/result file handoff below."
+        };
+        const previousMode = state.connectionMode;
+        state.connectionMode = mode;
+        element("modeBadge").dataset.mode = mode;
+        element("modeBadge").textContent = labels[mode];
+        element("modeDescription").textContent = descriptions[mode] +
+          (reason ? ` ${reason}` : "");
+        element("liveWorkflow").hidden = mode !== "live";
+        element("offlineWorkflow").hidden = mode !== "offline";
+        if (mode === "live") {
+          element("workflowEyebrow").textContent = "MATLAB loopback";
+          element("workflowTitle").textContent = "Plan directly";
+        } else if (mode === "offline") {
+          element("workflowEyebrow").textContent = "File handoff";
+          element("workflowTitle").textContent = "Plan without a server";
+        } else {
+          element("workflowEyebrow").textContent = "Connection";
+          element("workflowTitle").textContent = "Checking local MATLAB";
+        }
+        const needsLocalFile = mode === "offline" &&
+          window.location.protocol !== "file:" && !state.sandboxFolder;
+        element("offlineModeNote").innerHTML = needsLocalFile ?
+          "Live mode needs <code>offlineSandbox.serveSandbox</code> running " +
+            "in MATLAB. Reopen the local HTML file to use file handoff." :
+          "Live mode needs <code>offlineSandbox.serveSandbox</code> running " +
+            "in MATLAB.";
+        element("matlabCommand").textContent = matlabCommandText();
+        updatePlanningControls();
+        if (announce && mode !== "checking" && previousMode !== mode) {
+          if (mode === "live") {
+            setStatus(
+              "Live mode connected. Place the scene, then select Plan in MATLAB.",
+              "success"
+            );
+          } else {
+            setStatus(
+              reason || "MATLAB is not reachable; offline file handoff is active.",
+              "warning"
+            );
+          }
+        }
+      }
+
+      async function probeServer(showChecking = false) {
+        if (state.probeInProgress || state.isPlanning) {
+          return state.connectionMode === "live";
+        }
+        state.probeInProgress = true;
+        if (showChecking) {
+          setConnectionMode("checking", "", false);
+        }
+        const origin = state.serverOrigin || candidateServerOrigin();
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(),
+          PROBE_TIMEOUT_MS);
+        try {
+          const response = await fetch(`${origin}/health`, {
+            cache: "no-store",
+            credentials: "omit",
+            signal: controller.signal
+          });
+          if (!response.ok) {
+            throw new Error(`Health probe returned HTTP ${response.status}.`);
+          }
+          const health = await response.json();
+          const identified = health &&
+            health.schemaVersion === TRANSPORT_SCHEMA &&
+            (health.status === "ready" || health.status === "planning");
+          if (!identified) {
+            throw new Error("The process on the port is not this MATLAB server.");
+          }
+          if (state.isPlanning) {
+            return true;
+          }
+          state.serverOrigin = origin;
+          if (typeof health.sandboxFolder === "string" &&
+              health.sandboxFolder.length > 0) {
+            state.sandboxFolder = health.sandboxFolder;
+          }
+          setConnectionMode("live", "", true);
+          return true;
+        } catch (error) {
+          if (state.isPlanning) {
+            return state.connectionMode === "live";
+          }
+          const reason = error.name === "AbortError" ?
+            "The local MATLAB probe timed out." :
+            "The local MATLAB server is not reachable.";
+          setConnectionMode("offline", reason, true);
+          return false;
+        } finally {
+          window.clearTimeout(timeout);
+          state.probeInProgress = false;
+        }
       }
 
       function readControls(throwOnInvalid = true) {
@@ -1393,11 +1606,18 @@
         state.responseObstacles = [];
         renderResult();
         configureTimeline();
-        setStatus(reason + " Export a new request before loading another result.",
-          "warning");
+        const nextAction = state.connectionMode === "live" ?
+          " Select Plan in MATLAB to solve the updated request." :
+          " Export a new request before loading another result.";
+        setStatus(reason + nextAction, "warning");
       }
 
       function activateMode(mode) {
+        if (state.isPlanning && mode !== "select") {
+          setStatus("Planning is active; request editing is temporarily locked.",
+            "warning");
+          return;
+        }
         if (state.importedSceneIsReadOnly && mode !== "select") {
           setStatus(
             "This imported obstacle scene is inspection-only. Select Reset " +
@@ -1424,14 +1644,16 @@
       }
 
       function updateActionAvailability() {
-        const isReadOnly = state.importedSceneIsReadOnly;
-        element("undoVertexButton").disabled = isReadOnly ||
+        const editingDisabled = state.importedSceneIsReadOnly ||
+          state.isPlanning;
+        element("undoVertexButton").disabled = editingDisabled ||
           state.polygonDraft.length === 0;
         element("finishPolygonButton").disabled =
-          isReadOnly || state.polygonDraft.length < 3;
+          editingDisabled || state.polygonDraft.length < 3;
         const hasSelection = state.selectedObstacleIndex >= 0 &&
           state.selectedObstacleIndex < state.obstacles.length;
-        element("deleteObstacleButton").disabled = isReadOnly || !hasSelection;
+        element("deleteObstacleButton").disabled =
+          editingDisabled || !hasSelection;
       }
 
       function writeEndpointInputs() {
@@ -1487,7 +1709,9 @@
           element(id).disabled = disabled;
         });
         ["startAzimuth", "startElevation", "goalAzimuth", "goalElevation",
-          "applyEndpointsButton", "downloadRequestButton"].forEach((id) => {
+          "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
+          "motionProfile", "motionAzimuth", "motionElevation",
+          "deleteEditorButton", "zeroMotionButton"].forEach((id) => {
           element(id).disabled = disabled;
         });
         document.querySelectorAll("[data-mode]").forEach((button) => {
@@ -1495,6 +1719,7 @@
             button.disabled = disabled;
           }
         });
+        updateActionAvailability();
       }
 
       function pointInsideWorkspace(point) {
@@ -1843,6 +2068,143 @@
         }
       }
 
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        let payload;
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          const protocolError = new Error(
+            `MATLAB returned invalid JSON (HTTP ${response.status}).`
+          );
+          protocolError.isProtocolError = true;
+          throw protocolError;
+        }
+        if (!response.ok) {
+          const errorRecord = payload && payload.error;
+          const message = errorRecord && errorRecord.message ?
+            errorRecord.message : `MATLAB returned HTTP ${response.status}.`;
+          const httpError = new Error(message);
+          httpError.isHttpError = true;
+          httpError.status = response.status;
+          httpError.identifier = errorRecord && errorRecord.identifier || "";
+          throw httpError;
+        }
+        return payload;
+      }
+
+      async function requestJson(url, options) {
+        try {
+          const response = await fetch(url, options);
+          return await readJsonResponse(response);
+        } catch (error) {
+          if (error instanceof TypeError || error.name === "AbortError") {
+            error.isTransportError = true;
+          }
+          throw error;
+        }
+      }
+
+      async function planLive() {
+        if (state.connectionMode !== "live" || state.isPlanning) {
+          return;
+        }
+        let request;
+        try {
+          request = createRequest();
+        } catch (error) {
+          setStatus(error.message, "error");
+          return;
+        }
+
+        state.isPlanning = true;
+        state.activeRequestId = request.requestId;
+        state.cancellationRequested = false;
+        updatePlanningControls();
+        setStatus(
+          "Planning in MATLAB. Cancel stops at the next safe planner checkpoint.",
+          "info"
+        );
+        let probeAfterCompletion = false;
+        try {
+          const payload = await requestJson(`${state.serverOrigin}/plan`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify(request),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          loadResponse(payload, "live MATLAB response");
+        } catch (error) {
+          if (error.identifier === "planTrajectory:UserCancelled") {
+            probeAfterCompletion = true;
+            setStatus("Planning canceled at a safe checkpoint.", "warning");
+          } else if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during planning.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The live planning request failed.",
+              "error");
+          }
+        } finally {
+          state.isPlanning = false;
+          state.activeRequestId = "";
+          state.cancellationRequested = false;
+          updatePlanningControls();
+        }
+        if (probeAfterCompletion) {
+          await probeServer(false);
+        }
+      }
+
+      async function cancelLivePlan() {
+        if (!state.isPlanning || state.cancellationRequested ||
+            state.connectionMode !== "live") {
+          return;
+        }
+        const requestId = state.activeRequestId;
+        state.cancellationRequested = true;
+        updatePlanningControls();
+        setStatus(
+          "Cancellation requested. Waiting for a safe planner checkpoint.",
+          "warning"
+        );
+        try {
+          await requestJson(`${state.serverOrigin}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify({ requestId }),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          if (state.isPlanning && state.activeRequestId === requestId) {
+            setStatus(
+              "MATLAB accepted cancellation and will stop at a safe checkpoint.",
+              "warning"
+            );
+          }
+        } catch (error) {
+          if (!state.isPlanning || state.activeRequestId !== requestId) {
+            return;
+          }
+          if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during cancellation.",
+              true
+            );
+          } else {
+            state.cancellationRequested = false;
+            updatePlanningControls();
+            setStatus(error.message || "Cancellation was not accepted.",
+              "error");
+          }
+        }
+      }
+
       function asArray(value) {
         if (Array.isArray(value)) {
           return value;
@@ -1932,7 +2294,7 @@
         }
         state.importedSceneIsReadOnly = !requestMatches &&
           importedObstacles.length > 0;
-        setRequestEditingDisabled(state.importedSceneIsReadOnly);
+        updatePlanningControls();
         if (state.importedSceneIsReadOnly) {
           activateMode("select");
           setStatus(
@@ -1943,9 +2305,9 @@
         } else if (state.lastRequestId &&
             response.requestId !== state.lastRequestId) {
           setStatus(
-            "Loaded result requestId does not match the most recently " +
-            "downloaded request. The file is displayed, but may describe a " +
-            "different scene.", "warning"
+            "Loaded result requestId does not match the most recent request. " +
+            "The response is displayed, but may describe a different scene.",
+            "warning"
           );
         } else {
           setStatus(`Loaded ${fileName}.`, "success");
@@ -2866,6 +3228,11 @@
         if (event.button !== 0) {
           return;
         }
+        if (state.isPlanning) {
+          setStatus("Planning is active; request editing is temporarily locked.",
+            "warning");
+          return;
+        }
         const screenPoint = canvasPoint(event);
         if (!pointInPlot(screenPoint)) {
           setStatus("The selected point is outside the workspace rectangle.",
@@ -2947,15 +3314,19 @@
           azimuth: [defaultControls.azimuthMin, defaultControls.azimuthMax],
           elevation: [defaultControls.elevationMin, defaultControls.elevationMax]
         };
-        setRequestEditingDisabled(false);
+        updatePlanningControls();
         writeEndpointInputs();
         renderObstacleEditor();
         renderResult();
         configureTimeline();
         activateMode("start");
         updateCoordinateReadout(null);
-        setStatus("Scene reset. Place a start, a goal, and any polygon obstacles.",
-          "success");
+        const action = state.connectionMode === "live" ?
+          "then select Plan in MATLAB." : "then download a request.";
+        setStatus(
+          `Scene reset. Place a start, a goal, and any polygon obstacles, ${action}`,
+          "success"
+        );
       }
 
       function windowsFilePathFromLocation() {
@@ -2971,7 +3342,10 @@
       }
 
       function matlabCommandText() {
-        const sandboxFolder = windowsFilePathFromLocation().replace(/"/g, '""');
+        const localFileFolder = windowsFilePathFromLocation();
+        const discoveredFolder = window.location.protocol === "file:" ?
+          localFileFolder : state.sandboxFolder || localFileFolder;
+        const sandboxFolder = discoveredFolder.replace(/"/g, '""');
         return `addpath("${sandboxFolder}");\n` +
           "requestFile = fullfile(getenv(\"USERPROFILE\"), " +
           "\"Downloads\", \"az-el-request.json\");\n" +
@@ -3038,6 +3412,8 @@
           input.addEventListener("input", syncValidControls);
         }
       });
+      element("planButton").addEventListener("click", planLive);
+      element("cancelPlanButton").addEventListener("click", cancelLivePlan);
       element("downloadRequestButton").addEventListener("click", downloadRequest);
       element("resultFileInput").addEventListener("change", (event) => {
         const file = event.target.files && event.target.files[0];
@@ -3087,6 +3463,9 @@
             event.target instanceof HTMLSelectElement) {
           return;
         }
+        if (state.isPlanning) {
+          return;
+        }
         const key = event.key.toLowerCase();
         if (key === "v") {
           activateMode("select");
@@ -3115,13 +3494,15 @@
       const resizeObserver = new ResizeObserver(draw);
       resizeObserver.observe(canvasWrap);
       element("matlabCommand").textContent = matlabCommandText();
-      setRequestEditingDisabled(false);
       writeEndpointInputs();
       renderObstacleEditor();
       renderResult();
       configureTimeline();
       activateMode("start");
+      setConnectionMode("checking", "", false);
       draw();
+      probeServer(true);
+      window.setInterval(() => probeServer(false), HEALTH_POLL_MS);
     })();
   </script>
 </body>
