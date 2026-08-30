@@ -1,8 +1,11 @@
-function response = runPlanningRequest(requestFilePath, resultFilePath)
+function response = runPlanningRequest( ...
+        requestFilePath, resultFilePath, cancellationCheckFcn)
 %% Section 0: Header & Readme
 % SYNTAX
 %   response = offlineSandbox.runPlanningRequest( ...
 %       requestFilePath, resultFilePath)
+%   response = offlineSandbox.runPlanningRequest( ...
+%       requestFilePath, resultFilePath, cancellationCheckFcn)
 %**************************************************************************
 % PURPOSE
 %   - Read one offline-sandbox JSON request, call the maintained public
@@ -15,6 +18,9 @@ function response = runPlanningRequest(requestFilePath, resultFilePath)
 %   - resultFilePath (scalar text)
 %       Destination JSON file, not a folder. Its parent folder must already
 %       exist. An existing file at this explicit path is replaced.
+%   - cancellationCheckFcn (scalar function handle, optional; default [])
+%       Trusted MATLAB-only cooperative stop check supplied by a hosting
+%       application. JSON requests cannot provide callbacks.
 %**************************************************************************
 % OUTPUTS
 %   - response (scalar struct)
@@ -30,6 +36,13 @@ function response = runPlanningRequest(requestFilePath, resultFilePath)
 
 %% Section 1: Read & Validate The JSON Request
 
+if nargin < 3 || isempty(cancellationCheckFcn)
+    cancellationCheckFcn = [];
+elseif ~(isa(cancellationCheckFcn, "function_handle") && ...
+        isscalar(cancellationCheckFcn))
+    error("runPlanningRequest:InvalidCancellationCheckFcn", ...
+        "cancellationCheckFcn must be empty or a scalar function handle.");
+end
 requestFilePath = normalizeFilePath(requestFilePath, "requestFilePath");
 resultFilePath = normalizeFilePath(resultFilePath, "resultFilePath");
 if ~isfile(requestFilePath)
@@ -91,6 +104,9 @@ if isfield(options, "CancellationCheckFcn")
     error("runPlanningRequest:UnsupportedCallbackOption", ...
         "request.options must not contain CancellationCheckFcn; JSON cannot " + ...
         "carry MATLAB callbacks.");
+end
+if ~isempty(cancellationCheckFcn)
+    options.CancellationCheckFcn = cancellationCheckFcn;
 end
 
 %% Section 2: Construct Canonical Obstacles
