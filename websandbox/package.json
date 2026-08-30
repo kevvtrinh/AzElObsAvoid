@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "bridge": "node bridge.mjs",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node --test src/coordinateFrame.test.js"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",

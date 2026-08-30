@@ -2,45 +2,16 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import './styles.css';
+import {
+  coordinateToFramePercent,
+  createTicks,
+  createViewport,
+} from './coordinateFrame.js';
 
 const initialScene = { obstacles: [], initialState: { time_s: 0, position_deg: [-8, -5], velocity_deg_s: [0, 0], acceleration_deg_s2: [0, 0] }, goalState: { time_s: 20, position_deg: [8, 5], velocity_deg_s: [0, 0], acceleration_deg_s2: [0, 0] }, limits: { maxVelocity_deg_s: [2, 2], maxAcceleration_deg_s2: [0.75, 0.75], maxJerk_deg_s3: [2.5, 2.5], azimuthInterval_deg: [-180, 180], elevationInterval_deg: [-90, 90] }, plannerOptions: { GoalTimeMode: 'fixedArrival', MaximumSeedCount: 3 } };
 const sceneBounds = (scene) => ({ left: scene.limits.azimuthInterval_deg[0], right: scene.limits.azimuthInterval_deg[1], bottom: scene.limits.elevationInterval_deg[0], top: scene.limits.elevationInterval_deg[1] });
 
 const clamp = (value, low, high) => Math.min(Math.max(value, low), high);
-
-function createViewport(bounds, width_px, height_px) {
-  const centerAzimuth_deg = (bounds.left + bounds.right) / 2;
-  const centerElevation_deg = (bounds.bottom + bounds.top) / 2;
-  const workspaceWidth_deg = bounds.right - bounds.left;
-  const workspaceHeight_deg = bounds.top - bounds.bottom;
-  const canvasAspect = width_px / Math.max(height_px, 1);
-  let viewportWidth_deg = workspaceWidth_deg * 1.08;
-  let viewportHeight_deg = workspaceHeight_deg * 1.12;
-  if (viewportWidth_deg / viewportHeight_deg > canvasAspect) {
-    viewportHeight_deg = viewportWidth_deg / canvasAspect;
-  } else {
-    viewportWidth_deg = viewportHeight_deg * canvasAspect;
-  }
-  return {
-    left: centerAzimuth_deg - viewportWidth_deg / 2,
-    right: centerAzimuth_deg + viewportWidth_deg / 2,
-    bottom: centerElevation_deg - viewportHeight_deg / 2,
-    top: centerElevation_deg + viewportHeight_deg / 2,
-  };
-}
-
-function createTicks(minimum_deg, maximum_deg) {
-  const desiredStep_deg = (maximum_deg - minimum_deg) / 8;
-  const exponent = 10 ** Math.floor(Math.log10(desiredStep_deg));
-  const multiplier = [1, 2, 5, 10].find((value) => value * exponent >= desiredStep_deg);
-  const step_deg = (multiplier || 10) * exponent;
-  const firstTick_deg = Math.ceil(minimum_deg / step_deg) * step_deg;
-  const ticks = [];
-  for (let tick_deg = firstTick_deg; tick_deg <= maximum_deg + step_deg * 1e-8; tick_deg += step_deg) {
-    ticks.push(Math.abs(tick_deg) < step_deg * 1e-8 ? 0 : +tick_deg.toFixed(8));
-  }
-  return ticks;
-}
 
 function degreeLabel(value_deg) {
   return `${Number.isInteger(value_deg) ? value_deg : value_deg.toFixed(1)}°`;
@@ -71,8 +42,7 @@ function formatTime(time_s) {
 
 function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_deg, initialTime_s, goalTime_s, result }) {
   if (!viewport) return null;
-  const toLeftPercent = (value_deg) => (value_deg - viewport.left) / (viewport.right - viewport.left) * 100;
-  const toBottomPercent = (value_deg) => (value_deg - viewport.bottom) / (viewport.top - viewport.bottom) * 100;
+  const toFramePercent = (position_deg) => coordinateToFramePercent(position_deg, viewport);
   const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
   const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
   const trajectoryTime_s = result?.time_s || [];
@@ -82,11 +52,20 @@ function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_d
   const arrivalTime_s = hasTrajectory ? trajectoryTime_s[trajectoryTime_s.length - 1] : goalTime_s;
   const startPosition_deg = hasTrajectory ? trajectoryPosition_deg[0] : initialPosition_deg;
   const endPosition_deg = hasTrajectory ? trajectoryPosition_deg[trajectoryPosition_deg.length - 1] : goalPosition_deg;
+  const workspaceTopLeft = toFramePercent([bounds.left, bounds.top]);
+  const workspaceBottomRight = toFramePercent([bounds.right, bounds.bottom]);
+  const startFramePercent = toFramePercent(startPosition_deg);
+  const endFramePercent = toFramePercent(endPosition_deg);
   return <div className="coordinate-frame" aria-hidden="true">
-    {azimuthTicks_deg.map((tick_deg) => <span className="azimuth-tick-label" key={`az-${tick_deg}`} style={{ left: `${toLeftPercent(tick_deg)}%` }}>{degreeLabel(tick_deg)}</span>)}
-    {elevationTicks_deg.map((tick_deg) => <span className="elevation-tick-label" key={`el-${tick_deg}`} style={{ bottom: `${toBottomPercent(tick_deg)}%` }}>{degreeLabel(tick_deg)}</span>)}
-    <span className="marker-label start-marker-label" style={{ left: `${toLeftPercent(startPosition_deg[0])}%`, bottom: `${toBottomPercent(startPosition_deg[1])}%` }}>Start t = {formatTime(startTime_s)} {formatPosition(startPosition_deg)}</span>
-    <span className="marker-label goal-marker-label" style={{ left: `${toLeftPercent(endPosition_deg[0])}%`, bottom: `${toBottomPercent(endPosition_deg[1])}%` }}>Goal t = {formatTime(arrivalTime_s)} {formatPosition(endPosition_deg)}</span>
+    <svg className="coordinate-grid" viewBox="0 0 100 100" preserveAspectRatio="none">
+      {azimuthTicks_deg.map((tick_deg) => { const frame = toFramePercent([tick_deg, 0]); return <line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} key={`az-grid-${tick_deg}`} x1={frame.left} x2={frame.left} y1={workspaceTopLeft.top} y2={workspaceBottomRight.top} />; })}
+      {elevationTicks_deg.map((tick_deg) => { const frame = toFramePercent([0, tick_deg]); return <line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} key={`el-grid-${tick_deg}`} x1={workspaceTopLeft.left} x2={workspaceBottomRight.left} y1={frame.top} y2={frame.top} />; })}
+      <rect className="workspace-boundary" x={workspaceTopLeft.left} y={workspaceTopLeft.top} width={workspaceBottomRight.left - workspaceTopLeft.left} height={workspaceBottomRight.top - workspaceTopLeft.top} />
+    </svg>
+    {azimuthTicks_deg.map((tick_deg) => { const frame = toFramePercent([tick_deg, bounds.bottom]); return <span className="azimuth-tick-label" key={`az-${tick_deg}`} style={{ left: `${frame.left}%`, top: `${frame.top}%` }}>{degreeLabel(tick_deg)}</span>; })}
+    {elevationTicks_deg.map((tick_deg) => { const frame = toFramePercent([bounds.left, tick_deg]); return <span className="elevation-tick-label" key={`el-${tick_deg}`} style={{ left: `${frame.left}%`, top: `${frame.top}%` }}>{degreeLabel(tick_deg)}</span>; })}
+    <span className="marker-label start-marker-label" style={{ left: `${startFramePercent.left}%`, top: `${startFramePercent.top}%` }}>Start t = {formatTime(startTime_s)} {formatPosition(startPosition_deg)}</span>
+    <span className="marker-label goal-marker-label" style={{ left: `${endFramePercent.left}%`, top: `${endFramePercent.top}%` }}>Goal t = {formatTime(arrivalTime_s)} {formatPosition(endPosition_deg)}</span>
     <span className="obstacle-legend"><i className="protected-legend" />Protected / planner geometry<i className="original-legend" />Original polygon</span>
     <span className="azimuth-axis-label">Azimuth (deg)</span>
     <span className="elevation-axis-label">Elevation (deg)</span>
@@ -150,23 +129,6 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
         drawArrowhead(position_deg[Math.max(0, endIndex - 1)], position_deg[endIndex], 0x93c5fd);
       }
     };
-    const drawGrid = () => {
-      const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
-      const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
-      for (const azimuth_deg of azimuthTicks_deg) {
-        drawLine([[azimuth_deg, bounds.bottom], [azimuth_deg, bounds.top]],
-          azimuth_deg === 0 ? 0x64748b : 0x26354d);
-      }
-      for (const elevation_deg of elevationTicks_deg) {
-        drawLine([[bounds.left, elevation_deg], [bounds.right, elevation_deg]],
-          elevation_deg === 0 ? 0x64748b : 0x26354d);
-      }
-      drawLine([
-        [bounds.left, bounds.bottom], [bounds.right, bounds.bottom],
-        [bounds.right, bounds.top], [bounds.left, bounds.top],
-      ], 0x94a3b8, true);
-    };
-    drawGrid();
     const activeSlices = scene.obstacles.map((obstacle) => { const index = Math.max(0, obstacle.slices.findLastIndex((_, sliceIndex) => (obstacle.time_s?.[sliceIndex] ?? 0) <= time)); const slice = obstacle.slices[index] || {}; const originalVertices_deg = slice.vertices_deg ?? []; const protectedVertices_deg = slice.protectedVertices_deg ?? originalVertices_deg; drawPolygon(protectedVertices_deg, 0xf97316, 0.26, 0xfb923c, 0); drawPolygon(originalVertices_deg, 0xef4444, 0.20, 0xfca5a5, 0.03); if (mode === 'edit') drawVertices(originalVertices_deg, 0xfbbf24); return index; });
     drawVertices([scene.initialState.position_deg], 0x4ade80); drawVertices([scene.goalState.position_deg], 0xf87171); drawTrajectory(result?.position_deg);
     renderer.setSize(width_px, height_px); mount.current.appendChild(renderer.domElement); renderer.render(world, camera);
