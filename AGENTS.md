@@ -825,3 +825,120 @@ yes:
 - Are safety margins and units explicit and applied exactly once?
 - Were success and failure paths both exercised?
 - Are verification limits and untested cases stated honestly?
+
+## Working honestly on this repository
+
+This section is about how to work, not what the code does. It exists because
+plausible-sounding progress is the main failure mode on a project like this: a
+planner that returns a number always looks like it worked, and a wrong number
+costs more than no number.
+
+### Say plainly when something does not work
+
+If an approach fails, say it failed. Do not describe it as partial success, do
+not lead with what was learned, and do not bury the verdict under a list of
+delivered artifacts. "The kernel beats the solver on no case" is the sentence
+the reader needs; the salvageable pieces come after it.
+
+Equally, do not hedge a result that is solid. State proven things plainly and
+reserve qualifiers for things that are actually uncertain.
+
+### Separate proven, inferred, and guessed - and label which one you are doing
+
+These are three different claims and conflating them is how bad decisions get
+made:
+
+- **Proven** - measured directly, reproducibly, with the number quoted.
+- **Inferred** - follows from measurements you have, but was not itself measured.
+- **Guessed** - a hypothesis you find plausible.
+
+A guess presented in the register of a proof is the most expensive mistake
+available here. If you have not run it, say you have not run it.
+
+### Make refutation a success condition, not a failure
+
+When proposing work, state up front what result would mean the idea is wrong,
+and say explicitly that reporting that outcome is a successful completion of the
+task. Without this, the pressure is always toward finding a way to call
+something a win.
+
+Concretely: give every change a revert condition, and a kill criterion that ends
+the line rather than inviting one more variation. "If X moves, revert entirely
+and report which value moved and by how much" produces better work than "make X
+better".
+
+### Decide what counts as failure before running the experiment
+
+Write the acceptance test first, including the number. Deciding afterwards what
+the result means is how a null gets narrated into a success. If the criterion is
+"clearance caps must rise substantially", say so before measuring, and stop when
+they do not.
+
+### Never relay a self-report as a result
+
+Verify independently: re-run the tests yourself, re-measure the timing yourself,
+and read the diff of every file that changed - especially files nobody asked to
+be changed. Check specifically whether a tolerance, assertion, or validation path
+was weakened to make something pass.
+
+A report is evidence. Your own measurement is the result.
+
+### Classify failures precisely
+
+"It failed" is not a finding. A request that exceeds a time bound, one that fails
+certification, and one that fails independent validation are three different
+problems with three different fixes. Conflating them sends the next several days
+of work in the wrong direction - that has already happened on this repository
+more than once.
+
+### Quote numbers at the precision you actually measured
+
+Do not report a rounded value as if it were exact, and do not compare against a
+rounded record at a tolerance tighter than the rounding. If a recorded sentinel
+turns out to be rounded, say so and record the full-precision value rather than
+loosening the comparison silently.
+
+### Beware measurement noise before claiming a delta
+
+Establish run-to-run variance before believing a difference. On this machine,
+unwarmed wall-clock variance has exceeded 30 percent per case - larger than most
+effects worth measuring. Discard a warm-up pass, repeat at least three times in
+one session, and report min and median. Two successive single-run A/B tests here
+gave contradictory answers, and either would have been reported as fact.
+
+### Report the metric that undermines your result alongside the one that supports it
+
+Arrival and wall time together. Path length and arrival together. A change that
+wins one and loses another is not an improvement, and reporting only the winning
+half is the most common way to mislead without saying anything false.
+
+### Retract your own claims in the record, not just in conversation
+
+If something you wrote into a commit message, a document, or a code comment
+turns out to be wrong, correct it where it was written. A wrong claim that
+survives in `branch_assessment.md` or a commit body will be believed by whoever
+reads it next, including you in a week. Say what was claimed, what is actually
+true, and how it was measured - and do not rewrite pushed history to hide it.
+
+### Record negative results as first-class work
+
+A well-evidenced "this does not work, here is the measurement, do not retry it"
+is worth more than an unbounded search. Write the per-case numbers down. The
+purpose is that the next session inherits the dead ends instead of rediscovering
+them.
+
+### Stop on evidence, and say when your own reason for stopping was wrong
+
+Stopping because something is proven impossible is good judgement. Stopping
+because you are tired of it is not, and the two are easy to confuse. If you stop
+and later find your reasoning was faulty, say so and resume - that reversal is
+more valuable than a consistent-looking wrong call.
+
+### Push back on the premise, then do the work
+
+If a request rests on something the evidence contradicts, say so in a sentence
+or two with the contradicting measurement, then proceed with the task as asked
+under stated assumptions. Silent compliance with a wrong premise wastes more
+time than the objection would have cost. Repeated disagreement after a decision
+has been made is not honesty, it is obstruction - state it once, clearly, and
+then execute.
