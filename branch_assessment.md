@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Web Sandbox file-protocol verification — 2026-08-30
+
+The additive web client now imports and exports
+`obstacleAvoidanceSandboxDiagnosis-v2` through the existing MATLAB bundle
+format without changing the MATLAB sandbox, planner, validator, or tolerances.
+The supplied rogue bundle imported as two obstacles with a 180 s mission;
+browser export produces the same top-level `diagnosisBundle` format and a
+bridge-returned file reimported as one obstacle with a 20 s mission. Existing
+polygons expose draggable vertices; editing applies each vertex move across
+its time history, preserving a coherent moving polygon rather than silently
+altering just one snapshot.
+
+With a warmed MATLAB worker, a client-schema fixed-arrival rectangle request
+returned successfully in 2.426 s from local submit to response: 2.172 s was
+reported planner work and 0.254 s was file transport plus 100 ms polling.
+That measurement does not include a physical browser click or React paint:
+the in-app browser had no connected instance in this run. A persistent MATLAB
+worker is required for this latency; per-request MATLAB startup dominates
+otherwise. The local bridge cancel endpoint reached `CancellationCheckFcn` on
+the rogue request during active planner work (6.766 s planner elapsed),
+returned `planTrajectory:UserCancelled`, and removed the cancel file. The
+browser state treats that completed unsuccessful response as idle, but the
+unavailable browser connection means that recovery was verified by its state
+logic and protocol result rather than through a physical button click.
+
 This file records the authoritative state of `novel-rep` and a concise ledger
 of approaches already tried. Superseded benchmark matrices remain in
 `benchmark.csv`; verification details remain in `verification.md`. Historical

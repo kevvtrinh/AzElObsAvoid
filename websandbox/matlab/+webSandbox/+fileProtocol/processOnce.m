@@ -39,28 +39,11 @@ jobId = erase(string(requestRecord.name), ".request.json");
 %% Section 2: Run The Maintained Public Planner With File Cancellation
 
 startedTimer = tic;
+cancelFile = fullfile(protocolInfo.RequestDirectory, jobId + ".cancel");
 try
     request = jsondecode(fileread(requestPath));
-    inputs = webSandbox.fileProtocol.createRequestInputs(request);
-    cancelFile = fullfile(protocolInfo.RequestDirectory, jobId + ".cancel");
-    if inputs.Mode == "trajectory"
-        options = inputs.plannerOptions;
-        options.CancellationCheckFcn = @() isfile(cancelFile);
-        result = obstacleAvoidance.planTrajectory( ...
-            inputs.obstacles, inputs.initialState, inputs.goalState, ...
-            inputs.limits, options);
-    else
-        options = inputs.interceptOptions;
-        if ~isfield(options, "PlannerOptions") || isempty(options.PlannerOptions)
-            options.PlannerOptions = struct();
-        end
-        options.PlannerOptions.CancellationCheckFcn = @() isfile(cancelFile);
-        result = obstacleAvoidance.planMovingTargetIntercept( ...
-            inputs.obstacles, inputs.initialState, inputs.targetMotion, ...
-            inputs.limits, options);
-    end
-    response = webSandbox.fileProtocol.createResponse(result, toc(startedTimer));
-    nativeResult = result;
+    [response, nativeResult] = processRequest( ...
+        request, jobId, protocolInfo, startedTimer);
 catch exception
     response = struct( ...
         "Success", false, ...
@@ -93,6 +76,59 @@ processed = struct( ...
     "Message", responseMessage(response));
 end
 
+function [response, nativeResult] = processRequest( ...
+        request, jobId, protocolInfo, startedTimer)
+% Route planning and bundle actions while preserving the one response protocol.
+nativeResult = struct();
+if isfield(request, "protocolAction")
+    action = string(request.protocolAction);
+    if action == "bundleImport"
+        bundlePath = fullfile(protocolInfo.BundleImportDirectory, ...
+            string(request.bundleFileName));
+        response = struct( ...
+            "Success", true, "Error", struct(), ...
+            "ElapsedWallTime_s", toc(startedTimer), ...
+            "Result", struct(), "Diagnostics", struct(), ...
+            "Scene", webSandbox.bundle.importDiagnosisBundle(bundlePath));
+        return;
+    end
+    if action == "bundleExport"
+        destination = fullfile(protocolInfo.BundleExportDirectory, jobId + ".mat");
+        exportInfo = webSandbox.bundle.exportDiagnosisBundle( ...
+            destination, request.scene);
+        response = struct( ...
+            "Success", true, "Error", struct(), ...
+            "ElapsedWallTime_s", toc(startedTimer), ...
+            "Result", struct(), ...
+            "Diagnostics", exportInfo, ...
+            "DownloadUrl", "/api/bundles/" + jobId);
+        return;
+    end
+    error("webSandbox:processOnce:UnknownAction", ...
+        "protocolAction '%s' is not supported.", action);
+end
+inputs = webSandbox.fileProtocol.createRequestInputs(request);
+cancelFile = fullfile(protocolInfo.RequestDirectory, jobId + ".cancel");
+if inputs.Mode == "trajectory"
+    options = inputs.plannerOptions;
+    options.CancellationCheckFcn = @() isfile(cancelFile);
+    result = obstacleAvoidance.planTrajectory( ...
+        inputs.obstacles, inputs.initialState, inputs.goalState, ...
+        inputs.limits, options);
+else
+    options = inputs.interceptOptions;
+    if ~isfield(options, "PlannerOptions") || isempty(options.PlannerOptions)
+        options.PlannerOptions = struct();
+    end
+    options.PlannerOptions.CancellationCheckFcn = @() isfile(cancelFile);
+    result = obstacleAvoidance.planMovingTargetIntercept( ...
+        inputs.obstacles, inputs.initialState, inputs.targetMotion, ...
+        inputs.limits, options);
+end
+response = webSandbox.fileProtocol.createResponse(result, toc(startedTimer));
+nativeResult = result;
+end
+
 function writeJsonAtomically(filePath, payload)
 % A rename prevents the bridge from reading an incomplete JSON response.
 temporaryPath = filePath + ".tmp";
@@ -109,8 +145,11 @@ end
 
 function message = responseMessage(response)
 % Keep worker-console reporting useful even when a request was invalid.
-if response.Success
+if response.Success && isfield(response, "Result") && ...
+        isstruct(response.Result) && isfield(response.Result, "Message")
     message = response.Result.Message;
+elseif response.Success
+    message = "File action completed.";
 elseif isfield(response, "Error") && isfield(response.Error, "Message")
     message = response.Error.Message;
 else

@@ -25,6 +25,25 @@ accepts the schema in `fixtures/trajectory-request.json`; obstacle `slices`
 provide time-indexed `vertices_deg` polygons. The response retains public
 motion histories plus termination, validation, stage timing, and seed summaries.
 
+The browser can load and save `obstacleAvoidanceSandboxDiagnosis-v2` MAT
+bundles through the local worker. Import keeps canonical original polygon
+geometry, obstacle time histories, and the one stored safety margin. Export
+writes the same v2 `diagnosisBundle` top-level record used by
+`sandbox/exportSandboxDiagnosis.m`; it represents a replayable pre-run goal
+request. The web editor supports one finite polygon per obstacle slice.
+
+Run the browser client in a third terminal:
+
+```powershell
+npm --prefix websandbox run dev
+```
+
+The bridge resolves its runtime directory relative to `bridge.mjs`, so it may
+be started from either the repository root or `websandbox/`. Vite proxies its
+local `/api` requests to the bridge. The client polls every 100 ms and displays
+click-to-render latency, MATLAB planner time, and the residual transport/UI
+time after each completed job.
+
 For a curl round trip, post the fixture, then poll the returned job ID:
 
 ```powershell
