@@ -38,6 +38,12 @@ Planner options select work and display policy; they do not expose internal
 engine constants. Per-seed engine and independent-validation evidence is
 retained in `result.SearchDiagnostics.SeedSummaries`.
 
+`PerSeedWorkBudgetMultiplier` defaults to `3`. After an independently
+validated topology-seed motion exists, each later BMTP solve receives a
+deterministic work limit equal to this multiplier times the fastest validated
+seed solve so far, with a one-second floor. A work-limited seed remains visible
+in `SeedSummaries` with termination reason `seedWorkBudgetExhausted`.
+
 ## Minimal fixed-goal example
 
 ```matlab

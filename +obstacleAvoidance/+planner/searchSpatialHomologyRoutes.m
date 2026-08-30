@@ -61,6 +61,7 @@ stateCost_deg = Inf(1, stateCapacity);
 stateCost_deg(1) = 0;
 parentState = zeros(1, stateCapacity);
 closed = false(1, stateCapacity);
+stateLookup = dictionary(stateKey(1, stateSignature(1, :)), 1);
 rejectedCount = 0;
 phase = zeros(nodeCount, signatureWidth);
 if representativeCount > 0
@@ -130,10 +131,8 @@ while numel(routes) < maximumCount
             rejectedCount = rejectedCount + 1;
             continue;
         end
-        sameState = stateNode(1:stateCount) == neighbor & ...
-            all(stateSignature(1:stateCount, :) == trialSignature, 2).';
-        nextState = find(sameState, 1);
-        if isempty(nextState)
+        trialKey = stateKey(neighbor, trialSignature);
+        if ~isKey(stateLookup, trialKey)
             stateCount = stateCount + 1;
             if stateCount > stateCapacity
                 stateCapacity = 2 * stateCapacity;
@@ -147,7 +146,11 @@ while numel(routes) < maximumCount
             stateCost_deg(nextState) = Inf;
             parentState(nextState) = 0;
             closed(nextState) = false;
-        elseif closed(nextState)
+            stateLookup(trialKey) = nextState;
+        else
+            nextState = stateLookup(trialKey);
+        end
+        if closed(nextState)
             rejectedCount = rejectedCount + 1;
             continue;
         end
@@ -246,6 +249,11 @@ statePath = targetState;
 while statePath(1) ~= 1
     statePath = [parentState(statePath(1)), statePath]; %#ok<AGROW>
 end
+end
+
+function key = stateKey(node, signature)
+% Encode one augmented state without floating-point or ordering ambiguity.
+key = strjoin([string(node), string(double(signature(:).'))], ":");
 end
 
 function length_deg = routeLength(route_deg)

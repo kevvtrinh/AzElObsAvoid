@@ -52,9 +52,12 @@ for layerIndex = 1:layerCount
         obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
         repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
-sourceState = zeros(0, 1);
-targetState = zeros(0, 1);
-edgeLength_deg = zeros(0, 1);
+motionPairs = isfinite(edgeCost_deg) & ~eye(nodeCount);
+edgeCapacity = (layerCount - 1) * (nodeCount + nnz(motionPairs));
+sourceState = zeros(edgeCapacity, 1);
+targetState = zeros(edgeCapacity, 1);
+edgeLength_deg = zeros(edgeCapacity, 1);
+edgeCount = 0;
 waitCount = 0;
 motionCount = 0;
 rejectedCount = 0;
@@ -73,10 +76,11 @@ for layerIndex = 1:layerCount - 1
             nodePosition_deg(sourceNode, :), layerTimes_s(layerIndex), ...
             layerTimes_s(layerIndex + 1));
         if waitIsClear
-            [sourceState, targetState, edgeLength_deg] = appendEdge( ...
-                sourceState, targetState, edgeLength_deg, ...
-                sub2ind([layerCount nodeCount], layerIndex, sourceNode), ...
-                nextState, 0);
+            edgeCount = edgeCount + 1;
+            sourceState(edgeCount) = ...
+                sub2ind([layerCount nodeCount], layerIndex, sourceNode);
+            targetState(edgeCount) = nextState;
+            edgeLength_deg(edgeCount) = 0;
             waitCount = waitCount + 1;
         else
             rejectedCount = rejectedCount + 1;
@@ -101,15 +105,19 @@ for layerIndex = 1:layerCount - 1
                 rejectedCount = rejectedCount + 1;
                 continue;
             end
-            [sourceState, targetState, edgeLength_deg] = appendEdge( ...
-                sourceState, targetState, edgeLength_deg, ...
-                sub2ind([layerCount nodeCount], layerIndex, sourceNode), ...
-                sub2ind([layerCount nodeCount], targetLayer, targetNode), ...
-                norm(displacement_deg));
+            edgeCount = edgeCount + 1;
+            sourceState(edgeCount) = ...
+                sub2ind([layerCount nodeCount], layerIndex, sourceNode);
+            targetState(edgeCount) = ...
+                sub2ind([layerCount nodeCount], targetLayer, targetNode);
+            edgeLength_deg(edgeCount) = norm(displacement_deg);
             motionCount = motionCount + 1;
         end
     end
 end
+sourceState = sourceState(1:edgeCount);
+targetState = targetState(1:edgeCount);
+edgeLength_deg = edgeLength_deg(1:edgeCount);
 searchGraph = digraph(sourceState, targetState, edgeLength_deg, layerCount * nodeCount);
 
 %% Section 2: Select Goal And Best-Partial Paths
@@ -151,14 +159,6 @@ record = struct("LayerTimes_s", layerTimes_s, "NodeCount", nodeCount, ...
 end
 
 %% Section 3: Local Functions
-
-function [source, target, length_deg] = appendEdge( ...
-        source, target, length_deg, newSource, newTarget, newLength_deg)
-% Append one generated transition without changing deterministic loop order.
-source(end + 1, 1) = newSource;
-target(end + 1, 1) = newTarget;
-length_deg(end + 1, 1) = newLength_deg;
-end
 
 function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s)
 % Sample proposal edges; final public validation remains adaptive.

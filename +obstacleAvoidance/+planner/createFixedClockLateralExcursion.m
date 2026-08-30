@@ -1,5 +1,6 @@
 function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
-        directCandidate, obstacles, initialState, goalState, limits, options)
+        directCandidate, obstacles, initialState, goalState, limits, options, ...
+        directValidation)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -7,6 +8,10 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %   [candidate, diagnostics] = ...
 %       obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
 %       directCandidate, obstacles, initialState, goalState, limits, options)
+%   [candidate, diagnostics] = ...
+%       obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
+%       directCandidate, obstacles, initialState, goalState, limits, options, ...
+%       directValidation)
 %**************************************************************************
 % PURPOSE
 %   - Preserve a certified direct physical-minimum clock while enumerating
@@ -28,6 +33,9 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %       Per-axis physical limits and azimuth/elevation workspace intervals.
 %   - options (resolved scalar planner-options struct)
 %       Supplies sampling, collision, constraint, and goal-time policies.
+%   - directValidation (scalar validation record, optional)
+%       The caller's authoritative validation of directCandidate. When supplied,
+%       it avoids repeating the identical full-trajectory validation.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar planner candidate struct)
@@ -49,9 +57,9 @@ if nargin == 0
     diagnostics = createDiagnostics();
     return;
 end
-if nargin ~= 6
+if nargin ~= 6 && nargin ~= 7
     error("createFixedClockLateralExcursion:InvalidCall", ...
-        "directCandidate, obstacles, states, limits, and options are required.");
+        "Use six inputs or additionally supply directValidation.");
 end
 timer = tic;
 candidate = directCandidate;
@@ -91,11 +99,21 @@ if ~diagnostics.ClockMatched
         "The direct duration does not equal its componentwise physical lower bound.", timer);
     return;
 end
-directValidation = obstacleAvoidance.validateTrajectory( ...
-    directCandidate, obstacles, initialState, goalState, limits, options);
+if nargin == 7
+    if ~isstruct(directValidation) || ~isscalar(directValidation) || ...
+            ~isfield(directValidation, "Passed")
+        error("createFixedClockLateralExcursion:InvalidDirectValidation", ...
+            "directValidation must be the scalar public validation record.");
+    end
+else
+    validationTimer = tic;
+    directValidation = obstacleAvoidance.validateTrajectory( ...
+        directCandidate, obstacles, initialState, goalState, limits, options);
+    diagnostics = addValidationTiming(diagnostics, directValidation, ...
+        toc(validationTimer));
+end
 diagnostics.DirectValidation = directValidation;
-diagnostics.ValidationCount = 1;
-if directValidation.Passed
+if nargin == 6 && directValidation.Passed
     candidate.Validation = directValidation;
     diagnostics.Success = true;
     diagnostics.SelectedMode = "direct";
@@ -117,9 +135,11 @@ end
     directCandidate, obstacles, initialState, goalState, limits, options, clockTolerance_s);
 diagnostics.BarrierSequence = sequenceReport;
 if sequenceReport.CandidateCreated
+    validationTimer = tic;
     sequenceValidation = obstacleAvoidance.validateTrajectory( ...
         sequenceCandidate, obstacles, initialState, goalState, limits, options);
-    diagnostics.ValidationCount = diagnostics.ValidationCount + 1;
+    diagnostics = addValidationTiming(diagnostics, sequenceValidation, ...
+        toc(validationTimer));
     diagnostics.BarrierSequence.Validation = sequenceValidation;
     if sequenceValidation.Passed
         sequenceCandidate.Validation = sequenceValidation;
@@ -148,6 +168,11 @@ diagnostics.ScreeningCount = diagnostics.ScreeningCount + ...
     progressReport.ScreeningCount;
 diagnostics.ValidationCount = diagnostics.ValidationCount + ...
     progressReport.ValidationCount;
+diagnostics.ValidationElapsedTime_s = diagnostics.ValidationElapsedTime_s + ...
+    progressReport.ValidationElapsedTime_s;
+diagnostics.CollisionCheckingElapsedTime_s = ...
+    diagnostics.CollisionCheckingElapsedTime_s + ...
+    progressReport.CollisionCheckingElapsedTime_s;
 if progressReport.Success
     candidate = progressCandidate;
     diagnostics.Success = true;
@@ -274,9 +299,11 @@ if ~isempty(screenedReportIndex)
     [~, order] = sort([axisReports(screenedReportIndex).MotionLength_deg]);
     for candidateIndex = reshape(screenedReportIndex(order), 1, [])
         trial = screenedCandidates{candidateIndex};
+        validationTimer = tic;
         validation = obstacleAvoidance.validateTrajectory( ...
             trial, obstacles, initialState, goalState, limits, options);
-        diagnostics.ValidationCount = diagnostics.ValidationCount + 1;
+        diagnostics = addValidationTiming(diagnostics, validation, ...
+            toc(validationTimer));
         axisReports(candidateIndex).Validation = validation;
         if validation.Passed
             trial.Validation = validation;
@@ -431,10 +458,12 @@ if isempty(screenedIndex)
 end
 [~, order] = sort(motionLength_deg(screenedIndex));
 for candidateIndex = reshape(screenedIndex(order), 1, [])
-    trial = trialCandidates{candidateIndex};
-    validation = obstacleAvoidance.validateTrajectory( ...
-        trial, obstacles, initialState, goalState, limits, options);
-    report.ValidationCount = report.ValidationCount + 1;
+        trial = trialCandidates{candidateIndex};
+        validationTimer = tic;
+        validation = obstacleAvoidance.validateTrajectory( ...
+            trial, obstacles, initialState, goalState, limits, options);
+        report = addProgressValidationTiming(report, validation, ...
+            toc(validationTimer));
     report.ValidationPassed(candidateIndex) = validation.Passed;
     report.ValidationMessage(candidateIndex) = validation.Message;
     if validation.Passed
@@ -823,6 +852,7 @@ report = struct( ...
     "ValidationPassed", false(0, 1), ...
     "ValidationMessage", strings(0, 1), ...
     "ScreeningCount", 0, "ValidationCount", 0, ...
+    "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
     "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
     "Validation", obstacleAvoidance.validateTrajectory());
 end
@@ -870,7 +900,27 @@ diagnostics = struct( ...
     "BarrierSequence", createBarrierReport(), ...
     "ProgressPolynomial", createProgressReport(), ...
     "AxisReports", repmat(createAxisReport(), 0, 1), ...
+    "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
     "ElapsedTime_s", 0);
+end
+
+function diagnostics = addValidationTiming(diagnostics, validation, elapsedTime_s)
+% Keep nested public-validation work separable from construction time.
+diagnostics.ValidationCount = diagnostics.ValidationCount + 1;
+diagnostics.ValidationElapsedTime_s = diagnostics.ValidationElapsedTime_s + ...
+    elapsedTime_s;
+diagnostics.CollisionCheckingElapsedTime_s = ...
+    diagnostics.CollisionCheckingElapsedTime_s + ...
+    validation.CollisionCheckingElapsedTime_s;
+end
+
+function report = addProgressValidationTiming(report, validation, elapsedTime_s)
+% Record validation timing inside the local bounded progress family.
+report.ValidationCount = report.ValidationCount + 1;
+report.ValidationElapsedTime_s = report.ValidationElapsedTime_s + elapsedTime_s;
+report.CollisionCheckingElapsedTime_s = ...
+    report.CollisionCheckingElapsedTime_s + ...
+    validation.CollisionCheckingElapsedTime_s;
 end
 
 function diagnostics = finishFailure(diagnostics, reason, message, timer)

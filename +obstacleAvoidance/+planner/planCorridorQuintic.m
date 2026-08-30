@@ -127,11 +127,11 @@ if ~useRuckigWaypoint
     [excursionCandidate, excursionDiagnostics] = ...
         obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
         directCandidate, preparedObstacles, initialState, goalState, ...
-        limits, options);
+        limits, options, directValidation);
     excursionElapsedTime_s = toc(motionTimer);
     obstacleAvoidance.input.throwIfCancellationRequested(options);
-    stageTiming.MotionSolvingElapsedTime_s = ...
-        stageTiming.MotionSolvingElapsedTime_s + excursionElapsedTime_s;
+    stageTiming = accountConstructorValidation( ...
+        stageTiming, excursionElapsedTime_s, excursionDiagnostics);
     result.SearchDiagnostics.FixedClockExcursion = excursionDiagnostics;
     if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
         excursionSeed = createMotionSeed( ...
@@ -155,8 +155,8 @@ if ~useRuckigWaypoint
         obstacles, initialState, goalState, limits, options);
     openingElapsedTime_s = toc(motionTimer);
     obstacleAvoidance.input.throwIfCancellationRequested(options);
-    stageTiming.MotionSolvingElapsedTime_s = ...
-        stageTiming.MotionSolvingElapsedTime_s + openingElapsedTime_s;
+    stageTiming = accountConstructorValidation( ...
+        stageTiming, openingElapsedTime_s, openingDiagnostics);
     openingIsValidated = openingDiagnostics.Success && ...
         openingCandidate.Validation.Passed;
     if openingIsValidated
@@ -276,30 +276,42 @@ end
 
 for seedIndex = 1:seedCount
     obstacleAvoidance.input.throwIfCancellationRequested(options);
+    seedOptions = applyIncumbentWorkBudget(options, seedSummaries);
     motionTimer = tic;
     if useRuckigWaypoint
         [candidate, solverDiagnostics] = ...
             obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-            seeds(seedIndex), initialState, goalState, limits, options);
+            seeds(seedIndex), initialState, goalState, limits, seedOptions);
     elseif useStaticKernel
         kernelGoalState = createFixedKernelGoalState(goalState, options);
         [candidate, solverDiagnostics] = ...
             obstacleAvoidance.planner.solveBmtpTrajectory( ...
             seeds(seedIndex), preparedObstacles, initialState, kernelGoalState, ...
-            limits, options);
+            limits, seedOptions);
     else
         [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
-            seeds(seedIndex), initialState, goalState, limits, options);
+            seeds(seedIndex), initialState, goalState, limits, seedOptions);
     end
     elapsedTime_s = toc(motionTimer);
     obstacleAvoidance.input.throwIfCancellationRequested(options);
     stageTiming.MotionSolvingElapsedTime_s = ...
         stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
-    [candidate, validation, ~, stageTiming] = validateCandidate( ...
-        candidate, preparedObstacles, initialState, goalState, limits, ...
-        options, stageTiming, "The motion kernel returned no trajectory.");
+    budgetExhausted = solverWorkBudgetExhausted(solverDiagnostics);
+    if budgetExhausted
+        validation = obstacleAvoidance.validateTrajectory();
+        candidate.TerminationReason = "seedWorkBudgetExhausted";
+        candidate.Message = "The seed motion solve exhausted its incumbent work budget.";
+    else
+        [candidate, validation, ~, stageTiming] = validateCandidate( ...
+            candidate, preparedObstacles, initialState, goalState, limits, ...
+            options, stageTiming, "The motion kernel returned no trajectory.");
+    end
     summary = summarizeCandidate(candidate, validation, ...
         solverDiagnostics, elapsedTime_s, summaryTemplate);
+    if budgetExhausted
+        summary.TerminationReason = "seedWorkBudgetExhausted";
+        summary.Message = candidate.Message;
+    end
     if ~seedSummaries(seedIndex).ValidationPassed || ...
             (validation.Passed && isBetterSummary( ...
             summary, seedSummaries(seedIndex), options.GoalTimeMode))
@@ -492,6 +504,7 @@ targets = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
 for fieldIndex = 1:numel(names)
     summary.(targets(fieldIndex)) = candidate.(names(fieldIndex));
 end
+
 summary.ValidationPassed = validation.Passed;
 summary.CollisionFree = validation.CollisionFree;
 summary.CollisionResolved = validation.CollisionResolved;
@@ -503,6 +516,57 @@ summary.SolverDiagnostics = diagnostics;
 if ~validation.Passed && ~isempty(candidate.time_s)
     summary.TerminationReason = "independentValidationFailed";
 end
+end
+
+function options = applyIncumbentWorkBudget(options, seedSummaries)
+% Limit only later work after public validation establishes an incumbent.
+successful = [seedSummaries.ValidationPassed];
+if ~any(successful)
+    return;
+end
+successfulElapsed_s = [seedSummaries(successful).SeedPlanningElapsedTime_s];
+fastestSuccessfulSolve_s = min(successfulElapsed_s);
+if ~isfinite(fastestSuccessfulSolve_s) || fastestSuccessfulSolve_s <= 0
+    return;
+end
+options.MaximumSolverTime_s = max(1, ...
+    options.PerSeedWorkBudgetMultiplier * fastestSuccessfulSolve_s);
+end
+
+function exhausted = solverWorkBudgetExhausted(diagnostics)
+% Translate the engine work-limit flag into the planner's stable seed reason.
+exhausted = isstruct(diagnostics) && isscalar(diagnostics) && ...
+    isfield(diagnostics, "WorkLimitReached") && ...
+    isequal(diagnostics.WorkLimitReached, true);
+end
+
+function stageTiming = accountConstructorValidation( ...
+        stageTiming, constructorElapsedTime_s, diagnostics)
+% Move nested authoritative validation from constructor work into its stages.
+validationElapsedTime_s = 0;
+collisionElapsedTime_s = 0;
+if isfield(diagnostics, "ValidationElapsedTime_s")
+    validationElapsedTime_s = double(diagnostics.ValidationElapsedTime_s);
+end
+if isfield(diagnostics, "CollisionCheckingElapsedTime_s")
+    collisionElapsedTime_s = double(diagnostics.CollisionCheckingElapsedTime_s);
+end
+tolerance_s = 256 * eps(max(1, constructorElapsedTime_s));
+if validationElapsedTime_s > constructorElapsedTime_s + tolerance_s || ...
+        collisionElapsedTime_s > validationElapsedTime_s + tolerance_s
+    error("planCorridorQuintic:InvalidConstructorTiming", ...
+        "Nested validation timing exceeds its constructor or validation total.");
+end
+validationElapsedTime_s = min(validationElapsedTime_s, constructorElapsedTime_s);
+collisionElapsedTime_s = min(collisionElapsedTime_s, validationElapsedTime_s);
+stageTiming.MotionSolvingElapsedTime_s = ...
+    stageTiming.MotionSolvingElapsedTime_s + ...
+    constructorElapsedTime_s - validationElapsedTime_s;
+stageTiming.CollisionCheckingElapsedTime_s = ...
+    stageTiming.CollisionCheckingElapsedTime_s + collisionElapsedTime_s;
+stageTiming.FinalValidationElapsedTime_s = ...
+    stageTiming.FinalValidationElapsedTime_s + ...
+    validationElapsedTime_s - collisionElapsedTime_s;
 end
 
 function result = finishFastPath(result, candidate, validation, diagnostics, ...

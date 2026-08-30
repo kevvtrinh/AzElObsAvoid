@@ -274,3 +274,19 @@ planner work and pass the unchanged public validator.
 - Broad SQP, conjugate-gradient, limited-memory BFGS, PCG, Parallel Computing
   Toolbox, and `parfor` variants timed out, regressed, or established no sound
   end-to-end benefit.
+
+## Per-Seed Work Budget Verification — 2026-08-29
+
+The README fixed-goal protected-rectangle request was rerun on
+`422f887+worktree` with `PerSeedWorkBudgetMultiplier=3`. The retained selected
+motion is seed 3 with a 7.574541766-second arrival and 11.411861388-degree
+motion length. Final wall time was 14.060 seconds. The losing fourth BMTP seed
+ended after 4.857 seconds with `seedWorkBudgetExhausted`, rather than an
+independent-validation failure. Exclusive final stage timing was 0.4830 seconds
+topology, 12.0845 seconds motion solving, 0.3230 seconds collision checking,
+0.3292 seconds final validation, and 0.7899 seconds unattributed, totaling
+14.0096 seconds. This is one measured static request, not a general runtime or
+optimality claim. The full MATLAB suite passed 84/84; the timed and cavity
+certificate coverage is direct, while the geometric lower-bound pruning proposal
+was deliberately not implemented because a topology seed is not a mandatory
+optimized vertex chain.

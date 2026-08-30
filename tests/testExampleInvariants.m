@@ -154,3 +154,27 @@ for fileIndex = 1:numel(exampleFiles)
         exampleName + " must not append fields to the planner result.");
 end
 end
+
+function testObstacleAvoidanceRunsHeadlessly(testCase)
+% Execute a maintained obstacle case instead of checking only its source text.
+result = exampleObstacleAvoidance(struct( ...
+    "PlotOutputs", false, "FigureVisible", "off"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, result.ArrivalTime_s, 7.574542, "AbsTol", 1e-6);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyEqual(testCase, summary.MotionLength_deg, 11.411861, "AbsTol", 1e-6);
+end
+
+function testObstacleFreeRunsHeadlessly(testCase)
+% Execute the direct maintained example and check public result evidence.
+result = exampleObstacleFree(struct( ...
+    "PlotOutputs", false, "FigureVisible", "off"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyGreaterThan(testCase, result.ArrivalTime_s, 0);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyEqual(testCase, summary.MotionLength_deg, sqrt(20), "AbsTol", 1e-9);
+end
