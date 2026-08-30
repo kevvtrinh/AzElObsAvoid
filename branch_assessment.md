@@ -15,9 +15,9 @@ had 16 validated successes and one expected validated failure, but the branch
 still misses the combined size, runtime, arrival, and path-record gates. That
 matrix does not prove general completeness or global optimality.
 
-- Current integration and cooperative-cancellation suite: 79/79 tests passed
-  in a fresh MATLAB process; the last complete maintained-example matrix
-  remains `944a738`.
+- Current integration and cooperative-cancellation suite: 84/84 tests passed
+  after the reachability-frontier timed-search port. The rogue bundle now
+  terminates as `noValidatedSeed` in 149.484 seconds under its 180-second poll.
 - The sandbox now has a Stop action that remains enabled during synchronous
   planning, polls the time-expanded and homology searches plus planner-stage
   boundaries, restores idle state, and enables a replayable pre-run export.

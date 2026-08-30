@@ -291,6 +291,17 @@ for seedIndex = 1:seedCount
     else
         [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
             seeds(seedIndex), initialState, goalState, limits, seedOptions);
+        timedTerminationReason = string(candidate.TerminationReason);
+        timedTopologyIsUnsupported = any(timedTerminationReason == ...
+            ["unsupportedTimedTopology", "invalidDirectWaitSeed"]);
+        if timedTopologyIsUnsupported
+            [candidate, solverDiagnostics] = ...
+                obstacleAvoidance.planner.createRuckigWaypointMotion( ...
+                seeds(seedIndex), initialState, goalState, limits, seedOptions);
+            solverDiagnostics.FallbackContinued = true;
+            solverDiagnostics.FallbackTerminationReason = ...
+                timedTerminationReason;
+        end
     end
     elapsedTime_s = toc(motionTimer);
     obstacleAvoidance.input.throwIfCancellationRequested(options);

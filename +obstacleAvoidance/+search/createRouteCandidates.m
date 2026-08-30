@@ -163,9 +163,10 @@ end
 diagnostics.GeneratedSeedCount = numel(seeds);
 if usesReducedGeometry
     diagnostics.Coverage.CompletenessLossReason = ...
-        "reducedSpatialProposalAndBoundedSeedPortfolio";
+        "reducedSpatialProposalAndBoundedSearch";
 else
-    diagnostics.Coverage.CompletenessLossReason = "boundedVisibilityAndSeedPortfolio";
+    diagnostics.Coverage.CompletenessLossReason = ...
+        "boundedSeedNodeAndTimeSearch";
 end
 end
 

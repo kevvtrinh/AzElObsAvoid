@@ -44,6 +44,10 @@ deterministic work limit equal to this multiplier times the fastest validated
 seed solve so far, with a one-second floor. A work-limited seed remains visible
 in `SeedSummaries` with termination reason `seedWorkBudgetExhausted`.
 
+`MaximumTimeLayerCount` defaults to `17` and bounds the timed visibility
+search layers, including the initial and goal times. Lower values reduce
+timed-search work but can omit obstacle-event times and lose feasible routes.
+
 ## Minimal fixed-goal example
 
 ```matlab
