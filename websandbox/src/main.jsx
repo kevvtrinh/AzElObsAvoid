@@ -65,17 +65,28 @@ function formatPosition(position_deg) {
   return `(${position_deg[0].toFixed(2)}°, ${position_deg[1].toFixed(2)}°)`;
 }
 
-function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_deg }) {
+function formatTime(time_s) {
+  return `${time_s.toFixed(2)} s`;
+}
+
+function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_deg, initialTime_s, goalTime_s, result }) {
   if (!viewport) return null;
   const toLeftPercent = (value_deg) => (value_deg - viewport.left) / (viewport.right - viewport.left) * 100;
   const toBottomPercent = (value_deg) => (value_deg - viewport.bottom) / (viewport.top - viewport.bottom) * 100;
   const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
   const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
+  const trajectoryTime_s = result?.time_s || [];
+  const trajectoryPosition_deg = result?.position_deg || [];
+  const hasTrajectory = trajectoryTime_s.length > 0 && trajectoryPosition_deg.length > 0;
+  const startTime_s = hasTrajectory ? trajectoryTime_s[0] : initialTime_s;
+  const arrivalTime_s = hasTrajectory ? trajectoryTime_s[trajectoryTime_s.length - 1] : goalTime_s;
+  const startPosition_deg = hasTrajectory ? trajectoryPosition_deg[0] : initialPosition_deg;
+  const endPosition_deg = hasTrajectory ? trajectoryPosition_deg[trajectoryPosition_deg.length - 1] : goalPosition_deg;
   return <div className="coordinate-frame" aria-hidden="true">
     {azimuthTicks_deg.map((tick_deg) => <span className="azimuth-tick-label" key={`az-${tick_deg}`} style={{ left: `${toLeftPercent(tick_deg)}%` }}>{degreeLabel(tick_deg)}</span>)}
     {elevationTicks_deg.map((tick_deg) => <span className="elevation-tick-label" key={`el-${tick_deg}`} style={{ bottom: `${toBottomPercent(tick_deg)}%` }}>{degreeLabel(tick_deg)}</span>)}
-    <span className="marker-label start-marker-label" style={{ left: `${toLeftPercent(initialPosition_deg[0])}%`, bottom: `${toBottomPercent(initialPosition_deg[1])}%` }}>Start {formatPosition(initialPosition_deg)}</span>
-    <span className="marker-label goal-marker-label" style={{ left: `${toLeftPercent(goalPosition_deg[0])}%`, bottom: `${toBottomPercent(goalPosition_deg[1])}%` }}>Goal {formatPosition(goalPosition_deg)}</span>
+    <span className="marker-label start-marker-label" style={{ left: `${toLeftPercent(startPosition_deg[0])}%`, bottom: `${toBottomPercent(startPosition_deg[1])}%` }}>Start t = {formatTime(startTime_s)} {formatPosition(startPosition_deg)}</span>
+    <span className="marker-label goal-marker-label" style={{ left: `${toLeftPercent(endPosition_deg[0])}%`, bottom: `${toBottomPercent(endPosition_deg[1])}%` }}>Goal t = {formatTime(arrivalTime_s)} {formatPosition(endPosition_deg)}</span>
     <span className="obstacle-legend"><i className="protected-legend" />Protected / planner geometry<i className="original-legend" />Original polygon</span>
     <span className="azimuth-axis-label">Azimuth (deg)</span>
     <span className="elevation-axis-label">Elevation (deg)</span>
@@ -108,6 +119,37 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
         drawLine(path, lineColor, true, z + 0.01);
       }
     };
+    const drawArrowhead = (from_deg, to_deg, color) => {
+      const direction = new THREE.Vector2(
+        to_deg[0] - from_deg[0], to_deg[1] - from_deg[1],
+      );
+      if (direction.lengthSq() === 0) return;
+      direction.normalize();
+      const normal = new THREE.Vector2(-direction.y, direction.x);
+      const size_deg = Math.min(
+        currentViewport.right - currentViewport.left,
+        currentViewport.top - currentViewport.bottom,
+      ) * 0.018;
+      const tip = new THREE.Vector2(to_deg[0], to_deg[1]);
+      const base = tip.clone().addScaledVector(direction, -size_deg);
+      const shape = new THREE.Shape([
+        tip,
+        base.clone().addScaledVector(normal, size_deg * 0.48),
+        base.clone().addScaledVector(normal, -size_deg * 0.48),
+      ]);
+      const arrow = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color }));
+      arrow.position.z = 0.08;
+      world.add(arrow);
+    };
+    const drawTrajectory = (position_deg) => {
+      if (!position_deg?.length) return;
+      drawLine(position_deg, 0x60a5fa, false, 0.06);
+      const arrowCount = Math.min(4, Math.max(0, position_deg.length - 1));
+      for (let arrowIndex = 1; arrowIndex <= arrowCount; arrowIndex += 1) {
+        const endIndex = Math.round(arrowIndex * (position_deg.length - 1) / (arrowCount + 1));
+        drawArrowhead(position_deg[Math.max(0, endIndex - 1)], position_deg[endIndex], 0x93c5fd);
+      }
+    };
     const drawGrid = () => {
       const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
       const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
@@ -126,7 +168,7 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
     };
     drawGrid();
     const activeSlices = scene.obstacles.map((obstacle) => { const index = Math.max(0, obstacle.slices.findLastIndex((_, sliceIndex) => (obstacle.time_s?.[sliceIndex] ?? 0) <= time)); const slice = obstacle.slices[index] || {}; const originalVertices_deg = slice.vertices_deg ?? []; const protectedVertices_deg = slice.protectedVertices_deg ?? originalVertices_deg; drawPolygon(protectedVertices_deg, 0xf97316, 0.26, 0xfb923c, 0); drawPolygon(originalVertices_deg, 0xef4444, 0.20, 0xfca5a5, 0.03); if (mode === 'edit') drawVertices(originalVertices_deg, 0xfbbf24); return index; });
-    drawVertices([scene.initialState.position_deg], 0x4ade80); drawVertices([scene.goalState.position_deg], 0xf87171); if (result?.position_deg?.length) drawLine(result.position_deg, 0x60a5fa);
+    drawVertices([scene.initialState.position_deg], 0x4ade80); drawVertices([scene.goalState.position_deg], 0xf87171); drawTrajectory(result?.position_deg);
     renderer.setSize(width_px, height_px); mount.current.appendChild(renderer.domElement); renderer.render(world, camera);
     setViewport(currentViewport);
     const toPosition = (event) => { const box = renderer.domElement.getBoundingClientRect(); const azimuth_deg = currentViewport.left + (event.clientX - box.left) / box.width * (currentViewport.right - currentViewport.left); const elevation_deg = currentViewport.top - (event.clientY - box.top) / box.height * (currentViewport.top - currentViewport.bottom); return [clamp(azimuth_deg, bounds.left, bounds.right), clamp(elevation_deg, bounds.bottom, bounds.top)]; };
@@ -138,7 +180,7 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
     return () => { renderer.domElement.removeEventListener('pointerdown', pointerDown); renderer.domElement.removeEventListener('pointermove', pointerMove); renderer.domElement.removeEventListener('pointerup', pointerUp); renderer.domElement.removeEventListener('pointerleave', pointerLeave); renderer.dispose(); mount.current?.replaceChildren(); };
   }, [scene, result, time, mode, onPoint, onVertexMove, onCursorMove]);
   const bounds = sceneBounds(scene);
-  return <div className="plane"><div className="canvas-mount" ref={mount} /><CoordinateFrame bounds={bounds} viewport={viewport} initialPosition_deg={scene.initialState.position_deg} goalPosition_deg={scene.goalState.position_deg} /></div>;
+  return <div className="plane"><div className="canvas-mount" ref={mount} /><CoordinateFrame bounds={bounds} viewport={viewport} initialPosition_deg={scene.initialState.position_deg} goalPosition_deg={scene.goalState.position_deg} initialTime_s={scene.initialState.time_s} goalTime_s={scene.goalState.time_s} result={result} /></div>;
 }
 
 function App() {
@@ -151,8 +193,8 @@ function App() {
   const run = () => queue('/api/plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scene, mode: 'trajectory' }) }, 'plan');
   const importBundle = async (event) => { const [bundle] = event.target.files; if (!bundle) return; await queue('/api/bundles/import', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Bundle-Name': bundle.name }, body: bundle }, 'import'); event.target.value = ''; };
   const exportBundle = () => queue('/api/bundles/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...scene, bundleFileName: 'az_el_web_sandbox.mat' }) }, 'export');
-  useEffect(() => { if (!job) return undefined; const timer = setInterval(async () => { const poll = await fetch(`/api/jobs/${job.id}`); const payload = await poll.json(); if (payload.Status !== 'completed') return; clearInterval(timer); if (job.type === 'import' && payload.Response.Scene) setScene(payload.Response.Scene); setResponse(payload.Response); requestAnimationFrame(() => setLatency({ clickToRender_s: (performance.now() - job.startedAt_ms) / 1000, planner_s: payload.Response.ElapsedWallTime_s })); }, 100); return () => clearInterval(timer); }, [job]);
-  const cancel = () => fetch(`/api/jobs/${job.id}/cancel`, { method: 'POST' }); const duration = response?.Result?.TrajectoryDuration_s || scene.goalState.time_s; const busy = job && !response; const transport_s = latency ? Math.max(0, latency.clickToRender_s - (latency.planner_s || 0)) : undefined;
-  return <main><header><h1>Az/El Planner Sandbox</h1><span>{response?.Result?.TerminationReason || response?.Error?.Identifier || (busy ? 'planning' : 'ready')}</span></header><section className="workspace"><section><div className="position-readout"><span>Cursor: {cursorPosition_deg ? formatPosition(cursorPosition_deg) : 'outside workspace'}</span><span>Start: {formatPosition(scene.initialState.position_deg)}</span><span>Goal: {formatPosition(scene.goalState.position_deg)}</span></div><Plane scene={scene} result={response?.Result} time={time} mode={mode} onPoint={point} onVertexMove={moveVertex} onCursorMove={updateCursor} /></section><aside><button onClick={() => setMode('polygon')}>Draw polygon</button><button onClick={finishPolygon}>Finish polygon ({draft.length})</button><button onClick={() => setMode('edit')}>Edit vertices</button><button onClick={() => setMode('start')}>Place start</button><button onClick={() => setMode('goal')}>Place goal</button><button disabled={busy} onClick={run}>Run planner</button><button disabled={!busy || job.type !== 'plan'} onClick={cancel}>Cancel</button><label>Load sandbox bundle <input aria-label="Load sandbox bundle" type="file" accept=".mat" disabled={busy} onChange={importBundle} /></label><button disabled={busy} onClick={exportBundle}>Save sandbox bundle</button><label>Mission time <input value={scene.goalState.time_s} type="number" onChange={(event) => setScene((current) => ({ ...current, goalState: { ...current.goalState, time_s: +event.target.value } }))} /></label><label>Velocity az/el <input value={scene.limits.maxVelocity_deg_s.join(',')} onChange={(event) => setScene((current) => ({ ...current, limits: { ...current.limits, maxVelocity_deg_s: event.target.value.split(',').map(Number) } }))} /></label>{latency && <output>Click to render: {latency.clickToRender_s.toFixed(3)} s; planner: {latency.planner_s.toFixed(3)} s; transport/UI: {transport_s.toFixed(3)} s</output>}{response?.DownloadUrl && <a href={response.DownloadUrl}>Download saved MATLAB bundle</a>}<pre>{JSON.stringify(response?.Diagnostics || response?.Error || { draftVertices: draft.length, obstacleCount: scene.obstacles.length, editMode: mode === 'edit' }, null, 2)}</pre></aside></section><input aria-label="Trajectory time" className="scrub" type="range" min={scene.initialState.time_s} max={duration} step="0.01" value={Math.min(time, duration)} onChange={(event) => setTime(+event.target.value)} /></main>;
+  useEffect(() => { if (!job) return undefined; const timer = setInterval(async () => { const poll = await fetch(`/api/jobs/${job.id}`); const payload = await poll.json(); if (payload.Status !== 'completed') return; clearInterval(timer); if (job.type === 'import' && payload.Response.Scene) { setScene(payload.Response.Scene); setTime(payload.Response.Scene.initialState.time_s); } setResponse(payload.Response); requestAnimationFrame(() => setLatency({ clickToRender_s: (performance.now() - job.startedAt_ms) / 1000, planner_s: payload.Response.ElapsedWallTime_s })); }, 100); return () => clearInterval(timer); }, [job]);
+  const cancel = () => fetch(`/api/jobs/${job.id}/cancel`, { method: 'POST' }); const trajectoryTime_s = response?.Result?.time_s; const duration = trajectoryTime_s?.length ? trajectoryTime_s[trajectoryTime_s.length - 1] : scene.goalState.time_s; const currentTime_s = clamp(time, scene.initialState.time_s, duration); const busy = job && !response; const transport_s = latency ? Math.max(0, latency.clickToRender_s - (latency.planner_s || 0)) : undefined;
+  return <main><header><h1>Az/El Planner Sandbox</h1><span>{response?.Result?.TerminationReason || response?.Error?.Identifier || (busy ? 'planning' : 'ready')}</span></header><section className="workspace"><section><div className="position-readout"><span>Cursor: {cursorPosition_deg ? formatPosition(cursorPosition_deg) : 'outside workspace'}</span><span>Start: {formatPosition(scene.initialState.position_deg)}</span><span>Goal: {formatPosition(scene.goalState.position_deg)}</span></div><Plane scene={scene} result={response?.Result} time={currentTime_s} mode={mode} onPoint={point} onVertexMove={moveVertex} onCursorMove={updateCursor} /></section><aside><button onClick={() => setMode('polygon')}>Draw polygon</button><button onClick={finishPolygon}>Finish polygon ({draft.length})</button><button onClick={() => setMode('edit')}>Edit vertices</button><button onClick={() => setMode('start')}>Place start</button><button onClick={() => setMode('goal')}>Place goal</button><button disabled={busy} onClick={run}>Run planner</button><button disabled={!busy || job.type !== 'plan'} onClick={cancel}>Cancel</button><label>Load sandbox bundle <input aria-label="Load sandbox bundle" type="file" accept=".mat" disabled={busy} onChange={importBundle} /></label><button disabled={busy} onClick={exportBundle}>Save sandbox bundle</button><label>Mission time <input value={scene.goalState.time_s} type="number" onChange={(event) => setScene((current) => ({ ...current, goalState: { ...current.goalState, time_s: +event.target.value } }))} /></label><label>Velocity az/el <input value={scene.limits.maxVelocity_deg_s.join(',')} onChange={(event) => setScene((current) => ({ ...current, limits: { ...current.limits, maxVelocity_deg_s: event.target.value.split(',').map(Number) } }))} /></label>{latency && <output>Click to render: {latency.clickToRender_s.toFixed(3)} s; planner: {latency.planner_s.toFixed(3)} s; transport/UI: {transport_s.toFixed(3)} s</output>}{response?.DownloadUrl && <a href={response.DownloadUrl}>Download saved MATLAB bundle</a>}<pre>{JSON.stringify(response?.Diagnostics || response?.Error || { draftVertices: draft.length, obstacleCount: scene.obstacles.length, editMode: mode === 'edit' }, null, 2)}</pre></aside></section><label className="scrub-label" htmlFor="trajectory-time">Mission time: {formatTime(currentTime_s)}<input id="trajectory-time" aria-label="Trajectory time in seconds" className="scrub" type="range" min={scene.initialState.time_s} max={duration} step="0.01" value={currentTime_s} onChange={(event) => setTime(+event.target.value)} /></label></main>;
 }
 createRoot(document.getElementById('root')).render(<App />);
