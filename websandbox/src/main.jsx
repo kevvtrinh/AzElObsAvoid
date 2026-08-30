@@ -46,6 +46,21 @@ function degreeLabel(value_deg) {
   return `${Number.isInteger(value_deg) ? value_deg : value_deg.toFixed(1)}°`;
 }
 
+function finitePolygonPaths(vertices_deg) {
+  const paths = [];
+  let path = [];
+  for (const vertex_deg of vertices_deg || []) {
+    if (Number.isFinite(vertex_deg[0]) && Number.isFinite(vertex_deg[1])) {
+      path.push(vertex_deg);
+    } else if (path.length >= 3) {
+      paths.push(path);
+      path = [];
+    }
+  }
+  if (path.length >= 3) paths.push(path);
+  return paths;
+}
+
 function formatPosition(position_deg) {
   return `(${position_deg[0].toFixed(2)}°, ${position_deg[1].toFixed(2)}°)`;
 }
@@ -61,6 +76,7 @@ function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_d
     {elevationTicks_deg.map((tick_deg) => <span className="elevation-tick-label" key={`el-${tick_deg}`} style={{ bottom: `${toBottomPercent(tick_deg)}%` }}>{degreeLabel(tick_deg)}</span>)}
     <span className="marker-label start-marker-label" style={{ left: `${toLeftPercent(initialPosition_deg[0])}%`, bottom: `${toBottomPercent(initialPosition_deg[1])}%` }}>Start {formatPosition(initialPosition_deg)}</span>
     <span className="marker-label goal-marker-label" style={{ left: `${toLeftPercent(goalPosition_deg[0])}%`, bottom: `${toBottomPercent(goalPosition_deg[1])}%` }}>Goal {formatPosition(goalPosition_deg)}</span>
+    <span className="obstacle-legend"><i className="protected-legend" />Protected / planner geometry<i className="original-legend" />Original polygon</span>
     <span className="azimuth-axis-label">Azimuth (deg)</span>
     <span className="elevation-axis-label">Elevation (deg)</span>
   </div>;
@@ -81,8 +97,17 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
     );
     camera.position.z = 10;
     const world = new THREE.Scene(); world.background = new THREE.Color('#101827');
-    const drawLine = (points, color, closed = false) => { if (!points?.length) return; const geometry = new THREE.BufferGeometry().setFromPoints((closed ? [...points, points[0]] : points).map(([x, y]) => new THREE.Vector3(x, y, 0))); world.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color }))); };
+    const drawLine = (points, color, closed = false, z = 0) => { if (!points?.length) return; const geometry = new THREE.BufferGeometry().setFromPoints((closed ? [...points, points[0]] : points).map(([x, y]) => new THREE.Vector3(x, y, z))); world.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color }))); };
     const drawVertices = (points, color) => { if (!points?.length) return; const geometry = new THREE.BufferGeometry().setFromPoints(points.map(([x, y]) => new THREE.Vector3(x, y, 0.1))); world.add(new THREE.Points(geometry, new THREE.PointsMaterial({ color, size: 8, sizeAttenuation: false }))); };
+    const drawPolygon = (vertices_deg, fillColor, fillOpacity, lineColor, z) => {
+      for (const path of finitePolygonPaths(vertices_deg)) {
+        const shape = new THREE.Shape(path.map(([x, y]) => new THREE.Vector2(x, y)));
+        const fill = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: fillColor, transparent: true, opacity: fillOpacity, depthWrite: false }));
+        fill.position.z = z;
+        world.add(fill);
+        drawLine(path, lineColor, true, z + 0.01);
+      }
+    };
     const drawGrid = () => {
       const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
       const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
@@ -100,7 +125,7 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
       ], 0x94a3b8, true);
     };
     drawGrid();
-    const activeSlices = scene.obstacles.map((obstacle) => { const index = Math.max(0, obstacle.slices.findLastIndex((_, sliceIndex) => (obstacle.time_s?.[sliceIndex] ?? 0) <= time)); const vertices = obstacle.slices[index]?.vertices_deg ?? []; drawLine(vertices, 0xee7d72, true); if (mode === 'edit') drawVertices(vertices, 0xfbbf24); return index; });
+    const activeSlices = scene.obstacles.map((obstacle) => { const index = Math.max(0, obstacle.slices.findLastIndex((_, sliceIndex) => (obstacle.time_s?.[sliceIndex] ?? 0) <= time)); const slice = obstacle.slices[index] || {}; const originalVertices_deg = slice.vertices_deg ?? []; const protectedVertices_deg = slice.protectedVertices_deg ?? originalVertices_deg; drawPolygon(protectedVertices_deg, 0xf97316, 0.26, 0xfb923c, 0); drawPolygon(originalVertices_deg, 0xef4444, 0.20, 0xfca5a5, 0.03); if (mode === 'edit') drawVertices(originalVertices_deg, 0xfbbf24); return index; });
     drawVertices([scene.initialState.position_deg], 0x4ade80); drawVertices([scene.goalState.position_deg], 0xf87171); if (result?.position_deg?.length) drawLine(result.position_deg, 0x60a5fa);
     renderer.setSize(width_px, height_px); mount.current.appendChild(renderer.domElement); renderer.render(world, camera);
     setViewport(currentViewport);
