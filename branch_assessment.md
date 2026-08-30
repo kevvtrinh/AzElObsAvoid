@@ -210,7 +210,12 @@ planner work and pass the unchanged public validator.
   20.869565217 s clock, but its 13.7165279811 deg path missed the
   13.678271908 deg record and projected planner scope was 5.0271313 s versus
   the 2.0964864 s wall record. Target Exits was not run, and all experiment
-  code and artifacts were removed.
+  code and artifacts were removed. A later same-input reconstruction confirmed
+  that length-first selection cannot improve it because seed 2 is already its
+  shortest validated motion. Increasing the compact basis through 9, 10, 12,
+  and 14 spans preserved every public check but only reached 13.7164337975 deg;
+  warm walls were 4.4719357, 3.4983968, 3.8779253, and 5.1402292 s. The quality
+  gap is therefore representation-level, not a candidate-ranking defect.
 - **Fixed-clock velocity-energy C3 QP:** rejected after the Straight Target
   gate. Six relinearized QPs passed continuous motion validation and beat the
   path record at 13.6049323647 deg on the exact 20.869565217 s clock, but took
@@ -224,6 +229,17 @@ planner work and pass the unchanged public validator.
   end-to-end example did not finish within 30 measured seconds versus the
   2.0964864 s record. It was stopped before a valid path or certificate result
   was available; Target Exits was not run, and the hook and helper were removed.
+- **Fixed-clock QP witness reuse and active-set solve:** rejected at the
+  Straight Target gate. Directly retained constant support planes certified all
+  288 output span-region pairs with zero analytic or conic fallbacks in
+  0.0554667 s. Switching the same 28-variable QP from interior point
+  (7.2986105 s) to MATLAB's active-set algorithm reduced successful seed solves
+  to 0.1599676 s, 0.0308900 s, and 0.0235469 s. All five seeds were attempted,
+  and the selected motion passed the exact 20.8695652173913 s clock, public
+  collision, kinematic, and plane-certificate checks. Its 14.2707707658 deg
+  path and 10.0545878 s full wall still missed the 13.678271908 deg and
+  2.0964864 s records; topology alone took 2.3570636 s. Target Exits was not
+  run, and all probe code and instrumentation were removed.
 - **Continuous Bernstein safe-corridor QP:** rejected at its first frozen gate.
   Its 451-line candidate passed the public collision, kinematic, exact-clock,
   and seed-corridor checks on Straight Target, but produced a
