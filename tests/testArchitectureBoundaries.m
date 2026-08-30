@@ -4,7 +4,7 @@ function tests = testArchitectureBoundaries
 %   tests = testArchitectureBoundaries
 %**************************************************************************
 % PURPOSE
-%   - Protect one-way ownership between obstacle planning and BMTP motion.
+%   - Protect one-way ownership between planning and both motion engines.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -27,6 +27,7 @@ testCase.TestData.RepositoryRoot = repositoryRoot;
 testCase.TestData.ProductRoot = fullfile(repositoryRoot, "+obstacleAvoidance");
 testCase.TestData.TrajectoryRoot = trajectoryRoot;
 testCase.TestData.EngineRoot = fullfile(trajectoryRoot, "+bmtpEngine");
+testCase.TestData.RuckigRoot = fullfile(trajectoryRoot, "+ruckigEngine");
 end
 
 function testHighLevelProductionRootsAreExplicit(testCase)
@@ -54,13 +55,14 @@ expectedSources = sort(["planTrajectory.m", ...
 verifyEqual(testCase, publicSources, expectedSources);
 end
 
-function testTrajectoryRootContainsOnlyBmtpEngine(testCase)
-% Exclude deleted legacy engines and root-level forwarding wrappers.
+function testTrajectoryRootContainsSeparatedEngines(testCase)
+% Keep BMTP and Ruckig as explicit independent trajectory-engine packages.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
-verifyEmpty(testCase, dir(fullfile(trajectoryRoot, "*.m")));
+actualRootSources = string({dir(fullfile(trajectoryRoot, "*.m")).name});
+verifyEqual(testCase, actualRootSources, "planTrajRuckig.m");
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
-actualNames = string({packageRecords([packageRecords.isdir]).name});
-verifyEqual(testCase, actualNames, "+bmtpEngine");
+actualNames = sort(string({packageRecords([packageRecords.isdir]).name}));
+verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
 actualSources = sort(string({dir(fullfile( ...
     testCase.TestData.EngineRoot, "*.m")).name}));
 expectedSources = sort([ ...
@@ -70,6 +72,20 @@ expectedSources = sort([ ...
     "createProgressPolynomialMotion.m", "evaluatePolynomial.m", ...
     "maximumRestToRestDistance.m", "solve.m"]);
 verifyEqual(testCase, actualSources, expectedSources);
+end
+
+function testRuckigEngineHasNoObstaclePlannerDependency(testCase)
+% Keep exact switching equations independent of obstacle-route ownership.
+sourceRecords = dir(fullfile(testCase.TestData.RuckigRoot, "**", "*.m"));
+for sourceIndex = 1:numel(sourceRecords)
+    sourcePath = fullfile(sourceRecords(sourceIndex).folder, ...
+        sourceRecords(sourceIndex).name);
+    sourceText = lower(string(fileread(sourcePath)));
+    forbiddenPattern = ...
+        "obstacleavoidance|bmtp|fmincon|coneprog|quadprog|optimoptions";
+    verifyEmpty(testCase, regexp(sourceText, forbiddenPattern, "once"), ...
+        sprintf("Ruckig source crosses its engine boundary: %s", sourcePath));
+end
 end
 
 function testBmtpEngineHasNoObstaclePlannerDependency(testCase)
@@ -107,6 +123,8 @@ function testPlannerUsesOnlyNamedEngineEntries(testCase)
 plannerRoot = fullfile(testCase.TestData.ProductRoot, "+planner");
 adapterText = string(fileread(fullfile( ...
     plannerRoot, "solveBmtpTrajectory.m")));
+ruckigAdapterText = string(fileread(fullfile( ...
+    plannerRoot, "createRuckigWaypointMotion.m")));
 plannerText = string(fileread(fullfile( ...
     plannerRoot, "planCorridorQuintic.m")));
 fixedClockText = string(fileread(fullfile( ...
@@ -114,7 +132,10 @@ fixedClockText = string(fileread(fullfile( ...
 validatorText = string(fileread(fullfile( ...
     testCase.TestData.ProductRoot, "validateTrajectory.m")));
 verifyTrue(testCase, contains(adapterText, "bmtpEngine.solve("));
+verifyTrue(testCase, contains(ruckigAdapterText, "ruckigEngine.solve("));
 verifyTrue(testCase, contains(plannerText, "bmtpEngine.createDirectMotion("));
+verifyTrue(testCase, contains(plannerText, ...
+    "obstacleAvoidance.planner.createRuckigWaypointMotion("));
 verifyTrue(testCase, contains(fixedClockText, ...
     "bmtpEngine.createOffsetSplineMotion("));
 verifyTrue(testCase, contains(fixedClockText, ...
@@ -137,11 +158,11 @@ verifyEmpty(testCase, duplicateNames, sprintf( ...
     strjoin(duplicateNames, ", ")));
 end
 
-function testLegacyEngineTreesAreAbsent(testCase)
-% Do not retain empty or forwarding copies of the deleted implementations.
+function testDeletedHs3EngineTreeRemainsAbsent(testCase)
+% Do not restore the deleted HS3 implementation beside the compact engines.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
 verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+hs3Engine")));
-verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+ruckigEngine")));
 verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajHs3.m")));
-verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajRuckig.m")));
+verifyTrue(testCase, isfolder(fullfile(trajectoryRoot, "+ruckigEngine")));
+verifyTrue(testCase, isfile(fullfile(trajectoryRoot, "planTrajRuckig.m")));
 end

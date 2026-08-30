@@ -9,25 +9,28 @@ that should influence future planner work.
 ## Current verdict — 2026-08-29
 
 The branch is a working research milestone, not yet the requested beta. It has
-one public planner, a separate dimension-neutral trajectory package, stable
-failure diagnostics, and independent continuous validation. The last complete
-matrix had 16 validated successes and one expected validated failure, but the
-branch still misses the combined size, runtime, arrival, and path-record gates.
-That matrix does not prove general completeness or global optimality.
+one public planner, separated BMTP and Ruckig trajectory engines, stable failure
+diagnostics, and independent continuous validation. The last complete matrix
+had 16 validated successes and one expected validated failure, but the branch
+still misses the combined size, runtime, arrival, and path-record gates. That
+matrix does not prove general completeness or global optimality.
 
-- Last fully verified algorithmic milestone: `5357a6a` (66/66 tests in
-  41.3109654 s); last complete matrix: `944a738`.
-- Non-plotting core: 8,467 lines across 50 files, 3,468 over the ceiling.
+- Current Ruckig integration: 78/78 tests in 26.8828596 s; last complete
+  maintained-example matrix remains `944a738`.
+- Production size audit rule: 11,167 nonblank, noncomment lines across 67 files,
+  6,168 over the 4,999-line ceiling.
 - Strongest result: Two opposing U reaches the exact `649/30 s` physical
   arrival floor with a 24.0968121271875 deg path and 3.0005152 s full wall.
-- In the `944a738` matrix, fixed-arrival planners remain slow: Straight Target
-  52.0803077 s and Target Exits 21.9396096 s. Extreme uses 20.5615572 s of
-  planner time and 147.204954 s for the whole example.
+- Straight Target now explicitly selects exact Ruckig waypoint composition. It
+  retains the 20.8695652173913 s clock and passes every public check with a
+  20.7720160748 deg path, 5.8749177 s planner time, and 10.1040635 s wall.
+  Target Exits remains at the `944a738` BMTP result pending a fresh Ruckig gate.
 - In that matrix, Obstacle Avoidance is about 46.57 ms late. Extreme is
   1.179 ms late, inside the user's 2.07 ms allowance but still above the
   literal historical record.
 - Straight Target and same-input Target Exits remain longer than their
-  historical records.
+  historical records; the restored Ruckig route stops at its intermediate
+  vertices and is not a claim of locally time-optimal waypoint motion.
 
 ## Current invariant boundary
 
@@ -55,22 +58,22 @@ for that request, not globally minimum path length.
 
 ## Current blockers and next bounded gate
 
-1. Remove or replace 3,468 counted core lines without weakening the public
+1. Remove or replace 6,168 counted production lines without weakening the public
    interface, diagnostics, generality, or independent validation.
-2. Replace expensive fixed-arrival BMTP work on Straight Target and Target
-   Exits.
+2. Recover pass-through path quality without relabeling the local state-to-state
+   Ruckig engine as a waypoint-optimal solver.
 3. Close the Obstacle Avoidance arrival gap and both path-record gaps without
    scenario branches or relaxed tolerances.
 4. Reduce Extreme planner and scenario-construction wall while preserving
    exact protected geometry and the accepted arrival tolerance.
 5. Rerun all maintained examples sequentially before another release claim.
 
-The next fixed-arrival method must retain 20.8695652173913 s, reach at most
-13.678271907957 deg, and beat the 2.0964864 s Straight Target wall record. It
-must then retain 24 s, reach at most 20.6764423274 deg, and beat the 5.167399 s
-same-input Target Exits wall record. The older 20.2803317257 deg and
-1.9774286 s rows used a different randomized target endpoint and are not
-comparable to the maintained deterministic fixture.
+The current fixed-arrival gate retains 20.8695652173913 s but still must reduce
+Straight Target from 20.7720160748 deg and 10.1040635 s wall to the comparable
+13.678271907957 deg and 2.0964864 s records. Target Exits must retain 24 s,
+reach at most 20.6764423274 deg, and beat the 5.167399 s same-input wall record.
+The older 20.2803317257 deg and 1.9774286 s rows used a different randomized
+target endpoint and are not comparable to the maintained deterministic fixture.
 
 Headless profiling at `4ed7f46` localized the Straight Target loss to motion,
 not topology: BMTP spent 70.6255 of 75.4950 planner seconds and
@@ -177,6 +180,13 @@ planner work and pass the unchanged public validator.
 
 ### 2026-08-29 — BMTP replacement branch
 
+- **Restored exact Ruckig engine and explicit route method:** restored the
+  independent state-to-state switching engine and facade, added the general
+  `TrajectoryMethod="ruckigWaypoint"` route adapter, and wired Straight Target
+  through it without a BMTP fallback. The engine tests passed 10/10, the full
+  suite passed 78/78, and a structurally different static-box detour passed
+  earliest and fixed arrival. Straight Target passed at the exact fixed clock,
+  but its stop-at-waypoint path and wall remain above the historical records.
 - **Exact waypoint fallback:** composed exact jerk-limited stops along a failed
   spatial seed and recovered a failed multi-edge request. Swept-envelope HS3
   was rejected.

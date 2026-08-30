@@ -4723,3 +4723,35 @@ Verification performed after the final refactor:
 Every successful example passed collision, workspace, velocity, acceleration,
 and jerk checks. The cleanup preserves observed behavior; it does not prove
 global optimality or a wall-time improvement.
+
+## Restored Ruckig Route Integration Verification — 2026-08-29
+
+The exact historical state-to-state Ruckig engine and `planTrajRuckig` facade
+were restored under `trajectory/+ruckigEngine`. Obstacle routing remains in the
+planner. The new general `TrajectoryMethod="ruckigWaypoint"` option composes
+exact Ruckig state-to-state segments along deterministic route seeds, exposes
+`ruckigWaypointComposition` provenance, and does not silently fall back to
+BMTP. This local engine is not represented as Ruckig Pro's nonconvex waypoint
+solver or as globally waypoint-time-optimal.
+
+Verification performed after the adapter and Straight Target wiring:
+
+- MATLAB `checkcode(..., "-id")`: zero messages on the modified production
+  sources and maintained Straight Target example;
+- exact engine suite: 10/10 passed;
+- engine, adapter, options, and architecture focus: 24/24 passed;
+- full `tests` tree: 78/78 passed, zero failed or incomplete, in
+  26.8828596 seconds;
+- structurally different static-box detour: earliest and fixed arrival both
+  passed independent collision and kinematic validation;
+- Straight Target with jerk enabled: planner success and independent validation
+  passed; 20.7720160748-degree selected polyline and motion length;
+  20.8695652173913-second exact fixed duration; collision, continuous
+  kinematics, and continuous collision resolution passed; 5.8749177-second
+  planner time and 10.1040635-second full example wall;
+- production-size audit rule: 11,167 nonblank, noncomment MATLAB lines across
+  67 production files, above the 4,999-line ceiling by 6,168 lines.
+
+The Ruckig integration therefore meets the explicit Straight Target engine and
+physical-clock gate, but does not meet the historical 13.678271908-degree path,
+2.0964864-second wall, or repository-size records.
