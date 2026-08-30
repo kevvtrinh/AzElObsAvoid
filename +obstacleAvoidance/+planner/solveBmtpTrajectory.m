@@ -35,8 +35,15 @@ if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end
 obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
-assertStaticHorizon(obstacles, initialState.time_s, goalState.time_s);
-[exactRegions_deg, coverage] = createExactRegions(obstacles);
+[hasStaticHorizon, occupiedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon( ...
+    obstacles, initialState.time_s, goalState.time_s);
+if ~hasStaticHorizon
+    error("solveBmtpTrajectory:UnsupportedDynamicObstacle", ...
+        "Every obstacle must be static and active over the horizon.");
+end
+[exactRegions_deg, coverage] = createExactRegions( ...
+    occupiedShape, numel(obstacles));
 [regions_deg, grouping] = createSolverRegions(exactRegions_deg);
 coverage.SolverRegionCount = numel(regions_deg);
 coverage.ConservativeGrouping = grouping;
@@ -49,27 +56,9 @@ end
 
 %% Section 3: Local Functions
 
-function assertStaticHorizon(obstacles, startTime_s, endTime_s)
-% Reject geometry or activity that is not constant over the full horizon.
-for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
-    sourceTime_s = double(obstacle.time_s(:));
-    isActive = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && ...
-        startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
-    if ~(obstacle.InternalPreparation.IsTimeInvariant && isActive)
-        error("solveBmtpTrajectory:UnsupportedDynamicObstacle", ...
-            "Every obstacle must be static and active over the horizon.");
-    end
-end
-end
-
-function [regions_deg, coverage] = createExactRegions(obstacles)
+function [regions_deg, coverage] = createExactRegions( ...
+        occupiedShape, obstacleCount)
 % Decompose the protected union; public validation owns coverage acceptance.
-occupiedShape = polyshape();
-for obstacleIndex = 1:numel(obstacles)
-    occupiedShape = union(occupiedShape, ...
-        obstacles(obstacleIndex).InternalPreparation.StaticShape);
-end
 exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
 regions_deg = cell(numel(exactRegions), 1);
 for regionIndex = 1:numel(exactRegions)
@@ -78,8 +67,8 @@ for regionIndex = 1:numel(exactRegions)
         vertices_deg(all(isfinite(vertices_deg), 2), :);
 end
 coverage = struct( ...
-    "Passed", isempty(obstacles) || ~isempty(regions_deg), ...
-    "ObstacleCount", numel(obstacles), ...
+    "Passed", obstacleCount == 0 || ~isempty(regions_deg), ...
+    "ObstacleCount", obstacleCount, ...
     "RegionCount", numel(regions_deg), ...
     "ExactRegionCount", numel(regions_deg), ...
     "AuthoritativeCoverageCheck", "publicValidation");

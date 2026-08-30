@@ -275,6 +275,33 @@ movingObstacle = staticObstacle;
 movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
 verifyTrue(testCase, obstacleAvoidance.obstacles.hasChangingHistory( ...
     movingObstacle, 0, 20));
+
+% Verify shared static-horizon semantics, union reuse, and safe empty history.
+staticObstacle = rectangleObstacle("static horizon", [0; 4], [-2 2 -1 1]);
+preparedStatic = obstacleAvoidance.obstacles.prepareDynamic(staticObstacle);
+[isStaticHorizon, occupiedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(preparedStatic, 0, 4);
+verifyTrue(testCase, isStaticHorizon);
+verifyEqual(testCase, area(occupiedShape), ...
+    area(preparedStatic.InternalPreparation.StaticShape), "AbsTol", 1e-12);
+
+[coversLongHorizon, unsupportedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(preparedStatic, -1, 4);
+verifyFalse(testCase, coversLongHorizon);
+verifyEmpty(testCase, unsupportedShape.Vertices);
+
+movingObstacle = staticObstacle;
+movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
+preparedMoving = obstacleAvoidance.obstacles.prepareDynamic(movingObstacle);
+verifyFalse(testCase, obstacleAvoidance.obstacles.queryStaticHorizon( ...
+    preparedMoving, 0, 4));
+
+emptyTimeObstacle = preparedStatic;
+emptyTimeObstacle.time_s = zeros(0, 1);
+[supportsEmptyTime, emptyTimeShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(emptyTimeObstacle, 0, 4);
+verifyFalse(testCase, supportsEmptyTime);
+verifyEmpty(testCase, emptyTimeShape.Vertices);
 end
 
 function obstacle = normalizationFixture()

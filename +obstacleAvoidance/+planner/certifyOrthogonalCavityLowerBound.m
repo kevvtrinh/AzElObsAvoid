@@ -99,13 +99,10 @@ try
     obstacles = obstacleAvoidance.obstacles.prepareDynamic( ...
         obstacleAvoidance.obstacles.combineObstacles(obstacles));
     requireProof(isscalar(obstacles), "unsupportedMultipleObstacles");
-    obstacle = obstacles(1);
-    sourceTime_s = double(obstacle.time_s(:));
-    horizonCovered = isscalar(sourceTime_s) || ...
-        initialState.time_s >= sourceTime_s(1) && goalState.time_s <= sourceTime_s(end);
-    requireProof(obstacle.InternalPreparation.IsTimeInvariant && horizonCovered, ...
-        "unsupportedDynamicObstacle");
-    occupiedShape = obstacle.InternalPreparation.StaticShape;
+    [hasStaticHorizon, occupiedShape] = ...
+        obstacleAvoidance.obstacles.queryStaticHorizon( ...
+        obstacles, initialState.time_s, goalState.time_s);
+    requireProof(hasStaticHorizon, "unsupportedDynamicObstacle");
     requireProof(~isempty(occupiedShape.Vertices), "emptyProtectedUnion");
     p0_deg = initialState.position_deg(axisOrder) .* axisSign;
     pg_deg = goalState.position_deg(axisOrder) .* axisSign;
@@ -115,8 +112,8 @@ try
         ~options.AllowAzimuthWrapping && string(options.GoalTimeMode) == "earliestArrival";
     clearance_deg = double(options.CollisionClearanceTolerance_deg);
     finiteVertices_deg = occupiedShape.Vertices(isfinite(occupiedShape.Vertices));
-    coordinateScale_deg = max([1; abs(finiteVertices_deg); abs(p0_deg(:)); ...
-        abs(pg_deg(:)); abs(supports_deg(:)); abs(clearance_deg)]);
+    coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
+        finiteVertices_deg, p0_deg, pg_deg, supports_deg, clearance_deg);
     coordinateGuard_deg = 2 ^ 18 * eps(coordinateScale_deg);
     clearanceInterval_deg = outwardInterval(clearance_deg - ...
         4 * coordinateGuard_deg, clearance_deg + 4 * coordinateGuard_deg, 8);

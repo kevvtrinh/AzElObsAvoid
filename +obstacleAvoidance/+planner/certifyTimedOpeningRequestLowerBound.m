@@ -114,7 +114,7 @@ requireProof(metadataMatches, "eventMetadataMismatch");
 
 source_deg = [initialState.position_deg(:); goalState.position_deg(:); ...
     preparation.HistoryBounds_deg(:)];
-worldScale_deg = max([1; abs(source_deg(isfinite(source_deg)))]);
+worldScale_deg = bmtpEngine.createCoordinateTolerances(source_deg);
 guard_deg = 2 ^ 18 * eps(worldScale_deg);
 clearance_deg = double(options.CollisionClearanceTolerance_deg);
 certificate.CoordinateGuard_deg = guard_deg;

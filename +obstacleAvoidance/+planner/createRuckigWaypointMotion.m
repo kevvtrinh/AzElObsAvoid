@@ -43,7 +43,7 @@ if size(route_deg, 1) < 2
     error("createRuckigWaypointMotion:InsufficientWaypoints", ...
         "seed.position_deg must contain at least two route vertices.");
 end
-coordinateScale_deg = max([1; abs(route_deg(:))]);
+coordinateScale_deg = bmtpEngine.createCoordinateTolerances(route_deg);
 duplicateTolerance_deg = 256 * eps(coordinateScale_deg);
 keepVertex = [true; vecnorm(diff(route_deg), 2, 2) > ...
     duplicateTolerance_deg];

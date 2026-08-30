@@ -87,16 +87,15 @@ if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", ...
         "goalState.time_s must be greater than initialState.time_s.");
 end
-coordinateScale_deg = max([1; abs(route_deg(:)); abs(limits.azimuthInterval_deg(:)); ...
-    abs(limits.elevationInterval_deg(:))]);
 regionMinimum_deg = zeros(numel(regions_deg), 2);
 regionMaximum_deg = zeros(numel(regions_deg), 2);
 for regionIndex = 1:numel(regions_deg)
-    coordinateScale_deg = max(coordinateScale_deg, max(abs(regions_deg{regionIndex}), [], "all"));
     regionMinimum_deg(regionIndex, :) = min(regions_deg{regionIndex}, [], 1);
     regionMaximum_deg(regionIndex, :) = max(regions_deg{regionIndex}, [], 1);
 end
-roundoffReserve_deg = 2 ^ 20 * eps * coordinateScale_deg;
+[~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances( ...
+    route_deg, limits.azimuthInterval_deg, ...
+    limits.elevationInterval_deg, regions_deg);
 normalNormLimit = 1 + 2 ^ 20 * eps;
 obstacleTarget_deg = normalNormLimit * ...
     options.CollisionClearanceTolerance_deg + roundoffReserve_deg;
@@ -591,7 +590,8 @@ product_deg = alpha .* [sum(control_deg .* plane.Normal(1, :), 2); 0] + ...
 [minimumCorrection_deg, maximumCorrection_deg] = deal( ...
     target_deg - minimumObstacleSide_deg, -reserve_deg - maximumTrajectorySide_deg);
 if minimumCorrection_deg <= maximumCorrection_deg
-    scale_deg = max([1; abs(plane.Offset_deg(:)); abs(vertices_deg(:)); abs(control_deg(:))]);
+    scale_deg = bmtpEngine.createCoordinateTolerances( ...
+        plane.Offset_deg, vertices_deg, control_deg);
     roundoff_deg = 16 * eps(scale_deg);
     [robustMinimum_deg, robustMaximum_deg] = deal( ...
         minimumCorrection_deg + roundoff_deg, maximumCorrection_deg - roundoff_deg);

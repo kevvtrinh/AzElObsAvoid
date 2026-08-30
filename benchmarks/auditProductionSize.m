@@ -8,9 +8,9 @@ function report = auditProductionSize(maximumLineCount)
 %   - Count nonblank, noncomment MATLAB lines in maintained production roots.
 %**************************************************************************
 % INPUTS
-%   - maximumLineCount (positive integer scalar, optional; default 11428)
+%   - maximumLineCount (positive integer scalar, optional; default 11524)
 %       Inclusive ceiling for the complete production count. The default
-%       is the measured size at commit d0f00e1, adopted as a no-regression
+%       is the measured size after the wait-refinement and tolerance-consolidation work, adopted as a no-regression
 %       ceiling. The earlier 4999 target was not reachable without losing
 %       capability, so this bound protects against growth instead.
 %**************************************************************************
@@ -25,7 +25,7 @@ function report = auditProductionSize(maximumLineCount)
 %% Section 1: Resolve The Maintained Production Roots
 
 if nargin == 0
-    maximumLineCount = 11428;
+    maximumLineCount = 11524;
 end
 validateattributes(maximumLineCount, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});

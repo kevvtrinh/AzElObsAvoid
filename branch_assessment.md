@@ -54,6 +54,15 @@ reads `visibilityGraph`. A census built that way reported zero cavity wins for
 code that measurably changes the result. Attribute constructions from
 `SearchDiagnostics`, not from the seed source.
 
+### Roundoff reserve consistency correction
+
+Unifying the plane-certificate `roundoffReserve_deg` formulas moved
+`exampleStaticUShapedObstacle` from 20.7124477849715 s to
+20.7124477860115 s, a measured +1.04e-9 s change. The constructor's
+`eps(coordinateScale_deg)` form was the outlier; the shared helper now uses the
+more conservative validator-owned `eps * coordinateScale_deg` formula so the
+constructor and authoritative certificate check reason in the same reserve.
+
 ### Closed moving-barrier arrival gap
 
 At `d0f00e1+worktree`, `exampleMovingBarrierWait` arrives at
@@ -83,8 +92,8 @@ matrix does not prove general completeness or global optimality.
   boundaries, restores idle state, and enables a replayable pre-run export.
   Cancellation cannot preempt MATLAB inside one atomic solver or vectorized
   geometry call; it takes effect at the next safe checkpoint.
-- Production size audit rule: 11,428 nonblank, noncomment lines across 69
-  files at `d0f00e1`. That measured size is now the ceiling, replacing the
+- Production size audit rule: 11,524 nonblank, noncomment lines across 72
+  files at HEAD. That measured size is now the ceiling, replacing the
   earlier 4,999 target. The audit counts only `+obstacleAvoidance` and
   `trajectory`; `tests/`, `examples/`, `benchmarks/`, and `sandbox/` are
   outside the counted roots, so adding coverage costs nothing against it.
@@ -127,7 +136,7 @@ for that request, not globally minimum path length.
 
 ## Current blockers and next bounded gate
 
-1. Do not grow past the 11,428-line ceiling. Reduction is welcome but is no
+1. Do not grow past the 11,524-line ceiling. Reduction is welcome but is no
    longer a release gate: the one measured attempt, deleting the
    orthogonal-cavity path, regressed `exampleStaticUShapedObstacle` and was
    reverted, so remaining size is not obviously recoverable without losing

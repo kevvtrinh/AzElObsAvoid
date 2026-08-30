@@ -266,14 +266,17 @@ if ismissing(certificateKind) || ...
         certificateKind ~= "staticDegreeOne"
     return;
 end
-occupiedShape = polyshape();
+[hasStaticHorizon, occupiedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon( ...
+    obstacles, trajectory.time_s(1), trajectory.time_s(end));
+if ~hasStaticHorizon
+    return;
+end
 for obstacleIndex = 1:numel(obstacles)
     preparation = obstacles(obstacleIndex).InternalPreparation;
-    if ~preparation.IsTimeInvariant || ...
-            isempty(preparation.StaticShape.Vertices)
+    if isempty(preparation.StaticShape.Vertices)
         return;
     end
-    occupiedShape = union(occupiedShape, preparation.StaticShape);
 end
 [regionVertices, regionCoveragePassed] = ...
     reconstructCertificateRegions(certificate, occupiedShape);
@@ -285,20 +288,13 @@ if ~regionCoveragePassed || regionCount < 1 || ...
     return;
 end
 trajectoryControls_deg = cell(segmentCount, 1);
-coordinateScale_deg = 1;
 for segmentIndex = 1:segmentCount
     positionPower = reshape(trajectory.Polynomial.positionPower_deg( ...
         segmentIndex, :, :), 2, []).';
     trajectoryControls_deg{segmentIndex} = powerToBernstein(positionPower);
-    coordinateScale_deg = max(coordinateScale_deg, ...
-        max(abs(trajectoryControls_deg{segmentIndex}), [], "all"));
 end
-for regionIndex = 1:regionCount
-    vertices_deg = regionVertices{regionIndex};
-    coordinateScale_deg = max(coordinateScale_deg, ...
-        max(abs(vertices_deg), [], "all"));
-end
-roundoffReserve_deg = 2 ^ 20 * eps * coordinateScale_deg;
+[~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances( ...
+    trajectoryControls_deg, regionVertices);
 minimumClearance_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectoryControl_deg = trajectoryControls_deg{segmentIndex};

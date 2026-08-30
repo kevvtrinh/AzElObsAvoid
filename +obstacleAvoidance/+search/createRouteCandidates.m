@@ -42,9 +42,7 @@ directRoute_deg = [start_deg; goal_deg];
 directLength_deg = norm(goal_deg - start_deg);
 directDuration_s = min(available_s, max( routeDuration(directRoute_deg, limits), ...
     directLength_deg / max(limits.maxVelocity_deg_s)));
-template = struct("Index", 0, "Source", "", "position_deg", zeros(0, 2), "tau", zeros(0, 1), ...
-    "CorridorBoundary_deg", zeros(0, 2), ...
-    "UsesReducedGeometry", false, "EstimatedDuration_s", NaN, "Length_deg", NaN);
+template = obstacleAvoidance.search.createSeed();
 seeds = template;
 seeds.Index = 1;
 seeds.Source = "directVisibilityEdge";
@@ -199,7 +197,7 @@ function [positions_deg, cost_deg, record] = createVisibilityGraph( ...
 workBudget = 1e6;
 candidateLimit = max(2, floor(sqrt(2 * workBudget / max(1, size(edgeStart_deg, 1)))) - 2);
 all_deg = [start_deg; goal_deg; shape.Vertices];
-scale_deg = max(1, max(abs(all_deg), [], "all"));
+scale_deg = bmtpEngine.createCoordinateTolerances(all_deg);
 baseOffset_deg = max(1e-3, 256 * eps(scale_deg));
 offset_deg = offsetMultiplier * baseOffset_deg;
 candidateShape = shape;
@@ -342,7 +340,8 @@ offsetAz_deg = edgeStart_deg(:, 1).' - first_deg(:, 1);
 offsetEl_deg = edgeStart_deg(:, 2).' - first_deg(:, 2);
 denominator = segment_deg(:, 1) .* boundary_deg(:, 2).' - ...
     segment_deg(:, 2) .* boundary_deg(:, 1).';
-scale_deg = max(1, max(abs([first_deg; second_deg; edgeStart_deg; edgeEnd_deg]), [], "all"));
+scale_deg = bmtpEngine.createCoordinateTolerances( ...
+    first_deg, second_deg, edgeStart_deg, edgeEnd_deg);
 tolerance = 512 * eps(scale_deg^2);
 nonparallel = abs(denominator) > tolerance;
 safeDenominator = denominator;

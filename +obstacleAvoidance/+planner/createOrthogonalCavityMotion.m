@@ -76,29 +76,23 @@ if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end
 obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
-occupiedShape = polyshape();
-for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
-    sourceTime_s = double(obstacle.time_s(:));
-    isActive = isscalar(sourceTime_s) || (initialState.time_s >= sourceTime_s(1) && ...
-        goalState.time_s <= sourceTime_s(end));
-    if ~obstacle.InternalPreparation.IsTimeInvariant || ~isActive
-        [candidate, diagnostics] = reject(candidate, diagnostics, "unsupportedDynamicObstacle", ...
-            "Every obstacle must be static and active over the horizon.");
-        return;
-    end
-    occupiedShape = union(occupiedShape, obstacle.InternalPreparation.StaticShape);
+[hasStaticHorizon, occupiedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon( ...
+    obstacles, initialState.time_s, goalState.time_s);
+if ~hasStaticHorizon
+    [candidate, diagnostics] = reject(candidate, diagnostics, ...
+        "unsupportedDynamicObstacle", ...
+        "Every obstacle must be static and active over the horizon.");
+    return;
 end
 if isempty(occupiedShape.Vertices)
     [candidate, diagnostics] = reject(candidate, diagnostics, ...
         "structureNotDetected", "A cavity requires nonempty geometry.");
     return;
 end
-coordinateScale_deg = max([1; abs(occupiedShape.Vertices(:)); ...
-    abs(seed.position_deg(:)); abs(initialState.position_deg(:)); ...
-    abs(goalState.position_deg(:))], [], "omitnan");
-geometryTolerance_deg = 2 ^ 16 * eps(coordinateScale_deg);
-roundoffReserve_deg = 2 ^ 20 * eps(coordinateScale_deg);
+[coordinateScale_deg, geometryTolerance_deg, roundoffReserve_deg] = ...
+    bmtpEngine.createCoordinateTolerances(occupiedShape.Vertices, ...
+    seed.position_deg, initialState.position_deg, goalState.position_deg);
 
 % Two roundoff reserves are required by the independent plane verifier. A
 % third places the tangent strictly outside that threshold; subdivision then
@@ -400,13 +394,12 @@ planes = repmat(emptyPlane, segmentCount, regionCount);
 regions_deg = cell(regionCount, 1);
 powerToBernstein = [1 0 0 0; 1 1/3 0 0; 1 2/3 1/3 0; 1 1 1 1];
 controls_deg = zeros(segmentCount, 4, 2);
-coordinateScale_deg = max(1, max(abs(occupiedShape.Vertices), [], "all"));
 for segmentIndex = 1:segmentCount
     power = reshape(polynomial.positionPower_deg(segmentIndex, :, :), 2, 4).';
     controls_deg(segmentIndex, :, :) = reshape(powerToBernstein * power, 1, 4, 2);
-    coordinateScale_deg = max(coordinateScale_deg, max(abs(powerToBernstein * power), [], "all"));
 end
-roundoffReserve_deg = 2 ^ 20 * eps * coordinateScale_deg;
+[~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances( ...
+    occupiedShape.Vertices, controls_deg);
 normalNormLimit = 1 + 2 ^ 20 * eps;
 requiredGap_deg = normalNormLimit * ...
     options.CollisionClearanceTolerance_deg + 2 * roundoffReserve_deg;

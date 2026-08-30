@@ -59,7 +59,7 @@ useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
     obstacles, initialState, goalState, limits, options, ...
     obstacleAvoidance.validateTrajectory());
 preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
-useStaticKernel = supportsStaticHorizon( ...
+useStaticKernel = obstacleAvoidance.obstacles.queryStaticHorizon( ...
     preparedObstacles, initialState.time_s, goalState.time_s);
 stageTiming = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
@@ -494,11 +494,12 @@ if nargin >= 4 && wait_s > 0
     position_deg = [initialState.position_deg; position_deg];
     tau = [0; wait_s / duration_s; 1];
 end
-seed = struct("Index", 1, "Source", "directRestToRest", ...
-    "position_deg", position_deg, "tau", tau, ...
-    "CorridorBoundary_deg", zeros(0, 2), ...
-    "UsesReducedGeometry", false, "EstimatedDuration_s", duration_s, ...
-    "Length_deg", norm(diff(position_deg, 1, 1)));
+seed = obstacleAvoidance.search.createSeed();
+seed.Index = 1;
+seed.Source = "directRestToRest";
+[seed.position_deg, seed.tau] = deal(position_deg, tau);
+seed.EstimatedDuration_s = duration_s;
+seed.Length_deg = norm(diff(position_deg, 1, 1));
 end
 
 function seed = createMotionSeed(candidate, source)
@@ -506,11 +507,12 @@ function seed = createMotionSeed(candidate, source)
 time_s = double(candidate.time_s(:));
 duration_s = candidate.MotionDuration_s;
 tau = (time_s - time_s(1)) / duration_s;
-seed = struct("Index", 1, "Source", string(source), ...
-    "position_deg", candidate.position_deg, "tau", tau, ...
-    "CorridorBoundary_deg", zeros(0, 2), ...
-    "UsesReducedGeometry", false, "EstimatedDuration_s", duration_s, ...
-    "Length_deg", candidate.MotionLength_deg);
+seed = obstacleAvoidance.search.createSeed();
+seed.Index = 1;
+seed.Source = string(source);
+[seed.position_deg, seed.tau] = deal(candidate.position_deg, tau);
+seed.EstimatedDuration_s = duration_s;
+seed.Length_deg = candidate.MotionLength_deg;
 end
 
 function summary = summarizeCandidate(candidate, validation, diagnostics, ...
@@ -629,21 +631,6 @@ result.ArrivalTime_s = candidate.FinalTime_s;
 result.TrajectoryDuration_s = candidate.MotionDuration_s;
 end
 
-function supported = supportsStaticHorizon(obstacles, startTime_s, endTime_s)
-% Admit BMTP only when every obstacle is constant and active on the horizon.
-supported = true;
-for obstacleIndex = 1:numel(obstacles)
-    sourceTime_s = double(obstacles(obstacleIndex).time_s(:));
-    isActive = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && ...
-        startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
-    supported = obstacles(obstacleIndex).InternalPreparation.IsTimeInvariant && ...
-        isActive;
-    if ~supported
-        return;
-    end
-end
-end
-
 function kernelGoalState = createFixedKernelGoalState(goalState, options)
 % Remove moving-goal evidence only after a fixed trial has frozen its endpoint.
 kernelGoalState = goalState;
@@ -654,10 +641,10 @@ if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
 end
 targetPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
     goalState, goalState.time_s);
-coordinateScale_deg = max([1, abs(targetPosition_deg), ...
-    abs(goalState.position_deg)]);
+coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
+    targetPosition_deg, goalState.position_deg);
 if max(abs(targetPosition_deg - goalState.position_deg)) > ...
-        256 * eps(max(coordinateScale_deg))
+        256 * eps(coordinateScale_deg)
     return;
 end
 metadataFields = intersect(fieldnames(kernelGoalState), ...
@@ -688,8 +675,8 @@ if string(seed.Source) ~= "directWait"
     return;
 end
 
-coordinateScale_deg = max([1; abs(seed.position_deg(:)); ...
-    abs(initialState.position_deg(:)); abs(goalState.position_deg(:))]);
+coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
+    seed.position_deg, initialState.position_deg, goalState.position_deg);
 positionTolerance_deg = 256 * eps(coordinateScale_deg);
 isInitialPosition = vecnorm( ...
     seed.position_deg - initialState.position_deg, 2, 2) <= ...
