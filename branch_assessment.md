@@ -1,6 +1,33 @@
 # Novel replacement branch assessment
 
-## Web Sandbox file-protocol verification — 2026-08-30
+## Web Sandbox coordinate-frame verification - 2026-08-30
+
+The web canvas now derives its full orthographic view, grid, degree ticks,
+axis labels, and workspace boundary directly from
+`limits.azimuthInterval_deg` and `limits.elevationInterval_deg`. Its default
+scene exposes the MATLAB sandbox's full [-180, 180] by [-90, 90] degree
+workspace; pointer interaction clamps placements to those same bounds and
+reports their coordinates. Start and goal labels show their coordinates and
+times, and a plan adds blue directional arrowheads with the returned arrival
+time rather than a normalized scrub scale.
+
+On bundle import, the web adapter now retains both original vertices and the
+MATLAB-computed protected vertices. The supplied
+`az_el_sandbox_goal_20260829_212652` bundle imported through the live bridge
+as two obstacles in the full workspace; its first slice had 25 original and
+49 protected vertices. The renderer uses the protected data as an orange
+translucent boundary/fill and the original data as a separate red
+boundary/fill. This preserves the planner's actual `polybuffer` output in the
+browser instead of approximating a safety buffer in JavaScript.
+
+Vite, the local bridge, and the MATLAB file worker started successfully, and
+the full MATLAB suite passed 89/89 using an isolated `MATLAB_PREFDIR`. No
+browser instance was connected to this environment, so no physical rendered
+screen was inspected and no visual-paint claim is made. The remaining limit is
+strictly browser availability, not bundle transport: the live import response
+contained both geometry representations required by the renderer.
+
+## Web Sandbox file-protocol verification - 2026-08-30
 
 The additive web client now imports and exports
 `obstacleAvoidanceSandboxDiagnosis-v2` through the existing MATLAB bundle
