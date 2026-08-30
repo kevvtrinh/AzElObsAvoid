@@ -14,7 +14,8 @@ trajectory package, exact direct and certified event-based motions, stable
 failure diagnostics, and independent continuous validation. It does not yet
 meet the user's combined core-size, runtime, arrival, and path-record gates.
 
-- Branch: `novel-rep` at pause commit `5357a6a`.
+- Branch: `novel-rep`; the last fully verified algorithmic milestone is
+  `5357a6a`.
 - Tests: 66/66 passed in 41.3109654 s after the latest deletion.
 - Maintained examples: the last complete matrix at `944a738` had 16
   validated successes and one expected validated no-path result.
@@ -30,12 +31,6 @@ meet the user's combined core-size, runtime, arrival, and path-record gates.
   still fails.
 - Path records: Straight Target and Target Exits remain longer than their
   historical records. This gate fails.
-
-The post-deletion maintained-example rerun is incomplete. Every attempted new
-MATLAB process failed before repository code loaded with `System Error: File
-system inconsistency`, including isolated preference directories and the full
-R2024b executable path. The user's running MATLAB process was not attached to,
-stopped, or modified. `Rogue Examples/` remains user-owned and untracked.
 
 ## Current architecture and invariant ownership
 
@@ -94,18 +89,18 @@ record.
 1. Remove or replace 3,468 counted core lines without weakening the public
    interface, diagnostics, generality, or independent validation.
 2. Replace expensive fixed-arrival BMTP work on Straight Target and Target
-   Exits. A seven-coefficient endpoint-null experiment is prepared under
-   ignored `tmp/novel-rep` but has not run.
+   Exits. The seven-coefficient endpoint-null experiment was rejected after
+   its structurally different second gate missed both path and runtime.
 3. Close the Obstacle Avoidance arrival gap and both path-record gaps without
    scenario branches or relaxed tolerances.
 4. Reduce Extreme planner and scenario-construction wall while preserving
    exact protected geometry and the accepted arrival tolerance.
 5. Rerun all maintained examples sequentially before another release claim.
 
-The fixed-arrival experiment must retain 20.8695652173913 s and beat
-13.678271908 deg on Straight Target, then retain 24 s and beat
-20.6764423274 deg on Target Exits. Each helper wall must be below 10 seconds,
-and the unchanged public validator must pass.
+The next fixed-arrival method must retain 20.8695652173913 s and beat
+13.678271908 deg on Straight Target, then retain 24 s and beat the actual
+20.2803317257 deg Target Exits record. Comparisons must include like-for-like
+planner-scope work, and the unchanged public validator must pass.
 
 ## Experiment ledger
 
@@ -128,10 +123,6 @@ and the unchanged public validator must pass.
 - **Affine corridor prototype:** reached certified 0.02 deg clearance on a
   10-turn route and a 12-wall maze. The 20-turn motion exceeded its horizon,
   so no production replacement was established.
-- **Learning:** no imitation or reinforcement-learning phase started because
-  the deterministic prerequisite failed and learned output would not certify
-  safety.
-
 ### 2026-08-22 — corridor-only replacement development
 
 - **Corridor-only cutover:** removed dormant HS3/NLP paths and established an
@@ -152,11 +143,6 @@ and the unchanged public validator must pass.
 
 ### 2026-08-23 — ownership, instrumentation, and sandbox work
 
-- **Repository modules and readability:** established package ownership and
-  function-header conventions. One readability-only pass was not runtime
-  tested because MATLAB execution was disabled in that session.
-- **Persistent sandbox:** added guided manual scene creation and reset; no
-  algorithmic claim was attached to the initial UI checkpoint.
 - **Combined method suite:** exposed separate corridor and HS3 choices without
   blending internals; later superseded by single-planner cutovers.
 - **Compact stage timing:** retained exclusive topology, corridor, motion,
@@ -185,8 +171,6 @@ and the unchanged public validator must pass.
 
 ### 2026-08-25 — export and HS3-only checkpoint
 
-- **Sandbox export recovery:** added explicit no-dialog export and stable
-  not-run records.
 - **HS3-only production cutover:** removed corridor-quintic code and 2,525
   lines. Results validated, but runtime and record quality remained weak.
 - **Compact C3 duration controller and exact derivative retimer:** exercised
@@ -205,7 +189,6 @@ and the unchanged public validator must pass.
   improve arrival and wall.
 - **HS3 subpackage cleanup:** removed duplicated invariants and split
   polynomial, constraint, and solver ownership.
-- **Documentation cleanup:** removed redundant guides and an obsolete example.
 - **Same-homology shortcutting:** removed route edges only when visibility and
   winding signatures were preserved.
 - **Certified direct collinearity:** preserved Euclidean paths for eligible
@@ -243,8 +226,6 @@ and the unchanged public validator must pass.
   was unfavorable.
 - **Unified seed equivalence:** removed duplicate code; runtime missed the 5%
   gate, so only ownership reduction was claimed.
-- **Route file-cap cleanup:** removed narrative/blank lines. MATLAB startup
-  failed afterward, so no behavior claim was attached.
 - **Prepared dynamic boundary queries:** accelerated exact moving-edge work.
   Repeated-validation removal, sparse Jacobians, limited-memory BFGS, and
   solver variants missed gates or regressed cases.
@@ -258,26 +239,15 @@ and the unchanged public validator must pass.
   geometry and algebra; retained for measured reductions.
 - **Validation complexity refactor:** split public validation into focused
   helpers without changing issue order or results.
-- **Interactive polygon editing and constructor panel:** routed polygon,
-  circle, freehand, square, and motion controls through canonical obstacles.
-- **Public namespace cleanup:** moved production under `+obstacleAvoidance` and
-  removed duplicate metric generation.
 - **Prepared constraint-layout reuse:** improved Opening-U profiling. A timed
   moving-barrier CG variation regressed wall and was removed.
 - **Rogue route cleanup:** recovered a visibility detour only after validation.
-- **Named trajectory entry points:** exposed HS3/Ruckig names with deprecated
-  aliases; later superseded.
-
 ### 2026-08-28 — hybrid and repository-reduction experiments
 
 - **Direct Ruckig before topology:** accelerated eligible direct requests and
   continued after collision; later removed from retained production.
-- **Goal-only sandbox and loaded-result compatibility:** removed unreachable
-  Free Mode and supported older uniform-mesh records.
 - **HS3 optimizer complexity split:** reduced orchestrator complexity without
   changing numerical behavior.
-- **Branch hygiene:** ignored generated output, scratch, and local worktrees;
-  user-owned Rogue examples remained visible.
 - **Optional pass-through warm start:** improved Single U quality but did not
   establish a runtime win; later isolated behind a deletable boundary.
 - **Multi-seed diagnostics:** retained completed candidates for inspection;
@@ -316,8 +286,23 @@ and the unchanged public validator must pass.
 - **Fixed-clock null-space path:** a 109-variable experiment beat the dense
   path target and validated but took 35.14 s. A seven-coefficient version
   retained quality and validation but took 8.39 s against its 2 s gate.
-- **Fixed-arrival seven-coefficient extension:** prepared for two BMTP outliers;
-  not executed because MATLAB startup failed.
+- **Fixed-arrival seven-coefficient extension:** rejected after both frozen
+  gates ran. Straight Target produced a fully plane-certified 13.582258304 deg
+  path at the exact 20.869565217 s clock in 8.03538 helper seconds, beating
+  its path and helper-time gates. Target Exits remained fully valid but took
+  22.1424908 helper seconds and produced 21.811076622 deg versus the
+  20.280331726 deg record. The helper also fixed azimuth to the direct clock
+  and excluded shared preparation/direct-validation work from its timer, so
+  no general or end-to-end speed claim was retained.
+- **Rest-state safe-interval search:** rejected as a universal replacement.
+  On Alternating Slalom, its 8-vertex visibility route was only
+  16.0193197983 deg, but exact rest-to-rest jerk primitives summed to
+  24.6732769008 s versus the retained 10.5 s fly-through motion. Stopping at
+  every graph vertex cannot meet the maintained arrival records.
+- **Open-quintic route smoother:** rejected at its first frozen gate. It made
+  a fully validated Straight Target trajectory in 3.0661778 s candidate scope
+  at the exact 20.869565217 s clock, but its 13.7395585901 deg path missed the
+  13.678271908 deg record. Target Exits was not run after that gate failed.
 - **Orphan seed-corridor removal:** zero callers, 60 counted core lines removed,
   and 66/66 tests passed before pause commit `5357a6a`.
 
