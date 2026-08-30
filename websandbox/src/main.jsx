@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import './styles.css';
 import {
+  coordinateToFramePixel,
   coordinateToFramePercent,
   createTicks,
   createViewport,
@@ -40,9 +41,13 @@ function formatTime(time_s) {
   return `${time_s.toFixed(2)} s`;
 }
 
-function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_deg, initialTime_s, goalTime_s, result }) {
-  if (!viewport) return null;
+function CoordinateFrame({ bounds, frame, initialPosition_deg, goalPosition_deg, initialTime_s, goalTime_s, result }) {
+  if (!frame) return null;
+  const { viewport, width_px, height_px } = frame;
   const toFramePercent = (position_deg) => coordinateToFramePercent(position_deg, viewport);
+  const toFramePixel = (position_deg) => coordinateToFramePixel(
+    position_deg, viewport, width_px, height_px,
+  );
   const azimuthTicks_deg = createTicks(bounds.left, bounds.right);
   const elevationTicks_deg = createTicks(bounds.bottom, bounds.top);
   const trajectoryTime_s = result?.time_s || [];
@@ -52,18 +57,16 @@ function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_d
   const arrivalTime_s = hasTrajectory ? trajectoryTime_s[trajectoryTime_s.length - 1] : goalTime_s;
   const startPosition_deg = hasTrajectory ? trajectoryPosition_deg[0] : initialPosition_deg;
   const endPosition_deg = hasTrajectory ? trajectoryPosition_deg[trajectoryPosition_deg.length - 1] : goalPosition_deg;
-  const workspaceTopLeft = toFramePercent([bounds.left, bounds.top]);
-  const workspaceBottomRight = toFramePercent([bounds.right, bounds.bottom]);
+  const workspaceTopLeft = toFramePixel([bounds.left, bounds.top]);
+  const workspaceBottomRight = toFramePixel([bounds.right, bounds.bottom]);
   const startFramePercent = toFramePercent(startPosition_deg);
   const endFramePercent = toFramePercent(endPosition_deg);
   return <div className="coordinate-frame" aria-hidden="true">
-    <svg className="coordinate-grid" viewBox="0 0 100 100" preserveAspectRatio="none">
-      {azimuthTicks_deg.map((tick_deg) => { const frame = toFramePercent([tick_deg, 0]); return <line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} key={`az-grid-${tick_deg}`} x1={frame.left} x2={frame.left} y1={workspaceTopLeft.top} y2={workspaceBottomRight.top} />; })}
-      {elevationTicks_deg.map((tick_deg) => { const frame = toFramePercent([0, tick_deg]); return <line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} key={`el-grid-${tick_deg}`} x1={workspaceTopLeft.left} x2={workspaceBottomRight.left} y1={frame.top} y2={frame.top} />; })}
-      <rect className="workspace-boundary" x={workspaceTopLeft.left} y={workspaceTopLeft.top} width={workspaceBottomRight.left - workspaceTopLeft.left} height={workspaceBottomRight.top - workspaceTopLeft.top} />
+    <svg className="coordinate-grid" viewBox={`0 0 ${width_px} ${height_px}`} preserveAspectRatio="none">
+      {azimuthTicks_deg.map((tick_deg) => { const point = toFramePixel([tick_deg, bounds.bottom]); return <React.Fragment key={`az-${tick_deg}`}><line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} x1={point.x} x2={point.x} y1={workspaceTopLeft.y} y2={workspaceBottomRight.y} /><text className="azimuth-tick-label" x={point.x} y={point.y + 5}>{degreeLabel(tick_deg)}</text></React.Fragment>; })}
+      {elevationTicks_deg.map((tick_deg) => { const point = toFramePixel([bounds.left, tick_deg]); return <React.Fragment key={`el-${tick_deg}`}><line className={tick_deg === 0 ? 'zero-gridline' : 'gridline'} x1={workspaceTopLeft.x} x2={workspaceBottomRight.x} y1={point.y} y2={point.y} /><text className="elevation-tick-label" x={point.x - 5} y={point.y}>{degreeLabel(tick_deg)}</text></React.Fragment>; })}
+      <rect className="workspace-boundary" x={workspaceTopLeft.x} y={workspaceTopLeft.y} width={workspaceBottomRight.x - workspaceTopLeft.x} height={workspaceBottomRight.y - workspaceTopLeft.y} />
     </svg>
-    {azimuthTicks_deg.map((tick_deg) => { const frame = toFramePercent([tick_deg, bounds.bottom]); return <span className="azimuth-tick-label" key={`az-${tick_deg}`} style={{ left: `${frame.left}%`, top: `${frame.top}%` }}>{degreeLabel(tick_deg)}</span>; })}
-    {elevationTicks_deg.map((tick_deg) => { const frame = toFramePercent([bounds.left, tick_deg]); return <span className="elevation-tick-label" key={`el-${tick_deg}`} style={{ left: `${frame.left}%`, top: `${frame.top}%` }}>{degreeLabel(tick_deg)}</span>; })}
     <span className="marker-label start-marker-label" style={{ left: `${startFramePercent.left}%`, top: `${startFramePercent.top}%` }}>Start t = {formatTime(startTime_s)} {formatPosition(startPosition_deg)}</span>
     <span className="marker-label goal-marker-label" style={{ left: `${endFramePercent.left}%`, top: `${endFramePercent.top}%` }}>Goal t = {formatTime(arrivalTime_s)} {formatPosition(endPosition_deg)}</span>
     <span className="obstacle-legend"><i className="protected-legend" />Protected / planner geometry<i className="original-legend" />Original polygon</span>
@@ -74,17 +77,12 @@ function CoordinateFrame({ bounds, viewport, initialPosition_deg, goalPosition_d
 
 function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove }) {
   const mount = useRef();
-  const [viewport, setViewport] = useState();
+  const [frame, setFrame] = useState();
   useEffect(() => {
     const bounds = sceneBounds(scene);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    const width_px = mount.current.clientWidth;
-    const height_px = mount.current.clientHeight;
-    const currentViewport = createViewport(bounds, width_px, height_px);
-    const camera = new THREE.OrthographicCamera(
-      currentViewport.left, currentViewport.right, currentViewport.top,
-      currentViewport.bottom, 0.1, 100,
-    );
+    let currentViewport;
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
     camera.position.z = 10;
     const world = new THREE.Scene(); world.background = new THREE.Color('#101827');
     const drawLine = (points, color, closed = false, z = 0) => { if (!points?.length) return; const geometry = new THREE.BufferGeometry().setFromPoints((closed ? [...points, points[0]] : points).map(([x, y]) => new THREE.Vector3(x, y, z))); world.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color }))); };
@@ -106,8 +104,7 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
       direction.normalize();
       const normal = new THREE.Vector2(-direction.y, direction.x);
       const size_deg = Math.min(
-        currentViewport.right - currentViewport.left,
-        currentViewport.top - currentViewport.bottom,
+        bounds.right - bounds.left, bounds.top - bounds.bottom,
       ) * 0.018;
       const tip = new THREE.Vector2(to_deg[0], to_deg[1]);
       const base = tip.clone().addScaledVector(direction, -size_deg);
@@ -131,18 +128,34 @@ function Plane({ scene, result, time, mode, onPoint, onVertexMove, onCursorMove 
     };
     const activeSlices = scene.obstacles.map((obstacle) => { const index = Math.max(0, obstacle.slices.findLastIndex((_, sliceIndex) => (obstacle.time_s?.[sliceIndex] ?? 0) <= time)); const slice = obstacle.slices[index] || {}; const originalVertices_deg = slice.vertices_deg ?? []; const protectedVertices_deg = slice.protectedVertices_deg ?? originalVertices_deg; drawPolygon(protectedVertices_deg, 0xf97316, 0.26, 0xfb923c, 0); drawPolygon(originalVertices_deg, 0xef4444, 0.20, 0xfca5a5, 0.03); if (mode === 'edit') drawVertices(originalVertices_deg, 0xfbbf24); return index; });
     drawVertices([scene.initialState.position_deg], 0x4ade80); drawVertices([scene.goalState.position_deg], 0xf87171); drawTrajectory(result?.position_deg);
-    renderer.setSize(width_px, height_px); mount.current.appendChild(renderer.domElement); renderer.render(world, camera);
-    setViewport(currentViewport);
+    mount.current.appendChild(renderer.domElement);
+    const resize = (width_px, height_px) => {
+      if (width_px <= 0 || height_px <= 0) return;
+      currentViewport = createViewport(bounds, width_px, height_px);
+      camera.left = currentViewport.left;
+      camera.right = currentViewport.right;
+      camera.top = currentViewport.top;
+      camera.bottom = currentViewport.bottom;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width_px, height_px, false);
+      renderer.render(world, camera);
+      setFrame({ viewport: currentViewport, width_px, height_px });
+    };
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      resize(entry.contentRect.width, entry.contentRect.height);
+    });
+    resizeObserver.observe(mount.current);
+    resize(mount.current.clientWidth, mount.current.clientHeight);
     const toPosition = (event) => { const box = renderer.domElement.getBoundingClientRect(); const azimuth_deg = currentViewport.left + (event.clientX - box.left) / box.width * (currentViewport.right - currentViewport.left); const elevation_deg = currentViewport.top - (event.clientY - box.top) / box.height * (currentViewport.top - currentViewport.bottom); return [clamp(azimuth_deg, bounds.left, bounds.right), clamp(elevation_deg, bounds.bottom, bounds.top)]; };
     let drag = null;
     const findVertex = (event) => { const position = toPosition(event); const box = renderer.domElement.getBoundingClientRect(); const threshold_deg = 12 / box.width * (bounds.right - bounds.left); let nearest = null; scene.obstacles.forEach((obstacle, obstacleIndex) => obstacle.slices[activeSlices[obstacleIndex]]?.vertices_deg.forEach((vertex, vertexIndex) => { const distance = Math.hypot(vertex[0] - position[0], vertex[1] - position[1]); if (distance <= threshold_deg && (!nearest || distance < nearest.distance)) nearest = { obstacleIndex, vertexIndex, distance }; })); return nearest; };
     const pointerDown = (event) => { if (mode === 'edit') drag = findVertex(event); }; const pointerMove = (event) => { const position_deg = toPosition(event); onCursorMove(position_deg); if (drag) onVertexMove(drag, position_deg); }; const pointerLeave = () => onCursorMove(null); const pointerUp = (event) => { if (drag) { drag = null; return; } if (mode !== 'edit') onPoint(toPosition(event)); };
     renderer.domElement.addEventListener('pointerdown', pointerDown); renderer.domElement.addEventListener('pointermove', pointerMove); renderer.domElement.addEventListener('pointerup', pointerUp);
     renderer.domElement.addEventListener('pointerleave', pointerLeave);
-    return () => { renderer.domElement.removeEventListener('pointerdown', pointerDown); renderer.domElement.removeEventListener('pointermove', pointerMove); renderer.domElement.removeEventListener('pointerup', pointerUp); renderer.domElement.removeEventListener('pointerleave', pointerLeave); renderer.dispose(); mount.current?.replaceChildren(); };
+    return () => { resizeObserver.disconnect(); renderer.domElement.removeEventListener('pointerdown', pointerDown); renderer.domElement.removeEventListener('pointermove', pointerMove); renderer.domElement.removeEventListener('pointerup', pointerUp); renderer.domElement.removeEventListener('pointerleave', pointerLeave); renderer.dispose(); mount.current?.replaceChildren(); };
   }, [scene, result, time, mode, onPoint, onVertexMove, onCursorMove]);
   const bounds = sceneBounds(scene);
-  return <div className="plane"><div className="canvas-mount" ref={mount} /><CoordinateFrame bounds={bounds} viewport={viewport} initialPosition_deg={scene.initialState.position_deg} goalPosition_deg={scene.goalState.position_deg} initialTime_s={scene.initialState.time_s} goalTime_s={scene.goalState.time_s} result={result} /></div>;
+  return <div className="plane"><div className="canvas-mount" ref={mount} /><CoordinateFrame bounds={bounds} frame={frame} initialPosition_deg={scene.initialState.position_deg} goalPosition_deg={scene.goalState.position_deg} initialTime_s={scene.initialState.time_s} goalTime_s={scene.goalState.time_s} result={result} /></div>;
 }
 
 function App() {

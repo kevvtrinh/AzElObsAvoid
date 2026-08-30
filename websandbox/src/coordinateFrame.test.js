@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  coordinateToFramePixel,
   coordinateToFramePercent,
   createTicks,
   createViewport,
@@ -17,6 +18,21 @@ test('default azimuth ticks cover the full workspace every 45 degrees', () => {
   assert.deepEqual(createTicks(defaultBounds.left, defaultBounds.right), [
     -180, -135, -90, -45, 0, 45, 90, 135, 180,
   ]);
+});
+
+test('default azimuth ticks map across the measured plot width', () => {
+  const width_px = 919;
+  const height_px = 502;
+  const viewport = createViewport(defaultBounds, width_px, height_px);
+  const tickPixels = [-180, 0, 180].map((azimuth_deg) => (
+    coordinateToFramePixel(
+      [azimuth_deg, defaultBounds.bottom], viewport, width_px, height_px,
+    ).x
+  ));
+
+  assert.ok(Math.abs(tickPixels[0] - 34.037037037037045) < 1e-12);
+  assert.equal(tickPixels[1], width_px / 2);
+  assert.ok(Math.abs(tickPixels[2] - 884.9629629629629) < 1e-12);
 });
 
 test('default elevation ticks cover the full workspace', () => {

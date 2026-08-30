@@ -1,27 +1,27 @@
 # Novel replacement branch assessment
 
-## Web Sandbox tick and grid correction - 2026-08-30
+## Web Sandbox responsive coordinate-frame correction - 2026-08-30
 
-The coordinate frame now creates both axes as eight equal intervals including
-both workspace endpoints. For the default workspace, azimuth ticks are
-`[-180 -135 -90 -45 0 45 90 135 180]` degrees and elevation ticks are
-`[-90 -67.5 -45 -22.5 0 22.5 45 67.5 90]` degrees. Tick labels and the new
-subdued SVG grid use one `coordinateToFramePercent` projection, so their
-screen intersections cannot diverge through separate x/y formulas. The
-three.js layer remains responsible for obstacles, endpoints, and trajectories.
+The three.js camera, canvas drawing buffer, and SVG overlay now share dimensions
+from one `ResizeObserver`. The canvas mount is absolutely inset into the plot,
+and a zero-size observation is ignored rather than becoming the persistent
+drawing-buffer size. The SVG viewBox uses the measured pixel width and height
+with `preserveAspectRatio="none"`, so its user space has the same aspect ratio
+and projection as the orthographic camera.
 
-Node coordinate-frame tests passed 3/3 and the production Vite build
-succeeded. At a 1000-by-500 default view, the orthographic viewport is
-approximately `[-201.6 201.6]` by `[-100.8 100.8]` degrees; `(90, 45)` maps to
-72.3214286% from the left and 27.6785714% from the top, exactly matching the
-90-degree azimuth and 45-degree elevation gridlines. The full MATLAB suite
-passed 89/89 in 50.6493659 seconds with an isolated `MATLAB_PREFDIR`.
+All 18 tick labels now live beside their 18 gridlines in the SVG. Both use the
+same degree-to-viewport-to-pixel transform. At the previously reported
+919-by-502 reference size, the numeric transform places the `-180`, `0`, and
+`180` azimuth ticks at x = 34.0370370, 459.5, and 884.9629630 px relative to
+the plot; the zero tick is exactly at half width. Node coordinate-frame tests
+passed 4/4, the production Vite build succeeded, and the full MATLAB suite
+passed 89/89 with an isolated `MATLAB_PREFDIR`.
 
-No browser instance was available to the browser-control surface, so this
-correction has numeric, unit-test, build, and MATLAB regression evidence but
-no claimed visual-paint verification. The generated `websandbox/dist/` and
-installed `websandbox/node_modules/` trees remain untracked and were not
-committed.
+No browser instance was available to the browser-control surface, so the
+reference-size values are explicitly computed rather than claimed
+`getBoundingClientRect` measurements. The generated `websandbox/dist/` and
+installed `websandbox/node_modules/` trees remain untracked and are not part of
+the commit.
 
 ## Web Sandbox coordinate-frame verification - 2026-08-30
 

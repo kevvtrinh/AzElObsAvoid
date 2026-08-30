@@ -39,3 +39,13 @@ export function coordinateToFramePercent(position_deg, viewport) {
       / (viewport.top - viewport.bottom) * 100,
   };
 }
+
+export function coordinateToFramePixel(
+  position_deg, viewport, width_px, height_px,
+) {
+  const framePercent = coordinateToFramePercent(position_deg, viewport);
+  return {
+    x: framePercent.left / 100 * width_px,
+    y: framePercent.top / 100 * height_px,
+  };
+}
