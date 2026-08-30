@@ -4,6 +4,43 @@ Current worktree evidence is summarized in
 [Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
 Earlier sections are retained as historical checkpoints.
 
+## Ruckig-to-BMTP collision gate, step 2 — 2026-08-30
+
+- The standalone certificate first tries an exact constant separator, then
+  uses BMTP's degree-one maximum-margin conic form and directly replays the
+  validator's Bernstein-product, clearance, roundoff, and normal-norm checks.
+- The final focused run passed `testBmtpWarmStartConversion` 5/5 and
+  `testArchitectureBoundaries` 9/9. Code Analyzer reported zero findings in
+  the certifier and both changed tests. The final code edit also passed
+  `gate(1)` with unchanged Two-U, README quick-start, and no-path sentinels.
+- The decisive census used maintained static cases and route candidates. The
+  intermediate Ruckig request used earliest arrival with a 3,600-second upper
+  horizon so the final request horizon did not confound geometric conversion.
+  Every curve in the denominator independently passed the public validator
+  against the original static obstacles before conversion.
+- Eight curves converted. Per-curve maximum errors and certificate results:
+  Obstacle Avoidance seeds 2 and 3, `1.74313715049989e-5 deg`, both failed;
+  Static U seeds 2 and 3, `7.85168079719939e-5 deg`, both failed; Target Exits
+  seed 2, `1.34309047285578e-5 deg`, passed; Target Exits seed 3,
+  `5.68171630073286e-5 deg`, failed; Alternating Slalom seed 2,
+  `9.50061068454221e-6 deg`, failed; Dense Concave seed 2,
+  `9.59122759523563e-6 deg`, failed.
+- The collision-certificate fraction was therefore `1/8 = 12.5%`, below the
+  predeclared one-third kill threshold with the required denominator of at
+  least six. The experiment stopped before planner wiring. No outer-iteration
+  or warm/cold timing result was run.
+- A constant-plane-only preliminary census produced 0/8 but was retracted
+  because it was more restrictive than the specified degree-one check. The
+  recorded 1/8 result is the corrected measurement.
+- The five cold maintained-example runs used jerk constraints and all passed
+  independent validation, collision, and kinematic checks. Their exact result
+  rows are appended to `benchmark.csv`; they are not warm-start benchmarks.
+- The certifier contains 382 physical lines and 323 counted production lines.
+  Experimental production is now 11,975 counted lines, 4,475 above the
+  literal 7,500 target. The allowance formula is
+  `0.25 * 4475 / 100 = 11.1875`, or 1,118.75%. The kill result provides no
+  runtime reduction and makes no size-compliance claim.
+
 ## Ruckig-to-BMTP warm-start conversion, step 1 — 2026-08-30
 
 - Source before the experiment: `novel-rep` at `e842356`.

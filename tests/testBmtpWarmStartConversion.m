@@ -67,6 +67,52 @@ verifyTrue(testCase, isfinite( ...
     coarseDiagnostics.MaximumPositionDeviation_deg));
 end
 
+function testSeparatedControlHullIsCertified(testCase)
+% Require one verified all-control-point separator with stated clearance.
+warmStart = createLinearWarmStart(0);
+regions_deg = {[-0.5 1; 0.5 1; 0.5 2; -0.5 2]};
+certificate = bmtpEngine.certifyWarmStartCollisionFree( ...
+    warmStart, regions_deg, 0.2);
+verifyTrue(testCase, certificate.Passed, certificate.Message);
+verifyEqual(testCase, certificate.CertifiedPairCount, 1);
+verifyGreaterThanOrEqual(testCase, ...
+    certificate.MinimumCertifiedClearance_deg, 0.2);
+end
+
+function testCrossingControlHullIsRejected(testCase)
+% Keep a control hull that crosses protected geometry out of BMTP.
+warmStart = createLinearWarmStart(0);
+regions_deg = {[-0.25 -0.5; 0.25 -0.5; 0.25 0.5; -0.25 0.5]};
+certificate = bmtpEngine.certifyWarmStartCollisionFree( ...
+    warmStart, regions_deg, 0);
+verifyFalse(testCase, certificate.Passed);
+verifyEqual(testCase, certificate.FailedPairCount, 1);
+verifyNotEqual(testCase, certificate.PairReason, "certifiedDegreeOnePlane");
+end
+
+function testClearanceToleranceIsAppliedAfterRoundoff(testCase)
+% Distinguish geometric separation from sufficient protected clearance.
+warmStart = createLinearWarmStart(0);
+regions_deg = {[-0.5 0.15; 0.5 0.15; 0.5 1; -0.5 1]};
+passing = bmtpEngine.certifyWarmStartCollisionFree( ...
+    warmStart, regions_deg, 0.1);
+failing = bmtpEngine.certifyWarmStartCollisionFree( ...
+    warmStart, regions_deg, 0.2);
+verifyTrue(testCase, passing.Passed);
+verifyFalse(testCase, failing.Passed);
+verifyNotEqual(testCase, failing.PairReason, "certifiedDegreeOnePlane");
+end
+
+function warmStart = createLinearWarmStart(elevation_deg)
+% Create one degree-7 line segment with an exact Bernstein control polygon.
+controlPoint_deg = zeros(1, 8, 2);
+controlPoint_deg(1, :, 1) = linspace(-2, 2, 8);
+controlPoint_deg(1, :, 2) = elevation_deg;
+warmStart = struct( ...
+    "ControlPoint_deg", controlPoint_deg, ...
+    "SegmentTime_s", 2);
+end
+
 function [result, polynomial] = createRuckigPolynomial()
 % Reconstruct the shared record directly from an exact Ruckig jerk profile.
 initialState = struct( ...

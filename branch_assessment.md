@@ -6,6 +6,38 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Ruckig-to-BMTP warm-start experiment stopped at step 2 — 2026-08-30
+
+The approach failed its predeclared collision-survival gate and is not wired
+into the planner. Across five maintained static cases, eight Ruckig route
+motions first passed the unchanged public endpoint, dynamics, and collision
+validation. All eight converted successfully to the exact degree-16 BMTP span
+count, but only one converted control net passed the complete degree-one
+Bernstein plane check: `1/8`, or 12.5%. The declared kill threshold was fewer
+than one-third of at least six validated conversions.
+
+| Case | Converted seeds | Maximum conversion error (deg) | Certified |
+| --- | --- | ---: | ---: |
+| `exampleObstacleAvoidance` | 2, 3 | 1.74313715049989e-5 each | 0/2 |
+| `exampleStaticUShapedObstacle` | 2, 3 | 7.85168079719939e-5 each | 0/2 |
+| `exampleTargetExitsObstacle` | 2, 3 | 1.34309047285578e-5; 5.68171630073286e-5 | 1/2 |
+| `exampleAlternatingSlalom` | 2 | 9.50061068454221e-6 | 0/1 |
+| `exampleDenseConcaveObstacle` | 2 | 9.59122759523563e-6 | 0/1 |
+
+The census used an extended earliest-arrival horizon only for the intermediate
+Ruckig source, then independently validated that complete source motion before
+conversion. Direct seeds that failed collision validation were excluded from
+the denominator. A preliminary constant-plane-only result of 0/8 was discarded
+because it did not implement the specified degree-one validator; the 1/8 result
+above uses the same conic plane form and direct Bernstein-product inequalities
+as BMTP.
+
+No planner option or caller was added, so no arrival, route, or cold BMTP
+behavior changed. In accordance with the kill criterion, outer iterations to
+first feasibility and repeated warm/cold wall times were not measured. Step 2
+adds 323 counted production lines, taking the experimental total to 11,975;
+this dead-end code has no measured performance allowance.
+
 ## Ruckig-to-BMTP warm-start experiment, step 1 — 2026-08-30
 
 The standalone equal-duration converter is implemented but remains unreachable
