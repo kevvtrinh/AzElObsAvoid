@@ -218,6 +218,12 @@ planner work and pass the unchanged public validator.
   plane-certificate parity. A one-QP form took 2.7812950 s and regressed path
   length to 14.1539862749 deg. Both missed the 2.0964864 s wall record; Target
   Exits was not run, and the experiment code was removed.
+- **One-shot eight-span Bernstein velocity-energy QP:** rejected at the
+  Straight Target runtime gate. The 447-line experiment eliminated 96 control
+  scalars to 28 QP variables and reached the common exporter, but the focused
+  end-to-end example did not finish within 30 measured seconds versus the
+  2.0964864 s record. It was stopped before a valid path or certificate result
+  was available; Target Exits was not run, and the hook and helper were removed.
 - **Continuous Bernstein safe-corridor QP:** rejected at its first frozen gate.
   Its 451-line candidate passed the public collision, kinematic, exact-clock,
   and seed-corridor checks on Straight Target, but produced a
