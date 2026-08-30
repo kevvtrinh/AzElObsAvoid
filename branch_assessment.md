@@ -6,6 +6,40 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Static earliest-arrival horizon monotonicity — 2026-08-30
+
+The frozen `180bad360good` request disproved the suspected seed-admission
+failure. At both 180 s and 360 s the search generated and admitted the same two
+seeds: a 153.358411534181 deg direct seed estimated at 76.6792057670906 s and a
+281.401707597662 deg visibility seed estimated at 140.700853798831 s. Before
+the correction, the visibility seed ended as `noOptimizedFeasibleIterate` at
+180 s but reached 100.675947361398 s at 360 s.
+
+The earliest divergence was inside the static BMTP biconvex solve. Six
+horizon-bounded trajectory SOCPs remained colliding at durations through
+179.203882993999 s, and the seventh became infeasible. The 360 s solve used the
+same plane sequence to find a temporary 191.541694821082 s collision-free
+iterate, then descended to the roughly 100.676 s validated motion. Thus the
+request horizon incorrectly bounded a feasibility iterate even though final
+horizon enforcement already existed in BMTP and public validation.
+
+The retained correction activates only when the horizon-bounded SOCP reports
+infeasibility before any collision-free iterate. It doubles the intermediate
+horizon, capped by the finite 454.754593605252 s kinematic duration of the
+seed-warm control net, and restores the request horizon immediately after the
+first collision-free iterate. Work remains bounded by the existing 35 outer
+iterations, per-SOCP iteration cap, and any active per-seed solver-time budget.
+No seed gate, public validator, tolerance, obstacle geometry, or scenario rule
+changed.
+
+In the final single-process gate, the 180 s request succeeded with independent
+validation at 100.664824112243 s in 19.2650543 s wall. The unchanged 360 s
+request succeeded at 100.675947361398 s in 16.2218415 s wall. All 17 maintained
+examples passed serial headless validation; `exampleNoPath` remained the
+expected `noValidatedSeed` failure; visible success and hidden failure plots
+were created. Code Analyzer reported zero findings, the complete suite passed
+84/84 in 22.2649327 s, and production remained exactly 11,524 counted lines.
+
 ## Dynamic-scene findings — 2026-08-30
 
 These supersede two claims in commit `4138f26`'s message, which were wrong.
