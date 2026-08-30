@@ -1,8 +1,109 @@
 # Plan 325 verification
 
 Current worktree evidence is summarized in
-[Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
+[BMTP immutable SOCP cache - 2026-08-30](#bmtp-immutable-socp-cache---2026-08-30).
 Earlier sections are retained as historical checkpoints.
+
+## BMTP immutable SOCP cache - 2026-08-30
+
+The retained change caches only the per-seed trajectory-SOCP data that the
+profile showed was rebuilt unchanged: derivative, endpoint, and continuity
+matrices; equality right-hand side; objective; bound template; and
+second-order cones. Plane-dependent rows and the active horizon bound are
+reconstructed on every alternation in the original order. No solver
+tolerance, acceptance rule, iteration cap, restart policy, or warm start
+changed.
+
+### Production timing
+
+The production comparison excluded the temporary call ledger. MATLAB R2024b
+Update 4 used a separate isolated `MATLAB_PREFDIR` for each snapshot. Each
+snapshot received one discarded warm-up and three recorded repetitions in
+one session. The two Target modes were interleaved A/B, B/A, A/B.
+
+| Case and mode | Baseline raw times (s) | Baseline min / median (s) | Candidate raw times (s) | Candidate min / median (s) |
+| --- | --- | ---: | --- | ---: |
+| Target Exits, maintained BMTP `1e-7 deg` | 15.8698495, 15.6846937, 15.7403272 | 15.6846937 / 15.7403272 | 14.2601636, 13.4320352, 14.1946827 | 13.4320352 / 14.1946827 |
+| Target Exits, diagnostic BMTP `1e-4 deg` | 41.7338001, 42.8482502, 41.2565451 | 41.2565451 / 41.7338001 | 35.3456280, 35.3323942, 35.3340565 | 35.3323942 / 35.3340565 |
+| Straight Target, maintained Ruckig waypoint | 4.4833886, 4.2972902, 4.3850744 | 4.2972902 / 4.3850744 | 4.6562452, 4.5019727, 4.1759325 | 4.1759325 / 4.5019727 |
+| Straight Target, diagnostic BMTP override | 18.2344675, 19.5057861, 18.3498866 | 18.2344675 / 18.3498866 | 17.7112745, 18.0195969, 19.1323885 | 17.7112745 / 18.0195969 |
+
+The maintained Target Exits median improved by 9.82%; the `1e-4 deg`
+diagnostic median improved by 15.34%. The maintained Straight Target control
+still makes zero BMTP and zero `coneprog` calls; its 2.67% median movement in
+the unfavorable direction is wall variance, not a cache result. The explicit
+BMTP override improved by 1.80% at the median.
+
+A separate observational profile measured
+`solve>solveTrajectorySocp` self time falling from
+`2.882206656 s / 17 calls` to `0.394152606 s / 17 calls` for maintained
+Target Exits, and from `7.664537344 s / 42 calls` to
+`0.448020402 s / 42 calls` at `1e-4 deg`. The corresponding complete Target
+call structures stayed at 17 outer iterations / 138 conic calls and
+42 / 433. This locates the retained benefit in removal of immutable
+MATLAB-side reconstruction, not in a looser conic problem.
+
+### Exact formulation and answer checks
+
+A temporary same-call oracle constructed the legacy and cached trajectory
+formulations immediately before each trajectory `coneprog` call. It compared
+the complete objective, cones, sparse inequality and equality matrices,
+right-hand sides, lower bounds, and horizon-adjusted upper bounds exactly.
+It passed `testBmtpEngine`, all 17 trajectory formulations in the maintained
+Target 138-call run, all 42 trajectory formulations in the `1e-4 deg`
+433-call run, and the explicit Straight BMTP path including horizon expansion.
+The unchanged maximum-margin-plane solver was outside the cache and oracle.
+The oracle was removed before production timing and commit.
+
+The instrumented Target sequences also retained exact per-seed structure:
+default outer counts `1 / 5 / 11` and conic-call counts `2 / 45 / 91`;
+`1e-4 deg` outer counts `1 / 35 / 6` and calls `2 / 385 / 46`. All exit flags
+were `+1`, and neither Target mode used a horizon expansion or caller restart.
+
+A detached archive of committed baseline `747f46c` and the candidate were
+then run in separate MATLAB processes for all 17 maintained examples. Every
+example used jerk constraints and passed its independent example validation.
+The maximum candidate-minus-baseline arrival, selected-polyline, and
+smoothed-path deltas were each exactly zero, within the required `1e-9`.
+Success states, termination reasons, selected seeds, and aggregate BMTP
+outer-, trajectory-SOCP-, and plane-SOCP counts were also identical. Exact
+candidate metrics and walls are recorded in `benchmark.csv`.
+
+The explicit Straight BMTP timing diagnostic is subject to its wall-clock
+per-seed budget, so its observed outer and conic call counts varied between
+runs as they did before this change. Its arrival and both path lengths stayed
+exact. The maintained Straight example is the zero-BMTP Ruckig row and is not
+subject to that caveat.
+
+### Verification and remaining limits
+
+Final MATLAB Code Analyzer output contained zero findings in `solve.m`.
+Focused suites passed 31/31 tests: `testBmtpEngine`, `testPlannerContract`,
+`testPlannerStageTiming`, and `testArchitectureBoundaries`. A visible
+`exampleObstacleFree` run created two figures with five axes. A hidden
+expected `exampleNoPath` run passed its failure validation and created one
+search-diagnostic figure with one axis. A zero-second BMTP budget returned
+`WorkLimitReached = true`, made zero trajectory or plane conic calls, and
+returned the stable `noOptimizedFeasibleIterate` failure.
+
+The required staged gate ran at the supplied path in one MATLAB invocation
+with an isolated `MATLAB_PREFDIR`. Every stage passed, including the Rogue
+sentinel and the complete 94/94 test suite, in about 101 seconds of observed
+tool wall time.
+
+The cache does not cure the `1e-4 deg` seed-2 oscillation: that solve still
+reaches the 35-outer-iteration cap. It only makes each immutable reconstruction
+cheaper. Counted production increased from 11,975 to 12,015 lines. The 4,515
+line excess over 7,500 gives the existing allowance formula
+`0.25 * 4515 / 100 = 11.2875`, or 1,128.75%; no size-compliance claim is made.
+`solve.m` is 1,065 physical lines, up from 1,026, and 936 noncomment lines, so
+it remains above the 900-line target. Its patch contains more than 50 added
+lines because the original inline assembly was partitioned into immutable
+template construction and dynamic row assembly; the net physical growth is
+39 lines. A separate helper would broaden the internal source surface without
+reducing total production size, so the one-call-site invariant remains local.
+The exact-formulation oracle, 31 focused tests, 17 detached comparisons, and
+94-test gate are the retained checks for that larger edit.
 
 ## BMTP conic profiler baseline - 2026-08-30
 

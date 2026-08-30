@@ -150,6 +150,7 @@ maximumSolverTime_s = Inf;
 if isfield(options, "MaximumSolverTime_s") && ~isempty(options.MaximumSolverTime_s)
     maximumSolverTime_s = max(0, double(options.MaximumSolverTime_s));
 end
+trajectorySocpTemplate = struct([]);
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
     if toc(totalTimer) >= maximumSolverTime_s
@@ -157,10 +158,11 @@ for iterationIndex = 1:35
             deal(true, "The biconvex solver reached its time limit.");
         break;
     end
-    [trialControl_deg, trialTime_s, exitFlag, output] = solveTrajectorySocp( ...
+    [trialControl_deg, trialTime_s, exitFlag, output, ...
+        trajectorySocpTemplate] = solveTrajectorySocp( ...
         segmentCount, degree, initialState.position_deg, goalState.position_deg, ...
         limits, planes, roundoffReserve_deg, optimizationHorizon_s, ...
-        trajectoryOptions);
+        trajectoryOptions, trajectorySocpTemplate);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
     diagnostics.FinalTrajectoryExitFlag = exitFlag;
     if exitFlag <= 0 || isempty(trialControl_deg)
@@ -409,91 +411,128 @@ end
 segmentTime_s = max(segmentTime_s, eps);
 end
 
-function [controlPoint_deg, segmentTime_s, exitFlag, output] = solveTrajectorySocp( ...
+function [controlPoint_deg, segmentTime_s, exitFlag, output, template] = ...
+        solveTrajectorySocp( ...
         segmentCount, degree, start_deg, goal_deg, limits, planes, reserve_deg, ...
-        maximumMotionDuration_s, options)
-% Solve one fixed-plane update as an SOCP in shared scalar time powers.
-controlCount = segmentCount * (degree + 1) * 2;
-powerIndex = controlCount + (1:4);
-variableCount = controlCount + 4;
-differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
-activePlaneCount = nnz(reshape([planes.Active], size(planes)));
-inequalityCount = 4 * segmentCount * (3 * degree - 3) + activePlaneCount * (degree + 2);
-equalityCount = 13 + 8 * (segmentCount - 1);
-A = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
-b = zeros(inequalityCount, 1);
-Aeq = spalloc(equalityCount, variableCount, 8 * equalityCount);
-beq = zeros(equalityCount, 1);
-% Exact row ownership makes bounded in-place sparse fills cheaper than dense copies.
-f = zeros(variableCount, 1);
-f(powerIndex(4)) = 1;
-lb = -Inf(variableCount, 1);
-ub = Inf(variableCount, 1);
-domain_deg = [limits.azimuthInterval_deg; limits.elevationInterval_deg];
-lb(1:controlCount) = repmat(domain_deg(:, 1), segmentCount * (degree + 1), 1);
-ub(1:controlCount) = repmat(domain_deg(:, 2), segmentCount * (degree + 1), 1);
-maximumSegmentTime_s = maximumMotionDuration_s / segmentCount;
-lb(powerIndex) = 0;
-lb(powerIndex(2)) = eps;
-ub(powerIndex) = [1; maximumSegmentTime_s; maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
-equalityIndex = 0;
-for axisIndex = 1:2
-    equalityIndex = equalityIndex + 1;
-    Aeq(equalityIndex, controlIndexOf(1, 0, axisIndex, degree)) = 1; %#ok<SPRIX>
-    beq(equalityIndex) = start_deg(axisIndex);
-    equalityIndex = equalityIndex + 1;
-    Aeq(equalityIndex, ...
-        controlIndexOf(segmentCount, degree, axisIndex, degree)) = 1; %#ok<SPRIX>
-    beq(equalityIndex) = goal_deg(axisIndex);
-    for endpointOrder = 1:2
+        maximumMotionDuration_s, options, template)
+% Reuse one seed's immutable SOCP rows while replacing plane and horizon data.
+if isempty(template)
+    controlCount = segmentCount * (degree + 1) * 2;
+    powerIndex = controlCount + (1:4);
+    variableCount = controlCount + 4;
+    differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
+    inequalityCount = 4 * segmentCount * (3 * degree - 3);
+    equalityCount = 13 + 8 * (segmentCount - 1);
+    A = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
+    Aeq = spalloc(equalityCount, variableCount, 8 * equalityCount);
+    beq = zeros(equalityCount, 1);
+    f = zeros(variableCount, 1);
+    f(powerIndex(4)) = 1;
+    lb = -Inf(variableCount, 1);
+    ub = Inf(variableCount, 1);
+    domain_deg = [limits.azimuthInterval_deg; limits.elevationInterval_deg];
+    lb(1:controlCount) = repmat( ...
+        domain_deg(:, 1), segmentCount * (degree + 1), 1);
+    ub(1:controlCount) = repmat( ...
+        domain_deg(:, 2), segmentCount * (degree + 1), 1);
+    lb(powerIndex) = 0;
+    lb(powerIndex(2)) = eps;
+    equalityIndex = 0;
+    for axisIndex = 1:2
         equalityIndex = equalityIndex + 1;
-        indices = controlIndexOf(1, [endpointOrder 0], axisIndex, degree);
-        Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
+        Aeq(equalityIndex, ...
+            controlIndexOf(1, 0, axisIndex, degree)) = 1; %#ok<SPRIX>
+        beq(equalityIndex) = start_deg(axisIndex);
         equalityIndex = equalityIndex + 1;
-        indices = controlIndexOf(segmentCount, [degree - endpointOrder degree], axisIndex, degree);
-        Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
-    end
-end
-for segmentIndex = 1:segmentCount - 1
-    for order = 0:3
-        coefficients = differenceCoefficients{order + 1};
-        coefficientIndex = 0:order;
-        for axisIndex = 1:2
+        Aeq(equalityIndex, controlIndexOf( ...
+            segmentCount, degree, axisIndex, degree)) = 1; %#ok<SPRIX>
+        beq(equalityIndex) = goal_deg(axisIndex);
+        for endpointOrder = 1:2
             equalityIndex = equalityIndex + 1;
-            left = controlIndexOf(segmentIndex, ...
-                degree - order + coefficientIndex, axisIndex, degree);
-            right = controlIndexOf(segmentIndex + 1, coefficientIndex, axisIndex, degree);
-            Aeq(equalityIndex, left) = coefficients; %#ok<SPRIX>
-            Aeq(equalityIndex, right) = ...
-                Aeq(equalityIndex, right) - coefficients; %#ok<SPRIX>
+            indices = controlIndexOf( ...
+                1, [endpointOrder 0], axisIndex, degree);
+            Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
+            equalityIndex = equalityIndex + 1;
+            indices = controlIndexOf(segmentCount, ...
+                [degree - endpointOrder degree], axisIndex, degree);
+            Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
         end
     end
-end
-equalityIndex = equalityIndex + 1;
-Aeq(equalityIndex, powerIndex(1)) = 1;
-beq(equalityIndex) = 1;
-limitValues = [limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
-inequalityIndex = 0;
-for segmentIndex = 1:segmentCount
-    for order = 1:3
-        coefficients = differenceCoefficients{order + 1};
-        scale = factorial(degree) / factorial(degree - order);
-        for derivativeIndex = 0:degree - order
+    for segmentIndex = 1:segmentCount - 1
+        for order = 0:3
+            coefficients = differenceCoefficients{order + 1};
+            coefficientIndex = 0:order;
             for axisIndex = 1:2
-                inequalityIndex = inequalityIndex + 1;
-                indices = controlIndexOf(segmentIndex, ...
-                    derivativeIndex + (0:order), axisIndex, degree);
-                A(inequalityIndex, indices) = scale * coefficients; %#ok<SPRIX>
-                A(inequalityIndex, powerIndex(order + 1)) = ...
-                    -limitValues(order, axisIndex); %#ok<SPRIX>
-                inequalityIndex = inequalityIndex + 1;
-                A(inequalityIndex, :) = -A(inequalityIndex - 1, :); %#ok<SPRIX>
-                A(inequalityIndex, powerIndex(order + 1)) = ...
-                    -limitValues(order, axisIndex); %#ok<SPRIX>
+                equalityIndex = equalityIndex + 1;
+                left = controlIndexOf(segmentIndex, ...
+                    degree - order + coefficientIndex, axisIndex, degree);
+                right = controlIndexOf( ...
+                    segmentIndex + 1, coefficientIndex, axisIndex, degree);
+                Aeq(equalityIndex, left) = coefficients; %#ok<SPRIX>
+                Aeq(equalityIndex, right) = ...
+                    Aeq(equalityIndex, right) - coefficients; %#ok<SPRIX>
             end
         end
     end
+    equalityIndex = equalityIndex + 1;
+    Aeq(equalityIndex, powerIndex(1)) = 1;
+    beq(equalityIndex) = 1;
+    limitValues = [limits.maxVelocity_deg_s; ...
+        limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
+    inequalityIndex = 0;
+    for segmentIndex = 1:segmentCount
+        for order = 1:3
+            coefficients = differenceCoefficients{order + 1};
+            scale = factorial(degree) / factorial(degree - order);
+            for derivativeIndex = 0:degree - order
+                for axisIndex = 1:2
+                    inequalityIndex = inequalityIndex + 1;
+                    indices = controlIndexOf(segmentIndex, ...
+                        derivativeIndex + (0:order), axisIndex, degree);
+                    A(inequalityIndex, indices) = ...
+                        scale * coefficients; %#ok<SPRIX>
+                    A(inequalityIndex, powerIndex(order + 1)) = ...
+                        -limitValues(order, axisIndex); %#ok<SPRIX>
+                    inequalityIndex = inequalityIndex + 1;
+                    A(inequalityIndex, :) = ...
+                        -A(inequalityIndex - 1, :); %#ok<SPRIX>
+                    A(inequalityIndex, powerIndex(order + 1)) = ...
+                        -limitValues(order, axisIndex); %#ok<SPRIX>
+                end
+            end
+        end
+    end
+    template = struct( ...
+        "controlCount", controlCount, ...
+        "powerIndex", powerIndex, ...
+        "variableCount", variableCount, ...
+        "baseInequality", A, ...
+        "equality", Aeq, ...
+        "equalityRightSide", beq, ...
+        "objective", f, ...
+        "lowerBound", lb, ...
+        "upperBoundTemplate", ub, ...
+        "cones", createTimePowerCones(variableCount, powerIndex));
 end
+controlCount = template.controlCount;
+powerIndex = template.powerIndex;
+variableCount = template.variableCount;
+baseInequalityCount = size(template.baseInequality, 1);
+activePlaneCount = nnz(reshape([planes.Active], size(planes)));
+inequalityCount = baseInequalityCount + ...
+    activePlaneCount * (degree + 2);
+if activePlaneCount == 0
+    A = template.baseInequality;
+else
+    A = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
+    A(1:baseInequalityCount, :) = template.baseInequality;
+end
+b = zeros(inequalityCount, 1);
+ub = template.upperBoundTemplate;
+maximumSegmentTime_s = maximumMotionDuration_s / segmentCount;
+ub(powerIndex) = [1; maximumSegmentTime_s; ...
+    maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
+inequalityIndex = baseInequalityCount;
 for segmentIndex = 1:segmentCount
     for regionIndex = 1:size(planes, 2)
         plane = planes(segmentIndex, regionIndex);
@@ -507,9 +546,9 @@ for segmentIndex = 1:segmentCount
         inequalityIndex = targets(end);
     end
 end
-soc = createTimePowerCones(variableCount, powerIndex);
 [x, ~, exitFlag, output] = coneprog( ...
-    f, soc, A, b, Aeq, beq, lb, ub, options);
+    template.objective, template.cones, A, b, template.equality, ...
+    template.equalityRightSide, template.lowerBound, ub, options);
 if exitFlag <= 0 || isempty(x) || any(~isfinite(x))
     controlPoint_deg = zeros(0, degree + 1, 2);
     segmentTime_s = NaN;

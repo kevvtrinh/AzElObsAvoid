@@ -6,6 +6,39 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## BMTP immutable SOCP cache retained - 2026-08-30
+
+The measured reconstruction bottleneck was reduced without moving an answer.
+The maintained Target Exits warm median changed from `15.7403272` to
+`14.1946827 s`, and its `1e-4 deg` diagnostic changed from `41.7338001` to
+`35.3340565 s`. Corresponding `solveTrajectorySocp` profiler self time fell
+from `2.882206656` to `0.394152606 s` at default clearance and from
+`7.664537344` to `0.448020402 s` at `1e-4 deg`.
+
+The cache is deliberately narrow: it reuses only immutable per-seed
+trajectory-SOCP structure while rebuilding plane rows and horizon bounds in
+their original order. A temporary legacy-versus-cache oracle found exact
+trajectory `coneprog` arguments across all 17 trajectory calls in the
+138-conic-call default Target sequence, all 42 trajectory calls in the
+433-call slow sequence, and a horizon expansion. All 17 maintained examples
+had exactly zero arrival, selected-polyline, and smoothed-path movement against
+the archived `747f46c` baseline; aggregate solver structure was also exact.
+Focused tests passed 31/31 and the staged gate passed 94/94.
+
+The original instability remains visible. At `1e-4 deg`, seed 2 still
+oscillates to the 35-iteration cap; the cache reduces reconstruction cost but
+does not alter that stopping path. Maintained Straight Target remains a
+zero-BMTP Ruckig control. Its explicit BMTP diagnostic is wall-budgeted, so
+outer and conic call counts can vary with wall timing even when its answer is
+unchanged.
+
+The branch also remains oversized. Counted production is now 12,015 lines,
+40 above the 11,975 baseline and 4,515 above the literal 7,500 target.
+`solve.m` is 1,065 physical and 936 noncomment lines, above its 900-line
+target. The runtime and exactness evidence supports retaining the cache, but
+it is not a size-compliance result and does not resolve the slow-clearance
+alternation mechanism.
+
 ## BMTP conic runtime localization - 2026-08-30
 
 Fresh warmed, repeated profiling corrects two runtime attributions. Maintained
