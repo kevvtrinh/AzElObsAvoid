@@ -9,3 +9,7 @@ benchmarks/*.mat
 benchmarks/*.png
 benchmarks/*_runs.csv
 benchmarks/*_summary.csv
+
+# Web sandbox build output and dependencies stay untracked.
+websandbox/node_modules/
+websandbox/dist/
