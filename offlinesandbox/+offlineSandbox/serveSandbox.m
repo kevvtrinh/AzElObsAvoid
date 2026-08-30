@@ -188,7 +188,6 @@ requestFilePath = string(tempname) + ".json";
 resultFilePath = string(tempname) + ".json";
 temporaryCleanup = onCleanup(@() deleteTemporaryFiles( ...
     requestFilePath, resultFilePath));
-activeRequestId = "";
 planningTimer = tic;
 try
     writeFileBytes(requestFilePath, requestBytes);
@@ -335,7 +334,7 @@ end
 
 headerText = native2unicode( ...
     headerBytes(1:headerByteCount), "UTF-8");
-headerText = strrep(headerText, sprintf('\r\n'), sprintf('\n'));
+headerText = strrep(headerText, char([13 10]), newline);
 lines = regexp(headerText, '\n', 'split');
 requestParts = regexp(strtrim(lines{1}), '\s+', 'split');
 if numel(requestParts) ~= 3 || ~startsWith(requestParts{3}, 'HTTP/')
