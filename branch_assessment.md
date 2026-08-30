@@ -6,6 +6,67 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Dynamic-scene findings — 2026-08-30
+
+These supersede two claims in commit `4138f26`'s message, which were wrong.
+
+### Correction to `4138f26`
+
+That message states the rogue bundle "still takes about 177.8 s wall" and that
+edge-query batching "is not attempted here". Both are false. The 177.8 s figure
+was a bad measurement taken under process contention. Two independent
+measurements of the same commit give **12.9 s and 14.5 s**, and the committed
+reachability-frontier search already groups edge queries by layer pair:
+`edgeIsClear` calls fell from 23,040 to 82, and `queryObstacleOccupancyAtTime`
+from 23,093 to 222. The commit is pushed, so the record is corrected here
+rather than by rewriting history.
+
+### Sandbox bundle `az_el_sandbox_goal_20260829_212652`
+
+Two moving obstacles, 180 s horizon, about 203 degrees of azimuth travel at
+2 deg/s. Before `4138f26` this request never returned: cancelled at 180 s,
+150 s, and 120 s. It now succeeds in about 12.9 s with independent validation,
+arrival 107.632292801 s and length 227.751816227 deg. `HS3-planner` solves the
+same request at 155.205670334 s, so this branch arrives 47.573378 s earlier.
+
+The failure had two causes. The time-expanded search built the complete edge
+list for every free node at every layer with no bound. Separately, with dynamic
+obstacles `supportsStaticHorizon` is false, so every seed routed to
+`createTimedSeedCandidate`, which accepts only `directWait` seeds and returned
+`unsupportedTimedTopology` in about one millisecond — discarding the entire
+topology search. A `noValidatedSeed` result with that per-seed signature is a
+false negative, not evidence of infeasibility.
+
+### The orthogonal-cavity path is load-bearing
+
+A removal experiment deleted `createOrthogonalCavityMotion`,
+`certifyOrthogonalCavityLowerBound`, `evaluateArrivalCertificatePortfolio`, and
+their planner wiring, then measured the sentinels.
+`exampleStaticUShapedObstacle` regressed from 20.7124477849715 s to
+20.7814828183771 s, so the deletion was reverted in full. Those roughly 880
+lines earn their keep and are not size-reduction candidates.
+
+That experiment also invalidated an attribution method worth recording. Reading
+the winning construction from `result.Seeds(SelectedSeedIndex).Source`
+misreports cavity wins: when the cavity portfolio wins, `planCorridorQuintic`
+passes the original topology seed to `finishFastPath`, so the source still
+reads `visibilityGraph`. A census built that way reported zero cavity wins for
+code that measurably changes the result. Attribute constructions from
+`SearchDiagnostics`, not from the seed source.
+
+### Remaining measured arrival gap
+
+`exampleMovingBarrierWait` arrives at 10.5 s against `HS3-planner`'s
+10.2314453125 s on an identical 10 deg path, so the gap is timing rather than
+geometry. It is not layer quantisation: sweeping `MaximumTimeLayerCount` across
+17, 33, 65, 129, and 257 leaves the arrival at exactly 10.5 s. The cause is
+that `boundedTimeLayers` only ever removes candidate times and never adds any,
+and the candidate pool is fixed at obstacle event times plus a hardcoded
+`linspace(start, end, 9)`. The HS3 value is a dyadic rational, consistent with
+bisection to about 2^-12 after a feasible wait is found. Refining an accepted
+`directWait` seed the way `planMovingTargetIntercept` already refines its
+earliest-arrival bracket is the untried next step.
+
 ## Current verdict — 2026-08-29
 
 The branch is a working research milestone, not yet the requested beta. It has

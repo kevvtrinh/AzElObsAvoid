@@ -82,6 +82,17 @@ Do not judge or bless a change that moves any sentinel. Stop and report it.
 Treat `exampleNoPath` as the negative control for every fallback. Making a
 genuinely infeasible request succeed is worse than the bug being fixed.
 
+## Attribute A Winning Construction Correctly
+
+Do not read the winning construction from
+`result.Seeds(result.SelectedSeedIndex).Source`. When a fast path such as the
+cavity portfolio wins, `planCorridorQuintic` passes the original topology seed
+to `finishFastPath`, so the source still reads `visibilityGraph`. A census
+built that way reported zero cavity wins for code whose removal measurably
+regressed `exampleStaticUShapedObstacle` by 0.069 s. Attribute from
+`SearchDiagnostics` instead, and treat "wins no maintained example" as a
+hypothesis to test by removal-and-measure, never as grounds for deletion.
+
 ## Use Cross-Branch Evidence Carefully
 
 `benchmark.csv` records other revisions. A row is a record for its revision
