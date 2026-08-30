@@ -15,16 +15,17 @@ matrix had 16 validated successes and one expected validated failure, but the
 branch still misses the combined size, runtime, arrival, and path-record gates.
 That matrix does not prove general completeness or global optimality.
 
-- Last fully verified algorithmic milestone: `5357a6a`; last complete matrix:
-  `944a738`; tests after the latest deletion: 66/66 in 41.3109654 s.
+- Last fully verified algorithmic milestone: `5357a6a` (66/66 tests in
+  41.3109654 s); last complete matrix: `944a738`.
 - Non-plotting core: 8,467 lines across 50 files, 3,468 over the ceiling.
 - Strongest result: Two opposing U reaches the exact `649/30 s` physical
   arrival floor with a 24.0968121271875 deg path and 3.0005152 s full wall.
-- Recorded current-matrix fixed-arrival planners remain slow: Straight Target
+- In the `944a738` matrix, fixed-arrival planners remain slow: Straight Target
   52.0803077 s and Target Exits 21.9396096 s. Extreme uses 20.5615572 s of
   planner time and 147.204954 s for the whole example.
-- Obstacle Avoidance is about 46.57 ms late. Extreme is 1.179 ms late, inside
-  the user's 2.07 ms allowance but still above the literal historical record.
+- In that matrix, Obstacle Avoidance is about 46.57 ms late. Extreme is
+  1.179 ms late, inside the user's 2.07 ms allowance but still above the
+  literal historical record.
 - Straight Target and same-input Target Exits remain longer than their
   historical records.
 
@@ -71,11 +72,11 @@ same-input Target Exits wall record. The older 20.2803317257 deg and
 1.9774286 s rows used a different randomized target endpoint and are not
 comparable to the maintained deterministic fixture.
 
-Fresh headless profiling at `4ed7f46` localized the current Straight Target
-loss to motion, not topology: BMTP spent 70.6255 of 75.4950 planner seconds and
+Headless profiling at `4ed7f46` localized the Straight Target loss to motion,
+not topology: BMTP spent 70.6255 of 75.4950 planner seconds and
 selected a longer seed even though a shorter valid seed was available. Its
 output uses 48 degree-16 certified spans, while the same-input historical path
-record used ten quintic spans. Current Target Exits similarly spent 22.1507 of
+record used ten quintic spans. The Target Exits profile spent 22.1507 of
 31.3204 planner seconds in motion. Comparisons must include like-for-like
 planner work and pass the unchanged public validator.
 
@@ -174,7 +175,7 @@ planner work and pass the unchanged public validator.
 - **Moving/deforming runtime gate:** query reuse was 9.02%; skipping the coarse
   basin took 192.03 s, and a short iteration cap regressed path quality.
 
-### 2026-08-29 — current replacement branch
+### 2026-08-29 — BMTP replacement branch
 
 - **Exact waypoint fallback:** composed exact jerk-limited stops along a failed
   spatial seed and recovered a failed multi-edge request. Swept-envelope HS3
@@ -210,6 +211,13 @@ planner work and pass the unchanged public validator.
   13.678271908 deg record and projected planner scope was 5.0271313 s versus
   the 2.0964864 s wall record. Target Exits was not run, and all experiment
   code and artifacts were removed.
+- **Fixed-clock velocity-energy C3 QP:** rejected after the Straight Target
+  gate. Six relinearized QPs passed continuous motion validation and beat the
+  path record at 13.6049323647 deg on the exact 20.869565217 s clock, but took
+  3.5579439 s in candidate scope and did not provide the required current
+  plane-certificate parity. A one-QP form took 2.7812950 s and regressed path
+  length to 14.1539862749 deg. Both missed the 2.0964864 s wall record; Target
+  Exits was not run, and the experiment code was removed.
 - **Continuous Bernstein safe-corridor QP:** rejected at its first frozen gate.
   Its 451-line candidate passed the public collision, kinematic, exact-clock,
   and seed-corridor checks on Straight Target, but produced a
