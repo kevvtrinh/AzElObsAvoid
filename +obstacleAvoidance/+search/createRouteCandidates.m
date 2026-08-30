@@ -60,6 +60,7 @@ end
 %% Section 2: Create One Protected Visibility Graph
 
 sampleTimes_s = obstacleTimes(obstacles, initialState.time_s, goalState.time_s);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 [sweptShape, usedDenseEnvelope] = obstacleAvoidance.search.denseSweptEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], 10e3);
 if usedDenseEnvelope
@@ -72,6 +73,7 @@ end
     "createRouteCandidates:InvalidClusterShape");
 [nodePosition_deg, edgeCost_deg, graphRecord] = ...
     createVisibilityGraph(sweptShape, start_deg, goal_deg, limits, 1, 0);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 diagnostics.SampleTimes_s = sampleTimes_s;
 diagnostics.SampledShapeCount = sampledShapeCount;
 diagnostics.DenseSeedEnvelopeUsed = usedDenseEnvelope;
@@ -132,7 +134,7 @@ visibilityFunction = @(first_deg, second_deg) segmentsAreVisible( ...
 [routes, signatures, searchRecord] = ...
     obstacleAvoidance.planner.searchSpatialHomologyRoutes( ...
     edgeCost_deg, nodePosition_deg, representatives_deg, ...
-    maximumClassCount, visibilityFunction);
+    maximumClassCount, visibilityFunction, options);
 diagnostics = appendSearchDiagnostics(diagnostics, searchRecord);
 diagnostics.HomologySearchAttempted = maximumClassCount > 0;
 diagnostics.HomologyClassSignatures = signatures;

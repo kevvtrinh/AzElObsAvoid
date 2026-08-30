@@ -87,6 +87,8 @@ verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "Export"));
 verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "SetMotion"));
+verifyTrue(testCase, isfield( ...
+    currentState.GoalMode.GraphicsHandles.Actions, "Stop"));
 verifyFalse(testCase, isfield(currentState, "FreeMode"));
 constructorNames = [ ...
     "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
@@ -114,7 +116,67 @@ verifyEqual(testCase, ...
 verifyEqual(testCase, get( ...
     currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), ...
+    'off');
 verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
+end
+
+function testStopRestoresExportableRequest(testCase)
+% Stop a synchronous run cooperatively and retain a pre-run diagnosis bundle.
+sandboxState = obstacleAvoidanceSandbox(struct( ...
+    "FigureVisible", "off", "MissionTime_s", 6));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.StartPosition_deg = [0 0];
+applicationState.GoalMode.GoalPosition_deg = [4 0];
+guidata(sandboxState.FigureHandle, applicationState);
+runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
+stopHandle = applicationState.GoalMode.GraphicsHandles.Actions.Stop;
+runCallback = get(runHandle, "Callback");
+stopCallback = get(stopHandle, "Callback");
+
+% Exercise the button callback while the UI is in its planning state.
+applicationState.InteractionState = "planning";
+applicationState.GoalMode.InteractionState = "planning";
+guidata(sandboxState.FigureHandle, applicationState);
+stopCallback(stopHandle, []);
+verifyTrue(testCase, getappdata( ...
+    sandboxState.FigureHandle, "SandboxStopRequested"));
+stoppingState = sandboxState.ReadState();
+verifyTrue(testCase, contains(stoppingState.GoalMode.Status, ...
+    "Stopping planning"));
+
+% A programmatic policy uses the same planner checkpoint and makes the
+% synchronous recovery path deterministic in a headless test process.
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.InteractionState = "idle";
+applicationState.GoalMode.InteractionState = "idle";
+applicationState.Options.PlannerOptions.CancellationCheckFcn = @() true;
+guidata(sandboxState.FigureHandle, applicationState);
+
+runCallback(runHandle, []);
+
+currentState = sandboxState.ReadState();
+verifyEqual(testCase, currentState.InteractionState, "idle");
+verifyEmpty(testCase, fieldnames(currentState.GoalMode.LastPlannerResult));
+verifyTrue(testCase, contains(currentState.GoalMode.Status, ...
+    "Export Bundle is available"));
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), 'off');
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), 'on');
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+currentState.ExportBundle(filePath, "goal");
+loaded = load(char(filePath), "diagnosisBundle");
+verifyEqual(testCase, loaded.diagnosisBundle.PlanningState, "notRun");
+verifyEmpty(testCase, ...
+    loaded.diagnosisBundle.PlannerOptions.CancellationCheckFcn);
+verifyEqual(testCase, ...
+    loaded.diagnosisBundle.PlannerInputs.initialState.position_deg, [0 0]);
+verifyEqual(testCase, ...
+    loaded.diagnosisBundle.PlannerInputs.goalState.position_deg, [4 0]);
 end
 
 function testSandboxDefaultsBoundInteractivePlannerWork(testCase)

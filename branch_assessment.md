@@ -15,10 +15,16 @@ had 16 validated successes and one expected validated failure, but the branch
 still misses the combined size, runtime, arrival, and path-record gates. That
 matrix does not prove general completeness or global optimality.
 
-- Current Ruckig integration: 78/78 tests in 26.8828596 s; last complete
-  maintained-example matrix remains `944a738`.
-- Production size audit rule: 11,167 nonblank, noncomment lines across 67 files,
-  6,168 over the 4,999-line ceiling.
+- Current integration and cooperative-cancellation suite: 79/79 tests passed
+  in a fresh MATLAB process; the last complete maintained-example matrix
+  remains `944a738`.
+- The sandbox now has a Stop action that remains enabled during synchronous
+  planning, polls the time-expanded and homology searches plus planner-stage
+  boundaries, restores idle state, and enables a replayable pre-run export.
+  Cancellation cannot preempt MATLAB inside one atomic solver or vectorized
+  geometry call; it takes effect at the next safe checkpoint.
+- Production size audit rule: 11,223 nonblank, noncomment lines across 68 files,
+  6,224 over the 4,999-line ceiling.
 - Strongest result: Two opposing U reaches the exact `649/30 s` physical
   arrival floor with a 24.0968121271875 deg path and 3.0005152 s full wall.
 - Straight Target now explicitly selects exact Ruckig waypoint composition. It
@@ -58,7 +64,7 @@ for that request, not globally minimum path length.
 
 ## Current blockers and next bounded gate
 
-1. Remove or replace 6,168 counted production lines without weakening the public
+1. Remove or replace 6,224 counted production lines without weakening the public
    interface, diagnostics, generality, or independent validation.
 2. Recover pass-through path quality without relabeling the local state-to-state
    Ruckig engine as a waypoint-optimal solver.

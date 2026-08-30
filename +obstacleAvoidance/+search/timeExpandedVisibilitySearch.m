@@ -46,6 +46,7 @@ layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     nodeIsFree(layerIndex, :) = ...
         ~obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
         obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
@@ -57,8 +58,15 @@ edgeLength_deg = zeros(0, 1);
 waitCount = 0;
 motionCount = 0;
 rejectedCount = 0;
+pollStride = 8;
+visitedSourceCount = 0;
 for layerIndex = 1:layerCount - 1
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     for sourceNode = reshape(find(nodeIsFree(layerIndex, :)), 1, [])
+        visitedSourceCount = visitedSourceCount + 1;
+        if mod(visitedSourceCount - 1, pollStride) == 0
+            obstacleAvoidance.input.throwIfCancellationRequested(options);
+        end
         nextState = sub2ind([layerCount nodeCount], layerIndex + 1, sourceNode);
         waitIsClear = nodeIsFree(layerIndex + 1, sourceNode) && ...
             edgeIsClear(obstacles, nodePosition_deg(sourceNode, :), ...

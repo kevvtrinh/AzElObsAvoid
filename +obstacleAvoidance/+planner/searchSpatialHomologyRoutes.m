@@ -1,11 +1,16 @@
 function [routes, signatures, record] = searchSpatialHomologyRoutes( ...
-        cost_deg, positions_deg, representatives_deg, maximumCount, visibilityFunction)
+        cost_deg, positions_deg, representatives_deg, maximumCount, ...
+        visibilityFunction, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [routes, signatures, record] = ...
 %       obstacleAvoidance.planner.searchSpatialHomologyRoutes( ...
 %       cost_deg, positions_deg, representatives_deg, maximumCount, ...
 %       visibilityFunction)
+%   [routes, signatures, record] = ...
+%       obstacleAvoidance.planner.searchSpatialHomologyRoutes( ...
+%       cost_deg, positions_deg, representatives_deg, maximumCount, ...
+%       visibilityFunction, options)
 %**************************************************************************
 % PURPOSE
 %   - Search graph-node and winding-signature states for shortest distinct
@@ -22,6 +27,8 @@ function [routes, signatures, record] = searchSpatialHomologyRoutes( ...
 %       Requested number of distinct classes; zero disables the search.
 %   - visibilityFunction (scalar function handle)
 %       Exact proposal-geometry chord predicate used during cleanup.
+%   - options (resolved scalar planner-options struct, optional)
+%       CancellationCheckFcn enables cooperative caller cancellation.
 %**************************************************************************
 % OUTPUTS
 %   - routes (cell vector)
@@ -37,6 +44,9 @@ function [routes, signatures, record] = searchSpatialHomologyRoutes( ...
 
 %% Section 1: Expand Augmented Visibility States
 
+if nargin < 6 || isempty(options)
+    options = struct("CancellationCheckFcn", []);
+end
 nodeCount = size(positions_deg, 1);
 representativeCount = size(representatives_deg, 1);
 signatureWidth = max(1, representativeCount);
@@ -63,7 +73,13 @@ signatureFunction = @(route_deg) routeSignature(route_deg, representatives_deg);
 cleanup = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
     "HomologyRejectedCount", 0, "AcceptedCount", 0, "LengthReduction_deg", 0);
 cleanupFields = string(fieldnames(cleanup));
+pollStride = 32;
+expandedCount = 0;
 while numel(routes) < maximumCount
+    expandedCount = expandedCount + 1;
+    if mod(expandedCount - 1, pollStride) == 0
+        obstacleAvoidance.input.throwIfCancellationRequested(options);
+    end
     unsettledCost_deg = stateCost_deg(1:stateCount);
     unsettledCost_deg(closed(1:stateCount)) = Inf;
     [currentCost_deg, currentState] = min(unsettledCost_deg);

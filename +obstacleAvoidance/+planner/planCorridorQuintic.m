@@ -50,6 +50,7 @@ if nargin < 5 || isempty(optionOverrides)
 end
 planningTimer = tic;
 options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
 [obstacles, initialState, goalState, limits] = ...
     obstacleAvoidance.input.normalizePlannerRequest( ...
@@ -86,6 +87,7 @@ end
 
 %% Section 3: Try Exact Physical-Time Motions
 
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 motionTimer = tic;
 if useRuckigWaypoint
     directSeed = createDirectSeed(initialState, goalState, ...
@@ -104,6 +106,7 @@ stageTiming.MotionSolvingElapsedTime_s = ...
 [directCandidate, directValidation, directValidationTime_s, stageTiming] = ...
     validateCandidate(directCandidate, preparedObstacles, initialState, ...
     goalState, limits, options, stageTiming, "");
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 directAttempt = recordDirectAttempt(directCandidate, directValidation, ...
     directElapsedTime_s, directValidationTime_s);
 result.SearchDiagnostics.DirectAttempt = directAttempt;
@@ -119,12 +122,14 @@ end
 result.SearchDiagnostics.DirectAttempt.FallbackContinued = true;
 
 if ~useRuckigWaypoint
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     motionTimer = tic;
     [excursionCandidate, excursionDiagnostics] = ...
         obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
         directCandidate, preparedObstacles, initialState, goalState, ...
         limits, options);
     excursionElapsedTime_s = toc(motionTimer);
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     stageTiming.MotionSolvingElapsedTime_s = ...
         stageTiming.MotionSolvingElapsedTime_s + excursionElapsedTime_s;
     result.SearchDiagnostics.FixedClockExcursion = excursionDiagnostics;
@@ -143,11 +148,13 @@ end
 %% Section 4: Try A Certified Timed Opening
 
 if ~useRuckigWaypoint
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     motionTimer = tic;
     [openingCandidate, openingDiagnostics] = ...
         obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion( ...
         obstacles, initialState, goalState, limits, options);
     openingElapsedTime_s = toc(motionTimer);
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     stageTiming.MotionSolvingElapsedTime_s = ...
         stageTiming.MotionSolvingElapsedTime_s + openingElapsedTime_s;
     openingIsValidated = openingDiagnostics.Success && ...
@@ -199,6 +206,7 @@ cavityUpperDurations_s = NaN(seedCount, 1);
 cavityMotionLengths_deg = NaN(seedCount, 1);
 if ~useRuckigWaypoint
     for seedIndex = 1:seedCount
+        obstacleAvoidance.input.throwIfCancellationRequested(options);
         motionTimer = tic;
         [candidate, cavityDiagnostics] = ...
             obstacleAvoidance.planner.createOrthogonalCavityMotion( ...
@@ -210,6 +218,7 @@ if ~useRuckigWaypoint
         [candidate, validation, ~, stageTiming] = validateCandidate( ...
             candidate, preparedObstacles, initialState, goalState, limits, ...
             options, stageTiming, "");
+        obstacleAvoidance.input.throwIfCancellationRequested(options);
         candidate.SeedIndex = seedIndex;
         lowerCertificate = struct("Passed", false, ...
             "TerminationReason", "candidateNotConstructed", ...
@@ -266,6 +275,7 @@ if ~useRuckigWaypoint
 end
 
 for seedIndex = 1:seedCount
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     motionTimer = tic;
     if useRuckigWaypoint
         [candidate, solverDiagnostics] = ...
@@ -282,6 +292,7 @@ for seedIndex = 1:seedCount
             seeds(seedIndex), initialState, goalState, limits, options);
     end
     elapsedTime_s = toc(motionTimer);
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     stageTiming.MotionSolvingElapsedTime_s = ...
         stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
     [candidate, validation, ~, stageTiming] = validateCandidate( ...

@@ -305,10 +305,10 @@ actions = createAddButtons(addPanelHandle, modeName, addNames, addLabels);
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", ...
     "Units", "normalized", "Position", [0.265 0.275 0.42 0.052]);
 actionNames = [ ...
-    "SetMotion", "Run", "Reset", ...
+    "SetMotion", "Run", "Stop", "Reset", ...
     "Diagnostics", "Export"];
 actionLabels = [ ...
-    "Set Motion", "Run", "Reset", ...
+    "Set Motion", "Run", "Stop", "Reset", ...
     "Diagnostics", "Export Bundle"];
 actionButtons = createActionButtons( ...
     actionPanelHandle, modeName, actionNames, actionLabels);
@@ -559,6 +559,8 @@ try
             activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
         case "Run"
             executeGoalPlan(figureHandle);
+        case "Stop"
+            requestPlanningStop(figureHandle, modeName);
         case "Reset"
             resetMode(figureHandle, modeName);
         case "Diagnostics"
@@ -571,9 +573,16 @@ catch exception
     applicationState = guidata(figureHandle);
     modeState = getModeState(applicationState, modeName);
     exceptionText = formatSandboxException(exception);
-    modeState.Status = "Input or planning error: " + string(exceptionText);
-    modeState = appendLogLines( ...
-        modeState, "[Sandbox error] " + string(exceptionText));
+    if string(exception.identifier) == "planTrajectory:UserCancelled"
+        modeState.Status = ...
+            "Planning stopped. Export Bundle is available for this request.";
+        modeState = appendLogLines(modeState, ...
+            "[Planner stopped] " + string(exception.message));
+    else
+        modeState.Status = "Input or planning error: " + string(exceptionText);
+        modeState = appendLogLines( ...
+            modeState, "[Sandbox error] " + string(exceptionText));
+    end
     applicationState = setModeState( applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
@@ -583,6 +592,23 @@ catch exception
             'Sandbox export failed', 'modal');
     end
 end
+end
+
+function requestPlanningStop(figureHandle, modeName)
+% Record a cooperative stop request while retaining the scene for export.
+applicationState = guidata(figureHandle);
+if applicationState.InteractionState ~= "planning"
+    return;
+end
+setappdata(figureHandle, "SandboxStopRequested", true);
+modeState = getModeState(applicationState, modeName);
+modeState.Status = "Stopping planning at the next safe checkpoint...";
+modeState = appendLogLines(modeState, "[Stop requested]");
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
+updateModeStatusDisplay(modeState);
+drawnow limitrate;
 end
 
 function exceptionText = formatSandboxException(exception)
@@ -1179,6 +1205,11 @@ plannerOptions.GoalTimeMode = controls.GoalTimeMode;
 plannerOptions.WaypointWarmStartMode = controls.WaypointWarmStartMode;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
 plannerOptions.Verbose = controls.Verbose;
+callerCancellationCheckFcn = plannerOptions.CancellationCheckFcn;
+setappdata(figureHandle, "SandboxStopRequested", false);
+plannerOptions.CancellationCheckFcn = ...
+    @() sandboxStopRequested(figureHandle, callerCancellationCheckFcn);
+stopCleanup = onCleanup(@() clearPlanningStopRequest(figureHandle));
 modeState = clearModeSolution(modeState);
 modeState.CanonicalObstacles = canonicalObstacles;
 modeState.ResolvedControls = controls;
@@ -1193,6 +1224,7 @@ drawnow;
 [result, validation, logLines] = callPlanner( ...
     canonicalObstacles, initialState, goalState, limits, ...
     plannerOptions, "Goal Mode");
+result.Options.CancellationCheckFcn = [];
 applicationState = guidata(figureHandle);
 modeState = applicationState.GoalMode;
 modeState.LastPlannerResult = result;
@@ -1348,6 +1380,28 @@ controls = struct( ...
     "AllowAzimuthWrapping", logical(get( ...
         handles.AllowAzimuthWrappingHandle, "Value")), ...
     "Verbose", logical(get(handles.VerboseHandle, "Value")));
+end
+
+function stopRequested = sandboxStopRequested( ...
+        figureHandle, callerCancellationCheckFcn)
+% Combine the Stop button with any programmatic caller cancellation policy.
+if isempty(figureHandle) || ~isgraphics(figureHandle)
+    stopRequested = true;
+    return;
+end
+stopRequested = isappdata(figureHandle, "SandboxStopRequested") && ...
+    logical(getappdata(figureHandle, "SandboxStopRequested"));
+if ~stopRequested && ~isempty(callerCancellationCheckFcn)
+    stopRequested = callerCancellationCheckFcn();
+end
+end
+
+function clearPlanningStopRequest(figureHandle)
+% Remove the transient callback flag from a surviving sandbox figure.
+if ~isempty(figureHandle) && isgraphics(figureHandle) && ...
+        isappdata(figureHandle, "SandboxStopRequested")
+    rmappdata(figureHandle, "SandboxStopRequested");
+end
 end
 
 function values = readAxisPairControl(handles, labelText, mustBePositive)
@@ -1760,6 +1814,7 @@ modeState = applicationState.GoalMode;
     set(modeState.GraphicsHandles.Controls.MotionProfileHandle, ...
         "Enable", onOff(~isPlanning));
     if isPlanning
+        set(modeState.GraphicsHandles.Actions.Stop, "Enable", "on");
         return;
     end
     canRun = ~isempty(modeState.StartPosition_deg) && ...
@@ -1768,6 +1823,7 @@ modeState = applicationState.GoalMode;
     set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
         onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
     set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
+    set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
     hasSceneData = ~isempty(modeState.StartPosition_deg) || ...
         ~isempty(modeState.GoalPosition_deg) || ...
@@ -1910,6 +1966,7 @@ plannerOptions = applicationState.Options.PlannerOptions;
 plannerOptions.Verbose = controls.Verbose;
 plannerOptions.WaypointWarmStartMode = controls.WaypointWarmStartMode;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
+plannerOptions.CancellationCheckFcn = [];
 plannerInputs = struct();
 obstacleEndTime_s = controls.MissionTime_s;
 hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
