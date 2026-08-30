@@ -1,0 +1,19 @@
+{
+  "name": "az-el-web-sandbox",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "bridge": "node bridge.mjs",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "three": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {}
+}
