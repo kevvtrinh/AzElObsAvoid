@@ -1,5 +1,28 @@
 # Novel replacement branch assessment
 
+## Web Sandbox tick and grid correction - 2026-08-30
+
+The coordinate frame now creates both axes as eight equal intervals including
+both workspace endpoints. For the default workspace, azimuth ticks are
+`[-180 -135 -90 -45 0 45 90 135 180]` degrees and elevation ticks are
+`[-90 -67.5 -45 -22.5 0 22.5 45 67.5 90]` degrees. Tick labels and the new
+subdued SVG grid use one `coordinateToFramePercent` projection, so their
+screen intersections cannot diverge through separate x/y formulas. The
+three.js layer remains responsible for obstacles, endpoints, and trajectories.
+
+Node coordinate-frame tests passed 3/3 and the production Vite build
+succeeded. At a 1000-by-500 default view, the orthographic viewport is
+approximately `[-201.6 201.6]` by `[-100.8 100.8]` degrees; `(90, 45)` maps to
+72.3214286% from the left and 27.6785714% from the top, exactly matching the
+90-degree azimuth and 45-degree elevation gridlines. The full MATLAB suite
+passed 89/89 in 50.6493659 seconds with an isolated `MATLAB_PREFDIR`.
+
+No browser instance was available to the browser-control surface, so this
+correction has numeric, unit-test, build, and MATLAB regression evidence but
+no claimed visual-paint verification. The generated `websandbox/dist/` and
+installed `websandbox/node_modules/` trees remain untracked and were not
+committed.
+
 ## Web Sandbox coordinate-frame verification - 2026-08-30
 
 The web canvas now derives its full orthographic view, grid, degree ticks,

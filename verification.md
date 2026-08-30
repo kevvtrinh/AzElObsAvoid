@@ -1,5 +1,32 @@
 # Plan 325 verification
 
+## Web Sandbox tick and grid correction - 2026-08-30
+
+- Source implementation commit: `705ff6d` on `web-sandbox`.
+- `npm --prefix websandbox test`: 3/3 coordinate-frame tests passed in
+  0.0834879 seconds. The default azimuth ticks are `-180:45:180`; the default
+  elevation ticks are `-90:22.5:90`.
+- The fixed 1000-by-500 projection test maps `(90, 45)` to 72.3214286% from
+  the left and 27.6785714% from the top. Those values equal the independently
+  selected 90-degree azimuth and 45-degree elevation tick/grid coordinates.
+- `npm --prefix websandbox run build` succeeded. Vite retained its existing
+  advisory that the single minified JavaScript chunk exceeds 500 kB.
+- The browser-control surface returned `No browser is available`; no visual
+  render or paint result is claimed.
+- MATLAB ran with
+  `MATLAB_PREFDIR=tmp/matlab-pref-web-grid-705ff6d`. The full test tree passed
+  89/89 with zero failed or incomplete tests in 50.6493659 seconds wall.
+- `exampleObstacleFree`, jerk enabled: planner/validation 1/1,
+  4.472135955-degree selected polyline and smoothed motion,
+  4.53112887415-second duration, collision/kinematic 1/1, `goalReached`.
+- `exampleObstacleAvoidance`, jerk enabled: planner/validation 1/1,
+  11.152119519-degree selected polyline, 11.4118613877-degree smoothed motion,
+  7.57454176632-second duration, collision/kinematic 1/1, `goalReached`.
+- Two preliminary standalone metric probes stopped before example execution
+  because the harness omitted first `examples/` and then `trajectory/` from
+  the MATLAB path. The corrected explicit-path probes above passed; these were
+  harness setup errors, not planner or example failures.
+
 Current worktree evidence is summarized in
 [Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
 Earlier sections are retained as historical checkpoints.
