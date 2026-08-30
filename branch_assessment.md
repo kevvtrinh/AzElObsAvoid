@@ -54,18 +54,17 @@ reads `visibilityGraph`. A census built that way reported zero cavity wins for
 code that measurably changes the result. Attribute constructions from
 `SearchDiagnostics`, not from the seed source.
 
-### Remaining measured arrival gap
+### Closed moving-barrier arrival gap
 
-`exampleMovingBarrierWait` arrives at 10.5 s against `HS3-planner`'s
-10.2314453125 s on an identical 10 deg path, so the gap is timing rather than
-geometry. It is not layer quantisation: sweeping `MaximumTimeLayerCount` across
-17, 33, 65, 129, and 257 leaves the arrival at exactly 10.5 s. The cause is
-that `boundedTimeLayers` only ever removes candidate times and never adds any,
-and the candidate pool is fixed at obstacle event times plus a hardcoded
-`linspace(start, end, 9)`. The HS3 value is a dyadic rational, consistent with
-bisection to about 2^-12 after a feasible wait is found. Refining an accepted
-`directWait` seed the way `planMovingTargetIntercept` already refines its
-earliest-arrival bracket is the untried next step.
+At `d0f00e1+worktree`, `exampleMovingBarrierWait` arrives at
+10.0903015136719 s on the unchanged 10 deg path, improving both the prior
+10.5 s branch result and `HS3-planner`'s recorded 10.2314453125 s result. The
+accepted `directWait` seed now validates a zero-wait lower trial and bisects
+the measured infeasible/feasible bracket through the unchanged public
+validator. Sixteen deterministic trials refined the wait from 3 s to
+2.59030151367188 s; the final measured infeasible lower wait was
+2.5902099609375 s. This is a bounded refinement of one validated direct-wait
+construction, not a request-wide minimum-arrival proof.
 
 ## Current verdict — 2026-08-29
 
@@ -84,8 +83,11 @@ matrix does not prove general completeness or global optimality.
   boundaries, restores idle state, and enables a replayable pre-run export.
   Cancellation cannot preempt MATLAB inside one atomic solver or vectorized
   geometry call; it takes effect at the next safe checkpoint.
-- Production size audit rule: 11,223 nonblank, noncomment lines across 68 files,
-  6,224 over the 4,999-line ceiling.
+- Production size audit rule: 11,428 nonblank, noncomment lines across 69
+  files at `d0f00e1`. That measured size is now the ceiling, replacing the
+  earlier 4,999 target. The audit counts only `+obstacleAvoidance` and
+  `trajectory`; `tests/`, `examples/`, `benchmarks/`, and `sandbox/` are
+  outside the counted roots, so adding coverage costs nothing against it.
 - Strongest result: Two opposing U reaches the exact `649/30 s` physical
   arrival floor with a 24.0968121271875 deg path and 3.0005152 s full wall.
 - Straight Target now explicitly selects exact Ruckig waypoint composition. It
@@ -125,8 +127,13 @@ for that request, not globally minimum path length.
 
 ## Current blockers and next bounded gate
 
-1. Remove or replace 6,224 counted production lines without weakening the public
-   interface, diagnostics, generality, or independent validation.
+1. Do not grow past the 11,428-line ceiling. Reduction is welcome but is no
+   longer a release gate: the one measured attempt, deleting the
+   orthogonal-cavity path, regressed `exampleStaticUShapedObstacle` and was
+   reverted, so remaining size is not obviously recoverable without losing
+   capability. `trajectory/+ruckigEngine` (2,083 counted lines) is shared
+   with other projects and `+obstacleAvoidance/+plotting` (425) is frozen,
+   leaving about 7,138 counted lines in scope for any future reduction.
 2. Recover pass-through path quality without relabeling the local state-to-state
    Ruckig engine as a waypoint-optimal solver.
 3. Close the Obstacle Avoidance arrival gap and both path-record gaps without

@@ -30,10 +30,12 @@ function testDefaultsExposeStablePlannerChoices(testCase)
 % Keep the zero-input interface as the single defaults source.
 options = obstacleAvoidance.planTrajectory();
 requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
+    'MaximumWaitRefinementIterations', ...
     'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping', 'Verbose'};
 verifyTrue(testCase, isstruct(options) && isscalar(options));
 verifyTrue(testCase, all(isfield(options, requiredFields)));
 verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
+verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
 end
 
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)

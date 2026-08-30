@@ -290,7 +290,8 @@ for seedIndex = 1:seedCount
             limits, seedOptions);
     else
         [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
-            seeds(seedIndex), initialState, goalState, limits, seedOptions);
+            seeds(seedIndex), initialState, goalState, limits, seedOptions, ...
+            [], []);
         timedTerminationReason = string(candidate.TerminationReason);
         timedTopologyIsUnsupported = any(timedTerminationReason == ...
             ["unsupportedTimedTopology", "invalidDirectWaitSeed"]);
@@ -316,6 +317,18 @@ for seedIndex = 1:seedCount
         [candidate, validation, ~, stageTiming] = validateCandidate( ...
             candidate, preparedObstacles, initialState, goalState, limits, ...
             options, stageTiming, "The motion kernel returned no trajectory.");
+        if validation.Passed && string(seeds(seedIndex).Source) == ...
+                "directWait" && options.GoalTimeMode == "earliestArrival"
+            [candidate, validation, solverDiagnostics, ...
+                refinementElapsedTime_s, stageTiming] = refineDirectWait( ...
+                seeds(seedIndex), candidate, validation, solverDiagnostics, ...
+                preparedObstacles, initialState, goalState, limits, options, ...
+                stageTiming);
+            elapsedTime_s = elapsedTime_s + refinementElapsedTime_s;
+            stageTiming.MotionSolvingElapsedTime_s = ...
+                stageTiming.MotionSolvingElapsedTime_s + ...
+                refinementElapsedTime_s;
+        end
     end
     summary = summarizeCandidate(candidate, validation, ...
         solverDiagnostics, elapsedTime_s, summaryTemplate);
@@ -653,7 +666,8 @@ kernelGoalState = rmfield(kernelGoalState, metadataFields);
 end
 
 function [candidate, diagnostics] = createTimedSeedCandidate( ...
-        seed, initialState, goalState, limits, options)
+        seed, initialState, goalState, limits, options, ...
+        waitOverride_s, directMotionDuration_s)
 % Realize a timed direct-wait seed without sending dynamics to static BMTP.
 timer = tic;
     candidate = bmtpEngine.createMotionRecord( ...
@@ -661,7 +675,10 @@ timer = tic;
 candidate.SeedIndex = seed.Index;
 diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "TerminationReason", "unsupportedTimedTopology", ...
-    "WaitTime_s", NaN, "EstimatedDuration_s", seed.EstimatedDuration_s);
+    "WaitTime_s", NaN, "InitialWaitTime_s", NaN, ...
+    "FinalWaitTime_s", NaN, "RefinementCount", 0, ...
+    "InfeasibleLowerWaitTime_s", NaN, ...
+    "EstimatedDuration_s", seed.EstimatedDuration_s);
 if string(seed.Source) ~= "directWait"
     candidate.Message = ...
         "The compact dynamic kernel currently requires a direct-wait seed.";
@@ -692,6 +709,10 @@ end
 
 duration_s = double(seed.EstimatedDuration_s);
 waitTime_s = duration_s * double(seed.tau(firstMotionIndex - 1));
+if ~isempty(waitOverride_s)
+    waitTime_s = waitOverride_s;
+    duration_s = waitTime_s + directMotionDuration_s;
+end
 delayedInitialState = initialState;
 delayedInitialState.time_s = initialState.time_s + waitTime_s;
 delayedGoalState = goalState;
@@ -714,9 +735,14 @@ directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
     direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
 directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, ...
     direct.Polynomial.SegmentCount, numel(initialState.position_deg));
-relativeBreak_s = [0; waitTime_s + directBreak_s];
-segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); ...
-    directJerk_deg_s3];
+if waitTime_s > 0
+    relativeBreak_s = [0; waitTime_s + directBreak_s];
+    segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); ...
+        directJerk_deg_s3];
+else
+    relativeBreak_s = directBreak_s;
+    segmentJerk_deg_s3 = directJerk_deg_s3;
+end
 candidate = bmtpEngine.createMotionRecord( ...
     direct, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
     options.SampleTime_s, seed.Source);
@@ -728,6 +754,60 @@ diagnostics.Accepted = true;
 diagnostics.TerminationReason = candidate.TerminationReason;
 diagnostics.WaitTime_s = waitTime_s;
 diagnostics.ElapsedTime_s = toc(timer);
+candidate.SolverDiagnostics = diagnostics;
+end
+
+function [candidate, validation, diagnostics, motionElapsedTime_s, ...
+        stageTiming] = refineDirectWait(seed, candidate, validation, ...
+        diagnostics, obstacles, initialState, goalState, limits, options, ...
+        stageTiming)
+% Bisect a measured infeasible/feasible dwell bracket through public validation.
+initialWaitTime_s = diagnostics.WaitTime_s;
+diagnostics.InitialWaitTime_s = initialWaitTime_s;
+diagnostics.FinalWaitTime_s = initialWaitTime_s;
+motionElapsedTime_s = 0;
+if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
+    candidate.SolverDiagnostics = diagnostics;
+    return;
+end
+
+directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
+lowerWaitTime_s = 0;
+upperWaitTime_s = initialWaitTime_s;
+bestCandidate = candidate;
+bestValidation = validation;
+for refinementIndex = 1:options.MaximumWaitRefinementIterations
+    if refinementIndex == 1
+        trialWaitTime_s = lowerWaitTime_s;
+    else
+        trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
+    end
+    motionTimer = tic;
+    [trialCandidate, ~] = createTimedSeedCandidate( ...
+        seed, initialState, goalState, limits, options, ...
+        trialWaitTime_s, directMotionDuration_s);
+    motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
+    [trialCandidate, trialValidation, ~, stageTiming] = validateCandidate( ...
+        trialCandidate, obstacles, initialState, goalState, limits, options, ...
+        stageTiming, "The refined direct-wait kernel returned no trajectory.");
+    diagnostics.RefinementCount = refinementIndex;
+    if trialValidation.Passed
+        bestCandidate = trialCandidate;
+        bestValidation = trialValidation;
+        upperWaitTime_s = trialWaitTime_s;
+        if trialWaitTime_s == 0
+            break;
+        end
+    else
+        lowerWaitTime_s = trialWaitTime_s;
+        diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
+    end
+end
+candidate = bestCandidate;
+validation = bestValidation;
+diagnostics.WaitTime_s = upperWaitTime_s;
+diagnostics.FinalWaitTime_s = upperWaitTime_s;
+diagnostics.ElapsedTime_s = diagnostics.ElapsedTime_s + motionElapsedTime_s;
 candidate.SolverDiagnostics = diagnostics;
 end
 

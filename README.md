@@ -48,6 +48,12 @@ in `SeedSummaries` with termination reason `seedWorkBudgetExhausted`.
 search layers, including the initial and goal times. Lower values reduce
 timed-search work but can omit obstacle-event times and lose feasible routes.
 
+`MaximumWaitRefinementIterations` defaults to `16`. For an earliest-arrival
+`directWait` seed that already passes independent validation, the planner first
+validates zero wait and then bisects the measured infeasible/feasible wait
+bracket. Every trial uses `obstacleAvoidance.validateTrajectory`; fixed-arrival
+requests are not refined. Set the option to `0` to retain the accepted grid wait.
+
 ## Minimal fixed-goal example
 
 ```matlab

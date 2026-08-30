@@ -73,7 +73,7 @@ Do not judge or bless a change that moves any sentinel. Stop and report it.
 | `exampleTwoOpposingUVisibilityGraph` | arrival 21.6333333333333 s (`649/30`, certified physical floor) |
 | `exampleStaticUShapedObstacle` | duration 20.7124477849715 s; smoothed path 40.2550285014326 deg (selected polyline 34.9425880404659 deg) |
 | README quick-start (`exampleObstacleAvoidance`) | arrival 7.5745417663213 s; length 11.411861 deg. Older records quote `7.574542`; that is a rounded value, so compare at 1e-6, not tighter. |
-| `exampleMovingBarrierWait` | arrival 10.5 s |
+| `exampleMovingBarrierWait` | arrival 10.0903015136719 s |
 | `exampleMovingCircleNoAzimuthWrap` | arrival 8.5 s |
 | `exampleMovingDeformingUSOutlineVisibility` | arrival 7.91666666666667 s |
 | Full suite | 84/84 |
