@@ -6,7 +6,19 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
-## BMTP unchanged-plane reuse, gated off - 2026-08-30
+## BMTP retained-best stagnation stop removed - 2026-08-31
+
+The optional retained-best stagnation stop was built and measured, then
+superseded by the default-on plane-reuse gate and removed. The earlier
+measurement remains below: with `EnableStagnationStop=true`, five retained
+trials reduced the `1e-4 deg` Target diagnostic from 42 outer iterations and
+433 conic calls to 18 and 159 without moving its returned result. After plane
+reuse became the default, the stagnation counter reached 2 of 3 in the former
+test while `StoppedOnStagnation` remained false because reuse ended the loop
+first. The option, its counter, and its diagnostics were therefore dead on the
+default path and were removed rather than retained as unreachable control.
+
+## BMTP unchanged-plane reuse, initially gated off - 2026-08-30
 
 `EnablePlaneReuse=false` preserves the existing plane reset and re-derivation
 path. The four supplied default sentinels were bit-identical to their required
