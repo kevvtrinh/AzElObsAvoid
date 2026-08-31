@@ -68,7 +68,7 @@ result has been prepared. The later boxes are included now so this page remains
 the map for the complete walkthrough.
 
 \begin{center}
-\begin{tikzpicture}[
+\begin{tikzpicture}[scale=.84,transform shape,
     station/.style={draw=blue!75!black,rounded corners=2pt,fill=blue!7,
         text width=7.25cm,minimum height=.55cm,align=left,font=\scriptsize},
     later/.style={station,draw=green!55!black,fill=green!7},
@@ -88,10 +88,16 @@ the map for the complete walkthrough.
 \node[later,below=4mm of s9] (s10) {\textbf{10. Orthogonal cavity} --- test each route proposal for one restricted concave-cavity motion};
 \node[later,below=4mm of s10] (s11) {\textbf{11. Create route candidates} --- search the protected map for deterministic route shapes};
 \node[later,below=4mm of s11] (s12) {\textbf{12. Record route proposals} --- retain seeds as inputs to later motion construction, not as answers};
-\node[later,below=4mm of s12] (s13) {\textbf{13. Make one motion per route} --- use the selected trajectory method and record each attempt};
-\node[later,below=4mm of s13] (s14) {\textbf{14. Independently validate} --- check the full timed motion, not only its route points};
-\node[later,below=4mm of s14] (s15) {\textbf{15. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
-\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14,s14/s15}
+\node[later,below=4mm of s12] (s13) {\textbf{13. Choose the motion builder} --- select BMTP or the waypoint builder for each route};
+\node[later,below=4mm of s13] (s14) {\textbf{14. Shape the BMTP curve} --- turn a route into connected Bezier spans};
+\node[later,below=4mm of s14] (s15) {\textbf{15. Solve the first curve problem} --- minimize shared time under motion limits};
+\node[later,below=4mm of s15] (s16) {\textbf{16. Find a first safe attempt} --- test each unconstrained curve against obstacles};
+\node[later,below=4mm of s16] (s17) {\textbf{17. Draw safety lines} --- solve maximum-clearance separating planes};
+\node[later,below=4mm of s17] (s18) {\textbf{18. Alternate and stop} --- update curve and lines, optionally reuse unchanged lines};
+\node[later,below=4mm of s18] (s19) {\textbf{19. Finish the BMTP motion} --- project ends, stretch time, and certify};
+\node[later,below=4mm of s19] (s20) {\textbf{20. Independently validate} --- check the full timed motion, not only its route points};
+\node[later,below=4mm of s20] (s21) {\textbf{21. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14,s14/s15,s15/s16,s16/s17,s17/s18,s18/s19,s19/s20,s20/s21}
     \draw[flow] (\a.south)--(\b.north);
 \node[exit,right=18mm of s2] (inputerror) {input error\\no result record};
 \draw[early] (s2.east)--(inputerror.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{invalid};
@@ -105,14 +111,14 @@ the map for the complete walkthrough.
 \draw[early] (s9.east)--(opening.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
 \node[exit,right=18mm of s10] (cavity) {return success\\cavity works};
 \draw[early] (s10.east)--(cavity.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
-\node[exit,right=18mm of s15] (final) {completed result\\success or no validated motion};
-\draw[early] (s15.east)--(final.west);
+\node[exit,right=18mm of s21] (final) {completed result\\success or no validated motion};
+\draw[early] (s21.east)--(final.west);
 \end{tikzpicture}
 \end{center}
 \smallskip
 \textit{Figure 1.} The complete route through the planner. Stations 1--12
-are written in milestones 1--2; stations 13--15 are deliberately shown now
-and will be written in later milestones.
+are written in milestones 1--2; stations 13--19 are written in this milestone.
+Stations 20--21 are deliberately shown now and will be written later.
 \clearpage
 
 \section{The request we follow}
@@ -566,5 +572,256 @@ That is why the stable record begins with empty route fields and \texttt{NaN}
 estimates. Calling a seed an answer would hide this distinction.
 
 \stationSource{+obstacleAvoidance/+search/createSeed.m:22--30; +obstacleAvoidance/+search/createRouteCandidates.m:401--415; +obstacleAvoidance/+planner/planCorridorQuintic.m:276--401}
+
+\section{Station 13: choose the motion builder}
+
+\arrival{1. What arrives here.}
+One seed at a time arrives from Station 12, together with the prepared obstacle
+history and the resolved option \texttt{TrajectoryMethod}. Our run has
+\texttt{"bmtp"}, the default. Its protected rectangle is static throughout the
+request horizon.
+
+\arrival{2. What this station does to it.}
+The orchestrator reads the option first. \texttt{"ruckigWaypoint"} sends every
+seed to the waypoint builder. Otherwise, a static obstacle horizon sends the
+seed to BMTP. A non-static horizon instead starts with the timed seed builder;
+only its stated unsupported-timed-topology outcomes continue to the waypoint
+builder. Thus the choice follows the selected method and the obstacle history,
+not the seed's name or a preferred side of an obstacle.
+
+\arrival{3. What leaves.}
+For each of our three seeds, a static BMTP call leaves this station. The
+selected route is seed \WalkSelectedSeedIndex, whose exported four polyline
+points go round the upper side of the rectangle. The later result selection is
+not performed here.
+
+\arrival{4. What can go wrong here, and what it is called.}
+BMTP requires every obstacle to be static and active over the horizon. A
+violation is
+\nolinkurl{solveBmtpTrajectory:UnsupportedDynamicObstacle}. The
+timed route branch can report \texttt{unsupportedTimedTopology} or
+\texttt{invalidDirectWaitSeed}; those are the two cases that cause the
+waypoint fallback. None applies to this static request.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:52--63, 276--305; +obstacleAvoidance/+planner/solveBmtpTrajectory.m:33--55; trajectory/+bmtpEngine/solve.m:23--37}
+
+\section{Station 14: shape the BMTP curve}
+
+\arrival{1. What arrives here.}
+BMTP receives one seed polyline, convex protected exclusion regions, the rest
+start and goal states, physical limits, resolved options, and an empty
+per-seed motion record. The selected route has three straight seed edges.
+
+\arrival{2. What this station does to it.}
+It turns each seed edge into three degree-16 Bezier spans, so the selected
+route begins with nine optimizer spans. A Bezier span is a curve controlled by
+an ordered row of points: moving one control point changes the whole span
+smoothly, while the endpoint control points pin its ends.
+The first three and last three controls are made equal to impose the required
+rest endpoint derivatives; matching finite differences through order three
+joins neighboring spans. The ordinary exact-region case uses degree 16 and
+three splits. The compact degree-7, one-split form is used only when the
+caller records conservative grouping of a complex outline.
+
+This keeps the curve as controls, so derivative and safety-line conditions
+apply over every span. The later 1201-point scan only finds possible collisions;
+the source explicitly says it is not an acceptance certificate.
+
+\arrival{3. What leaves.}
+The selected seed leaves as a route-shaped C3 composite Bezier warm control
+net, an equal shared segment time sufficient for its derivative controls, and
+region bounds. Diagnostics retain degree, split count, span count, and whether
+an oversized warm route was resampled.
+
+\arrival{4. What can go wrong here, and what it is called.}
+Malformed coordinates or non-increasing \texttt{tau} give
+\texttt{bmtpEngine:InvalidSeedTau}. The source does not document why the
+degree, split count, collision-sample count, or later iteration limits were
+chosen; it documents their operation, not their tuning reason.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:52--109, 342--397, 419--439, 730--752, 1064--1088}
+
+\section{Station 15: solve the first curve problem}
+
+\arrival{1. What arrives here.}
+The curve controls are now unknowns. BMTP also uses four linked nonnegative
+time-power variables: $1$, the common span time, its square, and its cube.
+The first is fixed to one; the objective minimizes the cube, then recovers the
+common span time. Every span therefore advances on one physical clock.
+
+\arrival{2. What this station does to it.}
+It assembles a convex second-order cone problem. Equality rows fix the start
+and goal positions, make the first and last derivative controls zero, and
+match position through jerk at each join. Bounds keep controls inside the
+azimuth and elevation workspace. At the first call there are no safety lines:
+the problem asks only for the fastest smooth curve satisfying these conditions.
+
+\arrival{3. What leaves.}
+Each successful call returns a full Bezier control net and shared span time.
+For the selected route, the recorded first trajectory solve lasts
+\WalkSelectedTrialOneDuration. The next station tests this curve for collision.
+
+A speed limit becomes first differences of adjacent Bezier controls. For a
+degree-$n$ span, $n(P_{i+1}-P_i)$ is a velocity-control coefficient before
+division by span time, so it is bounded by the per-axis velocity limit times
+the time variable. Second and third differences use the squared and cubed
+time variables for acceleration and jerk. Two cone relations make the four
+variables act as powers of one shared time. This checks the polynomial control
+coefficients, rather than merely checking sampled speeds.
+
+\arrival{4. What can go wrong here, and what it is called.}
+An unsuccessful conic call supplies its solver message. Before a collision-free
+incumbent exists, an infeasible request-horizon call may temporarily enlarge
+the intermediate horizon up to the warm kinematic duration; an accepted motion
+still has its own horizon check. The source sets conic iteration caps and
+tolerances but does not document why those numerical values were chosen.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:158--181, 441--601}
+
+\section{Station 16: find a first safe attempt}
+
+\arrival{1. What arrives here.}
+The first unconstrained curve arrives from Station 15. No safety line exists
+yet. The selected route's first recorded attempt is
+\WalkSelectedTrialOneDuration, and it has
+\WalkSelectedTrialOnePairs\ colliding span--region pairs.
+
+\arrival{2. What this station does to it.}
+It evaluates 1201 normalized-time points per span, first using region bounds
+to avoid unnecessary polygon work, then marks every span--region pair whose
+points are inside or on that region. The recorded selected route has
+\WalkSelectedTrialCount\ trajectory attempts: attempt one collides, and
+\WalkSelectedCollisionFreeTrialCount\ later attempts are collision-free. Their
+recorded durations are \WalkSelectedTrialTwoDuration\ and
+\WalkSelectedTrialThreeDuration.
+
+\arrival{3. Why the first safe attempt comes before safety lines.}
+A safety line is solved from a \emph{fixed collision-free curve} and one fixed
+obstacle region. Its job is to separate those two objects. A colliding curve
+does not provide such a pair, so there is no line to fix into the next curve
+problem. This is why BMTP cannot simply begin by imposing obstacle lines: it
+first needs a collision-free incumbent from which the lines can be established.
+
+Commit \texttt{41c4311} records the consequence. On its saved scene, a 180 s
+horizon produced six colliding attempts through 179.203882993999 s, then an
+infeasible seventh and no safe incumbent. At 360 s, the solver reached a
+collision-free 191.541694821082 s attempt, established the lines, then
+descended to about 100.676 s. The current code restores the requested horizon
+as soon as a collision-free attempt is found.
+
+\arrival{4. What can go wrong here, and what it is called.}
+If no collision-free iterate is retained, BMTP returns
+\texttt{noOptimizedFeasibleIterate}; its message preserves the last solver
+cause. A sampled collision is useful to choose line work, but is not itself a
+final collision certificate.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:135--146, 158--243, 730--752; branch_assessment.md:260--279}
+
+\section{Station 17: draw safety lines}
+
+\arrival{1. What arrives here.}
+Each newly tagged colliding span--region pair arrives, along with the most
+recent collision-free curve. The curve is now fixed for this problem; its
+control points are numbers, not unknowns.
+
+\arrival{2. What this station does to it.}
+For each pair it solves a second convex problem for a degree-one safety line:
+two endpoint normals, two offsets, and one margin. The obstacle vertices must
+lie on the obstacle side with the clearance target; the fixed curve's controls
+must lie on the other side. The objective minimizes the negative margin, so it
+finds the greatest separation allowed by those conditions. It then directly
+checks normal size, obstacle side, trajectory side, and signed gap before
+retaining the line.
+
+\arrival{3. What leaves.}
+Verified lines become fixed coefficients in the next trajectory SOCP. The
+selected-route diagnostic records \WalkSelectedPlaneSocpCount\ plane SOCPs and
+\WalkSelectedTrajectorySocpCount\ trajectory SOCPs. It retains the failed pair
+and line if a verification fails, rather than silently continuing.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A failed or unverified maximum-margin solve stops the loop with the message
+\texttt{"A maximum-margin plane failed direct verification."} The source does
+not explain a separate physical reason for its margin formulation beyond the
+implemented clearance and roundoff conditions.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:244--264, 603--728, 761--824}
+
+\section{Station 18: alternate and stop}
+
+\arrival{1. What arrives here.}
+The next curve problem holds every retained safety line fixed, so its control
+points and shared time can move while respecting those lines. The line problem
+then holds that collision-free curve fixed, so its normal and offsets can move.
+Neither step alone can do both jobs. Letting curve controls and line normals
+move together multiplies unknowns, so their joint condition is not one convex
+problem; BMTP alternates the two convex problems.
+
+\arrival{2. Reusing unchanged safety lines.}
+\texttt{EnablePlaneReuse} defaults to \WalkPlaneReuse. After a collision-free
+trial, it skips line re-derivation only when the retained best duration changed
+by no more than \texttt{PlaneReuseImprovementTolerance\_s} and the tagged
+pair set is unchanged. It solves the curve problem again with the same lines.
+On the measured reference case, that repeated solve was identical in control
+net and duration, so the existing arrival-improvement test ended the loop.
+Our selected route did not use it:
+\texttt{PlaneReuseApplied=\WalkSelectedPlaneReuseApplied}.
+
+The recorded trade is deliberately visible: on one reference example plane
+reuse was 41\% faster and arrived 0.016643674134 s later. That arrival cost
+was accepted; it is a single measurement, not a general performance claim.
+
+\arrival{3. What leaves.}
+The loop retains the shortest collision-free control net seen so far, not just
+the last trial. It also records trial duration, collision-pair count,
+collision-free status, trajectory and plane call counts, and reuse differences.
+It does not retain the geometry of every intermediate curve, so this document
+does not draw those unrecorded curves.
+
+\arrival{4. How it stops.}
+It stops successfully when a collision-free arrival improvement is nonnegative
+and at most \WalkArrivalTolerance. Other stops are the 35-iteration limit,
+the optional solver-time limit, a failed trajectory SOCP, a tagged pair crossing
+its retained line, or a failed line verification. Without any safe incumbent
+the final reason is \texttt{noOptimizedFeasibleIterate}; otherwise Station 19
+receives the retained best curve. The source does not document why 35 is the
+iteration cap.
+
+\stationSource{+obstacleAvoidance/+input/resolvePlannerOptions.m:21--24, 49, 95--97; trajectory/+bmtpEngine/solve.m:149--266, 1064--1088; branch_assessment.md:19--24, 43--60}
+
+\section{Station 19: finish the BMTP motion}
+
+\arrival{1. What arrives here.}
+The shortest retained collision-free optimizer control net and shared time
+arrive with the retained safety lines. This is still the optimizer form, not
+yet the published sampled motion.
+
+\arrival{2. What this station does to it.}
+It projects the endpoint control points onto exact rest positions, then splits
+every Bezier span at its midpoint. From both the original and converted
+Bernstein controls it calculates the minimum segment time required by velocity,
+acceleration, and jerk limits. It stretches time by the larger required ratio,
+never clips a derivative. A fixed-arrival request that cannot fit after this
+stretching returns \texttt{timeWindowInfeasible} or
+\texttt{fixedArrivalInfeasible}; an earliest-arrival motion keeps the stretched
+time. The engine then converts controls to power polynomials, samples them for
+the public record, and verifies every output span against every supplied region
+with its plane certificate.
+
+\arrival{3. What leaves.}
+The selected candidate leaves with time, position, velocity, acceleration, and
+jerk histories; polynomial coefficients; arrival time \WalkArrivalTime; and a
+motion and plane certificate. Its final duration is longer than its retained
+optimizer trials because midpoint subdivision and post-projection dilation are
+part of the published certificate path, not a hidden correction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+If a certificate does not pass, the expected result is
+\texttt{planeCertificateUnavailable}; it explicitly asks for independent
+collision validation rather than declaring success. Only a passed all-pair
+certificate sets the engine candidate to \texttt{goalReached}. Station 20 will
+independently check that motion before the planner is allowed to return it.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:276--338, 428--439, 754--824, 896--1003}
 
 \end{document}
