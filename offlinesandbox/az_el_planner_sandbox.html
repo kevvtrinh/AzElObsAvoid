@@ -366,6 +366,64 @@
       text-align: right;
     }
 
+    .kinematics-panel {
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+      background: #091522;
+    }
+
+    .kinematics-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.58rem;
+    }
+
+    .kinematics-heading h2 {
+      margin: 0;
+      font-size: 0.78rem;
+    }
+
+    .kinematics-heading span {
+      color: var(--quiet);
+      font-size: 0.65rem;
+    }
+
+    .kinematics-charts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
+    }
+
+    .kinematic-chart {
+      min-width: 0;
+      margin: 0;
+      padding: 0.42rem;
+      border: 1px solid rgba(57, 83, 108, 0.65);
+      border-radius: 8px;
+      background: #07111c;
+    }
+
+    .kinematic-chart figcaption {
+      margin: 0 0 0.28rem 0.2rem;
+      color: #dbe8ef;
+      font-size: 0.67rem;
+      font-weight: 650;
+    }
+
+    .kinematic-chart canvas {
+      display: block;
+      width: 100%;
+      height: 150px;
+    }
+
+    .kinematics-empty {
+      margin: 0;
+      color: var(--quiet);
+      font-size: 0.7rem;
+    }
+
     .speed-select {
       width: 76px;
       min-height: 34px;
@@ -720,6 +778,20 @@
       font-size: 0.72rem;
     }
 
+    .overlay-controls {
+      display: grid;
+      justify-items: end;
+      gap: 0.34rem;
+    }
+
+    .overlay-note {
+      max-width: 285px;
+      color: var(--quiet);
+      font-size: 0.66rem;
+      line-height: 1.35;
+      text-align: right;
+    }
+
     .diagnostics-layout {
       display: grid;
       grid-template-columns: minmax(250px, 0.72fr) minmax(480px, 1.28fr);
@@ -872,6 +944,10 @@
         display: none;
       }
 
+      .kinematics-charts {
+        grid-template-columns: 1fr;
+      }
+
       .coordinate-readout {
         min-width: 160px;
       }
@@ -972,6 +1048,29 @@
             <option value="25">25×</option>
           </select>
         </div>
+        <section class="kinematics-panel" aria-label="Motion kinematics">
+          <div class="kinematics-heading">
+            <h2>Motion kinematics</h2>
+            <span>Azimuth — cyan · Elevation — violet · cursor follows time</span>
+          </div>
+          <p id="kinematicsEmpty" class="kinematics-empty">
+            Load a successful result to inspect returned motion histories.
+          </p>
+          <div id="kinematicsCharts" class="kinematics-charts" hidden>
+            <figure class="kinematic-chart">
+              <figcaption>Turning speed (deg/s)</figcaption>
+              <canvas id="velocityChart" aria-label="Turning speed against time"></canvas>
+            </figure>
+            <figure class="kinematic-chart">
+              <figcaption>Acceleration (deg/s²)</figcaption>
+              <canvas id="accelerationChart" aria-label="Acceleration against time"></canvas>
+            </figure>
+            <figure class="kinematic-chart">
+              <figcaption>Jerk (deg/s³)</figcaption>
+              <canvas id="jerkChart" aria-label="Jerk against time"></canvas>
+            </figure>
+          </div>
+        </section>
       </section>
 
       <aside class="sidebar" aria-label="Planning controls and file handoff">
@@ -1250,10 +1349,18 @@
           <div class="eyebrow">SearchDiagnostics</div>
           <h2>Search evidence &amp; stage timing</h2>
         </div>
-        <label class="overlay-toggle">
-          <input id="searchOverlayToggle" type="checkbox" checked>
-          Show search overlay on workspace
-        </label>
+        <div class="overlay-controls">
+          <label class="overlay-toggle">
+            <input id="searchOverlayToggle" type="checkbox">
+            Show visibility graph on workspace
+          </label>
+          <span id="searchOverlayNote" class="overlay-note"></span>
+          <label class="overlay-toggle">
+            <input id="selectedSeedToggle" type="checkbox">
+            Show selected seed on workspace
+          </label>
+          <span id="selectedSeedNote" class="overlay-note"></span>
+        </div>
       </div>
       <div class="result-grid" style="margin-bottom:1rem">
         <div class="metric">
@@ -1358,7 +1465,8 @@
         validation: null,
         responseObstacles: [],
         lastRequestId: "",
-        showSearchOverlay: true,
+        showSearchOverlay: false,
+        showSelectedSeed: false,
         importedSceneIsReadOnly: false,
         applyingResult: false,
         connectionMode: "checking",
@@ -1379,6 +1487,11 @@
       const timeSlider = document.getElementById("timeSlider");
       const timeReadout = document.getElementById("timeReadout");
       const playButton = document.getElementById("playButton");
+      const kinematicCharts = {
+        velocity: document.getElementById("velocityChart"),
+        acceleration: document.getElementById("accelerationChart"),
+        jerk: document.getElementById("jerkChart")
+      };
       const obstacleList = document.getElementById("obstacleList");
       const obstacleEditor = document.getElementById("obstacleEditor");
 
@@ -2312,6 +2425,10 @@
         stopPlayback();
         state.result = response.result;
         state.validation = response.validation;
+        state.showSearchOverlay = false;
+        state.showSelectedSeed = false;
+        element("searchOverlayToggle").checked = false;
+        element("selectedSeedToggle").checked = false;
         state.responseObstacles = importedObstacles.map((obstacle) => {
           const times = numericArray(obstacle.time_s);
           return {
@@ -2443,6 +2560,34 @@
             String(grid.RejectedTransitionCount) : "—";
         renderStageTiming(diagnostics.StageTiming || {});
         renderSeedSummaries(diagnostics.SeedSummaries);
+        updateOverlayControls(grid);
+      }
+
+      function updateOverlayControls(grid) {
+        const searchCount = matrix(grid.AcceptedEdges_deg, 4).length +
+          matrix(grid.RejectedEdges_deg, 4).length +
+          matrix(grid.ExploredNodes_deg, 2).length +
+          matrix(grid.FrontierNodes_deg, 2).length +
+          matrix(grid.BestPartialRoute_deg, 2).length;
+        const seedCount = matrix(state.result.SelectedSeed_deg, 2).length;
+        const searchToggle = element("searchOverlayToggle");
+        const seedToggle = element("selectedSeedToggle");
+        const noSearchMessage = "No route search was needed for this request.";
+        const noSeedMessage = "No selected seed was returned for this request.";
+        searchToggle.disabled = searchCount === 0;
+        seedToggle.disabled = seedCount < 2;
+        if (searchToggle.disabled) {
+          searchToggle.checked = false;
+          state.showSearchOverlay = false;
+        }
+        if (seedToggle.disabled) {
+          seedToggle.checked = false;
+          state.showSelectedSeed = false;
+        }
+        element("searchOverlayNote").textContent = searchToggle.disabled ?
+          noSearchMessage : "Accepted and rejected graph transitions.";
+        element("selectedSeedNote").textContent = seedToggle.disabled ?
+          noSeedMessage : "Geometric route used to initialize the motion.";
       }
 
       function humanizeTimingName(name) {
@@ -3039,6 +3184,19 @@
         }
       }
 
+      function drawSelectedSeed() {
+        if (!state.result || !state.showSelectedSeed) {
+          return;
+        }
+        const seed = matrix(state.result.SelectedSeed_deg, 2)
+          .filter((point) => point.every(finiteNumber));
+        if (seed.length >= 2) {
+          wrappedSegments(seed).forEach((segment) => strokePath(segment, {
+            stroke: "#be84ff", width: 2.1, dash: [9, 5], alpha: 0.9
+          }));
+        }
+      }
+
       function drawDiagnosticNodes(points, color, radius) {
         context.save();
         context.fillStyle = color;
@@ -3063,6 +3221,170 @@
           positions: matrix(state.result.position_deg, 2)
             .filter((point) => point.every(finiteNumber))
         };
+      }
+
+      function kinematicHistory(fieldName) {
+        if (!state.result) {
+          return [];
+        }
+        const times = numericArray(state.result.time_s);
+        const rows = matrix(state.result[fieldName], 2);
+        const sampleCount = Math.min(times.length, rows.length);
+        const history = [];
+        for (let index = 0; index < sampleCount; index += 1) {
+          if (finiteNumber(times[index]) && rows[index].every(finiteNumber)) {
+            history.push({ time_s: times[index], values: rows[index] });
+          }
+        }
+        return history;
+      }
+
+      function kinematicLimit(fieldName) {
+        const limits = state.result && state.result.Inputs &&
+          state.result.Inputs.limits || {};
+        const limitFields = {
+          velocity_deg_s: "maxVelocity_deg_s",
+          acceleration_deg_s2: "maxAcceleration_deg_s2",
+          jerk_deg_s3: "maxJerk_deg_s3"
+        };
+        return numericArray(limits[limitFields[fieldName]]).slice(0, 2);
+      }
+
+      function resizeChartCanvas(chartCanvas) {
+        const rectangle = chartCanvas.getBoundingClientRect();
+        const ratio = Math.max(1, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.round(rectangle.width * ratio));
+        const height = Math.max(1, Math.round(rectangle.height * ratio));
+        if (chartCanvas.width !== width || chartCanvas.height !== height) {
+          chartCanvas.width = width;
+          chartCanvas.height = height;
+        }
+        const chartContext = chartCanvas.getContext("2d");
+        chartContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { chartContext, width: rectangle.width, height: rectangle.height };
+      }
+
+      function drawKinematicChart(chartCanvas, fieldName, yLabel) {
+        const { chartContext, width, height } = resizeChartCanvas(chartCanvas);
+        chartContext.clearRect(0, 0, width, height);
+        const history = kinematicHistory(fieldName);
+        if (history.length < 2) {
+          chartContext.fillStyle = "#8298a8";
+          chartContext.font = "11px ui-sans-serif, system-ui, sans-serif";
+          chartContext.textAlign = "center";
+          chartContext.fillText("No returned history", width / 2, height / 2);
+          return false;
+        }
+        const margins = { left: 44, right: 8, top: 8, bottom: 25 };
+        const plotWidth = Math.max(1, width - margins.left - margins.right);
+        const plotHeight = Math.max(1, height - margins.top - margins.bottom);
+        const [timeStart_s, timeEnd_s] = timelineBounds();
+        const safeEnd_s = timeEnd_s > timeStart_s ? timeEnd_s : timeStart_s + 1;
+        const limits = kinematicLimit(fieldName);
+        const magnitudes = history.flatMap((sample) => sample.values.map(Math.abs));
+        limits.forEach((limit) => {
+          if (finiteNumber(limit)) {
+            magnitudes.push(Math.abs(limit));
+          }
+        });
+        const maximum = Math.max(1e-9, ...magnitudes);
+        const yExtent = maximum * 1.12;
+        const xAt = (time_s) => margins.left + (time_s - timeStart_s) /
+          (safeEnd_s - timeStart_s) * plotWidth;
+        const yAt = (value) => margins.top + (yExtent - value) /
+          (2 * yExtent) * plotHeight;
+        chartContext.fillStyle = "#091522";
+        chartContext.fillRect(margins.left, margins.top, plotWidth, plotHeight);
+        chartContext.strokeStyle = "rgba(95,139,166,0.34)";
+        chartContext.lineWidth = 1;
+        chartContext.beginPath();
+        chartContext.moveTo(margins.left, yAt(0));
+        chartContext.lineTo(margins.left + plotWidth, yAt(0));
+        chartContext.stroke();
+        const limitColors = ["rgba(57,208,216,0.74)", "rgba(190,132,255,0.74)"];
+        limits.forEach((limit, axisIndex) => {
+          if (!finiteNumber(limit) || limit <= 0) {
+            return;
+          }
+          chartContext.save();
+          chartContext.strokeStyle = limitColors[axisIndex];
+          chartContext.lineWidth = 1;
+          chartContext.setLineDash([4, 3]);
+          [-limit, limit].forEach((signedLimit) => {
+            chartContext.beginPath();
+            chartContext.moveTo(margins.left, yAt(signedLimit));
+            chartContext.lineTo(margins.left + plotWidth, yAt(signedLimit));
+            chartContext.stroke();
+          });
+          chartContext.restore();
+        });
+        [[0, "#39d0d8"], [1, "#be84ff"]].forEach(([axisIndex, color]) => {
+          chartContext.save();
+          chartContext.strokeStyle = color;
+          chartContext.lineWidth = 1.6;
+          chartContext.lineJoin = "round";
+          chartContext.beginPath();
+          history.forEach((sample, index) => {
+            const x = xAt(sample.time_s);
+            const y = yAt(sample.values[axisIndex]);
+            if (index === 0) {
+              chartContext.moveTo(x, y);
+            } else {
+              chartContext.lineTo(x, y);
+            }
+          });
+          chartContext.stroke();
+          chartContext.restore();
+        });
+        const cursorTime_s = Math.max(timeStart_s,
+          Math.min(safeEnd_s, state.currentTime_s));
+        chartContext.save();
+        chartContext.strokeStyle = "#ffbd69";
+        chartContext.lineWidth = 1.1;
+        chartContext.setLineDash([3, 3]);
+        chartContext.beginPath();
+        chartContext.moveTo(xAt(cursorTime_s), margins.top);
+        chartContext.lineTo(xAt(cursorTime_s), margins.top + plotHeight);
+        chartContext.stroke();
+        chartContext.restore();
+        chartContext.fillStyle = "#9eb4c2";
+        chartContext.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
+        chartContext.textAlign = "right";
+        chartContext.fillText(yExtent.toPrecision(3), margins.left - 4,
+          margins.top + 5);
+        chartContext.fillText((-yExtent).toPrecision(3), margins.left - 4,
+          margins.top + plotHeight);
+        chartContext.textAlign = "center";
+        chartContext.fillText("Time (s)", margins.left + plotWidth / 2,
+          height - 3);
+        chartContext.save();
+        chartContext.translate(10, margins.top + plotHeight / 2);
+        chartContext.rotate(-Math.PI / 2);
+        chartContext.fillText(yLabel, 0, 0);
+        chartContext.restore();
+        return true;
+      }
+
+      function drawKinematicCharts() {
+        const chartDefinitions = [
+          [kinematicCharts.velocity, "velocity_deg_s", "deg/s"],
+          [kinematicCharts.acceleration, "acceleration_deg_s2", "deg/s²"],
+          [kinematicCharts.jerk, "jerk_deg_s3", "deg/s³"]
+        ];
+        const hasKinematics = chartDefinitions.some((definition) =>
+          kinematicHistory(definition[1]).length >= 2
+        );
+        element("kinematicsCharts").hidden = !hasKinematics;
+        element("kinematicsEmpty").hidden = hasKinematics;
+        if (!hasKinematics) {
+          element("kinematicsEmpty").textContent = state.result ?
+            "No returned kinematic history is available for this result." :
+            "Load a successful result to inspect returned motion histories.";
+          return;
+        }
+        chartDefinitions.forEach(([chartCanvas, fieldName, yLabel]) => {
+          drawKinematicChart(chartCanvas, fieldName, yLabel);
+        });
       }
 
       function trajectoryPointAt(time_s) {
@@ -3130,7 +3452,27 @@
           }));
         const current = trajectoryPointAt(state.currentTime_s);
         if (current) {
-          drawPoint(wrapPoint(current), "#39d0d8", "t", "diamond");
+          // The moving marker passes over the start and goal labels. Measure
+          // the text instead of guessing a distance, and drop the marker
+          // label only when its box would actually overlap one of them. The
+          // diamond shape still identifies the marker without a label.
+          const labelBox = (point, text) => {
+            const screen = worldToScreen(point);
+            const width = context.measureText(text).width;
+            return [screen[0] + 10, screen[1] - 21,
+              screen[0] + 10 + width, screen[1] - 8];
+          };
+          const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] &&
+            a[1] < b[3] && b[1] < a[3];
+          context.save();
+          context.font = "650 11px ui-sans-serif, system-ui, sans-serif";
+          const markerBox = labelBox(wrapPoint(current), "Pointing");
+          const anchors = [[state.start, "Start"], [state.goal, "Goal"]];
+          const collides = anchors.some(([anchor, text]) =>
+            anchor && overlaps(markerBox, labelBox(anchor, text)));
+          context.restore();
+          drawPoint(wrapPoint(current), "#39d0d8",
+            collides ? "" : "Pointing", "diamond");
         }
       }
 
@@ -3192,6 +3534,7 @@
           state.plotRect.width, state.plotRect.height);
         context.clip();
         drawSearchDiagnostics();
+        drawSelectedSeed();
         if (state.responseObstacles.length > 0) {
           drawResponseObstacles();
         } else {
@@ -3210,6 +3553,7 @@
         drawPoint(state.goal, "#ff7a83", "Goal");
         drawCrosshair();
         context.restore();
+        drawKinematicCharts();
       }
 
       function updateCoordinateReadout(point) {
@@ -3294,6 +3638,10 @@
         state.validation = null;
         state.responseObstacles = [];
         state.lastRequestId = "";
+        state.showSearchOverlay = false;
+        state.showSelectedSeed = false;
+        element("searchOverlayToggle").checked = false;
+        element("selectedSeedToggle").checked = false;
         state.importedSceneIsReadOnly = false;
         state.currentTime_s = 0;
         Object.entries(defaultControls).forEach(([id, value]) => {
@@ -3422,6 +3770,10 @@
       element("resetButton").addEventListener("click", resetScene);
       element("searchOverlayToggle").addEventListener("change", (event) => {
         state.showSearchOverlay = event.target.checked;
+        draw();
+      });
+      element("selectedSeedToggle").addEventListener("change", (event) => {
+        state.showSelectedSeed = event.target.checked;
         draw();
       });
       playButton.addEventListener("click", () => {
