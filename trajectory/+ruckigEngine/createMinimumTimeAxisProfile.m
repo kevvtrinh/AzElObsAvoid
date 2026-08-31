@@ -144,9 +144,11 @@ phase(7) = phase(5) + context.af / jMaximum;
 candidates = appendCandidate(candidates, context, limits, ...
     phase, "accelerationVelocity");
 
-timeAcceleration0 = safeSqrt(context.a0Squared / (2 * jSquared) + ...
+timeAcceleration0 = ruckigEngine.internal.safeSqrt( ...
+    context.a0Squared / (2 * jSquared) + ...
     (vMaximum - context.v0) / jMaximum);
-timeAcceleration1 = safeSqrt(context.afSquared / (2 * jSquared) + ...
+timeAcceleration1 = ruckigEngine.internal.safeSqrt( ...
+    context.afSquared / (2 * jSquared) + ...
     (vMaximum - context.vf) / jMaximum);
 if isfinite(timeAcceleration0)
     phase(1:3) = [timeAcceleration0 - context.a0 / jMaximum, ...
@@ -434,15 +436,6 @@ allRoots = roots(coefficients);
 imaginaryTolerance = 1e-8 * max(1, max(abs(allRoots)));
 isReal = abs(imag(allRoots)) <= imaginaryTolerance;
 values = sort(real(allRoots(isReal))).';
-end
-
-function value = safeSqrt(radicand)
-% Return NaN for a genuinely negative radical while accepting roundoff at zero.
-if radicand < -64 * eps(max(1, abs(radicand)))
-    value = NaN;
-else
-    value = sqrt(max(0, radicand));
-end
 end
 
 function candidate = createEmptyCandidate()
