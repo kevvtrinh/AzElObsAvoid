@@ -240,11 +240,25 @@ for axisIndex = 1:dimensionCount
             diagnostics.ScreeningCount = diagnostics.ScreeningCount + ...
                 coarseLevelCount;
             passingLevel = find(sampledClear, 1, "first");
+            upperValidation = obstacleAvoidance.validateTrajectory();
             if ~isempty(passingLevel)
-                upperMagnitude_deg = trialMagnitudes_deg(passingLevel);
-                upperCandidate = trialCandidates{passingLevel};
                 if passingLevel > 1
                     lowerMagnitude_deg = trialMagnitudes_deg(passingLevel - 1);
+                end
+                for levelIndex = passingLevel:coarseLevelCount
+                    validationTimer = tic;
+                    trialValidation = obstacleAvoidance.validateTrajectory( ...
+                        trialCandidates{levelIndex}, obstacles, initialState, ...
+                        goalState, limits, options);
+                    diagnostics = addValidationTiming( ...
+                        diagnostics, trialValidation, toc(validationTimer));
+                    if trialValidation.Passed
+                        upperMagnitude_deg = trialMagnitudes_deg(levelIndex);
+                        upperCandidate = trialCandidates{levelIndex};
+                        upperValidation = trialValidation;
+                        break;
+                    end
+                    lowerMagnitude_deg = trialMagnitudes_deg(levelIndex);
                 end
             end
             if ~isfinite(upperMagnitude_deg)
@@ -252,13 +266,45 @@ for axisIndex = 1:dimensionCount
                 axisReports(reportIndex) = report;
                 continue;
             end
+
+            % The coarse sweep only proves a failing/passing bracket. Using
+            % its first passing level directly can retain almost one eighth
+            % of the available lateral range as needless joint travel. Refine
+            % the same input-derived bracket until geometry-scale resolution.
+            % Full validation owns each boundary decision because sampled
+            % clearance can miss a collision between adjacent history points.
+            refinementCount = 0;
+            while upperMagnitude_deg - lowerMagnitude_deg > ...
+                    boundaryResolution_deg
+                midpointMagnitude_deg = ...
+                    0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
+                midpointCandidate = createExcursion( ...
+                    directCandidate, direction * midpointMagnitude_deg, ...
+                    axisIndex, peakTime_s(peakIndex), initialState, options);
+                validationTimer = tic;
+                midpointValidation = obstacleAvoidance.validateTrajectory( ...
+                    midpointCandidate, obstacles, initialState, goalState, ...
+                    limits, options);
+                diagnostics = addValidationTiming( ...
+                    diagnostics, midpointValidation, toc(validationTimer));
+                refinementCount = refinementCount + 1;
+                if midpointValidation.Passed
+                    upperMagnitude_deg = midpointMagnitude_deg;
+                    upperCandidate = midpointCandidate;
+                    upperValidation = midpointValidation;
+                else
+                    lowerMagnitude_deg = midpointMagnitude_deg;
+                end
+            end
+            upperCandidate.Validation = upperValidation;
             report.InvalidBoundaryMagnitude_deg = lowerMagnitude_deg;
             report.ValidBoundaryMagnitude_deg = upperMagnitude_deg;
             report.BoundaryResolutionReserve_deg = ...
                 upperMagnitude_deg - lowerMagnitude_deg;
+            report.BoundaryRefinementCount = refinementCount;
             report.RetainedAmplitude_deg = direction * upperMagnitude_deg;
             report.MotionLength_deg = upperCandidate.MotionLength_deg;
-            report.TerminationReason = "sampledClearancePassed";
+            report.TerminationReason = "validatedClearanceBoundary";
             screenedCandidates{reportIndex} = upperCandidate;
             axisReports(reportIndex) = report;
         end
@@ -856,7 +902,7 @@ report = struct( ...
     "PeakTime_s", NaN, "Eligible", false, "MaximumMagnitude_deg", 0, ...
     "InvalidBoundaryMagnitude_deg", NaN, ...
     "ValidBoundaryMagnitude_deg", NaN, ...
-    "BoundaryResolutionReserve_deg", NaN, ...
+    "BoundaryResolutionReserve_deg", NaN, "BoundaryRefinementCount", 0, ...
     "RetainedAmplitude_deg", NaN, "MotionLength_deg", NaN, ...
     "Validation", obstacleAvoidance.validateTrajectory(), ...
     "TerminationReason", "notAttempted");

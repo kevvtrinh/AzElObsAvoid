@@ -192,6 +192,7 @@ verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
 verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
 verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "none");
+verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
@@ -204,7 +205,7 @@ sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
 testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
 currentState = sandboxState.ReadState();
 controls = currentState.GoalMode.GraphicsHandles.Controls;
-set(controls.WaypointWarmStartHandle, "Value", 2);
+set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
 set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 filePath = string(tempname) + ".mat";
@@ -214,7 +215,8 @@ currentState.ExportBundle(filePath, "goal");
 
 loaded = load(char(filePath), "diagnosisBundle");
 plannerOptions = loaded.diagnosisBundle.PlannerOptions;
-verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "passThrough");
+verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, ...
+    "ruckigStopAtWaypoints");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
 verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
 end
@@ -229,7 +231,7 @@ applicationState.GoalMode.StartPosition_deg = [179 0];
 applicationState.GoalMode.GoalPosition_deg = [-179 0];
 guidata(sandboxState.FigureHandle, applicationState);
 controls = applicationState.GoalMode.GraphicsHandles.Controls;
-set(controls.WaypointWarmStartHandle, "Value", 2);
+set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
 set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
@@ -240,14 +242,8 @@ runCallback(runHandle, []);
 currentState = sandboxState.ReadState();
 result = currentState.GoalMode.LastPlannerResult;
 verifyTrue(testCase, result.Success, result.Message);
-expectedWarmStartMode = "none";
-repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
-if isfile(fullfile(repositoryRoot, "+obstacleAvoidance", ...
-        "+planner", "ruckigWarmStart.m"))
-    expectedWarmStartMode = "passThrough";
-end
-verifyEqual(testCase, result.Options.WaypointWarmStartMode, ...
-    expectedWarmStartMode);
+verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
+    "ruckigStopAtWaypoints");
 verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
 verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
 verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);

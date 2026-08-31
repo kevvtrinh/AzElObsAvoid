@@ -223,6 +223,10 @@ if ~canCertifyCollision
 end
 [planeCertificateCertified, planeClearance_deg] = ...
     certifyStaticPlaneCertificate(trajectory, obstacles, options);
+if ~planeCertificateCertified
+    [planeCertificateCertified, planeClearance_deg] = ...
+        certifyTimedPlaneCertificate(trajectory, obstacles, options);
+end
 if planeCertificateCertified
     [collisionFree, collisionResolved, minimumClearance_deg] = ...
         deal(true, true, planeClearance_deg);
@@ -283,10 +287,193 @@ end
 regionCount = numel(regionVertices);
 segmentCount = trajectory.Polynomial.SegmentCount;
 if ~regionCoveragePassed || regionCount < 1 || ...
-        ~isequal(size(certificate.Planes), ...
-        [segmentCount regionCount])
+        ~isequal(size(certificate.Planes), [segmentCount regionCount])
     return;
 end
+activePairs = true(segmentCount, regionCount);
+[certified, minimumClearance_deg] = verifyDegreeOneCertificate( ...
+    trajectory, regionVertices, certificate.Planes, activePairs, options);
+end
+
+function [certified, minimumClearance_deg] = ...
+        certifyTimedPlaneCertificate(trajectory, obstacles, options)
+% Reconstruct timed cells and independently verify every applicable plane.
+[certified, minimumClearance_deg] = deal(false, NaN);
+if ~isfield(trajectory, "PlaneCertificate") || isempty(obstacles)
+    return;
+end
+certificate = trajectory.PlaneCertificate;
+requiredFields = {'Kind', 'Planes', 'Regions_deg', ...
+    'RegionActiveBySegment', 'Coverage'};
+if ~isstruct(certificate) || ~isscalar(certificate) || ...
+        ~all(isfield(certificate, requiredFields)) || ...
+        string(certificate.Kind) ~= "timeCellDegreeOne"
+    return;
+end
+coverage = certificate.Coverage;
+coverageFields = {'Passed', 'RegionActiveTauInterval', ...
+    'RegionSourceObstacleIndex', 'RegionSourceCellIndex', ...
+    'BaseTimeCellCount'};
+if ~isstruct(coverage) || ~isscalar(coverage) || ...
+        ~all(isfield(coverage, coverageFields)) || ~coverage.Passed
+    return;
+end
+regions_deg = certificate.Regions_deg;
+regionCount = numel(regions_deg);
+segmentCount = trajectory.Polynomial.SegmentCount;
+activeTau = double(coverage.RegionActiveTauInterval);
+sourceObstacleIndex = double(coverage.RegionSourceObstacleIndex(:));
+sourceCellIndex = double(coverage.RegionSourceCellIndex(:));
+recordSizesMatch = iscell(regions_deg) && iscolumn(regions_deg) && ...
+    isequal(size(activeTau), [regionCount 2]) && ...
+    numel(sourceObstacleIndex) == regionCount && ...
+    numel(sourceCellIndex) == regionCount && ...
+    isequal(size(certificate.Planes), [segmentCount regionCount]) && ...
+    isequal(size(certificate.RegionActiveBySegment), ...
+    [segmentCount regionCount]);
+if ~recordSizesMatch
+    return;
+end
+segmentStartTau = (0:segmentCount - 1).' / segmentCount;
+segmentFinishTau = (1:segmentCount).' / segmentCount;
+expectedActivePairs = segmentStartTau < activeTau(:, 2).' & ...
+    segmentFinishTau > activeTau(:, 1).';
+if ~isequal(logical(certificate.RegionActiveBySegment), expectedActivePairs)
+    return;
+end
+startTime_s = trajectory.time_s(1);
+finishTime_s = trajectory.time_s(end);
+[regionCoveragePassed, ~] = timedRegionCoverageMatches( ...
+        regions_deg, activeTau, sourceObstacleIndex, sourceCellIndex, ...
+        obstacles, startTime_s, finishTime_s, coverage.BaseTimeCellCount);
+if ~regionCoveragePassed
+    return;
+end
+[certified, minimumClearance_deg] = verifyDegreeOneCertificate( ...
+    trajectory, regions_deg, certificate.Planes, expectedActivePairs, options);
+end
+
+function [passed, failure] = timedRegionCoverageMatches( ...
+        regions_deg, activeTau, sourceObstacleIndex, sourceCellIndex, ...
+        obstacles, startTime_s, finishTime_s, baseTimeCellCount)
+% Prove stored convex cells cover each obstacle over their declared intervals.
+passed = false;
+failure = "baseTimeCellCount";
+if ~isnumeric(baseTimeCellCount) || ~isscalar(baseTimeCellCount) || ...
+        ~isfinite(baseTimeCellCount) || baseTimeCellCount < 1 || ...
+        baseTimeCellCount ~= round(baseTimeCellCount)
+    return;
+end
+baseEdges_s = linspace( ...
+    startTime_s, finishTime_s, baseTimeCellCount + 1).';
+for obstacleIndex = 1:numel(obstacles)
+    obstacle = obstacles(obstacleIndex);
+    [isStatic, staticShape] = ...
+        obstacleAvoidance.obstacles.queryStaticHorizon( ...
+        obstacle, startTime_s, finishTime_s);
+    attributedRegion = sourceObstacleIndex == obstacleIndex;
+    if isStatic
+        staticRegion = attributedRegion & sourceCellIndex == 0;
+        if ~any(staticRegion)
+            failure = "missingStaticRegion";
+            return;
+        end
+        unionShape = polyshape();
+        for regionIndex = reshape(find(staticRegion), 1, [])
+            unionShape = union(unionShape, ...
+                polyshape(regions_deg{regionIndex}(:, 1), ...
+                regions_deg{regionIndex}(:, 2)));
+        end
+        uncoveredArea_deg2 = area(subtract(staticShape, unionShape));
+        areaTolerance_deg2 = 1e-10 * max(1, area(staticShape));
+        if uncoveredArea_deg2 > areaTolerance_deg2
+            failure = "staticCoverage";
+            return;
+        end
+        continue;
+    end
+    obstacleTimes_s = double(obstacle.time_s(:));
+    internalEdges_s = obstacleTimes_s(obstacleTimes_s > startTime_s & ...
+        obstacleTimes_s < finishTime_s);
+    cellEdges_s = snapTimedCellEdges( ...
+        [baseEdges_s; internalEdges_s], obstacleTimes_s);
+    for cellIndex = 1:numel(cellEdges_s) - 1
+        cellStart_s = cellEdges_s(cellIndex);
+        cellFinish_s = cellEdges_s(cellIndex + 1);
+        queryTime_s = [cellStart_s; ...
+            0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
+        expectedVertices_deg = zeros(0, 2);
+        for queryIndex = 1:numel(queryTime_s)
+            shape = obstacleAvoidance.obstacles.shapeAtTime( ...
+                obstacle, queryTime_s(queryIndex));
+            vertices_deg = double(shape.Vertices);
+            expectedVertices_deg = [expectedVertices_deg; ...
+                vertices_deg(all(isfinite(vertices_deg), 2), :)]; %#ok<AGROW>
+        end
+        expectedVertices_deg = unique(expectedVertices_deg, "rows", "stable");
+        matchingRegion = attributedRegion & sourceCellIndex == cellIndex;
+        if size(expectedVertices_deg, 1) < 3
+            if any(matchingRegion)
+                failure = "unexpectedInactiveRegion";
+                return;
+            end
+            continue;
+        end
+        if nnz(matchingRegion) ~= 1
+            failure = "dynamicRegionCount";
+            return;
+        end
+        regionIndex = find(matchingRegion, 1);
+        expectedTau = ([cellStart_s cellFinish_s] - startTime_s) / ...
+            (finishTime_s - startTime_s);
+        tauScale = max(1, max(abs( ...
+            [activeTau(regionIndex, :), expectedTau])));
+        tauTolerance = 4096 * eps(tauScale);
+        if max(abs(activeTau(regionIndex, :) - expectedTau)) > tauTolerance
+            failure = "dynamicTau";
+            return;
+        end
+        hullIndex = convhull( ...
+            expectedVertices_deg(:, 1), expectedVertices_deg(:, 2));
+        expectedShape = polyshape( ...
+            expectedVertices_deg(hullIndex(1:end - 1), 1), ...
+            expectedVertices_deg(hullIndex(1:end - 1), 2), ...
+            "Simplify", false);
+        certifiedVertices_deg = unique( ...
+            regions_deg{regionIndex}, "rows", "stable");
+        certifiedShape = polyshape( ...
+            certifiedVertices_deg(:, 1), certifiedVertices_deg(:, 2), ...
+            "Simplify", false);
+        uncoveredArea_deg2 = area(subtract(expectedShape, certifiedShape));
+        areaTolerance_deg2 = 1e-10 * max(1, area(expectedShape));
+        if uncoveredArea_deg2 > areaTolerance_deg2
+            failure = "dynamicCoverage";
+            return;
+        end
+    end
+end
+passed = true;
+failure = "";
+end
+
+function cellEdges_s = snapTimedCellEdges(candidateEdges_s, obstacleTimes_s)
+% Coalesce roundoff-equivalent certificate-grid and obstacle-event times.
+timeScale_s = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
+timeTolerance_s = 4096 * eps(timeScale_s);
+for eventIndex = 1:numel(obstacleTimes_s)
+    nearEvent = abs(candidateEdges_s - obstacleTimes_s(eventIndex)) <= ...
+        timeTolerance_s;
+    candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);
+end
+cellEdges_s = unique(candidateEdges_s, "sorted");
+end
+
+function [certified, minimumClearance_deg] = verifyDegreeOneCertificate( ...
+        trajectory, regionVertices, planes, activePairs, options)
+% Verify polynomial controls against caller-reconstructed convex regions.
+certified = false;
+regionCount = numel(regionVertices);
+segmentCount = trajectory.Polynomial.SegmentCount;
 trajectoryControls_deg = cell(segmentCount, 1);
 for segmentIndex = 1:segmentCount
     positionPower = reshape(trajectory.Polynomial.positionPower_deg( ...
@@ -301,7 +488,10 @@ for segmentIndex = 1:segmentCount
     degree = size(trajectoryControl_deg, 1) - 1;
     fraction = (0:degree + 1).' / (degree + 1);
     for regionIndex = 1:regionCount
-        plane = certificate.Planes(segmentIndex, regionIndex);
+        if ~activePairs(segmentIndex, regionIndex)
+            continue;
+        end
+        plane = planes(segmentIndex, regionIndex);
         if ~validPlane(plane)
             minimumClearance_deg = NaN;
             return;

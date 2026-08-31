@@ -1,5 +1,30 @@
 # Plan 325 verification
 
+## Fixed-clock route-economy refinement - 2026-08-31
+
+The fixed-clock lateral excursion now refines its coarse failing/passing
+amplitude bracket with the full public trajectory validator. The direct
+physical clock, obstacle geometry, safety margin, motion limits, and final
+acceptance rules are unchanged. On the centered protected-circle gate, travel
+fell from 16.822181 to 16.700092 degrees while the validated 7.333333-second
+arrival remained unchanged. The retained path is within one percent of the
+16.638-degree tangent-and-arc geometric lower bound.
+
+The route-economy suite passed 3/3 for a circle, irregular static concave
+outline, and the same outline moving across the route. The focused planner and
+sandbox selection passed 38/38. All 17 maintained examples were run headlessly
+and recorded in `benchmark.csv`; all 16 expected-success examples passed
+independent collision and kinematic validation, and `exampleNoPath` returned
+the expected `noValidatedSeed`. A visible `exampleObstacleAvoidance` run
+created two figures and passed validation.
+
+The improvement adds full validation calls to the fixed-clock boundary search.
+The centered-circle focused run took 3.123552 seconds, but no identically
+instrumented pre-change runtime was retained, so no runtime ratio is claimed.
+The static-U maintained example still expands from a 34.942588-degree seed to
+a 40.255029-degree smooth motion; this change does not claim to solve that
+separate multi-waypoint smoothing inefficiency.
+
 Current worktree evidence is summarized in
 [BMTP immutable SOCP cache - 2026-08-30](#bmtp-immutable-socp-cache---2026-08-30).
 Earlier sections are retained as historical checkpoints.
@@ -5034,3 +5059,45 @@ Verification performed after the adapter and Straight Target wiring:
 The Ruckig integration therefore meets the explicit Straight Target engine and
 physical-clock gate, but does not meet the historical 13.678271908-degree path,
 2.0964864-second wall, or repository-size records.
+
+## Explicit timed-topology policy and moving BMTP projection — 2026-08-31
+
+Baseline on `f383ae4` used a static U-shaped detour plus a distant moving
+rectangle. All three topology seeds first returned
+`unsupportedTimedTopology`, all three silently invoked Ruckig, and seed 3
+returned a 31.4265 s, 34.9426 deg stop-at-waypoint success.
+
+After the change:
+
+- default `UnsupportedTimedTopologyPolicy="fail"` preserved
+  `unsupportedTimedMultiWaypointRoute` and made zero Ruckig attempts when
+  `MaximumNlpIterations=1` forced the unsupported boundary;
+- explicit `"ruckigStopAtWaypoints"` reproduced the 31.4265 s recovery and
+  reported the original reason, method, interior times, zero interior
+  velocity/acceleration states, and forced-rest policy;
+- the normal distant-mover request succeeded through static BMTP at
+  20.8454 s and 39.5987 deg only after validation against the complete moving
+  scene;
+- a translating-rectangle detour succeeded through the conservative swept
+  BMTP projection at the fixed 20 s horizon, with 10.3005480783 deg selected
+  polyline, 10.7117850149 deg motion, 0.0657896049 deg minimum clearance, and
+  complete collision and kinematic validation.
+
+Verification performed after the final implementation:
+
+- Code Analyzer reported zero messages on all modified MATLAB sources;
+- focused option, Ruckig, sandbox, projection, and fallback-policy tests
+  passed;
+- the complete test tree passed 98/98 in 69.6771 s;
+- all 17 maintained examples ran serially and headlessly: 16 planner and
+  independent-validation successes plus the expected validated
+  `exampleNoPath` failure;
+- a visible `exampleObstacleFree` run passed with jerk enabled, 4.472135955
+  deg polyline and motion length, and 4.53112887415 s duration;
+- the unchanged static-U and moving-barrier sentinels returned
+  20.712447786 s and 10.0903015137 s respectively.
+
+The moving extension is deliberately described as a conservative static
+projection, not a time-dependent separating-plane method. Time-cell BMTP and
+wait-plus-detour support remain unimplemented and visible in the branch
+assessment.
