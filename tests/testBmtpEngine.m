@@ -162,6 +162,33 @@ verifyTrue(testCase, diagnostics.Accepted);
 verifyTrue(testCase, isstruct(restart) && isscalar(restart));
 end
 
+function testPublicWrapperAcceptsReturnedRestart(testCase)
+% Feed a certified cold-solve restart through the documented eight-input form.
+initialState = createState(0, [-2 0]);
+goalState = createState(10, [2 0]);
+seed = struct("Index", 1, "Source", "unitDirect", ...
+    "tau", [0; 1], "position_deg", [-2 0; 2 0], ...
+    "CorridorBoundary_deg", zeros(0, 2));
+regions_deg = {[3 3; 4 3; 4 4; 3 4]};
+coverage = struct("Passed", true, "RegionCount", 1);
+options = createOptions("fixedArrival");
+[coldCandidate, coldDiagnostics, restart] = planTrajBmtp( ...
+    seed, regions_deg, coverage, initialState, goalState, ...
+    testCase.TestData.Limits, options);
+[warmCandidate, warmDiagnostics] = planTrajBmtp( ...
+    seed, regions_deg, coverage, initialState, goalState, ...
+    testCase.TestData.Limits, options, restart);
+
+verifyTrue(testCase, coldCandidate.Success, coldCandidate.Message);
+verifyTrue(testCase, coldDiagnostics.Accepted);
+verifyTrue(testCase, warmCandidate.Success, warmCandidate.Message);
+verifyTrue(testCase, warmDiagnostics.Accepted);
+verifyEqual(testCase, warmCandidate.position_deg([1 end], :), ...
+    coldCandidate.position_deg([1 end], :), "AbsTol", 1e-8);
+verifyEqual(testCase, warmCandidate.MotionDuration_s, ...
+    coldCandidate.MotionDuration_s, "AbsTol", 1e-8);
+end
+
 function testPublicWrapperRejectsUnsupportedArities(testCase)
 % Return InvalidCall before the wrapper references absent input arguments.
 verifyError(testCase, @() planTrajBmtp(), "planTrajBmtp:InvalidCall");
