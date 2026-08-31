@@ -6,6 +6,56 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Current state: smooth timed multi-waypoint BMTP - 2026-08-31
+
+The planner now has a general smooth path for time-expanded multi-waypoint
+seeds. It partitions each moving obstacle history into physical-time cells,
+uses the convex hull of protected endpoint and midpoint geometry as a
+conservative cell superset, and applies each cell only to overlapping equal-
+duration Bezier spans. Static concave geometry remains exactly decomposed and
+active for the complete motion. Interior search points guide the warm route;
+they are not constrained to zero velocity or acceleration.
+
+The primary frozen baseline at `fe076fe` was a moving circle plus a static
+concave U, with two admitted seeds and the default fail policy. It returned
+`unsupportedTimedMultiWaypointRoute` after 4.790300 s. With the retained
+changes, that exact request returned an independently validated smooth motion
+at 14.634958917 s with 39.676450938 deg sampled length; its minimum speed at
+the four interior timed-seed points was 3.644660375 deg/s.
+
+A stronger version held the circle in the detour for the first 10 s, which
+made both static and swept projections fail. The time-cell solver then selected
+the time-expanded seed and returned an independently certified 35 s motion:
+45.574198839 deg selected polyline, 45.517670812 deg sampled smooth length,
+and 1.469097516 deg/s minimum speed at interior timed-seed points. Its complete
+91-pair time-cell certificate reconstructed every static region and moving
+cell from the original protected obstacles before verifying the degree-one
+Bernstein planes. A structurally different four-span translating-polygon
+engine test also verifies that a region is enforced only on its overlapping
+time spans.
+
+The contact-linearization correction is also retained. A solved separator for
+a visibility seed that merely touches protected geometry may initialize the
+next alternating trajectory step even when it does not yet have the required
+positive gap. It is never an acceptance certificate: final Bernstein plane
+verification and public trajectory validation remain mandatory. This removed
+a measured `3.3e-8 deg` numerical-contact dead end without relaxing collision
+clearance or any public tolerance.
+
+The largest current weakness is completeness and conservatism. Time cells use
+convex supersets, the solver currently maps the search-layer clock to at most
+the existing BMTP span budget, and earliest-arrival work is bounded to the
+search estimate plus the request horizon. A failure is therefore evidence that
+these bounded representations found no validated trajectory, not proof that
+no dynamic path exists or that a returned arrival is globally optimal.
+
+Final verification passed Code Analyzer on all six changed MATLAB files and
+101/101 tests. All 17 maintained examples ran in separate serial headless
+MATLAB processes: 16 independently validated successes and the expected
+validated `exampleNoPath` failure. The visible moving-circle example created
+two figures and passed. Existing static-U and moving-barrier sentinels retained
+20.7124477860115 s and 10.0903015136719 s durations, respectively.
+
 ## Current state: stagnation stop trade - 2026-08-31
 
 The earlier statement that the stagnation stop was dead on the default path is

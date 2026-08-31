@@ -298,6 +298,7 @@ for seedIndex = 1:seedCount
             "directWait" && size(seeds(seedIndex).position_deg, 1) > 2;
         staticAttempt = struct();
         sweptAttempt = struct();
+        timedBmtpAttempt = struct();
         if tryStaticProjection
             kernelGoalState = createFixedKernelGoalState(goalState, options);
             [staticCandidate, staticDiagnostics] = ...
@@ -353,6 +354,37 @@ for seedIndex = 1:seedCount
                 candidateWasPrevalidated = true;
             end
         end
+        tryTimedBmtp = tryStaticProjection && ~candidateWasPrevalidated && ...
+            string(seeds(seedIndex).Source) == "timeExpandedVisibilityGraph";
+        if tryTimedBmtp
+            [timedCandidate, timedBmtpDiagnostics] = ...
+                obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
+                seeds(seedIndex), preparedObstacles, initialState, ...
+                goalState, limits, seedOptions);
+            [timedCandidate, timedValidation, timedValidationTime_s, ...
+                stageTiming] = validateCandidate( ...
+                timedCandidate, preparedObstacles, initialState, ...
+                goalState, limits, options, stageTiming, ...
+                "The timed-cell BMTP kernel returned no trajectory.");
+            prevalidationElapsedTime_s = prevalidationElapsedTime_s + ...
+                timedValidationTime_s;
+            timedBmtpAttempt = struct( ...
+                "Attempted", true, ...
+                "SolverDiagnostics", timedBmtpDiagnostics, ...
+                "FullObstacleValidation", timedValidation, ...
+                "Outcome", "rejectedByFullValidation");
+            if timedValidation.Passed
+                timedBmtpAttempt.Outcome = "acceptedAfterFullValidation";
+                candidate = timedCandidate;
+                validation = timedValidation;
+                solverDiagnostics = timedBmtpDiagnostics;
+                solverDiagnostics.StaticProjection = staticAttempt;
+                solverDiagnostics.SweptProjection = sweptAttempt;
+                solverDiagnostics.TimedBmtp = timedBmtpAttempt;
+                candidate.SolverDiagnostics = solverDiagnostics;
+                candidateWasPrevalidated = true;
+            end
+        end
         if ~candidateWasPrevalidated
             [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
                 seeds(seedIndex), initialState, goalState, limits, ...
@@ -360,6 +392,7 @@ for seedIndex = 1:seedCount
             if tryStaticProjection
                 solverDiagnostics.StaticProjection = staticAttempt;
                 solverDiagnostics.SweptProjection = sweptAttempt;
+                solverDiagnostics.TimedBmtp = timedBmtpAttempt;
                 candidate.SolverDiagnostics = solverDiagnostics;
             end
         end

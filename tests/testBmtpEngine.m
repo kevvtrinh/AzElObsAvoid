@@ -139,6 +139,30 @@ verifyEqual(testCase, motion.position_deg([1 end], :), ...
     [initialState.position_deg; goalState.position_deg], "AbsTol", 1e-8);
 end
 
+function testTimedRegionAppliesOnlyToOverlappingSpans(testCase)
+% Certify a structurally different moving-polygon time-cell assignment.
+initialState = createState(0, [-4 0]);
+goalState = createState(20, [4 0]);
+seed = struct("Index", 1, "Source", "unitTimedRoute", ...
+    "tau", [0; 1], "position_deg", [-4 0; 4 0], ...
+    "CorridorBoundary_deg", zeros(0, 2));
+regions_deg = {[2 -1; 3 -1; 3 1; 2 1]};
+coverage = struct( ...
+    "Passed", true, "RegionCount", 1, "ExactRegionCount", 1, ...
+    "RegionActiveTauInterval", [0 0.25], "TimedSegmentCount", 4);
+options = createOptions("fixedArrival");
+[motion, diagnostics] = bmtpEngine.solve( ...
+    seed, regions_deg, coverage, initialState, goalState, ...
+    testCase.TestData.Limits, options);
+verifyTrue(testCase, motion.Success, motion.Message);
+verifyTrue(testCase, diagnostics.Accepted);
+verifyEqual(testCase, motion.PlaneCertificate.Kind, "timeCellDegreeOne");
+verifyEqual(testCase, motion.PlaneCertificate.AllPairCount, 2);
+verifyEqual(testCase, ...
+    sum(motion.PlaneCertificate.RegionActiveBySegment, 1), 2);
+verifyTrue(testCase, motion.PlaneCertificate.Passed);
+end
+
 function testPublicWrapperAcceptsDocumentedArities(testCase)
 % Keep both BMTP wrapper forms as direct engine dispatches.
 initialState = createState(0, [-2 0]);
