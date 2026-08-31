@@ -6,6 +6,20 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## Rejected BMTP unchanged-plane reuse - 2026-08-30
+
+An off-by-default gate was tested that reused the preceding plane set only
+after retained-best nonimprovement and an unchanged tagged-pair set. At the
+`1e-4 deg` Target case it reduced plane SOCPs from 391 to 93 and made the
+existing convergence check fire after an exact repeated trajectory SOCP.
+However, the read-only Rogue 360 s case did not trigger the gate and still
+showed a warmed min / median wall regression from `23.0071665 / 23.0830120 s`
+to `23.2093958 / 23.4646274 s`, while its counts, arrival, length, and
+validation were unchanged. The task's strict Rogue regression kill criterion
+therefore rejects the mechanism. The implementation, tests, and benchmark rows
+were reverted; do not retry it without explaining and eliminating this
+gate-inert overhead.
+
 ## BMTP retained-best stagnation stop, gated off - 2026-08-30
 
 The optional retained-best stop is inert at its default. Four supplied
