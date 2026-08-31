@@ -1,0 +1,323 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.68in,headheight=15pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{xurl}
+\usepackage{booktabs,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black}
+\definecolor{ink}{RGB}{32,48,67}
+\definecolor{blue}{RGB}{0,108,162}
+\definecolor{green}{RGB}{35,133,91}
+\definecolor{orange}{RGB}{202,110,37}
+\definecolor{red}{RGB}{201,78,78}
+\definecolor{papergray}{RGB}{243,245,247}
+\newcommand{\stationSource}[1]{\par\smallskip{\footnotesize\color{ink}\textit{Source checked: }\nolinkurl{#1}.}\par}
+\newcommand{\arrival}[1]{\subsubsection*{#1}}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{How a planning request moves through the software}
+\rhead{\thepage}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{leftmargin=1.3em,itemsep=.2em,topsep=.2em}
+\input{data/walkthrough_values.tex}
+\begin{document}
+\pagenumbering{gobble}
+\begin{titlepage}
+\centering
+\vspace*{1.2in}
+{\Huge\bfseries How a Planning Request Is Made\par}
+\vspace{.28in}
+{\Large A station-by-station walkthrough\par}
+\vfill
+\begin{minipage}{.82\textwidth}
+\large
+This follows one real request from \texttt{exampleObstacleAvoidance}. Its
+antenna starts at $[-5,0]$ degrees at time 0 and must reach $[5,0]$ degrees
+by time 12 seconds without entering a protected rectangle. The successful run
+we export reaches the goal at \WalkArrivalTime\ and has a motion length of
+\WalkMotionLength. This document explains what happens to that request, in
+order. It is a process walkthrough, not a second introduction to the problem.
+\end{minipage}
+\vfill
+\large Current-source edition, with values exported from the maintained example
+\end{titlepage}
+\pagenumbering{arabic}
+\tableofcontents
+\clearpage
+
+\section{The whole assembly line}
+\label{sec:assembly-line}
+
+Read this page from top to bottom. Each numbered box has, or will have, a
+matching station section. An arrow to the right is an early finish: either an
+input error before a result exists, or a completed result after the empty
+result has been prepared. The later boxes are included now so this page remains
+the map for the complete walkthrough.
+
+\begin{center}
+\begin{tikzpicture}[
+    station/.style={draw=blue!75!black,rounded corners=2pt,fill=blue!7,
+        text width=7.25cm,minimum height=.55cm,align=left,font=\scriptsize},
+    later/.style={station,draw=green!55!black,fill=green!7},
+    exit/.style={draw=red!70!black,rounded corners=2pt,fill=red!8,
+        text width=2.35cm,minimum height=.55cm,align=center,font=\scriptsize},
+    flow/.style={-{Stealth[length=2mm]},thick,ink},
+    early/.style={-{Stealth[length=2mm]},thick,red!75!black}]
+\node[station] (s1) {\textbf{1. Public entry} --- receive obstacles, endpoints, limits, and options};
+\node[station,below=4mm of s1] (s2) {\textbf{2. Resolve options} --- fill defaults, reject misplaced workspace values, warn once about unknown names};
+\node[station,below=4mm of s2] (s3) {\textbf{3. Normalize request} --- turn inputs into canonical obstacle, state, and limit records};
+\node[station,below=4mm of s3] (s4) {\textbf{4. Create empty result} --- prepare every success and failure field before planning};
+\node[station,below=4mm of s4] (s5) {\textbf{5. Prepare obstacles} --- cache shapes and motion information; preserve the once-applied safety margin};
+\node[later,below=4mm of s5] (s6) {\textbf{6. Check endpoints} --- detect an invalid start or goal before constructing a motion};
+\node[later,below=4mm of s6] (s7) {\textbf{7. Try direct motion} --- create a direct rest-to-rest motion and independently check it};
+\node[later,below=4mm of s7] (s8) {\textbf{8. Try special constructions} --- fixed-clock excursion, timed opening, and cavity motions where applicable};
+\node[later,below=4mm of s8] (s9) {\textbf{9. Create route candidates} --- search the protected map for deterministic route shapes};
+\node[later,below=4mm of s9] (s10) {\textbf{10. Make one motion per route} --- use the selected trajectory method and record each attempt};
+\node[later,below=4mm of s10] (s11) {\textbf{11. Independently validate} --- check the full timed motion, not only its route points};
+\node[later,below=4mm of s11] (s12) {\textbf{12. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12}
+    \draw[flow] (\a.south)--(\b.north);
+\node[exit,right=4mm of s2] (inputerror) {input error\\no result record};
+\draw[early] (s2.east)--(inputerror.west) node[midway,above,font=\scriptsize]{invalid};
+\node[exit,right=4mm of s6] (endpoint) {completed failure result\\invalid endpoint};
+\draw[early] (s6.east)--(endpoint.west) node[midway,above,font=\scriptsize]{not feasible};
+\node[exit,right=4mm of s7] (direct) {return success\\direct motion works};
+\draw[early] (s7.east)--(direct.west) node[midway,above,font=\scriptsize]{passes};
+\node[exit,right=4mm of s8] (special) {return success\\special motion works};
+\draw[early] (s8.east)--(special.west) node[midway,above,font=\scriptsize]{passes};
+\node[exit,right=4mm of s12] (final) {completed result\\success or no validated motion};
+\draw[early] (s12.east)--(final.west);
+\end{tikzpicture}
+\end{center}
+\smallskip
+\textit{Figure 1.} The complete route through the planner. Blue boxes are
+written in this milestone; green boxes are deliberately shown now and will be
+written in later milestones.
+\clearpage
+
+\section{The request we follow}
+
+The example creates one rectangle at times \WalkObstacleTimes. Its original
+four corners are $(-1,-2)$, $(1,-2)$, $(1,2)$, and $(-1,2)$ degrees. The
+constructor applies a \WalkSafetyMargin\ safety margin. It asks the planner for
+an earliest-arrival motion from \WalkInitialState\ to \WalkGoalState. The
+coordinate velocity, acceleration, and jerk limits are respectively
+\WalkVelocityLimit, \WalkAccelerationLimit, and \WalkJerkLimit.
+
+The numbers used below come from a real run of the example through
+\texttt{exportPlannerManualData}. The exporter writes
+\texttt{data/walkthrough\_values.tex}, which this document reads, along with
+the existing numeric figure data. In this run the selected route record is
+number \WalkSelectedSeedIndex. A value introduced by a station is shown in the
+form it has at that point, rather than being back-filled from a later station.
+
+\stationSource{examples/exampleObstacleAvoidance.m:23--59; output/pdf/data/exportPlannerManualData.m:24--107}
+
+\section{Station 1: the public entry point}
+
+\arrival{1. What arrives here.}
+The call is
+\texttt{obstacleAvoidance.planTrajectory(obstacles, initialState, goalState,
+limits, options)}. For this request, \texttt{obstacles} is one protected
+rectangle record; \texttt{initialState} is \WalkInitialState; \texttt{goalState}
+is \WalkGoalState; \texttt{limits} has the three two-element vectors above;
+and \texttt{options} is a scalar structure supplied by the example. Angles are
+degrees, time is seconds, and the two-coordinate order is
+\texttt{[azimuth elevation]}.
+
+\arrival{2. What this station does to it.}
+It first handles two call forms that are not a planning request. With no inputs,
+it returns the planner's defaults. With only one input, or fewer than the four
+physical inputs, it stops with an input error. For a real request it replaces a
+missing or empty options input with an empty scalar structure, checks that the
+options value is a scalar structure, then forwards all five inputs unchanged to
+the internal planner. This wrapper makes no route or motion decision.
+
+\arrival{3. What leaves.}
+For our request, the same five values leave, still in their example-supplied
+forms. The next station receives the scalar options structure; later stations
+receive the normalized versions. No result record exists yet.
+
+\arrival{4. What can go wrong here, and what it is called.}
+Too few physical inputs give \texttt{planTrajectory:MissingInputs}. An options
+value that is not one scalar structure gives \texttt{planTrajectory:InvalidOptions}.
+Those are input errors, so no planner result is returned. A normal five-input
+call such as this one does not fail here.
+
+\stationSource{+obstacleAvoidance/planTrajectory.m:1--84}
+
+\section{Station 2: option resolution}
+
+\arrival{1. What arrives here.}
+Our example sends an options structure that explicitly asks for
+\texttt{GoalTimeMode="earliestArrival"}. It also sets
+\texttt{MaximumSeedCount=3}. It leaves the rest empty. These values have no
+physical units; option fields
+whose names end in \texttt{\_s} are seconds and fields ending in
+\texttt{\_deg} are degrees.
+
+\arrival{2. What this station does to it.}
+It starts from one complete default list, copies only known nonempty overrides,
+and then checks the resulting values. For this request the resolved values
+include: sample time \WalkSampleTime; trajectory method \texttt{"bmtp"};
+azimuth wrapping \texttt{false}; maximum seeds \WalkMaximumSeedCount; maximum
+time layers \WalkMaximumTimeLayerCount; collocation segments
+\WalkCollocationSegmentCount; maximum solver iterations \WalkMaximumNlpIterations;
+arrival tolerance \WalkArrivalTolerance; and plane reuse \WalkPlaneReuse.
+\texttt{EnablePlaneReuse} is therefore on by default in this real request.
+
+If the caller supplies an unknown field, the station leaves it out, makes no
+behavior change, and issues one
+\nolinkurl{planTrajectory:UnknownOptions} warning
+that lists the ignored names. If it sees the former workspace fields
+\nolinkurl{AzimuthInterval_deg} or \nolinkurl{ElevationInterval_deg} in options,
+it stops instead: workspace intervals now belong in \texttt{limits}.
+
+\arrival{3. What leaves.}
+One complete, normalized scalar \texttt{options} structure leaves. It includes
+every known option in the default field order and the two explicit example
+choices. The unknown names, if any, do not leave in that structure.
+
+\arrival{4. What can go wrong here, and what it is called.}
+An options value that is not a scalar structure gives
+\texttt{planTrajectory:InvalidOptions}. A moved workspace field gives
+\texttt{planTrajectory:WorkspaceLimitMoved}. Invalid named choices and bad
+numeric ranges use the identified option errors, such as
+\texttt{planTrajectory:InvalidGoalTimeMode} and
+\texttt{planTrajectory:InvalidLogicalOption}. Unknown names are not a failure:
+they produce the warning named above and are ignored.
+
+\stationSource{+obstacleAvoidance/+input/resolvePlannerOptions.m:1--162; +obstacleAvoidance/+input/resolveOptions.m:1--64}
+
+\section{Station 3: input normalization}
+
+\arrival{1. What arrives here.}
+The station receives the one rectangle, endpoints \WalkInitialState\ and
+\WalkGoalState, the three physical limit vectors, and the completed options.
+The example omitted endpoint velocity and acceleration, and it omitted the two
+workspace intervals from \texttt{limits}.
+
+\arrival{2. What this station does to it.}
+It flattens obstacle input into a column array of canonical records and checks
+each record. It converts state numbers to double precision, forces every
+two-coordinate value into a 1-by-2 row in \texttt{[azimuth elevation]} order,
+and fills missing endpoint velocity and acceleration with zero. Thus our start
+becomes \texttt{time\_s=0}, \texttt{position\_deg=[-5 0]},
+\texttt{velocity\_deg\_s=\WalkInitialVelocity}, and
+\texttt{acceleration\_deg\_s2=\WalkInitialAcceleration}; the goal gets the
+same zero derivative fields. It converts physical limits to double 1-by-2 rows
+and adds the omitted workspace intervals: azimuth \WalkAzimuthInterval and
+elevation \WalkElevationInterval.
+
+It then tests \texttt{goalState.time\_s > initialState.time\_s}. If azimuth
+wrapping is requested, it is allowed only for an obstacle-free fixed-position
+goal. This request has an obstacle and wrapping is false, so no angle is
+shifted.
+
+\arrival{3. What leaves.}
+The result is one canonical obstacle record and three scalar records:
+\texttt{initialState}, \texttt{goalState}, and \texttt{limits}. Their numeric
+vectors are double rows; the request now has explicit zero start and goal
+derivatives and explicit workspace bounds. The next station can use one shape
+for every accepted request.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A missing or malformed endpoint gives
+\nolinkurl{planTrajectory:InvalidState}. A bad limits record gives
+\nolinkurl{planTrajectory:InvalidLimits}. A goal time not later than the start
+gives \nolinkurl{planTrajectory:InvalidTimeWindow}. A
+moving goal with incomplete or malformed samples has its own identified input
+errors. A wrapping request with obstacles or a moving goal gives
+\texttt{planTrajectory:UnsupportedWrappedGeometry}. These are input errors, so
+the empty result has not been made yet.
+
+\stationSource{+obstacleAvoidance/+input/normalizePlannerRequest.m:1--124; +obstacleAvoidance/+input/normalizePlannerState.m:1--46; +obstacleAvoidance/+obstacles/combineObstacles.m:1--75}
+
+\section{Station 4: build the empty result}
+
+\arrival{1. What arrives here.}
+The station receives the normalized obstacle, states, limits, and options. In
+our request it can already record a goal horizon of \WalkGoalHorizon, but it
+has not searched for a route or made a motion.
+
+\arrival{2. What this station does to it.}
+Before any endpoint check, direct attempt, or route search, it constructs one
+complete result record and one empty candidate-summary record. The result starts
+with \texttt{Success=false}, \texttt{TerminationReason="notRun"}, and the
+message \texttt{"Planning was not completed."}. It stores resolved inputs and
+options immediately. Motion histories are empty arrays with two columns, timing
+and arrival values are \texttt{NaN}, and diagnostic records already have their
+expected fields.
+
+The source states why the order matters: success, an expected no-path outcome,
+and an early endpoint failure must all return the same named fields. This means
+a caller or plotter does not have to guess which fields disappeared when work
+stopped early.
+
+\arrival{3. What leaves.}
+One incomplete-but-shaped result record leaves, plus the empty seed-summary
+template. For our request it carries the normalized rectangle, endpoints,
+limits, options, an empty selected seed of shape 0-by-2 degrees, empty motion
+histories of shape 0-by-2, and \texttt{GoalHorizon\_s=12}.
+
+\arrival{4. What can go wrong here, and what it is called.}
+This station has no expected planning failure of its own. It only allocates and
+fills records from inputs that have already been checked. If MATLAB itself
+cannot allocate memory, that is a runtime error rather than a planner-reported
+planning outcome.
+
+\stationSource{+obstacleAvoidance/+planner/createEmptyResult.m:1--120; +obstacleAvoidance/+planner/planCorridorQuintic.m:51--61}
+
+\section{Station 5: obstacle preparation}
+
+\arrival{1. What arrives here.}
+The result still holds the normalized obstacle. Its original boundary is the
+four-corner rectangle given in the introduction. Its protected boundary was
+already made by the obstacle constructor with a \WalkSafetyMargin\ margin; in
+this run its first time slice has \WalkProtectedVertexCount\ boundary rows,
+including the closing repeat. The time history is \WalkObstacleTimes.
+
+\arrival{2. What this station does to it.}
+It does not add another margin. The constructor retained the original boundary,
+then used a square-joint outward buffer once to make the protected boundary.
+When a caller rebuilds a canonical obstacle with a margin, the constructor
+again starts from its retained original boundary rather than buffering an
+already buffered shape. That is how a 0.2-degree request remains a 0.2-degree
+request instead of growing each time it passes through the planner.
+
+This preparation step turns each protected boundary into a reusable MATLAB
+shape, records its overall bounds, and compares neighboring time slices. When
+their vertex layout matches, it saves coordinate changes and a speed bound;
+when it differs, it saves the union of the two endpoint shapes for conservative
+use over that interval. Our rectangle does not change between 0 and 20 seconds,
+so it is marked time-invariant and its first prepared shape is also its static
+shape.
+
+\arrival{3. What leaves.}
+The protected obstacle record leaves unchanged in its public fields, with an
+internal preparation record added. That record contains sample shapes, bounds,
+per-interval coordinate changes, speed bounds, topology-match flags, and the
+time-invariant static shape. The original and protected geometry both remain
+available: the later planner uses the protected geometry, while the retained
+original geometry shows where the margin came from.
+
+\arrival{4. What can go wrong here, and what it is called.}
+For a valid canonical obstacle, this cache-building station has no expected
+planning failure. Earlier obstacle construction reports malformed time or
+boundary data with names such as \nolinkurl{createObstacle:InvalidTime},
+\nolinkurl{createObstacle:BoundarySizeMismatch}, and
+\nolinkurl{createObstacle:DegeneratePolygon}. A request that reaches this station
+has already passed those checks.
+
+\stationSource{+obstacleAvoidance/+obstacles/createObstacle.m:18--22, 66--95, 256--307; +obstacleAvoidance/+obstacles/prepareDynamic.m:1--96; +obstacleAvoidance/+planner/planCorridorQuintic.m:58--63}
+
+\end{document}
