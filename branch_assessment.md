@@ -6,19 +6,73 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
-## Rejected BMTP unchanged-plane reuse - 2026-08-30
+## BMTP unchanged-plane reuse, gated off - 2026-08-30
 
-An off-by-default gate was tested that reused the preceding plane set only
-after retained-best nonimprovement and an unchanged tagged-pair set. At the
-`1e-4 deg` Target case it reduced plane SOCPs from 391 to 93 and made the
-existing convergence check fire after an exact repeated trajectory SOCP.
-However, the read-only Rogue 360 s case did not trigger the gate and still
-showed a warmed min / median wall regression from `23.0071665 / 23.0830120 s`
-to `23.2093958 / 23.4646274 s`, while its counts, arrival, length, and
-validation were unchanged. The task's strict Rogue regression kill criterion
-therefore rejects the mechanism. The implementation, tests, and benchmark rows
-were reverted; do not retry it without explaining and eliminating this
-gate-inert overhead.
+`EnablePlaneReuse=false` preserves the existing plane reset and re-derivation
+path. The four supplied default sentinels were bit-identical to their required
+arrivals and sampled motion lengths: Target Exits
+`24 / 22.554006042022394`, Obstacle Avoidance
+`7.574541766321258 / 11.411861387735195`, Static U
+`20.712447786011488 / 40.255028504000862`, and Two Opposing U
+`21.633333333333336 / 24.096812127187516` (seconds / degrees). All passed
+independent validation. The clean MATLAB suite passed 96/96, the changed files
+were Code Analyzer clean, and `exampleNoPath` retained `noValidatedSeed`.
+
+The enabled gate requires both a retained-best improvement no greater than
+`PlaneReuseImprovementTolerance_s` and an unchanged tagged-pair set. It skips
+only the reset/re-derivation and performs the next trajectory solve. In the
+`1e-4 deg` Target case that repeated SOCP was bit-identical on this machine:
+the maximum control-net and duration differences were both zero, then the
+existing convergence test fired. Baseline / stagnation-only / reuse-only
+respectively used `42 / 18 / 15` outer and trajectory SOCPs and `391 / 141 /
+93` plane SOCPs. Their warmed minimum / median walls were
+`53.0606007 / 53.5620057`, `23.8239231 / 24.4742484`, and
+`19.5354281 / 19.7202448 s`; all retained the `24 s` arrival and
+`22.555163889326948 deg` path. Reuse therefore achieved more plane-SOCP and
+wall reduction than the existing stagnation stop in the measured wandering
+case; they are not redundant there.
+
+At default clearance, Target Exits similarly changed from `17 / 121` outer /
+plane SOCPs to `12 / 73`, with a `20.8999410 s` baseline median and
+`16.3771825 s` reuse median, with no result movement. Obstacle Avoidance did
+not trigger the gate (`7 / 13` outer / plane SOCPs in both modes); Static U and
+Two Opposing U did no BMTP conic work in either mode. The read-only Rogue
+bundle was also a gate-null at both tested horizons: 180 s stayed at
+`22 / 576`, `100.664824112242897 s`, and `221.885353904752918 deg`; 360 s
+stayed at `20 / 507`, `100.675947361398343 s`, and
+`220.666927423424511 deg`. Its warmed medians changed only within ordinary
+wall variance (`25.0848222` to `24.8300924 s` at 180 and `23.0830120` to
+`23.4646274 s` at 360). The supplied bundle succeeds at 180 s on this branch;
+the measured 180 result agrees with the supplied known-good arrival and length
+despite the brief's historical failure description.
+
+The option remains off because this is a measured diagnostic/runtime tradeoff,
+not a proof that every future alternating problem has deterministic SOCP
+repeats. The retained reset remains load-bearing whenever the incumbent is
+still improving or tagged pairs change.
+
+### Reverted, then restored - decision record
+
+This mechanism was reverted once (`438c0be`) and then restored. The revert
+applied a kill criterion worded as "Regime C regresses in any way", against a
+warmed 360 s median moving from 23.0830120 to 23.4646274 s. That criterion was
+too strict for wall time and the rejection was wrong:
+
+- The gate does not trigger at all on the Rogue bundle. Counts, arrival,
+  length, and validation were identical at both horizons.
+- The only added work on that path is one small logical-array copy and one
+  `isequal` per outer iteration - microseconds across 20 iterations, not the
+  0.38 s the median moved.
+- The two horizons moved in opposite directions: 180 s improved from
+  25.0848222 to 24.8300924 s while 360 s worsened. Opposite-signed movement on
+  a gate-inert path is variance, not effect. The section above had already
+  described it as ordinary wall variance.
+
+Wall-clock variance on this machine has exceeded 30% between sessions, larger
+than the difference that triggered the rejection. Behavioural invariance, not
+wall time, is the criterion that should gate a change on a path the option
+never touches.
+
 
 ## BMTP retained-best stagnation stop, gated off - 2026-08-30
 
