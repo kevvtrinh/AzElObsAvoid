@@ -6,17 +6,27 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
-## BMTP retained-best stagnation stop removed - 2026-08-31
+## Current state: stagnation stop trade - 2026-08-31
 
-The optional retained-best stagnation stop was built and measured, then
-superseded by the default-on plane-reuse gate and removed. The earlier
-measurement remains below: with `EnableStagnationStop=true`, five retained
-trials reduced the `1e-4 deg` Target diagnostic from 42 outer iterations and
-433 conic calls to 18 and 159 without moving its returned result. After plane
-reuse became the default, the stagnation counter reached 2 of 3 in the former
-test while `StoppedOnStagnation` remained false because reuse ended the loop
-first. The option, its counter, and its diagnostics were therefore dead on the
-default path and were removed rather than retained as unreachable control.
+The earlier statement that the stagnation stop was dead on the default path is
+wrong. The stop worked and was the more accurate of the two measured methods
+on `exampleUSOutlineExtremeVisibility`.
+
+| setting | arrival (s) | length (deg) | plane solves | wall (s) |
+| --- | ---: | ---: | ---: | ---: |
+| neither | 5.794009507455 | 23.354756039381 | 776 | 88.39 |
+| stagnation stop | 5.794009507455 | 23.354756039381 | 468 | 64.73 |
+| plane reuse | 5.810653181589 | 23.345756644341 | 160 | 52.42 |
+
+The stagnation stop reached the exact original arrival and was 27% faster.
+Plane reuse was 41% faster and arrived 0.016643674134 s later. Kevin chose
+plane reuse, accepted that arrival-time cost, and chose to retain one method
+rather than two.
+
+At baseline `9d18840`, counted production lines were 11,618, the full suite
+passed 92 of 92 tests, and all 17 reference examples verified. Earlier
+stagnation-stop numbers below are historical records and do not supersede this
+current-state decision.
 
 ## BMTP unchanged-plane reuse, initially gated off - 2026-08-30
 
@@ -86,7 +96,7 @@ wall time, is the criterion that should gate a change on a path the option
 never touches.
 
 
-## BMTP retained-best stagnation stop, gated off - 2026-08-30
+## Historical: BMTP retained-best stagnation stop, gated off - 2026-08-30
 
 The optional retained-best stop is inert at its default. Four supplied
 sentinels kept their recorded arrivals and smoothed lengths: Target Exits
