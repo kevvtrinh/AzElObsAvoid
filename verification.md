@@ -1,5 +1,30 @@
 # Plan 325 verification
 
+## Fixed-clock route-economy refinement - 2026-08-31
+
+The fixed-clock lateral excursion now refines its coarse failing/passing
+amplitude bracket with the full public trajectory validator. The direct
+physical clock, obstacle geometry, safety margin, motion limits, and final
+acceptance rules are unchanged. On the centered protected-circle gate, travel
+fell from 16.822181 to 16.700092 degrees while the validated 7.333333-second
+arrival remained unchanged. The retained path is within one percent of the
+16.638-degree tangent-and-arc geometric lower bound.
+
+The route-economy suite passed 3/3 for a circle, irregular static concave
+outline, and the same outline moving across the route. The focused planner and
+sandbox selection passed 38/38. All 17 maintained examples were run headlessly
+and recorded in `benchmark.csv`; all 16 expected-success examples passed
+independent collision and kinematic validation, and `exampleNoPath` returned
+the expected `noValidatedSeed`. A visible `exampleObstacleAvoidance` run
+created two figures and passed validation.
+
+The improvement adds full validation calls to the fixed-clock boundary search.
+The centered-circle focused run took 3.123552 seconds, but no identically
+instrumented pre-change runtime was retained, so no runtime ratio is claimed.
+The static-U maintained example still expands from a 34.942588-degree seed to
+a 40.255029-degree smooth motion; this change does not claim to solve that
+separate multi-waypoint smoothing inefficiency.
+
 Current worktree evidence is summarized in
 [BMTP immutable SOCP cache - 2026-08-30](#bmtp-immutable-socp-cache---2026-08-30).
 Earlier sections are retained as historical checkpoints.

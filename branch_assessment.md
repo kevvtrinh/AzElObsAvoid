@@ -1,5 +1,37 @@
 # Novel replacement branch assessment
 
+## Sandbox route-economy coverage - 2026-08-31
+
+Sandbox-scale route tests now measure accumulated two-axis travel and
+meaningful lateral velocity reversals for a static circle, an irregular
+concave static outline, and the same irregular outline moving across the
+direct route. Each case also requires independent collision, velocity,
+acceleration, and jerk validation. The static-circle guard compares the
+returned motion with the exact tangent-and-arc geometric lower bound; the
+irregular cases use direct endpoint distance as a conservative lower bound.
+
+Before clearance-boundary refinement, the centered protected circle returned
+a validated 7.333333-second fixed-clock motion of 16.822181 degrees. Refining
+the coarse failing/passing amplitude bracket with authoritative continuous
+validation retains the same arrival time and reduces travel to 16.700092
+degrees. The protected-radius tangent-and-arc lower bound is about 16.638
+degrees. The retained motion is therefore within one percent of that geometric
+lower bound and contains one lateral reversal. A visibility-route alternative has a
+16.636942-degree geometric seed, but its smooth realization is 17.216282
+degrees and takes 8.169085 seconds. A waypoint-stop realization preserves the
+16.636942-degree geometry but takes 15.675572 seconds and stops at every
+interior point. Those alternatives were rejected because they increase time,
+joint cycling, or both.
+
+The route-economy checks limit regressions; they do not prove global
+minimum-wear motion. The planner still prioritizes earliest validated arrival,
+then path length and integrated squared jerk. Mechanical wear also depends on
+loads, backlash, lubrication, and controller behavior that are not modeled.
+The refined boundary requires additional full validation calls. The centered
+circle planning call took 3.123552 seconds in the retained focused run; an
+identically instrumented pre-change runtime was not recorded, so no runtime
+ratio is claimed.
+
 This file records the authoritative state of `novel-rep` and a concise ledger
 of approaches already tried. Superseded benchmark matrices remain in
 `benchmark.csv`; verification details remain in `verification.md`. Historical
