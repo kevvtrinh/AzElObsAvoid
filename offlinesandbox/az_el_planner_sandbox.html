@@ -1001,6 +1001,10 @@
               aria-pressed="false"><span class="tool-key">G</span>Set goal</button>
             <button class="tool-button" type="button" data-mode="polygon"
               aria-pressed="false"><span class="tool-key">P</span>Polygon</button>
+            <button class="tool-button" type="button" data-mode="circle"
+              aria-pressed="false">Circle</button>
+            <button class="tool-button" type="button" data-mode="freehand"
+              aria-pressed="false">Freehand</button>
           </div>
           <div class="tool-actions">
             <button id="undoVertexButton" class="compact-button" type="button"
@@ -1031,6 +1035,10 @@
             Click once to place the start point. Grid coordinates are degrees.
           </div>
         </div>
+        <p class="page-note">
+          Drawing tools add geometry only. In Select, click to pick and drag to
+          move; the selected obstacle's motion-arrow head is its vector handle.
+        </p>
 
         <div class="timeline" aria-label="Mission playback">
           <button id="playButton" class="play-button" type="button"
@@ -1289,6 +1297,9 @@
                 <input id="motionElevation" type="number" step="0.5">
               </div>
             </div>
+            <p id="motionProfileNote" class="page-note" hidden>
+              Out and back returns to its start; the arrow marks its furthest point.
+            </p>
             <div class="editor-actions">
               <button id="zeroMotionButton" class="compact-button" type="button">
                 Make stationary
@@ -1300,7 +1311,9 @@
           </div>
           <p class="page-note">
             The page exports original polygons. MATLAB applies each safety
-            margin once and returns the protected geometry for display.
+            margin once and returns the protected geometry for display. Circle and
+            freehand tools create ordinary polygons (24 and at most 40 vertices).
+            A circle is round in planning degrees, not merely in screen pixels.
           </p>
         </section>
 
@@ -1425,6 +1438,9 @@
       const DEFAULT_SERVER_ORIGIN = "http://127.0.0.1:52731";
       const PROBE_TIMEOUT_MS = 800;
       const HEALTH_POLL_MS = 3000;
+      const CIRCLE_VERTEX_COUNT = 24;
+      const FREEHAND_MAXIMUM_VERTICES = 40;
+      const HANDLE_RADIUS_PX = 10;
       const defaultControls = Object.freeze({
         azimuthMin: -180,
         azimuthMax: 180,
@@ -1448,6 +1464,9 @@
         start: null,
         goal: null,
         polygonDraft: [],
+        freehandDraft: [],
+        circlePreview: null,
+        activeDrag: null,
         obstacles: [],
         selectedObstacleIndex: -1,
         nextObstacleNumber: 1,
@@ -1741,16 +1760,24 @@
         if (mode !== "polygon" && state.polygonDraft.length > 0) {
           state.polygonDraft = [];
         }
+        if (mode !== "freehand") {
+          state.freehandDraft = [];
+        }
+        if (mode !== "circle") {
+          state.circlePreview = null;
+        }
         state.mode = mode;
         document.querySelectorAll("[data-mode]").forEach((button) => {
           button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
         });
         updateActionAvailability();
         const messages = {
-          select: "Select a polygon to edit its safety margin or motion.",
+          select: "Select picks; drag endpoints, polygon interiors, vertices, or the selected motion handle.",
           start: "Click once in the workspace to place or replace the start.",
           goal: "Click once in the workspace to place or replace the goal.",
-          polygon: "Left-click polygon vertices. Right-click or press Enter to finish."
+          polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
+          circle: "Drag from the center to set a radius in degrees. Nothing is draggable.",
+          freehand: "Drag a closed outline. It is simplified to an ordinary polygon. Nothing is draggable."
         };
         canvasHint.textContent = messages[mode];
         draw();
@@ -1870,17 +1897,7 @@
             "error");
           return;
         }
-        const controls = readControls(false);
-        const margin = controls ? controls.defaultMargin : 0.2;
-        state.obstacles.push({
-          name: `Obstacle ${state.nextObstacleNumber}`,
-          vertices_deg: state.polygonDraft.map((point) => point.slice()),
-          safetyMargin_deg: margin,
-          motionVector_deg: [0, 0],
-          motionProfile: "stationary"
-        });
-        state.nextObstacleNumber += 1;
-        state.selectedObstacleIndex = state.obstacles.length - 1;
+        addObstacle(state.polygonDraft);
         state.polygonDraft = [];
         invalidateResult("Obstacle geometry changed.");
         activateMode("select");
@@ -1981,6 +1998,7 @@
         element("motionProfile").value = selected.motionProfile;
         element("motionAzimuth").value = selected.motionVector_deg[0];
         element("motionElevation").value = selected.motionVector_deg[1];
+        element("motionProfileNote").hidden = selected.motionProfile !== "oscillating";
       }
 
       function updateSelectedObstacle() {
@@ -2563,6 +2581,107 @@
         updateOverlayControls(grid);
       }
 
+      function addObstacle(vertices) {
+        const controls = readControls(false);
+        const margin = controls ? controls.defaultMargin : 0.2;
+        state.obstacles.push({
+          name: `Obstacle ${state.nextObstacleNumber}`,
+          vertices_deg: vertices.map((point) => point.slice()),
+          safetyMargin_deg: margin,
+          motionVector_deg: [0, 0],
+          motionProfile: "stationary"
+        });
+        state.nextObstacleNumber += 1;
+        state.selectedObstacleIndex = state.obstacles.length - 1;
+      }
+
+      function pointsClose(first, second, tolerance = 1e-8) {
+        return Math.hypot(first[0] - second[0], first[1] - second[1]) <= tolerance;
+      }
+
+      function orientation(first, second, third) {
+        return (second[0] - first[0]) * (third[1] - first[1]) -
+          (second[1] - first[1]) * (third[0] - first[0]);
+      }
+
+      function segmentsIntersect(first, second, third, fourth) {
+        const firstSide = orientation(first, second, third);
+        const secondSide = orientation(first, second, fourth);
+        const thirdSide = orientation(third, fourth, first);
+        const fourthSide = orientation(third, fourth, second);
+        return ((firstSide > 0 && secondSide < 0) || (firstSide < 0 && secondSide > 0)) &&
+          ((thirdSide > 0 && fourthSide < 0) || (thirdSide < 0 && fourthSide > 0));
+      }
+
+      function polygonSelfIntersects(vertices) {
+        for (let firstIndex = 0; firstIndex < vertices.length; firstIndex += 1) {
+          const firstEndIndex = (firstIndex + 1) % vertices.length;
+          for (let secondIndex = firstIndex + 1;
+            secondIndex < vertices.length; secondIndex += 1) {
+            const secondEndIndex = (secondIndex + 1) % vertices.length;
+            const sharesEndpoint = firstIndex === secondIndex ||
+              firstEndIndex === secondIndex || secondEndIndex === firstIndex;
+            if (!sharesEndpoint && segmentsIntersect(vertices[firstIndex],
+                vertices[firstEndIndex], vertices[secondIndex],
+                vertices[secondEndIndex])) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function perpendicularDistance(point, first, second) {
+        const deltaAzimuth = second[0] - first[0];
+        const deltaElevation = second[1] - first[1];
+        const length = Math.hypot(deltaAzimuth, deltaElevation);
+        if (length <= Number.EPSILON) {
+          return Math.hypot(point[0] - first[0], point[1] - first[1]);
+        }
+        return Math.abs(deltaElevation * point[0] - deltaAzimuth * point[1] +
+          second[0] * first[1] - second[1] * first[0]) / length;
+      }
+
+      function simplifyPolyline(points, tolerance_deg) {
+        if (points.length < 3) {
+          return points.slice();
+        }
+        let maximumDistance = 0;
+        let splitIndex = -1;
+        for (let index = 1; index < points.length - 1; index += 1) {
+          const distance = perpendicularDistance(points[index], points[0],
+            points[points.length - 1]);
+          if (distance > maximumDistance) {
+            maximumDistance = distance;
+            splitIndex = index;
+          }
+        }
+        if (splitIndex < 0 || maximumDistance <= tolerance_deg) {
+          return [points[0], points[points.length - 1]];
+        }
+        return simplifyPolyline(points.slice(0, splitIndex + 1), tolerance_deg)
+          .slice(0, -1)
+          .concat(simplifyPolyline(points.slice(splitIndex), tolerance_deg));
+      }
+
+      function simplifyFreehand(points) {
+        let tolerance_deg = 1e-5;
+        let simplified = points;
+        while (simplified.length > FREEHAND_MAXIMUM_VERTICES && tolerance_deg < 360) {
+          simplified = simplifyPolyline(points, tolerance_deg);
+          tolerance_deg *= 1.8;
+        }
+        return simplified;
+      }
+
+      function circleVertices(center, radius_deg) {
+        return Array.from({ length: CIRCLE_VERTEX_COUNT }, (_, index) => {
+          const angle = 2 * Math.PI * index / CIRCLE_VERTEX_COUNT;
+          return [center[0] + radius_deg * Math.cos(angle),
+            center[1] + radius_deg * Math.sin(angle)];
+        });
+      }
+
       function updateOverlayControls(grid) {
         const searchCount = matrix(grid.AcceptedEdges_deg, 4).length +
           matrix(grid.RejectedEdges_deg, 4).length +
@@ -3063,14 +3182,14 @@
         ], [0, 0]).map((value) => value / vertices.length);
       }
 
-      function drawArrow(start, end) {
+      function drawArrow(start, end, isHandle = false) {
         const startScreen = worldToScreen(start);
         const endScreen = worldToScreen(end);
         const angle = Math.atan2(endScreen[1] - startScreen[1],
           endScreen[0] - startScreen[0]);
         context.save();
-        context.strokeStyle = "#73d99a";
-        context.fillStyle = "#73d99a";
+        context.strokeStyle = "rgba(115,217,154,0.72)";
+        context.fillStyle = "rgba(115,217,154,0.72)";
         context.lineWidth = 1.6;
         context.beginPath();
         context.moveTo(...startScreen);
@@ -3084,6 +3203,55 @@
           endScreen[1] - 9 * Math.sin(angle + Math.PI / 6));
         context.closePath();
         context.fill();
+        if (isHandle) {
+          context.fillStyle = "#07111c";
+          context.beginPath();
+          context.arc(endScreen[0], endScreen[1], HANDLE_RADIUS_PX - 2,
+            0, Math.PI * 2);
+          context.fill();
+          context.strokeStyle = "#76e5eb";
+          context.lineWidth = 2;
+          context.beginPath();
+          context.arc(endScreen[0], endScreen[1], HANDLE_RADIUS_PX - 2,
+            0, Math.PI * 2);
+          context.stroke();
+        }
+        context.restore();
+      }
+
+      function translatedVertices(vertices, offset) {
+        return vertices.map((point) => [point[0] + offset[0], point[1] + offset[1]]);
+      }
+
+      function drawMotionVector(obstacle, isSelected) {
+        const hasMotion = obstacle.motionProfile !== "stationary" &&
+          Math.hypot(...obstacle.motionVector_deg) > 1e-12;
+        if (!hasMotion) {
+          return;
+        }
+        const center = centroid(obstacle.vertices_deg);
+        const end = [center[0] + obstacle.motionVector_deg[0],
+          center[1] + obstacle.motionVector_deg[1]];
+        strokePath(translatedVertices(obstacle.vertices_deg,
+          obstacle.motionVector_deg), {
+          stroke: "rgba(145,166,184,0.55)", width: 1, dash: [5, 5],
+          fill: "rgba(145,166,184,0.045)", close: true
+        });
+        drawArrow(center, end, isSelected && state.mode === "select");
+      }
+
+      function drawVertexHandles(vertices) {
+        context.save();
+        context.fillStyle = "#07111c";
+        context.strokeStyle = "#76e5eb";
+        context.lineWidth = 1.5;
+        vertices.forEach((point) => {
+          const screen = worldToScreen(point);
+          context.beginPath();
+          context.arc(screen[0], screen[1], 4.5, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+        });
         context.restore();
       }
 
@@ -3104,12 +3272,9 @@
               "rgba(57,208,216,0.15)" : "rgba(106,169,255,0.13)",
             close: true
           });
-          if (index === state.selectedObstacleIndex &&
-              obstacle.motionProfile !== "stationary" &&
-              Math.hypot(...obstacle.motionVector_deg) > 1e-12) {
-            const center = centroid(obstacle.vertices_deg);
-            drawArrow(center, [center[0] + obstacle.motionVector_deg[0],
-              center[1] + obstacle.motionVector_deg[1]]);
+          drawMotionVector(obstacle, index === state.selectedObstacleIndex);
+          if (index === state.selectedObstacleIndex && state.mode === "select") {
+            drawVertexHandles(obstacle.vertices_deg);
           }
         });
       }
@@ -3494,6 +3659,22 @@
         context.restore();
       }
 
+      function drawTransientDrafts() {
+        if (state.circlePreview) {
+          const vertices = circleVertices(state.circlePreview.center,
+            state.circlePreview.radius_deg);
+          strokePath(vertices, {
+            stroke: "#76e5eb", width: 1.7, dash: [6, 4],
+            fill: "rgba(118,229,235,0.08)", close: true
+          });
+        }
+        if (state.freehandDraft.length > 1) {
+          strokePath(state.freehandDraft, {
+            stroke: "#76e5eb", width: 1.7, dash: [4, 3]
+          });
+        }
+      }
+
       function drawCrosshair() {
         if (!state.cursor || !pointInsideWorkspace(state.cursor)) {
           return;
@@ -3549,6 +3730,7 @@
         }
         drawTrajectory();
         drawDraft();
+        drawTransientDrafts();
         drawPoint(state.start, "#73d99a", "Start");
         drawPoint(state.goal, "#ff7a83", "Goal");
         drawCrosshair();
@@ -3563,6 +3745,210 @@
         }
         coordinateReadout.textContent =
           `Az ${point[0].toFixed(3)}° · El ${point[1].toFixed(3)}°`;
+      }
+
+      function clampToWorkspace(point) {
+        const bounds = workspace();
+        return [Math.max(bounds.azimuth[0], Math.min(bounds.azimuth[1], point[0])),
+          Math.max(bounds.elevation[0], Math.min(bounds.elevation[1], point[1]))];
+      }
+
+      function screenDistance(point, screenPoint) {
+        const screen = worldToScreen(point);
+        return Math.hypot(screen[0] - screenPoint[0], screen[1] - screenPoint[1]);
+      }
+
+      function selectedMotionHandle() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected || selected.motionProfile === "stationary" ||
+            Math.hypot(...selected.motionVector_deg) <= 1e-12) {
+          return null;
+        }
+        const center = centroid(selected.vertices_deg);
+        return [center[0] + selected.motionVector_deg[0],
+          center[1] + selected.motionVector_deg[1]];
+      }
+
+      function selectDragTarget(point, screenPoint) {
+        const motionHandle = selectedMotionHandle();
+        if (motionHandle && screenDistance(motionHandle, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "motion", obstacleIndex: state.selectedObstacleIndex };
+        }
+        for (let obstacleIndex = state.obstacles.length - 1;
+          obstacleIndex >= 0; obstacleIndex -= 1) {
+          const vertices = state.obstacles[obstacleIndex].vertices_deg;
+          for (let vertexIndex = 0; vertexIndex < vertices.length; vertexIndex += 1) {
+            if (screenDistance(vertices[vertexIndex], screenPoint) <= HANDLE_RADIUS_PX) {
+              return { type: "vertex", obstacleIndex, vertexIndex };
+            }
+          }
+        }
+        if (state.start && screenDistance(state.start, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "start" };
+        }
+        if (state.goal && screenDistance(state.goal, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "goal" };
+        }
+        for (let obstacleIndex = state.obstacles.length - 1;
+          obstacleIndex >= 0; obstacleIndex -= 1) {
+          if (pointInPolygon(point, state.obstacles[obstacleIndex].vertices_deg)) {
+            return { type: "obstacle", obstacleIndex };
+          }
+        }
+        return null;
+      }
+
+      function beginSceneDrag(target, point, pointerId) {
+        const drag = { ...target, pointerId, startPoint: point.slice(), wasClamped: false };
+        if (target.type === "vertex" || target.type === "obstacle") {
+          const obstacle = state.obstacles[target.obstacleIndex];
+          drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
+          if (target.type === "obstacle") {
+            const azimuthValues = obstacle.vertices_deg.map((vertex) => vertex[0]);
+            const elevationValues = obstacle.vertices_deg.map((vertex) => vertex[1]);
+            const bounds = workspace();
+            drag.offsetBounds = {
+              azimuth: [bounds.azimuth[0] - Math.min(...azimuthValues),
+                bounds.azimuth[1] - Math.max(...azimuthValues)],
+              elevation: [bounds.elevation[0] - Math.min(...elevationValues),
+                bounds.elevation[1] - Math.max(...elevationValues)]
+            };
+          }
+        }
+        state.activeDrag = drag;
+        if (target.obstacleIndex !== undefined) {
+          state.selectedObstacleIndex = target.obstacleIndex;
+          renderObstacleEditor();
+          updateActionAvailability();
+        }
+      }
+
+      function markDragChanged(drag, point) {
+        if (drag.didChange || pointsClose(drag.startPoint, point)) {
+          return;
+        }
+        drag.didChange = true;
+        invalidateResult("Scene changed while dragging.");
+      }
+
+      function updateMotionInputs(vector) {
+        element("motionAzimuth").value = vector[0].toFixed(3);
+        element("motionElevation").value = vector[1].toFixed(3);
+      }
+
+      function updateActiveDrag(point) {
+        const drag = state.activeDrag;
+        if (!drag) {
+          return;
+        }
+        if (drag.type === "circle") {
+          const maximumRadius = Math.min(drag.center[0] - workspace().azimuth[0],
+            workspace().azimuth[1] - drag.center[0],
+            drag.center[1] - workspace().elevation[0],
+            workspace().elevation[1] - drag.center[1]);
+          const radius_deg = Math.min(maximumRadius,
+            Math.hypot(point[0] - drag.center[0], point[1] - drag.center[1]));
+          state.circlePreview = { center: drag.center, radius_deg };
+          coordinateReadout.textContent = `Radius ${radius_deg.toFixed(3)} deg`;
+          draw();
+          return;
+        }
+        if (drag.type === "freehand") {
+          const clamped = clampToWorkspace(point);
+          if (!pointsClose(clamped, state.freehandDraft[state.freehandDraft.length - 1], 1e-4)) {
+            state.freehandDraft.push(clamped);
+          }
+          updateCoordinateReadout(clamped);
+          draw();
+          return;
+        }
+        if (drag.type === "motion") {
+          const obstacle = state.obstacles[drag.obstacleIndex];
+          const center = centroid(obstacle.vertices_deg);
+          markDragChanged(drag, point);
+          obstacle.motionVector_deg = [point[0] - center[0], point[1] - center[1]];
+          updateMotionInputs(obstacle.motionVector_deg);
+          const missionTime_s = Math.max(Number.EPSILON, numberFromInput("missionTime"));
+          const offset_deg = Math.hypot(...obstacle.motionVector_deg);
+          coordinateReadout.textContent = `Δ ${offset_deg.toFixed(3)} deg · ` +
+            `${(offset_deg / missionTime_s).toFixed(3)} deg/s`;
+          draw();
+          return;
+        }
+        let clamped = clampToWorkspace(point);
+        drag.wasClamped ||= !pointsClose(point, clamped);
+        markDragChanged(drag, clamped);
+        if (drag.type === "start" || drag.type === "goal") {
+          state[drag.type] = clamped;
+          writeEndpointInputs();
+        } else if (drag.type === "vertex") {
+          state.obstacles[drag.obstacleIndex].vertices_deg[drag.vertexIndex] = clamped;
+        } else if (drag.type === "obstacle") {
+          const requestedOffset = [clamped[0] - drag.startPoint[0],
+            clamped[1] - drag.startPoint[1]];
+          const offset = [Math.max(drag.offsetBounds.azimuth[0],
+            Math.min(drag.offsetBounds.azimuth[1], requestedOffset[0])),
+          Math.max(drag.offsetBounds.elevation[0],
+            Math.min(drag.offsetBounds.elevation[1], requestedOffset[1]))];
+          drag.wasClamped ||= !pointsClose(requestedOffset, offset);
+          state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices
+            .map((vertex) => [vertex[0] + offset[0], vertex[1] + offset[1]]);
+          clamped = [drag.startPoint[0] + offset[0], drag.startPoint[1] + offset[1]];
+        }
+        updateCoordinateReadout(clamped);
+        draw();
+      }
+
+      function finishActiveDrag() {
+        const drag = state.activeDrag;
+        if (!drag) {
+          return;
+        }
+        state.activeDrag = null;
+        if (drag.type === "circle") {
+          const preview = state.circlePreview;
+          state.circlePreview = null;
+          if (!preview || preview.radius_deg <= 1e-6) {
+            setStatus("Circle radius must be greater than zero.", "warning");
+          } else {
+            addObstacle(circleVertices(preview.center, preview.radius_deg));
+            invalidateResult("Obstacle geometry changed.");
+            renderObstacleEditor();
+            activateMode("select");
+            setStatus(`24-vertex circle added (radius ${preview.radius_deg.toFixed(3)} deg).`,
+              "success");
+          }
+        } else if (drag.type === "freehand") {
+          const raw = state.freehandDraft;
+          state.freehandDraft = [];
+          const vertices = simplifyFreehand(raw);
+          if (vertices.length < 3 || polygonArea(vertices) <= 1e-10) {
+            setStatus("The polygon has no enclosed area. Draw a wider outline.", "error");
+          } else if (polygonSelfIntersects(raw) || polygonSelfIntersects(vertices)) {
+            setStatus("The outline crosses itself, please redraw.", "error");
+          } else {
+            addObstacle(vertices);
+            invalidateResult("Obstacle geometry changed.");
+            renderObstacleEditor();
+            activateMode("select");
+            setStatus(`Freehand polygon added with ${vertices.length} vertices.`, "success");
+          }
+        } else if (drag.type === "vertex") {
+          const vertices = state.obstacles[drag.obstacleIndex].vertices_deg;
+          if (polygonArea(vertices) <= 1e-10) {
+            state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices;
+            setStatus("The polygon has no enclosed area. Vertex move was refused.", "error");
+          } else if (drag.wasClamped) {
+            setStatus("Move stopped at the workspace boundary.", "warning");
+          }
+        } else if ((drag.type === "start" || drag.type === "goal") && drag.wasClamped) {
+          setStatus("Endpoint move stopped at the workspace boundary.", "warning");
+        } else if (drag.type === "obstacle" && drag.wasClamped) {
+          setStatus("Polygon move stopped at the workspace boundary.", "warning");
+        }
+        renderObstacleEditor();
+        updateActionAvailability();
+        draw();
       }
 
       function handleCanvasPointerDown(event) {
@@ -3591,7 +3977,21 @@
           );
           return;
         }
-        if (state.mode === "start") {
+        if (state.mode === "select") {
+          if (state.importedSceneIsReadOnly) {
+            setStatus("This imported result is inspection-only. Select Reset to edit a scene.",
+              "warning");
+            return;
+          }
+          const target = selectDragTarget(point, screenPoint);
+          if (!target) {
+            selectObstacleAt(point);
+            return;
+          }
+          beginSceneDrag(target, point, event.pointerId);
+          canvas.setPointerCapture(event.pointerId);
+          draw();
+        } else if (state.mode === "start") {
           state.start = point;
           writeEndpointInputs();
           invalidateResult("Start position changed.");
@@ -3620,8 +4020,15 @@
             "Right-click or press Enter to finish.", "info"
           );
           draw();
-        } else {
-          selectObstacleAt(point);
+        } else if (state.mode === "circle") {
+          state.activeDrag = { type: "circle", pointerId: event.pointerId,
+            center: point.slice() };
+          state.circlePreview = { center: point.slice(), radius_deg: 0 };
+          canvas.setPointerCapture(event.pointerId);
+        } else if (state.mode === "freehand") {
+          state.activeDrag = { type: "freehand", pointerId: event.pointerId };
+          state.freehandDraft = [point.slice()];
+          canvas.setPointerCapture(event.pointerId);
         }
       }
 
@@ -3630,6 +4037,9 @@
         state.start = null;
         state.goal = null;
         state.polygonDraft = [];
+        state.freehandDraft = [];
+        state.circlePreview = null;
+        state.activeDrag = null;
         state.obstacles = [];
         state.selectedObstacleIndex = -1;
         state.nextObstacleNumber = 1;
@@ -3793,10 +4203,33 @@
       canvas.addEventListener("pointermove", (event) => {
         const screenPoint = canvasPoint(event);
         state.cursor = pointInPlot(screenPoint) ? screenToWorld(screenPoint) : null;
-        updateCoordinateReadout(state.cursor);
-        draw();
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          updateActiveDrag(state.cursor || clampToWorkspace(screenToWorld(screenPoint)));
+        } else {
+          updateCoordinateReadout(state.cursor);
+          draw();
+        }
+      });
+      canvas.addEventListener("pointerup", (event) => {
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+          finishActiveDrag();
+        }
+      });
+      canvas.addEventListener("pointercancel", (event) => {
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+          finishActiveDrag();
+        }
       });
       canvas.addEventListener("pointerleave", () => {
+        if (state.activeDrag) {
+          return;
+        }
         state.cursor = null;
         updateCoordinateReadout(null);
         draw();
@@ -3824,6 +4257,10 @@
           activateMode("goal");
         } else if (key === "p") {
           activateMode("polygon");
+        } else if (key === "c") {
+          activateMode("circle");
+        } else if (key === "f") {
+          activateMode("freehand");
         } else if (event.key === "Enter" && state.mode === "polygon") {
           finishPolygon();
         } else if (event.key === "Escape" && state.polygonDraft.length > 0) {
