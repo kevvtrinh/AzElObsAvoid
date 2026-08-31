@@ -26,9 +26,6 @@ verifyFalse(testCase, options.EnableStagnationStop);
 verifyEqual(testCase, options.StagnationIterationLimit, 5);
 verifyEqual(testCase, options.StagnationImprovementTolerance_s, ...
     options.ArrivalTimeTolerance_s);
-verifyFalse(testCase, options.EnablePlaneReuse);
-verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, ...
-    options.ArrivalTimeTolerance_s);
 end
 
 function testPartialOverridesResolveAndNormalize(testCase)
@@ -42,7 +39,6 @@ overrides = struct( ...
     "MaximumWaitRefinementIterations", 8, ...
     "EnableStagnationStop", 1, ...
     "StagnationIterationLimit", 8, ...
-    "EnablePlaneReuse", 1, ...
     "ArrivalTimeTolerance_s", 2e-3, ...
     "Verbose", 1);
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
@@ -68,8 +64,6 @@ verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
 verifyTrue(testCase, options.EnableStagnationStop);
 verifyEqual(testCase, options.StagnationIterationLimit, 8);
 verifyEqual(testCase, options.StagnationImprovementTolerance_s, 2e-3);
-verifyTrue(testCase, options.EnablePlaneReuse);
-verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, 2e-3);
 verifyTrue(testCase, options.Verbose);
 end
 

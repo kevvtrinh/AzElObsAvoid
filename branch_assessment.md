@@ -6,51 +6,6 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
-## BMTP unchanged-plane reuse, gated off - 2026-08-30
-
-`EnablePlaneReuse=false` preserves the existing plane reset and re-derivation
-path. The four supplied default sentinels were bit-identical to their required
-arrivals and sampled motion lengths: Target Exits
-`24 / 22.554006042022394`, Obstacle Avoidance
-`7.574541766321258 / 11.411861387735195`, Static U
-`20.712447786011488 / 40.255028504000862`, and Two Opposing U
-`21.633333333333336 / 24.096812127187516` (seconds / degrees). All passed
-independent validation. The clean MATLAB suite passed 96/96, the changed files
-were Code Analyzer clean, and `exampleNoPath` retained `noValidatedSeed`.
-
-The enabled gate requires both a retained-best improvement no greater than
-`PlaneReuseImprovementTolerance_s` and an unchanged tagged-pair set. It skips
-only the reset/re-derivation and performs the next trajectory solve. In the
-`1e-4 deg` Target case that repeated SOCP was bit-identical on this machine:
-the maximum control-net and duration differences were both zero, then the
-existing convergence test fired. Baseline / stagnation-only / reuse-only
-respectively used `42 / 18 / 15` outer and trajectory SOCPs and `391 / 141 /
-93` plane SOCPs. Their warmed minimum / median walls were
-`53.0606007 / 53.5620057`, `23.8239231 / 24.4742484`, and
-`19.5354281 / 19.7202448 s`; all retained the `24 s` arrival and
-`22.555163889326948 deg` path. Reuse therefore achieved more plane-SOCP and
-wall reduction than the existing stagnation stop in the measured wandering
-case; they are not redundant there.
-
-At default clearance, Target Exits similarly changed from `17 / 121` outer /
-plane SOCPs to `12 / 73`, with a `20.8999410 s` baseline median and
-`16.3771825 s` reuse median, with no result movement. Obstacle Avoidance did
-not trigger the gate (`7 / 13` outer / plane SOCPs in both modes); Static U and
-Two Opposing U did no BMTP conic work in either mode. The read-only Rogue
-bundle was also a gate-null at both tested horizons: 180 s stayed at
-`22 / 576`, `100.664824112242897 s`, and `221.885353904752918 deg`; 360 s
-stayed at `20 / 507`, `100.675947361398343 s`, and
-`220.666927423424511 deg`. Its warmed medians changed only within ordinary
-wall variance (`25.0848222` to `24.8300924 s` at 180 and `23.0830120` to
-`23.4646274 s` at 360). The supplied bundle succeeds at 180 s on this branch;
-the measured 180 result agrees with the supplied known-good arrival and length
-despite the brief's historical failure description.
-
-The option remains off because this is a measured diagnostic/runtime tradeoff,
-not a proof that every future alternating problem has deterministic SOCP
-repeats. The retained reset remains load-bearing whenever the incumbent is
-still improving or tagged pairs change.
-
 ## BMTP retained-best stagnation stop, gated off - 2026-08-30
 
 The optional retained-best stop is inert at its default. Four supplied
