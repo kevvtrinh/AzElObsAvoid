@@ -5059,7 +5059,6 @@ Verification performed after the adapter and Straight Target wiring:
 The Ruckig integration therefore meets the explicit Straight Target engine and
 physical-clock gate, but does not meet the historical 13.678271908-degree path,
 2.0964864-second wall, or repository-size records.
-
 ## Explicit timed-topology policy and moving BMTP projection — 2026-08-31
 
 Baseline on `f383ae4` used a static U-shaped detour plus a distant moving
@@ -5101,3 +5100,26 @@ The moving extension is deliberately described as a conservative static
 projection, not a time-dependent separating-plane method. Time-cell BMTP and
 wait-plus-detour support remain unimplemented and visible in the branch
 assessment.
+
+## HTML sandbox diagnosis-bundle export — 2026-08-31
+
+The live HTML sandbox now enables **Save diagnosis bundle** only after a
+matching live MATLAB result. `POST /plan` retains the unprojected public result
+and exact canonical inputs in a server-owned
+`obstacleAvoidanceSandboxDiagnosis-v2` MAT cache; `POST /bundle` returns that
+cache only for the matching request identifier. Editing the scene, resetting,
+or loading a result file clears browser eligibility, and stopping the server
+deletes its cache. Offline JSON handoff remains bounded and does not claim it
+can reconstruct omitted solver diagnostics.
+
+Code Analyzer reported zero messages across the three changed MATLAB owners
+and the focused test. `testOfflineSandboxDiagnosisBundle` passed 2/2 in
+0.46553 seconds. A live loopback smoke produced a successful independently
+validated obstacle-free plan, downloaded a 452,512-byte MAT response with the
+MATLAB content type, and rejected a stale request identifier with HTTP 409.
+`git diff --check` passed. A separate MATLAB reload inspection could not start
+because the environment reported `System Error: File system inconsistency`
+while several pre-existing MATLAB processes were active; the generated MAT
+file had already been written and transported successfully. The in-app browser
+also prohibited navigation to the local `file://` page, so visual layout was
+not exercised through that browser surface.

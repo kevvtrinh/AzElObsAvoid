@@ -14,8 +14,8 @@ function serverInfo = serveSandbox(port)
 %**************************************************************************
 % OUTPUTS
 %   - serverInfo (scalar struct)
-%       URL, port, stop-file path, request counts, elapsed time, and the
-%       termination reason after the blocking server loop stops.
+%       URL, port, stop-file path, plan and bundle request counts, elapsed
+%       time, and the termination reason after the blocking server loop stops.
 %**************************************************************************
 % UNITS
 %   - Port and request counts are dimensionless. Elapsed time is seconds.
@@ -41,6 +41,10 @@ end
 pageBytes = readFileBytes(pagePath);
 stopFilePath = fullfile(tempdir, ...
     "offlineSandbox-stop-" + string(port) + ".txt");
+bundleFilePath = fullfile(tempdir, ...
+    "offlineSandbox-bundle-" + string(port) + ".mat");
+bundleRequestIdPath = fullfile(tempdir, ...
+    "offlineSandbox-bundle-" + string(port) + ".txt");
 
 %% Section 2: Bind The Loopback Server
 
@@ -55,10 +59,13 @@ end
 % Delete a stale marker only after binding. A second server therefore cannot
 % consume the running server's stop request before its own bind fails.
 deleteFileIfPresent(stopFilePath);
+deleteFileIfPresent(bundleFilePath);
+deleteFileIfPresent(bundleRequestIdPath);
 acceptTimeout_ms = 250;
 serverSocket.setSoTimeout(int32(acceptTimeout_ms));
 serverCleanup = onCleanup( ...
-    @() closeServer(serverSocket, stopFilePath));
+    @() closeServer(serverSocket, stopFilePath, bundleFilePath, ...
+        bundleRequestIdPath));
 
 url = "http://127.0.0.1:" + string(port) + "/";
 fprintf("Az/El planner sandbox: %s\n", url);
@@ -70,6 +77,7 @@ fprintf("Press Ctrl-C or create the stop file to stop the server.\n");
 serverTimer = tic;
 requestCount = 0;
 planRequestCount = 0;
+bundleRequestCount = 0;
 terminationReason = "stopFile";
 while ~isfile(stopFilePath)
     try
@@ -83,10 +91,12 @@ while ~isfile(stopFilePath)
 
     requestCount = requestCount + 1;
     try
-        wasPlanRequest = serveClient( ...
+        [wasPlanRequest, wasBundleRequest] = serveClient( ...
             clientSocket, serverSocket, pageBytes, sandboxFolder, ...
-            port, stopFilePath);
+            port, stopFilePath, bundleFilePath, bundleRequestIdPath);
         planRequestCount = planRequestCount + double(wasPlanRequest);
+        bundleRequestCount = ...
+            bundleRequestCount + double(wasBundleRequest);
     catch exception
         if isUserInterruption(exception)
             rethrow(exception);
@@ -104,6 +114,7 @@ serverInfo = struct( ...
     "StopFilePath", stopFilePath, ...
     "RequestCount", requestCount, ...
     "PlanRequestCount", planRequestCount, ...
+    "BundleRequestCount", bundleRequestCount, ...
     "ElapsedTime_s", elapsedTime_s, ...
     "TerminationReason", terminationReason);
 clear serverCleanup;
@@ -114,11 +125,13 @@ end
 
 %% Section 5: Local Functions
 
-function wasPlanRequest = serveClient(clientSocket, serverSocket, ...
-        pageBytes, sandboxFolder, port, stopFilePath)
+function [wasPlanRequest, wasBundleRequest] = serveClient( ...
+        clientSocket, serverSocket, pageBytes, sandboxFolder, port, ...
+        stopFilePath, bundleFilePath, bundleRequestIdPath)
 % Read, route, and close one HTTP/1.1 connection.
 clientCleanup = onCleanup(@() closeSocket(clientSocket));
 wasPlanRequest = false;
+wasBundleRequest = false;
 try
     request = readHttpRequest(clientSocket, 2000);
 catch exception
@@ -140,7 +153,8 @@ if request.HasOrigin && strlength(corsOrigin) == 0
         "from the local file page.", "");
     return;
 end
-knownPath = any(path == ["/", "/health", "/plan", "/cancel"]);
+knownPath = any(path == ["/", "/health", "/plan", "/cancel", ...
+    "/bundle"]);
 if method == "OPTIONS" && knownPath
     writeHttpResponse(clientSocket, 204, "No Content", ...
         "text/plain; charset=utf-8", zeros(1, 0, 'uint8'), ...
@@ -156,7 +170,11 @@ elseif method == "POST" && path == "/plan"
     wasPlanRequest = true;
     servePlanningRequest( ...
         clientSocket, serverSocket, request.BodyBytes, stopFilePath, ...
-        port, corsOrigin);
+        port, corsOrigin, bundleFilePath, bundleRequestIdPath);
+elseif method == "POST" && path == "/bundle"
+    wasBundleRequest = true;
+    serveBundleRequest(clientSocket, request.BodyBytes, corsOrigin, ...
+        bundleFilePath, bundleRequestIdPath);
 elseif method == "POST" && path == "/cancel"
     writeErrorResponse(clientSocket, 409, ...
         "serveSandbox:NoActivePlan", ...
@@ -175,7 +193,8 @@ clear clientCleanup;
 end
 
 function servePlanningRequest(clientSocket, serverSocket, ...
-        requestBytes, stopFilePath, port, corsOrigin)
+        requestBytes, stopFilePath, port, corsOrigin, bundleFilePath, ...
+        bundleRequestIdPath)
 % Run the unchanged file adapter and return its exact result JSON bytes.
 if isempty(requestBytes)
     writeErrorResponse(clientSocket, 400, ...
@@ -192,11 +211,13 @@ planningTimer = tic;
 try
     writeFileBytes(requestFilePath, requestBytes);
     activeRequestId = previewRequestId(requestBytes);
-    response = offlineSandbox.runPlanningRequest( ...
+    [response, diagnosisBundle] = offlineSandbox.runPlanningRequest( ...
         requestFilePath, resultFilePath, ...
         @() cancellationRequested( ...
             serverSocket, stopFilePath, activeRequestId, port));
     resultBytes = readFileBytes(resultFilePath);
+    cacheDiagnosisBundle(bundleFilePath, bundleRequestIdPath, ...
+        activeRequestId, diagnosisBundle);
 catch exception
     if isUserInterruption(exception)
         rethrow(exception);
@@ -231,6 +252,67 @@ writeHttpResponse(clientSocket, 200, "OK", ...
 fprintf("Plan %s: planner %.6f s; server before transport %.6f s.\n", ...
     activeRequestId, plannerTime_s, serverTime_s);
 clear temporaryCleanup;
+end
+
+function serveBundleRequest(clientSocket, requestBytes, corsOrigin, ...
+        bundleFilePath, bundleRequestIdPath)
+% Return the exact cached MAT diagnosis bundle for the matching live result.
+requestId = previewRequestId(requestBytes);
+if strlength(requestId) == 0
+    writeErrorResponse(clientSocket, 400, ...
+        "serveSandbox:InvalidBundleRequest", ...
+        "POST /bundle requires a nonempty JSON requestId.", corsOrigin);
+    return;
+end
+if ~isfile(bundleFilePath) || ~isfile(bundleRequestIdPath)
+    writeErrorResponse(clientSocket, 404, ...
+        "serveSandbox:BundleNotAvailable", ...
+        "No completed live plan is available for bundle export.", ...
+        corsOrigin);
+    return;
+end
+cachedRequestId = strtrim(string(native2unicode( ...
+    readFileBytes(bundleRequestIdPath), "UTF-8")));
+if cachedRequestId ~= requestId
+    writeErrorResponse(clientSocket, 409, ...
+        "serveSandbox:BundleRequestMismatch", ...
+        "The requested result is not the latest live plan on this server.", ...
+        corsOrigin);
+    return;
+end
+bundleBytes = readFileBytes(bundleFilePath);
+downloadHeaders = ...
+    "Content-Disposition: attachment; filename=az-el-sandbox-bundle.mat";
+writeHttpResponse(clientSocket, 200, "OK", ...
+    "application/vnd.matlab.mat-file", bundleBytes, downloadHeaders, ...
+    corsOrigin);
+end
+
+function cacheDiagnosisBundle(bundleFilePath, bundleRequestIdPath, ...
+        requestId, diagnosisBundle)
+% Atomically replace the server-owned bundle cache after a completed plan.
+temporaryBundlePath = string(tempname) + ".mat";
+temporaryRequestIdPath = string(tempname) + ".txt";
+cacheCleanup = onCleanup(@() deleteTemporaryFiles( ...
+    temporaryBundlePath, temporaryRequestIdPath));
+save(char(temporaryBundlePath), 'diagnosisBundle', '-v7.3');
+writeFileBytes(temporaryRequestIdPath, ...
+    unicode2native(char(requestId), "UTF-8"));
+[bundleMoved, bundleMessage] = movefile( ...
+    temporaryBundlePath, bundleFilePath, "f");
+if ~bundleMoved || ~isfile(bundleFilePath)
+    error("serveSandbox:BundleCacheFailed", ...
+        "Could not cache the diagnosis bundle: %s", bundleMessage);
+end
+[requestIdMoved, requestIdMessage] = movefile( ...
+    temporaryRequestIdPath, bundleRequestIdPath, "f");
+if ~requestIdMoved || ~isfile(bundleRequestIdPath)
+    deleteFileIfPresent(bundleFilePath);
+    error("serveSandbox:BundleCacheFailed", ...
+        "Could not cache the bundle request identifier: %s", ...
+        requestIdMessage);
+end
+clear cacheCleanup;
 end
 
 function stopRequested = cancellationRequested( ...
@@ -642,7 +724,8 @@ catch
 end
 end
 
-function closeServer(serverSocket, stopFilePath)
+function closeServer(serverSocket, stopFilePath, bundleFilePath, ...
+        bundleRequestIdPath)
 % Release the listening port and consume this server's stop marker.
 try
     if ~isempty(serverSocket) && ~serverSocket.isClosed()
@@ -651,4 +734,6 @@ try
 catch
 end
 deleteFileIfPresent(stopFilePath);
+deleteFileIfPresent(bundleFilePath);
+deleteFileIfPresent(bundleRequestIdPath);
 end

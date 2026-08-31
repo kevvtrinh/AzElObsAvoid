@@ -501,6 +501,10 @@
       color: #ffc3c7;
     }
 
+    .live-actions #downloadBundleButton {
+      grid-column: 1 / -1;
+    }
+
     .workflow-button,
     .file-button {
       display: flex;
@@ -1099,6 +1103,8 @@
               <button id="cancelPlanButton"
                 class="workflow-button cancel-button" type="button"
                 disabled>Cancel</button>
+              <button id="downloadBundleButton" class="workflow-button"
+                type="button" disabled>Save diagnosis bundle</button>
             </div>
           </div>
           <div id="offlineWorkflow" hidden>
@@ -1488,6 +1494,7 @@
         validation: null,
         responseObstacles: [],
         lastRequestId: "",
+        bundleRequestId: "",
         showSearchOverlay: false,
         showSelectedSeed: false,
         importedSceneIsReadOnly: false,
@@ -1558,6 +1565,8 @@
         element("planButton").disabled = !isLive || editingDisabled;
         element("cancelPlanButton").disabled = !isLive ||
           !state.isPlanning || state.cancellationRequested;
+        element("downloadBundleButton").disabled = !isLive ||
+          state.isPlanning || !state.bundleRequestId;
         element("resetButton").disabled = state.isPlanning;
         element("resultFileInput").disabled = state.isPlanning;
         document.querySelectorAll(".obstacle-row").forEach((button) => {
@@ -1735,6 +1744,8 @@
           return;
         }
         state.lastRequestId = "";
+        state.bundleRequestId = "";
+        updatePlanningControls();
         if (!state.result) {
           return;
         }
@@ -2270,6 +2281,8 @@
             credentials: "omit"
           });
           loadResponse(payload, "live MATLAB response");
+          state.bundleRequestId = payload.requestId;
+          updatePlanningControls();
         } catch (error) {
           if (error.identifier === "planTrajectory:UserCancelled") {
             probeAfterCompletion = true;
@@ -2340,6 +2353,54 @@
         }
       }
 
+      async function downloadLiveBundle() {
+        if (state.connectionMode !== "live" || state.isPlanning ||
+            !state.bundleRequestId) {
+          return;
+        }
+        const requestId = state.bundleRequestId;
+        element("downloadBundleButton").disabled = true;
+        setStatus("Preparing the MATLAB diagnosis bundle.", "info");
+        try {
+          const response = await fetch(`${state.serverOrigin}/bundle`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify({ requestId }),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          if (!response.ok) {
+            await readJsonResponse(response);
+          }
+          const bundleBlob = await response.blob();
+          const objectUrl = URL.createObjectURL(bundleBlob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = `${requestId}-diagnosis.mat`;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          setStatus(
+            "Diagnosis bundle saved. Load diagnosisBundle from the MAT file " +
+            "to reproduce or inspect this exact live plan.", "success"
+          );
+        } catch (error) {
+          if (error instanceof TypeError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during bundle export.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The diagnosis bundle could not be saved.",
+              "error");
+          }
+        } finally {
+          updatePlanningControls();
+        }
+      }
+
       function asArray(value) {
         if (Array.isArray(value)) {
           return value;
@@ -2393,6 +2454,7 @@
         reader.onload = () => {
           try {
             const response = JSON.parse(String(reader.result));
+            state.bundleRequestId = "";
             loadResponse(response, file.name);
           } catch (error) {
             setStatus(`Invalid result JSON: ${error.message}`, "error");
@@ -4056,6 +4118,7 @@
         state.validation = null;
         state.responseObstacles = [];
         state.lastRequestId = "";
+        state.bundleRequestId = "";
         state.showSearchOverlay = false;
         state.showSelectedSeed = false;
         element("searchOverlayToggle").checked = false;
@@ -4177,6 +4240,8 @@
       });
       element("planButton").addEventListener("click", planLive);
       element("cancelPlanButton").addEventListener("click", cancelLivePlan);
+      element("downloadBundleButton").addEventListener(
+        "click", downloadLiveBundle);
       element("downloadRequestButton").addEventListener("click", downloadRequest);
       element("resultFileInput").addEventListener("change", (event) => {
         const file = event.target.files && event.target.files[0];

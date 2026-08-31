@@ -29,6 +29,15 @@ path of its stop file. Open that printed URL, create the scene, and select
 JSON to `POST /plan` and passes the returned `offlineSandboxResult/v1` object
 to the same result loader used by offline mode.
 
+After a live plan completes, select **Save diagnosis bundle** to download a
+MAT file for the exact displayed result. The file contains the same versioned
+`diagnosisBundle` workflow used by the MATLAB sandbox: canonical planner
+inputs, resolved options, the unprojected success or failure result,
+independent validation, original browser geometry, environment metadata, and
+reproduction commands. MATLAB-only cancellation callbacks are removed. The
+button is enabled only while the matching live result remains current; editing
+the request or loading an unrelated result disables it.
+
 Select **Cancel** to request cooperative cancellation. The server accepts that
 request out of band and supplies a trusted MATLAB-only `CancellationCheckFcn`
 to the existing adapter. The public planner stops at its next safe checkpoint;
@@ -112,6 +121,9 @@ The MATLAB server implements a small HTTP/1.1 subset directly over
   JSON bytes. No request or result schema is duplicated in the server.
 - `POST /cancel` is serviced by the planner's cooperative cancellation callback
   while the main MATLAB thread is planning.
+- `POST /bundle` returns the server-cached MAT diagnosis bundle only when the
+  supplied request identifier matches the latest completed live plan. The
+  cache is deleted when the server stops.
 
 Every connection has bounded headers, a 16 MiB body limit, a read timeout, an
 exact UTF-8 `Content-Length`, `Connection: close`, and cleanup on normal or
@@ -249,6 +261,9 @@ in the file handoff and become a bounded HTTP 400 error in live mode.
   launch MATLAB, or reload the result automatically. The displayed command
   assumes the usual Windows `Downloads` folder; edit the two paths if the
   browser uses another folder.
+- MAT bundle download requires live mode because only MATLAB retains the full,
+  unprojected planner result. Offline request/result JSON remains intentionally
+  bounded for file handoff and cannot reconstruct omitted solver diagnostics.
 - The page does not plan, inflate geometry, check collisions, or certify
   dynamics. Those responsibilities remain in the unchanged MATLAB code.
   Protected geometry becomes visible only after a result is loaded.
