@@ -643,3 +643,38 @@ optimality claim. The full MATLAB suite passed 84/84; the timed and cavity
 certificate coverage is direct, while the geometric lower-bound pruning proposal
 was deliberately not implemented because a topology seed is not a mandatory
 optimized vertex chain.
+
+## Explicit timed-topology policy and conservative moving BMTP — 2026-08-31
+
+The largest current strength is that a changing obstacle no longer causes an
+undocumented switch to rest-to-rest waypoint composition. The public
+`UnsupportedTimedTopologyPolicy` defaults to `"fail"`; an intentionally
+work-limited static-U-plus-mover request returned the earliest accurate
+`unsupportedTimedMultiWaypointRoute` reason with zero fallback attempts. The
+same request succeeded at 31.4265 s only when
+`"ruckigStopAtWaypoints"` was explicit, and diagnostics retained the original
+failure plus every forced zero-velocity and zero-acceleration interior state.
+
+Candidate-specific relevance removes the old request-wide static-kernel veto.
+A static U with a distant moving obstacle succeeded through static BMTP at
+20.8454 s and 39.5987 deg under the default fail policy after full continuous
+validation against both obstacles. A structurally different translating
+rectangle used the conservative protected-history convex-hull projection and
+produced one globally smooth 20 s, 10.7117850149 deg BMTP motion with
+0.0657896049 deg minimum clearance against the original moving geometry.
+
+The largest current weakness remains genuine time dependence. The retained
+projection is a conservative static swept-history superset; it cannot exploit
+an obstacle opening later, couple separating planes to physical-time cells, or
+guarantee a wait-plus-detour solution. Those cases still return
+`unsupportedTimedMultiWaypointRoute` unless the explicitly labeled
+stop-at-waypoints recovery is enabled. This branch therefore demonstrates one
+moving-detour family, not a general dynamic BMTP completeness or optimality
+result.
+
+Final verification on `f383ae4+worktree` passed 98/98 tests in 69.6771 s.
+All 17 maintained examples ran in separate serial headless MATLAB processes:
+16 independently validated successes and the expected validated
+`exampleNoPath` failure. A visible obstacle-free run also passed. The static-U
+sentinel remained 20.712447786 s and the moving-barrier direct-wait sentinel
+remained 10.0903015137 s.

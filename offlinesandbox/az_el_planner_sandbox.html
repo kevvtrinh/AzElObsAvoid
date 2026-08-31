@@ -1249,10 +1249,14 @@
                 </select>
               </div>
               <div class="field full">
-                <label for="warmStartMode">Waypoint warm start</label>
-                <select id="warmStartMode">
-                  <option value="none" selected>None</option>
-                  <option value="passThrough">Ruckig pass-through</option>
+                <label for="unsupportedTimedTopologyPolicy">
+                  Unsupported timed route
+                </label>
+                <select id="unsupportedTimedTopologyPolicy">
+                  <option value="fail" selected>Fail and diagnose</option>
+                  <option value="ruckigStopAtWaypoints">
+                    Ruckig stop at waypoints
+                  </option>
                 </select>
               </div>
               <label class="checkbox-field field full">
@@ -1455,7 +1459,7 @@
         missionTime: 180,
         defaultMargin: 0.2,
         goalTimeMode: "earliestArrival",
-        warmStartMode: "none",
+        unsupportedTimedTopologyPolicy: "fail",
         allowWrapping: false
       });
 
@@ -1518,7 +1522,7 @@
         "azimuthMin", "azimuthMax", "elevationMin", "elevationMax",
         "velocityAz", "velocityEl", "accelerationAz", "accelerationEl",
         "jerkAz", "jerkEl", "missionTime", "defaultMargin",
-        "goalTimeMode", "warmStartMode", "allowWrapping"
+        "goalTimeMode", "unsupportedTimedTopologyPolicy", "allowWrapping"
       ];
 
       function element(id) {
@@ -1682,7 +1686,9 @@
           missionTime: numberFromInput("missionTime"),
           defaultMargin: numberFromInput("defaultMargin"),
           goalTimeMode: element("goalTimeMode").value,
-          warmStartMode: element("warmStartMode").value,
+          unsupportedTimedTopologyPolicy: element(
+            "unsupportedTimedTopologyPolicy"
+          ).value,
           allowWrapping: element("allowWrapping").checked
         };
         const allFinite = Object.entries(controls)
@@ -2165,7 +2171,8 @@
             MaximumNlpIterations: 80,
             ArrivalTimeTolerance_s: 0.05,
             GoalTimeMode: controls.goalTimeMode,
-            WaypointWarmStartMode: controls.warmStartMode,
+            UnsupportedTimedTopologyPolicy:
+              controls.unsupportedTimedTopologyPolicy,
             AllowAzimuthWrapping: controls.allowWrapping,
             Verbose: false
           }
@@ -2510,8 +2517,9 @@
           if (typeof options.GoalTimeMode === "string") {
             element("goalTimeMode").value = options.GoalTimeMode;
           }
-          if (typeof options.WaypointWarmStartMode === "string") {
-            element("warmStartMode").value = options.WaypointWarmStartMode;
+          if (typeof options.UnsupportedTimedTopologyPolicy === "string") {
+            element("unsupportedTimedTopologyPolicy").value =
+              options.UnsupportedTimedTopologyPolicy;
           }
           element("allowWrapping").checked = Boolean(
             options.AllowAzimuthWrapping

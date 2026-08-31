@@ -5034,3 +5034,45 @@ Verification performed after the adapter and Straight Target wiring:
 The Ruckig integration therefore meets the explicit Straight Target engine and
 physical-clock gate, but does not meet the historical 13.678271908-degree path,
 2.0964864-second wall, or repository-size records.
+
+## Explicit timed-topology policy and moving BMTP projection — 2026-08-31
+
+Baseline on `f383ae4` used a static U-shaped detour plus a distant moving
+rectangle. All three topology seeds first returned
+`unsupportedTimedTopology`, all three silently invoked Ruckig, and seed 3
+returned a 31.4265 s, 34.9426 deg stop-at-waypoint success.
+
+After the change:
+
+- default `UnsupportedTimedTopologyPolicy="fail"` preserved
+  `unsupportedTimedMultiWaypointRoute` and made zero Ruckig attempts when
+  `MaximumNlpIterations=1` forced the unsupported boundary;
+- explicit `"ruckigStopAtWaypoints"` reproduced the 31.4265 s recovery and
+  reported the original reason, method, interior times, zero interior
+  velocity/acceleration states, and forced-rest policy;
+- the normal distant-mover request succeeded through static BMTP at
+  20.8454 s and 39.5987 deg only after validation against the complete moving
+  scene;
+- a translating-rectangle detour succeeded through the conservative swept
+  BMTP projection at the fixed 20 s horizon, with 10.3005480783 deg selected
+  polyline, 10.7117850149 deg motion, 0.0657896049 deg minimum clearance, and
+  complete collision and kinematic validation.
+
+Verification performed after the final implementation:
+
+- Code Analyzer reported zero messages on all modified MATLAB sources;
+- focused option, Ruckig, sandbox, projection, and fallback-policy tests
+  passed;
+- the complete test tree passed 98/98 in 69.6771 s;
+- all 17 maintained examples ran serially and headlessly: 16 planner and
+  independent-validation successes plus the expected validated
+  `exampleNoPath` failure;
+- a visible `exampleObstacleFree` run passed with jerk enabled, 4.472135955
+  deg polyline and motion length, and 4.53112887415 s duration;
+- the unchanged static-U and moving-barrier sentinels returned
+  20.712447786 s and 10.0903015137 s respectively.
+
+The moving extension is deliberately described as a conservative static
+projection, not a time-dependent separating-plane method. Time-cell BMTP and
+wait-plus-detour support remain unimplemented and visible in the branch
+assessment.
