@@ -96,7 +96,7 @@ wall time, is the criterion that should gate a change on a path the option
 never touches.
 
 
-## Historical: BMTP retained-best stagnation stop, gated off - 2026-08-30
+## Historical: BMTP retained-best stagnation stop, off by default - 2026-08-30
 
 The optional retained-best stop is inert at its default. Four supplied
 sentinels kept their recorded arrivals and smoothed lengths: Target Exits
