@@ -189,17 +189,13 @@ verifyEqual(testCase, sandboxState.Options.AnimationFrameStride, 20);
 verifyEqual(testCase, sandboxState.Options.AnimationPause_s, 0.001);
 verifyEqual(testCase, plannerOptions.MaximumSeedCount, 3);
 verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
-verifyEqual(testCase, plannerOptions.MaximumCollocationSegmentCount, 16);
-verifyEqual(testCase, plannerOptions.MaximumMeshRefinementPasses, 0);
 verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
-verifyEqual(testCase, plannerOptions.MaximumNlpFunctionEvaluations, 5000);
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
 verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "none");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, productionOptions.MaximumSeedCount, 5);
-verifyEqual(testCase, productionOptions.MaximumMeshRefinementPasses, 2);
 end
 
 function testPlannerOptionControlsDriveExport(testCase)

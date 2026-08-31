@@ -69,7 +69,6 @@ goalState = state(3, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
 options.CollocationSegmentCount = 2;
-options.MaximumCollocationSegmentCount = 2;
 farObstacle = rectangleObstacle([0 3], [-100 -90 70 80], 0);
 result = obstacleAvoidance.planTrajectory( ...
     farObstacle, initialState, goalState, limits, options);
@@ -147,8 +146,6 @@ options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
 options.MaximumSeedCount = 1;
 options.CollocationSegmentCount = 3;
-options.MaximumCollocationSegmentCount = 3;
-options.MaximumMeshRefinementPasses = 0;
 options.SampleTime_s = 0.05;
 options.Verbose = false;
 end
