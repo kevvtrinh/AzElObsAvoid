@@ -26,7 +26,7 @@ verifyFalse(testCase, options.EnableStagnationStop);
 verifyEqual(testCase, options.StagnationIterationLimit, 5);
 verifyEqual(testCase, options.StagnationImprovementTolerance_s, ...
     options.ArrivalTimeTolerance_s);
-verifyFalse(testCase, options.EnablePlaneReuse);
+verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, ...
     options.ArrivalTimeTolerance_s);
 end
