@@ -3,6 +3,10 @@
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{microtype}
+% Identifiers such as noCertifiedCavityCandidate are long, are set in
+% typewriter text, and cannot be hyphenated by default. This document names
+% many of them, so allow breaks inside them rather than patching each one.
+\usepackage[htt]{hyphenat}
 \usepackage{xurl}
 \usepackage{booktabs,tabularx,array}
 \usepackage{enumitem}
@@ -79,29 +83,36 @@ the map for the complete walkthrough.
 \node[station,below=4mm of s4] (s5) {\textbf{5. Prepare obstacles} --- cache shapes and motion information; preserve the once-applied safety margin};
 \node[later,below=4mm of s5] (s6) {\textbf{6. Check endpoints} --- detect an invalid start or goal before constructing a motion};
 \node[later,below=4mm of s6] (s7) {\textbf{7. Try direct motion} --- create a direct rest-to-rest motion and independently check it};
-\node[later,below=4mm of s7] (s8) {\textbf{8. Try special constructions} --- fixed-clock excursion, timed opening, and cavity motions where applicable};
-\node[later,below=4mm of s8] (s9) {\textbf{9. Create route candidates} --- search the protected map for deterministic route shapes};
-\node[later,below=4mm of s9] (s10) {\textbf{10. Make one motion per route} --- use the selected trajectory method and record each attempt};
-\node[later,below=4mm of s10] (s11) {\textbf{11. Independently validate} --- check the full timed motion, not only its route points};
-\node[later,below=4mm of s11] (s12) {\textbf{12. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
-\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12}
+\node[later,below=4mm of s7] (s8) {\textbf{8. Fixed-clock lateral excursion} --- seek a collision-free sideways motion on the direct physical clock};
+\node[later,below=4mm of s8] (s9) {\textbf{9. Timed orthogonal opening} --- try one certified opening event where that construction applies};
+\node[later,below=4mm of s9] (s10) {\textbf{10. Orthogonal cavity} --- test each route proposal for one restricted concave-cavity motion};
+\node[later,below=4mm of s10] (s11) {\textbf{11. Create route candidates} --- search the protected map for deterministic route shapes};
+\node[later,below=4mm of s11] (s12) {\textbf{12. Record route proposals} --- retain seeds as inputs to later motion construction, not as answers};
+\node[later,below=4mm of s12] (s13) {\textbf{13. Make one motion per route} --- use the selected trajectory method and record each attempt};
+\node[later,below=4mm of s13] (s14) {\textbf{14. Independently validate} --- check the full timed motion, not only its route points};
+\node[later,below=4mm of s14] (s15) {\textbf{15. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14,s14/s15}
     \draw[flow] (\a.south)--(\b.north);
-\node[exit,right=4mm of s2] (inputerror) {input error\\no result record};
-\draw[early] (s2.east)--(inputerror.west) node[midway,above,font=\scriptsize]{invalid};
-\node[exit,right=4mm of s6] (endpoint) {completed failure result\\invalid endpoint};
-\draw[early] (s6.east)--(endpoint.west) node[midway,above,font=\scriptsize]{not feasible};
-\node[exit,right=4mm of s7] (direct) {return success\\direct motion works};
-\draw[early] (s7.east)--(direct.west) node[midway,above,font=\scriptsize]{passes};
-\node[exit,right=4mm of s8] (special) {return success\\special motion works};
-\draw[early] (s8.east)--(special.west) node[midway,above,font=\scriptsize]{passes};
-\node[exit,right=4mm of s12] (final) {completed result\\success or no validated motion};
-\draw[early] (s12.east)--(final.west);
+\node[exit,right=18mm of s2] (inputerror) {input error\\no result record};
+\draw[early] (s2.east)--(inputerror.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{invalid};
+\node[exit,right=18mm of s6] (endpoint) {completed failure result\\invalid endpoint};
+\draw[early] (s6.east)--(endpoint.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{not feasible};
+\node[exit,right=18mm of s7] (direct) {return success\\direct motion works};
+\draw[early] (s7.east)--(direct.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s8] (excursion) {return success\\excursion works};
+\draw[early] (s8.east)--(excursion.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s9] (opening) {return success\\opening works};
+\draw[early] (s9.east)--(opening.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s10] (cavity) {return success\\cavity works};
+\draw[early] (s10.east)--(cavity.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s15] (final) {completed result\\success or no validated motion};
+\draw[early] (s15.east)--(final.west);
 \end{tikzpicture}
 \end{center}
 \smallskip
-\textit{Figure 1.} The complete route through the planner. Blue boxes are
-written in this milestone; green boxes are deliberately shown now and will be
-written in later milestones.
+\textit{Figure 1.} The complete route through the planner. Stations 1--12
+are written in milestones 1--2; stations 13--15 are deliberately shown now
+and will be written in later milestones.
 \clearpage
 
 \section{The request we follow}
@@ -319,5 +330,241 @@ boundary data with names such as \nolinkurl{createObstacle:InvalidTime},
 has already passed those checks.
 
 \stationSource{+obstacleAvoidance/+obstacles/createObstacle.m:18--22, 66--95, 256--307; +obstacleAvoidance/+obstacles/prepareDynamic.m:1--96; +obstacleAvoidance/+planner/planCorridorQuintic.m:58--63}
+
+\section{Station 6: check endpoints}
+
+\arrival{1. What arrives here.}
+The prepared protected rectangle, normalized start and goal, workspace, motion
+limits, and resolved options arrive with the empty result already available.
+For this request the start is outside the rectangle at time 0, and the static
+goal is outside it at its stated time. The exported endpoint result is
+\texttt{\WalkEndpointFeasible}; its failure-reason field is empty
+(\texttt{\WalkEndpointReason}).
+
+\arrival{2. What this station does to it.}
+It asks whether the protected geometry contains the start and, when required,
+the terminal point. It then compares endpoint velocity and acceleration against
+the limits, checks whether the endpoint displacement fits in the available time
+at the velocity limit, and checks the workspace. It does not create motion.
+
+\arrival{3. What leaves.}
+Our request passes, so the prepared request and incomplete result continue to
+the direct-motion attempt. If a check fails, the caller receives the already
+shaped completed failure result: \texttt{Success=false}, an actionable
+message, and one of \texttt{endpointBlocked},
+\texttt{dynamicEndpointInfeasible}, \texttt{timeWindowInfeasible}, or
+\texttt{endpointOutsideWorkspace}. The planner records that reason and
+returns without trying motion construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+These are expected feasibility outcomes, not input errors. They describe the
+start, terminal point, endpoint derivatives, time window, or workspace that
+failed. Our run has no such outcome.
+
+\stationSource{+obstacleAvoidance/+input/validatePlannerEndpoints.m:30--102; +obstacleAvoidance/+planner/planCorridorQuintic.m:76--85}
+
+\section{Station 7: try direct motion}
+
+\arrival{1. What arrives here.}
+The valid rest-to-rest request arrives. Its endpoints are separated by the
+blocked horizontal chord; the direct constructor's reported duration is
+\WalkDirectDuration\ and its path length is \WalkDirectLength.
+
+\arrival{2. What this station does to it.}
+For the normal BMTP method, it creates an exact synchronized rest-to-rest
+motion directly between the endpoints, then sends that timed motion to the
+public trajectory validator. A construction is not trusted on its own because
+being mathematically buildable does not establish collision freedom or all
+independent motion checks. The code treats that validator as the sole
+authoritative acceptance check.
+
+\arrival{3. What leaves.}
+Our direct motion was built but failed independent collision validation; its
+recorded result is \texttt{\WalkDirectReason}, so the planner continues. If it
+had passed, the caller would receive a completed success result immediately:
+the direct seed and its complete time, position, derivative, and validation
+histories are copied into the public result, \texttt{Success=true}, and
+\texttt{TerminationReason="goalReached"}. No later construction would run.
+
+\arrival{4. What can go wrong here, and what it is called.}
+For a built direct motion that does not pass the independent check, the direct
+attempt record says \texttt{directValidationFailed}; it is evidence for the
+next step, not a final no-path claim. A constructor can also return no motion,
+which later validation records as an unavailable candidate.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:88--122, 454--477, 598--630; trajectory/+bmtpEngine/createDirectMotion.m:1--116}
+
+\section{Station 8: fixed-clock lateral excursion}
+
+\arrival{1. What arrives here.}
+The failed direct motion arrives with a certified direct physical clock. Here
+that clock is \WalkDirectDuration. The construction requires a successful,
+two-coordinate direct record whose duration matches its componentwise lower
+bound, plus a direct validation that failed only on collision-related grounds.
+
+\arrival{2. What this station does to it.}
+It first tries a static sequence of barriers attached to a workspace side. If
+that is not available, it tries an endpoint-flat alternating progress
+polynomial, then enumerates sideways axis excursions and checks screened
+motions independently. The documented purpose is to preserve the direct clock
+while adding a lateral detour; beyond that operational description, the source
+does not state a broader reason for this ordering.
+
+\arrival{3. What leaves.}
+In our request the barrier-sequence form was skipped because the rectangle is
+not attached to exactly one lateral workspace side
+(\texttt{\WalkBarrierReason}). The progress form was tried but had no
+sampled-clear amplitude (\texttt{\WalkProgressReason}). The axis enumeration
+screened \WalkFixedClockScreeningCount\ proposals and independently checked
+\WalkFixedClockValidationCount; none passed, producing
+\texttt{\WalkFixedClockReason}. If one had passed, the caller would receive
+the same immediate completed success result as the direct early finish, now
+with a seed whose source records the fixed-clock construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+The diagnostic distinguishes unsupported request shapes from failed proposals:
+for example \texttt{unsupportedChangingRequest},
+\texttt{unsupportedClockOwnership}, and \texttt{noExcursionRoom} say this
+restricted construction cannot be used; \texttt{noValidatedExcursion} says its
+enumerated proposals did not pass. Neither is a statement that no motion
+exists.
+
+\stationSource{+obstacleAvoidance/+planner/createFixedClockLateralExcursion.m:50--169, 171--320, 324--445, 566--690; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
+
+\section{Station 9: timed orthogonal opening}
+
+\arrival{1. What arrives here.}
+The original obstacle history, endpoints, limits, and options arrive. This is a
+separate construction after the fixed-clock attempt; it is not a sideways
+excursion.
+
+\arrival{2. What this station does to it.}
+It first asks for a request-wide lower-bound certificate with one interior
+opening event. In plain words, ``opens at a topology event'' means the
+protected geometry changes at one particular time so that the previously
+blocked centerline crossing becomes clear, and remains the required crossing
+for this construction. If that evidence exists, the code computes a wait, a
+direct constant-jerk motion through the event, and independently validates the
+full timed candidate.
+
+\arrival{3. What leaves.}
+The function was called for our request, but no motion was built:
+\texttt{Attempted=\WalkTimedOpeningAttempted} and the recorded reason is
+\texttt{\WalkTimedOpeningReason}. This static rectangle supplies no single
+opening event. It would run its motion construction when the certificate finds
+one supported event within the request time interval and a clear centerline.
+If its validated motion also meets the infimum-gap policy, the caller receives
+an immediate completed \texttt{goalReached} result; otherwise it remains an
+attempt and later search continues.
+
+\arrival{4. What can go wrong here, and what it is called.}
+The certificate can reject the request with names such as
+\texttt{singleOpeningEventNotFound}, \texttt{openedCenterlineNotClear},
+\texttt{unsupportedSwitchingRegime}, or \texttt{eventTimeWindowInfeasible}.
+They state why this special construction was unavailable, not that all motion
+is impossible.
+
+\stationSource{+obstacleAvoidance/+planner/certifyTimedOpeningRequestLowerBound.m:56--111; +obstacleAvoidance/+planner/createTimedOrthogonalOpeningMotion.m:40--190; +obstacleAvoidance/+planner/planCorridorQuintic.m:148--185}
+
+\section{Station 10: orthogonal cavity}
+
+\arrival{1. What arrives here.}
+This station receives each route proposal after route creation, together with
+the prepared obstacles and endpoint request. In this run it receives
+\WalkCavityAttemptCount\ proposals.
+
+\arrival{2. What this station does to it.}
+For every proposal it tests eight signed and permuted coordinate frames for a
+particular orthogonal concave cavity pattern. If it detects that pattern, it
+constructs a rounded-corner, piecewise-constant-jerk tangent motion, makes a
+plane certificate, and still sends the result to the independent validator.
+
+\arrival{3. What leaves.}
+All \WalkCavityAttemptCount\ proposals were examined here. None produced a
+certified cavity motion; each records \texttt{\WalkCavityReason}. The code
+therefore continues to the regular motion solver. If the cavity portfolio had
+a validated motion with the required lower-bound agreement, the caller would
+instead receive an immediate completed \texttt{goalReached} result with that
+seed and its motion histories.
+
+\arrival{4. What can go wrong here, and what it is called.}
+This is deliberately narrow. It refuses non-rest endpoints
+(\texttt{unsupportedEndpointDerivative}), wrapping or another goal policy
+(\texttt{unsupportedGoalPolicy}), an unsupported velocity/acceleration/jerk
+branch, dynamic or inactive geometry
+(\texttt{unsupportedDynamicObstacle}), and geometry that does not contain the
+tested cavity pattern. Those are capability limits of this construction; they
+do not establish that a different motion does not exist.
+
+\stationSource{+obstacleAvoidance/+planner/createOrthogonalCavityMotion.m:45--165, 169--259; +obstacleAvoidance/+planner/planCorridorQuintic.m:187--274}
+
+\section{Station 11: create route candidates}
+
+\arrival{1. What arrives here.}
+The prepared protected map and request arrive after the early constructions.
+For this request the visibility graph has \WalkVisibilityNodeCount\ nodes and
+considers \WalkVisibilityPairCount\ candidate line pairs.
+
+\arrival{2. What this station does to it.}
+It always records the direct endpoint proposal first. It then makes one
+protected visibility graph from obstacle slices, with start, goal, and small
+outward-offset boundary vertices as nodes. A candidate line is accepted only
+when its midpoint is outside the shape and it neither crosses nor overlaps a
+protected boundary; otherwise it is rejected. It searches distinct spatial
+route families using representatives inside occupied regions, retaining only
+routes that are longer than the direct chord and can fit the request duration.
+
+For moving obstacles it also uses input-derived time layers: it marks which
+nodes are free at each layer, adds wait and motion transitions that can reach a
+later layer, samples each moving edge, and reconstructs a timed route from
+parent links. Our obstacle history is static, so its temporal layer count is
+\WalkTemporalLayerCount\ and this part was skipped with
+\texttt{\WalkTimedSuppressionReason}; it would run when the obstacle history
+changes during the request.
+
+\arrival{3. What leaves.}
+The graph accepted \WalkVisibilityAcceptedCount\ candidate lines and rejected
+\WalkVisibilityRejectedCount. It found \WalkHomologyClassCount\ distinct
+spatial route families and emitted \WalkGeneratedSeedCount\ ordered proposals:
+the direct chord and two visibility routes. The exported seed lengths are
+\WalkSeedOneLength, \WalkSeedTwoLength, and \WalkSeedThreeLength. They leave
+with graph counts, explored states, frontier states, and the best partial route
+for later motion construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+The graph builder bounds its work and its output explains reduced or bounded
+coverage. An empty timed or spatial search produces fewer proposals and its
+diagnostic arrays rather than a claim that all continuous routes have been
+ruled out. The direct proposal is still retained first.
+
+\stationSource{+obstacleAvoidance/+search/createRouteCandidates.m:33--171, 195--368, 382--465, 468--492; +obstacleAvoidance/+search/timeExpandedVisibilitySearch.m:32--162}
+
+\section{Station 12: what a seed is}
+
+\arrival{1. What arrives here.}
+The \WalkGeneratedSeedCount\ route proposals created above arrive as seed
+records. In this request seed 1 is \texttt{\WalkSeedOneSource}; seeds 2 and 3
+are both \texttt{\WalkSeedTwoSource}. Their estimated durations are
+\WalkSeedOneDuration, \WalkSeedTwoDuration, and \WalkSeedThreeDuration.
+
+\arrival{2. What this station does to it.}
+A seed stores an index, source label, ordered polyline, normalized route
+parameter \texttt{tau}, optional corridor boundary, estimated duration, and
+length. It is a geometric or timed proposal that later code uses to initialize
+one motion attempt. It is not a trajectory and has not earned a success flag.
+
+\arrival{3. What leaves.}
+All three seeds leave in deterministic order for the later BMTP stage. The
+eventual selected answer is seed \WalkSelectedSeedIndex, the upper visibility
+route, but that fact is not decided here: seed 2 also later produces a valid
+motion, and seed 1 does not. The next milestone explains how these proposals
+become motion candidates and why seed 3 is selected.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A seed can be empty or later fail its motion solve or independent validation.
+That is why the stable record begins with empty route fields and \texttt{NaN}
+estimates. Calling a seed an answer would hide this distinction.
+
+\stationSource{+obstacleAvoidance/+search/createSeed.m:22--30; +obstacleAvoidance/+search/createRouteCandidates.m:401--415; +obstacleAvoidance/+planner/planCorridorQuintic.m:276--401}
 
 \end{document}
