@@ -9,6 +9,8 @@ function result = planMovingTargetIntercept(varargin)
 %**************************************************************************
 % PURPOSE
 %   - Convert sampled target motion into fixed-time planner requests.
+%   - Use a fixed arrival time for every planner trial because each trial
+%     evaluates one selected intercept time.
 %   - Enumerate every algebraic event for an obstacle-free linear target;
 %     otherwise retain a bounded chronological planner search.
 %**************************************************************************
@@ -151,6 +153,8 @@ else
     achievedTime_s = NaN;
     achievedTarget_deg = [NaN NaN];
 end
+% Every trial overwrites this mode before invoking the public planner.
+options.PlannerOptions.GoalTimeMode = "fixedArrival";
 policies = ["zero", "target"];
 result.Intercept = struct("Mode", options.InterceptMode, ...
     "Time_s", achievedTime_s, "TargetPosition_deg", achievedTarget_deg, ...
