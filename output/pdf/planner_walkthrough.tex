@@ -61,8 +61,8 @@ order. It is a process walkthrough, not a second introduction to the problem.
 \section{The whole assembly line}
 \label{sec:assembly-line}
 
-Read this page from top to bottom. Each numbered box has, or will have, a
-matching station section. An arrow to the right is an early finish: either an
+Read this page from top to bottom. Each numbered box has a matching station
+section. An arrow to the right is an early finish: either an
 input error before a result exists, or a completed result after the empty
 result has been prepared. The later boxes are included now so this page remains
 the map for the complete walkthrough.
@@ -92,7 +92,7 @@ the map for the complete walkthrough.
 \node[later,below=4mm of s13] (s14) {\textbf{14. Shape the BMTP curve} --- turn a route into connected Bezier spans};
 \node[later,below=4mm of s14] (s15) {\textbf{15. Solve the first curve problem} --- minimize shared time under motion limits};
 \node[later,below=4mm of s15] (s16) {\textbf{16. Find a first safe attempt} --- test each unconstrained curve against obstacles};
-\node[later,below=4mm of s16] (s17) {\textbf{17. Draw safety lines} --- solve maximum-clearance separating planes};
+\node[later,below=4mm of s16] (s17) {\textbf{17. Draw safety lines} --- solve maximum-clearance safety lines};
 \node[later,below=4mm of s17] (s18) {\textbf{18. Alternate and stop} --- update curve and lines, optionally reuse unchanged lines};
 \node[later,below=4mm of s18] (s19) {\textbf{19. Finish the BMTP motion} --- project ends, stretch time, and certify};
 \node[later,below=4mm of s19] (s20) {\textbf{20. Independently validate} --- check the full timed motion, not only its route points};
@@ -116,9 +116,8 @@ the map for the complete walkthrough.
 \end{tikzpicture}
 \end{center}
 \smallskip
-\textit{Figure 1.} The complete route through the planner. Stations 1--12
-are written in milestones 1--2; stations 13--19 are written in this milestone.
-Stations 20--21 are deliberately shown now and will be written later.
+\textit{Figure 1.} The complete route through the planner. Each numbered box
+has one matching station below, from public entry through the completed result.
 \clearpage
 
 \section{The request we follow}
@@ -483,7 +482,7 @@ the prepared obstacles and endpoint request. In this run it receives
 For every proposal it tests eight signed and permuted coordinate frames for a
 particular orthogonal concave cavity pattern. If it detects that pattern, it
 constructs a rounded-corner, piecewise-constant-jerk tangent motion, makes a
-plane certificate, and still sends the result to the independent validator.
+safety-line certificate, and still sends the result to the independent validator.
 
 \arrival{3. What leaves.}
 All \WalkCavityAttemptCount\ proposals were examined here. None produced a
@@ -735,7 +734,7 @@ retaining the line.
 
 \arrival{3. What leaves.}
 Verified lines become fixed coefficients in the next trajectory SOCP. The
-selected-route diagnostic records \WalkSelectedPlaneSocpCount\ plane SOCPs and
+selected-route diagnostic records \WalkSelectedPlaneSocpCount\ safety-line SOCPs and
 \WalkSelectedTrajectorySocpCount\ trajectory SOCPs. It retains the failed pair
 and line if a verification fails, rather than silently continuing.
 
@@ -767,14 +766,14 @@ net and duration, so the existing arrival-improvement test ended the loop.
 Our selected route did not use it:
 \texttt{PlaneReuseApplied=\WalkSelectedPlaneReuseApplied}.
 
-The recorded trade is deliberately visible: on one reference example plane
+The recorded trade is deliberately visible: on one reference example safety-line
 reuse was 41\% faster and arrived 0.016643674134 s later. That arrival cost
 was accepted; it is a single measurement, not a general performance claim.
 
 \arrival{3. What leaves.}
 The loop retains the shortest collision-free control net seen so far, not just
 the last trial. It also records trial duration, collision-pair count,
-collision-free status, trajectory and plane call counts, and reuse differences.
+collision-free status, trajectory and safety-line call counts, and reuse differences.
 It does not retain the geometry of every intermediate curve, so this document
 does not draw those unrecorded curves.
 
@@ -806,12 +805,12 @@ stretching returns \texttt{timeWindowInfeasible} or
 \texttt{fixedArrivalInfeasible}; an earliest-arrival motion keeps the stretched
 time. The engine then converts controls to power polynomials, samples them for
 the public record, and verifies every output span against every supplied region
-with its plane certificate.
+with its safety-line certificate.
 
 \arrival{3. What leaves.}
 The selected candidate leaves with time, position, velocity, acceleration, and
 jerk histories; polynomial coefficients; arrival time \WalkArrivalTime; and a
-motion and plane certificate. Its final duration is longer than its retained
+motion and safety-line certificate. Its final duration is longer than its retained
 optimizer trials because midpoint subdivision and post-projection dilation are
 part of the published certificate path, not a hidden correction.
 
@@ -823,5 +822,147 @@ certificate sets the engine candidate to \texttt{goalReached}. Station 20 will
 independently check that motion before the planner is allowed to return it.
 
 \stationSource{trajectory/+bmtpEngine/solve.m:276--338, 428--439, 754--824, 896--1003}
+
+\section{Station 20: independently validate}
+
+\arrival{1. What arrives here.}
+One constructed candidate arrives with the original normalized request. The
+candidate provides sampled time, position, velocity, acceleration, and jerk
+histories, its polynomial segments, and any seed-corridor or safety-line
+certificate. The request provides the protected obstacles, start and goal
+states, workspace and derivative limits, and resolved options. The builder's
+success flag is not an input to the decision.
+
+\arrival{2. What this station examines.}
+The checker first requires compatible finite histories and a strictly increasing
+time base. It compares the sampled endpoints and endpoint derivatives with the
+request, applying the fixed-arrival or earliest-arrival time policy. It then
+checks the polynomial format, its time base, continuity, endpoint states, and
+agreement with the sampled histories. From the polynomial itself it checks
+position against the workspace and velocity, acceleration, and jerk against
+their limits over the whole smooth motion, including stationary points between
+samples.
+
+It also establishes collision freedom over the full time-parameterized motion,
+not merely at route points. For a static safety-line certificate it rebuilds the
+convex regions from the protected shape, converts the published power
+polynomials independently to Bernstein controls, and rechecks every
+span--region separation and clearance. If that evidence is unavailable, it
+tries the seed-corridor certificate, then an adaptive collision check. Unresolved
+continuous intervals fail closed. Finally it checks that original obstacle
+geometry and one nonnegative applied safety margin are present; when azimuth
+wrapping is off, it also requires the position to remain in the workspace.
+
+The builder is not allowed to judge its own output because its construction
+arithmetic, cached regions, or certificate fields could share the same error as
+the proposed motion. This checker reconstructs the relevant regions and
+converts the polynomial independently instead of trusting a claimed certificate
+or a builder-provided pass flag. That separation is mechanical: it compares the
+published motion and the original request against freshly rebuilt evidence.
+
+\arrival{3. What leaves.}
+One stable validation record leaves. It contains \texttt{Passed} and an
+actionable \texttt{Message}; the individual history, endpoint, polynomial,
+continuous-limit, dynamic-consistency, collision, collision-resolution,
+safety-margin, and azimuth-wrap check results; continuity and history residuals;
+per-axis maximum sampled derivatives; minimum clearance; collision and
+unresolved-interval counts; which seed-corridor or safety-line certificate was
+independently established; the failed check names in \texttt{Issues}; and
+collision-checking and total validation elapsed time.
+
+\arrival{4. What can fail here, and what each name means.}
+The validator reports the following failed-check names in \texttt{Issues}:
+\texttt{history shape} means the histories do not have the required common
+N-by-2 form; \texttt{finite increasing time} means time is missing, nonfinite,
+or not strictly increasing; and \texttt{finite histories} means a required
+sample is nonfinite. \texttt{initial state}, \texttt{terminal state}, and
+\texttt{goal time} mean the published endpoints or arrival do not meet the
+request and its time policy. \texttt{polynomial format}, \texttt{polynomial
+initial time}, \texttt{polynomial time base}, \texttt{polynomial segment
+continuity}, \texttt{polynomial endpoint states}, and \texttt{polynomial
+sampled histories} mean the polynomial record is malformed, begins at the
+wrong time, uses an inconsistent time base, is discontinuous, misses its
+endpoint state, or disagrees with its samples. \texttt{continuous limits} means
+the smooth position or a derivative exceeds its workspace or physical limit;
+\texttt{polynomial dynamics} means the reported derivative histories disagree
+with the polynomial. \texttt{collision freedom} means contact or insufficient
+clearance was found; \texttt{collision resolution} means a continuous interval
+could not be proved clear. \texttt{safety-margin provenance} means original
+geometry or a finite nonnegative recorded margin is missing. \texttt{azimuth-wrap
+policy} means an unwrapped motion left the workspace. Any one of these leaves
+\texttt{Passed=false}.
+
+\stationSource{+obstacleAvoidance/validateTrajectory.m:1--145, 181--242, 244--340, 452--477, 499--560; +obstacleAvoidance/+validation/validatePolynomialTrajectory.m:1--173}
+
+\section{Station 21: select and return}
+
+\arrival{1. What is eligible.}
+All seed summaries arrive with their constructed candidates. Only the indices
+whose \texttt{ValidationPassed} field is true are eligible. An optimizer result,
+a collision scan, or a builder's own success flag cannot make an unvalidated
+candidate eligible.
+
+\arrival{2. How eligible candidates are ordered.}
+The source sorts every key in ascending order. For a fixed-arrival request the
+keys are, in order: \texttt{MotionLength\_deg},
+\texttt{IntegratedSquaredJerk\_deg2\_s5}, and seed index. For the
+earliest-arrival request in this walkthrough, it prepends
+\texttt{ArrivalTime\_s}: arrival time, motion length, integrated squared jerk,
+then seed index. The final key makes an exact tie deterministic. Our two
+validated visibility-route candidates therefore reach this comparison, and
+seed \WalkSelectedSeedIndex, the upper route, wins under that ordering.
+
+\arrival{3. What happens when none passed.}
+The planner returns the stable empty-result shape with
+\texttt{Success=false},
+\texttt{TerminationReason="noValidatedSeed"}, and the message
+\texttt{"No compact motion passed independent validation."} followed, when
+available, by the best attempt's message. It keeps all seeds, candidate
+summaries, grid evidence, direct and special-construction records, timings, and
+the original normalized inputs. Its diagnostic record also identifies a best
+partial seed by, in order, resolved collision evidence, smaller maximum
+constraint violation, greater minimum clearance, and then original index. This
+is evidence of the attempts made, not a conclusion that no safe motion exists.
+
+\arrival{4. What the caller finally receives.}
+On success the caller receives \texttt{Success}, \texttt{Message}, and
+\texttt{TerminationReason}; resolved \texttt{Options} and \texttt{Inputs};
+all \texttt{Seeds} and \texttt{SeedSummaries};
+\texttt{SelectedSeedIndex} and \texttt{SelectedSeed\_deg}; complete
+\texttt{time\_s}, \texttt{position\_deg}, \texttt{velocity\_deg\_s},
+\texttt{acceleration\_deg\_s2}, and \texttt{jerk\_deg\_s3} histories;
+\texttt{Polynomial}, \texttt{SeedCorridorBoundary\_deg},
+\texttt{SeedCorridor}, \texttt{PlaneCertificate}, and the independent
+\texttt{Validation} record. It also returns \texttt{ArrivalTime\_s},
+\texttt{TrajectoryDuration\_s}, \texttt{GoalHorizon\_s},
+\texttt{FirstValidatedMotionTime\_s}, and
+\texttt{ElapsedPlanningTime\_s}.
+
+\texttt{SearchDiagnostics} accompanies those fields: grid and route-search
+evidence, every seed summary, attempted and validated candidate counts, the
+first validated-motion time, selected best-partial index, its termination
+reason, early-construction records, and stage timing. The same named fields
+exist on the no-validated-motion return, with documented empty values where no
+motion exists.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:364--400, 518--545, 801--832; +obstacleAvoidance/+planner/createEmptyResult.m:39--120}
+
+\section{What this run produced}
+
+The request that began at $[-5,0]$ degrees at time 0 reached $[5,0]$ degrees
+at \WalkArrivalTime. Its published motion length is \WalkMotionLength. The
+winning candidate is seed \WalkSelectedSeedIndex, the upper visibility route;
+its complete smooth motion, polynomial record, safety-line certificate, and
+independent validation accompany the result. The diagnostics retain the three
+route proposals, the direct and restricted-construction outcomes, the search
+counts, each candidate summary, the selected seed, collision and clearance
+evidence, and stage timings.
+
+This result says that this constructed motion passed the independent check for
+the stated request and limits. It does not prove that no shorter, earlier, or
+otherwise better safe motion exists outside the candidates and constructions
+examined here.
+
+\stationSource{examples/exampleObstacleAvoidance.m:23--59; +obstacleAvoidance/+planner/planCorridorQuintic.m:362--400; +obstacleAvoidance/validateTrajectory.m:97--145}
 
 \end{document}
