@@ -22,6 +22,10 @@ verifyEqual(testCase, options, expected);
 verifyFalse(testCase, isfield(options, "MotionMethod"));
 verifyFalse(testCase, isfield(options, "RandomSeed"));
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
+verifyFalse(testCase, options.EnableStagnationStop);
+verifyEqual(testCase, options.StagnationIterationLimit, 5);
+verifyEqual(testCase, options.StagnationImprovementTolerance_s, ...
+    options.ArrivalTimeTolerance_s);
 end
 
 function testPartialOverridesResolveAndNormalize(testCase)
@@ -33,6 +37,9 @@ overrides = struct( ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
     "MaximumWaitRefinementIterations", 8, ...
+    "EnableStagnationStop", 1, ...
+    "StagnationIterationLimit", 8, ...
+    "ArrivalTimeTolerance_s", 2e-3, ...
     "Verbose", 1);
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 
@@ -54,6 +61,9 @@ verifyEqual(testCase, ...
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
+verifyTrue(testCase, options.EnableStagnationStop);
+verifyEqual(testCase, options.StagnationIterationLimit, 8);
+verifyEqual(testCase, options.StagnationImprovementTolerance_s, 2e-3);
 verifyTrue(testCase, options.Verbose);
 end
 

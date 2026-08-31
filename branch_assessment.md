@@ -6,6 +6,40 @@ of approaches already tried. Superseded benchmark matrices remain in
 work is retained here only when it records a mechanism, outcome, or warning
 that should influence future planner work.
 
+## BMTP retained-best stagnation stop, gated off - 2026-08-30
+
+The optional retained-best stop is inert at its default. Four supplied
+sentinels kept their recorded arrivals and smoothed lengths: Target Exits
+`24 / 22.554006042022394`, Obstacle Avoidance
+`7.574541766321258 / 11.411861387735195`, Static U
+`20.712447786011488 / 40.255028504000862`, and Two Opposing U
+`21.633333333333336 / 24.096812127187516` (seconds / degrees). All four
+passed independent validation.
+
+With `EnableStagnationStop=true`, `StagnationIterationLimit=5`, and the
+resolved arrival tolerance, the diagnostic `1e-4 deg` Target case reduced
+from 42 outer iterations and 433 conic calls to 18 and 159 without moving its
+returned `24 s` arrival or `22.555163889326948 deg` smoothed path. The default
+Target case also triggered, reducing 17 / 138 to 15 / 120 while retaining its
+exact returned result. The other three production sentinels executed no BMTP
+conic calls, so the option was a mechanical null there.
+
+After one discarded warm-up, the `1e-4 deg` raw off walls were
+`57.1787115 / 56.4846390 / 55.8231577 s`; enabled walls were
+`24.9188578 / 26.2214737 / 25.3317567 s`. Thus the observed min / median
+changed from `55.8231577 / 56.4846390 s` to `24.9188578 / 25.3317567 s`.
+This is a diagnostic-clearance benefit, not a claim about every production
+scene or a reason to enable the option by default.
+
+The adverse horizon sentinel is also a null: at 180 s, both modes returned
+the independently validated `100.664824112242897 s` motion with 22 / 598
+outer / conic work and no stagnation trigger. The 360 s control stayed at
+`100.675947361398343 s`, also with no trigger. This does not establish a
+production-wide performance win. The documented default remains off; enable
+only as an explicit diagnostic/runtime tradeoff because the retained
+best-before-stop can be worse than a later oscillating iterate even when the
+returned example result does not move.
+
 ## BMTP immutable SOCP cache retained - 2026-08-30
 
 The measured reconstruction bottleneck was reduced without moving an answer.
