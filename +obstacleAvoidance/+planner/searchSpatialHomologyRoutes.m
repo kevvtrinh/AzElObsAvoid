@@ -206,7 +206,7 @@ searchGraph = graph(cost_deg, "upper", "omitselfloops");
 seenPaths = cell(size(positions_deg, 1) + 1, 1);
 seenPaths{1} = primaryNodePath;
 seenCount = 1;
-bestLength_deg = routeLength(bestRoute_deg);
+bestLength_deg = obstacleAvoidance.geometry.routeLength(bestRoute_deg);
 for waypoint = 1:size(positions_deg, 1)
     firstPath = shortestpath(searchGraph, 1, waypoint);
     secondPath = shortestpath(searchGraph, waypoint, 2);
@@ -234,7 +234,7 @@ for waypoint = 1:size(positions_deg, 1)
         fieldName = fields(fieldIndex);
         record.(fieldName) = record.(fieldName) + cleanup.(fieldName);
     end
-    cleanedLength_deg = routeLength(cleaned_deg);
+cleanedLength_deg = obstacleAvoidance.geometry.routeLength(cleaned_deg);
     if isequal(candidateSignature, requiredSignature) && ...
             cleanedLength_deg < bestLength_deg - 1e-12
         bestRoute_deg = cleaned_deg;
@@ -254,11 +254,6 @@ end
 function key = stateKey(node, signature)
 % Encode one augmented state without floating-point or ordering ambiguity.
 key = strjoin([string(node), string(double(signature(:).'))], ":");
-end
-
-function length_deg = routeLength(route_deg)
-% Measure Euclidean polyline length for deterministic portfolio selection.
-length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
 end
 
 function [stateNode, stateSignature, stateCost_deg, parentState, closed] = ...

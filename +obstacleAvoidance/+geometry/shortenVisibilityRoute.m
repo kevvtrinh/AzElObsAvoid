@@ -33,7 +33,7 @@ function [cleanedRoute_deg, record] = shortenVisibilityRoute( ...
 %% Section 1: Select Decision-Faithful Shortcuts
 
 cleanedRoute_deg = route_deg;
-initialLength_deg = routeLength(route_deg);
+initialLength_deg = obstacleAvoidance.geometry.routeLength(route_deg);
 record = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
     "HomologyRejectedCount", 0, "AcceptedCount", 0, "LengthReduction_deg", 0);
 if size(route_deg, 1) < 3 || ...
@@ -41,14 +41,15 @@ if size(route_deg, 1) < 3 || ...
     return;
 end
 while size(cleanedRoute_deg, 1) >= 3
-    currentLength_deg = routeLength(cleanedRoute_deg);
+    currentLength_deg = obstacleAvoidance.geometry.routeLength(cleanedRoute_deg);
     lengthTolerance_deg = max(1e-12, 1e-12 * currentLength_deg);
     bestReduction_deg = 0;
     bestRoute_deg = cleanedRoute_deg;
     for firstIndex = 1:size(cleanedRoute_deg, 1) - 2
         for secondIndex = firstIndex + 2:size(cleanedRoute_deg, 1)
             record.CandidateCount = record.CandidateCount + 1;
-            reduction_deg = routeLength(cleanedRoute_deg(firstIndex:secondIndex, :)) - ...
+            reduction_deg = obstacleAvoidance.geometry.routeLength( ...
+                cleanedRoute_deg(firstIndex:secondIndex, :)) - ...
                 norm(cleanedRoute_deg(secondIndex, :) - cleanedRoute_deg(firstIndex, :));
             if reduction_deg <= lengthTolerance_deg
                 continue;
@@ -77,12 +78,6 @@ while size(cleanedRoute_deg, 1) >= 3
     cleanedRoute_deg = bestRoute_deg;
     record.AcceptedCount = record.AcceptedCount + 1;
 end
-record.LengthReduction_deg = initialLength_deg - routeLength(cleanedRoute_deg);
-end
-
-%% Section 2: Local Functions
-
-function length_deg = routeLength(route_deg)
-% Measure Euclidean polyline length for strict shortcut comparisons.
-length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
+record.LengthReduction_deg = initialLength_deg - ...
+    obstacleAvoidance.geometry.routeLength(cleanedRoute_deg);
 end

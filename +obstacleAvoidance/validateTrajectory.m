@@ -450,6 +450,8 @@ valid = isstruct(plane) && isscalar(plane) && ...
 end
 
 function bernstein = powerToBernstein(power)
+% Deliberately independent from motion construction so a shared arithmetic
+% error cannot make generated motions and independent checking agree.
 % Convert ascending power coefficients to same-degree Bernstein controls.
 degree = size(power, 1) - 1;
 transform = zeros(degree + 1);

@@ -51,6 +51,8 @@ inequality = inequalityMatrix(:);
 end
 
 function coefficient = convertPowerToBernstein(powerCoefficient)
+% Deliberately independent from certification conversions so a shared
+% arithmetic error cannot make corridor construction and checking agree.
 % Convert ascending power coefficients exactly on the normalized interval.
 degree = size(powerCoefficient, 1) - 1;
 persistent conversionMatrixByDegree

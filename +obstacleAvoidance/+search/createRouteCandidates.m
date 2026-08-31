@@ -394,7 +394,7 @@ end
 seed.position_deg = route_deg;
 seed.tau = (routeTime_s - routeTime_s(1)) / (routeTime_s(end) - routeTime_s(1));
 seed.EstimatedDuration_s = routeTime_s(end) - routeTime_s(1);
-seed.Length_deg = routeLength(route_deg);
+seed.Length_deg = obstacleAvoidance.geometry.routeLength(route_deg);
 seeds(end + 1, 1) = seed;
 end
 
@@ -489,9 +489,4 @@ end
 function duration_s = routeDuration(route_deg, limits)
 % Bound independent-axis traversal by total variation and velocity limits.
 duration_s = max([1e-3, sum(abs(diff(route_deg, 1, 1)), 1) ./ limits.maxVelocity_deg_s]);
-end
-
-function length_deg = routeLength(route_deg)
-% Measure Euclidean polyline length.
-length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
 end

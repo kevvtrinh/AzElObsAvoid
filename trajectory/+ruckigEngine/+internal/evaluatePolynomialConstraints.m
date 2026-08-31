@@ -119,6 +119,8 @@ bernstein = bernstein(:);
 end
 
 function coefficient = convertPowerToBernstein(powerCoefficient)
+% Deliberately independent from obstacle-side conversions so one arithmetic
+% error cannot make motion production and certification agree.
 % Convert ascending powers to same-degree Bernstein coefficients on [0,1].
 powerCoefficient = double(powerCoefficient);
 if isvector(powerCoefficient)
