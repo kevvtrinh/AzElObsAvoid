@@ -113,6 +113,25 @@ verifyEqual(testCase, hs3Options.CollocationSegmentCount, 6);
 verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
 end
 
+function testExampleResolverForwardsDeprecatedPlannerOptions(testCase)
+% Preserve legacy planner fields only until the planner migration shim runs.
+legacyOptions = struct( ...
+    "WaypointWarmStartMode", "passThrough", ...
+    "RequestedWaypointWarmStartMode", "none", ...
+    "IsWaypointWarmStartAvailable", true, ...
+    "PlotOutputs", false);
+lastwarn("", "");
+[forwardedOptions, ~] = resolveExampleOptions(legacyOptions, struct());
+[~, warningIdentifier] = lastwarn;
+verifyEmpty(testCase, warningIdentifier);
+verifyEqual(testCase, forwardedOptions.WaypointWarmStartMode, "passThrough");
+verifyEqual(testCase, forwardedOptions.RequestedWaypointWarmStartMode, "none");
+verifyTrue(testCase, forwardedOptions.IsWaypointWarmStartAvailable);
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(forwardedOptions), ...
+    "planTrajectory:DeprecatedWaypointWarmStartOptions");
+end
+
 function testUniformMaximumJerkRouting(testCase)
 % Verify that every example routes the shared jerk control into limits.
 exampleNames = [ ...

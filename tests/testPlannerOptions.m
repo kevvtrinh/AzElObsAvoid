@@ -22,6 +22,9 @@ verifyEqual(testCase, options, expected);
 verifyFalse(testCase, isfield(options, "MotionMethod"));
 verifyFalse(testCase, isfield(options, "RandomSeed"));
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
+verifyFalse(testCase, isfield(options, "WaypointWarmStartMode"));
+verifyFalse(testCase, isfield(options, "RequestedWaypointWarmStartMode"));
+verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
@@ -36,7 +39,6 @@ overrides = struct( ...
     "GoalTimeMode", 'fixedArrival', ...
     "TrajectoryMethod", 'ruckigWaypoint', ...
     "UnsupportedTimedTopologyPolicy", 'ruckigStopAtWaypoints', ...
-    "WaypointWarmStartMode", 'passThrough', ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
     "MaximumWaitRefinementIterations", 8, ...
@@ -49,25 +51,41 @@ verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
 verifyEqual(testCase, options.TrajectoryMethod, "ruckigWaypoint");
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
-expectedWarmStartMode = "none";
-repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
-if isfile(fullfile(repositoryRoot, "+obstacleAvoidance", ...
-        "+planner", "ruckigWarmStart.m"))
-    expectedWarmStartMode = "passThrough";
-end
-verifyEqual(testCase, options.WaypointWarmStartMode, expectedWarmStartMode);
-verifyEqual(testCase, options.RequestedWaypointWarmStartMode, "passThrough");
-verifyEqual(testCase, options.IsWaypointWarmStartAvailable, ...
-    expectedWarmStartMode == "passThrough");
-replayedOptions = obstacleAvoidance.input.resolvePlannerOptions(options);
-verifyEqual(testCase, ...
-    replayedOptions.RequestedWaypointWarmStartMode, "passThrough");
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, 2e-3);
 verifyTrue(testCase, options.Verbose);
+end
+
+function testDeprecatedWaypointWarmStartOptionsWarnOnceAndAreRemoved(testCase)
+% Accept one-release legacy inputs without echoing dormant controls.
+legacyNames = ["WaypointWarmStartMode", ...
+    "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable"];
+partialOptions = struct( ...
+    "WaypointWarmStartMode", "invalid", ...
+    "RequestedWaypointWarmStartMode", "passThrough", ...
+    "IsWaypointWarmStartAvailable", true);
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(partialOptions), ...
+    "planTrajectory:DeprecatedWaypointWarmStartOptions");
+resolvedPartial = callWithoutDeprecatedWarning(partialOptions);
+for fieldName = legacyNames
+    verifyFalse(testCase, isfield(resolvedPartial, fieldName));
+end
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.WaypointWarmStartMode = "none";
+oldResolvedOptions.RequestedWaypointWarmStartMode = "passThrough";
+oldResolvedOptions.IsWaypointWarmStartAvailable = false;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedWaypointWarmStartOptions");
+replayedOptions = callWithoutDeprecatedWarning(oldResolvedOptions);
+for fieldName = legacyNames
+    verifyFalse(testCase, isfield(replayedOptions, fieldName));
+end
 end
 
 function testUnknownFieldsWarnOnceAndRemainIgnored(testCase)
@@ -101,9 +119,6 @@ verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
 verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
     struct("UnsupportedTimedTopologyPolicy", "invalid")), ...
     "planTrajectory:InvalidUnsupportedTimedTopologyPolicy");
-verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
-    struct("WaypointWarmStartMode", "invalid")), ...
-    "planTrajectory:InvalidWaypointWarmStartMode");
 verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
     struct("DirectSeedOnly", true)), ...
     "planTrajectory:UnknownOptions");
@@ -115,6 +130,14 @@ end
 function options = callWithoutWarning(overrides)
 % Suppress the already-verified aggregate warning for output inspection.
 warningState = warning("off", "planTrajectory:UnknownOptions");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutDeprecatedWarning(overrides)
+% Suppress the already-verified migration warning for output inspection.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedWaypointWarmStartOptions");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

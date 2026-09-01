@@ -1,5 +1,83 @@
 # Plan 325 verification
 
+## Dormant waypoint warm-start option removal - 2026-09-01
+
+The authoritative baseline was commit
+`93a28e62efc4e81f97368928e7a3c1a747665ec4` in detached worktree
+`tmp/bmtp-warmstart-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Tracked state was clean before editing except for the
+intentional untracked `bmtp_cleanup_handoff.md`. Every MATLAB command used a
+fresh private `MATLAB_PREFDIR`, `TEMP`, and `TMP`, and maintained examples ran
+one process at a time.
+
+Read-only caller tracing established that the optional
+`+obstacleAvoidance/+planner/ruckigWarmStart.m` file is absent and no planner
+or engine reads `WaypointWarmStartMode`,
+`RequestedWaypointWarmStartMode`, or `IsWaypointWarmStartAvailable`. The
+separate restart input/output on `trajectory/planTrajBmtp.m` and
+`trajectory/+bmtpEngine/solve.m` is documented and directly tested, so it was
+excluded from the change. The accepted edit removes 29 and adds 13 lines in
+`resolvePlannerOptions.m` (net -16), adds six net production lines to
+`examples/resolveExampleOptions.m` for one-release forwarding, and therefore
+removes ten production lines overall. The two restart files have zero diff.
+
+Focused verification completed as follows:
+
+- pre-change `testPlannerOptions`: 4/4 passed; defaults contained 24 fields;
+  explicit `passThrough` resolved to `none`, echoed requested mode and
+  unavailable state, and warned `planTrajectory:RuckigWarmStartUnavailable`;
+- post-change `testPlannerOptions`: 5/5 passed;
+- `testExampleInvariants`: 9/9 passed;
+- `testObstacleAvoidanceSandboxDiagnosis`: 11/11 passed;
+- `testBmtpEngine`: 12/12 passed, including public restart production/reuse;
+- MATLAB Code Analyzer: zero findings for `resolvePlannerOptions.m` and
+  `resolveExampleOptions.m`;
+- `git diff --check`: passed and no modified line exceeded 100 characters.
+
+Four repeated obstacle-free runs replayed the deprecated option through the
+public example boundary. Baseline and candidate success, termination,
+selection, histories, validation, and non-runtime diagnostics matched at
+`1e-9` after allowing only the declared removal of the three option fields.
+Warmed medians were 0.0777916 s baseline and 0.0835580 s candidate (+7.413%).
+An unsuppressed end-to-end call emitted exactly
+`planTrajectory:DeprecatedWaypointWarmStartOptions`, not an unknown-field
+warning, and returned 4.472135955 deg polyline/smoothed length and
+4.53112887415 s duration with collision and kinematic validation passing.
+
+The structurally different moving/deforming example passed with
+40.2805670061 deg polyline/smoothed length and 7.91666666667 s duration. The
+full serial headless matrix then ran all 17 maintained examples: 16 succeeded
+and independently validated, and `exampleNoPath` returned the expected
+validated `noValidatedSeed` failure. Exact metrics are in `benchmark.csv`.
+The hidden no-path plot created one figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free run created two figures, both visible.
+The complete test tree passed 113/113 with zero failed or incomplete,
+85.8302862 s aggregate duration and 93.3293115 s wall time.
+
+One default `exampleStraightTargetAlternatingOcclusion` candidate run selected
+seed 5 while baseline and a candidate repeat selected seed 1. Saved summaries
+localized the difference to the existing wall-clock work budget: seed 5
+finished in the first candidate run but returned
+`seedWorkBudgetExhausted` in the others. Arrival and validation were identical;
+the seed-5 final motion was shorter (13.5713266002 deg versus
+13.5986641387 deg). A controlled baseline/candidate comparison with the
+existing `PerSeedWorkBudgetMultiplier=100` removed that cutoff variability.
+Both selected seed 5 with identical 27.950433436 deg polyline,
+13.5713266002 deg final motion and 20.8695652174 s duration. Recursive
+non-runtime result comparison passed; walls were 24.8525406 s and
+25.1338125 s (+1.132%). No planner setting was changed in production.
+
+Five setup/inspection failures produced no accepted planner evidence: the
+first candidate repeated-run command lost the comparator path after the runner
+reset MATLAB's path; the first comparator omitted
+`ElapsedPlanningTime_s` from its runtime exclusions; two inline commands were
+truncated by shell quoting before MATLAB executed; and the first seed-summary
+inspection queried a nonexistent top-level `SelectedSeedSource` field. Each
+was corrected in a fresh process. A post-result MATLAB connector shutdown
+exception occurred once after evidence was saved and the process still exited
+zero. No required gate remains untested for this option-only milestone.
+
 ## BMTP immutable-SOCP-cache removal - 2026-09-01
 
 The frozen comparison baseline was

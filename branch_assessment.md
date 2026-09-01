@@ -1,5 +1,57 @@
 # Novel replacement branch assessment
 
+## Dormant waypoint warm-start option removal - 2026-09-01
+
+The second `bmtp-cleanup-codex` milestone removes the planner-option surface
+for an implementation that is not present in the repository. No production
+planner or trajectory engine consumed `WaypointWarmStartMode`,
+`RequestedWaypointWarmStartMode`, or `IsWaypointWarmStartAvailable`; their
+only behavior was validation, probing for the absent `ruckigWarmStart.m`, and
+echoing fallback state. Current defaults and results no longer contain those
+fields. A one-release migration shim recognizes all three legacy names, emits
+one explicit deprecation warning, and strips them before ordinary option
+resolution. The example option boundary forwards legacy names to that single
+warning/strip owner instead of misclassifying them as unknown example fields.
+
+The measurable maintainability benefit is a net reduction of 16 production
+lines in `resolvePlannerOptions.m` and 10 production lines overall after the
+six-line example-boundary compatibility cost. The tested public BMTP
+eight-input/three-output restart interface is unchanged. Together with the
+first milestone, the branch has removed 40 production lines while preserving
+the active trajectory engine, route families, plane reuse, validation, and
+diagnostics.
+
+The strongest result-retention evidence is two controlled comparisons against
+the exact accepted baseline commit `93a28e6`. Four paired obstacle-free runs
+with a legacy option replay matched at `1e-9` for all non-runtime result data
+outside the three intentionally removed option fields. Warmed medians were
+0.0777916 s baseline and 0.0835580 s candidate, a 7.413% difference within the
+declared 10% noise allowance. A structurally different fixed-arrival,
+alternating-occlusion comparison used the existing
+`PerSeedWorkBudgetMultiplier=100` diagnostic to remove wall-clock cutoff
+variability. Both sides selected seed 5 and returned exactly
+27.950433436 deg polyline, 13.5713266002 deg smoothed motion, and
+20.8695652174 s duration; recursive comparison found no non-runtime result
+difference, and wall time changed from 24.8525406 s to 25.1338125 s (+1.132%).
+
+Broad verification passed 113/113 tests. All 17 maintained examples ran in
+separate serial headless processes: 16 planner/example-validation successes
+and the expected validated `noValidatedSeed` result. A hidden no-path run
+created one diagnostic figure with the reason and search counts; a visible
+obstacle-free run created two visible figures. MATLAB Code Analyzer reported
+zero findings in both changed production files, and `git diff --check` passed.
+
+The largest observed weakness is the existing wall-clock per-seed work budget.
+One default alternating-occlusion run allowed seed 5 to finish and selected a
+27.950433436 deg conservative seed whose final motion was 13.5713266002 deg;
+other baseline and candidate runs stopped that seed at
+`seedWorkBudgetExhausted` and selected the 13.3416640641 deg direct seed with
+13.5986641387 deg final motion. Arrival and validity were identical, and the
+alternate final motion was shorter rather than worse, but default selected
+seed identity is timing-sensitive. The controlled high-budget comparison
+shows this cleanup did not create the difference; deterministic work budgeting
+remains a separate core-maintainability candidate.
+
 ## Self-contained BMTP SOCP construction - 2026-09-01
 
 The first `bmtp-cleanup-codex` milestone removes the immutable trajectory-SOCP

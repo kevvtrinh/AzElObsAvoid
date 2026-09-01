@@ -191,7 +191,11 @@ verifyEqual(testCase, plannerOptions.MaximumSeedCount, 3);
 verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
 verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
-verifyEqual(testCase, plannerOptions.WaypointWarmStartMode, "none");
+verifyFalse(testCase, isfield(plannerOptions, "WaypointWarmStartMode"));
+verifyFalse(testCase, ...
+    isfield(plannerOptions, "RequestedWaypointWarmStartMode"));
+verifyFalse(testCase, ...
+    isfield(plannerOptions, "IsWaypointWarmStartAvailable"));
 verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 1);
