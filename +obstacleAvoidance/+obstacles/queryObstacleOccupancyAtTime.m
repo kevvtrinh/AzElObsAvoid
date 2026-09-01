@@ -97,8 +97,18 @@ tolerance_deg = double(options.ClearanceTolerance_deg);
 if isempty(obstacles)
     obstacleBounds_deg = zeros(0, 4);
 else
-    preparation = [obstacles.InternalPreparation];
-    obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
+    obstacleBounds_deg = zeros(numel(obstacles), 4);
+    if any(finiteQuery)
+        queryStartTime_s = min(queryTime_s(finiteQuery));
+        queryEndTime_s = max(queryTime_s(finiteQuery));
+        for obstacleIndex = 1:numel(obstacles)
+            horizonGeometry = ...
+                obstacleAvoidance.obstacles.queryHorizonGeometry( ...
+                obstacles(obstacleIndex), queryStartTime_s, queryEndTime_s);
+            obstacleBounds_deg(obstacleIndex, :) = ...
+                horizonGeometry.Bounds_deg;
+        end
+    end
 end
 for timeIndex = 1:numel(uniqueTime_s)
     queryIndices = find(finiteQuery & queryTime_s == uniqueTime_s(timeIndex));

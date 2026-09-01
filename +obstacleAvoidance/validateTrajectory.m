@@ -703,12 +703,22 @@ end
     deal(true, true, Inf, 0, 0, 0);
 pathSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
 historyBounds_deg = zeros(numel(obstacles), 4);
+obstacleHasHorizonGeometry = false(numel(obstacles), 1);
 obstacleEventTimes_s = zeros(0, 1);
+trajectoryStart_s = polynomial.SegmentStartTime_s(1);
+lastDurationIndex = min(polynomial.SegmentCount, ...
+    numel(polynomial.SegmentDuration_s));
+trajectoryEnd_s = polynomial.SegmentStartTime_s(end) + ...
+    polynomial.SegmentDuration_s(lastDurationIndex);
 for obstacleIndex = 1:numel(obstacles)
-    historyBounds_deg(obstacleIndex, :) = ...
-        obstacles(obstacleIndex).InternalPreparation.HistoryBounds_deg;
+    horizonGeometry = obstacleAvoidance.obstacles.queryHorizonGeometry( ...
+        obstacles(obstacleIndex), trajectoryStart_s, trajectoryEnd_s);
+    historyBounds_deg(obstacleIndex, :) = horizonGeometry.Bounds_deg;
+    obstacleHasHorizonGeometry(obstacleIndex) = horizonGeometry.Active;
     obstacleEventTimes_s = [obstacleEventTimes_s; ...
-        obstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
+        obstacles(obstacleIndex).time_s( ...
+        obstacles(obstacleIndex).time_s >= trajectoryStart_s & ...
+        obstacles(obstacleIndex).time_s <= trajectoryEnd_s)]; %#ok<AGROW>
 end
 obstacleEventTimes_s = unique(obstacleEventTimes_s);
 for segmentIndex = 1:polynomial.SegmentCount
@@ -740,6 +750,9 @@ for segmentIndex = 1:polynomial.SegmentCount
         polynomial, splitTimes_s, segmentIndex);
     for splitIndex = 1:numel(splitTimes_s)
         for obstacleIndex = 1:numel(obstacles)
+            if ~obstacleHasHorizonGeometry(obstacleIndex)
+                continue;
+            end
             broadClearance_deg = pointBoxClearance( ...
                 splitPoints_deg(splitIndex, :), ...
                 historyBounds_deg(obstacleIndex, :));
@@ -774,6 +787,9 @@ for segmentIndex = 1:polynomial.SegmentCount
         intervalResolved = true;
         intervalClearance_deg = Inf;
         for obstacleIndex = 1:numel(obstacles)
+            if ~obstacleHasHorizonGeometry(obstacleIndex)
+                continue;
+            end
             broadClearance_deg = pointBoxClearance(point_deg, ...
                 historyBounds_deg(obstacleIndex, :)) - pathDisplacement_deg;
             if broadClearance_deg > options.CollisionClearanceTolerance_deg

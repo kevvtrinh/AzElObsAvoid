@@ -1,5 +1,29 @@
 # Plan 325 verification
 
+## Restrict geometry to the request horizon - 2026-09-01
+
+Item 6 added one source-derived `queryHorizonGeometry` record and routed static
+planning projections, dense fallback envelopes, seed-corridor replay,
+occupancy broad-phase bounds, and continuous-validator broad-phase bounds
+through it. The record includes exact request endpoints, stored samples inside
+the closed horizon, and every conservative fallback interval intersecting the
+horizon. Samples and intervals wholly outside the request are omitted.
+
+The prior red projection case now passes: a `[0, 1]` request over a history
+with remote samples at -10 and 10 seconds retains the expected azimuth span
+`[-1, 2]` instead of `[-101, 101]`. `checkcode` reported zero findings for all
+seven modified or added production files. Static projection passed 2/2,
+obstacle infrastructure 9/9, stage timing 4/4, and the public planner contract
+14/14. The adversarial suite now passes 6/7; only the disjoint intercept window
+scheduled for item 15 remains red.
+
+The maintained `exampleTargetExitsObstacle` ran headlessly with jerk enabled.
+Planning and independent validation passed with `goalReached`, a
+20.1357890335-degree selected polyline, 20.6100682085-degree sampled motion,
+24-second duration, collision freedom, full kinematic compliance, and an
+applicable independent certificate. Wall time was 35.1896642 seconds. No
+runtime comparison is claimed from this correctness-focused run.
+
 ## Conservative obstacle interpolation - 2026-09-01
 
 Item 5 replaced size-and-finite-mask correspondence inference with a bounded

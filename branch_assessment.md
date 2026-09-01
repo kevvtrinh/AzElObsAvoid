@@ -1,5 +1,20 @@
 # Novel replacement branch assessment
 
+## Restrict proposal and broad-phase geometry to request time - 2026-09-01
+
+The largest new strength is one horizon-selection invariant shared by
+projection, dense-envelope, seed-corridor, occupancy, and validator paths.
+The adversarial projection no longer grows from `[-1, 2]` to `[-101, 101]`
+because of remote stored samples. Forty-five focused contract and compatibility
+tests passed, and a maintained moving-obstacle example passed planning,
+independent validation, collision, kinematic, and certificate checks.
+
+The largest remaining limitation in the correctness block is temporal search:
+the narrow first intercept window is still skipped in favor of the later
+6.668424011230469-second window. Horizon geometry is recomputed at several
+call sites in this item; prepared request-owned caching is deliberately left
+for items 7-12, so no runtime improvement is claimed here.
+
 ## Make unsupported obstacle interpolation conservative - 2026-09-01
 
 The largest new strength is that boundary array shape no longer establishes

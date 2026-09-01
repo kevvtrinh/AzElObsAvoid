@@ -12,7 +12,7 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
-%       Complete stored histories whose vertices define each envelope.
+%       Only geometry applicable to the sampleTimes_s horizon is enclosed.
 %   - sampleTimes_s (numeric vector)
 %       Times used to estimate the ordinary sampled-union work.
 %   - endpointPosition_deg (2-by-2 numeric array)
@@ -32,17 +32,20 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
 
 %% Section 1: Detect Dense History Work
 
-validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
+validateattributes(sampleTimes_s, {'numeric'}, ...
+    {'real', 'finite', 'vector', 'nonempty'});
 validateattributes(endpointPosition_deg, {'numeric'}, {'real', 'finite', 'size', [2 2]});
 validateattributes(vertexWorkBudget, {'numeric'}, {'real', 'finite', 'positive', 'scalar'});
 verticesPerLayer = 0;
+horizonStart_s = min(sampleTimes_s);
+horizonEnd_s = max(sampleTimes_s);
+horizonGeometry = cell(numel(obstacles), 1);
 for obstacleIndex = 1:numel(obstacles)
-    maximumVertexCount = 0;
-    for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-        maximumVertexCount = max(maximumVertexCount, ...
-            numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
-    end
-    verticesPerLayer = verticesPerLayer + maximumVertexCount;
+    horizonGeometry{obstacleIndex} = ...
+        obstacleAvoidance.obstacles.queryHorizonGeometry( ...
+        obstacles(obstacleIndex), horizonStart_s, horizonEnd_s);
+    verticesPerLayer = verticesPerLayer + ...
+        size(horizonGeometry{obstacleIndex}.SweepShape.Vertices, 1);
 end
 envelopeShape = polyshape();
 usedEnvelope = false;
@@ -52,25 +55,15 @@ end
 
 %% Section 2: Enclose Every Complete Stored History
 
-% Linear corresponding-vertex motion lies in the convex hull of its endpoint
-% vertices. A topology-change query uses endpoint geometry, which is contained
-% by the same hull. Separate hulls do not bridge unrelated obstacles.
+% The shared horizon query already encloses corresponding-vertex motion and
+% every applicable fallback interval. Separate hulls do not bridge obstacles.
 envelopes = cell(numel(obstacles), 1);
 envelopeCount = 0;
 for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
-    vertices_deg = zeros(0, 2);
-    for sampleIndex = 1:numel(obstacle.az_deg)
-        sample_deg = [obstacle.az_deg{sampleIndex}(:), obstacle.el_deg{sampleIndex}(:)];
-        vertices_deg = [vertices_deg; sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>
-    end
-    vertices_deg = unique(vertices_deg, "rows", "stable");
-    if size(vertices_deg, 1) < 3
+    trialShape = horizonGeometry{obstacleIndex}.SweepShape;
+    if isempty(trialShape.Vertices)
         continue;
     end
-    hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-    trialShape = polyshape(vertices_deg(hullIndex(1:end - 1), :), ...
-        "Simplify", false, "KeepCollinearPoints", true);
     guardedShape = polybuffer(trialShape, 1e-9);
     if any(isinterior(guardedShape, endpointPosition_deg(:, 1), endpointPosition_deg(:, 2)))
         envelopeShape = polyshape();
