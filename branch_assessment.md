@@ -1,5 +1,35 @@
 # Novel replacement branch assessment
 
+## Detailed plane-reuse trace retirement - 2026-09-01
+
+The tenth `bmtp-cleanup-codex` milestone removes diagnostic-only state around
+automatic plane reuse. `PlaneReuseIterationHistory`,
+`PlaneReuseControlDifference_deg`, and
+`PlaneReuseDurationDifference_s` no longer appear in solver diagnostics. Their
+pending control-net and duration snapshots never influenced a solver input,
+continuation, convergence decision, retained candidate, or certificate.
+
+The behavior-bearing mechanism remains intact. `PlaneReuseApplied` and
+`PlaneReuseCount` still summarize use; the arrival-tolerance condition, stable
+tagged-pair requirement, plane-preserving `continue`, collision histories,
+retained-best evidence, and convergence diagnostics are unchanged. The focused
+contract still requires reuse, convergence, initial collision evidence, and the
+exact minimum collision-free retained duration.
+
+Target Exits at `1e-4 deg` clearance and Extreme US Outline both reused once at
+iteration 7 and finished at iteration 8. After removing only runtime fields and
+the three retired arrays, their complete baseline/candidate results matched
+recursively with maximum numeric difference zero. Target Exits retained 24
+seconds and 21.9416287312 degrees; Extreme retained 5.81065318159 seconds and
+23.3457566443 degrees. Code Analyzer reported zero findings, focused tests
+passed 49/49, and the full suite passed 123/123 in 88.5057376 seconds wall time.
+
+All 17 maintained examples retained their prior metrics: 16 independently
+validated successes plus the expected validated `noValidatedSeed`. Visible and
+failure-figure gates passed. The milestone removes exactly 17 engine lines and
+adds no production replacement. The ten-milestone branch is now 213 non-test
+MATLAB lines smaller than `5c0a6c9`.
+
 ## External BMTP restart retirement - 2026-09-01
 
 The ninth `bmtp-cleanup-codex` milestone removes externally supplied restart

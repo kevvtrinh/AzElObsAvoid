@@ -115,9 +115,6 @@ diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
 taggedPairs = false(segmentCount, numel(regions_deg));
 planes = repmat(emptyPlane(), segmentCount, numel(regions_deg));
 solverMessage = "The biconvex iteration limit was reached.";
-hasPendingPlaneReuse = false;
-reusedControl_deg = zeros(0, degree + 1, 2);
-reusedDuration_s = NaN;
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
     [trialControl_deg, trialTime_s, exitFlag, output] = solveTrajectorySocp( ...
@@ -137,13 +134,6 @@ for iterationIndex = 1:35
         end
         solverMessage = "Trajectory SOCP failed: " + string(output.message);
         break;
-    end
-    if hasPendingPlaneReuse
-        diagnostics.PlaneReuseControlDifference_deg(iterationIndex) = max( ...
-            abs(trialControl_deg - reusedControl_deg), [], "all");
-        diagnostics.PlaneReuseDurationDifference_s(iterationIndex) = abs( ...
-            segmentCount * trialTime_s - reusedDuration_s);
-        hasPendingPlaneReuse = false;
     end
     collisionPairs = findSampledCollisionPairs( ...
         trialControl_deg, regions_deg, regionMinimum_deg, ...
@@ -186,10 +176,6 @@ for iterationIndex = 1:35
         if reusePlanes
             diagnostics.PlaneReuseApplied = true;
             diagnostics.PlaneReuseCount = diagnostics.PlaneReuseCount + 1;
-            diagnostics.PlaneReuseIterationHistory(iterationIndex) = true;
-            hasPendingPlaneReuse = true;
-            reusedControl_deg = trialControl_deg;
-            reusedDuration_s = duration_s;
             continue;
         end
         planes(:) = emptyPlane();
@@ -1277,9 +1263,6 @@ diagnostics = struct( "Identifier", "bmtpStaticDegree" + string(degree), ...
     "TravelRefinementMessage", "", ...
     "TrialDuration_s", NaN(35, 1), "TrialWasCollisionFree", false(35, 1), ...
     "CollisionPairCountHistory", NaN(35, 1), ...
-    "PlaneReuseIterationHistory", false(35, 1), ...
-    "PlaneReuseControlDifference_deg", NaN(35, 1), ...
-    "PlaneReuseDurationDifference_s", NaN(35, 1), ...
     "DilationScale", NaN, "MotionCertificate", struct(), "Coverage", struct(), ...
     "PlaneCertificate", struct(), "SolverMessage", "", "ElapsedTime_s", 0);
 end

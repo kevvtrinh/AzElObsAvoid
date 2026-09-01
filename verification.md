@@ -5856,3 +5856,70 @@ The engine removes 44 net production lines and the compatibility facade adds
 four, for a net 40-line non-test MATLAB reduction. The nine-milestone branch is
 196 lines smaller than `5c0a6c9`. `pdflatex` and `pdftotext` remain unavailable,
 so the updated appendix source was not compiled or text-extracted on this host.
+
+## Detailed plane-reuse trace retirement - 2026-09-01
+
+At tracked-clean baseline `75dff7a`, only one focused contract read
+`PlaneReuseIterationHistory`, `PlaneReuseControlDifference_deg`, or
+`PlaneReuseDurationDifference_s`. No production decision, example, sandbox,
+plotter, exporter, or manual consumed them. The candidate removes those arrays
+and the pending control/duration snapshots that populated them while retaining
+`PlaneReuseApplied`, `PlaneReuseCount`, reuse continuation, convergence,
+collision histories, retained-best evidence, and certificates.
+
+Two fresh-process reuse-triggering baselines were frozen before editing. Static
+U was rejected because its selected constructor did not expose BMTP reuse, and
+generic Obstacle Avoidance was rejected because its BMTP solve reported zero
+reuse. The retained cases were:
+
+- Target Exits with `CollisionClearanceTolerance_deg=1e-4` and two seeds:
+  24 seconds, 21.7425467317-degree polyline, 21.9416287312-degree motion,
+  reuse count 1, iteration 8, baseline/candidate walls 12.3447550 and
+  12.3359060 seconds;
+- Extreme US Outline: 5.81065318159 seconds, 22.070643085-degree polyline,
+  23.3457566443-degree motion, reuse count 1, iteration 8,
+  baseline/candidate walls 67.9107908 and 67.7257618 seconds.
+
+Both baselines reused at iteration 7 and had zero recorded control and duration
+difference at iteration 8. Recursive comparison at `1e-9`, after removing only
+elapsed fields and the three declared retired arrays, passed both complete
+results with maximum numeric difference exactly zero.
+
+Verification evidence:
+
+- `testPlannerContract`: 15/15 in 40.3201808 seconds;
+- engine, architecture, timed, contract/failure, and sandbox diagnostics:
+  49/49 in 63.6097376 seconds wall and 58.4247912 aggregate test seconds;
+- Code Analyzer: zero findings in the engine and revised contract test;
+- complete test tree: 123/123 in 88.5057376 seconds wall and
+  81.5314915 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.4242522 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.5123487 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0104120 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9858665 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9838127 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0575241 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8032134 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.6797632 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.8039494 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7854012 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.9581027 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9827518 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7843060 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3366819 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8160799 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.3152718 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.2328108 | `goalReached` |
+
+The milestone removes exactly 17 engine lines and adds no production
+replacement. The ten-milestone branch is 213 non-test MATLAB lines smaller
+than `5c0a6c9`.

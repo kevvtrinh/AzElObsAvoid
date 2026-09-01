@@ -102,8 +102,8 @@ verifyGreaterThan(testCase, ...
     sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
 end
 
-function testPlaneReuseSkipsOnlyUnchangedPlaneSetsAndRetainsBestTrial(testCase)
-% Repeat the maintained collision-free alternation without re-deriving planes.
+function testPlaneReuseSummaryAndRetainedBestTrial(testCase)
+% Preserve behavior-bearing reuse summary and best-trial evidence.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(fullfile(repositoryRoot, "examples"));
 overrides = struct( ...
@@ -116,19 +116,10 @@ result = exampleTargetExitsObstacle(overrides);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
-reuseIterationIndex = find(diagnostics.PlaneReuseIterationHistory, 1, "first");
 verifyTrue(testCase, diagnostics.PlaneReuseApplied);
 verifyGreaterThan(testCase, diagnostics.PlaneReuseCount, 0);
 verifyTrue(testCase, diagnostics.Converged);
-verifyNotEmpty(testCase, reuseIterationIndex);
 verifyGreaterThan(testCase, diagnostics.CollisionPairCountHistory(1), 0);
-verifyFalse(testCase, diagnostics.PlaneReuseIterationHistory(1));
-verifyTrue(testCase, all(~diagnostics.PlaneReuseIterationHistory( ...
-    1:reuseIterationIndex - 1)));
-verifyEqual(testCase, diagnostics.PlaneReuseControlDifference_deg( ...
-    reuseIterationIndex + 1), 0);
-verifyEqual(testCase, diagnostics.PlaneReuseDurationDifference_s( ...
-    reuseIterationIndex + 1), 0);
 collisionFreeTrials_s = diagnostics.TrialDuration_s( ...
     diagnostics.TrialWasCollisionFree);
 verifyEqual(testCase, diagnostics.RetainedBestTrialDuration_s, ...

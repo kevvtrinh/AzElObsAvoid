@@ -222,3 +222,17 @@ still accepts the old arities, warns once when restart input or output is used,
 ignores supplied state, and returns a documented empty restart record. This
 keeps migration explicit while removing restart validation, alternate initial
 best retention, and restart export from the core.
+
+## Plane-reuse diagnostic ownership audit - 2026-09-01
+
+Automatic plane reuse retains two stable summary fields:
+`PlaneReuseApplied` and `PlaneReuseCount`. Three iteration-detail arrays were
+removed because no production decision, plotter, sandbox, exporter, or public
+consumer read them. Their associated pending control and duration snapshots
+were diagnostic-only and did not feed a later solve.
+
+The reuse condition, unchanged tagged-pair requirement, plane-preserving
+continuation, arrival-tolerance ownership, convergence, retained-best evidence,
+collision history, and certificates remain. Complete Target Exits and Extreme
+US Outline results matched their saved reuse-triggering baselines exactly after
+excluding only runtime and the declared retired fields.
