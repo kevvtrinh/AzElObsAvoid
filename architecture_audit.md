@@ -301,3 +301,19 @@ The stable certificate retains `AnalyticPairCount` because the independent
 orthogonal-cavity motion constructor still produces analytic certificates;
 ordinary BMTP certificates now report zero. No public option or new facade was
 introduced.
+
+## Uniform BMTP final-certificate ownership audit - 2026-09-01
+
+Verified optimizer planes previously served two roles: they constrained later
+BMTP optimization iterations and, through `restrictRetainedPlane`, bypassed the
+general solver for some final certificate pairs. Only the first role affects
+trajectory generation. The second role created a separate final-certification
+algorithm, argument plumbing, re-verification branch, and reuse accounting.
+
+The final-certificate shortcut is removed. Every applicable final output-span
+and obstacle-region pair now calls `solveMaximumMarginPlane` and verifies its
+result through the same path. Optimizer plane reuse remains unchanged in the
+outer solve. The stable certificate schema retains `ReusedPairCount` for other
+producers, while ordinary BMTP certificates now report zero and place every
+applicable pair in `ConicPairCount`. No option, fallback, or replacement helper
+was introduced.

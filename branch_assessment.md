@@ -1,5 +1,38 @@
 # Novel replacement branch assessment
 
+## Uniform BMTP final certification - 2026-09-01
+
+The fifteenth accepted `bmtp-cleanup-codex` milestone removes the separate
+retained-parent-plane restriction path from final BMTP certification. Every
+applicable final output-span and obstacle-region pair now uses the same
+degree-one maximum-margin conic solver. Optimizer plane reuse remains active
+inside the outer BMTP solve; it is no longer treated as an alternative final
+certificate algorithm.
+
+Saved Obstacle Avoidance and moving fixed-arrival Target Exits results matched
+the exact `514185b` baseline with maximum numeric difference zero across
+success, validation, termination, selected seed, arrival, lengths, and sampled
+time, position, velocity, acceleration, and jerk histories. Their certificates
+remained independently valid. Ordinary BMTP certification now reports all 18
+and all 12 applicable pairs, respectively, as conic pairs and zero as reused
+pairs. Code Analyzer found no issue, focused tests passed 24/24, and the full
+test tree passed 110/110.
+
+All 17 maintained examples preserved their established physical results:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` failure. The focused warmed Obstacle Avoidance median grew
+1.985 percent, from 2.2880017 to 2.3334234 seconds. Serial maintained-example
+wall time grew 2.227 percent, from 199.7103879 to 204.1579553 seconds. The
+runtime cost is accepted for one final-certificate algorithm; no speedup is
+claimed.
+
+The milestone removes 33 net production MATLAB lines and reduces
+`trajectory/+bmtpEngine/solve.m` from 1,191 to 1,158 physical lines. Across
+fifteen accepted milestones, the branch is 450 non-test MATLAB lines smaller
+than `5c0a6c9`. The conic separator remains solver-dependent, and exact results
+on the maintained families do not establish identical numerical behavior for
+every unseen region geometry.
+
 ## General BMTP final-plane solver - 2026-09-01
 
 The fourteenth `bmtp-cleanup-codex` milestone removes the BMTP engine's

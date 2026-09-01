@@ -352,8 +352,8 @@ diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale = dilationScale;
 diagnostics.MotionCertificate = motion;
 certificate = certifyAllPlanes(certifiedControlPoint_deg, regions_deg, ...
-    planes, coverage, repelem(regionActiveBySegment, 2, 1), ...
-    roundoffReserve_deg, obstacleTarget_deg, tightPlaneOptions);
+    coverage, repelem(regionActiveBySegment, 2, 1), roundoffReserve_deg, ...
+    obstacleTarget_deg, tightPlaneOptions);
 diagnostics.PlaneCertificate = certificate;
 candidate.PlaneCertificate = certificate;
 candidate = exportMotion(candidate, controlPoint_deg, segmentTime_s, ...
@@ -885,15 +885,14 @@ motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
 end
 
 function certificate = certifyAllPlanes(control_deg, regions_deg, ...
-        retainedPlanes, coverage, regionActiveBySegment, reserve_deg, ...
-        target_deg, solverOptions)
+        coverage, regionActiveBySegment, reserve_deg, target_deg, ...
+        solverOptions)
 % Verify every applicable output-span and convex-exclusion-region pair.
 segmentCount = size(control_deg, 1);
 regionCount = numel(regions_deg);
 planes = repmat(emptyPlane(), segmentCount, regionCount);
 verifiedCount = 0;
 conicCount = 0;
-reusedCount = 0;
 minimumGap_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectory_deg = squeeze(control_deg(segmentIndex, :, :));
@@ -901,22 +900,10 @@ for segmentIndex = 1:segmentCount
         if ~regionActiveBySegment(segmentIndex, regionIndex)
             continue;
         end
-        parentSegmentIndex = ceil(segmentIndex / 2);
-        plane = restrictRetainedPlane( ...
-            retainedPlanes(parentSegmentIndex, regionIndex), ...
-            mod(segmentIndex, 2) == 1);
-        if plane.Active
-            plane = verifyPlane(plane, trajectory_deg, ...
-                regions_deg{regionIndex}, reserve_deg, target_deg);
-        end
-        if plane.Verified
-            reusedCount = reusedCount + 1;
-        else
-            [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
-                regions_deg{regionIndex}, target_deg, reserve_deg, ...
-                solverOptions);
-            conicCount = conicCount + 1;
-        end
+        [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
+            regions_deg{regionIndex}, target_deg, reserve_deg, ...
+            solverOptions);
+        conicCount = conicCount + 1;
         planes(segmentIndex, regionIndex) = plane;
         if plane.Verified
             verifiedCount = verifiedCount + 1;
@@ -943,28 +930,8 @@ certificate = struct( "Kind", certificateKind, ...
     "MinimumSignedGap_deg", minimumGap_deg, ...
     "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
     "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-    "ReusedPairCount", reusedCount, "AnalyticPairCount", 0, ...
+    "ReusedPairCount", 0, "AnalyticPairCount", 0, ...
     "ConicPairCount", conicCount);
-end
-
-function plane = restrictRetainedPlane(parentPlane, isLeftHalf)
-% Restrict one degree-one separator to a midpoint half without approximation.
-plane = emptyPlane();
-if ~parentPlane.Active || ~parentPlane.Verified
-    return;
-end
-midpointNormal = 0.5 * sum(parentPlane.Normal, 1);
-midpointOffset_deg = 0.5 * sum(parentPlane.Offset_deg);
-plane = parentPlane;
-if isLeftHalf
-    plane.Normal = [parentPlane.Normal(1, :); midpointNormal];
-    plane.Offset_deg = [parentPlane.Offset_deg(1), midpointOffset_deg];
-else
-    plane.Normal = [midpointNormal; parentPlane.Normal(2, :)];
-    plane.Offset_deg = [midpointOffset_deg, parentPlane.Offset_deg(2)];
-end
-plane.Verified = false;
-plane.SignedGap_deg = NaN;
 end
 
 function subdivided_deg = subdivideMidpoint(control_deg)

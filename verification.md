@@ -6182,3 +6182,68 @@ immediately preceding facade-removal record, an 18.010 percent aggregate
 increase. Straight Target has the largest single cold increase at 43.030
 percent. This milestone is retained for one general certificate algorithm and
 40 fewer production lines; no runtime improvement is claimed.
+
+## Uniform BMTP final certification - 2026-09-01
+
+The baseline was exact detached worktree commit `514185b`. The candidate
+removes the final retained-parent-plane restriction shortcut, so every
+applicable final BMTP pair is solved and verified through
+`solveMaximumMarginPlane`. Optimizer plane reuse inside trajectory optimization
+is unchanged. The change removes 42 and adds nine lines in
+`trajectory/+bmtpEngine/solve.m`.
+
+Focused evidence:
+
+- Obstacle Avoidance matched success, validation, reason, seed 3,
+  7.57454176632-second duration, 11.4118613877-degree motion, and every sampled
+  history value with maximum difference zero. Its certificate passed with 18
+  conic and zero reused pairs instead of 12 conic and six reused pairs.
+- Four-run Obstacle Avoidance baseline walls were 5.3917737, 2.6832424,
+  2.2880017, and 2.2017332 seconds. Candidate walls were 4.9472324, 2.6379999,
+  2.3334234, and 2.2597204 seconds. The warmed median grew 1.985 percent.
+- Moving fixed-arrival Target Exits matched success, validation, reason, seed
+  1, 24-second duration, 20.6100682085-degree motion, and every sampled history
+  value with maximum difference zero. Its certificate passed with 12 conic and
+  zero reused pairs instead of six conic and six reused pairs. Wall time grew
+  from 18.8165606 to 19.7293136 seconds, 4.851 percent.
+- Code Analyzer reported zero findings and `git diff --check` passed.
+- Focused `testBmtpEngine` plus `testPlannerContract`: 24/24 passed in
+  41.2646313 seconds wall and 39.8502065 aggregate test seconds.
+- Complete test tree: 110/110 passed in 87.6470229 seconds wall and
+  84.8867422 aggregate test seconds.
+- Visible `exampleObstacleFree`: success, validation, two figures, one visible
+  figure state, and no warning.
+- Hidden `exampleNoPath`: expected `noValidatedSeed`, independent validation,
+  one attempted seed, one diagnostic figure, and the reason present in figure
+  text.
+
+Every maintained example ran after the production change in its own fresh,
+serial MATLAB process with jerk enabled. Obstacle Avoidance and Target Exits
+are the focused candidate processes; all other rows are from the serial broad
+sweep:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3351494 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4141372 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9318843 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9351499 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9524044 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0080579 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.9376122 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5714743 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5781854 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9472324 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8712688 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9110820 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7309015 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.7826915 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.7293136 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2052408 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 85.3161697 | `goalReached` |
+
+The candidate total is 204.1579553 seconds versus 199.7103879 seconds for the
+immediately preceding general-final-plane record, a 2.227 percent aggregate
+increase. The milestone is retained for one final-certificate algorithm, 33
+fewer production lines, and exact maintained physical results. No runtime
+improvement is claimed.
