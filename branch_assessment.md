@@ -1,5 +1,40 @@
 # Novel replacement branch assessment
 
+## General BMTP final-plane solver - 2026-09-01
+
+The fourteenth `bmtp-cleanup-codex` milestone removes the BMTP engine's
+cardinal-axis final-certificate shortcut. Every output span/region pair whose
+retained optimizer plane cannot be reused now goes through the existing
+degree-one maximum-margin conic solver. This deletes one separate certificate
+algorithm without adding an option, fallback, helper, or replacement branch.
+
+Saved Obstacle Avoidance and moving fixed-arrival Target Exits results matched
+baseline with maximum numeric difference zero across time, position, velocity,
+acceleration, jerk, arrival, duration, selected seed, and motion length. Their
+plane certificates remained independently valid. Obstacle Avoidance shifted
+12 analytic pairs to 12 conic pairs while retaining six parent planes; Target
+Exits shifted five analytic plus one conic pair to six conic pairs while also
+retaining six. Code Analyzer found no issue, focused tests passed 24/24, and
+the complete suite passed 110/110 in 86.9001094 seconds wall time.
+
+All 17 maintained examples preserved their established physical results:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` failure. The runtime cost is visible. The focused warmed
+Obstacle Avoidance median grew 5.323 percent, from 2.1769730 to 2.2928512
+seconds. Serial maintained-example wall time grew 18.010 percent in aggregate,
+from the immediately preceding 169.2320276-second record to 199.7103879
+seconds. The largest single cold movement was Straight Target, from 24.2076020
+to 34.6242062 seconds (43.030 percent); Target Exits grew 20.070 percent and US
+Outline Extreme grew 23.701 percent. Those are accepted maintainability costs,
+not speed improvements or noise claims.
+
+The milestone removes 40 net production MATLAB lines and reduces
+`trajectory/+bmtpEngine/solve.m` from 1,231 to 1,191 physical lines. Across
+fourteen milestones, the branch is 417 non-test MATLAB lines smaller than
+`5c0a6c9`. The general conic separator remains solver-dependent, and exact
+results on the maintained families do not prove identical numerical behavior
+for every unseen region geometry.
+
 ## Deprecated BMTP facade removal - 2026-09-01
 
 The thirteenth `bmtp-cleanup-codex` milestone deletes the 58-line

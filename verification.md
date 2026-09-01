@@ -6125,3 +6125,60 @@ with jerk enabled:
 The milestone removes the full 58-line production facade and one competing
 public function. The thirteen-milestone branch is 377 non-test MATLAB lines
 smaller than `5c0a6c9`.
+
+## General BMTP final-plane solver - 2026-09-01
+
+Baseline was clean commit `3e5d62e`; only the durable handoff and private
+MATLAB evidence were untracked. The candidate deletes `createAxisPlane` and
+routes every unresolved final certificate pair through the existing
+`solveMaximumMarginPlane` implementation. It changes only
+`trajectory/+bmtpEngine/solve.m`, removes 49 and adds nine lines, and reduces
+the fourteen-milestone branch by 417 non-test MATLAB lines relative to
+`5c0a6c9`.
+
+Verification evidence:
+
+- Code Analyzer: zero findings for changed `solve.m`;
+- saved four-run Obstacle Avoidance comparison: maximum physical/history
+  difference zero; warmed median 2.1769730 to 2.2928512 seconds, +5.323%;
+- saved moving fixed-arrival Target Exits comparison: maximum physical/history
+  difference zero; certificate passed with the same six reused pairs;
+- focused `testBmtpEngine` plus `testPlannerContract`: 24/24 passed in
+  40.7189783 seconds wall and 39.2945019 aggregate test seconds;
+- complete test tree: 110/110 passed in 86.9001094 seconds wall and
+  84.1559378 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two visible figures,
+  and no warning;
+- hidden `exampleNoPath`: expected-failure validation, one figure, and
+  `noValidatedSeed` present in figure text;
+- `git diff --check` passed before record updates.
+
+Every maintained example ran after the production change in its own fresh
+serial MATLAB process with jerk enabled. Target Exits is the fresh focused
+candidate process; every other row is from the serial broad sweep:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3650576 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3543889 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9304695 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9185245 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9666285 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9923528 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7345516 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5575720 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6079726 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7791563 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8230975 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8819802 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6331342 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 34.6242062 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 18.8708768 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2137733 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 83.4566454 | `goalReached` |
+
+The candidate total is 199.7103879 seconds versus 169.2320276 seconds for the
+immediately preceding facade-removal record, an 18.010 percent aggregate
+increase. Straight Target has the largest single cold increase at 43.030
+percent. This milestone is retained for one general certificate algorithm and
+40 fewer production lines; no runtime improvement is claimed.

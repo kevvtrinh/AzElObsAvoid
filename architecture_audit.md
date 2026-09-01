@@ -284,3 +284,20 @@ to call the package engine directly. Architecture tests require
 `planTrajBmtp.m` to remain absent and `+bmtpEngine/solve.m` to remain present.
 This removes a competing public surface without changing the engine contract
 used by production planning.
+
+## BMTP final-plane ownership audit - 2026-09-01
+
+Final BMTP certificate construction previously owned two separator algorithms
+for unresolved output-span/region pairs: a constant cardinal-axis box shortcut
+and the general degree-one maximum-margin conic separator. The shortcut did not
+participate in route choice, trajectory optimization, time dilation, or public
+continuous validation; it only avoided conic calls when axis-aligned bounding
+boxes already proved separation.
+
+The cardinal-axis constructor and its bounds/dispatch branch are removed.
+Every unresolved pair now uses `solveMaximumMarginPlane`, while verified
+retained parent planes still restrict exactly to each subdivided output span.
+The stable certificate retains `AnalyticPairCount` because the independent
+orthogonal-cavity motion constructor still produces analytic certificates;
+ordinary BMTP certificates now report zero. No public option or new facade was
+introduced.

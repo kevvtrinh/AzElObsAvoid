@@ -352,9 +352,8 @@ diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale = dilationScale;
 diagnostics.MotionCertificate = motion;
 certificate = certifyAllPlanes(certifiedControlPoint_deg, regions_deg, ...
-    regionMinimum_deg, regionMaximum_deg, planes, coverage, ...
-    repelem(regionActiveBySegment, 2, 1), roundoffReserve_deg, ...
-    obstacleTarget_deg, tightPlaneOptions);
+    planes, coverage, repelem(regionActiveBySegment, 2, 1), ...
+    roundoffReserve_deg, obstacleTarget_deg, tightPlaneOptions);
 diagnostics.PlaneCertificate = certificate;
 candidate.PlaneCertificate = certificate;
 candidate = exportMotion(candidate, controlPoint_deg, segmentTime_s, ...
@@ -886,21 +885,18 @@ motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
 end
 
 function certificate = certifyAllPlanes(control_deg, regions_deg, ...
-        regionMinimum_deg, regionMaximum_deg, retainedPlanes, coverage, ...
-        regionActiveBySegment, reserve_deg, target_deg, solverOptions)
+        retainedPlanes, coverage, regionActiveBySegment, reserve_deg, ...
+        target_deg, solverOptions)
 % Verify every applicable output-span and convex-exclusion-region pair.
 segmentCount = size(control_deg, 1);
 regionCount = numel(regions_deg);
 planes = repmat(emptyPlane(), segmentCount, regionCount);
 verifiedCount = 0;
-analyticCount = 0;
 conicCount = 0;
 reusedCount = 0;
 minimumGap_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectory_deg = squeeze(control_deg(segmentIndex, :, :));
-    controlMinimum_deg = min(trajectory_deg, [], 1);
-    controlMaximum_deg = max(trajectory_deg, [], 1);
     for regionIndex = 1:regionCount
         if ~regionActiveBySegment(segmentIndex, regionIndex)
             continue;
@@ -916,18 +912,10 @@ for segmentIndex = 1:segmentCount
         if plane.Verified
             reusedCount = reusedCount + 1;
         else
-            [plane, isAnalytic] = createAxisPlane( ...
-                trajectory_deg, controlMinimum_deg, controlMaximum_deg, ...
-                regions_deg{regionIndex}, regionMinimum_deg(regionIndex, :), ...
-                regionMaximum_deg(regionIndex, :), target_deg, reserve_deg);
-            if isAnalytic
-                analyticCount = analyticCount + 1;
-            else
-                [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
-                    regions_deg{regionIndex}, target_deg, reserve_deg, ...
-                    solverOptions);
-                conicCount = conicCount + 1;
-            end
+            [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
+                regions_deg{regionIndex}, target_deg, reserve_deg, ...
+                solverOptions);
+            conicCount = conicCount + 1;
         end
         planes(segmentIndex, regionIndex) = plane;
         if plane.Verified
@@ -955,36 +943,8 @@ certificate = struct( "Kind", certificateKind, ...
     "MinimumSignedGap_deg", minimumGap_deg, ...
     "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
     "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-    "ReusedPairCount", reusedCount, "AnalyticPairCount", analyticCount, ...
+    "ReusedPairCount", reusedCount, "AnalyticPairCount", 0, ...
     "ConicPairCount", conicCount);
-end
-
-function [plane, isCertified] = createAxisPlane( ...
-        control_deg, controlMinimum_deg, controlMaximum_deg, vertices_deg, ...
-        regionMinimum_deg, regionMaximum_deg, target_deg, reserve_deg)
-% Certify an easy pair with a constant cardinal-axis plane.
-box_deg = [controlMinimum_deg; controlMaximum_deg; ...
-    regionMinimum_deg; regionMaximum_deg];
-gaps_deg = [box_deg(3, 1) - box_deg(2, 1), box_deg(1, 1) - box_deg(4, 1), ...
-    box_deg(3, 2) - box_deg(2, 2), box_deg(1, 2) - box_deg(4, 2)];
-[gap_deg, directionIndex] = max(gaps_deg);
-plane = emptyPlane();
-isCertified = false;
-if gap_deg < target_deg - reserve_deg + 4 * reserve_deg
-    return;
-end
-axisNormals = [1 0; -1 0; 0 1; 0 -1];
-normal = axisNormals(directionIndex, :);
-maximumTrajectorySide_deg = max(control_deg * normal.');
-minimumObstacleSide_deg = min(vertices_deg * normal.');
-minimumOffset_deg = target_deg - minimumObstacleSide_deg;
-maximumOffset_deg = -reserve_deg - maximumTrajectorySide_deg;
-offset_deg = minimumOffset_deg + 0.5 * (maximumOffset_deg - minimumOffset_deg);
-[plane.Active, plane.ExitFlag] = deal(true, 1);
-plane.Normal = repmat(normal, 2, 1);
-plane.Offset_deg = [offset_deg offset_deg];
-plane = verifyPlane(plane, control_deg, vertices_deg, reserve_deg, target_deg);
-isCertified = plane.Verified;
 end
 
 function plane = restrictRetainedPlane(parentPlane, isLeftHalf)
