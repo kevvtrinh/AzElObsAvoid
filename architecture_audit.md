@@ -190,14 +190,15 @@ fallback remain deliberately outside this optional boundary.
 
 ## Planner option ownership audit - 2026-09-01
 
-The current public default record contains 18 fields after removing the unread
-planner `Verbose` field. Every remaining field has a production consumer.
+The current public default record contains 16 fields after removing the unread
+planner `Verbose` field and internalizing two BMTP plane-reuse controls. Every
+remaining field has a production consumer.
 
 | Classification | Fields | Decision |
 | --- | --- | --- |
 | Meaningful request/search/validation choices | `GoalTimeMode`, `MinimumTravelSavingsRate_deg_s`, `SampleTime_s`, `TrajectoryMethod`, `UnsupportedTimedTopologyPolicy`, `AllowAzimuthWrapping`, `MaximumSeedCount`, `MaximumTimeLayerCount`, `MaximumWaitRefinementIterations`, `ArrivalTimeTolerance_s`, `ConstraintTolerance`, `CollisionClearanceTolerance_deg`, `CollisionMinimumTimeStep_s`, `CancellationCheckFcn` | Retain. |
-| Active implementation controls to evaluate independently | `CollocationSegmentCount`, `MaximumNlpIterations`, `EnablePlaneReuse`, `PlaneReuseImprovementTolerance_s` | Do not delete without a bounded replacement; all four currently alter BMTP work or stopping behavior. |
-| Removed unread control | `Verbose` | One-release direct-planner warning and strip; caller-owned example/sandbox logging remains. |
+| Active implementation controls to evaluate independently | `CollocationSegmentCount`, `MaximumNlpIterations` | Do not delete without a bounded replacement; both currently alter BMTP work. |
+| Removed or internalized controls | `Verbose`, `EnablePlaneReuse`, `PlaneReuseImprovementTolerance_s` | One-release direct-planner warnings and stripping. Caller-owned logging remains; BMTP plane reuse is automatic and uses `ArrivalTimeTolerance_s`. |
 | Compatibility-only inputs | `WaypointWarmStartMode`, `RequestedWaypointWarmStartMode`, `IsWaypointWarmStartAvailable`, `PerSeedWorkBudgetMultiplier`, `SeedClusterDistance_deg` | Warn and strip; none appears in returned defaults. |
 
 This classification is based on production field reads, not names or

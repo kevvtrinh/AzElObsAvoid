@@ -44,10 +44,10 @@ Function & Role in the current planner \\
 \toprule
 Setting or behavior & Current source-checked meaning \\
 \midrule
-\texttt{EnablePlaneReuse} & Defaults to \texttt{true}. After a collision-free trial stops improving the retained safe duration beyond its tolerance and the same path--region pairs are involved, the engine may reuse its existing separating planes on the next trajectory calculation. \\
-\scriptsize\url{PlaneReuseImprovementTolerance_s} & Defaults to the arrival-time tolerance when not supplied. \\
+Automatic plane reuse & After a collision-free trial changes the retained safe duration by no more than the arrival-time tolerance and the same path--region pairs remain involved, the engine reuses its separating planes on the next trajectory calculation. This continuation rule is not a planner option. \\
+Reuse tolerance & The existing \texttt{ArrivalTimeTolerance\_s} owns both convergence and the automatic reuse boundary. \\
 Repeat limit & The BMTP loop has at most 35 iterations. It can stop when the safe arrival improvement reaches the arrival-time tolerance or a time/work limit is reached. There is no stagnation-stop setting or diagnostic in current source. \\
-Removed settings & \texttt{MaximumCollocationSegmentCount}, \texttt{MaximumMeshRefinementPasses}, \texttt{MaximumNlpFunctionEvaluations}, \texttt{OptimalityTolerance}, and \texttt{StepTolerance} are not planner options in the current resolver. \\
+Removed settings & \texttt{EnablePlaneReuse}, \texttt{PlaneReuseImprovementTolerance\_s}, \texttt{MaximumCollocationSegmentCount}, \texttt{MaximumMeshRefinementPasses}, \texttt{MaximumNlpFunctionEvaluations}, \texttt{OptimalityTolerance}, and \texttt{StepTolerance} are not planner options in the current resolver. \\
 \bottomrule
 \end{tabularx}
 

@@ -1,5 +1,44 @@
 # Novel replacement branch assessment
 
+## Automatic plane-reuse ownership - 2026-09-01
+
+The sixth `bmtp-cleanup-codex` milestone keeps BMTP separating-plane reuse and
+its diagnostics while removing two public implementation controls:
+`EnablePlaneReuse` and `PlaneReuseImprovementTolerance_s`. Reuse is now an
+internal continuation invariant: the retained-best duration improvement must
+be within `ArrivalTimeTolerance_s`, and the tagged path--region pair set must
+be unchanged. Direct legacy fields warn once, are ignored, and cannot disable
+or retune the mechanism.
+
+This removes two false user choices and one duplicated tolerance relationship,
+but the one-release migration shim costs three net production MATLAB lines.
+The six-milestone branch total is therefore 152 production lines smaller than
+`5c0a6c9`. The benefit is interface and ownership reduction, not a runtime or
+physical-line claim.
+
+Three pre-edit results were saved and compared recursively after removing only
+elapsed-time evidence and the two retired option fields. The tight-clearance
+Target Exits case remained 24 seconds and 21.9416287311844 degrees with reuse
+count 1, 60 plane SOCPs, and 8 trajectory SOCPs. The structurally different
+timed alternating-occlusion case remained 20.8695652173913 seconds and
+13.571326600194 degrees, with per-seed reuse counts `[0 1 1 0 1]`. Static U,
+which did not activate reuse, also remained exact at 20.7124477860115 seconds
+and 40.2550285040009 degrees. A legacy `false` plus custom tolerance reproduced
+the automatic Target Exits result exactly.
+
+Broad verification passed 120/120 tests in 81.7413358 seconds wall time and
+Code Analyzer reported zero findings. All 17 maintained examples ran in fresh
+serial processes: 16 independently validated successes plus the expected
+validated `noValidatedSeed`. Visible success and hidden failure plotting both
+passed. The manual-data exporter ran successfully and now records plane reuse
+as `automatic`.
+
+The remaining public-surface candidates are active solver controls, not dead
+fields. `MaximumNlpIterations` owns the `coneprog` iteration cap despite its
+obsolete name, while `CollocationSegmentCount` bounds static/timed BMTP route
+segmentation. Evaluate each independently; do not remove or retune either
+without exact-result evidence.
+
 ## Dead planner verbosity option removal - 2026-09-01
 
 The fifth `bmtp-cleanup-codex` milestone removes the public planner `Verbose`
@@ -25,14 +64,10 @@ kinematic validation, and `exampleNoPath` retained the expected validated
 time, Code Analyzer reported zero findings, the visible success created two
 figures without warnings, and the hidden failure created its diagnostic figure.
 
-The remaining option audit found no other unread default. In particular,
-`CollocationSegmentCount` caps static/timed BMTP route segmentation and
-`MaximumNlpIterations` sets the trajectory `coneprog` iteration cap despite
-its obsolete name. `EnablePlaneReuse` and
-`PlaneReuseImprovementTolerance_s` also change active BMTP behavior. Those
-four controls are candidates for internal ownership or a compatibility rename,
-but deleting them would change solver behavior and requires separate bounded
-evidence.
+The remaining option audit found no other unread default. At that milestone,
+collocation, solver-iteration, and plane-reuse controls were all still active;
+the later automatic plane-reuse milestone internalized only the two reuse
+fields under exact-result gates.
 
 ## Dormant seed-clustering removal - 2026-09-01
 

@@ -223,9 +223,10 @@ for iterationIndex = 1:35
             break;
         end
         taggedPairSetUnchanged = isequal(taggedPairs, previousTaggedPairs);
-        reusePlanes = options.EnablePlaneReuse && ...
-            retainedBestImprovement_s <= ...
-            options.PlaneReuseImprovementTolerance_s && taggedPairSetUnchanged;
+        % Plane reuse is an internal continuation invariant, not a request
+        % choice. Share the arrival tolerance used by convergence ownership.
+        reusePlanes = retainedBestImprovement_s <= ...
+            options.ArrivalTimeTolerance_s && taggedPairSetUnchanged;
         if reusePlanes
             diagnostics.PlaneReuseApplied = true;
             diagnostics.PlaneReuseCount = diagnostics.PlaneReuseCount + 1;

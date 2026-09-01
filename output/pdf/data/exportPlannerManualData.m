@@ -127,7 +127,7 @@ if fileIdentifier < 0
     error("exportPlannerManualData:WalkthroughValuesWriteFailed", ...
         "Could not open %s for writing.", fileName);
 end
-cleaner = onCleanup(@() fclose(fileIdentifier)); %#ok<NASGU>
+cleaner = onCleanup(@() fclose(fileIdentifier));
 initialState = result.Inputs.initialState;
 goalState = result.Inputs.goalState;
 limits = result.Inputs.limits;
@@ -176,8 +176,8 @@ fprintf(fileIdentifier, "\\newcommand{\\WalkMaximumNlpIterations}{%d}\n", ...
     options.MaximumNlpIterations);
 fprintf(fileIdentifier, "\\newcommand{\\WalkArrivalTolerance}{%.3g s}\n", ...
     options.ArrivalTimeTolerance_s);
-fprintf(fileIdentifier, "\\newcommand{\\WalkPlaneReuse}{%s}\n", ...
-    string(options.EnablePlaneReuse));
+fprintf(fileIdentifier, ...
+    "\\newcommand{\\WalkPlaneReuse}{automatic}\n");
 solver = selectedSummary.SolverDiagnostics;
 validTrial = isfinite(solver.TrialDuration_s);
 trialIndex = find(validTrial);

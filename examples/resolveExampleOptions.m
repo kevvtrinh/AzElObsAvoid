@@ -132,7 +132,8 @@ plannerOptions = obstacleAvoidance.planTrajectory();
 plannerNames = string(fieldnames(plannerOptions));
 deprecatedPlannerNames = ["WaypointWarmStartMode", ...
     "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable", ...
-    "PerSeedWorkBudgetMultiplier", "SeedClusterDistance_deg"];
+    "PerSeedWorkBudgetMultiplier", "SeedClusterDistance_deg", ...
+    "EnablePlaneReuse", "PlaneReuseImprovementTolerance_s"];
 forwardedPlannerNames = [plannerNames; deprecatedPlannerNames.'];
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.

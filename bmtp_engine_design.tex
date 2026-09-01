@@ -415,16 +415,15 @@ record with \texttt{Passed=false} and reason
 \section{Alternatives considered}
 
 \begin{itemize}
-    \item \textbf{Rebuild the full SOCP every alternation (previous behavior).} Rejected
-    for cost. Profiling showed the immutable conic structure was rebuilt
-    unchanged. The retained cache improved the maintained Target Exits median
-    wall time by 9.82\% and the diagnostic mode by 15.34\%, with bit-identical
-    reference example results (see \texttt{verification.md}).
-    \item \textbf{Separating-plane reuse across alternations.} Rejected. The
-    experiment changed accepted results without a controlling bound. The
-    restored version is off unless the planner sets \texttt{EnablePlaneReuse} to true, with a
-    retained-best improvement bound; the default path preserves the plane reset
-    and re-derivation exactly (see \texttt{branch\_assessment.md}).
+    \item \textbf{Cache the immutable SOCP template.} Removed. The cache added
+    threading and schema ownership for a modest measured speed benefit. Direct
+    construction is smaller, remained result-identical, and incurred a 9.4\%
+    warmed runtime cost on the declared cleanup gate.
+    \item \textbf{Separating-plane reuse across alternations.} Retained as an
+    automatic continuation rule. Reuse occurs only when the retained-best
+    improvement is within \texttt{ArrivalTimeTolerance\_s} and the tagged
+    path--region pair set is unchanged. The mechanism and its diagnostics stay
+    internal to BMTP rather than creating planner options.
     \item \textbf{Sample-based collision checking.} Rejected. Sampling cannot bound a full
     polynomial interval. Bernstein convex-hull bounds certify complete spans.
     \item \textbf{Engine-side obstacle interpretation.} Rejected. It would couple the
@@ -434,13 +433,13 @@ record with \texttt{Passed=false} and reason
 \section{Testing, performance, and failure reporting}
 
 \begin{itemize}
-    \item \textbf{Testing.} The clean MATLAB suite checks every change (currently 98/98).
+    \item \textbf{Testing.} The complete MATLAB suite checks every change.
     Default reference example cases must remain bit-identical for any change that claims
     no behavior difference. Changed files must be Code Analyzer clean.
     \item \textbf{Performance.} \texttt{coneprog} calls dominate solve cost. Timing claims use
     isolated MATLAB preference snapshots, one discarded warm-up, and interleaved
     A/B repetitions.
-    \item \textbf{Failure visibility.} Work limits, exhausted alternation, unsupported
+    \item \textbf{Failure visibility.} Iteration limits, exhausted alternation, unsupported
     requests, and physical infeasibility return stable failure records. The
     engine does not throw for expected infeasibility.
 \end{itemize}
@@ -468,8 +467,8 @@ compares the recorded baseline and candidate medians for one timed case.}
 \section{Open questions}
 
 \begin{itemize}
-    \item Should the stagnation stop and \texttt{EnablePlaneReuse} controls merge into one
-    alternation-policy option?
+    \item Can automatic plane reuse receive a stronger convergence certificate
+    without exposing an alternation-policy option?
     \item Can the warm-start position-error bound from \texttt{convertPolynomialToWarmStart}
     feed the dilation margin directly, instead of a fixed tolerance?
     \item Is a request-wide lower-bound certificate practical for seeded BMTP solves,

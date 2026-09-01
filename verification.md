@@ -5616,3 +5616,46 @@ seed, and one diagnostic figure. `git diff --check` is the final repository
 gate. The change adds eight net production MATLAB lines because the required
 one-release migration shim and tests outweigh deleting the dormant field; the
 five-milestone branch total remains a 155-line production reduction.
+
+## Automatic plane-reuse ownership - 2026-09-01
+
+BMTP plane reuse remains active, but `EnablePlaneReuse` and
+`PlaneReuseImprovementTolerance_s` are no longer planner choices. Automatic
+reuse applies only when the retained-best duration improvement is within
+`ArrivalTimeTolerance_s` and the tagged path--region pair set is unchanged.
+Legacy fields warn once with
+`planTrajectory:DeprecatedPlaneReuseOptions`, are ignored, and are absent from
+returned options.
+
+Saved pre-edit results and the candidate matched recursively outside elapsed
+time and the two removed fields:
+
+- tight-clearance Target Exits: 24 s, 21.9416287311844 deg, selected seed 2,
+  reuse count 1, 60 plane SOCPs, 8 trajectory SOCPs;
+- timed alternating occlusion: 20.8695652173913 s, 13.571326600194 deg,
+  per-seed reuse counts `[0 1 1 0 1]`;
+- static-U non-activation sentinel: 20.7124477860115 s,
+  40.2550285040009 deg and zero selected-solve reuse.
+
+The first comparison supplied legacy `EnablePlaneReuse=false` and a custom
+reuse tolerance, proving the retired fields cannot disable or retune automatic
+behavior. The expanded focused suite passed 48/48. Final Code Analyzer output
+was clean, and the complete repository suite passed 120/120 in 81.7413358
+seconds wall time (78.9273796 aggregate test seconds).
+
+All 17 maintained examples ran in separate serial MATLAB processes with jerk
+enabled. Sixteen succeeded and independently validated; `exampleNoPath`
+returned the expected validated `noValidatedSeed`. Every success passed
+collision and kinematic checks. The exact rows and wall times are recorded in
+`benchmark.csv`. A visible obstacle-free run created two figures without a
+warning, and the hidden no-path run created one diagnostic figure. The manual
+exporter also reran `exampleObstacleAvoidance` successfully in 6.3053904
+seconds and regenerated `WalkPlaneReuse` as `automatic`. Neither `pdflatex`
+nor `pdftotext` is installed on this host, so the updated TeX sources and data
+were not compiled or text-extracted from the tracked PDFs in this milestone.
+
+The change adds three net production MATLAB lines because the compatibility
+shim outweighs removing two option fields. The six-milestone branch total is
+152 production lines smaller than `5c0a6c9`; this milestone claims a smaller
+public interface and clearer invariant ownership, not fewer physical lines or
+a speedup.

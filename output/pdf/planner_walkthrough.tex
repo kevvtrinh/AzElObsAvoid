@@ -188,8 +188,8 @@ include: sample time \WalkSampleTime; trajectory method \texttt{"bmtp"};
 azimuth wrapping \texttt{false}; maximum seeds \WalkMaximumSeedCount; maximum
 time layers \WalkMaximumTimeLayerCount; collocation segments
 \WalkCollocationSegmentCount; maximum solver iterations \WalkMaximumNlpIterations;
-arrival tolerance \WalkArrivalTolerance; and plane reuse \WalkPlaneReuse.
-\texttt{EnablePlaneReuse} is therefore on by default in this real request.
+and arrival tolerance \WalkArrivalTolerance. Plane reuse is \WalkPlaneReuse;
+it is an internal BMTP continuation rule rather than a planner option.
 
 If the caller supplies an unknown field, the station leaves it out, makes no
 behavior change, and issues one
@@ -757,10 +757,10 @@ move together multiplies unknowns, so their joint condition is not one convex
 problem; BMTP alternates the two convex problems.
 
 \arrival{2. Reusing unchanged safety lines.}
-\texttt{EnablePlaneReuse} defaults to \WalkPlaneReuse. After a collision-free
-trial, it skips line re-derivation only when the retained best duration changed
-by no more than \texttt{PlaneReuseImprovementTolerance\_s} and the tagged
-pair set is unchanged. It solves the curve problem again with the same lines.
+Plane reuse is \WalkPlaneReuse. After a collision-free trial, BMTP skips line
+re-derivation only when the retained best duration changed by no more than
+\texttt{ArrivalTimeTolerance\_s} and the tagged pair set is unchanged. It
+solves the curve problem again with the same lines.
 On the measured reference case, that repeated solve was identical in control
 net and duration, so the existing arrival-improvement test ended the loop.
 Our selected route did not use it:

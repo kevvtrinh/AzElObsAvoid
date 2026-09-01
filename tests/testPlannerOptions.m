@@ -28,12 +28,12 @@ verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
 verifyFalse(testCase, isfield(options, "PerSeedWorkBudgetMultiplier"));
 verifyFalse(testCase, isfield(options, "SeedClusterDistance_deg"));
 verifyFalse(testCase, isfield(options, "Verbose"));
-verifyTrue(testCase, options.EnablePlaneReuse);
+verifyFalse(testCase, isfield(options, "EnablePlaneReuse"));
+verifyFalse(testCase, isfield(options, ...
+    "PlaneReuseImprovementTolerance_s"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
-verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, ...
-    options.ArrivalTimeTolerance_s);
 end
 
 function testPartialOverridesResolveAndNormalize(testCase)
@@ -45,7 +45,6 @@ overrides = struct( ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
     "MaximumWaitRefinementIterations", 8, ...
-    "EnablePlaneReuse", 1, ...
     "ArrivalTimeTolerance_s", 2e-3);
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 
@@ -56,8 +55,31 @@ verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, ...
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
-verifyTrue(testCase, options.EnablePlaneReuse);
-verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, 2e-3);
+end
+
+function testDeprecatedPlaneReuseOptionsWarnOnceAndAreRemoved(testCase)
+% Accept old implementation controls without disabling automatic reuse.
+legacyOptions = struct( ...
+    "EnablePlaneReuse", false, ...
+    "PlaneReuseImprovementTolerance_s", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(legacyOptions), ...
+    "planTrajectory:DeprecatedPlaneReuseOptions");
+resolvedOptions = callWithoutPlaneReuseWarning(legacyOptions);
+verifyFalse(testCase, isfield(resolvedOptions, "EnablePlaneReuse"));
+verifyFalse(testCase, isfield(resolvedOptions, ...
+    "PlaneReuseImprovementTolerance_s"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.EnablePlaneReuse = false;
+oldResolvedOptions.PlaneReuseImprovementTolerance_s = 1e-7;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedPlaneReuseOptions");
+replayedOptions = callWithoutPlaneReuseWarning(oldResolvedOptions);
+verifyFalse(testCase, isfield(replayedOptions, "EnablePlaneReuse"));
+verifyFalse(testCase, isfield(replayedOptions, ...
+    "PlaneReuseImprovementTolerance_s"));
 end
 
 function testDeprecatedVerboseWarnsOnceAndIsRemoved(testCase)
@@ -218,6 +240,14 @@ end
 function options = callWithoutVerboseWarning(overrides)
 % Suppress the already-verified dead-logging-option migration warning.
 warningState = warning("off", "planTrajectory:DeprecatedVerbose");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutPlaneReuseWarning(overrides)
+% Suppress the already-verified plane-reuse migration warning.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedPlaneReuseOptions");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end
