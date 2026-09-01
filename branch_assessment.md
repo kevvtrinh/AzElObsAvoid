@@ -1,5 +1,63 @@
 # Novel replacement branch assessment
 
+## Wall-clock seed cutoff removal - 2026-09-01
+
+The third `bmtp-cleanup-codex` milestone removes the planner's
+machine-load-dependent per-seed wall-clock cutoff. Every admitted seed now
+runs to the existing deterministic BMTP iteration and cone-program limits, or
+to the existing explicit cancellation boundary. The public
+`PerSeedWorkBudgetMultiplier` is recognized for one release, warned as
+deprecated and ignored, then stripped before ordinary option resolution. The
+private `MaximumSolverTime_s`, `WorkLimitReached`, and
+`seedWorkBudgetExhausted` paths are gone. `MaximumSeedCount`, the 35 BMTP
+outer-iteration bound, nonlinear and cone-program limits, validation,
+diagnostics, and the tested public restart API remain.
+
+The measurable maintainability benefit is a net reduction of 40 production
+MATLAB lines: 57 removed and 17 added, including the compatibility shim and
+example-boundary forwarding. Together with the first two milestones, the
+branch has removed 80 production lines while retaining the continuous BMTP
+solver, separating-plane reuse, static and time-varying obstacle support,
+arrival policies, motion limits, validation, certificates, failure
+diagnostics, and public result contract.
+
+The strongest correctness evidence is recursive comparison against frozen
+commit `dd7a674` at `1e-9`. Fixed-arrival alternating occlusion, earliest and
+balanced obstacle avoidance, the extreme outline, moving/deforming geometry,
+and expected no-path results matched their completed-seed baselines outside
+the declared option and diagnostic removal. Alternating occlusion now
+deterministically completes seed 5 and selects its 13.5713266002-degree motion
+instead of sometimes discarding it and selecting the 13.5986641387-degree
+motion; arrival remains 20.8695652174 seconds. Earliest arrival remains
+7.57454176632 seconds with 11.4118613877 degrees of motion. Balanced arrival
+remains 7.54855735896 seconds, 11.2161345431 degrees of motion, and
+18.764691902 degrees of declared composite cost.
+
+Broad verification passed 115/115 tests. All 17 maintained examples ran in
+separate serial headless processes: 16 planner/example-validation successes
+and the expected validated `noValidatedSeed` result. Every successful motion
+passed collision and kinematic checks. A hidden no-path run created one
+diagnostic figure titled with `noValidatedSeed`, one seed, one expanded state,
+and two rejected transitions. A visible obstacle-free run created two visible
+figures. MATLAB Code Analyzer reported zero findings in all four changed
+production files, and `git diff --check` passed.
+
+The explicit unfavorable tradeoff is runtime. The extreme-outline default
+wall time increased from the prior cutoff run's 42.1929796 seconds to
+67.4136091 seconds in the full sweep. A controlled completed-seed comparison
+was much closer: 72.2275885 seconds before the edit and 72.80709 seconds after
+it, with exact non-runtime results. This is accepted because the user
+prioritized a smaller deterministic core over early runtime and because the
+old cutoff could discard a better valid result. Runtime ratios remain
+case-specific; this milestone does not claim a universal slowdown bound.
+
+The next highest-confidence cleanup candidate is dormant seed-region
+clustering. Its default is zero, no maintained example or test enables it,
+and a separate bounded experiment could remove approximately 90-100
+production lines while requiring exact default-result equality. Plane reuse
+itself remains explicitly retained: its completed removal experiment worsened
+motion length and approximately doubled runtime.
+
 ## Dormant waypoint warm-start option removal - 2026-09-01
 
 The second `bmtp-cleanup-codex` milestone removes the planner-option surface

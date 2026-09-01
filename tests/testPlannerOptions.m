@@ -25,6 +25,7 @@ verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
 verifyFalse(testCase, isfield(options, "WaypointWarmStartMode"));
 verifyFalse(testCase, isfield(options, "RequestedWaypointWarmStartMode"));
 verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
+verifyFalse(testCase, isfield(options, "PerSeedWorkBudgetMultiplier"));
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
@@ -57,6 +58,26 @@ verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, 2e-3);
 verifyTrue(testCase, options.Verbose);
+end
+
+function testDeprecatedPerSeedWorkBudgetWarnsOnceAndIsRemoved(testCase)
+% Accept old timing-cutoff inputs without restoring timing-based behavior.
+partialOptions = struct("PerSeedWorkBudgetMultiplier", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(partialOptions), ...
+    "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
+resolvedPartial = callWithoutWorkBudgetWarning(partialOptions);
+verifyFalse(testCase, ...
+    isfield(resolvedPartial, "PerSeedWorkBudgetMultiplier"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.PerSeedWorkBudgetMultiplier = 3;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
+replayedOptions = callWithoutWorkBudgetWarning(oldResolvedOptions);
+verifyFalse(testCase, ...
+    isfield(replayedOptions, "PerSeedWorkBudgetMultiplier"));
 end
 
 function testDeprecatedWaypointWarmStartOptionsWarnOnceAndAreRemoved(testCase)
@@ -138,6 +159,14 @@ function options = callWithoutDeprecatedWarning(overrides)
 % Suppress the already-verified migration warning for output inspection.
 warningState = warning( ...
     "off", "planTrajectory:DeprecatedWaypointWarmStartOptions");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutWorkBudgetWarning(overrides)
+% Suppress the already-verified work-budget migration warning.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

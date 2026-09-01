@@ -132,6 +132,20 @@ verifyWarning(testCase, @() ...
     "planTrajectory:DeprecatedWaypointWarmStartOptions");
 end
 
+function testExampleResolverForwardsDeprecatedWorkBudget(testCase)
+% Forward the retired cutoff to the planner's single migration-warning owner.
+legacyOptions = struct( ...
+    "PerSeedWorkBudgetMultiplier", 3, "PlotOutputs", false);
+lastwarn("", "");
+[forwardedOptions, ~] = resolveExampleOptions(legacyOptions, struct());
+[~, warningIdentifier] = lastwarn;
+verifyEmpty(testCase, warningIdentifier);
+verifyEqual(testCase, forwardedOptions.PerSeedWorkBudgetMultiplier, 3);
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(forwardedOptions), ...
+    "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
+end
+
 function testUniformMaximumJerkRouting(testCase)
 % Verify that every example routes the shared jerk control into limits.
 exampleNames = [ ...

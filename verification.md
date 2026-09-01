@@ -1,5 +1,100 @@
 # Plan 325 verification
 
+## Wall-clock seed cutoff removal - 2026-09-01
+
+The authoritative baseline was commit
+`dd7a67441086c651c818adbd65c110cb72c752fa` in detached worktree
+`tmp/bmtp-seed-budget-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Every MATLAB command used a fresh private
+`MATLAB_PREFDIR`, `TEMP`, and `TMP`, and every maintained example ran in its
+own process. The predeclared gate allowed a documented runtime increase but
+required no representative result-quality regression.
+
+The accepted edit removes the complete timing-dependent seed cutoff:
+
+- `PerSeedWorkBudgetMultiplier` is no longer a planner default or echoed
+  result option. A one-release shim warns once that a supplied legacy value is
+  deprecated and ignored, then strips it before unknown-option handling.
+- `planCorridorQuintic` no longer computes an incumbent-derived wall budget,
+  injects it into a seed solve, or translates a solver stop into
+  `seedWorkBudgetExhausted`.
+- `bmtpEngine.solve` no longer accepts or polls `MaximumSolverTime_s`, and no
+  longer publishes `WorkLimitReached`.
+- The example option boundary forwards the legacy public name to the central
+  resolver. Deterministic iteration/conic limits, `MaximumSeedCount`, explicit
+  cancellation, validation, diagnostics, and the public BMTP restart surface
+  are unchanged.
+
+Production MATLAB changes were 17 additions and 57 deletions, a net reduction
+of 40 lines. The README loses six obsolete lines. Together with the previous
+milestones, the branch production reduction is 80 lines. Static verification
+passed `git diff --check`, stale-name searches, the 40-line benefit gate, and
+MATLAB Code Analyzer with zero findings in
+`resolvePlannerOptions.m`, `planCorridorQuintic.m`,
+`resolveExampleOptions.m`, and `bmtpEngine/solve.m`.
+
+Focused tests passed as follows:
+
+- planner options, example invariants, BMTP engine and planner contract:
+  43/43;
+- cancellation and offline-sandbox behavior: 14/14;
+- legacy partial and fully resolved option replay warns exactly once with
+  `planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier`, is not also unknown,
+  and is absent from resolved options;
+- the public seven/eight-input, three-output BMTP restart tests remain green.
+
+Recursive result comparisons ignored only runtime fields and the declared
+`PerSeedWorkBudgetMultiplier` / `WorkLimitReached` migration. Every comparison
+passed at `1e-9`:
+
+| Case | Policy | Arrival (s) | Motion (deg) | Candidate wall (s) | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| Straight target alternating occlusion | fixed | 20.8695652174 | 13.5713266002 | 25.1877224 | exact; seed 5 selected |
+| Protected rectangle | earliest | 7.57454176632 | 11.4118613877 | 5.0345331 | exact |
+| Protected rectangle | balanced | 7.54855735896 | 11.2161345431 | 7.2766595 | exact; composite 18.764691902 deg |
+| Extreme outline | earliest | 5.81065318159 | 23.3457566443 | 72.80709 | exact |
+| Moving/deforming outline | earliest | 7.91666666667 | 40.2805670061 | 27.1419769 | exact |
+| Expected no path | earliest | NaN | NaN | 2.7477454 | exact `noValidatedSeed` |
+
+The controlled pre-edit completed-seed walls were 6.1394393 seconds for the
+earliest rectangle, 7.1542421 seconds for balanced, and 72.2275885 seconds for
+the extreme outline. Runtime is secondary and noisy; these comparisons show
+no material extra engine cost after both sides complete the same seeds. The
+operational cost comes from allowing formerly cut-off losing seeds to finish.
+In the serial default sweep, the extreme outline grew from the previous
+42.1929796-second cutoff run to 67.4136091 seconds. This unfavorable result is
+retained visibly and accepted under the declared gate.
+
+All 17 maintained examples then ran serially and headlessly with jerk enabled.
+Sixteen returned planner success plus independent example-validation success;
+`exampleNoPath` returned the expected independently validated
+`noValidatedSeed`. Every successful result was collision-free and passed
+velocity, acceleration, jerk and dynamics checks; applicable certificates
+passed. Exact lengths, durations, wall times and applicability are recorded in
+`benchmark.csv`. The fixed alternating-occlusion sweep selected seed 5 with
+27.950433436 degrees of seed polyline, 13.5713266002 degrees of final motion,
+and 20.8695652174 seconds duration. The extreme-outline sweep retained
+22.070643085 degrees of seed polyline, 23.3457566443 degrees of final motion,
+and 5.81065318159 seconds duration.
+
+The hidden failure-plot gate created one invisible figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free gate created two figures with
+`Visible="on"`. The complete test tree passed 115/115 with zero failed or
+incomplete, 79.2300998 seconds aggregate test duration, and 85.891126 seconds
+wall time.
+
+Several reporting/setup mistakes did not invalidate saved planner evidence:
+the first sandboxed MATLAB start failed before repository code and was rerun
+with the approved isolated process; early reporting expressions queried the
+obsolete top-level names `Trajectory`, `BalancedArrivalTradeoff_deg_s`, and
+`ExpandedStateCount`; the no-path inspection initially expected successful-
+trajectory validation on an expected failure; and one older moving/deforming
+artifact stored its result under `evidence.Result`. In each case the planner
+result had already been saved, recursive comparison had passed where
+applicable, and a fresh read-only artifact inspection corrected only the
+reporting expression. No required gate remains untested.
+
 ## Dormant waypoint warm-start option removal - 2026-09-01
 
 The authoritative baseline was commit

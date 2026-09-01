@@ -55,12 +55,6 @@ planner compares their actual travel against alternating and spline families;
 sampled screening may reject a proposal, but only continuous public validation
 can accept one.
 
-`PerSeedWorkBudgetMultiplier` defaults to `3`. After an independently
-validated topology-seed motion exists, each later BMTP solve receives a
-deterministic work limit equal to this multiplier times the fastest validated
-seed solve so far, with a one-second floor. A work-limited seed remains visible
-in `SeedSummaries` with termination reason `seedWorkBudgetExhausted`.
-
 `MaximumTimeLayerCount` defaults to `17` and bounds the timed visibility
 search layers, including the initial and goal times. Lower values reduce
 timed-search work but can omit obstacle-event times and lose feasible routes.

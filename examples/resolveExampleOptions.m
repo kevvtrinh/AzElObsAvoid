@@ -130,7 +130,8 @@ plannerOptions = obstacleAvoidance.planTrajectory();
 plannerOptions.Verbose = true;
 plannerNames = string(fieldnames(plannerOptions));
 deprecatedPlannerNames = ["WaypointWarmStartMode", ...
-    "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable"];
+    "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable", ...
+    "PerSeedWorkBudgetMultiplier"];
 forwardedPlannerNames = [plannerNames; deprecatedPlannerNames.'];
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
