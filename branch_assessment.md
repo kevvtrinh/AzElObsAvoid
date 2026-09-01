@@ -40,6 +40,32 @@ Clarabel is Apache-2.0 but has no official MATLAB interface; MOSEK requires its
 proprietary dependency and license, neither of which was present. All losing
 candidate adapters were removed, and the temporary builds were not installed.
 
+Two further BSD-3-Clause candidates were built outside the repository. The
+official `qoco-org/qoco-matlab` interface passed all nine upstream MATLAB tests,
+but using QOCO only for the plane problems produced a 2.6017821-second focused
+median versus the fresh 2.2773948-second `coneprog` median, a 14.2 percent
+regression. QOCOGen 0.1.9 produced a compiled degree-16/four-vertex plane
+solver with the same validated physical output and a 2.2673445-second focused
+median, only 0.44 percent faster. Its fixed sparsity and dimensions did not
+cover other Bezier degrees or obstacle vertex counts, so it was not a general
+backend and missed the 10 percent gate. Both adapters were removed.
+
+A reopened ECOS plane-only adapter reached a 2.0481737-second focused median,
+10.1 percent faster than the fresh incumbent, with the focused certificate
+passing. The required asymmetric-triangle confirmation was faster as well
+(2.3278577 versus 2.7633012 seconds), but only 17 of 18 plane pairs verified;
+the minimum signed gap was 0.192109892896 degrees. Public trajectory validation
+still passed, which is precisely why the independent plane certificate remains
+authoritative. ECOS was rejected and removed rather than hiding that failure.
+
+The follow-up call-reduction plan also retained no production change. Batching
+18 independent final plane programs into one call kept validation passed but
+was slower in comparable cold runs (8.20 versus 7.97 seconds). Stopping at the
+first collision-free biconvex iterate improved the warmed focused median by
+17.4 percent (1.8804262 versus 2.2773948 seconds) and retained validation, but
+the smoothed path grew 5.1 percent from 11.4118614 to 11.9926831 degrees. Both
+candidates were removed under their fixed gates.
+
 Code Analyzer reported no issues in changed MATLAB files, focused conic tests
 passed 6/6, and the complete tree passed 114/114. All 17 maintained examples
 ran serially after the retained wrapper: sixteen independently validated

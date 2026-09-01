@@ -80,8 +80,12 @@ benchmark table.
 ## Completed Decision
 
 The retained backend is `coneprog` with its default `auto` linear solver.
-The isolated `normal` setting did not complete the focused planner gate, SCS
-made the validated focused planner case about 23 times slower, and ECOS did
-not produce a validated trajectory. MOSEK was unavailable because neither the
-dependency nor a license was present. Clarabel is Apache-2.0 but has no
-official MATLAB interface. All losing candidate adapters were removed.
+The isolated `normal` setting did not complete the focused planner gate, and
+SCS made the validated focused planner case about 23 times slower. QOCO's
+plane-only adapter was 14.2% slower than the fresh incumbent. A QOCOGen solver
+for one fixed degree-16/four-vertex plane family was only 0.44% faster and was
+not general across degrees or vertex counts. ECOS's plane-only adapter cleared
+the focused runtime gate, but a structurally different triangle case verified
+only 17 of 18 plane pairs, so it was rejected. MOSEK was unavailable because
+neither the dependency nor a license was present. Clarabel is Apache-2.0 but
+has no official MATLAB interface. All losing candidate adapters were removed.
