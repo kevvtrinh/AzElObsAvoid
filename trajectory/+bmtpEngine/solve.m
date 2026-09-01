@@ -69,8 +69,8 @@ end
 validateKernelInputs(seed, regions_deg, coverage, ...
     initialState, goalState, limits, options);
 originalSeedSegmentCount = size(seed.position_deg, 1) - 1;
-maximumWarmSegmentCount = max(2, 2 * round(double( ...
-    optionalField(options, "CollocationSegmentCount", 10))));
+% Preserve the former default 2-by-10 cap without exposing conic dimension.
+maximumWarmSegmentCount = 20;
 if usesTimedCells
     route_deg = createTimedWarmRoute( ...
         seed, coverage.TimedSegmentCount, maximumWarmSegmentCount);

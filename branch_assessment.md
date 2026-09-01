@@ -1,5 +1,36 @@
 # Novel replacement branch assessment
 
+## Internal BMTP segmentation ownership - 2026-09-01
+
+The eighth `bmtp-cleanup-codex` milestone removes the last public option used
+only to size BMTP's conic construction. `CollocationSegmentCount` is no longer
+resolved or echoed. Static warm routes and timed-cell routes retain the former
+default effective cap of 20 spans. Legacy input warns once, is ignored, and
+cannot retune segmentation. The timed helper also drops its now-unused options
+argument.
+
+Saved static-U and true timed-cell BMTP results matched recursively at `1e-9`
+after removing only runtime evidence and the retired field. The timed fixture
+retained `bmtpTimedCell`, seven optimizer spans, seven timed cells, 35 seconds,
+36.6949453597 degrees, full coverage, planes, validation, and certificates.
+The existing dense 30-edge engine fixture still resamples to exactly 20 spans.
+A legacy value of 2 warned, disappeared, and matched automatic static-U output
+recursively.
+
+Focused tests passed 56/56. Sandbox diagnosis took 10.1182416 seconds versus
+10.3521119 before the change; route economy took 14.8954734 versus
+14.6741929 seconds, ordinary run noise. All 17 maintained examples then ran
+serially with exact prior trajectory metrics: 16 validated successes plus the
+expected independently checked `noValidatedSeed`. Visible and failure plotting
+passed, Code Analyzer reported zero findings, and the full suite passed 123/123
+in 88.5229176 seconds wall time.
+
+The required migration shim makes this milestone two net non-test MATLAB lines
+larger even though the public interface and two consumer paths are smaller.
+Under the established accounting, the eight-milestone branch remains 156 lines
+smaller than `5c0a6c9`. Public defaults now contain 14 meaningful fields, and
+the audited public surface has no remaining solver-construction-only control.
+
 ## Internal trajectory-solver cap ownership - 2026-09-01
 
 The seventh `bmtp-cleanup-codex` milestone removes the obsolete public

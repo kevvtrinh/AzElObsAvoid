@@ -5720,3 +5720,62 @@ and reported one attempted seed. The manual-data exporter completed in
 5.7923965 seconds and removed the retired option macro. The milestone reduces
 non-test MATLAB by six lines under the established accounting, taking the
 seven-milestone branch total to 158 lines removed from `5c0a6c9`.
+
+## Internal BMTP segmentation ownership - 2026-09-01
+
+`CollocationSegmentCount` previously doubled into a cap on static warm-route
+and timed-cell spans. It is now a compatibility-only input: direct and example
+legacy use warns once with
+`planTrajectory:DeprecatedCollocationSegmentCount`, is ignored, and is absent
+from returned options. Both internal sites retain the former default effective
+cap of 20 spans. Public defaults contain 14 fields.
+
+Recursive comparison at `1e-9`, after removing only runtime evidence and the
+retired field, passed for static U and the moving-circle/static-U timed-cell
+fixture. The timed case retained `bmtpTimedCell`, seven optimizer spans, seven
+timed segments, 35 seconds, 36.6949453597 degrees, and exact coverage, plane,
+trajectory, validation, and certificate records. The 30-edge engine sentinel
+still reports `WarmRouteResampled=true` and exactly 20 optimizer spans. A
+legacy value of 2 warned once, disappeared, and reproduced automatic static-U
+output exactly.
+
+Focused evidence:
+
+- focused option/engine/stage/example/timed/sandbox gate: 56/56 in
+  47.0155112 seconds;
+- sandbox diagnosis: 11/11 in 10.1182416 seconds versus 10.3521119 baseline;
+- sandbox route economy: 3/3 in 14.8954734 seconds versus 14.6741929 baseline;
+- stage timing: 4/4 in 2.4564911 seconds;
+- Code Analyzer: zero findings in every changed MATLAB file;
+- manual-data exporter: validated result in 5.8262656 seconds;
+- complete suite: 123/123 in 88.5229176 seconds wall time and
+  81.7095918 seconds aggregate test time.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3499269 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4132808 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9587101 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9464368 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9466535 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0030567 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8236954 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5096838 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6737009 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7690469 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8466857 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8883797 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6598913 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.5195017 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8739982 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2825783 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.7607284 | `goalReached` |
+
+The visible obstacle-free gate created two figures without warnings. Hidden
+`exampleNoPath` created one diagnostic figure containing `noValidatedSeed` and
+one attempted seed. The milestone adds two net non-test MATLAB lines because
+the one-release shim outweighs consumer simplification. The eight-milestone
+branch total is therefore 156 lines smaller than `5c0a6c9`.

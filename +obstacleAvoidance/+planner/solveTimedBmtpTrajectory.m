@@ -52,7 +52,7 @@ else
     end
 end
 trialTime_s = unique(double(trialTime_s(:)), "stable");
-timedSegmentCount = createTimedSegmentCount(seed, options);
+timedSegmentCount = createTimedSegmentCount(seed);
 trialTemplate = struct( ...
     "FinalTime_s", NaN, "Coverage", struct(), ...
     "Success", false, "TerminationReason", "notRun", ...
@@ -208,12 +208,13 @@ end
 cellEdges_s = unique(candidateEdges_s, "sorted");
 end
 
-function segmentCount = createTimedSegmentCount(seed, options)
+function segmentCount = createTimedSegmentCount(seed)
 % Recover the uniform search-layer clock without changing waypoint times.
 tau = double(seed.tau(:));
 minimumInterval = min(diff(tau));
 segmentCount = max(1, round(1 / minimumInterval));
-maximumSegmentCount = max(2, 2 * round(double(options.CollocationSegmentCount)));
+% Match the engine's former default 2-by-10 cap so time cells and spans agree.
+maximumSegmentCount = 20;
 clockResidual = max(abs(tau * segmentCount - round(tau * segmentCount)));
 if clockResidual > 1e-8 || segmentCount > maximumSegmentCount
     segmentCount = maximumSegmentCount;

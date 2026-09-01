@@ -32,9 +32,28 @@ verifyFalse(testCase, isfield(options, "EnablePlaneReuse"));
 verifyFalse(testCase, isfield(options, ...
     "PlaneReuseImprovementTolerance_s"));
 verifyFalse(testCase, isfield(options, "MaximumNlpIterations"));
+verifyFalse(testCase, isfield(options, "CollocationSegmentCount"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
+end
+
+function testDeprecatedCollocationSegmentCountWarnsOnceAndIsRemoved(testCase)
+% Accept the old mesh-size input without retuning internal segmentation.
+legacyOptions = struct("CollocationSegmentCount", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(legacyOptions), ...
+    "planTrajectory:DeprecatedCollocationSegmentCount");
+resolvedOptions = callWithoutCollocationWarning(legacyOptions);
+verifyFalse(testCase, isfield(resolvedOptions, "CollocationSegmentCount"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.CollocationSegmentCount = 2;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedCollocationSegmentCount");
+replayedOptions = callWithoutCollocationWarning(oldResolvedOptions);
+verifyFalse(testCase, isfield(replayedOptions, "CollocationSegmentCount"));
 end
 
 function testDeprecatedMaximumNlpIterationsWarnsOnceAndIsRemoved(testCase)
@@ -275,6 +294,14 @@ function options = callWithoutMaximumIterationsWarning(overrides)
 % Suppress the already-verified trajectory-iteration migration warning.
 warningState = warning( ...
     "off", "planTrajectory:DeprecatedMaximumNlpIterations");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutCollocationWarning(overrides)
+% Suppress the already-verified segmentation migration warning.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedCollocationSegmentCount");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

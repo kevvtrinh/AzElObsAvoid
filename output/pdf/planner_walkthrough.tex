@@ -186,10 +186,10 @@ It starts from one complete default list, copies only known nonempty overrides,
 and then checks the resulting values. For this request the resolved values
 include: sample time \WalkSampleTime; trajectory method \texttt{"bmtp"};
 azimuth wrapping \texttt{false}; maximum seeds \WalkMaximumSeedCount; maximum
-time layers \WalkMaximumTimeLayerCount; collocation segments
-\WalkCollocationSegmentCount; and arrival tolerance \WalkArrivalTolerance.
-The trajectory cone-program iteration cap is internally fixed at 300, and
-plane reuse is \WalkPlaneReuse; neither is a planner option.
+time layers \WalkMaximumTimeLayerCount; and arrival tolerance
+\WalkArrivalTolerance. The trajectory cone-program iteration cap is internally
+fixed at 300, warm-route and timed-cell segmentation are capped at 20 spans,
+and plane reuse is \WalkPlaneReuse; none is a planner option.
 
 If the caller supplies an unknown field, the station leaves it out, makes no
 behavior change, and issues one

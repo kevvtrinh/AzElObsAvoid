@@ -102,17 +102,31 @@ verifyFalse(testCase, isfield(defaultOptions, "Verbose"));
 verifyTrue(testCase, defaultDisplayOptions.Verbose);
 verifyEqual(testCase, defaultOptions.MaximumSeedCount, 2);
 verifyFalse(testCase, isfield(defaultOptions, "PlannerMethod"));
-verifyTrue(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
+verifyFalse(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
 verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
 
 [hs3Options, displayOptions] = resolveExampleOptions( ...
     struct("Verbose", false), ...
-    struct("CollocationSegmentCount", 6));
+    struct("MaximumSeedCount", 6));
 verifyFalse(testCase, isfield(hs3Options, "Verbose"));
 verifyFalse(testCase, displayOptions.Verbose);
 verifyFalse(testCase, isfield(hs3Options, "PlannerMethod"));
-verifyEqual(testCase, hs3Options.CollocationSegmentCount, 6);
+verifyEqual(testCase, hs3Options.MaximumSeedCount, 6);
 verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
+end
+
+function testExampleResolverForwardsDeprecatedCollocation(testCase)
+% Forward the retired mesh knob to the planner's single warning owner.
+legacyOptions = struct( ...
+    "CollocationSegmentCount", 6, "PlotOutputs", false);
+lastwarn("", "");
+[forwardedOptions, ~] = resolveExampleOptions(legacyOptions, struct());
+[~, warningIdentifier] = lastwarn;
+verifyEmpty(testCase, warningIdentifier);
+verifyEqual(testCase, forwardedOptions.CollocationSegmentCount, 6);
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(forwardedOptions), ...
+    "planTrajectory:DeprecatedCollocationSegmentCount");
 end
 
 function testExampleResolverForwardsDeprecatedPlannerOptions(testCase)
