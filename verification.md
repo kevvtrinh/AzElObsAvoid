@@ -1,5 +1,53 @@
 # Plan 325 verification
 
+## Moving-obstacle robustness audit - 2026-09-01
+
+The fixed baseline was clean commit
+`81a94be2224ef6dd0183848772f5fbdbce81b85f` on
+`compare-conic-solvers`, MATLAB R2024b Update 4. The supplied shared-chat
+snapshot contained only `plan_coneprog.md`, so the audit used the repository's
+existing `benchmarkRandomMovingPolygonStress` corpus instead of inventing a
+missing artifact or regenerating an unfavorable seed.
+
+The first two launch attempts were setup failures and did not execute planner
+code: the benchmark folder, then the `trajectory` package root, were absent
+from the MATLAB path. The corrected command added only the repository root,
+`trajectory`, and `benchmarks` before calling:
+
+```matlab
+benchmarkRandomMovingPolygonStress(1011, struct("PrintProgress", true))
+benchmarkRandomMovingPolygonStress(1001:1012, ...
+    struct("PrintProgress", true))
+```
+
+Focused seed 1011 passed public planning and independent validation, returned
+`goalReached`, preserved its 2.40165847462-degree analytic witness, and arrived
+at 17.9833348954 seconds in 26.526273 seconds wall time. The complete serial
+corpus then produced:
+
+| Seed | Success / validation | Arrival (s) | Witness (deg) | Wall (s) |
+| ---: | :---: | ---: | ---: | ---: |
+| 1001 | 1 / 1 | 17.7894304357 | 2.69544318398 | 24.0943898 |
+| 1002 | 1 / 1 | 17.9179911782 | 2.71859797993 | 68.6336954 |
+| 1003 | 1 / 1 | 18.1897334792 | 2.76428444127 | 40.7002512 |
+| 1004 | 1 / 1 | 17.6869100774 | 3.45094899920 | 21.0016595 |
+| 1005 | 1 / 1 | 18.6733536574 | 2.82510707443 | 29.0789434 |
+| 1006 | 1 / 1 | 17.3773712877 | 3.35991651014 | 73.0848992 |
+| 1007 | 1 / 1 | 18.5580002700 | 2.69072852617 | 82.4723368 |
+| 1008 | 1 / 1 | 18.5048278151 | 2.74471951247 | 54.7600947 |
+| 1009 | 1 / 1 | 18.7423396702 | 2.63077659636 | 36.1416153 |
+| 1010 | 1 / 1 | 18.4718184308 | 2.51526924210 | 32.5048258 |
+| 1011 | 1 / 1 | 17.9833348954 | 2.40165847462 | 23.4149016 |
+| 1012 | 1 / 1 | 18.0660421140 | 2.80039171894 | 23.4077390 |
+
+All twelve cases returned `goalReached`. Total corpus wall time was
+509.2953517 seconds; per-case minimum, median, and maximum were 21.0016595,
+34.32322055, and 82.4723368 seconds. No planner or test file changed, so the
+already-recorded 114/114 suite, 17 serial headless examples, visible success,
+and no-path diagnostic at the same commit remain the applicable production
+verification. `benchmark.csv` remains unchanged because this stress corpus is
+not a maintained example/motion-mode row under its stable schema.
+
 ## Dormant seed-clustering removal - 2026-09-01
 
 The authoritative baseline was commit

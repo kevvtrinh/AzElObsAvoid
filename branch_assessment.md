@@ -1,5 +1,22 @@
 # Novel replacement branch assessment
 
+## Reconfirm moving-obstacle robustness - 2026-09-01
+
+No planner change was retained. The historical random-moving-polygon seed
+1011 failure no longer reproduced at the pushed `81a94be` baseline: its
+2.40165847462-degree analytic boundary witness accompanied an independently
+validated `goalReached` result at 17.9833348954 seconds arrival. The focused
+run took 26.526273 seconds.
+
+The unchanged deterministic `1001:1012` corpus then passed 12/12 through the
+public planner and independent validator. Per-case wall time ranged from
+21.0016595 to 82.4723368 seconds, with a 34.32322055-second median and
+509.2953517 seconds total. This proves the historical clear-witness failure is
+absent on this fixed corpus; it does not prove completeness on unseen moving
+obstacles. The largest unfavorable result is seed 1007's 82.4723368-second
+wall time. Because no correctness failure remained, changing planner behavior
+would have been speculative and was rejected before implementation.
+
 ## Retain coneprog after conic-backend comparison - 2026-09-01
 
 This branch starts from the exact pushed `bmtp-cleanup-codex` commit
