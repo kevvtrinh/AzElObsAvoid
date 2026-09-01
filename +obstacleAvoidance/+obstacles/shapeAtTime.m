@@ -45,7 +45,8 @@ preparation = obstacle.InternalPreparation;
 time_s = double(obstacle.time_s(:));
 shape = [];
 if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
-    geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, true, 0, 0);
+    geometry = boundaryGeometry( ...
+        zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive");
     if ~geometryOnly
         shape = polyshape();
     end
@@ -68,6 +69,7 @@ elevation_deg = double(obstacle.el_deg{lowerIndex}(:));
 topologyIsInterpolated = true;
 if lowerIndex == upperIndex
     speed_deg_s = preparation.SampleSpeedBound_deg_s(lowerIndex);
+    geometryModel = "authoritativeSample";
     if ~geometryOnly
         shape = preparation.SampleShapes{lowerIndex};
     end
@@ -75,6 +77,7 @@ elseif preparation.MatchingTopology(lowerIndex)
     azimuth_deg = azimuth_deg + fraction * preparation.DeltaAzimuth_deg{lowerIndex};
     elevation_deg = elevation_deg + fraction * preparation.DeltaElevation_deg{lowerIndex};
     speed_deg_s = preparation.IntervalSpeedBound_deg_s(lowerIndex);
+    geometryModel = preparation.IntervalGeometryModel(lowerIndex);
     if ~geometryOnly && speed_deg_s == 0
         shape = preparation.SampleShapes{lowerIndex};
     end
@@ -83,6 +86,7 @@ else
     [azimuth_deg, elevation_deg] = boundary(shape);
     speed_deg_s = 0;
     topologyIsInterpolated = false;
+    geometryModel = preparation.IntervalGeometryModel(lowerIndex);
 end
 azimuth_deg(~isfinite(azimuth_deg)) = NaN;
 elevation_deg(~isfinite(elevation_deg)) = NaN;
@@ -90,11 +94,12 @@ if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg);
 end
 geometry = boundaryGeometry(azimuth_deg, elevation_deg, speed_deg_s, ...
-    topologyIsInterpolated, lowerIndex, upperIndex);
+    topologyIsInterpolated, lowerIndex, upperIndex, geometryModel);
 end
 
 function geometry = boundaryGeometry(azimuth_deg, elevation_deg, ...
-        speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex)
+        speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex, ...
+        geometryModel)
 % Classify one ordered boundary without changing its vertices or ring order.
 finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
 active = nnz(finiteVertex) >= 3;
@@ -123,5 +128,6 @@ geometry = struct("Active", active, "azimuth_deg", double(azimuth_deg(:)), ...
     "elevation_deg", double(elevation_deg(:)), "VertexSpeedBound_deg_s", speed_deg_s, ...
     "HasOrderedSingleRegion", hasOneRing, "IsConvex", isConvex, "OutwardSign", outwardSign, ...
     "TopologyIsInterpolated", topologyIsInterpolated, ...
+    "GeometryModel", string(geometryModel), ...
     "LowerSampleIndex", lowerIndex, "UpperSampleIndex", upperIndex);
 end

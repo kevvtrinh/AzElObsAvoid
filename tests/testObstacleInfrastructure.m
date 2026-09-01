@@ -211,9 +211,12 @@ verifyFalse(testCase, ...
 [~, multiRegionGeometry] = ...
     obstacleAvoidance.obstacles.shapeAtTime( ...
     preparedMultiRegionObstacle, 1, true);
-verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
-verifyFalse(testCase, multiRegionGeometry.IsConvex);
-verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));
+verifyTrue(testCase, multiRegionGeometry.HasOrderedSingleRegion);
+verifyTrue(testCase, multiRegionGeometry.IsConvex);
+verifyFalse(testCase, isnan(multiRegionGeometry.OutwardSign));
+verifyFalse(testCase, multiRegionGeometry.TopologyIsInterpolated);
+verifyEqual(testCase, multiRegionGeometry.GeometryModel, ...
+    "conservativeEndpointConvexHull");
 end
 
 function testShapeQueryPreservesOutputTypesAcrossControlPaths(testCase)
@@ -237,7 +240,9 @@ verifyEqual(testCase, geometryOnlyRecord, inactiveGeometry);
 verifyClass(testCase, interpolatedShape, "polyshape");
 verifyNotEmpty(testCase, interpolatedShape.Vertices);
 verifyTrue(testCase, interpolatedGeometry.Active);
-verifyTrue(testCase, interpolatedGeometry.TopologyIsInterpolated);
+verifyFalse(testCase, interpolatedGeometry.TopologyIsInterpolated);
+verifyEqual(testCase, interpolatedGeometry.GeometryModel, ...
+    "conservativeEndpointConvexHull");
 
 singleSliceObstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "single slice", 0, [-1; 1; 1; -1], [-1; -1; 1; 1], 0);

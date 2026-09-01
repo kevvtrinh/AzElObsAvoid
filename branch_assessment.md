@@ -1,5 +1,23 @@
 # Novel replacement branch assessment
 
+## Make unsupported obstacle interpolation conservative - 2026-09-01
+
+The largest new strength is that boundary array shape no longer establishes
+vertex correspondence. Equivalent ring-order changes are canonicalized without
+fabricated motion, and a topology mismatch now occupies the full convex
+endpoint sweep instead of leaving the between-sample gap clear. The targeted
+regressions and 16 related infrastructure, projection, timed-motion, and
+fallback-policy tests passed. A maintained moving-circle example also passed
+public planning and independent continuous validation.
+
+The largest current limitation is proposal completeness for unsupported
+histories: a convex endpoint enclosure may fill holes and bridge disconnected
+regions. That is a deliberate fail-safe loss of free space, not an exact swept
+shape or a completeness claim. Request-horizon projection still includes
+irrelevant stored samples, and the narrow first intercept window is still
+missed; their failing tests remain visible for later numbered items. No runtime
+benefit is claimed from this correctness change.
+
 ## Add reproducible obstacle-work counters - 2026-09-01
 
 The largest new strength is a decision-neutral profiler benchmark that turns

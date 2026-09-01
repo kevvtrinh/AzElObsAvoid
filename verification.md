@@ -1,5 +1,34 @@
 # Plan 325 verification
 
+## Conservative obstacle interpolation - 2026-09-01
+
+Item 5 replaced size-and-finite-mask correspondence inference with a bounded
+single-ring alignment and proof. Cyclic shifts and orientation reversal are
+enumerated deterministically. Translation is verified directly; other aligned
+single rings must remain strictly convex over the complete linear interpolation
+interval. Equivalent multi-ring samples remain static. Every unsupported or
+topology-changing interval now uses the convex hull of all finite endpoint
+vertices, occupied for the whole interval, rather than a separated endpoint
+union.
+
+The two applicable red regressions now pass. Equivalent reordered rectangles
+return their unchanged occupied set with zero speed, and the mismatched
+topology translation occupies `[0, 0]` in its between-sample gap. The complete
+`testObstacleInfrastructure` suite passed 9/9, static projection passed 2/2,
+timed BMTP passed 3/3, and unsupported-timed-topology policy passed 2/2.
+`checkcode` reported zero findings for both modified production files. The
+seven-case adversarial suite now passes 5/7; only the deliberately separate
+request-horizon and disjoint-intercept tests remain red for items 6 and 15.
+
+The maintained `exampleMovingCircleNoAzimuthWrap` ran headlessly with jerk
+enabled. Planning and independent validation passed with `goalReached`, a
+12.4795774865-degree selected polyline, a 12.4795774865-degree sampled motion,
+8.5-second duration, collision freedom, and velocity, acceleration, and jerk
+limits all passing. No seed- or plane-certificate fast path applied, so the
+independent continuous collision check was authoritative. Wall time was
+4.4307681 seconds. This focused run is a correctness check, not a runtime
+comparison.
+
 ## Adversarial obstacle-history baseline - 2026-09-01
 
 Before changing moving-obstacle semantics, the new deterministic
