@@ -1,5 +1,59 @@
 # Plan 325 verification
 
+## BMTP immutable-SOCP-cache removal - 2026-09-01
+
+The frozen comparison baseline was
+`5c0a6c97bf68e9db03ace5281bda2e0f84243a8c` in detached worktree
+`tmp/bmtp-cleanup-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Every MATLAB invocation used a new private
+`MATLAB_PREFDIR`, `TEMP`, and `TMP`, and only one example process ran at a
+time.
+
+The focused comparison called `exampleTargetExitsObstacle` once for warmup and
+three timed repetitions in each worktree with
+`CollisionClearanceTolerance_deg=1e-4`, plane reuse enabled, two seeds, and all
+plots/animation disabled. A separate MATLAB process compared the saved records
+recursively while excluding runtime-only fields. All four pairs matched in
+planner success, independent validation, termination, selected seed/source,
+certificate decisions, non-runtime search/solver diagnostics, and sampled
+time, position, velocity, acceleration, and jerk. Maximum sampled numerical
+difference was exactly zero against the `1e-9` gate. Arrival was 24 s, selected
+polyline length was 21.7425467317 deg, and smoothed motion length was
+21.9416287312 deg. Warmed medians were 10.7475989 s baseline and 11.7573298 s
+candidate, a 9.395% candidate increase within the declared 25% limit.
+
+Focused and full test commands completed as follows:
+
+- `runtests('tests/testBmtpEngine.m')`: 12/12 passed in 3.4384 s;
+- `runtests('tests/testPlannerContract.m')`: 15/15 passed in 48.646 s;
+- `runtests('tests')`: 111/111 passed, zero failed or incomplete,
+  94.1434 s aggregate test duration and 106.8387038 s wall time;
+- MATLAB Code Analyzer: zero findings for both candidate and baseline
+  `trajectory/+bmtpEngine/solve.m`;
+- `git diff --check`: passed.
+
+All 17 maintained examples ran in separate serial headless MATLAB processes
+with jerk constrained. Sixteen returned planner success and independent
+example-validation success; `exampleNoPath` returned the expected
+`noValidatedSeed`, no validation warning, and documented empty trajectory
+metrics. Every successful motion was collision-free and passed continuous
+velocity, acceleration, jerk, and dynamics checks. Exact per-example lengths,
+durations, certificate status, and wall times are recorded in `benchmark.csv`.
+A second hidden `exampleNoPath` run created one search diagnostic figure titled
+with `noValidatedSeed`, `seeds 1`, `expanded 1`, and `rejected 2`. A visible
+`exampleObstacleFree` run passed and created two figures with `Visible="on"`.
+
+Three setup failures produced no planner evidence and were corrected before
+the recorded runs: MATLAB initially reported `System Error: File system
+inconsistency` until the user-authorized MathWorks support processes were
+stopped; the first temporary baseline harness lacked its primary-function
+`end`; the next omitted the separate `trajectory` package path; and the first
+visible smoke command had a shell-quoting parse error. Each corrected run used
+a new private MATLAB directory. No required gate remains untested for this
+cache-only milestone. The non-jerk motion configuration was not rerun because
+this change does not alter motion-profile construction or constraint meaning;
+the full test tree still exercised both BMTP and Ruckig owners.
+
 ## Balanced travel-time and route-realization correction - 2026-08-31
 
 Baseline commit was `25757dcad64bff0ff57423132691109de94181e3` on

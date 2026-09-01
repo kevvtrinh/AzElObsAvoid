@@ -1,5 +1,55 @@
 # Novel replacement branch assessment
 
+## Self-contained BMTP SOCP construction - 2026-09-01
+
+The first `bmtp-cleanup-codex` milestone removes the immutable trajectory-SOCP
+template threaded through the BMTP alternation and travel-refinement loops.
+Each trajectory solve now constructs its own equality rows, derivative rows,
+bounds, time/travel cones, and active separating-plane rows in execution order.
+The final-sized sparse inequality matrix is allocated once, so the prior base
+matrix cache plus later enlargement/copy path is gone. Public planner inputs,
+options, result fields, diagnostics, solver arguments, and selection policies
+are unchanged. The edit is confined to `trajectory/+bmtpEngine/solve.m` and
+reduces it from 1,380 to 1,350 physical lines and from 1,235 to 1,205
+nonblank/noncomment lines.
+
+The largest measured strength is exact result retention under a controlled
+baseline/candidate comparison. The frozen baseline revision was
+`5c0a6c97bf68e9db03ace5281bda2e0f84243a8c`. Four paired runs of
+`exampleTargetExitsObstacle`, including one warmup and three timed repetitions
+per side, had identical success, independent validation, termination, selected
+seed/source, certificate decisions, non-runtime diagnostics, and sampled time,
+position, velocity, acceleration, and jerk histories. The maximum sampled
+numerical difference was zero against a `1e-9` gate. Both sides returned a
+24 s motion, 21.7425467317 deg selected polyline, and 21.9416287312 deg
+smoothed path.
+
+The explicit unfavorable tradeoff is runtime. The warmed median increased from
+10.7475989 s to 11.7573298 s, or 9.395%, on that repeated-SOCP case. This is
+inside the predeclared 25% limit and was retained because eliminating hidden
+cache state makes the optimization kernel smaller and self-contained. It is
+one measured fixed-arrival case, not a general runtime ratio.
+
+Verification covered the structurally different static degree-16 and timed
+degree-7 BMTP paths, moving and deforming obstacles, fixed and earliest arrival,
+successful and expected no-path outcomes, and graphics diagnostics. The full
+test tree passed 111/111 with zero failed or incomplete tests. All 17 maintained
+examples ran in separate serial headless processes: 16 planner/example-
+validation successes and the expected validated `noValidatedSeed` result. A
+hidden failure plot included the reason and search counts, a visible
+obstacle-free run created two visible figures, Code Analyzer reported zero
+findings for both baseline and candidate `solve.m`, and `git diff --check`
+passed.
+
+The largest remaining weakness is that this is intentionally only the first
+cleanup milestone. The repository still contains plane reuse, the three-rate
+travel-refinement portfolio, specialized exact-clock/timed-opening/cavity
+constructors, and an externally visible restart surface. Several are measured
+load-bearing for arrival or path length and cannot be deleted honestly until a
+general mechanism reproduces their results. This milestone establishes neither
+planner completeness nor global optimality; the next bounded experiment is to
+evaluate plane-reuse removal independently.
+
 ## HTML bundle replay and velocity-authored obstacle motion - 2026-08-31
 
 The HTML sandbox can now load an
