@@ -189,7 +189,7 @@ verifyEqual(testCase, sandboxState.Options.AnimationFrameStride, 20);
 verifyEqual(testCase, sandboxState.Options.AnimationPause_s, 0.001);
 verifyEqual(testCase, plannerOptions.MaximumSeedCount, 3);
 verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
-verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
+verifyFalse(testCase, isfield(plannerOptions, "MaximumNlpIterations"));
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
 verifyFalse(testCase, isfield(plannerOptions, "WaypointWarmStartMode"));
 verifyFalse(testCase, ...

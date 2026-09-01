@@ -1,5 +1,40 @@
 # Novel replacement branch assessment
 
+## Internal trajectory-solver cap ownership - 2026-09-01
+
+The seventh `bmtp-cleanup-codex` milestone removes the obsolete public
+`MaximumNlpIterations` field without deleting its active safeguard. BMTP now
+owns one fixed trajectory `coneprog` iteration cap of 300, equal to the former
+public default. Legacy direct-planner input warns once, is ignored, and is not
+returned. The sandbox and examples no longer present private solver tuning as
+a request-level choice.
+
+The former unsupported-topology integration fixture was not independent of
+this option: `MaximumNlpIterations=1` manufactured a solver failure. With the
+real cap it instead returned `goalReached` after about 66 seconds. The revised
+fixture uses a physically infeasible eight-second fixed-arrival deadline, so
+the default policy genuinely refuses fallback and the explicit policy genuinely
+attempts it. The separate Ruckig unit test continues to own the two-segment
+limit. Revised policy tests pass 2/2 in 2.9632806 seconds.
+
+The measured tradeoff is unfavorable but bounded in one deliberately low-cap
+test: timed BMTP rose from 9.9854775 to 15.0755105 seconds while retaining a
+validated smooth result. Sandbox route economy remained effectively unchanged
+at 14.6741929 versus 14.7555260 seconds. The combined focused gate passed
+40/40; all changed MATLAB files had zero Code Analyzer findings; and the full
+suite passed 121/121 in 88.5048981 seconds wall time.
+
+All 17 maintained examples ran serially in fresh MATLAB processes. Sixteen
+succeeded with independent validation, collision freedom, and kinematic
+compliance; `exampleNoPath` retained its expected independently checked
+`noValidatedSeed`. Every trajectory metric matched the preceding committed
+milestone. Visible success created two figures without warnings and hidden
+failure created one diagnostic figure containing the reason. The manual-data
+exporter passed in 5.7923965 seconds. The milestone removes six net non-test
+MATLAB lines under the established branch accounting, leaving the branch 158
+lines smaller than `5c0a6c9`. The remaining active implementation option is
+`CollocationSegmentCount`, which requires its own bounded experiment.
+
 ## Automatic plane-reuse ownership - 2026-09-01
 
 The sixth `bmtp-cleanup-codex` milestone keeps BMTP separating-plane reuse and

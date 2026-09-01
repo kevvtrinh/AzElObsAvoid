@@ -110,10 +110,7 @@ end
 normalNormLimit = 1 + 2 ^ 20 * eps;
 obstacleTarget_deg = normalNormLimit * ...
     options.CollisionClearanceTolerance_deg + roundoffReserve_deg;
-maximumTrajectoryIterations = 400;
-if isfield(options, "MaximumNlpIterations")
-    maximumTrajectoryIterations = max(1, double(options.MaximumNlpIterations));
-end
+maximumTrajectoryIterations = 300;
 trajectoryOptions = optimoptions("coneprog", "Display", "none", ...
     "MaxIterations", maximumTrajectoryIterations);
 planeOptions = optimoptions("coneprog", "Display", "none");

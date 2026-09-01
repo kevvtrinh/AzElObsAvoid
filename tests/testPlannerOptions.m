@@ -31,9 +31,28 @@ verifyFalse(testCase, isfield(options, "Verbose"));
 verifyFalse(testCase, isfield(options, "EnablePlaneReuse"));
 verifyFalse(testCase, isfield(options, ...
     "PlaneReuseImprovementTolerance_s"));
+verifyFalse(testCase, isfield(options, "MaximumNlpIterations"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
+end
+
+function testDeprecatedMaximumNlpIterationsWarnsOnceAndIsRemoved(testCase)
+% Accept the old solver cap without exposing or retuning the internal limit.
+legacyOptions = struct("MaximumNlpIterations", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(legacyOptions), ...
+    "planTrajectory:DeprecatedMaximumNlpIterations");
+resolvedOptions = callWithoutMaximumIterationsWarning(legacyOptions);
+verifyFalse(testCase, isfield(resolvedOptions, "MaximumNlpIterations"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.MaximumNlpIterations = 1;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedMaximumNlpIterations");
+replayedOptions = callWithoutMaximumIterationsWarning(oldResolvedOptions);
+verifyFalse(testCase, isfield(replayedOptions, "MaximumNlpIterations"));
 end
 
 function testPartialOverridesResolveAndNormalize(testCase)
@@ -248,6 +267,14 @@ function options = callWithoutPlaneReuseWarning(overrides)
 % Suppress the already-verified plane-reuse migration warning.
 warningState = warning( ...
     "off", "planTrajectory:DeprecatedPlaneReuseOptions");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutMaximumIterationsWarning(overrides)
+% Suppress the already-verified trajectory-iteration migration warning.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedMaximumNlpIterations");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

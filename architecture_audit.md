@@ -190,17 +190,19 @@ fallback remain deliberately outside this optional boundary.
 
 ## Planner option ownership audit - 2026-09-01
 
-The current public default record contains 16 fields after removing the unread
-planner `Verbose` field and internalizing two BMTP plane-reuse controls. Every
+The current public default record contains 15 fields after removing the unread
+planner `Verbose` field and internalizing BMTP plane-reuse and trajectory-solver
+controls. Every
 remaining field has a production consumer.
 
 | Classification | Fields | Decision |
 | --- | --- | --- |
 | Meaningful request/search/validation choices | `GoalTimeMode`, `MinimumTravelSavingsRate_deg_s`, `SampleTime_s`, `TrajectoryMethod`, `UnsupportedTimedTopologyPolicy`, `AllowAzimuthWrapping`, `MaximumSeedCount`, `MaximumTimeLayerCount`, `MaximumWaitRefinementIterations`, `ArrivalTimeTolerance_s`, `ConstraintTolerance`, `CollisionClearanceTolerance_deg`, `CollisionMinimumTimeStep_s`, `CancellationCheckFcn` | Retain. |
-| Active implementation controls to evaluate independently | `CollocationSegmentCount`, `MaximumNlpIterations` | Do not delete without a bounded replacement; both currently alter BMTP work. |
-| Removed or internalized controls | `Verbose`, `EnablePlaneReuse`, `PlaneReuseImprovementTolerance_s` | One-release direct-planner warnings and stripping. Caller-owned logging remains; BMTP plane reuse is automatic and uses `ArrivalTimeTolerance_s`. |
+| Active implementation controls to evaluate independently | `CollocationSegmentCount` | Do not delete without a bounded replacement; it currently alters static and timed BMTP segmentation. |
+| Removed or internalized controls | `Verbose`, `EnablePlaneReuse`, `PlaneReuseImprovementTolerance_s`, `MaximumNlpIterations` | One-release direct-planner warnings and stripping. Caller-owned logging remains; BMTP plane reuse is automatic and uses `ArrivalTimeTolerance_s`; the trajectory `coneprog` cap is internally fixed at the former default of 300. |
 | Compatibility-only inputs | `WaypointWarmStartMode`, `RequestedWaypointWarmStartMode`, `IsWaypointWarmStartAvailable`, `PerSeedWorkBudgetMultiplier`, `SeedClusterDistance_deg` | Warn and strip; none appears in returned defaults. |
 
 This classification is based on production field reads, not names or
-documentation. The outdated `MaximumNlpIterations` name does not make its
-`coneprog` iteration cap dead.
+documentation. `MaximumNlpIterations` was active rather than dead; its behavior
+was internalized only after preserving the former public default and measuring
+the nondefault timed and sandbox callers.

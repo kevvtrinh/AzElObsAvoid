@@ -5659,3 +5659,64 @@ shim outweighs removing two option fields. The six-milestone branch total is
 152 production lines smaller than `5c0a6c9`; this milestone claims a smaller
 public interface and clearer invariant ownership, not fewer physical lines or
 a speedup.
+
+## Internal trajectory-solver cap ownership - 2026-09-01
+
+`MaximumNlpIterations` actively controlled the BMTP trajectory `coneprog`
+iteration cap despite its obsolete NLP name. The planner interface now omits
+that implementation control while the engine retains the former default cap of
+300. Direct legacy input warns once with
+`planTrajectory:DeprecatedMaximumNlpIterations`, is ignored, and is absent from
+returned options. Current sandbox, offline sandbox, examples, tests, and manual
+data no longer set or display it.
+
+The old unsupported-topology fixture used a cap of one to force its boundary.
+At 300 the same request succeeded and required 65.7410579 seconds, proving the
+fixture tested solver starvation rather than an input-driven topology policy.
+The replacement uses a physically infeasible eight-second fixed-arrival
+deadline. Default policy refuses fallback and explicit policy attempts it;
+both revised tests pass in 2.9632806 seconds. The dedicated Ruckig test still
+checks the two-segment limit.
+
+Focused evidence:
+
+- option migration: 10/10 in 1.9703629 seconds;
+- BMTP engine: 12/12 in 3.7918162 seconds;
+- sandbox diagnosis: 11/11 in 10.3521119 seconds;
+- timed policy: 2/2 in 2.9632806 seconds;
+- timed BMTP: 2/2 in 15.0755105 seconds versus 9.9854775 baseline;
+- sandbox route economy: 3/3 in 14.6741929 seconds versus 14.7555260 baseline;
+- combined focused gate: 40/40 in 44.5871511 seconds;
+- Code Analyzer: zero findings across every changed MATLAB file;
+- full suite: 121/121 in 88.5048981 seconds wall time and
+  81.6421096 seconds aggregate test time.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.5159463 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3829100 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9079066 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9036065 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9448795 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9750579 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7703150 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5642490 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6439313 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7093528 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8396021 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9333544 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6443382 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3221035 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.9573421 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1915333 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.9672843 | `goalReached` |
+
+The visible obstacle-free gate created two figures without warnings. The
+hidden no-path gate created one figure whose text included `noValidatedSeed`
+and reported one attempted seed. The manual-data exporter completed in
+5.7923965 seconds and removed the retired option macro. The milestone reduces
+non-test MATLAB by six lines under the established accounting, taking the
+seven-milestone branch total to 158 lines removed from `5c0a6c9`.
