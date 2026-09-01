@@ -1,5 +1,43 @@
 # Plan 325 verification
 
+## Obstacle-performance profiler baseline - 2026-09-01
+
+The fixed pre-change commit was
+`0a55ef7e1500a9d64b37187ce97c7218d682b8b4` on
+`obstacle-performance-robustness`. That commit changed only plans and
+instructions from the previously measured planner, so the production MATLAB
+code was identical to the 12/12 independently validated moving-polygon corpus
+reported below. MATLAB R2024b Update 4 and Optimization Toolbox 24.2 ran on
+64-bit Windows 11 10.0.26200 with an AMD Ryzen 5 3600, six physical cores,
+and twelve logical processors.
+
+The deterministic seed-1011 request was warmed and then profiled in the same
+MATLAB session. The warmup passed public planning and independent validation
+in 26.5167718 seconds. The profiled repeat also returned `goalReached` and
+passed independent validation in 27.6499923 seconds. The profile attributed
+16.210907148 seconds to 2,272 `coneprog` calls, 3.815109682 seconds to 55
+occupancy-query calls, 2.451599353 seconds to 7,714 point-to-polygon clearance
+calls, and 1.140148324 seconds to 7,969 `shapeAtTime` calls. It counted 8,087
+top-level `polyshape` constructions and four full independent validations;
+49 zero-input validation-template requests were reported separately.
+
+`benchmarkObstaclePlannerProfile` now reproduces those profiler counts and
+also reports returned collision work and route-search state counts. A
+post-change diagnostic run preserved the same physical outcome and the same
+function-call counts: 2,272 `coneprog`, 7,969 `shapeAtTime`, 8,087
+`polyshape`, 55 occupancy queries, four full validations, 105 homology states,
+and 284 expanded search states. The retained candidate summaries reported 209
+adaptive collision intervals and zero unresolved intervals. Its profiled wall
+time was 42.7303887 seconds; this variable profiler time is retained as an
+unfavorable measurement and is not used as a performance comparison.
+
+The diagnostic-only implementation passed `checkcode` with zero findings for
+all four modified/added production and benchmark files. All four
+`testPlannerStageTiming` cases and all fourteen `testPlannerContract` cases
+passed. The collision test now proves the interval counter advances when an
+adaptive midpoint detects a collision, while the existing success/failure
+shape checks prove the new field is stable on every result path.
+
 ## Moving-obstacle robustness audit - 2026-09-01
 
 The fixed baseline was clean commit

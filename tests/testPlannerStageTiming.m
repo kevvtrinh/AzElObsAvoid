@@ -30,6 +30,8 @@ obstacle = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
     trajectory, obstacle, initialState, goalState, limits, fixedHs3Options());
 
 verifyFalse(testCase, validation.Passed);
+verifyGreaterThan(testCase, validation.CollisionIntervalCount, 0);
+verifyEqual(testCase, validation.UnresolvedIntervalCount, 0);
 verifyGreaterThanOrEqual(testCase, ...
     validation.CollisionCheckingElapsedTime_s, 0);
 verifyLessThanOrEqual(testCase, ...

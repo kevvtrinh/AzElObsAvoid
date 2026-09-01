@@ -1,5 +1,25 @@
 # Novel replacement branch assessment
 
+## Add reproducible obstacle-work counters - 2026-09-01
+
+The largest new strength is a decision-neutral profiler benchmark that turns
+the moving-polygon stress request into stable work counts. On deterministic
+seed 1011 it repeatedly observed 2,272 `coneprog` calls, 7,969 `shapeAtTime`
+calls, 8,087 `polyshape` constructions, 55 occupancy queries, four full
+independent validations, 105 homology states, and 284 expanded states. The
+public validation record now also exposes adaptive collision intervals; the
+latest profiled result retained 209 intervals and zero unresolved intervals.
+All focused static and contract tests passed, and planner decisions and the
+independent acceptance criteria were unchanged.
+
+The largest measured weakness is still repeated conic and geometry work:
+`coneprog` consumed 16.210907148 seconds of the 27.6499923-second warmed
+profiled baseline, while occupancy queries consumed 3.815109682 seconds.
+Profiler wall time later varied to 42.7303887 seconds with the same call
+counts, so no runtime improvement or regression is claimed from this
+diagnostic-only group. The counters identify work volume; they do not prove
+which later reduction will preserve behavior.
+
 ## Reconfirm moving-obstacle robustness - 2026-09-01
 
 No planner change was retained. The historical random-moving-polygon seed

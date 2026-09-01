@@ -513,6 +513,7 @@ summary.ValidationPassed = validation.Passed;
 summary.CollisionFree = validation.CollisionFree;
 summary.CollisionResolved = validation.CollisionResolved;
 summary.MinimumClearance_deg = validation.MinimumClearance_deg;
+summary.CollisionIntervalCount = validation.CollisionIntervalCount;
 summary.UnresolvedIntervalCount = validation.UnresolvedIntervalCount;
 summary.SeedPlanningElapsedTime_s = elapsedTime_s;
 summary.Message = strtrim(string(candidate.Message) + " " + validation.Message);
