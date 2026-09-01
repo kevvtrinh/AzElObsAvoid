@@ -1,5 +1,31 @@
 # Novel replacement branch assessment
 
+## Dead planner-option shim retirement - 2026-09-01
+
+The eleventh `bmtp-cleanup-codex` milestone removes special compatibility
+handling for ten planner fields that had already stopped affecting behavior.
+Direct planner calls now report them through the maintained aggregate
+`planTrajectory:UnknownOptions` warning, and examples reject obsolete
+planner-only fields at their own boundary instead of forwarding them. The live
+example display `Verbose` control remains; only the dead planner field with the
+same spelling lost bespoke handling.
+
+Default, live override, example-chain, and display-option records match their
+saved baselines exactly. Complete Obstacle Free and Target Exits results also
+match recursively with maximum numeric difference zero after excluding only
+runtime fields. Code Analyzer found no issues, focused tests passed 14/14, and
+the complete test tree passed 113/113 in 88.1141873 seconds wall time. The
+smaller test count is the intentional consolidation of twelve legacy-specific
+warning and forwarding tests into two behavior-focused tests, not lost
+live-option coverage.
+
+All 17 maintained examples retained their prior metrics: 16 independently
+validated successes and the expected validated `noValidatedSeed` failure.
+Visible-success and failure-figure gates passed. This intentionally breaking
+warning-surface cleanup removes 60 net production MATLAB lines. The
+eleven-milestone branch is now 273 non-test MATLAB lines smaller than
+`5c0a6c9`.
+
 ## Detailed plane-reuse trace retirement - 2026-09-01
 
 The tenth `bmtp-cleanup-codex` milestone removes diagnostic-only state around

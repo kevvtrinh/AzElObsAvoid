@@ -236,3 +236,20 @@ continuation, arrival-tolerance ownership, convergence, retained-best evidence,
 collision history, and certificates remain. Complete Target Exits and Extreme
 US Outline results matched their saved reuse-triggering baselines exactly after
 excluding only runtime and the declared retired fields.
+
+## Dead planner-option compatibility audit - 2026-09-01
+
+Ten retired planner fields had no remaining algorithmic reader and were absent
+from returned defaults. Their only production ownership was 54 lines of
+special warning/removal logic in `resolvePlannerOptions` and a nine-name
+example forwarding allowlist. Planner-level `Verbose` was also dead, while the
+separate example display control with that spelling remains live.
+
+The bespoke compatibility paths are now removed. Direct planner callers get
+one aggregate `planTrajectory:UnknownOptions` warning for any mix of obsolete
+fields, using the same path as every unsupported option. The example resolver
+warns once with `resolveExampleOptions:UnknownOptions` and discards obsolete
+planner-only inputs at its boundary. No field was renamed or replaced, and no
+retired value reaches returned options or a planner decision. This collapses
+seven warning owners and the forwarding allowlist into the two already
+maintained unknown-field policies.

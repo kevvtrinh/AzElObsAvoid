@@ -130,16 +130,10 @@ end
 % planner and producing an unknown-option warning.
 plannerOptions = obstacleAvoidance.planTrajectory();
 plannerNames = string(fieldnames(plannerOptions));
-deprecatedPlannerNames = ["WaypointWarmStartMode", ...
-    "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable", ...
-    "PerSeedWorkBudgetMultiplier", "SeedClusterDistance_deg", ...
-    "EnablePlaneReuse", "PlaneReuseImprovementTolerance_s", ...
-    "MaximumNlpIterations", "CollocationSegmentCount"];
-forwardedPlannerNames = [plannerNames; deprecatedPlannerNames.'];
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
 for name = intersect(string(fieldnames(scenarioDefaults)), ...
-        forwardedPlannerNames, "stable").'
+        plannerNames, "stable").'
     if ~isempty(scenarioDefaults.(name))
         plannerOptions.(name) = scenarioDefaults.(name);
     end
@@ -148,9 +142,9 @@ overrideNames = string(fieldnames(normalizedOverrides));
 aliasNames = ["ShowKinematicPlot", "AnimationFrameStride", "AnimationPause_s", "MaxJerk_deg_s3"];
 scenarioNames = string(fieldnames(scenarioDefaults));
 unknownNames = setdiff(overrideNames, ...
-    [forwardedPlannerNames; displayNames; aliasNames.'], "stable");
+    [plannerNames; displayNames; aliasNames.'], "stable");
 unknownScenarioNames = setdiff(scenarioNames(:), ...
-    [forwardedPlannerNames; displayNames(:)], "stable");
+    [plannerNames; displayNames(:)], "stable");
 unknownNames = unique( [unknownNames(:); unknownScenarioNames(:)], "stable");
 if ~isempty(unknownNames)
     warning("resolveExampleOptions:UnknownOptions", ...
@@ -158,7 +152,7 @@ if ~isempty(unknownNames)
 end
 
 % Apply recognized caller planner values after scenario defaults.
-for name = intersect(overrideNames, forwardedPlannerNames, "stable").'
+for name = intersect(overrideNames, plannerNames, "stable").'
     if ~isempty(normalizedOverrides.(name))
         plannerOptions.(name) = normalizedOverrides.(name);
     end

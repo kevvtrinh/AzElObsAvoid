@@ -5923,3 +5923,72 @@ with jerk enabled:
 The milestone removes exactly 17 engine lines and adds no production
 replacement. The ten-milestone branch is 213 non-test MATLAB lines smaller
 than `5c0a6c9`.
+
+## Dead planner-option shim retirement - 2026-09-01
+
+At tracked-clean baseline `12d72cc`, ten obsolete planner fields were absent
+from defaults and had no algorithmic reader. Passing all ten directly produced
+a resolved record exactly equal to defaults. Passing live options alongside the
+nine obsolete planner-only example fields ultimately produced the same 14-field
+resolved planner record after the legacy forwarding and stripping chain.
+
+The candidate removes the seven bespoke deprecation-warning blocks and the
+example forwarding allowlist. Direct planner calls now aggregate all obsolete
+fields into `planTrajectory:UnknownOptions`; examples discard obsolete
+planner-only inputs under `resolveExampleOptions:UnknownOptions`. Planner-level
+`Verbose` is unknown, while the separate example display `Verbose` control is
+unchanged. Candidate default, live, example-chain, and display option records
+all matched their saved baselines exactly.
+
+Fresh-process physical comparisons at `1e-9`, excluding only fields containing
+`Elapsed` and `FirstValidatedMotionTime_s`, passed with maximum numeric
+difference zero:
+
+- `exampleObstacleFree`: baseline/candidate walls 0.7509786 and 0.7641284
+  seconds, success/validation 1/1;
+- `exampleTargetExitsObstacle`: baseline/candidate walls 15.9860619 and
+  15.7913810 seconds, success/validation 1/1.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in both changed production files and both
+  revised tests;
+- planner-option and example-boundary tests: 14/14;
+- complete test tree: 113/113 in 88.1141873 seconds wall and 81.4978243
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The first Obstacle Free baseline capture omitted the `trajectory` folder from
+the temporary MATLAB path and stopped before planning. The corrected fresh
+process succeeded. The first no-path figure command had an unterminated shell
+string and did not execute the example; the corrected script-based fresh
+process passed. Neither failure involved production planner code.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2755374 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3019420 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8690915 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8303314 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8724000 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9318499 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7659094 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.4149146 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5300496 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6763214 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7428393 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8152035 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5999470 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.1460202 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.7535135 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1600466 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.6307320 | `goalReached` |
+
+The milestone removes 64 production lines and adds four ordinary field-owner
+substitutions, a net reduction of 60 non-test MATLAB lines. The eleven-milestone
+branch is 273 non-test MATLAB lines smaller than `5c0a6c9`.
