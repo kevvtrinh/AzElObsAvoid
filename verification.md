@@ -1,5 +1,52 @@
 # Plan 325 verification
 
+## Balanced travel-time and route-realization correction - 2026-08-31
+
+Baseline commit was `25757dcad64bff0ff57423132691109de94181e3` on
+`novel-rep`. All MATLAB commands added the repository and `trajectory` package
+to the path. Code Analyzer returned zero messages for every changed MATLAB
+production, example, sandbox, and test file. `git diff --check` returned no
+whitespace errors (Git emitted only the repository's CRLF conversion warnings).
+
+Focused suites passed after the implementation:
+
+- `testPlannerOptions`: 4/4;
+- `testBmtpEngine`: 11/11;
+- `testStaticPlanningProjection`: 2/2, including a structurally different
+  translating-rectangle projection and a lower-route no-overshoot assertion;
+- `testPlannerContract`: 14/14;
+- `testTimedBmtpPlanning`: 2/2;
+- `testRuckigWaypointMotion`: 2/2;
+- `testUnsupportedTimedTopologyPolicy`: 2/2;
+- `testObstacleAvoidanceSandboxDiagnosis`: 11/11.
+
+The first complete `runtests('tests')` invocation took 113.599 s and passed
+107/108. The single failure was
+`testTimedOpeningLowerBoundPassesAndPolicyRejects`: its certificate fixture had
+relied on the former implicit goal-time default even though the certificate is
+defined only for strict earliest arrival. The fixture now explicitly declares
+`earliestArrival`; its focused suite passes 3/3. After all planner, UI, example,
+test, and record edits, the final complete-suite rerun passed 108/108 with zero
+incomplete tests in 111.388 s.
+
+Supplied rogue cases, each independently validated:
+
+| case | policy | selected seed (deg) | motion (deg) | arrival (s) | result |
+| --- | --- | ---: | ---: | ---: | --- |
+| hidden Ruckig fallback | earliest | 248.239063 | 233.911502 | 104.261457 | BMTP success; six-segment Ruckig rejected before execution |
+| sine trajectory | earliest fixed clock | 146.976783 | 146.976783 | 70.344251 | one-sided family beats 153.472521-degree progress family |
+| static shrimp | balanced, 1 deg/s | 175.168391 | 175.780063 | 82.389498 | maximum elevation 39.288753 deg |
+| non-ideal moving circle | balanced, 1 deg/s | 227.905578 | 228.491135 | 144 | cost 372.491135 beats fast-detour cost 379.503102 |
+
+Every maintained example was run in a separate headless MATLAB process with
+jerk enabled, plots and animation disabled, and its metrics written to
+`benchmark.csv`. Sixteen returned independently validated successes. The sole
+expected failure, `exampleNoPath`, returned `noValidatedSeed`; a separate hidden
+plot run created one figure, one axes, four line objects, and three text objects.
+A separate visible `exampleObstacleAvoidance` run created one visible figure
+and independently validated. The alternating-occlusion example now explicitly
+uses BMTP because its route exceeds the intentional two-segment Ruckig limit.
+
 ## Fixed-clock route-economy refinement - 2026-08-31
 
 The fixed-clock lateral excursion now refines its coarse failing/passing
@@ -5123,3 +5170,61 @@ while several pre-existing MATLAB processes were active; the generated MAT
 file had already been written and transported successfully. The in-app browser
 also prohibited navigation to the local `file://` page, so visual layout was
 not exercised through that browser surface.
+
+## Balanced Wear Objective And Newheart Exact-Clock Repair — 2026-08-31
+
+The `newheart.mat` diagnosis bundle already requested `balancedArrival` at
+1 deg/s, so its visible S-bend was not stale UI state or an earliest-arrival
+replay. The selected alternating progress polynomial cost 201.070948503 deg at
+the certified 100.970425693 s physical time floor. A static visibility seed was
+199.1997663 deg, proving the selected motion retained avoidable travel.
+
+The retained implementation generalizes progress-polynomial composition to a
+validated input basis and derives normalized one-sided beta bases from the
+direct collision progress. It keeps the physical direct clock and enumerates
+only amplitudes inside continuous Bernstein workspace, velocity, acceleration,
+and jerk bounds. Sampled occupancy rejects proposals but never accepts them;
+the public continuous validator remains authoritative. Actual path length
+ranks all fixed-clock families.
+
+Measured results after the final change:
+
+- `newheart`, balanced rate 1: success/validation 1/1,
+  199.268051966 deg selected polyline and motion, 100.970425693 s,
+  collision/kinematic 1/1, `oneSidedBeta_1_4`, 65.7788 planner seconds;
+- prior `newheart` alternating motion: 201.070948503 deg at the same clock;
+- `sinetraj`: success/validation 1/1, 146.928879089 deg,
+  70.344250998 s, collision/kinematic 1/1;
+- `shrimp`, balanced rate 1: success/validation 1/1, 175.703912280 deg,
+  81.455142283 s, collision/kinematic 1/1;
+- `non-ideal`, balanced rate 1: success/validation 1/1,
+  228.491135293 deg, 144 s, collision/kinematic 1/1;
+- `hiddenruckigfallback`: success/validation 1/1,
+  233.911502487 deg, 104.261456926 s, collision/kinematic 1/1, BMTP selected.
+
+The structurally different near-start rectangle regression selected a
+20.493950992-deg one-sided motion instead of its 20.585690610-deg validated
+alternating motion, at the same 12.5 s physical clock. Its lateral offset never
+crossed the direct chord.
+
+Verification performed after the final source edits:
+
+- Code Analyzer: zero findings across all 22 changed MATLAB files;
+- focused BMTP engine: 12/12 passed;
+- focused near-start rectangular route-economy regression passed;
+- complete test tree: 110/110 passed, zero failed or incomplete,
+  126.782359 s wall and 122.514226 s aggregate test duration;
+- all 17 maintained examples in separate serial headless MATLAB processes:
+  16 validated successes and expected `exampleNoPath` failure;
+- every successful example passed collision, workspace, velocity,
+  acceleration, and jerk checks;
+- visible `exampleObstacleFree`: success/validation 1/1, two figures,
+  4.472135955 deg and 4.531128874 s;
+- `git diff --check` was run after record updates.
+
+After the 17-example pass, repeated fresh MATLAB launches for the hidden
+failure-figure smoke returned the environment-level fatal startup message
+`System Error: File system inconsistency`. The headless no-path example itself
+had just returned `noValidatedSeed` without an example-validation warning. An
+earlier check on the same worktree had already created its hidden diagnostic
+figure; no failure plotting file changed in this final exact-clock repair.

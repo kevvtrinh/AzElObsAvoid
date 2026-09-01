@@ -4,7 +4,8 @@ function tests = testRuckigWaypointMotion
 %   tests = testRuckigWaypointMotion
 %**************************************************************************
 % PURPOSE
-%   - Verify exact Ruckig route composition on a static obstacle detour.
+%   - Verify exact Ruckig composition for at most two route segments.
+%   - Verify that longer routes fail explicitly before the engine runs.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -25,8 +26,8 @@ addpath(repositoryRoot);
 addpath(fullfile(repositoryRoot, "trajectory"));
 end
 
-function testStaticDetourSupportsEarliestAndFixedArrival(testCase)
-% Exercise a structurally different four-vertex route around a static box.
+function testTwoSegmentDetourSupportsEarliestAndFixedArrival(testCase)
+% Exercise the maximum supported route size around a static box.
 obstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "static box", 0, [-1 1 1 -1], [-1 -1 1 1], 0.2);
 obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacle);
@@ -46,7 +47,7 @@ options = obstacleAvoidance.planTrajectory();
 options.TrajectoryMethod = "ruckigWaypoint";
 seed = struct( ...
     "Index", 1, "Source", "visibilityGraph", ...
-    "position_deg", [-4 0; -1.5 -1.5; 1.5 -1.5; 4 0]);
+    "position_deg", [-4 0; 0 -2.5; 4 0]);
 
 [candidate, diagnostics] = ...
     obstacleAvoidance.planner.createRuckigWaypointMotion( ...
@@ -56,7 +57,8 @@ validation = obstacleAvoidance.validateTrajectory( ...
 
 verifyTrue(testCase, candidate.OptimizerFeasible);
 verifyTrue(testCase, diagnostics.Accepted);
-verifyEqual(testCase, diagnostics.CompletedPartCount, 3);
+verifyEqual(testCase, diagnostics.CompletedPartCount, 2);
+verifyEqual(testCase, diagnostics.MaximumSupportedPartCount, 2);
 verifyTrue(testCase, validation.Passed, validation.Message);
 verifyTrue(testCase, validation.CollisionFree);
 verifyGreaterThan(testCase, validation.MinimumClearance_deg, ...
@@ -78,4 +80,42 @@ verifyTrue(testCase, fixedValidation.Passed, fixedValidation.Message);
 verifyTrue(testCase, fixedValidation.CollisionFree);
 verifyEqual(testCase, fixedCandidate.FinalTime_s, goalState.time_s, ...
     "AbsTol", 1e-10);
+end
+
+function testThreeSegmentRouteReturnsExplicitUnsupportedResult(testCase)
+% Reject a longer route without constructing any partial Ruckig motion.
+initialState = struct( ...
+    "time_s", 0, "position_deg", [-4 0], ...
+    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+goalState = struct( ...
+    "time_s", 30, "position_deg", [4 0], ...
+    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+limits = struct( ...
+    "maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1], ...
+    "maxJerk_deg_s3", [2 2], ...
+    "azimuthInterval_deg", [-10 10], ...
+    "elevationInterval_deg", [-10 10]);
+options = obstacleAvoidance.planTrajectory();
+options.TrajectoryMethod = "ruckigWaypoint";
+seed = struct( ...
+    "Index", 1, "Source", "visibilityGraph", ...
+    "position_deg", [-4 0; -2 -1.5; 2 -1.5; 4 0]);
+
+[candidate, diagnostics] = ...
+    obstacleAvoidance.planner.createRuckigWaypointMotion( ...
+    seed, initialState, goalState, limits, options);
+
+verifyFalse(testCase, candidate.Success);
+verifyFalse(testCase, candidate.OptimizerFeasible);
+verifyEqual(testCase, candidate.TerminationReason, ...
+    "ruckigWaypointSegmentLimitExceeded");
+verifyThat(testCase, candidate.Message, ...
+    matlab.unittest.constraints.ContainsSubstring("at most 2 route segments"));
+verifyFalse(testCase, diagnostics.Accepted);
+verifyEqual(testCase, diagnostics.RequestedPartCount, 3);
+verifyEqual(testCase, diagnostics.MaximumSupportedPartCount, 2);
+verifyEqual(testCase, diagnostics.CompletedPartCount, 0);
+verifyEqual(testCase, diagnostics.EngineTerminationReason, ...
+    "ruckigWaypointSegmentLimitExceeded");
 end

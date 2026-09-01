@@ -30,12 +30,14 @@ function testDefaultsExposeStablePlannerChoices(testCase)
 % Keep the zero-input interface as the single defaults source.
 options = obstacleAvoidance.planTrajectory();
 requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
+    'MinimumTravelSavingsRate_deg_s', ...
     'MaximumWaitRefinementIterations', 'EnablePlaneReuse', ...
     'PlaneReuseImprovementTolerance_s', ...
     'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping', 'Verbose'};
 verifyTrue(testCase, isstruct(options) && isscalar(options));
 verifyTrue(testCase, all(isfield(options, requiredFields)));
-verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
+verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
+verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
 end
 
@@ -134,8 +136,8 @@ verifyEqual(testCase, diagnostics.RetainedBestTrialDuration_s, ...
     min(collisionFreeTrials_s), "AbsTol", 1e-12);
 end
 
-function testReflectedProgressAxisUsesValidatedPolynomial(testCase)
-% Exercise negative first-axis progress through two floating convex barriers.
+function testReflectedProgressAxisRanksValidatedFamiliesByLength(testCase)
+% Rank two validated fixed-clock families under negative first-axis progress.
 obstacleTime_s = [0; 30];
 firstObstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "first floating barrier", obstacleTime_s, ...
@@ -160,8 +162,9 @@ verifyTrue(testCase, result.Validation.CollisionFree);
 verifyTrue(testCase, result.Validation.CollisionResolved);
 diagnostics = result.SearchDiagnostics.FixedClockExcursion;
 verifyTrue(testCase, diagnostics.Success, diagnostics.Message);
-verifyEqual(testCase, diagnostics.SelectedMode, ...
-    "alternatingProgressPolynomial");
+verifyEqual(testCase, diagnostics.SelectedMode, "singleAmplitude");
+verifyTrue(testCase, diagnostics.ProgressPolynomial.Success, ...
+    diagnostics.ProgressPolynomial.Message);
 verifyEqual(testCase, ...
     diagnostics.ProgressPolynomial.ProgressAxisIndex, 1);
 verifyEqual(testCase, ...
@@ -171,6 +174,61 @@ verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, ...
 verifyEqual(testCase, result.SelectedSeed_deg, result.position_deg);
 verifyEqual(testCase, result.Seeds(1).Length_deg, ...
     sum(vecnorm(diff(result.position_deg), 2, 2)), "AbsTol", 1e-12);
+verifyLessThan(testCase, result.Seeds(1).Length_deg, ...
+    diagnostics.ProgressPolynomial.SelectedMotionLength_deg, ...
+    "The planner did not retain the shorter validated fixed-clock family.");
+end
+
+function testNearStartBarrierUsesShorterOneSidedExactClockFamily(testCase)
+% A local static obstruction must not force an alternating full-path tail.
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "offset rectangle", [0; 30], [-9 -6 -6 -9], [0 0 2.8 2.8], 0.1);
+initialState = restState(0, [-10 3.2]);
+goalState = restState(30, [10 -1]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-20 20];
+limits.elevationInterval_deg = [-10 10];
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, ...
+    plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+progressReport = result.SearchDiagnostics.FixedClockExcursion.ProgressPolynomial;
+verifyTrue(testCase, startsWith( ...
+    progressReport.SelectedBasis, "oneSidedBeta_"));
+alternatingIndex = find([progressReport.BasisReports.Name] == ...
+    "alternatingDegreeFive", 1, "first");
+verifyNotEmpty(testCase, alternatingIndex);
+verifyLessThan(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), ...
+    progressReport.BasisReports(alternatingIndex).SelectedMotionLength_deg);
+progress = (result.position_deg(:, 1) - initialState.position_deg(1)) / ...
+    (goalState.position_deg(1) - initialState.position_deg(1));
+directElevation_deg = initialState.position_deg(2) + ...
+    (goalState.position_deg(2) - initialState.position_deg(2)) * progress;
+verifyGreaterThanOrEqual(testCase, ...
+    min(result.position_deg(:, 2) - directElevation_deg), -1e-9);
+end
+
+function testBalancedDefaultReportsTradeoffAndUtilization(testCase)
+% Expose the declared selection cost and measured envelope use on success.
+initialState = restState(0, [0 0]);
+goalState = restState(20, [4 2]);
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits());
+
+verifyTrue(testCase, result.Success, result.Message);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+expectedCost_deg = summary.MotionLength_deg + ...
+    result.Options.MinimumTravelSavingsRate_deg_s * ...
+    summary.MotionDuration_s;
+verifyEqual(testCase, summary.TravelTimeTradeoffCost_deg, ...
+    expectedCost_deg, "AbsTol", 1e-10);
+verifyGreaterThan(testCase, summary.KinematicUtilization, 0);
+verifyLessThanOrEqual(testCase, summary.KinematicUtilization, 1 + 1e-6);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.SelectionPolicy.JerkRole, ...
+    "hardConstraintOnly");
 end
 
 function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)

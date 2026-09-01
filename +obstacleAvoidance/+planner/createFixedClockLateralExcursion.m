@@ -15,8 +15,9 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 %     additive coordinate-axis rest-to-rest collision detours.
 %   - On a static sequence of boundary-attached barriers, construct an
 %     input-driven minimum-jerk lateral spline on that same exact clock.
-%   - Try an endpoint-flat alternating progress polynomial when its complete
-%     continuous workspace and kinematic amplitude interval is nonempty.
+%   - Compare an endpoint-flat alternating progress polynomial with one-sided
+%     input-derived excursions and retain the shortest validated exact-clock
+%     motion.
 %**************************************************************************
 % INPUTS
 %   - directCandidate (scalar planner candidate struct)
@@ -137,7 +138,7 @@ if sequenceReport.CandidateCreated
     diagnostics.BarrierSequence.Message = sequenceValidation.Message;
 end
 
-%% Section 3: Try An Alternating Progress Polynomial
+%% Section 3: Try Input-Derived Progress Polynomials
 
 [progressCandidate, progressReport] = createAlternatingProgressExcursion( ...
     directCandidate, obstacles, initialState, goalState, limits, ...
@@ -152,21 +153,6 @@ diagnostics.ValidationElapsedTime_s = diagnostics.ValidationElapsedTime_s + ...
 diagnostics.CollisionCheckingElapsedTime_s = ...
     diagnostics.CollisionCheckingElapsedTime_s + ...
     progressReport.CollisionCheckingElapsedTime_s;
-if progressReport.Success
-    candidate = progressCandidate;
-    diagnostics.Success = true;
-    diagnostics.SelectedMode = "alternatingProgressPolynomial";
-    diagnostics.Message = ...
-        "An alternating progress polynomial attained the physical time floor.";
-    diagnostics.TerminationReason = "goalReached";
-    diagnostics.SelectedAxisIndex = progressReport.LateralAxisIndex;
-    diagnostics.SelectedDirection = sign(progressReport.SelectedAmplitude_deg);
-    diagnostics.RetainedAmplitude_deg = progressReport.SelectedAmplitude_deg;
-    diagnostics.MotionLength_deg = candidate.MotionLength_deg;
-    diagnostics.SelectedValidation = candidate.Validation;
-    diagnostics.ElapsedTime_s = toc(timer);
-    return;
-end
 
 %% Section 4: Enumerate Input-Scaled Axis Excursions
 
@@ -343,23 +329,39 @@ if ~isempty(screenedReportIndex)
     end
 end
 diagnostics.AxisReports = axisReports;
-if bestReportIndex == 0
+if bestReportIndex == 0 && ~progressReport.Success
     diagnostics = finishFailure(diagnostics, "noValidatedExcursion", ...
         "No enumerated fixed-clock excursion passed independent validation.", timer);
     diagnostics.AxisReports = axisReports;
     return;
 end
-selectedReport = axisReports(bestReportIndex);
 diagnostics.Success = true;
-diagnostics.SelectedMode = "singleAmplitude";
-diagnostics.Message = "A shortest enumerated fixed-clock excursion passed independent validation.";
 diagnostics.TerminationReason = "goalReached";
-diagnostics.SelectedAxisIndex = selectedReport.AxisIndex;
-diagnostics.SelectedDirection = selectedReport.Direction;
-diagnostics.InvalidBoundaryMagnitude_deg = selectedReport.InvalidBoundaryMagnitude_deg;
-diagnostics.ValidBoundaryMagnitude_deg = selectedReport.ValidBoundaryMagnitude_deg;
-diagnostics.BoundaryResolutionReserve_deg = selectedReport.BoundaryResolutionReserve_deg;
-diagnostics.RetainedAmplitude_deg = selectedReport.RetainedAmplitude_deg;
+selectProgress = progressReport.Success && (bestReportIndex == 0 || ...
+    progressCandidate.MotionLength_deg <= candidate.MotionLength_deg);
+if selectProgress
+    candidate = progressCandidate;
+    diagnostics.SelectedMode = "progressPolynomial";
+    diagnostics.Message = "The shortest validated fixed-clock family was " + ...
+        "the " + progressReport.SelectedBasis + " progress polynomial.";
+    diagnostics.SelectedAxisIndex = progressReport.LateralAxisIndex;
+    diagnostics.SelectedDirection = sign(progressReport.SelectedAmplitude_deg);
+    diagnostics.RetainedAmplitude_deg = progressReport.SelectedAmplitude_deg;
+else
+    selectedReport = axisReports(bestReportIndex);
+    diagnostics.SelectedMode = "singleAmplitude";
+    diagnostics.Message = ...
+        "The shortest validated fixed-clock family was a one-sided excursion.";
+    diagnostics.SelectedAxisIndex = selectedReport.AxisIndex;
+    diagnostics.SelectedDirection = selectedReport.Direction;
+    diagnostics.InvalidBoundaryMagnitude_deg = ...
+        selectedReport.InvalidBoundaryMagnitude_deg;
+    diagnostics.ValidBoundaryMagnitude_deg = ...
+        selectedReport.ValidBoundaryMagnitude_deg;
+    diagnostics.BoundaryResolutionReserve_deg = ...
+        selectedReport.BoundaryResolutionReserve_deg;
+    diagnostics.RetainedAmplitude_deg = selectedReport.RetainedAmplitude_deg;
+end
 diagnostics.MotionLength_deg = candidate.MotionLength_deg;
 diagnostics.SelectedValidation = candidate.Validation;
 diagnostics.ElapsedTime_s = toc(timer);
@@ -418,54 +420,68 @@ report.Eligible = true;
 report.ProgressAxisIndex = progressAxisIndex;
 report.LateralAxisIndex = lateralAxisIndex;
 
-unitCandidate = bmtpEngine.createProgressPolynomialMotion( ...
-    directCandidate, initialState, goalState, progressAxisIndex, 1, ...
-    options.SampleTime_s, "fixedClockProgressPolynomialUnit");
-[lowerAmplitude_deg, upperAmplitude_deg] = ...
-    createContinuousAmplitudeInterval( ...
-    directCandidate, unitCandidate, lateralAxisIndex, limits);
-report.LowerAmplitude_deg = lowerAmplitude_deg;
-report.UpperAmplitude_deg = upperAmplitude_deg;
-if ~isfinite(lowerAmplitude_deg) || ~isfinite(upperAmplitude_deg) || ...
-        lowerAmplitude_deg >= 0 || upperAmplitude_deg <= 0
-    report = progressFailure(report, "noBoundedPhysicalAmplitude", ...
-        "Continuous workspace and derivative bounds left no signed interval.");
-    return;
-end
-
-% The levels are proposals only. Sampled occupancy can reject a motion, but
-% only the unchanged continuous validator can accept one. Retaining every
-% sampled-clear level avoids assuming that collision clearance is monotone.
+progressBases = createProgressBases( ...
+    directCandidate, obstacles, progressAxisIndex, options);
+basisCount = numel(progressBases);
+basisReports = repmat(createProgressBasisReport(), basisCount, 1);
 levelCount = 8;
 levelFraction = (1:levelCount).' / levelCount;
-candidateAmplitude_deg = [ ...
-    -(-lowerAmplitude_deg) * levelFraction; ...
-    upperAmplitude_deg * levelFraction];
+trialCandidates = cell(0, 1);
+candidateAmplitude_deg = zeros(0, 1);
+candidateBasisIndex = zeros(0, 1);
+motionLength_deg = zeros(0, 1);
+for basisIndex = 1:basisCount
+    basisPower = progressBases(basisIndex).Power;
+    unitCandidate = bmtpEngine.createProgressPolynomialMotion( ...
+        directCandidate, initialState, goalState, progressAxisIndex, 1, ...
+        options.SampleTime_s, "fixedClockProgressPolynomialUnit", ...
+        basisPower);
+    [lowerAmplitude_deg, upperAmplitude_deg] = ...
+        createContinuousAmplitudeInterval( ...
+        directCandidate, unitCandidate, lateralAxisIndex, limits);
+    basisReports(basisIndex).Name = progressBases(basisIndex).Name;
+    basisReports(basisIndex).Power = basisPower;
+    basisReports(basisIndex).PeakProgress = ...
+        progressBases(basisIndex).PeakProgress;
+    basisReports(basisIndex).LowerAmplitude_deg = lowerAmplitude_deg;
+    basisReports(basisIndex).UpperAmplitude_deg = upperAmplitude_deg;
+    intervalIsBounded = isfinite(lowerAmplitude_deg) && ...
+        isfinite(upperAmplitude_deg) && lowerAmplitude_deg < 0 && ...
+        upperAmplitude_deg > 0;
+    if ~intervalIsBounded
+        basisReports(basisIndex).TerminationReason = ...
+            "noBoundedPhysicalAmplitude";
+        continue;
+    end
+    amplitudes_deg = [ ...
+        -(-lowerAmplitude_deg) * levelFraction; ...
+        upperAmplitude_deg * levelFraction];
+    for levelIndex = 1:numel(amplitudes_deg)
+        trial = bmtpEngine.createProgressPolynomialMotion( ...
+            directCandidate, initialState, goalState, progressAxisIndex, ...
+            amplitudes_deg(levelIndex), options.SampleTime_s, ...
+            "fixedClockProgressPolynomial", basisPower);
+        trialCandidates{end + 1, 1} = trial; %#ok<AGROW>
+        candidateAmplitude_deg(end + 1, 1) = ...
+            amplitudes_deg(levelIndex); %#ok<AGROW>
+        candidateBasisIndex(end + 1, 1) = basisIndex; %#ok<AGROW>
+        motionLength_deg(end + 1, 1) = trial.MotionLength_deg; %#ok<AGROW>
+    end
+end
 workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
     double(limits.elevationInterval_deg(:).')];
 workspaceScale_deg = diff(workspaceInterval_deg(lateralAxisIndex, :));
 amplitudeResolution_deg = max( ...
     8 * double(options.CollisionClearanceTolerance_deg), ...
     sqrt(eps) * max(1, workspaceScale_deg));
-candidateAmplitude_deg = candidateAmplitude_deg( ...
-    abs(candidateAmplitude_deg) > amplitudeResolution_deg);
-candidateCount = numel(candidateAmplitude_deg);
+candidateCount = numel(trialCandidates);
+report.BasisReports = basisReports;
 report.CandidateAmplitude_deg = candidateAmplitude_deg;
+report.CandidateBasisIndex = candidateBasisIndex;
 if candidateCount == 0
     report = progressFailure(report, "noResolvedAmplitude", ...
-        "The continuous amplitude interval is below numeric resolution.");
+        "No progress basis retained a bounded physical amplitude interval.");
     return;
-end
-trialCandidates = cell(candidateCount, 1);
-motionLength_deg = zeros(candidateCount, 1);
-for candidateIndex = 1:candidateCount
-    trialCandidates{candidateIndex} = ...
-        bmtpEngine.createProgressPolynomialMotion( ...
-        directCandidate, initialState, goalState, progressAxisIndex, ...
-        candidateAmplitude_deg(candidateIndex), options.SampleTime_s, ...
-        "fixedClockProgressPolynomial");
-    motionLength_deg(candidateIndex) = ...
-        trialCandidates{candidateIndex}.MotionLength_deg;
 end
 sampledClear = sampledCandidatesAreClear( ...
     trialCandidates, obstacles, options);
@@ -475,38 +491,167 @@ report.SampledClear = sampledClear;
 report.ScreeningCount = candidateCount;
 report.ValidationPassed = false(candidateCount, 1);
 report.ValidationMessage = strings(candidateCount, 1);
-screenedIndex = find(sampledClear);
-if isempty(screenedIndex)
-    report = progressFailure(report, "noSampledClearAmplitude", ...
-        "No bounded progress-polynomial proposal passed sampled occupancy.");
-    return;
-end
-[~, order] = sort(motionLength_deg(screenedIndex));
-for candidateIndex = reshape(screenedIndex(order), 1, [])
+
+bestCandidate = struct();
+bestValidation = obstacleAvoidance.validateTrajectory();
+bestAmplitude_deg = NaN;
+bestBasisIndex = 0;
+for basisIndex = 1:basisCount
+    screenedIndex = find(sampledClear & candidateBasisIndex == basisIndex);
+    if isempty(screenedIndex)
+        basisReports(basisIndex).TerminationReason = ...
+            "noSampledClearAmplitude";
+        continue;
+    end
+    [~, order] = sort(motionLength_deg(screenedIndex));
+    selectedIndex = 0;
+    for candidateIndex = reshape(screenedIndex(order), 1, [])
         trial = trialCandidates{candidateIndex};
         validationTimer = tic;
         validation = obstacleAvoidance.validateTrajectory( ...
             trial, obstacles, initialState, goalState, limits, options);
         report = addProgressValidationTiming(report, validation, ...
             toc(validationTimer));
-    report.ValidationPassed(candidateIndex) = validation.Passed;
-    report.ValidationMessage(candidateIndex) = validation.Message;
-    if validation.Passed
-        trial.Validation = validation;
-        candidate = trial;
-        report.Success = true;
-        report.Message = ...
-            "A bounded progress polynomial passed independent validation.";
-        report.TerminationReason = "goalReached";
-        report.SelectedAmplitude_deg = ...
-            candidateAmplitude_deg(candidateIndex);
-        report.SelectedMotionLength_deg = trial.MotionLength_deg;
-        report.Validation = validation;
-        return;
+        report.ValidationPassed(candidateIndex) = validation.Passed;
+        report.ValidationMessage(candidateIndex) = validation.Message;
+        if validation.Passed
+            selectedIndex = candidateIndex;
+            break;
+        end
+    end
+    if selectedIndex == 0
+        basisReports(basisIndex).TerminationReason = ...
+            "noValidatedAmplitude";
+        continue;
+    end
+    upperMagnitude_deg = abs(candidateAmplitude_deg(selectedIndex));
+    direction = sign(candidateAmplitude_deg(selectedIndex));
+    sameSide = candidateBasisIndex == basisIndex & ...
+        sign(candidateAmplitude_deg) == direction & ...
+        abs(candidateAmplitude_deg) < upperMagnitude_deg;
+    lowerMagnitude_deg = max([0; abs(candidateAmplitude_deg( ...
+        sameSide & ~sampledClear))]);
+    refinedCandidate = trialCandidates{selectedIndex};
+    refinedValidation = validation;
+    refinementCount = 0;
+    while upperMagnitude_deg - lowerMagnitude_deg > ...
+            amplitudeResolution_deg && refinementCount < 16
+        midpointMagnitude_deg = ...
+            0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
+        midpointCandidate = bmtpEngine.createProgressPolynomialMotion( ...
+            directCandidate, initialState, goalState, progressAxisIndex, ...
+            direction * midpointMagnitude_deg, options.SampleTime_s, ...
+            "fixedClockProgressPolynomial", ...
+            progressBases(basisIndex).Power);
+        validationTimer = tic;
+        midpointValidation = obstacleAvoidance.validateTrajectory( ...
+            midpointCandidate, obstacles, initialState, goalState, ...
+            limits, options);
+        report = addProgressValidationTiming(report, midpointValidation, ...
+            toc(validationTimer));
+        refinementCount = refinementCount + 1;
+        if midpointValidation.Passed
+            upperMagnitude_deg = midpointMagnitude_deg;
+            refinedCandidate = midpointCandidate;
+            refinedValidation = midpointValidation;
+        else
+            lowerMagnitude_deg = midpointMagnitude_deg;
+        end
+    end
+    basisReports(basisIndex).SelectedAmplitude_deg = ...
+        direction * upperMagnitude_deg;
+    basisReports(basisIndex).SelectedMotionLength_deg = ...
+        refinedCandidate.MotionLength_deg;
+    basisReports(basisIndex).BoundaryRefinementCount = refinementCount;
+    basisReports(basisIndex).TerminationReason = "validatedClearanceBoundary";
+    if bestBasisIndex == 0 || refinedCandidate.MotionLength_deg < ...
+            bestCandidate.MotionLength_deg
+        bestCandidate = refinedCandidate;
+        bestValidation = refinedValidation;
+        bestAmplitude_deg = direction * upperMagnitude_deg;
+        bestBasisIndex = basisIndex;
     end
 end
-report = progressFailure(report, "noValidatedProgressPolynomial", ...
-    "No sampled-clear progress polynomial passed independent validation.");
+report.BasisReports = basisReports;
+if bestBasisIndex == 0
+    report = progressFailure(report, "noValidatedProgressPolynomial", ...
+        "No sampled-clear progress polynomial passed independent validation.");
+    return;
+end
+bestCandidate.Validation = bestValidation;
+candidate = bestCandidate;
+report.Success = true;
+report.Message = "A bounded progress polynomial passed independent validation.";
+report.TerminationReason = "goalReached";
+report.SelectedBasis = progressBases(bestBasisIndex).Name;
+report.LowerAmplitude_deg = ...
+    basisReports(bestBasisIndex).LowerAmplitude_deg;
+report.UpperAmplitude_deg = ...
+    basisReports(bestBasisIndex).UpperAmplitude_deg;
+report.SelectedAmplitude_deg = bestAmplitude_deg;
+report.SelectedMotionLength_deg = bestCandidate.MotionLength_deg;
+report.Validation = bestValidation;
+end
+
+function progressBases = createProgressBases( ...
+        directCandidate, obstacles, progressAxisIndex, options)
+% Derive asymmetric one-sided bases from direct collision progress.
+progressBases = struct( ...
+    "Name", "alternatingDegreeFive", ...
+    "Power", [0, 4, 4, -56, 80, -32], ...
+    "PeakProgress", NaN);
+queryOptions = struct( ...
+    "BoundaryIsOccupied", true, ...
+    "ClearanceTolerance_deg", options.CollisionClearanceTolerance_deg);
+[isOccupied, ~, details] = ...
+    obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    obstacles, directCandidate.position_deg(:, 1), ...
+    directCandidate.position_deg(:, 2), directCandidate.time_s, queryOptions);
+isOccupied = logical(isOccupied(:));
+runChange = diff([false; isOccupied; false]);
+runStart = find(runChange == 1);
+runEnd = find(runChange == -1) - 1;
+progressDelta_deg = directCandidate.position_deg(end, progressAxisIndex) - ...
+    directCandidate.position_deg(1, progressAxisIndex);
+collisionProgress = zeros(numel(runStart), 1);
+for runIndex = 1:numel(runStart)
+    indices = runStart(runIndex):runEnd(runIndex);
+    [~, localIndex] = min(details.MinimumClearance_deg(indices));
+    sampleIndex = indices(localIndex);
+    collisionProgress(runIndex) = ( ...
+        directCandidate.position_deg(sampleIndex, progressAxisIndex) - ...
+        directCandidate.position_deg(1, progressAxisIndex)) / ...
+        progressDelta_deg;
+end
+if isempty(collisionProgress)
+    % A continuous collision can lie between history samples. Symmetric
+    % progress keeps the family useful without inventing obstacle geometry.
+    collisionProgress = 0.5;
+end
+collisionProgress = min(1 - eps, max(eps, collisionProgress));
+for collisionIndex = 1:numel(collisionProgress)
+    for degree = 3:6
+        firstExponent = min(degree - 1, max(1, ...
+            round(degree * collisionProgress(collisionIndex))));
+        secondExponent = degree - firstExponent;
+        basisName = "oneSidedBeta_" + firstExponent + "_" + secondExponent;
+        if any([progressBases.Name] == basisName)
+            continue;
+        end
+        basisPower = zeros(1, degree + 1);
+        for secondPower = 0:secondExponent
+            basisPower(firstExponent + secondPower + 1) = ...
+                (-1) ^ secondPower * nchoosek(secondExponent, secondPower);
+        end
+        peakProgress = firstExponent / degree;
+        peakValue = peakProgress ^ firstExponent * ...
+            (1 - peakProgress) ^ secondExponent;
+        basisPower = basisPower / peakValue;
+        progressBases(end + 1) = struct( ...
+            "Name", basisName, "Power", basisPower, ...
+            "PeakProgress", peakProgress); %#ok<AGROW>
+    end
+end
 end
 
 function [lowerAmplitude_deg, upperAmplitude_deg] = ...
@@ -785,11 +930,6 @@ function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, optio
 startTime_s = directCandidate.time_s(1);
 endTime_s = directCandidate.time_s(end);
 midpointTime_s = 0.5 * (startTime_s + endTime_s);
-peakTime_s = midpointTime_s;
-if ~obstacleAvoidance.obstacles.hasChangingHistory( ...
-        obstacles, startTime_s, endTime_s)
-    return;
-end
 queryOptions = struct( ...
     "BoundaryIsOccupied", true, ...
     "ClearanceTolerance_deg", options.CollisionClearanceTolerance_deg);
@@ -871,7 +1011,10 @@ report = struct( ...
     "TerminationReason", "notAttempted", ...
     "ProgressAxisIndex", 0, "LateralAxisIndex", 0, ...
     "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
+    "SelectedBasis", "", ...
+    "BasisReports", repmat(createProgressBasisReport(), 0, 1), ...
     "CandidateAmplitude_deg", zeros(0, 1), ...
+    "CandidateBasisIndex", zeros(0, 1), ...
     "MotionLength_deg", zeros(0, 1), ...
     "SampledClear", false(0, 1), ...
     "ValidationPassed", false(0, 1), ...
@@ -880,6 +1023,15 @@ report = struct( ...
     "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
     "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
     "Validation", obstacleAvoidance.validateTrajectory());
+end
+
+function report = createProgressBasisReport()
+% Preserve physical bounds and the best validated result for one basis.
+report = struct( ...
+    "Name", "", "Power", zeros(1, 0), "PeakProgress", NaN, ...
+    "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
+    "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
+    "BoundaryRefinementCount", 0, "TerminationReason", "notAttempted");
 end
 
 function report = progressFailure(report, reason, message)

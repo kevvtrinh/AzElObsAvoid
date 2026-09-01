@@ -1,5 +1,69 @@
 # Novel replacement branch assessment
 
+## Balanced travel-time planning and bounded waypoint fallback - 2026-08-31
+
+The planner now separates hard feasibility from preference. `GoalTimeMode`
+defaults to `balancedArrival`, whose explicit
+`MinimumTravelSavingsRate_deg_s=1` policy selects a later validated motion only
+when it saves more than one degree per second of delay. Jerk remains a hard
+validated limit and is not a selection cost. Equal-cost candidates prefer the
+earlier arrival, then greater mean normalized peak velocity, acceleration, and
+jerk utilization. Every seed summary reports its degree-valued tradeoff cost
+and utilization, and search diagnostics state the formula and retain the
+secondary conic portfolio's trial rates, durations, lengths, and costs.
+
+The largest measured strength is that one input-driven policy now corrects
+three different failure mechanisms without scenario branches. The supplied
+static shrimp already had a 175.168391-degree upper-boundary seed, but the
+time-only BMTP kernel expanded it to 192.556229 degrees and 56.293 degrees of
+elevation. A two-stage solve now first establishes a collision-free homotopy,
+then minimizes a convex Bezier control-edge travel bound under retained and
+newly discovered separating planes. A bounded three-rate portfolio rejects
+dominated local scalarizations. The retained shrimp motion is 175.780063
+degrees at 82.389498 s, never exceeds 39.288753 degrees elevation, and passes
+independent collision, velocity, acceleration, and jerk validation.
+
+For moving obstacles, balanced timed search retains the shortest ancestry at
+the mission horizon but removes terminal goal dwell before motion realization.
+That supplies a moving-aware later/shorter candidate while the spatial search
+supplies the faster end of the comparison. On the supplied non-ideal case the
+planner compares a validated 144 s / 228.491135-degree timed motion (cost
+372.491135 degrees) with a validated 119.473594 s / 260.029509-degree detour
+(cost 379.503102 degrees) and selects the former. This is a measured incumbent
+comparison, not a completeness or global-Pareto-optimality claim.
+
+The fixed-clock excursion now validates and compares its progress-polynomial
+and one-sided families by actual travel at the identical physical clock. The
+supplied sine case falls from 153.472521 to 146.976783 degrees without changing
+its 70.344251 s duration or any constraint. Candidate selection no longer uses
+integrated squared jerk.
+
+Ruckig waypoint composition now has a visible two-segment hard limit. A route
+with more segments returns `ruckigWaypointSegmentLimitExceeded` before Ruckig
+runs. The supplied six-segment hidden-fallback request still succeeds through
+velocity-carried BMTP at 104.261457 s and 233.911502 degrees; it is not
+misreported as no-path and no interior state is forced to rest. The maintained
+alternating-occlusion example was moved from explicit Ruckig to BMTP because
+its route genuinely exceeds that public limit.
+
+The main unfavorable tradeoff is runtime and boundedness. The shrimp balanced
+solve took 32.54 s versus the saved pre-change planner result's 13.08 s; this
+comparison includes different MATLAB sessions and is not a controlled speed
+ratio. The three-rate refinement is deliberately bounded, and timed search is
+still bounded by its node, layer, cell, and seed caps. A returned solution is
+independently valid, but failure does not prove that no continuous trajectory
+exists and success does not prove the complete Pareto frontier was found.
+
+Code Analyzer reported zero findings on all changed MATLAB files. The full
+suite initially passed 107/108 tests; the sole failure was a certificate fixture
+that had unintentionally inherited the new default. After declaring its
+intended `earliestArrival` policy, the focused certificate suite passed 3/3,
+and the final complete suite passed 108/108 in 111.388 s. All 17 maintained
+examples ran in separate headless MATLAB processes: 16 independently validated
+successes and the expected `exampleNoPath` failure. A hidden no-path run created
+one diagnostic figure, and a visible obstacle-avoidance run created one visible
+validated figure.
+
 ## Sandbox route-economy coverage - 2026-08-31
 
 Sandbox-scale route tests now measure accumulated two-axis travel and
@@ -760,3 +824,49 @@ All 17 maintained examples ran in separate serial headless MATLAB processes:
 `exampleNoPath` failure. A visible obstacle-free run also passed. The static-U
 sentinel remained 20.712447786 s and the moving-barrier direct-wait sentinel
 remained 10.0903015137 s.
+
+## Balanced Selection And One-Sided Exact-Clock Economy — 2026-08-31
+
+The largest current strength is that route choice now represents the stated
+gimbal-wear trade rather than using jerk as a preference or choosing arrival
+time lexicographically. The default balanced objective is actual motion travel
+plus `MinimumTravelSavingsRate_deg_s` times elapsed time; jerk remains a hard
+constraint, and normalized kinematic utilization is only a deterministic
+tie-break. Static exact-clock detours now enumerate asymmetric, one-sided
+progress polynomials whose peak locations are derived from direct-path
+collision progress. Every proposal retains the clock-owning coordinate's
+physical-limit motion and is accepted only after the unchanged continuous
+validator passes.
+
+On the motivating `newheart` bundle, the prior alternating fixed-clock motion
+was 201.070948503 deg at the 100.970425693 s physical time floor. The retained
+`oneSidedBeta_1_4` motion is 199.268051966 deg at the identical clock, has no
+sign reversal relative to the direct chord, and passes continuous collision,
+workspace, velocity, acceleration, and jerk checks. This removes
+1.802896537 deg of travel. A structurally different near-start rectangle also
+selected a one-sided exact-clock basis: 20.493950992 deg versus
+20.585690610 deg for the validated alternating family.
+
+The same change improved, rather than traded against, the existing rogue
+sentinels: `sinetraj` reached 146.928879089 deg at 70.344250998 s, and balanced
+`shrimp` reached 175.703912280 deg at 81.455142283 s. Balanced `non-ideal`
+remained 228.491135293 deg at 144 s, while `hiddenruckigfallback` remained a
+validated velocity-carried BMTP result with no silent Ruckig substitution.
+
+The largest current weakness is bounded family coverage and runtime. The
+one-sided portfolio applies only to static, two-axis, rest-to-rest requests
+with one straight-progress coordinate owning the physical clock. It does not
+prove globally shortest travel, and alternating/multi-obstacle homotopies may
+still require topology BMTP. `newheart` used 154 full validation calls and
+65.7788 planner seconds versus the saved 32.7045-second prior run. Runtime is
+therefore an explicit regression on that rogue case, retained because
+correctness and 1.8029 deg less gimbal travel have higher repository priority.
+
+Final verification passed 110/110 tests in 126.782359 s. All 17 maintained
+examples ran serially and headlessly: 16 continuously validated successes and
+the expected `noValidatedSeed` result without an example-validation warning.
+A visible obstacle-free smoke passed and created two figures. A fresh repeat
+of the hidden failure-figure smoke was blocked after the example pass by
+MATLAB's environment-level `System Error: File system inconsistency`; the same
+worktree's earlier failure-plot check had already created the diagnostic figure,
+and no plotting source changed in this final algorithm step.

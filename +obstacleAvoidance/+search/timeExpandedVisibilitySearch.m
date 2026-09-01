@@ -148,6 +148,17 @@ if ~isempty(deepestLayerIndex)
 end
 if options.GoalTimeMode == "earliestArrival"
     goalLayerIndex = find(reachable(:, 2), 1, "first");
+elseif options.GoalTimeMode == "balancedArrival"
+    candidateGoalLayers = find(reachable(:, 2));
+    if isempty(candidateGoalLayers)
+        goalLayerIndex = [];
+    else
+        travelCost_deg = spatialCost_deg(candidateGoalLayers, 2);
+        delayCost_deg = options.MinimumTravelSavingsRate_deg_s * ...
+            (layerTimes_s(candidateGoalLayers) - initialState.time_s);
+        [~, selectedGoalIndex] = min(travelCost_deg + delayCost_deg);
+        goalLayerIndex = candidateGoalLayers(selectedGoalIndex);
+    end
 else
     goalLayerIndex = find(reachable(:, 2) & (1:layerCount).' == layerCount, 1, "first");
 end
@@ -159,7 +170,9 @@ record = struct("LayerTimes_s", layerTimes_s, ...
     "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
     "RejectedTransitionCount", rejectedCount, "ExpandedCount", expandedCount, ...
     "ExploredNodes_deg", exploredNodes_deg, "FrontierNodes_deg", frontier_deg, ...
-    "BestPartialRoute_deg", bestPartial_deg);
+    "BestPartialRoute_deg", bestPartial_deg, ...
+    "SelectedGoalLayerIndex", goalLayerIndex, ...
+    "ReachableGoalLayerCount", nnz(reachable(:, 2)));
 end
 %% Section 3: Local Functions
 function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s)

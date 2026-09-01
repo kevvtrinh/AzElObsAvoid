@@ -10,8 +10,9 @@ function result = planTrajectory( ...
 %**************************************************************************
 % PURPOSE
 %   - Plan collision-free Az/El motion through one public entry point.
-%   - Prefer certified physical arrival floors, then path length and runtime,
-%     while retaining independently validated topology fallback behavior.
+%   - Honor the resolved goal-time policy: balanced arrival applies an explicit
+%     travel-saved-per-second exchange rate, fixed arrival minimizes travel at
+%     the mission time, and earliest arrival minimizes time.
 %**************************************************************************
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])

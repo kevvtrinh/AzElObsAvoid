@@ -109,10 +109,22 @@ elseif hasChangingHistory
     diagnostics.Coverage.TimedSearchSuppressionReason = "";
     timedCost_deg = hypot( nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', ...
         nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
+    timedSearchOptions = options;
+    if options.GoalTimeMode == "balancedArrival"
+        % Retain the shortest final-horizon ancestry, then remove terminal
+        % dwell. The spatial candidates supply the fast end of the Pareto
+        % comparison; this timed seed supplies a later route that exploits
+        % obstacle motion without paying for irrelevant goal waiting.
+        timedSearchOptions.GoalTimeMode = "fixedArrival";
+    end
     [route_deg, routeTime_s, timedRecord] = ...
         obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodePosition_deg, timedCost_deg, obstacles, initialState, ...
-        goalState, limits, sampleTimes_s, options);
+        goalState, limits, sampleTimes_s, timedSearchOptions);
+    if options.GoalTimeMode == "balancedArrival"
+        [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
+            route_deg, routeTime_s, goal_deg);
+    end
     diagnostics.TemporalLayerTimes_s = timedRecord.LayerTimes_s;
     diagnostics.TemporalLayerCount = numel(timedRecord.LayerTimes_s);
     diagnostics.TemporalCandidateLayerCount = timedRecord.CandidateLayerCount;
@@ -120,6 +132,7 @@ elseif hasChangingHistory
     diagnostics.TemporalNodeCount = timedRecord.NodeCount;
     diagnostics.WaitEdgeCount = timedRecord.WaitEdgeCount;
     diagnostics.MotionEdgeCount = timedRecord.MotionEdgeCount;
+    diagnostics.TimedSearchGoalTimeMode = timedSearchOptions.GoalTimeMode;
     diagnostics = appendSearchDiagnostics(diagnostics, timedRecord);
     seeds = appendTimedSeed(seeds, template, route_deg, routeTime_s);
 end
@@ -190,6 +203,24 @@ shape = polyshape();
 if count > 0
     shape = union([parts{1:count}]);
 end
+end
+
+function [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
+        route_deg, routeTime_s, goal_deg)
+% Remove only repeated goal occupancy after the first verified arrival.
+if isempty(route_deg)
+    return;
+end
+coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
+    route_deg, goal_deg);
+goalTolerance_deg = 256 * eps(coordinateScale_deg);
+firstGoalIndex = find(vecnorm(route_deg - goal_deg, 2, 2) <= ...
+    goalTolerance_deg, 1, "first");
+if isempty(firstGoalIndex)
+    return;
+end
+route_deg = route_deg(1:firstGoalIndex, :);
+routeTime_s = routeTime_s(1:firstGoalIndex);
 end
 
 function [positions_deg, cost_deg, record] = createVisibilityGraph( ...

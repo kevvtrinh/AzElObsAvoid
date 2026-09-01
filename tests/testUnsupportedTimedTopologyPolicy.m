@@ -62,29 +62,40 @@ for seedIndex = 1:numel(result.SeedSummaries)
 end
 end
 
-function testExplicitPolicyReportsStopAtWaypointFallback(testCase)
-% Report every forced rest state and retain the timed-kernel failure reason.
+function testExplicitPolicyStillRejectsOverLimitFallbackRoutes(testCase)
+% Keep explicit fallback bounded to two segments and report every attempt.
 result = testCase.TestData.FallbackResult;
-validation = testCase.TestData.FallbackValidation;
-verifyTrue(testCase, result.Success, result.Message);
-verifyTrue(testCase, validation.Passed, validation.Message);
+verifyFalse(testCase, result.Success);
+verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
-diagnostics = result.SeedSummaries( ...
-    result.SelectedSeedIndex).SolverDiagnostics;
-verifyTrue(testCase, diagnostics.FallbackAttempted);
-verifyEqual(testCase, diagnostics.FallbackMethod, ...
-    "ruckigStopAtWaypoints");
-verifyEqual(testCase, diagnostics.OriginalTerminationReason, ...
-    "unsupportedTimedMultiWaypointRoute");
-verifyTrue(testCase, diagnostics.AllInteriorWaypointsConstrainedToRest);
-verifyNotEmpty(testCase, diagnostics.InteriorWaypointTime_s);
-verifyEqual(testCase, diagnostics.InteriorWaypointVelocity_deg_s, ...
-    zeros(size(diagnostics.InteriorWaypointVelocity_deg_s)));
-verifyThat(testCase, result.SeedSummaries( ...
-    result.SelectedSeedIndex).Message, ...
-    matlab.unittest.constraints.ContainsSubstring( ...
-    "explicitly enabled Ruckig fallback"));
+fallbackAttemptCount = 0;
+overLimitAttemptCount = 0;
+for seedIndex = 1:numel(result.SeedSummaries)
+    diagnostics = result.SeedSummaries(seedIndex).SolverDiagnostics;
+    if ~isfield(diagnostics, "FallbackAttempted") || ...
+            ~diagnostics.FallbackAttempted
+        continue;
+    end
+    fallbackAttemptCount = fallbackAttemptCount + 1;
+    verifyEqual(testCase, diagnostics.FallbackMethod, ...
+        "ruckigStopAtWaypoints");
+    verifyEqual(testCase, diagnostics.OriginalTerminationReason, ...
+        "unsupportedTimedMultiWaypointRoute");
+    fallback = diagnostics.FallbackDiagnostics;
+    verifyLessThanOrEqual(testCase, fallback.CompletedPartCount, ...
+        fallback.MaximumSupportedPartCount);
+    if fallback.RequestedPartCount > fallback.MaximumSupportedPartCount
+        overLimitAttemptCount = overLimitAttemptCount + 1;
+        verifyFalse(testCase, fallback.Accepted);
+        verifyEqual(testCase, fallback.CompletedPartCount, 0);
+        verifyEqual(testCase, fallback.EngineTerminationReason, ...
+            "ruckigWaypointSegmentLimitExceeded");
+    end
+end
+verifyGreaterThan(testCase, fallbackAttemptCount, 0);
+verifyGreaterThan(testCase, overLimitAttemptCount, 0, ...
+    "The integration case did not exercise an over-limit fallback route.");
 end
 
 function [obstacles, initialState, goalState, limits] = createScenario()

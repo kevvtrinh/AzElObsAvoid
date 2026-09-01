@@ -39,6 +39,22 @@ Planner options select work and display policy; they do not expose internal
 engine constants. Per-seed engine and independent-validation evidence is
 retained in `result.SearchDiagnostics.SeedSummaries`.
 
+`GoalTimeMode` defaults to `"balancedArrival"`. A validated later motion is
+preferred only when its travel saving exceeds
+`MinimumTravelSavingsRate_deg_s` times its delay; the default rate is 1 deg/s.
+Thus a 0.1 s delay must save more than 0.1 degree. The returned seed summaries
+report the degree-valued tradeoff cost and measured kinematic utilization.
+Jerk is a hard limit, not a selection cost. Set `GoalTimeMode` to
+`"earliestArrival"` for strict time-first behavior or `"fixedArrival"` for
+minimum travel at the mission horizon.
+
+For an eligible static rest-to-rest request with one coordinate owning the
+physical clock, the exact-clock detour portfolio includes asymmetric one-sided
+progress polynomials whose peaks come from the direct collision location. The
+planner compares their actual travel against alternating and spline families;
+sampled screening may reject a proposal, but only continuous public validation
+can accept one.
+
 `PerSeedWorkBudgetMultiplier` defaults to `3`. After an independently
 validated topology-seed motion exists, each later BMTP solve receives a
 deterministic work limit equal to this multiplier times the fastest validated
@@ -59,8 +75,10 @@ requests are not refined. Set the option to `0` to retain the accepted grid wait
 kernel cannot realize a multi-waypoint route, the original
 `unsupportedTimedMultiWaypointRoute` failure remains visible. Set the policy to
 `"ruckigStopAtWaypoints"` only when rest-to-rest composition at every interior
-waypoint is acceptable. The result then reports the original failure, forced
-rest states, fallback method, and fallback outcome.
+waypoint is acceptable and the normalized route has no more than two segments.
+Longer routes fail with `ruckigWaypointSegmentLimitExceeded` before Ruckig is
+run. The result reports the original failure, forced rest states, fallback
+method, and fallback outcome.
 
 ## Minimal fixed-goal example
 

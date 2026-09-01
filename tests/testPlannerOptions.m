@@ -24,6 +24,8 @@ verifyFalse(testCase, isfield(options, "RandomSeed"));
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
+verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
+verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
 verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, ...
     options.ArrivalTimeTolerance_s);
 end

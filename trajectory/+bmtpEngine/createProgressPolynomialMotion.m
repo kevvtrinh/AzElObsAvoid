@@ -1,15 +1,18 @@
 function candidate = createProgressPolynomialMotion( ...
         baseMotion, initialState, goalState, progressAxisIndex, ...
-        amplitude_deg, sampleStep_s, seedSource)
+        amplitude_deg, sampleStep_s, seedSource, basisPower)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = bmtpEngine.createProgressPolynomialMotion( ...
 %       baseMotion, initialState, goalState, progressAxisIndex, ...
 %       amplitude_deg, sampleStep_s, seedSource)
+%   candidate = bmtpEngine.createProgressPolynomialMotion( ...
+%       baseMotion, initialState, goalState, progressAxisIndex, ...
+%       amplitude_deg, sampleStep_s, seedSource, basisPower)
 %**************************************************************************
 % PURPOSE
-%   - Compose an endpoint-flat alternating lateral path with one exact
-%     straight-progress motion without changing its physical clock.
+%   - Compose a bounded lateral polynomial in normalized progress with one
+%     exact straight-progress motion without changing its physical clock.
 %**************************************************************************
 % INPUTS
 %   - baseMotion (scalar trajectory-engine result struct)
@@ -24,10 +27,14 @@ function candidate = createProgressPolynomialMotion( ...
 %       Requested output-history spacing.
 %   - seedSource (scalar text)
 %       Input-derived construction label copied to the motion record.
+%   - basisPower (finite numeric row vector, optional)
+%       Ascending powers of the dimensionless lateral basis. The default is
+%       the endpoint-flat alternating degree-five basis. Both endpoint values
+%       must be zero so the requested endpoint positions remain unchanged.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar trajectory-engine result struct)
-%       Exact degree-15 composition on the base switching intervals.
+%       Exact polynomial composition on the base switching intervals.
 %**************************************************************************
 % UNITS
 %   - Position and amplitude are degrees; time is seconds; derivatives use
@@ -36,9 +43,13 @@ function candidate = createProgressPolynomialMotion( ...
 
 %% Section 1: Validate The Straight-Progress Clock
 
+if nargin < 8 || isempty(basisPower)
+    basisPower = [0, 4, 4, -56, 80, -32];
+end
 requiredFields = {'Success', 'UsedStraightProgress', 'Polynomial'};
 stateFields = {'position_deg', 'velocity_deg_s', 'acceleration_deg_s2'};
-if nargin ~= 7 || ~isstruct(baseMotion) || ~isscalar(baseMotion) || ...
+if (nargin ~= 7 && nargin ~= 8) || ...
+        ~isstruct(baseMotion) || ~isscalar(baseMotion) || ...
         ~all(isfield(baseMotion, requiredFields)) || ...
         ~baseMotion.Success || ~baseMotion.UsedStraightProgress || ...
         ~isstruct(initialState) || ~isscalar(initialState) || ...
@@ -67,6 +78,23 @@ if ~isscalar(seedSource)
     error("createProgressPolynomialMotion:InvalidSource", ...
         "seedSource must be scalar text.");
 end
+basisPower = double(basisPower(:).');
+lastBasisPower = find(basisPower ~= 0, 1, "last");
+if isempty(lastBasisPower)
+    basisPower = 0;
+else
+    basisPower = basisPower(1:lastBasisPower);
+end
+if any(~isfinite(basisPower)) || numel(basisPower) < 2
+    error("createProgressPolynomialMotion:InvalidBasis", ...
+        "basisPower must be a finite nonconstant numeric vector.");
+end
+endpointTolerance = 256 * eps(max(1, sum(abs(basisPower))));
+if abs(basisPower(1)) > endpointTolerance || ...
+        abs(sum(basisPower)) > endpointTolerance
+    error("createProgressPolynomialMotion:NonzeroBasisEndpoint", ...
+        "The lateral basis must evaluate to zero at progress zero and one.");
+end
 lateralAxisIndex = 3 - progressAxisIndex;
 progressDelta_deg = goalPosition_deg(progressAxisIndex) - ...
     initialPosition_deg(progressAxisIndex);
@@ -75,11 +103,13 @@ if progressDelta_deg == 0
         "The selected progress coordinate must have nonzero displacement.");
 end
 
-%% Section 2: Compose The Degree-Fifteen Path
+%% Section 2: Compose The Progress-Polynomial Path
 
 direct = baseMotion.Polynomial;
 segmentCount = direct.SegmentCount;
-coefficientCount = 16;
+directDegree = size(direct.positionPower_deg, 3) - 1;
+basisDegree = numel(basisPower) - 1;
+coefficientCount = max(directDegree + 1, directDegree * basisDegree + 1);
 positionPower_deg = zeros(segmentCount, 2, coefficientCount);
 for segmentIndex = 1:segmentCount
     directPower_deg = reshape( ...
@@ -88,22 +118,14 @@ for segmentIndex = 1:segmentCount
     progressPower(1) = progressPower(1) - ...
         initialPosition_deg(progressAxisIndex) / progressDelta_deg;
     progressPower = trimPower(progressPower);
-    progressSquared = conv(progressPower, progressPower);
-    progressCubed = conv(progressSquared, progressPower);
-    progressFourth = conv(progressCubed, progressPower);
-    progressFifth = conv(progressFourth, progressPower);
-    alternatingPower = zeros(1, coefficientCount);
-    alternatingPower = addPower(alternatingPower, 4, progressPower);
-    alternatingPower = addPower(alternatingPower, 4, progressSquared);
-    alternatingPower = addPower(alternatingPower, -56, progressCubed);
-    alternatingPower = addPower(alternatingPower, 80, progressFourth);
-    alternatingPower = addPower(alternatingPower, -32, progressFifth);
+    lateralBasisPower = composePower( ...
+        basisPower, progressPower, coefficientCount);
     lateralPower = zeros(1, coefficientCount);
     lateralPower(1) = initialPosition_deg(lateralAxisIndex);
     lateralPower = addPower(lateralPower, ...
         goalPosition_deg(lateralAxisIndex) - ...
         initialPosition_deg(lateralAxisIndex), progressPower);
-    lateralPower = lateralPower + double(amplitude_deg) * alternatingPower;
+    lateralPower = lateralPower + double(amplitude_deg) * lateralBasisPower;
     progressOutput = zeros(1, coefficientCount);
     progressOutput(1:size(directPower_deg, 2)) = ...
         directPower_deg(progressAxisIndex, :);
@@ -112,13 +134,13 @@ for segmentIndex = 1:segmentCount
 end
 durationScale_s = reshape(double(direct.SegmentDuration_s(:)), [], 1, 1);
 velocityPower_deg_s = positionPower_deg(:, :, 2:end) .* ...
-    reshape(1:15, 1, 1, []) ./ durationScale_s;
+    reshape(1:coefficientCount - 1, 1, 1, []) ./ durationScale_s;
 accelerationPower_deg_s2 = velocityPower_deg_s(:, :, 2:end) .* ...
-    reshape(1:14, 1, 1, []) ./ durationScale_s;
+    reshape(1:coefficientCount - 2, 1, 1, []) ./ durationScale_s;
 jerkPower_deg_s3 = accelerationPower_deg_s2(:, :, 2:end) .* ...
-    reshape(1:13, 1, 1, []) ./ durationScale_s;
+    reshape(1:coefficientCount - 3, 1, 1, []) ./ durationScale_s;
 polynomial = struct( ...
-    "Degree", 15, "SegmentCount", segmentCount, ...
+    "Degree", coefficientCount - 1, "SegmentCount", segmentCount, ...
     "SegmentStartTime_s", direct.SegmentStartTime_s, ...
     "SegmentDuration_s", direct.SegmentDuration_s, ...
     "SegmentBreakTau", direct.SegmentBreakTau, ...
@@ -150,5 +172,21 @@ if isempty(lastIndex)
     power = 0;
 else
     power = power(1:lastIndex);
+end
+end
+
+function composition = composePower(outerPower, innerPower, outputCount)
+% Compose ascending-power polynomials without optional symbolic functions.
+composition = zeros(1, outputCount);
+innerProduct = 1;
+for outerIndex = 1:numel(outerPower)
+    if outerPower(outerIndex) ~= 0
+        composition(1:numel(innerProduct)) = ...
+            composition(1:numel(innerProduct)) + ...
+            outerPower(outerIndex) * innerProduct;
+    end
+    if outerIndex < numel(outerPower)
+        innerProduct = conv(innerProduct, innerPower);
+    end
 end
 end

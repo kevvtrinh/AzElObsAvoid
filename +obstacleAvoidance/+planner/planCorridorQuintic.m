@@ -69,9 +69,18 @@ result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
     obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion();
 result.SearchDiagnostics.OrthogonalCavity = ...
     obstacleAvoidance.planner.evaluateArrivalCertificatePortfolio();
+result.SearchDiagnostics.SelectionPolicy = struct( ...
+    "GoalTimeMode", options.GoalTimeMode, ...
+    "MinimumTravelSavingsRate_deg_s", ...
+    options.MinimumTravelSavingsRate_deg_s, ...
+    "BalancedCost", "travel_deg + rate_deg_s * elapsed_s", ...
+    "JerkRole", "hardConstraintOnly", ...
+    "UtilizationTieBreak", ...
+    "mean normalized peak velocity, acceleration, and jerk");
 maximumInfimumGap_s = 1e-7;
 firstValidatedMotionTime_s = NaN;
 openingIsValidated = false;
+excursionIsValidated = false;
 
 %% Section 2: Reject Physically Invalid Endpoints
 
@@ -134,14 +143,17 @@ if ~useRuckigWaypoint
         stageTiming, excursionElapsedTime_s, excursionDiagnostics);
     result.SearchDiagnostics.FixedClockExcursion = excursionDiagnostics;
     if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
+        excursionIsValidated = true;
         excursionSeed = createMotionSeed( ...
             excursionCandidate, "fixedClockLateralExcursion");
-        result = finishFastPath(result, excursionCandidate, ...
-            excursionCandidate.Validation, excursionDiagnostics, ...
-            excursionElapsedTime_s, excursionSeed, summaryTemplate, ...
-            "A fixed-clock lateral excursion attained the physical time floor.", ...
-            planningTimer, stageTiming);
-        return;
+        if options.GoalTimeMode == "earliestArrival"
+            result = finishFastPath(result, excursionCandidate, ...
+                excursionCandidate.Validation, excursionDiagnostics, ...
+                excursionElapsedTime_s, excursionSeed, summaryTemplate, ...
+                "A fixed-clock lateral excursion attained the physical time floor.", ...
+                planningTimer, stageTiming);
+            return;
+        end
     end
 end
 
@@ -171,7 +183,8 @@ if ~useRuckigWaypoint
             openingDiagnostics.InfimumGap_s <= maximumInfimumGap_s;
     end
     result.SearchDiagnostics.TimedOpening = openingDiagnostics;
-    if openingIsValidated && openingDiagnostics.InfimumGapWithinPolicy
+    if openingIsValidated && openingDiagnostics.InfimumGapWithinPolicy && ...
+            options.GoalTimeMode == "earliestArrival"
         openingSeed = createDirectSeed(initialState, goalState, ...
             openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
         openingSeed.Source = "timedOrthogonalOpening";
@@ -245,7 +258,7 @@ if ~useRuckigWaypoint
             candidates{seedIndex} = candidate;
             seedSummaries(seedIndex) = summarizeCandidate( ...
                 candidate, validation, attempt, elapsedTime_s, ...
-                summaryTemplate);
+                summaryTemplate, limits, options, initialState.time_s);
             if isnan(firstValidatedMotionTime_s)
                 firstValidatedMotionTime_s = toc(planningTimer);
             end
@@ -257,7 +270,8 @@ if ~useRuckigWaypoint
         cavityLowerBounds_s, maximumInfimumGap_s);
     cavityPortfolio.Attempts = cavityAttempts;
     result.SearchDiagnostics.OrthogonalCavity = cavityPortfolio;
-    if cavityPortfolio.InfimumGapWithinPolicy
+    if cavityPortfolio.InfimumGapWithinPolicy && ...
+            options.GoalTimeMode == "earliestArrival"
         selectedIndex = cavityPortfolio.SelectedSeedIndex;
         selectedCandidate = cavityCandidates{selectedIndex};
         selectedCandidate.SeedIndex = 1;
@@ -460,14 +474,15 @@ for seedIndex = 1:seedCount
         end
     end
     summary = summarizeCandidate(candidate, validation, ...
-        solverDiagnostics, elapsedTime_s, summaryTemplate);
+        solverDiagnostics, elapsedTime_s, summaryTemplate, ...
+        limits, options, initialState.time_s);
     if budgetExhausted
         summary.TerminationReason = "seedWorkBudgetExhausted";
         summary.Message = candidate.Message;
     end
     if ~seedSummaries(seedIndex).ValidationPassed || ...
             (validation.Passed && isBetterSummary( ...
-            summary, seedSummaries(seedIndex), options.GoalTimeMode))
+            summary, seedSummaries(seedIndex), options))
         candidates{seedIndex} = candidate;
         seedSummaries(seedIndex) = summary;
     end
@@ -476,9 +491,23 @@ for seedIndex = 1:seedCount
     end
 end
 
+% Balanced and fixed policies compare every validated special motion against
+% the topology candidates; their physical arrival lower bounds are not travel
+% optimality certificates.
+if excursionIsValidated
+    excursionCandidate.SeedIndex = numel(seeds) + 1;
+    excursionSeed.Index = excursionCandidate.SeedIndex;
+    seeds(end + 1) = excursionSeed;
+    candidates{end + 1, 1} = excursionCandidate;
+    seedSummaries(end + 1, 1) = summarizeCandidate( ...
+        excursionCandidate, excursionCandidate.Validation, ...
+        excursionDiagnostics, excursionElapsedTime_s, summaryTemplate, ...
+        limits, options, initialState.time_s);
+end
+
 % A route-class upper without a request-wide lower must not suppress BMTP.
 if openingIsValidated
-    openingCandidate.SeedIndex = seedCount + 1;
+    openingCandidate.SeedIndex = numel(seeds) + 1;
     openingSeed = createDirectSeed(initialState, goalState, ...
         openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
     openingSeed.Index = openingCandidate.SeedIndex;
@@ -487,7 +516,8 @@ if openingIsValidated
     candidates{end + 1, 1} = openingCandidate;
     seedSummaries(end + 1, 1) = summarizeCandidate(openingCandidate, ...
         openingCandidate.Validation, openingDiagnostics, ...
-        openingElapsedTime_s, summaryTemplate);
+        openingElapsedTime_s, summaryTemplate, limits, options, ...
+        initialState.time_s);
 end
 result.Seeds = seeds;
 
@@ -524,7 +554,7 @@ if isempty(validatedIndices)
     return;
 end
 selectedIndex = selectValidatedCandidate( ...
-    seedSummaries, validatedIndices, options.GoalTimeMode);
+    seedSummaries, validatedIndices, options);
 selectedCandidate = candidates{selectedIndex};
 result.Success = true;
 result.Message = "A validated motion was found.";
@@ -654,7 +684,7 @@ seed.Length_deg = candidate.MotionLength_deg;
 end
 
 function summary = summarizeCandidate(candidate, validation, diagnostics, ...
-        elapsedTime_s, template)
+        elapsedTime_s, template, limits, options, initialTime_s)
 % Copy solve and independent-validation evidence into the stable summary.
 summary = template;
 names = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
@@ -677,6 +707,16 @@ summary.UnresolvedIntervalCount = validation.UnresolvedIntervalCount;
 summary.SeedPlanningElapsedTime_s = elapsedTime_s;
 summary.Message = strtrim(string(candidate.Message) + " " + validation.Message);
 summary.SolverDiagnostics = diagnostics;
+if validation.Passed
+    normalizedPeaks = [validation.PeakVelocity_deg_s ./ ...
+        limits.maxVelocity_deg_s, validation.PeakAcceleration_deg_s2 ./ ...
+        limits.maxAcceleration_deg_s2, validation.PeakJerk_deg_s3 ./ ...
+        limits.maxJerk_deg_s3];
+    summary.KinematicUtilization = mean(normalizedPeaks);
+    summary.TravelTimeTradeoffCost_deg = candidate.MotionLength_deg + ...
+        options.MinimumTravelSavingsRate_deg_s * ...
+        (candidate.FinalTime_s - initialTime_s);
+end
 if ~validation.Passed && ~isempty(candidate.time_s)
     summary.TerminationReason = "independentValidationFailed";
 end
@@ -737,7 +777,8 @@ function result = finishFastPath(result, candidate, validation, diagnostics, ...
         elapsedTime_s, seed, summaryTemplate, message, timer, stageTiming)
 % Assemble each independently accepted fast-path through one owner.
 summary = summarizeCandidate(candidate, validation, diagnostics, ...
-    elapsedTime_s, summaryTemplate);
+    elapsedTime_s, summaryTemplate, result.Inputs.limits, result.Options, ...
+    result.Inputs.initialState.time_s);
 result.Success = true;
 result.Message = message;
 result.TerminationReason = "goalReached";
@@ -1034,21 +1075,28 @@ diagnostics.ElapsedTime_s = diagnostics.ElapsedTime_s + motionElapsedTime_s;
 candidate.SolverDiagnostics = diagnostics;
 end
 
-function index = selectValidatedCandidate(summaries, indices, goalTimeMode)
-% Rank fixed arrivals by length then jerk, and free arrivals by time first.
-ranking = [[summaries(indices).MotionLength_deg].', ...
-    [summaries(indices).IntegratedSquaredJerk_deg2_s5].', indices];
-if goalTimeMode ~= "fixedArrival"
-    ranking = [[summaries(indices).ArrivalTime_s].', ranking];
+function index = selectValidatedCandidate(summaries, indices, options)
+% Rank valid motions by the declared objective, then utilization and travel.
+length_deg = [summaries(indices).MotionLength_deg].';
+utilization = [summaries(indices).KinematicUtilization].';
+if options.GoalTimeMode == "fixedArrival"
+    ranking = [length_deg, -utilization, indices];
+elseif options.GoalTimeMode == "earliestArrival"
+    ranking = [[summaries(indices).ArrivalTime_s].', ...
+        -utilization, length_deg, indices];
+else
+    ranking = [[summaries(indices).TravelTimeTradeoffCost_deg].', ...
+        [summaries(indices).ArrivalTime_s].', ...
+        -utilization, length_deg, indices];
 end
 [~, order] = sortrows(ranking, 1:size(ranking, 2));
 index = indices(order(1));
 end
 
-function isBetter = isBetterSummary(candidate, incumbent, goalTimeMode)
+function isBetter = isBetterSummary(candidate, incumbent, options)
 % Compare passing summaries using the public selection priority.
 isBetter = selectValidatedCandidate([incumbent, candidate], [1; 2], ...
-    goalTimeMode) == 2;
+    options) == 2;
 end
 
 function index = bestPartialSeed(summaries)
