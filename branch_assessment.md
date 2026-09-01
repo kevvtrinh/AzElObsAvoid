@@ -36,9 +36,10 @@ the warmed incumbent median. GPL-3.0 `embotech/ecos-matlab` at
 `2acb7f472f0021a3d226da187cd2941341199893` solved the plane fixture in a
 0.000218-second median with a 2.0183e-9 maximum residual, but its production
 trajectory calls did not all solve and the example ended `noValidatedSeed`.
-Clarabel is Apache-2.0 but has no official MATLAB interface; MOSEK requires its
-proprietary dependency and license, neither of which was present. All losing
-candidate adapters were removed, and the temporary builds were not installed.
+Clarabel's official core is Apache-2.0 but has no official MATLAB interface;
+MOSEK requires its proprietary dependency and license, neither of which was
+present. All losing candidate adapters were removed, and the temporary builds
+were not installed.
 
 Two further BSD-3-Clause candidates were built outside the repository. The
 official `qoco-org/qoco-matlab` interface passed all nine upstream MATLAB tests,
@@ -65,6 +66,27 @@ first collision-free biconvex iterate improved the warmed focused median by
 17.4 percent (1.8804262 versus 2.2773948 seconds) and retained validation, but
 the smoothed path grew 5.1 percent from 11.4118614 to 11.9926831 degrees. Both
 candidates were removed under their fixed gates.
+
+The follow-up trajectory audit located the public GPL-3.0 work-in-progress
+`iFR-OFC/Clarabel.m` adapter and built it against the official Apache-2.0
+Clarabel C++/Rust core. After isolated compatibility repairs, its LP, QP, and
+SOCP examples passed. Using Clarabel only for trajectory SOCPs reduced the
+focused three-warmup, eleven-run median from 2.3941869 to 1.0663089 seconds
+(55.5 percent), with all focused validation and 18 of 18 plane certificates
+passing. It failed the structural quality gate: static U still certified all
+504 pairs, but arrival grew from 20.7814508253 to 36.2565015075 seconds and
+sampled motion length from 39.4001427062 to 48.2844877484 degrees. The adapter
+was removed without tuning or a hybrid fallback.
+
+QOCO and ECOS also failed trajectory-only correctness gates, while exact
+fixed-time LP bisection returned a valid but lower-quality motion. An exact
+constant-plane geometric fast path removed every final plane SOCP in the
+focused case, but its weaker linearizations raised the successful-seed
+trajectory-SOCP count from three to five and slowed the cold smoke. These
+results reinforce that strong plane linearizations and trajectory solution
+selection matter more than raw solver-call count. The retained production
+files remain byte-for-byte equal to commit `e9af134` for both BMTP and the
+conic wrapper.
 
 Code Analyzer reported no issues in changed MATLAB files, focused conic tests
 passed 6/6, and the complete tree passed 114/114. All 17 maintained examples
