@@ -5992,3 +5992,70 @@ with jerk enabled:
 The milestone removes 64 production lines and adds four ordinary field-owner
 substitutions, a net reduction of 60 non-test MATLAB lines. The eleven-milestone
 branch is 273 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Travel-refinement trace retirement - 2026-09-01
+
+At tracked-clean baseline `aa8d601`, all 37 `TravelRefinement*` references were
+inside `trajectory/+bmtpEngine/solve.m`. Fifteen diagnostics fields and their
+assignments had no external consumer. The candidate removes only this payload,
+uses one local accepted-state boolean, and leaves the balanced/fixed refinement
+portfolio, collision plane updates, objective comparisons, and selected motion
+unchanged.
+
+The default Obstacle Avoidance probe succeeded but did not attempt refinement
+because its scenario defaults use earliest arrival, so it was rejected as
+coverage. The retained explicit balanced run accepted all three successful
+portfolio solves at selected rate 1 deg/s. Fixed Target Exits accepted its one
+successful rate-1 refinement.
+
+Fresh-process recursive comparisons at `1e-9`, excluding only fields containing
+`Elapsed`, `FirstValidatedMotionTime_s`, and the fifteen declared
+`TravelRefinement*` fields, passed with maximum numeric difference zero:
+
+- balanced Obstacle Avoidance: baseline/candidate walls 6.7036477 and
+  6.7250928 seconds, success/validation 1/1;
+- fixed Target Exits: baseline/candidate walls 15.7873509 and 15.7295776
+  seconds, success/validation 1/1.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in the engine and revised contract test;
+- `testBmtpEngine` plus `testPlannerContract`: 27/27 in 42.0186741 seconds
+  wall and 38.2584586 aggregate test seconds;
+- complete test tree: 113/113 in 87.9262869 seconds wall and 81.3773886
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The first focused batch passed all 27 tests but intentionally failed its final
+assert because Code Analyzer exposed one now-unused `bestDuration_s`
+assignment. Removing that diagnostic residue produced zero findings, and the
+fresh 27-test rerun passed. No planner result failed.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2947553 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3130783 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8858599 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8700775 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8817736 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9179395 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7246965 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.4802310 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5940667 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6683283 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7358218 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8242300 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5662948 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3575863 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8239935 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1479165 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.3130925 | `goalReached` |
+
+The milestone deletes 50 and adds four core MATLAB lines, net minus 46, and
+removes fifteen fields from every BMTP diagnostics record. The twelve-milestone
+branch is 319 non-test MATLAB lines smaller than `5c0a6c9`.

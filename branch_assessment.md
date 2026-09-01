@@ -1,5 +1,29 @@
 # Novel replacement branch assessment
 
+## Travel-refinement trace retirement - 2026-09-01
+
+The twelfth `bmtp-cleanup-codex` milestone removes fifteen private
+`TravelRefinement*` diagnostic fields and their assignments. No planner,
+example, test, plotter, exporter, or sandbox consumed them. The balanced and
+fixed-arrival refinement algorithms remain unchanged: rate portfolios,
+collision-driven plane updates, objective comparisons, and accepted control
+nets are still executed. One local boolean now owns the only behavior-bearing
+accepted-state decision.
+
+Explicit balanced Obstacle Avoidance accepted refinement from a three-rate
+portfolio, while fixed Target Exits accepted its one-rate refinement. Both
+complete candidate results matched saved baselines recursively with maximum
+numeric difference zero after excluding only runtime and the retired trace
+fields. Code Analyzer found no issues, focused tests passed 27/27, and the full
+suite passed 113/113 in 87.9262869 seconds wall time.
+
+All 17 maintained examples retained their established metrics: sixteen
+independently validated successes and the expected validated
+`noValidatedSeed`. Both visualization gates passed. The milestone removes 46
+net core MATLAB lines and fifteen fields from every BMTP diagnostics record.
+The twelve-milestone branch is now 319 non-test MATLAB lines smaller than
+`5c0a6c9`.
+
 ## Dead planner-option shim retirement - 2026-09-01
 
 The eleventh `bmtp-cleanup-codex` milestone removes special compatibility

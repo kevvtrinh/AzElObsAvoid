@@ -253,3 +253,19 @@ planner-only inputs at its boundary. No field was renamed or replaced, and no
 retired value reaches returned options or a planner decision. This collapses
 seven warning owners and the forwarding allowlist into the two already
 maintained unknown-field policies.
+
+## Travel-refinement diagnostic ownership audit - 2026-09-01
+
+The balanced and fixed-arrival travel-refinement loops remain behavior-bearing,
+but their fifteen `TravelRefinement*` fields had no consumer outside
+`bmtpEngine.solve`. Those fields recorded attempted rates, candidate arrays,
+counts, exit status, duration, and solver text without influencing a later
+solve, selection, validation, plot, or failure decision.
+
+The trace payload and writes are removed. A local
+`travelRefinementAccepted` boolean retains the sole control-flow dependency.
+All rate construction, SOCP calls, collision checks, plane additions, length
+and tradeoff objectives, selected control nets, and certification remain in
+execution order. Explicit balanced and fixed refinement-active cases match
+their saved physical baselines exactly after removing only the declared schema
+and nondeterministic timing fields.

@@ -116,6 +116,8 @@ result = exampleTargetExitsObstacle(overrides);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
+verifyFalse(testCase, any(startsWith( ...
+    string(fieldnames(diagnostics)), "TravelRefinement")));
 verifyTrue(testCase, diagnostics.PlaneReuseApplied);
 verifyGreaterThan(testCase, diagnostics.PlaneReuseCount, 0);
 verifyTrue(testCase, diagnostics.Converged);
