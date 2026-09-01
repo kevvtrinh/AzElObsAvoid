@@ -13,8 +13,8 @@ File & Current responsibility \\
 \midrule
 \scriptsize\url{+obstacleAvoidance/planTrajectory.m} & Public planner entry point. It accepts obstacles, an initial state, a goal state, limits, and optional overrides; a zero-input call returns defaults. \\
 \scriptsize\url{+obstacleAvoidance/+planner/planCorridorQuintic.m} & Internal orchestrator. It normalizes requests, makes route proposals, asks a motion method to construct candidates, invokes the separate validator, and selects only a passed candidate. \\
-\scriptsize\url{trajectory/planTrajBmtp.m} & New public BMTP trajectory entry point. It forwards seven or eight documented inputs to the BMTP engine. \\
-\scriptsize\url{trajectory/+bmtpEngine/solve.m} & Static-route engine. It alternates a trajectory calculation with separating-plane calculations, retains a safe best-known result, then performs engine-side checks before public validation. \\
+\scriptsize\url{trajectory/planTrajBmtp.m} & One-release compatibility facade. Seven-input, two-output calls dispatch to BMTP; a former restart input or output warns and carries no restart state. \\
+\scriptsize\url{trajectory/+bmtpEngine/solve.m} & Seven-input, two-output BMTP engine. It alternates a trajectory calculation with separating-plane calculations, retains a safe best-known result, then performs engine-side checks before public validation. \\
 \scriptsize\url{+obstacleAvoidance/validateTrajectory.m} & Independent public validation of histories, endpoints, continuous bounds, motion limits, collision freedom, safety-margin provenance, and wrapping policy. \\
 \bottomrule
 \end{tabularx}

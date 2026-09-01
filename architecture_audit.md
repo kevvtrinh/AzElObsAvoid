@@ -208,3 +208,17 @@ was internalized only after preserving the former public default and measuring
 the nondefault timed and sandbox callers. `CollocationSegmentCount` was
 likewise internalized at its former effective default of 20 spans only after
 exact static and timed comparisons.
+
+## BMTP restart ownership audit - 2026-09-01
+
+The maintained planner has no caller for externally returned BMTP restart
+state. Both static and timed planner adapters call `bmtpEngine.solve` with
+seven inputs and two outputs. Only direct tests exercised the former eighth
+input and third output through `planTrajBmtp`.
+
+The core engine now owns one seed-derived initialization path and returns only
+candidate and diagnostics. The one-release `planTrajBmtp` compatibility facade
+still accepts the old arities, warns once when restart input or output is used,
+ignores supplied state, and returns a documented empty restart record. This
+keeps migration explicit while removing restart validation, alternate initial
+best retention, and restart export from the core.

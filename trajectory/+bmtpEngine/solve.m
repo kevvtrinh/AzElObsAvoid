@@ -1,15 +1,10 @@
-function [candidate, diagnostics, restart] = solve( ...
-        seed, regions_deg, coverage, initialState, goalState, limits, ...
-        options, warmStart)
+function [candidate, diagnostics] = solve( ...
+        seed, regions_deg, coverage, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
 %       bmtpEngine.solve( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
-%   [candidate, diagnostics, restart] = ...
-%       bmtpEngine.solve( ...
-%       seed, regions_deg, coverage, initialState, goalState, limits, ...
-%       options, warmStart)
 %**************************************************************************
 % PURPOSE
 %   - Optimize one topology seed with a composite Bezier trajectory,
@@ -34,16 +29,12 @@ function [candidate, diagnostics, restart] = solve( ...
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%   - warmStart (scalar struct, optional; default struct())
-%       A previously certified ControlPoint_deg array and SegmentTime_s.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
-%   - restart (scalar struct)
-%       Certified parent control net and segment time for exact refinement.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
@@ -63,9 +54,6 @@ if usesConservativeGrouping || usesTimedCells
 else
     [degree, splitCount] = deal(16, 3);
 end
-if nargin < 8 || isempty(warmStart)
-    warmStart = struct();
-end
 validateKernelInputs(seed, regions_deg, coverage, ...
     initialState, goalState, limits, options);
 originalSeedSegmentCount = size(seed.position_deg, 1) - 1;
@@ -84,7 +72,6 @@ segmentCount = size(route_deg, 1) - 1;
 regionActiveBySegment = createRegionActiveMask( ...
     segmentCount, numel(regions_deg), coverage);
 candidate = createEmptyCandidate(seed, initialState, options);
-restart = struct("ControlPoint_deg", zeros(0, degree + 1, 2), "SegmentTime_s", NaN);
 diagnostics = createEmptyDiagnostics( degree, splitCount, segmentCount, numel(regions_deg));
 diagnostics.OriginalSeedSegmentCount = originalSeedSegmentCount;
 diagnostics.WarmRouteResampled = originalSeedSegmentCount > maximumWarmSegmentCount;
@@ -119,39 +106,11 @@ tightPlaneOptions = optimoptions("coneprog", "Display", "none", ...
 
 %% Section 2: Alternate Time-Power And Maximum-Margin SOCPs
 
-hasWarmStart = isstruct(warmStart) && isscalar(warmStart) && ...
-    all(isfield(warmStart, {'ControlPoint_deg', 'SegmentTime_s'})) && ...
-    isequal(size(warmStart.ControlPoint_deg), ...
-    [segmentCount, degree + 1, 2]) && ...
-    isnumeric(warmStart.ControlPoint_deg) && ...
-    all(isfinite(warmStart.ControlPoint_deg), "all") && ...
-    isnumeric(warmStart.SegmentTime_s) && isscalar(warmStart.SegmentTime_s) && ...
-    isfinite(warmStart.SegmentTime_s) && warmStart.SegmentTime_s > 0;
-if ~isempty(fieldnames(warmStart)) && ~hasWarmStart
-    error("bmtpEngine:InvalidWarmStart", ...
-        "warmStart must contain a finite segment-compatible control net " + ...
-        "and positive SegmentTime_s.");
-end
-if hasWarmStart
-    feasibleControl_deg = double(warmStart.ControlPoint_deg);
-    feasibleSegmentTime_s = max(double(warmStart.SegmentTime_s), ...
-        requiredSegmentTime(feasibleControl_deg, limits));
-else
-    feasibleControl_deg = createWarmControl(route_deg, degree);
-    feasibleSegmentTime_s = requiredSegmentTime(feasibleControl_deg, limits);
-end
+feasibleControl_deg = createWarmControl(route_deg, degree);
+feasibleSegmentTime_s = requiredSegmentTime(feasibleControl_deg, limits);
 diagnostics.WarmStartDuration_s = segmentCount * feasibleSegmentTime_s;
-warmCollisionPairs = findSampledCollisionPairs( ...
-    feasibleControl_deg, regions_deg, regionMinimum_deg, ...
-    regionMaximum_deg, regionActiveBySegment, 1201);
-if hasWarmStart && ~any(warmCollisionPairs, "all")
-    bestControl_deg = feasibleControl_deg;
-    bestSegmentTime_s = feasibleSegmentTime_s;
-    bestDuration_s = segmentCount * feasibleSegmentTime_s;
-else
-    bestControl_deg = zeros(0, degree + 1, 2);
-    [bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
-end
+bestControl_deg = zeros(0, degree + 1, 2);
+[bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
 diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
 taggedPairs = false(segmentCount, numel(regions_deg));
 planes = repmat(emptyPlane(), segmentCount, numel(regions_deg));
@@ -408,7 +367,6 @@ end
 controlPoint_deg = bestControl_deg;
 controlPoint_deg(1, 1:3, :) = reshape( repmat(initialState.position_deg, 3, 1), 1, 3, 2);
 controlPoint_deg(end, end - 2:end, :) = reshape( repmat(goalState.position_deg, 3, 1), 1, 3, 2);
-restartControlPoint_deg = controlPoint_deg;
 controlPoint_deg = subdivideMidpoint(controlPoint_deg);
 segmentTime_s = bestSegmentTime_s / 2;
 exportPolynomial = createPowerPolynomial(controlPoint_deg, 1, 0);
@@ -464,8 +422,6 @@ end
 [diagnostics.BestDuration_s, diagnostics.ElapsedTime_s] = ...
     deal(candidate.MotionDuration_s, toc(totalTimer));
 candidate.SolverDiagnostics = diagnostics;
-restart.ControlPoint_deg = restartControlPoint_deg;
-restart.SegmentTime_s = 2 * segmentTime_s;
 end
 
 %% Section 5: Local Functions

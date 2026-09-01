@@ -5779,3 +5779,80 @@ The visible obstacle-free gate created two figures without warnings. Hidden
 one attempted seed. The milestone adds two net non-test MATLAB lines because
 the one-release shim outweighs consumer simplification. The eight-milestone
 branch total is therefore 156 lines smaller than `5c0a6c9`.
+
+## External BMTP restart retirement - 2026-09-01
+
+At tracked-clean baseline `5a8eee0`, no maintained planner, example, sandbox,
+or benchmark consumed the third BMTP output or eighth restart input. Only two
+direct wrapper tests exercised that surface. The retained candidate removes
+restart validation, alternate initialization, collision-free supplied-net
+retention, restart allocation, and restart export from `bmtpEngine.solve`.
+`planTrajBmtp` keeps one-release callable compatibility: restart use warns once,
+is ignored, and returns an empty record.
+
+Fresh-process saved baselines and candidates compared recursively at `1e-9`
+after removing only fields containing `Elapsed` and
+`FirstValidatedMotionTime_s`:
+
+- static degree-16 planner record: passed, maximum difference 0;
+- true timed-cell degree-7 planner record: passed, maximum difference 0;
+- direct cold candidate and diagnostics: passed, maximum difference 0;
+- deprecated-call physical result versus old warm result: passed, maximum
+  difference 0.
+
+The direct fixed-arrival baseline used one `unitDirect` segment, a distant
+rectangle, ten seconds, and 2/1/2 deg/s derivative limits. Its returned restart
+had three spans and 3.33333333333-second segment time. Cold and warm results
+both used two iterations and two trajectory SOCPs, with identical sampled
+position, velocity, acceleration, ten-second duration, and
+4.0000000019748008-degree length. The restart reduced this direct-only engine
+time from 1.0651848 to 0.2434276 seconds; the candidate cold/legacy times were
+1.0474138 and 0.2373834 seconds. Static planning was 3.0265116 baseline versus
+3.0494709 candidate; timed planning was 13.7478176 versus 13.7950498 seconds.
+
+Verification evidence:
+
+- `testBmtpEngine`: 12/12 in 6.9514129 seconds;
+- architecture, timed BMTP, planner contract/failure, and sandbox diagnostics:
+  37/37 in 61.4287410 seconds wall and 56.7385531 aggregate test seconds;
+- Code Analyzer: zero findings in the engine, facade, and changed tests;
+- complete test tree: 123/123 in 88.4909933 seconds wall and
+  81.5665061 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The temporary evidence reporter initially exited after saving valid static
+results because it referenced candidate-only `MotionDuration_s` and
+`MotionLength_deg` fields. It was corrected to use the public result schema and
+the same baseline was rerun cleanly. The first failure-figure inspection also
+used obsolete `SeedAttemptCount`; rerunning with current
+`AttemptedSeedCount` passed. Neither failure involved production planner code.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3897094 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4522526 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9946238 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9867267 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0137154 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0419501 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8532760 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5408143 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.7672403 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9816229 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8768426 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9987615 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7470639 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3210595 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8694792 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2695347 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 68.2132158 | `goalReached` |
+
+The engine removes 44 net production lines and the compatibility facade adds
+four, for a net 40-line non-test MATLAB reduction. The nine-milestone branch is
+196 lines smaller than `5c0a6c9`. `pdflatex` and `pdftotext` remain unavailable,
+so the updated appendix source was not compiled or text-extracted on this host.

@@ -1,5 +1,39 @@
 # Novel replacement branch assessment
 
+## External BMTP restart retirement - 2026-09-01
+
+The ninth `bmtp-cleanup-codex` milestone removes externally supplied restart
+state from the BMTP engine. Neither maintained planner adapter consumed this
+state: static and timed planning both called the engine with seven inputs and
+two outputs. The core now has one seed-derived initialization path and no
+restart validation, alternate initial-best branch, template allocation, or
+restart export.
+
+`planTrajBmtp` remains as a one-release compatibility facade. Ordinary
+seven-input/two-output use is unchanged. A former eighth input or requested
+third output warns once with `planTrajBmtp:DeprecatedRestart`; supplied state
+is ignored and the returned restart record is empty. This is an intentional
+compatibility loss for direct external callers: the measured test restart cut
+one repeated direct solve from 1.0651848 to 0.2434276 seconds. No maintained
+planner path received that benefit, and the old warm and cold fixture motions
+were exactly identical.
+
+Saved static degree-16, true timed-cell degree-7, and direct cold results
+matched recursively with maximum numeric difference zero after removing only
+runtime fields. The deprecated direct call also reproduced the old warm
+trajectory exactly. Focused engine tests passed 12/12, the broader focused gate
+passed 37/37, Code Analyzer reported zero findings, and the full suite passed
+123/123 in 88.4909933 seconds wall time. All 17 examples retained their prior
+metrics: 16 independently validated successes and the expected validated
+`noValidatedSeed`. Visible and failure-figure gates passed.
+
+The engine removes 44 net production lines; the migration facade adds four,
+for a net 40-line non-test MATLAB reduction. The nine-milestone branch is now
+196 non-test MATLAB lines smaller than `5c0a6c9`. Plane reuse, three-rate travel
+refinement, timed cells, conservative grouping, specialized input-driven
+constructors, certificates, validation, and failure diagnostics remain because
+their maintained result ownership has not been replaced.
+
 ## Internal BMTP segmentation ownership - 2026-09-01
 
 The eighth `bmtp-cleanup-codex` milestone removes the last public option used

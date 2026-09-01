@@ -1,16 +1,17 @@
 function [candidate, diagnostics, restart] = planTrajBmtp( ...
         seed, regions_deg, coverage, initialState, goalState, limits, ...
-        options, warmStart)
+        options, legacyRestart) %#ok<INUSD>
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics, restart] = planTrajBmtp( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
 %   [candidate, diagnostics, restart] = planTrajBmtp( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, ...
-%       options, warmStart)
+%       options, legacyRestart)
 %**************************************************************************
 % PURPOSE
 %   - Provide the public trajectory-planning entry point for BMTP motion.
+%   - Preserve one-release call compatibility for retired restart state.
 %**************************************************************************
 % INPUTS
 %   - seed (scalar struct)
@@ -25,8 +26,8 @@ function [candidate, diagnostics, restart] = planTrajBmtp( ...
 %       Normalized workspace and derivative limits in degrees and seconds.
 %   - options (scalar struct)
 %       Resolved BMTP planning options.
-%   - warmStart (scalar struct, optional; default struct())
-%       Compatible certified control net and segment duration.
+%   - legacyRestart (scalar struct, optional; deprecated and ignored)
+%       Supplying the former restart input warns once and changes no behavior.
 %**************************************************************************
 % OUTPUTS
 %   - candidate (scalar struct)
@@ -34,21 +35,24 @@ function [candidate, diagnostics, restart] = planTrajBmtp( ...
 %   - diagnostics (scalar struct)
 %       BMTP solver and certificate evidence.
 %   - restart (scalar struct)
-%       Certified parent control net and segment duration for refinement.
+%       Deprecated empty compatibility record with zero control points and
+%       SegmentTime_s=NaN. Requesting this output warns once.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s powers.
 %**************************************************************************
 
-if nargin == 7
-    [candidate, diagnostics, restart] = bmtpEngine.solve( ...
-        seed, regions_deg, coverage, initialState, goalState, limits, options);
-elseif nargin == 8
-    [candidate, diagnostics, restart] = bmtpEngine.solve( ...
-        seed, regions_deg, coverage, initialState, goalState, limits, ...
-        options, warmStart);
-else
+if nargin ~= 7 && nargin ~= 8
     error("planTrajBmtp:InvalidCall", ...
         "Use seven or eight inputs as documented.");
 end
+if nargin == 8 || nargout >= 3
+    warning("planTrajBmtp:DeprecatedRestart", ...
+        "BMTP restart state is deprecated and ignored. The maintained " + ...
+        "planner always performs a seed-derived cold solve.");
+end
+[candidate, diagnostics] = bmtpEngine.solve( ...
+    seed, regions_deg, coverage, initialState, goalState, limits, options);
+restart = struct( ...
+    "ControlPoint_deg", zeros(0, 0, 2), "SegmentTime_s", NaN);
 end
