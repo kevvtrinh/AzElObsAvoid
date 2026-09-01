@@ -10,8 +10,6 @@ function result = planCorridorQuintic( ...
 %**************************************************************************
 % PURPOSE
 %   - Try exact direct and fixed-clock motions before topology work.
-%   - Accept timed-opening or cavity motion early only when its request-wide
-%     physical lower bound is within 0.1 microsecond of its validated upper.
 %   - Exhaust deterministic topology seeds through the static BMTP fallback.
 %   - Promote only motions that pass independent public validation.
 %**************************************************************************
@@ -65,10 +63,6 @@ stageTiming = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
 [~, result.SearchDiagnostics.FixedClockExcursion] = ...
     obstacleAvoidance.planner.createFixedClockLateralExcursion();
-[~, result.SearchDiagnostics.TimedOpening] = ...
-    obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion();
-result.SearchDiagnostics.OrthogonalCavity = ...
-    obstacleAvoidance.planner.evaluateArrivalCertificatePortfolio();
 result.SearchDiagnostics.SelectionPolicy = struct( ...
     "GoalTimeMode", options.GoalTimeMode, ...
     "MinimumTravelSavingsRate_deg_s", ...
@@ -77,9 +71,7 @@ result.SearchDiagnostics.SelectionPolicy = struct( ...
     "JerkRole", "hardConstraintOnly", ...
     "UtilizationTieBreak", ...
     "mean normalized peak velocity, acceleration, and jerk");
-maximumInfimumGap_s = 1e-7;
 firstValidatedMotionTime_s = NaN;
-openingIsValidated = false;
 excursionIsValidated = false;
 
 %% Section 2: Reject Physically Invalid Endpoints
@@ -157,47 +149,7 @@ if ~useRuckigWaypoint
     end
 end
 
-%% Section 4: Try A Certified Timed Opening
-
-if ~useRuckigWaypoint
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
-    motionTimer = tic;
-    [openingCandidate, openingDiagnostics] = ...
-        obstacleAvoidance.planner.createTimedOrthogonalOpeningMotion( ...
-        obstacles, initialState, goalState, limits, options);
-    openingElapsedTime_s = toc(motionTimer);
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
-    stageTiming = accountConstructorValidation( ...
-        stageTiming, openingElapsedTime_s, openingDiagnostics);
-    openingIsValidated = openingDiagnostics.Success && ...
-        openingCandidate.Validation.Passed;
-    if openingIsValidated
-        firstValidatedMotionTime_s = toc(planningTimer);
-    end
-    if openingIsValidated && openingDiagnostics.AllRouteCertificatePassed
-        if openingDiagnostics.InfimumGap_s < 0
-            error("planCorridorQuintic:InconsistentOpeningBounds", ...
-                "The opening upper is below its request-wide lower bound.");
-        end
-        openingDiagnostics.InfimumGapWithinPolicy = ...
-            openingDiagnostics.InfimumGap_s <= maximumInfimumGap_s;
-    end
-    result.SearchDiagnostics.TimedOpening = openingDiagnostics;
-    if openingIsValidated && openingDiagnostics.InfimumGapWithinPolicy && ...
-            options.GoalTimeMode == "earliestArrival"
-        openingSeed = createDirectSeed(initialState, goalState, ...
-            openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
-        openingSeed.Source = "timedOrthogonalOpening";
-        result = finishFastPath(result, openingCandidate, ...
-            openingCandidate.Validation, openingDiagnostics, ...
-            openingElapsedTime_s, openingSeed, summaryTemplate, ...
-            "A timed opening motion met the physical infimum-gap policy.", ...
-            planningTimer, stageTiming);
-        return;
-    end
-end
-
-%% Section 5: Exhaust Deterministic Topology Seeds
+%% Section 4: Exhaust Deterministic Topology Seeds
 
 topologyTimer = tic;
 [seeds, gridDiagnostics] = ...
@@ -211,82 +163,6 @@ result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
 seedCount = numel(seeds);
 seedSummaries = repmat(summaryTemplate, seedCount, 1);
 candidates = cell(seedCount, 1);
-cavityAttempts = cell(seedCount, 1);
-cavityCandidates = cell(seedCount, 1);
-cavityLowerBounds_s = NaN(seedCount, 1);
-cavityUpperDurations_s = NaN(seedCount, 1);
-cavityMotionLengths_deg = NaN(seedCount, 1);
-if ~useRuckigWaypoint
-    for seedIndex = 1:seedCount
-        obstacleAvoidance.input.throwIfCancellationRequested(options);
-        motionTimer = tic;
-        [candidate, cavityDiagnostics] = ...
-            obstacleAvoidance.planner.createOrthogonalCavityMotion( ...
-            seeds(seedIndex), preparedObstacles, initialState, goalState, ...
-            limits, options);
-        elapsedTime_s = toc(motionTimer);
-        stageTiming.MotionSolvingElapsedTime_s = ...
-            stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
-        [candidate, validation, ~, stageTiming] = validateCandidate( ...
-            candidate, preparedObstacles, initialState, goalState, limits, ...
-            options, stageTiming, "");
-        obstacleAvoidance.input.throwIfCancellationRequested(options);
-        candidate.SeedIndex = seedIndex;
-        lowerCertificate = struct("Passed", false, ...
-            "TerminationReason", "candidateNotConstructed", ...
-            "LowerBound_s", NaN, "UpperGap_s", NaN);
-        if ~isempty(candidate.time_s)
-            lowerCertificate = ...
-                obstacleAvoidance.planner.certifyOrthogonalCavityLowerBound( ...
-                cavityDiagnostics, candidate, preparedObstacles, ...
-                initialState, goalState, limits, options);
-        end
-        attempt = struct("Diagnostics", cavityDiagnostics, ...
-            "AllRouteCertificate", lowerCertificate, ...
-            "Validation", validation, "ElapsedTime_s", elapsedTime_s);
-        cavityAttempts{seedIndex} = attempt;
-        if validation.Passed
-            candidate = acceptValidatedCandidate( ...
-                candidate, initialState.time_s, ...
-                "A cavity motion passed independent public validation.");
-            cavityCandidates{seedIndex} = candidate;
-            cavityUpperDurations_s(seedIndex) = candidate.MotionDuration_s;
-            cavityMotionLengths_deg(seedIndex) = candidate.MotionLength_deg;
-            if lowerCertificate.Passed
-                cavityLowerBounds_s(seedIndex) = lowerCertificate.LowerBound_s;
-            end
-            candidates{seedIndex} = candidate;
-            seedSummaries(seedIndex) = summarizeCandidate( ...
-                candidate, validation, attempt, elapsedTime_s, ...
-                summaryTemplate, limits, options, initialState.time_s);
-            if isnan(firstValidatedMotionTime_s)
-                firstValidatedMotionTime_s = toc(planningTimer);
-            end
-        end
-    end
-    cavityPortfolio = ...
-        obstacleAvoidance.planner.evaluateArrivalCertificatePortfolio( ...
-        cavityUpperDurations_s, cavityMotionLengths_deg, ...
-        cavityLowerBounds_s, maximumInfimumGap_s);
-    cavityPortfolio.Attempts = cavityAttempts;
-    result.SearchDiagnostics.OrthogonalCavity = cavityPortfolio;
-    if cavityPortfolio.InfimumGapWithinPolicy && ...
-            options.GoalTimeMode == "earliestArrival"
-        selectedIndex = cavityPortfolio.SelectedSeedIndex;
-        selectedCandidate = cavityCandidates{selectedIndex};
-        selectedCandidate.SeedIndex = 1;
-        selectedSeed = seeds(selectedIndex);
-        selectedSeed.Index = 1;
-        result = finishFastPath(result, selectedCandidate, ...
-            selectedCandidate.Validation, cavityAttempts{selectedIndex}, ...
-            cavityAttempts{selectedIndex}.ElapsedTime_s, selectedSeed, ...
-            summaryTemplate, ...
-            "A cavity motion met the fixed-goal physical infimum-gap policy.", ...
-            planningTimer, stageTiming);
-        return;
-    end
-end
-
 for seedIndex = 1:seedCount
     obstacleAvoidance.input.throwIfCancellationRequested(options);
     motionTimer = tic;
@@ -463,23 +339,9 @@ if excursionIsValidated
         limits, options, initialState.time_s);
 end
 
-% A route-class upper without a request-wide lower must not suppress BMTP.
-if openingIsValidated
-    openingCandidate.SeedIndex = numel(seeds) + 1;
-    openingSeed = createDirectSeed(initialState, goalState, ...
-        openingCandidate.MotionDuration_s, openingDiagnostics.WaitTime_s);
-    openingSeed.Index = openingCandidate.SeedIndex;
-    openingSeed.Source = "timedOrthogonalOpening";
-    seeds(end + 1) = openingSeed;
-    candidates{end + 1, 1} = openingCandidate;
-    seedSummaries(end + 1, 1) = summarizeCandidate(openingCandidate, ...
-        openingCandidate.Validation, openingDiagnostics, ...
-        openingElapsedTime_s, summaryTemplate, limits, options, ...
-        initialState.time_s);
-end
 result.Seeds = seeds;
 
-%% Section 6: Select A Valid Motion Or Return Evidence
+%% Section 5: Select A Valid Motion Or Return Evidence
 
 result.SeedSummaries = seedSummaries;
 result.SearchDiagnostics.SeedSummaries = seedSummaries;
@@ -526,7 +388,7 @@ result = obstacleAvoidance.planner.stageTiming( ...
     result, planningTimer, stageTiming);
 end
 
-%% Section 7: Local Functions
+%% Section 6: Local Functions
 
 function record = directAttemptTemplate()
 % Define stable exact-direct evidence before the attempt runs.
@@ -600,16 +462,6 @@ else
         validation.CollisionCheckingElapsedTime_s);
 end
 candidate.Validation = validation;
-end
-
-function candidate = acceptValidatedCandidate(candidate, initialTime_s, message)
-% Normalize authoritative final-time fields after validation passes.
-candidate.FinalTime_s = double(candidate.Polynomial.FinalTime_s);
-candidate.ArrivalTime_s = candidate.FinalTime_s;
-candidate.MotionDuration_s = candidate.FinalTime_s - initialTime_s;
-candidate.Success = true;
-candidate.TerminationReason = "goalReached";
-candidate.Message = message;
 end
 
 function seed = createDirectSeed(initialState, goalState, duration_s, wait_s)

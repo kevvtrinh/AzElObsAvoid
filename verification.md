@@ -6381,3 +6381,94 @@ repair changes ownership rather than restoring an option or adding a special
 case; all retained specialized-looking paths have distinct measured fixtures
 or public contracts, so no further deletion candidate passed the bounded
 retention threshold in this audit.
+
+## Orthogonal planner removal - 2026-09-01
+
+Baseline was clean pushed commit `0f9c268`. The user explicitly classified the
+orthogonal-cavity and timed-orthogonal-opening families as benchmark-specific
+and required their complete removal while keeping both U examples. Baselines
+from fresh processes were:
+
+- Static U: success/validation 1/1, visibility seed 1, polyline
+  34.9425880405 degrees, motion 40.255028504 degrees, duration
+  20.712447786 seconds, wall 3.8604474 seconds. Its orthogonal portfolio had
+  attempted three seeds and selected its second special candidate.
+- Opening U: success/validation 1/1, `timedOrthogonalOpening`, polyline and
+  motion 10 degrees, duration 11.5843333838 seconds, wall 2.0777559 seconds.
+
+Deleted production files were `createOrthogonalCavityMotion.m`,
+`certifyOrthogonalCavityLowerBound.m`,
+`createTimedOrthogonalOpeningMotion.m`,
+`certifyTimedOpeningRequestLowerBound.m`,
+`certifyGuardedRectangleContainment.m`, and the now-dead
+`evaluateArrivalCertificatePortfolio.m`. Every call and dedicated diagnostic
+branch was removed from `planCorridorQuintic`; dedicated certificate tests and
+manual stations were removed. An architecture test now requires every file to
+remain absent and rejects orthogonal/cavity logic in the orchestrator.
+
+No replacement was added. A bounded experiment broadened swept/timed BMTP from
+time-expanded multi-waypoint seeds to every non-wait dynamic seed. Opening U
+still selected the same 13.6175223541-second direct-wait motion; the additional
+timed solves failed numerically and only added work. The two-line experiment
+was removed before broad verification.
+
+Focused post-removal results:
+
+- Static U: success/validation 1/1 through visibility seed 3 and
+  `bmtpStaticDegree16`; polyline 34.9425880405 degrees, motion
+  39.4001427062 degrees, duration 20.7814508253 seconds, certificate passed.
+- Opening U: success/validation 1/1 through general `directWait`; polyline and
+  motion 10 degrees, duration 13.6175223541 seconds.
+- Structurally different Dense Concave: success/validation 1/1 through the
+  existing fixed-clock path, with unchanged 12.7952270203-degree motion and
+  8.5-second duration.
+
+Code Analyzer reported zero findings. Focused architecture, planner-contract,
+example-invariant, stage-timing, timed-BMTP, and unsupported-policy tests passed
+42/42 in 44.2016562 seconds wall. The complete test tree passed 108/108 with
+zero failures or incomplete tests in 74.1749327 seconds wall. The only warning
+was the expected two-vertex obstacle-normalization fixture warning. The test
+count fell because the deleted constructors' dedicated tests were removed and
+rose by one for the new absence boundary.
+
+Visible `exampleObstacleFree` succeeded, independently validated, and produced
+two visible figures. Hidden `exampleNoPath` returned the expected validated
+`noValidatedSeed`, attempted a seed, and produced one diagnostic figure with
+the reason in its text. The planner-manual exporter completed and returned
+`ValidationPassed = 1`; an initial post-export harness queried a nonexistent
+summary field after the export had already succeeded.
+
+Every maintained example remained in place and ran serially in its own fresh
+MATLAB process with jerk enabled:
+
+| Example | Source | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | fixed-clock | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3899435 | `goalReached` |
+| `exampleDenseConcaveObstacle` | fixed-clock | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4654619 | `goalReached` |
+| `exampleFourAcceleratingCircles` | direct | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0247071 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | direct | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9570363 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | direct | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0239669 | `goalReached` |
+| `exampleMovingBarrierWait` | direct-wait | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0200357 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | fixed-clock | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8763682 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | fixed-clock | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.6228851 | `goalReached` |
+| `exampleNoPath` | none | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5994901 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | visibility | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.8989594 | `goalReached` |
+| `exampleObstacleFree` | direct | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8951998 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | direct-wait | 1 / 1 | 10 | 10 | 13.6175223541 | 1 / 1 / NaN | 11.7516735 | `goalReached` |
+| `exampleStaticUShapedObstacle` | visibility | 1 / 1 | 34.9425880405 | 39.4001427062 | 20.7814508253 | 1 / 1 / 1 | 32.4429785 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | visibility | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.9045711 | `goalReached` |
+| `exampleTargetExitsObstacle` | direct visibility | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.6584316 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | fixed-clock | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2880719 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | visibility | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 84.5912531 | `goalReached` |
+
+Serial maintained-example wall time was 242.4110337 seconds versus
+205.3929177 seconds at `0f9c268`, an 18.023 percent increase. Fifteen examples
+retained exact physical metrics. Static U traded 0.0690030393 seconds of
+arrival for 0.8548857978 degrees less sampled travel; Opening U retained its
+10-degree path but arrived 2.0331889703 seconds later. These tradeoffs are
+accepted for removing benchmark-shaped algorithms, not presented as an
+optimization.
+
+The milestone removes 1,804 additional non-test MATLAB lines and reduces
+`planCorridorQuintic.m` from 1,023 to 875 physical lines. Cumulatively, the
+branch is 2,317 non-test MATLAB lines smaller than `5c0a6c9`.

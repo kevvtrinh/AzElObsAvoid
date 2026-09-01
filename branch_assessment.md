@@ -1,5 +1,43 @@
 # Novel replacement branch assessment
 
+## Remove benchmark-shaped orthogonal planners - 2026-09-01
+
+At the user's direction, the branch removes the complete orthogonal-cavity and
+timed-orthogonal-opening family rather than retaining it as a benchmark
+shortcut. Six production helpers are deleted: both motion constructors, both
+request/cavity certifiers, their private guarded-rectangle predicate, and the
+now-unreferenced arrival-certificate portfolio. `planCorridorQuintic` no longer
+detects an orthogonal cavity, constructs a cavity-shaped motion, recognizes an
+opening event specially, or ranks those special candidates. Dedicated tests
+and manual sections are removed, while both maintained U-shaped examples stay.
+
+The retained planner passes both U examples through ordinary mechanisms.
+Static U uses visibility-graph seed 3 and `bmtpStaticDegree16`, independently
+validates its certificate, and returns a 39.4001427062-degree sampled motion in
+20.7814508253 seconds. The prior cavity shortcut returned 40.255028504 degrees
+in 20.712447786 seconds. Opening U uses the general `directWait` seed,
+independently validates a 10-degree motion, and arrives in 13.6175223541
+seconds versus 11.5843333838 seconds for the removed opening shortcut. These
+quality and runtime costs are explicit; passing the examples no longer depends
+on recognizing their orthogonal geometry.
+
+Code Analyzer found no issue, focused architecture/contract tests passed
+42/42, and the complete suite passed 108/108. All 17 maintained examples ran
+serially: sixteen independently validated successes and the expected validated
+`noValidatedSeed` result. Fifteen examples retained their established physical
+metrics; only the two U examples changed as described above. Serial wall time
+was 242.4110337 seconds versus 205.3929177 seconds at `0f9c268`, an 18.023
+percent increase concentrated in the general U paths. No speedup is claimed.
+
+This milestone removes 1,804 additional non-test MATLAB lines and reduces
+`planCorridorQuintic.m` from 1,023 to 875 physical lines. The branch is now
+2,317 non-test MATLAB lines smaller than `5c0a6c9`. Its largest strength is
+that U-shaped examples remain real general-planner regressions instead of
+being owned by shape detectors. Its largest weakness is that the general
+paths are slower and do not reproduce the deleted shortcuts' arrival times;
+improving that gap must come from a structurally general timed or static motion
+algorithm, not a restored U/cavity detector.
+
 ## Timed BMTP follows the search-layer budget - 2026-09-01
 
 The completion audit caught one result regression that the maintained suite did

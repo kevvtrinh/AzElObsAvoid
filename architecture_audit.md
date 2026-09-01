@@ -353,3 +353,27 @@ The same count creates obstacle time cells and is passed in coverage to the
 BMTP engine, so spatial containment cells, optimizer spans, and the search
 clock cannot silently diverge. The static BMTP warm-route cap remains an
 internal engine concern. No collocation or segmentation option is restored.
+
+## Orthogonal planner removal audit - 2026-09-01
+
+The planner previously owned two geometry-specific motion families outside the
+general route-and-motion pipeline. One detected an axis-aligned concave cavity,
+searched signed/permuted coordinate frames, constructed a closed-form tangent
+motion, and proved a cavity lower bound. The other detected one orthogonal
+opening event, constructed an event-compatible motion, and proved a
+request-wide opening lower bound. Both depended on a guarded-rectangle
+predicate and a candidate/lower-bound portfolio.
+
+All six production helpers and every orchestrator call are removed. No
+compatibility facade or renamed replacement remains. The arrival-certificate
+portfolio is also deleted because it had no consumer after those two families
+were removed. An architecture test requires the files to remain absent and
+rejects `orthogonal` or `cavity` logic in `planCorridorQuintic`.
+
+The two U examples remain consumers of the maintained public planner. Static U
+now proceeds from visibility search to the general static BMTP engine. Opening
+U proceeds through the general dynamic route candidates and selects the
+existing continuously refined direct-wait motion. Independent public
+validation and plotting are unchanged. The planner manual now presents the
+actual 19-stage path without the removed stations, and the performance-triage
+skill records that scenario detectors must not be restored.

@@ -111,12 +111,9 @@ layer selection and its reachability-frontier
 
 - Never weaken `obstacleAvoidance.validateTrajectory`, a tolerance, or an
   acceptance criterion. It is the sole authority.
-- Never add another scenario detector. The branch already has about 2,523
-  lines: `createFixedClockLateralExcursion` 882,
-  `createOrthogonalCavityMotion` 489,
-  `createTimedOrthogonalOpeningMotion` 271, plus three certifiers.
-  `detectCavity` requires axis-parallel polygon edges; it is a rectilinear
-  detector, not a general method.
+- Never add a scenario detector. Orthogonal-cavity and timed-opening detectors
+  were removed because they encoded rectilinear benchmark structure rather
+  than a general planning invariant.
 - Never restore the HS3 engine tree. `tests/testArchitectureBoundaries.m`
   enforces `testDeletedHs3EngineTreeRemainsAbsent`.
 - Never let `trajectory/+bmtpEngine` reference `obstacleAvoidance.*`.
@@ -125,11 +122,6 @@ layer selection and its reachability-frontier
 
 ## Consolidate Known Divergence When In Scope
 
-- `roundoffReserve_deg` appears in four places with two unequal formulas:
-  `2^20 * eps(scale)` and `2^20 * eps * scale`.
-  `createOrthogonalCavityMotion.m` uses both; authoritative
-  `validateTrajectory.m` uses the second. A constructor margin can therefore
-  be narrower than the verifier requires.
 - The predicate "every obstacle is static and active over the horizon" is
   implemented five times with divergent semantics. One copy lacks an
   `~isempty` guard and errors on empty `time_s`; another safely returns false.
