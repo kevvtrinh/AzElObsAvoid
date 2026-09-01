@@ -63,7 +63,7 @@ violation, fallback, substitution, or unfavorable result inside the code.
 
 The public planner should accept these conceptual inputs in this order:
 
-```matlab
+```
 result = planner(obstacles, initialState, goalState, limits, options);
 ```
 
@@ -87,7 +87,7 @@ the resolved options in the returned record.
 Expected planning outcomes must return a result rather than terminate the
 example:
 
-```matlab
+```
 result.Success = false;
 result.Message = "No feasible path found.";
 result.TerminationReason = "openSetExhausted";
@@ -163,7 +163,7 @@ Failure visualization is required even when no trajectory exists.
 All runnable examples must follow the same top-level sequence and section
 ordering. Use this structure:
 
-```matlab
+```
 function result = exampleScenario(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -345,7 +345,7 @@ incompatibility. Record runtime limitations separately from code failures.
 Every function, public or local, begins immediately after its complete function
 declaration with:
 
-```matlab
+```
 %% Section 0: Header & Readme
 ```
 
@@ -359,13 +359,13 @@ the four required blocks in this exact order:
 
 Separate the blocks with `%` followed by 74 asterisks:
 
-```matlab
+```
 %**************************************************************************
 ```
 
 Use this canonical public-function header:
 
-```matlab
+```
 function result = functionName(requiredInput, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -421,7 +421,7 @@ Header requirements:
 Use numbered, title-cased sections in execution order. A typical planning
 function uses:
 
-```matlab
+```
 %% Section 1: Validate Inputs & Apply Defaults
 %% Section 2: Create The Planning Representation
 %% Section 3: Create Candidate Routes
@@ -434,7 +434,7 @@ Name the actual algorithm or operation when a more specific title is useful.
 Do not use unnumbered top-level `%%` cells. Do not place `%%` sections inside a
 loop or conditional. For a visible internal stage within a long section, use:
 
-```matlab
+```
 % --- Broad-Phase Reject Box ---------------------------------------
 ```
 
@@ -502,10 +502,7 @@ below when a rename has functional value.
 - When defaults depend on required input, support an explicit defaults request
   rather than inventing dummy inputs, for example:
 
-  ```matlab
-  options = planner(limits, "defaults");
-  ```
-
+  `options = planner(limits, "defaults");`
 - One defaults structure or local defaults function is the only source of
   truth. Do not repeat the same default in validation, examples, and plotting.
 - Optional override inputs accept both omission and `[]` consistently.
@@ -539,7 +536,7 @@ document the exact behavior at the point of use.
 
 Errors and warnings use the emitting function plus a Pascal-case problem name:
 
-```matlab
+```
 error("createObstacleField:BoundaryCountMismatch", ...)
 warning("planTrajectory:UnknownOptions", ...)
 ```
@@ -676,6 +673,178 @@ If a requested metric is unavailable because planning failed, print the
 documented empty value and the termination reason. State the exact baseline
 when making a performance comparison.
 
+## Detective-Style Architecture and Performance Audits
+
+Treat an audit like a professional investigation of an evidence chain, not a
+search for suspicious-looking lines. The goal is to find the earliest place
+where correct information is lost, an unsupported assumption is introduced, or
+expensive work is repeated. A familiar hotspot is a lead, not a verdict.
+
+### Preserve the scene before forming a theory
+
+- Record the branch, HEAD, `git status`, exact request, options, MATLAB release,
+  solver, and available stored diagnostics before changing code.
+- Keep source inspection, reproduction, measurement, and repair as separate
+  stages. Do not edit the behavior while still deciding what it does.
+- Map the complete evidence chain:
+
+  `request -> protected geometry -> prepared geometry -> proposal geometry
+          -> graph/routes -> timed seeds -> motion kernel -> validator
+          -> objective selection -> public result`
+- At every arrow, identify what is transformed, discarded, approximated,
+  cached, recomputed, bounded, or classified as unsupported.
+- Locate the earliest stage that explains the observation. Later warnings and
+  failures may be genuine consequences without being the root cause.
+
+### Build an evidence ledger instead of relying on intuition
+
+For every material finding, record:
+
+| Field | Required content |
+| --- | --- |
+| Claim | One falsifiable statement |
+| Location | Function and enclosing loop or dispatch path |
+| Evidence | Source control flow, diagnostic value, profile, or reproduction |
+| Frequency | Calls per request, seed, interval, refinement, or obstacle |
+| Cost | Measured time or explicitly labeled source-level inference |
+| Risk | Runtime, incompleteness, non-conservatism, objective error, or diagnostics |
+| Confidence | Proven, inferred, or guessed |
+| Counterexample | Smallest input that could disprove the claim |
+| Experiment | Smallest change or test that distinguishes the hypotheses |
+| Revert rule | Predeclared condition that rejects the proposed change |
+
+Do not call something the largest hotspot from line inspection alone. Rank
+measured candidates by frequency times per-call cost and then consider how many
+scenario families they affect. A famous solver is not automatically the main
+cost owner.
+
+### Follow converging clues toward recurring hotspot areas
+
+The following clusters have repeatedly deserved investigation in this planner.
+Start there when the symptoms match, but verify them anew:
+
+1. **Authoritative validation inside search loops** - Look for continuous
+  collision certification inside amplitude, wait-time, intercept-time, or
+  objective refinement. Also look for candidates validated again after an
+  unchanged validation record was retained.
+2. **Dynamic geometry rebuilt at high frequency** - Look for normalization,
+  `polyshape`, boundary extraction, convex decomposition, swept projection, or
+  cache destruction inside per-seed, per-query, or per-collision-interval
+  loops.
+3. **Temporal coverage lost through work limits** - Check whether raw sample
+  counts suppress timed search, horizon-external samples enlarge proposal
+  geometry, event down-selection removes important times, or a motion edge is
+  stretched into a physically different trajectory.
+4. **Objective disagreement across stages** - Write the proposal, optimizer,
+  and final-selection objective algebraically with units. Include time origin,
+  surrogate objectives, portfolios, arrival quantization, and tie-breaks.
+5. **Seed diversity lost or duplicated** - Account for every spatial homology
+  class, timed strategy, wait pattern, cleanup result, rejection, and kernel
+  attempt. Recompute class signatures after cleanup before deduplication.
+6. **Global bounds causing local work** - Check whether whole-history geometry
+  bounds or global kinematic limits force excessive subdivision where
+  interval-local certified bounds would suffice.
+
+When several independent clues point to one cluster, investigate that shared
+owner before replacing a downstream solver or adding another fallback.
+
+### Use cheap evidence without promoting it to proof
+
+- A sampled collision is a valid counterexample to that candidate. Sampled
+  clearance is not proof of continuous safety.
+- Cheap checks may reject definite failures, rank candidates, or select a
+  bounded portfolio for validation. They may not set public success.
+- Every returned motion still passes the unchanged independent validator.
+- Do not bisect feasibility unless monotonicity is proven for that exact
+  candidate family. Moving obstacles commonly create disjoint feasible windows.
+- If a cheap-selected candidate fails continuous validation, retain and use the
+  failing interval to continue the search; do not silently return no path.
+- Never obtain speed by weakening tolerances, reducing protected geometry,
+  replacing continuous proof with dense samples, or trusting a planner-owned
+  certificate in the validator.
+
+### Interrogate contradictions and test competing explanations
+
+Form at least two plausible explanations whenever the evidence permits. Prefer
+one small test that makes them predict different outcomes. Useful contrasts
+include:
+
+- solver time versus geometry/preparation/validation time;
+- no graph route versus route found but rejected by temporal lifting;
+- optimizer infeasibility versus independently invalid warm start;
+- no collision versus collision proof unresolved at minimum resolution;
+- objective mismatch versus insufficient timed-seed diversity;
+- intended physical obstacle motion versus the implemented interpolation model.
+
+Pay special attention when names, comments, and behavior disagree: a
+"conservative" endpoint union with a swept gap, "event-aware" layers that drop
+all events, a "complete" history search suppressed by sample count, or an
+"independent" check that reuses solver-owned evidence. Verify behavior rather
+than trusting the label.
+
+### Audit moving geometry as a mathematical contract
+
+For every implicated moving obstacle, establish:
+
+- active request horizon and behavior outside it;
+- exact geometry at both horizon endpoints;
+- vertex and ring correspondence, orientation, holes, and topology changes;
+- interpolation model between samples and whether it is conservative for the
+  physical motion represented by the input;
+- status/visibility semantics;
+- interval speed bounds and interval bounding boxes;
+- which cached shapes, edges, and decompositions remain authoritative.
+
+A regression test must exercise the branch it claims to test. For example, a
+simple translated polygon with matching vertices does not test the
+nonmatching-topology fallback.
+
+### Audit objectives and portfolios end to end
+
+- State the public objective as one equation with units.
+- Record what each proposal search actually optimizes, what each kernel uses,
+  and how final selection and tie-breaking rank validated candidates.
+- Treat alternate optimization weights as search diversification when final
+  comparison still uses the public objective; do not misreport them as separate
+  user objectives.
+- Count the routes produced for each spatial and temporal class. One cheapest
+  timed route is not evidence that other useful wait/detour strategies do not
+  exist.
+- Deduplicate only within the same recomputed class using scale-aware geometry.
+  Rounded global deduplication can erase a valid narrow-passage alternative.
+
+### Design reversible repairs
+
+- Add the discriminating regression test before the repair.
+- Declare the affected benchmark family and exact acceptance criteria first.
+- Make one independently revertible behavioral change per commit.
+- Warm up once and run at least three measured repetitions in one MATLAB
+  session. Report minimum, median, and unfavorable physical metrics together.
+- Revert a performance change when it adds maintained complexity without a
+  material exact call-count reduction or measured end-to-end improvement.
+- Keep an established fallback until its replacement passes every supported
+  family, expected failure, public validation, objective-quality, and runtime
+  gate.
+- Do not turn a temporary experiment into a permanent public option unless it
+  represents a genuine user choice.
+
+### Required architecture-assessment conclusion
+
+Finish an audit with:
+
+1. the specific subsystem where evidence converges;
+2. confirmed strengths that must not be weakened;
+3. proven defects, source-level inferences, and untested hypotheses separated;
+4. corrected versions of any overstated claims;
+5. smallest-first experiments with tests and revert rules;
+6. scenario families still untested; and
+7. an explicit statement when no runtime profile or MATLAB reproduction was
+  performed.
+
+Do not conclude that all remaining work is "tuning" when unresolved items can
+change conservatism, feasible-window coverage, objective selection, or supported
+scenario families.
+
 ## Testing and Verification
 
 Do not run every maintained example before a planned code change. Inspect the
@@ -688,10 +857,10 @@ Before considering a change complete:
 1. Run syntax/static checks available in the environment.
 2. Run focused unit tests for modified helpers.
 3. Run every example headlessly with plots and animation disabled.
-   Run only one example process at a time. Finish and record the result,
-   output, runtime, and failure diagnosis for that example before starting
-   the next example. Do not run examples as one combined suite or in
-   parallel.
+  Run only one example process at a time. Finish and record the result,
+  output, runtime, and failure diagnosis for that example before starting
+  the next example. Do not run examples as one combined suite or in
+  parallel.
 4. Run at least one visible example when graphics are available.
 5. Exercise both a successful plan and an expected no-path result.
 6. Verify the failure case produces a search-space diagnostic figure.
@@ -756,7 +925,6 @@ only when it represents a general result that later runs can populate.
   requirement. Example files have no repository line cap, but their full line
   count must still be reported and they must not be used to justify planner
   growth.
-
 - Inspect existing interfaces and call sites before editing.
 - Before completing, committing, or pushing a change, inspect the per-file
   diff statistics. If an existing source file or script has more than 50 added
