@@ -5228,3 +5228,33 @@ failure-figure smoke returned the environment-level fatal startup message
 had just returned `noValidatedSeed` without an example-validation warning. An
 earlier check on the same worktree had already created its hidden diagnostic
 figure; no failure plotting file changed in this final exact-clock repair.
+
+## HTML diagnosis replay and velocity-vector motion - 2026-08-31
+
+This change affects the HTML authoring and loopback transport, not planner
+selection or trajectory generation. Verification after the final source edits:
+
+- Code Analyzer returned zero findings for `replayDiagnosisBundle.m`,
+  `serveSandbox.m`, and the focused diagnosis-bundle tests.
+- The focused diagnosis bundle suite passed 3/3. Its reproduction case included
+  a moving polygon and verified exact preservation of keyframe time and original
+  terminal geometry.
+- The complete test tree passed 111/111 with zero failed or incomplete tests in
+  123.685910 seconds.
+- JavaScript syntax passed with the bundled Node.js runtime. The production
+  `motionOffset_deg` function was extracted and exercised for constant,
+  zero-start, trapezoidal, and out-and-back profiles. A `[3, 4]` drawn vector
+  produced a displayed magnitude of exactly `5.000 deg/s`.
+- A live MATLAB server on `127.0.0.1:52739` accepted a raw diagnosis MAT file at
+  `/run-bundle` and returned `offlineSandboxResult/v1`, a new
+  `bundle-replay-*` request identifier, `goalReached`, planner success, and
+  independent validation success. Arrival was 1.86969384567 seconds; planner
+  time was 0.927697 seconds and server time before transport was 1.498398
+  seconds. The server then stopped cleanly and its explicit smoke artifacts
+  were removed.
+- The in-app browser rejected the local `file://` page under its URL policy, so
+  no visual browser pass is claimed. Two fresh serial-example attempts were
+  blocked before the first example by MATLAB's intermittent environment-level
+  `System Error: File system inconsistency`. The planner source was unchanged;
+  the prior successful 17-example matrix above remains the applicable planner
+  baseline.

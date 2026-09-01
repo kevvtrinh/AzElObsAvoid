@@ -1,4 +1,5 @@
 RunDate,SourceCommit,Branch,Example,GoalTimeMode,JerkConstrained,PlannerSuccess,ValidationPassed,SelectedPolylineLength_deg,SmoothedPathLength_deg,MotionDuration_s,CollisionFree,KinematicCertificatePassed,ApplicableCertificatePassed,WallTime_s,TerminationReason,Notes
+2026-08-31,ebd1282+html-bundle-replay,novel-rep,offlineSandboxBundleReplaySmoke,earliestArrival,1,1,1,NaN,NaN,1.86969384567,NaN,NaN,NaN,1.498398,goalReached,Fresh raw-MAT /run-bundle reproduction; validation passed; path submetrics were not collected
 2026-08-19,6c6b948,plan-502-implementation,exampleObstacleFreeAzElMotion,fixedArrival,1,1,1,4.472135955,4.472135955,8,1,1,1,7.421851,goalReached,
 2026-08-19,6c6b948,plan-502-implementation,exampleAzElPlanning,fixedArrival,1,1,1,11.152119519,11.4302740211,12,1,1,1,6.832057,goalReached,Arrival time error was zero
 2026-08-19,6c6b948,plan-502-implementation,exampleUShapedAzElTimeSpace,fixedArrival,1,1,1,13.0984626634,13.6337924413,16,1,1,1,12.883694,goalReached,

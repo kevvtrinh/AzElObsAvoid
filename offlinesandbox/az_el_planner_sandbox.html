@@ -86,7 +86,8 @@
 
     button:disabled,
     input:disabled,
-    select:disabled {
+    select:disabled,
+    .file-button[aria-disabled="true"] {
       cursor: not-allowed;
       opacity: 0.45;
     }
@@ -502,6 +503,10 @@
     }
 
     .live-actions #downloadBundleButton {
+      grid-column: 1 / -1;
+    }
+
+    .live-actions .live-bundle-button {
       grid-column: 1 / -1;
     }
 
@@ -1040,8 +1045,8 @@
           </div>
         </div>
         <p class="page-note">
-          Drawing tools add geometry only. In Select, click to pick and drag to
-          move; the selected obstacle's motion-arrow head is its vector handle.
+          Drawing tools add geometry only. Select an obstacle and use Set
+          Motion to draw its velocity; arrow length is speed in deg/s.
         </p>
 
         <div class="timeline" aria-label="Mission playback">
@@ -1105,6 +1110,13 @@
                 disabled>Cancel</button>
               <button id="downloadBundleButton" class="workflow-button"
                 type="button" disabled>Save diagnosis bundle</button>
+              <label id="bundleFileLabel"
+                class="file-button live-bundle-button"
+                for="bundleFileInput">
+                Load &amp; run diagnosis bundle
+                <input id="bundleFileInput" type="file"
+                  accept="application/vnd.matlab.mat-file,.mat">
+              </label>
             </div>
           </div>
           <div id="offlineWorkflow" hidden>
@@ -1307,18 +1319,25 @@
                 </select>
               </div>
               <div class="field">
-                <label for="motionAzimuth">Final Δ azimuth (deg)</label>
+                <label for="motionAzimuth">Azimuth speed (deg/s)</label>
                 <input id="motionAzimuth" type="number" step="0.5">
               </div>
               <div class="field">
-                <label for="motionElevation">Final Δ elevation (deg)</label>
+                <label for="motionElevation">Elevation speed (deg/s)</label>
                 <input id="motionElevation" type="number" step="0.5">
               </div>
             </div>
-            <p id="motionProfileNote" class="page-note" hidden>
-              Out and back returns to its start; the arrow marks its furthest point.
+            <p id="motionSpeedReadout" class="page-note">
+              Speed magnitude: 0.000 deg/s
+            </p>
+            <p id="motionProfileNote" class="page-note">
+              Arrow length is speed. Profiles integrate that speed command
+              over mission time to create obstacle positions.
             </p>
             <div class="editor-actions">
+              <button id="setMotionButton" class="compact-button" type="button">
+                Set motion
+              </button>
               <button id="zeroMotionButton" class="compact-button" type="button">
                 Make stationary
               </button>
@@ -1576,6 +1595,10 @@
           !state.isPlanning || state.cancellationRequested;
         element("downloadBundleButton").disabled = !isLive ||
           state.isPlanning || !state.bundleRequestId;
+        const bundleInputDisabled = !isLive || state.isPlanning;
+        element("bundleFileInput").disabled = bundleInputDisabled;
+        element("bundleFileLabel").setAttribute("aria-disabled",
+          String(bundleInputDisabled));
         element("resetButton").disabled = state.isPlanning;
         element("resultFileInput").disabled = state.isPlanning;
         document.querySelectorAll(".obstacle-row").forEach((button) => {
@@ -1802,12 +1825,13 @@
         });
         updateActionAvailability();
         const messages = {
-          select: "Select picks; drag endpoints, polygon interiors, vertices, or the selected motion handle.",
+          select: "Select picks; drag endpoints, polygons, vertices, or an existing velocity handle.",
           start: "Click once in the workspace to place or replace the start.",
           goal: "Click once in the workspace to place or replace the goal.",
           polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
           circle: "Drag from the center to set a radius in degrees. Nothing is draggable.",
-          freehand: "Drag a closed outline. It is simplified to an ordinary polygon. Nothing is draggable."
+          freehand: "Drag a closed outline. It is simplified to an ordinary polygon. Nothing is draggable.",
+          motion: "Drag from the selected polygon's center to set its velocity in deg/s."
         };
         canvasHint.textContent = messages[mode];
         draw();
@@ -1824,6 +1848,7 @@
           state.selectedObstacleIndex < state.obstacles.length;
         element("deleteObstacleButton").disabled =
           editingDisabled || !hasSelection;
+        element("setMotionButton").disabled = editingDisabled || !hasSelection;
       }
 
       function writeEndpointInputs() {
@@ -1881,7 +1906,8 @@
         ["startAzimuth", "startElevation", "goalAzimuth", "goalElevation",
           "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
           "motionProfile", "motionAzimuth", "motionElevation",
-          "deleteEditorButton", "zeroMotionButton"].forEach((id) => {
+          "deleteEditorButton", "setMotionButton", "zeroMotionButton"
+        ].forEach((id) => {
           element(id).disabled = disabled;
         });
         document.querySelectorAll("[data-mode]").forEach((button) => {
@@ -2006,8 +2032,10 @@
             const kind = document.createElement("span");
             kind.className = "obstacle-kind";
             const isMoving = obstacle.motionProfile !== "stationary" &&
-              Math.hypot(...obstacle.motionVector_deg) > 1e-12;
-            kind.textContent = isMoving ? "moving" : "static";
+              Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+            const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+            kind.textContent = isMoving ?
+              `${speed_deg_s.toFixed(3)} deg/s` : "static";
             row.append(name, kind);
             row.addEventListener("click", () => {
               state.selectedObstacleIndex = index;
@@ -2026,9 +2054,18 @@
         }
         element("selectedMargin").value = selected.safetyMargin_deg;
         element("motionProfile").value = selected.motionProfile;
-        element("motionAzimuth").value = selected.motionVector_deg[0];
-        element("motionElevation").value = selected.motionVector_deg[1];
-        element("motionProfileNote").hidden = selected.motionProfile !== "oscillating";
+        element("motionAzimuth").value = selected.motionVelocity_deg_s[0];
+        element("motionElevation").value = selected.motionVelocity_deg_s[1];
+        updateMotionSpeedReadout(selected.motionVelocity_deg_s);
+        const profileDescriptions = {
+          stationary: "Stationary: speed is zero and position does not change.",
+          nonzeroVelocity: "Constant: the arrow is the velocity for the full mission.",
+          zeroStart: "Zero-start: speed ramps linearly from zero to the arrow value.",
+          trapezoidal: "Trapezoidal: the arrow is peak speed after ramp-up and before ramp-down.",
+          oscillating: "Out and back: the arrow is peak speed; the polygon returns to its start."
+        };
+        element("motionProfileNote").textContent =
+          profileDescriptions[selected.motionProfile];
       }
 
       function updateSelectedObstacle() {
@@ -2048,50 +2085,70 @@
         }
         selected.safetyMargin_deg = margin;
         selected.motionProfile = element("motionProfile").value;
-        selected.motionVector_deg = [motionAzimuth, motionElevation];
+        selected.motionVelocity_deg_s = [motionAzimuth, motionElevation];
         invalidateResult("Obstacle settings changed.");
         renderObstacleEditor();
         configureTimeline();
         draw();
       }
 
-      function motionFactor(profile, phase) {
-        const boundedPhase = Math.max(0, Math.min(1, phase));
-        if (profile === "nonzeroVelocity") {
-          return boundedPhase;
+      function activateMotionDrawing() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected) {
+          setStatus("Select a polygon before setting its motion.", "warning");
+          return;
         }
-        if (profile === "zeroStart") {
-          return boundedPhase * boundedPhase;
-        }
-        if (profile === "trapezoidal") {
+        stopPlayback();
+        state.currentTime_s = 0;
+        syncTimelineControl();
+        activateMode("motion");
+        setStatus(
+          "Drag from the selected polygon's center. Arrow length is speed in deg/s.",
+          "info"
+        );
+      }
+
+      function motionOffset_deg(obstacle, time_s, missionTime_s) {
+        const boundedTime_s = Math.max(0, Math.min(missionTime_s, time_s));
+        const boundedPhase = boundedTime_s / missionTime_s;
+        let integratedTime_s = 0;
+        if (obstacle.motionProfile === "nonzeroVelocity") {
+          integratedTime_s = boundedTime_s;
+        } else if (obstacle.motionProfile === "zeroStart") {
+          integratedTime_s = 0.5 * missionTime_s * boundedPhase * boundedPhase;
+        } else if (obstacle.motionProfile === "trapezoidal") {
           const accelerationFraction = 0.25;
-          const peakVelocity = 1 / (1 - accelerationFraction);
           if (boundedPhase < accelerationFraction) {
-            return 0.5 * peakVelocity / accelerationFraction *
+            integratedTime_s = 0.5 * missionTime_s / accelerationFraction *
               boundedPhase * boundedPhase;
+          } else if (boundedPhase <= 1 - accelerationFraction) {
+            integratedTime_s = missionTime_s *
+              (boundedPhase - 0.5 * accelerationFraction);
+          } else {
+            integratedTime_s = missionTime_s *
+              (1 - accelerationFraction - 0.5 / accelerationFraction *
+              (1 - boundedPhase) * (1 - boundedPhase));
           }
-          if (boundedPhase <= 1 - accelerationFraction) {
-            return peakVelocity * (boundedPhase - 0.5 * accelerationFraction);
-          }
-          return 1 - 0.5 * peakVelocity / accelerationFraction *
-            (1 - boundedPhase) * (1 - boundedPhase);
+        } else if (obstacle.motionProfile === "oscillating") {
+          integratedTime_s = missionTime_s / (2 * Math.PI) *
+            (1 - Math.cos(2 * Math.PI * boundedPhase));
         }
-        if (profile === "oscillating") {
-          return 0.5 * (1 - Math.cos(2 * Math.PI * boundedPhase));
-        }
-        return 0;
+        return obstacle.motionVelocity_deg_s.map((velocity_deg_s) =>
+          velocity_deg_s * integratedTime_s
+        );
       }
 
       function buildObstacleKeyframes(obstacle, missionTime_s) {
         const moving = obstacle.motionProfile !== "stationary" &&
-          Math.hypot(...obstacle.motionVector_deg) > 1e-12;
+          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
         const sampleCount = moving ? 21 : 2;
         const keyframes = [];
         for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
           const phase = sampleCount === 1 ? 0 :
             sampleIndex / (sampleCount - 1);
-          const factor = moving ? motionFactor(obstacle.motionProfile, phase) : 0;
-          const offset = obstacle.motionVector_deg.map((value) => value * factor);
+          const offset = moving ? motionOffset_deg(
+            obstacle, missionTime_s * phase, missionTime_s
+          ) : [0, 0];
           keyframes.push({
             time_s: missionTime_s * phase,
             vertices_deg: obstacle.vertices_deg.map((point) => [
@@ -2316,6 +2373,78 @@
           state.isPlanning = false;
           state.activeRequestId = "";
           state.cancellationRequested = false;
+          updatePlanningControls();
+        }
+        if (probeAfterCompletion) {
+          await probeServer(false);
+        }
+      }
+
+      async function runBundleFile(file) {
+        const maximumBundleBytes = 128 * 1024 * 1024;
+        if (state.connectionMode !== "live" || state.isPlanning) {
+          setStatus(
+            "Diagnosis bundles can run only while the local MATLAB server is connected.",
+            "warning"
+          );
+          return;
+        }
+        if (!file.name.toLowerCase().endsWith(".mat")) {
+          setStatus("Select a .mat diagnosis bundle.", "error");
+          return;
+        }
+        if (file.size > maximumBundleBytes) {
+          setStatus("Diagnosis bundles may not exceed 128 MiB.", "error");
+          return;
+        }
+
+        state.isPlanning = true;
+        state.activeRequestId = "bundle-replay";
+        state.cancellationRequested = false;
+        state.lastRequestId = "";
+        state.bundleRequestId = "";
+        updatePlanningControls();
+        setStatus(`Running ${file.name} through the current MATLAB planner.`,
+          "info");
+        let probeAfterCompletion = false;
+        try {
+          const payload = await requestJson(
+            `${state.serverOrigin}/run-bundle`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/vnd.matlab.mat-file"
+              },
+              body: file,
+              cache: "no-store",
+              credentials: "omit"
+            }
+          );
+          loadResponse(payload, `${file.name} replay`);
+          state.bundleRequestId = payload.requestId;
+          setStatus(
+            `Replayed ${file.name} with the current planner. The displayed ` +
+            "result is a fresh run, not the result stored in the bundle.",
+            "success"
+          );
+        } catch (error) {
+          if (error.identifier === "planTrajectory:UserCancelled") {
+            probeAfterCompletion = true;
+            setStatus("Bundle replay canceled at a safe checkpoint.", "warning");
+          } else if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during bundle replay.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The diagnosis bundle could not be run.",
+              "error");
+          }
+        } finally {
+          state.isPlanning = false;
+          state.activeRequestId = "";
+          state.cancellationRequested = false;
+          element("bundleFileInput").value = "";
           updatePlanningControls();
         }
         if (probeAfterCompletion) {
@@ -2677,7 +2806,7 @@
           name: `Obstacle ${state.nextObstacleNumber}`,
           vertices_deg: vertices.map((point) => point.slice()),
           safetyMargin_deg: margin,
-          motionVector_deg: [0, 0],
+          motionVelocity_deg_s: [0, 0],
           motionProfile: "stationary"
         });
         state.nextObstacleNumber += 1;
@@ -3308,25 +3437,27 @@
         context.restore();
       }
 
-      function translatedVertices(vertices, offset) {
-        return vertices.map((point) => [point[0] + offset[0], point[1] + offset[1]]);
-      }
-
-      function drawMotionVector(obstacle, isSelected) {
+      function drawMotionVector(obstacle, displayedVertices, isSelected) {
         const hasMotion = obstacle.motionProfile !== "stationary" &&
-          Math.hypot(...obstacle.motionVector_deg) > 1e-12;
+          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
         if (!hasMotion) {
           return;
         }
-        const center = centroid(obstacle.vertices_deg);
-        const end = [center[0] + obstacle.motionVector_deg[0],
-          center[1] + obstacle.motionVector_deg[1]];
-        strokePath(translatedVertices(obstacle.vertices_deg,
-          obstacle.motionVector_deg), {
-          stroke: "rgba(145,166,184,0.55)", width: 1, dash: [5, 5],
-          fill: "rgba(145,166,184,0.045)", close: true
-        });
-        drawArrow(center, end, isSelected && state.mode === "select");
+        const center = centroid(displayedVertices);
+        const end = [center[0] + obstacle.motionVelocity_deg_s[0],
+          center[1] + obstacle.motionVelocity_deg_s[1]];
+        drawArrow(center, end, isSelected &&
+          (state.mode === "select" || state.mode === "motion"));
+        const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+        const endScreen = worldToScreen(end);
+        context.save();
+        context.fillStyle = "#9cf2d0";
+        context.font = "650 11px ui-monospace, SFMono-Regular, Consolas, monospace";
+        context.textAlign = "left";
+        context.textBaseline = "bottom";
+        context.fillText(`${speed_deg_s.toFixed(3)} deg/s`,
+          endScreen[0] + 9, endScreen[1] - 7);
+        context.restore();
       }
 
       function drawVertexHandles(vertices) {
@@ -3348,11 +3479,11 @@
         const missionTime = Math.max(Number.EPSILON,
           numberFromInput("missionTime") || defaultControls.missionTime);
         state.obstacles.forEach((obstacle, index) => {
-          const factor = motionFactor(obstacle.motionProfile,
-            state.currentTime_s / missionTime);
+          const offset_deg = motionOffset_deg(
+            obstacle, state.currentTime_s, missionTime
+          );
           const moved = obstacle.vertices_deg.map((point) => [
-            point[0] + factor * obstacle.motionVector_deg[0],
-            point[1] + factor * obstacle.motionVector_deg[1]
+            point[0] + offset_deg[0], point[1] + offset_deg[1]
           ]);
           strokePath(moved, {
             stroke: index === state.selectedObstacleIndex ? "#76e5eb" : "#6aa9ff",
@@ -3361,7 +3492,8 @@
               "rgba(57,208,216,0.15)" : "rgba(106,169,255,0.13)",
             close: true
           });
-          drawMotionVector(obstacle, index === state.selectedObstacleIndex);
+          drawMotionVector(obstacle, moved,
+            index === state.selectedObstacleIndex);
           if (index === state.selectedObstacleIndex && state.mode === "select") {
             drawVertexHandles(obstacle.vertices_deg);
           }
@@ -3850,12 +3982,19 @@
       function selectedMotionHandle() {
         const selected = state.obstacles[state.selectedObstacleIndex];
         if (!selected || selected.motionProfile === "stationary" ||
-            Math.hypot(...selected.motionVector_deg) <= 1e-12) {
+            Math.hypot(...selected.motionVelocity_deg_s) <= 1e-12) {
           return null;
         }
-        const center = centroid(selected.vertices_deg);
-        return [center[0] + selected.motionVector_deg[0],
-          center[1] + selected.motionVector_deg[1]];
+        const missionTime_s = Math.max(Number.EPSILON,
+          numberFromInput("missionTime") || defaultControls.missionTime);
+        const offset_deg = motionOffset_deg(
+          selected, state.currentTime_s, missionTime_s
+        );
+        const initialCenter = centroid(selected.vertices_deg);
+        const center = [initialCenter[0] + offset_deg[0],
+          initialCenter[1] + offset_deg[1]];
+        return [center[0] + selected.motionVelocity_deg_s[0],
+          center[1] + selected.motionVelocity_deg_s[1]];
       }
 
       function selectDragTarget(point, screenPoint) {
@@ -3903,6 +4042,15 @@
                 bounds.elevation[1] - Math.max(...elevationValues)]
             };
           }
+        } else if (target.type === "motion") {
+          const obstacle = state.obstacles[target.obstacleIndex];
+          drag.originalVelocity_deg_s = obstacle.motionVelocity_deg_s.slice();
+          drag.originalProfile = obstacle.motionProfile;
+          const handle = selectedMotionHandle();
+          drag.origin_deg = [
+            handle[0] - obstacle.motionVelocity_deg_s[0],
+            handle[1] - obstacle.motionVelocity_deg_s[1]
+          ];
         }
         state.activeDrag = drag;
         if (target.obstacleIndex !== undefined) {
@@ -3923,6 +4071,13 @@
       function updateMotionInputs(vector) {
         element("motionAzimuth").value = vector[0].toFixed(3);
         element("motionElevation").value = vector[1].toFixed(3);
+        updateMotionSpeedReadout(vector);
+      }
+
+      function updateMotionSpeedReadout(vector) {
+        const speed_deg_s = Math.hypot(...vector);
+        element("motionSpeedReadout").textContent =
+          `Speed magnitude: ${speed_deg_s.toFixed(3)} deg/s`;
       }
 
       function updateActiveDrag(point) {
@@ -3953,14 +4108,14 @@
         }
         if (drag.type === "motion") {
           const obstacle = state.obstacles[drag.obstacleIndex];
-          const center = centroid(obstacle.vertices_deg);
+          const center = drag.origin_deg;
           markDragChanged(drag, point);
-          obstacle.motionVector_deg = [point[0] - center[0], point[1] - center[1]];
-          updateMotionInputs(obstacle.motionVector_deg);
-          const missionTime_s = Math.max(Number.EPSILON, numberFromInput("missionTime"));
-          const offset_deg = Math.hypot(...obstacle.motionVector_deg);
-          coordinateReadout.textContent = `Δ ${offset_deg.toFixed(3)} deg · ` +
-            `${(offset_deg / missionTime_s).toFixed(3)} deg/s`;
+          obstacle.motionVelocity_deg_s = [
+            point[0] - center[0], point[1] - center[1]
+          ];
+          updateMotionInputs(obstacle.motionVelocity_deg_s);
+          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+          coordinateReadout.textContent = `Speed ${speed_deg_s.toFixed(3)} deg/s`;
           draw();
           return;
         }
@@ -4034,6 +4189,25 @@
           setStatus("Endpoint move stopped at the workspace boundary.", "warning");
         } else if (drag.type === "obstacle" && drag.wasClamped) {
           setStatus("Polygon move stopped at the workspace boundary.", "warning");
+        } else if (drag.type === "motion") {
+          const obstacle = state.obstacles[drag.obstacleIndex];
+          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+          if (speed_deg_s <= 1e-9) {
+            obstacle.motionVelocity_deg_s = drag.originalVelocity_deg_s.slice();
+            obstacle.motionProfile = drag.originalProfile;
+            setStatus("The motion vector must have nonzero speed.", "warning");
+          } else {
+            if (obstacle.motionProfile === "stationary") {
+              obstacle.motionProfile = "nonzeroVelocity";
+            }
+            setStatus(
+              `${obstacle.name} speed set to ${speed_deg_s.toFixed(3)} deg/s.`,
+              "success"
+            );
+          }
+          if (drag.startedBySetMotion) {
+            activateMode("select");
+          }
         }
         renderObstacleEditor();
         updateActionAvailability();
@@ -4117,6 +4291,31 @@
         } else if (state.mode === "freehand") {
           state.activeDrag = { type: "freehand", pointerId: event.pointerId };
           state.freehandDraft = [point.slice()];
+          canvas.setPointerCapture(event.pointerId);
+        } else if (state.mode === "motion") {
+          const obstacleIndex = state.selectedObstacleIndex;
+          const obstacle = state.obstacles[obstacleIndex];
+          if (!obstacle) {
+            activateMode("select");
+            setStatus("Select a polygon before setting its motion.", "warning");
+            return;
+          }
+          const center = centroid(obstacle.vertices_deg);
+          state.activeDrag = {
+            type: "motion",
+            obstacleIndex,
+            pointerId: event.pointerId,
+            startPoint: center,
+            originalVelocity_deg_s: obstacle.motionVelocity_deg_s.slice(),
+            originalProfile: obstacle.motionProfile,
+            origin_deg: center,
+            startedBySetMotion: true,
+            wasClamped: false
+          };
+          if (obstacle.motionProfile === "stationary") {
+            obstacle.motionProfile = "nonzeroVelocity";
+          }
+          updateActiveDrag(point);
           canvas.setPointerCapture(event.pointerId);
         }
       }
@@ -4238,6 +4437,8 @@
         deleteSelectedObstacle);
       element("deleteEditorButton").addEventListener("click",
         deleteSelectedObstacle);
+      element("setMotionButton").addEventListener("click",
+        activateMotionDrawing);
       element("zeroMotionButton").addEventListener("click", () => {
         element("motionAzimuth").value = 0;
         element("motionElevation").value = 0;
@@ -4261,6 +4462,12 @@
       element("cancelPlanButton").addEventListener("click", cancelLivePlan);
       element("downloadBundleButton").addEventListener(
         "click", downloadLiveBundle);
+      element("bundleFileInput").addEventListener("change", (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (file) {
+          runBundleFile(file);
+        }
+      });
       element("downloadRequestButton").addEventListener("click", downloadRequest);
       element("resultFileInput").addEventListener("change", (event) => {
         const file = event.target.files && event.target.files[0];

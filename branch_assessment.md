@@ -1,5 +1,43 @@
 # Novel replacement branch assessment
 
+## HTML bundle replay and velocity-authored obstacle motion - 2026-08-31
+
+The HTML sandbox can now load an
+`obstacleAvoidanceSandboxDiagnosis-v2` MAT file in live mode and run its
+canonical request through the current planner. Replay reconstructs the initial
+state, goal, limits, resolved options, original obstacle keyframes, and safety
+margins; it does not reuse the result stored in the bundle. The reproduced
+result becomes the current downloadable diagnosis bundle, so replay remains a
+complete inspect-run-save workflow rather than a display-only import.
+
+Moving-obstacle authoring now follows an explicit Set Motion interaction. The
+selected polygon's arrow is a velocity vector in deg/s: its component values
+and Euclidean magnitude are displayed, and its length in planning coordinates
+equals that magnitude. Constant, zero-start, trapezoidal, and out-and-back
+velocity laws are integrated into the 21 position keyframes supplied to the
+planner. In particular, zero-start treats the arrow as final velocity, while
+trapezoidal and out-and-back treat it as peak velocity. This replaces the old
+and easily misread total-displacement arrow.
+
+The measured strength is end-to-end reproduction without a second planner
+interface. A raw MAT upload through `/run-bundle` returned a fresh
+`goalReached` result in 1.498398 server seconds; its independent validation
+passed. A moving-obstacle unit replay preserved both keyframe times and the
+final original polygon slice. The complete test tree passed 111/111 in
+123.685910 seconds, and Code Analyzer reported no findings in the changed
+MATLAB files.
+
+The largest current limitation is that MAT replay requires the loopback MATLAB
+server and is capped at 128 MiB. The in-app browser policy blocked opening the
+local `file://` page, so no browser-driven visual claim is made; production
+JavaScript syntax, the extracted velocity-profile integration, HTML wiring,
+MATLAB replay, and the live HTTP endpoint were verified independently. Two
+fresh attempts to rerun the maintained example matrix were blocked before the
+first example by MATLAB's already-recorded host startup error, `System Error:
+File system inconsistency`. Planner sources were not changed by this UI and
+transport work; the immediately preceding 17-example matrix remains the exact
+planner baseline.
+
 ## Balanced travel-time planning and bounded waypoint fallback - 2026-08-31
 
 The planner now separates hard feasibility from preference. `GoalTimeMode`

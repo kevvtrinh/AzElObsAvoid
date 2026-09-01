@@ -38,6 +38,21 @@ reproduction commands. MATLAB-only cancellation callbacks are removed. The
 button is enabled only while the matching live result remains current; editing
 the request or loading an unrelated result disables it.
 
+Select **Load & run diagnosis bundle** to upload a v2 diagnosis MAT file to
+the loopback server. MATLAB reconstructs its canonical initial state, goal,
+limits, original obstacle histories, safety margins, and resolved planner
+options, then runs the current planner. The displayed result is therefore a
+fresh reproduction, not the result stored in the bundle. Replayed bundles may
+be saved again, and cooperative cancellation remains available while they run.
+
+For moving polygons, select the polygon and press **Set motion**, then drag
+from its centroid. The arrow components and length are velocity in deg/s, and
+the speed magnitude is printed at the arrow head and in the obstacle editor.
+Constant-velocity motion uses that vector directly; zero-start uses it as
+final velocity; trapezoidal and out-and-back motion use it as peak velocity.
+The browser integrates the selected velocity profile into the 21 position
+keyframes sent to MATLAB.
+
 Select **Cancel** to request cooperative cancellation. The server accepts that
 request out of band and supplies a trusted MATLAB-only `CancellationCheckFcn`
 to the existing adapter. The public planner stops at its next safe checkpoint;
@@ -124,9 +139,12 @@ The MATLAB server implements a small HTTP/1.1 subset directly over
 - `POST /bundle` returns the server-cached MAT diagnosis bundle only when the
   supplied request identifier matches the latest completed live plan. The
   cache is deleted when the server stops.
+- `POST /run-bundle` accepts a diagnosis MAT file, reconstructs its canonical
+  request, runs the current planner, and returns `offlineSandboxResult/v1`.
 
-Every connection has bounded headers, a 16 MiB body limit, a read timeout, an
-exact UTF-8 `Content-Length`, `Connection: close`, and cleanup on normal or
+Every connection has bounded headers, a 16 MiB body limit (128 MiB only for
+the MAT replay route), a read timeout, an exact `Content-Length`,
+`Connection: close`, and cleanup on normal or
 exceptional exit. Unsupported paths, methods, framing, and malformed requests
 receive bounded JSON errors rather than terminating the accept loop.
 
@@ -261,9 +279,9 @@ in the file handoff and become a bounded HTTP 400 error in live mode.
   launch MATLAB, or reload the result automatically. The displayed command
   assumes the usual Windows `Downloads` folder; edit the two paths if the
   browser uses another folder.
-- MAT bundle download requires live mode because only MATLAB retains the full,
-  unprojected planner result. Offline request/result JSON remains intentionally
-  bounded for file handoff and cannot reconstruct omitted solver diagnostics.
+- MAT bundle download and replay require live mode because MATLAB owns the
+  unprojected result and MAT decoding. Offline request/result JSON remains
+  intentionally bounded and cannot reconstruct omitted solver diagnostics.
 - The page does not plan, inflate geometry, check collisions, or certify
   dynamics. Those responsibilities remain in the unchanged MATLAB code.
   Protected geometry becomes visible only after a result is loaded.
