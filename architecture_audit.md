@@ -269,3 +269,18 @@ and tradeoff objectives, selected control nets, and certification remain in
 execution order. Explicit balanced and fixed refinement-active cases match
 their saved physical baselines exactly after removing only the declared schema
 and nondeterministic timing fields.
+
+## BMTP facade ownership audit - 2026-09-01
+
+`trajectory/planTrajBmtp.m` had no production caller after restart state moved
+out of the engine. Its seven-input path only forwarded to `bmtpEngine.solve`;
+its eighth input and third output existed solely to warn and return an empty
+restart record. Tests and current appendix text were its only remaining
+consumers.
+
+The facade is deleted rather than replaced. `obstacleAvoidance.planTrajectory`
+remains the public request-level entry point, and maintained adapters continue
+to call the package engine directly. Architecture tests require
+`planTrajBmtp.m` to remain absent and `+bmtpEngine/solve.m` to remain present.
+This removes a competing public surface without changing the engine contract
+used by production planning.

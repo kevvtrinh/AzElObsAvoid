@@ -55,12 +55,11 @@ expectedSources = sort(["planTrajectory.m", ...
 verifyEqual(testCase, publicSources, expectedSources);
 end
 
-function testTrajectoryRootContainsSeparatedEngines(testCase)
-% Keep BMTP and Ruckig as explicit independent trajectory-engine packages.
+function testTrajectoryRootContainsEnginePackagesAndRuckigFacade(testCase)
+% Keep both engines packaged while the remaining Ruckig facade is explicit.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
 actualRootSources = string({dir(fullfile(trajectoryRoot, "*.m")).name});
-verifyEqual(testCase, sort(actualRootSources), ...
-    ["planTrajBmtp.m", "planTrajRuckig.m"]);
+verifyEqual(testCase, sort(actualRootSources), "planTrajRuckig.m");
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
 actualNames = sort(string({packageRecords([packageRecords.isdir]).name}));
 verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
@@ -166,6 +165,6 @@ trajectoryRoot = testCase.TestData.TrajectoryRoot;
 verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+hs3Engine")));
 verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajHs3.m")));
 verifyTrue(testCase, isfolder(fullfile(trajectoryRoot, "+ruckigEngine")));
-verifyTrue(testCase, isfile(fullfile(trajectoryRoot, "planTrajBmtp.m")));
+verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajBmtp.m")));
 verifyTrue(testCase, isfile(fullfile(trajectoryRoot, "planTrajRuckig.m")));
 end

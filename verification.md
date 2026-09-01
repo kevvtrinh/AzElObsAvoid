@@ -6059,3 +6059,69 @@ with jerk enabled:
 The milestone deletes 50 and adds four core MATLAB lines, net minus 46, and
 removes fifteen fields from every BMTP diagnostics record. The twelve-milestone
 branch is 319 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Deprecated BMTP facade removal - 2026-09-01
+
+At tracked-clean baseline `9db9a23`, `trajectory/planTrajBmtp.m` had no
+production caller. Its only references were migration/architecture tests,
+current appendix text, and historical records. A direct fixed-arrival fixture
+proved its candidate and diagnostics were recursively identical to
+`bmtpEngine.solve` after excluding elapsed fields: 10 seconds,
+4.00000000197 degrees, success, and accepted solver evidence.
+
+The candidate deletes the complete 58-line facade, 100 lines of restart-only
+tests/helpers, and its two current appendix references. The package engine and
+maintained public planner remain. This is an intentional breaking change for
+external direct callers of `planTrajBmtp`; no replacement facade was added.
+
+Fresh-process comparisons at `1e-9`, excluding only fields containing
+`Elapsed` and `FirstValidatedMotionTime_s`, all passed with maximum numeric
+difference zero:
+
+- direct package-engine candidate and diagnostics;
+- `exampleObstacleFree`, baseline/candidate walls 0.7556770 and 0.7671999
+  seconds;
+- `exampleTargetExitsObstacle`, baseline/candidate walls 15.7366482 and
+  15.7810529 seconds.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in the revised architecture and engine tests;
+- focused architecture plus BMTP engine tests: 18/18 in 5.5806524 seconds wall
+  and 2.0638914 aggregate test seconds;
+- complete test tree: 110/110 in 86.8524662 seconds wall and 80.3306783
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text;
+- tracked MATLAB has no live facade call; its sole name reference is the
+  architecture assertion that the file is absent;
+- `pdflatex` remains unavailable, so the current appendix source could not be
+  compiled on this host.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2863726 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.2754486 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8746644 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8275977 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8774148 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9046406 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7484003 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5350788 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5406131 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6391760 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7585376 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8351888 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5845367 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.2076020 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.7165294 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1540480 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.4661782 | `goalReached` |
+
+The milestone removes the full 58-line production facade and one competing
+public function. The thirteen-milestone branch is 377 non-test MATLAB lines
+smaller than `5c0a6c9`.

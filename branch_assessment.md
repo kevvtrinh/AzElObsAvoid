@@ -1,5 +1,29 @@
 # Novel replacement branch assessment
 
+## Deprecated BMTP facade removal - 2026-09-01
+
+The thirteenth `bmtp-cleanup-codex` milestone deletes the 58-line
+`planTrajBmtp` compatibility facade. Maintained planners already called
+`bmtpEngine.solve` directly; only restart-migration tests and current appendix
+text referenced the facade. The maintained public planner remains
+`obstacleAvoidance.planTrajectory`, and the package engine remains directly
+tested.
+
+Before deletion, the facade and package engine returned recursively identical
+fixed-arrival candidates and diagnostics. After deletion, the direct package
+engine plus complete Obstacle Free and Target Exits results matched saved
+baselines with maximum numeric difference zero after excluding only runtime.
+Code Analyzer found no issues, focused tests passed 18/18, and the complete
+suite passed 110/110 in 86.8524662 seconds wall time. The three removed tests
+covered only the deleted restart and invalid-arity surface.
+
+All 17 maintained examples retained established metrics: sixteen independently
+validated successes and the expected validated `noValidatedSeed`. Both
+visualization gates passed. This deliberately breaking direct-caller cleanup
+removes one competing public function and 58 production MATLAB lines. The
+thirteen-milestone branch is now 377 non-test MATLAB lines smaller than
+`5c0a6c9`.
+
 ## Travel-refinement trace retirement - 2026-09-01
 
 The twelfth `bmtp-cleanup-codex` milestone removes fifteen private
