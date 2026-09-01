@@ -23,6 +23,8 @@ function [obstacleData, history] = createMovingObstacle( ...
 %       Paired nonfinite rows may separate rings.
 %   - sliceTransform (function handle)
 %       position_deg = sliceTransform(sourcePosition_deg,time_s,index).
+%       Output slices use the obstacle history contract: direct motion is
+%       linear between verified corresponding vertices, not rigid arc motion.
 %   - safetyMargin_deg (nonnegative scalar)
 %   - options (scalar struct, optional; default struct())
 %       Verbose prints bounded progress updates (default false).
@@ -34,6 +36,7 @@ function [obstacleData, history] = createMovingObstacle( ...
 %**************************************************************************
 % UNITS
 %   - Position is degrees, time is seconds, and area is square degrees.
+%   - See obstacle_history_contract.md for ring and fallback semantics.
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults

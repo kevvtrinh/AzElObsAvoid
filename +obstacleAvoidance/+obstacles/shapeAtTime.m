@@ -8,7 +8,8 @@ function [shape, geometry] = shapeAtTime(obstacle, queryTime_s, geometryOnly)
 %**************************************************************************
 % PURPOSE
 %   - Return protected obstacle geometry active at one physical time.
-%   - Interpolate matched vertices and union topology-changing endpoints.
+%   - Interpolate verified corresponding vertices and otherwise return a
+%     conservative swept enclosure for the complete source interval.
 %**************************************************************************
 % INPUTS
 %   - obstacle (scalar canonical or prepared struct)
@@ -19,9 +20,11 @@ function [shape, geometry] = shapeAtTime(obstacle, queryTime_s, geometryOnly)
 %   - shape (scalar polyshape or [])
 %   - geometry (scalar struct)
 %       Boundary, speed bound, topology, and source-slice metadata.
+%       status is metadata and never deactivates supplied geometry.
 %**************************************************************************
 % UNITS
 %   - Geometry is degrees; time is seconds; speed is degrees per second.
+%   - See obstacle_history_contract.md for the complete history model.
 %**************************************************************************
 
 %% Section 1: Validate And Select The Source Interval

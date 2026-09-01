@@ -118,6 +118,12 @@ histories and `obstacleAvoidance.obstacles.createMovingObstacle` for moving shap
 Safety margins are applied by the package constructors exactly once, and
 original and protected geometry remain separate.
 
+[`obstacle_history_contract.md`](obstacle_history_contract.md) defines sample
+activity, ring and hole semantics, linear corresponding-vertex interpolation,
+the conservative swept fallback, status metadata, and request-horizon
+projection. In particular, sampled rotation is not interpreted as rigid arc
+motion, and an unverified topology change is enclosed rather than interpolated.
+
 `obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
 Obstacle coordinates use degrees and history times use seconds.
 
