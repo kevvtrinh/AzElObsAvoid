@@ -6310,3 +6310,74 @@ uniform-final-certificate milestone, a 3.772 percent aggregate increase. The
 milestone is retained for one moving-obstacle spatial projection, 62 fewer
 production lines, and exact maintained physical results. No runtime
 improvement is claimed.
+
+## Completion audit and timed-layer-budget repair - 2026-09-01
+
+The tracked baseline was pushed commit `df6a85c`. A final replay of the five
+supplied Rogue bundles found one unfavorable result change: balanced
+`non-ideal` still succeeded and independently validated, but sampled motion was
+228.680505208 degrees instead of the recorded 228.491135293 degrees. Detached
+replays at `ebd12827`, `8ac19c5`, `8e5a3b1`, `7ed0cf6`, and `5a8eee0`
+localized the first changed result to `5a8eee0`. The removed fixture option was
+`CollocationSegmentCount = 8`; internalizing the former default had changed
+the timed-cell cap from 16 to 20.
+
+The option remains removed. `solveTimedBmtpTrajectory` now caps the clock
+recovered from `seed.tau` at `MaximumTimeLayerCount - 1`, matching the maximum
+number of intervals the search-layer budget can author. A focused test checks
+that the selected timed BMTP coverage respects this invariant. The focused
+file passed 3/3, and the repaired balanced `non-ideal` replay restored
+228.491135293 degrees exactly at the same 144-second arrival.
+
+Verification commands used fresh `matlab -batch` processes. The complete test
+tree passed 111/111 with zero failures or incomplete tests in 83.6258138
+seconds wall. The only warning was the maintained obstacle-normalization
+fixture warning. Visible `exampleObstacleFree` succeeded, independently
+validated, and created two visible figures. Hidden `exampleNoPath` returned
+the expected `noValidatedSeed`, passed example validation, attempted a seed,
+and created one diagnostic figure containing the reason. An initial diagnostic
+harness queried a nonexistent `IterationCount` after correct planning; the
+corrected fresh run used `AttemptedSeedCount` and passed.
+
+Every maintained example ran serially after the repair in its own fresh MATLAB
+process with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.4355073 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4581631 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0411611 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9786752 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0077032 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0700575 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.9392512 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.7286900 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.7156151 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9372917 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8625416 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9661376 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7370093 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.6673457 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.6606053 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.7302067 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 85.4569561 | `goalReached` |
+
+Aggregate maintained-example wall time was 205.3929177 seconds versus
+211.8586926 seconds at `df6a85c`, a 3.052 percent decrease in cold serial
+runs. This is reported as observation only; no speedup is claimed.
+
+Final fresh supplied-bundle replays:
+
+| Bundle and policy | Success / validation | Selected source / solver | Polyline (deg) | Motion (deg) | Duration (s) | Wall (s) |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `sinetraj`, saved earliest | 1 / 1 | fixed-clock lateral excursion | 146.928879089 | 146.928879089 | 70.3442509975 | 10.8391817 |
+| `newheart`, saved balanced | 1 / 1 | fixed-clock lateral excursion | 199.268051966 | 199.268051966 | 100.970425693 | 69.9664476 |
+| `shrimp`, documented balanced | 1 / 1 | fixed-clock lateral excursion | 175.703912280 | 175.703912280 | 81.4551422825 | 44.8156242 |
+| `non-ideal`, documented balanced | 1 / 1 | timed visibility / `bmtpTimedCell` | 227.905577664 | 228.491135293 | 144 | 24.1637265 |
+| `hiddenruckigfallback`, saved earliest | 1 / 1 | visibility / `bmtpStaticDegree16` | 248.239063282 | 233.911502487 | 104.261456926 | 22.3702489 |
+
+The branch remains 513 non-test MATLAB lines smaller than `5c0a6c9`. The
+repair changes ownership rather than restoring an option or adding a special
+case; all retained specialized-looking paths have distinct measured fixtures
+or public contracts, so no further deletion candidate passed the bounded
+retention threshold in this audit.

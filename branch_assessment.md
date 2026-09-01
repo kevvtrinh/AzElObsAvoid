@@ -1,5 +1,40 @@
 # Novel replacement branch assessment
 
+## Timed BMTP follows the search-layer budget - 2026-09-01
+
+The completion audit caught one result regression that the maintained suite did
+not expose: removing `CollocationSegmentCount` had changed timed BMTP from the
+saved Rogue fixtures' 16 segments to an unrelated internal cap of 20. The
+`non-ideal` fixture still validated, but sampled travel grew from
+228.491135293 to 228.680505208 degrees. A detached milestone bisect localized
+the change to `5a8eee0`.
+
+The public collocation option remains removed. Timed BMTP now enforces the
+input-driven invariant that its time-cell count cannot exceed the search-layer
+budget that authored the seed. With 17 search layers, the planner uses at most
+16 timed segments. This restores the saved `non-ideal` result exactly and adds
+a focused contract test without exposing conic dimension as a user choice.
+
+The full test tree passed 111/111. All 17 maintained examples retained their
+established physical metrics: sixteen independently validated successes and
+the expected validated `noValidatedSeed` result. Their serial wall time was
+205.3929177 seconds versus 211.8586926 seconds at `df6a85c`; cold-run timing
+noise prevents a speed claim. Visible-success and hidden-failure diagnostic
+gates passed.
+
+All five supplied Rogue sentinels also succeeded and independently validated.
+`sinetraj`, `newheart`, balanced `shrimp`, balanced `non-ideal`, and
+`hiddenruckigfallback` retained sampled travel of 146.928879089,
+199.268051966, 175.703912280, 228.491135293, and 233.911502487 degrees,
+respectively. The largest current strength is therefore a 513-line-smaller
+non-test MATLAB core with preserved measured outcomes across maintained and
+external regression families. The largest remaining weakness is structural:
+the retained general BMTP engine and corridor orchestrator are still large,
+solver-dependent functions, while the audited timed-opening, direct-wait,
+orthogonal-cavity, fixed-clock, travel-refinement, Ruckig, and timed-cell paths
+are all load-bearing on distinct inputs. Further deletion needs a new bounded
+hypothesis rather than another broad pruning pass.
+
 ## One moving-obstacle spatial projection - 2026-09-01
 
 The sixteenth accepted `bmtp-cleanup-codex` milestone removes the opportunistic

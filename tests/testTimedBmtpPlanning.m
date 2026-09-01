@@ -62,6 +62,16 @@ verifyEqual(testCase, diagnostics.TimedBmtp.Outcome, ...
     "acceptedAfterFullValidation");
 end
 
+function testTimedCellsRespectSearchLayerBudget(testCase)
+% Keep the continuous optimizer no finer than the search clock it receives.
+result = testCase.TestData.Result;
+acceptedIndex = find([result.SeedSummaries.ValidationPassed], 1, "first");
+diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
+maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
+verifyLessThanOrEqual(testCase, ...
+    diagnostics.Coverage.TimedSegmentCount, maximumTimedSegmentCount);
+end
+
 function [obstacles, initialState, goalState, limits, options] = createScenario()
 % Create input-driven static-concave and translating-convex geometry.
 missionEndTime_s = 40;

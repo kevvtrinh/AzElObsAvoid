@@ -336,3 +336,20 @@ a valid motion, a time-expanded visibility seed still reaches
 cells. Direct-wait handling and its continuous wait refinement remain separate
 because they represent explicit temporal motion rather than another spatial
 projection.
+
+## Timed-cell segmentation ownership audit - 2026-09-01
+
+The removed `CollocationSegmentCount` option had controlled both BMTP warm
+route size and moving-obstacle time-cell count. Internalizing its default as a
+20-segment cap removed the public solver knob but disconnected timed BMTP from
+the discretized search that supplied its seed. A supplied moving-obstacle
+Rogue fixture exposed the resulting, independently valid but longer motion.
+
+Timed-cell count is now owned by
+`+obstacleAvoidance/+planner/solveTimedBmtpTrajectory.m`. It recovers the
+uniform clock represented by `seed.tau`, then caps that clock at one fewer than
+`MaximumTimeLayerCount`: a layer budget of N can author at most N-1 intervals.
+The same count creates obstacle time cells and is passed in coverage to the
+BMTP engine, so spatial containment cells, optimizer spans, and the search
+clock cannot silently diverge. The static BMTP warm-route cap remains an
+internal engine concern. No collocation or segmentation option is restored.
