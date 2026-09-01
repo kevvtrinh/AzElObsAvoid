@@ -18,7 +18,7 @@ function [seeds, diagnostics] = createRouteCandidates( ...
 %   - limits (scalar struct)
 %       Workspace and independent-axis physical limits.
 %   - options (resolved scalar struct)
-%       Seed count, clustering, wrapping, and goal-time policy.
+%       Seed count, wrapping, and goal-time policy.
 %**************************************************************************
 % OUTPUTS
 %   - seeds (struct array)
@@ -50,7 +50,7 @@ seeds.position_deg = directRoute_deg;
 seeds.tau = [0; 1];
 seeds.EstimatedDuration_s = directDuration_s;
 seeds.Length_deg = directLength_deg;
-diagnostics = emptyDiagnostics(start_deg, goal_deg, options.SeedClusterDistance_deg);
+diagnostics = emptyDiagnostics(start_deg, goal_deg);
 if options.MaximumSeedCount == 1 || isempty(obstacles)
     return;
 end
@@ -66,9 +66,7 @@ if usedDenseEnvelope
 else
     [sweptShape, sampledShapeCount] = sampledShape( obstacles, sampleTimes_s);
 end
-[sweptShape, diagnostics.SeedCluster] = obstacleAvoidance.search.clusterSeedShape( ...
-    sweptShape, options.SeedClusterDistance_deg, [start_deg; goal_deg], ...
-    "createRouteCandidates:InvalidClusterShape");
+diagnostics.SeedCluster.SourceRegionCount = numel(regions(sweptShape));
 [nodePosition_deg, edgeCost_deg, graphRecord] = ...
     createVisibilityGraph(sweptShape, start_deg, goal_deg, limits, 1, 0);
 obstacleAvoidance.input.throwIfCancellationRequested(options);
@@ -91,7 +89,7 @@ for fieldIndex = 1:numel(graphFields)
 end
 representatives_deg = createRepresentatives(sweptShape);
 diagnostics.HomologyRepresentative_deg = representatives_deg;
-usesReducedGeometry = usedDenseEnvelope || diagnostics.SeedCluster.ClusterGroupCount > 0;
+usesReducedGeometry = usedDenseEnvelope;
 diagnostics.Coverage.ExactSpatialProposalUsed = ~usesReducedGeometry;
 diagnostics.Coverage.ReducedSpatialProposalUsed = usesReducedGeometry;
 diagnostics.Coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
@@ -457,14 +455,14 @@ if ~isempty(record.BestPartialRoute_deg)
 end
 end
 
-function diagnostics = emptyDiagnostics(start_deg, goal_deg, clusterDistance_deg)
+function diagnostics = emptyDiagnostics(start_deg, goal_deg)
 % Initialize every stable field before direct-only and no-path exits.
 coverage = struct("ExactSpatialProposalUsed", false, ...
     "ReducedSpatialProposalUsed", false, "TimedSearchAttempted", false, ...
     "ExtendedTimedSearchAttempted", false, "TimedSearchUsesExactObstacles", false, ...
     "TimedSearchSuppressionReason", "graphNotBuilt", ...
     "CompletenessLost", true, "CompletenessLossReason", "graphNotBuilt");
-cluster = struct("Distance_deg", clusterDistance_deg, ...
+cluster = struct("Distance_deg", 0, ...
     "SourceRegionCount", 0, "ClusterGroupCount", 0, ...
     "ClusteredRegionCount", 0, "ClusterBoundary_deg", zeros(0, 2));
 diagnostics = struct("GraphType", "timeExpandedVisibilityGraph", ...

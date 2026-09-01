@@ -146,6 +146,20 @@ verifyWarning(testCase, @() ...
     "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
 end
 
+function testExampleResolverForwardsDeprecatedSeedCluster(testCase)
+% Forward the retired clustering option to the planner migration owner.
+legacyOptions = struct( ...
+    "SeedClusterDistance_deg", 2, "PlotOutputs", false);
+lastwarn("", "");
+[forwardedOptions, ~] = resolveExampleOptions(legacyOptions, struct());
+[~, warningIdentifier] = lastwarn;
+verifyEmpty(testCase, warningIdentifier);
+verifyEqual(testCase, forwardedOptions.SeedClusterDistance_deg, 2);
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(forwardedOptions), ...
+    "planTrajectory:DeprecatedSeedClusterDistance");
+end
+
 function testUniformMaximumJerkRouting(testCase)
 % Verify that every example routes the shared jerk control into limits.
 exampleNames = [ ...
@@ -198,6 +212,15 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyEqual(testCase, result.ArrivalTime_s, 7.574542, "AbsTol", 1e-6);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
 verifyEqual(testCase, summary.MotionLength_deg, 11.411861, "AbsTol", 1e-6);
+verifyEqual(testCase, result.SearchDiagnostics.Grid.SeedCluster.Distance_deg, 0);
+verifyGreaterThan(testCase, ...
+    result.SearchDiagnostics.Grid.SeedCluster.SourceRegionCount, 0);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.Grid.SeedCluster.ClusterGroupCount, 0);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.Grid.SeedCluster.ClusteredRegionCount, 0);
+verifyEmpty(testCase, ...
+    result.SearchDiagnostics.Grid.SeedCluster.ClusterBoundary_deg);
 end
 
 function testObstacleFreeRunsHeadlessly(testCase)

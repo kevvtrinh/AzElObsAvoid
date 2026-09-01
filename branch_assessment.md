@@ -1,5 +1,61 @@
 # Novel replacement branch assessment
 
+## Dormant seed-clustering removal - 2026-09-01
+
+The fourth `bmtp-cleanup-codex` milestone removes optional conservative hull
+clustering from topology-seed generation. `SeedClusterDistance_deg` previously
+defaulted to zero and no current maintained example, test, benchmark, or
+sandbox enabled it. The 85-line `clusterSeedShape.m` helper is deleted and
+route candidates always use the unclustered protected swept geometry. A
+one-release option shim warns that a supplied legacy distance is deprecated
+and ignored. The existing `SearchDiagnostics.Grid.SeedCluster` record remains
+with its exact default values and source-region count so default diagnostic
+schema and plotting consumers do not change.
+
+The measurable maintainability benefit is a net reduction of 83 production
+MATLAB lines: 100 removed and 17 added after the compatibility and diagnostic
+cost. The branch has now removed 163 production lines across four committed
+milestones while preserving route generation, continuous BMTP, separating-
+plane reuse, static and time-varying obstacle handling, time policies, motion
+constraints, validation, certificates, failure diagnostics, and the public
+result/restart contracts.
+
+The strongest correctness evidence is recursive comparison of every current
+maintained example against frozen commit `11582e3`. All 17 results match at
+`1e-9` outside the intentionally removed option and runtime fields. This
+includes seed ordering, visibility graph counts, coverage flags, the retained
+zero-valued cluster diagnostic, route and trajectory histories, validation,
+certificates, and termination. Sixteen examples succeeded and independently
+validated; the expected no-path example retained its validated
+`noValidatedSeed` failure. The extreme outline retained 5.81065318159 seconds
+arrival and 23.3457566443 degrees of motion, with 67.5731971 seconds wall time
+versus 67.4136091 seconds at baseline.
+
+A structurally different three-region fixture proved the removed behavior was
+actually exercised. At distance zero the frozen baseline used 26 nodes and 46
+visibility edges. At one degree it formed one conservative group and reduced
+the graph to 10 nodes and 16 edges, while both returned the same validated
+8.08716891419-degree motion at 6.5 seconds. The candidate legacy replay warned
+once, used the unclustered 26-node/46-edge graph, and matched the zero-distance
+baseline recursively. Its 4.3206596-second wall time was close to the
+4.2952183-second clustered run; this small fixture does not establish a global
+runtime ratio for fragmented fields.
+
+Broad verification passed 117/117 tests. A hidden no-path run retained the
+termination reason and search counts in its figure title, and a visible
+obstacle-free run created two visible figures. MATLAB Code Analyzer reported
+zero findings in the three changed production files, documentation no longer
+claims the helper exists, benchmark rows record every executed example, and
+`git diff --check` passed.
+
+The largest remaining option-surface issue is not simple dead state.
+`CollocationSegmentCount` actively caps BMTP warm-route and timed segmentation,
+and `MaximumNlpIterations` actively sets the trajectory `coneprog` iteration
+limit despite its outdated name. They should be evaluated for internal
+ownership or clearer naming in independent bounded changes, not deleted as
+unused. The next option audit should trace every remaining default and rank
+truly unread fields ahead of active solver controls.
+
 ## Wall-clock seed cutoff removal - 2026-09-01
 
 The third `bmtp-cleanup-codex` milestone removes the planner's

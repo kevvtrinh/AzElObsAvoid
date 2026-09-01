@@ -26,6 +26,7 @@ verifyFalse(testCase, isfield(options, "WaypointWarmStartMode"));
 verifyFalse(testCase, isfield(options, "RequestedWaypointWarmStartMode"));
 verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
 verifyFalse(testCase, isfield(options, "PerSeedWorkBudgetMultiplier"));
+verifyFalse(testCase, isfield(options, "SeedClusterDistance_deg"));
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
@@ -78,6 +79,24 @@ verifyWarning(testCase, @() ...
 replayedOptions = callWithoutWorkBudgetWarning(oldResolvedOptions);
 verifyFalse(testCase, ...
     isfield(replayedOptions, "PerSeedWorkBudgetMultiplier"));
+end
+
+function testDeprecatedSeedClusterDistanceWarnsOnceAndIsRemoved(testCase)
+% Accept old clustering inputs without restoring conservative seed hulls.
+legacyOptions = struct("SeedClusterDistance_deg", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(legacyOptions), ...
+    "planTrajectory:DeprecatedSeedClusterDistance");
+resolvedOptions = callWithoutSeedClusterWarning(legacyOptions);
+verifyFalse(testCase, isfield(resolvedOptions, "SeedClusterDistance_deg"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.SeedClusterDistance_deg = 2;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedSeedClusterDistance");
+replayedOptions = callWithoutSeedClusterWarning(oldResolvedOptions);
+verifyFalse(testCase, isfield(replayedOptions, "SeedClusterDistance_deg"));
 end
 
 function testDeprecatedWaypointWarmStartOptionsWarnOnceAndAreRemoved(testCase)
@@ -167,6 +186,14 @@ function options = callWithoutWorkBudgetWarning(overrides)
 % Suppress the already-verified work-budget migration warning.
 warningState = warning( ...
     "off", "planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutSeedClusterWarning(overrides)
+% Suppress the already-verified seed-cluster migration warning.
+warningState = warning( ...
+    "off", "planTrajectory:DeprecatedSeedClusterDistance");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

@@ -58,7 +58,7 @@ Key audit conclusions:
 | `+obstacleAvoidance/+plotting/plotTrajectory.m` | Retain, consolidated | Reusable result-only success/failure visualization owner, including periodic and continuous-azimuth views. |
 | `+obstacleAvoidance/+search/boundedTimeLayers.m` | Retain | Input-derived route/search diagnostics owner. |
 | `+obstacleAvoidance/+search/certifySeedCorridor.m` | Retain | Input-derived route/search diagnostics owner. |
-| `+obstacleAvoidance/+search/clusterSeedShape.m` | Retain | Input-derived route/search diagnostics owner. |
+| `+obstacleAvoidance/+search/clusterSeedShape.m` | Removed | Default-zero clustering had no maintained caller and conservatively erased passages. |
 | `+obstacleAvoidance/+search/createRouteCandidates.m` | Retain | Input-derived route/search diagnostics owner. |
 | `+obstacleAvoidance/+search/createSeedCorridor.m` | Retain | Input-derived route/search diagnostics owner. |
 | `+obstacleAvoidance/+search/denseSweptEnvelope.m` | Retain | Input-derived route/search diagnostics owner. |

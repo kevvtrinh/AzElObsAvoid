@@ -1,5 +1,90 @@
 # Plan 325 verification
 
+## Dormant seed-clustering removal - 2026-09-01
+
+The authoritative baseline was commit
+`11582e39998de997c1e453c4e5f798d4a3d4961f`; its complete 17-example result
+artifacts were already recorded under `tmp/bmtp-seed-budget-full`. The
+candidate was branch `bmtp-cleanup-codex`. Every new MATLAB invocation used a
+fresh private `MATLAB_PREFDIR`, `TEMP`, and `TMP`, and maintained examples ran
+one process at a time.
+
+Read-only caller tracing found that `SeedClusterDistance_deg` defaulted to zero
+and no current maintained example, test, benchmark, or sandbox supplied it.
+Zero caused `clusterSeedShape` to return the protected swept geometry
+unchanged. Historical evidence had one maintained nonzero use, but its swept
+input contained one source region and therefore formed zero cluster groups.
+The accepted edit:
+
+- deletes the 85-line `+obstacleAvoidance/+search/clusterSeedShape.m` helper;
+- removes `SeedClusterDistance_deg` from defaults and validation;
+- warns once that a legacy value is deprecated and ignored, strips it before
+  unknown-option handling, and forwards it through the example boundary;
+- always constructs visibility and homology proposals from the unclustered
+  protected swept geometry;
+- retains `SearchDiagnostics.Grid.SeedCluster` for one release with distance
+  zero, the true source-region count, zero groups, zero clustered regions, and
+  an empty boundary;
+- removes the obsolete helper entry from current architecture and technical
+  documentation.
+
+Production MATLAB changes were 17 additions and 100 deletions, a net reduction
+of 83 lines, exceeding the declared 75-line gate. Together with prior
+milestones, the branch production reduction is 163 lines. `git diff --check`
+passed; stale helper references are absent outside historical records and the
+one-release option shim/tests. MATLAB Code Analyzer reported zero findings in
+`resolvePlannerOptions.m`, `createRouteCandidates.m`, and
+`resolveExampleOptions.m`.
+
+Focused verification passed 48/48 option, example, contract, architecture,
+static-projection, timed-BMTP, and unsupported-topology tests. Legacy partial
+and fully resolved options warn with
+`planTrajectory:DeprecatedSeedClusterDistance`, are not also unknown, do not
+echo in resolved options, and cannot restore clustering. The maintained
+obstacle-avoidance test additionally protects the retained diagnostic record.
+
+A new neutral three-region fixture established both sides of the behavior:
+
+| Call | Groups | Nodes | Edges | Polyline/motion (deg) | Arrival (s) | Wall (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Frozen distance 0 | 0 | 26 | 46 | 8.08716891419 | 6.5 | 4.2970193 |
+| Frozen distance 1 deg | 1 | 10 | 16 | 8.08716891419 | 6.5 | 4.2952183 |
+| Candidate legacy 1 deg | 0 | 26 | 46 | 8.08716891419 | 6.5 | 4.3206596 |
+
+The candidate legacy replay matched the frozen zero-distance planner result
+recursively at `1e-9`, including unclustered graph counts, route, trajectory,
+validation, termination, and zero-valued diagnostic fields. The nonzero
+baseline proves the removed code was capable of changing the graph rather than
+being unreachable. The candidate uses more graph nodes for legacy nonzero
+requests, as intended, but this fixture showed no material wall-time or result
+cost. No global fragmented-field runtime claim is made.
+
+All 17 maintained candidate examples then ran serially and headlessly with
+jerk enabled. Every result matched the corresponding frozen `11582e3` artifact
+recursively at `1e-9`, excluding only runtime and the removed option. Sixteen
+returned planner and independent validation success; `exampleNoPath` returned
+the expected independently validated `noValidatedSeed`. Every successful
+motion remained collision-free and kinematically valid, with applicable
+certificates passing. Exact per-example lengths, durations, wall times and
+certificate applicability are appended to `benchmark.csv`.
+
+The hidden failure-plot gate created one invisible figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free gate created two figures with
+`Visible="on"`. The complete test tree passed 117/117 with zero failed or
+incomplete, 79.0522037 seconds aggregate test duration, and 85.7283342 seconds
+wall time.
+
+Three fixture/setup errors produced no adverse planner finding and were
+corrected without weakening a gate. The first fixture attempted a nonexistent
+zero-input obstacle constructor; the second queried the cluster record from a
+planner fast-path diagnostic rather than directly from route generation; and
+the first candidate comparison lost the external comparator path when the
+runner restored MATLAB's default path. The corrected fixture explicitly
+constructs all obstacles, invokes the maintained route generator on the
+resolved request for graph evidence, and compares already-saved results in a
+fresh process. No required gate remains untested.
+
 ## Wall-clock seed cutoff removal - 2026-09-01
 
 The authoritative baseline was commit

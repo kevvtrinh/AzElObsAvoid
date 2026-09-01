@@ -131,7 +131,7 @@ plannerOptions.Verbose = true;
 plannerNames = string(fieldnames(plannerOptions));
 deprecatedPlannerNames = ["WaypointWarmStartMode", ...
     "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable", ...
-    "PerSeedWorkBudgetMultiplier"];
+    "PerSeedWorkBudgetMultiplier", "SeedClusterDistance_deg"];
 forwardedPlannerNames = [plannerNames; deprecatedPlannerNames.'];
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.
