@@ -1,5 +1,37 @@
 # Novel replacement branch assessment
 
+## One moving-obstacle spatial projection - 2026-09-01
+
+The sixteenth accepted `bmtp-cleanup-codex` milestone removes the opportunistic
+static-only BMTP solve from moving-obstacle planning. Eligible dynamic topology
+seeds now use one conservative swept protected-history projection before the
+existing true timed-cell BMTP solver. Full-scene public validation remains
+authoritative, and no option, fallback, solver, or scenario branch was added.
+
+A static concave U plus distant translating polygon moved from the removed
+static-only route to the swept projection with maximum numeric difference zero
+across success, validation, termination, selected seed and source, arrival,
+lengths, and sampled time, position, velocity, acceleration, and jerk. Its
+plane certificate and full-scene validation passed. A structurally different
+moving-circle plus static-concave case still fell through the conservative
+swept representation and selected true timed-cell BMTP, also with maximum
+physical difference zero and a valid certificate.
+
+Code Analyzer found no issue, focused orchestration tests passed 39/39, and the
+complete suite passed 110/110. All 17 maintained examples retained their
+established physical metrics: sixteen independently validated successes and
+the expected validated `noValidatedSeed` result. Both visualization gates
+passed. Serial maintained-example wall time grew 3.772 percent, from
+204.1579553 to 211.8586926 seconds. The focused swept winner grew from
+12.5067717 to 12.7454047 seconds in one cold run; no speedup is claimed.
+
+The milestone removes 62 net production MATLAB lines and reduces
+`+obstacleAvoidance/+planner/planCorridorQuintic.m` from 1,085 to 1,023
+physical lines. Across sixteen accepted milestones, the branch is 512 non-test
+MATLAB lines smaller than `5c0a6c9`. Swept geometry remains conservative and
+can reject a motion that true time-dependent geometry permits; timed-cell BMTP
+is retained for that general case.
+
 ## Uniform BMTP final certification - 2026-09-01
 
 The fifteenth accepted `bmtp-cleanup-codex` milestone removes the separate

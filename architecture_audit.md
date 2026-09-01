@@ -317,3 +317,22 @@ outer solve. The stable certificate schema retains `ReusedPairCount` for other
 producers, while ordinary BMTP certificates now report zero and place every
 applicable pair in `ConicPairCount`. No option, fallback, or replacement helper
 was introduced.
+
+## Moving-obstacle spatial-projection ownership audit - 2026-09-01
+
+Dynamic multi-waypoint seeds previously invoked the static BMTP kernel twice:
+first against only invariant obstacles and then, if full-scene validation
+rejected that result, against a conservative static projection of every
+protected obstacle history. The first attempt was safe but required obstacle
+partitioning, its own diagnostic schema, and attachment plumbing around a
+duplicate kernel invocation.
+
+The static-only attempt and `StaticProjection` record are removed. Eligible
+dynamic seeds now have one spatial approximation,
+`createStaticPlanningProjection`, whose provenance and full-scene validation
+remain in `SweptProjection`. If that conservative representation cannot return
+a valid motion, a time-expanded visibility seed still reaches
+`solveTimedBmtpTrajectory`, which models obstacle activity by overlapping time
+cells. Direct-wait handling and its continuous wait refinement remain separate
+because they represent explicit temporal motion rather than another spatial
+projection.

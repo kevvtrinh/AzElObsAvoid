@@ -6247,3 +6247,66 @@ immediately preceding general-final-plane record, a 2.227 percent aggregate
 increase. The milestone is retained for one final-certificate algorithm, 33
 fewer production lines, and exact maintained physical results. No runtime
 improvement is claimed.
+
+## One moving-obstacle spatial projection - 2026-09-01
+
+The baseline was clean commit `31577c4`. The candidate removes the
+static-obstacle-only BMTP attempt from dynamic multi-waypoint orchestration,
+leaving the conservative swept protected-history projection followed by true
+timed-cell BMTP. The production edit removes 66 and adds four lines in
+`+obstacleAvoidance/+planner/planCorridorQuintic.m`.
+
+Focused evidence:
+
+- The distant-translating-obstacle fixture moved from static-only BMTP to
+  `SweptProjection.Outcome = acceptedAfterFullValidation`. It retained seed 2,
+  the time-expanded source, 14.5963802711-second duration,
+  34.9232288125-degree polyline, 39.6810414459-degree sampled motion, and every
+  sampled state and derivative with maximum difference zero. Its certificate
+  passed. Cold wall moved from 12.5067717 to 12.7454047 seconds.
+- The moving-circle plus static-concave fixture still selected
+  `bmtpTimedCell` after swept projection failed. It retained seed 2,
+  35-second duration, 45.5741988392-degree polyline,
+  36.6949453597-degree sampled motion, and every sampled state and derivative
+  with maximum difference zero. Its certificate passed. Cold wall moved from
+  15.8076512 to 10.7781744 seconds; no speed claim is based on one run.
+- Code Analyzer reported zero findings and `git diff --check` passed.
+- Focused orchestration and policy tests: 39/39 passed in 59.3958223 seconds
+  wall and 54.3933985 aggregate test seconds.
+- Complete test tree: 110/110 passed in 83.6459910 seconds wall and
+  76.8673640 aggregate test seconds.
+- Visible `exampleObstacleFree`: success, validation, two visible figures, and
+  no warning.
+- Hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  diagnostic figure, and the reason present in figure text. An initial
+  post-plan harness assertion used a nonscalar string array; the corrected
+  scalar check passed in a fresh rerun.
+
+Every maintained example ran after the production change in its own fresh,
+serial MATLAB process with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3209333 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3217680 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8256271 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8477667 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8459686 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.1278543 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 7.2826389 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 28.8030877 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6978418 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 5.5620738 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7546874 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 2.3167401 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7462718 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 37.8071321 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 20.0299007 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2540140 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 87.3143863 | `goalReached` |
+
+The candidate total is 211.8586926 seconds versus 204.1579553 seconds for the
+uniform-final-certificate milestone, a 3.772 percent aggregate increase. The
+milestone is retained for one moving-obstacle spatial projection, 62 fewer
+production lines, and exact maintained physical results. No runtime
+improvement is claimed.
