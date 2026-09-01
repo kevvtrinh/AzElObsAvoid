@@ -1,5 +1,39 @@
 # Novel replacement branch assessment
 
+## Dead planner verbosity option removal - 2026-09-01
+
+The fifth `bmtp-cleanup-codex` milestone removes the public planner `Verbose`
+field. A complete read audit found that the field was resolved, validated,
+echoed, and forwarded but never read by planning, search, motion generation,
+validation, or plotting. The live obstacle-construction verbosity controls
+remain separate. The sandbox also retains its top-level verbosity checkbox,
+which now owns console capture outside the planner instead of injecting dead
+planner state. Direct legacy planner input warns once, is ignored, and is not
+returned.
+
+This is an interface reduction rather than a physical-line reduction. The
+one-release compatibility shim and its ownership plumbing cost eight net
+production MATLAB lines, so the branch total changes from 163 to 155 removed lines
+across five milestones. That unfavorable line-count delta is explicit; the
+benefit is one fewer false planner capability and clearer logging ownership.
+
+Default and legacy-`Verbose` obstacle-free runs matched exactly after removing
+only measured runtime fields. All 17 maintained examples then ran in separate
+fresh MATLAB processes: 16 successes independently passed collision and
+kinematic validation, and `exampleNoPath` retained the expected validated
+`noValidatedSeed`. The complete suite passed 118/118 in 81.436094 seconds wall
+time, Code Analyzer reported zero findings, the visible success created two
+figures without warnings, and the hidden failure created its diagnostic figure.
+
+The remaining option audit found no other unread default. In particular,
+`CollocationSegmentCount` caps static/timed BMTP route segmentation and
+`MaximumNlpIterations` sets the trajectory `coneprog` iteration cap despite
+its obsolete name. `EnablePlaneReuse` and
+`PlaneReuseImprovementTolerance_s` also change active BMTP behavior. Those
+four controls are candidates for internal ownership or a compatibility rename,
+but deleting them would change solver behavior and requires separate bounded
+evidence.
+
 ## Dormant seed-clustering removal - 2026-09-01
 
 The fourth `bmtp-cleanup-codex` milestone removes optional conservative hull

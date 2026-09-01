@@ -207,8 +207,7 @@ The browser writes this shape:
   },
   "options": {
     "GoalTimeMode": "earliestArrival",
-    "AllowAzimuthWrapping": false,
-    "Verbose": false
+    "AllowAzimuthWrapping": false
   }
 }
 ```

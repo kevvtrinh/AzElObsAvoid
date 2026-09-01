@@ -1209,7 +1209,6 @@ plannerOptions.MinimumTravelSavingsRate_deg_s = ...
 plannerOptions.UnsupportedTimedTopologyPolicy = ...
     controls.UnsupportedTimedTopologyPolicy;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
-plannerOptions.Verbose = controls.Verbose;
 callerCancellationCheckFcn = plannerOptions.CancellationCheckFcn;
 setappdata(figureHandle, "SandboxStopRequested", false);
 plannerOptions.CancellationCheckFcn = ...
@@ -1228,7 +1227,7 @@ refreshApplication(figureHandle);
 drawnow;
 [result, validation, logLines] = callPlanner( ...
     canonicalObstacles, initialState, goalState, limits, ...
-    plannerOptions, "Goal Mode");
+    plannerOptions, controls.Verbose, "Goal Mode");
 result.Options.CancellationCheckFcn = [];
 applicationState = guidata(figureHandle);
 modeState = applicationState.GoalMode;
@@ -1291,12 +1290,14 @@ guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
 end
 
-function [result, validation, logLines] = callPlanner( obstacles, initialState, goalState, limits, options, labelText)
+function [result, validation, logLines] = callPlanner( ...
+        obstacles, initialState, goalState, limits, options, ...
+        captureVerbose, labelText)
 % Capture optional verbose text for the sandbox log. Keep structured planner
 % diagnostics in the returned result.
 result = struct();
 plannerText = "";
-if options.Verbose
+if captureVerbose
     plannerText = string(evalc( 'result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
 else
     result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
@@ -1978,7 +1979,6 @@ function applicationState = prepareSandboxStateForExport( ...
 modeState = getModeState(applicationState, modeName);
 controls = readModeControls(applicationState, modeName);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.Verbose = controls.Verbose;
 plannerOptions.UnsupportedTimedTopologyPolicy = ...
     controls.UnsupportedTimedTopologyPolicy;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;

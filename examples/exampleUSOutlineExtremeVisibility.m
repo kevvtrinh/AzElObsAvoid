@@ -55,7 +55,8 @@ regionScenarios = cell(regionCount, 1);
 for regionIndex = 1:regionCount
     [obstacles{regionIndex}, obstacleHistories{regionIndex}, ...
         regionScenarios{regionIndex}] = createGeographicRegionObstacle( ...
-        regionNames(regionIndex), [0; missionEndTime_s], 0.15, struct("Verbose", options.Verbose));
+        regionNames(regionIndex), [0; missionEndTime_s], 0.15, ...
+        struct("Verbose", jerkConfiguration.Verbose));
 end
 
 %% Section 3: Create Planner Inputs

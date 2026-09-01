@@ -147,7 +147,6 @@ options.GoalTimeMode = "fixedArrival";
 options.MaximumSeedCount = 1;
 options.CollocationSegmentCount = 3;
 options.SampleTime_s = 0.05;
-options.Verbose = false;
 end
 
 function value = state(time_s, position_deg)

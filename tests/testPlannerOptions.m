@@ -27,6 +27,7 @@ verifyFalse(testCase, isfield(options, "RequestedWaypointWarmStartMode"));
 verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
 verifyFalse(testCase, isfield(options, "PerSeedWorkBudgetMultiplier"));
 verifyFalse(testCase, isfield(options, "SeedClusterDistance_deg"));
+verifyFalse(testCase, isfield(options, "Verbose"));
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
@@ -45,8 +46,7 @@ overrides = struct( ...
     "MaximumSeedCount", 3, ...
     "MaximumWaitRefinementIterations", 8, ...
     "EnablePlaneReuse", 1, ...
-    "ArrivalTimeTolerance_s", 2e-3, ...
-    "Verbose", 1);
+    "ArrivalTimeTolerance_s", 2e-3);
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 
 verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
@@ -58,7 +58,24 @@ verifyEqual(testCase, options.MaximumSeedCount, 3);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
 verifyTrue(testCase, options.EnablePlaneReuse);
 verifyEqual(testCase, options.PlaneReuseImprovementTolerance_s, 2e-3);
-verifyTrue(testCase, options.Verbose);
+end
+
+function testDeprecatedVerboseWarnsOnceAndIsRemoved(testCase)
+% Accept old logging inputs without restoring a planner-owned output stream.
+legacyOptions = struct("Verbose", "invalid");
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(legacyOptions), ...
+    "planTrajectory:DeprecatedVerbose");
+resolvedOptions = callWithoutVerboseWarning(legacyOptions);
+verifyFalse(testCase, isfield(resolvedOptions, "Verbose"));
+
+oldResolvedOptions = obstacleAvoidance.input.resolvePlannerOptions();
+oldResolvedOptions.Verbose = true;
+verifyWarning(testCase, @() ...
+    obstacleAvoidance.input.resolvePlannerOptions(oldResolvedOptions), ...
+    "planTrajectory:DeprecatedVerbose");
+replayedOptions = callWithoutVerboseWarning(oldResolvedOptions);
+verifyFalse(testCase, isfield(replayedOptions, "Verbose"));
 end
 
 function testDeprecatedPerSeedWorkBudgetWarnsOnceAndIsRemoved(testCase)
@@ -194,6 +211,13 @@ function options = callWithoutSeedClusterWarning(overrides)
 % Suppress the already-verified seed-cluster migration warning.
 warningState = warning( ...
     "off", "planTrajectory:DeprecatedSeedClusterDistance");
+warningCleanup = onCleanup(@() warning(warningState));
+options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function options = callWithoutVerboseWarning(overrides)
+% Suppress the already-verified dead-logging-option migration warning.
+warningState = warning("off", "planTrajectory:DeprecatedVerbose");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end

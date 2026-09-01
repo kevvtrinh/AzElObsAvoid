@@ -7,7 +7,7 @@ function [plannerOptions, displayOptions] = resolveExampleOptions( ...
 %       exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
 %**************************************************************************
 % PURPOSE
-%   - Resolve uniform example display controls and public planner overrides.
+%   - Resolve uniform example display/runtime controls and planner overrides.
 %   - Accept the maintained main-branch display names through one mapping.
 %**************************************************************************
 % INPUTS
@@ -19,7 +19,8 @@ function [plannerOptions, displayOptions] = resolveExampleOptions( ...
 %**************************************************************************
 % OUTPUTS
 %   - plannerOptions (resolved planner options for the scenario)
-%   - displayOptions (resolved plotTrajectory options plus PlotOutputs)
+%   - displayOptions (resolved example display/runtime controls)
+%       PlotOptions contains only controls accepted by plotTrajectory.
 %**************************************************************************
 % UNITS
 %   - Pause_s is seconds. Planner values retain their documented units.
@@ -52,6 +53,7 @@ displayDefaults = struct( ...
     "ShowAnimation", true, ...
     "ShowSearchEdges", true, ...
     "ShowVisibilityGraphs", true, ...
+    "Verbose", true, ...
     "FrameStride", 4, ...
     "Pause_s", 0.01, ...
     "SaveAnimationGif", false, ...
@@ -89,7 +91,7 @@ if isscalar(maxJerk_deg_s3)
 end
 logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", ...
-    "ShowSweptSurfaces", "SaveAnimationGif"];
+    "ShowSweptSurfaces", "SaveAnimationGif", "Verbose"];
 
 % Convert each display toggle to one true or false value.
 for name = logicalNames
@@ -127,7 +129,6 @@ end
 % A list of public field names prevents display-only values from reaching the
 % planner and producing an unknown-option warning.
 plannerOptions = obstacleAvoidance.planTrajectory();
-plannerOptions.Verbose = true;
 plannerNames = string(fieldnames(plannerOptions));
 deprecatedPlannerNames = ["WaypointWarmStartMode", ...
     "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable", ...
@@ -160,7 +161,7 @@ for name = intersect(overrideNames, forwardedPlannerNames, "stable").'
         plannerOptions.(name) = normalizedOverrides.(name);
     end
 end
-plotOptions = rmfield(displayOptions, "PlotOutputs");
+plotOptions = rmfield(displayOptions, ["PlotOutputs", "Verbose"]);
 displayOptions.JerkConstraintEnabled = true;
 displayOptions.MaxJerk_deg_s3 = maxJerk_deg_s3;
 displayOptions.ConfiguredFiniteMaxJerk_deg_s3 = maxJerk_deg_s3;

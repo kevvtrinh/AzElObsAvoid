@@ -5570,3 +5570,49 @@ selection or trajectory generation. Verification after the final source edits:
   `System Error: File system inconsistency`. The planner source was unchanged;
   the prior successful 17-example matrix above remains the applicable planner
   baseline.
+
+## Dead planner verbosity option removal - 2026-09-01
+
+The public planner `Verbose` field had no production reader. It was removed
+from defaults, examples, sandbox exports, offline requests, contracts, and
+current interface documentation. Obstacle-construction verbosity remains live,
+and the sandbox checkbox still controls caller-owned `evalc` capture. Direct
+legacy planner input produces only
+`planTrajectory:DeprecatedVerbose`, is stripped before ordinary resolution,
+and is absent from returned `Options`.
+
+An obstacle-free default run and a legacy-`Verbose=true` run were recursively
+identical after removing measured elapsed-time fields. Both succeeded with a
+4.41995024845-second duration and 4.472135955-degree motion. Final verification
+after all source edits produced zero Code Analyzer findings and passed 118/118
+tests in 81.436094 seconds wall time (78.6810012 aggregate test seconds).
+
+Every maintained example ran headlessly in a separate serial MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 | 1.3070865 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 | 4.3292660 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 1.8896941 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 0.8572632 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 | 0.8962971 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 | 1.9732295 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 | 6.7140330 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 | 26.6008908 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 2.5900853 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 | 4.7387231 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 | 0.7821855 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 | 1.8459921 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 | 3.6708232 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 | 25.0493233 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 | 16.0339540 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 | 4.2266279 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 | 68.4555210 | `goalReached` |
+
+A separate visible `exampleObstacleFree` run created two figures with no
+warning. A hidden `exampleNoPath` run retained `noValidatedSeed`, one attempted
+seed, and one diagnostic figure. `git diff --check` is the final repository
+gate. The change adds eight net production MATLAB lines because the required
+one-release migration shim and tests outweigh deleting the dormant field; the
+five-milestone branch total remains a 155-line production reduction.
