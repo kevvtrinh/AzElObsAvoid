@@ -1,5 +1,25 @@
 # Plan 325 verification
 
+## Adversarial obstacle-history baseline - 2026-09-01
+
+Before changing moving-obstacle semantics, the new deterministic
+`testObstacleHistoryRobustness` suite ran against commit `b6239cb`. `checkcode`
+reported zero findings. Three cases already passed: sampled rotation followed
+the existing linear corresponding-vertex model, a 0.1-second source event was
+retained as a timed-search layer, and `status` remained conservative metadata
+rather than silently deactivating geometry.
+
+Four cases failed and preserve the exact defects that later groups must fix.
+Cyclically shifted and reversed representations of one rectangle fabricated
+up to 8 square degrees of shape difference and a 4.47213595499958-degree/s
+speed. A topology-changing translation left the point `[0, 0]` clear in the
+between-sample swept gap with 2 degrees reported clearance. A `[0, 1]` request
+projection incorrectly included stored samples at -10 and 10 seconds, growing
+the expected azimuth span `[-1, 2]` to `[-101, 101]`. Finally, chronological
+intercept sampling skipped a feasible 2.89-to-3.09-second window and selected
+the later disjoint window at 6.668424011230469 seconds. These are expected
+red tests, not accepted planner outcomes.
+
 ## Obstacle-performance profiler baseline - 2026-09-01
 
 The fixed pre-change commit was
