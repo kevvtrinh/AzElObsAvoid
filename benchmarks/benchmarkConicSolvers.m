@@ -1,0 +1,300 @@
+function resultTable = benchmarkConicSolvers(benchmarkOverrides)
+%% Section 0: Header & Readme
+% SYNTAX
+%   resultTable = benchmarkConicSolvers()
+%   resultTable = benchmarkConicSolvers(benchmarkOverrides)
+%**************************************************************************
+% PURPOSE
+%   - Compare requested conic backends and retained coneprog linear solvers
+%     on identical trajectory-shaped and plane-shaped cone programs.
+%**************************************************************************
+% INPUTS
+%   - benchmarkOverrides (scalar struct, optional; default struct())
+%       WarmupCount defaults to 2, RepetitionCount to 7, DisplayTable to
+%       true, and OutputCsvPath to empty. Empty fields retain defaults.
+%**************************************************************************
+% OUTPUTS
+%   - resultTable (table)
+%       One row per backend, configuration, and problem family. Unavailable
+%       dependencies remain explicit rows with documented empty metrics.
+%**************************************************************************
+% UNITS
+%   - Runtime is seconds. Fixture variables and residuals are dimensionless.
+%**************************************************************************
+
+%% Section 1: Resolve Benchmark Controls
+
+if nargin < 1 || isempty(benchmarkOverrides)
+    benchmarkOverrides = struct();
+end
+defaults = struct( ...
+    "WarmupCount", 2, ...
+    "RepetitionCount", 7, ...
+    "DisplayTable", true, ...
+    "OutputCsvPath", "");
+controls = resolveControls(defaults, benchmarkOverrides);
+
+%% Section 2: Create Fixed Cone Problems
+
+problems = [createTrajectoryProblem(); createPlaneProblem()];
+backendNames = ["coneprog", "mosek", "clarabel", "ecos", "scs"];
+dependencyNames = ["Optimization Toolbox", "MOSEK", ...
+    "Clarabel MATLAB", "ECOS MATLAB", "SCS MATLAB"];
+licenseNames = ["MathWorks commercial", "MOSEK commercial", ...
+    "Apache-2.0", "GPL-3.0", "MIT"];
+sourceRepositories = ["mathworks.com", "mosek.com", ...
+    "github.com/oxfordcontrol/Clarabel.cpp", ...
+    "github.com/embotech/ecos-matlab", ...
+    "github.com/bodono/scs-matlab"];
+unavailableNotes = [ ...
+    "Optimization Toolbox coneprog was not detected.", ...
+    "MOSEK and a usable MOSEK license were not detected.", ...
+    "Clarabel is open source but has no official MATLAB interface.", ...
+    "The GPL-3.0 ECOS MATLAB interface was not installed.", ...
+    "The MIT SCS MATLAB interface was not installed."];
+availability = [exist("coneprog", "file") == 2, ...
+    exist("mosekopt", "file") >= 2, ...
+    exist("clarabel.DefaultSolver", "class") == 8, ...
+    exist("ecos", "file") >= 2 || exist("ecosmex", "file") >= 2, ...
+    exist("scs", "file") >= 2];
+coneprogConfigurations = ["auto", "prodchol", "normal", "schur"];
+rowCount = numel(problems) * ...
+    (numel(coneprogConfigurations) + numel(backendNames) - 1);
+record = createEmptyRecord();
+records = repmat(record, rowCount, 1);
+
+%% Section 3: Measure Available Configurations
+
+rowIndex = 0;
+for backendIndex = 1:numel(backendNames)
+    backendName = backendNames(backendIndex);
+    if backendName == "coneprog"
+        configurations = coneprogConfigurations;
+    else
+        configurations = "default";
+    end
+    for configuration = configurations
+        for problemIndex = 1:numel(problems)
+            rowIndex = rowIndex + 1;
+            problem = problems(problemIndex).Problem;
+            records(rowIndex).Backend = backendName;
+            records(rowIndex).Configuration = configuration;
+            records(rowIndex).ProblemFamily = problem.Kind;
+            records(rowIndex).Available = availability(backendIndex);
+            records(rowIndex).VariableCount = numel(problem.Objective);
+            records(rowIndex).InequalityCount = ...
+                size(problem.InequalityMatrix, 1);
+            records(rowIndex).EqualityCount = ...
+                size(problem.EqualityMatrix, 1);
+            records(rowIndex).ConeCount = numel(problem.Cones);
+            records(rowIndex).Dependency = dependencyNames(backendIndex);
+            records(rowIndex).License = licenseNames(backendIndex);
+            records(rowIndex).SourceRepository = ...
+                sourceRepositories(backendIndex);
+            if backendName ~= "coneprog"
+                if availability(backendIndex)
+                    records(rowIndex).TerminationReason = "adapterNotRetained";
+                    records(rowIndex).Notes = ...
+                        "Dependency detected; no unverified adapter was retained.";
+                else
+                    records(rowIndex).TerminationReason = "backendUnavailable";
+                    records(rowIndex).Notes = unavailableNotes(backendIndex);
+                end
+                continue;
+            end
+            options = struct("LinearSolver", configuration);
+            for warmupIndex = 1:controls.WarmupCount
+                conicSolver.solve(problem, options);
+            end
+            elapsedTime_s = NaN(controls.RepetitionCount, 1);
+            objectiveValue = NaN(controls.RepetitionCount, 1);
+            maximumViolation = NaN(controls.RepetitionCount, 1);
+            allValid = true;
+            terminationReason = "notRun";
+            firstRun_s = NaN;
+            for repetitionIndex = 1:controls.RepetitionCount
+                runTimer = tic;
+                solveResult = conicSolver.solve(problem, options);
+                elapsedTime_s(repetitionIndex) = toc(runTimer);
+                if repetitionIndex == 1
+                    firstRun_s = elapsedTime_s(repetitionIndex);
+                end
+                objectiveValue(repetitionIndex) = solveResult.ObjectiveValue;
+                maximumViolation(repetitionIndex) = ...
+                    evaluateMaximumViolation( ...
+                    problem, solveResult.PrimalSolution);
+                runIsValid = solveResult.Success && ...
+                    maximumViolation(repetitionIndex) <= 1e-7;
+                allValid = allValid && runIsValid;
+                terminationReason = solveResult.TerminationReason;
+            end
+            records(rowIndex).Valid = allValid;
+            records(rowIndex).TerminationReason = terminationReason;
+            records(rowIndex).FirstRun_s = firstRun_s;
+            records(rowIndex).RepeatedMedian_s = median(elapsedTime_s);
+            records(rowIndex).Minimum_s = min(elapsedTime_s);
+            records(rowIndex).Maximum_s = max(elapsedTime_s);
+            records(rowIndex).ObjectiveValue = median(objectiveValue);
+            records(rowIndex).MaximumConstraintViolation = ...
+                max(maximumViolation);
+            records(rowIndex).Notes = ...
+                "Warmed repeated MATLAB measurement.";
+        end
+    end
+end
+
+%% Section 4: Publish The Comparison Table
+
+resultTable = struct2table(records);
+if strlength(controls.OutputCsvPath) > 0
+    writetable(resultTable, controls.OutputCsvPath);
+end
+if controls.DisplayTable
+    disp(resultTable);
+end
+end
+
+%% Section 5: Local Functions
+
+function controls = resolveControls(defaults, overrides)
+% Resolve partial controls and reject silent benchmark-shape changes.
+if ~isstruct(overrides) || ~isscalar(overrides)
+    error("benchmarkConicSolvers:InvalidOverrides", ...
+        "benchmarkOverrides must be a scalar structure or empty.");
+end
+names = string(fieldnames(overrides));
+knownNames = string(fieldnames(defaults));
+unknownNames = setdiff(names, knownNames, "stable");
+if ~isempty(unknownNames)
+    warning("benchmarkConicSolvers:UnknownOptions", ...
+        "Ignored unknown option fields without changing behavior: %s.", ...
+        strjoin(unknownNames, ", "));
+end
+controls = defaults;
+for name = reshape(intersect(names, knownNames, "stable"), 1, [])
+    if ~isempty(overrides.(name))
+        controls.(name) = overrides.(name);
+    end
+end
+validateattributes(controls.WarmupCount, {'numeric'}, ...
+    {'scalar', 'integer', 'nonnegative', 'finite'}, ...
+    "benchmarkConicSolvers", "WarmupCount");
+validateattributes(controls.RepetitionCount, {'numeric'}, ...
+    {'scalar', 'integer', 'positive', 'finite'}, ...
+    "benchmarkConicSolvers", "RepetitionCount");
+validateattributes(controls.DisplayTable, {'logical', 'numeric'}, ...
+    {'scalar'}, "benchmarkConicSolvers", "DisplayTable");
+if isnumeric(controls.DisplayTable) && ...
+        ~any(controls.DisplayTable == [0 1])
+    error("benchmarkConicSolvers:InvalidDisplayTable", ...
+        "DisplayTable must be scalar logical or binary numeric.");
+end
+controls.DisplayTable = logical(controls.DisplayTable);
+if ~(isstring(controls.OutputCsvPath) || ischar(controls.OutputCsvPath)) || ...
+        numel(string(controls.OutputCsvPath)) ~= 1
+    error("benchmarkConicSolvers:InvalidOutputPath", ...
+        "OutputCsvPath must be scalar text.");
+end
+controls.OutputCsvPath = string(controls.OutputCsvPath);
+end
+
+function fixture = createTrajectoryProblem()
+% Create repeated time-power cones fixed at their exact feasible boundary.
+blockCount = 24;
+variableCount = 4 * blockCount;
+objective = zeros(variableCount, 1);
+lowerBound = ones(variableCount, 1);
+upperBound = ones(variableCount, 1);
+emptyCone = secondordercone( ...
+    zeros(2, variableCount), zeros(2, 1), ...
+    zeros(variableCount, 1), 0);
+cones = repmat(emptyCone, 2 * blockCount, 1);
+for blockIndex = 1:blockCount
+    powerIndex = 4 * (blockIndex - 1) + (1:4);
+    objective(powerIndex(4)) = 1;
+    for coneIndex = 1:2
+        coneMatrix = zeros(2, variableCount);
+        coneMatrix(1, powerIndex(coneIndex + 1)) = 2;
+        coneMatrix(2, powerIndex(coneIndex)) = 1;
+        coneMatrix(2, powerIndex(coneIndex + 2)) = -1;
+        coneBound = zeros(variableCount, 1);
+        coneBound(powerIndex([coneIndex coneIndex + 2])) = 1;
+        cones(2 * (blockIndex - 1) + coneIndex) = ...
+            secondordercone( ...
+            coneMatrix, zeros(2, 1), coneBound, 0);
+    end
+end
+fixture = struct("Problem", struct( ...
+    "Kind", "trajectory", ...
+    "Objective", objective, ...
+    "Cones", cones, ...
+    "InequalityMatrix", zeros(0, variableCount), ...
+    "InequalityBound", zeros(0, 1), ...
+    "EqualityMatrix", zeros(0, variableCount), ...
+    "EqualityBound", zeros(0, 1), ...
+    "LowerBound", lowerBound, ...
+    "UpperBound", upperBound));
+end
+
+function fixture = createPlaneProblem()
+% Create a small maximum-margin-shaped norm problem with a known solution.
+variableCount = 3;
+coneMatrix = [1 0 0; 0 1 0];
+cone = secondordercone( ...
+    coneMatrix, [3; 4], [0; 0; 1], 0);
+fixture = struct("Problem", struct( ...
+    "Kind", "plane", ...
+    "Objective", [0; 0; 1], ...
+    "Cones", cone, ...
+    "InequalityMatrix", zeros(0, variableCount), ...
+    "InequalityBound", zeros(0, 1), ...
+    "EqualityMatrix", [1 0 0; 0 1 0], ...
+    "EqualityBound", [0; 0], ...
+    "LowerBound", [-Inf; -Inf; 0], ...
+    "UpperBound", Inf(variableCount, 1)));
+end
+
+function maximumViolation = evaluateMaximumViolation(problem, primal)
+% Evaluate all linear, bound, and cone residuals in the backend convention.
+if isempty(primal) || any(~isfinite(primal))
+    maximumViolation = Inf;
+    return;
+end
+violations = [0; ...
+    problem.InequalityMatrix * primal - problem.InequalityBound; ...
+    abs(problem.EqualityMatrix * primal - problem.EqualityBound); ...
+    problem.LowerBound - primal; ...
+    primal - problem.UpperBound];
+for coneIndex = 1:numel(problem.Cones)
+    cone = problem.Cones(coneIndex);
+    coneViolation = norm(cone.A * primal - cone.b) - ...
+        (cone.d.' * primal - cone.gamma);
+    violations(end + 1, 1) = coneViolation; %#ok<AGROW>
+end
+maximumViolation = max(violations);
+end
+
+function record = createEmptyRecord()
+% Define stable row fields before any backend availability is known.
+record = struct( ...
+    "Backend", "", ...
+    "Configuration", "", ...
+    "ProblemFamily", "", ...
+    "Available", false, ...
+    "Valid", false, ...
+    "TerminationReason", "notRun", ...
+    "FirstRun_s", NaN, ...
+    "RepeatedMedian_s", NaN, ...
+    "Minimum_s", NaN, ...
+    "Maximum_s", NaN, ...
+    "ObjectiveValue", NaN, ...
+    "MaximumConstraintViolation", NaN, ...
+    "VariableCount", 0, ...
+    "InequalityCount", 0, ...
+    "EqualityCount", 0, ...
+    "ConeCount", 0, ...
+    "Dependency", "", ...
+    "License", "", ...
+    "SourceRepository", "", ...
+    "Notes", "");
+end

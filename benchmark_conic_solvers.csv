@@ -1,0 +1,17 @@
+Backend,Configuration,ProblemFamily,Available,Valid,TerminationReason,FirstRun_s,RepeatedMedian_s,Minimum_s,Maximum_s,ObjectiveValue,MaximumConstraintViolation,VariableCount,InequalityCount,EqualityCount,ConeCount,Dependency,License,SourceRepository,Notes
+coneprog,auto,trajectory,1,1,solved,0.0127446,0.0123925,0.0122279,0.0130425,24,0,96,0,0,48,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,auto,plane,1,1,solved,0.0014219,0.0013927,0.0013638,0.0015709,5.00000003247577,8.20425816622615e-23,3,0,2,1,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,prodchol,trajectory,1,1,solved,0.0116227,0.0114304,0.0112009,0.0121352,24,0,96,0,0,48,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,prodchol,plane,1,1,solved,0.0014638,0.0013359,0.001322,0.0016027,5.00000003247577,2.71614315631985e-18,3,0,2,1,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,normal,trajectory,1,1,solved,0.0114875,0.0111566,0.0109274,0.0118004,24,0,96,0,0,48,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,normal,plane,1,1,solved,0.0012946,0.0013029,0.0012888,0.0019055,5.00000003247577,3.92107665018692e-17,3,0,2,1,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,schur,trajectory,1,1,solved,0.0111845,0.0111845,0.0109197,0.0115224,24,0,96,0,0,48,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+coneprog,schur,plane,1,1,solved,0.0013341,0.0012984,0.0012797,0.0014741,5.00000003247577,3.92107665018692e-17,3,0,2,1,Optimization Toolbox,MathWorks commercial,mathworks.com,Warmed repeated MATLAB measurement.
+mosek,default,trajectory,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,96,0,0,48,MOSEK,MOSEK commercial,mosek.com,MOSEK and a usable MOSEK license were not detected.
+mosek,default,plane,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,3,0,2,1,MOSEK,MOSEK commercial,mosek.com,MOSEK and a usable MOSEK license were not detected.
+clarabel,default,trajectory,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,96,0,0,48,Clarabel MATLAB,Apache-2.0,github.com/oxfordcontrol/Clarabel.cpp,Clarabel is open source but has no official MATLAB interface.
+clarabel,default,plane,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,3,0,2,1,Clarabel MATLAB,Apache-2.0,github.com/oxfordcontrol/Clarabel.cpp,Clarabel is open source but has no official MATLAB interface.
+ecos,default,trajectory,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,96,0,0,48,ECOS MATLAB,GPL-3.0,github.com/embotech/ecos-matlab,The GPL-3.0 ECOS MATLAB interface was not installed.
+ecos,default,plane,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,3,0,2,1,ECOS MATLAB,GPL-3.0,github.com/embotech/ecos-matlab,The GPL-3.0 ECOS MATLAB interface was not installed.
+scs,default,trajectory,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,96,0,0,48,SCS MATLAB,MIT,github.com/bodono/scs-matlab,The MIT SCS MATLAB interface was not installed.
+scs,default,plane,0,0,backendUnavailable,NaN,NaN,NaN,NaN,NaN,NaN,3,0,2,1,SCS MATLAB,MIT,github.com/bodono/scs-matlab,The MIT SCS MATLAB interface was not installed.

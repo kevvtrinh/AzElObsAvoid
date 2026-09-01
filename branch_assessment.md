@@ -1,5 +1,58 @@
 # Novel replacement branch assessment
 
+## Retain coneprog after conic-backend comparison - 2026-09-01
+
+This branch starts from the exact pushed `bmtp-cleanup-codex` commit
+`44851b6e8fa438b607467e4fc497286c205f5878`. MATLAB R2024b Update 4 ran on
+an AMD64 Family 23 Model 113 host with 12 logical processors. Optimization
+Toolbox and `coneprog` were installed; MOSEK, Clarabel, ECOS, and SCS were not
+installed on the MATLAB path at baseline.
+
+Both repository-owned BMTP cone-program call sites now pass unchanged problem
+records through one `+conicSolver` interface. The retained interface keeps
+`coneprog` and its `auto` linear solver as the default, validates dimensions,
+resolves partial options, warns once for unknown fields, and returns stable
+success-or-failure evidence. The fixed benchmark separates a 96-variable,
+48-cone trajectory fixture from a 3-variable, one-cone plane fixture and keeps
+unavailable backends visible with their license and source repository.
+
+Among `coneprog` configurations, `normal` had the lowest isolated medians in
+the first 3-warmup/11-repeat run, but the focused public example did not finish
+within two minutes. It was stopped and reverted. The final repeated comparison
+placed `auto` at 0.0123925 seconds for the trajectory fixture and 0.0013927
+seconds for the plane fixture. Routing through the retained wrapper changed the
+warmed `exampleObstacleAvoidance` median from 2.39756075 to 2.4162405 seconds,
+a 0.779 percent increase consistent with measurement noise. The physical
+result remained exactly 11.152119519 degrees selected, 11.4118613877 degrees
+smoothed, and 7.57454176632 seconds, with collision, kinematic, certificate,
+and independent validation all passing. No speedup is claimed.
+
+Two public license-free repositories were compiled outside the repository with
+Microsoft Visual C++ 2022. MIT-licensed `bodono/scs-matlab` at
+`d7720fcea2fba4a10a671602263eab36228bd8d9` passed both isolated fixtures with
+maximum residuals below 2e-13 and medians of 0.0019295 and 0.0003284 seconds,
+but the same validated public example took 55.1105597 seconds, about 23 times
+the warmed incumbent median. GPL-3.0 `embotech/ecos-matlab` at
+`2acb7f472f0021a3d226da187cd2941341199893` solved the plane fixture in a
+0.000218-second median with a 2.0183e-9 maximum residual, but its production
+trajectory calls did not all solve and the example ended `noValidatedSeed`.
+Clarabel is Apache-2.0 but has no official MATLAB interface; MOSEK requires its
+proprietary dependency and license, neither of which was present. All losing
+candidate adapters were removed, and the temporary builds were not installed.
+
+Code Analyzer reported no issues in changed MATLAB files, focused conic tests
+passed 6/6, and the complete tree passed 114/114. All 17 maintained examples
+ran serially after the retained wrapper: sixteen independently validated
+successes and the expected validated `noValidatedSeed` result. A visible
+success produced two figures and five axes. The failure case produced one
+search-diagnostic figure whose annotation included `noValidatedSeed`.
+
+The largest strength is now an explicit, tested solver boundary plus measured
+negative evidence against attractive microbenchmark results. The largest
+weakness is that the branch adds a small wrapper cost without a runtime gain;
+it is retained only to keep the two BMTP formulations isolated behind one
+stable interface and to make future solver evaluations repeatable.
+
 ## Remove benchmark-shaped orthogonal planners - 2026-09-01
 
 At the user's direction, the branch removes the complete orthogonal-cavity and

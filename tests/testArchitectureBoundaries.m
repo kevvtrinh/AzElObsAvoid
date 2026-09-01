@@ -56,13 +56,14 @@ verifyEqual(testCase, publicSources, expectedSources);
 end
 
 function testTrajectoryRootContainsEnginePackagesAndRuckigFacade(testCase)
-% Keep both engines packaged while the remaining Ruckig facade is explicit.
+% Keep engines and conic ownership packaged while Ruckig facade is explicit.
 trajectoryRoot = testCase.TestData.TrajectoryRoot;
 actualRootSources = string({dir(fullfile(trajectoryRoot, "*.m")).name});
 verifyEqual(testCase, sort(actualRootSources), "planTrajRuckig.m");
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
 actualNames = sort(string({packageRecords([packageRecords.isdir]).name}));
-verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
+verifyEqual(testCase, actualNames, ...
+    sort(["+bmtpEngine", "+conicSolver", "+ruckigEngine"]));
 actualSources = sort(string({dir(fullfile( ...
     testCase.TestData.EngineRoot, "*.m")).name}));
 expectedSources = sort([ ...
