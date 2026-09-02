@@ -65,144 +65,34 @@ diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled = warmStart.WarmRouteResampled;
 diagnostics.Coverage = coverage;
 diagnostics.ApplicablePairCount = nnz(regionActiveBySegment);
-motionHorizon_s = request.MotionHorizon_s;
-travelSavingsRate_deg_s = request.TravelSavingsRate_deg_s;
-optimizationHorizon_s = motionHorizon_s;
-regionMinimum_deg = request.RegionMinimum_deg;
-regionMaximum_deg = request.RegionMaximum_deg;
 [~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances( ...
     route_deg, limits.azimuthInterval_deg, ...
     limits.elevationInterval_deg, regions_deg);
 normalNormLimit = 1 + 2 ^ 20 * eps;
 obstacleTarget_deg = normalNormLimit * ...
     options.CollisionClearanceTolerance_deg + roundoffReserve_deg;
-trajectoryOptions = request.TrajectoryOptions;
-planeOptions = request.PlaneOptions;
-tightPlaneOptions = request.TightPlaneOptions;
 
 %% Section 2: Alternate Time-Power And Maximum-Margin SOCPs
 
-feasibleControl_deg = warmStart.ControlPoint_deg;
-feasibleSegmentTime_s = warmStart.SegmentTime_s;
-diagnostics.WarmStartDuration_s = segmentCount * feasibleSegmentTime_s;
-bestControl_deg = zeros(0, degree + 1, 2);
-[bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
-diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
-taggedPairs = false(segmentCount, numel(regions_deg));
-planes = repmat(emptyPlane(), segmentCount, numel(regions_deg));
-solverMessage = "The biconvex iteration limit was reached.";
-for iterationIndex = 1:35
-    diagnostics.IterationCount = iterationIndex;
-    usedRequestHorizon = optimizationHorizon_s == motionHorizon_s;
-    [trialControl_deg, trialTime_s, exitFlag, output] = solveTrajectorySocp( ...
-        segmentCount, degree, initialState.position_deg, goalState.position_deg, ...
-        limits, planes, roundoffReserve_deg, optimizationHorizon_s, ...
-        "earliestArrival", 0, ...
-        feasibleSegmentTime_s, trajectoryOptions);
-    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
-    diagnostics.FinalTrajectoryExitFlag = exitFlag;
-    if exitFlag <= 0 || isempty(trialControl_deg)
-        % A request horizon constrains the returned motion, not the
-        % intermediate iterate needed to establish separating planes.
-        if exitFlag == -2 && isempty(bestControl_deg) && ...
-                optimizationHorizon_s < diagnostics.WarmStartDuration_s
-            optimizationHorizon_s = min(2 * optimizationHorizon_s, diagnostics.WarmStartDuration_s);
-            continue;
-        end
-        solverMessage = "Trajectory SOCP failed: " + string(output.message);
-        break;
-    end
-    collisionPairs = findSampledCollisionPairs( ...
-        trialControl_deg, regions_deg, regionMinimum_deg, ...
-        regionMaximum_deg, regionActiveBySegment, 1201);
-    diagnostics.TrialDuration_s(iterationIndex) = ...
-        segmentCount * trialTime_s;
-    diagnostics.CollisionPairCountHistory(iterationIndex) = ...
-        nnz(collisionPairs);
-    diagnostics.TrialWasCollisionFree(iterationIndex) = ...
-        ~any(collisionPairs, "all");
-    diagnostics.FinalCollisionPairCount = nnz(collisionPairs);
-    previousTaggedPairs = taggedPairs;
-    newPairs = collisionPairs & ~taggedPairs;
-    taggedPairs = taggedPairs | newPairs;
-    if ~any(collisionPairs, "all")
-        optimizationHorizon_s = motionHorizon_s;
-        previousDuration_s = segmentCount * feasibleSegmentTime_s;
-        feasibleControl_deg = trialControl_deg;
-        feasibleSegmentTime_s = trialTime_s;
-        duration_s = segmentCount * trialTime_s;
-        retainedBestImprovement_s = bestDuration_s - duration_s;
-        if duration_s < bestDuration_s
-            bestControl_deg = trialControl_deg;
-            bestSegmentTime_s = trialTime_s;
-            bestDuration_s = duration_s;
-            diagnostics.BestDuration_s = duration_s;
-            diagnostics.RetainedBestTrialDuration_s = duration_s;
-        end
-        improvement_s = previousDuration_s - duration_s;
-        if improvement_s >= 0 && improvement_s <= options.ArrivalTimeTolerance_s
-            diagnostics.Converged = true;
-            solverMessage = "The feasible arrival improvement reached tolerance.";
-            break;
-        end
-        taggedPairSetUnchanged = isequal(taggedPairs, previousTaggedPairs);
-        % Plane reuse is an internal continuation invariant, not a request
-        % choice. Share the arrival tolerance used by convergence ownership.
-        reusePlanes = retainedBestImprovement_s <= ...
-            options.ArrivalTimeTolerance_s && taggedPairSetUnchanged;
-        if reusePlanes
-            diagnostics.PlaneReuseApplied = true;
-            diagnostics.PlaneReuseCount = diagnostics.PlaneReuseCount + 1;
-            if usedRequestHorizon
-                diagnostics.Converged = true;
-                solverMessage = "The next trajectory SOCP would be unchanged.";
-                break;
-            end
-            continue;
-        end
-        planes(:) = emptyPlane();
-        activePairs = taggedPairs;
-    elseif any(newPairs, "all")
-        activePairs = newPairs;
-    else
-        solverMessage = "A tagged pair crossed its retained separating plane.";
-        break;
-    end
-    updateFailed = false;
-    activePairIndices = reshape(find(activePairs), 1, []);
-    for activeIndex = 1:numel(activePairIndices)
-        pairIndex = activePairIndices(activeIndex);
-        [segmentIndex, regionIndex] = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag] = solveMaximumMarginPlane( ...
-            squeeze(feasibleControl_deg(segmentIndex, :, :)), ...
-            regions_deg{regionIndex}, obstacleTarget_deg, ...
-            roundoffReserve_deg, planeOptions);
-        diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
-        if planeExitFlag <= 0 || ~plane.Active
-            [diagnostics.FailedPlaneSegmentIndex, diagnostics.FailedPlaneRegionIndex, ...
-                diagnostics.FailedPlane] = deal(segmentIndex, regionIndex, plane);
-            solverMessage = "A maximum-margin plane solve failed.";
-            updateFailed = true;
-            break;
-        end
-        if ~plane.Verified
-            % A boundary-touching visibility seed may have no positive gap.
-            % Its solved separator is only a linearization that must move the
-            % next iterate; final acceptance still requires direct proof.
-            diagnostics.UnverifiedPlaneInitializationCount = ...
-                diagnostics.UnverifiedPlaneInitializationCount + 1;
-        end
-        planes(segmentIndex, regionIndex) = plane;
-    end
-    if updateFailed
-        break;
-    end
-end
-[diagnostics.TaggedPairCount, diagnostics.SolverMessage] = ...
-    deal(nnz(taggedPairs), solverMessage);
-if isempty(bestControl_deg)
+engineOperations = struct( ...
+    "solveTrajectoryStep", @solveTrajectorySocp, ...
+    "findSampledObstacleOverlaps", @findSampledCollisionPairs, ...
+    "updateSeparatingLine", @solveMaximumMarginPlane, ...
+    "createEmptyPlane", @emptyPlane, ...
+    "controlPolygonLength", @controlPolygonLength);
+
+% The trajectory controls and separating lines depend on one another, so
+% neither can be solved once in isolation. Alternate those two decisions,
+% retain every attempt in diagnostics, and return the best sampled-clear
+% iterate for the later direct certificate.
+[alternatingResult, diagnostics] = ...
+    bmtpEngine.solveAlternatingTrajectory( ...
+    request, warmStart, diagnostics, obstacleTarget_deg, ...
+    roundoffReserve_deg, engineOperations);
+if ~alternatingResult.Success
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
-        "No optimized collision-free iterate was found. " + solverMessage, ...
+        "No optimized collision-free iterate was found. " + ...
+        alternatingResult.SolverMessage, ...
         "noOptimizedFeasibleIterate", false);
     return;
 end
@@ -210,140 +100,52 @@ end
 % Establish a feasible homotopy with the proven time-minimizing kernel before
 % asking for less travel. A path-length solve from an unconstrained chord can
 % initialize a separating plane on the wrong side of a concave obstacle.
-if options.GoalTimeMode ~= "earliestArrival"
-    baseControl_deg = bestControl_deg;
-    baseSegmentTime_s = bestSegmentTime_s;
-    baseLength_deg = controlPolygonLength(baseControl_deg);
-    selectedControl_deg = baseControl_deg;
-    selectedSegmentTime_s = baseSegmentTime_s;
-    selectedPlanes = planes;
-    selectedLength_deg = baseLength_deg;
-    selectedCost_deg = baseLength_deg + travelSavingsRate_deg_s * ...
-        segmentCount * baseSegmentTime_s;
-    trialSavingsRates_deg_s = travelSavingsRate_deg_s;
-    if options.GoalTimeMode == "balancedArrival"
-        trialSavingsRates_deg_s = travelSavingsRate_deg_s * [0.1 1 10];
-    end
-    travelRefinementAccepted = false;
-    for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
-        travelPlanes = planes;
-        trialRate_deg_s = trialSavingsRates_deg_s(portfolioIndex);
-        for refinementIndex = 1:8
-            [refinedControl_deg, refinedSegmentTime_s, travelExitFlag] = ...
-                solveTrajectorySocp( ...
-                segmentCount, degree, initialState.position_deg, ...
-                goalState.position_deg, limits, travelPlanes, ...
-                roundoffReserve_deg, motionHorizon_s, ...
-                options.GoalTimeMode, trialRate_deg_s, ...
-                baseSegmentTime_s, trajectoryOptions);
-            if travelExitFlag <= 0 || isempty(refinedControl_deg)
-                break;
-            end
-            refinedCollisionPairs = findSampledCollisionPairs( ...
-                refinedControl_deg, regions_deg, regionMinimum_deg, ...
-                regionMaximum_deg, regionActiveBySegment, 1201);
-            if any(refinedCollisionPairs, "all")
-                activeTravelPairs = reshape( ...
-                    [travelPlanes.Active], size(travelPlanes));
-                newPairs = refinedCollisionPairs & ~activeTravelPairs;
-                newPairIndices = reshape(find(newPairs), 1, []);
-                if isempty(newPairIndices)
-                    break;
-                end
-                planeUpdateFailed = false;
-                for newPairIndex = newPairIndices
-                    [segmentIndex, regionIndex] = ind2sub( ...
-                        size(newPairs), newPairIndex);
-                    [travelPlane, planeExitFlag] = solveMaximumMarginPlane( ...
-                        squeeze(baseControl_deg(segmentIndex, :, :)), ...
-                        regions_deg{regionIndex}, obstacleTarget_deg, ...
-                        roundoffReserve_deg, planeOptions);
-                    if planeExitFlag <= 0 || ~travelPlane.Active
-                        planeUpdateFailed = true;
-                        break;
-                    end
-                    travelPlanes(segmentIndex, regionIndex) = travelPlane;
-                end
-                if planeUpdateFailed
-                    break;
-                end
-                continue;
-            end
-            refinedLength_deg = controlPolygonLength(refinedControl_deg);
-            refinedCost_deg = refinedLength_deg + ...
-                travelSavingsRate_deg_s * ...
-                segmentCount * refinedSegmentTime_s;
-            if options.GoalTimeMode == "fixedArrival"
-                refinementIsBetter = refinedLength_deg < selectedLength_deg;
-            else
-                refinementIsBetter = refinedCost_deg < selectedCost_deg;
-            end
-            if refinementIsBetter
-                selectedControl_deg = refinedControl_deg;
-                selectedSegmentTime_s = refinedSegmentTime_s;
-                selectedPlanes = travelPlanes;
-                selectedLength_deg = refinedLength_deg;
-                selectedCost_deg = refinedCost_deg;
-                travelRefinementAccepted = true;
-            end
-            break;
-        end
-    end
-    if travelRefinementAccepted
-        bestControl_deg = selectedControl_deg;
-        bestSegmentTime_s = selectedSegmentTime_s;
-        planes = selectedPlanes;
-        taggedPairs = taggedPairs | reshape( ...
-            [planes.Active], size(planes));
-    end
-    diagnostics.TaggedPairCount = nnz(taggedPairs);
-end
+[selectedMotion, diagnostics] = bmtpEngine.refineTravel( ...
+    request, warmStart, alternatingResult, diagnostics, ...
+    obstacleTarget_deg, roundoffReserve_deg, engineOperations);
+bestControl_deg = selectedMotion.ControlPoint_deg;
+bestSegmentTime_s = selectedMotion.SegmentTime_s;
 
-%% Section 3: Project, Dilate, And Certify The Selected Motion
+%% Section 3: Prepare And Check The Final Motion
 
-controlPoint_deg = bestControl_deg;
-controlPoint_deg(1, 1:3, :) = reshape( repmat(initialState.position_deg, 3, 1), 1, 3, 2);
-controlPoint_deg(end, end - 2:end, :) = reshape( repmat(goalState.position_deg, 3, 1), 1, 3, 2);
-controlPoint_deg = subdivideMidpoint(controlPoint_deg);
-segmentTime_s = bestSegmentTime_s / 2;
-exportPolynomial = createPowerPolynomial(controlPoint_deg, 1, 0);
-certifiedControlPoint_deg = ...
-    powerToBernsteinControls(exportPolynomial.positionPower_deg);
-requiredTime_s = max( ...
-    bmtpEngine.findRequiredSegmentTime(controlPoint_deg, limits), ...
-    bmtpEngine.findRequiredSegmentTime( ...
-    certifiedControlPoint_deg, limits));
-dilationScale = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
-segmentTime_s = segmentTime_s * dilationScale;
-minimumDuration_s = size(controlPoint_deg, 1) * segmentTime_s;
-isFixedArrival = options.GoalTimeMode == "fixedArrival";
-if minimumDuration_s > motionHorizon_s + options.ConstraintTolerance
-    reasons = ["timeWindowInfeasible", "fixedArrivalInfeasible"];
-    messages = ["The certified motion exceeds the goal horizon.", ...
-        "The certified minimum exceeds the fixed arrival."];
-    diagnostics.EndpointProjectionApplied = true;
-    diagnostics.DilationScale = dilationScale;
-    [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
-        messages(1 + isFixedArrival), reasons(1 + isFixedArrival), true);
-    return;
-elseif isFixedArrival
-    fixedScale = motionHorizon_s / minimumDuration_s;
-    segmentTime_s = segmentTime_s * fixedScale;
-    dilationScale = dilationScale * fixedScale;
-end
-motion = motionCertificate(segmentTime_s, requiredTime_s);
+finalOperations = struct( ...
+    "subdivideMidpoint", @subdivideMidpoint, ...
+    "createPowerPolynomial", @createPowerPolynomial, ...
+    "powerToBernsteinControls", @powerToBernsteinControls, ...
+    "createMotionCertificate", @motionCertificate, ...
+    "checkAllCurveObstaclePairs", @certifyAllPlanes, ...
+    "createMotionOutput", @exportMotion);
+
+% Endpoint derivatives are imposed after optimization, which can increase the
+% derivative-control bounds. Project those endpoints, split the curve, and
+% increase segment time before any final safety claim is attempted.
+preparedMotion = bmtpEngine.prepareFinalMotion( ...
+    request, bestControl_deg, bestSegmentTime_s, finalOperations);
 diagnostics.EndpointProjectionApplied = true;
-diagnostics.DilationScale = dilationScale;
-diagnostics.MotionCertificate = motion;
-certificate = certifyAllPlanes(certifiedControlPoint_deg, regions_deg, ...
-    coverage, repelem(regionActiveBySegment, 2, 1), ...
-    roundoffReserve_deg, obstacleTarget_deg, tightPlaneOptions);
+diagnostics.DilationScale = preparedMotion.DilationScale;
+if ~preparedMotion.Success
+    [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
+        preparedMotion.Message, preparedMotion.TerminationReason, true);
+    return;
+end
+
+% Sampled overlap tests guided the alternating solver but cannot approve its
+% output. Check every applicable final curve-region pair directly and retain
+% the complete certificate for independent planner validation.
+certificate = bmtpEngine.checkFinalMotion( ...
+    request, warmStart, preparedMotion, roundoffReserve_deg, ...
+    obstacleTarget_deg, finalOperations);
+diagnostics.MotionCertificate = preparedMotion.MotionCertificate;
 diagnostics.PlaneCertificate = certificate;
 candidate.PlaneCertificate = certificate;
-candidate = exportMotion(candidate, controlPoint_deg, segmentTime_s, ...
-    initialState.time_s, options.SampleTime_s, motion);
-[candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = ...
-    deal(true, isFixedArrival);
+
+% The checked control net is still an engine representation. Convert and
+% sample it once into the stable motion record consumed by the planner,
+% validator, diagnostics, and plotting without rerunning any solve.
+candidate = bmtpEngine.createMotionOutput( ...
+    candidate, request, preparedMotion, finalOperations);
+[candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal( ...
+    true, preparedMotion.ArrivalAtHorizon);
 diagnostics.BestDuration_s = candidate.MotionDuration_s;
 if ~certificate.Passed
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
