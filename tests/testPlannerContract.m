@@ -56,6 +56,9 @@ verifyTrue(testCase, result.Validation.JerkWithinLimits);
 verifyEqual(testCase, result.TerminationReason, "goalReached");
 verifyEqual(testCase, result.SeedSummaries(1).SeedSource, ...
     "directRestToRest");
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
+    "notApplicableExactPath");
 verifyLessThan(testCase, result.TrajectoryDuration_s, ...
     goalState.time_s - initialState.time_s);
 end

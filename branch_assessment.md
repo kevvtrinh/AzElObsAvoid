@@ -1,5 +1,39 @@
 # Novel replacement branch assessment
 
+## Isolate one-seed solving and bound early exit - 2026-09-01
+
+The largest new strength is a single `solveOneSeed` owner for the existing
+static BMTP, swept projection, timed BMTP, direct-wait, and explicitly enabled
+Ruckig fallback order. The main planner now prepares request-wide
+representations, iterates seeds, and selects results without duplicating the
+per-seed state machine. The obsolete `isBetterSummary` helper was removed after
+the extraction made its sole initialization-time call redundant.
+
+Direct waits are now refined for `balancedArrival` as well as
+`earliestArrival`, because reducing wait lowers the declared balanced objective
+when path length is unchanged. The two-window regression exercises both modes
+and confirms each selects the first observed window. An earliest-arrival seed
+loop may stop only when an independently validated arrival equals the
+obstacle-free physical arrival lower bound within the declared tolerance.
+Diagnostics expose whether that guard applied, the bound, and the seed index.
+Direct fast paths and later direct waits verify that the guard does not claim an
+unreached bound.
+
+Exact item-15 baseline and item-16 candidate suites retained all decisions and
+passes. Planner-contract duration changed from 34.5795205 to 34.0742936 seconds
+(-1.461 percent), timed planning from 12.2135944 to 12.3922855 seconds (+1.463
+percent), and route economy from 10.4367040 to 10.0221966 seconds (-3.972
+percent). These single adjacent suite observations are neutral refactor
+evidence, not speedup claims.
+
+The largest current limitation is that no parallel implementation was retained.
+The required separate availability evaluation found the MATLAB parallel
+license feature but no installed Parallel Computing Toolbox product,
+`parpool`, or pool runtime. Therefore a `parfor` speed comparison could not be
+run in this environment, and the serial deterministic order remains. A
+positive seed-loop lower-bound exit was not reached by the maintained corpus;
+the existing direct and fixed-clock fast paths normally return before it.
+
 ## Refine every event-aware feasibility window - 2026-09-01
 
 The largest new strength is that earliest-arrival intercept and direct-wait

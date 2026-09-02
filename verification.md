@@ -1,5 +1,51 @@
 # Plan 325 verification
 
+## Isolate one-seed solving and bound early exit - 2026-09-01
+
+Item 16 extracts the complete per-seed state machine into `solveOneSeed`. The
+fallback order is unchanged: configured Ruckig or static BMTP; otherwise swept
+static projection, timed BMTP if the swept result fails, compact direct-wait
+construction, and only then the explicitly enabled stop-at-waypoint fallback.
+The helper returns the candidate, independent validation, stable summary, and
+accumulated stage timing. The main loop owns cancellation, candidate storage,
+first-success timing, and final selection. Code Analyzer identified the old
+`isBetterSummary` function as unused after extraction, so it was removed.
+
+Wait refinement now runs when `GoalTimeMode` is `balancedArrival` because the
+public objective is motion length plus the declared arrival-time exchange rate.
+For a fixed direct path, avoidable wait can only worsen that objective. The
+forced two-window regression runs both earliest and balanced policies; both
+pass independent validation, perform local refinement, and select window one.
+
+The seed loop records a physical arrival lower bound from the obstacle-free
+direct motion. It stops only for earliest-arrival policy when a seed passes the
+independent validator and its arrival differs from that bound by no more than
+`ArrivalTimeTolerance_s`. Direct fast-path tests retain an explicit
+`notApplicableExactPath` record; the later-wait regression retains
+`lowerBoundNotReached`. No maintained case triggered the positive guard, so no
+runtime saving is claimed from early exit.
+
+Exact adjacent suite comparisons were:
+
+- `testPlannerContract`: item-15 baseline 14/14 in 34.5795205 seconds;
+  item-16 candidate 14/14 in 34.0742936 seconds (-1.461 percent).
+- `testTimedBmtpPlanning`: baseline 3/3 in 12.2135944 seconds; candidate
+  3/3 in 12.3922855 seconds (+1.463 percent).
+- `testSandboxRouteEconomy`: baseline 3/3 in 10.4367040 seconds; candidate
+  3/3 in 10.0221966 seconds (-3.972 percent).
+
+After final diagnostic assertions, planner contract again passed 14/14 in
+34.103085 seconds and obstacle-history robustness passed 8/8 in 2.884767
+seconds. Code Analyzer returned zero findings for the planner and both changed
+tests. These are single-process suite observations and establish decision
+neutrality, not a general performance change.
+
+The parallel evaluation was kept separate. `license('test',
+'Distrib_Computing_Toolbox')` returned one, but `ver('parallel')` returned no
+installed product and both `parpool` and the pool runtime were absent; calling
+`gcp` reported that Parallel Computing Toolbox was required. No unmeasured
+`parfor` branch or nested parallelism was retained.
+
 ## Refine every event-aware feasibility window - 2026-09-01
 
 Item 15 replaces the single global fail/pass bisection in moving-target
