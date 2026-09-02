@@ -1,5 +1,29 @@
 # Novel replacement branch assessment
 
+## Preserve plans across finite timing disagreement - 2026-09-01
+
+The largest new strength is that exclusive-stage accounting can no longer turn
+an otherwise valid trajectory into a planner exception merely because measured
+stage totals exceed wall time. `StageTiming` now returns a logical
+`TimingAccountingValid` field and signed `TimingAccountingResidual_s`, defined
+as independently measured total minus exclusive named stages. A negative
+residual beyond clock tolerance marks disagreement, retains zero unattributed
+time, and preserves the planner's success, trajectory, and validation result.
+
+The corruption boundary remains strict. Total time and every elapsed-time input
+must be real, finite, scalar, and nonnegative; the accounting flag must be one
+logical scalar; the signed residual must be a finite real scalar; and the exact
+shared field format is still required. Malformed, negative, and nonfinite input
+tests retain named errors. The focused timing suite passed 6/6, including a
+successful fake result finalized with deliberate over-attribution and three
+corrupt-input cases. Code Analyzer reported zero findings.
+
+The largest current limitation is that an invalid accounting flag is advisory:
+consumers that care about profiler attribution must inspect it. This is
+intentional because planner correctness comes from the independent trajectory
+validator, not stopwatch reconciliation. The signed residual localizes the
+disagreement without hiding it in a clipped zero.
+
 ## Isolate one-seed solving and bound early exit - 2026-09-01
 
 The largest new strength is a single `solveOneSeed` owner for the existing

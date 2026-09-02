@@ -1,5 +1,36 @@
 # Plan 325 verification
 
+## Preserve plans across finite timing disagreement - 2026-09-01
+
+Item 17 changes `obstacleAvoidance.planner.stageTiming` reconciliation only.
+The record now includes `TimingAccountingValid` and
+`TimingAccountingResidual_s`. The residual is the independently measured total
+elapsed time minus the sum of the five exclusive named stages. Residuals at
+least negative clock tolerance are valid; larger finite over-attribution sets
+the flag false. `UnattributedElapsedTime_s` remains the nonnegative part of the
+residual, and `TotalElapsedTime_s` remains the independent wall measurement.
+
+The three-input finalizer always writes the diagnostic record and elapsed wall
+time back to the supplied planner result. A deliberate ten-second exclusive
+stage finalized immediately retained `Success=true`, returned a negative
+residual, and set the flag false. The two-input form likewise reconciled a
+two-second exclusive stage against a one-second total to residual -1 and zero
+unattributed time without throwing.
+
+Input corruption still throws. Tests verify named `InvalidTimingValue` errors
+for negative and `NaN` exclusive stages and `InvalidTotalElapsedTime` for an
+infinite total. Production also validates every derived nonnegative elapsed
+field, the logical flag, the finite signed residual, scalar structure shape,
+and exact field order before reconciliation.
+
+Code Analyzer returned zero findings for `stageTiming.m` and
+`testPlannerStageTiming.m`. The focused suite passed 6/6: collision activity,
+minimum-step unresolved evidence, success/failure format parity, motion-solver
+reconciliation, finite over-attribution reporting, and corrupt-input rejection.
+The summed test duration was approximately 2.109028 seconds. This change has no
+trajectory or performance claim; its acceptance evidence is preservation of a
+valid result with explicit unfavorable timing evidence.
+
 ## Isolate one-seed solving and bound early exit - 2026-09-01
 
 Item 16 extracts the complete per-seed state machine into `solveOneSeed`. The
