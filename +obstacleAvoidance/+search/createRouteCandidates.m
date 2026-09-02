@@ -66,8 +66,14 @@ sweptShape = proposal.shape;
 usedDenseEnvelope = proposal.usedDenseEnvelope;
 sampledShapeCount = proposal.sampledShapeCount;
 diagnostics.SeedCluster.SourceRegionCount = numel(regions(sweptShape));
-[nodePosition_deg, edgeCost_deg, graphRecord] = ...
-    createVisibilityGraph(sweptShape, start_deg, goal_deg, limits, 1, 0);
+% Visibility routes are only spatial starting suggestions. Build the graph as
+% an inspectable sequence of offset attempts so downstream route search uses
+% the exact accepted edges while final validation retains sole approval.
+visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
+    proposal, request);
+nodePosition_deg = visibilityGraph.NodePosition_deg;
+edgeCost_deg = visibilityGraph.EdgeCost_deg;
+graphRecord = visibilityGraph.Record;
 obstacleAvoidance.input.throwIfCancellationRequested(options);
 diagnostics.SampleTimes_s = sampleTimes_s;
 diagnostics.SampledShapeCount = sampledShapeCount;
@@ -198,142 +204,6 @@ if isempty(firstGoalIndex)
 end
 route_deg = route_deg(1:firstGoalIndex, :);
 routeTime_s = routeTime_s(1:firstGoalIndex);
-end
-
-function [positions_deg, cost_deg, record] = createVisibilityGraph( ...
-        shape, start_deg, goal_deg, limits, offsetMultiplier, offsetRetryCount)
-% Create a work-derived sparse graph and affordable exhaustive fallback.
-[edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(shape, 1e-12);
-workBudget = 1e6;
-candidateLimit = max(2, floor(sqrt(2 * workBudget / max(1, size(edgeStart_deg, 1)))) - 2);
-all_deg = [start_deg; goal_deg; shape.Vertices];
-scale_deg = bmtpEngine.createCoordinateTolerances(all_deg);
-baseOffset_deg = max(1e-3, 256 * eps(scale_deg));
-offset_deg = offsetMultiplier * baseOffset_deg;
-candidateShape = shape;
-if ~isempty(shape.Vertices)
-    candidateShape = polybuffer(shape, offset_deg, "JointType", "miter");
-end
-candidates_deg = candidateShape.Vertices;
-inside = candidates_deg(:, 1) >= limits.azimuthInterval_deg(1) & ...
-    candidates_deg(:, 1) <= limits.azimuthInterval_deg(2) & ...
-    candidates_deg(:, 2) >= limits.elevationInterval_deg(1) & ...
-    candidates_deg(:, 2) <= limits.elevationInterval_deg(2);
-candidates_deg = unique(candidates_deg(inside, :), "rows", "stable");
-if size(candidates_deg, 1) > candidateLimit
-    candidates_deg = selectVisibilityCandidates( ...
-        candidates_deg, start_deg, goal_deg, candidateLimit);
-end
-positions_deg = unique([start_deg; goal_deg; candidates_deg], "rows", "stable");
-nodeCount = size(positions_deg, 1);
-pairMask = triu(true(nodeCount), 1);
-usedExhaustive = nodeCount < 4;
-if nodeCount >= 4
-    triangulation = delaunayTriangulation(positions_deg);
-    pairs = sort(edges(triangulation), 2);
-    pairMask = false(nodeCount);
-    pairMask(sub2ind([nodeCount nodeCount], pairs(:, 1), pairs(:, 2))) = true;
-    pairMask(1:2, 3:end) = true;
-    pairMask(1, 2) = true;
-end
-[cost_deg, accepted_deg, rejected_deg, acceptedCount, rejectedCount] = ...
-    createEdges(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg);
-component = conncomp(graph(isfinite(cost_deg), "upper"));
-if component(1) ~= component(2) && nodeCount >= 4
-    [boundaryStart_deg, boundaryEnd_deg] = ...
-        obstacleAvoidance.geometry.boundaryToEdges(candidateShape, 1e-12);
-    [startFound, startIndex] = ismember(boundaryStart_deg, positions_deg, "rows");
-    [endFound, endIndex] = ismember(boundaryEnd_deg, positions_deg, "rows");
-    boundaryPairs = sort([startIndex(startFound & endFound), ...
-        endIndex(startFound & endFound)], 2);
-    boundaryPairs = boundaryPairs(boundaryPairs(:, 1) ~= boundaryPairs(:, 2), :);
-    augmentedPairMask = pairMask;
-    augmentedPairMask(sub2ind([nodeCount nodeCount], ...
-        boundaryPairs(:, 1), boundaryPairs(:, 2))) = true;
-    if nnz(augmentedPairMask) > nnz(pairMask)
-        pairMask = augmentedPairMask;
-        [cost_deg, accepted_deg, rejected_deg, acceptedCount, rejectedCount] = ...
-            createEdges(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg);
-        component = conncomp(graph(isfinite(cost_deg), "upper"));
-    end
-end
-exhaustiveWork = nodeCount * (nodeCount - 1) / 2 * ...
-    max(1, size(edgeStart_deg, 1));
-usedFallback = component(1) ~= component(2) && ...
-    ~usedExhaustive && exhaustiveWork <= workBudget;
-if usedFallback
-    pairMask = triu(true(nodeCount), 1);
-    [cost_deg, accepted_deg, rejected_deg, acceptedCount, rejectedCount] = ...
-        createEdges(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg);
-    usedExhaustive = true;
-    component = conncomp(graph(isfinite(cost_deg), "upper"));
-end
-maximumOffset_deg = max([diff(limits.azimuthInterval_deg), ...
-    diff(limits.elevationInterval_deg)]);
-if component(1) ~= component(2) && offset_deg < maximumOffset_deg
-    nextOffset_deg = min(4 * offset_deg, maximumOffset_deg);
-    [positions_deg, cost_deg, record] = createVisibilityGraph( ...
-        shape, start_deg, goal_deg, limits, nextOffset_deg / baseOffset_deg, ...
-        offsetRetryCount + 1);
-    record.ExhaustiveVisibilityUsed = ...
-        record.ExhaustiveVisibilityUsed || usedExhaustive;
-    record.ExhaustiveVisibilityFallbackUsed = ...
-        record.ExhaustiveVisibilityFallbackUsed || usedFallback;
-    return;
-end
-minimum_deg = min(all_deg, [], 1);
-maximum_deg = max(all_deg, [], 1);
-record = struct("Bounds_deg", [minimum_deg(1), maximum_deg(1), ...
-    minimum_deg(2), maximum_deg(2)], "CandidateOffset_deg", offset_deg, ...
-    "CandidateOffsetRetryCount", offsetRetryCount, ...
-    "VisibilityWorkBudget", workBudget, "EstimatedExhaustiveVisibilityWork", exhaustiveWork, ...
-    "ExhaustiveVisibilityUsed", usedExhaustive, ...
-    "ExhaustiveVisibilityFallbackUsed", usedFallback, ...
-    "VisibilityCandidatePairCount", nnz(pairMask), "VisibilityEdgeCount", acceptedCount, ...
-    "AcceptedEdges_deg", accepted_deg, "RejectedEdges_deg", rejected_deg, ...
-    "RejectedTransitionCount", rejectedCount);
-end
-
-function selected_deg = selectVisibilityCandidates(candidates_deg, start_deg, goal_deg, count)
-% Retain global supports, endpoint access, and uniform boundary coverage.
-endpointCount = min(4, floor(count / 6));
-directionCount = min(16, floor(count / 3));
-uniformCount = count - directionCount - 2 * endpointCount;
-selected = unique(round(linspace(1, size(candidates_deg, 1), uniformCount))).';
-if directionCount > 0
-    angle_rad = (0:directionCount - 1).' * (2 * pi / directionCount);
-    direction = [cos(angle_rad), sin(angle_rad)];
-    [~, support] = max(candidates_deg * direction.', [], 1);
-    selected = [selected; support(:)];
-end
-for reference_deg = [start_deg; goal_deg].'
-    [~, order] = sort(vecnorm(candidates_deg - reference_deg.', 2, 2));
-    selected = [selected; order(1:endpointCount)]; %#ok<AGROW>
-end
-selected = unique(selected, "stable");
-selected_deg = candidates_deg(selected(1:min(count, numel(selected))), :);
-end
-
-function [cost_deg, accepted_deg, rejected_deg, acceptedCount, rejectedCount] = ...
-        createEdges(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg)
-% Evaluate proposed pairs and retain the first 2000 decisions by category.
-[firstNode, secondNode] = find(pairMask);
-first_deg = positions_deg(firstNode, :);
-second_deg = positions_deg(secondNode, :);
-visible = segmentsAreVisible(first_deg, second_deg, shape, edgeStart_deg, edgeEnd_deg);
-distance_deg = vecnorm(second_deg - first_deg, 2, 2);
-nodeCount = size(positions_deg, 1);
-cost_deg = Inf(nodeCount);
-cost_deg(1:nodeCount + 1:end) = 0;
-linearIndex = sub2ind([nodeCount nodeCount], firstNode(visible), secondNode(visible));
-cost_deg(linearIndex) = distance_deg(visible);
-cost_deg = min(cost_deg, cost_deg.');
-acceptedCount = nnz(visible);
-rejectedCount = nnz(~visible);
-accepted_deg = [first_deg(visible, :), second_deg(visible, :)];
-rejected_deg = [first_deg(~visible, :), second_deg(~visible, :)];
-accepted_deg = accepted_deg(1:min(2000, acceptedCount), :);
-rejected_deg = rejected_deg(1:min(2000, rejectedCount), :);
 end
 
 function visible = segmentsAreVisible(first_deg, second_deg, shape, edgeStart_deg, edgeEnd_deg)
