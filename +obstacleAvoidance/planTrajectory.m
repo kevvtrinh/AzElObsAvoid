@@ -162,10 +162,6 @@ directCandidate = exactMotionSet.DirectCandidate;
 
 topologyTimer = tic;
 
-% Every request begins with the direct route suggestion. It remains first in
-% deterministic seed order even when its exact timed motion failed, because a
-% different motion method may still use that same spatial route successfully.
-seeds = obstacleAvoidance.search.createSeeds([], [], request);
 proposal = struct();
 visibilityGraph = struct();
 routeSet = struct();
@@ -197,6 +193,10 @@ if needsRouteSearch
     % duration, and reduced-geometry provenance for the motion solvers.
     seeds = obstacleAvoidance.search.createSeeds( ...
         routeSet, proposal, request);
+else
+    % A direct-only or obstacle-free request still uses the same seed creator
+    % so source labels, timing estimates, and indices keep one owner.
+    seeds = obstacleAvoidance.search.createSeeds([], [], request);
 end
 
 % Search diagnostics copy only work already returned by the stages above.

@@ -88,17 +88,24 @@ if ~profileAttempt.Success
     return;
 end
 
-%% Section 3: Evaluate And Check The Synchronized Motion
+%% Section 3: Evaluate The Synchronized Motion
 
 % Synchronization is itself a transformation, so evaluate the final polynomial
-% and check all limits and optional path rows again. This final engine check is
-% independent of obstacle-planner validation and cannot approve obstacle safety.
+% at uniform and switching times before checking the returned vector motion.
 result = ruckigEngine.evaluateSynchronizedMotion( ...
-    result, profileAttempt.Profile, initialState, terminalState, limits, ...
-    options, pathConstraints);
+    result, profileAttempt.Profile, initialState, options);
+
+%% Section 4: Check And Classify The Returned Motion
+
+% Axis constructors and synchronization cannot approve the assembled result.
+% Re-evaluate continuous limits and optional affine rows, then classify the
+% engine outcome. This dimension-neutral check cannot approve obstacle safety;
+% the calling planner's full trajectory validator retains that responsibility.
+result = ruckigEngine.internal.checkResult( ...
+    result, profileAttempt.Profile, terminalState, limits, pathConstraints);
 end
 
-%% Section 4: Local Functions
+%% Section 5: Local Functions
 
 function options = normalizeEngineOptions(options)
 % Resolve only direct Ruckig settings; routing decisions belong to callers.
