@@ -1,9 +1,9 @@
 function preparedMotion = prepareFinalMotion( ...
-        request, controlPoint_deg, segmentTime_s, operations)
+        request, controlPoint_deg, segmentTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
-%       request, controlPoint_deg, segmentTime_s, operations)
+%       request, controlPoint_deg, segmentTime_s)
 %**************************************************************************
 % PURPOSE
 %   - Impose exact rest-to-rest endpoints, split the selected curve, and
@@ -16,8 +16,6 @@ function preparedMotion = prepareFinalMotion( ...
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite scalar)
 %       Selected common segment time.
-%   - operations (scalar struct of function handles)
-%       Polynomial and subdivision kernels owned by BMTP solve.
 %**************************************************************************
 % OUTPUTS
 %   - preparedMotion (scalar struct)
@@ -33,14 +31,14 @@ controlPoint_deg(1, 1:3, :) = reshape(repmat( ...
     request.InitialState.position_deg, 3, 1), 1, 3, 2);
 controlPoint_deg(end, end - 2:end, :) = reshape(repmat( ...
     request.GoalState.position_deg, 3, 1), 1, 3, 2);
-controlPoint_deg = operations.subdivideMidpoint(controlPoint_deg);
+controlPoint_deg = subdivideMidpoint(controlPoint_deg);
 segmentTime_s = segmentTime_s / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
-exportPolynomial = operations.createPowerPolynomial( ...
+exportPolynomial = bmtpEngine.createPowerPolynomial( ...
     controlPoint_deg, 1, 0);
-certifiedControlPoint_deg = operations.powerToBernsteinControls( ...
+certifiedControlPoint_deg = powerToBernsteinControls( ...
     exportPolynomial.positionPower_deg);
 requiredTime_s = max( ...
     bmtpEngine.findRequiredSegmentTime(controlPoint_deg, request.Limits), ...
@@ -68,7 +66,7 @@ end
 
 %% Section 3: Return The Prepared Representation
 
-motionCertificate = operations.createMotionCertificate( ...
+motionCertificate = createMotionCertificate( ...
     segmentTime_s, requiredTime_s);
 preparedMotion = struct( ...
     "Success", success, ...
@@ -81,4 +79,51 @@ preparedMotion = struct( ...
     "DilationScale", dilationScale, ...
     "ArrivalAtHorizon", isFixedArrival, ...
     "MotionCertificate", motionCertificate);
+end
+
+%% Section 4: Local Functions
+
+function subdivided_deg = subdivideMidpoint(controlPoint_deg)
+% Restrict every Bezier span to exact half intervals by de Casteljau averaging.
+segmentCount = size(controlPoint_deg, 1);
+degree = size(controlPoint_deg, 2) - 1;
+subdivided_deg = zeros(2 * segmentCount, degree + 1, 2);
+for segmentIndex = 1:segmentCount
+    work_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
+    left_deg = zeros(degree + 1, 2);
+    right_deg = zeros(degree + 1, 2);
+    left_deg(1, :) = work_deg(1, :);
+    right_deg(end, :) = work_deg(end, :);
+    for levelIndex = 1:degree
+        work_deg = (work_deg(1:end - 1, :) + work_deg(2:end, :)) / 2;
+        left_deg(levelIndex + 1, :) = work_deg(1, :);
+        right_deg(end - levelIndex, :) = work_deg(end, :);
+    end
+    subdivided_deg(2 * segmentIndex - 1, :, :) = left_deg;
+    subdivided_deg(2 * segmentIndex, :, :) = right_deg;
+end
+end
+
+function controlPoint_deg = powerToBernsteinControls(positionPower_deg)
+% Reconstruct the exact control net represented by exported position powers.
+degree = size(positionPower_deg, 3) - 1;
+transform = zeros(degree + 1);
+for bernsteinIndex = 0:degree
+    for powerIndex = 0:bernsteinIndex
+        transform(bernsteinIndex + 1, powerIndex + 1) = ...
+            nchoosek(bernsteinIndex, powerIndex) / ...
+            nchoosek(degree, powerIndex);
+    end
+end
+powerPages = permute(positionPower_deg, [3 1 2]);
+controlPoint_deg = permute( ...
+    pagemtimes(transform, powerPages), [2 1 3]);
+end
+
+function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
+% Record the exact derivative-control timing inequality used for dilation.
+motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
+    "SegmentTime_s", segmentTime_s, ...
+    "RequiredSegmentTime_s", requiredTime_s, ...
+    "MaximumViolation", max(0, requiredTime_s - segmentTime_s));
 end

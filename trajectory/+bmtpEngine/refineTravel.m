@@ -1,11 +1,11 @@
 function [result, diagnostics] = refineTravel( ...
         request, warmStart, alternatingResult, diagnostics, ...
-        obstacleTarget_deg, roundoffReserve_deg, operations)
+        obstacleTarget_deg, roundoffReserve_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [result, diagnostics] = bmtpEngine.refineTravel( ...
 %       request, warmStart, alternatingResult, diagnostics, ...
-%       obstacleTarget_deg, roundoffReserve_deg, operations)
+%       obstacleTarget_deg, roundoffReserve_deg)
 %**************************************************************************
 % PURPOSE
 %   - Reduce the convex travel surrogate after the alternating solve has
@@ -16,8 +16,6 @@ function [result, diagnostics] = refineTravel( ...
 %       Checked request, prepared curve, retained attempt, and diagnostics.
 %   - obstacleTarget_deg, roundoffReserve_deg (finite scalars)
 %       Required obstacle-side target and numerical reserve in degrees.
-%   - operations (scalar struct of function handles)
-%       Numerical kernels owned by the BMTP solve implementation.
 %**************************************************************************
 % OUTPUTS
 %   - result (scalar struct)
@@ -45,7 +43,7 @@ end
 segmentCount = warmStart.SegmentCount;
 baseControl_deg = result.ControlPoint_deg;
 baseSegmentTime_s = result.SegmentTime_s;
-baseLength_deg = operations.controlPolygonLength(baseControl_deg);
+baseLength_deg = controlPolygonLength(baseControl_deg);
 selectedControl_deg = baseControl_deg;
 selectedSegmentTime_s = baseSegmentTime_s;
 selectedPlanes = result.Planes;
@@ -62,7 +60,7 @@ for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
     trialRate_deg_s = trialSavingsRates_deg_s(portfolioIndex);
     for refinementIndex = 1:8
         [refinedControl_deg, refinedSegmentTime_s, travelExitFlag] = ...
-            operations.solveTrajectoryStep( ...
+            bmtpEngine.solveTrajectoryStep( ...
             segmentCount, request.Degree, ...
             request.InitialState.position_deg, request.GoalState.position_deg, ...
             request.Limits, travelPlanes, roundoffReserve_deg, ...
@@ -71,7 +69,7 @@ for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
         if travelExitFlag <= 0 || isempty(refinedControl_deg)
             break;
         end
-        refinedCollisionPairs = operations.findSampledObstacleOverlaps( ...
+        refinedCollisionPairs = bmtpEngine.findSampledObstacleOverlaps( ...
             refinedControl_deg, request.Regions_deg, ...
             request.RegionMinimum_deg, request.RegionMaximum_deg, ...
             warmStart.RegionActiveBySegment, 1201);
@@ -88,7 +86,7 @@ for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
                 [segmentIndex, regionIndex] = ind2sub( ...
                     size(newPairs), newPairIndex);
                 [travelPlane, planeExitFlag] = ...
-                    operations.updateSeparatingLine( ...
+                    bmtpEngine.solveSeparatingLine( ...
                     squeeze(baseControl_deg(segmentIndex, :, :)), ...
                     request.Regions_deg{regionIndex}, obstacleTarget_deg, ...
                     roundoffReserve_deg, request.PlaneOptions);
@@ -103,8 +101,7 @@ for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
             end
             continue;
         end
-        refinedLength_deg = ...
-            operations.controlPolygonLength(refinedControl_deg);
+        refinedLength_deg = controlPolygonLength(refinedControl_deg);
         refinedCost_deg = refinedLength_deg + ...
             request.TravelSavingsRate_deg_s * ...
             segmentCount * refinedSegmentTime_s;
@@ -135,4 +132,12 @@ if travelRefinementAccepted
         [selectedPlanes.Active], size(selectedPlanes));
 end
 diagnostics.TaggedPairCount = nnz(result.TaggedPairs);
+end
+
+%% Section 4: Local Functions
+
+function length_deg = controlPolygonLength(controlPoint_deg)
+% Return the convex Bezier travel surrogate used by the secondary SOCP.
+edge_deg = diff(controlPoint_deg, 1, 2);
+length_deg = sum(vecnorm(edge_deg, 2, 3), "all");
 end
