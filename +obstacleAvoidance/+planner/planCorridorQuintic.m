@@ -53,10 +53,10 @@ useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
 [obstacles, initialState, goalState, limits] = ...
     obstacleAvoidance.input.normalizePlannerRequest( ...
     obstacles, initialState, goalState, limits, options);
+[preparedObstacles, publicObstacles] = prepareRequestObstacles(obstacles);
 [result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
-    obstacles, initialState, goalState, limits, options, ...
+    publicObstacles, initialState, goalState, limits, options, ...
     obstacleAvoidance.validateTrajectory());
-preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 useStaticKernel = obstacleAvoidance.obstacles.queryStaticHorizon( ...
     preparedObstacles, initialState.time_s, goalState.time_s);
 stageTiming = result.SearchDiagnostics.StageTiming;
@@ -655,6 +655,12 @@ diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "WaitTime_s", NaN, "InitialWaitTime_s", NaN, ...
     "FinalWaitTime_s", NaN, "RefinementCount", 0, ...
     "InfeasibleLowerWaitTime_s", NaN, ...
+    "CoarseTrialCount", 0, "FeasibleWindowCount", 0, ...
+    "EventWaitTime_s", zeros(0, 1), ...
+    "TrialWaitTime_s", zeros(0, 1), "TrialPassed", false(0, 1), ...
+    "WindowRecords", repmat(waitWindowTemplate(), 0, 1), ...
+    "SelectedWindowIndex", 0, ...
+    "HorizonProjectionKey", "candidateTimeRange_s", ...
     "EstimatedDuration_s", seed.EstimatedDuration_s, ...
     "SeedIndex", seed.Index, "SeedSource", string(seed.Source), ...
     "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau, ...
@@ -788,6 +794,16 @@ hasWait = any(vecnorm(diff(position_deg), 2, 2) <= ...
     duplicateTolerance_deg);
 end
 
+function [preparedObstacles, publicObstacles] = ...
+        prepareRequestObstacles(obstacles)
+% Reuse source-checked preparation without exposing internal caches in results.
+preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
+publicObstacles = obstacles;
+if isfield(publicObstacles, "InternalPreparation")
+    publicObstacles = rmfield(publicObstacles, "InternalPreparation");
+end
+end
+
 function record = createSweptProjectionRecord( ...
         diagnostics, validation, projection)
 % Record conservative static mover geometry and authoritative validation.
@@ -817,43 +833,135 @@ if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
 end
 
 directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
-lowerWaitTime_s = 0;
-upperWaitTime_s = initialWaitTime_s;
+eventWaitTime_s = collectDirectWaitEventTimes( ...
+    obstacles, initialState.time_s, directMotionDuration_s, initialWaitTime_s);
+coarseIntervalCount = 16;
+trialWaitTime_s = obstacleAvoidance.planner.createEventAwareTrialTimes( ...
+    0, initialWaitTime_s, eventWaitTime_s, coarseIntervalCount);
+trialPassed = false(size(trialWaitTime_s));
+trialCandidates = cell(size(trialWaitTime_s));
+trialValidations = cell(size(trialWaitTime_s));
+for trialIndex = 1:numel(trialWaitTime_s)
+    if trialWaitTime_s(trialIndex) == initialWaitTime_s
+        trialCandidate = candidate;
+        trialValidation = validation;
+    else
+        motionTimer = tic;
+        [trialCandidate, ~] = createTimedSeedCandidate( ...
+            seed, initialState, goalState, limits, options, ...
+            trialWaitTime_s(trialIndex), directMotionDuration_s);
+        motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
+        [trialCandidate, trialValidation, ~, stageTiming] = ...
+            validateCandidate( ...
+            trialCandidate, obstacles, initialState, goalState, limits, ...
+            options, stageTiming, ...
+            "The refined direct-wait kernel returned no trajectory.");
+    end
+    trialPassed(trialIndex) = trialValidation.Passed;
+    if trialPassed(trialIndex)
+        trialCandidates{trialIndex} = trialCandidate;
+        trialValidations{trialIndex} = trialValidation;
+    end
+end
+
+windowStartIndex = find(trialPassed & [true; ~trialPassed(1:end - 1)]);
+windowRecords = repmat(waitWindowTemplate(), numel(windowStartIndex), 1);
+selectedWaitTime_s = NaN;
+selectedWindowIndex = 0;
 bestCandidate = candidate;
 bestValidation = validation;
-for refinementIndex = 1:options.MaximumWaitRefinementIterations
-    if refinementIndex == 1
-        trialWaitTime_s = lowerWaitTime_s;
+refinementCount = 0;
+selectedLowerWaitTime_s = NaN;
+for windowIndex = 1:numel(windowStartIndex)
+    upperIndex = windowStartIndex(windowIndex);
+    upperWaitTime_s = trialWaitTime_s(upperIndex);
+    initialUpperWaitTime_s = upperWaitTime_s;
+    bestWindowCandidate = trialCandidates{upperIndex};
+    bestWindowValidation = trialValidations{upperIndex};
+    windowRefinementCount = 0;
+    if upperIndex == 1
+        lowerWaitTime_s = NaN;
+        coarseLowerWaitTime_s = NaN;
     else
-        trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
-    end
-    motionTimer = tic;
-    [trialCandidate, ~] = createTimedSeedCandidate( ...
-        seed, initialState, goalState, limits, options, ...
-        trialWaitTime_s, directMotionDuration_s);
-    motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
-    [trialCandidate, trialValidation, ~, stageTiming] = validateCandidate( ...
-        trialCandidate, obstacles, initialState, goalState, limits, options, ...
-        stageTiming, "The refined direct-wait kernel returned no trajectory.");
-    diagnostics.RefinementCount = refinementIndex;
-    if trialValidation.Passed
-        bestCandidate = trialCandidate;
-        bestValidation = trialValidation;
-        upperWaitTime_s = trialWaitTime_s;
-        if trialWaitTime_s == 0
-            break;
+        lowerWaitTime_s = trialWaitTime_s(upperIndex - 1);
+        coarseLowerWaitTime_s = lowerWaitTime_s;
+        while upperWaitTime_s - lowerWaitTime_s > ...
+                options.ArrivalTimeTolerance_s && ...
+                windowRefinementCount < ...
+                options.MaximumWaitRefinementIterations
+            queryWaitTime_s = 0.5 * ...
+                (lowerWaitTime_s + upperWaitTime_s);
+            motionTimer = tic;
+            [trialCandidate, ~] = createTimedSeedCandidate( ...
+                seed, initialState, goalState, limits, options, ...
+                queryWaitTime_s, directMotionDuration_s);
+            motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
+            [trialCandidate, trialValidation, ~, stageTiming] = ...
+                validateCandidate( ...
+                trialCandidate, obstacles, initialState, goalState, limits, ...
+                options, stageTiming, ...
+                "The refined direct-wait kernel returned no trajectory.");
+            refinementCount = refinementCount + 1;
+            windowRefinementCount = windowRefinementCount + 1;
+            if trialValidation.Passed
+                bestWindowCandidate = trialCandidate;
+                bestWindowValidation = trialValidation;
+                upperWaitTime_s = queryWaitTime_s;
+            else
+                lowerWaitTime_s = queryWaitTime_s;
+            end
         end
-    else
-        lowerWaitTime_s = trialWaitTime_s;
-        diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
+    end
+    windowRecords(windowIndex) = struct( ...
+        "CoarseLowerWaitTime_s", coarseLowerWaitTime_s, ...
+        "InitialUpperWaitTime_s", initialUpperWaitTime_s, ...
+        "FinalLowerWaitTime_s", lowerWaitTime_s, ...
+        "SelectedWaitTime_s", upperWaitTime_s, ...
+        "RefinementCount", windowRefinementCount);
+    if ~isfinite(selectedWaitTime_s) || upperWaitTime_s < selectedWaitTime_s
+        selectedWaitTime_s = upperWaitTime_s;
+        selectedLowerWaitTime_s = lowerWaitTime_s;
+        selectedWindowIndex = windowIndex;
+        bestCandidate = bestWindowCandidate;
+        bestValidation = bestWindowValidation;
     end
 end
 candidate = bestCandidate;
 validation = bestValidation;
-diagnostics.WaitTime_s = upperWaitTime_s;
-diagnostics.FinalWaitTime_s = upperWaitTime_s;
+diagnostics.RefinementCount = refinementCount;
+diagnostics.CoarseTrialCount = numel(trialWaitTime_s);
+diagnostics.FeasibleWindowCount = numel(windowRecords);
+diagnostics.EventWaitTime_s = eventWaitTime_s;
+diagnostics.TrialWaitTime_s = trialWaitTime_s;
+diagnostics.TrialPassed = trialPassed;
+diagnostics.WindowRecords = windowRecords;
+diagnostics.SelectedWindowIndex = selectedWindowIndex;
+diagnostics.InfeasibleLowerWaitTime_s = selectedLowerWaitTime_s;
+diagnostics.WaitTime_s = selectedWaitTime_s;
+diagnostics.FinalWaitTime_s = selectedWaitTime_s;
 diagnostics.ElapsedTime_s = diagnostics.ElapsedTime_s + motionElapsedTime_s;
 candidate.SolverDiagnostics = diagnostics;
+end
+
+function eventWaitTime_s = collectDirectWaitEventTimes( ...
+        obstacles, initialTime_s, directMotionDuration_s, maximumWaitTime_s)
+% Map source events to dwell times where motion starts or finishes at an event.
+sourceEventTime_s = zeros(0, 1);
+for obstacleIndex = 1:numel(obstacles)
+    sourceEventTime_s = [sourceEventTime_s; ...
+        double(obstacles(obstacleIndex).time_s(:))]; %#ok<AGROW>
+end
+eventWaitTime_s = [sourceEventTime_s - initialTime_s; ...
+    sourceEventTime_s - initialTime_s - directMotionDuration_s];
+eventWaitTime_s = unique(eventWaitTime_s( ...
+    eventWaitTime_s >= 0 & eventWaitTime_s <= maximumWaitTime_s));
+end
+
+function record = waitWindowTemplate()
+% Keep direct-wait feasible-window diagnostics stable across all candidates.
+record = struct("CoarseLowerWaitTime_s", NaN, ...
+    "InitialUpperWaitTime_s", NaN, "FinalLowerWaitTime_s", NaN, ...
+    "SelectedWaitTime_s", NaN, "RefinementCount", 0);
 end
 
 function index = selectValidatedCandidate(summaries, indices, options)

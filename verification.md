@@ -1,5 +1,55 @@
 # Plan 325 verification
 
+## Refine every event-aware feasibility window - 2026-09-01
+
+Item 15 replaces the single global fail/pass bisection in moving-target
+intercept and direct-wait refinement. A shared chronological grid retains a
+16-interval uniform background, every caller-supplied source event, and one
+midpoint between consecutive events. Each path evaluates the complete grid,
+records every observed false-to-true window opening, refines each opening
+locally to the declared arrival tolerance and iteration bound, and chooses the
+earliest result that passed the independent public validator. Diagnostics now
+retain event/trial times, trial outcomes, window brackets, the selected window,
+and the horizon-projection ownership key.
+
+The intercept regression uses a stationary target and a blocker with clear
+windows at source times 2.90--3.08 and 6.50--8.00 seconds. The exact item-14
+baseline returned 6.582983337402 seconds; the candidate returned
+2.931640625000 seconds and recorded at least two windows. The forced direct-wait
+regression uses a full-workspace barrier with two clear intervals, so no lateral
+route can replace timing. Baseline refinement returned 5.021850585938 seconds
+of wait; the candidate returned 2.022460937500 seconds, recorded two windows,
+36 coarse trials, 16 refinements, and selected window one.
+
+The focused warm medians quantify the correctness cost: intercept rose from
+0.4793112 to 0.7438613 seconds (55.185 percent) and direct wait from 0.4451262
+to 0.6665108 seconds (49.738 percent). The retained implementation prepares the
+immutable obstacle collection once before intercept trials, preserves the
+cache through canonical normalization only when every record carries it, and
+relies on `prepareDynamic`'s exact source snapshot to reject stale data.
+Internal preparation is stripped before assembling public result inputs.
+Horizon-dependent geometry is not shared: intercept diagnostics key it by
+`trialGoalTime_s`, and direct-wait diagnostics by `candidateTimeRange_s`.
+
+Code Analyzer returned zero findings for the four changed production files,
+the new event-grid helper, and both changed tests. MATLAB results were:
+
+- `testObstacleHistoryRobustness`: 8/8 passed in 4.695680 seconds.
+- `testObstacleInfrastructure`: 10/10 passed in 1.301944 seconds.
+- `testPlannerContract`: 14/14 passed in 33.869245 seconds.
+- `testTimedBmtpPlanning`: 3/3 passed in 12.702431 seconds.
+- `testSandboxRouteEconomy`: 3/3 passed in 10.675562 seconds.
+- `testPlannerOptions`: 5/5 passed in 0.513904 seconds.
+
+The maintained `exampleObstacleAvoidance` was run headlessly four times per
+side with jerk enabled. Baseline and candidate both passed planning and
+independent validation with 11.152119519024-degree selected polyline,
+11.411861387735-degree smoothed motion, 7.574541766321-second duration, and
+collision/kinematic/certificate status 1/1/1. Adjacent warm-plus-three medians
+were 3.4247017 seconds baseline and 3.2834362 seconds candidate (4.125 percent
+faster). This is neutral evidence that ordinary static planning did not regress
+in the sample, not a general end-to-end speedup claim.
+
 ## Reduce spatial-homology overhead - 2026-09-01
 
 Item 14 replaces string state keys with an injective numeric encoding. Each

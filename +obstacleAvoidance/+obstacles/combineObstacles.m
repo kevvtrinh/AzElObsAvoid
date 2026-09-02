@@ -42,9 +42,21 @@ if isempty(obstacleItems)
     return;
 end
 normalized = cell(size(obstacleItems));
+hasReusablePreparation = true;
 for obstacleIndex = 1:numel(obstacleItems)
     normalized{obstacleIndex} = ...
         obstacleAvoidance.obstacles.createObstacle(obstacleItems{obstacleIndex});
+    hasReusablePreparation = hasReusablePreparation && ...
+        isfield(obstacleItems{obstacleIndex}, "InternalPreparation");
+end
+% A complete collection-wide cache can survive normalization because
+% prepareDynamic verifies its immutable source snapshot before every reuse.
+% Drop partial caches so the resulting structure array remains uniform.
+if hasReusablePreparation
+    for obstacleIndex = 1:numel(obstacleItems)
+        normalized{obstacleIndex}.InternalPreparation = ...
+            obstacleItems{obstacleIndex}.InternalPreparation;
+    end
 end
 obstacleField = vertcat(normalized{:});
 end

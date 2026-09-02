@@ -186,6 +186,58 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyGreaterThan(testCase, result.Intercept.Time_s, 2.89);
 verifyLessThan(testCase, result.Intercept.Time_s, 3.09, ...
     "The chronological search skipped the first feasible window.");
+verifyGreaterThanOrEqual(testCase, ...
+    result.Intercept.Search.FeasibleWindowCount, 2);
+verifyEqual(testCase, result.Intercept.Search.SelectedWindowIndex, 1);
+verifyTrue(testCase, result.Intercept.Search.ObstaclePreparationReused);
+verifyFalse(testCase, ...
+    isfield(result.Inputs.obstacles, "InternalPreparation"));
+end
+
+function testDirectWaitFindsFirstOfTwoFeasibleWindows(testCase)
+% Refine every direct-wait opening and retain the earliest validated motion.
+blocked_deg = [1.9 -10; 2.1 -10; 2.1 10; 1.9 10];
+clear_deg = blocked_deg + [20 0];
+obstacleTime_s = [0; 2.5; 2.6; 3.4; 3.5; 5.5; 5.6; 8];
+isClear = logical([0; 0; 1; 1; 0; 0; 1; 1]);
+azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
+elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+for sampleIndex = 1:numel(obstacleTime_s)
+    position_deg = blocked_deg;
+    if isClear(sampleIndex)
+        position_deg = clear_deg;
+    end
+    azimuthBySlice_deg{sampleIndex} = position_deg(:, 1);
+    elevationBySlice_deg{sampleIndex} = position_deg(:, 2);
+end
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "direct-wait window blocker", obstacleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, 0);
+limits = struct( ...
+    "maxVelocity_deg_s", [10 10], ...
+    "maxAcceleration_deg_s2", [1000 1000], ...
+    "maxJerk_deg_s3", [10000 10000], ...
+    "azimuthInterval_deg", [-1 6], ...
+    "elevationInterval_deg", [-10 10]);
+options = struct("GoalTimeMode", "earliestArrival", ...
+    "MaximumSeedCount", 3, "MaximumTimeLayerCount", 9, ...
+    "SampleTime_s", 0.02);
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, restState(0, [0 0]), restState(8, [4 0]), ...
+    limits, options);
+
+directWaitIndex = find(string({result.Seeds.Source}) == "directWait", 1);
+verifyTrue(testCase, result.Success, result.Message);
+verifyNotEmpty(testCase, directWaitIndex);
+verifyEqual(testCase, result.SelectedSeedIndex, directWaitIndex);
+diagnostics = result.SeedSummaries(directWaitIndex).SolverDiagnostics;
+verifyGreaterThanOrEqual(testCase, diagnostics.FeasibleWindowCount, 2);
+verifyEqual(testCase, diagnostics.SelectedWindowIndex, 1);
+verifyGreaterThan(testCase, diagnostics.FinalWaitTime_s, 2);
+verifyLessThan(testCase, diagnostics.FinalWaitTime_s, 3.5, ...
+    "The direct-wait refinement skipped the first feasible window.");
+verifyEqual(testCase, diagnostics.HorizonProjectionKey, ...
+    "candidateTimeRange_s");
 end
 
 function state = restState(time_s, position_deg)

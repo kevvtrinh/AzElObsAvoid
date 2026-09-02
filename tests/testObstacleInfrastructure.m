@@ -275,6 +275,9 @@ function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
 obstacle = rectangleObstacle("cache source", [0; 4], [-2 2 -1 1]);
 prepared = obstacleAvoidance.obstacles.prepareDynamic(obstacle);
 preparation = prepared.InternalPreparation;
+recombined = obstacleAvoidance.obstacles.combineObstacles(prepared);
+verifyTrue(testCase, isfield(recombined, "InternalPreparation"));
+verifyEqual(testCase, recombined.InternalPreparation, preparation);
 verifyEqual(testCase, preparation.PreparationVersion, 1);
 verifySize(testCase, preparation.SampleBounds_deg, [2 4]);
 verifySize(testCase, preparation.IntervalBounds_deg, [1 4]);
@@ -282,7 +285,7 @@ verifyEqual(testCase, size(preparation.SampleEdgeStart_deg{1}, 1), 4);
 verifyEqual(testCase, preparation.SampleEdgeStart_deg{1}, ...
     preparation.SampleEdgeEnd_deg{1}([4 1 2 3], :), "AbsTol", 0);
 
-mutated = prepared;
+mutated = recombined;
 for sampleIndex = 1:numel(mutated.az_deg)
     mutated.az_deg{sampleIndex} = mutated.az_deg{sampleIndex} + 5;
 end
@@ -297,7 +300,8 @@ verifyFalse(testCase, ...
     mutated, 0, 4);
 verifyEqual(testCase, min(projection.Records.Boundary_deg(:, 1)), ...
     3, "AbsTol", 1e-12);
-reprepared = obstacleAvoidance.obstacles.prepareDynamic(mutated);
+reprepared = obstacleAvoidance.obstacles.prepareDynamic( ...
+    obstacleAvoidance.obstacles.combineObstacles(mutated));
 verifyNotEqual(testCase, reprepared.InternalPreparation.SourceSnapshot, ...
     preparation.SourceSnapshot);
 verifyEqual(testCase, ...

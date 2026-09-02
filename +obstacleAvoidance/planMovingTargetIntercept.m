@@ -122,6 +122,8 @@ if ~isscalar(targetMotion.InterpolationMethod) || ~any( ...
     error("planMovingTargetIntercept:InvalidInterpolation", ...
         "InterpolationMethod must be 'linear' or 'pchip'.");
 end
+obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
+obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 
 %% Section 3: Plan The Intercept
 
@@ -200,55 +202,121 @@ if isDirectExact
             search = searchRecord("completePiecewisePolynomialDirect", ...
                 1, 0, 0, searchStart_s, searchEnd_s, exactTime_s, ...
                 exactTime_s, 0, exactDiagnostics);
+            search.FeasibleWindowCount = 1;
+            search.ObstaclePreparationReused = ~isempty(obstacles);
             return;
         end
     end
 end
 
 coarseIntervalCount = 16;
-coarseTime_s = unique([linspace(searchStart_s, searchEnd_s, ...
-    coarseIntervalCount + 1).'; targetMotion.time_s( ...
-    targetMotion.time_s >= searchStart_s & targetMotion.time_s <= searchEnd_s)]);
+sourceEventTime_s = collectSourceEventTimes(obstacles, targetMotion);
+coarseTime_s = obstacleAvoidance.planner.createEventAwareTrialTimes( ...
+    searchStart_s, searchEnd_s, sourceEventTime_s, coarseIntervalCount);
 trialCount = 0;
-selectedTime_s = NaN;
-lowerTime_s = searchStart_s;
 result = [];
-for queryTime_s = coarseTime_s.'
+coarsePassed = false(size(coarseTime_s));
+coarseResult = cell(size(coarseTime_s));
+for coarseIndex = 1:numel(coarseTime_s)
+    queryTime_s = coarseTime_s(coarseIndex);
     [trial, ~] = planAtTime(obstacles, initialState, targetMotion, ...
         limits, options, queryTime_s);
     trialCount = trialCount + 1;
     result = trial;
-    if trial.Success
-        selectedTime_s = queryTime_s;
-        break;
+    coarsePassed(coarseIndex) = trialIsValidated(trial);
+    if coarsePassed(coarseIndex)
+        coarseResult{coarseIndex} = trial;
     end
-    lowerTime_s = queryTime_s;
 end
-initialUpperTime_s = selectedTime_s;
+windowStartIndex = find(coarsePassed & [true; ~coarsePassed(1:end - 1)]);
+windowTemplate = struct("CoarseLowerTime_s", NaN, ...
+    "InitialUpperTime_s", NaN, "FinalLowerTime_s", NaN, ...
+    "SelectedTime_s", NaN, "RefinementCount", 0);
+windowRecords = repmat(windowTemplate, numel(windowStartIndex), 1);
+maximumRefinementCount = 16;
 refinementCount = 0;
-while isfinite(selectedTime_s) && selectedTime_s - lowerTime_s > ...
-        tolerance_s && refinementCount < 16
-    queryTime_s = 0.5 * (lowerTime_s + selectedTime_s);
-    [trial, ~] = planAtTime(obstacles, initialState, targetMotion, ...
-        limits, options, queryTime_s);
-    trialCount = trialCount + 1;
-    refinementCount = refinementCount + 1;
-    if trial.Success
-        result = trial;
-        selectedTime_s = queryTime_s;
+selectedTime_s = NaN;
+selectedWindowIndex = 0;
+for windowIndex = 1:numel(windowStartIndex)
+    upperIndex = windowStartIndex(windowIndex);
+    upperTime_s = coarseTime_s(upperIndex);
+    initialUpperTime_s = upperTime_s;
+    bestWindowResult = coarseResult{upperIndex};
+    windowRefinementCount = 0;
+    if upperIndex == 1
+        lowerTime_s = NaN;
+        coarseLowerTime_s = NaN;
     else
-        lowerTime_s = queryTime_s;
+        lowerTime_s = coarseTime_s(upperIndex - 1);
+        coarseLowerTime_s = lowerTime_s;
+        while upperTime_s - lowerTime_s > tolerance_s && ...
+                windowRefinementCount < maximumRefinementCount
+            queryTime_s = 0.5 * (lowerTime_s + upperTime_s);
+            [trial, ~] = planAtTime(obstacles, initialState, targetMotion, ...
+                limits, options, queryTime_s);
+            trialCount = trialCount + 1;
+            refinementCount = refinementCount + 1;
+            windowRefinementCount = windowRefinementCount + 1;
+            if trialIsValidated(trial)
+                bestWindowResult = trial;
+                upperTime_s = queryTime_s;
+            else
+                lowerTime_s = queryTime_s;
+            end
+        end
     end
+    windowRecords(windowIndex) = struct( ...
+        "CoarseLowerTime_s", coarseLowerTime_s, ...
+        "InitialUpperTime_s", initialUpperTime_s, ...
+        "FinalLowerTime_s", lowerTime_s, ...
+        "SelectedTime_s", upperTime_s, ...
+        "RefinementCount", windowRefinementCount);
+    if ~isfinite(selectedTime_s) || upperTime_s < selectedTime_s
+        selectedTime_s = upperTime_s;
+        selectedWindowIndex = windowIndex;
+        result = bestWindowResult;
+    end
+end
+if selectedWindowIndex == 0
+    initialUpperTime_s = NaN;
+    lowerTime_s = coarseTime_s(end);
+else
+    initialUpperTime_s = ...
+        windowRecords(selectedWindowIndex).InitialUpperTime_s;
+    lowerTime_s = windowRecords(selectedWindowIndex).FinalLowerTime_s;
 end
 search = searchRecord("boundedChronologicalFixedTime", trialCount, ...
     coarseIntervalCount, refinementCount, searchStart_s, searchEnd_s, ...
     initialUpperTime_s, lowerTime_s, tolerance_s, exactDiagnostics);
+search.EventTime_s = sourceEventTime_s;
+search.TrialTime_s = coarseTime_s;
+search.TrialPassed = coarsePassed;
+search.FeasibleWindowCount = numel(windowRecords);
+search.WindowRecords = windowRecords;
+search.SelectedWindowIndex = selectedWindowIndex;
+search.ObstaclePreparationReused = ~isempty(obstacles);
 end
 
 function isZero = derivativeIsZero(state, fieldName)
 % Recognize the exact rest state required by the algebraic kernel.
 isZero = ~isfield(state, fieldName) || isempty(state.(fieldName)) || ...
     all(double(state.(fieldName)) == 0, "all");
+end
+
+function passed = trialIsValidated(trial)
+% Accept only planner success backed by the retained public validation.
+passed = trial.Success && isfield(trial, "Validation") && ...
+    trial.Validation.Passed;
+end
+
+function eventTime_s = collectSourceEventTimes(obstacles, targetMotion)
+% Collect immutable target and obstacle sample times for chronological trials.
+eventTime_s = double(targetMotion.time_s(:));
+for obstacleIndex = 1:numel(obstacles)
+    eventTime_s = [eventTime_s; ...
+        double(obstacles(obstacleIndex).time_s(:))]; %#ok<AGROW>
+end
+eventTime_s = unique(eventTime_s);
 end
 
 function [result, search] = planAtTime( ...
@@ -282,6 +350,8 @@ result = obstacleAvoidance.planTrajectory( ...
 search = searchRecord("specifiedFixedTime", 1, 0, 0, ...
     interceptTime_s, interceptTime_s, interceptTime_s, ...
     interceptTime_s, 0, struct());
+search.FeasibleWindowCount = double(trialIsValidated(result));
+search.ObstaclePreparationReused = ~isempty(obstacles);
 end
 
 function position_deg = targetAtTime(targetMotion, queryTime_s)
@@ -317,5 +387,12 @@ search = struct("Policy", policy, "TrialCount", trialCount, ...
     "SearchStartTime_s", startTime_s, "SearchEndTime_s", endTime_s, ...
     "InitialValidatedUpperTime_s", upperTime_s, ...
     "FinalLowerTime_s", lowerTime_s, ...
-    "ArrivalTimeTolerance_s", tolerance_s, "ExactDirect", exactDiagnostics);
+    "ArrivalTimeTolerance_s", tolerance_s, "ExactDirect", exactDiagnostics, ...
+    "EventTime_s", zeros(0, 1), "TrialTime_s", zeros(0, 1), ...
+    "TrialPassed", false(0, 1), "FeasibleWindowCount", 0, ...
+    "WindowRecords", repmat(struct("CoarseLowerTime_s", NaN, ...
+    "InitialUpperTime_s", NaN, "FinalLowerTime_s", NaN, ...
+    "SelectedTime_s", NaN, "RefinementCount", 0), 0, 1), ...
+    "SelectedWindowIndex", 0, "ObstaclePreparationReused", false, ...
+    "HorizonProjectionKey", "trialGoalTime_s");
 end

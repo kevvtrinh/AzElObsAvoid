@@ -1,5 +1,36 @@
 # Novel replacement branch assessment
 
+## Refine every event-aware feasibility window - 2026-09-01
+
+The largest new strength is that earliest-arrival intercept and direct-wait
+refinement no longer assumes feasibility is globally monotone. Both paths now
+retain obstacle and target source events, add bounded coarse/interior trials,
+identify every observed feasible window, refine each local fail/pass opening,
+and select the earliest independently validated motion. Two deterministic
+regressions each expose two disjoint feasible windows. The item-14 baseline
+incorrectly selected 6.582983337402 seconds for the intercept and
+5.021850585938 seconds of direct wait; item 15 selected the first windows at
+2.931640625000 seconds and 2.022460937500 seconds respectively. The direct-wait
+record reports both windows, 36 coarse trials, and 16 local refinements.
+
+Repeated intercept trials now preserve one immutable-source-checked obstacle
+preparation through canonical normalization. `prepareDynamic` still rejects a
+stale source snapshot, internal preparation is removed from public result
+inputs, and every horizon-dependent projection remains owned by the trial's
+goal time or candidate time range. Obstacle-history tests passed 8/8,
+infrastructure 10/10, planner contract 14/14, timed planning 3/3, route economy
+3/3, and planner options 5/5. Code Analyzer reported zero findings in every
+changed production and test file.
+
+The largest new weakness is bounded extra work on refinement requests. Focused
+warm medians rose from 0.4793112 to 0.7438613 seconds for the two-window
+intercept (55.185 percent) and from 0.4451262 to 0.6665108 seconds for the
+two-window direct wait (49.738 percent). This cost is retained because it fixes
+incorrect earliest-arrival selection, a higher-priority correctness result.
+An unrelated maintained static example remained physically identical and its
+adjacent warm median was 3.2834362 seconds versus 3.4247017 seconds baseline;
+no general speedup is claimed.
+
 ## Encode homology states numerically and reuse cleanup trees - 2026-09-01
 
 The largest new strength is bounded numeric ownership of spatial-homology
