@@ -106,9 +106,10 @@ preparedObstacles = scene.preparedObstacles;
 useStaticKernel = scene.isStaticHorizon;
 stageTiming = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.StageOutputs.Scene = scene;
-result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
-[~, result.SearchDiagnostics.FixedClockExcursion] = ...
-    obstacleAvoidance.planner.createFixedClockLateralExcursion();
+exactMotionSet = obstacleAvoidance.planner.solveExactCandidates();
+result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
+result.SearchDiagnostics.FixedClockExcursion = ...
+    exactMotionSet.ExcursionDiagnostics;
 result.SearchDiagnostics.SelectionPolicy = struct( ...
     "GoalTimeMode", options.GoalTimeMode, ...
     "MinimumTravelSavingsRate_deg_s", ...
@@ -122,7 +123,6 @@ result.SearchDiagnostics.SeedEarlyExit = struct( ...
     "Reason", "notApplicableExactPath", ...
     "PhysicalArrivalLowerBound_s", NaN, ...
     "ReachedBySeedIndex", 0);
-excursionIsValidated = false;
 
 %% Section 4: Check Physical Endpoints
 
@@ -138,67 +138,25 @@ end
 
 %% Section 5: Try Exact Physical-Time Motions
 
-obstacleAvoidance.input.throwIfCancellationRequested(options);
-motionTimer = tic;
-if useRuckigWaypoint
-    directSeed = createDirectSeed(initialState, goalState, ...
-        goalState.time_s - initialState.time_s);
-    directSeed.Source = "ruckigDirect";
-    [directCandidate, ~] = ...
-        obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-        directSeed, initialState, goalState, limits, options);
-else
-    directCandidate = bmtpEngine.createDirectMotion( ...
-        initialState, goalState, limits, options);
-end
-directElapsedTime_s = toc(motionTimer);
-stageTiming.MotionSolvingElapsedTime_s = ...
-    stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
-[directCandidate, directValidation, directValidationTime_s, stageTiming] = ...
-    obstacleAvoidance.planner.checkCandidateMotion( ...
-    directCandidate, preparedObstacles, initialState, ...
-    goalState, limits, options, stageTiming, "");
-obstacleAvoidance.input.throwIfCancellationRequested(options);
-directAttempt = recordDirectAttempt(directCandidate, directValidation, ...
-    directElapsedTime_s, directValidationTime_s);
-result.SearchDiagnostics.DirectAttempt = directAttempt;
-if directValidation.Passed
-    result = finishFastPath(result, directCandidate, directValidation, ...
-        directAttempt, directElapsedTime_s, ...
-        createDirectSeed(initialState, goalState, ...
-        directCandidate.MotionDuration_s), summaryTemplate, ...
-        "An exact direct rest-to-rest motion passed independent validation.", ...
-        planningTimer, stageTiming);
+% Exact analytic motions can avoid graph construction entirely, but only after
+% the same complete trajectory check used by all other candidates. Try the
+% direct profile and enabled fixed-clock excursion before creating proposal
+% geometry; retain every attempt even when route search must continue.
+exactMotionSet = obstacleAvoidance.planner.solveExactCandidates( ...
+    request, scene, stageTiming);
+stageTiming = exactMotionSet.StageTiming;
+result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
+result.SearchDiagnostics.FixedClockExcursion = ...
+    exactMotionSet.ExcursionDiagnostics;
+if exactMotionSet.FastPath.Available
+    fastPath = exactMotionSet.FastPath;
+    result = finishFastPath(result, fastPath.Candidate, ...
+        fastPath.Validation, fastPath.AttemptDetails, ...
+        fastPath.ElapsedTime_s, fastPath.Seed, summaryTemplate, ...
+        fastPath.Message, planningTimer, stageTiming);
     return;
 end
-result.SearchDiagnostics.DirectAttempt.FallbackContinued = true;
-
-if ~useRuckigWaypoint
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
-    motionTimer = tic;
-    [excursionCandidate, excursionDiagnostics] = ...
-        obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
-        directCandidate, preparedObstacles, initialState, goalState, ...
-        limits, options, directValidation);
-    excursionElapsedTime_s = toc(motionTimer);
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
-    stageTiming = accountConstructorValidation( ...
-        stageTiming, excursionElapsedTime_s, excursionDiagnostics);
-    result.SearchDiagnostics.FixedClockExcursion = excursionDiagnostics;
-    if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
-        excursionIsValidated = true;
-        excursionSeed = createMotionSeed( ...
-            excursionCandidate, "fixedClockLateralExcursion");
-        if options.GoalTimeMode == "earliestArrival"
-            result = finishFastPath(result, excursionCandidate, ...
-                excursionCandidate.Validation, excursionDiagnostics, ...
-                excursionElapsedTime_s, excursionSeed, summaryTemplate, ...
-                "A fixed-clock lateral excursion attained the physical time floor.", ...
-                planningTimer, stageTiming);
-            return;
-        end
-    end
-end
+directCandidate = exactMotionSet.DirectCandidate;
 
 %% Section 6: Create Proposal Geometry And Search Routes
 
@@ -290,7 +248,11 @@ result.SearchDiagnostics.StageOutputs.CandidateSet = candidateSet;
 % Balanced and fixed policies compare every validated special motion against
 % the topology candidates; their physical arrival lower bounds are not travel
 % optimality certificates.
-if excursionIsValidated
+if exactMotionSet.ExcursionIsValidated
+    excursionCandidate = exactMotionSet.ExcursionCandidate;
+    excursionDiagnostics = exactMotionSet.ExcursionDiagnostics;
+    excursionElapsedTime_s = exactMotionSet.ExcursionElapsedTime_s;
+    excursionSeed = exactMotionSet.ExcursionSeed;
     excursionCandidate.SeedIndex = numel(seeds) + 1;
     excursionSeed.Index = excursionCandidate.SeedIndex;
     seeds(end + 1) = excursionSeed;
@@ -319,113 +281,6 @@ result = obstacleAvoidance.planner.createPlannerResult( ...
 end
 
 %% Section 8: Local Functions
-
-function record = directAttemptTemplate()
-% Define stable exact-direct evidence before the attempt runs.
-record = struct("Identifier", "analyticRestToRest", ...
-    "Attempted", false, "ProfileCreated", false, ...
-    "ValidationAttempted", false, "ValidationPassed", false, ...
-    "CollisionFree", false, "CollisionResolved", false, ...
-    "FallbackContinued", false, "KernelTerminationReason", "notRun", ...
-    "TerminationReason", "notRun", ...
-    "Message", "The exact direct motion was not attempted.", ...
-    "ElapsedTime_s", 0, "ValidationElapsedTime_s", 0, ...
-    "MotionDuration_s", NaN, "MotionLength_deg", NaN, ...
-    "MinimumAxisDuration_s", [NaN NaN], ...
-    "StraightProgressMinimumDuration_s", NaN, ...
-    "UsedStraightProgress", false);
-end
-
-function record = recordDirectAttempt(candidate, validation, elapsedTime_s, ...
-        validationElapsedTime_s)
-% Fill exact-direct kernel and authoritative-validation evidence.
-record = directAttemptTemplate();
-if isfield(candidate, "SolverDiagnostics") && ...
-        isfield(candidate.SolverDiagnostics, "Identifier")
-    record.Identifier = candidate.SolverDiagnostics.Identifier;
-end
-record.Attempted = true;
-record.ProfileCreated = ~isempty(candidate.time_s);
-record.ValidationAttempted = record.ProfileCreated;
-record.ValidationPassed = validation.Passed;
-record.CollisionFree = validation.CollisionFree;
-record.CollisionResolved = validation.CollisionResolved;
-record.KernelTerminationReason = candidate.TerminationReason;
-record.TerminationReason = candidate.TerminationReason;
-record.Message = candidate.Message;
-record.ElapsedTime_s = elapsedTime_s;
-record.ValidationElapsedTime_s = validationElapsedTime_s;
-for name = ["MotionDuration_s", "MotionLength_deg", ...
-        "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", ...
-        "UsedStraightProgress"]
-    record.(name) = candidate.(name);
-end
-if record.ValidationAttempted && ~validation.Passed
-    record.TerminationReason = "directValidationFailed";
-    record.Message = strtrim(candidate.Message + " " + validation.Message);
-elseif validation.Passed
-    record.TerminationReason = "goalReached";
-    record.Message = validation.Message;
-end
-end
-
-function seed = createDirectSeed(initialState, goalState, duration_s, wait_s)
-% Create the ordinary endpoint seed, adding a truthful waiting vertex if used.
-position_deg = [initialState.position_deg; goalState.position_deg];
-tau = [0; 1];
-if nargin >= 4 && wait_s > 0
-    position_deg = [initialState.position_deg; position_deg];
-    tau = [0; wait_s / duration_s; 1];
-end
-seed = obstacleAvoidance.search.createSeed();
-seed.Index = 1;
-seed.Source = "directRestToRest";
-[seed.position_deg, seed.tau] = deal(position_deg, tau);
-seed.EstimatedDuration_s = duration_s;
-seed.Length_deg = norm(diff(position_deg, 1, 1));
-end
-
-function seed = createMotionSeed(candidate, source)
-% Preserve an accepted curved motion instead of labeling its blocked chord.
-time_s = double(candidate.time_s(:));
-duration_s = candidate.MotionDuration_s;
-tau = (time_s - time_s(1)) / duration_s;
-seed = obstacleAvoidance.search.createSeed();
-seed.Index = 1;
-seed.Source = string(source);
-[seed.position_deg, seed.tau] = deal(candidate.position_deg, tau);
-seed.EstimatedDuration_s = duration_s;
-seed.Length_deg = candidate.MotionLength_deg;
-end
-
-function stageTiming = accountConstructorValidation( ...
-        stageTiming, constructorElapsedTime_s, diagnostics)
-% Move nested authoritative validation from constructor work into its stages.
-validationElapsedTime_s = 0;
-collisionElapsedTime_s = 0;
-if isfield(diagnostics, "ValidationElapsedTime_s")
-    validationElapsedTime_s = double(diagnostics.ValidationElapsedTime_s);
-end
-if isfield(diagnostics, "CollisionCheckingElapsedTime_s")
-    collisionElapsedTime_s = double(diagnostics.CollisionCheckingElapsedTime_s);
-end
-tolerance_s = 256 * eps(max(1, constructorElapsedTime_s));
-if validationElapsedTime_s > constructorElapsedTime_s + tolerance_s || ...
-        collisionElapsedTime_s > validationElapsedTime_s + tolerance_s
-    error("planCorridorQuintic:InvalidConstructorTiming", ...
-        "Nested validation timing exceeds its constructor or validation total.");
-end
-validationElapsedTime_s = min(validationElapsedTime_s, constructorElapsedTime_s);
-collisionElapsedTime_s = min(collisionElapsedTime_s, validationElapsedTime_s);
-stageTiming.MotionSolvingElapsedTime_s = ...
-    stageTiming.MotionSolvingElapsedTime_s + ...
-    constructorElapsedTime_s - validationElapsedTime_s;
-stageTiming.CollisionCheckingElapsedTime_s = ...
-    stageTiming.CollisionCheckingElapsedTime_s + collisionElapsedTime_s;
-stageTiming.FinalValidationElapsedTime_s = ...
-    stageTiming.FinalValidationElapsedTime_s + ...
-    validationElapsedTime_s - collisionElapsedTime_s;
-end
 
 function result = finishFastPath(result, candidate, validation, diagnostics, ...
         elapsedTime_s, seed, summaryTemplate, message, timer, stageTiming)
