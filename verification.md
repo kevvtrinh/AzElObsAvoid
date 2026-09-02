@@ -7027,37 +7027,3 @@ optimization.
 The milestone removes 1,804 additional non-test MATLAB lines and reduces
 `planCorridorQuintic.m` from 1,023 to 875 physical lines. Cumulatively, the
 branch is 2,317 non-test MATLAB lines smaller than `5c0a6c9`.
-
-## Obstacle robustness item 18: explicit timed-search work - 2026-09-01
-
-The adjacent baseline was `5c6a01a`. The retained change replaces the nominal
-65,535-layer allowance with two user-visible estimates and bounds:
-`MaximumTimedSearchStateCount = 50000` and
-`MaximumTimedSearchTransitionCount = 1000000`. The existing 17-layer default
-remains a requested ceiling. The search computes an effective layer ceiling
-before allocation and reports the requested/effective layers, estimated states
-and worst-case transitions, applied bounds, and termination reason.
-
-The focused large-request case asked for 1,000,000 layers on a three-node graph.
-It retained three layers with exactly nine estimated states and eighteen
-estimated worst-case transitions, reached the goal, and reported both work
-limits. A five-state/eight-transition case could not afford two layers and
-returned documented empty route shapes with `timedSearchWorkLimit` and zero
-allocated-work estimates. Parent and transition indices are now `uint32`; the
-effective work-bounded clock ceiling travels with a timed seed into timed BMTP.
-
-Validation uses one stable empty template and explicit assignments rather than
-a positional 40-value cell array paired with a separate field-name list.
-Timed-search diagnostics use the same pattern, and route diagnostics copy named
-fields directly. Code Analyzer returned zero findings for all eight changed or
-added MATLAB files. `git diff --check` passed. Options and work-limit tests
-passed 7/7 in 1.6254 seconds. Planner contract, obstacle history, timed BMTP,
-and route economy expanded focused verification to 35/35 in 60.2045 seconds.
-
-Diff-growth disclosure: existing production files added more than 50 lines in
-three cases because explicit stable schema replaced compact positional
-construction: `createRouteCandidates.m` added 65/deleted 19,
-`timeExpandedVisibilitySearch.m` added 123/deleted 31, and
-`validateTrajectory.m` added 91/deleted 51. The change is diagnostic and
-work-bounding infrastructure; no runtime speedup or added search completeness
-is claimed.
