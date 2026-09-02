@@ -1690,3 +1690,24 @@ The full serial matrix produced 17 validated successes plus the validated
 `exampleNoPath` failure. The test audit reduced the suite from 119 to 110 tests
 despite adding the new regression, consolidating duplicated example source
 contracts and removing historical negative assertions; all 110 tests passed.
+
+## Identical Trajectory SOCP Termination — 2026-09-02
+
+The remaining BMTP cost was trajectory-generating `coneprog` work. When a
+collision-free iterate did not improve the retained best motion, the engine
+could retain unchanged separating planes and invoke the same earliest-arrival
+trajectory SOCP again. At the request horizon every solver input was identical;
+the repeated solve returned the same motion and convergence was then reported
+from its zero improvement.
+
+The engine now terminates at that fixed point. Expanded-horizon recovery still
+continues because its next request-horizon SOCP is different. Controlled warm
+medians improved 6.493% for static U, 5.237% for fixed-arrival occlusion, and
+4.622% for the complex outline. The small-static no-op sentinel had unchanged
+solver work and a noise-level favorable shift. All compared routes, arrivals,
+motion lengths, and complete sampled histories were exactly unchanged.
+
+The implementation adds six production lines and no function, option, public
+field, or dependency. Its 1.5% size threshold was met by the smallest 4.622%
+affected-case gain. All 18 maintained examples matched the prior physical
+metrics and validated; the complete suite passed 110/110.

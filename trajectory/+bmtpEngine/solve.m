@@ -117,6 +117,7 @@ planes = repmat(emptyPlane(), segmentCount, numel(regions_deg));
 solverMessage = "The biconvex iteration limit was reached.";
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
+    usedRequestHorizon = optimizationHorizon_s == motionHorizon_s;
     [trialControl_deg, trialTime_s, exitFlag, output] = solveTrajectorySocp( ...
         segmentCount, degree, initialState.position_deg, goalState.position_deg, ...
         limits, planes, roundoffReserve_deg, optimizationHorizon_s, ...
@@ -176,6 +177,11 @@ for iterationIndex = 1:35
         if reusePlanes
             diagnostics.PlaneReuseApplied = true;
             diagnostics.PlaneReuseCount = diagnostics.PlaneReuseCount + 1;
+            if usedRequestHorizon
+                diagnostics.Converged = true;
+                solverMessage = "The next trajectory SOCP would be unchanged.";
+                break;
+            end
             continue;
         end
         planes(:) = emptyPlane();

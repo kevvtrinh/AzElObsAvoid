@@ -6644,3 +6644,57 @@ All 18 maintained examples ran serially and headlessly with jerk enabled.
 Seventeen succeeded and independently validated; `exampleNoPath` returned the
 expected independently validated `noValidatedSeed`. Their summed wall time was
 220.5077749 seconds. Exact per-example values are recorded in `benchmark.csv`.
+
+## Identical Trajectory SOCP Termination — 2026-09-02
+
+Baseline revision was committed `fd06459` on `bmtp-cleanup-codex`, with the
+unrelated user-owned dirty files left untouched. Measurements used MATLAB
+R2024b Update 4, Optimization Toolbox 24.2, six reported cores, no Parallel
+Computing Toolbox, deterministic example defaults, and all figures and
+animation disabled.
+
+Source tracing proved a repeated-work invariant in the BMTP biconvex loop. If
+the retained best duration does not improve, the tagged pair set is unchanged,
+the separating planes are reused, and the just-solved horizon is already the
+request horizon, every input to the next earliest-arrival trajectory SOCP is
+unchanged. The old loop called `coneprog` again and converged only after the
+identical result produced zero improvement. The retained change reports the
+same convergence before that redundant call. A larger recovery horizon is
+excluded from the fast termination because the subsequent request-horizon
+problem differs.
+
+Four runs were made per revision; the first was discarded as warm-up:
+
+| Case | Baseline runs (s) | Candidate runs (s) | Warm median gain | Trajectory SOCPs |
+| --- | --- | --- | ---: | ---: |
+| Static U | 35.807792, 33.504315, 32.639043, 32.479121 | 33.707076, 32.078981, 30.519938, 30.508978 | 6.493% | 33 to 31 |
+| Fixed occlusion | 29.858010, 26.272671, 25.449616, 25.361525 | 28.279758, 24.688852, 24.116929, 23.936589 | 5.237% | 34 to 31 |
+| Complex outline | 81.306414, 75.208905, 72.992095, 73.087807 | 75.894327, 71.029098, 69.710006, 69.186028 | 4.622% | 20 to 19 |
+| Small-static sentinel | 5.378327, 2.754120, 2.513264, 2.422643 | 5.373900, 2.769137, 2.481872, 2.446805 | 1.249% | unchanged |
+
+Success, termination reason, independent validation, selected seed and route,
+arrival, motion length, and complete time, position, velocity, acceleration,
+and jerk histories were exactly equal in the three affected comparisons. The
+sentinel physical result was also exact. The production change is +6/-0 lines,
+so the declared 0.25%-per-line threshold was 1.5%; the smallest affected-case
+gain was 4.622%.
+
+A preceding experiment replaced repeated scalar binomial calls with exact
+Pascal matrices. Degrees 0 through 32 were bitwise equal and its degree-16
+microbenchmark was 63.8 times faster, but the small-static warm median changed
+unfavorably from 2.4411 to 2.4836 seconds. The end-to-end benefit was absent,
+so all four experimental source changes and artifacts were removed.
+
+The final complete test suite passed 110/110 with no failures or incomplete
+results; the only warning was the intentional two-vertex normalization fixture.
+The existing plane-reuse contract test now requires the fixed-point termination
+message. Code Analyzer reported zero findings in the changed MATLAB files.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated, and `exampleNoPath` returned
+the expected independently validated `noValidatedSeed`. Every success, path
+length, motion length, duration/arrival, and termination reason matched the
+committed baseline rows. Their summed wall time was 208.6403044 seconds, a
+5.382% observed reduction from the closest same-process 220.5077749-second
+matrix. Controlled per-case medians above, rather than this aggregate, support
+the retained speedup claim.
