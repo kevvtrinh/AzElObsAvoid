@@ -1,5 +1,28 @@
 # Plan 325 verification
 
+## Reject direct cached-edge clearance - 2026-09-01
+
+Item 9 evaluated a direct signed-clearance implementation over the cached
+boundary edges created by item 8. Five focused equivalence cases covered holes,
+disconnected components, NaN-separated rings, boundary points, orientation,
+exact sample reuse, verified interpolation, and conservative fallback. The
+candidate passed 5/5 equivalence tests, obstacle infrastructure 10/10, planner
+stage timing 4/4, planner contract 14/14, timed BMTP 3/3, and the adversarial
+robustness suite's established 6/7 state. The sole red robustness case remained
+the item-15 disjoint intercept-window test, selecting 6.668424 seconds rather
+than the required first window below 3.09 seconds.
+
+Repeated timings rejected the candidate. A strict warmup followed by three
+seed-1011 runs produced an item-8 median of 81.4626468 seconds and a candidate
+median of 81.3327973 seconds, a 0.159 percent decrease. Of 4,953 clearance
+queries, only 144 used direct cached edges while 4,809 still required
+`polyshape`. A structurally different static maintained example retained exact
+physical output but regressed from a 2.9158384-second baseline median to
+3.1493434 seconds, or 8.008 percent. The candidate added 188 net production
+lines. All item-9 production and test code was removed; content hashes of the
+affected tracked files match commit `1aaff35` exactly. Only this negative
+benchmark record is retained.
+
 ## Own one prepared obstacle collection per request - 2026-09-01
 
 Item 8 gives every prepared obstacle a schema version and an exact snapshot of

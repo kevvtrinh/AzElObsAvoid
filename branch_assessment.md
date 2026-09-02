@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Reject direct cached-edge clearance - 2026-09-01
+
+No production change was retained for item 9. A direct even-odd boundary
+clearance query was proved equivalent on holes, disconnected regions, NaN-ring
+separators, reversed orientation, exact sample times, verified interpolation,
+and conservative fallback geometry. The candidate passed its 5/5 focused
+equivalence tests and the existing obstacle, stage-timing, planner-contract,
+timed-BMTP, and adversarial suites without changing their physical results.
+
+The implementation nevertheless failed its bounded retention gate. On the
+moving seed-1011 stress request, strict warm-plus-three medians were
+81.4626468 seconds for item 8 and 81.3327973 seconds for the candidate, only a
+0.159 percent reduction. Only 144 of 4,953 clearance queries avoided
+`polyshape`; 4,809 still required the fallback representation. On the static
+maintained example, the median regressed 8.008 percent from 2.9158384 to
+3.1493434 seconds. The candidate also added 188 net production lines. It was
+removed completely rather than trading clarity and static runtime for a
+neutral moving-case result.
+
+The largest current strength remains exact preparation ownership and reuse of
+request-invariant geometry. The largest current weakness is that cached edges
+do not by themselves eliminate most topology-sensitive geometry conversions;
+future collision work must reduce a materially larger exact call population or
+demonstrate at least a ten-percent median improvement without regression.
+
 ## Own and invalidate prepared obstacle geometry - 2026-09-01
 
 The largest new strength is a request-owned preparation record whose cached
