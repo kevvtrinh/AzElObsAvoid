@@ -115,6 +115,10 @@ result = exampleTargetExitsObstacle(overrides);
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.StaticProjectionCreationCount, 0);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.StaticRepresentationCreationCount, 1);
 diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
 verifyFalse(testCase, any(startsWith( ...
     string(fieldnames(diagnostics)), "TravelRefinement")));

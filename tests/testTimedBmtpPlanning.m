@@ -42,6 +42,10 @@ verifyTrue(testCase, validation.CollisionFree);
 verifyTrue(testCase, validation.VelocityWithinLimits);
 verifyTrue(testCase, validation.AccelerationWithinLimits);
 verifyTrue(testCase, validation.JerkWithinLimits);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.StaticProjectionCreationCount, 1);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.StaticRepresentationCreationCount, 1);
 verifyEqual(testCase, result.Seeds(result.SelectedSeedIndex).Source, ...
     "timeExpandedVisibilityGraph");
 end

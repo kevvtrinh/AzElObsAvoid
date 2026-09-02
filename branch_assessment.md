@@ -1,5 +1,26 @@
 # Novel replacement branch assessment
 
+## Reuse invariant projection and decomposition work - 2026-09-01
+
+The largest new strength is exact request ownership for static BMTP geometry.
+An applicable request now creates one conservative static projection and one
+source-derived convex representation rather than rebuilding both for every
+seed. Independent public validation remains authoritative. Permanent static
+and moving tests require the construction counts to equal one, and the fixed
+seed-1011 profile reduced `polyshape` construction 37.908 percent, from 1,377
+to 855, without changing arrival, route-search counts, collision resolution,
+or the 4,852 `coneprog` calls. Fixed-clock boundary searches also expose and
+obey a 0.001-degree physical target and twelve-iteration cap while keeping the
+passing side of every independently validated bracket.
+
+The largest measured weakness remains trajectory optimization work. Profiled
+wall time improved only 3.205 percent, from 143.0640531 to 138.4790277 seconds,
+which does not support an end-to-end speedup claim. The post-correctness stress
+request is still roughly five times slower and makes more than twice the
+`coneprog` calls of the item-2 baseline. Reusing source-derived static geometry
+does not yet cache dynamic sample shapes, edges, or interval bounds; those are
+separate item-8 and item-9 responsibilities.
+
 ## Restrict proposal and broad-phase geometry to request time - 2026-09-01
 
 The largest new strength is one horizon-selection invariant shared by

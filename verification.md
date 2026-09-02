@@ -1,5 +1,41 @@
 # Plan 325 verification
 
+## Reduce invariant planner calls - 2026-09-01
+
+Item 7 now creates a request-invariant static planning projection and its BMTP
+convex representation before the seed loop. Static requests likewise create
+their BMTP representation once. `StaticProjectionCreationCount` and
+`StaticRepresentationCreationCount` are stable search-diagnostic fields, and
+the static and moving BMTP tests require the applicable count to equal one.
+Candidate selection already copied each candidate's retained independent
+validation, so no duplicate selection-time validation was present to remove.
+
+Fixed-clock amplitude refinement now stops on the independently validated
+side of the bracket at a documented 0.001-degree physical resolution, a larger
+caller-supplied collision tolerance when applicable, or twelve bisections.
+The target, achieved reserve, iteration count, and cap remain visible in the
+returned diagnostics. No collision tolerance, obstacle geometry, seed budget,
+or validator requirement was weakened.
+
+The identical warmed/profiled seed-1011 gate compared against item 6. Planner
+and independent validation remained successful; arrival stayed
+17.9853686689 seconds, with 167 route states, 268 expansions, 331 retained
+collision intervals, zero unresolved intervals, and 4,852 `coneprog` calls.
+Profiled wall time decreased from 143.0640531 to 138.4790277 seconds, only
+3.205 percent, so no end-to-end speedup is claimed. Exact work did decrease:
+`polyshape` construction fell from 1,377 to 855 (37.908 percent),
+`shapeAtTime` calls fell from 5,988 to 5,871, and the repeated projection and
+BMTP decomposition fell from four constructions to one.
+
+Code Analyzer reported zero findings for the five modified/added planner
+files. Planner-contract tests passed 14/14, timed-BMTP tests passed 3/3, and
+route-economy tests passed 3/3. These cover a static request, a structurally
+different moving-obstacle request, and the fixed-clock path-quality bounds.
+The profiler remains roughly five times slower and uses over twice as many
+`coneprog` calls as the pre-correctness item-2 baseline; that unfavorable cost
+remains visible for later items rather than being attributed to this modest
+call reduction.
+
 ## Restrict geometry to the request horizon - 2026-09-01
 
 Item 6 added one source-derived `queryHorizonGeometry` record and routed static
