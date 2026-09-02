@@ -6747,3 +6747,51 @@ motion length, duration/arrival, and termination reason matched `6d1a41e`.
 Their wall-time sum was 198.1119552 seconds versus 208.6403044 seconds in the
 closest same-process baseline, an observed 5.046% decrease. The controlled
 medians, not the aggregate observation, support the speedup conclusion.
+
+## Block-Sparse Derivative Bounds — 2026-09-02
+
+Baseline was committed `6eb4e58` on `bmtp-cleanup-codex`. The environment was
+MATLAB R2024b Update 4 with Optimization Toolbox 24.2, six reported cores, no
+Parallel Computing Toolbox, deterministic defaults, and disabled figures and
+animation. User-owned dirty files remained untouched.
+
+After direct negative-stencil construction removed whole-row sparse copies,
+static-U profiling still attributed about 1.4 seconds to 55,350 individual
+positive and negative stencil writes and their index calculation. The retained
+change creates the same derivative operator with `spdiags` and Kronecker
+products, then assigns one sparse block per segment and derivative order.
+It preserves the original row order: derivative, axis, then positive/negative
+sign. It also preserves interleaved azimuth/elevation decision columns and both
+copies of the time-power limit coefficient.
+
+A direct construction comparison covered 56 combinations of degrees 3 through
+16 and segment counts 1, 2, 5, and 17 with random axis limits. Every old and new
+sparse inequality matrix was exactly equal. The static-U profile retained 31
+trajectory SOCP calls while `solveTrajectorySocp` fell from 25.264848 to
+23.940503 seconds.
+
+Four static-U runs were made for each implementation, discarding the first as
+warm-up. The committed baseline measured 34.145249, 29.428726, 28.458691, and
+28.149735 seconds. The candidate measured 33.380430, 27.970259, 27.317818, and
+27.061302 seconds. The warm median improved from 28.458691 to 27.317818 seconds,
+or 4.009%. Success, independent validation, selected seed, 34.9425880405-degree
+polyline, 39.4001427062-degree smoothed path, 20.7814508253-second arrival,
+sample count, and history checksums were unchanged.
+
+The fixed-arrival occlusion case provided a structurally different sentinel.
+Its candidate runs were 28.123761, 22.647415, 21.469113, and 21.041197 seconds;
+the 21.469113-second warm median was 1.678% below the current baseline record of
+21.835469 seconds. Its 27.950433436-degree polyline, 13.5713266002-degree
+smoothed path, 20.8695652174-second arrival, validation, and history checksums
+were unchanged. The production diff is +13/-16 lines, a net reduction of three
+lines, with no new helper, option, interface, or dependency.
+
+The complete suite passed 110/110 with no failures or incomplete results; the
+only warning was the intentional two-vertex normalization fixture. Code
+Analyzer reported zero findings in `solve.m`. All 18 maintained examples ran
+serially and headlessly with jerk enabled. Seventeen independently validated
+successes and the independently validated `noValidatedSeed` outcome reproduced
+every baseline path length and duration. Their 197.1835107-second aggregate was
+0.469% below the prior 198.1119552-second matrix; this aggregate is recorded as
+an observation, while the controlled static-U median and profile support the
+retained speedup claim.

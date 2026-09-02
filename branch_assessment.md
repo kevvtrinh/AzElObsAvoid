@@ -1726,3 +1726,18 @@ medians improved 7.332% and 9.460%; the small-static sentinel remained exact
 with a noise-level 0.507% favorable shift. The targeted profiled line fell
 from 3.058 to 0.587 seconds. All 18 examples retained their physical metrics
 and validated, and all 110 tests passed.
+
+## Block-Sparse Derivative Bounds — 2026-09-02
+
+The remaining scalar sparse writes now assemble as one exact block per segment
+and derivative order. Fifty-six degree/segment construction cases produced
+bit-for-bit equal inequality matrices. Static-U profiling reduced
+`solveTrajectorySocp` from 25.265 to 23.941 seconds without changing its 31
+calls, and the controlled warm median improved 4.009%. A fixed-arrival sentinel
+was exact and 1.678% favorable relative to the current baseline record.
+
+The production implementation is three lines smaller and adds no interface,
+helper, option, or dependency. All 18 maintained examples preserved path length
+and arrival time and independently validated, and all 110 tests passed. The
+full-matrix wall sum was only 0.469% favorable, so the profile and controlled
+static-U comparison—not the aggregate—are the evidence for retention.
