@@ -11,7 +11,9 @@ seed-1011 profile reduced `polyshape` construction 37.908 percent, from 1,377
 to 855, without changing arrival, route-search counts, collision resolution,
 or the 4,852 `coneprog` calls. Fixed-clock boundary searches also expose and
 obey a 0.001-degree physical target and twelve-iteration cap while keeping the
-passing side of every independently validated bracket.
+passing side of every independently validated bracket. The standalone BMTP
+adapter retains its established canonical-obstacle input form through a
+single-representation forwarding path.
 
 The largest measured weakness remains trajectory optimization work. Profiled
 wall time improved only 3.205 percent, from 143.0640531 to 138.4790277 seconds,

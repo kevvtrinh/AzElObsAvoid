@@ -31,6 +31,11 @@ Code Analyzer reported zero findings for the five modified/added planner
 files. Planner-contract tests passed 14/14, timed-BMTP tests passed 3/3, and
 route-economy tests passed 3/3. These cover a static request, a structurally
 different moving-obstacle request, and the fixed-clock path-quality bounds.
+The subsequent static-projection audit exposed that the internal adapter's
+established canonical-obstacle call form had been narrowed to the reusable
+representation. A forwarding compatibility path now constructs one
+representation for that standalone call, while public planner requests still
+pass the request-owned representation. Static-projection tests pass 2/2.
 The profiler remains roughly five times slower and uses over twice as many
 `coneprog` calls as the pre-correctness item-2 baseline; that unfavorable cost
 remains visible for later items rather than being attributed to this modest

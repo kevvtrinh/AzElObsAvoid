@@ -1,5 +1,6 @@
 function [candidate, diagnostics] = solveBmtpTrajectory( ...
-        seed, staticRepresentation, initialState, goalState, limits, options)
+        seed, obstaclesOrRepresentation, initialState, goalState, limits, ...
+        options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -13,9 +14,10 @@ function [candidate, diagnostics] = solveBmtpTrajectory( ...
 % INPUTS
 %   - seed (scalar struct)
 %       position_deg is N-by-2 and tau increases from zero through one.
-%   - staticRepresentation (scalar struct)
-%       Source-derived output from createBmtpStaticRepresentation for the
-%       same request horizon. Public validation remains authoritative.
+%   - obstaclesOrRepresentation (obstacle array or scalar struct)
+%       Canonical/prepared static obstacles, or the source-derived output
+%       from createBmtpStaticRepresentation for the same request horizon.
+%       Public validation remains authoritative.
 %   - initialState, goalState, limits, options (resolved scalar structs)
 %       Normalized planner request and fully resolved planner options.
 %**************************************************************************
@@ -30,13 +32,17 @@ function [candidate, diagnostics] = solveBmtpTrajectory( ...
 %     deg/s^2, and deg/s^3. Histories are N-by-2.
 %**************************************************************************
 
-%% Section 1: Validate The Reusable Static Representation
+%% Section 1: Resolve The Reusable Static Representation
 
-if ~isstruct(staticRepresentation) || ~isscalar(staticRepresentation) || ...
-        ~all(isfield(staticRepresentation, ["Regions_deg", "Coverage"]))
-    error("solveBmtpTrajectory:InvalidStaticRepresentation", ...
-        ["staticRepresentation must be the scalar struct returned by " ...
-        "createBmtpStaticRepresentation."]);
+isStaticRepresentation = isstruct(obstaclesOrRepresentation) && ...
+    isscalar(obstaclesOrRepresentation) && ...
+    all(isfield(obstaclesOrRepresentation, ["Regions_deg", "Coverage"]));
+if isStaticRepresentation
+    staticRepresentation = obstaclesOrRepresentation;
+else
+    staticRepresentation = ...
+        obstacleAvoidance.planner.createBmtpStaticRepresentation( ...
+        obstaclesOrRepresentation, initialState.time_s, goalState.time_s);
 end
 regions_deg = staticRepresentation.Regions_deg;
 coverage = staticRepresentation.Coverage;
