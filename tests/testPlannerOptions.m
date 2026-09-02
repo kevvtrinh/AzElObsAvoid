@@ -36,6 +36,10 @@ verifyFalse(testCase, isfield(options, "CollocationSegmentCount"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
+verifyEqual(testCase, options.MaximumSeedCount, 5);
+verifyEqual(testCase, options.MaximumTimeLayerCount, 17);
+verifyEqual(testCase, options.MaximumTimedSearchStateCount, 50000);
+verifyEqual(testCase, options.MaximumTimedSearchTransitionCount, 1000000);
 end
 
 function testRetiredFieldsUseAggregateUnknownWarningAndAreIgnored(testCase)
@@ -67,6 +71,9 @@ overrides = struct( ...
     "UnsupportedTimedTopologyPolicy", 'ruckigStopAtWaypoints', ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
+    "MaximumTimeLayerCount", 1000000, ...
+    "MaximumTimedSearchStateCount", 1200, ...
+    "MaximumTimedSearchTransitionCount", 4800, ...
     "MaximumWaitRefinementIterations", 8, ...
     "ArrivalTimeTolerance_s", 2e-3);
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
@@ -77,6 +84,9 @@ verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, options.SampleTime_s, 0.05);
 verifyEqual(testCase, options.MaximumSeedCount, 3);
+verifyEqual(testCase, options.MaximumTimeLayerCount, 1000000);
+verifyEqual(testCase, options.MaximumTimedSearchStateCount, 1200);
+verifyEqual(testCase, options.MaximumTimedSearchTransitionCount, 4800);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 8);
 end
 

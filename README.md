@@ -41,6 +41,11 @@ Planner options select work and display policy; they do not expose internal
 engine constants. Per-seed engine and independent-validation evidence is
 retained in `result.SearchDiagnostics.SeedSummaries`.
 
+`MaximumSeedCount` is capped at `9` because each retained route can trigger an
+expensive motion solve and independent continuous validation. One slot belongs
+to the required direct proposal, at most one belongs to time-expanded search,
+and the remaining slots represent distinct spatial homology classes.
+
 `GoalTimeMode` defaults to `"balancedArrival"`. A validated later motion is
 preferred only when its travel saving exceeds
 `MinimumTravelSavingsRate_deg_s` times its delay; the default rate is 1 deg/s.
@@ -57,9 +62,13 @@ planner compares their actual travel against alternating and spline families;
 sampled screening may reject a proposal, but only continuous public validation
 can accept one.
 
-`MaximumTimeLayerCount` defaults to `17` and bounds the timed visibility
-search layers, including the initial and goal times. Lower values reduce
-timed-search work but can omit obstacle-event times and lose feasible routes.
+`MaximumTimeLayerCount` defaults to `17` and requests a timed visibility layer
+ceiling, including the initial and goal times. The effective ceiling is also
+bounded by `MaximumTimedSearchStateCount` (default `50000`) and
+`MaximumTimedSearchTransitionCount` (default `1000000`). Diagnostics report
+the requested and effective layer counts, estimated work, and which bound was
+applied. Lower values reduce work but can omit obstacle-event times and lose
+feasible routes.
 
 `MaximumWaitRefinementIterations` defaults to `16`. For an earliest-arrival
 `directWait` seed that already passes independent validation, the planner first

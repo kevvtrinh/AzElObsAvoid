@@ -18,7 +18,8 @@ function [route_deg, routeTime_s, record] = ...
 %   - obstacles (canonical protected obstacle struct array)
 %   - initialState, goalState, limits, options (scalar structs)
 %   - sampleTimes_s (numeric vector)
-%       Candidate times before applying MaximumTimeLayerCount.
+%       Candidate times before applying the configured layer, state, and
+%       transition work bounds.
 %**************************************************************************
 % OUTPUTS
 %   - route_deg (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector)
@@ -29,12 +30,62 @@ function [route_deg, routeTime_s, record] = ...
 % UNITS
 %   - Position and edge cost are degrees; time is seconds.
 %**************************************************************************
-%% Section 1: Propagate The Reachability Frontier
+%% Section 1: Bound The Time-Expanded Work
+
+nodeCount = size(nodePosition_deg, 1);
+maximumStateCount = options.MaximumTimedSearchStateCount;
+maximumTransitionCount = options.MaximumTimedSearchTransitionCount;
+transitionsPerLayerGap = nodeCount^2;
+maximumLayersByStateCount = floor(maximumStateCount / nodeCount);
+maximumLayersByTransitionCount = ...
+    floor(maximumTransitionCount / transitionsPerLayerGap) + 1;
+effectiveMaximumLayerCount = floor(min([options.MaximumTimeLayerCount, ...
+    maximumLayersByStateCount, maximumLayersByTransitionCount]));
+
+record = createTimedSearchRecord();
+record.NodeCount = nodeCount;
+record.RequestedMaximumLayerCount = options.MaximumTimeLayerCount;
+record.EffectiveMaximumLayerCount = max(0, effectiveMaximumLayerCount);
+record.MaximumStateCount = maximumStateCount;
+record.MaximumTransitionCount = maximumTransitionCount;
+route_deg = zeros(0, 2);
+routeTime_s = zeros(0, 1);
+if effectiveMaximumLayerCount < 2
+    [~, ~, candidateLayerCount] = ...
+        obstacleAvoidance.search.boundedTimeLayers(sampleTimes_s, ...
+        initialState.time_s, goalState.time_s, 2);
+    record.LayerLimitApplied = true;
+    record.CandidateLayerCount = candidateLayerCount;
+    record.StateLimitApplied = ...
+        candidateLayerCount * nodeCount > maximumStateCount;
+    record.TransitionLimitApplied = max(0, candidateLayerCount - 1) * ...
+        transitionsPerLayerGap > maximumTransitionCount;
+    record.WorkLimitExceeded = true;
+    record.TerminationReason = "timedSearchWorkLimit";
+    return;
+end
+
 [layerTimes_s, layerLimitApplied, candidateLayerCount] = ...
     obstacleAvoidance.search.boundedTimeLayers(sampleTimes_s, ...
-    initialState.time_s, goalState.time_s, options.MaximumTimeLayerCount);
+    initialState.time_s, goalState.time_s, effectiveMaximumLayerCount);
 layerCount = numel(layerTimes_s);
-nodeCount = size(nodePosition_deg, 1);
+record.LayerTimes_s = layerTimes_s;
+record.LayerLimitApplied = layerLimitApplied;
+record.ConfiguredLayerLimitApplied = ...
+    candidateLayerCount > options.MaximumTimeLayerCount;
+record.CandidateLayerCount = candidateLayerCount;
+record.EstimatedStateCount = layerCount * nodeCount;
+record.EstimatedTransitionCount = max(0, layerCount - 1) * ...
+    transitionsPerLayerGap;
+record.StateLimitApplied = ...
+    candidateLayerCount * nodeCount > maximumStateCount;
+record.TransitionLimitApplied = max(0, candidateLayerCount - 1) * ...
+    transitionsPerLayerGap > maximumTransitionCount;
+record.WorkLimitExceeded = ...
+    record.StateLimitApplied || record.TransitionLimitApplied;
+
+%% Section 2: Propagate The Reachability Frontier
+
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
     obstacleAvoidance.input.throwIfCancellationRequested(options);
@@ -45,7 +96,8 @@ for layerIndex = 1:layerCount
 end
 reachable = false(layerCount, nodeCount);
 spatialCost_deg = Inf(layerCount, nodeCount);
-[parentLayerIndex, parentNodeIndex] = deal(zeros(layerCount, nodeCount, "uint16"));
+[parentLayerIndex, parentNodeIndex] = ...
+    deal(zeros(layerCount, nodeCount, "uint32"));
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_deg(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
@@ -56,13 +108,16 @@ for layerIndex = 1:layerCount - 1
         break;
     end
     currentNodeIndices = find(reachable(layerIndex, :));
-    maximumTransitionCount = numel(currentNodeIndices) * nodeCount;
-    transitionSourceNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionTargetNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionTargetLayerIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionLength_deg = zeros(maximumTransitionCount, 1);
-    transitionIsWait = false(maximumTransitionCount, 1);
-    transitionNeedsQuery = false(maximumTransitionCount, 1);
+    maximumLayerTransitionCount = numel(currentNodeIndices) * nodeCount;
+    transitionSourceNodeIndex = ...
+        zeros(maximumLayerTransitionCount, 1, "uint32");
+    transitionTargetNodeIndex = ...
+        zeros(maximumLayerTransitionCount, 1, "uint32");
+    transitionTargetLayerIndex = ...
+        zeros(maximumLayerTransitionCount, 1, "uint32");
+    transitionLength_deg = zeros(maximumLayerTransitionCount, 1);
+    transitionIsWait = false(maximumLayerTransitionCount, 1);
+    transitionNeedsQuery = false(maximumLayerTransitionCount, 1);
     transitionCount = 0;
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
@@ -71,9 +126,9 @@ for layerIndex = 1:layerCount - 1
         end
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
         transitionCount = transitionCount + 1;
-        transitionSourceNodeIndex(transitionCount) = uint16(currentNodeIndex);
-        transitionTargetNodeIndex(transitionCount) = uint16(currentNodeIndex);
-        transitionTargetLayerIndex(transitionCount) = uint16(layerIndex + 1);
+        transitionSourceNodeIndex(transitionCount) = uint32(currentNodeIndex);
+        transitionTargetNodeIndex(transitionCount) = uint32(currentNodeIndex);
+        transitionTargetLayerIndex(transitionCount) = uint32(layerIndex + 1);
         transitionIsWait(transitionCount) = true;
         transitionNeedsQuery(transitionCount) = ...
             nodeIsFree(layerIndex + 1, currentNodeIndex);
@@ -88,12 +143,12 @@ for layerIndex = 1:layerCount - 1
             earliestTime_s = layerTimes_s(layerIndex) + minimumDuration_s - 1e-12;
             targetLayerIndex = find(layerTimes_s > earliestTime_s, 1, "first");
             transitionCount = transitionCount + 1;
-            transitionSourceNodeIndex(transitionCount) = uint16(currentNodeIndex);
-            transitionTargetNodeIndex(transitionCount) = uint16(targetNodeIndex);
+            transitionSourceNodeIndex(transitionCount) = uint32(currentNodeIndex);
+            transitionTargetNodeIndex(transitionCount) = uint32(targetNodeIndex);
             transitionLength_deg(transitionCount) = norm(displacement_deg);
             if ~isempty(targetLayerIndex)
                 transitionTargetLayerIndex(transitionCount) = ...
-                    uint16(targetLayerIndex);
+                    uint32(targetLayerIndex);
                 transitionNeedsQuery(transitionCount) = ...
                     nodeIsFree(targetLayerIndex, targetNodeIndex);
             end
@@ -135,7 +190,7 @@ for layerIndex = 1:layerCount - 1
                 targetNodeIndex, edgeLength_deg);
     end
 end
-%% Section 2: Reconstruct Goal And Best-Partial Routes
+%% Section 3: Reconstruct Goal And Best-Partial Routes
 deepestLayerIndex = find(any(reachable, 2), 1, "last");
 [frontier_deg, bestPartial_deg] = deal(zeros(0, 2));
 if ~isempty(deepestLayerIndex)
@@ -164,17 +219,54 @@ else
 end
 [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, layerTimes_s, ...
     parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
-record = struct("LayerTimes_s", layerTimes_s, ...
-    "LayerLimitApplied", layerLimitApplied, ...
-    "CandidateLayerCount", candidateLayerCount, "NodeCount", nodeCount, ...
-    "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
-    "RejectedTransitionCount", rejectedCount, "ExpandedCount", expandedCount, ...
-    "ExploredNodes_deg", exploredNodes_deg, "FrontierNodes_deg", frontier_deg, ...
-    "BestPartialRoute_deg", bestPartial_deg, ...
-    "SelectedGoalLayerIndex", goalLayerIndex, ...
-    "ReachableGoalLayerCount", nnz(reachable(:, 2)));
+record.WaitEdgeCount = waitCount;
+record.MotionEdgeCount = motionCount;
+record.RejectedTransitionCount = rejectedCount;
+record.ExpandedCount = expandedCount;
+record.ExploredNodes_deg = exploredNodes_deg;
+record.FrontierNodes_deg = frontier_deg;
+record.BestPartialRoute_deg = bestPartial_deg;
+record.SelectedGoalLayerIndex = goalLayerIndex;
+record.ReachableGoalLayerCount = nnz(reachable(:, 2));
+if ~isempty(goalLayerIndex)
+    record.TerminationReason = "goalReached";
+elseif record.WorkLimitExceeded
+    record.TerminationReason = "timedSearchWorkLimit";
+else
+    record.TerminationReason = "openSetExhausted";
 end
-%% Section 3: Local Functions
+end
+%% Section 4: Local Functions
+
+function record = createTimedSearchRecord()
+% Define stable timed-search diagnostics before work-bound exits are known.
+record = struct( ...
+    "LayerTimes_s", zeros(0, 1), ...
+    "LayerLimitApplied", false, ...
+    "ConfiguredLayerLimitApplied", false, ...
+    "CandidateLayerCount", 0, ...
+    "RequestedMaximumLayerCount", 0, ...
+    "EffectiveMaximumLayerCount", 0, ...
+    "MaximumStateCount", 0, ...
+    "MaximumTransitionCount", 0, ...
+    "EstimatedStateCount", 0, ...
+    "EstimatedTransitionCount", 0, ...
+    "StateLimitApplied", false, ...
+    "TransitionLimitApplied", false, ...
+    "WorkLimitExceeded", false, ...
+    "TerminationReason", "notStarted", ...
+    "NodeCount", 0, ...
+    "WaitEdgeCount", 0, ...
+    "MotionEdgeCount", 0, ...
+    "RejectedTransitionCount", 0, ...
+    "ExpandedCount", 0, ...
+    "ExploredNodes_deg", zeros(0, 2), ...
+    "FrontierNodes_deg", zeros(0, 2), ...
+    "BestPartialRoute_deg", zeros(0, 2), ...
+    "SelectedGoalLayerIndex", [], ...
+    "ReachableGoalLayerCount", 0);
+end
+
 function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s)
 % Batch edges sharing layer times without changing their 13 sample points.
 fraction = linspace(0, 1, 13).';
@@ -207,8 +299,8 @@ if trialCost_deg > storedCost_deg + 1e-12 || (costIsEqual && ~isLaterFinalTransi
 end
 reachable(targetLayerIndex, targetNodeIndex) = true;
 spatialCost_deg(targetLayerIndex, targetNodeIndex) = trialCost_deg;
-parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceLayerIndex);
-parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
+parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceLayerIndex);
+parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceNodeIndex);
 end
 function [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, ...
         layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, goalNodeIndex)

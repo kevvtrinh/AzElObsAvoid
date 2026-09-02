@@ -190,14 +190,14 @@ fallback remain deliberately outside this optional boundary.
 
 ## Planner option ownership audit - 2026-09-01
 
-The current public default record contains 14 fields after removing the unread
+The current public default record contains 16 fields after removing the unread
 planner `Verbose` field and internalizing BMTP plane-reuse and trajectory-solver
 controls, including warm-route segmentation. Every
 remaining field has a production consumer.
 
 | Classification | Fields | Decision |
 | --- | --- | --- |
-| Meaningful request/search/validation choices | `GoalTimeMode`, `MinimumTravelSavingsRate_deg_s`, `SampleTime_s`, `TrajectoryMethod`, `UnsupportedTimedTopologyPolicy`, `AllowAzimuthWrapping`, `MaximumSeedCount`, `MaximumTimeLayerCount`, `MaximumWaitRefinementIterations`, `ArrivalTimeTolerance_s`, `ConstraintTolerance`, `CollisionClearanceTolerance_deg`, `CollisionMinimumTimeStep_s`, `CancellationCheckFcn` | Retain. |
+| Meaningful request/search/validation choices | `GoalTimeMode`, `MinimumTravelSavingsRate_deg_s`, `SampleTime_s`, `TrajectoryMethod`, `UnsupportedTimedTopologyPolicy`, `AllowAzimuthWrapping`, `MaximumSeedCount`, `MaximumTimeLayerCount`, `MaximumTimedSearchStateCount`, `MaximumTimedSearchTransitionCount`, `MaximumWaitRefinementIterations`, `ArrivalTimeTolerance_s`, `ConstraintTolerance`, `CollisionClearanceTolerance_deg`, `CollisionMinimumTimeStep_s`, `CancellationCheckFcn` | Retain. |
 | Active implementation controls to evaluate independently | None | The audit found no remaining public field whose only purpose is tuning internal solver construction. |
 | Removed or internalized controls | `Verbose`, `EnablePlaneReuse`, `PlaneReuseImprovementTolerance_s`, `MaximumNlpIterations`, `CollocationSegmentCount` | One-release direct-planner warnings and stripping. Caller-owned logging remains; BMTP plane reuse is automatic; the trajectory iteration cap and 20-span warm-route/time-cell cap are internally owned. |
 | Compatibility-only inputs | `WaypointWarmStartMode`, `RequestedWaypointWarmStartMode`, `IsWaypointWarmStartAvailable`, `PerSeedWorkBudgetMultiplier`, `SeedClusterDistance_deg` | Warn and strip; none appears in returned defaults. |
@@ -347,8 +347,9 @@ Rogue fixture exposed the resulting, independently valid but longer motion.
 
 Timed-cell count is now owned by
 `+obstacleAvoidance/+planner/solveTimedBmtpTrajectory.m`. It recovers the
-uniform clock represented by `seed.tau`, then caps that clock at one fewer than
-`MaximumTimeLayerCount`: a layer budget of N can author at most N-1 intervals.
+uniform clock represented by `seed.tau`, then caps that clock at the seed's
+effective work-bounded search ceiling: N allowed layers can author at most N-1
+intervals.
 The same count creates obstacle time cells and is passed in coverage to the
 BMTP engine, so spatial containment cells, optimizer spans, and the search
 clock cannot silently diverge. The static BMTP warm-route cap remains an

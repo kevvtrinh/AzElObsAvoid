@@ -1,5 +1,37 @@
 # Novel replacement branch assessment
 
+## Make timed-search work and diagnostics explicit - 2026-09-01
+
+The largest new strength is that timed visibility search is bounded by declared
+estimated work rather than an index-width proxy. `MaximumTimeLayerCount` now
+requests a ceiling, while `MaximumTimedSearchStateCount` and
+`MaximumTimedSearchTransitionCount` independently bound the allocated state
+grid and worst-case transitions. Search diagnostics report requested and
+effective layers, both estimates and budgets, each applied limit, and a stable
+termination reason. A budget too small for two layers returns empty routes plus
+`timedSearchWorkLimit`; it does not allocate, throw, or hide the suppression.
+
+The former 65,535-layer cap and `uint16` parents are gone. Parents and transition
+indices use `uint32`, and each timed seed retains the effective work-bounded
+search-clock ceiling consumed by timed BMTP. A one-million-layer test with
+three nodes was restricted to three layers, nine states, and eighteen worst-case
+transitions. A five-state/eight-transition request returned the documented
+work-limit record without search allocation.
+
+Diagnostics and validation assembly now use shared empty templates plus named
+field assignments. The positional 40-value validation list, its separate name
+list, two dynamic diagnostic-copy loops, and the obsolete
+`createValidationRecord` helper were removed. `MaximumSeedCount = 9` is now
+documented as a cap on downstream solve-and-validate work: one direct seed, at
+most one timed seed, and the remaining distinct spatial classes.
+
+Code Analyzer reported zero findings. Focused options/work-limit tests passed
+7/7 in 1.6254 seconds, and planner contract, obstacle history, timed BMTP, and
+route economy brought the focused total to 35/35 in 60.2045 seconds. The
+largest current limitation is deliberate bounded incompleteness: applying any
+layer, state, transition, or seed cap can omit a feasible route. That loss is
+now explicit, not eliminated, and no runtime speedup is claimed.
+
 ## Preserve plans across finite timing disagreement - 2026-09-01
 
 The largest new strength is that exclusive-stage accounting can no longer turn

@@ -52,7 +52,11 @@ else
     end
 end
 trialTime_s = unique(double(trialTime_s(:)), "stable");
-maximumTimedSegmentCount = options.MaximumTimeLayerCount - 1;
+maximumTimedSegmentCount = seed.MaximumTimedSegmentCount;
+if maximumTimedSegmentCount < 1
+    error("solveTimedBmtpTrajectory:MissingTimedSegmentBound", ...
+        "A timed visibility seed must retain its positive search-clock bound.");
+end
 timedSegmentCount = createTimedSegmentCount(seed, maximumTimedSegmentCount);
 trialTemplate = struct( ...
     "FinalTime_s", NaN, "Coverage", struct(), ...
