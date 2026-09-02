@@ -43,6 +43,16 @@ publicSources = sort(string({dir(fullfile(productRoot, "*.m")).name}));
 expectedSources = sort(["planTrajectory.m", ...
     "planMovingTargetIntercept.m", "validateTrajectory.m"]);
 verifyEqual(testCase, publicSources, expectedSources);
+plottingRoot = fullfile(productRoot, "+plotting");
+plottingSources = dir(fullfile(plottingRoot, "*.m"));
+for sourceIndex = 1:numel(plottingSources)
+    sourcePath = fullfile(plottingSources(sourceIndex).folder, ...
+        plottingSources(sourceIndex).name);
+    sourceText = string(fileread(sourcePath));
+    forbiddenCall = "obstacleAvoidance.(planner|search)\.[A-Za-z0-9_]+\s*\(";
+    verifyEmpty(testCase, regexp(sourceText, forbiddenCall, "once"), ...
+        sprintf("Plotting source reruns planner work: %s", sourcePath));
+end
 end
 
 function testTrajectoryRootContainsEnginePackagesAndRuckigFacade(testCase)

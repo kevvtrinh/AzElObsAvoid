@@ -1,7 +1,7 @@
-function [seeds, diagnostics] = createRouteCandidates(scene, request)
+function [seeds, diagnostics, stages] = createRouteCandidates(scene, request)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [seeds, diagnostics] = ...
+%   [seeds, diagnostics, stages] = ...
 %       obstacleAvoidance.search.createRouteCandidates( ...
 %       scene, request)
 %**************************************************************************
@@ -20,6 +20,8 @@ function [seeds, diagnostics] = createRouteCandidates(scene, request)
 %       Deterministically ordered proposals; direct is always first.
 %   - diagnostics (scalar struct)
 %       Nodes, edges, rejections, explored/frontier states, and best partial.
+%   - stages (scalar struct)
+%       Proposal geometry, visibility graph, route set, and final seed set.
 %**************************************************************************
 % UNITS
 %   - Position and path length are degrees; time is seconds.
@@ -33,6 +35,8 @@ seeds = obstacleAvoidance.search.createSeeds([], [], request);
 start_deg = seeds.position_deg(1, :);
 goal_deg = seeds.position_deg(end, :);
 diagnostics = emptyDiagnostics(start_deg, goal_deg);
+stages = struct("Proposal", struct(), "VisibilityGraph", struct(), ...
+    "RouteSet", struct(), "SeedSet", seeds);
 if options.MaximumSeedCount == 1 || isempty(obstacles)
     return;
 end
@@ -43,6 +47,7 @@ end
 % topology. Create it separately so its sample times and any conservative
 % dense-history fallback remain inspectable before graph construction.
 proposal = obstacleAvoidance.search.createProposalGeometry(scene, request);
+stages.Proposal = proposal;
 sampleTimes_s = proposal.sampleTimes_s;
 sweptShape = proposal.shape;
 usedDenseEnvelope = proposal.usedDenseEnvelope;
@@ -53,6 +58,7 @@ diagnostics.SeedCluster.SourceRegionCount = numel(regions(sweptShape));
 % the exact accepted edges while final validation retains sole approval.
 visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
     proposal, request);
+stages.VisibilityGraph = visibilityGraph;
 nodePosition_deg = visibilityGraph.NodePosition_deg;
 graphRecord = visibilityGraph.Record;
 obstacleAvoidance.input.throwIfCancellationRequested(options);
@@ -87,6 +93,7 @@ diagnostics.Coverage.TimedSearchSuppressionReason = "staticObstacleHistory";
 % so route decisions and search records remain directly inspectable.
 routeSet = obstacleAvoidance.search.searchRoutes( ...
     scene, request, proposal, visibilityGraph);
+stages.RouteSet = routeSet;
 if routeSet.TimedSearchAttempted
     diagnostics.Coverage.TimedSearchAttempted = true;
     diagnostics.Coverage.ExtendedTimedSearchAttempted = true;
@@ -115,6 +122,7 @@ end
 % may reject unreachable or duplicate spatial suggestions but cannot approve
 % any motion.
 seeds = obstacleAvoidance.search.createSeeds(routeSet, proposal, request);
+stages.SeedSet = seeds;
 searchRecord = routeSet.SpatialSearchRecord;
 diagnostics = appendSearchDiagnostics(diagnostics, searchRecord);
 diagnostics.HomologySearchAttempted = ...

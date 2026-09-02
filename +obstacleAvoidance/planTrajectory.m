@@ -105,6 +105,7 @@ scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
 preparedObstacles = scene.preparedObstacles;
 useStaticKernel = scene.isStaticHorizon;
 stageTiming = result.SearchDiagnostics.StageTiming;
+result.SearchDiagnostics.StageOutputs.Scene = scene;
 result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
 [~, result.SearchDiagnostics.FixedClockExcursion] = ...
     obstacleAvoidance.planner.createFixedClockLateralExcursion();
@@ -202,12 +203,17 @@ end
 %% Section 6: Search And Solve Deterministic Seeds
 
 topologyTimer = tic;
-[seeds, gridDiagnostics] = ...
+[seeds, gridDiagnostics, searchStages] = ...
     obstacleAvoidance.search.createRouteCandidates( ...
     scene, request);
 gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
 stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
+result.SearchDiagnostics.StageOutputs.Proposal = searchStages.Proposal;
+result.SearchDiagnostics.StageOutputs.VisibilityGraph = ...
+    searchStages.VisibilityGraph;
+result.SearchDiagnostics.StageOutputs.RouteSet = searchStages.RouteSet;
+result.SearchDiagnostics.StageOutputs.SeedSet = seeds;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
     gridDiagnostics.ElapsedTime_s;
 seedSolveContext = struct( ...
@@ -239,6 +245,7 @@ firstValidatedMotionTime_s = ...
     candidateSet.FirstValidatedMotionTime_s;
 stageTiming = candidateSet.StageTiming;
 result.SearchDiagnostics.SeedEarlyExit = candidateSet.SeedEarlyExit;
+result.SearchDiagnostics.StageOutputs.CandidateSet = candidateSet;
 
 % Balanced and fixed policies compare every validated special motion against
 % the topology candidates; their physical arrival lower bounds are not travel

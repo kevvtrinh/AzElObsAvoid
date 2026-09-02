@@ -22,15 +22,17 @@ function value = stripPlannerRefactorRuntime(value)
 
 %% Section 1: Remove Runtime Fields Recursively
 
-% Only names that explicitly describe elapsed measurement are removed. The
-% final-candidate clock and stage breakdown are also runtime observations.
+% Only elapsed measurements and the additive StageOutputs inspection cache
+% are removed. StageOutputs repeats decisions already compared through seeds,
+% summaries, and established search diagnostics; retaining it would make a
+% behavior-preserving diagnostic addition fail every historical record.
 % Physical fields such as ArrivalTime_s and SegmentDuration_s remain intact.
 
 if isstruct(value)
     fieldNames = string(fieldnames(value));
     isRuntimeField = contains(fieldNames, "ElapsedTime") | ...
         fieldNames == "FirstValidatedMotionTime_s" | ...
-        fieldNames == "StageTiming";
+        fieldNames == "StageTiming" | fieldNames == "StageOutputs";
     if any(isRuntimeField)
         value = rmfield(value, cellstr(fieldNames(isRuntimeField)));
     end
