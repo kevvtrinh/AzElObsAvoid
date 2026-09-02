@@ -56,6 +56,9 @@ verifyTrue(testCase, result.Validation.JerkWithinLimits);
 verifyEqual(testCase, result.TerminationReason, "goalReached");
 verifyEqual(testCase, result.SeedSummaries(1).SeedSource, ...
     "directRestToRest");
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
+    "notApplicableExactPath");
 verifyLessThan(testCase, result.TrajectoryDuration_s, ...
     goalState.time_s - initialState.time_s);
 end
@@ -100,6 +103,45 @@ verifyTrue(testCase, result.Validation.CollisionResolved);
 verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 verifyGreaterThan(testCase, ...
     sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+end
+
+function testBalancedArrivalRefinesObjectiveRelevantDirectWait(testCase)
+% Remove avoidable wait when time contributes to the balanced objective.
+obstacleTime_s = [0; 6; 6.5; 12];
+barrierCenterElevation_deg = [0; 0; 8; 8];
+sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
+elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+for sampleIndex = 1:numel(obstacleTime_s)
+    translatedPosition_deg = sourcePosition_deg + ...
+        [0 barrierCenterElevation_deg(sampleIndex)];
+    azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
+    elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
+end
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "balanced direct wait", obstacleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, 0.1);
+initialState = restState(0, [-5 0]);
+goalState = restState(12, [5 0]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-6 6];
+limits.elevationInterval_deg = [-3 3];
+options = struct( ...
+    "GoalTimeMode", "balancedArrival", ...
+    "MaximumSeedCount", 5, ...
+    "SampleTime_s", 0.05);
+
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, options);
+directWaitIndex = find( ...
+    string({result.Seeds.Source}) == "directWait", 1);
+verifyTrue(testCase, result.Success, result.Message);
+verifyNotEmpty(testCase, directWaitIndex);
+diagnostics = result.SeedSummaries(directWaitIndex).SolverDiagnostics;
+verifyGreaterThan(testCase, diagnostics.RefinementCount, 0);
+verifyLessThan(testCase, diagnostics.FinalWaitTime_s, ...
+    diagnostics.InitialWaitTime_s);
 end
 
 function testPlaneReuseSummaryAndRetainedBestTrial(testCase)
@@ -271,6 +313,9 @@ verifyTrue(testCase, isfield(result.SearchDiagnostics.Grid, ...
     "ExpandedCount"));
 verifyGreaterThanOrEqual(testCase, ...
     result.SearchDiagnostics.AttemptedSeedCount, 1);
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
+    "lowerBoundNotReached");
 end
 
 function testRepeatedDirectRequestIsDeterministic(testCase)

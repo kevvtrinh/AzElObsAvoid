@@ -6472,3 +6472,49 @@ optimization.
 The milestone removes 1,804 additional non-test MATLAB lines and reduces
 `planCorridorQuintic.m` from 1,023 to 875 physical lines. Cumulatively, the
 branch is 2,317 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Prepared Obstacle History And Seed Refactor — 2026-09-01
+
+Source state was `44851b6+prepared-obstacle-worktree` on
+`bmtp-cleanup-codex`. The retained implementation prepares one request-owned
+obstacle collection, rejects stale preparation through an exact source
+snapshot and preparation version, and caches sample shapes, sample and
+interval bounds, boundary edges, ring runs, interval union shapes, and motion
+bounds. Downstream entry points perform the inexpensive freshness check and
+reuse the prepared value when its public source remains unchanged.
+
+The obstacle-history contract now states activity, status, ring/hole,
+orientation, correspondence, linear-vertex, nested-set, and conservative
+nonnested fallback behavior. The unchanged opening-U example exposed the
+needed distinction: its open endpoint occupied set is contained in the closed
+U endpoint. Treating that interval as an arbitrary nonnested transition used a
+convex hull that filled the cavity. The retained nested occupied-set rule uses
+the exact endpoint union for the full interval; the existing nonnested test
+continues to require a convex hull that covers the swept gap.
+
+`planCorridorQuintic` now delegates each deterministic seed to `solveOneSeed`
+while retaining the measured fallback order. Direct waits are refined for
+earliest arrival and for balanced arrival only when elapsed time affects the
+objective. Early exit requires a validated fixed-goal result at the proven
+request-wide physical arrival lower bound. Parallel seed execution was not
+retained because `parpool` and `gcp` were unavailable for a representative
+measurement, and solver-level parallel work must never be nested.
+
+Focused obstacle-history, infrastructure, and planner-contract tests passed
+30/30. The complete non-example test set passed 106/106 with zero failures or
+incomplete results in 109.399314 s of summed test duration. MATLAB Code Analyzer
+reported zero findings in all 11 changed MATLAB files. The only emitted test
+warning was the expected two-vertex normalization fixture warning.
+
+All 17 maintained examples ran serially in one headless MATLAB process with
+jerk enabled. Sixteen succeeded and independently validated; `exampleNoPath`
+returned the expected independently validated `noValidatedSeed`. Exact rows
+were appended to `benchmark.csv`. The retained per-example wall-time sum was
+317.9755667 s and total loop wall time was 318.224285 s.
+
+The closest pre-fix same-process sweep summed to 282.4631766 s, making the raw
+change +35.5123901 s or +12.572 percent. Opening U is not performance-comparable
+across those runs: it changed from an invalid 0.80716-second failure to a
+validated 26.1968938-second success. Excluding opening U, the remaining 16
+examples changed from 281.6560166 s to 291.7786729 s, +10.1226563 s or
++3.594 percent. This is recorded as a runtime regression, not an optimization.

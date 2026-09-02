@@ -1570,3 +1570,44 @@ of the hidden failure-figure smoke was blocked after the example pass by
 MATLAB's environment-level `System Error: File system inconsistency`; the same
 worktree's earlier failure-plot check had already created the diagnostic figure,
 and no plotting source changed in this final algorithm step.
+
+## Request-Owned Obstacle Preparation And Explicit History Contract — 2026-09-01
+
+The largest current strength is that one request-owned obstacle collection now
+normalizes, protects, and prepares source geometry before endpoint checks,
+proposal creation, motion solving, wait refinement, and authoritative
+validation. Preparation retains an exact public-source snapshot and version,
+so any public geometry mutation rebuilds the collection rather than reusing
+stale shapes, interval bounds, or boundary edges. The documented history model
+uses verified linear corresponding-vertex motion, exact static equivalence,
+and a conservative nested occupied-set transition when one endpoint set is
+contained in the other. Nonnested unproven transitions retain the endpoint
+convex-hull enclosure.
+
+Tracing the unchanged opening-U example located the prior failure at the
+earliest broken stage: an unconditional endpoint convex hull filled the U
+cavity during its topology change, invalidated the wait state, and left no
+validated seed. The nested-set contract preserves the larger exact occupied
+set without filling its cavity. The unchanged example now selects the general
+`directWait` seed and independently validates a 10-degree motion arriving at
+13.6175223541 s, with 0.0000842562 degree minimum clearance. A structurally
+different nested-L test and the existing separated-endpoint swept-gap test
+protect both sides of the rule.
+
+The largest current weakness remains dynamic multi-waypoint completeness and
+runtime. Static spatial proposals still use a whole-history convex hull, which
+can discard usable dynamic free space; timed BMTP supports only its current
+bounded topology set. The request-local cache removes repeated preparation but
+does not make those algorithms complete. `parfor` was evaluated separately,
+but the parallel runtime entry points were unavailable in this environment, so
+the serial seed loop remains and no nested parallel work was introduced.
+
+In the closest same-process comparison, the pre-fix 17-example sweep used
+282.4631766 s and the retained sweep used 317.9755667 s, an increase of
+35.5123901 s or 12.572 percent. That aggregate is unfavorable but not a clean
+performance comparison: opening U failed after 0.80716 s in the baseline and
+succeeded with full validation in 26.1968938 s after the fix. Excluding that
+failed-versus-successful case, the other 16 examples increased from
+281.6560166 s to 291.7786729 s, or 10.1226563 s and 3.594 percent. No speedup
+claim is made. All 17 expected example outcomes passed, the complete
+non-example suite passed 106/106, and Code Analyzer reported zero findings.

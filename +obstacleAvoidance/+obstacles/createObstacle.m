@@ -27,6 +27,9 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       an optional nonnegative margin, and optional scalar options.
 %       Rebuild uses an absolute margin and optional scalar options.
 %       constructionOptions.Verbose defaults to false.
+%       Paired nonfinite rows separate rings. Ring orientation and first
+%       vertex are representation details. The status field is metadata and
+%       does not deactivate physical geometry.
 %**************************************************************************
 % OUTPUTS
 %   - obstacleData (canonical scalar or column struct array)
@@ -34,6 +37,7 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %**************************************************************************
 % UNITS
 %   - Boundary coordinates and safety margins are degrees; time is seconds.
+%   - See obstacle_history_contract.md for between-sample semantics.
 %**************************************************************************
 
 %% Section 1: Select Construction Or Canonical Rebuild

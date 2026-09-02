@@ -54,8 +54,8 @@ elseif nargin ~= 6
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-    obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 end
+obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 hasMovingGoal = isfield(goalState, "targetTime_s") && ...
     ~isempty(goalState.targetTime_s);
 if options.AllowAzimuthWrapping && (~isempty(obstacles) || hasMovingGoal)
