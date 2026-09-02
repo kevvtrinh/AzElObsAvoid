@@ -6795,3 +6795,40 @@ every baseline path length and duration. Their 197.1835107-second aggregate was
 0.469% below the prior 198.1119552-second matrix; this aggregate is recorded as
 an observation, while the controlled static-U median and profile support the
 retained speedup claim.
+
+## Shared Dynamic Shape Differences — 2026-09-02
+
+Baseline was committed `859b6e1` on `bmtp-cleanup-codex` in the same MATLAB
+R2024b Update 4 environment. The dynamic preparation classifier previously
+asked whether two endpoint shapes were equivalent and, when they were not,
+asked whether they were nested. Both predicates evaluated the same directed
+`polyshape` differences, so a non-equivalent pair performed one or two Boolean
+subtractions twice.
+
+The retained classifier computes each directed difference once and derives
+both predicates from their two areas and the unchanged roundoff tolerance. It
+preserves the prior equivalent, nested, and conservative-convex-hull branches
+and therefore does not change interpolation or occupied geometry. The change
+removes one helper and is +24/-37 production lines, a net reduction of 13.
+
+Four moving/deforming-outline runs were made per implementation, discarding
+the first. The committed baseline measured 32.461339, 30.848097, 30.500254,
+and 30.594772 seconds; the candidate measured 31.058685, 29.393349, 28.893895,
+and 28.959748 seconds. The warm median improved from 30.594772 to 28.959748
+seconds, or 5.344%. Its independently validated 40.2805679611-degree path and
+7.91666666667-second arrival, selected seed, sample count, and complete-history
+checksums were unchanged.
+
+The moving/rotating mixed-obstacle sentinel had a 2.087504-second candidate
+warm median versus its 2.104135-second current baseline record, a favorable
+0.790% shift. Its independently validated 20.7160388668-degree path and
+9.04166666667-second arrival and all history checksums were unchanged.
+
+Code Analyzer reported zero findings in `prepareDynamic.m`. The complete suite
+passed 110/110 with no failures or incomplete results and only the intentional
+two-vertex normalization warning. All 18 maintained examples ran serially and
+headlessly with jerk enabled. Seventeen independently validated successes and
+the independently validated `noValidatedSeed` outcome reproduced every prior
+path length and duration. Their 194.5266044-second wall sum was 1.348% below
+the immediately preceding 197.1835107-second matrix; the controlled dynamic
+median, not that aggregate observation, supports retention.

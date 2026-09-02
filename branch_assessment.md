@@ -1741,3 +1741,16 @@ helper, option, or dependency. All 18 maintained examples preserved path length
 and arrival time and independently validated, and all 110 tests passed. The
 full-matrix wall sum was only 0.469% favorable, so the profile and controlled
 static-U comparison—not the aggregate—are the evidence for retention.
+
+## Shared Dynamic Shape Differences — 2026-09-02
+
+Dynamic preparation no longer repeats the same two directed `polyshape`
+subtractions when classifying a non-equivalent endpoint pair as nested or
+non-nested. One comparison now derives both predicates from the same areas
+with the same tolerance and branch outcomes.
+
+The change removes 13 production lines. The moving/deforming-outline controlled
+warm median improved 5.344%, while the structurally different moving/rotating
+sentinel was exact and 0.790% favorable. All 18 maintained examples preserved
+path length and arrival time and independently validated, all 110 tests passed,
+and the complete serial matrix was 1.348% favorable as a secondary observation.
