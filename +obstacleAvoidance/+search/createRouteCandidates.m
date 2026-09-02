@@ -1,24 +1,19 @@
-function [seeds, diagnostics] = createRouteCandidates( ...
-        obstacles, initialState, goalState, limits, options)
+function [seeds, diagnostics] = createRouteCandidates(scene, request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [seeds, diagnostics] = ...
 %       obstacleAvoidance.search.createRouteCandidates( ...
-%       obstacles, initialState, goalState, limits, options)
+%       scene, request)
 %**************************************************************************
 % PURPOSE
 %   - Create deterministic direct, timed, and distinct spatial topology
 %     proposals with first-class bounded-search diagnostics.
 %**************************************************************************
 % INPUTS
-%   - obstacles (prepared canonical obstacle struct array)
-%       Static or time-varying protected geometry.
-%   - initialState, goalState (scalar structs)
-%       Endpoint states and request interval.
-%   - limits (scalar struct)
-%       Workspace and independent-axis physical limits.
-%   - options (resolved scalar struct)
-%       Seed count, wrapping, and goal-time policy.
+%   - scene (scalar prepared-scene struct)
+%       Prepared obstacles and physical request horizon.
+%   - request (scalar planning-request struct)
+%       Normalized states, limits, and resolved options.
 %**************************************************************************
 % OUTPUTS
 %   - seeds (struct array)
@@ -32,6 +27,11 @@ function [seeds, diagnostics] = createRouteCandidates( ...
 
 %% Section 1: Create The Required Direct Proposal
 
+initialState = request.initialState;
+goalState = request.goalState;
+limits = request.limits;
+options = request.options;
+obstacles = scene.preparedObstacles;
 start_deg = initialState.position_deg;
 goal_deg = obstacleAvoidance.input.goalPositionAtTime( goalState, goalState.time_s);
 if options.AllowAzimuthWrapping
@@ -57,15 +57,14 @@ end
 
 %% Section 2: Create One Protected Visibility Graph
 
-sampleTimes_s = obstacleTimes(obstacles, initialState.time_s, goalState.time_s);
-obstacleAvoidance.input.throwIfCancellationRequested(options);
-[sweptShape, usedDenseEnvelope] = obstacleAvoidance.search.denseSweptEnvelope( ...
-    obstacles, sampleTimes_s, [start_deg; goal_deg], 10e3);
-if usedDenseEnvelope
-    sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
-else
-    [sweptShape, sampledShapeCount] = sampledShape( obstacles, sampleTimes_s);
-end
+% Route search needs one spatial obstacle view, but that view can only suggest
+% topology. Create it separately so its sample times and any conservative
+% dense-history fallback remain inspectable before graph construction.
+proposal = obstacleAvoidance.search.createProposalGeometry(scene, request);
+sampleTimes_s = proposal.sampleTimes_s;
+sweptShape = proposal.shape;
+usedDenseEnvelope = proposal.usedDenseEnvelope;
+sampledShapeCount = proposal.sampledShapeCount;
 diagnostics.SeedCluster.SourceRegionCount = numel(regions(sweptShape));
 [nodePosition_deg, edgeCost_deg, graphRecord] = ...
     createVisibilityGraph(sweptShape, start_deg, goal_deg, limits, 1, 0);
@@ -138,8 +137,8 @@ end
 %% Section 4: Select Distinct Spatial Classes
 
 maximumClassCount = max(0, options.MaximumSeedCount - numel(seeds));
-[edgeStart_deg, edgeEnd_deg] = ...
-    obstacleAvoidance.geometry.boundaryToEdges(sweptShape, 1e-12);
+edgeStart_deg = proposal.edgeStart_deg;
+edgeEnd_deg = proposal.edgeEnd_deg;
 visibilityFunction = @(first_deg, second_deg) segmentsAreVisible( ...
     first_deg, second_deg, sweptShape, edgeStart_deg, edgeEnd_deg);
 [routes, signatures, searchRecord] = ...
@@ -182,26 +181,6 @@ end
 end
 
 %% Section 5: Local Functions
-
-function [shape, count] = sampledShape(obstacles, times_s)
-% Union all exact proposal slices without changing authoritative obstacles.
-parts = cell(numel(times_s) * numel(obstacles), 1);
-count = 0;
-for timeIndex = 1:numel(times_s)
-    for obstacleIndex = 1:numel(obstacles)
-        part = obstacleAvoidance.obstacles.shapeAtTime( ...
-            obstacles(obstacleIndex), times_s(timeIndex));
-        if ~isempty(part.Vertices)
-            count = count + 1;
-            parts{count} = part;
-        end
-    end
-end
-shape = polyshape();
-if count > 0
-    shape = union([parts{1:count}]);
-end
-end
 
 function [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
         route_deg, routeTime_s, goal_deg)
@@ -492,16 +471,6 @@ diagnostics = struct("GraphType", "timeExpandedVisibilityGraph", ...
     "Goal_deg", goal_deg, "TraceDownsampleRule", ...
     "Temporal/explored states are complete; static edge traces retain " + ...
     "the first 2000 accepted and rejected decisions");
-end
-
-function times_s = obstacleTimes(obstacles, start_s, end_s)
-% Retain all source, midpoint, endpoint, and uniform request times.
-times_s = [start_s; linspace(start_s, end_s, 9).'; end_s];
-for obstacleIndex = 1:numel(obstacles)
-    source_s = obstacles(obstacleIndex).time_s(:);
-    times_s = [times_s; source_s; (source_s(1:end - 1) + source_s(2:end)) / 2]; %#ok<AGROW>
-end
-times_s = unique(times_s(times_s >= start_s & times_s <= end_s));
 end
 
 function [tau, length_deg] = routeTau(route_deg)

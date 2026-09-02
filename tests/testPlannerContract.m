@@ -70,6 +70,25 @@ verifyTrue(testCase, scene.obstacleDetails(1).IsTimeInvariant);
 verifyFalse(testCase, scene.obstacleDetails(2).IsTimeInvariant);
 verifyEqual(testCase, scene.obstacleDetails(2).IntervalGeometryMethod, ...
     "linearCorrespondingVertices");
+
+proposal = obstacleAvoidance.search.createProposalGeometry(scene, request);
+verifyEqual(testCase, proposal.start_deg, [-4 0]);
+verifyEqual(testCase, proposal.goal_deg, [8 0]);
+verifyEqual(testCase, proposal.sampleTimes_s, ...
+    linspace(0, 10, 9).');
+maximumVerticesPerObstacle = zeros(1, numel(scene.preparedObstacles));
+for obstacleIndex = 1:numel(scene.preparedObstacles)
+    maximumVerticesPerObstacle(obstacleIndex) = max(cellfun( ...
+        @numel, scene.preparedObstacles(obstacleIndex).az_deg));
+end
+expectedVertexWork = numel(proposal.sampleTimes_s) * ...
+    sum(maximumVerticesPerObstacle);
+verifyEqual(testCase, proposal.estimatedVertexWork, expectedVertexWork);
+verifyEqual(testCase, proposal.representation, "sampledObstacleUnion");
+verifyFalse(testCase, proposal.usedDenseEnvelope);
+verifyEqual(testCase, proposal.sampledShapeCount, 18);
+verifyEqual(testCase, size(proposal.edgeStart_deg), ...
+    size(proposal.edgeEnd_deg));
 end
 
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)

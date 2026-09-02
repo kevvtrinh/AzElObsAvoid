@@ -169,7 +169,7 @@ end
 topologyTimer = tic;
 [seeds, gridDiagnostics] = ...
     obstacleAvoidance.search.createRouteCandidates( ...
-    preparedObstacles, initialState, goalState, limits, options);
+    scene, request);
 gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
 stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
