@@ -6698,3 +6698,52 @@ committed baseline rows. Their summed wall time was 208.6403044 seconds, a
 5.382% observed reduction from the closest same-process 220.5077749-second
 matrix. Controlled per-case medians above, rather than this aggregate, support
 the retained speedup claim.
+
+## Direct Sparse Derivative Rows — 2026-09-02
+
+Baseline was committed `6d1a41e` on `bmtp-cleanup-codex`, with user-owned dirty
+files untouched. The environment remained MATLAB R2024b Update 4, Optimization
+Toolbox 24.2, six reported cores, no Parallel Computing Toolbox, deterministic
+example defaults, and disabled figures and animation.
+
+Line-level profiling of static U recorded 31 trajectory SOCPs. The sparse-row
+assignment that negated an entire preceding inequality row ran 55,350 times
+and consumed 3.058189 seconds. The row contains only the current derivative
+control stencil and one time-power coefficient. The candidate writes the
+negative stencil directly and then writes the same negative limit coefficient.
+A 6,000-pair construction check proved the old and new sparse matrices exactly
+equal; direct construction was 4.427 times faster in that microbenchmark.
+
+Four end-to-end candidate runs were compared with the immediately preceding
+four-run `6d1a41e` measurements, which used identical inputs and environment:
+
+| Case | Baseline runs (s) | Candidate runs (s) | Warm median gain | Physical result |
+| --- | --- | --- | ---: | --- |
+| Static U | 33.707076, 32.078981, 30.519938, 30.508978 | 31.216347, 28.698559, 28.282108, 27.943378 | 7.332% | Exact |
+| Fixed occlusion | 28.279758, 24.688852, 24.116929, 23.936589 | 25.985134, 22.879713, 21.835469, 21.678934 | 9.460% | Exact |
+| Small-static sentinel | 5.373900, 2.769137, 2.481872, 2.446805 | 5.309145, 2.649936, 2.469282, 2.356385 | 0.507% | Exact |
+
+The post-change profile measured the targeted row at 0.587347 seconds, down
+2.470842 seconds. Success, termination, selected seed and route, arrival,
+motion length, validation, and complete time, position, velocity, acceleration,
+and jerk histories were exactly equal in the controlled comparisons. The
+production diff is +2/-2 lines, so code size is neutral.
+
+An earlier candidate prepared obstacle history once inside the shared example
+validator and reused it across validation probes. Although it targets repeated
+large-history preparation, the predeclared moving/rotating focus case changed
+unfavorably from a 2.1041-second to 2.1407-second warm median. The five-line
+experiment and all artifacts were removed rather than special-casing large
+histories.
+
+The complete suite passed 110/110 with no failures or incomplete results; its
+only warning was the intentional two-vertex normalization fixture. Code
+Analyzer reported zero findings in `solve.m`.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`. Every success, path length,
+motion length, duration/arrival, and termination reason matched `6d1a41e`.
+Their wall-time sum was 198.1119552 seconds versus 208.6403044 seconds in the
+closest same-process baseline, an observed 5.046% decrease. The controlled
+medians, not the aggregate observation, support the speedup conclusion.

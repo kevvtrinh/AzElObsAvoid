@@ -1711,3 +1711,18 @@ The implementation adds six production lines and no function, option, public
 field, or dependency. Its 1.5% size threshold was met by the smallest 4.622%
 affected-case gain. All 18 maintained examples matched the prior physical
 metrics and validated; the complete suite passed 110/110.
+
+## Direct Sparse Derivative Rows — 2026-09-02
+
+Trajectory-SOCP profiling localized 3.058 seconds in static U to 55,350
+full-width sparse-row negations used to create lower derivative bounds. Each
+row had only a short control-point stencil and one time-power entry. Writing
+those entries directly creates the exact same sparse matrix without copying
+the complete preceding row.
+
+The source replacement is +2/-2 production lines and adds no interface,
+helper, option, diagnostic, or dependency. Static-U and fixed-arrival warm
+medians improved 7.332% and 9.460%; the small-static sentinel remained exact
+with a noise-level 0.507% favorable shift. The targeted profiled line fell
+from 3.058 to 0.587 seconds. All 18 examples retained their physical metrics
+and validated, and all 110 tests passed.
