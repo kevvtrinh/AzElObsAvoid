@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Current acceptance blocker: Opening-U history regression - 2026-09-01
+
+A fresh serial maintained-example sweep exposed a real regression in
+`exampleOpeningUShapedObstacle`. The first eleven examples completed, but the
+Opening-U example returned `noValidatedSeed` where the adjacent pre-contract
+revision returned a validated 10-degree direct-wait trajectory with
+13.6175223541-second duration.
+
+Stage isolation found the earliest break in dynamic-obstacle preparation. The
+example represents one closed ring changing into two disjoint open-side rings
+over a two-millisecond history interval. The documented conservative fallback
+uses the endpoint convex hull when topology correspondence cannot be proved;
+that hull fills the U cavity, and the best retained candidate reports
+-5.25653520966 degrees minimum clearance. The behavior first appears with the
+conservative interpolation change at `5429e23`; the exact detached parent
+`9ded021` succeeds.
+
+The attempted example rewrite to a permanent opening plus a separate gate was
+reverted in `9cb02c1` because changing the maintained acceptance scenario after
+the regression appeared was not a general planner fix. Item 18's explicit
+timed-search work-bound implementation was independently removed in `9ccd422`.
+The branch is a review checkpoint, not acceptance-ready, and no runtime or
+correctness claim should treat the earlier focused suite passes as resolving
+this example failure.
+
 ## Preserve plans across finite timing disagreement - 2026-09-01
 
 The largest new strength is that exclusive-stage accounting can no longer turn

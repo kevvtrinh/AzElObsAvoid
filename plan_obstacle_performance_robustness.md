@@ -138,6 +138,35 @@ the independent public validator. Keep changes general-purpose and retain
     nominal 65,535-layer allowance with a bound on estimated states and
     transitions.
 
+## Item Execution Results
+
+These are the recorded item-level runs, not a final acceptance claim. Runtime
+percentages compare adjacent implementations only where the runs used a valid
+comparison protocol. A later fresh serial example sweep exposed an Opening-U
+`noValidatedSeed` regression, so the branch is not acceptance-ready. A pushed
+revision is a review checkpoint, not evidence that final acceptance passed.
+
+| Item | Numerical test result | Runtime improvement or regression | Outcome |
+| ---: | --- | --- | --- |
+| 1 | Branch creation only; no MATLAB run. | Not measured. | Administrative |
+| 2 | Warmup and profile passed in 26.5168 and 27.6500 s. Instrumented profile passed in 42.7304 s with 2,272 `coneprog`, 8,087 `polyshape`, 7,969 shape, and 55 occupancy calls. Focused suites passed 4/4 and 14/14. | Baseline only; no improvement claim. | Retained baseline |
+| 3 | Adversarial history suite passed 3/7; four expected-red cases quantified unsafe geometry, horizon, and intercept behavior. | No suite time recorded. | Retained regressions |
+| 4 | The obstacle-history contract was defined, but no independent numerical run was recorded for this item. | Not measured; verification gap. | Retained contract |
+| 5 | Infrastructure 9/9, projection 2/2, timed BMTP 3/3, policy 2/2; adversarial suite improved to 5/7. Moving-circle example passed in 4.4308 s. | No adjacent runtime comparison. | Retained correctness change |
+| 6 | Projection 2/2, infrastructure 9/9, timing 4/4, contract 14/14; adversarial suite improved to 6/7. Moving example passed in 35.1897 s. | No adjacent runtime comparison. | Retained correctness change |
+| 7 | Contract 14/14, timed BMTP 3/3, route economy 3/3, projection 2/2. Projection/decomposition count fell 4 to 1; `polyshape` 1,377 to 855; shape calls 5,988 to 5,871. | Profile 143.0641 to 138.4790 s: 3.205% faster. | Retained work reduction |
+| 8 | Infrastructure 10/10, projection 2/2, contract 14/14, timed BMTP 3/3. `polyshape` fell 855 to 741. | Profile 138.4790 to 137.6644 s: 0.588% faster. | Retained work reduction |
+| 9 | Equivalence 5/5, infrastructure 10/10, timing 4/4, contract 14/14, timed BMTP 3/3; adversarial 6/7. Only 144 of 4,953 clearance queries used cached edges. | Large profile 81.4626 to 81.3328 s: 0.159% faster; static median 2.9158 to 3.1493 s: 8.008% slower. | Rejected and removed |
+| 10 | Collision/timing 5/5, infrastructure 10/10, contract 14/14, timed BMTP 3/3. Certified intervals fell 331 to 259. | Large profile 86.0660 to 86.2291 s: 0.190% slower; static median 3.5125 to 3.3586 s: about 4.38% faster. | Retained proof-work reduction |
+| 11 | Bound regressions 2/2, stage/collision 5/5, contract 14/14, timed BMTP 3/3. Root calls fell 537 to 0. | Validation 0.3920 to 0.2267 s: 42.162% faster; example median 3.3586 to 3.0803 s: 8.287% faster. | Retained work reduction |
+| 12 | Infrastructure 10/10, contract 14/14, timed BMTP 3/3; adversarial 6/7. `polyshape` fell 711 to 423. | Profile walls 99.2463 and 100.4388 s were differently warmed and are not comparable; static median 3.0803 to 3.2084 s: 4.157% slower. | Retained construction reduction |
+| 13 | New focused cases 3/3, timed BMTP 3/3, contract 14/14, route economy 3/3. Conic solves rose 269 to 680. | Timed suite 20.4759 to 30.1980 s: 47.482% slower; first complete candidate took about 180 s. | Rejected and removed |
+| 14 | Homology 2/2, contract 14/14, route economy 3/3. Numeric keys and two-tree cleanup preserved states, routes, and geometry. | Microbenchmark 1.8144 to 1.4815 s: 18.349% faster; static median 3.2084 to 3.3335 s: 3.898% slower. Heap probe was 19.505% slower than the retained linear scan. | Retained local work reduction; heap removed |
+| 15 | Suites passed 8/8, 10/10, 14/14, 3/3, 3/3, and 5/5. Intercept corrected 6.5830 to 2.9316 s; direct wait corrected 5.0219 to 2.0225 s. | Intercept runtime 0.4793 to 0.7439 s: 55.185% slower; wait runtime 0.4451 to 0.6665 s: 49.738% slower; static median 3.4247 to 3.2834 s: 4.125% faster. | Retained correctness change |
+| 16 | Contract 14/14, timed BMTP 3/3, route economy 3/3; final contract 14/14 and history 8/8. | Contract suite 1.461% faster; timed BMTP 1.463% slower; route economy 3.972% faster. | Retained neutral refactor |
+| 17 | Timing suite passed 6/6 in 2.1090 s and preserved valid plans while exposing finite accounting disagreement. | No adjacent runtime comparison or speed claim. | Retained diagnostic change |
+| 18 | Before removal, options/work tests passed 7/7 in 1.6254 s and expanded focused verification passed 35/35 in 60.2045 s. | No adjacent runtime improvement was measured; the implementation added substantial production and diagnostic code. | Removed at user direction |
+
 ## Benchmark Matrix
 
 Run at least these deterministic families:
