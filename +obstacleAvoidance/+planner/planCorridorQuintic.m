@@ -47,18 +47,28 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 planningTimer = tic;
-options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
-obstacleAvoidance.input.throwIfCancellationRequested(options);
+
+% Search, motion construction, and final validation require the same resolved
+% options and normalized physical inputs. Create one request here so later
+% stages cannot interpret the caller's raw structures differently.
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    obstacles, initialState, goalState, limits, optionOverrides);
+obstacles = request.obstacles;
+initialState = request.initialState;
+goalState = request.goalState;
+limits = request.limits;
+options = request.options;
 useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
-[obstacles, initialState, goalState, limits] = ...
-    obstacleAvoidance.input.normalizePlannerRequest( ...
-    obstacles, initialState, goalState, limits, options);
 [result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
     obstacles, initialState, goalState, limits, options, ...
     obstacleAvoidance.validateTrajectory());
-preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
-useStaticKernel = obstacleAvoidance.obstacles.queryStaticHorizon( ...
-    preparedObstacles, initialState.time_s, goalState.time_s);
+
+% Graph construction and motion checks query obstacle histories many times.
+% Prepare their shared shapes and horizon decision once, before any stage can
+% take an early return or create an alternative representation.
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+preparedObstacles = scene.preparedObstacles;
+useStaticKernel = scene.isStaticHorizon;
 stageTiming = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.DirectAttempt = directAttemptTemplate();
 [~, result.SearchDiagnostics.FixedClockExcursion] = ...

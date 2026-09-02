@@ -26,6 +26,52 @@ repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 end
 
+function testPlanningRequestOwnsResolvedNormalizedInputs(testCase)
+% Keep option resolution and physical-input normalization in one stage.
+initialState = struct("time_s", 0, "position_deg", [0 0]);
+goalState = struct("time_s", 12, "position_deg", [4 2]);
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], initialState, goalState, physicalLimits(), ...
+    struct("MaximumSeedCount", 2));
+
+verifyEqual(testCase, fieldnames(request), ...
+    {'obstacles'; 'initialState'; 'goalState'; 'limits'; 'options'});
+verifyEqual(testCase, request.options.MaximumSeedCount, 2);
+verifyEqual(testCase, request.initialState.velocity_deg_s, [0 0]);
+verifyEqual(testCase, request.initialState.acceleration_deg_s2, [0 0]);
+verifyEqual(testCase, request.goalState.velocity_deg_s, [0 0]);
+verifyEqual(testCase, request.goalState.acceleration_deg_s2, [0 0]);
+end
+
+function testPlanningSceneOwnsPreparedHistoriesAndHorizon(testCase)
+% Expose prepared obstacle details and one shared horizon classification.
+obstacleTime_s = [0; 10];
+staticObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "static", obstacleTime_s, [-1 1 1 -1], [-1 -1 1 1], 0.1);
+movingStart_deg = [4 -1; 6 -1; 6 1; 4 1];
+movingEnd_deg = movingStart_deg + [1 0];
+movingObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "moving", obstacleTime_s, ...
+    {movingStart_deg(:, 1); movingEnd_deg(:, 1)}, ...
+    {movingStart_deg(:, 2); movingEnd_deg(:, 2)}, 0.1);
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    obstacleAvoidance.obstacles.combineObstacles( ...
+    staticObstacle, movingObstacle), ...
+    restState(0, [-4 0]), restState(10, [8 0]), ...
+    physicalLimits(), plannerOptions("earliestArrival"));
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+
+verifyEqual(testCase, scene.startTime_s, 0);
+verifyEqual(testCase, scene.endTime_s, 10);
+verifyFalse(testCase, scene.isStaticHorizon);
+verifyEqual(testCase, numel(scene.preparedObstacles), 2);
+verifyEqual(testCase, [scene.obstacleDetails.SampleCount], [2 2]);
+verifyTrue(testCase, scene.obstacleDetails(1).IsTimeInvariant);
+verifyFalse(testCase, scene.obstacleDetails(2).IsTimeInvariant);
+verifyEqual(testCase, scene.obstacleDetails(2).IntervalGeometryMethod, ...
+    "linearCorrespondingVertices");
+end
+
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
 % Require a finite rest-to-rest direct motion inside the supplied horizon.
 initialState = restState(0, [0 0]);
