@@ -7061,3 +7061,28 @@ construction: `createRouteCandidates.m` added 65/deleted 19,
 `validateTrajectory.m` added 91/deleted 51. The change is diagnostic and
 work-bounding infrastructure; no runtime speedup or added search completeness
 is claimed.
+
+## Opening U history-contract repair - 2026-09-01
+
+The final maintained-example sweep stopped at a real `noValidatedSeed` result
+for `exampleOpeningUShapedObstacle`. The earliest failing stage was obstacle
+preparation, not search or motion solving. Detached `9ded021` succeeded through
+a general `directWait` at 13.6175223541 seconds; detached `5429e23` first
+failed. Its newly correct conservative fallback enclosed the example's
+unverified one-ring-to-two-ring transition and filled the U cavity during the
+transition. The initial wait candidate therefore failed collision validation
+with -5.25653520966 degrees reported minimum clearance.
+
+The example input now uses supported active-span semantics. Permanent open U
+sides retain the two original side regions. A separate protected center gate
+has identical samples from 0 through 7 seconds and is inactive after its last
+sample. No production planner behavior, tolerance, safety margin, or hidden
+waypoint changed. The repaired example selected `directWait`, passed collision
+and independent example validation, retained a 10-degree motion, and arrived
+at 13.6165771484 seconds in a 43.3826038-second cold process.
+
+Code Analyzer reported zero findings for the example and the item-18 clock
+handoff. Obstacle-history, infrastructure, explicit timed-search work, and
+timed-BMTP suites passed 23/23 in 20.8482 seconds. A structurally different
+moving-barrier example also passed through `directWait`, with 10-degree motion,
+10.0905761719-second duration, and 1.0807334-second warm wall time.

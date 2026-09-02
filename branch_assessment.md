@@ -1,5 +1,27 @@
 # Novel replacement branch assessment
 
+## Express the maintained opening through the history contract - 2026-09-01
+
+The final serial-example gate found that `exampleOpeningUShapedObstacle` had
+become an expected `noValidatedSeed` after item 5, although the full unit tree
+passed. Exact detached replays localized the first change from success at
+`9ded021` to failure at `5429e23`. The example encoded a closed single ring
+becoming two disjoint rings over two milliseconds. Under the documented
+conservative fallback, the endpoint convex hull correctly filled the U cavity
+during that unverified topology transition, making any dwell inside the cavity
+collide.
+
+No planner rule or geometry tolerance changed. The example now represents the
+same physical U as permanent open side regions plus a center gate whose
+canonical history ends at the opening time. This uses the public active-span
+semantics and preserves the original protected open geometry. The general
+planner again selected `directWait`, returned a 10-degree collision-free motion
+in 13.6165771484 seconds, and passed independent example validation. A
+structurally different moving barrier also selected `directWait` and passed at
+10.0905761719 seconds. Obstacle-history, infrastructure, timed-search, and timed
+BMTP tests passed 23/23. The largest remaining weakness is runtime: the cold
+Opening U verification took 43.3826 seconds, and no speedup is claimed.
+
 ## Make timed-search work and diagnostics explicit - 2026-09-01
 
 The largest new strength is that timed visibility search is bounded by declared
