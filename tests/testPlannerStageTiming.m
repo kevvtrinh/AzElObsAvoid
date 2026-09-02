@@ -39,6 +39,38 @@ verifyLessThanOrEqual(testCase, ...
     validation.ElapsedTime_s + timingTolerance(validation.ElapsedTime_s));
 end
 
+function testUnresolvedCollisionReportsProofBounds(testCase)
+% Preserve the limiting interval and speed evidence on a fail-closed exit.
+initialState = state(0, [-1 0]);
+initialState.velocity_deg_s = [2 0];
+goalState = state(1, [1 0]);
+goalState.velocity_deg_s = [2 0];
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [3 3];
+options = fixedHs3Options();
+options.CollisionMinimumTimeStep_s = 1;
+trajectory = linearTrajectory(initialState, goalState);
+nearMiss = rectangleObstacle([0 1], [-0.1 0.1 0.2 0.3], 0);
+
+validation = obstacleAvoidance.validateTrajectory( ...
+    trajectory, nearMiss, initialState, goalState, limits, options);
+diagnostics = validation.CollisionDiagnostics;
+
+verifyFalse(testCase, validation.CollisionFree);
+verifyFalse(testCase, validation.CollisionResolved);
+verifyEqual(testCase, validation.UnresolvedIntervalCount, 1);
+verifyEqual(testCase, diagnostics.TerminationReason, ...
+    "minimumTimeStepUnresolved");
+verifyEqual(testCase, diagnostics.LastUnresolvedInterval_s, [0 1]);
+verifyEqual(testCase, diagnostics.LastUnresolvedObstacleIndex, 1);
+verifyEqual(testCase, diagnostics.LastPathSpeedBound_deg_s, 2, ...
+    "AbsTol", 1e-10);
+verifyEqual(testCase, diagnostics.LastObstacleSpeedBound_deg_s, 0);
+verifyGreaterThan(testCase, diagnostics.LastRequiredClearance_deg, ...
+    diagnostics.LastObservedClearance_deg);
+verifyEqual(testCase, diagnostics.MinimumTimeStep_s, 1);
+end
+
 function testSuccessAndEndpointFailureShareTiming(testCase)
 % Require timing on a solved request and critical early exit.
 initialState = state(0, [0 0]);

@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Bound continuous collision work per interval - 2026-09-01
+
+The largest new strength is a fail-closed adaptive certificate whose proof
+bounds now belong to the interval being certified. Each polynomial segment is
+converted to velocity Bernstein controls once; de Casteljau restriction gives
+a conservative vector-speed envelope for every adaptive subinterval. Prepared
+obstacle samples and verified linear interpolation provide the matching swept
+box and obstacle-speed bound without constructing a `polyshape`. An unresolved
+exit now preserves its last interval, limiting obstacle, path and obstacle speed
+bounds, required and observed clearance, and configured minimum timestep.
+
+On an adjacent warm-plus-three seed-1011 comparison, retained adaptive
+intervals fell from 331 to 259 (21.752 percent) with the same successful,
+independently validated 17.9853686689-second arrival and zero unresolved
+intervals. Median wall time changed from 86.0659709 to 86.2290776 seconds, a
+0.190 percent increase, so no runtime speedup is claimed. A fresh adjacent
+static comparison changed from 3.5125306 to 3.3586421 seconds with exact
+physical output, but that isolated observation is likewise not generalized.
+
+The largest remaining weakness is temporal proposal quality: the adversarial
+disjoint-window case still skips the first feasible intercept and selects
+6.5829833374 seconds. The stronger certificate can validate earlier proposals
+more tightly, but it cannot create a missing chronological proposal. That is
+item 15, not evidence against the certificate.
+
 ## Reject direct cached-edge clearance - 2026-09-01
 
 No production change was retained for item 9. A direct even-odd boundary

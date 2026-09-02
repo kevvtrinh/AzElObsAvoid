@@ -1,5 +1,49 @@
 # Plan 325 verification
 
+## Strengthen continuous collision certification - 2026-09-01
+
+Item 10 replaces the global workspace velocity norm and whole-request obstacle
+boxes used by the adaptive certificate. Velocity power coefficients are
+converted once per polynomial segment to Bernstein controls, and stable de
+Casteljau subdivision bounds each exact adaptive interval. Prepared sample
+bounds, interval bounds, interpolation deltas, and speed bounds provide an
+obstacle-specific swept box for the same time slice. Midpoint clearance plus
+the combined path/obstacle Lipschitz bound remains a proof; dense sampling was
+not substituted, and an interval that reaches the minimum timestep without a
+proof still fails closed.
+
+`Validation.CollisionDiagnostics` is stable on every exit. It records the proof
+method and termination reason; broad-phase reject counts; maximum path and
+obstacle speed bounds; the configured minimum timestep; and, when unresolved,
+the last interval, limiting obstacle index, both speed bounds, required
+certifiable clearance, and observed midpoint clearance. A deliberate near-miss
+with a one-second minimum step failed closed and reported interval `[0, 1]`, a
+2 deg/s path bound, zero obstacle speed, and required clearance greater than
+the observed clearance.
+
+Code Analyzer reported zero findings. Planner stage/collision tests passed 5/5,
+obstacle infrastructure 10/10, planner contract 14/14, and timed BMTP 3/3.
+The adversarial suite remained at its scheduled 6/7 state: the only failure is
+item 15's first-intercept-window case, which selected 6.5829833374 seconds
+instead of a time below 3.09 seconds.
+
+The final adjacent warm-plus-three seed-1011 comparison used exact item-8
+commit `1aaff35` as baseline. Baseline measured times were 86.5679274,
+84.7575470, and 86.0659709 seconds (median 86.0659709). Candidate times were
+86.2290776, 86.6045835, and 85.9689313 seconds (median 86.2290776), a 0.190
+percent increase treated as neutral. Both returned the same independently
+validated 17.9853686689-second arrival and zero unresolved intervals. Retained
+adaptive intervals fell exactly from 331 to 259, or 21.752 percent, which is
+the material work-reduction evidence for retention.
+
+A structurally different adjacent static gate retained the exact
+11.4118613877-degree motion and 7.5745417663-second arrival while its median
+changed from 3.5125306 to 3.3586421 seconds. The maintained moving
+`exampleTargetExitsObstacle` also passed planning and independent validation:
+20.1357890335-degree polyline, 20.6100682085-degree motion, 24-second duration,
+collision, kinematic, and applicable-certificate checks all true, and
+26.8137175 seconds wall. No end-to-end speedup is claimed.
+
 ## Reject direct cached-edge clearance - 2026-09-01
 
 Item 9 evaluated a direct signed-clearance implementation over the cached
