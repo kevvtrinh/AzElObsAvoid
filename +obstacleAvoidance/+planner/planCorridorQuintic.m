@@ -86,7 +86,6 @@ result.SearchDiagnostics.SeedEarlyExit = struct( ...
     "Reason", "notApplicableExactPath", ...
     "PhysicalArrivalLowerBound_s", NaN, ...
     "ReachedBySeedIndex", 0);
-firstValidatedMotionTime_s = NaN;
 excursionIsValidated = false;
 
 %% Section 2: Reject Physically Invalid Endpoints
@@ -120,7 +119,8 @@ directElapsedTime_s = toc(motionTimer);
 stageTiming.MotionSolvingElapsedTime_s = ...
     stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
 [directCandidate, directValidation, directValidationTime_s, stageTiming] = ...
-    validateCandidate(directCandidate, preparedObstacles, initialState, ...
+    obstacleAvoidance.planner.checkCandidateMotion( ...
+    directCandidate, preparedObstacles, initialState, ...
     goalState, limits, options, stageTiming, "");
 obstacleAvoidance.input.throwIfCancellationRequested(options);
 directAttempt = recordDirectAttempt(directCandidate, directValidation, ...
@@ -175,9 +175,6 @@ stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
     gridDiagnostics.ElapsedTime_s;
-seedCount = numel(seeds);
-seedSummaries = repmat(summaryTemplate, seedCount, 1);
-candidates = cell(seedCount, 1);
 seedSolveContext = struct( ...
     "UseRuckigWaypoint", useRuckigWaypoint, ...
     "UseStaticKernel", useStaticKernel, ...
@@ -194,43 +191,19 @@ if hasFixedGoal && isfinite(directCandidate.MotionDuration_s)
     physicalArrivalLowerBound_s = initialState.time_s + ...
         directCandidate.MotionDuration_s;
 end
-result.SearchDiagnostics.SeedEarlyExit.PhysicalArrivalLowerBound_s = ...
-    physicalArrivalLowerBound_s;
-if options.GoalTimeMode ~= "earliestArrival"
-    result.SearchDiagnostics.SeedEarlyExit.Reason = ...
-        "policyRequiresFullComparison";
-elseif ~isfinite(physicalArrivalLowerBound_s)
-    result.SearchDiagnostics.SeedEarlyExit.Reason = ...
-        "unprovenRequestLowerBound";
-else
-    result.SearchDiagnostics.SeedEarlyExit.Reason = ...
-        "lowerBoundNotReached";
-end
-processedSeedCount = 0;
-for seedIndex = 1:seedCount
-    [candidate, summary, validation, stageTiming] = solveOneSeed( ...
-        seeds(seedIndex), seedSolveContext, stageTiming);
-    candidates{seedIndex} = candidate;
-    seedSummaries(seedIndex) = summary;
-    processedSeedCount = seedIndex;
-    if validation.Passed && isnan(firstValidatedMotionTime_s)
-        firstValidatedMotionTime_s = toc(planningTimer);
-    end
-    if reachesPhysicalArrivalLowerBound( ...
-            summary, validation, physicalArrivalLowerBound_s, options)
-        result.SearchDiagnostics.SeedEarlyExit.Applied = true;
-        result.SearchDiagnostics.SeedEarlyExit.Reason = ...
-            "validatedPhysicalArrivalLowerBound";
-        result.SearchDiagnostics.SeedEarlyExit.ReachedBySeedIndex = ...
-            seedIndex;
-        break;
-    end
-end
-if processedSeedCount < seedCount
-    seeds = seeds(1:processedSeedCount);
-    candidates = candidates(1:processedSeedCount);
-    seedSummaries = seedSummaries(1:processedSeedCount);
-end
+% Every geometric seed must become a timed candidate and pass the full motion
+% check before selection. Solve them as one inspectable stage, retaining the
+% existing proven earliest-arrival exit without hiding unattempted seeds.
+candidateSet = obstacleAvoidance.planner.solveSeeds( ...
+    seeds, seedSolveContext, stageTiming, ...
+    physicalArrivalLowerBound_s, planningTimer);
+seeds = candidateSet.Seeds;
+candidates = candidateSet.Candidates;
+seedSummaries = candidateSet.Summaries;
+firstValidatedMotionTime_s = ...
+    candidateSet.FirstValidatedMotionTime_s;
+stageTiming = candidateSet.StageTiming;
+result.SearchDiagnostics.SeedEarlyExit = candidateSet.SeedEarlyExit;
 
 % Balanced and fixed policies compare every validated special motion against
 % the topology candidates; their physical arrival lower bounds are not travel
@@ -240,7 +213,8 @@ if excursionIsValidated
     excursionSeed.Index = excursionCandidate.SeedIndex;
     seeds(end + 1) = excursionSeed;
     candidates{end + 1, 1} = excursionCandidate;
-    seedSummaries(end + 1, 1) = summarizeCandidate( ...
+    seedSummaries(end + 1, 1) = ...
+        obstacleAvoidance.planner.createCandidateSummary( ...
         excursionCandidate, excursionCandidate.Validation, ...
         excursionDiagnostics, excursionElapsedTime_s, summaryTemplate, ...
         limits, options, initialState.time_s);
@@ -297,178 +271,6 @@ end
 
 %% Section 6: Local Functions
 
-function [candidate, summary, validation, stageTiming] = solveOneSeed( ...
-        seed, context, stageTiming)
-% Preserve the measured projection, timed-kernel, and explicit fallback order.
-obstacleAvoidance.input.throwIfCancellationRequested(context.Options);
-motionTimer = tic;
-candidateWasPrevalidated = false;
-prevalidationElapsedTime_s = 0;
-validation = obstacleAvoidance.validateTrajectory();
-initialState = context.InitialState;
-goalState = context.GoalState;
-limits = context.Limits;
-options = context.Options;
-preparedObstacles = context.PreparedObstacles;
-
-if context.UseRuckigWaypoint
-    [candidate, solverDiagnostics] = ...
-        obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-        seed, initialState, goalState, limits, options);
-elseif context.UseStaticKernel
-    kernelGoalState = createFixedKernelGoalState(goalState, options);
-    [candidate, solverDiagnostics] = ...
-        obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, preparedObstacles, initialState, kernelGoalState, ...
-        limits, options);
-else
-    trySweptProjection = string(seed.Source) ~= "directWait" && ...
-        size(seed.position_deg, 1) > 2;
-    sweptAttempt = struct();
-    timedBmtpAttempt = struct();
-    if trySweptProjection
-        kernelGoalState = createFixedKernelGoalState(goalState, options);
-        [planningObstacles, projection] = ...
-            obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
-            preparedObstacles, initialState.time_s, goalState.time_s);
-        [sweptCandidate, sweptDiagnostics] = ...
-            obstacleAvoidance.planner.solveBmtpTrajectory( ...
-            seed, planningObstacles, initialState, kernelGoalState, ...
-            limits, options);
-        [sweptCandidate, sweptValidation, sweptValidationTime_s, ...
-            stageTiming] = validateCandidate( ...
-            sweptCandidate, preparedObstacles, initialState, goalState, ...
-            limits, options, stageTiming, ...
-            "The swept-projection BMTP kernel returned no trajectory.");
-        prevalidationElapsedTime_s = prevalidationElapsedTime_s + ...
-            sweptValidationTime_s;
-        sweptAttempt = createSweptProjectionRecord( ...
-            sweptDiagnostics, sweptValidation, projection);
-        if sweptValidation.Passed
-            candidate = sweptCandidate;
-            validation = sweptValidation;
-            solverDiagnostics = sweptDiagnostics;
-            solverDiagnostics.SweptProjection = sweptAttempt;
-            solverDiagnostics.DynamicObstacleRepresentation = ...
-                "conservativeStaticProtectedHistoryConvexHull";
-            candidate.SolverDiagnostics = solverDiagnostics;
-            candidateWasPrevalidated = true;
-        end
-    end
-    tryTimedBmtp = trySweptProjection && ~candidateWasPrevalidated && ...
-        string(seed.Source) == "timeExpandedVisibilityGraph";
-    if tryTimedBmtp
-        [timedCandidate, timedBmtpDiagnostics] = ...
-            obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
-            seed, preparedObstacles, initialState, goalState, ...
-            limits, options);
-        [timedCandidate, timedValidation, timedValidationTime_s, ...
-            stageTiming] = validateCandidate( ...
-            timedCandidate, preparedObstacles, initialState, goalState, ...
-            limits, options, stageTiming, ...
-            "The timed-cell BMTP kernel returned no trajectory.");
-        prevalidationElapsedTime_s = prevalidationElapsedTime_s + ...
-            timedValidationTime_s;
-        timedBmtpAttempt = struct( ...
-            "Attempted", true, ...
-            "SolverDiagnostics", timedBmtpDiagnostics, ...
-            "FullObstacleValidation", timedValidation, ...
-            "Outcome", "rejectedByFullValidation");
-        if timedValidation.Passed
-            timedBmtpAttempt.Outcome = "acceptedAfterFullValidation";
-            candidate = timedCandidate;
-            validation = timedValidation;
-            solverDiagnostics = timedBmtpDiagnostics;
-            solverDiagnostics.SweptProjection = sweptAttempt;
-            solverDiagnostics.TimedBmtp = timedBmtpAttempt;
-            candidate.SolverDiagnostics = solverDiagnostics;
-            candidateWasPrevalidated = true;
-        end
-    end
-    if ~candidateWasPrevalidated
-        [candidate, solverDiagnostics] = createTimedSeedCandidate( ...
-            seed, initialState, goalState, limits, options, [], []);
-        if trySweptProjection
-            solverDiagnostics.SweptProjection = sweptAttempt;
-            solverDiagnostics.TimedBmtp = timedBmtpAttempt;
-            candidate.SolverDiagnostics = solverDiagnostics;
-        end
-    end
-    timedTerminationReason = string(candidate.TerminationReason);
-    timedTopologyIsUnsupported = any(timedTerminationReason == ...
-        ["unsupportedTimedMultiWaypointRoute", "invalidDirectWaitSeed"]);
-    if timedTopologyIsUnsupported
-        timedDiagnostics = solverDiagnostics;
-        if options.UnsupportedTimedTopologyPolicy == ...
-                "ruckigStopAtWaypoints"
-            [candidate, fallbackDiagnostics] = ...
-                obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-                seed, initialState, goalState, limits, options);
-            solverDiagnostics = combineFallbackDiagnostics( ...
-                timedDiagnostics, fallbackDiagnostics, ...
-                timedTerminationReason, true);
-            if fallbackDiagnostics.Accepted
-                candidate.Message = candidate.Message + ...
-                    " Every interior waypoint was constrained to rest " + ...
-                    "by the explicitly enabled Ruckig fallback.";
-            else
-                candidate.Message = ...
-                    "The explicitly enabled Ruckig stop-at-waypoints " + ...
-                    "fallback failed. " + candidate.Message;
-                candidate.TerminationReason = ...
-                    "ruckigWaypointFallbackFailed";
-                solverDiagnostics.FallbackOutcome = ...
-                    candidate.TerminationReason;
-            end
-            candidate.SolverDiagnostics = solverDiagnostics;
-        else
-            solverDiagnostics = combineFallbackDiagnostics( ...
-                timedDiagnostics, struct(), timedTerminationReason, false);
-            candidate.SolverDiagnostics = solverDiagnostics;
-        end
-    end
-end
-
-elapsedTime_s = toc(motionTimer) - prevalidationElapsedTime_s;
-obstacleAvoidance.input.throwIfCancellationRequested(options);
-stageTiming.MotionSolvingElapsedTime_s = ...
-    stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
-if ~candidateWasPrevalidated
-    [candidate, validation, ~, stageTiming] = validateCandidate( ...
-        candidate, preparedObstacles, initialState, goalState, limits, ...
-        options, stageTiming, "The motion kernel returned no trajectory.");
-    waitRefinementAffectsObjective = ...
-        options.GoalTimeMode == "earliestArrival" || ...
-        (options.GoalTimeMode == "balancedArrival" && ...
-        options.MinimumTravelSavingsRate_deg_s > 0);
-    if validation.Passed && string(seed.Source) == "directWait" && ...
-            waitRefinementAffectsObjective
-        [candidate, validation, solverDiagnostics, ...
-            refinementElapsedTime_s, stageTiming] = refineDirectWait( ...
-            seed, candidate, validation, solverDiagnostics, ...
-            preparedObstacles, initialState, goalState, limits, options, ...
-            stageTiming);
-        elapsedTime_s = elapsedTime_s + refinementElapsedTime_s;
-        stageTiming.MotionSolvingElapsedTime_s = ...
-            stageTiming.MotionSolvingElapsedTime_s + ...
-            refinementElapsedTime_s;
-    end
-end
-summary = summarizeCandidate( ...
-    candidate, validation, solverDiagnostics, elapsedTime_s, ...
-    context.SummaryTemplate, limits, options, initialState.time_s);
-end
-
-function reached = reachesPhysicalArrivalLowerBound( ...
-        summary, validation, lowerBound_s, options)
-% Stop earliest-arrival search only at a proven fixed-goal physical floor.
-reached = options.GoalTimeMode == "earliestArrival" && ...
-    validation.Passed && isfinite(lowerBound_s) && ...
-    isfinite(summary.ArrivalTime_s) && ...
-    abs(summary.ArrivalTime_s - lowerBound_s) <= ...
-    options.ArrivalTimeTolerance_s;
-end
-
 function record = directAttemptTemplate()
 % Define stable exact-direct evidence before the attempt runs.
 record = struct("Identifier", "analyticRestToRest", ...
@@ -518,31 +320,6 @@ elseif validation.Passed
 end
 end
 
-function [candidate, validation, elapsedTime_s, stageTiming] = ...
-        validateCandidate(candidate, obstacles, initialState, goalState, ...
-        limits, options, stageTiming, emptyMessage)
-% Run and time the sole authoritative acceptance check for one candidate.
-validation = obstacleAvoidance.validateTrajectory();
-elapsedTime_s = 0;
-if isempty(candidate.time_s)
-    if strlength(emptyMessage) > 0
-        validation.Message = emptyMessage;
-    end
-else
-    validationTimer = tic;
-    validation = obstacleAvoidance.validateTrajectory(candidate, obstacles, ...
-        initialState, goalState, limits, options);
-    elapsedTime_s = toc(validationTimer);
-    stageTiming.CollisionCheckingElapsedTime_s = ...
-        stageTiming.CollisionCheckingElapsedTime_s + ...
-        validation.CollisionCheckingElapsedTime_s;
-    stageTiming.FinalValidationElapsedTime_s = ...
-        stageTiming.FinalValidationElapsedTime_s + max(0, elapsedTime_s - ...
-        validation.CollisionCheckingElapsedTime_s);
-end
-candidate.Validation = validation;
-end
-
 function seed = createDirectSeed(initialState, goalState, duration_s, wait_s)
 % Create the ordinary endpoint seed, adding a truthful waiting vertex if used.
 position_deg = [initialState.position_deg; goalState.position_deg];
@@ -570,45 +347,6 @@ seed.Source = string(source);
 [seed.position_deg, seed.tau] = deal(candidate.position_deg, tau);
 seed.EstimatedDuration_s = duration_s;
 seed.Length_deg = candidate.MotionLength_deg;
-end
-
-function summary = summarizeCandidate(candidate, validation, diagnostics, ...
-        elapsedTime_s, template, limits, options, initialTime_s)
-% Copy solve and independent-validation evidence into the stable summary.
-summary = template;
-names = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
-    "FinalTime_s", "MotionDuration_s", "MotionLength_deg", ...
-    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
-    "TerminationReason"];
-targets = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
-    "ArrivalTime_s", "MotionDuration_s", "MotionLength_deg", ...
-    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
-    "TerminationReason"];
-for fieldIndex = 1:numel(names)
-    summary.(targets(fieldIndex)) = candidate.(names(fieldIndex));
-end
-
-summary.ValidationPassed = validation.Passed;
-summary.CollisionFree = validation.CollisionFree;
-summary.CollisionResolved = validation.CollisionResolved;
-summary.MinimumClearance_deg = validation.MinimumClearance_deg;
-summary.UnresolvedIntervalCount = validation.UnresolvedIntervalCount;
-summary.SeedPlanningElapsedTime_s = elapsedTime_s;
-summary.Message = strtrim(string(candidate.Message) + " " + validation.Message);
-summary.SolverDiagnostics = diagnostics;
-if validation.Passed
-    normalizedPeaks = [validation.PeakVelocity_deg_s ./ ...
-        limits.maxVelocity_deg_s, validation.PeakAcceleration_deg_s2 ./ ...
-        limits.maxAcceleration_deg_s2, validation.PeakJerk_deg_s3 ./ ...
-        limits.maxJerk_deg_s3];
-    summary.KinematicUtilization = mean(normalizedPeaks);
-    summary.TravelTimeTradeoffCost_deg = candidate.MotionLength_deg + ...
-        options.MinimumTravelSavingsRate_deg_s * ...
-        (candidate.FinalTime_s - initialTime_s);
-end
-if ~validation.Passed && ~isempty(candidate.time_s)
-    summary.TerminationReason = "independentValidationFailed";
-end
 end
 
 function stageTiming = accountConstructorValidation( ...
@@ -643,7 +381,8 @@ end
 function result = finishFastPath(result, candidate, validation, diagnostics, ...
         elapsedTime_s, seed, summaryTemplate, message, timer, stageTiming)
 % Assemble each independently accepted fast-path through one owner.
-summary = summarizeCandidate(candidate, validation, diagnostics, ...
+summary = obstacleAvoidance.planner.createCandidateSummary( ...
+    candidate, validation, diagnostics, ...
     elapsedTime_s, summaryTemplate, result.Inputs.limits, result.Options, ...
     result.Inputs.initialState.time_s);
 result.Success = true;
@@ -675,241 +414,6 @@ for name = ["time_s", "position_deg", "velocity_deg_s", ...
 end
 result.ArrivalTime_s = candidate.FinalTime_s;
 result.TrajectoryDuration_s = candidate.MotionDuration_s;
-end
-
-function kernelGoalState = createFixedKernelGoalState(goalState, options)
-% Remove moving-goal evidence only after a fixed trial has frozen its endpoint.
-kernelGoalState = goalState;
-hasTargetHistory = isfield(goalState, "targetTime_s") && ...
-    ~isempty(goalState.targetTime_s);
-if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
-    return;
-end
-targetPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
-    goalState, goalState.time_s);
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    targetPosition_deg, goalState.position_deg);
-if max(abs(targetPosition_deg - goalState.position_deg)) > ...
-        256 * eps(coordinateScale_deg)
-    return;
-end
-metadataFields = intersect(fieldnames(kernelGoalState), ...
-    {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
-kernelGoalState = rmfield(kernelGoalState, metadataFields);
-end
-
-function [candidate, diagnostics] = createTimedSeedCandidate( ...
-        seed, initialState, goalState, limits, options, ...
-        waitOverride_s, directMotionDuration_s)
-% Realize a timed direct-wait seed without sending dynamics to static BMTP.
-timer = tic;
-    candidate = bmtpEngine.createMotionRecord( ...
-    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
-candidate.SeedIndex = seed.Index;
-diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
-    "TerminationReason", "unsupportedTimedMultiWaypointRoute", ...
-    "WaitTime_s", NaN, "InitialWaitTime_s", NaN, ...
-    "FinalWaitTime_s", NaN, "RefinementCount", 0, ...
-    "InfeasibleLowerWaitTime_s", NaN, ...
-    "EstimatedDuration_s", seed.EstimatedDuration_s, ...
-    "SeedIndex", seed.Index, "SeedSource", string(seed.Source), ...
-    "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau, ...
-    "ContainsWait", hasRepeatedWaypoint(seed.position_deg), ...
-    "FirstUnsupportedTransitionIndex", 0, ...
-    "FirstUnsupportedFeature", "", ...
-    "OriginalTerminationReason", "", ...
-    "FallbackPolicy", options.UnsupportedTimedTopologyPolicy, ...
-    "FallbackAvailable", true, "FallbackAttempted", false, ...
-    "FallbackMethod", "", "FallbackOutcome", "notApplicable", ...
-    "AllInteriorWaypointsConstrainedToRest", false);
-if string(seed.Source) ~= "directWait"
-    diagnostics.FirstUnsupportedTransitionIndex = 1;
-    diagnostics.FirstUnsupportedFeature = "multiWaypointTimedRoute";
-    diagnostics.OriginalTerminationReason = diagnostics.TerminationReason;
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    candidate.Message = ...
-        "The compact dynamic kernel currently requires a direct-wait seed.";
-    candidate.TerminationReason = diagnostics.TerminationReason;
-    candidate.SolverDiagnostics = diagnostics;
-    diagnostics.ElapsedTime_s = toc(timer);
-    return;
-end
-
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    seed.position_deg, initialState.position_deg, goalState.position_deg);
-positionTolerance_deg = 256 * eps(coordinateScale_deg);
-isInitialPosition = vecnorm( ...
-    seed.position_deg - initialState.position_deg, 2, 2) <= ...
-    positionTolerance_deg;
-firstMotionIndex = find(~isInitialPosition, 1, "first");
-isDirectWait = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && ...
-    all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - ...
-    goalState.position_deg, 2, 2) <= positionTolerance_deg);
-if ~isDirectWait
-    diagnostics.TerminationReason = "invalidDirectWaitSeed";
-    diagnostics.FirstUnsupportedTransitionIndex = firstMotionIndex;
-    diagnostics.FirstUnsupportedFeature = "nonDirectMotionAfterWait";
-    diagnostics.OriginalTerminationReason = diagnostics.TerminationReason;
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    candidate.Message = "The timed seed is not a dwell followed by a direct edge.";
-    candidate.TerminationReason = diagnostics.TerminationReason;
-    candidate.SolverDiagnostics = diagnostics;
-    diagnostics.ElapsedTime_s = toc(timer);
-    return;
-end
-
-duration_s = double(seed.EstimatedDuration_s);
-waitTime_s = duration_s * double(seed.tau(firstMotionIndex - 1));
-if ~isempty(waitOverride_s)
-    waitTime_s = waitOverride_s;
-    duration_s = waitTime_s + directMotionDuration_s;
-end
-delayedInitialState = initialState;
-delayedInitialState.time_s = initialState.time_s + waitTime_s;
-delayedGoalState = goalState;
-delayedGoalState.time_s = initialState.time_s + duration_s;
-fixedOptions = options;
-fixedOptions.GoalTimeMode = "fixedArrival";
-direct = bmtpEngine.createDirectMotion( ...
-    delayedInitialState, delayedGoalState, limits, fixedOptions);
-if ~direct.Success
-    candidate = direct;
-    candidate.SeedIndex = seed.Index;
-    candidate.SeedSource = string(seed.Source);
-    diagnostics.TerminationReason = direct.TerminationReason;
-    diagnostics.ElapsedTime_s = toc(timer);
-    candidate.SolverDiagnostics = diagnostics;
-    return;
-end
-
-directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
-    direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
-directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, ...
-    direct.Polynomial.SegmentCount, numel(initialState.position_deg));
-if waitTime_s > 0
-    relativeBreak_s = [0; waitTime_s + directBreak_s];
-    segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); ...
-        directJerk_deg_s3];
-else
-    relativeBreak_s = directBreak_s;
-    segmentJerk_deg_s3 = directJerk_deg_s3;
-end
-candidate = bmtpEngine.createMotionRecord( ...
-    direct, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
-    options.SampleTime_s, seed.Source);
-candidate.SeedIndex = seed.Index;
-candidate.Message = "An exact direct motion was realized after the timed dwell.";
-[candidate.Success, candidate.OptimizerFeasible] = deal(true);
-candidate.TerminationReason = "goalReached";
-diagnostics.Accepted = true;
-diagnostics.TerminationReason = candidate.TerminationReason;
-diagnostics.WaitTime_s = waitTime_s;
-diagnostics.ElapsedTime_s = toc(timer);
-candidate.SolverDiagnostics = diagnostics;
-end
-
-function diagnostics = combineFallbackDiagnostics( ...
-        timedDiagnostics, fallbackDiagnostics, originalReason, attempted)
-% Preserve the earliest timed-kernel failure across an explicit recovery.
-diagnostics = timedDiagnostics;
-diagnostics.OriginalTerminationReason = originalReason;
-diagnostics.FallbackAttempted = attempted;
-diagnostics.FallbackMethod = "ruckigStopAtWaypoints";
-if ~attempted
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    return;
-end
-diagnostics.FallbackOutcome = string(fallbackDiagnostics.EngineTerminationReason);
-diagnostics.FallbackDiagnostics = fallbackDiagnostics;
-for fieldName = ["InteriorWaypointTime_s", ...
-        "InteriorWaypointPosition_deg", ...
-        "InteriorWaypointVelocity_deg_s", ...
-        "InteriorWaypointAcceleration_deg_s2", ...
-        "AllInteriorWaypointsConstrainedToRest"]
-    if isfield(fallbackDiagnostics, fieldName)
-        diagnostics.(fieldName) = fallbackDiagnostics.(fieldName);
-    end
-end
-end
-
-function hasWait = hasRepeatedWaypoint(position_deg)
-% Treat a repeated consecutive guide point as an explicit spatial dwell.
-if size(position_deg, 1) < 2
-    hasWait = false;
-    return;
-end
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances(position_deg);
-duplicateTolerance_deg = 256 * eps(coordinateScale_deg);
-hasWait = any(vecnorm(diff(position_deg), 2, 2) <= ...
-    duplicateTolerance_deg);
-end
-
-function record = createSweptProjectionRecord( ...
-        diagnostics, validation, projection)
-% Record conservative static mover geometry and authoritative validation.
-record = struct( ...
-    "Attempted", true, ...
-    "Projection", projection, ...
-    "SolverDiagnostics", diagnostics, ...
-    "FullObstacleValidation", validation, ...
-    "Outcome", "rejectedByFullValidation");
-if validation.Passed
-    record.Outcome = "acceptedAfterFullValidation";
-end
-end
-
-function [candidate, validation, diagnostics, motionElapsedTime_s, ...
-        stageTiming] = refineDirectWait(seed, candidate, validation, ...
-        diagnostics, obstacles, initialState, goalState, limits, options, ...
-        stageTiming)
-% Bisect a measured infeasible/feasible dwell bracket through public validation.
-initialWaitTime_s = diagnostics.WaitTime_s;
-diagnostics.InitialWaitTime_s = initialWaitTime_s;
-diagnostics.FinalWaitTime_s = initialWaitTime_s;
-motionElapsedTime_s = 0;
-if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
-    candidate.SolverDiagnostics = diagnostics;
-    return;
-end
-
-directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
-lowerWaitTime_s = 0;
-upperWaitTime_s = initialWaitTime_s;
-bestCandidate = candidate;
-bestValidation = validation;
-for refinementIndex = 1:options.MaximumWaitRefinementIterations
-    if refinementIndex == 1
-        trialWaitTime_s = lowerWaitTime_s;
-    else
-        trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
-    end
-    motionTimer = tic;
-    [trialCandidate, ~] = createTimedSeedCandidate( ...
-        seed, initialState, goalState, limits, options, ...
-        trialWaitTime_s, directMotionDuration_s);
-    motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
-    [trialCandidate, trialValidation, ~, stageTiming] = validateCandidate( ...
-        trialCandidate, obstacles, initialState, goalState, limits, options, ...
-        stageTiming, "The refined direct-wait kernel returned no trajectory.");
-    diagnostics.RefinementCount = refinementIndex;
-    if trialValidation.Passed
-        bestCandidate = trialCandidate;
-        bestValidation = trialValidation;
-        upperWaitTime_s = trialWaitTime_s;
-        if trialWaitTime_s == 0
-            break;
-        end
-    else
-        lowerWaitTime_s = trialWaitTime_s;
-        diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
-    end
-end
-candidate = bestCandidate;
-validation = bestValidation;
-diagnostics.WaitTime_s = upperWaitTime_s;
-diagnostics.FinalWaitTime_s = upperWaitTime_s;
-diagnostics.ElapsedTime_s = diagnostics.ElapsedTime_s + motionElapsedTime_s;
-candidate.SolverDiagnostics = diagnostics;
 end
 
 function index = selectValidatedCandidate(summaries, indices, options)
