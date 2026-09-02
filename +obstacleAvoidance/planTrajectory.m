@@ -127,7 +127,7 @@ excursionIsValidated = false;
 %% Section 4: Check Physical Endpoints
 
 [endpointFeasible, result.Message, result.TerminationReason] = ...
-    obstacleAvoidance.input.validatePlannerEndpoints( ...
+    obstacleAvoidance.input.checkPlannerEndpoints( ...
     preparedObstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
@@ -200,19 +200,59 @@ if ~useRuckigWaypoint
     end
 end
 
-%% Section 6: Search And Solve Deterministic Seeds
+%% Section 6: Create Proposal Geometry And Search Routes
 
 topologyTimer = tic;
-[seeds, gridDiagnostics, searchStages] = ...
-    obstacleAvoidance.search.createRouteCandidates( ...
-    scene, request);
+
+% Every request begins with the direct route suggestion. It remains first in
+% deterministic seed order even when its exact timed motion failed, because a
+% different motion method may still use that same spatial route successfully.
+seeds = obstacleAvoidance.search.createSeeds([], [], request);
+proposal = struct();
+visibilityGraph = struct();
+routeSet = struct();
+needsRouteSearch = options.MaximumSeedCount > 1 && ...
+    ~isempty(preparedObstacles);
+if needsRouteSearch
+    % Obstacle histories are too detailed for affordable spatial graph work.
+    % Create one explicit proposal representation, retaining whether it is a
+    % sampled union or conservative dense envelope; this can suggest routes
+    % but cannot approve any final motion.
+    proposal = obstacleAvoidance.search.createProposalGeometry( ...
+        scene, request);
+
+    % Route search needs discrete nodes and collision-checked connections.
+    % Preserve every offset attempt so rejected nodes, edges, and connectivity
+    % recovery remain inspectable before any route is selected.
+    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
+        proposal, request);
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
+
+    % Moving histories may admit timed routes that a static envelope hides,
+    % while distinct spatial routes preserve different obstacle-passing
+    % choices. Search both forms before converting either into motion seeds.
+    routeSet = obstacleAvoidance.search.searchRoutes( ...
+        scene, request, proposal, visibilityGraph);
+
+    % Visibility routes are only starting suggestions. Convert timed and
+    % spatial routes into one deterministic seed order with explicit source,
+    % duration, and reduced-geometry provenance for the motion solvers.
+    seeds = obstacleAvoidance.search.createSeeds( ...
+        routeSet, proposal, request);
+end
+
+% Search diagnostics copy only work already returned by the stages above.
+% Keeping assembly separate prevents plotting or reporting from recreating
+% graph decisions after an early return or expected no-path outcome.
+gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
+    proposal, visibilityGraph, routeSet, seeds);
 gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
 stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
-result.SearchDiagnostics.StageOutputs.Proposal = searchStages.Proposal;
+result.SearchDiagnostics.StageOutputs.Proposal = proposal;
 result.SearchDiagnostics.StageOutputs.VisibilityGraph = ...
-    searchStages.VisibilityGraph;
-result.SearchDiagnostics.StageOutputs.RouteSet = searchStages.RouteSet;
+    visibilityGraph;
+result.SearchDiagnostics.StageOutputs.RouteSet = routeSet;
 result.SearchDiagnostics.StageOutputs.SeedSet = seeds;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
     gridDiagnostics.ElapsedTime_s;
