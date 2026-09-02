@@ -668,22 +668,9 @@ satisfied = hasFields && all(isfinite([obstacles.safetyMargin_deg])) && ...
 end
 
 function within = withinBounds(powerCoefficient, lower, upper, tolerance)
-% Check endpoints and every finite stationary point on normalized time [0, 1].
-derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* ...
-    powerCoefficient(2:end);
-lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");
-candidateTau = [0; 1];
-if ~isempty(lastDerivativeIndex)
-    stationaryTau = real(roots(flip( ...
-        derivativeCoefficient(1:lastDerivativeIndex))));
-    rootTolerance = 1e-9;
-    stationaryTau = stationaryTau(stationaryTau >= -rootTolerance & ...
-        stationaryTau <= 1 + rootTolerance);
-    candidateTau = [candidateTau; min(max(stationaryTau, 0), 1)];
-end
-candidateValue = polyval(flip(powerCoefficient), candidateTau);
-within = all(candidateValue >= lower - tolerance & ...
-    candidateValue <= upper + tolerance);
+% Delegate to the degree-neutral certified fast path and exact fallback.
+within = obstacleAvoidance.validation.certifyPolynomialRange( ...
+    powerCoefficient, lower, upper, tolerance);
 end
 
 function [collisionFree, resolved, minimumClearance_deg, ...

@@ -1,5 +1,36 @@
 # Novel replacement branch assessment
 
+## Certified continuous polynomial bounds - 2026-09-02
+
+Continuous position, velocity, acceleration, and jerk checks now use a
+degree-neutral Bernstein fast path. A complete in-range hull proves an interval;
+a hull wholly outside one limit proves failure; one outlying control remains
+ambiguous. Ambiguous intervals receive at most two midpoint de Casteljau
+subdivisions before the established endpoint and stationary-point evaluation
+resolves the result. Degree-specific power-to-Bernstein maps are cached because
+reconstructing their binomial coefficients dominated the first implementation.
+
+The focused cubic validation benchmark improved from a 0.225285700-second
+median to 0.107645900 seconds per 100 validations, a 52.218 percent reduction.
+On the structurally different degree-16, 18-segment obstacle trajectory, an
+interleaved same-session comparison produced identical bound decisions and
+improved the polynomial-validation-stage median from 0.957598300 to
+0.183847000 seconds per 100 calls, an 80.801 percent reduction. The rejected
+uncached implementation is recorded in `verification.md`; it was more than five
+times slower and is not retained.
+
+MATLAB Code Analyzer reported zero findings, and the complete test suite passed
+118/118. All 17 maintained examples ran serially against the final code:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` result, with established physical metrics unchanged. The
+final sweep took 451.1994148 seconds. This is 10.5 percent below the rejected
+uncached sweep but 41.9 percent above the older 317.9755667-second record, so no
+end-to-end speedup is claimed from those non-interleaved runs. The current
+strength is a certified fast path that never treats one Bernstein coefficient
+as exact rejection evidence. The remaining weakness is that ambiguous cases
+still depend on polynomial-root conditioning in the conservative stationary
+fallback.
+
 ## Remove benchmark-shaped orthogonal planners - 2026-09-01
 
 At the user's direction, the branch removes the complete orthogonal-cavity and

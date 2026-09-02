@@ -1,5 +1,64 @@
 # Plan 325 verification
 
+## Certified continuous polynomial bounds - 2026-09-02
+
+The baseline was commit `d5cd59aadc6e74bb7e6f3b7101056cf8a033783e` on
+`bmtp-cleanup-codex`. The working tree already contained unrelated user changes
+to `AGENTS.md`, deleted planning/audit documents, and the untracked
+`Rogue Examples/` directory; none was modified by this work. MATLAB was R2024b
+Update 4. The focused inputs, options, jerk constraint, plotting state, and
+independent validator were held constant.
+
+The accepted change adds one 164-physical-line, 113-noncomment-line range
+certifier; removes 13 net physical lines from `validateTrajectory.m`; and adds
+24 focused test lines. The 151-line net production growth requires a 37.75
+percent reduction under the 25-percent-per-100-line allowance. The smaller of
+the two controlled improvements was 52.218 percent, so that incremental growth
+gate passes. `validateTrajectory.m` remains 856 physical lines and the new file
+is 164, both below the 900-line file cap. The repository audit reported 11,448
+noncomment production lines against its maintained 11,524-line ceiling. The
+separate current physical totals remain 9,607 lines in `+obstacleAvoidance`,
+5,216 in `trajectory`, and 4,446 in `tests`; therefore the repository-wide
+7,500 production target and 12,000 planner/test-tree target were already
+exceeded and remain unresolved. No commit or push was performed.
+
+The cubic easy-case benchmark used `exampleObstacleFree`, six cubic segments,
+seven repetitions after warm-up, and 100 complete independent validations per
+repetition. Baseline minimum/median/maximum were
+0.172095300/0.225285700/0.262237500 seconds. Final candidate values were
+0.091198100/0.107645900/0.155967900 seconds, a 52.218 percent median reduction.
+
+The degree-16 comparison used the unchanged 18-segment
+`exampleObstacleAvoidance` polynomial and interleaved 100-call baseline and
+candidate blocks for nine repetitions in one MATLAB session. The stationary
+baseline minimum/median/maximum were
+0.903708400/0.957598300/1.022489700 seconds; the cached Bernstein candidate was
+0.173457100/0.183847000/0.218173700 seconds, an 80.801 percent median reduction.
+All four bound decisions were identical. The initial depth-eight uncached
+prototype measured 5.444254300 seconds versus 0.953080100 baseline median; a
+depth-two uncached check still measured 5.423218900 versus 0.968649000 seconds.
+Those negative results localized transform reconstruction as the owner and the
+uncached code was replaced, not retained.
+
+Focused tests prove that one outlying Bernstein control does not reject a safe
+quadratic, midpoint subdivision rejects a true interior violation, and a
+non-dyadic boundary tangent reaches the stationary fallback and passes. Code
+Analyzer reported zero findings in all three touched MATLAB files. The final
+complete suite passed 118/118 with zero failed or incomplete tests,
+107.2784051 seconds aggregate duration, and 117.2130268 seconds wall time.
+
+All 17 maintained examples ran serially and headlessly against the final code.
+Sixteen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed` result. Every successful
+motion was collision-free and passed velocity, acceleration, jerk, and dynamics
+checks; applicable plane certificates passed. Exact metrics are appended to
+`benchmark.csv`. The final serial wall total was 451.1994148 seconds. A hidden
+failure run created one search-diagnostic figure annotated with termination and
+search counts; a visible obstacle-free run created two visible figures. Because
+those visualization checks preceded only the argument-independent transform
+cache correction, they were rerun after the final example sweep before
+completion.
+
 ## Dormant seed-clustering removal - 2026-09-01
 
 The authoritative baseline was commit
