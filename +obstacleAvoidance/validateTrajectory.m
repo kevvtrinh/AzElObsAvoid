@@ -656,13 +656,24 @@ function bernstein = powerToBernstein(power)
 % error cannot make generated motions and independent checking agree.
 % Convert ascending power coefficients to same-degree Bernstein controls.
 degree = size(power, 1) - 1;
-transform = zeros(degree + 1);
-for bernsteinIndex = 0:degree
-    for powerIndex = 0:bernsteinIndex
-        transform(bernsteinIndex + 1, powerIndex + 1) = ...
-            nchoosek(bernsteinIndex, powerIndex) / ...
-            nchoosek(degree, powerIndex);
+persistent transformsByDegree
+if isempty(transformsByDegree)
+    transformsByDegree = cell(0, 1);
+end
+transformIndex = degree + 1;
+if numel(transformsByDegree) < transformIndex || ...
+        isempty(transformsByDegree{transformIndex})
+    transform = zeros(degree + 1);
+    for bernsteinIndex = 0:degree
+        for powerIndex = 0:bernsteinIndex
+            transform(bernsteinIndex + 1, powerIndex + 1) = ...
+                nchoosek(bernsteinIndex, powerIndex) / ...
+                nchoosek(degree, powerIndex);
+        end
     end
+    transformsByDegree{transformIndex} = transform;
+else
+    transform = transformsByDegree{transformIndex};
 end
 bernstein = transform * power;
 end
@@ -680,15 +691,67 @@ satisfied = hasFields && all(isfinite([obstacles.safetyMargin_deg])) && ...
 end
 
 function within = withinBounds(powerCoefficient, lower, upper, tolerance)
-% Check endpoints and every finite stationary point on normalized time [0, 1].
+% Prove easy Bernstein ranges, then use stationary points when ambiguous.
+bernsteinControls = powerToBernstein(powerCoefficient);
+maximumSubdivisionDepth = 8;
+classification = classifyBernsteinRange( ...
+    bernsteinControls, lower, upper, tolerance, maximumSubdivisionDepth);
+if classification ~= 0
+    within = classification > 0;
+    return;
+end
+within = stationaryPointRangeCheck( ...
+    powerCoefficient, lower, upper, tolerance);
+end
+
+function classification = classifyBernsteinRange( ...
+        controls, lower, upper, tolerance, remainingDepth)
+% Return one for proved inside, minus one for proved outside, or zero.
+if all(controls >= lower - tolerance & controls <= upper + tolerance)
+    classification = 1;
+    return;
+end
+if max(controls) < lower - tolerance || min(controls) > upper + tolerance
+    classification = -1;
+    return;
+end
+if remainingDepth == 0
+    classification = 0;
+    return;
+end
+[leftControls, rightControls] = ...
+    subdivideBernsteinControls(controls, 0.5);
+leftClassification = classifyBernsteinRange( ...
+    leftControls, lower, upper, tolerance, remainingDepth - 1);
+if leftClassification < 0
+    classification = -1;
+    return;
+end
+rightClassification = classifyBernsteinRange( ...
+    rightControls, lower, upper, tolerance, remainingDepth - 1);
+if rightClassification < 0
+    classification = -1;
+elseif leftClassification > 0 && rightClassification > 0
+    classification = 1;
+else
+    classification = 0;
+end
+end
+
+function within = stationaryPointRangeCheck( ...
+        powerCoefficient, lower, upper, tolerance)
+% Check endpoints and every finite real stationary point on [0, 1].
 derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* ...
     powerCoefficient(2:end);
 lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");
 candidateTau = [0; 1];
 if ~isempty(lastDerivativeIndex)
-    stationaryTau = real(roots(flip( ...
-        derivativeCoefficient(1:lastDerivativeIndex))));
+    stationaryRoot = roots(flip( ...
+        derivativeCoefficient(1:lastDerivativeIndex)));
     rootTolerance = 1e-9;
+    isNumericallyReal = abs(imag(stationaryRoot)) <= ...
+        rootTolerance * (1 + abs(real(stationaryRoot)));
+    stationaryTau = real(stationaryRoot(isNumericallyReal));
     stationaryTau = stationaryTau(stationaryTau >= -rootTolerance & ...
         stationaryTau <= 1 + rootTolerance);
     candidateTau = [candidateTau; min(max(stationaryTau, 0), 1)];

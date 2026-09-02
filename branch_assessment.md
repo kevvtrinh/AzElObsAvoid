@@ -1,5 +1,29 @@
 # Novel replacement branch assessment
 
+## Certify easy continuous bounds in Bernstein form - 2026-09-01
+
+The largest new strength is a three-outcome continuous range check. A complete
+Bernstein hull inside the limit certifies an interval immediately; recursive
+de Casteljau subdivision can prove smaller intervals inside or wholly outside;
+and anything still ambiguous retains the independent endpoint/stationary-point
+fallback. One coefficient outside the limit is never treated as a rejection.
+The degree-only power-to-Bernstein transform is cached as immutable arithmetic,
+so repeated validations do not rebuild it.
+
+On the maintained static example, the exact item-10 profile made 600 range
+checks and 537 `roots` calls, spending 0.391988 seconds in validation. Item 11
+made the same 600 checks, made zero `roots` calls, and spent 0.226719 seconds in
+validation. The warm-plus-three example median decreased from 3.3586421 to
+3.0803439 seconds (8.287 percent) with exact motion and arrival. The exact root
+reduction is the retention evidence; the sub-ten-percent end-to-end observation
+is not generalized into a speedup claim.
+
+The largest current weakness is that recursive Bernstein range checks still
+share the already large `validateTrajectory.m` local-helper surface. The
+stationary fallback remains necessary for high-degree or numerically ambiguous
+inputs, and no global claim is made about the root-call mix on unseen
+polynomials.
+
 ## Bound continuous collision work per interval - 2026-09-01
 
 The largest new strength is a fail-closed adaptive certificate whose proof

@@ -1,5 +1,35 @@
 # Plan 325 verification
 
+## Add a certified continuous-bound fast path - 2026-09-01
+
+Item 11 first converts each ascending-power scalar polynomial to equal-degree
+Bernstein controls. A hull wholly within the allowed range proves the interval;
+otherwise the checker recursively bisects through de Casteljau construction.
+A child whose complete hull lies beyond one side proves a violation. Ambiguous
+children fall back to endpoints and every numerically real stationary root.
+The fallback therefore remains authoritative where subdivision does not decide,
+and a single outside Bernstein coefficient is not used as an exact rejection.
+
+Two permanent public-validator regressions use `p(t) = a*t*(1-t)`. With
+`a = 4`, a Bernstein control lies above the one-degree limit while the actual
+curve only touches it; validation passes. With `a = 5`, the same polynomial
+family truly reaches 1.25 degrees; continuous position validation fails. Both
+tests pass, as do planner stage/collision 5/5, planner contract 14/14, and timed
+BMTP 3/3. The adversarial suite remains at its expected pre-item-15 state of
+6/7, selecting 6.5829833374 seconds in the still-red first-window test. Code
+Analyzer reported zero findings in both changed files.
+
+An exact detached item-10 `d40422f` profile of
+`exampleObstacleAvoidance` performed 600 `withinBounds` calls and 537 `roots`
+calls, with 0.391988 seconds attributed to `validateTrajectory`. Item 11
+performed the same 600 checks with zero `roots` calls and 0.226719 seconds in
+validation, a 42.162 percent profile-local decrease. Its warm-plus-three
+end-to-end median was 3.0803439 seconds versus item 10's 3.3586421 seconds,
+an 8.287 percent observation. The physical result remained exactly
+11.4118613877 degrees of sampled motion and 7.5745417663 seconds arrival. The
+exact 537-to-zero root-call reduction, not a broad runtime claim, satisfies the
+retention gate.
+
 ## Strengthen continuous collision certification - 2026-09-01
 
 Item 10 replaces the global workspace velocity norm and whole-request obstacle
