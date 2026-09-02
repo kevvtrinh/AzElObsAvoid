@@ -73,91 +73,29 @@ if hasBoundaryInfeasibility
     return;
 end
 
-%% Section 2: Create An Exact Switching Profile
+%% Section 2: Create And Synchronize Exact Axis Profiles
 
-requestedFinalTime = [];
-if options.TimeMode == "fixed"
-    requestedFinalTime = options.FinalTime;
-    if isempty(requestedFinalTime)
-        requestedFinalTime = terminalState.maximumTime;
-    end
-end
-solveTimer = tic;
-profile = struct();
-[hasDirectProgress, progressInitialState, progressTerminalState, ...
-    progressLimits, displacement] = createDirectProgressProblem( ...
+% Independent axis profiles generally finish at different times. Create the
+% fastest eligible profiles and synchronize them before evaluation so the
+% returned vector motion has one physical clock and unchanged boundary states.
+profileAttempt = ruckigEngine.createSynchronizedMotion( ...
     initialState, terminalState, limits, options);
-if hasDirectProgress
-    progressProfile = ruckigEngine.createRestToRestJerkProfile( ...
-        progressInitialState, progressTerminalState, progressLimits, ...
-        requestedFinalTime);
-    if progressProfile.Success
-        profile = liftDirectProfile( ...
-            progressProfile, displacement, initialState);
-    end
-end
-if isempty(fieldnames(profile))
-    profile = ruckigEngine.createSynchronizedJerkProfile( ...
-        initialState, terminalState, limits, requestedFinalTime);
-end
-elapsedTime = toc(solveTimer);
-result.Diagnostics.Profile = profile;
-result.Diagnostics.ElapsedTime = elapsedTime;
-if ~profile.Success
-    [reason, message] = classifyProfileFailure( ...
-        profile, initialState, options, requestedFinalTime);
-    result.Message = message;
-    result.TerminationReason = reason;
-    return;
-end
-if options.TimeMode == "earliestArrival" && ...
-        profile.FinalTime > terminalState.maximumTime + ...
-        options.ArrivalTimeTolerance
-    result.Message = ...
-        "The certified switching profile does not fit inside maximumTime.";
-    result.TerminationReason = "infeasibleTimeHorizon";
+result.Diagnostics.Profile = profileAttempt.Profile;
+result.Diagnostics.ElapsedTime = profileAttempt.ElapsedTime;
+if ~profileAttempt.Success
+    result.Message = profileAttempt.Message;
+    result.TerminationReason = profileAttempt.TerminationReason;
     return;
 end
 
-%% Section 3: Reconstruct And Validate The Result
+%% Section 3: Evaluate And Check The Synchronized Motion
 
-result.FinalTime = profile.FinalTime;
-result.Duration = profile.FinalTime - initialState.time;
-result.ControlJerk = profile.ControlJerk;
-result.Polynomial = profile.Polynomial;
-result.IntegratedSquaredJerk = profile.IntegratedSquaredJerk;
-uniformTime = (initialState.time:options.SampleTime:profile.FinalTime).';
-sampleTime = unique([uniformTime; ...
-    profile.Polynomial.SegmentStartTime; profile.FinalTime]);
-[sampleTime, position, velocity, acceleration, jerk] = ...
-    ruckigEngine.internal.evaluatePolynomial( ...
-    profile.Polynomial, sampleTime);
-result.time = sampleTime;
-result.position = position;
-result.velocity = velocity;
-result.acceleration = acceleration;
-result.jerk = jerk;
-[inequality, equality] = ...
-    ruckigEngine.internal.evaluatePolynomialConstraints( ...
-    profile.Polynomial, terminalState, limits, pathConstraints);
-result.MaximumConstraintViolation = max([ ...
-    0; inequality(:); abs(equality(:))]);
-result.Validation = ruckigEngine.internal.validateResult(result);
-result.Success = result.Validation.Passed;
-if result.Success
-    result.Message = ...
-        "A kinematically constrained trajectory was found and independently validated.";
-    result.TerminationReason = "goalReached";
-else
-    if ~isempty(pathConstraints.Tau)
-        result.Message = "The exact switching profile violates an affine " + ...
-            "path constraint. " + result.Validation.Message;
-        result.TerminationReason = "pathConstraintViolation";
-    else
-        result.Message = result.Validation.Message;
-        result.TerminationReason = "exactProfileValidationFailed";
-    end
-end
+% Synchronization is itself a transformation, so evaluate the final polynomial
+% and check all limits and optional path rows again. This final engine check is
+% independent of obstacle-planner validation and cannot approve obstacle safety.
+result = ruckigEngine.evaluateSynchronizedMotion( ...
+    result, profileAttempt.Profile, initialState, terminalState, limits, ...
+    options, pathConstraints);
 end
 
 %% Section 4: Local Functions
@@ -210,110 +148,6 @@ if ~isLogical && ~isBinaryNumeric
 end
 resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
 options = resolvedOptions;
-end
-
-function [isEligible, progressInitialState, progressTerminalState, ...
-        progressLimits, displacement] = createDirectProgressProblem( ...
-        initialState, terminalState, limits, options)
-% Reduce eligible rest-to-rest motion to one scalar straight-line progress.
-dimensionCount = numel(initialState.position);
-displacement = terminalState.position - initialState.position;
-progressInitialState = struct();
-progressTerminalState = struct();
-progressLimits = struct();
-endpointDerivatives = [ ...
-    initialState.velocity, terminalState.velocity, ...
-    initialState.acceleration, terminalState.acceleration];
-derivativeTolerance = 256 * eps(max([1, abs(endpointDerivatives)]));
-isEligible = dimensionCount > 1 && any(displacement ~= 0) && ...
-    all(abs(endpointDerivatives) <= derivativeTolerance);
-if ~isEligible
-    return;
-end
-activeCoordinate = displacement ~= 0;
-displacementMagnitude = abs(displacement(activeCoordinate));
-normalizedLimits = [ ...
-    limits.maximumVelocity(activeCoordinate) ./ displacementMagnitude; ...
-    limits.maximumAcceleration(activeCoordinate) ./ displacementMagnitude; ...
-    limits.maximumJerk(activeCoordinate) ./ displacementMagnitude];
-if options.TimeMode == "earliestArrival"
-    minimumLimit = min(normalizedLimits, [], 2);
-    tieTolerance = 256 * eps(max([1; normalizedLimits(:)]));
-    oneAxisOwnsAllLimits = any(all( ...
-        normalizedLimits <= minimumLimit + tieTolerance, 1));
-    if ~oneAxisOwnsAllLimits
-        isEligible = false;
-        return;
-    end
-end
-progressMaximum = min(normalizedLimits, [], 2);
-progressInitialState = struct( ...
-    "time", initialState.time, ...
-    "position", 0, "velocity", 0, "acceleration", 0);
-progressTerminalState = struct( ...
-    "position", 1, "velocity", 0, "acceleration", 0, ...
-    "maximumTime", terminalState.maximumTime);
-progressLimits = struct( ...
-    "maximumVelocity", progressMaximum(1), ...
-    "maximumAcceleration", progressMaximum(2), ...
-    "maximumJerk", progressMaximum(3));
-end
-
-function profile = liftDirectProfile( ...
-        progressProfile, displacement, initialState)
-% Lift one scalar switching polynomial into every requested coordinate.
-scalarPolynomial = progressProfile.Polynomial;
-dimensionCount = numel(displacement);
-displacementScale = reshape(displacement, 1, dimensionCount, 1);
-polynomial = scalarPolynomial;
-polynomial.positionPower = ...
-    scalarPolynomial.positionPower .* displacementScale;
-polynomial.positionPower(:, :, 1) = ...
-    polynomial.positionPower(:, :, 1) + initialState.position;
-polynomial.velocityPower = ...
-    scalarPolynomial.velocityPower .* displacementScale;
-polynomial.accelerationPower = ...
-    scalarPolynomial.accelerationPower .* displacementScale;
-polynomial.jerkPower = ...
-    scalarPolynomial.jerkPower .* displacementScale;
-scalarTerminal = scalarPolynomial.TerminalState;
-polynomial.TerminalState = struct( ...
-    "position", initialState.position + ...
-    scalarTerminal.position * displacement, ...
-    "velocity", scalarTerminal.velocity * displacement, ...
-    "acceleration", scalarTerminal.acceleration * displacement);
-profile = progressProfile;
-profile.Polynomial = polynomial;
-profile.ControlJerk = progressProfile.ControlJerk * displacement;
-profile.IntegratedSquaredJerk = ...
-    progressProfile.IntegratedSquaredJerk * sum(displacement .^ 2);
-end
-
-function [reason, message] = classifyProfileFailure( ...
-        profile, initialState, options, requestedFinalTime)
-% Distinguish a too-short fixed request from an unsupported switching family.
-reason = "unsupportedSwitchingFamily";
-message = string(profile.Message);
-if options.TimeMode ~= "fixed" || isempty(requestedFinalTime)
-    return;
-end
-minimumFinalTime = NaN;
-if isfield(profile, "MinimumFinalTime") && ...
-        isfinite(profile.MinimumFinalTime)
-    minimumFinalTime = profile.MinimumFinalTime;
-end
-if ~isfinite(minimumFinalTime) && ...
-        isfield(profile, "MinimumAxisDuration") && ...
-        all(isfinite(profile.MinimumAxisDuration))
-    minimumFinalTime = initialState.time + ...
-        max(profile.MinimumAxisDuration);
-end
-if isfinite(minimumFinalTime) && requestedFinalTime < minimumFinalTime
-    reason = "fixedTimeBelowMinimum";
-    message = sprintf( ...
-        "Requested final time %.12g is below the certified minimum %.12g.", ...
-        requestedFinalTime, minimumFinalTime);
-end
 end
 
 function [value, message] = detectBoundaryKinematicInfeasibility( ...
