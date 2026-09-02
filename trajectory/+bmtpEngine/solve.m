@@ -352,8 +352,8 @@ diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale = dilationScale;
 diagnostics.MotionCertificate = motion;
 certificate = certifyAllPlanes(certifiedControlPoint_deg, regions_deg, ...
-    coverage, repelem(regionActiveBySegment, 2, 1), roundoffReserve_deg, ...
-    obstacleTarget_deg, tightPlaneOptions);
+    coverage, repelem(regionActiveBySegment, 2, 1), ...
+    roundoffReserve_deg, obstacleTarget_deg, tightPlaneOptions);
 diagnostics.PlaneCertificate = certificate;
 candidate.PlaneCertificate = certificate;
 candidate = exportMotion(candidate, controlPoint_deg, segmentTime_s, ...
@@ -885,14 +885,16 @@ motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
 end
 
 function certificate = certifyAllPlanes(control_deg, regions_deg, ...
-        coverage, regionActiveBySegment, reserve_deg, target_deg, ...
-        solverOptions)
+        coverage, regionActiveBySegment, reserve_deg, ...
+        target_deg, solverOptions)
 % Verify every applicable output-span and convex-exclusion-region pair.
 segmentCount = size(control_deg, 1);
 regionCount = numel(regions_deg);
 planes = repmat(emptyPlane(), segmentCount, regionCount);
 verifiedCount = 0;
 conicCount = 0;
+reusedCount = 0;
+analyticCount = 0;
 minimumGap_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectory_deg = squeeze(control_deg(segmentIndex, :, :));
@@ -900,10 +902,16 @@ for segmentIndex = 1:segmentCount
         if ~regionActiveBySegment(segmentIndex, regionIndex)
             continue;
         end
-        [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
-            regions_deg{regionIndex}, target_deg, reserve_deg, ...
-            solverOptions);
-        conicCount = conicCount + 1;
+        plane = certifyHullSeparationPlane(trajectory_deg, ...
+            regions_deg{regionIndex}, reserve_deg, target_deg);
+        if plane.Verified
+            analyticCount = analyticCount + 1;
+        else
+            [plane, ~] = solveMaximumMarginPlane(trajectory_deg, ...
+                regions_deg{regionIndex}, target_deg, reserve_deg, ...
+                solverOptions);
+            conicCount = conicCount + 1;
+        end
         planes(segmentIndex, regionIndex) = plane;
         if plane.Verified
             verifiedCount = verifiedCount + 1;
@@ -930,8 +938,37 @@ certificate = struct( "Kind", certificateKind, ...
     "MinimumSignedGap_deg", minimumGap_deg, ...
     "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
     "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-    "ReusedPairCount", 0, "AnalyticPairCount", 0, ...
+    "ReusedPairCount", reusedCount, "AnalyticPairCount", analyticCount, ...
     "ConicPairCount", conicCount);
+end
+
+function plane = certifyHullSeparationPlane( ...
+        control_deg, vertices_deg, reserve_deg, target_deg)
+% Prove disjoint convex hulls by separating axes; leave overlap to SOCP.
+plane = emptyPlane();
+edge_deg = vertices_deg([2:end 1], :) - vertices_deg;
+controlPairs = nchoosek(1:size(control_deg, 1), 2);
+edge_deg = [edge_deg; ...
+    control_deg(controlPairs(:, 2), :) - control_deg(controlPairs(:, 1), :)];
+edgeLength_deg = vecnorm(edge_deg, 2, 2);
+edge_deg = edge_deg(edgeLength_deg > 0, :);
+edgeLength_deg = edgeLength_deg(edgeLength_deg > 0);
+if isempty(edge_deg)
+    return;
+end
+normals = [-edge_deg(:, 2), edge_deg(:, 1)] ./ edgeLength_deg;
+normals = [normals; -normals];
+gaps_deg = min(vertices_deg * normals.', [], 1) - ...
+    max(control_deg * normals.', [], 1);
+[maximumGap_deg, normalIndex] = max(gaps_deg);
+if maximumGap_deg < target_deg + reserve_deg
+    return;
+end
+normal = normals(normalIndex, :);
+[plane.Active, plane.Normal, plane.Offset_deg] = ...
+    deal(true, repmat(normal, 2, 1), zeros(1, 2));
+plane = verifyPlane( ...
+    plane, control_deg, vertices_deg, reserve_deg, target_deg);
 end
 
 function subdivided_deg = subdivideMidpoint(control_deg)

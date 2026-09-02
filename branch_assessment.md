@@ -1642,3 +1642,51 @@ failed-versus-successful case, the other 16 examples increased from
 281.6560166 s to 291.7786729 s, or 10.1226563 s and 3.594 percent. No speedup
 claim is made. All 17 expected example outcomes passed, the complete
 non-example suite passed 106/106, and Code Analyzer reported zero findings.
+
+## Certified Final-Plane Fast Path And Mixed Dynamic Example — 2026-09-02
+
+The measured runtime owner is conic optimization inside BMTP. Before this
+change, representative profiles attributed 57 to 5,240 calls per maintained
+example to `coneprog`; in static U, 1,598 calls consumed 30.976 seconds and
+motion solving consumed 39.858 of 41.099 planner seconds. Final collision-plane
+certification was a material but redundant subset: the selected trajectory was
+already fixed before every output-span/region pair solved another maximum-margin
+SOCP.
+
+The retained fast path tests separating axes from both the convex obstacle and
+the final Bezier control hull. A pair is accepted only when the unchanged
+`verifyPlane` routine proves the complete Bernstein control net, obstacle side,
+normal bound, roundoff reserve, and required clearance. Hull overlap is
+ambiguous rather than a rejection; it retains the tight `coneprog` fallback.
+This is therefore a sufficient certificate, not a single-coefficient exact
+rejection test.
+
+Four-repeat controlled comparisons against clean `ca51871` used one warm-up
+and three measured runs. Success, termination reason, selected seed, arrival,
+both reported lengths, and complete sampled time, position, velocity,
+acceleration, and jerk histories were exactly equal in every comparison.
+
+| Example | Baseline median (s) | Candidate median (s) | Improvement | Final analytic / conic pairs |
+| --- | ---: | ---: | ---: | ---: |
+| `exampleObstacleAvoidance` | 2.683438 | 2.430598 | 9.422% | 18 / 0 |
+| `exampleStaticUShapedObstacle` | 36.439496 | 32.801454 | 9.984% | 498 / 6 |
+| `exampleStraightTargetAlternatingOcclusion` | 37.381200 | 26.072233 | 30.253% | 863 / 1 |
+| `exampleUSOutlineExtremeVisibility` | 93.018745 | 74.159052 | 20.275% | 319 / 1 |
+
+The 37-line production increase required a 9.25% measured benefit under the
+declared bounded-change gate; the smallest measured benefit was 9.422%.
+Post-change static-U profiling leaves trajectory optimization as the dominant
+cost: `solveTrajectorySocp` used 29.631 seconds, and 601 remaining `coneprog`
+calls used 26.492 seconds. Final certification fell to 0.387 seconds, including
+0.292 seconds for 1,008 hull tests. Further trajectory-SOCP reduction was not
+attempted because it participates in path and arrival selection rather than
+replaying a fixed result.
+
+`exampleMovingRotatingObstacleField` is now the eighteenth maintained example.
+It plans without waypoints through three static centerline obstacles while a
+five-slice rectangle translates and rotates across the competing route. It
+independently validated at 20.7160388668 degrees and 9.04166666667 seconds.
+The full serial matrix produced 17 validated successes plus the validated
+`exampleNoPath` failure. The test audit reduced the suite from 119 to 110 tests
+despite adding the new regression, consolidating duplicated example source
+contracts and removing historical negative assertions; all 110 tests passed.

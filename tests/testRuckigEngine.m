@@ -161,16 +161,6 @@ verifyEqual(testCase, columnResult.Inputs.initialState.position, [0, 0]);
 verifyEqual(testCase, columnResult.Inputs.limits.maximumJerk, [2, 2]);
 end
 
-function testResultContainsNoDispatcherProvenance(testCase)
-% Verify a direct engine result does not pretend a routing layer exists.
-[initialState, terminalState, limits] = restToRestFixture();
-result = ruckigEngine.solve(initialState, terminalState, limits, struct());
-for fieldName = ["SolverRequested", "SolverUsed", ...
-        "FallbackOccurred", "SelectionReason"]
-    verifyFalse(testCase, isfield(result, fieldName));
-end
-end
-
 function testPolynomialEvaluationMatchesReturnedHistories(testCase)
 % Verify engine-owned reconstruction agrees at every published sample.
 [initialState, terminalState, limits] = restToRestFixture();

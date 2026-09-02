@@ -6577,3 +6577,70 @@ across those runs: it changed from an invalid 0.80716-second failure to a
 validated 26.1968938-second success. Excluding opening U, the remaining 16
 examples changed from 281.6560166 s to 291.7786729 s, +10.1226563 s or
 +3.594 percent. This is recorded as a runtime regression, not an optimization.
+
+## Certified Hull Plane Verification — 2026-09-02
+
+Baseline identity was clean committed source `ca51871` on
+`bmtp-cleanup-codex`. The environment was MATLAB R2024b Update 4 with
+Optimization Toolbox 24.2 and six reported cores. Parallel Computing Toolbox
+was unavailable, so every comparison and example run was serial.
+
+The predeclared representative set covered static degree-16 BMTP, a multi-route
+static U, fixed-arrival timed occlusion, moving/deforming geometry, and a
+complex outline. Baseline profiles established `coneprog` as the largest
+operation. Static U used 1,598 calls and 30.975985 seconds in `coneprog`;
+`solveTrajectorySocp` used 30.157580 seconds inclusive and final
+`certifyAllPlanes` used 4.459705 seconds. The fixed-arrival occlusion example
+used 2,698 conic calls and spent 13.841465 seconds in final certification.
+
+The retained algorithm first seeks a constant supporting plane using axes from
+the obstacle and final Bezier control hulls. The existing numerical verifier is
+the only acceptance gate. An overlapping hull is classified as ambiguous and
+uses the prior tight maximum-margin SOCP, so the fast path cannot reject a
+trajectory from one Bernstein coefficient or hide an unresolved pair.
+
+Controlled runs used four repetitions per revision, discarded the first as
+warm-up, and compared the median of the remaining three:
+
+| Example | Baseline runs (s) | Candidate runs (s) | Median improvement | Exact fields | Baseline conic pairs | Candidate analytic / conic |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `exampleObstacleAvoidance` | 5.474790, 2.920159, 2.683438, 2.619638 | 5.389910, 2.719571, 2.430598, 2.381922 | 9.422% | 12 / 12 | 18 | 18 / 0 |
+| `exampleStaticUShapedObstacle` | 39.530848, 37.381852, 36.278693, 36.439496 | 36.030863, 33.358336, 32.413158, 32.801454 | 9.984% | 12 / 12 | 504 | 498 / 6 |
+| `exampleStraightTargetAlternatingOcclusion` | 41.678869, 38.200433, 37.113741, 37.381200 | 29.899053, 26.072233, 25.480319, 26.273605 | 30.253% | 12 / 12 | 864 | 863 / 1 |
+| `exampleUSOutlineExtremeVisibility` | 99.614979, 94.471436, 93.018745, 92.284211 | 80.717766, 74.585679, 74.159052, 73.217753 | 20.275% | 12 / 12 | 320 | 319 / 1 |
+
+The twelve exact comparisons were success, termination reason, independent
+validation, selected seed, arrival, selected-polyline length, smoothed length,
+time, position, velocity, acceleration, and jerk. The production diff in
+`trajectory/+bmtpEngine/solve.m` is +46/-9 lines, a net 37-line increase. Its
+9.25% retention threshold was met by the smallest 9.422% measured gain.
+
+Post-change static-U profiling recorded 601 remaining `coneprog` calls at
+26.492254 seconds. `solveTrajectorySocp` remained the largest inclusive
+operation at 29.631200 seconds across 33 calls. Maximum-margin plane updates
+used 1.820055 seconds; final `certifyAllPlanes` used 0.387175 seconds and
+the hull-separation fast path used 0.291880 seconds across 1,008 calls. This
+localizes the remaining cost to optimization that generates the selected
+trajectory, not final proof replay.
+
+The new `exampleMovingRotatingObstacleField` contains three static rectangles
+on the direct route and a fourth rectangle with five translated and rotated
+boundary slices. Its headless regression passed planner and independent
+validation, returned a 20.7160388668-degree route at 9.04166666667 seconds,
+and remained collision-free with all kinematic limits certified. A visible
+plot smoke produced two success figures; the visible `exampleNoPath` smoke
+produced one annotated failure-diagnostic figure.
+
+The test audit consolidated three duplicated maintained-example source scans,
+moved the public planner-default contract to one test owner, removed the
+duplicated obstacle-free example execution, and removed five historical or
+nonbehavioral negative assertions. The suite changed from 119 to 110 tests
+while adding the new mixed-obstacle regression. Code Analyzer reported zero
+findings in every changed MATLAB file. Final tests passed 110/110 with no
+failures or incomplete results; the only warning was the intentional
+two-vertex obstacle-normalization warning fixture.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`. Their summed wall time was
+220.5077749 seconds. Exact per-example values are recorded in `benchmark.csv`.

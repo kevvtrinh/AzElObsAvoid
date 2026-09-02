@@ -19,6 +19,12 @@ options = obstacleAvoidance.input.resolvePlannerOptions();
 expected = obstacleAvoidance.planTrajectory();
 
 verifyEqual(testCase, options, expected);
+requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
+    'MinimumTravelSavingsRate_deg_s', ...
+    'MaximumWaitRefinementIterations', ...
+    'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping'};
+verifyTrue(testCase, isstruct(options) && isscalar(options));
+verifyTrue(testCase, all(isfield(options, requiredFields)));
 verifyFalse(testCase, isfield(options, "MotionMethod"));
 verifyFalse(testCase, isfield(options, "RandomSeed"));
 verifyFalse(testCase, isfield(options, "MaximumPlanningTime_s"));
@@ -36,6 +42,7 @@ verifyFalse(testCase, isfield(options, "CollocationSegmentCount"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
 verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
+verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
 end
 
 function testRetiredFieldsUseAggregateUnknownWarningAndAreIgnored(testCase)

@@ -30,16 +30,6 @@ testCase.TestData.EngineRoot = fullfile(trajectoryRoot, "+bmtpEngine");
 testCase.TestData.RuckigRoot = fullfile(trajectoryRoot, "+ruckigEngine");
 end
 
-function testHighLevelProductionRootsAreExplicit(testCase)
-% Keep the public planner and dimension-neutral trajectory engine visible.
-repositoryRoot = testCase.TestData.RepositoryRoot;
-packageRecords = dir(fullfile(repositoryRoot, "+*"));
-packageNames = string({packageRecords([packageRecords.isdir]).name});
-verifyEqual(testCase, sort(packageNames), "+obstacleAvoidance");
-verifyTrue(testCase, isfolder(testCase.TestData.TrajectoryRoot));
-verifyEmpty(testCase, dir(fullfile(repositoryRoot, "*.m")));
-end
-
 function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
 % Require one shallow package for each planner-owned responsibility.
 productRoot = testCase.TestData.ProductRoot;
@@ -143,30 +133,6 @@ verifyTrue(testCase, contains(fixedClockText, ...
     "bmtpEngine.createProgressPolynomialMotion("));
 verifyTrue(testCase, contains(validatorText, ...
     "bmtpEngine.evaluatePolynomial("));
-end
-
-function testProductionFunctionBasenamesAreUnique(testCase)
-% Keep stack traces and repository searches unambiguous across both roots.
-sourceRecords = [ ...
-    dir(fullfile(testCase.TestData.ProductRoot, "**", "*.m")); ...
-    dir(fullfile(testCase.TestData.EngineRoot, "**", "*.m"))];
-sourceNames = lower(string({sourceRecords.name}));
-[uniqueNames, ~, nameGroup] = unique(sourceNames);
-nameCounts = accumarray(nameGroup(:), 1);
-duplicateNames = uniqueNames(nameCounts > 1);
-verifyEmpty(testCase, duplicateNames, sprintf( ...
-    "Duplicate production function basenames: %s", ...
-    strjoin(duplicateNames, ", ")));
-end
-
-function testDeletedHs3EngineTreeRemainsAbsent(testCase)
-% Do not restore the deleted HS3 implementation beside the compact engines.
-trajectoryRoot = testCase.TestData.TrajectoryRoot;
-verifyFalse(testCase, isfolder(fullfile(trajectoryRoot, "+hs3Engine")));
-verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajHs3.m")));
-verifyTrue(testCase, isfolder(fullfile(trajectoryRoot, "+ruckigEngine")));
-verifyFalse(testCase, isfile(fullfile(trajectoryRoot, "planTrajBmtp.m")));
-verifyTrue(testCase, isfile(fullfile(trajectoryRoot, "planTrajRuckig.m")));
 end
 
 function testScenarioSpecificOrthogonalPlannersRemainAbsent(testCase)

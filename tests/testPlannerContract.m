@@ -26,20 +26,6 @@ repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 end
 
-function testDefaultsExposeStablePlannerChoices(testCase)
-% Keep the zero-input interface as the single defaults source.
-options = obstacleAvoidance.planTrajectory();
-requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
-    'MinimumTravelSavingsRate_deg_s', ...
-    'MaximumWaitRefinementIterations', ...
-    'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping'};
-verifyTrue(testCase, isstruct(options) && isscalar(options));
-verifyTrue(testCase, all(isfield(options, requiredFields)));
-verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
-verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
-verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
-end
-
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
 % Require a finite rest-to-rest direct motion inside the supplied horizon.
 initialState = restState(0, [0 0]);
