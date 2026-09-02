@@ -61,7 +61,11 @@ stateCost_deg = Inf(1, stateCapacity);
 stateCost_deg(1) = 0;
 parentState = zeros(1, stateCapacity);
 closed = false(1, stateCapacity);
-stateLookup = dictionary(stateKey(1, stateSignature(1, :)), 1);
+signatureKeyPowers = createSignatureKeyPowers( ...
+    representativeCount, nodeCount);
+initialKey = numericStateKey( ...
+    1, stateSignature(1, :), nodeCount, signatureKeyPowers);
+stateLookup = dictionary(initialKey, 1);
 rejectedCount = 0;
 phase = zeros(nodeCount, signatureWidth);
 if representativeCount > 0
@@ -72,7 +76,8 @@ end
 reference = principalAngle(phase - phase(1, :)) / (2 * pi);
 signatureFunction = @(route_deg) routeSignature(route_deg, representatives_deg);
 cleanup = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
-    "HomologyRejectedCount", 0, "AcceptedCount", 0, "LengthReduction_deg", 0);
+    "HomologyRejectedCount", 0, "AcceptedCount", 0, ...
+    "LengthReduction_deg", 0, "TreeBuildCount", 0);
 cleanupFields = string(fieldnames(cleanup));
 pollStride = 32;
 expandedCount = 0;
@@ -96,6 +101,7 @@ while numel(routes) < maximumCount
         [route_deg, routeCleanup] = ...
             obstacleAvoidance.geometry.shortenVisibilityRoute( ...
             route_deg, visibilityFunction, signatureFunction, signature);
+        routeCleanup.TreeBuildCount = 0;
         if routeCleanup.AcceptedCount > 0
             [route_deg, alternativeCleanup] = cleanupRouteAlternatives( ...
                 route_deg, stateNode(statePath), cost_deg, positions_deg, ...
@@ -131,7 +137,8 @@ while numel(routes) < maximumCount
             rejectedCount = rejectedCount + 1;
             continue;
         end
-        trialKey = stateKey(neighbor, trialSignature);
+        trialKey = numericStateKey( ...
+            neighbor, trialSignature, nodeCount, signatureKeyPowers);
         if ~isKey(stateLookup, trialKey)
             stateCount = stateCount + 1;
             if stateCount > stateCapacity
@@ -181,6 +188,9 @@ record = struct("ExpandedCount", nnz(expandedState), ...
     "ExploredNodes_deg", positions_deg(activeNode(expandedState), :), ...
     "FrontierNodes_deg", positions_deg(activeNode(frontierState), :), ...
     "BestPartialRoute_deg", bestPartial_deg, "StateCount", stateCount, ...
+    "StateKeyEncoding", "uint64Base3", ...
+    "FrontierSelection", "linearScan", ...
+    "CleanupTreeBuildCount", cleanup.TreeBuildCount, ...
     "Truncated", false, "RouteCleanupAttemptedCount", numel(routes), ...
     "RouteCleanupCandidateCount", cleanup.CandidateCount, ...
     "RouteCleanupVisibilityRejectedCount", cleanup.VisibilityRejectedCount, ...
@@ -201,15 +211,20 @@ function [bestRoute_deg, record] = cleanupRouteAlternatives( ...
 fields = ["CandidateCount", "VisibilityRejectedCount", ...
     "HomologyRejectedCount", "AcceptedCount", "LengthReduction_deg"];
 record = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
-    "HomologyRejectedCount", 0, "AcceptedCount", 0, "LengthReduction_deg", 0);
+    "HomologyRejectedCount", 0, "AcceptedCount", 0, ...
+    "LengthReduction_deg", 0, "TreeBuildCount", 2);
 searchGraph = graph(cost_deg, "upper", "omitselfloops");
+[startPaths, ~] = shortestpathtree( ...
+    searchGraph, 1, "all", "OutputForm", "cell");
+[goalPaths, ~] = shortestpathtree( ...
+    searchGraph, 2, "all", "OutputForm", "cell");
 seenPaths = cell(size(positions_deg, 1) + 1, 1);
 seenPaths{1} = primaryNodePath;
 seenCount = 1;
 bestLength_deg = obstacleAvoidance.geometry.routeLength(bestRoute_deg);
 for waypoint = 1:size(positions_deg, 1)
-    firstPath = shortestpath(searchGraph, 1, waypoint);
-    secondPath = shortestpath(searchGraph, waypoint, 2);
+    firstPath = startPaths{waypoint};
+    secondPath = fliplr(goalPaths{waypoint});
     if isempty(firstPath) || isempty(secondPath)
         continue;
     end
@@ -251,9 +266,48 @@ while statePath(1) ~= 1
 end
 end
 
-function key = stateKey(node, signature)
-% Encode one augmented state without floating-point or ordering ambiguity.
-key = strjoin([string(node), string(double(signature(:).'))], ":");
+function powers = createSignatureKeyPowers(representativeCount, nodeCount)
+% Create base-3 signature powers only when every state key fits uint64.
+maximumKey = intmax("uint64");
+powers = zeros(1, representativeCount, "uint64");
+nextPower = uint64(1);
+for representativeIndex = 1:representativeCount
+    powers(representativeIndex) = nextPower;
+    if representativeIndex < representativeCount
+        if nextPower > idivide(maximumKey, uint64(3), "floor")
+            error("searchSpatialHomologyRoutes:StateKeyCapacityExceeded", ...
+                "A base-3 key cannot represent %d winding components.", ...
+                representativeCount);
+        end
+        nextPower = nextPower * uint64(3);
+    end
+end
+signatureStateCount = nextPower;
+if representativeCount > 0
+    if nextPower > idivide(maximumKey, uint64(3), "floor")
+        error("searchSpatialHomologyRoutes:StateKeyCapacityExceeded", ...
+            "A base-3 key cannot represent %d winding components.", ...
+            representativeCount);
+    end
+    signatureStateCount = nextPower * uint64(3);
+end
+if uint64(nodeCount) > idivide( ...
+        maximumKey, signatureStateCount, "floor")
+    error("searchSpatialHomologyRoutes:StateKeyCapacityExceeded", ...
+        "Node count %d and %d winding components exceed uint64 capacity.", ...
+        nodeCount, representativeCount);
+end
+end
+
+function key = numericStateKey(node, signature, nodeCount, powers)
+% Encode node and ternary winding digits without strings or floating point.
+key = uint64(node - 1);
+if isempty(powers)
+    return;
+end
+digits = uint64(int16(signature(1:numel(powers))) + 1);
+signatureCode = sum(digits .* powers, "native");
+key = key + uint64(nodeCount) * signatureCode;
 end
 
 function [stateNode, stateSignature, stateCost_deg, parentState, closed] = ...

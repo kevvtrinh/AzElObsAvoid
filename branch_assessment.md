@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Encode homology states numerically and reuse cleanup trees - 2026-09-01
+
+The largest new strength is bounded numeric ownership of spatial-homology
+states. Node and ternary winding digits now form an overflow-checked base-3
+`uint64` key instead of allocating formatted strings. Unsupported key capacity
+throws an identified error before search. Alternative cleanup builds one
+shortest-path tree from the start and one from the goal per route class instead
+of solving two shortest paths for every waypoint. Diagnostics expose the key
+encoding, retained linear frontier, and exact cleanup-tree count.
+
+On a deterministic 50-node cleanup graph repeated 50 times, total profiled
+homology time fell from 1.814420 to 1.481489 seconds (18.349 percent). Key work
+fell from 0.051524 to 0.005690 seconds across 4,900 states (88.956 percent), and
+cleanup alternatives fell from 0.392447 to 0.137429 seconds (64.981 percent).
+A binary-heap candidate preserved states and expansions but took 1.770479
+seconds, 19.505 percent slower than the numeric-key linear scan, and was
+removed. A maintained static median increased 3.898 percent from 3.2084006 to
+3.3334726 seconds with exact physical output, so no end-to-end speedup is
+claimed.
+
+The largest current weakness is that the frontier remains a linear scan. That
+is intentional evidence-based retention at current bounded state counts, not a
+claim that a heap can never win at a larger explicit work bound. Item 18 must
+make those state/transition limits explicit before frontier scaling is revisited.
+
 ## Reject explicit move-then-wait time expansion - 2026-09-01
 
 No production change was retained for item 13. The candidate prioritized

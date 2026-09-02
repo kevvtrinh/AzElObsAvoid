@@ -1,5 +1,39 @@
 # Plan 325 verification
 
+## Reduce spatial-homology overhead - 2026-09-01
+
+Item 14 replaces string state keys with an injective numeric encoding. Each
+winding component is an `int8` digit in `[-1, 1]`, shifted to base-3 digit
+`[0, 2]`; the node index occupies the least-significant block. Key powers and
+the complete node/signature product are checked against `uint64` capacity
+before the first dictionary insertion. A 40-component/two-node regression
+proves overflow returns the identified `StateKeyCapacityExceeded` error rather
+than wrapping or colliding.
+
+Cleanup alternatives now call `shortestpathtree` exactly twice—once from the
+start and once from the goal—and reuse their path cells for every waypoint.
+A chain regression verifies the cleaned route, zero-width signature matrix,
+`uint64Base3` evidence, retained `linearScan`, two tree builds, and accepted
+shortcut. Code Analyzer reported zero findings. Spatial-homology tests passed
+2/2, planner contract 14/14, and route economy 3/3.
+
+A deterministic 50-node bent chain exercised 4,900 state encodes and cleanup
+on 50 repetitions. The exact parent implementation took 1.814420 profiled
+seconds total, 0.051524 seconds in formatted `stateKey`, and 0.392447 seconds in
+cleanup alternatives. The retained candidate took 1.481489 seconds total,
+0.005690 seconds in `numericStateKey`, and 0.137429 seconds in cleanup, reductions
+of 18.349, 88.956, and 64.981 percent respectively. Route count, state count,
+expansions, cleanup acceptance, and returned geometry were unchanged.
+
+A deterministic binary heap with exact cost/state-index tie ordering was then
+benchmarked against the retained linear scan. It returned the same 50 states
+and 49 expansions but took 1.770479 profiled seconds, 19.505 percent more than
+the 1.481489-second linear candidate. The heap was removed. The final maintained
+`exampleObstacleAvoidance` warm-plus-three median was 3.3334726 seconds versus
+item 12's 3.2084006 seconds, a 3.898 percent increase with exact
+11.4118613877-degree motion and 7.5745417663-second arrival. Retention is based
+on the affected homology workload, not an end-to-end speedup claim.
+
 ## Reject time-expanded move-then-wait candidate - 2026-09-01
 
 Item 13 was implemented and removed under the bounded-change gate. Its layer
