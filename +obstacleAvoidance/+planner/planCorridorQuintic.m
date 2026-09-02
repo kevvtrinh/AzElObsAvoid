@@ -220,53 +220,20 @@ if excursionIsValidated
         limits, options, initialState.time_s);
 end
 
-result.Seeds = seeds;
-
 %% Section 5: Select A Valid Motion Or Return Evidence
 
-result.SeedSummaries = seedSummaries;
-result.SearchDiagnostics.SeedSummaries = seedSummaries;
-result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
-result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
-    firstValidatedMotionTime_s;
-result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
-validatedIndices = find([seedSummaries.ValidationPassed]).';
-result.SearchDiagnostics.ValidatedCandidateCount = numel(validatedIndices);
-if isempty(validatedIndices)
-    bestIndex = bestPartialSeed(seedSummaries);
-    result.SearchDiagnostics.BestPartialSeedIndex = bestIndex;
-    result.Message = "No compact motion passed independent validation.";
-    result.TerminationReason = "noValidatedSeed";
-    if bestIndex > 0
-        bestReason = string(seedSummaries(bestIndex).TerminationReason);
-        if bestReason == "unsupportedTimedMultiWaypointRoute"
-            result.TerminationReason = bestReason;
-            result.Message = "A geometric route was found, but the smooth " + ...
-                "timed-motion kernel does not yet support its multi-waypoint " + ...
-                "topology. The stop-at-waypoint fallback was disabled by policy.";
-        elseif strlength(seedSummaries(bestIndex).Message) > 0
-            result.Message = result.Message + " Best attempt: " + ...
-                seedSummaries(bestIndex).Message;
-        end
-    end
-    result.SearchDiagnostics.TerminationReason = result.TerminationReason;
-    result = obstacleAvoidance.planner.stageTiming( ...
-        result, planningTimer, stageTiming);
-    return;
-end
-selectedIndex = selectValidatedCandidate( ...
-    seedSummaries, validatedIndices, options);
-selectedCandidate = candidates{selectedIndex};
-result.Success = true;
-result.Message = "A validated motion was found.";
-result.TerminationReason = "goalReached";
-result.SelectedSeedIndex = selectedIndex;
-result.SelectedSeed_deg = seeds(selectedIndex).position_deg;
-result = copyMotion(result, selectedCandidate);
-result.SearchDiagnostics.TerminationReason = result.TerminationReason;
-result.SearchDiagnostics.BestPartialSeedIndex = selectedIndex;
-result = obstacleAvoidance.planner.stageTiming( ...
-    result, planningTimer, stageTiming);
+% Solver and proposal status cannot approve a motion. Restrict ranking to
+% summaries whose full trajectory check passed, retaining a best partial
+% attempt only as failure evidence when no candidate qualifies.
+selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
+    seedSummaries, options);
+
+% The final stage preserves one result shape on success and expected failure.
+% It copies trajectory fields only from the selected fully checked candidate;
+% plotting and callers therefore consume returned work without rerunning it.
+result = obstacleAvoidance.planner.createPlannerResult( ...
+    result, seeds, candidates, seedSummaries, selection, ...
+    firstValidatedMotionTime_s, planningTimer, stageTiming);
 end
 
 %% Section 6: Local Functions
@@ -414,39 +381,4 @@ for name = ["time_s", "position_deg", "velocity_deg_s", ...
 end
 result.ArrivalTime_s = candidate.FinalTime_s;
 result.TrajectoryDuration_s = candidate.MotionDuration_s;
-end
-
-function index = selectValidatedCandidate(summaries, indices, options)
-% Rank valid motions by the declared objective, then utilization and travel.
-length_deg = [summaries(indices).MotionLength_deg].';
-utilization = [summaries(indices).KinematicUtilization].';
-if options.GoalTimeMode == "fixedArrival"
-    ranking = [length_deg, -utilization, indices];
-elseif options.GoalTimeMode == "earliestArrival"
-    ranking = [[summaries(indices).ArrivalTime_s].', ...
-        -utilization, length_deg, indices];
-else
-    ranking = [[summaries(indices).TravelTimeTradeoffCost_deg].', ...
-        [summaries(indices).ArrivalTime_s].', ...
-        -utilization, length_deg, indices];
-end
-[~, order] = sortrows(ranking, 1:size(ranking, 2));
-index = indices(order(1));
-end
-
-function index = bestPartialSeed(summaries)
-% Prefer resolved collision evidence, small residual, and large clearance.
-if isempty(summaries)
-    index = 0;
-    return;
-end
-violation = [summaries.MaximumConstraintViolation].';
-violation(~isfinite(violation)) = Inf;
-clearance_deg = [summaries.MinimumClearance_deg].';
-clearance_deg(~isfinite(clearance_deg)) = -Inf;
-collisionRank = 2 * ~[summaries.CollisionResolved].' + ...
-    ~[summaries.CollisionFree].';
-[~, order] = sortrows([collisionRank, violation, -clearance_deg, ...
-    (1:numel(summaries)).']);
-index = order(1);
 end
