@@ -44,70 +44,46 @@ function [candidate, diagnostics] = solve( ...
 %% Section 1: Validate And Create The Exclusion Representation
 
 totalTimer = tic;
-usesConservativeGrouping = isfield(coverage, "ConservativeGrouping") && ...
-    isstruct(coverage.ConservativeGrouping) && ...
-    isfield(coverage.ConservativeGrouping, "Applied") && ...
-    isequal(coverage.ConservativeGrouping.Applied, true);
-usesTimedCells = isfield(coverage, "RegionActiveTauInterval");
-if usesConservativeGrouping || usesTimedCells
-    [degree, splitCount] = deal(7, 1);
-else
-    [degree, splitCount] = deal(16, 3);
-end
-validateKernelInputs(seed, regions_deg, coverage, ...
-    initialState, goalState, limits, options);
-originalSeedSegmentCount = size(seed.position_deg, 1) - 1;
-% Preserve the former default 2-by-10 cap without exposing conic dimension.
-maximumWarmSegmentCount = 20;
-if usesTimedCells
-    route_deg = createTimedWarmRoute( ...
-        seed, coverage.TimedSegmentCount, maximumWarmSegmentCount);
-else
-    route_deg = limitWarmRouteSegments( ...
-        double(seed.position_deg), maximumWarmSegmentCount);
-    route_deg = splitRoute(route_deg, splitCount);
-end
-route_deg([1 end], :) = [initialState.position_deg; goalState.position_deg];
-segmentCount = size(route_deg, 1) - 1;
-regionActiveBySegment = createRegionActiveMask( ...
-    segmentCount, numel(regions_deg), coverage);
+% The conic stages require one checked, dimension-neutral request with a
+% declared polynomial representation and shared solver tolerances. Resolve it
+% before allocating candidates so invalid requirements never enter a solver.
+request = bmtpEngine.createSolveRequest( ...
+    seed, regions_deg, coverage, initialState, goalState, limits, options);
+
+% Alternating motion and separating-line solves need a topology-consistent,
+% kinematically feasible starting curve. Create that warm representation once;
+% later stages retain its route reduction and active-pair evidence.
+warmStart = bmtpEngine.createWarmStart(request);
+degree = request.Degree;
+splitCount = request.SplitCount;
+route_deg = warmStart.Route_deg;
+segmentCount = warmStart.SegmentCount;
+regionActiveBySegment = warmStart.RegionActiveBySegment;
 candidate = createEmptyCandidate(seed, initialState, options);
 diagnostics = createEmptyDiagnostics( degree, splitCount, segmentCount, numel(regions_deg));
-diagnostics.OriginalSeedSegmentCount = originalSeedSegmentCount;
-diagnostics.WarmRouteResampled = originalSeedSegmentCount > maximumWarmSegmentCount;
+diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
+diagnostics.WarmRouteResampled = warmStart.WarmRouteResampled;
 diagnostics.Coverage = coverage;
 diagnostics.ApplicablePairCount = nnz(regionActiveBySegment);
-motionHorizon_s = goalState.time_s - initialState.time_s;
-travelSavingsRate_deg_s = double(optionalField( ...
-    options, "MinimumTravelSavingsRate_deg_s", 10));
-if motionHorizon_s <= 0
-    error("bmtpEngine:InvalidGoalTime", ...
-        "goalState.time_s must be greater than initialState.time_s.");
-end
+motionHorizon_s = request.MotionHorizon_s;
+travelSavingsRate_deg_s = request.TravelSavingsRate_deg_s;
 optimizationHorizon_s = motionHorizon_s;
-regionMinimum_deg = zeros(numel(regions_deg), 2);
-regionMaximum_deg = zeros(numel(regions_deg), 2);
-for regionIndex = 1:numel(regions_deg)
-    regionMinimum_deg(regionIndex, :) = min(regions_deg{regionIndex}, [], 1);
-    regionMaximum_deg(regionIndex, :) = max(regions_deg{regionIndex}, [], 1);
-end
+regionMinimum_deg = request.RegionMinimum_deg;
+regionMaximum_deg = request.RegionMaximum_deg;
 [~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances( ...
     route_deg, limits.azimuthInterval_deg, ...
     limits.elevationInterval_deg, regions_deg);
 normalNormLimit = 1 + 2 ^ 20 * eps;
 obstacleTarget_deg = normalNormLimit * ...
     options.CollisionClearanceTolerance_deg + roundoffReserve_deg;
-maximumTrajectoryIterations = 300;
-trajectoryOptions = optimoptions("coneprog", "Display", "none", ...
-    "MaxIterations", maximumTrajectoryIterations);
-planeOptions = optimoptions("coneprog", "Display", "none");
-tightPlaneOptions = optimoptions("coneprog", "Display", "none", ...
-    "ConstraintTolerance", 1e-11, "OptimalityTolerance", 1e-11, "MaxIterations", 400);
+trajectoryOptions = request.TrajectoryOptions;
+planeOptions = request.PlaneOptions;
+tightPlaneOptions = request.TightPlaneOptions;
 
 %% Section 2: Alternate Time-Power And Maximum-Margin SOCPs
 
-feasibleControl_deg = createWarmControl(route_deg, degree);
-feasibleSegmentTime_s = requiredSegmentTime(feasibleControl_deg, limits);
+feasibleControl_deg = warmStart.ControlPoint_deg;
+feasibleSegmentTime_s = warmStart.SegmentTime_s;
 diagnostics.WarmStartDuration_s = segmentCount * feasibleSegmentTime_s;
 bestControl_deg = zeros(0, degree + 1, 2);
 [bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
@@ -333,8 +309,10 @@ segmentTime_s = bestSegmentTime_s / 2;
 exportPolynomial = createPowerPolynomial(controlPoint_deg, 1, 0);
 certifiedControlPoint_deg = ...
     powerToBernsteinControls(exportPolynomial.positionPower_deg);
-requiredTime_s = max(requiredSegmentTime(controlPoint_deg, limits), ...
-    requiredSegmentTime(certifiedControlPoint_deg, limits));
+requiredTime_s = max( ...
+    bmtpEngine.findRequiredSegmentTime(controlPoint_deg, limits), ...
+    bmtpEngine.findRequiredSegmentTime( ...
+    certifiedControlPoint_deg, limits));
 dilationScale = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
 segmentTime_s = segmentTime_s * dilationScale;
 minimumDuration_s = size(controlPoint_deg, 1) * segmentTime_s;
@@ -385,155 +363,6 @@ candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 5: Local Functions
-
-function validateKernelInputs( ...
-        seed, regions_deg, coverage, initialState, goalState, limits, options)
-% Recheck only kernel-specific restrictions after public normalization.
-if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_deg', 'tau'}))
-    error("bmtpEngine:InvalidSeed", ...
-        "seed must be scalar and contain position_deg and tau.");
-end
-tau = double(seed.tau(:));
-route_deg = double(seed.position_deg);
-seedIsValid = size(route_deg, 2) == 2 && size(route_deg, 1) == numel(tau) && ...
-    all(isfinite(route_deg), "all") && numel(tau) >= 2 && all(isfinite(tau)) && ...
-    all(diff(tau) > 0) && abs(tau(1)) <= 32 * eps && abs(tau(end) - 1) <= 32 * eps;
-if ~seedIsValid
-    error("bmtpEngine:InvalidSeedTau", ...
-        "seed.position_deg must be finite N-by-2 and tau must increase 0 to 1.");
-end
-regionsAreValid = iscell(regions_deg) && iscolumn(regions_deg);
-for regionIndex = 1:numel(regions_deg)
-    region_deg = regions_deg{regionIndex};
-    regionsAreValid = regionsAreValid && isnumeric(region_deg) && ...
-        size(region_deg, 2) == 2 && size(region_deg, 1) >= 3 && ...
-        all(isfinite(region_deg), "all");
-end
-coverageIsValid = isstruct(coverage) && isscalar(coverage) && ...
-    isfield(coverage, "Passed") && islogical(coverage.Passed) && ...
-    isscalar(coverage.Passed);
-if ~(regionsAreValid && coverageIsValid)
-    error("bmtpEngine:InvalidExclusionRegions", ...
-        "regions_deg must be a column cell array of finite N-by-2 polygons " + ...
-        "and coverage must contain scalar logical Passed.");
-end
-if isfield(coverage, "RegionActiveTauInterval")
-    activeInterval = double(coverage.RegionActiveTauInterval);
-    intervalsAreValid = isnumeric(coverage.RegionActiveTauInterval) && ...
-        isreal(coverage.RegionActiveTauInterval) && ...
-        isequal(size(activeInterval), [numel(regions_deg), 2]) && ...
-        all(isfinite(activeInterval), "all") && ...
-        all(activeInterval(:, 1) >= 0) && ...
-        all(activeInterval(:, 2) <= 1) && ...
-        all(activeInterval(:, 2) > activeInterval(:, 1));
-    if ~intervalsAreValid
-        error("bmtpEngine:InvalidRegionActiveTauInterval", ...
-            "coverage.RegionActiveTauInterval must be finite R-by-2 " + ...
-            "intervals satisfying 0 <= start < finish <= 1.");
-    end
-    timedSegmentCountIsValid = isfield(coverage, "TimedSegmentCount") && ...
-        isnumeric(coverage.TimedSegmentCount) && ...
-        isreal(coverage.TimedSegmentCount) && ...
-        isscalar(coverage.TimedSegmentCount) && ...
-        isfinite(coverage.TimedSegmentCount) && ...
-        coverage.TimedSegmentCount >= 1 && ...
-        coverage.TimedSegmentCount == round(coverage.TimedSegmentCount);
-    if ~timedSegmentCountIsValid
-        error("bmtpEngine:InvalidTimedSegmentCount", ...
-            "Timed coverage requires a positive integer TimedSegmentCount.");
-    end
-end
-endpointDerivative = [initialState.velocity_deg_s, ...
-    initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
-limitsMatrix = [limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
-requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && ...
-    any(string(options.GoalTimeMode) == ...
-    ["balancedArrival", "earliestArrival", "fixedArrival"]) && ...
-    ~options.AllowAzimuthWrapping && options.SampleTime_s > 0 && ...
-    isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && ...
-    all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || ...
-    isempty(goalState.targetTime_s));
-if ~requestIsSupported
-    error("bmtpEngine:UnsupportedRequest", ...
-        "The BMTP kernel requires a finite unwrapped rest-to-rest request.");
-end
-end
-
-function activePairs = createRegionActiveMask( ...
-        segmentCount, regionCount, coverage)
-% Map equal-duration spans to caller-owned cells with positive-time overlap.
-activePairs = true(segmentCount, regionCount);
-if ~isfield(coverage, "RegionActiveTauInterval")
-    return;
-end
-activeInterval = double(coverage.RegionActiveTauInterval);
-segmentStartTau = (0:segmentCount - 1).' / segmentCount;
-segmentFinishTau = (1:segmentCount).' / segmentCount;
-activePairs = segmentStartTau < activeInterval(:, 2).' & ...
-    segmentFinishTau > activeInterval(:, 1).';
-end
-
-function route_deg = createTimedWarmRoute( ...
-        seed, requestedSegmentCount, maximumSegmentCount)
-% Sample the timed seed on the equal-duration grid used by the optimizer.
-segmentCount = min(round(double(requestedSegmentCount)), maximumSegmentCount);
-queryTau = linspace(0, 1, segmentCount + 1).';
-route_deg = interp1(double(seed.tau(:)), double(seed.position_deg), ...
-    queryTau, "linear");
-end
-
-function route_deg = splitRoute(seedRoute_deg, splitCount)
-% Split each authored edge uniformly without introducing route preference.
-edgeCount = size(seedRoute_deg, 1) - 1;
-route_deg = zeros(edgeCount * splitCount + 1, 2);
-fractions = repmat((0:splitCount - 1).' / splitCount, edgeCount, 1);
-edgeStart_deg = repelem(seedRoute_deg(1:end - 1, :), splitCount, 1);
-edgeDelta_deg = repelem(diff(seedRoute_deg, 1, 1), splitCount, 1);
-route_deg(1:end - 1, :) = edgeStart_deg + fractions .* edgeDelta_deg;
-route_deg(end, :) = seedRoute_deg(end, :);
-end
-
-function route_deg = limitWarmRouteSegments(route_deg, maximumSegmentCount)
-% Resample only oversized warm routes; final feasibility is independently checked.
-segmentCount = size(route_deg, 1) - 1;
-if segmentCount <= maximumSegmentCount
-    return;
-end
-distance_deg = [0; cumsum(vecnorm(diff(route_deg, 1, 1), 2, 2))];
-keepPoint = [true; diff(distance_deg) > 0];
-distance_deg = distance_deg(keepPoint);
-route_deg = route_deg(keepPoint, :);
-if distance_deg(end) <= 0
-    route_deg = repmat(route_deg(1, :), maximumSegmentCount + 1, 1);
-    return;
-end
-queryDistance_deg = linspace(0, distance_deg(end), ...
-    maximumSegmentCount + 1).';
-route_deg = interp1(distance_deg, route_deg, queryDistance_deg, "linear");
-end
-
-
-function controlPoint_deg = createWarmControl(route_deg, degree)
-% Create the route-shaped C3 rest-through-jerk warm control net.
-segmentCount = size(route_deg, 1) - 1;
-fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
-start_deg = reshape(route_deg(1:end - 1, :), segmentCount, 1, 2);
-finish_deg = reshape(route_deg(2:end, :), segmentCount, 1, 2);
-controlPoint_deg = (1 - fraction) .* start_deg + fraction .* finish_deg;
-end
-
-function segmentTime_s = requiredSegmentTime(controlPoint_deg, limits)
-% Bound one common segment time from exact derivative control coefficients.
-degree = size(controlPoint_deg, 2) - 1;
-limitValues = [limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
-segmentTime_s = 0;
-for order = 1:3
-    scale = factorial(degree) / factorial(degree - order);
-    peak = squeeze(max(abs(scale * diff(controlPoint_deg, order, 2)), [], [1 2]));
-    segmentTime_s = max(segmentTime_s, max( (peak(:).' ./ limitValues(order, :)) .^ (1 / order)));
-end
-segmentTime_s = max(segmentTime_s, eps);
-end
 
 function length_deg = controlPolygonLength(controlPoint_deg)
 % Return the convex Bezier travel surrogate used by the secondary SOCP.
@@ -1156,9 +985,9 @@ candidate.Message = "The BMTP kernel was not run.";
 end
 
 function value = optionalField(record, name, defaultValue)
-% Read one optional diagnostic field without duplicating fallback branches.
+% Read an optional scalar field while preserving documented empty defaults.
 value = defaultValue;
-if isfield(record, name)
+if isfield(record, name) && ~isempty(record.(name))
     value = record.(name);
 end
 end
