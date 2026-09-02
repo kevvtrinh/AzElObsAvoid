@@ -38,8 +38,9 @@ function position_deg = goalPositionAtTime(goalState, time_s)
 % the function returns the original 1-by-2 position. This function handles the
 % goal type. Other planner functions do not need to handle the goal type.
 if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
-    position_deg = interp1( ...
-        goalState.targetTime_s, goalState.targetPosition_deg, time_s, goalState.InterpolationMethod);
+    position_deg = interp1(goalState.targetTime_s, ...
+        goalState.targetPosition_deg, time_s, ...
+        goalState.InterpolationMethod);
 else
     position_deg = goalState.position_deg;
 end
