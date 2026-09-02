@@ -7,6 +7,8 @@ plotting. Dimension-neutral motion generation lives independently under
 `trajectory/+bmtpEngine`.
 
 A successful result is accepted only after canonical independent validation.
+Each request prepares one immutable-source-checked obstacle collection and
+reuses its sample shapes, interval bounds, and boundary edges downstream.
 The planner converts static protected geometry to numeric convex exclusion
 regions before calling BMTP; the engine never imports obstacle or planner
 packages. Exact jerk switching, event-word integration, quintic offset splines,

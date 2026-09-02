@@ -1,5 +1,21 @@
 # Novel replacement branch assessment
 
+## Own and invalidate prepared obstacle geometry - 2026-09-01
+
+The largest new strength is a request-owned preparation record whose cached
+sample shapes, bounds, edges, fallback geometry, interpolation deltas, and
+speed bounds are tied to an exact immutable source snapshot. Mutating any
+canonical public field rebuilds the complete collection. A targeted regression
+proves shape, occupancy, and projection queries cannot reuse the stale cache,
+and preserving valid preparation reduced seed-1011 `polyshape` construction
+from 855 to 741 without changing physical, search, collision, or solver work.
+
+The largest current weakness is that cached edges and per-ring bounds are not
+yet consumed by point-clearance hot loops; item 8 establishes ownership and
+freshness, while item 9 must prove direct cached geometry equivalent before it
+can remove the remaining repeated conversions. The profiled wall change was
+only a 0.588 percent decrease, so no end-to-end speedup is claimed.
+
 ## Reuse invariant projection and decomposition work - 2026-09-01
 
 The largest new strength is exact request ownership for static BMTP geometry.

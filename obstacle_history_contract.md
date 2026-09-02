@@ -72,6 +72,21 @@ enlarge its projection or bounds. Horizon restriction changes proposal work,
 not authoritative validation: the validator continues to query the original
 protected history at physical trajectory times.
 
+## Prepared Request Ownership
+
+One planner request normalizes, protects, and prepares its canonical obstacle
+collection once. Preparation caches exact sample shapes, sample and interval
+bounds, ordered boundary edges, fallback shapes, correspondence deltas, and
+speed bounds. Proposal, solver, and validation code receive that same prepared
+value; cached source geometry is evidence, never a replacement for independent
+trajectory validation.
+
+Every preparation record contains a schema version and an exact immutable
+snapshot of the canonical public source fields. Reusing a prepared value first
+checks that snapshot. If time, boundaries, original geometry, margin, status,
+or name changed, the complete collection is rebuilt instead of mixing old
+cached geometry with new public fields.
+
 ## Unsupported Intent
 
 The canonical format does not encode material vertex identifiers, a rigid-body

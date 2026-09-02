@@ -265,6 +265,41 @@ verifyEqual(testCase, geometryOnlyUnion, unionGeometry);
 verifyFalse(testCase, unionGeometry.TopologyIsInterpolated);
 end
 
+function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
+% Rebuild cached shapes after any canonical public source field changes.
+obstacle = rectangleObstacle("cache source", [0; 4], [-2 2 -1 1]);
+prepared = obstacleAvoidance.obstacles.prepareDynamic(obstacle);
+preparation = prepared.InternalPreparation;
+verifyEqual(testCase, preparation.PreparationVersion, 1);
+verifySize(testCase, preparation.SampleBounds_deg, [2 4]);
+verifySize(testCase, preparation.IntervalBounds_deg, [1 4]);
+verifyEqual(testCase, size(preparation.SampleEdgeStart_deg{1}, 1), 4);
+verifyEqual(testCase, preparation.SampleEdgeStart_deg{1}, ...
+    preparation.SampleEdgeEnd_deg{1}([4 1 2 3], :), "AbsTol", 0);
+
+mutated = prepared;
+for sampleIndex = 1:numel(mutated.az_deg)
+    mutated.az_deg{sampleIndex} = mutated.az_deg{sampleIndex} + 5;
+end
+[shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime(mutated, 2);
+verifyTrue(testCase, geometry.Active);
+verifyEqual(testCase, min(shape.Vertices(:, 1)), 3, "AbsTol", 1e-12);
+verifyFalse(testCase, ...
+    obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    mutated, 0, 0, 2));
+[~, projection] = ...
+    obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
+    mutated, 0, 4);
+verifyEqual(testCase, min(projection.Records.Boundary_deg(:, 1)), ...
+    3, "AbsTol", 1e-12);
+reprepared = obstacleAvoidance.obstacles.prepareDynamic(mutated);
+verifyNotEqual(testCase, reprepared.InternalPreparation.SourceSnapshot, ...
+    preparation.SourceSnapshot);
+verifyEqual(testCase, ...
+    reprepared.InternalPreparation.SampleBounds_deg(:, 1), [3; 3], ...
+    "AbsTol", 1e-12);
+end
+
 function testChangingHistoryClassifiesSpanAndGeometry(testCase)
 % Verify one owner classifies static, partial-span, and moving histories.
 staticObstacle = rectangleObstacle("static", [0; 20], [-2 2 -1 1]);

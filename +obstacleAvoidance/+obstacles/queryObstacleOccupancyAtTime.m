@@ -70,8 +70,8 @@ end
 options.ReferenceTime.TimeZone = "UTC";
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-    obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 end
+obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 if isdatetime(queryTime)
     queryTime.TimeZone = "UTC";
     queryTime_s = seconds(queryTime - options.ReferenceTime);

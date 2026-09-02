@@ -1,5 +1,32 @@
 # Plan 325 verification
 
+## Own one prepared obstacle collection per request - 2026-09-01
+
+Item 8 gives every prepared obstacle a schema version and an exact snapshot of
+all canonical public source fields. A current snapshot reuses preparation; any
+change to time, protected or original boundaries, safety margin, status, or
+name invalidates and rebuilds the complete collection. The cache now contains
+exact sample shapes, sample and interval bounds, ordered sample and fallback
+edges, per-ring bounds, interpolation deltas, and speed bounds. Static
+projection no longer reconstructs canonical obstacles or discards their valid
+request-owned preparation.
+
+The new mutation regression shifts every protected sample of an already
+prepared rectangle by 5 degrees. `shapeAtTime`, occupancy, static projection,
+and direct re-preparation all use the shifted geometry rather than the stale
+sample shape. Obstacle infrastructure passed 10/10, static projection 2/2,
+planner contract 14/14, and timed BMTP 3/3. Code Analyzer reported zero
+findings for the five modified production/test files.
+
+The identical seed-1011 warmup passed in 128.5012 seconds; the profiled repeat
+passed planning and independent validation in 137.6644170 seconds. Arrival
+remained 17.9853686689 seconds, with 167 route states, 268 expansions, 331
+retained collision intervals, zero unresolved intervals, 57 occupancy calls,
+5,871 `shapeAtTime` calls, and 4,852 `coneprog` calls. Preserving preparation
+reduced `polyshape` constructions from item 7's 855 to 741 (13.333 percent).
+The 0.588 percent profiled wall decrease is not an end-to-end speedup claim;
+the exact construction reduction is the retention evidence.
+
 ## Reduce invariant planner calls - 2026-09-01
 
 Item 7 now creates a request-invariant static planning projection and its BMTP
