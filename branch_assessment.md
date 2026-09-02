@@ -1,5 +1,30 @@
 # Novel replacement branch assessment
 
+## Prune occupancy queries with exact-time boxes - 2026-09-01
+
+The largest new strength is output-aware occupancy pruning. One- and two-output
+calls discard points outside the exact-time protected box and stop processing a
+point after its first blocker. Three-output diagnostic calls retain every
+obstacle that could improve signed clearance and skip one only when positive
+box distance proves it cannot beat the current exact value. Exact-time boxes
+come from prepared boundary records; occupancy no longer constructs a convex
+request-horizon `polyshape` merely to obtain a loose box.
+
+The immediate item-11 seed-1011 profile retained identical success, validation,
+17.9853686689-second arrival, 259 collision intervals, 57 occupancy calls, 167
+route states, 268 expansions, and 4,852 `coneprog` calls. `polyshape`
+construction fell from 711 to 423 (40.506 percent), while inexpensive
+`shapeAtTime` boundary-record calls rose from 5,639 to 15,488. A static median
+increased 4.157 percent from 3.0803439 to 3.2084006 seconds with exact physical
+output, so no end-to-end speedup is claimed.
+
+The largest current weakness is that MATLAB function-call volume rises sharply
+even though expensive shape construction falls. This is a deliberate
+geometry-cost exchange that passed the exact-call gate, not proof that every
+occupancy workload is faster. A later refactor may centralize the repeated
+prepared-boundary query, but must preserve the distinct first-blocker and
+minimum-clearance rules.
+
 ## Certify easy continuous bounds in Bernstein form - 2026-09-01
 
 The largest new strength is a three-outcome continuous range check. A complete

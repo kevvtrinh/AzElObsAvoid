@@ -1,5 +1,39 @@
 # Plan 325 verification
 
+## Restore occupancy bounding-box acceleration - 2026-09-01
+
+Item 12 adds exact-time bounds to the lightweight `shapeAtTime` geometry record
+and removes occupancy's convex request-horizon construction. Occupancy-only and
+first-blocker calls use a tolerance-expanded box and skip points already
+blocked by an earlier obstacle. Minimum-clearance diagnostics keep processing
+a point unless a positive point-to-box distance is already no better than the
+best exact signed clearance. Thus an overlapping box or negative current
+clearance is never pruned unsafely, and caller-order first-blocker behavior is
+unchanged.
+
+Code Analyzer reported zero findings in both production files and the modified
+test. Obstacle infrastructure passed 10/10, including one-, two-, and
+three-output equivalence, multi-ring batched/pointwise agreement, boundary
+policies, and exact diagnostic clearance. Planner contract passed 14/14 and
+timed BMTP 3/3. The adversarial suite remained 6/7, with only item 15's known
+first-window failure at 6.5829833374 seconds.
+
+An exact no-warmup profile at immediate parent `2f7f91f` and a candidate
+warmup/profile both returned the same successful, independently validated
+17.9853686689-second seed-1011 result. Decision work was identical: 259
+retained collision intervals, zero unresolved, 57 occupancy calls, 167 route
+states, 268 expansions, 4,852 `coneprog` calls, one projection, one static
+representation, and one convex decomposition. `polyshape` calls fell from 711
+to 423, a 40.506 percent exact reduction. Lightweight `shapeAtTime` calls rose
+from 5,639 to 15,488 because box queries now avoid shape construction.
+
+The candidate profiled wall was 100.4388029 seconds and the cold parent profile
+was 99.2463007 seconds; those differently warmed profiler runs are not a valid
+speed comparison. A separate candidate warm-plus-three static median was
+3.2084006 seconds versus item 11's 3.0803439 seconds, a 4.157 percent increase,
+with exact 11.4118613877-degree motion and 7.5745417663-second arrival. Item 12
+is retained for the material exact construction reduction, not a runtime claim.
+
 ## Add a certified continuous-bound fast path - 2026-09-01
 
 Item 11 first converts each ascending-power scalar polynomial to equal-degree

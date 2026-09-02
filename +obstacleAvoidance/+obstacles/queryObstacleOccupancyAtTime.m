@@ -94,34 +94,31 @@ finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & isfinite(queryTi
 minimumClearance_deg(~finiteQuery) = NaN;
 uniqueTime_s = unique(queryTime_s(finiteQuery));
 tolerance_deg = double(options.ClearanceTolerance_deg);
-if isempty(obstacles)
-    obstacleBounds_deg = zeros(0, 4);
-else
-    obstacleBounds_deg = zeros(numel(obstacles), 4);
-    if any(finiteQuery)
-        queryStartTime_s = min(queryTime_s(finiteQuery));
-        queryEndTime_s = max(queryTime_s(finiteQuery));
-        for obstacleIndex = 1:numel(obstacles)
-            horizonGeometry = ...
-                obstacleAvoidance.obstacles.queryHorizonGeometry( ...
-                obstacles(obstacleIndex), queryStartTime_s, queryEndTime_s);
-            obstacleBounds_deg(obstacleIndex, :) = ...
-                horizonGeometry.Bounds_deg;
-        end
-    end
-end
+needsClearanceDiagnostics = nargout >= 3;
 for timeIndex = 1:numel(uniqueTime_s)
     queryIndices = find(finiteQuery & queryTime_s == uniqueTime_s(timeIndex));
     for obstacleIndex = 1:numel(obstacles)
         candidate = queryIndices;
-        if nargout < 2
+        if ~needsClearanceDiagnostics
             candidate = candidate(~isOccupied(candidate));
-            bound_deg = obstacleBounds_deg(obstacleIndex, :);
-            inBounds = azimuth_deg(candidate) >= bound_deg(1) - tolerance_deg & ...
-                azimuth_deg(candidate) <= bound_deg(2) + tolerance_deg & ...
-                elevation_deg(candidate) >= bound_deg(3) - tolerance_deg & ...
-                elevation_deg(candidate) <= bound_deg(4) + tolerance_deg;
-            candidate = candidate(inBounds);
+        end
+        if isempty(candidate)
+            continue;
+        end
+        [~, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
+            obstacles(obstacleIndex), uniqueTime_s(timeIndex), true);
+        if ~geometry.Active
+            continue;
+        end
+        bounds_deg = geometry.Bounds_deg;
+        points_deg = [azimuth_deg(candidate), elevation_deg(candidate)];
+        boxDistance_deg = pointBoxDistance(points_deg, bounds_deg);
+        if needsClearanceDiagnostics
+            cannotImprove = boxDistance_deg > 0 & ...
+                boxDistance_deg >= minimumClearance_deg(candidate);
+            candidate = candidate(~cannotImprove);
+        else
+            candidate = candidate(boxDistance_deg <= tolerance_deg);
         end
         if isempty(candidate)
             continue;
@@ -130,7 +127,7 @@ for timeIndex = 1:numel(uniqueTime_s)
             obstacles(obstacleIndex), uniqueTime_s(timeIndex));
         points_deg = [azimuth_deg(candidate), elevation_deg(candidate)];
         clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
-        if nargout >= 2
+        if needsClearanceDiagnostics
             priorClearance_deg = minimumClearance_deg(candidate);
             closer = clearance_deg < priorClearance_deg;
             priorClearance_deg(closer) = clearance_deg(closer);
@@ -152,6 +149,9 @@ if nargout < 2
     return;
 end
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
+if nargout < 3
+    return;
+end
 minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
 obstacleNames = strings(outputSize);
@@ -162,6 +162,15 @@ queryDetails = struct("MinimumClearance_deg", minimumClearance_deg, ...
     "NearestObstacleIndex", nearestObstacleIndex, "NearestObstacleName", obstacleNames, ...
     "QueryTime_s", reshape(queryTime_s, outputSize), "ObstacleSafetyMargins_deg", ...
     reshape([obstacles.safetyMargin_deg], [], 1), "Options", options);
+end
+
+function distance_deg = pointBoxDistance(points_deg, bounds_deg)
+% Return a pointwise lower bound on distance to enclosed obstacle geometry.
+axisDistance_deg = max(cat(3, ...
+    bounds_deg([1 3]) - points_deg, ...
+    zeros(size(points_deg)), ...
+    points_deg - bounds_deg([2 4])), [], 3);
+distance_deg = hypot(axisDistance_deg(:, 1), axisDistance_deg(:, 2));
 end
 
 function [azimuth_deg, elevation_deg, time_s, outputSize] = ...
