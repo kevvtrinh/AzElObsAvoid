@@ -1,5 +1,41 @@
 # Plan 325 verification
 
+## Reject time-expanded move-then-wait candidate - 2026-09-01
+
+Item 13 was implemented and removed under the bounded-change gate. Its layer
+selector reserved request endpoints and authoritative obstacle source events
+before midpoint and uniform candidates and reported when hard events alone
+exceeded the layer cap. Search transitions used `uint32` parent/transition
+indices, vectorized duration and target-layer calculations, and preallocated
+the full explored-node trace. A moving edge arrived after the existing
+input-derived minimum transition duration, then retained a duplicate destination
+knot through the target layer rather than stretching motion across the gap.
+
+Three new focused tests passed: event priority under ordinary truncation,
+explicit hard-event overflow, and a one-second move followed by a nine-second
+wait reconstructed at times `[0, 1, 10]`. Code Analyzer reported zero findings.
+The adversarial history suite stayed 6/7 with only item 15 red; timed BMTP
+passed 3/3, planner contract 14/14, and route economy 3/3.
+
+The first complete candidate made the timed-BMTP test setup take about 180
+seconds. Its profile attributed 154.334851 seconds to 59 occupancy queries,
+including 374,872 `shapeAtTime`, 374,942 preparation, and 56,926 exact
+point-clearance calls. A secondary general batching experiment evaluated
+static shapes, rigid translations in the source frame, and conservative
+interval enclosures without per-time shape construction; unsupported
+deformation retained the exact fallback. It passed 10/10 obstacle equivalence
+tests and reduced the timed suite to 30.1980109 seconds.
+
+The exact immediate item-12 `ab5c0d9` suite still completed in 20.4758520
+seconds. Its profile used 269 conic-wrapper solves, while the explicit
+arrival/wait candidate used 680 because the extra timed knots enlarged the
+continuous formulation. The final candidate was 47.482 percent slower despite
+valid output. Reducing the 13 motion plus 12 nonduplicate dwell samples or
+hiding the additional solves would weaken the declared comparison, so all
+item-13 production and test code was removed. Content hashes of the four
+affected tracked files match `ab5c0d9` exactly; only this negative record is
+retained.
+
 ## Restore occupancy bounding-box acceleration - 2026-09-01
 
 Item 12 adds exact-time bounds to the lightweight `shapeAtTime` geometry record

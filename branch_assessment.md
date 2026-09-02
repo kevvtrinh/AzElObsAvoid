@@ -1,5 +1,33 @@
 # Novel replacement branch assessment
 
+## Reject explicit move-then-wait time expansion - 2026-09-01
+
+No production change was retained for item 13. The candidate prioritized
+source-event layers before midpoint/uniform fill, widened temporal parent and
+transition indices from `uint16` to `uint32`, vectorized per-source duration and
+target-layer calculations, preallocated explored nodes, and represented a move
+at the existing minimum transition duration followed by an explicit destination
+wait. Focused event-priority, event-overflow, and arrival-knot tests passed, as
+did timed BMTP 3/3, planner contract 14/14, route economy 3/3, and the existing
+6/7 adversarial state.
+
+The implementation failed its bounded runtime gate. The first exact version
+took about 180 seconds on `testTimedBmtpPlanning`; 154.334851 seconds were in
+occupancy, with 374,872 `shapeAtTime` calls caused by per-edge arrival times. A
+general exact batch path for static, rigid-translation, and conservative
+enclosure histories reduced the suite to 30.1980109 seconds, but the immediate
+item-12 baseline was 20.4758520 seconds. Explicit arrival/wait knots also raised
+conic-wrapper solve calls from 269 to 680. The final candidate was therefore
+47.482 percent slower and was removed completely rather than reducing collision
+samples or hiding solver work.
+
+The largest current strength is a measured negative boundary around a tempting
+temporal-model cleanup. The largest remaining weakness is that the retained
+time-expanded search still stretches a move over its layer gap and uses
+`uint16` parents. Correcting that representation needs a formulation that does
+not more than double timed-solver work; item 18 will still replace the nominal
+layer allowance with an explicit state/transition work bound independently.
+
 ## Prune occupancy queries with exact-time boxes - 2026-09-01
 
 The largest new strength is output-aware occupancy pruning. One- and two-output
