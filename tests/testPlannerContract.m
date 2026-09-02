@@ -109,6 +109,16 @@ verifyTrue(testCase, isfield(visibilityGraph.Attempts, ...
     "EdgeRejectionReasons"));
 verifyTrue(testCase, isfield(visibilityGraph.Attempts, ...
     "RecoverySteps"));
+
+routeSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph);
+seedSet = obstacleAvoidance.search.createSeeds( ...
+    routeSet, proposal, request);
+verifyEqual(testCase, seedSet(1).Source, "directVisibilityEdge");
+verifyEqual(testCase, [seedSet.Index], 1:numel(seedSet));
+verifyTrue(testCase, isfield(routeSet, "TimedSearchRecord"));
+verifyTrue(testCase, isfield(routeSet, "SpatialSearchRecord"));
+verifyTrue(testCase, isfield(routeSet, "RouteClassPattern"));
 end
 
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
