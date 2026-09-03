@@ -1,8 +1,10 @@
-function profile = createMinimumTimeAxisProfile( ...
+function [profile, candidates] = createMinimumTimeAxisProfile( ...
         initialState, terminalState, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   profile = ruckigEngine.createMinimumTimeAxisProfile( ...
+%       initialState, terminalState, limits)
+%   [profile, candidates] = ruckigEngine.createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
 %**************************************************************************
 % PURPOSE
@@ -23,6 +25,9 @@ function profile = createMinimumTimeAxisProfile( ...
 %       Success, seven phase durations and jerks, minimum duration, and the
 %       exact phase-boundary state histories. Unsupported numerical edge
 %       cases return Success = false so the caller receives an identified unsupported result.
+%   - candidates (structure array)
+%       Every certified extremal profile used to derive synchronization
+%       block intervals, including duration and signed initial direction.
 %**************************************************************************
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
@@ -427,6 +432,8 @@ candidate.Velocity = evaluated.Velocity;
 candidate.Acceleration = evaluated.Acceleration;
 candidate.Family = family;
 candidate.PathLength = evaluated.PathLength;
+candidate.Duration = sum(evaluated.PhaseDuration);
+candidate.Direction = sign(limits.jMaximum);
 candidates(end + 1, 1) = candidate;
 end
 
@@ -447,7 +454,9 @@ candidate = struct( ...
     "Velocity", zeros(1, 8), ...
     "Acceleration", zeros(1, 8), ...
     "Family", "", ...
-    "PathLength", Inf);
+    "PathLength", Inf, ...
+    "Duration", NaN, ...
+    "Direction", 0);
 end
 
 function profile = createEmptyProfile()

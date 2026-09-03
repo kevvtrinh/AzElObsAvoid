@@ -38,14 +38,17 @@ end
 terminal = polynomial.TerminalState;
 equality = [ ...
     terminal.position - terminalState.position, ...
-    terminal.velocity - terminalState.velocity, ...
-    terminal.acceleration - terminalState.acceleration].';
+    terminal.velocity - terminalState.velocity].';
+if limits.ControlOrder == 3
+    equality = [equality; ...
+        (terminal.acceleration - terminalState.acceleration).'];
+end
 end
 
 %% Section 2: Local Functions
 
 function inequality = continuousBoundConstraints(polynomial, limits)
-% Bound every complete segment through its exact Bernstein convex hull.
+% Check every scalar segment without treating hull controls as curve samples.
 coefficientFields = [ ...
     "positionPower", "velocityPower", ...
     "accelerationPower", "jerkPower"];
@@ -60,17 +63,24 @@ inequality = zeros(0, 1);
 for dimensionIndex = 1:dimensionCount
     for quantityIndex = 1:numel(coefficientFields)
         coefficientArray = polynomial.(coefficientFields(quantityIndex));
-        bernstein = coordinateBernstein( ...
-            coefficientArray, dimensionIndex);
         upperBounds = limits.(upperFields(quantityIndex));
         lowerBounds = limits.(lowerFields(quantityIndex));
         upperBound = upperBounds(dimensionIndex);
         lowerBound = lowerBounds(dimensionIndex);
-        if isfinite(upperBound)
-            inequality = [inequality; bernstein - upperBound]; %#ok<AGROW>
-        end
-        if isfinite(lowerBound)
-            inequality = [inequality; lowerBound - bernstein]; %#ok<AGROW>
+        for segmentIndex = 1:polynomial.SegmentCount
+            powerCoefficient = reshape(coefficientArray( ...
+                segmentIndex, dimensionIndex, :), [], 1);
+            [~, minimumValue, maximumValue] = ...
+                ruckigEngine.internal.checkPolynomialRange( ...
+                powerCoefficient, lowerBound, upperBound, 0);
+            if isfinite(upperBound)
+                inequality(end + 1, 1) = ...
+                    maximumValue - upperBound; %#ok<AGROW>
+            end
+            if isfinite(lowerBound)
+                inequality(end + 1, 1) = ...
+                    lowerBound - minimumValue; %#ok<AGROW>
+            end
         end
     end
 end
@@ -92,57 +102,27 @@ for constraintIndex = 1:numel(pathConstraints.Tau)
     for segmentIndex = firstSegmentIndex:lastSegmentIndex
         localStart = min(1, max(0, scaledStart - segmentIndex + 1));
         localEnd = min(1, max(0, scaledEnd - segmentIndex + 1));
-        hullMap = createSubintervalBernsteinMap( ...
+        restriction = createSubintervalPowerMap( ...
             localStart, localEnd, coefficientCount);
         segmentPower = reshape(polynomial.positionPower( ...
             segmentIndex, :, :), [], coefficientCount);
         projectedPower = ...
             pathConstraints.Normal(constraintIndex, :) * segmentPower;
-        projectionHull = hullMap * projectedPower.';
-        rowCount = 1 + (coefficientCount - 1) * (scaledEnd > scaledStart);
-        inequality = [inequality; pathConstraints.LowerBound( ...
-            constraintIndex) - projectionHull(1:rowCount)]; %#ok<AGROW>
+        restrictedPower = restriction * projectedPower.';
+        [~, minimumValue] = ...
+            ruckigEngine.internal.checkPolynomialRange( ...
+            restrictedPower, ...
+            pathConstraints.LowerBound(constraintIndex), Inf, 0);
+        inequality(end + 1, 1) = ...
+            pathConstraints.LowerBound(constraintIndex) - ...
+            minimumValue; %#ok<AGROW>
     end
 end
 end
 
-function bernstein = coordinateBernstein( ...
-        coefficientArray, dimensionIndex)
-% Convert every segment for one coordinate while preserving row order.
-segmentCount = size(coefficientArray, 1);
-coefficientCount = size(coefficientArray, 3);
-powerMatrix = reshape(permute( ...
-    coefficientArray(:, dimensionIndex, :), [3, 1, 2]), ...
-    coefficientCount, segmentCount);
-bernstein = convertPowerToBernstein(powerMatrix);
-bernstein = bernstein(:);
-end
-
-function coefficient = convertPowerToBernstein(powerCoefficient)
-% Deliberately independent from obstacle-side conversions so one arithmetic
-% error cannot make motion production and certification agree.
-% Convert ascending powers to same-degree Bernstein coefficients on [0,1].
-powerCoefficient = double(powerCoefficient);
-if isvector(powerCoefficient)
-    powerCoefficient = powerCoefficient(:);
-end
-degree = size(powerCoefficient, 1) - 1;
-persistent conversionMatrixByDegree
-if numel(conversionMatrixByDegree) > degree && ...
-        ~isempty(conversionMatrixByDegree{degree + 1})
-    coefficient = ...
-        conversionMatrixByDegree{degree + 1} * powerCoefficient;
-    return;
-end
-conversionMatrix = pascal(degree + 1, 1);
-conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
-conversionMatrixByDegree{degree + 1} = conversionMatrix;
-coefficient = conversionMatrix * powerCoefficient;
-end
-
-function hullMap = createSubintervalBernsteinMap( ...
+function restriction = createSubintervalPowerMap( ...
         localStart, localEnd, coefficientCount)
-% Combine interval restriction with power-to-Bernstein basis conversion.
+% Express a source power polynomial on one normalized subinterval.
 localSpan = max(0, localEnd - localStart);
 degree = coefficientCount - 1;
 sourceExponent = 0:degree;
@@ -158,5 +138,4 @@ end
 restriction = binomialWeight .* ...
     localStart .^ max(shiftExponent, 0) .* ...
     localSpan .^ targetExponent;
-hullMap = convertPowerToBernstein(eye(coefficientCount)) * restriction;
 end
