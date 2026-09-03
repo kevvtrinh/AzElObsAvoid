@@ -9,6 +9,7 @@ function routeSet = searchRoutes( ...
 %**************************************************************************
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
+%   - Retain multi-winding routes for failure-only motion recovery.
 %   - Return route suggestions and complete search records before seeding.
 %**************************************************************************
 % INPUTS
@@ -26,9 +27,10 @@ function routeSet = searchRoutes( ...
 %**************************************************************************
 % OUTPUTS
 %   - routeSet (scalar struct)
-%       Timed and spatial routes, route-class patterns, search records,
-%       selected search modes, and coverage details. Routes are suggestions
-%       and cannot approve a completed obstacle-avoidance motion.
+%       Timed, ordinary spatial, and deferred multi-winding routes plus
+%       route-class patterns, search records, selected search modes, and
+%       coverage details. Routes are suggestions and cannot approve a
+%       completed obstacle-avoidance motion.
 %**************************************************************************
 % UNITS
 %   - Positions and route lengths are degrees; physical times are seconds.
@@ -121,6 +123,14 @@ visibilityFunction = @(first_deg, second_deg) ...
     visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, ...
     visibilityFunction, options);
 
+% Multi-winding routes remain available, but their usually expensive motion
+% solves cannot improve availability after an ordinary class already passes.
+% Defer only the solve; a failure recovery consumes these already-found routes
+% without repeating spatial search or lower-winding motion work.
+isDeferredSpatialRoute = any(abs(routeClassPattern) > 1, 2);
+deferredSpatialRoutes_deg = spatialRoutes_deg(isDeferredSpatialRoute);
+spatialRoutes_deg = spatialRoutes_deg(~isDeferredSpatialRoute);
+
 %% Section 3: Assemble The Route Set
 
 % Keep the search records beside their routes. Seed creation can then remain
@@ -137,6 +147,8 @@ routeSet = struct( ...
     "TimedSearchRecoveryAttempted", false, ...
     "TimedSearchSuppressionReason", timedSearchSuppressionReason, ...
     "SpatialRoutes_deg", {spatialRoutes_deg}, ...
+    "DeferredSpatialRoutes_deg", {deferredSpatialRoutes_deg}, ...
+    "DeferredSpatialSolveAttempted", false, ...
     "RouteClassPattern", routeClassPattern, ...
     "SpatialSearchRecord", spatialSearchRecord, ...
     "MaximumSpatialClassCount", maximumClassCount, ...

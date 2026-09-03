@@ -237,28 +237,45 @@ candidateSet = obstacleAvoidance.planner.solveSeeds( ...
     seeds, seedSolveContext, stageTiming, ...
     physicalArrivalLowerBound_s, planningTimer);
 
-% A dense spatial envelope may defer exact timed search, but it cannot
-% authorize a no-trajectory result. Pay that cost only when every initially
-% offered candidate and the separately validated exact motion have failed.
+% Dense histories and multi-winding routes are expensive fallback work, not
+% permission to return no trajectory. If every ordinary candidate fails,
+% consume the deferred work without repeating its search or any prior solve.
+initialCandidatePassed = any([candidateSet.CheckResults.Passed]);
 needsDeferredTimedRecovery = needsRouteSearch && ...
-    routeSet.TimedSearchDeferred && ...
-    ~any([candidateSet.CheckResults.Passed]) && ...
-    ~exactMotionSet.ExcursionIsValidated;
-if needsDeferredTimedRecovery
-    recoverySearchTimer = tic;
-    routeSet = obstacleAvoidance.search.searchRoutes( ...
-        scene, request, proposal, visibilityGraph, routeSet);
-    recoverySearchElapsedTime_s = toc(recoverySearchTimer);
+    routeSet.TimedSearchDeferred;
+needsDeferredSpatialRecovery = needsRouteSearch && ...
+    ~isempty(routeSet.DeferredSpatialRoutes_deg);
+needsCandidateRecovery = ...
+    (needsDeferredTimedRecovery || needsDeferredSpatialRecovery) && ...
+    ~initialCandidatePassed && ~exactMotionSet.ExcursionIsValidated;
+if needsCandidateRecovery
     stageTiming = candidateSet.StageTiming;
-    stageTiming.TopologyElapsedTime_s = ...
-        stageTiming.TopologyElapsedTime_s + recoverySearchElapsedTime_s;
-    candidateSet.StageTiming = stageTiming;
-    if ~isempty(routeSet.TimedRoute_deg)
-        timedOnlyRouteSet = routeSet;
-        timedOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
-        recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
-            timedOnlyRouteSet, proposal, request);
-        recoveredSeed = recoveredSeeds(2);
+    if needsDeferredTimedRecovery
+        recoverySearchTimer = tic;
+        routeSet = obstacleAvoidance.search.searchRoutes( ...
+            scene, request, proposal, visibilityGraph, routeSet);
+        recoverySearchElapsedTime_s = toc(recoverySearchTimer);
+        stageTiming.TopologyElapsedTime_s = ...
+            stageTiming.TopologyElapsedTime_s + recoverySearchElapsedTime_s;
+    end
+    routeSet.DeferredSpatialSolveAttempted = ...
+        needsDeferredSpatialRecovery;
+    recoveredOnlyRouteSet = routeSet;
+    if ~needsDeferredTimedRecovery
+        recoveredOnlyRouteSet.TimedRoute_deg = zeros(0, 2);
+        recoveredOnlyRouteSet.TimedRouteTime_s = zeros(0, 1);
+    end
+    if needsDeferredSpatialRecovery
+        recoveredOnlyRouteSet.SpatialRoutes_deg = ...
+            routeSet.DeferredSpatialRoutes_deg;
+    else
+        recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
+    end
+    recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
+        recoveredOnlyRouteSet, proposal, request);
+    recoveredSeeds = recoveredSeeds(2:end);
+    for recoveryIndex = 1:numel(recoveredSeeds)
+        recoveredSeed = recoveredSeeds(recoveryIndex);
         recoveredSeed.Index = numel(candidateSet.Seeds) + 1;
         [recoveredCandidate, recoveredSummary, recoveredCheck, ...
             stageTiming] = obstacleAvoidance.planner.solveOneSeed( ...
@@ -271,8 +288,8 @@ if needsDeferredTimedRecovery
                 isnan(candidateSet.FirstValidatedMotionTime_s)
             candidateSet.FirstValidatedMotionTime_s = toc(planningTimer);
         end
-        candidateSet.StageTiming = stageTiming;
     end
+    candidateSet.StageTiming = stageTiming;
     gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
         proposal, visibilityGraph, routeSet, candidateSet.Seeds);
     gridDiagnostics.ElapsedTime_s = ...

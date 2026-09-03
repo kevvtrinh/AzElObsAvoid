@@ -1795,12 +1795,13 @@ The current heuristics fall into two materially different groups:
   five-seed budget (maximum nine), 17 time layers, 10,000-vertex proposal
   switch, 1,000,000 pair-edge visibility budget, sparse Delaunay graph,
   13-sample timed-edge screen, one winding reference per connected occupied
-  region, winding components limited to `[-1, 1]`, and finite BMTP degree,
-  segment, and iteration budgets. Dense-envelope use defers timed search until
-  every cheaper validated-motion source fails. These limits are reported, but
-  they are not a proof of no path.
-  In particular, `HomologySearchTruncated` is true when the winding cap or
-  requested class count stops exploration.
+  region, the requested route-class count, and finite BMTP degree, segment,
+  and iteration budgets. Dense-envelope use defers timed search until every
+  cheaper validated-motion source fails. Higher winding components are no
+  longer discarded; their already-found routes are solved if all ordinary
+  winding candidates fail. These limits are reported, but they are not a proof
+  of no path. `HomologySearchTruncated` now means only that the requested class
+  count stopped exploration.
 
 The optional moving-target wrapper retains another bounded method for cases
 outside its exact obstacle-free piecewise-linear kernel: 16 chronological
@@ -1867,3 +1868,53 @@ outlier versus the wrapper version's 3.663449 seconds. Three immediate retained
 code repeats measured 3.501831, 3.620015, and 3.589213 seconds with identical
 physics. Their 3.589213-second median does not support a regression, but the
 small favorable difference is treated as noise rather than a speedup.
+
+## Unbounded Winding With Lazy Motion Recovery — 2026-09-03
+
+The former `[-1, 1]` winding-component rejection was an explicit completeness
+defect, not a validity rule. A 25-edge spiral-chain counterexample has one
+collision-free start-to-goal route with winding magnitude two. The old search
+returned no route after rejecting that transition; the retained search returns
+the class-two route. Ordinary graph reachability is checked first so an
+unreachable goal beside a reachable winding cycle terminates with one stored
+start state instead of creating an unbounded lifted search.
+
+Eagerly solving every newly visible winding class was rejected. On the extreme
+geographic-outline example it found four classes and 177 lifted states, then
+raised wall time from a controlled capped 62.296466 seconds to 78.213287
+seconds while selecting the exact same 22.0706469074562-degree polyline,
+23.3604967801989-degree smooth motion, and 5.80443397354784-second arrival.
+The cost was not route search: the returned region's topology time changed
+from 1.212179 to 1.595468 seconds, while motion solving changed from 20.300903
+to 35.450938 seconds.
+
+The retained design performs the unbounded winding search once, stores higher
+winding routes in the existing route set, and solves those routes only if every
+ordinary winding candidate and exact motion fails validation. It does not
+repeat graph construction, spatial search, or a lower-winding motion solve.
+Diagnostics expose both the deferred-route count and whether recovery consumed
+it. This scheduling rule prevents a winding restriction from authorizing
+`noValidatedSeed`; because the planner already has a finite route-class budget,
+it does not claim that a successful bounded run compared every possible winding
+class for global objective optimality.
+
+With lazy motion recovery, the same extreme example found four classes and 177
+states but left its one multi-winding motion unsolved after an ordinary route
+validated. Focused wall time was 61.977703 seconds and the final fresh-matrix
+run was 62.704676 seconds, consistent with the controlled capped baseline.
+The exact supplied bundle retained its 143.92829584254-degree polyline,
+145.143797542061-degree smooth motion, 71.2828117654205-second arrival, and
+independent collision, kinematic, and certificate validation; direct replay
+took 42.867156 seconds and its four-test suite passed 4/4 in 46.868438 seconds.
+
+The final complete MATLAB suite, including the exact bundle, passed 120/120 in
+151.611569 seconds. The final fresh-process example matrix passed 19/19 with
+203.090791 seconds summed wall time and exact prior path and arrival values.
+Code Analyzer reported zero findings in the five changed MATLAB files. The
+milestone adds no production file, wrapper, public option, or dependency.
+Relative to the pre-existing dirty baseline it is +98/-46 production lines,
+net +52; the working production tree is 19,733 physical lines. The 12,233-line
+excess above the 7,500-line target would require a 3,058.25% wall-time reduction
+under the documented allowance, which is absent. This is therefore recorded as
+a correctness recovery with neutral controlled runtime, not as a size or
+speedup claim.

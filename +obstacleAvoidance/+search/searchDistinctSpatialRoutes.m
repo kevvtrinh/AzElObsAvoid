@@ -35,8 +35,8 @@ function [routes_deg, classPattern, searchRecord] = ...
 % OUTPUTS
 %   - routes_deg (cell column of N-by-2 numeric arrays)
 %       Deterministically ordered shortest routes for distinct classes.
-%   - classPattern (M-by-R int8 matrix)
-%       Integer route-class pattern corresponding to every returned route.
+%   - classPattern (M-by-R integer-valued numeric matrix)
+%       Route-class pattern corresponding to every returned route.
 %   - searchRecord (scalar struct)
 %       Search, frontier, best-partial, and cleanup evidence.
 %**************************************************************************
@@ -53,19 +53,18 @@ nodeCount = size(nodePosition_deg, 1);
 referenceCount = size(obstacleReferencePoints_deg, 1);
 classWidth = max(1, referenceCount);
 routes_deg = cell(0, 1);
-classPattern = zeros(0, referenceCount, "int8");
+classPattern = zeros(0, referenceCount);
 stateCapacity = max(16, 2 * nodeCount);
 stateCount = 1;
 stateNode = zeros(1, stateCapacity);
 stateNode(1) = 1;
-stateClass = zeros(stateCapacity, classWidth, "int8");
+stateClass = zeros(stateCapacity, classWidth);
 stateCost_deg = Inf(1, stateCapacity);
 stateCost_deg(1) = 0;
 parentState = zeros(1, stateCapacity);
 closed = false(1, stateCapacity);
 stateLookup = dictionary(stateKey(1, stateClass(1, :)), 1);
 rejectedCount = 0;
-windingLimitRejectedCount = 0;
 phase = zeros(nodeCount, classWidth);
 if referenceCount > 0
     phase(:, 1:referenceCount) = atan2( ...
@@ -81,7 +80,30 @@ cleanup = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
 cleanupFields = string(fieldnames(cleanup));
 pollStride = 32;
 expandedCount = 0;
-while numel(routes_deg) < maximumClassCount
+
+% Without an arbitrary winding cap, a disconnected cyclic component could
+% contain infinitely many lifted states. Prove ordinary graph reachability
+% first. Expand each reached adjacency row once so this guard stays linear in
+% the stored graph size.
+reachableNode = false(1, nodeCount);
+reachableNode(1) = true;
+reachableQueue = zeros(1, nodeCount);
+reachableQueue(1) = 1;
+queueHead = 1;
+queueTail = 1;
+while queueHead <= queueTail
+    currentNode = reachableQueue(queueHead);
+    queueHead = queueHead + 1;
+    newReachableNode = find( ...
+        isfinite(edgeCost_deg(currentNode, :)) & ~reachableNode);
+    reachableNode(newReachableNode) = true;
+    newReachableCount = numel(newReachableNode);
+    reachableQueue(queueTail + (1:newReachableCount)) = newReachableNode;
+    queueTail = queueTail + newReachableCount;
+end
+goalIsReachable = nodeCount >= 2 && reachableNode(2);
+
+while goalIsReachable && numel(routes_deg) < maximumClassCount
     expandedCount = expandedCount + 1;
     if mod(expandedCount - 1, pollStride) == 0
         obstacleAvoidance.input.throwIfCancellationRequested(options);
@@ -105,7 +127,7 @@ while numel(routes_deg) < maximumClassCount
         if referenceCount > 0
             classPattern(end + 1, :) = requiredClass; %#ok<AGROW>
         else
-            classPattern = zeros(numel(routes_deg), 0, "int8");
+            classPattern = zeros(numel(routes_deg), 0);
         end
         for fieldIndex = 1:numel(cleanupFields)
             fieldName = cleanupFields(fieldIndex);
@@ -124,12 +146,7 @@ while numel(routes_deg) < maximumClassCount
             phase(neighbor, :) - phase(currentNode, :)) / (2 * pi);
         classStep = round(reference(currentNode, :) + step - ...
             reference(neighbor, :));
-        trialClass = int8(double(stateClass(currentState, :)) + classStep);
-        if any(abs(double(trialClass)) > 1)
-            rejectedCount = rejectedCount + 1;
-            windingLimitRejectedCount = windingLimitRejectedCount + 1;
-            continue;
-        end
+        trialClass = stateClass(currentState, :) + classStep;
         trialKey = stateKey(neighbor, trialClass);
         if ~isKey(stateLookup, trialKey)
             stateCount = stateCount + 1;
@@ -185,9 +202,9 @@ searchRecord = struct("ExpandedCount", nnz(expandedState), ...
     "ExploredNodes_deg", nodePosition_deg(activeNode(expandedState), :), ...
     "FrontierNodes_deg", nodePosition_deg(activeNode(frontierState), :), ...
     "BestPartialRoute_deg", bestPartial_deg, "StateCount", stateCount, ...
-    "Truncated", windingLimitRejectedCount > 0 || stoppedAtClassLimit, ...
-    "WindingComponentLimit", 1, ...
-    "WindingLimitRejectedCount", windingLimitRejectedCount, ...
+    "Truncated", stoppedAtClassLimit, ...
+    "WindingComponentLimit", Inf, ...
+    "WindingLimitRejectedCount", 0, ...
     "StoppedAtClassLimit", stoppedAtClassLimit, ...
     "RouteCleanupAttemptedCount", numel(routes_deg), ...
     "RouteCleanupCandidateCount", cleanup.CandidateCount, ...
@@ -224,7 +241,7 @@ oldCapacity = numel(stateNode);
 nextNode = zeros(1, newCapacity);
 nextNode(1:oldCapacity) = stateNode;
 stateNode = nextNode;
-nextClass = zeros(newCapacity, size(stateClass, 2), "int8");
+nextClass = zeros(newCapacity, size(stateClass, 2));
 nextClass(1:oldCapacity, :) = stateClass;
 stateClass = nextClass;
 nextCost_deg = Inf(1, newCapacity);
@@ -240,7 +257,7 @@ end
 
 function pattern = routeClassPattern(route_deg, referencePoints_deg)
 % Evaluate the same open-route class pattern used by search transitions.
-pattern = zeros(1, size(referencePoints_deg, 1), "int8");
+pattern = zeros(1, size(referencePoints_deg, 1));
 if isempty(referencePoints_deg)
     return;
 end
@@ -250,8 +267,8 @@ reference = principalAngle(phase - phase(1, :)) / (2 * pi);
 for edgeIndex = 1:size(route_deg, 1) - 1
     step = principalAngle( ...
         phase(edgeIndex + 1, :) - phase(edgeIndex, :)) / (2 * pi);
-    pattern = int8(double(pattern) + round( ...
-        reference(edgeIndex, :) + step - reference(edgeIndex + 1, :)));
+    pattern = pattern + round( ...
+        reference(edgeIndex, :) + step - reference(edgeIndex + 1, :));
 end
 end
 

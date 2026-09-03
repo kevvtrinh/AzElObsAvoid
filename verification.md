@@ -6885,3 +6885,63 @@ repeats on retained code measured 3.501831, 3.620015, and 3.589213 seconds with
 identical path and arrival. The 3.589213-second median shows no retained
 regression; its small favorable difference is below the evidence threshold for
 a speedup claim.
+
+## Unbounded Winding With Lazy Motion Recovery — 2026-09-03
+
+Baseline commit was `a15ebbd` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. MATLAB was R2024b Update 4. Figures,
+animation, and verbose example output were disabled. Each final maintained
+example ran in a fresh MATLAB process.
+
+The discriminating graph was a 25-edge Archimedean spiral from start to goal
+around one supplied reference point. Its only route has winding magnitude two.
+The baseline returned zero routes, recorded 19 states, rejected one transition
+at the winding limit, and reported truncation. The retained search returns one
+class-two route with 25 states, no winding rejection, and no truncation. A
+separate disconnected graph with a reachable cycle around the reference and an
+isolated goal returns zero routes, one stored state, and no truncation. This
+proves both removal of the false-negative cap and finite disconnected exit.
+
+An eager experiment was rejected by the runtime gate. The extreme geographic
+outline example kept its exact 22.0706469074562-degree selected polyline,
+23.3604967801989-degree motion, 5.80443397354784-second arrival, and independent
+validation, but wall time was 78.213287 seconds versus 62.296466 seconds in an
+immediately controlled capped run, a 25.552% increase. The returned final
+region found four classes and 177 states instead of three classes and 156
+states. Its topology time rose only from 1.212179 to 1.595468 seconds, while
+motion solving rose from 20.300903 to 35.450938 seconds.
+
+The retained implementation searches unbounded winding components once and
+keeps multi-winding routes in the existing route-set record. Their motion solves
+are deferred until every ordinary candidate and exact motion fails validation.
+No proposal, graph, lower-winding route search, or lower-winding motion solve is
+repeated. `Coverage.MultiWindingRouteCount` and
+`Coverage.MultiWindingSolveAttempted` expose this ordering. On the same extreme
+example, the retained focused run found four classes and 177 states, recorded
+one deferred route, did not need its motion solve, and completed in 61.977703
+seconds. The final matrix run was 62.704676 seconds. Both are consistent with
+the controlled capped run and preserve its exact physical result.
+
+The supplied `Rogue Examples/failed.mat` replay preserved a
+143.92829584254-degree polyline, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival. Independent validation, collision, kinematic,
+and certificate checks passed. Direct replay took 42.867156 seconds; the exact
+four-test bundle suite passed 4/4 in 46.868438 seconds.
+
+The final complete test suite passed 120/120 with no failures or incomplete
+tests in 151.611569 seconds and included the exact supplied bundle. The final
+fresh-process example matrix passed 19/19 in 203.090791 summed planner wall
+seconds. All 18 successful examples passed independent collision and kinematic
+validation with exact prior path and arrival values; `exampleNoPath` returned
+the expected `noValidatedSeed` and passed failure-diagnostic validation. Code
+Analyzer reported zero findings in all five changed MATLAB files.
+
+The milestone adds no production file, wrapper, public option, or dependency.
+Relative to the pre-existing dirty baseline, experiment-owned production code
+is +98/-46 lines, net +52. The working production tree contains 19,733 physical
+MATLAB lines and 13,866 nonblank/noncomment lines. The physical 12,233-line
+excess above the 7,500-line target would require a 3,058.25% wall-time reduction
+under the documented allowance. No such reduction is claimed: this is a
+correctness recovery with neutral controlled runtime. The successful bounded
+planner still does not claim global objective optimality across unsearched
+route classes or deferred multi-winding motions.

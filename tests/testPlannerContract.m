@@ -147,6 +147,69 @@ verifyGreaterThan(testCase, seedSet(2).Length_deg, ...
     request.goalState.time_s - request.initialState.time_s);
 end
 
+function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
+% Remove arbitrary winding rejection without losing finite disconnected exit.
+angle_rad = linspace(0, 4 * pi, 25).';
+radius_deg = 1 + 0.1 * angle_rad;
+spiralPath_deg = [radius_deg .* cos(angle_rad), ...
+    radius_deg .* sin(angle_rad)];
+nodePosition_deg = [spiralPath_deg(1, :); spiralPath_deg(end, :); ...
+    spiralPath_deg(2:end - 1, :)];
+pathNodeIndex = [1, 3:size(nodePosition_deg, 1), 2];
+edgeCost_deg = Inf(size(nodePosition_deg, 1));
+for edgeIndex = 1:numel(pathNodeIndex) - 1
+    firstNode = pathNodeIndex(edgeIndex);
+    secondNode = pathNodeIndex(edgeIndex + 1);
+    edgeLength_deg = norm( ...
+        nodePosition_deg(firstNode, :) - nodePosition_deg(secondNode, :));
+    edgeCost_deg(firstNode, secondNode) = edgeLength_deg;
+    edgeCost_deg(secondNode, firstNode) = edgeLength_deg;
+end
+[routes_deg, classPattern, record] = ...
+    obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
+    edgeCost_deg, nodePosition_deg, [0 0], 1, ...
+    @(first_deg, second_deg) true, struct("CancellationCheckFcn", []));
+verifyNumElements(testCase, routes_deg, 1);
+verifyEqual(testCase, abs(classPattern), 2);
+verifyEqual(testCase, record.WindingComponentLimit, Inf);
+verifyEqual(testCase, record.WindingLimitRejectedCount, 0);
+
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], restState(0, nodePosition_deg(1, :)), ...
+    restState(20, nodePosition_deg(2, :)), physicalLimits(), struct( ...
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2));
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+proposal = struct( ...
+    "usedDenseEnvelope", false, "sampleTimes_s", [0; 20], ...
+    "goal_deg", nodePosition_deg(2, :), "shape", polyshape(), ...
+    "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
+visibilityGraph = struct( ...
+    "NodePosition_deg", nodePosition_deg, "EdgeCost_deg", edgeCost_deg, ...
+    "ObstacleReferencePoints_deg", [0 0]);
+routeSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph);
+verifyEmpty(testCase, routeSet.SpatialRoutes_deg);
+verifyNumElements(testCase, routeSet.DeferredSpatialRoutes_deg, 1);
+verifyFalse(testCase, routeSet.DeferredSpatialSolveAttempted);
+
+nodePosition_deg = [1 0; 4 0; 0 1; -1 0; 0 -1];
+edgeCost_deg = Inf(5);
+cycleNodeIndex = [1 3 4 5 1];
+for edgeIndex = 1:numel(cycleNodeIndex) - 1
+    firstNode = cycleNodeIndex(edgeIndex);
+    secondNode = cycleNodeIndex(edgeIndex + 1);
+    edgeCost_deg(firstNode, secondNode) = 1;
+    edgeCost_deg(secondNode, firstNode) = 1;
+end
+[routes_deg, ~, record] = ...
+    obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
+    edgeCost_deg, nodePosition_deg, [0 0], 2, ...
+    @(first_deg, second_deg) true, struct("CancellationCheckFcn", []));
+verifyEmpty(testCase, routes_deg);
+verifyEqual(testCase, record.StateCount, 1);
+verifyFalse(testCase, record.Truncated);
+end
+
 function testDenseProposalDefersThenRunsExactTimedSearch(testCase)
 % Dense spatial work may reorder exact timed search but cannot discard it.
 obstacleTime_s = [0; 10];
