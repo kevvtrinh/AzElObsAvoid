@@ -1792,7 +1792,8 @@ The current heuristics fall into two materially different groups:
   and the endpoint-velocity duration lower bound. Every retained motion still
   passes the authoritative continuous validator.
 - Explicit work bounds can still make the planner incomplete: the default
-  five-seed budget (maximum nine), 17 time layers, 10,000-vertex proposal
+  five-seed budget (maximum nine), input-derived discrete time layers,
+  10,000-vertex proposal
   switch, 1,000,000 pair-edge visibility budget, sparse Delaunay graph,
   13-sample timed-edge screen, one winding reference per connected occupied
   region, the requested route-class count, and finite BMTP degree, segment,
@@ -1918,3 +1919,52 @@ excess above the 7,500-line target would require a 3,058.25% wall-time reduction
 under the documented allowance, which is absent. This is therefore recorded as
 a correctness recovery with neutral controlled runtime, not as a size or
 speedup claim.
+
+## Complete Input-Derived Time Layers — 2026-09-03
+
+Baseline commit was `a7ef285` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. The deleted time-layer selector could reduce
+105 supplied planning times to 17 uniformly distributed representatives. In a
+moving-barrier graph, it dropped the brief opening around 4.0--4.2 seconds and
+returned no route; the complete supplied set returned a route arriving at
+4.1 seconds. The retained 51-layer regression uses a different horizon and
+reaches the same structural opening at 4.0 seconds.
+
+Timed visibility search now keeps every supplied endpoint, obstacle source,
+midpoint, and uniform request time. `MaximumTimeLayerCount` remains one option
+with one responsibility: it bounds timed BMTP segments plus one. The 62-line
+`boundedTimeLayers.m` helper was deleted. No replacement helper, wrapper,
+fallback search, public option, or dependency was added. Layer parent indices
+use `uint32`, so removing the former 65,535-layer option bound does not create
+an index overflow.
+
+A 24-node complete moving-obstacle graph exercised the prior performance
+signature. Seventeen layers took 0.847459 seconds and expanded 275 states;
+all 41 supplied layers took 0.861912 seconds and expanded 702 states, a
+1.017055 wall-time ratio. This single smoke comparison is evidence against a
+large regression after batched edge checking, not a speedup claim.
+
+The supplied `Rogue Examples/failed.mat` replay remained physically exact:
+143.92829584254 degrees selected polyline, 145.143797542061 degrees smooth
+motion, and 71.2828117654205 seconds arrival. Independent validation,
+collision, kinematic, and certificate checks passed; wall time was 45.883803
+seconds. Its timed search was not invoked, so this is a regression sentinel
+rather than benefit evidence.
+
+The complete suite passed 121/121 with no failures or incomplete tests in
+154.377006 seconds. The final single-session example matrix passed all 19
+expected outcomes in 163.823447 summed planner seconds. Every successful
+example passed independent collision and kinematic validation, while
+`exampleNoPath` retained its independently validated `noValidatedSeed`
+outcome. Physical metrics matched the `a7ef285` benchmark rows. Repeated
+fresh-process launches reported a MATLAB startup `File system inconsistency`
+before any example code ran; the aggregate is therefore not compared with the
+prior fresh-process sum.
+
+Relative to `a7ef285`, production is 59 physical lines smaller. The working
+production tree contains 19,674 physical MATLAB lines and 13,845
+nonblank/noncomment lines. This milestone removes one production file and one
+false-negative heuristic; it makes no performance-based size allowance or
+global completeness claim. Finite seed/node budgets, input-derived temporal
+discretization, sampled timed-edge screening, and finite solver budgets remain
+explicit completeness limits.

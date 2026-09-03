@@ -6945,3 +6945,47 @@ under the documented allowance. No such reduction is claimed: this is a
 correctness recovery with neutral controlled runtime. The successful bounded
 planner still does not claim global objective optimality across unsearched
 route classes or deferred multi-winding motions.
+
+## Complete Input-Derived Time Layers — 2026-09-03
+
+The baseline was `a7ef285` on `bmtp-cleanup-codex`. A controlled moving-barrier
+graph proved that the former `MaximumTimeLayerCount = 17` selector could drop
+the only usable obstacle-event interval: the bounded search returned no route,
+while all 105 supplied times returned a route arriving at 4.1 seconds. The
+retained contract fixture uses 51 supplied times and protects a 4.0-second
+arrival through the same kind of brief opening.
+
+The selector and its 62-line production helper were removed. The existing
+time-expanded search directly retains each supplied time and its stable
+diagnostics report that no layer limit was applied. The public option remains
+because the existing timed BMTP solver uses `MaximumTimeLayerCount - 1` as its
+maximum segment count. Documentation and the performance-triage skill now
+state this single remaining responsibility; no compatibility wrapper was
+created.
+
+Focused verification passed 26/26 planner-contract tests, and Code Analyzer
+reported zero findings in the three changed MATLAB files. A 24-node complete
+moving graph took 0.847459 seconds at 17 layers and 0.861912 seconds at all 41
+supplied layers. Both reached the same fixed arrival; the 1.017055 ratio is a
+single regression smoke measurement, not a speedup claim.
+
+The exact supplied-bundle replay passed independent validation with a
+143.92829584254-degree polyline, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival. Collision, kinematic, and certificate checks
+all passed in 45.883803 seconds. The complete suite, including that artifact,
+passed 121/121 in 154.377006 seconds.
+
+All 19 shipped examples then passed their expected independent checks in one
+MATLAB session, with 163.823447 seconds summed planner wall time. Eighteen
+returned validated success and `exampleNoPath` returned the expected validated
+`noValidatedSeed`. Every physical path and arrival metric matched the current
+benchmark rows. Repeated fresh-process launches failed in MATLAB startup with
+`File system inconsistency` before executing example code, so no aggregate
+fresh-process timing comparison is claimed.
+
+The retained production diff is 16 additions and 75 deletions, net minus 59
+physical lines, with one production file removed and no new production file,
+wrapper, option, or dependency. The working production tree is 19,674 physical
+MATLAB lines and 13,845 nonblank/noncomment lines. The result removes both a
+false-negative heuristic and its abstraction rather than layering a recovery
+mechanism over it.

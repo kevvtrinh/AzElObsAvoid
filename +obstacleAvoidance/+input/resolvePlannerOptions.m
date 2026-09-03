@@ -17,7 +17,7 @@ function options = resolvePlannerOptions(optionOverrides)
 %       motion wins only when its travel saving exceeds that rate times its
 %       delay. Jerk remains a hard constraint and is never a ranking cost.
 %       MaximumTimeLayerCount is an integer from 2 through 65535 and bounds
-%       timed-search layers, including both endpoints. Default is 17.
+%       BMTP timed-motion segments plus one. Default is 17.
 %       MaximumWaitRefinementIterations is an integer from 0 through 64 and
 %       bounds validated direct-wait bisection trials. Default is 16.
 %       UnsupportedTimedTopologyPolicy is "fail" (default) or

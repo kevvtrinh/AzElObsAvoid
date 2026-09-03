@@ -8,7 +8,8 @@ function [route_deg, routeTime_s, record] = ...
 %       edgeCost_deg, obstacles, initialState, goalState, limits, sampleTimes_s, options)
 %**************************************************************************
 % PURPOSE
-%   - Search bounded forward reachability using waits and moving edges.
+%   - Search forward reachability using waits and moving edges at every
+%     supplied planning time.
 %**************************************************************************
 % INPUTS
 %   - nodePosition_deg (N-by-2 numeric matrix)
@@ -18,7 +19,7 @@ function [route_deg, routeTime_s, record] = ...
 %   - obstacles (canonical protected obstacle struct array)
 %   - initialState, goalState, limits, options (scalar structs)
 %   - sampleTimes_s (numeric vector)
-%       Candidate times before applying MaximumTimeLayerCount.
+%       Candidate times retained exactly as temporal search layers.
 %**************************************************************************
 % OUTPUTS
 %   - route_deg (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector)
@@ -30,9 +31,10 @@ function [route_deg, routeTime_s, record] = ...
 %   - Position and edge cost are degrees; time is seconds.
 %**************************************************************************
 %% Section 1: Propagate The Reachability Frontier
-[layerTimes_s, layerLimitApplied, candidateLayerCount] = ...
-    obstacleAvoidance.search.boundedTimeLayers(sampleTimes_s, ...
-    initialState.time_s, goalState.time_s, options.MaximumTimeLayerCount);
+layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); ...
+    goalState.time_s]);
+layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & ...
+    layerTimes_s <= goalState.time_s);
 layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
@@ -45,7 +47,8 @@ for layerIndex = 1:layerCount
 end
 reachable = false(layerCount, nodeCount);
 spatialCost_deg = Inf(layerCount, nodeCount);
-[parentLayerIndex, parentNodeIndex] = deal(zeros(layerCount, nodeCount, "uint16"));
+parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
+parentNodeIndex = zeros(layerCount, nodeCount, "uint16");
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_deg(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
@@ -59,7 +62,7 @@ for layerIndex = 1:layerCount - 1
     maximumTransitionCount = numel(currentNodeIndices) * nodeCount;
     transitionSourceNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
     transitionTargetNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionTargetLayerIndex = zeros(maximumTransitionCount, 1, "uint16");
+    transitionTargetLayerIndex = zeros(maximumTransitionCount, 1, "uint32");
     transitionLength_deg = zeros(maximumTransitionCount, 1);
     transitionIsWait = false(maximumTransitionCount, 1);
     transitionNeedsQuery = false(maximumTransitionCount, 1);
@@ -73,7 +76,7 @@ for layerIndex = 1:layerCount - 1
         transitionCount = transitionCount + 1;
         transitionSourceNodeIndex(transitionCount) = uint16(currentNodeIndex);
         transitionTargetNodeIndex(transitionCount) = uint16(currentNodeIndex);
-        transitionTargetLayerIndex(transitionCount) = uint16(layerIndex + 1);
+        transitionTargetLayerIndex(transitionCount) = uint32(layerIndex + 1);
         transitionIsWait(transitionCount) = true;
         transitionNeedsQuery(transitionCount) = ...
             nodeIsFree(layerIndex + 1, currentNodeIndex);
@@ -96,7 +99,7 @@ for layerIndex = 1:layerCount - 1
             transitionLength_deg(transitionCount) = norm(displacement_deg);
             if ~isempty(targetLayerIndex)
                 transitionTargetLayerIndex(transitionCount) = ...
-                    uint16(targetLayerIndex);
+                    uint32(targetLayerIndex);
                 transitionNeedsQuery(transitionCount) = ...
                     nodeIsFree(targetLayerIndex, targetNodeIndex);
             end
@@ -168,8 +171,8 @@ end
 [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, layerTimes_s, ...
     parentLayerIndex, parentNodeIndex, goalLayerIndex, 2);
 record = struct("LayerTimes_s", layerTimes_s, ...
-    "LayerLimitApplied", layerLimitApplied, ...
-    "CandidateLayerCount", candidateLayerCount, "NodeCount", nodeCount, ...
+    "LayerLimitApplied", false, ...
+    "CandidateLayerCount", layerCount, "NodeCount", nodeCount, ...
     "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
     "RejectedTransitionCount", rejectedCount, "ExpandedCount", expandedCount, ...
     "ExploredNodes_deg", exploredNodes_deg, "FrontierNodes_deg", frontier_deg, ...
@@ -210,7 +213,7 @@ if trialCost_deg > storedCost_deg + 1e-12 || (costIsEqual && ~isLaterFinalTransi
 end
 reachable(targetLayerIndex, targetNodeIndex) = true;
 spatialCost_deg(targetLayerIndex, targetNodeIndex) = trialCost_deg;
-parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceLayerIndex);
+parentLayerIndex(targetLayerIndex, targetNodeIndex) = uint32(sourceLayerIndex);
 parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
 end
 function [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, ...

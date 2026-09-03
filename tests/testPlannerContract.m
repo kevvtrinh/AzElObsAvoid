@@ -286,6 +286,51 @@ verifyEqual(testCase, route_deg, nodePosition_deg([1 3 2], :));
 verifyEqual(testCase, routeTime_s, [0; 1; 2]);
 end
 
+function testTimedSearchRetainsEverySuppliedTime(testCase)
+% Keep a brief input-defined opening that layer thinning would erase.
+blockedVertices_deg = [-0.15 -2; 0.15 -2; 0.15 2; -0.15 2];
+clearVertices_deg = blockedVertices_deg + [0 30];
+obstacleTime_s = [0; 3.8; 3.9; 4.2; 4.3; 5];
+barrier = obstacleAvoidance.obstacles.createObstacle( ...
+    "briefOpening", obstacleTime_s, ...
+    {blockedVertices_deg(:, 1); blockedVertices_deg(:, 1); ...
+    clearVertices_deg(:, 1); clearVertices_deg(:, 1); ...
+    blockedVertices_deg(:, 1); blockedVertices_deg(:, 1)}, ...
+    {blockedVertices_deg(:, 2); blockedVertices_deg(:, 2); ...
+    clearVertices_deg(:, 2); clearVertices_deg(:, 2); ...
+    blockedVertices_deg(:, 2); blockedVertices_deg(:, 2)}, 0);
+nodePosition_deg = [-2 0; 2 0; 0 0];
+edgeCost_deg = Inf(3);
+edgeCost_deg(1, 3) = 2;
+edgeCost_deg(3, 1) = 2;
+edgeCost_deg(2, 3) = 2;
+edgeCost_deg(3, 2) = 2;
+initialState = restState(0, nodePosition_deg(1, :));
+goalState = restState(5, nodePosition_deg(2, :));
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [20 20];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival", ...
+    "MaximumTimeLayerCount", 17));
+sampleTimes_s = (0:0.1:5).';
+
+[route_deg, routeTime_s, record] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, barrier, initialState, goalState, ...
+    limits, sampleTimes_s, options);
+
+verifyEqual(testCase, record.LayerTimes_s, sampleTimes_s, ...
+    "AbsTol", eps(5));
+verifyEqual(testCase, record.CandidateLayerCount, numel(sampleTimes_s));
+verifyGreaterThan(testCase, ...
+    record.CandidateLayerCount, options.MaximumTimeLayerCount);
+verifyFalse(testCase, record.LayerLimitApplied);
+verifyFalse(testCase, isempty(route_deg));
+verifyEqual(testCase, route_deg(1, :), initialState.position_deg);
+verifyEqual(testCase, route_deg(end, :), goalState.position_deg);
+verifyEqual(testCase, routeTime_s(end), 4, "AbsTol", 1e-12);
+end
+
 function testDenseMovingBarrierRecoversDeferredTimedSeed(testCase)
 % Recover a wait route after dense spatial proposals yield no valid motion.
 angle_rad = (0:1199).' * (2 * pi / 1200);

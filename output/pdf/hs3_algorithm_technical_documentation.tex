@@ -1448,11 +1448,6 @@ uses polynomial coefficients rather than trusting samples alone.}
 
 \subsection{Production: search and certification}
 
-\scriptentry{+obstacleAvoidance/+search/boundedTimeLayers.m}{Combines source-aware
-and uniformly spaced time layers, retains endpoints, and applies a deterministic
-cap. Route generation and the time-expanded search use it to bound work without
-discarding event provenance silently.}
-
 \scriptentry{+obstacleAvoidance/+search/certifySeedCorridor.m}{Independently
 verifies a solver-supplied static corridor certificate. It checks schema,
 complete obstacle-envelope containment, supporting half-spaces, and the entire
@@ -1485,9 +1480,10 @@ of every protected obstacle. Incomplete containment prevents a static corridor
 from being treated as a certificate.}
 
 \scriptentry{+obstacleAvoidance/+search/timeExpandedVisibilitySearch.m}{Searches
-a forward layered graph whose state is time layer plus visibility node. It
-supports waiting and motion arcs, uses bounded sampled collision filtering, and
-returns route positions, absolute route times, parents, costs, and work counts.}
+a forward layered graph over every supplied planning time; each state is a time
+layer plus visibility node. It supports waiting and motion arcs, uses sampled
+edge-collision filtering, and returns route positions, absolute route times,
+parents, costs, and work counts.}
 
 \subsection{Production: public APIs and plotting}
 

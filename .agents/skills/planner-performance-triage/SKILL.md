@@ -102,10 +102,12 @@ only, not reproducible evidence. Read deleted precedents without checkout:
 git show HS3-planner:<path>
 ```
 
-Useful `HS3-planner` precedents are `+search/boundedTimeLayers.m` for bounded
-layer selection and its reachability-frontier
-`timeExpandedVisibilitySearch`, which expands only reached nodes and stops on
-`reachable(layerIndex, 2)` for earliest arrival.
+The `HS3-planner` reachability-frontier
+`timeExpandedVisibilitySearch` is a useful historical precedent because it
+expands only reached nodes and stops on `reachable(layerIndex, 2)` for earliest
+arrival. Its `+search/boundedTimeLayers.m` selector is a negative precedent:
+thinning supplied obstacle times can erase a brief feasible opening and must
+not authorize `noValidatedSeed`.
 
 ## Never Do These Things
 

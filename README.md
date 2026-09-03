@@ -55,9 +55,9 @@ planner compares their actual travel against alternating and spline families;
 sampled screening may reject a proposal, but only continuous public validation
 can accept one.
 
-`MaximumTimeLayerCount` defaults to `17` and bounds the timed visibility
-search layers, including the initial and goal times. Lower values reduce
-timed-search work but can omit obstacle-event times and lose feasible routes.
+`MaximumTimeLayerCount` defaults to `17` and bounds timed BMTP motion segments
+plus one. Timed visibility search retains every input-derived endpoint, source,
+and midpoint time because discarding those times can lose feasible routes.
 
 `MaximumWaitRefinementIterations` defaults to `16`. For an earliest-arrival
 `directWait` seed that already passes independent validation, the planner first
