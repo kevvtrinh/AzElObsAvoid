@@ -1,8 +1,730 @@
 # Plan 325 verification
 
+## Certified continuous polynomial bounds - 2026-09-02
+
+The baseline was commit `d5cd59aadc6e74bb7e6f3b7101056cf8a033783e` on
+`bmtp-cleanup-codex`. The working tree already contained unrelated user changes
+to `AGENTS.md`, deleted planning/audit documents, and the untracked
+`Rogue Examples/` directory; none was modified by this work. MATLAB was R2024b
+Update 4. The focused inputs, options, jerk constraint, plotting state, and
+independent validator were held constant.
+
+The accepted change adds one 164-physical-line, 113-noncomment-line range
+certifier; removes 13 net physical lines from `validateTrajectory.m`; and adds
+24 focused test lines. The 151-line net production growth requires a 37.75
+percent reduction under the 25-percent-per-100-line allowance. The smaller of
+the two controlled improvements was 52.218 percent, so that incremental growth
+gate passes. `validateTrajectory.m` remains 856 physical lines and the new file
+is 164, both below the 900-line file cap. The repository audit reported 11,448
+noncomment production lines against its maintained 11,524-line ceiling. The
+separate current physical totals remain 9,607 lines in `+obstacleAvoidance`,
+5,216 in `trajectory`, and 4,446 in `tests`; therefore the repository-wide
+7,500 production target and 12,000 planner/test-tree target were already
+exceeded and remain unresolved. No commit or push was performed.
+
+The cubic easy-case benchmark used `exampleObstacleFree`, six cubic segments,
+seven repetitions after warm-up, and 100 complete independent validations per
+repetition. Baseline minimum/median/maximum were
+0.172095300/0.225285700/0.262237500 seconds. Final candidate values were
+0.091198100/0.107645900/0.155967900 seconds, a 52.218 percent median reduction.
+
+The degree-16 comparison used the unchanged 18-segment
+`exampleObstacleAvoidance` polynomial and interleaved 100-call baseline and
+candidate blocks for nine repetitions in one MATLAB session. The stationary
+baseline minimum/median/maximum were
+0.903708400/0.957598300/1.022489700 seconds; the cached Bernstein candidate was
+0.173457100/0.183847000/0.218173700 seconds, an 80.801 percent median reduction.
+All four bound decisions were identical. The initial depth-eight uncached
+prototype measured 5.444254300 seconds versus 0.953080100 baseline median; a
+depth-two uncached check still measured 5.423218900 versus 0.968649000 seconds.
+Those negative results localized transform reconstruction as the owner and the
+uncached code was replaced, not retained.
+
+Focused tests prove that one outlying Bernstein control does not reject a safe
+quadratic, midpoint subdivision rejects a true interior violation, and a
+non-dyadic boundary tangent reaches the stationary fallback and passes. Code
+Analyzer reported zero findings in all three touched MATLAB files. The final
+complete suite passed 118/118 with zero failed or incomplete tests,
+107.2784051 seconds aggregate duration, and 117.2130268 seconds wall time.
+
+All 17 maintained examples ran serially and headlessly against the final code.
+Sixteen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed` result. Every successful
+motion was collision-free and passed velocity, acceleration, jerk, and dynamics
+checks; applicable plane certificates passed. Exact metrics are appended to
+`benchmark.csv`. The final serial wall total was 451.1994148 seconds. A hidden
+failure run created one search-diagnostic figure annotated with termination and
+search counts; a visible obstacle-free run created two visible figures. Because
+those visualization checks preceded only the argument-independent transform
+cache correction, they were rerun after the final example sweep before
+completion.
+
+## Dormant seed-clustering removal - 2026-09-01
+
+The authoritative baseline was commit
+`11582e39998de997c1e453c4e5f798d4a3d4961f`; its complete 17-example result
+artifacts were already recorded under `tmp/bmtp-seed-budget-full`. The
+candidate was branch `bmtp-cleanup-codex`. Every new MATLAB invocation used a
+fresh private `MATLAB_PREFDIR`, `TEMP`, and `TMP`, and maintained examples ran
+one process at a time.
+
+Read-only caller tracing found that `SeedClusterDistance_deg` defaulted to zero
+and no current maintained example, test, benchmark, or sandbox supplied it.
+Zero caused `clusterSeedShape` to return the protected swept geometry
+unchanged. Historical evidence had one maintained nonzero use, but its swept
+input contained one source region and therefore formed zero cluster groups.
+The accepted edit:
+
+- deletes the 85-line `+obstacleAvoidance/+search/clusterSeedShape.m` helper;
+- removes `SeedClusterDistance_deg` from defaults and validation;
+- warns once that a legacy value is deprecated and ignored, strips it before
+  unknown-option handling, and forwards it through the example boundary;
+- always constructs visibility and homology proposals from the unclustered
+  protected swept geometry;
+- retains `SearchDiagnostics.Grid.SeedCluster` for one release with distance
+  zero, the true source-region count, zero groups, zero clustered regions, and
+  an empty boundary;
+- removes the obsolete helper entry from current architecture and technical
+  documentation.
+
+Production MATLAB changes were 17 additions and 100 deletions, a net reduction
+of 83 lines, exceeding the declared 75-line gate. Together with prior
+milestones, the branch production reduction is 163 lines. `git diff --check`
+passed; stale helper references are absent outside historical records and the
+one-release option shim/tests. MATLAB Code Analyzer reported zero findings in
+`resolvePlannerOptions.m`, `createRouteCandidates.m`, and
+`resolveExampleOptions.m`.
+
+Focused verification passed 48/48 option, example, contract, architecture,
+static-projection, timed-BMTP, and unsupported-topology tests. Legacy partial
+and fully resolved options warn with
+`planTrajectory:DeprecatedSeedClusterDistance`, are not also unknown, do not
+echo in resolved options, and cannot restore clustering. The maintained
+obstacle-avoidance test additionally protects the retained diagnostic record.
+
+A new neutral three-region fixture established both sides of the behavior:
+
+| Call | Groups | Nodes | Edges | Polyline/motion (deg) | Arrival (s) | Wall (s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Frozen distance 0 | 0 | 26 | 46 | 8.08716891419 | 6.5 | 4.2970193 |
+| Frozen distance 1 deg | 1 | 10 | 16 | 8.08716891419 | 6.5 | 4.2952183 |
+| Candidate legacy 1 deg | 0 | 26 | 46 | 8.08716891419 | 6.5 | 4.3206596 |
+
+The candidate legacy replay matched the frozen zero-distance planner result
+recursively at `1e-9`, including unclustered graph counts, route, trajectory,
+validation, termination, and zero-valued diagnostic fields. The nonzero
+baseline proves the removed code was capable of changing the graph rather than
+being unreachable. The candidate uses more graph nodes for legacy nonzero
+requests, as intended, but this fixture showed no material wall-time or result
+cost. No global fragmented-field runtime claim is made.
+
+All 17 maintained candidate examples then ran serially and headlessly with
+jerk enabled. Every result matched the corresponding frozen `11582e3` artifact
+recursively at `1e-9`, excluding only runtime and the removed option. Sixteen
+returned planner and independent validation success; `exampleNoPath` returned
+the expected independently validated `noValidatedSeed`. Every successful
+motion remained collision-free and kinematically valid, with applicable
+certificates passing. Exact per-example lengths, durations, wall times and
+certificate applicability are appended to `benchmark.csv`.
+
+The hidden failure-plot gate created one invisible figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free gate created two figures with
+`Visible="on"`. The complete test tree passed 117/117 with zero failed or
+incomplete, 79.0522037 seconds aggregate test duration, and 85.7283342 seconds
+wall time.
+
+Three fixture/setup errors produced no adverse planner finding and were
+corrected without weakening a gate. The first fixture attempted a nonexistent
+zero-input obstacle constructor; the second queried the cluster record from a
+planner fast-path diagnostic rather than directly from route generation; and
+the first candidate comparison lost the external comparator path when the
+runner restored MATLAB's default path. The corrected fixture explicitly
+constructs all obstacles, invokes the maintained route generator on the
+resolved request for graph evidence, and compares already-saved results in a
+fresh process. No required gate remains untested.
+
+## Wall-clock seed cutoff removal - 2026-09-01
+
+The authoritative baseline was commit
+`dd7a67441086c651c818adbd65c110cb72c752fa` in detached worktree
+`tmp/bmtp-seed-budget-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Every MATLAB command used a fresh private
+`MATLAB_PREFDIR`, `TEMP`, and `TMP`, and every maintained example ran in its
+own process. The predeclared gate allowed a documented runtime increase but
+required no representative result-quality regression.
+
+The accepted edit removes the complete timing-dependent seed cutoff:
+
+- `PerSeedWorkBudgetMultiplier` is no longer a planner default or echoed
+  result option. A one-release shim warns once that a supplied legacy value is
+  deprecated and ignored, then strips it before unknown-option handling.
+- `planCorridorQuintic` no longer computes an incumbent-derived wall budget,
+  injects it into a seed solve, or translates a solver stop into
+  `seedWorkBudgetExhausted`.
+- `bmtpEngine.solve` no longer accepts or polls `MaximumSolverTime_s`, and no
+  longer publishes `WorkLimitReached`.
+- The example option boundary forwards the legacy public name to the central
+  resolver. Deterministic iteration/conic limits, `MaximumSeedCount`, explicit
+  cancellation, validation, diagnostics, and the public BMTP restart surface
+  are unchanged.
+
+Production MATLAB changes were 17 additions and 57 deletions, a net reduction
+of 40 lines. The README loses six obsolete lines. Together with the previous
+milestones, the branch production reduction is 80 lines. Static verification
+passed `git diff --check`, stale-name searches, the 40-line benefit gate, and
+MATLAB Code Analyzer with zero findings in
+`resolvePlannerOptions.m`, `planCorridorQuintic.m`,
+`resolveExampleOptions.m`, and `bmtpEngine/solve.m`.
+
+Focused tests passed as follows:
+
+- planner options, example invariants, BMTP engine and planner contract:
+  43/43;
+- cancellation and offline-sandbox behavior: 14/14;
+- legacy partial and fully resolved option replay warns exactly once with
+  `planTrajectory:DeprecatedPerSeedWorkBudgetMultiplier`, is not also unknown,
+  and is absent from resolved options;
+- the public seven/eight-input, three-output BMTP restart tests remain green.
+
+Recursive result comparisons ignored only runtime fields and the declared
+`PerSeedWorkBudgetMultiplier` / `WorkLimitReached` migration. Every comparison
+passed at `1e-9`:
+
+| Case | Policy | Arrival (s) | Motion (deg) | Candidate wall (s) | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| Straight target alternating occlusion | fixed | 20.8695652174 | 13.5713266002 | 25.1877224 | exact; seed 5 selected |
+| Protected rectangle | earliest | 7.57454176632 | 11.4118613877 | 5.0345331 | exact |
+| Protected rectangle | balanced | 7.54855735896 | 11.2161345431 | 7.2766595 | exact; composite 18.764691902 deg |
+| Extreme outline | earliest | 5.81065318159 | 23.3457566443 | 72.80709 | exact |
+| Moving/deforming outline | earliest | 7.91666666667 | 40.2805670061 | 27.1419769 | exact |
+| Expected no path | earliest | NaN | NaN | 2.7477454 | exact `noValidatedSeed` |
+
+The controlled pre-edit completed-seed walls were 6.1394393 seconds for the
+earliest rectangle, 7.1542421 seconds for balanced, and 72.2275885 seconds for
+the extreme outline. Runtime is secondary and noisy; these comparisons show
+no material extra engine cost after both sides complete the same seeds. The
+operational cost comes from allowing formerly cut-off losing seeds to finish.
+In the serial default sweep, the extreme outline grew from the previous
+42.1929796-second cutoff run to 67.4136091 seconds. This unfavorable result is
+retained visibly and accepted under the declared gate.
+
+All 17 maintained examples then ran serially and headlessly with jerk enabled.
+Sixteen returned planner success plus independent example-validation success;
+`exampleNoPath` returned the expected independently validated
+`noValidatedSeed`. Every successful result was collision-free and passed
+velocity, acceleration, jerk and dynamics checks; applicable certificates
+passed. Exact lengths, durations, wall times and applicability are recorded in
+`benchmark.csv`. The fixed alternating-occlusion sweep selected seed 5 with
+27.950433436 degrees of seed polyline, 13.5713266002 degrees of final motion,
+and 20.8695652174 seconds duration. The extreme-outline sweep retained
+22.070643085 degrees of seed polyline, 23.3457566443 degrees of final motion,
+and 5.81065318159 seconds duration.
+
+The hidden failure-plot gate created one invisible figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free gate created two figures with
+`Visible="on"`. The complete test tree passed 115/115 with zero failed or
+incomplete, 79.2300998 seconds aggregate test duration, and 85.891126 seconds
+wall time.
+
+Several reporting/setup mistakes did not invalidate saved planner evidence:
+the first sandboxed MATLAB start failed before repository code and was rerun
+with the approved isolated process; early reporting expressions queried the
+obsolete top-level names `Trajectory`, `BalancedArrivalTradeoff_deg_s`, and
+`ExpandedStateCount`; the no-path inspection initially expected successful-
+trajectory validation on an expected failure; and one older moving/deforming
+artifact stored its result under `evidence.Result`. In each case the planner
+result had already been saved, recursive comparison had passed where
+applicable, and a fresh read-only artifact inspection corrected only the
+reporting expression. No required gate remains untested.
+
+## Dormant waypoint warm-start option removal - 2026-09-01
+
+The authoritative baseline was commit
+`93a28e62efc4e81f97368928e7a3c1a747665ec4` in detached worktree
+`tmp/bmtp-warmstart-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Tracked state was clean before editing except for the
+intentional untracked `bmtp_cleanup_handoff.md`. Every MATLAB command used a
+fresh private `MATLAB_PREFDIR`, `TEMP`, and `TMP`, and maintained examples ran
+one process at a time.
+
+Read-only caller tracing established that the optional
+`+obstacleAvoidance/+planner/ruckigWarmStart.m` file is absent and no planner
+or engine reads `WaypointWarmStartMode`,
+`RequestedWaypointWarmStartMode`, or `IsWaypointWarmStartAvailable`. The
+separate restart input/output on `trajectory/planTrajBmtp.m` and
+`trajectory/+bmtpEngine/solve.m` is documented and directly tested, so it was
+excluded from the change. The accepted edit removes 29 and adds 13 lines in
+`resolvePlannerOptions.m` (net -16), adds six net production lines to
+`examples/resolveExampleOptions.m` for one-release forwarding, and therefore
+removes ten production lines overall. The two restart files have zero diff.
+
+Focused verification completed as follows:
+
+- pre-change `testPlannerOptions`: 4/4 passed; defaults contained 24 fields;
+  explicit `passThrough` resolved to `none`, echoed requested mode and
+  unavailable state, and warned `planTrajectory:RuckigWarmStartUnavailable`;
+- post-change `testPlannerOptions`: 5/5 passed;
+- `testExampleInvariants`: 9/9 passed;
+- `testObstacleAvoidanceSandboxDiagnosis`: 11/11 passed;
+- `testBmtpEngine`: 12/12 passed, including public restart production/reuse;
+- MATLAB Code Analyzer: zero findings for `resolvePlannerOptions.m` and
+  `resolveExampleOptions.m`;
+- `git diff --check`: passed and no modified line exceeded 100 characters.
+
+Four repeated obstacle-free runs replayed the deprecated option through the
+public example boundary. Baseline and candidate success, termination,
+selection, histories, validation, and non-runtime diagnostics matched at
+`1e-9` after allowing only the declared removal of the three option fields.
+Warmed medians were 0.0777916 s baseline and 0.0835580 s candidate (+7.413%).
+An unsuppressed end-to-end call emitted exactly
+`planTrajectory:DeprecatedWaypointWarmStartOptions`, not an unknown-field
+warning, and returned 4.472135955 deg polyline/smoothed length and
+4.53112887415 s duration with collision and kinematic validation passing.
+
+The structurally different moving/deforming example passed with
+40.2805670061 deg polyline/smoothed length and 7.91666666667 s duration. The
+full serial headless matrix then ran all 17 maintained examples: 16 succeeded
+and independently validated, and `exampleNoPath` returned the expected
+validated `noValidatedSeed` failure. Exact metrics are in `benchmark.csv`.
+The hidden no-path plot created one figure titled
+`Azimuth/elevation motion plan | noValidatedSeed | seeds 1 | expanded 1 |
+rejected 2`. The visible obstacle-free run created two figures, both visible.
+The complete test tree passed 113/113 with zero failed or incomplete,
+85.8302862 s aggregate duration and 93.3293115 s wall time.
+
+One default `exampleStraightTargetAlternatingOcclusion` candidate run selected
+seed 5 while baseline and a candidate repeat selected seed 1. Saved summaries
+localized the difference to the existing wall-clock work budget: seed 5
+finished in the first candidate run but returned
+`seedWorkBudgetExhausted` in the others. Arrival and validation were identical;
+the seed-5 final motion was shorter (13.5713266002 deg versus
+13.5986641387 deg). A controlled baseline/candidate comparison with the
+existing `PerSeedWorkBudgetMultiplier=100` removed that cutoff variability.
+Both selected seed 5 with identical 27.950433436 deg polyline,
+13.5713266002 deg final motion and 20.8695652174 s duration. Recursive
+non-runtime result comparison passed; walls were 24.8525406 s and
+25.1338125 s (+1.132%). No planner setting was changed in production.
+
+Five setup/inspection failures produced no accepted planner evidence: the
+first candidate repeated-run command lost the comparator path after the runner
+reset MATLAB's path; the first comparator omitted
+`ElapsedPlanningTime_s` from its runtime exclusions; two inline commands were
+truncated by shell quoting before MATLAB executed; and the first seed-summary
+inspection queried a nonexistent top-level `SelectedSeedSource` field. Each
+was corrected in a fresh process. A post-result MATLAB connector shutdown
+exception occurred once after evidence was saved and the process still exited
+zero. No required gate remains untested for this option-only milestone.
+
+## BMTP immutable-SOCP-cache removal - 2026-09-01
+
+The frozen comparison baseline was
+`5c0a6c97bf68e9db03ace5281bda2e0f84243a8c` in detached worktree
+`tmp/bmtp-cleanup-baseline`; the candidate was branch
+`bmtp-cleanup-codex`. Every MATLAB invocation used a new private
+`MATLAB_PREFDIR`, `TEMP`, and `TMP`, and only one example process ran at a
+time.
+
+The focused comparison called `exampleTargetExitsObstacle` once for warmup and
+three timed repetitions in each worktree with
+`CollisionClearanceTolerance_deg=1e-4`, plane reuse enabled, two seeds, and all
+plots/animation disabled. A separate MATLAB process compared the saved records
+recursively while excluding runtime-only fields. All four pairs matched in
+planner success, independent validation, termination, selected seed/source,
+certificate decisions, non-runtime search/solver diagnostics, and sampled
+time, position, velocity, acceleration, and jerk. Maximum sampled numerical
+difference was exactly zero against the `1e-9` gate. Arrival was 24 s, selected
+polyline length was 21.7425467317 deg, and smoothed motion length was
+21.9416287312 deg. Warmed medians were 10.7475989 s baseline and 11.7573298 s
+candidate, a 9.395% candidate increase within the declared 25% limit.
+
+Focused and full test commands completed as follows:
+
+- `runtests('tests/testBmtpEngine.m')`: 12/12 passed in 3.4384 s;
+- `runtests('tests/testPlannerContract.m')`: 15/15 passed in 48.646 s;
+- `runtests('tests')`: 111/111 passed, zero failed or incomplete,
+  94.1434 s aggregate test duration and 106.8387038 s wall time;
+- MATLAB Code Analyzer: zero findings for both candidate and baseline
+  `trajectory/+bmtpEngine/solve.m`;
+- `git diff --check`: passed.
+
+All 17 maintained examples ran in separate serial headless MATLAB processes
+with jerk constrained. Sixteen returned planner success and independent
+example-validation success; `exampleNoPath` returned the expected
+`noValidatedSeed`, no validation warning, and documented empty trajectory
+metrics. Every successful motion was collision-free and passed continuous
+velocity, acceleration, jerk, and dynamics checks. Exact per-example lengths,
+durations, certificate status, and wall times are recorded in `benchmark.csv`.
+A second hidden `exampleNoPath` run created one search diagnostic figure titled
+with `noValidatedSeed`, `seeds 1`, `expanded 1`, and `rejected 2`. A visible
+`exampleObstacleFree` run passed and created two figures with `Visible="on"`.
+
+Three setup failures produced no planner evidence and were corrected before
+the recorded runs: MATLAB initially reported `System Error: File system
+inconsistency` until the user-authorized MathWorks support processes were
+stopped; the first temporary baseline harness lacked its primary-function
+`end`; the next omitted the separate `trajectory` package path; and the first
+visible smoke command had a shell-quoting parse error. Each corrected run used
+a new private MATLAB directory. No required gate remains untested for this
+cache-only milestone. The non-jerk motion configuration was not rerun because
+this change does not alter motion-profile construction or constraint meaning;
+the full test tree still exercised both BMTP and Ruckig owners.
+
+## Balanced travel-time and route-realization correction - 2026-08-31
+
+Baseline commit was `25757dcad64bff0ff57423132691109de94181e3` on
+`novel-rep`. All MATLAB commands added the repository and `trajectory` package
+to the path. Code Analyzer returned zero messages for every changed MATLAB
+production, example, sandbox, and test file. `git diff --check` returned no
+whitespace errors (Git emitted only the repository's CRLF conversion warnings).
+
+Focused suites passed after the implementation:
+
+- `testPlannerOptions`: 4/4;
+- `testBmtpEngine`: 11/11;
+- `testStaticPlanningProjection`: 2/2, including a structurally different
+  translating-rectangle projection and a lower-route no-overshoot assertion;
+- `testPlannerContract`: 14/14;
+- `testTimedBmtpPlanning`: 2/2;
+- `testRuckigWaypointMotion`: 2/2;
+- `testUnsupportedTimedTopologyPolicy`: 2/2;
+- `testObstacleAvoidanceSandboxDiagnosis`: 11/11.
+
+The first complete `runtests('tests')` invocation took 113.599 s and passed
+107/108. The single failure was
+`testTimedOpeningLowerBoundPassesAndPolicyRejects`: its certificate fixture had
+relied on the former implicit goal-time default even though the certificate is
+defined only for strict earliest arrival. The fixture now explicitly declares
+`earliestArrival`; its focused suite passes 3/3. After all planner, UI, example,
+test, and record edits, the final complete-suite rerun passed 108/108 with zero
+incomplete tests in 111.388 s.
+
+Supplied rogue cases, each independently validated:
+
+| case | policy | selected seed (deg) | motion (deg) | arrival (s) | result |
+| --- | --- | ---: | ---: | ---: | --- |
+| hidden Ruckig fallback | earliest | 248.239063 | 233.911502 | 104.261457 | BMTP success; six-segment Ruckig rejected before execution |
+| sine trajectory | earliest fixed clock | 146.976783 | 146.976783 | 70.344251 | one-sided family beats 153.472521-degree progress family |
+| static shrimp | balanced, 1 deg/s | 175.168391 | 175.780063 | 82.389498 | maximum elevation 39.288753 deg |
+| non-ideal moving circle | balanced, 1 deg/s | 227.905578 | 228.491135 | 144 | cost 372.491135 beats fast-detour cost 379.503102 |
+
+Every maintained example was run in a separate headless MATLAB process with
+jerk enabled, plots and animation disabled, and its metrics written to
+`benchmark.csv`. Sixteen returned independently validated successes. The sole
+expected failure, `exampleNoPath`, returned `noValidatedSeed`; a separate hidden
+plot run created one figure, one axes, four line objects, and three text objects.
+A separate visible `exampleObstacleAvoidance` run created one visible figure
+and independently validated. The alternating-occlusion example now explicitly
+uses BMTP because its route exceeds the intentional two-segment Ruckig limit.
+
+## Fixed-clock route-economy refinement - 2026-08-31
+
+The fixed-clock lateral excursion now refines its coarse failing/passing
+amplitude bracket with the full public trajectory validator. The direct
+physical clock, obstacle geometry, safety margin, motion limits, and final
+acceptance rules are unchanged. On the centered protected-circle gate, travel
+fell from 16.822181 to 16.700092 degrees while the validated 7.333333-second
+arrival remained unchanged. The retained path is within one percent of the
+16.638-degree tangent-and-arc geometric lower bound.
+
+The route-economy suite passed 3/3 for a circle, irregular static concave
+outline, and the same outline moving across the route. The focused planner and
+sandbox selection passed 38/38. All 17 maintained examples were run headlessly
+and recorded in `benchmark.csv`; all 16 expected-success examples passed
+independent collision and kinematic validation, and `exampleNoPath` returned
+the expected `noValidatedSeed`. A visible `exampleObstacleAvoidance` run
+created two figures and passed validation.
+
+The improvement adds full validation calls to the fixed-clock boundary search.
+The centered-circle focused run took 3.123552 seconds, but no identically
+instrumented pre-change runtime was retained, so no runtime ratio is claimed.
+The static-U maintained example still expands from a 34.942588-degree seed to
+a 40.255029-degree smooth motion; this change does not claim to solve that
+separate multi-waypoint smoothing inefficiency.
+
 Current worktree evidence is summarized in
-[Certified multi-axis direct progress — 2026-08-27](#certified-multi-axis-direct-progress--2026-08-27).
+[BMTP immutable SOCP cache - 2026-08-30](#bmtp-immutable-socp-cache---2026-08-30).
 Earlier sections are retained as historical checkpoints.
+
+## BMTP immutable SOCP cache - 2026-08-30
+
+The retained change caches only the per-seed trajectory-SOCP data that the
+profile showed was rebuilt unchanged: derivative, endpoint, and continuity
+matrices; equality right-hand side; objective; bound template; and
+second-order cones. Plane-dependent rows and the active horizon bound are
+reconstructed on every alternation in the original order. No solver
+tolerance, acceptance rule, iteration cap, restart policy, or warm start
+changed.
+
+### Production timing
+
+The production comparison excluded the temporary call ledger. MATLAB R2024b
+Update 4 used a separate isolated `MATLAB_PREFDIR` for each snapshot. Each
+snapshot received one discarded warm-up and three recorded repetitions in
+one session. The two Target modes were interleaved A/B, B/A, A/B.
+
+| Case and mode | Baseline raw times (s) | Baseline min / median (s) | Candidate raw times (s) | Candidate min / median (s) |
+| --- | --- | ---: | --- | ---: |
+| Target Exits, maintained BMTP `1e-7 deg` | 15.8698495, 15.6846937, 15.7403272 | 15.6846937 / 15.7403272 | 14.2601636, 13.4320352, 14.1946827 | 13.4320352 / 14.1946827 |
+| Target Exits, diagnostic BMTP `1e-4 deg` | 41.7338001, 42.8482502, 41.2565451 | 41.2565451 / 41.7338001 | 35.3456280, 35.3323942, 35.3340565 | 35.3323942 / 35.3340565 |
+| Straight Target, maintained Ruckig waypoint | 4.4833886, 4.2972902, 4.3850744 | 4.2972902 / 4.3850744 | 4.6562452, 4.5019727, 4.1759325 | 4.1759325 / 4.5019727 |
+| Straight Target, diagnostic BMTP override | 18.2344675, 19.5057861, 18.3498866 | 18.2344675 / 18.3498866 | 17.7112745, 18.0195969, 19.1323885 | 17.7112745 / 18.0195969 |
+
+The maintained Target Exits median improved by 9.82%; the `1e-4 deg`
+diagnostic median improved by 15.34%. The maintained Straight Target control
+still makes zero BMTP and zero `coneprog` calls; its 2.67% median movement in
+the unfavorable direction is wall variance, not a cache result. The explicit
+BMTP override improved by 1.80% at the median.
+
+A separate observational profile measured
+`solve>solveTrajectorySocp` self time falling from
+`2.882206656 s / 17 calls` to `0.394152606 s / 17 calls` for maintained
+Target Exits, and from `7.664537344 s / 42 calls` to
+`0.448020402 s / 42 calls` at `1e-4 deg`. The corresponding complete Target
+call structures stayed at 17 outer iterations / 138 conic calls and
+42 / 433. This locates the retained benefit in removal of immutable
+MATLAB-side reconstruction, not in a looser conic problem.
+
+### Exact formulation and answer checks
+
+A temporary same-call oracle constructed the legacy and cached trajectory
+formulations immediately before each trajectory `coneprog` call. It compared
+the complete objective, cones, sparse inequality and equality matrices,
+right-hand sides, lower bounds, and horizon-adjusted upper bounds exactly.
+It passed `testBmtpEngine`, all 17 trajectory formulations in the maintained
+Target 138-call run, all 42 trajectory formulations in the `1e-4 deg`
+433-call run, and the explicit Straight BMTP path including horizon expansion.
+The unchanged maximum-margin-plane solver was outside the cache and oracle.
+The oracle was removed before production timing and commit.
+
+The instrumented Target sequences also retained exact per-seed structure:
+default outer counts `1 / 5 / 11` and conic-call counts `2 / 45 / 91`;
+`1e-4 deg` outer counts `1 / 35 / 6` and calls `2 / 385 / 46`. All exit flags
+were `+1`, and neither Target mode used a horizon expansion or caller restart.
+
+A detached archive of committed baseline `747f46c` and the candidate were
+then run in separate MATLAB processes for all 17 maintained examples. Every
+example used jerk constraints and passed its independent example validation.
+The maximum candidate-minus-baseline arrival, selected-polyline, and
+smoothed-path deltas were each exactly zero, within the required `1e-9`.
+Success states, termination reasons, selected seeds, and aggregate BMTP
+outer-, trajectory-SOCP-, and plane-SOCP counts were also identical. Exact
+candidate metrics and walls are recorded in `benchmark.csv`.
+
+The explicit Straight BMTP timing diagnostic is subject to its wall-clock
+per-seed budget, so its observed outer and conic call counts varied between
+runs as they did before this change. Its arrival and both path lengths stayed
+exact. The maintained Straight example is the zero-BMTP Ruckig row and is not
+subject to that caveat.
+
+### Verification and remaining limits
+
+Final MATLAB Code Analyzer output contained zero findings in `solve.m`.
+Focused suites passed 31/31 tests: `testBmtpEngine`, `testPlannerContract`,
+`testPlannerStageTiming`, and `testArchitectureBoundaries`. A visible
+`exampleObstacleFree` run created two figures with five axes. A hidden
+expected `exampleNoPath` run passed its failure validation and created one
+search-diagnostic figure with one axis. A zero-second BMTP budget returned
+`WorkLimitReached = true`, made zero trajectory or plane conic calls, and
+returned the stable `noOptimizedFeasibleIterate` failure.
+
+The required staged gate ran at the supplied path in one MATLAB invocation
+with an isolated `MATLAB_PREFDIR`. Every stage passed, including the Rogue
+sentinel and the complete 94/94 test suite, in about 101 seconds of observed
+tool wall time.
+
+The cache does not cure the `1e-4 deg` seed-2 oscillation: that solve still
+reaches the 35-outer-iteration cap. It only makes each immutable reconstruction
+cheaper. Counted production increased from 11,975 to 12,015 lines. The 4,515
+line excess over 7,500 gives the existing allowance formula
+`0.25 * 4515 / 100 = 11.2875`, or 1,128.75%; no size-compliance claim is made.
+`solve.m` is 1,065 physical lines, up from 1,026, and 936 noncomment lines, so
+it remains above the 900-line target. Its patch contains more than 50 added
+lines because the original inline assembly was partitioned into immutable
+template construction and dynamic row assembly; the net physical growth is
+39 lines. A separate helper would broaden the internal source surface without
+reducing total production size, so the one-call-site invariant remains local.
+The exact-formulation oracle, 31 focused tests, 17 detached comparisons, and
+94-test gate are the retained checks for that larger edit.
+
+## BMTP conic profiler baseline - 2026-08-30
+
+Source was `novel-rep` at `cf6733d` plus a temporary observational ledger in
+`trajectory/+bmtpEngine/solve.m`. The ledger timed calls and retained exit
+flags; it did not change a matrix, solver option, tolerance, stopping rule,
+candidate, or selection decision. It is excluded from the measurement commit.
+
+MATLAB R2024b Update 4 ran in one process with a fresh `MATLAB_PREFDIR`.
+Plots, animation, and kinematic figures were disabled. Each case received one
+discarded warm-up, then three recorded repetitions. Default and `1e-4 deg`
+Target Exits runs were interleaved A/B, B/A, A/B. Profiled runs were separate
+because profiler overhead is not a wall-time baseline.
+
+| Case and mode | Raw wall times (s) | Min / median (s) | BMTP solves / outer iterations / `coneprog` calls | `coneprog` min / median total (s) |
+| --- | --- | ---: | ---: | ---: |
+| Target Exits, maintained BMTP `1e-7 deg` | 19.2216859, 17.6795313, 17.6197381 | 17.6197381 / 17.6795313 | 3 / 17 / 138 on every run | 9.9852706 / 10.0226759 |
+| Target Exits, diagnostic BMTP `1e-4 deg` | 49.1185155, 48.2423766, 51.4278263 | 48.2423766 / 49.1185155 | 3 / 42 / 433 on every run | 33.4553216 / 34.7197311 |
+| Straight Target, maintained Ruckig waypoint | 5.6869915, 5.2936647, 5.4580266 | 5.2936647 / 5.4580266 | 0 / 0 / 0 on every run | 0 / 0 |
+| Straight Target, diagnostic BMTP override | 21.2219000, 20.9824146, 21.2279523 | 20.9824146 / 21.2219000 | 5 / 31 / 195 on every measured run | 14.4342698 / 14.5378415 |
+
+The maintained Straight Target example explicitly uses
+`TrajectoryMethod="ruckigWaypoint"`. Its reported 5.5--6 second runtime is not
+inside `bmtpEngine.solve`; all three measured runs and its profile contained
+zero BMTP solves and zero `coneprog` calls. The BMTP row is an explicitly
+labeled diagnostic override, not a substitute maintained result.
+
+Every recorded result passed planner and independent validation. Exact result
+metrics were stable within each mode:
+
+| Case and mode | Arrival (s) | Selected polyline (deg) | Smoothed path (deg) |
+| --- | ---: | ---: | ---: |
+| Target Exits, `1e-7 deg` | 24 | 32.5940497846889 | 22.5540060420224 |
+| Target Exits, `1e-4 deg` | 24 | 32.5940497846889 | 22.5551638893269 |
+| Straight Target, maintained Ruckig waypoint | 20.8695652173913 | 20.7720160748463 | 20.7720160748463 |
+| Straight Target, BMTP override | 20.8695652173913 | 20.7720160748463 | 13.9954554403792 |
+
+### Decisive clearance comparison
+
+The median-wall representatives prove the slow mode takes a longer bounded
+alternation path; it is not a caller restart, a horizon retry, or one unusually
+slow `coneprog` call.
+
+| Target Exits seed | Default outer / calls / conic s | `1e-4` outer / calls / conic s | First collision-free iteration | Horizon expansions | Exit flags |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1, blocked direct edge | 1 / 2 / 0.0671718 | 1 / 2 / 0.0784015 | unavailable | 0 / 0 | all `+1` |
+| 2, visibility route | 5 / 45 / 3.8770388 | 35 / 385 / 31.1791465 | 2 / 2 | 0 / 0 | all `+1` |
+| 3, visibility route | 11 / 91 / 6.0410600 | 6 / 46 / 3.4621831 | 2 / 2 | 0 / 0 | all `+1` |
+
+Seed 2 is the entire adverse mechanism. At default clearance, its feasible
+trial durations were
+`15.2541832934, 13.0243197240, 12.9792492794, 12.9785763379 s` and the fifth
+outer iteration met the existing improvement tolerance. At `1e-4 deg`, it
+remained collision-free from iteration 2 onward but its duration oscillated
+between `12.9627946391` and `12.9825425646 s` after the initial descent. The
+one-sided consecutive-improvement test never fired, so the solve reached the
+hard 35-iteration cap. That added 30 trajectory calls and 310 maximum-margin
+plane calls. There is no caller restart loop; the third `restart` output is
+ignored by the adapter.
+
+Representative seed-2 per-iteration wall times were:
+
+- default: `1.0539504, 1.0535098, 1.0472976, 0.9020167, 1.0033996 s`;
+- `1e-4`: `1.1079259, 1.0703438, 1.0944885, 1.0700774,
+  1.0324632, 1.1893641, 1.0355548, 1.1546870, 1.2635565,
+  1.1751728, 1.1279355, 1.0952053, 1.1217369, 1.2456730,
+  1.1184008, 1.1314867, 1.0896716, 1.2302039, 1.1178210,
+  1.1632448, 1.0601267, 1.1149967, 1.2208972, 1.1131718,
+  1.0875190, 1.0931486, 1.1452155, 1.1337634, 1.2251764,
+  1.1707898, 1.0737866, 1.2017295, 1.1583726, 1.0717253,
+  1.0363081 s`.
+
+All 35 slow seed-2 trajectory calls exited `+1`; their per-call times ranged
+from `0.6240110` to `0.8759522 s` with `0.7168136 s` median. Its 350 plane
+calls all exited `+1`, ranged from `0.0110804` to `0.0297394 s`, and had
+`0.01594915 s` median. The default seed-2 trajectory and plane medians were
+`0.6687750 s` and `0.01448765 s`. Individual calls were therefore only
+modestly slower; the 8.56-times call-count increase dominates the 2.78-times
+wall increase.
+
+### MATLAB profiler self time inside `trajectory/+bmtpEngine`
+
+| Target Exits function | Default self / calls (s) | `1e-4` self / calls (s) |
+| --- | ---: | ---: |
+| `solve>solveTrajectorySocp` | 2.882206656 / 17 | 7.664537344 / 42 |
+| `solve>evaluateBezier` | 0.596560112 / 402 | 1.228873507 / 1017 |
+| `createCoordinateTolerances>updateScale` | 0.506126410 / 102858 | 0.516137303 / 103668 |
+| `createCoordinateTolerances` | 0.237270705 / 25761 | 0.246332501 / 26031 |
+| `solve>controlIndexOf` | 0.147970703 / 41536 | 0.318927702 / 115466 |
+| `solve` | 0.068327601 / 3 | 0.079272500 / 3 |
+| `solve>verifyPlane` | 0.053696001 / 301 | 0.107748601 / 571 |
+| `solve>findSampledCollisionPairs` | 0.042231701 / 20 | 0.060788000 / 45 |
+| `solve>fixedPlaneRows` | 0.038245901 / 120 | 0.090562401 / 380 |
+| `solve>solveMaximumMarginPlane` | 0.028016301 / 121 | 0.071504100 / 391 |
+
+The default profile made 138 conic calls totaling `11.6722840 s`; the `1e-4`
+profile made 433 totaling `32.7149386 s`. `solveTrajectorySocp` self time is
+the largest engine-owned cost outside `coneprog` and scales with rebuilding
+the same endpoint, continuity, derivative, bound, and cone structures on each
+outer iteration. This supports one bounded behavior-preserving experiment:
+reuse only that immutable per-seed SOCP template while rebuilding the
+plane-dependent rows and horizon bounds exactly as before. The change must be
+reverted if any maintained-example arrival or either path length moves by more
+than `1e-9`, if solver call/exit structure changes, or if warmed repeated wall
+time does not improve without a regression in the representative BMTP cases.
+
+Measurement verification before the profile session: MATLAB Code Analyzer
+reported zero findings in the temporary ledger and harness, and
+`testBmtpEngine` passed 7/7. The measurement commit changes no production
+code, so the recorded production size remains 11,975 counted lines, 4,475
+above 7,500. The unchanged allowance formula is
+`0.25 * 4475 / 100 = 11.1875`, or 1,118.75%; this measurement milestone makes
+no size-compliance claim.
+
+## Ruckig-to-BMTP collision gate, step 2 — 2026-08-30
+
+- The standalone certificate first tries an exact constant separator, then
+  uses BMTP's degree-one maximum-margin conic form and directly replays the
+  validator's Bernstein-product, clearance, roundoff, and normal-norm checks.
+- The final focused run passed `testBmtpWarmStartConversion` 5/5 and
+  `testArchitectureBoundaries` 9/9. Code Analyzer reported zero findings in
+  the certifier and both changed tests. The final code edit also passed
+  `gate(1)` with unchanged Two-U, README quick-start, and no-path sentinels.
+- The decisive census used maintained static cases and route candidates. The
+  intermediate Ruckig request used earliest arrival with a 3,600-second upper
+  horizon so the final request horizon did not confound geometric conversion.
+  Every curve in the denominator independently passed the public validator
+  against the original static obstacles before conversion.
+- Eight curves converted. Per-curve maximum errors and certificate results:
+  Obstacle Avoidance seeds 2 and 3, `1.74313715049989e-5 deg`, both failed;
+  Static U seeds 2 and 3, `7.85168079719939e-5 deg`, both failed; Target Exits
+  seed 2, `1.34309047285578e-5 deg`, passed; Target Exits seed 3,
+  `5.68171630073286e-5 deg`, failed; Alternating Slalom seed 2,
+  `9.50061068454221e-6 deg`, failed; Dense Concave seed 2,
+  `9.59122759523563e-6 deg`, failed.
+- The collision-certificate fraction was therefore `1/8 = 12.5%`, below the
+  predeclared one-third kill threshold with the required denominator of at
+  least six. The experiment stopped before planner wiring. No outer-iteration
+  or warm/cold timing result was run.
+- A constant-plane-only preliminary census produced 0/8 but was retracted
+  because it was more restrictive than the specified degree-one check. The
+  recorded 1/8 result is the corrected measurement.
+- The five cold maintained-example runs used jerk constraints and all passed
+  independent validation, collision, and kinematic checks. Their exact result
+  rows are appended to `benchmark.csv`; they are not warm-start benchmarks.
+- The certifier contains 382 physical lines and 323 counted production lines.
+  Experimental production is now 11,975 counted lines, 4,475 above the
+  literal 7,500 target. The allowance formula is
+  `0.25 * 4475 / 100 = 11.1875`, or 1,118.75%. The kill result provides no
+  runtime reduction and makes no size-compliance claim.
+
+## Ruckig-to-BMTP warm-start conversion, step 1 — 2026-08-30
+
+- Source before the experiment: `novel-rep` at `e842356`.
+- The converter is standalone and has no planner caller. It uses a scalar
+  equal-span time, Chebyshev-Lobatto least-squares fits, and a denser error
+  grid augmented with source switching times.
+- The final `gate(1)` run retained Two-U at `21.6333333333333 s`, the README
+  quick start at `7.5745417663213 s`, and `exampleNoPath` as
+  `noValidatedSeed`.
+- `testBmtpWarmStartConversion` passed 2/2 and
+  `testArchitectureBoundaries` passed 9/9. MATLAB Code Analyzer reported zero
+  findings in the converter, its test, and the updated architecture test.
+- One six-phase Ruckig fixture measured a `4.96506830649455e-15 deg`
+  single-phase-span maximum at degree 7. The same degree with two uniform
+  multi-break spans measured `0.000534264339868523 deg`; degree 16 measured
+  `3.52475369970282e-5 deg`. No unmeasured error bound is asserted.
+- `auditProductionSize(20000)` reported 74 files and 11,652 counted lines.
+  Removing the new converter's 128 counted lines reproduces the exact 11,524
+  branch baseline. Against the literal 7,500-line target, the current excess
+  is 4,152 lines and the allowance formula is
+  `0.25 * 4152 / 100 = 10.38`, or 1,038%. No runtime reduction has yet been
+  measured, so this experimental commit does not claim size compliance.
+- Two sandboxed MATLAB startups failed before loading code with the documented
+  filesystem-inconsistency error despite isolated preferences. Fresh isolated
+  preference directories outside the sandbox completed every result above.
+- `benchmark.csv` was not changed because the converter is not planner-wired
+  and no warm-start planner benchmark was executed.
 
 ## Certified multi-axis direct progress — 2026-08-27
 
@@ -4426,3 +5148,1886 @@ mode (2/3 retained), which was corrected. The next gate exposed a 0.308685-secon
 post-solver overrun, which led to the retained two-second finalization reserve.
 The final gate retained 3/3 paths with every per-seed elapsed time below 60
 seconds and an independently valid selected result.
+
+## Optional non-stopping waypoint warm start — 2026-08-28
+
+Source under test was `HS3-planner` at
+`f0d12f8+pass-through-worktree`. MATLAB Code Analyzer reported zero findings
+in the option resolver, planner, pass-through helper, and HS3 candidate solver.
+Focused tests passed: `testPlannerOptions` 4/4, `testRuckigEngine` 10/10,
+`testPassThroughWaypointWarmStart` 1/1, and `testHs3Planner` 64/64 in
+64.569466 test seconds. One earlier HS3 suite attempt produced 63/64 only
+because the test harness disabled all warnings while a test expected an
+unknown-option warning; rerunning with normal warning state passed 64/64.
+
+Serial headless A/B evidence with jerk enabled:
+
+| Example / mode | Planner / validation | Polyline deg | Motion deg | Duration s | Collision / certificate | Wall s |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle`, default | 1 / 1 | 34.9425880405 | 41.5363500661 | 22.6308876389 | 1 / 1 | 13.717231 |
+| `exampleStaticUShapedObstacle`, pass-through | 1 / 1 | 34.9425880405 | 41.2461615078 | 21.9798565134 | 1 / 1 | 16.139615 |
+| `exampleTwoOpposingUVisibilityGraph`, default | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 5.977472 |
+| `exampleTwoOpposingUVisibilityGraph`, pass-through | 1 / 1 | 24.035784715 | 24.4189853364 | 21.9090835611 | 1 / 1 | 9.375114 |
+
+The separately recorded four-sweep experiment reached the best validated
+single-U arrival of 21.4038773205 seconds with a 41.056539875-degree motion,
+but required 34.3518164 seconds for the full profile, repair, polish, and
+validation pipeline. It remains benchmark evidence rather than a default.
+
+## Nonuniform segment-placement gate — 2026-08-28
+
+Focused verification passed `testNonuniformHs3Mesh` 6/6,
+`testHs3PolynomialOperations` 10/10,
+`testPassThroughWaypointWarmStart` 1/1, the Ruckig signature/mesh tests 4/4,
+and `testHs3Planner` 64/64. The first combined polynomial-test command omitted
+the repository root from MATLAB's path and produced package-resolution harness
+errors. A fresh process with both package roots passed all 10 tests.
+
+Single-U placement results, all independently valid:
+
+| Mesh | Segments | Duration (s) | Gap from uniform 20 (s) |
+| --- | ---: | ---: | ---: |
+| Uniform | 20 | 21.4038773205 | 0 |
+| Ruckig signature | 19 | 21.4852160195 | 0.0813386990 |
+| Uniform | 19 | 21.6190328443 | 0.2151555238 |
+| Ruckig signature | 14 | 21.8372833147 | 0.4334059942 |
+| Jerk-fit coarsened | 14 | 21.8814530191 | 0.4775756986 |
+
+Placement carries useful information, but no tested 14- or 19-segment mesh
+reproduced the 21.4038773205-second reference. The adaptive placement policy
+was removed from the pass-through pipeline; the general nonuniform HS3
+representation and its tests remain.
+
+Fresh headless static gates used `WaypointWarmStartMode="passThrough"` and
+finite jerk limits:
+
+| Example | Jerk | Planner / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / certificate | Wall (s) |
+| --- | ---: | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle` | 1 | 1 / 1 | 34.9425880405 | 41.2433751280 | 21.9798547914 | 1 / 1 | 17.4851590 |
+| `exampleTwoOpposingUVisibilityGraph` | 1 | 1 / 1 | 24.0357847150 | 24.4189852783 | 21.9090835611 | 1 / 1 | 9.4036758 |
+| `exampleDenseConcaveObstacle` | 1 | 1 / 1 | 12.7007215595 | 14.0108528198 | 8.60599186623 | 1 / 1 | 11.0079427 |
+
+## Adaptive static hybrid verification — 2026-08-28
+
+Source under test was `HS3-planner` at
+`f0d12f8+adaptive-hybrid-worktree`. The retained decisions are based only on
+route geometry, resolved options, a Ruckig timing profile, validated HS3
+activity, and continuous-motion validation. The rejected 40-segment dense
+probe (8.50653509124-second arrival, 95.5607259-second wall) and the rejected
+Single-U clustered shortcut (21.8151192504 seconds, 29.5015091-second wall)
+remain recorded here because neither meets the bounded runtime objective.
+
+Retained serial record gates, jerk enabled:
+
+| Example | Planner / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.4882254189 | 21.2540286325 | 1 / 1 | 10.4296843 warm; 17.7360472 cold |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 23.8537208838 | 24.4031321189 | 21.7254621235 | 1 / 1 | 20.2258638 |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.7561799502 | 8.55509702317 | 1 / 1 | 9.9209119 warm; 17.9190903 cold |
+
+These improve the declared prior hybrid records: Single U
+21.4038773205 seconds / 34.3518164 seconds wall, Two U
+21.7309195016 seconds / 67.482064 seconds wall, and dense concave
+8.5551003021 seconds / approximately 13.5 seconds wall. The warm/cold labels
+are intentional; process startup and first-use solver work are not hidden.
+
+Deterministic random static A/B gates:
+
+| Seed / obstacles | Pass-through duration / wall (s) | Ordinary duration / wall (s) | Outcome |
+| --- | ---: | ---: | --- |
+| 101 / 2 | 15.8643105795 / 11.2243794 | 16.5995347238 / 5.3768225 | 0.735224-second gain for 5.847557 seconds extra work |
+| 303 / 3 | 15.7631244134 / 10.5809183 | 15.7631244134 / 6.9965109 | measured-potential gate skipped repair/polish |
+| 404 / 3 | 16.0903836179 / 3.2277611 | 16.0903836179 / 5.0975473 | measured-potential gate skipped repair/polish |
+
+All six random trajectories above passed independent collision and kinematic
+validation. Seed 202 also matched ordinary arrival, path, and 20-segment mesh;
+its earlier serial walls were 7.719 seconds pass-through and 9.588 seconds
+ordinary and are treated only as order-sensitive generalization evidence.
+
+The broader maintained static-family pass-through sweep produced:
+
+| Example | Success / example validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleAlternatingSlalom` | 1 / 1 | 16 | 17.2251036845 | 12.1510445858 | 1 / 1 | 13.0849257 |
+| `exampleNoPath` | 0 / 1 expected failure | NaN | NaN | NaN | NaN | 5.8366406 |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4466826495 | 7.57952066338 | 1 / 1 | 10.7509637 |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 | 4.946881 |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.2394635087 | 24.6373466428 | 6.3679977502 | 1 / 1 | 55.740453 |
+
+Pass-through matched the current ordinary trajectory on alternating slalom,
+the basic obstacle, obstacle free, and the extreme static outline. It does not
+beat the older `325-full-suite` alternating-slalom and extreme-outline records,
+so no all-history/all-branch record claim is made.
+
+Verification commands and outcomes:
+
+- Code Analyzer: zero findings in the modified planner, pass-through solver,
+  search classifier, activity mesh, HS3 candidate solver, and HS3 engine.
+- `testHs3Planner`: 64/64 passed.
+- Pass-through classification, warm-start, activity-mesh, nonuniform-mesh,
+  and Ruckig signature/refinement suites: 18/18 passed.
+- `testPlannerOptions` and `testRuckigEngine`: 14/14 passed.
+- Total focused result: 96/96 passed.
+- The complete HS3 suite's deforming-obstacle case emitted extensive
+  near-singular `fmincon` warnings but completed successfully. This remains a
+  visible conditioning weakness rather than a suppressed or passing claim.
+
+## Certified continuation and random HS3 milestone — 2026-08-28
+
+The broad near-direct shortcut was rejected after it returned an intermediate
+25.92-second Two-U result instead of reaching its declared final duration.
+The retained condition is narrower and input-driven: one active endpoint axis,
+monotone progress on that axis, route length within 2% of direct displacement,
+and at least two lateral sign reversals. An incomplete continuation ladder is
+now rejected rather than silently promoting its last feasible intermediate.
+
+Fresh serial static gates, jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Planner wall (s) |
+| --- | --- | ---: | ---: | ---: | --- | ---: |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0193197983 | 16.0904389848 | 10.7625 | 1 / 1 | 4.7953407 |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.4882254189 | 21.2540286325 | 1 / 1 | 11.7809874; 19.8996114 fresh post-cleanup |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 23.8537208838 | 24.4031321189 | 21.7254621235 | 1 / 1 | 17.0938997 |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7007215595 | 13.7561799502 | 8.55509702317 | 1 / 1 | 12.9727886 |
+
+The alternating result is an HS3 fixed-time solution, not a Ruckig-only
+fallback. It improves the current ordinary/hybrid 12.1510445858-second arrival,
+17.2251036845-degree motion, and 13.0849257-second wall record. The other three
+protected static results remain numerically unchanged. Single-U fresh-process
+runtime is still variable and is not claimed below ten seconds.
+
+Three predeclared deterministic random static A/B cases prove the first
+milestone reaches HS3 without unbounded work:
+
+| Seed / obstacles | Hybrid arrival / wall (s) | Ordinary arrival / wall (s) | Hybrid overhead (s) | Selected HS3 |
+| --- | ---: | ---: | ---: | ---: |
+| 101 / 2 | 15.8643105795 / 11.4773750 | 16.5995347238 / 5.1656831 | +6.3116919 | attempted / feasible / validated |
+| 303 / 3 | 15.7631244134 / 12.7055879 | 15.7631244134 / 8.5891386 | +4.1164493 | attempted / feasible / validated |
+| 404 / 3 | 16.0903836179 / 3.9028172 | 16.0903836179 / 6.2603182 | -2.3575010 | attempted / feasible / validated |
+
+All six random trajectories passed independent collision and kinematic
+validation. Hybrid overhead stayed below the declared 10--15 second ceiling in
+all three cases; seed 101 improved arrival by 0.7352241443 seconds, while 303
+and 404 matched the ordinary HS3 solution exactly.
+
+Post-cleanup verification reported zero Code Analyzer findings in the six
+hybrid planner files, 16/16 hybrid/nonuniform focused tests, 14/14 option and
+Ruckig tests, and 64/64 HS3 planner tests. The full HS3 run took 169.75339
+seconds and again exposed the deforming-obstacle near-singular warning flood.
+Against `f0d12f8`, production growth is 2,123 physical added lines and 131
+removed lines (1,992 net); excluding blank and comment-only additions gives
+1,795 executable physical lines. This is below two thousand net lines but is
+still a material implementation-size cost, so no small-change claim is made.
+
+## Bounded moving/deforming runtime closeout — 2026-08-28
+
+The final retained source contains none of the runtime experiments below:
+
+- exact obstacle-query caching had only a 9.0167% theoretical hit fraction;
+- failed stage-two recovery cost 0.307568 seconds and remained infeasible;
+- initial 20-segment topology escalation took 192.026619 seconds and reached
+  40 segments, despite returning a valid 7.941370833-second motion;
+- a 50-iteration coarse pass returned a fully valid 7.962868741-second motion
+  in 56.098832 planner seconds, but its 43.132171247-degree smooth length was
+  0.059904737 degree longer than the clean 43.072266510-degree reference.
+
+The last candidate was rejected because its 8.3% apparent runtime improvement
+was below a robust retention threshold under the observed process variance and
+regressed path length by 0.139%. The production hunk was removed before final
+verification.
+
+Post-removal checks:
+
+- Code Analyzer reported zero findings for `plan.m`.
+- The seven focused planner/hybrid/mesh/option test files passed 93/93 in
+  137.442642 seconds. The deforming test again emitted the known near-singular
+  `fmincon` warning flood; no warning was suppressed.
+- `exampleStaticUShapedObstacle`, jerk enabled: success/validation 1/1,
+  34.942588041-degree polyline, 40.520436104-degree motion,
+  21.254028732-second arrival, collision/kinematic 1/1, 30.260707-second wall.
+- `exampleTwoOpposingUVisibilityGraph`, jerk enabled: success/validation 1/1,
+  23.853720884-degree polyline, 24.403132126-degree motion,
+  21.725462124-second arrival, collision/kinematic 1/1, 30.073726-second wall.
+- Visible `exampleObstacleFree`, jerk enabled: success/validation 1/1,
+  4.472135955-degree polyline and motion, 4.531128874-second arrival,
+  collision/kinematic 1/1, four figures, frame stride 20.
+- `exampleNoPath`, jerk enabled: expected success 0 / validation 1,
+  unavailable path and arrival metrics, `noValidatedSeed`, and two search-
+  diagnostic figures.
+
+The final production line audit after consolidation is +2,132/-133 physical
+lines versus `f0d12f8`, or +1,999 net, with 1,807 nonblank/non-comment
+additions. Duplicate validation in the one-caller activity-mesh policy and two
+derivable classification/activity diagnostic fields were removed. The
+activity decision, nonuniform mesh, and HS3 candidate behavior remain intact.
+
+Post-consolidation verification:
+
+- 3/3 activity-mesh tests, then 8/8 activity/classification/pass-through tests;
+- all 17 maintained examples run serially: 16 independently validated
+  successes and one independently validated expected no-path result;
+- exact retained moving/deforming result: 40-degree selected polyline,
+  43.0722665096-degree motion, 7.96286792066-second arrival, collision and
+  kinematic certificates passed, 55.7054096-second planner time;
+- visible obstacle-free smoke: 4.472135955-degree path and motion,
+  4.53112887415-second arrival, four figures, frame stride 20;
+- no-path smoke: `noValidatedSeed`, three expanded states, two diagnostic
+  figures;
+- final focused suite: 93/93 passed in 115.924289 seconds. This duplicate run
+  suppressed only the already-recorded near-singular MATLAB console flood;
+  the prior unsuppressed 93/93 run passed in 137.442642 seconds.
+
+Post-consolidation random A/B evidence, all selected hybrid results explicitly
+HS3-attempted, optimizer-feasible, independently validated, collision-free,
+and kinematically certified:
+
+| Seed | Hybrid arrival / wall (s) | Ordinary arrival / wall (s) | Hybrid wall delta (s) |
+| ---: | ---: | ---: | ---: |
+| 101 | 15.8643105795 / 17.7135074 | 16.5995347238 / 8.4561331 | +9.2573743 |
+| 303 | 15.7631244134 / 15.9672482 | 15.7631244134 / 10.8656958 | +5.1015524 |
+| 404 | 16.0903840021 / 5.2379460 | 16.0903840021 / 8.3214712 | -3.0835252 |
+
+Thus the current worktree proves the first milestone on three deterministic
+random static fields without exceeding the 10--15-second hybrid overhead cap.
+Seed 101 also proves the second milestone with a 0.7352241443-second arrival
+gain for 9.2573743 seconds of additional wall work. This is bounded evidence,
+not a claim of global path or time optimality.
+
+The final post-consolidation Single-U A/B directly proves simultaneous metric
+improvement on the same physical request:
+
+| Mode | Arrival (s) | Motion length (deg) | Wall (s) | HS3/validation |
+| --- | ---: | ---: | ---: | --- |
+| Ruckig/HS3 hybrid | 21.2540287320 | 40.5204361036 | 28.7366170 | attempted, feasible, passed |
+| Ordinary HS3 | 22.6308871020 | 41.5367249083 | 40.8732228 | attempted, feasible, passed |
+
+The hybrid delta is -1.3768583700 seconds arrival, -1.0162888047 degrees
+motion length, and -12.1366058 seconds wall. Both rows used the same maintained
+example, finite jerk limits, and independent validation. The ordinary solve's
+near-singular warnings remain visible in the execution record.
+
+## Four-File Hybrid Cleanup Verification
+
+The cleanup scope was limited to:
+
+- `+obstacleAvoidance/+planner/classifyPassThroughSearch.m`;
+- `+obstacleAvoidance/+planner/createHybridActivityMesh.m`;
+- `+obstacleAvoidance/+planner/solvePassThroughSeedCandidate.m`;
+- `trajectory/+hs3Engine/+polynomial/resolveSegmentMesh.m`.
+
+Measured size changed from 815 to 758 physical lines and from 629 to 574
+nonblank, non-comment lines. No public option, result field, diagnostic, or
+validation rule was removed.
+
+The complete production diff versus `main` is +2,075/-133 physical lines, or
++1,942 net. No replacement production file was introduced by the cleanup.
+
+Verification performed after the final refactor:
+
+- MATLAB `checkcode(..., "-id")`: zero messages on all four files;
+- focused activity, classification, pass-through, and nonuniform-mesh tests:
+  14/14 passed;
+- full `tests` tree with subfolders: 164/164 passed, zero failed or incomplete,
+  84.9595026 aggregate test seconds;
+- all 17 maintained examples in separate serial MATLAB processes with plots
+  and animation disabled: 16 validated successes and the expected validated
+  `noValidatedSeed` result;
+- exact Single-U result: 34.9425880405-degree polyline,
+  40.5204361036-degree motion, 21.2540287320-second duration;
+- exact Two-U result: 23.8537208838-degree polyline,
+  24.4031321261-degree motion, 21.7254621235-second duration;
+- exact moving/deforming result: 40-degree polyline,
+  43.0722665096-degree motion, 7.96286792066-second duration;
+- default visible obstacle-free run: validation passed and four figures;
+- expected no-path diagnostic run: validation passed, three expanded states,
+  and two figures.
+
+Every successful example passed collision, workspace, velocity, acceleration,
+and jerk checks. The cleanup preserves observed behavior; it does not prove
+global optimality or a wall-time improvement.
+
+## Restored Ruckig Route Integration Verification — 2026-08-29
+
+The exact historical state-to-state Ruckig engine and `planTrajRuckig` facade
+were restored under `trajectory/+ruckigEngine`. Obstacle routing remains in the
+planner. The new general `TrajectoryMethod="ruckigWaypoint"` option composes
+exact Ruckig state-to-state segments along deterministic route seeds, exposes
+`ruckigWaypointComposition` provenance, and does not silently fall back to
+BMTP. This local engine is not represented as Ruckig Pro's nonconvex waypoint
+solver or as globally waypoint-time-optimal.
+
+Verification performed after the adapter and Straight Target wiring:
+
+- MATLAB `checkcode(..., "-id")`: zero messages on the modified production
+  sources and maintained Straight Target example;
+- exact engine suite: 10/10 passed;
+- engine, adapter, options, and architecture focus: 24/24 passed;
+- full `tests` tree: 78/78 passed, zero failed or incomplete, in
+  26.8828596 seconds;
+- structurally different static-box detour: earliest and fixed arrival both
+  passed independent collision and kinematic validation;
+- Straight Target with jerk enabled: planner success and independent validation
+  passed; 20.7720160748-degree selected polyline and motion length;
+  20.8695652173913-second exact fixed duration; collision, continuous
+  kinematics, and continuous collision resolution passed; 5.8749177-second
+  planner time and 10.1040635-second full example wall;
+- production-size audit rule: 11,167 nonblank, noncomment MATLAB lines across
+  67 production files, above the 4,999-line ceiling by 6,168 lines.
+
+The Ruckig integration therefore meets the explicit Straight Target engine and
+physical-clock gate, but does not meet the historical 13.678271908-degree path,
+2.0964864-second wall, or repository-size records.
+## Explicit timed-topology policy and moving BMTP projection — 2026-08-31
+
+Baseline on `f383ae4` used a static U-shaped detour plus a distant moving
+rectangle. All three topology seeds first returned
+`unsupportedTimedTopology`, all three silently invoked Ruckig, and seed 3
+returned a 31.4265 s, 34.9426 deg stop-at-waypoint success.
+
+After the change:
+
+- default `UnsupportedTimedTopologyPolicy="fail"` preserved
+  `unsupportedTimedMultiWaypointRoute` and made zero Ruckig attempts when
+  `MaximumNlpIterations=1` forced the unsupported boundary;
+- explicit `"ruckigStopAtWaypoints"` reproduced the 31.4265 s recovery and
+  reported the original reason, method, interior times, zero interior
+  velocity/acceleration states, and forced-rest policy;
+- the normal distant-mover request succeeded through static BMTP at
+  20.8454 s and 39.5987 deg only after validation against the complete moving
+  scene;
+- a translating-rectangle detour succeeded through the conservative swept
+  BMTP projection at the fixed 20 s horizon, with 10.3005480783 deg selected
+  polyline, 10.7117850149 deg motion, 0.0657896049 deg minimum clearance, and
+  complete collision and kinematic validation.
+
+Verification performed after the final implementation:
+
+- Code Analyzer reported zero messages on all modified MATLAB sources;
+- focused option, Ruckig, sandbox, projection, and fallback-policy tests
+  passed;
+- the complete test tree passed 98/98 in 69.6771 s;
+- all 17 maintained examples ran serially and headlessly: 16 planner and
+  independent-validation successes plus the expected validated
+  `exampleNoPath` failure;
+- a visible `exampleObstacleFree` run passed with jerk enabled, 4.472135955
+  deg polyline and motion length, and 4.53112887415 s duration;
+- the unchanged static-U and moving-barrier sentinels returned
+  20.712447786 s and 10.0903015137 s respectively.
+
+The moving extension is deliberately described as a conservative static
+projection, not a time-dependent separating-plane method. Time-cell BMTP and
+wait-plus-detour support remain unimplemented and visible in the branch
+assessment.
+
+## HTML sandbox diagnosis-bundle export — 2026-08-31
+
+The live HTML sandbox now enables **Save diagnosis bundle** only after a
+matching live MATLAB result. `POST /plan` retains the unprojected public result
+and exact canonical inputs in a server-owned
+`obstacleAvoidanceSandboxDiagnosis-v2` MAT cache; `POST /bundle` returns that
+cache only for the matching request identifier. Editing the scene, resetting,
+or loading a result file clears browser eligibility, and stopping the server
+deletes its cache. Offline JSON handoff remains bounded and does not claim it
+can reconstruct omitted solver diagnostics.
+
+Code Analyzer reported zero messages across the three changed MATLAB owners
+and the focused test. `testOfflineSandboxDiagnosisBundle` passed 2/2 in
+0.46553 seconds. A live loopback smoke produced a successful independently
+validated obstacle-free plan, downloaded a 452,512-byte MAT response with the
+MATLAB content type, and rejected a stale request identifier with HTTP 409.
+`git diff --check` passed. A separate MATLAB reload inspection could not start
+because the environment reported `System Error: File system inconsistency`
+while several pre-existing MATLAB processes were active; the generated MAT
+file had already been written and transported successfully. The in-app browser
+also prohibited navigation to the local `file://` page, so visual layout was
+not exercised through that browser surface.
+
+## Balanced Wear Objective And Newheart Exact-Clock Repair — 2026-08-31
+
+The `newheart.mat` diagnosis bundle already requested `balancedArrival` at
+1 deg/s, so its visible S-bend was not stale UI state or an earliest-arrival
+replay. The selected alternating progress polynomial cost 201.070948503 deg at
+the certified 100.970425693 s physical time floor. A static visibility seed was
+199.1997663 deg, proving the selected motion retained avoidable travel.
+
+The retained implementation generalizes progress-polynomial composition to a
+validated input basis and derives normalized one-sided beta bases from the
+direct collision progress. It keeps the physical direct clock and enumerates
+only amplitudes inside continuous Bernstein workspace, velocity, acceleration,
+and jerk bounds. Sampled occupancy rejects proposals but never accepts them;
+the public continuous validator remains authoritative. Actual path length
+ranks all fixed-clock families.
+
+Measured results after the final change:
+
+- `newheart`, balanced rate 1: success/validation 1/1,
+  199.268051966 deg selected polyline and motion, 100.970425693 s,
+  collision/kinematic 1/1, `oneSidedBeta_1_4`, 65.7788 planner seconds;
+- prior `newheart` alternating motion: 201.070948503 deg at the same clock;
+- `sinetraj`: success/validation 1/1, 146.928879089 deg,
+  70.344250998 s, collision/kinematic 1/1;
+- `shrimp`, balanced rate 1: success/validation 1/1, 175.703912280 deg,
+  81.455142283 s, collision/kinematic 1/1;
+- `non-ideal`, balanced rate 1: success/validation 1/1,
+  228.491135293 deg, 144 s, collision/kinematic 1/1;
+- `hiddenruckigfallback`: success/validation 1/1,
+  233.911502487 deg, 104.261456926 s, collision/kinematic 1/1, BMTP selected.
+
+The structurally different near-start rectangle regression selected a
+20.493950992-deg one-sided motion instead of its 20.585690610-deg validated
+alternating motion, at the same 12.5 s physical clock. Its lateral offset never
+crossed the direct chord.
+
+Verification performed after the final source edits:
+
+- Code Analyzer: zero findings across all 22 changed MATLAB files;
+- focused BMTP engine: 12/12 passed;
+- focused near-start rectangular route-economy regression passed;
+- complete test tree: 110/110 passed, zero failed or incomplete,
+  126.782359 s wall and 122.514226 s aggregate test duration;
+- all 17 maintained examples in separate serial headless MATLAB processes:
+  16 validated successes and expected `exampleNoPath` failure;
+- every successful example passed collision, workspace, velocity,
+  acceleration, and jerk checks;
+- visible `exampleObstacleFree`: success/validation 1/1, two figures,
+  4.472135955 deg and 4.531128874 s;
+- `git diff --check` was run after record updates.
+
+After the 17-example pass, repeated fresh MATLAB launches for the hidden
+failure-figure smoke returned the environment-level fatal startup message
+`System Error: File system inconsistency`. The headless no-path example itself
+had just returned `noValidatedSeed` without an example-validation warning. An
+earlier check on the same worktree had already created its hidden diagnostic
+figure; no failure plotting file changed in this final exact-clock repair.
+
+## HTML diagnosis replay and velocity-vector motion - 2026-08-31
+
+This change affects the HTML authoring and loopback transport, not planner
+selection or trajectory generation. Verification after the final source edits:
+
+- Code Analyzer returned zero findings for `replayDiagnosisBundle.m`,
+  `serveSandbox.m`, and the focused diagnosis-bundle tests.
+- The focused diagnosis bundle suite passed 3/3. Its reproduction case included
+  a moving polygon and verified exact preservation of keyframe time and original
+  terminal geometry.
+- The complete test tree passed 111/111 with zero failed or incomplete tests in
+  123.685910 seconds.
+- JavaScript syntax passed with the bundled Node.js runtime. The production
+  `motionOffset_deg` function was extracted and exercised for constant,
+  zero-start, trapezoidal, and out-and-back profiles. A `[3, 4]` drawn vector
+  produced a displayed magnitude of exactly `5.000 deg/s`.
+- A live MATLAB server on `127.0.0.1:52739` accepted a raw diagnosis MAT file at
+  `/run-bundle` and returned `offlineSandboxResult/v1`, a new
+  `bundle-replay-*` request identifier, `goalReached`, planner success, and
+  independent validation success. Arrival was 1.86969384567 seconds; planner
+  time was 0.927697 seconds and server time before transport was 1.498398
+  seconds. The server then stopped cleanly and its explicit smoke artifacts
+  were removed.
+- The in-app browser rejected the local `file://` page under its URL policy, so
+  no visual browser pass is claimed. Two fresh serial-example attempts were
+  blocked before the first example by MATLAB's intermittent environment-level
+  `System Error: File system inconsistency`. The planner source was unchanged;
+  the prior successful 17-example matrix above remains the applicable planner
+  baseline.
+
+## Dead planner verbosity option removal - 2026-09-01
+
+The public planner `Verbose` field had no production reader. It was removed
+from defaults, examples, sandbox exports, offline requests, contracts, and
+current interface documentation. Obstacle-construction verbosity remains live,
+and the sandbox checkbox still controls caller-owned `evalc` capture. Direct
+legacy planner input produces only
+`planTrajectory:DeprecatedVerbose`, is stripped before ordinary resolution,
+and is absent from returned `Options`.
+
+An obstacle-free default run and a legacy-`Verbose=true` run were recursively
+identical after removing measured elapsed-time fields. Both succeeded with a
+4.41995024845-second duration and 4.472135955-degree motion. Final verification
+after all source edits produced zero Code Analyzer findings and passed 118/118
+tests in 81.436094 seconds wall time (78.6810012 aggregate test seconds).
+
+Every maintained example ran headlessly in a separate serial MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 | 1.3070865 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 | 4.3292660 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 | 1.8896941 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 | 0.8572632 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 | 0.8962971 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 | 1.9732295 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 | 6.7140330 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 | 26.6008908 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN | 2.5900853 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 | 4.7387231 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 | 0.7821855 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 | 1.8459921 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 | 3.6708232 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 | 25.0493233 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 | 16.0339540 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 | 4.2266279 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 | 68.4555210 | `goalReached` |
+
+A separate visible `exampleObstacleFree` run created two figures with no
+warning. A hidden `exampleNoPath` run retained `noValidatedSeed`, one attempted
+seed, and one diagnostic figure. `git diff --check` is the final repository
+gate. The change adds eight net production MATLAB lines because the required
+one-release migration shim and tests outweigh deleting the dormant field; the
+five-milestone branch total remains a 155-line production reduction.
+
+## Automatic plane-reuse ownership - 2026-09-01
+
+BMTP plane reuse remains active, but `EnablePlaneReuse` and
+`PlaneReuseImprovementTolerance_s` are no longer planner choices. Automatic
+reuse applies only when the retained-best duration improvement is within
+`ArrivalTimeTolerance_s` and the tagged path--region pair set is unchanged.
+Legacy fields warn once with
+`planTrajectory:DeprecatedPlaneReuseOptions`, are ignored, and are absent from
+returned options.
+
+Saved pre-edit results and the candidate matched recursively outside elapsed
+time and the two removed fields:
+
+- tight-clearance Target Exits: 24 s, 21.9416287311844 deg, selected seed 2,
+  reuse count 1, 60 plane SOCPs, 8 trajectory SOCPs;
+- timed alternating occlusion: 20.8695652173913 s, 13.571326600194 deg,
+  per-seed reuse counts `[0 1 1 0 1]`;
+- static-U non-activation sentinel: 20.7124477860115 s,
+  40.2550285040009 deg and zero selected-solve reuse.
+
+The first comparison supplied legacy `EnablePlaneReuse=false` and a custom
+reuse tolerance, proving the retired fields cannot disable or retune automatic
+behavior. The expanded focused suite passed 48/48. Final Code Analyzer output
+was clean, and the complete repository suite passed 120/120 in 81.7413358
+seconds wall time (78.9273796 aggregate test seconds).
+
+All 17 maintained examples ran in separate serial MATLAB processes with jerk
+enabled. Sixteen succeeded and independently validated; `exampleNoPath`
+returned the expected validated `noValidatedSeed`. Every success passed
+collision and kinematic checks. The exact rows and wall times are recorded in
+`benchmark.csv`. A visible obstacle-free run created two figures without a
+warning, and the hidden no-path run created one diagnostic figure. The manual
+exporter also reran `exampleObstacleAvoidance` successfully in 6.3053904
+seconds and regenerated `WalkPlaneReuse` as `automatic`. Neither `pdflatex`
+nor `pdftotext` is installed on this host, so the updated TeX sources and data
+were not compiled or text-extracted from the tracked PDFs in this milestone.
+
+The change adds three net production MATLAB lines because the compatibility
+shim outweighs removing two option fields. The six-milestone branch total is
+152 production lines smaller than `5c0a6c9`; this milestone claims a smaller
+public interface and clearer invariant ownership, not fewer physical lines or
+a speedup.
+
+## Internal trajectory-solver cap ownership - 2026-09-01
+
+`MaximumNlpIterations` actively controlled the BMTP trajectory `coneprog`
+iteration cap despite its obsolete NLP name. The planner interface now omits
+that implementation control while the engine retains the former default cap of
+300. Direct legacy input warns once with
+`planTrajectory:DeprecatedMaximumNlpIterations`, is ignored, and is absent from
+returned options. Current sandbox, offline sandbox, examples, tests, and manual
+data no longer set or display it.
+
+The old unsupported-topology fixture used a cap of one to force its boundary.
+At 300 the same request succeeded and required 65.7410579 seconds, proving the
+fixture tested solver starvation rather than an input-driven topology policy.
+The replacement uses a physically infeasible eight-second fixed-arrival
+deadline. Default policy refuses fallback and explicit policy attempts it;
+both revised tests pass in 2.9632806 seconds. The dedicated Ruckig test still
+checks the two-segment limit.
+
+Focused evidence:
+
+- option migration: 10/10 in 1.9703629 seconds;
+- BMTP engine: 12/12 in 3.7918162 seconds;
+- sandbox diagnosis: 11/11 in 10.3521119 seconds;
+- timed policy: 2/2 in 2.9632806 seconds;
+- timed BMTP: 2/2 in 15.0755105 seconds versus 9.9854775 baseline;
+- sandbox route economy: 3/3 in 14.6741929 seconds versus 14.7555260 baseline;
+- combined focused gate: 40/40 in 44.5871511 seconds;
+- Code Analyzer: zero findings across every changed MATLAB file;
+- full suite: 121/121 in 88.5048981 seconds wall time and
+  81.6421096 seconds aggregate test time.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.5159463 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3829100 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9079066 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9036065 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9448795 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9750579 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7703150 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5642490 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6439313 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7093528 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8396021 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9333544 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6443382 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3221035 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.9573421 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1915333 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.9672843 | `goalReached` |
+
+The visible obstacle-free gate created two figures without warnings. The
+hidden no-path gate created one figure whose text included `noValidatedSeed`
+and reported one attempted seed. The manual-data exporter completed in
+5.7923965 seconds and removed the retired option macro. The milestone reduces
+non-test MATLAB by six lines under the established accounting, taking the
+seven-milestone branch total to 158 lines removed from `5c0a6c9`.
+
+## Internal BMTP segmentation ownership - 2026-09-01
+
+`CollocationSegmentCount` previously doubled into a cap on static warm-route
+and timed-cell spans. It is now a compatibility-only input: direct and example
+legacy use warns once with
+`planTrajectory:DeprecatedCollocationSegmentCount`, is ignored, and is absent
+from returned options. Both internal sites retain the former default effective
+cap of 20 spans. Public defaults contain 14 fields.
+
+Recursive comparison at `1e-9`, after removing only runtime evidence and the
+retired field, passed for static U and the moving-circle/static-U timed-cell
+fixture. The timed case retained `bmtpTimedCell`, seven optimizer spans, seven
+timed segments, 35 seconds, 36.6949453597 degrees, and exact coverage, plane,
+trajectory, validation, and certificate records. The 30-edge engine sentinel
+still reports `WarmRouteResampled=true` and exactly 20 optimizer spans. A
+legacy value of 2 warned once, disappeared, and reproduced automatic static-U
+output exactly.
+
+Focused evidence:
+
+- focused option/engine/stage/example/timed/sandbox gate: 56/56 in
+  47.0155112 seconds;
+- sandbox diagnosis: 11/11 in 10.1182416 seconds versus 10.3521119 baseline;
+- sandbox route economy: 3/3 in 14.8954734 seconds versus 14.6741929 baseline;
+- stage timing: 4/4 in 2.4564911 seconds;
+- Code Analyzer: zero findings in every changed MATLAB file;
+- manual-data exporter: validated result in 5.8262656 seconds;
+- complete suite: 123/123 in 88.5229176 seconds wall time and
+  81.7095918 seconds aggregate test time.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3499269 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4132808 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9587101 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9464368 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9466535 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0030567 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8236954 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5096838 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6737009 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7690469 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8466857 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8883797 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6598913 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.5195017 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8739982 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2825783 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.7607284 | `goalReached` |
+
+The visible obstacle-free gate created two figures without warnings. Hidden
+`exampleNoPath` created one diagnostic figure containing `noValidatedSeed` and
+one attempted seed. The milestone adds two net non-test MATLAB lines because
+the one-release shim outweighs consumer simplification. The eight-milestone
+branch total is therefore 156 lines smaller than `5c0a6c9`.
+
+## External BMTP restart retirement - 2026-09-01
+
+At tracked-clean baseline `5a8eee0`, no maintained planner, example, sandbox,
+or benchmark consumed the third BMTP output or eighth restart input. Only two
+direct wrapper tests exercised that surface. The retained candidate removes
+restart validation, alternate initialization, collision-free supplied-net
+retention, restart allocation, and restart export from `bmtpEngine.solve`.
+`planTrajBmtp` keeps one-release callable compatibility: restart use warns once,
+is ignored, and returns an empty record.
+
+Fresh-process saved baselines and candidates compared recursively at `1e-9`
+after removing only fields containing `Elapsed` and
+`FirstValidatedMotionTime_s`:
+
+- static degree-16 planner record: passed, maximum difference 0;
+- true timed-cell degree-7 planner record: passed, maximum difference 0;
+- direct cold candidate and diagnostics: passed, maximum difference 0;
+- deprecated-call physical result versus old warm result: passed, maximum
+  difference 0.
+
+The direct fixed-arrival baseline used one `unitDirect` segment, a distant
+rectangle, ten seconds, and 2/1/2 deg/s derivative limits. Its returned restart
+had three spans and 3.33333333333-second segment time. Cold and warm results
+both used two iterations and two trajectory SOCPs, with identical sampled
+position, velocity, acceleration, ten-second duration, and
+4.0000000019748008-degree length. The restart reduced this direct-only engine
+time from 1.0651848 to 0.2434276 seconds; the candidate cold/legacy times were
+1.0474138 and 0.2373834 seconds. Static planning was 3.0265116 baseline versus
+3.0494709 candidate; timed planning was 13.7478176 versus 13.7950498 seconds.
+
+Verification evidence:
+
+- `testBmtpEngine`: 12/12 in 6.9514129 seconds;
+- architecture, timed BMTP, planner contract/failure, and sandbox diagnostics:
+  37/37 in 61.4287410 seconds wall and 56.7385531 aggregate test seconds;
+- Code Analyzer: zero findings in the engine, facade, and changed tests;
+- complete test tree: 123/123 in 88.4909933 seconds wall and
+  81.5665061 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The temporary evidence reporter initially exited after saving valid static
+results because it referenced candidate-only `MotionDuration_s` and
+`MotionLength_deg` fields. It was corrected to use the public result schema and
+the same baseline was rerun cleanly. The first failure-figure inspection also
+used obsolete `SeedAttemptCount`; rerunning with current
+`AttemptedSeedCount` passed. Neither failure involved production planner code.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3897094 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4522526 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9946238 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9867267 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0137154 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0419501 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8532760 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5408143 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.7672403 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9816229 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8768426 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9987615 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7470639 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3210595 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8694792 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2695347 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 68.2132158 | `goalReached` |
+
+The engine removes 44 net production lines and the compatibility facade adds
+four, for a net 40-line non-test MATLAB reduction. The nine-milestone branch is
+196 lines smaller than `5c0a6c9`. `pdflatex` and `pdftotext` remain unavailable,
+so the updated appendix source was not compiled or text-extracted on this host.
+
+## Detailed plane-reuse trace retirement - 2026-09-01
+
+At tracked-clean baseline `75dff7a`, only one focused contract read
+`PlaneReuseIterationHistory`, `PlaneReuseControlDifference_deg`, or
+`PlaneReuseDurationDifference_s`. No production decision, example, sandbox,
+plotter, exporter, or manual consumed them. The candidate removes those arrays
+and the pending control/duration snapshots that populated them while retaining
+`PlaneReuseApplied`, `PlaneReuseCount`, reuse continuation, convergence,
+collision histories, retained-best evidence, and certificates.
+
+Two fresh-process reuse-triggering baselines were frozen before editing. Static
+U was rejected because its selected constructor did not expose BMTP reuse, and
+generic Obstacle Avoidance was rejected because its BMTP solve reported zero
+reuse. The retained cases were:
+
+- Target Exits with `CollisionClearanceTolerance_deg=1e-4` and two seeds:
+  24 seconds, 21.7425467317-degree polyline, 21.9416287312-degree motion,
+  reuse count 1, iteration 8, baseline/candidate walls 12.3447550 and
+  12.3359060 seconds;
+- Extreme US Outline: 5.81065318159 seconds, 22.070643085-degree polyline,
+  23.3457566443-degree motion, reuse count 1, iteration 8,
+  baseline/candidate walls 67.9107908 and 67.7257618 seconds.
+
+Both baselines reused at iteration 7 and had zero recorded control and duration
+difference at iteration 8. Recursive comparison at `1e-9`, after removing only
+elapsed fields and the three declared retired arrays, passed both complete
+results with maximum numeric difference exactly zero.
+
+Verification evidence:
+
+- `testPlannerContract`: 15/15 in 40.3201808 seconds;
+- engine, architecture, timed, contract/failure, and sandbox diagnostics:
+  49/49 in 63.6097376 seconds wall and 58.4247912 aggregate test seconds;
+- Code Analyzer: zero findings in the engine and revised contract test;
+- complete test tree: 123/123 in 88.5057376 seconds wall and
+  81.5314915 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.4242522 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.5123487 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0104120 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9858665 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9838127 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0575241 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8032134 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.6797632 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.8039494 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7854012 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.9581027 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9827518 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7843060 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3366819 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8160799 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.3152718 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.2328108 | `goalReached` |
+
+The milestone removes exactly 17 engine lines and adds no production
+replacement. The ten-milestone branch is 213 non-test MATLAB lines smaller
+than `5c0a6c9`.
+
+## Dead planner-option shim retirement - 2026-09-01
+
+At tracked-clean baseline `12d72cc`, ten obsolete planner fields were absent
+from defaults and had no algorithmic reader. Passing all ten directly produced
+a resolved record exactly equal to defaults. Passing live options alongside the
+nine obsolete planner-only example fields ultimately produced the same 14-field
+resolved planner record after the legacy forwarding and stripping chain.
+
+The candidate removes the seven bespoke deprecation-warning blocks and the
+example forwarding allowlist. Direct planner calls now aggregate all obsolete
+fields into `planTrajectory:UnknownOptions`; examples discard obsolete
+planner-only inputs under `resolveExampleOptions:UnknownOptions`. Planner-level
+`Verbose` is unknown, while the separate example display `Verbose` control is
+unchanged. Candidate default, live, example-chain, and display option records
+all matched their saved baselines exactly.
+
+Fresh-process physical comparisons at `1e-9`, excluding only fields containing
+`Elapsed` and `FirstValidatedMotionTime_s`, passed with maximum numeric
+difference zero:
+
+- `exampleObstacleFree`: baseline/candidate walls 0.7509786 and 0.7641284
+  seconds, success/validation 1/1;
+- `exampleTargetExitsObstacle`: baseline/candidate walls 15.9860619 and
+  15.7913810 seconds, success/validation 1/1.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in both changed production files and both
+  revised tests;
+- planner-option and example-boundary tests: 14/14;
+- complete test tree: 113/113 in 88.1141873 seconds wall and 81.4978243
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The first Obstacle Free baseline capture omitted the `trajectory` folder from
+the temporary MATLAB path and stopped before planning. The corrected fresh
+process succeeded. The first no-path figure command had an unterminated shell
+string and did not execute the example; the corrected script-based fresh
+process passed. Neither failure involved production planner code.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2755374 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3019420 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8690915 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8303314 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8724000 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9318499 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7659094 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.4149146 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5300496 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6763214 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7428393 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8152035 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5999470 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.1460202 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.7535135 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1600466 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.6307320 | `goalReached` |
+
+The milestone removes 64 production lines and adds four ordinary field-owner
+substitutions, a net reduction of 60 non-test MATLAB lines. The eleven-milestone
+branch is 273 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Travel-refinement trace retirement - 2026-09-01
+
+At tracked-clean baseline `aa8d601`, all 37 `TravelRefinement*` references were
+inside `trajectory/+bmtpEngine/solve.m`. Fifteen diagnostics fields and their
+assignments had no external consumer. The candidate removes only this payload,
+uses one local accepted-state boolean, and leaves the balanced/fixed refinement
+portfolio, collision plane updates, objective comparisons, and selected motion
+unchanged.
+
+The default Obstacle Avoidance probe succeeded but did not attempt refinement
+because its scenario defaults use earliest arrival, so it was rejected as
+coverage. The retained explicit balanced run accepted all three successful
+portfolio solves at selected rate 1 deg/s. Fixed Target Exits accepted its one
+successful rate-1 refinement.
+
+Fresh-process recursive comparisons at `1e-9`, excluding only fields containing
+`Elapsed`, `FirstValidatedMotionTime_s`, and the fifteen declared
+`TravelRefinement*` fields, passed with maximum numeric difference zero:
+
+- balanced Obstacle Avoidance: baseline/candidate walls 6.7036477 and
+  6.7250928 seconds, success/validation 1/1;
+- fixed Target Exits: baseline/candidate walls 15.7873509 and 15.7295776
+  seconds, success/validation 1/1.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in the engine and revised contract test;
+- `testBmtpEngine` plus `testPlannerContract`: 27/27 in 42.0186741 seconds
+  wall and 38.2584586 aggregate test seconds;
+- complete test tree: 113/113 in 87.9262869 seconds wall and 81.3773886
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text.
+
+The first focused batch passed all 27 tests but intentionally failed its final
+assert because Code Analyzer exposed one now-unused `bestDuration_s`
+assignment. Removing that diagnostic residue produced zero findings, and the
+fresh 27-test rerun passed. No planner result failed.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2947553 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3130783 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8858599 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8700775 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8817736 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9179395 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7246965 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.4802310 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5940667 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6683283 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7358218 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8242300 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5662948 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.3575863 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.8239935 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1479165 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.3130925 | `goalReached` |
+
+The milestone deletes 50 and adds four core MATLAB lines, net minus 46, and
+removes fifteen fields from every BMTP diagnostics record. The twelve-milestone
+branch is 319 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Deprecated BMTP facade removal - 2026-09-01
+
+At tracked-clean baseline `9db9a23`, `trajectory/planTrajBmtp.m` had no
+production caller. Its only references were migration/architecture tests,
+current appendix text, and historical records. A direct fixed-arrival fixture
+proved its candidate and diagnostics were recursively identical to
+`bmtpEngine.solve` after excluding elapsed fields: 10 seconds,
+4.00000000197 degrees, success, and accepted solver evidence.
+
+The candidate deletes the complete 58-line facade, 100 lines of restart-only
+tests/helpers, and its two current appendix references. The package engine and
+maintained public planner remain. This is an intentional breaking change for
+external direct callers of `planTrajBmtp`; no replacement facade was added.
+
+Fresh-process comparisons at `1e-9`, excluding only fields containing
+`Elapsed` and `FirstValidatedMotionTime_s`, all passed with maximum numeric
+difference zero:
+
+- direct package-engine candidate and diagnostics;
+- `exampleObstacleFree`, baseline/candidate walls 0.7556770 and 0.7671999
+  seconds;
+- `exampleTargetExitsObstacle`, baseline/candidate walls 15.7366482 and
+  15.7810529 seconds.
+
+Verification evidence:
+
+- Code Analyzer: zero findings in the revised architecture and engine tests;
+- focused architecture plus BMTP engine tests: 18/18 in 5.5806524 seconds wall
+  and 2.0638914 aggregate test seconds;
+- complete test tree: 110/110 in 86.8524662 seconds wall and 80.3306783
+  aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two figures, no warning;
+- hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  figure, and the reason present in figure text;
+- tracked MATLAB has no live facade call; its sole name reference is the
+  architecture assertion that the file is absent;
+- `pdflatex` remains unavailable, so the current appendix source could not be
+  compiled on this host.
+
+Every maintained example ran headlessly in a separate fresh MATLAB process
+with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.2863726 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.2754486 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8746644 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8275977 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8774148 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9046406 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7484003 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5350788 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5406131 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.6391760 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7585376 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8351888 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.5845367 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 24.2076020 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 15.7165294 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.1540480 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 67.4661782 | `goalReached` |
+
+The milestone removes the full 58-line production facade and one competing
+public function. The thirteen-milestone branch is 377 non-test MATLAB lines
+smaller than `5c0a6c9`.
+
+## General BMTP final-plane solver - 2026-09-01
+
+Baseline was clean commit `3e5d62e`; only the durable handoff and private
+MATLAB evidence were untracked. The candidate deletes `createAxisPlane` and
+routes every unresolved final certificate pair through the existing
+`solveMaximumMarginPlane` implementation. It changes only
+`trajectory/+bmtpEngine/solve.m`, removes 49 and adds nine lines, and reduces
+the fourteen-milestone branch by 417 non-test MATLAB lines relative to
+`5c0a6c9`.
+
+Verification evidence:
+
+- Code Analyzer: zero findings for changed `solve.m`;
+- saved four-run Obstacle Avoidance comparison: maximum physical/history
+  difference zero; warmed median 2.1769730 to 2.2928512 seconds, +5.323%;
+- saved moving fixed-arrival Target Exits comparison: maximum physical/history
+  difference zero; certificate passed with the same six reused pairs;
+- focused `testBmtpEngine` plus `testPlannerContract`: 24/24 passed in
+  40.7189783 seconds wall and 39.2945019 aggregate test seconds;
+- complete test tree: 110/110 passed in 86.9001094 seconds wall and
+  84.1559378 aggregate test seconds;
+- visible `exampleObstacleFree`: success, validation, two visible figures,
+  and no warning;
+- hidden `exampleNoPath`: expected-failure validation, one figure, and
+  `noValidatedSeed` present in figure text;
+- `git diff --check` passed before record updates.
+
+Every maintained example ran after the production change in its own fresh
+serial MATLAB process with jerk enabled. Target Exits is the fresh focused
+candidate process; every other row is from the serial broad sweep:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3650576 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3543889 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9304695 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9185245 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9666285 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 1.9923528 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.7345516 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5575720 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6079726 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.7791563 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8230975 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.8819802 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.6331342 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 34.6242062 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 18.8708768 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2137733 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 83.4566454 | `goalReached` |
+
+The candidate total is 199.7103879 seconds versus 169.2320276 seconds for the
+immediately preceding facade-removal record, an 18.010 percent aggregate
+increase. Straight Target has the largest single cold increase at 43.030
+percent. This milestone is retained for one general certificate algorithm and
+40 fewer production lines; no runtime improvement is claimed.
+
+## Uniform BMTP final certification - 2026-09-01
+
+The baseline was exact detached worktree commit `514185b`. The candidate
+removes the final retained-parent-plane restriction shortcut, so every
+applicable final BMTP pair is solved and verified through
+`solveMaximumMarginPlane`. Optimizer plane reuse inside trajectory optimization
+is unchanged. The change removes 42 and adds nine lines in
+`trajectory/+bmtpEngine/solve.m`.
+
+Focused evidence:
+
+- Obstacle Avoidance matched success, validation, reason, seed 3,
+  7.57454176632-second duration, 11.4118613877-degree motion, and every sampled
+  history value with maximum difference zero. Its certificate passed with 18
+  conic and zero reused pairs instead of 12 conic and six reused pairs.
+- Four-run Obstacle Avoidance baseline walls were 5.3917737, 2.6832424,
+  2.2880017, and 2.2017332 seconds. Candidate walls were 4.9472324, 2.6379999,
+  2.3334234, and 2.2597204 seconds. The warmed median grew 1.985 percent.
+- Moving fixed-arrival Target Exits matched success, validation, reason, seed
+  1, 24-second duration, 20.6100682085-degree motion, and every sampled history
+  value with maximum difference zero. Its certificate passed with 12 conic and
+  zero reused pairs instead of six conic and six reused pairs. Wall time grew
+  from 18.8165606 to 19.7293136 seconds, 4.851 percent.
+- Code Analyzer reported zero findings and `git diff --check` passed.
+- Focused `testBmtpEngine` plus `testPlannerContract`: 24/24 passed in
+  41.2646313 seconds wall and 39.8502065 aggregate test seconds.
+- Complete test tree: 110/110 passed in 87.6470229 seconds wall and
+  84.8867422 aggregate test seconds.
+- Visible `exampleObstacleFree`: success, validation, two figures, one visible
+  figure state, and no warning.
+- Hidden `exampleNoPath`: expected `noValidatedSeed`, independent validation,
+  one attempted seed, one diagnostic figure, and the reason present in figure
+  text.
+
+Every maintained example ran after the production change in its own fresh,
+serial MATLAB process with jerk enabled. Obstacle Avoidance and Target Exits
+are the focused candidate processes; all other rows are from the serial broad
+sweep:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3351494 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4141372 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.9318843 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9351499 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.9524044 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0080579 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.9376122 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.5714743 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5781854 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9472324 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8712688 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9110820 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7309015 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.7826915 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.7293136 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2052408 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 85.3161697 | `goalReached` |
+
+The candidate total is 204.1579553 seconds versus 199.7103879 seconds for the
+immediately preceding general-final-plane record, a 2.227 percent aggregate
+increase. The milestone is retained for one final-certificate algorithm, 33
+fewer production lines, and exact maintained physical results. No runtime
+improvement is claimed.
+
+## One moving-obstacle spatial projection - 2026-09-01
+
+The baseline was clean commit `31577c4`. The candidate removes the
+static-obstacle-only BMTP attempt from dynamic multi-waypoint orchestration,
+leaving the conservative swept protected-history projection followed by true
+timed-cell BMTP. The production edit removes 66 and adds four lines in
+`+obstacleAvoidance/+planner/planCorridorQuintic.m`.
+
+Focused evidence:
+
+- The distant-translating-obstacle fixture moved from static-only BMTP to
+  `SweptProjection.Outcome = acceptedAfterFullValidation`. It retained seed 2,
+  the time-expanded source, 14.5963802711-second duration,
+  34.9232288125-degree polyline, 39.6810414459-degree sampled motion, and every
+  sampled state and derivative with maximum difference zero. Its certificate
+  passed. Cold wall moved from 12.5067717 to 12.7454047 seconds.
+- The moving-circle plus static-concave fixture still selected
+  `bmtpTimedCell` after swept projection failed. It retained seed 2,
+  35-second duration, 45.5741988392-degree polyline,
+  36.6949453597-degree sampled motion, and every sampled state and derivative
+  with maximum difference zero. Its certificate passed. Cold wall moved from
+  15.8076512 to 10.7781744 seconds; no speed claim is based on one run.
+- Code Analyzer reported zero findings and `git diff --check` passed.
+- Focused orchestration and policy tests: 39/39 passed in 59.3958223 seconds
+  wall and 54.3933985 aggregate test seconds.
+- Complete test tree: 110/110 passed in 83.6459910 seconds wall and
+  76.8673640 aggregate test seconds.
+- Visible `exampleObstacleFree`: success, validation, two visible figures, and
+  no warning.
+- Hidden `exampleNoPath`: expected `noValidatedSeed`, one attempted seed, one
+  diagnostic figure, and the reason present in figure text. An initial
+  post-plan harness assertion used a nonscalar string array; the corrected
+  scalar check passed in a fresh rerun.
+
+Every maintained example ran after the production change in its own fresh,
+serial MATLAB process with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3209333 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.3217680 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 1.8256271 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.8477667 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 0.8459686 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.1278543 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 7.2826389 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 28.8030877 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.6978418 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 5.5620738 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.7546874 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 2.3167401 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7462718 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 37.8071321 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 20.0299007 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2540140 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 87.3143863 | `goalReached` |
+
+The candidate total is 211.8586926 seconds versus 204.1579553 seconds for the
+uniform-final-certificate milestone, a 3.772 percent aggregate increase. The
+milestone is retained for one moving-obstacle spatial projection, 62 fewer
+production lines, and exact maintained physical results. No runtime
+improvement is claimed.
+
+## Completion audit and timed-layer-budget repair - 2026-09-01
+
+The tracked baseline was pushed commit `df6a85c`. A final replay of the five
+supplied Rogue bundles found one unfavorable result change: balanced
+`non-ideal` still succeeded and independently validated, but sampled motion was
+228.680505208 degrees instead of the recorded 228.491135293 degrees. Detached
+replays at `ebd12827`, `8ac19c5`, `8e5a3b1`, `7ed0cf6`, and `5a8eee0`
+localized the first changed result to `5a8eee0`. The removed fixture option was
+`CollocationSegmentCount = 8`; internalizing the former default had changed
+the timed-cell cap from 16 to 20.
+
+The option remains removed. `solveTimedBmtpTrajectory` now caps the clock
+recovered from `seed.tau` at `MaximumTimeLayerCount - 1`, matching the maximum
+number of intervals the search-layer budget can author. A focused test checks
+that the selected timed BMTP coverage respects this invariant. The focused
+file passed 3/3, and the repaired balanced `non-ideal` replay restored
+228.491135293 degrees exactly at the same 144-second arrival.
+
+Verification commands used fresh `matlab -batch` processes. The complete test
+tree passed 111/111 with zero failures or incomplete tests in 83.6258138
+seconds wall. The only warning was the maintained obstacle-normalization
+fixture warning. Visible `exampleObstacleFree` succeeded, independently
+validated, and created two visible figures. Hidden `exampleNoPath` returned
+the expected `noValidatedSeed`, passed example validation, attempted a seed,
+and created one diagnostic figure containing the reason. An initial diagnostic
+harness queried a nonexistent `IterationCount` after correct planning; the
+corrected fresh run used `AttemptedSeedCount` and passed.
+
+Every maintained example ran serially after the repair in its own fresh MATLAB
+process with jerk enabled:
+
+| Example | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.4355073 | `goalReached` |
+| `exampleDenseConcaveObstacle` | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4581631 | `goalReached` |
+| `exampleFourAcceleratingCircles` | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0411611 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9786752 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0077032 | `goalReached` |
+| `exampleMovingBarrierWait` | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0700575 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.9392512 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.7286900 | `goalReached` |
+| `exampleNoPath` | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.7156151 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.9372917 | `goalReached` |
+| `exampleObstacleFree` | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8625416 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | 1 / 1 | 10 | 10 | 11.5843333838 | 1 / 1 / NaN | 1.9661376 | `goalReached` |
+| `exampleStaticUShapedObstacle` | 1 / 1 | 34.9425880405 | 40.255028504 | 20.712447786 | 1 / 1 / 1 | 3.7370093 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.6673457 | `goalReached` |
+| `exampleTargetExitsObstacle` | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.6606053 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.7302067 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 85.4569561 | `goalReached` |
+
+Aggregate maintained-example wall time was 205.3929177 seconds versus
+211.8586926 seconds at `df6a85c`, a 3.052 percent decrease in cold serial
+runs. This is reported as observation only; no speedup is claimed.
+
+Final fresh supplied-bundle replays:
+
+| Bundle and policy | Success / validation | Selected source / solver | Polyline (deg) | Motion (deg) | Duration (s) | Wall (s) |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `sinetraj`, saved earliest | 1 / 1 | fixed-clock lateral excursion | 146.928879089 | 146.928879089 | 70.3442509975 | 10.8391817 |
+| `newheart`, saved balanced | 1 / 1 | fixed-clock lateral excursion | 199.268051966 | 199.268051966 | 100.970425693 | 69.9664476 |
+| `shrimp`, documented balanced | 1 / 1 | fixed-clock lateral excursion | 175.703912280 | 175.703912280 | 81.4551422825 | 44.8156242 |
+| `non-ideal`, documented balanced | 1 / 1 | timed visibility / `bmtpTimedCell` | 227.905577664 | 228.491135293 | 144 | 24.1637265 |
+| `hiddenruckigfallback`, saved earliest | 1 / 1 | visibility / `bmtpStaticDegree16` | 248.239063282 | 233.911502487 | 104.261456926 | 22.3702489 |
+
+The branch remains 513 non-test MATLAB lines smaller than `5c0a6c9`. The
+repair changes ownership rather than restoring an option or adding a special
+case; all retained specialized-looking paths have distinct measured fixtures
+or public contracts, so no further deletion candidate passed the bounded
+retention threshold in this audit.
+
+## Orthogonal planner removal - 2026-09-01
+
+Baseline was clean pushed commit `0f9c268`. The user explicitly classified the
+orthogonal-cavity and timed-orthogonal-opening families as benchmark-specific
+and required their complete removal while keeping both U examples. Baselines
+from fresh processes were:
+
+- Static U: success/validation 1/1, visibility seed 1, polyline
+  34.9425880405 degrees, motion 40.255028504 degrees, duration
+  20.712447786 seconds, wall 3.8604474 seconds. Its orthogonal portfolio had
+  attempted three seeds and selected its second special candidate.
+- Opening U: success/validation 1/1, `timedOrthogonalOpening`, polyline and
+  motion 10 degrees, duration 11.5843333838 seconds, wall 2.0777559 seconds.
+
+Deleted production files were `createOrthogonalCavityMotion.m`,
+`certifyOrthogonalCavityLowerBound.m`,
+`createTimedOrthogonalOpeningMotion.m`,
+`certifyTimedOpeningRequestLowerBound.m`,
+`certifyGuardedRectangleContainment.m`, and the now-dead
+`evaluateArrivalCertificatePortfolio.m`. Every call and dedicated diagnostic
+branch was removed from `planCorridorQuintic`; dedicated certificate tests and
+manual stations were removed. An architecture test now requires every file to
+remain absent and rejects orthogonal/cavity logic in the orchestrator.
+
+No replacement was added. A bounded experiment broadened swept/timed BMTP from
+time-expanded multi-waypoint seeds to every non-wait dynamic seed. Opening U
+still selected the same 13.6175223541-second direct-wait motion; the additional
+timed solves failed numerically and only added work. The two-line experiment
+was removed before broad verification.
+
+Focused post-removal results:
+
+- Static U: success/validation 1/1 through visibility seed 3 and
+  `bmtpStaticDegree16`; polyline 34.9425880405 degrees, motion
+  39.4001427062 degrees, duration 20.7814508253 seconds, certificate passed.
+- Opening U: success/validation 1/1 through general `directWait`; polyline and
+  motion 10 degrees, duration 13.6175223541 seconds.
+- Structurally different Dense Concave: success/validation 1/1 through the
+  existing fixed-clock path, with unchanged 12.7952270203-degree motion and
+  8.5-second duration.
+
+Code Analyzer reported zero findings. Focused architecture, planner-contract,
+example-invariant, stage-timing, timed-BMTP, and unsupported-policy tests passed
+42/42 in 44.2016562 seconds wall. The complete test tree passed 108/108 with
+zero failures or incomplete tests in 74.1749327 seconds wall. The only warning
+was the expected two-vertex obstacle-normalization fixture warning. The test
+count fell because the deleted constructors' dedicated tests were removed and
+rose by one for the new absence boundary.
+
+Visible `exampleObstacleFree` succeeded, independently validated, and produced
+two visible figures. Hidden `exampleNoPath` returned the expected validated
+`noValidatedSeed`, attempted a seed, and produced one diagnostic figure with
+the reason in its text. The planner-manual exporter completed and returned
+`ValidationPassed = 1`; an initial post-export harness queried a nonexistent
+summary field after the export had already succeeded.
+
+Every maintained example remained in place and ran serially in its own fresh
+MATLAB process with jerk enabled:
+
+| Example | Source | Success / validation | Polyline (deg) | Motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Reason |
+| --- | --- | --- | ---: | ---: | ---: | --- | ---: | --- |
+| `exampleAlternatingSlalom` | fixed-clock | 1 / 1 | 16.0333716767 | 16.0333716767 | 10.5 | 1 / 1 / NaN | 1.3899435 | `goalReached` |
+| `exampleDenseConcaveObstacle` | fixed-clock | 1 / 1 | 12.7952270203 | 12.7952270203 | 8.5 | 1 / 1 / NaN | 4.4654619 | `goalReached` |
+| `exampleFourAcceleratingCircles` | direct | 1 / 1 | 20 | 20 | 22 | 1 / 1 / NaN | 2.0247071 | `goalReached` |
+| `exampleInterceptMovingTargetAtSetTime` | direct | 1 / 1 | 9.53894054682 | 9.53894054682 | 12 | 1 / 1 / NaN | 0.9570363 | `goalReached` |
+| `exampleInterceptMovingTargetEarliest` | direct | 1 / 1 | 7.30889024019 | 7.30889024019 | 6.11111111111 | 1 / 1 / NaN | 1.0239669 | `goalReached` |
+| `exampleMovingBarrierWait` | direct-wait | 1 / 1 | 10 | 10 | 10.0903015137 | 1 / 1 / NaN | 2.0200357 | `goalReached` |
+| `exampleMovingCircleNoAzimuthWrap` | fixed-clock | 1 / 1 | 12.1077259407 | 12.1077259407 | 8.5 | 1 / 1 / NaN | 6.8763682 | `goalReached` |
+| `exampleMovingDeformingUSOutlineVisibility` | fixed-clock | 1 / 1 | 40.2805670061 | 40.2805670061 | 7.91666666667 | 1 / 1 / NaN | 26.6228851 | `goalReached` |
+| `exampleNoPath` | none | 0 / 1 | NaN | NaN | NaN | NaN / NaN / NaN | 2.5994901 | `noValidatedSeed` |
+| `exampleObstacleAvoidance` | visibility | 1 / 1 | 11.152119519 | 11.4118613877 | 7.57454176632 | 1 / 1 / 1 | 4.8989594 | `goalReached` |
+| `exampleObstacleFree` | direct | 1 / 1 | 4.472135955 | 4.472135955 | 4.53112887415 | 1 / 1 / NaN | 0.8951998 | `goalReached` |
+| `exampleOpeningUShapedObstacle` | direct-wait | 1 / 1 | 10 | 10 | 13.6175223541 | 1 / 1 / NaN | 11.7516735 | `goalReached` |
+| `exampleStaticUShapedObstacle` | visibility | 1 / 1 | 34.9425880405 | 39.4001427062 | 20.7814508253 | 1 / 1 / 1 | 32.4429785 | `goalReached` |
+| `exampleStraightTargetAlternatingOcclusion` | visibility | 1 / 1 | 27.950433436 | 13.5713266002 | 20.8695652174 | 1 / 1 / 1 | 35.9045711 | `goalReached` |
+| `exampleTargetExitsObstacle` | direct visibility | 1 / 1 | 20.1357890335 | 20.6100682085 | 24 | 1 / 1 / 1 | 19.6584316 | `goalReached` |
+| `exampleTwoOpposingUVisibilityGraph` | fixed-clock | 1 / 1 | 24.0767724922 | 24.0767724922 | 21.6333333333 | 1 / 1 / NaN | 4.2880719 | `goalReached` |
+| `exampleUSOutlineExtremeVisibility` | visibility | 1 / 1 | 22.070643085 | 23.3457566443 | 5.81065318159 | 1 / 1 / 1 | 84.5912531 | `goalReached` |
+
+Serial maintained-example wall time was 242.4110337 seconds versus
+205.3929177 seconds at `0f9c268`, an 18.023 percent increase. Fifteen examples
+retained exact physical metrics. Static U traded 0.0690030393 seconds of
+arrival for 0.8548857978 degrees less sampled travel; Opening U retained its
+10-degree path but arrived 2.0331889703 seconds later. These tradeoffs are
+accepted for removing benchmark-shaped algorithms, not presented as an
+optimization.
+
+The milestone removes 1,804 additional non-test MATLAB lines and reduces
+`planCorridorQuintic.m` from 1,023 to 875 physical lines. Cumulatively, the
+branch is 2,317 non-test MATLAB lines smaller than `5c0a6c9`.
+
+## Prepared Obstacle History And Seed Refactor — 2026-09-01
+
+Source state was `44851b6+prepared-obstacle-worktree` on
+`bmtp-cleanup-codex`. The retained implementation prepares one request-owned
+obstacle collection, rejects stale preparation through an exact source
+snapshot and preparation version, and caches sample shapes, sample and
+interval bounds, boundary edges, ring runs, interval union shapes, and motion
+bounds. Downstream entry points perform the inexpensive freshness check and
+reuse the prepared value when its public source remains unchanged.
+
+The obstacle-history contract now states activity, status, ring/hole,
+orientation, correspondence, linear-vertex, nested-set, and conservative
+nonnested fallback behavior. The unchanged opening-U example exposed the
+needed distinction: its open endpoint occupied set is contained in the closed
+U endpoint. Treating that interval as an arbitrary nonnested transition used a
+convex hull that filled the cavity. The retained nested occupied-set rule uses
+the exact endpoint union for the full interval; the existing nonnested test
+continues to require a convex hull that covers the swept gap.
+
+`planCorridorQuintic` now delegates each deterministic seed to `solveOneSeed`
+while retaining the measured fallback order. Direct waits are refined for
+earliest arrival and for balanced arrival only when elapsed time affects the
+objective. Early exit requires a validated fixed-goal result at the proven
+request-wide physical arrival lower bound. Parallel seed execution was not
+retained because `parpool` and `gcp` were unavailable for a representative
+measurement, and solver-level parallel work must never be nested.
+
+Focused obstacle-history, infrastructure, and planner-contract tests passed
+30/30. The complete non-example test set passed 106/106 with zero failures or
+incomplete results in 109.399314 s of summed test duration. MATLAB Code Analyzer
+reported zero findings in all 11 changed MATLAB files. The only emitted test
+warning was the expected two-vertex normalization fixture warning.
+
+All 17 maintained examples ran serially in one headless MATLAB process with
+jerk enabled. Sixteen succeeded and independently validated; `exampleNoPath`
+returned the expected independently validated `noValidatedSeed`. Exact rows
+were appended to `benchmark.csv`. The retained per-example wall-time sum was
+317.9755667 s and total loop wall time was 318.224285 s.
+
+The closest pre-fix same-process sweep summed to 282.4631766 s, making the raw
+change +35.5123901 s or +12.572 percent. Opening U is not performance-comparable
+across those runs: it changed from an invalid 0.80716-second failure to a
+validated 26.1968938-second success. Excluding opening U, the remaining 16
+examples changed from 281.6560166 s to 291.7786729 s, +10.1226563 s or
++3.594 percent. This is recorded as a runtime regression, not an optimization.
+
+## Certified Hull Plane Verification — 2026-09-02
+
+Baseline identity was clean committed source `ca51871` on
+`bmtp-cleanup-codex`. The environment was MATLAB R2024b Update 4 with
+Optimization Toolbox 24.2 and six reported cores. Parallel Computing Toolbox
+was unavailable, so every comparison and example run was serial.
+
+The predeclared representative set covered static degree-16 BMTP, a multi-route
+static U, fixed-arrival timed occlusion, moving/deforming geometry, and a
+complex outline. Baseline profiles established `coneprog` as the largest
+operation. Static U used 1,598 calls and 30.975985 seconds in `coneprog`;
+`solveTrajectorySocp` used 30.157580 seconds inclusive and final
+`certifyAllPlanes` used 4.459705 seconds. The fixed-arrival occlusion example
+used 2,698 conic calls and spent 13.841465 seconds in final certification.
+
+The retained algorithm first seeks a constant supporting plane using axes from
+the obstacle and final Bezier control hulls. The existing numerical verifier is
+the only acceptance gate. An overlapping hull is classified as ambiguous and
+uses the prior tight maximum-margin SOCP, so the fast path cannot reject a
+trajectory from one Bernstein coefficient or hide an unresolved pair.
+
+Controlled runs used four repetitions per revision, discarded the first as
+warm-up, and compared the median of the remaining three:
+
+| Example | Baseline runs (s) | Candidate runs (s) | Median improvement | Exact fields | Baseline conic pairs | Candidate analytic / conic |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `exampleObstacleAvoidance` | 5.474790, 2.920159, 2.683438, 2.619638 | 5.389910, 2.719571, 2.430598, 2.381922 | 9.422% | 12 / 12 | 18 | 18 / 0 |
+| `exampleStaticUShapedObstacle` | 39.530848, 37.381852, 36.278693, 36.439496 | 36.030863, 33.358336, 32.413158, 32.801454 | 9.984% | 12 / 12 | 504 | 498 / 6 |
+| `exampleStraightTargetAlternatingOcclusion` | 41.678869, 38.200433, 37.113741, 37.381200 | 29.899053, 26.072233, 25.480319, 26.273605 | 30.253% | 12 / 12 | 864 | 863 / 1 |
+| `exampleUSOutlineExtremeVisibility` | 99.614979, 94.471436, 93.018745, 92.284211 | 80.717766, 74.585679, 74.159052, 73.217753 | 20.275% | 12 / 12 | 320 | 319 / 1 |
+
+The twelve exact comparisons were success, termination reason, independent
+validation, selected seed, arrival, selected-polyline length, smoothed length,
+time, position, velocity, acceleration, and jerk. The production diff in
+`trajectory/+bmtpEngine/solve.m` is +46/-9 lines, a net 37-line increase. Its
+9.25% retention threshold was met by the smallest 9.422% measured gain.
+
+Post-change static-U profiling recorded 601 remaining `coneprog` calls at
+26.492254 seconds. `solveTrajectorySocp` remained the largest inclusive
+operation at 29.631200 seconds across 33 calls. Maximum-margin plane updates
+used 1.820055 seconds; final `certifyAllPlanes` used 0.387175 seconds and
+the hull-separation fast path used 0.291880 seconds across 1,008 calls. This
+localizes the remaining cost to optimization that generates the selected
+trajectory, not final proof replay.
+
+The new `exampleMovingRotatingObstacleField` contains three static rectangles
+on the direct route and a fourth rectangle with five translated and rotated
+boundary slices. Its headless regression passed planner and independent
+validation, returned a 20.7160388668-degree route at 9.04166666667 seconds,
+and remained collision-free with all kinematic limits certified. A visible
+plot smoke produced two success figures; the visible `exampleNoPath` smoke
+produced one annotated failure-diagnostic figure.
+
+The test audit consolidated three duplicated maintained-example source scans,
+moved the public planner-default contract to one test owner, removed the
+duplicated obstacle-free example execution, and removed five historical or
+nonbehavioral negative assertions. The suite changed from 119 to 110 tests
+while adding the new mixed-obstacle regression. Code Analyzer reported zero
+findings in every changed MATLAB file. Final tests passed 110/110 with no
+failures or incomplete results; the only warning was the intentional
+two-vertex obstacle-normalization warning fixture.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`. Their summed wall time was
+220.5077749 seconds. Exact per-example values are recorded in `benchmark.csv`.
+
+## Identical Trajectory SOCP Termination — 2026-09-02
+
+Baseline revision was committed `fd06459` on `bmtp-cleanup-codex`, with the
+unrelated user-owned dirty files left untouched. Measurements used MATLAB
+R2024b Update 4, Optimization Toolbox 24.2, six reported cores, no Parallel
+Computing Toolbox, deterministic example defaults, and all figures and
+animation disabled.
+
+Source tracing proved a repeated-work invariant in the BMTP biconvex loop. If
+the retained best duration does not improve, the tagged pair set is unchanged,
+the separating planes are reused, and the just-solved horizon is already the
+request horizon, every input to the next earliest-arrival trajectory SOCP is
+unchanged. The old loop called `coneprog` again and converged only after the
+identical result produced zero improvement. The retained change reports the
+same convergence before that redundant call. A larger recovery horizon is
+excluded from the fast termination because the subsequent request-horizon
+problem differs.
+
+Four runs were made per revision; the first was discarded as warm-up:
+
+| Case | Baseline runs (s) | Candidate runs (s) | Warm median gain | Trajectory SOCPs |
+| --- | --- | --- | ---: | ---: |
+| Static U | 35.807792, 33.504315, 32.639043, 32.479121 | 33.707076, 32.078981, 30.519938, 30.508978 | 6.493% | 33 to 31 |
+| Fixed occlusion | 29.858010, 26.272671, 25.449616, 25.361525 | 28.279758, 24.688852, 24.116929, 23.936589 | 5.237% | 34 to 31 |
+| Complex outline | 81.306414, 75.208905, 72.992095, 73.087807 | 75.894327, 71.029098, 69.710006, 69.186028 | 4.622% | 20 to 19 |
+| Small-static sentinel | 5.378327, 2.754120, 2.513264, 2.422643 | 5.373900, 2.769137, 2.481872, 2.446805 | 1.249% | unchanged |
+
+Success, termination reason, independent validation, selected seed and route,
+arrival, motion length, and complete time, position, velocity, acceleration,
+and jerk histories were exactly equal in the three affected comparisons. The
+sentinel physical result was also exact. The production change is +6/-0 lines,
+so the declared 0.25%-per-line threshold was 1.5%; the smallest affected-case
+gain was 4.622%.
+
+A preceding experiment replaced repeated scalar binomial calls with exact
+Pascal matrices. Degrees 0 through 32 were bitwise equal and its degree-16
+microbenchmark was 63.8 times faster, but the small-static warm median changed
+unfavorably from 2.4411 to 2.4836 seconds. The end-to-end benefit was absent,
+so all four experimental source changes and artifacts were removed.
+
+The final complete test suite passed 110/110 with no failures or incomplete
+results; the only warning was the intentional two-vertex normalization fixture.
+The existing plane-reuse contract test now requires the fixed-point termination
+message. Code Analyzer reported zero findings in the changed MATLAB files.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated, and `exampleNoPath` returned
+the expected independently validated `noValidatedSeed`. Every success, path
+length, motion length, duration/arrival, and termination reason matched the
+committed baseline rows. Their summed wall time was 208.6403044 seconds, a
+5.382% observed reduction from the closest same-process 220.5077749-second
+matrix. Controlled per-case medians above, rather than this aggregate, support
+the retained speedup claim.
+
+## Direct Sparse Derivative Rows — 2026-09-02
+
+Baseline was committed `6d1a41e` on `bmtp-cleanup-codex`, with user-owned dirty
+files untouched. The environment remained MATLAB R2024b Update 4, Optimization
+Toolbox 24.2, six reported cores, no Parallel Computing Toolbox, deterministic
+example defaults, and disabled figures and animation.
+
+Line-level profiling of static U recorded 31 trajectory SOCPs. The sparse-row
+assignment that negated an entire preceding inequality row ran 55,350 times
+and consumed 3.058189 seconds. The row contains only the current derivative
+control stencil and one time-power coefficient. The candidate writes the
+negative stencil directly and then writes the same negative limit coefficient.
+A 6,000-pair construction check proved the old and new sparse matrices exactly
+equal; direct construction was 4.427 times faster in that microbenchmark.
+
+Four end-to-end candidate runs were compared with the immediately preceding
+four-run `6d1a41e` measurements, which used identical inputs and environment:
+
+| Case | Baseline runs (s) | Candidate runs (s) | Warm median gain | Physical result |
+| --- | --- | --- | ---: | --- |
+| Static U | 33.707076, 32.078981, 30.519938, 30.508978 | 31.216347, 28.698559, 28.282108, 27.943378 | 7.332% | Exact |
+| Fixed occlusion | 28.279758, 24.688852, 24.116929, 23.936589 | 25.985134, 22.879713, 21.835469, 21.678934 | 9.460% | Exact |
+| Small-static sentinel | 5.373900, 2.769137, 2.481872, 2.446805 | 5.309145, 2.649936, 2.469282, 2.356385 | 0.507% | Exact |
+
+The post-change profile measured the targeted row at 0.587347 seconds, down
+2.470842 seconds. Success, termination, selected seed and route, arrival,
+motion length, validation, and complete time, position, velocity, acceleration,
+and jerk histories were exactly equal in the controlled comparisons. The
+production diff is +2/-2 lines, so code size is neutral.
+
+An earlier candidate prepared obstacle history once inside the shared example
+validator and reused it across validation probes. Although it targets repeated
+large-history preparation, the predeclared moving/rotating focus case changed
+unfavorably from a 2.1041-second to 2.1407-second warm median. The five-line
+experiment and all artifacts were removed rather than special-casing large
+histories.
+
+The complete suite passed 110/110 with no failures or incomplete results; its
+only warning was the intentional two-vertex normalization fixture. Code
+Analyzer reported zero findings in `solve.m`.
+
+All 18 maintained examples ran serially and headlessly with jerk enabled.
+Seventeen succeeded and independently validated; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`. Every success, path length,
+motion length, duration/arrival, and termination reason matched `6d1a41e`.
+Their wall-time sum was 198.1119552 seconds versus 208.6403044 seconds in the
+closest same-process baseline, an observed 5.046% decrease. The controlled
+medians, not the aggregate observation, support the speedup conclusion.
+
+## Block-Sparse Derivative Bounds — 2026-09-02
+
+Baseline was committed `6eb4e58` on `bmtp-cleanup-codex`. The environment was
+MATLAB R2024b Update 4 with Optimization Toolbox 24.2, six reported cores, no
+Parallel Computing Toolbox, deterministic defaults, and disabled figures and
+animation. User-owned dirty files remained untouched.
+
+After direct negative-stencil construction removed whole-row sparse copies,
+static-U profiling still attributed about 1.4 seconds to 55,350 individual
+positive and negative stencil writes and their index calculation. The retained
+change creates the same derivative operator with `spdiags` and Kronecker
+products, then assigns one sparse block per segment and derivative order.
+It preserves the original row order: derivative, axis, then positive/negative
+sign. It also preserves interleaved azimuth/elevation decision columns and both
+copies of the time-power limit coefficient.
+
+A direct construction comparison covered 56 combinations of degrees 3 through
+16 and segment counts 1, 2, 5, and 17 with random axis limits. Every old and new
+sparse inequality matrix was exactly equal. The static-U profile retained 31
+trajectory SOCP calls while `solveTrajectorySocp` fell from 25.264848 to
+23.940503 seconds.
+
+Four static-U runs were made for each implementation, discarding the first as
+warm-up. The committed baseline measured 34.145249, 29.428726, 28.458691, and
+28.149735 seconds. The candidate measured 33.380430, 27.970259, 27.317818, and
+27.061302 seconds. The warm median improved from 28.458691 to 27.317818 seconds,
+or 4.009%. Success, independent validation, selected seed, 34.9425880405-degree
+polyline, 39.4001427062-degree smoothed path, 20.7814508253-second arrival,
+sample count, and history checksums were unchanged.
+
+The fixed-arrival occlusion case provided a structurally different sentinel.
+Its candidate runs were 28.123761, 22.647415, 21.469113, and 21.041197 seconds;
+the 21.469113-second warm median was 1.678% below the current baseline record of
+21.835469 seconds. Its 27.950433436-degree polyline, 13.5713266002-degree
+smoothed path, 20.8695652174-second arrival, validation, and history checksums
+were unchanged. The production diff is +13/-16 lines, a net reduction of three
+lines, with no new helper, option, interface, or dependency.
+
+The complete suite passed 110/110 with no failures or incomplete results; the
+only warning was the intentional two-vertex normalization fixture. Code
+Analyzer reported zero findings in `solve.m`. All 18 maintained examples ran
+serially and headlessly with jerk enabled. Seventeen independently validated
+successes and the independently validated `noValidatedSeed` outcome reproduced
+every baseline path length and duration. Their 197.1835107-second aggregate was
+0.469% below the prior 198.1119552-second matrix; this aggregate is recorded as
+an observation, while the controlled static-U median and profile support the
+retained speedup claim.
+
+## Shared Dynamic Shape Differences — 2026-09-02
+
+Baseline was committed `859b6e1` on `bmtp-cleanup-codex` in the same MATLAB
+R2024b Update 4 environment. The dynamic preparation classifier previously
+asked whether two endpoint shapes were equivalent and, when they were not,
+asked whether they were nested. Both predicates evaluated the same directed
+`polyshape` differences, so a non-equivalent pair performed one or two Boolean
+subtractions twice.
+
+The retained classifier computes each directed difference once and derives
+both predicates from their two areas and the unchanged roundoff tolerance. It
+preserves the prior equivalent, nested, and conservative-convex-hull branches
+and therefore does not change interpolation or occupied geometry. The change
+removes one helper and is +24/-37 production lines, a net reduction of 13.
+
+Four moving/deforming-outline runs were made per implementation, discarding
+the first. The committed baseline measured 32.461339, 30.848097, 30.500254,
+and 30.594772 seconds; the candidate measured 31.058685, 29.393349, 28.893895,
+and 28.959748 seconds. The warm median improved from 30.594772 to 28.959748
+seconds, or 5.344%. Its independently validated 40.2805679611-degree path and
+7.91666666667-second arrival, selected seed, sample count, and complete-history
+checksums were unchanged.
+
+The moving/rotating mixed-obstacle sentinel had a 2.087504-second candidate
+warm median versus its 2.104135-second current baseline record, a favorable
+0.790% shift. Its independently validated 20.7160388668-degree path and
+9.04166666667-second arrival and all history checksums were unchanged.
+
+Code Analyzer reported zero findings in `prepareDynamic.m`. The complete suite
+passed 110/110 with no failures or incomplete results and only the intentional
+two-vertex normalization warning. All 18 maintained examples ran serially and
+headlessly with jerk enabled. Seventeen independently validated successes and
+the independently validated `noValidatedSeed` outcome reproduced every prior
+path length and duration. Their 194.5266044-second wall sum was 1.348% below
+the immediately preceding 197.1835107-second matrix; the controlled dynamic
+median, not that aggregate observation, supports retention.
+
+## Deferred Dense Timed-Search Recovery — 2026-09-03
+
+The baseline was committed `aed8123` on `bmtp-cleanup-codex`, with unrelated
+user-owned changes already present and preserved. The retained change fixes a
+correctness defect: dense proposal geometry may defer exact-history timed
+search, but that work threshold can no longer authorize `noValidatedSeed`.
+Recovery reuses the existing proposal, visibility graph, and route set. The
+existing route coordinator runs only its timed portion on the recovery call,
+returns before spatial search, and solves only the newly recovered timed seed.
+
+The staged production tree contains 19,682 physical MATLAB lines. The
+repository target is 7,500 lines, leaving 12,182 excess lines. The documented
+performance allowance would therefore require
+`0.25 * 12182 / 100 = 30.455`, or a 3,045.5% wall-time reduction. No such
+reduction exists and no performance-based size allowance or speedup is
+claimed. The closest unchanged dense sentinel moved from a prior warm record
+of 29.291917 seconds to 29.104198 seconds, a 0.641% observation treated as
+ordinary noise. The correctness fix is retained under the repository priority
+that correctness and general behavior outrank size and runtime.
+
+The staged maintained planner/test tree contains 24,811 physical lines excluding the
+2,651 example lines, so it also remains above the separate 12,000-line cap.
+
+Relative to the pre-existing dirty baseline, experiment-owned production code
+is +94/-10 lines, net +84, with no new production file. The final coordinator
+keeps exact timed-search setup, terminal-goal-dwell cleanup, spatial search, and
+recovery in their existing `searchRoutes.m` owner. Its fifth input is internal
+continuation state, not a public planner option. Relative to intermediate commit
+`5e531a4`, the consolidation deletes the 86-line `searchTimedRoute.m` wrapper
+and reduces production by a net 36 Git lines. Diagnostics retain six stable
+deferral/recovery assignments.
+
+The focused architecture and contract gate passed 31/31 in 42.093 seconds,
+and Code Analyzer reported zero findings in all four changed MATLAB files. An
+earlier audit-only test run was 30/31 because the new source check referenced an
+undefined test variable; deriving the repository root locally fixed that test
+without changing planner behavior. The
+complete suite, including the exact saved failure bundle, passed 119/119 in
+147.042709 seconds. The required fresh-process example run passed 19/19 with
+199.959769 seconds summed example wall time. Every
+successful motion passed independent collision and kinematic validation; the
+expected no-path result passed failure-diagnostic validation. A visible success
+created two visible figures in 4.874535 seconds, and the expected-failure plot
+created 158 graphics objects with `noValidatedSeed` in its title in 5.841729
+seconds.
+
+The fresh-process matrix contained one moving/rotating wall-time outlier at
+6.096837 seconds, compared with 3.663449 seconds for the wrapper version. Three
+repeats on retained code measured 3.501831, 3.620015, and 3.589213 seconds with
+identical path and arrival. The 3.589213-second median shows no retained
+regression; its small favorable difference is below the evidence threshold for
+a speedup claim.
+
+## Unbounded Winding With Lazy Motion Recovery — 2026-09-03
+
+Baseline commit was `a15ebbd` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. MATLAB was R2024b Update 4. Figures,
+animation, and verbose example output were disabled. Each final maintained
+example ran in a fresh MATLAB process.
+
+The discriminating graph was a 25-edge Archimedean spiral from start to goal
+around one supplied reference point. Its only route has winding magnitude two.
+The baseline returned zero routes, recorded 19 states, rejected one transition
+at the winding limit, and reported truncation. The retained search returns one
+class-two route with 25 states, no winding rejection, and no truncation. A
+separate disconnected graph with a reachable cycle around the reference and an
+isolated goal returns zero routes, one stored state, and no truncation. This
+proves both removal of the false-negative cap and finite disconnected exit.
+
+An eager experiment was rejected by the runtime gate. The extreme geographic
+outline example kept its exact 22.0706469074562-degree selected polyline,
+23.3604967801989-degree motion, 5.80443397354784-second arrival, and independent
+validation, but wall time was 78.213287 seconds versus 62.296466 seconds in an
+immediately controlled capped run, a 25.552% increase. The returned final
+region found four classes and 177 states instead of three classes and 156
+states. Its topology time rose only from 1.212179 to 1.595468 seconds, while
+motion solving rose from 20.300903 to 35.450938 seconds.
+
+The retained implementation searches unbounded winding components once and
+keeps multi-winding routes in the existing route-set record. Their motion solves
+are deferred until every ordinary candidate and exact motion fails validation.
+No proposal, graph, lower-winding route search, or lower-winding motion solve is
+repeated. `Coverage.MultiWindingRouteCount` and
+`Coverage.MultiWindingSolveAttempted` expose this ordering. On the same extreme
+example, the retained focused run found four classes and 177 states, recorded
+one deferred route, did not need its motion solve, and completed in 61.977703
+seconds. The final matrix run was 62.704676 seconds. Both are consistent with
+the controlled capped run and preserve its exact physical result.
+
+The supplied `Rogue Examples/failed.mat` replay preserved a
+143.92829584254-degree polyline, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival. Independent validation, collision, kinematic,
+and certificate checks passed. Direct replay took 42.867156 seconds; the exact
+four-test bundle suite passed 4/4 in 46.868438 seconds.
+
+The final complete test suite passed 120/120 with no failures or incomplete
+tests in 151.611569 seconds and included the exact supplied bundle. The final
+fresh-process example matrix passed 19/19 in 203.090791 summed planner wall
+seconds. All 18 successful examples passed independent collision and kinematic
+validation with exact prior path and arrival values; `exampleNoPath` returned
+the expected `noValidatedSeed` and passed failure-diagnostic validation. Code
+Analyzer reported zero findings in all five changed MATLAB files.
+
+The milestone adds no production file, wrapper, public option, or dependency.
+Relative to the pre-existing dirty baseline, experiment-owned production code
+is +98/-46 lines, net +52. The working production tree contains 19,733 physical
+MATLAB lines and 13,866 nonblank/noncomment lines. The physical 12,233-line
+excess above the 7,500-line target would require a 3,058.25% wall-time reduction
+under the documented allowance. No such reduction is claimed: this is a
+correctness recovery with neutral controlled runtime. The successful bounded
+planner still does not claim global objective optimality across unsearched
+route classes or deferred multi-winding motions.
+
+## Complete Input-Derived Time Layers — 2026-09-03
+
+The baseline was `a7ef285` on `bmtp-cleanup-codex`. A controlled moving-barrier
+graph proved that the former `MaximumTimeLayerCount = 17` selector could drop
+the only usable obstacle-event interval: the bounded search returned no route,
+while all 105 supplied times returned a route arriving at 4.1 seconds. The
+retained contract fixture uses 51 supplied times and protects a 4.0-second
+arrival through the same kind of brief opening.
+
+The selector and its 62-line production helper were removed. The existing
+time-expanded search directly retains each supplied time and its stable
+diagnostics report that no layer limit was applied. The public option remains
+because the existing timed BMTP solver uses `MaximumTimeLayerCount - 1` as its
+maximum segment count. Documentation and the performance-triage skill now
+state this single remaining responsibility; no compatibility wrapper was
+created.
+
+Focused verification passed 26/26 planner-contract tests, and Code Analyzer
+reported zero findings in the three changed MATLAB files. A 24-node complete
+moving graph took 0.847459 seconds at 17 layers and 0.861912 seconds at all 41
+supplied layers. Both reached the same fixed arrival; the 1.017055 ratio is a
+single regression smoke measurement, not a speedup claim.
+
+The exact supplied-bundle replay passed independent validation with a
+143.92829584254-degree polyline, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival. Collision, kinematic, and certificate checks
+all passed in 45.883803 seconds. The complete suite, including that artifact,
+passed 121/121 in 154.377006 seconds.
+
+All 19 shipped examples then passed their expected independent checks in one
+MATLAB session, with 163.823447 seconds summed planner wall time. Eighteen
+returned validated success and `exampleNoPath` returned the expected validated
+`noValidatedSeed`. Every physical path and arrival metric matched the current
+benchmark rows. Repeated fresh-process launches failed in MATLAB startup with
+`File system inconsistency` before executing example code, so no aggregate
+fresh-process timing comparison is claimed.
+
+The retained production diff is 16 additions and 75 deletions, net minus 59
+physical lines, with one production file removed and no new production file,
+wrapper, option, or dependency. The working production tree is 19,674 physical
+MATLAB lines and 13,845 nonblank/noncomment lines. The result removes both a
+false-negative heuristic and its abstraction rather than layering a recovery
+mechanism over it.
+
+## Safe-Wait Arrival Dominance — 2026-09-03
+
+Baseline commit was `08c3171` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. A two-node moving-obstacle probe made the
+source unsafe to wait at 0.25 seconds and blocked the first velocity-feasible
+0.5-second traversal. The same direct edge was collision-free at 1 second, but
+the baseline returned no route. The retained regression reaches the goal at 1
+second and independently samples that motion at 101 times.
+
+An exhaustive candidate tested every later layer and fixed the probe, but was
+rejected: its warm 24-node, 41-layer complete-graph run took 1.618--1.707
+seconds versus the committed 0.861912-second smoke baseline. The retained
+search instead partitions target layers by verified safe waits, tests arrivals
+only until the first clear entry in each partition, and batches equal target
+layers through the existing collision query. Warm repeats were 0.887845,
+0.894181, and 0.956589 seconds. The difference is treated as runtime noise;
+no speedup is claimed.
+
+A seeded differential oracle enumerated every feasible temporal edge for 60
+random moving-obstacle graphs under earliest, balanced, and fixed arrival. All
+180 comparisons matched route existence, selected goal layer, and spatial
+cost. The focused timed-search gate passed 4/4, the planner contract passed
+27/27, and Code Analyzer reported zero findings in the changed production
+file. The complete suite, including `Rogue Examples/failed.mat`, passed 122/122
+in 155.942464 seconds.
+
+The direct supplied-bundle replay retained its 143.92829584254-degree polyline,
+145.143797542061-degree smooth motion, and 71.2828117654205-second arrival.
+Independent validation, collision, kinematic, and certificate checks passed in
+43.155695 seconds. The 19-file headless example matrix passed 19/19 expected
+outcomes in 163.692676 summed planner seconds. The prior matrix was 163.823447
+seconds, so the aggregate observation is neutral. Every success passed
+independent collision and kinematic validation; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`.
+
+The milestone adds no production file, helper, wrapper, option, diagnostic
+field, or dependency. Production is +108/-60 lines relative to `08c3171`, a net
+48 physical lines for the completeness repair. The working production tree is
+19,722 physical MATLAB lines and 13,885 nonblank/noncomment lines. The 13-sample
+timed-edge predicate and finite supplied time grid remain disclosed
+completeness limits; this change does not claim continuous-time completeness.

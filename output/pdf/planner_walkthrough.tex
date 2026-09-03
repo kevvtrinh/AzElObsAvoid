@@ -1,0 +1,897 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=0.68in,headheight=15pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+% Identifiers such as noCertifiedCavityCandidate are long, are set in
+% typewriter text, and cannot be hyphenated by default. This document names
+% many of them, so allow breaks inside them rather than patching each one.
+\usepackage[htt]{hyphenat}
+\usepackage{xurl}
+\usepackage{booktabs,tabularx,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,fit}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{bookmark}
+\hypersetup{colorlinks=true,linkcolor=blue!45!black,urlcolor=blue!45!black}
+\definecolor{ink}{RGB}{32,48,67}
+\definecolor{blue}{RGB}{0,108,162}
+\definecolor{green}{RGB}{35,133,91}
+\definecolor{orange}{RGB}{202,110,37}
+\definecolor{red}{RGB}{201,78,78}
+\definecolor{papergray}{RGB}{243,245,247}
+\newcommand{\stationSource}[1]{\par\smallskip{\footnotesize\color{ink}\textit{Source checked: }\nolinkurl{#1}.}\par}
+\newcommand{\arrival}[1]{\subsubsection*{#1}}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{How a planning request moves through the software}
+\rhead{\thepage}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\setlist[itemize]{leftmargin=1.3em,itemsep=.2em,topsep=.2em}
+\input{data/walkthrough_values.tex}
+\begin{document}
+\pagenumbering{gobble}
+\begin{titlepage}
+\centering
+\vspace*{1.2in}
+{\Huge\bfseries How a Planning Request Is Made\par}
+\vspace{.28in}
+{\Large A station-by-station walkthrough\par}
+\vfill
+\begin{minipage}{.82\textwidth}
+\large
+This follows one real request from \texttt{exampleObstacleAvoidance}. Its
+antenna starts at $[-5,0]$ degrees at time 0 and must reach $[5,0]$ degrees
+by time 12 seconds without entering a protected rectangle. The successful run
+we export reaches the goal at \WalkArrivalTime\ and has a motion length of
+\WalkMotionLength. This document explains what happens to that request, in
+order. It is a process walkthrough, not a second introduction to the problem.
+\end{minipage}
+\vfill
+\large Current-source edition, with values exported from the maintained example
+\end{titlepage}
+\pagenumbering{arabic}
+\tableofcontents
+\clearpage
+
+\section{The whole assembly line}
+\label{sec:assembly-line}
+
+Read this page from top to bottom. Each numbered box has a matching station
+section. An arrow to the right is an early finish: either an
+input error before a result exists, or a completed result after the empty
+result has been prepared. The later boxes are included now so this page remains
+the map for the complete walkthrough.
+
+\begin{center}
+\begin{tikzpicture}[scale=.84,transform shape,
+    station/.style={draw=blue!75!black,rounded corners=2pt,fill=blue!7,
+        text width=7.25cm,minimum height=.55cm,align=left,font=\scriptsize},
+    later/.style={station,draw=green!55!black,fill=green!7},
+    exit/.style={draw=red!70!black,rounded corners=2pt,fill=red!8,
+        text width=2.35cm,minimum height=.55cm,align=center,font=\scriptsize},
+    flow/.style={-{Stealth[length=2mm]},thick,ink},
+    early/.style={-{Stealth[length=2mm]},thick,red!75!black}]
+\node[station] (s1) {\textbf{1. Public entry} --- receive obstacles, endpoints, limits, and options};
+\node[station,below=4mm of s1] (s2) {\textbf{2. Resolve options} --- fill defaults, reject misplaced workspace values, warn once about unknown names};
+\node[station,below=4mm of s2] (s3) {\textbf{3. Normalize request} --- turn inputs into canonical obstacle, state, and limit records};
+\node[station,below=4mm of s3] (s4) {\textbf{4. Create empty result} --- prepare every success and failure field before planning};
+\node[station,below=4mm of s4] (s5) {\textbf{5. Prepare obstacles} --- cache shapes and motion information; preserve the once-applied safety margin};
+\node[later,below=4mm of s5] (s6) {\textbf{6. Check endpoints} --- detect an invalid start or goal before constructing a motion};
+\node[later,below=4mm of s6] (s7) {\textbf{7. Try direct motion} --- create a direct rest-to-rest motion and independently check it};
+\node[later,below=4mm of s7] (s8) {\textbf{8. Fixed-clock lateral excursion} --- seek a collision-free sideways motion on the direct physical clock};
+\node[later,below=4mm of s8] (s9) {\textbf{9. Create route candidates} --- search the protected map for deterministic route shapes};
+\node[later,below=4mm of s9] (s10) {\textbf{10. Record route proposals} --- retain seeds as inputs to later motion construction, not as answers};
+\node[later,below=4mm of s10] (s11) {\textbf{11. Choose the motion builder} --- select BMTP or the waypoint builder for each route};
+\node[later,below=4mm of s11] (s12) {\textbf{12. Shape the BMTP curve} --- turn a route into connected Bezier spans};
+\node[later,below=4mm of s12] (s13) {\textbf{13. Solve the first curve problem} --- minimize shared time under motion limits};
+\node[later,below=4mm of s13] (s14) {\textbf{14. Find a first safe attempt} --- test each unconstrained curve against obstacles};
+\node[later,below=4mm of s14] (s15) {\textbf{15. Draw safety lines} --- solve maximum-clearance safety lines};
+\node[later,below=4mm of s15] (s16) {\textbf{16. Alternate and stop} --- update curve and lines, optionally reuse unchanged lines};
+\node[later,below=4mm of s16] (s17) {\textbf{17. Finish the BMTP motion} --- project ends, stretch time, and certify};
+\node[later,below=4mm of s17] (s18) {\textbf{18. Independently validate} --- check the full timed motion, not only its route points};
+\node[later,below=4mm of s18] (s19) {\textbf{19. Select and return} --- choose a validated motion, or return the saved evidence of no validated motion};
+\foreach \a/\b in {s1/s2,s2/s3,s3/s4,s4/s5,s5/s6,s6/s7,s7/s8,s8/s9,s9/s10,s10/s11,s11/s12,s12/s13,s13/s14,s14/s15,s15/s16,s16/s17,s17/s18,s18/s19}
+    \draw[flow] (\a.south)--(\b.north);
+\node[exit,right=18mm of s2] (inputerror) {input error\\no result record};
+\draw[early] (s2.east)--(inputerror.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{invalid};
+\node[exit,right=18mm of s6] (endpoint) {completed failure result\\invalid endpoint};
+\draw[early] (s6.east)--(endpoint.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{not feasible};
+\node[exit,right=18mm of s7] (direct) {return success\\direct motion works};
+\draw[early] (s7.east)--(direct.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s8] (excursion) {return success\\excursion works};
+\draw[early] (s8.east)--(excursion.west) node[pos=.5,yshift=5pt,font=\scriptsize,fill=white,inner sep=1pt]{passes};
+\node[exit,right=18mm of s19] (final) {completed result\\success or no validated motion};
+\draw[early] (s19.east)--(final.west);
+\end{tikzpicture}
+\end{center}
+\smallskip
+\textit{Figure 1.} The complete route through the planner. Each numbered box
+has one matching station below, from public entry through the completed result.
+\clearpage
+
+\section{The request we follow}
+
+The example creates one rectangle at times \WalkObstacleTimes. Its original
+four corners are $(-1,-2)$, $(1,-2)$, $(1,2)$, and $(-1,2)$ degrees. The
+constructor applies a \WalkSafetyMargin\ safety margin. It asks the planner for
+an earliest-arrival motion from \WalkInitialState\ to \WalkGoalState. The
+coordinate velocity, acceleration, and jerk limits are respectively
+\WalkVelocityLimit, \WalkAccelerationLimit, and \WalkJerkLimit.
+
+The numbers used below come from a real run of the example through
+\texttt{exportPlannerManualData}. The exporter writes
+\texttt{data/walkthrough\_values.tex}, which this document reads, along with
+the existing numeric figure data. In this run the selected route record is
+number \WalkSelectedSeedIndex. A value introduced by a station is shown in the
+form it has at that point, rather than being back-filled from a later station.
+
+\stationSource{examples/exampleObstacleAvoidance.m:23--59; output/pdf/data/exportPlannerManualData.m:24--107}
+
+\section{Station 1: the public entry point}
+
+\arrival{1. What arrives here.}
+The call is
+\texttt{obstacleAvoidance.planTrajectory(obstacles, initialState, goalState,
+limits, options)}. For this request, \texttt{obstacles} is one protected
+rectangle record; \texttt{initialState} is \WalkInitialState; \texttt{goalState}
+is \WalkGoalState; \texttt{limits} has the three two-element vectors above;
+and \texttt{options} is a scalar structure supplied by the example. Angles are
+degrees, time is seconds, and the two-coordinate order is
+\texttt{[azimuth elevation]}.
+
+\arrival{2. What this station does to it.}
+It first handles two call forms that are not a planning request. With no inputs,
+it returns the planner's defaults. With only one input, or fewer than the four
+physical inputs, it stops with an input error. For a real request it replaces a
+missing or empty options input with an empty scalar structure, checks that the
+options value is a scalar structure, then forwards all five inputs unchanged to
+the internal planner. This wrapper makes no route or motion decision.
+
+\arrival{3. What leaves.}
+For our request, the same five values leave, still in their example-supplied
+forms. The next station receives the scalar options structure; later stations
+receive the normalized versions. No result record exists yet.
+
+\arrival{4. What can go wrong here, and what it is called.}
+Too few physical inputs give \texttt{planTrajectory:MissingInputs}. An options
+value that is not one scalar structure gives \texttt{planTrajectory:InvalidOptions}.
+Those are input errors, so no planner result is returned. A normal five-input
+call such as this one does not fail here.
+
+\stationSource{+obstacleAvoidance/planTrajectory.m:1--84}
+
+\section{Station 2: option resolution}
+
+\arrival{1. What arrives here.}
+Our example sends an options structure that explicitly asks for
+\texttt{GoalTimeMode="earliestArrival"}. It also sets
+\texttt{MaximumSeedCount=3}. It leaves the rest empty. These values have no
+physical units; option fields
+whose names end in \texttt{\_s} are seconds and fields ending in
+\texttt{\_deg} are degrees.
+
+\arrival{2. What this station does to it.}
+It starts from one complete default list, copies only known nonempty overrides,
+and then checks the resulting values. For this request the resolved values
+include: sample time \WalkSampleTime; trajectory method \texttt{"bmtp"};
+azimuth wrapping \texttt{false}; maximum seeds \WalkMaximumSeedCount; maximum
+timed BMTP layer count \WalkMaximumTimeLayerCount\ (one more than the segment
+count); and arrival tolerance
+\WalkArrivalTolerance. The trajectory cone-program iteration cap is internally
+fixed at 300, warm-route and timed-cell segmentation are capped at 20 spans,
+and plane reuse is \WalkPlaneReuse; none is a planner option.
+
+If the caller supplies an unknown field, the station leaves it out, makes no
+behavior change, and issues one
+\nolinkurl{planTrajectory:UnknownOptions} warning
+that lists the ignored names. If it sees the former workspace fields
+\nolinkurl{AzimuthInterval_deg} or \nolinkurl{ElevationInterval_deg} in options,
+it stops instead: workspace intervals now belong in \texttt{limits}.
+
+\arrival{3. What leaves.}
+One complete, normalized scalar \texttt{options} structure leaves. It includes
+every known option in the default field order and the two explicit example
+choices. The unknown names, if any, do not leave in that structure.
+
+\arrival{4. What can go wrong here, and what it is called.}
+An options value that is not a scalar structure gives
+\texttt{planTrajectory:InvalidOptions}. A moved workspace field gives
+\texttt{planTrajectory:WorkspaceLimitMoved}. Invalid named choices and bad
+numeric ranges use the identified option errors, such as
+\texttt{planTrajectory:InvalidGoalTimeMode} and
+\texttt{planTrajectory:InvalidLogicalOption}. Unknown names are not a failure:
+they produce the warning named above and are ignored.
+
+\stationSource{+obstacleAvoidance/+input/resolvePlannerOptions.m:1--162; +obstacleAvoidance/+input/resolveOptions.m:1--64}
+
+\section{Station 3: input normalization}
+
+\arrival{1. What arrives here.}
+The station receives the one rectangle, endpoints \WalkInitialState\ and
+\WalkGoalState, the three physical limit vectors, and the completed options.
+The example omitted endpoint velocity and acceleration, and it omitted the two
+workspace intervals from \texttt{limits}.
+
+\arrival{2. What this station does to it.}
+It flattens obstacle input into a column array of canonical records and checks
+each record. It converts state numbers to double precision, forces every
+two-coordinate value into a 1-by-2 row in \texttt{[azimuth elevation]} order,
+and fills missing endpoint velocity and acceleration with zero. Thus our start
+becomes \texttt{time\_s=0}, \texttt{position\_deg=[-5 0]},
+\texttt{velocity\_deg\_s=\WalkInitialVelocity}, and
+\texttt{acceleration\_deg\_s2=\WalkInitialAcceleration}; the goal gets the
+same zero derivative fields. It converts physical limits to double 1-by-2 rows
+and adds the omitted workspace intervals: azimuth \WalkAzimuthInterval and
+elevation \WalkElevationInterval.
+
+It then tests \texttt{goalState.time\_s > initialState.time\_s}. If azimuth
+wrapping is requested, it is allowed only for an obstacle-free fixed-position
+goal. This request has an obstacle and wrapping is false, so no angle is
+shifted.
+
+\arrival{3. What leaves.}
+The result is one canonical obstacle record and three scalar records:
+\texttt{initialState}, \texttt{goalState}, and \texttt{limits}. Their numeric
+vectors are double rows; the request now has explicit zero start and goal
+derivatives and explicit workspace bounds. The next station can use one shape
+for every accepted request.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A missing or malformed endpoint gives
+\nolinkurl{planTrajectory:InvalidState}. A bad limits record gives
+\nolinkurl{planTrajectory:InvalidLimits}. A goal time not later than the start
+gives \nolinkurl{planTrajectory:InvalidTimeWindow}. A
+moving goal with incomplete or malformed samples has its own identified input
+errors. A wrapping request with obstacles or a moving goal gives
+\texttt{planTrajectory:UnsupportedWrappedGeometry}. These are input errors, so
+the empty result has not been made yet.
+
+\stationSource{+obstacleAvoidance/+input/normalizePlannerRequest.m:1--124; +obstacleAvoidance/+input/normalizePlannerState.m:1--46; +obstacleAvoidance/+obstacles/combineObstacles.m:1--75}
+
+\section{Station 4: build the empty result}
+
+\arrival{1. What arrives here.}
+The station receives the normalized obstacle, states, limits, and options. In
+our request it can already record a goal horizon of \WalkGoalHorizon, but it
+has not searched for a route or made a motion.
+
+\arrival{2. What this station does to it.}
+Before any endpoint check, direct attempt, or route search, it constructs one
+complete result record and one empty candidate-summary record. The result starts
+with \texttt{Success=false}, \texttt{TerminationReason="notRun"}, and the
+message \texttt{"Planning was not completed."}. It stores resolved inputs and
+options immediately. Motion histories are empty arrays with two columns, timing
+and arrival values are \texttt{NaN}, and diagnostic records already have their
+expected fields.
+
+The source states why the order matters: success, an expected no-path outcome,
+and an early endpoint failure must all return the same named fields. This means
+a caller or plotter does not have to guess which fields disappeared when work
+stopped early.
+
+\arrival{3. What leaves.}
+One incomplete-but-shaped result record leaves, plus the empty seed-summary
+template. For our request it carries the normalized rectangle, endpoints,
+limits, options, an empty selected seed of shape 0-by-2 degrees, empty motion
+histories of shape 0-by-2, and \texttt{GoalHorizon\_s=12}.
+
+\arrival{4. What can go wrong here, and what it is called.}
+This station has no expected planning failure of its own. It only allocates and
+fills records from inputs that have already been checked. If MATLAB itself
+cannot allocate memory, that is a runtime error rather than a planner-reported
+planning outcome.
+
+\stationSource{+obstacleAvoidance/+planner/createEmptyResult.m:1--120; +obstacleAvoidance/+planner/planCorridorQuintic.m:51--61}
+
+\section{Station 5: obstacle preparation}
+
+\arrival{1. What arrives here.}
+The result still holds the normalized obstacle. Its original boundary is the
+four-corner rectangle given in the introduction. Its protected boundary was
+already made by the obstacle constructor with a \WalkSafetyMargin\ margin; in
+this run its first time slice has \WalkProtectedVertexCount\ boundary rows,
+including the closing repeat. The time history is \WalkObstacleTimes.
+
+\arrival{2. What this station does to it.}
+It does not add another margin. The constructor retained the original boundary,
+then used a square-joint outward buffer once to make the protected boundary.
+When a caller rebuilds a canonical obstacle with a margin, the constructor
+again starts from its retained original boundary rather than buffering an
+already buffered shape. That is how a 0.2-degree request remains a 0.2-degree
+request instead of growing each time it passes through the planner.
+
+This preparation step turns each protected boundary into a reusable MATLAB
+shape, records its overall bounds, and compares neighboring time slices. When
+their vertex layout matches, it saves coordinate changes and a speed bound;
+when it differs, it saves the union of the two endpoint shapes for conservative
+use over that interval. Our rectangle does not change between 0 and 20 seconds,
+so it is marked time-invariant and its first prepared shape is also its static
+shape.
+
+\arrival{3. What leaves.}
+The protected obstacle record leaves unchanged in its public fields, with an
+internal preparation record added. That record contains sample shapes, bounds,
+per-interval coordinate changes, speed bounds, topology-match flags, and the
+time-invariant static shape. The original and protected geometry both remain
+available: the later planner uses the protected geometry, while the retained
+original geometry shows where the margin came from.
+
+\arrival{4. What can go wrong here, and what it is called.}
+For a valid canonical obstacle, this cache-building station has no expected
+planning failure. Earlier obstacle construction reports malformed time or
+boundary data with names such as \nolinkurl{createObstacle:InvalidTime},
+\nolinkurl{createObstacle:BoundarySizeMismatch}, and
+\nolinkurl{createObstacle:DegeneratePolygon}. A request that reaches this station
+has already passed those checks.
+
+\stationSource{+obstacleAvoidance/+obstacles/createObstacle.m:18--22, 66--95, 256--307; +obstacleAvoidance/+obstacles/prepareDynamic.m:1--96; +obstacleAvoidance/+planner/planCorridorQuintic.m:58--63}
+
+\section{Station 6: check endpoints}
+
+\arrival{1. What arrives here.}
+The prepared protected rectangle, normalized start and goal, workspace, motion
+limits, and resolved options arrive with the empty result already available.
+For this request the start is outside the rectangle at time 0, and the static
+goal is outside it at its stated time. The exported endpoint result is
+\texttt{\WalkEndpointFeasible}; its failure-reason field is empty
+(\texttt{\WalkEndpointReason}).
+
+\arrival{2. What this station does to it.}
+It asks whether the protected geometry contains the start and, when required,
+the terminal point. It then compares endpoint velocity and acceleration against
+the limits, checks whether the endpoint displacement fits in the available time
+at the velocity limit, and checks the workspace. It does not create motion.
+
+\arrival{3. What leaves.}
+Our request passes, so the prepared request and incomplete result continue to
+the direct-motion attempt. If a check fails, the caller receives the already
+shaped completed failure result: \texttt{Success=false}, an actionable
+message, and one of \texttt{endpointBlocked},
+\texttt{dynamicEndpointInfeasible}, \texttt{timeWindowInfeasible}, or
+\texttt{endpointOutsideWorkspace}. The planner records that reason and
+returns without trying motion construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+These are expected feasibility outcomes, not input errors. They describe the
+start, terminal point, endpoint derivatives, time window, or workspace that
+failed. Our run has no such outcome.
+
+\stationSource{+obstacleAvoidance/+input/validatePlannerEndpoints.m:30--102; +obstacleAvoidance/+planner/planCorridorQuintic.m:76--85}
+
+\section{Station 7: try direct motion}
+
+\arrival{1. What arrives here.}
+The valid rest-to-rest request arrives. Its endpoints are separated by the
+blocked horizontal chord; the direct constructor's reported duration is
+\WalkDirectDuration\ and its path length is \WalkDirectLength.
+
+\arrival{2. What this station does to it.}
+For the normal BMTP method, it creates an exact synchronized rest-to-rest
+motion directly between the endpoints, then sends that timed motion to the
+public trajectory validator. A construction is not trusted on its own because
+being mathematically buildable does not establish collision freedom or all
+independent motion checks. The code treats that validator as the sole
+authoritative acceptance check.
+
+\arrival{3. What leaves.}
+Our direct motion was built but failed independent collision validation; its
+recorded result is \texttt{\WalkDirectReason}, so the planner continues. If it
+had passed, the caller would receive a completed success result immediately:
+the direct seed and its complete time, position, derivative, and validation
+histories are copied into the public result, \texttt{Success=true}, and
+\texttt{TerminationReason="goalReached"}. No later construction would run.
+
+\arrival{4. What can go wrong here, and what it is called.}
+For a built direct motion that does not pass the independent check, the direct
+attempt record says \texttt{directValidationFailed}; it is evidence for the
+next step, not a final no-path claim. A constructor can also return no motion,
+which later validation records as an unavailable candidate.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:89--121, 393--481, 564--600; trajectory/+bmtpEngine/createDirectMotion.m:1--116}
+
+\section{Station 8: fixed-clock lateral excursion}
+
+\arrival{1. What arrives here.}
+The failed direct motion arrives with a certified direct physical clock. Here
+that clock is \WalkDirectDuration. The construction requires a successful,
+two-coordinate direct record whose duration matches its componentwise lower
+bound, plus a direct validation that failed only on collision-related grounds.
+
+\arrival{2. What this station does to it.}
+It first tries a static sequence of barriers attached to a workspace side. If
+that is not available, it tries an endpoint-flat alternating progress
+polynomial, then enumerates sideways axis excursions and checks screened
+motions independently. The documented purpose is to preserve the direct clock
+while adding a lateral detour; beyond that operational description, the source
+does not state a broader reason for this ordering.
+
+\arrival{3. What leaves.}
+In our request the barrier-sequence form was skipped because the rectangle is
+not attached to exactly one lateral workspace side
+(\texttt{\WalkBarrierReason}). The progress form was tried but had no
+sampled-clear amplitude (\texttt{\WalkProgressReason}). The axis enumeration
+screened \WalkFixedClockScreeningCount\ proposals and independently checked
+\WalkFixedClockValidationCount; none passed, producing
+\texttt{\WalkFixedClockReason}. If one had passed, the caller would receive
+the same immediate completed success result as the direct early finish, now
+with a seed whose source records the fixed-clock construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+The diagnostic distinguishes unsupported request shapes from failed proposals:
+for example \texttt{unsupportedChangingRequest},
+\texttt{unsupportedClockOwnership}, and \texttt{noExcursionRoom} say this
+restricted construction cannot be used; \texttt{noValidatedExcursion} says its
+enumerated proposals did not pass. Neither is a statement that no motion
+exists.
+
+\stationSource{+obstacleAvoidance/+planner/createFixedClockLateralExcursion.m:50--169, 171--320, 324--445, 566--690; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
+
+\section{Station 9: create route candidates}
+
+\arrival{1. What arrives here.}
+The prepared protected map and request arrive after the early constructions.
+For this request the visibility graph has \WalkVisibilityNodeCount\ nodes and
+considers \WalkVisibilityPairCount\ candidate line pairs.
+
+\arrival{2. What this station does to it.}
+It always records the direct endpoint proposal first. It then makes one
+protected visibility graph from obstacle slices, with start, goal, and small
+outward-offset boundary vertices as nodes. A candidate line is accepted only
+when its midpoint is outside the shape and it neither crosses nor overlaps a
+protected boundary; otherwise it is rejected. It searches distinct spatial
+route families using representatives inside occupied regions, retaining only
+routes that are longer than the direct chord and can fit the request duration.
+
+For moving obstacles it also uses input-derived time layers: it marks which
+nodes are free at each layer, adds wait and motion transitions that can reach a
+later layer, samples each moving edge, and reconstructs a timed route from
+parent links. Our obstacle history is static, so its temporal layer count is
+\WalkTemporalLayerCount\ and this part was skipped with
+\texttt{\WalkTimedSuppressionReason}; it would run when the obstacle history
+changes during the request.
+
+\arrival{3. What leaves.}
+The graph accepted \WalkVisibilityAcceptedCount\ candidate lines and rejected
+\WalkVisibilityRejectedCount. It found \WalkHomologyClassCount\ distinct
+spatial route families and emitted \WalkGeneratedSeedCount\ ordered proposals:
+the direct chord and two visibility routes. The exported seed lengths are
+\WalkSeedOneLength, \WalkSeedTwoLength, and \WalkSeedThreeLength. They leave
+with graph counts, explored states, frontier states, and the best partial route
+for later motion construction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+The graph builder bounds its work and its output explains reduced or bounded
+coverage. An empty timed or spatial search produces fewer proposals and its
+diagnostic arrays rather than a claim that all continuous routes have been
+ruled out. The direct proposal is still retained first.
+
+\stationSource{+obstacleAvoidance/+search/createRouteCandidates.m:33--171, 195--368, 382--465, 468--492; +obstacleAvoidance/+search/timeExpandedVisibilitySearch.m:32--162}
+
+\section{Station 10: what a seed is}
+
+\arrival{1. What arrives here.}
+The \WalkGeneratedSeedCount\ route proposals created above arrive as seed
+records. In this request seed 1 is \texttt{\WalkSeedOneSource}; seeds 2 and 3
+are both \texttt{\WalkSeedTwoSource}. Their estimated durations are
+\WalkSeedOneDuration, \WalkSeedTwoDuration, and \WalkSeedThreeDuration.
+
+\arrival{2. What this station does to it.}
+A seed stores an index, source label, ordered polyline, normalized route
+parameter \texttt{tau}, optional corridor boundary, estimated duration, and
+length. It is a geometric or timed proposal that later code uses to initialize
+one motion attempt. It is not a trajectory and has not earned a success flag.
+
+\arrival{3. What leaves.}
+All three seeds leave in deterministic order for the later BMTP stage. The
+eventual selected answer is seed \WalkSelectedSeedIndex, the upper visibility
+route, but that fact is not decided here: seed 2 also later produces a valid
+motion, and seed 1 does not. The next milestone explains how these proposals
+become motion candidates and why seed 3 is selected.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A seed can be empty or later fail its motion solve or independent validation.
+That is why the stable record begins with empty route fields and \texttt{NaN}
+estimates. Calling a seed an answer would hide this distinction.
+
+\stationSource{+obstacleAvoidance/+search/createSeed.m:22--30; +obstacleAvoidance/+search/createRouteCandidates.m:401--415; +obstacleAvoidance/+planner/planCorridorQuintic.m:152--343}
+
+\section{Station 11: choose the motion builder}
+
+\arrival{1. What arrives here.}
+One seed at a time arrives from Station 10, together with the prepared obstacle
+history and the resolved option \texttt{TrajectoryMethod}. Our run has
+\texttt{"bmtp"}, the default. Its protected rectangle is static throughout the
+request horizon.
+
+\arrival{2. What this station does to it.}
+The orchestrator reads the option first. \texttt{"ruckigWaypoint"} sends every
+seed to the waypoint builder. Otherwise, a static obstacle horizon sends the
+seed to BMTP. A non-static horizon first tries a conservative swept projection,
+then timed-cell BMTP for a time-expanded route, and finally the general timed
+seed builder. Only its stated unsupported-timed-topology outcomes can continue
+to the explicitly enabled waypoint fallback. Thus the choice follows the
+selected method and obstacle history, not a preferred side of an obstacle.
+
+\arrival{3. What leaves.}
+For each of our three seeds, a static BMTP call leaves this station. The
+selected route is seed \WalkSelectedSeedIndex, whose exported four polyline
+points go round the upper side of the rectangle. The later result selection is
+not performed here.
+
+\arrival{4. What can go wrong here, and what it is called.}
+BMTP requires every obstacle to be static and active over the horizon. A
+violation is
+\nolinkurl{solveBmtpTrajectory:UnsupportedDynamicObstacle}. The
+timed route branch can report \texttt{unsupportedTimedTopology} or
+\texttt{invalidDirectWaitSeed}; those are the two cases that cause the
+waypoint fallback. None applies to this static request.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:47--65, 165--306; +obstacleAvoidance/+planner/solveBmtpTrajectory.m:33--55; trajectory/+bmtpEngine/solve.m:23--37}
+
+\section{Station 12: shape the BMTP curve}
+
+\arrival{1. What arrives here.}
+BMTP receives one seed polyline, convex protected exclusion regions, the rest
+start and goal states, physical limits, resolved options, and an empty
+per-seed motion record. The selected route has three straight seed edges.
+
+\arrival{2. What this station does to it.}
+It turns each seed edge into three degree-16 Bezier spans, so the selected
+route begins with nine optimizer spans. A Bezier span is a curve controlled by
+an ordered row of points: moving one control point changes the whole span
+smoothly, while the endpoint control points pin its ends.
+The first three and last three controls are made equal to impose the required
+rest endpoint derivatives; matching finite differences through order three
+joins neighboring spans. The ordinary exact-region case uses degree 16 and
+three splits. The compact degree-7, one-split form is used only when the
+caller records conservative grouping of a complex outline.
+
+This keeps the curve as controls, so derivative and safety-line conditions
+apply over every span. The later 1201-point scan only finds possible collisions;
+the source explicitly says it is not an acceptance certificate.
+
+\arrival{3. What leaves.}
+The selected seed leaves as a route-shaped C3 composite Bezier warm control
+net, an equal shared segment time sufficient for its derivative controls, and
+region bounds. Diagnostics retain degree, split count, span count, and whether
+an oversized warm route was resampled.
+
+\arrival{4. What can go wrong here, and what it is called.}
+Malformed coordinates or non-increasing \texttt{tau} give
+\texttt{bmtpEngine:InvalidSeedTau}. The source does not document why the
+degree, split count, collision-sample count, or later iteration limits were
+chosen; it documents their operation, not their tuning reason.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:52--109, 342--397, 419--439, 730--752, 1064--1088}
+
+\section{Station 13: solve the first curve problem}
+
+\arrival{1. What arrives here.}
+The curve controls are now unknowns. BMTP also uses four linked nonnegative
+time-power variables: $1$, the common span time, its square, and its cube.
+The first is fixed to one; the objective minimizes the cube, then recovers the
+common span time. Every span therefore advances on one physical clock.
+
+\arrival{2. What this station does to it.}
+It assembles a convex second-order cone problem. Equality rows fix the start
+and goal positions, make the first and last derivative controls zero, and
+match position through jerk at each join. Bounds keep controls inside the
+azimuth and elevation workspace. At the first call there are no safety lines:
+the problem asks only for the fastest smooth curve satisfying these conditions.
+
+\arrival{3. What leaves.}
+Each successful call returns a full Bezier control net and shared span time.
+For the selected route, the recorded first trajectory solve lasts
+\WalkSelectedTrialOneDuration. The next station tests this curve for collision.
+
+A speed limit becomes first differences of adjacent Bezier controls. For a
+degree-$n$ span, $n(P_{i+1}-P_i)$ is a velocity-control coefficient before
+division by span time, so it is bounded by the per-axis velocity limit times
+the time variable. Second and third differences use the squared and cubed
+time variables for acceleration and jerk. Two cone relations make the four
+variables act as powers of one shared time. This checks the polynomial control
+coefficients, rather than merely checking sampled speeds.
+
+\arrival{4. What can go wrong here, and what it is called.}
+An unsuccessful conic call supplies its solver message. Before a collision-free
+incumbent exists, an infeasible request-horizon call may temporarily enlarge
+the intermediate horizon up to the warm kinematic duration; an accepted motion
+still has its own horizon check. The source sets conic iteration caps and
+tolerances but does not document why those numerical values were chosen.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:158--181, 441--601}
+
+\section{Station 14: find a first safe attempt}
+
+\arrival{1. What arrives here.}
+The first unconstrained curve arrives from Station 13. No safety line exists
+yet. The selected route's first recorded attempt is
+\WalkSelectedTrialOneDuration, and it has
+\WalkSelectedTrialOnePairs\ colliding span--region pairs.
+
+\arrival{2. What this station does to it.}
+It evaluates 1201 normalized-time points per span, first using region bounds
+to avoid unnecessary polygon work, then marks every span--region pair whose
+points are inside or on that region. The recorded selected route has
+\WalkSelectedTrialCount\ trajectory attempts: attempt one collides, and
+\WalkSelectedCollisionFreeTrialCount\ later attempts are collision-free. Their
+recorded durations are \WalkSelectedTrialTwoDuration\ and
+\WalkSelectedTrialThreeDuration.
+
+\arrival{3. Why the first safe attempt comes before safety lines.}
+A safety line is solved from a \emph{fixed collision-free curve} and one fixed
+obstacle region. Its job is to separate those two objects. A colliding curve
+does not provide such a pair, so there is no line to fix into the next curve
+problem. This is why BMTP cannot simply begin by imposing obstacle lines: it
+first needs a collision-free incumbent from which the lines can be established.
+
+Commit \texttt{41c4311} records the consequence. On its saved scene, a 180 s
+horizon produced six colliding attempts through 179.203882993999 s, then an
+infeasible seventh and no safe incumbent. At 360 s, the solver reached a
+collision-free 191.541694821082 s attempt, established the lines, then
+descended to about 100.676 s. The current code restores the requested horizon
+as soon as a collision-free attempt is found.
+
+\arrival{4. What can go wrong here, and what it is called.}
+If no collision-free iterate is retained, BMTP returns
+\texttt{noOptimizedFeasibleIterate}; its message preserves the last solver
+cause. A sampled collision is useful to choose line work, but is not itself a
+final collision certificate.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:135--146, 158--243, 730--752; branch_assessment.md:260--279}
+
+\section{Station 15: draw safety lines}
+
+\arrival{1. What arrives here.}
+Each newly tagged colliding span--region pair arrives, along with the most
+recent collision-free curve. The curve is now fixed for this problem; its
+control points are numbers, not unknowns.
+
+\arrival{2. What this station does to it.}
+For each pair it solves a second convex problem for a degree-one safety line:
+two endpoint normals, two offsets, and one margin. The obstacle vertices must
+lie on the obstacle side with the clearance target; the fixed curve's controls
+must lie on the other side. The objective minimizes the negative margin, so it
+finds the greatest separation allowed by those conditions. It then directly
+checks normal size, obstacle side, trajectory side, and signed gap before
+retaining the line.
+
+\arrival{3. What leaves.}
+Verified lines become fixed coefficients in the next trajectory SOCP. The
+selected-route diagnostic records \WalkSelectedPlaneSocpCount\ safety-line SOCPs and
+\WalkSelectedTrajectorySocpCount\ trajectory SOCPs. It retains the failed pair
+and line if a verification fails, rather than silently continuing.
+
+\arrival{4. What can go wrong here, and what it is called.}
+A failed or unverified maximum-margin solve stops the loop with the message
+\texttt{"A maximum-margin plane failed direct verification."} The source does
+not explain a separate physical reason for its margin formulation beyond the
+implemented clearance and roundoff conditions.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:244--264, 603--728, 761--824}
+
+\section{Station 16: alternate and stop}
+
+\arrival{1. What arrives here.}
+The next curve problem holds every retained safety line fixed, so its control
+points and shared time can move while respecting those lines. The line problem
+then holds that collision-free curve fixed, so its normal and offsets can move.
+Neither step alone can do both jobs. Letting curve controls and line normals
+move together multiplies unknowns, so their joint condition is not one convex
+problem; BMTP alternates the two convex problems.
+
+\arrival{2. Reusing unchanged safety lines.}
+Plane reuse is \WalkPlaneReuse. After a collision-free trial, BMTP skips line
+re-derivation only when the retained best duration changed by no more than
+\texttt{ArrivalTimeTolerance\_s} and the tagged pair set is unchanged. It
+solves the curve problem again with the same lines.
+On the measured reference case, that repeated solve was identical in control
+net and duration, so the existing arrival-improvement test ended the loop.
+Our selected route did not use it:
+\texttt{PlaneReuseApplied=\WalkSelectedPlaneReuseApplied}.
+
+The recorded trade is deliberately visible: on one reference example safety-line
+reuse was 41\% faster and arrived 0.016643674134 s later. That arrival cost
+was accepted; it is a single measurement, not a general performance claim.
+
+\arrival{3. What leaves.}
+The loop retains the shortest collision-free control net seen so far, not just
+the last trial. It also records trial duration, collision-pair count,
+collision-free status, trajectory and safety-line call counts, and reuse differences.
+It does not retain the geometry of every intermediate curve, so this document
+does not draw those unrecorded curves.
+
+\arrival{4. How it stops.}
+It stops successfully when a collision-free arrival improvement is nonnegative
+and at most \WalkArrivalTolerance. Other stops are the 35-iteration limit,
+the optional solver-time limit, a failed trajectory SOCP, a tagged pair crossing
+its retained line, or a failed line verification. Without any safe incumbent
+the final reason is \texttt{noOptimizedFeasibleIterate}; otherwise Station 17
+receives the retained best curve. The source does not document why 35 is the
+iteration cap.
+
+\stationSource{+obstacleAvoidance/+input/resolvePlannerOptions.m:21--24, 49, 95--97; trajectory/+bmtpEngine/solve.m:149--266, 1064--1088; branch_assessment.md:19--24, 43--60}
+
+\section{Station 17: finish the BMTP motion}
+
+\arrival{1. What arrives here.}
+The shortest retained collision-free optimizer control net and shared time
+arrive with the retained safety lines. This is still the optimizer form, not
+yet the published sampled motion.
+
+\arrival{2. What this station does to it.}
+It projects the endpoint control points onto exact rest positions, then splits
+every Bezier span at its midpoint. From both the original and converted
+Bernstein controls it calculates the minimum segment time required by velocity,
+acceleration, and jerk limits. It stretches time by the larger required ratio,
+never clips a derivative. A fixed-arrival request that cannot fit after this
+stretching returns \texttt{timeWindowInfeasible} or
+\texttt{fixedArrivalInfeasible}; an earliest-arrival motion keeps the stretched
+time. The engine then converts controls to power polynomials, samples them for
+the public record, and verifies every output span against every supplied region
+with its safety-line certificate.
+
+\arrival{3. What leaves.}
+The selected candidate leaves with time, position, velocity, acceleration, and
+jerk histories; polynomial coefficients; arrival time \WalkArrivalTime; and a
+motion and safety-line certificate. Its final duration is longer than its retained
+optimizer trials because midpoint subdivision and post-projection dilation are
+part of the published certificate path, not a hidden correction.
+
+\arrival{4. What can go wrong here, and what it is called.}
+If a certificate does not pass, the expected result is
+\texttt{planeCertificateUnavailable}; it explicitly asks for independent
+collision validation rather than declaring success. Only a passed all-pair
+certificate sets the engine candidate to \texttt{goalReached}. Station 18 will
+independently check that motion before the planner is allowed to return it.
+
+\stationSource{trajectory/+bmtpEngine/solve.m:276--338, 428--439, 754--824, 896--1003}
+
+\section{Station 18: independently validate}
+
+\arrival{1. What arrives here.}
+One constructed candidate arrives with the original normalized request. The
+candidate provides sampled time, position, velocity, acceleration, and jerk
+histories, its polynomial segments, and any seed-corridor or safety-line
+certificate. The request provides the protected obstacles, start and goal
+states, workspace and derivative limits, and resolved options. The builder's
+success flag is not an input to the decision.
+
+\arrival{2. What this station examines.}
+The checker first requires compatible finite histories and a strictly increasing
+time base. It compares the sampled endpoints and endpoint derivatives with the
+request, applying the fixed-arrival or earliest-arrival time policy. It then
+checks the polynomial format, its time base, continuity, endpoint states, and
+agreement with the sampled histories. From the polynomial itself it checks
+position against the workspace and velocity, acceleration, and jerk against
+their limits over the whole smooth motion, including stationary points between
+samples.
+
+It also establishes collision freedom over the full time-parameterized motion,
+not merely at route points. For a static safety-line certificate it rebuilds the
+convex regions from the protected shape, converts the published power
+polynomials independently to Bernstein controls, and rechecks every
+span--region separation and clearance. If that evidence is unavailable, it
+tries the seed-corridor certificate, then an adaptive collision check. Unresolved
+continuous intervals fail closed. Finally it checks that original obstacle
+geometry and one nonnegative applied safety margin are present; when azimuth
+wrapping is off, it also requires the position to remain in the workspace.
+
+The builder is not allowed to judge its own output because its construction
+arithmetic, cached regions, or certificate fields could share the same error as
+the proposed motion. This checker reconstructs the relevant regions and
+converts the polynomial independently instead of trusting a claimed certificate
+or a builder-provided pass flag. That separation is mechanical: it compares the
+published motion and the original request against freshly rebuilt evidence.
+
+\arrival{3. What leaves.}
+One stable validation record leaves. It contains \texttt{Passed} and an
+actionable \texttt{Message}; the individual history, endpoint, polynomial,
+continuous-limit, dynamic-consistency, collision, collision-resolution,
+safety-margin, and azimuth-wrap check results; continuity and history residuals;
+per-axis maximum sampled derivatives; minimum clearance; collision and
+unresolved-interval counts; which seed-corridor or safety-line certificate was
+independently established; the failed check names in \texttt{Issues}; and
+collision-checking and total validation elapsed time.
+
+\arrival{4. What can fail here, and what each name means.}
+The validator reports the following failed-check names in \texttt{Issues}:
+\texttt{history shape} means the histories do not have the required common
+N-by-2 form; \texttt{finite increasing time} means time is missing, nonfinite,
+or not strictly increasing; and \texttt{finite histories} means a required
+sample is nonfinite. \texttt{initial state}, \texttt{terminal state}, and
+\texttt{goal time} mean the published endpoints or arrival do not meet the
+request and its time policy. \texttt{polynomial format}, \texttt{polynomial
+initial time}, \texttt{polynomial time base}, \texttt{polynomial segment
+continuity}, \texttt{polynomial endpoint states}, and \texttt{polynomial
+sampled histories} mean the polynomial record is malformed, begins at the
+wrong time, uses an inconsistent time base, is discontinuous, misses its
+endpoint state, or disagrees with its samples. \texttt{continuous limits} means
+the smooth position or a derivative exceeds its workspace or physical limit;
+\texttt{polynomial dynamics} means the reported derivative histories disagree
+with the polynomial. \texttt{collision freedom} means contact or insufficient
+clearance was found; \texttt{collision resolution} means a continuous interval
+could not be proved clear. \texttt{safety-margin provenance} means original
+geometry or a finite nonnegative recorded margin is missing. \texttt{azimuth-wrap
+policy} means an unwrapped motion left the workspace. Any one of these leaves
+\texttt{Passed=false}.
+
+\stationSource{+obstacleAvoidance/validateTrajectory.m:1--145, 181--242, 244--340, 452--477, 499--560; +obstacleAvoidance/+validation/validatePolynomialTrajectory.m:1--173}
+
+\section{Station 19: select and return}
+
+\arrival{1. What is eligible.}
+All seed summaries arrive with their constructed candidates. Only the indices
+whose \texttt{ValidationPassed} field is true are eligible. An optimizer result,
+a collision scan, or a builder's own success flag cannot make an unvalidated
+candidate eligible.
+
+\arrival{2. How eligible candidates are ordered.}
+The source sorts every key in ascending order. For a fixed-arrival request the
+keys are, in order: \texttt{MotionLength\_deg},
+\texttt{IntegratedSquaredJerk\_deg2\_s5}, and seed index. For the
+earliest-arrival request in this walkthrough, it prepends
+\texttt{ArrivalTime\_s}: arrival time, motion length, integrated squared jerk,
+then seed index. The final key makes an exact tie deterministic. Our two
+validated visibility-route candidates therefore reach this comparison, and
+seed \WalkSelectedSeedIndex, the upper route, wins under that ordering.
+
+\arrival{3. What happens when none passed.}
+The planner returns the stable empty-result shape with
+\texttt{Success=false},
+\texttt{TerminationReason="noValidatedSeed"}, and the message
+\texttt{"No compact motion passed independent validation."} followed, when
+available, by the best attempt's message. It keeps all seeds, candidate
+summaries, grid evidence, direct and special-construction records, timings, and
+the original normalized inputs. Its diagnostic record also identifies a best
+partial seed by, in order, resolved collision evidence, smaller maximum
+constraint violation, greater minimum clearance, and then original index. This
+is evidence of the attempts made, not a conclusion that no safe motion exists.
+
+\arrival{4. What the caller finally receives.}
+On success the caller receives \texttt{Success}, \texttt{Message}, and
+\texttt{TerminationReason}; resolved \texttt{Options} and \texttt{Inputs};
+all \texttt{Seeds} and \texttt{SeedSummaries};
+\texttt{SelectedSeedIndex} and \texttt{SelectedSeed\_deg}; complete
+\texttt{time\_s}, \texttt{position\_deg}, \texttt{velocity\_deg\_s},
+\texttt{acceleration\_deg\_s2}, and \texttt{jerk\_deg\_s3} histories;
+\texttt{Polynomial}, \texttt{SeedCorridorBoundary\_deg},
+\texttt{SeedCorridor}, \texttt{PlaneCertificate}, and the independent
+\texttt{Validation} record. It also returns \texttt{ArrivalTime\_s},
+\texttt{TrajectoryDuration\_s}, \texttt{GoalHorizon\_s},
+\texttt{FirstValidatedMotionTime\_s}, and
+\texttt{ElapsedPlanningTime\_s}.
+
+\texttt{SearchDiagnostics} accompanies those fields: grid and route-search
+evidence, every seed summary, attempted and validated candidate counts, the
+first validated-motion time, selected best-partial index, its termination
+reason, early-construction records, and stage timing. The same named fields
+exist on the no-validated-motion return, with documented empty values where no
+motion exists.
+
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:344--389, 496--563, 836--861; +obstacleAvoidance/+planner/createEmptyResult.m:39--120}
+
+\section{What this run produced}
+
+The request that began at $[-5,0]$ degrees at time 0 reached $[5,0]$ degrees
+at \WalkArrivalTime. Its published motion length is \WalkMotionLength. The
+winning candidate is seed \WalkSelectedSeedIndex, the upper visibility route;
+its complete smooth motion, polynomial record, safety-line certificate, and
+independent validation accompany the result. The diagnostics retain the three
+route proposals, the direct and restricted-construction outcomes, the search
+counts, each candidate summary, the selected seed, collision and clearance
+evidence, and stage timings.
+
+This result says that this constructed motion passed the independent check for
+the stated request and limits. It does not prove that no shorter, earlier, or
+otherwise better safe motion exists outside the candidates and constructions
+examined here.
+
+\stationSource{examples/exampleObstacleAvoidance.m:23--59; +obstacleAvoidance/+planner/planCorridorQuintic.m:344--389; +obstacleAvoidance/validateTrajectory.m:97--145}
+
+\end{document}

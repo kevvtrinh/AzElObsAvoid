@@ -38,18 +38,28 @@ corridorCount = numel(corridor);
 segmentIndex = [corridor.SegmentIndex].';
 normal = vertcat(corridor.Normal);
 selectedPower_deg = polynomial.positionPower_deg(segmentIndex, :, :);
-azimuthPower_deg = reshape( ...
-    selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
-elevationPower_deg = reshape( ...
-    selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
-projectionPower_deg = normal(:, 1) .* azimuthPower_deg + ...
-    normal(:, 2) .* elevationPower_deg;
+azimuthPower_deg = reshape( selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
+elevationPower_deg = reshape( selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
+projectionPower_deg = normal(:, 1) .* azimuthPower_deg + normal(:, 2) .* elevationPower_deg;
 
 % Bernstein coefficients bound the complete continuous projection on each
 % segment, so this is deliberately stronger than sampled feasibility.
-projectionBernstein_deg = hs3Engine.polynomial.convertPowerToBernstein( ...
-    projectionPower_deg.');
+projectionBernstein_deg = convertPowerToBernstein(projectionPower_deg.');
 offset_deg = [corridor.BoundaryOffset_deg] + [corridor.Clearance_deg];
 inequalityMatrix = offset_deg - projectionBernstein_deg;
 inequality = inequalityMatrix(:);
+end
+
+function coefficient = convertPowerToBernstein(powerCoefficient)
+% Deliberately independent from certification conversions so a shared
+% arithmetic error cannot make corridor construction and checking agree.
+% Convert ascending power coefficients exactly on the normalized interval.
+degree = size(powerCoefficient, 1) - 1;
+persistent conversionMatrixByDegree
+if numel(conversionMatrixByDegree) <= degree || isempty(conversionMatrixByDegree{degree + 1})
+    conversionMatrix = pascal(degree + 1, 1);
+    conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
+    conversionMatrixByDegree{degree + 1} = conversionMatrix;
+end
+coefficient = conversionMatrixByDegree{degree + 1} * double(powerCoefficient);
 end

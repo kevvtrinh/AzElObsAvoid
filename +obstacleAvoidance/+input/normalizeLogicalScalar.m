@@ -36,7 +36,8 @@ function value = normalizeLogicalScalar(value, fieldName, errorIdentifier)
 % safe. MATLAB converts 2, -1, and NaN to true. The scalar check also rejects a
 % value such as [true false].
 isLogicalScalar = islogical(value) && isscalar(value);
-isBinaryNumericScalar = isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && any(value == [0 1]);
+isBinaryNumericScalar = isnumeric(value) && isscalar(value) && ...
+    isreal(value) && isfinite(value) && any(value == [0 1]);
 if ~(isLogicalScalar || isBinaryNumericScalar)
     error(errorIdentifier, "%s must be scalar logical or binary numeric.", fieldName);
 end

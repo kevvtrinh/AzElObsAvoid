@@ -45,7 +45,8 @@ elseif nargin == 3
     totalElapsedTime_s = toc(totalOrTimer);
 else
     error("stageTiming:InvalidCall", ...
-        "Use zero inputs to create timing, two to reconcile it, or three to finalize a planner result.");
+        "Use zero inputs to create timing, two to reconcile it, or " + ...
+        "three to finalize a planner result.");
 end
 
 validateattributes(totalElapsedTime_s, {'numeric'}, ...

@@ -1,2692 +1,1988 @@
-# Plan 325 branch assessment
-
-The current planner judgment is **independent Ruckig-derived and HS3 trajectory
-engines, with obstacle-aware routing owned by the Az/El planner and no neutral
-trajectory wrapper — 2026-08-27**.
-Earlier sections remain as historical evidence and may name implementations
-that are no longer present.
-
-## Bounded interactive sandbox planning — 2026-08-27
-
-The sandbox now owns a smaller, explicitly documented HS3 work portfolio while
-the production planner defaults remain unchanged. On a screenshot-matched
-one-polygon moving-obstacle request, the production-default baseline required
-123.0002 seconds; 119.3994 seconds, or 97.1%, was motion solving. The bounded
-sandbox configuration returned an independently validated, collision-free and
-kinematically valid motion in 4.3057 seconds, a 28.57x wall-time reduction.
-
-The responsiveness gain has a visible quality cost: moving-case earliest
-arrival changed from 40.7616 to 51.7410 seconds, a 26.93% later result. The
-matched stationary case improved from 14.0421 to 5.2767 seconds (2.66x), with
-arrival changing from 41.7830 to 43.9204 seconds (5.12% later); both runs were
-independently valid. The sandbox result is an interactive preview, not a global
-or production-quality optimum. Callers may replace
-`sandboxOverrides.PlannerOptions` when finer arrival quality is worth the
-additional nonlinear work. These two cases do not establish broad scaling.
-
-Successful, independently validated Goal Mode runs now automatically launch
-the maintained result-driven animation dashboard. It advances the returned
-motion, time-varying obstacles, elapsed path, and four kinematic histories from
-the same planner result; it does not rerun planning. Hidden sessions skip the
-animation and pause entirely. `AnimateOnRun`, `AnimationFrameStride`, and
-`AnimationPause_s` remain sandbox-level display controls.
-
-## Independent engines and obstacle-owned routing — 2026-08-27
-
-The largest architectural strength is now enforceable ownership. The
-`trajectory/` root contains no MATLAB entry-point files: `ruckigEngine.solve`
-owns exact jerk-switching motion, while `hs3Engine.solve` owns direct
-collocation and its polynomial and constraint packages. Ruckig contains no HS3,
-optimizer, obstacle, or planner dependency. HS3 contains no Ruckig switching
-functions or Az/El dependency. Obstacle avoidance alone sees geometry and calls
-Ruckig only for an empty obstacle field with a fixed-position target. Every
-moving target or nonempty obstacle field continues through topology search and
-HS3. Unsupported Ruckig switching families continue to HS3, while identified
-physical infeasibility and independent-validation failures remain visible.
-
-The former neutral dispatcher and its request, validation, conversion, and
-internal-helper files were removed. Each engine now resolves its own options,
-normalizes its own input, and validates its own output. The obstacle planner's
-Ruckig-to-Az/El polynomial translation is a local function at the geometry-aware
-boundary, followed by canonical obstacle-planner validation. Direct engine
-results no longer contain selection or fallback provenance fields.
-
-Measured warm overhead supports the removal. On the same moderate two-axis
-request, direct Ruckig measured 1.8168 ms median over 30 repetitions. The public
-obstacle planner measured 7.0647 ms median, a 5.2479 ms addition for Az/El input
-normalization, endpoint checks, result translation, and a second independent
-continuous validation. Before removal, the neutral dispatcher itself added
-roughly 0.4--0.6 ms through duplicate normalization. The remaining 5.25 ms is
-real safety work and is not presented as zero-cost routing. It is material for
-millisecond-scale callers, so callers that need only dimension-neutral motion
-should invoke an engine directly.
-
-The full repository suite passed 144/144 in 55.099274 test seconds. All 17
-maintained examples then ran serially in fresh headless MATLAB processes. The
-16 successful motions passed their example-specific checks and independent
-continuous collision, position, velocity, acceleration, jerk, and dynamics
-validation. `exampleNoPath` returned the expected `noValidatedSeed` with
-consistent failure diagnostics. A visible Ruckig-routed success created three
-figures and six axes; a visible expected failure created two diagnostic figures
-and two axes.
-
-Obstacle-constrained route, motion-length, and duration results match the
-preceding exact-switching evidence. The obstacle-free example improved from
-4.5458984375 to 4.53112887415 seconds while retaining the 4.472135955-degree
-straight path. This local result does not prove global optimality. The largest
-runtime weakness remains the moving/deforming U.S. outline example at
-166.070652 seconds in this run, consistent with the recent 178--184 second
-range. The largest maintainability weakness also remains total implementation
-size and the complexity of the nonlinear obstacle-constrained path.
-
-## Exact dimension-neutral third-order switching — 2026-08-27
-
-The public HS3 engine now solves symmetric third-order position limits with a
-pure-MATLAB adaptation of the Ruckig v0.19.4 switching equations. Each axis is
-solved independently for its certified minimum time, faster axes are
-synchronized to the limiting duration, and equal-duration candidates are
-ranked by dense spatial length before integrated jerk. Eligible rest-to-rest
-multi-axis moves retain the certified scalar-progress path so a direct motion
-is exactly straight. Every constructed polynomial still passes the existing
-continuous HS3 constraint evaluator and independent public validation. Path
-constraints, asymmetric derivative bounds, and unsupported numerical families
-retain the existing general optimizer. The engine consumes only arbitrary-
-dimension states, derivative bounds, time policy, and optional path
-constraints; it has no knowledge of obstacles, azimuth/elevation, targets, or
-planner examples. The MIT attribution is retained in
-`hs3/THIRD_PARTY_NOTICES.txt`.
-
-Against exact baseline `e3596a3`, the final serial 21-case shared reference run
-matched 19 of the 20 published success arrival values within 0.00005 seconds;
-the largest absolute difference was 0.00004514 seconds. All 21 wall-time gates
-passed. Summed measured solver wall time decreased from 32.068521 to 1.1144582
-seconds (96.52%), while the 19 matched successful arrivals improved by a
-combined 2.0775845 seconds. The retained reference script, input table,
-benchmark harness, and final measurements make the comparison reproducible.
-
-The unmatched published-success row is not treated as a solver failure to be
-hidden. Its initial velocity is exactly at the lower bound while its initial
-acceleration points farther outward. Any finite continuous jerk therefore
-violates the velocity bound immediately. HS3 now returns
-`kinematicallyInfeasibleBoundaryState` in 0.0037 seconds rather than claiming
-the published 31.9573-second motion is feasible. The other published failure
-is rejected as `fixedTimeBelowMinimum` in 0.027 seconds.
-
-Minimum arrival remains the primary objective and spatial length is the
-secondary objective at that duration. Relative to the slower baseline, 16 of
-19 successful paths were equal or shorter and three were longer while reaching
-the endpoint earlier. The largest reduction was 16.7155 coordinate units for
-the reordered case. The mixed case-2/fixed-case-8 path was 21.7015 units at
-7.91695 seconds versus 21.3863 at 8.39679 seconds; its direct distance is
-21.2843. This is a real time-versus-length tradeoff, and the switching-family
-tie-break does not establish global shortestness for non-rest endpoint states.
-
-The focused standalone HS3 suite passed 18/18. The complete repository suite
-passed 132/132 in 68.757 seconds. All 17 maintained examples then ran serially
-in fresh headless MATLAB processes: 16 successes passed independent collision
-and continuous position, velocity, acceleration, jerk, and dynamics checks;
-the expected `noValidatedSeed` result passed its failure-diagnostic checks. A
-visible success created three figures, and a visible expected failure created
-two diagnostic figures with retained search data. Every maintained example
-kept its preceding selected route, smoothed-path length, and duration.
-
-The exact solver adds substantial implementation size: production is 13,674
-physical lines and production plus tests is 18,250, above the repository's
-7,500- and 12,000-line targets. The largest production file remains 899 lines.
-This size cost is the main maintainability weakness. Explicit `parfor` was not
-added because each accepted axis solve is normally only a few milliseconds and
-pool startup would dominate these cases; the axis decomposition remains ready
-for a caller-owned parallel strategy if much higher dimensions justify it.
-
-## Certified multi-axis direct progress — 2026-08-27
-
-The dimension-neutral public HS3 engine now reduces an eligible obstacle-free,
-rest-to-rest direct motion to one monotone scalar progress polynomial, then
-lifts the validated jerk controls back to every input dimension. Effective
-velocity, acceleration, and jerk limits are the intersection of the
-displacement-normalized limits from every active axis. Fixed-time requests use
-the reduction only when the direct line is feasible. Earliest-arrival requests
-additionally require one axis, including ties, to own all three normalized
-derivative limits; that axis supplies a lower bound on every unrestricted
-multi-axis motion, so the reduction cannot sacrifice arrival time. Asymmetric
-bounds, path constraints, non-rest endpoints, mixed limiting axes, and
-one-dimensional inputs retain the preceding general solve.
-
-Against exact baseline `e72957c`, three structurally different 3-D/4-D
-earliest-arrival cases kept arrival within 0.0000386 seconds of the same-mesh
-convex fixed-time feasibility boundary. Their spatial excess above the direct
-endpoint distance decreased from 0.00364763382, 0.00495067325, and
-0.00239304950 to magnitudes below `6.82e-9`. A three-axis moving-target
-fixed-time sweep decreased spatial excess from 0.000188808074 to floating-point
-zero while preserving every trial time. The warmed three-case median free-time
-wall time decreased from 1.6038312 to 0.5261287 seconds (67.20%). The first
-balanced solve remained dominated by cold Optimization Toolbox startup at
-3.1921851 seconds. The moving-target sweep changed from 0.2210358 to
-0.2851910 seconds; this single 0.064-second unfavorable observation is retained
-and no moving-sweep speedup is claimed.
-
-The focused standalone suite passed 17/17. The complete suite passed 131/131
-in 79.596835 seconds. Code Analyzer reported zero findings in the changed
-engine file. All 17 maintained examples ran serially in fresh MATLAB processes:
-16 successes passed independent continuous validation and the expected
-`noValidatedSeed` result passed its failure-diagnostic checks. Every maintained
-path and arrival metric matched `e72957c`. A visible success created three
-figures with six axes; a visible expected failure created two diagnostic
-figures with two axes.
-
-This is an exact shortest-path and minimum-time result only for the declared
-direct-progress gate, not a global optimality claim for constrained paths or
-mixed axis bottlenecks. Explicit parallel workers were not added: the accepted
-case is now one small scalar solve, for which pool startup and serialization
-would dominate; MATLAB remains free to use native threaded linear algebra.
-The change adds 147 production lines and 82 test lines. Production is 11,823
-lines, so the 4,323-line overage requires
-`0.25 * 4323 / 100 = 10.8075`, or a 1080.75% wall-time reduction, under the
-repository formula. That literal size gate remains impossible and unsatisfied.
-Production plus tests is 16,359 lines, also above its 12,000-line target.
-
-## Unified spatial and timed seed equivalence — 2026-08-27
-
-The route search now owns one sampled seed-equivalence helper instead of
-separate spatial and timed implementations. Spatial routes reuse the complete
-seed's arc-length parameterization, while timed routes additionally preserve
-the existing relative duration comparison. Position tolerances, seed order,
-reachability decisions, and diagnostics are unchanged.
-
-Exact A/B checks against `5cf2d87` compared complete seeds and diagnostics for
-a static concave U and a translating barrier. Both were `isequaln`. Eight
-focused duration, waiting, homology, cleanup, reachability, clustering, and
-dense-envelope tests passed 8/8. The complete suite passed 128/128 in
-80.343082 seconds, and Code Analyzer reported zero findings in the changed
-file. All 17 maintained examples then ran serially in fresh headless MATLAB
-processes: 16 successes and the expected `noValidatedSeed` failure all passed
-independent validation with unchanged path and arrival metrics. Their wall-time
-sum was 349.9932267 seconds. A visible success created three figures with six
-axes; the visible failure created two diagnostic figures with two axes.
-
-The matched route-search timings do not establish a speedup. Static-U median
-time changed from 0.0536149 to 0.0545641 seconds (-1.77%), while moving-barrier
-median time changed from 0.6353544 to 0.6119082 seconds (+3.69%). Both are
-below the 5% runtime gate, so the change is retained only for removing one
-duplicate implementation, three executable lines, and six physical lines.
-The main route owner remains McCabe 27 and its visibility helper remains 18;
-the two old equivalence helpers totaled complexity 7, versus 5 for the shared
-helper. `createRouteCandidates.m` is now 885 lines. Production is 11,676 lines
-and production plus tests is 16,130. The 4,176-line production overage still
-requires an impossible 1044% wall-time reduction under the literal formula.
-
-## Route-candidate file-cap cleanup — 2026-08-27
-
-`createRouteCandidates.m` decreased from 924 to 891 physical lines by removing
-33 duplicate narrative-comment or blank lines. Mechanical diff inspection
-confirms that no executable line changed. Production is now 11,682 lines, and
-the largest production file is `solveRouteCandidate.m` at 899 lines, so the
-hard per-file limit is currently satisfied.
-
-This is a file-cap and readability cleanup, not a cyclomatic-complexity claim.
-McCabe complexity remains 27 for the main route-candidate owner and 18 for its
-visibility-graph helper. Production plus tests remains 16,136 lines, and the
-4,182-line production overage still requires an impossible 1045.5% wall-time
-reduction under the literal formula. Four MATLAB R2024b verification launches
-failed before code execution with a host file-system inconsistency while
-existing processes were preserved, so focused post-cleanup tests remain
-unexecuted.
-
-## Prepared dynamic boundary-edge queries — 2026-08-27
-
-Dynamic non-support corridor constraints now interpolate only the selected
-canonical boundary edge. Preparation caches finite ring bounds and the
-topology-change union ring bounds, so each solver callback avoids rebuilding
-every boundary edge. Support constraints, fixed obstacles, final collision
-validation, and the spatial visibility search are unchanged. Exact source-time
-selection, query-time closure, multi-ring edge order, and conservative topology
-unions remain shared invariants with the complete geometry path. Old or partial
-caches and finite endpoints whose interpolation delta overflows fall back to
-that complete path.
-
-At exact baseline `750e9c7`, three moving/deforming U.S. runs had wall times of
-179.5093499, 179.4877722, and 180.0643631 seconds. The initial exact fast-path
-candidate measured 148.7280267, 147.6009931, and 148.5100961 seconds, a 17.27%
-median reduction. The later safeguarded worktree's 165.7597307-second run was
-collected in a different session without a contemporaneous baseline, so the
-former 7.66% comparison does not establish the final implementation's causal
-gain. Every recorded run retained the exact 40-degree selected route,
-43.0751355347-degree smoothed motion, 7.96286899667-second duration, solver
-evidence, and validation certificates. Structurally different opening-U,
-accelerating-circle, moving-circle, and static-outline controls retained their
-exact path and arrival metrics.
-
-A post-push experiment moved defensive cache validation outside the selected-
-edge hot loop. Against exact parent `8059595`, counterbalanced parent wall times
-were 167.9463006 and 165.2065477 seconds and candidate times were 165.7019183
-and 163.1769446 seconds. The 1.28% median wall reduction and 1.08% median
-reported-planner reduction missed the declared 5% retention gate; the code was
-reverted. This localizes repeated public-query validation as a real but minor
-cost rather than the remaining dominant bottleneck.
-
-Sparse nonlinear Jacobians were also tested only at the neutral HS3 `fmincon`
-boundary. The counterbalanced Opening-U median improved 2.29%, from
-43.48570245 to 42.4909808 seconds, while solver iterations, objective,
-residuals, route, arrival, and validation remained exact. Because the result
-missed the declared 5% wall-time gate and required production growth, it was
-reverted. Sparse conversion is therefore not the next retained optimization at
-the current 43-variable problem scale.
-
-Limited-memory BFGS was also rejected: one identical Opening-U run increased
-wall time to 69.5511834 seconds without changing the 19-iteration solution.
-
-The complete suite passed 128/128. All 17 maintained examples ran serially in
-fresh headless processes: 16 independently validated successes and the
-independently validated expected `noValidatedSeed` failure. Every successful
-result passed collision and continuous kinematic checks. Code Analyzer reported
-zero findings across all 87 maintained MATLAB files. Focused obstacle and HS3
-tests passed 21/21, including exact fast-path versus complete-boundary values
-and gradients for a deforming edge. A visible successful run created three
-figures with six axes; a visible expected failure created two diagnostic
-figures with two axes.
-
-The retained diff adds 205 net production lines and 173 net test lines. The
-production tree is 11,715 physical lines, so the 4,215-line overage requires
-`0.25 * 4215 / 100 = 10.5375`, or a 1053.75% wall-time reduction under the
-repository formula. That literal size gate is unsatisfied. Production plus
-tests is 16,169 lines, also above the independent 12,000-line limit. The size
-increase is a real maintainability cost. The benefit is localized to dynamic
-selected-edge constraints; support constraints and solver factorization remain
-dominant in other cases, and this optimization does not establish global path
-or arrival-time optimality.
-
-## Convex arrival search for certified static direct routes — 2026-08-27
-
-A static, geometry-certified direct seed with rest-to-rest endpoint velocity
-and acceleration now uses the existing fixed-time linear HS3 formulation and
-a bounded feasibility bisection for earliest arrival. The trial count is
-derived from the initial time bracket and `ArrivalTimeTolerance_s`, so the
-reported arrival resolves the public tolerance rather than an unrelated
-internal cap. Empty obstacle fields retain their existing branch. Detours,
-changing obstacles, moving goals, non-direct routes, and non-rest endpoint
-states retain the free-time or timed-topology behavior they had before.
-
-Against exact commit `db58000`, a diagonal 94.4183046713-degree direct case
-with irrelevant static geometry kept the exact shortest spatial length.
-Arrival changed by only 0.0000915641 seconds, within the 0.001-second public
-tolerance, while the warmed five-run median decreased from 1.5234749 to
-0.8456878 seconds (44.5%); every candidate run was faster than its baseline
-counterpart. A structurally different 20-degree axis-aligned case improved
-arrival from 12.8082788069 to 12.6129150391 seconds and decreased its warmed
-five-run median from 0.73225 to 0.6630497 seconds (9.45%). The exact fixed-time
-formulation removed the latter case's 7.45e-8-degree spatial drift.
-
-The complete suite passed 126/126. All 17 maintained examples ran serially in
-fresh headless processes: 16 independently validated successes and the
-independently validated expected `noValidatedSeed` failure. Every successful
-result passed collision and continuous kinematic checks, and all selected
-routes, smoothed lengths, and durations matched `db58000`. Code Analyzer
-reported zero findings across all 86 maintained MATLAB files, and the six
-example-requirement tests passed on a clean repository-only path. A visible
-obstacle-free run created three figures with six axes, and a visible expected
-failure created two diagnostic figures with two axes. The moving/deforming
-U.S. case retained its 40-degree route, 43.0751355347-degree motion, and
-7.96286899667-second duration at 179.1714178 seconds.
-
-The retained diff adds 24 net production lines and 31 net test lines.
-`plan.m` is 789 physical lines. The production tree is 11,510 physical lines
-and production plus tests is 15,791, still above the repository's 7,500- and
-12,000-line targets. The planner remains a bounded candidate search: this
-convex timing result applies only after a direct spatial route has been
-certified and does not establish global path or arrival-time optimality. The
-moving/deforming case remains the largest measured runtime weakness.
-
-## Certified monotonic direct-line progress — 2026-08-27
-
-Ordered, collinear, geometry-certified seeds now receive a continuous
-nonnegative-progress constraint only when both endpoint velocity and
-acceleration are zero within floating-point tolerance. The route tangent is
-projected onto every segment's complete velocity polynomial, converted to
-Bernstein form, and every coefficient is constrained nonnegative. This makes
-the returned motion advance or wait along the certified direct line rather
-than reverse along it. Detours, unordered collinear seeds, moving targets,
-nonparallel endpoint derivatives, and every non-rest endpoint request retain
-the original unrestricted behavior.
-
-The Bernstein coefficient condition is a conservative sufficient certificate,
-not a necessary characterization of every nonnegative polynomial. Restricting
-activation to certified rest-to-rest lines bounds that conservatism, but the
-planner remains a bounded candidate search and this change does not establish
-global path or arrival-time optimality. Focused tests verify value/Jacobian row
-parity, reject an interior backward velocity, preserve partial-layout rows, and
-retain required reversals for both backward initial velocity and a short move
-with large positive endpoint speeds.
-
-Against exact commit `36b854f`, Opening U retained its 10-degree selected
-route and 11.8560791016-second arrival while motion length decreased from
-10.0912159691 to exactly 10 degrees. The final fresh retention run took
-39.0340602 seconds versus the 38.5046175-second three-run baseline median;
-this 1.38% difference is treated as run noise rather than a speedup. Every
-other maintained example retained exact selected-route, smoothed-motion, and
-duration metrics from the preceding matrix. The longest moving/deforming U.S.
-case retained its 40-degree route, 43.0751355347-degree motion, and
-7.96286899667-second duration at 179.707168 seconds.
-
-The complete suite passed 125/125. All 17 maintained examples ran serially in
-fresh headless processes: 16 independently validated successes and the
-independently validated expected `noValidatedSeed` failure. Every successful
-result passed collision and continuous kinematic checks. A visible
-obstacle-free run created three figures with six axes, and a visible expected
-failure created two diagnostic figures with two axes.
-
-The retained diff adds 79 net production lines and 81 net test lines.
-`solveRouteCandidate.m` is 899 physical lines, below the 900-line changed-file
-cap, but existing `createRouteCandidates.m` remains 924 lines. The production
-tree is 11,486 physical lines and production plus tests is 15,736, still above
-the repository's 7,500- and 12,000-line targets. That pre-existing size debt
-remains a maintainability weakness; the moving/deforming case remains the
-largest runtime weakness.
-
-## Batched occupancy and deferred query allocation — 2026-08-27
-
-Multi-ring occupancy now passes every point at one obstacle/time group through
-the existing vectorized signed-clearance query. This reuses one boundary-edge
-traversal while preserving the same interior, boundary-tolerance, and first-
-blocker policies. `shapeAtTime` now constructs the stable empty geometry and
-empty `polyshape` only on inactive returns; active cached and interpolated
-queries no longer allocate placeholders that are immediately overwritten.
-Moving, deforming, topology-changing, single-slice, and out-of-range activity
-semantics are unchanged.
-
-Against exact commit `2cc0988`, an identical instrumented Opening-U run kept
-the exact 10-degree seed, 10.0912159691-degree trajectory, and
-11.8560791016-second duration. Occupancy-query time decreased from 1.63920621
-to 1.24773731 seconds (23.9%), its occupancy-only block from 1.16577671 to
-0.913307407 seconds (21.7%), multi-ring occupancy from 0.627571103 to
-0.546502604 seconds (12.9%), and 8,075 `shapeAtTime` calls from 0.880268904 to
-0.580085704 seconds (34.1%). Profiled wall time decreased from 41.1939427 to
-40.2238949 seconds (2.36%). The proprietary augmented-matrix factorization
-still dominates the optimizer and was not changed.
-
-The final serial moving/deforming U.S. example retained exactly its 40-degree
-seed, 43.0751355347-degree motion, and 7.96286899667-second duration while wall
-time decreased from the preceding 182.935442-second run to 178.568018 seconds
-(2.39%). Opening-U decreased from 38.9261867 to 38.4144474 seconds and the
-extreme U.S. outline from 39.5964486 to 38.7741662 seconds, with exact path and
-arrival parity. These are individual fresh-process observations rather than a
-claim of uniform speedup.
-
-The complete suite passed 122/122. All 17 maintained examples ran serially in
-fresh headless processes: 16 independently validated successes and the
-independently validated expected `noValidatedSeed` failure. Every successful
-result passed collision, continuous kinematic, and collision-resolution
-certificates without path-length or arrival-time regression. A visible failure
-run created two diagnostic figures with two axes. Ten focused obstacle tests
-cover batched-versus-pointwise multi-ring decisions and every allocation-
-sensitive return type, including inactive, interpolated, single-slice, and
-topology-changing queries.
-
-The retained production change adds two net lines; the focused tests add 86
-lines of boundary-policy and return-type evidence. It removes repeated work
-but introduces no cache lifetime, new option, tolerance, or planner heuristic.
-The moving/deforming example at 178.568018 seconds remains the largest runtime
-weakness.
-
-## Time-invariant obstacle geometry cache — 2026-08-27
-
-Prepared obstacles now retain one complete shape and geometry record only when
-their input history proves exact time invariance: either one source slice, or
-matching topology with zero corresponding-vertex speed across every interval.
-Out-of-range activity rules and source-slice indices are still evaluated per
-query. Moving, deforming, and topology-changing histories keep the original
-interpolation path.
-
-Against exact commit `81f2f8b`, 20,000 varying-time static geometry queries
-decreased from 0.9724214 to 0.4832129 seconds (50.3%) with the same checksum.
-Static-U profiler time across 8,317 `shapeAtTime` calls decreased from
-0.7005765 to 0.4038666 seconds. A warmed, counterbalanced Static-U comparison
-decreased median wall time from 10.56790325 to 10.1591988 seconds (3.87%).
-Success, validation, selected route, sampled motion, duration, and the complete
-polynomial were exactly equal.
-
-The complete suite passed 119/119. All 17 maintained examples ran serially in
-fresh headless processes: 16 independently validated successes and the
-independently validated expected no-path result. Every successful result passed
-collision and kinematic certificates with no path-length or arrival-time drift.
-The moving-circle control retained its exact trajectory and reported the
-time-invariant flag false. A visible Static-U run created three figures; the
-expected no-path run created two diagnostic figures with two axes.
-
-The cache adds 29 net production lines and retains one additional shape plus
-one geometry record per exactly static obstacle; focused tests add 12 net
-lines. This bounded memory cost is retained for the measured repeated-query
-and planner-level gains. The 183.495223-second moving/deforming U.S. example
-remains the largest runtime weakness and receives no shortcut.
-
-## Dimension-neutral polynomial map caches — 2026-08-27
-
-Two one-entry caches now reuse HS3 polynomial structure that is invariant
-across optimizer callbacks. `createAffineSensitivityModel` caches mesh
-incidence and prior-segment integration ordering by segment count.
-`createSubintervalBernsteinMap` caches one complete interval restriction map
-by exact segment count, coefficient count, and normalized interval endpoints.
-Both remain dimension-neutral; obstacle, Az/El, and planner concepts are absent.
-Keys are published only with complete values, and one-entry replacement bounds
-persistent memory.
-
-On identical inputs, 600 affine-map calls decreased from 0.6946311 to
-0.4367565 seconds (37.1%), and 10,000 repeated subinterval-map calls decreased
-from 1.5852113 to 0.1228665 seconds (92.2%). A warmed, counterbalanced
-Static-U comparison against exact commit `e1db1ed` decreased median wall time
-from 10.4040084 to 10.35779345 seconds (0.44%). Success, validation, selected
-route, sampled motion, duration, and the complete polynomial were exactly
-equal. The modest end-to-end gain is reported as measured; fmincon factorization
-still dominates total wall time.
-
-The complete unit suite passed 119/119. All 17 maintained examples then ran
-serially in fresh headless MATLAB processes: 16 independently validated
-successes and the independently validated expected `noValidatedSeed` result.
-Every successful trajectory passed collision and kinematic certificates, with
-no path-length or arrival-time drift from the preceding `9ba28f4` matrix. The
-moving/deforming U.S. case remained the largest weakness at 183.354475 seconds.
-A visible obstacle-free run created three figures, and the expected no-path run
-created two diagnostic figures with two axes.
-
-The implementation adds 30 net production lines across the two neutral
-polynomial helpers and seven net focused-test lines. That size is retained for
-the measured repeated-call reductions and exact-output evidence, not as a claim
-of a material solver-wide acceleration.
-
-## Independent-validation complexity refactor — 2026-08-27
-
-`obstacleAvoidance.validateTrajectory` now delegates sampled-history checks,
-endpoint agreement, complete collision certification, and safety-margin
-provenance to focused local helpers. The primary function's measured
-cyclomatic complexity decreased from 62 to 19. Complexity for the complete
-file decreased from 85 to 77 rather than merely moving intact into helpers;
-the largest new helper is 14 and the largest retained helper is 18. The public
-format, issue ordering, pass/fail decisions, exceptions, and collision evidence
-are unchanged.
-
-The retention gate compared normalized success and deliberately perturbed
-failure records exactly and passed all nine focused collision, dynamics, and
-timing tests. The complete unit suite passed 119/119 before the user-requested
-removal of `exampleFortyMovingCircleGrid`; the reduced maintained inventory is
-17 examples. All 17 ran serially headlessly: 16 independently validated
-successes and the independently validated expected `noValidatedSeed` failure.
-A default-options visible obstacle-free run also passed and created the normal
-plots. Every successful run passed collision and kinematic certificates.
-
-Two fresh metrics differ from the older `0302439` benchmark: the
-moving/deforming U.S. path is 43.0751355347 degrees at 7.96286899667 seconds,
-and the target-exit path is 20.6764423274 degrees at its fixed 24-second
-arrival. Clean detached runs at exact pre-refactor commit `9ba28f4` reproduced
-both values exactly, proving that this refactor introduced neither path-length
-nor arrival-time drift. The older target-exit difference came from replacing
-the example's seeded random target history with deterministic evenly spaced
-steps; it is an input change, not a same-input planner regression.
-
-The largest remaining production-function complexities are 85 in planner
-orchestration, 53 in trajectory plotting, and 49 in polynomial trajectory
-validation. The moving/deforming U.S. example took 184.596685 seconds in this
-run, so runtime remains a major weakness. The removed 40-circle grid had still
-not completed after roughly six minutes; historical measurements remain in
-`benchmark.csv`, but it is no longer a maintained runnable example.
-
-## Interactive polygon motion editing — 2026-08-27
-
-The sandbox now creates polygon obstacles from explicit left-clicked vertices.
-A right-click closes and retains the polygon after at least three non-collinear
-vertices are present. The Set Motion action selects a retained polygon by an
-interior click and previews an arrow from its centroid to a second click. Each
-polygon stores its own motion vector and one of four profiles: immediate
-constant velocity, acceleration from zero velocity, trapezoidal
-accelerate-cruise-decelerate motion, or one oscillating out-and-back cycle.
-
-Motion profiles are sampled into the same time-varying obstacle format used by
-the production planner. Focused tests verify the midpoint and endpoint position
-of every profile and confirm that the constant-velocity history produces the
-expected query-time polygon centroid. A visible UI smoke test confirmed one
-rendered sandbox figure, four profile choices, and the Set Motion action.
-Code Analyzer reports zero findings for the four changed MATLAB files.
-
-The vector defines total displacement over the active planning horizon. The
-oscillating choice completes one full cycle during that horizon. The sandbox
-does not yet expose a separate speed, acceleration time, cycle count, or phase
-control. Existing freehand line data remains readable, but new obstacle input
-through the UI is polygon-vertex based.
-
-## High-level public namespace and normal example results — 2026-08-27
-
-Production code is now exposed through the high-level +obstacleAvoidance
-package and the separate normal hs3 product. The public planner calls are
-obstacleAvoidance.planTrajectory,
-obstacleAvoidance.planMovingTargetIntercept, and
-obstacleAvoidance.validateTrajectory. Input, obstacle, geometry, search,
-planner, and plotting ownership is visible in matching subpackages. The
-dimension-neutral HS3 engine still has one public solveTrajHS3 entry and is
-source-checked against Az/El domain dependencies.
-
-Construction vocabulary now consistently uses create; query, combine,
-convert, evaluate, solve, and validate remain distinct behavioral verbs.
-HS3 polynomial helpers state their mathematical result, including
-createTrajectoryPolynomial, evaluateTrajectoryPolynomial,
-createAffineSensitivityModel, createSubintervalBernsteinMap, and
-evaluateIntegratedSquaredJerk. Architecture tests reject the removed nested
-product and legacy packages, require unique production basenames, and verify
-that numerical optimization stays in HS3.
-
-Examples no longer append names, controls, geometry, metrics, plot handles, or
-sequence summaries to planner results. The deleted example-metrics generator
-is replaced by external benchmark calculation, so every example returns the
-normal public planner format. Independent validation and plotting remain local.
-The moving-barrier and opening-U examples locally suppress only MATLAB's
-nearlySingularMatrix and singularMatrix warnings during their expected
-wait-seed solves, restore the caller's warning state, and still warn if
-independent validation fails.
-
-The plotting API now provides a synchronized spatial/position/velocity/
-acceleration/jerk dashboard, fixed derivative limits, and optional GIF export.
-A focused run produced a 95,507-byte two-frame GIF and four live kinematic
-axes. The complete unit suite passes 117/117 and Code Analyzer reports zero
-findings. All 18 maintained examples ran serially in fresh MATLAB processes:
-17 independently validated successes and the independently validated expected
-noValidatedSeed failure. A visible success created three figures, and the
-expected failure created both workspace and time-expanded diagnostic figures.
-
-No planner algorithm changed in this namespace/output refactor. Representative
-trajectory metrics match the preceding route-cleanup evidence, including the
-20-degree center-line accelerating-circle motion and 24.035784715-degree
-two-opposing-U seed. The largest measured example wall time remains
-55.227758 seconds for the extreme U.S. outline, so runtime remains the largest
-current weakness and no performance improvement is claimed.
-
-## Documentation and interactive-example cleanup — 2026-08-26
-
-Eight redundant subfolder `README.md` files and the manual
-`exampleAzElInteractiveSandbox` entry were removed. The repository-level
-`README.md` remains the single documentation entry and no longer links to the
-deleted guides or advertises the removed example. The example-requirement test no
-longer carries a sandbox-specific exclusion; all 18 maintained examples are
-now covered uniformly by the file-level metadata check.
-
-This cleanup removes nine files without changing planner, obstacle, validation,
-plotting, or HS3 behavior. The focused example-requirement suite passes 6/6 and
-Code Analyzer reports zero findings for the modified test. No maintained
-example was executed, so `benchmark.csv` correctly retains its last measured
-rows without a fabricated cleanup measurement. Historical verification text
-that records when the interactive example existed remains unchanged.
-
-## Same-homology spatial route cleanup — 2026-08-26
-
-The spatial visibility product now removes avoidable consecutive route edges
-after homology-augmented search and before HS3. A replacement is retained only
-when the direct segment is visible in the same protected swept geometry, the
-existing winding signature matches the searched class, and the route becomes
-strictly shorter beyond a scale-aware numerical tolerance. The original route
-is the fallback. Direct and timed seeds are not rewritten, visibility search
-still discovers the topology, and the dimension-neutral `hs3/` engine remains
-unchanged and Az/El-agnostic.
-
-The primary six-rectangle gate reduced the aggregate length of four homology
-routes by 0.0065005233 degrees with two accepted shortcuts. A structurally
-different four-circle case accepted eight shortcuts, rejected 172 visible
-candidates for changing homology, and reduced aggregate route length by
-86.1926109665 degrees. Independent tests recomputed every retained signature,
-route length, and protected-geometry clearance. An existing two-rectangle case
-accepted no shortcut and retained its original lengths, demonstrating the
-no-benefit fallback.
-
-The strongest maintained-example benefit is the two-opposing-U selected seed,
-which decreased from 24.5077116377 to 24.0357847150 degrees while the final
-motion remained independently collision-free and kinematically certified.
-Alternating slalom also decreased from 16.0604396350 to 16.0193197983 degrees.
-All 18 maintained examples completed serially: 17 validated successes and the
-validated expected no-path result. The focused planner suite passed 59/59 and
-the complete suite passed 114/114. Search diagnostics expose candidate,
-rejection, acceptance, and length-reduction counts.
-
-This cleanup proves neither global shortestness nor homotopy completeness; it
-only reaches a deterministic direct-shortcut fixed point within each route's
-searched homology signature. The most unfavorable fresh maintained wall time
-was 61.034329 seconds for the extreme outline, above its preceding 56.218460
-seconds, so no runtime benefit is claimed. Existing singular-solver warning
-floods and the moving/deforming-outline runtime remain current weaknesses.
-
-## Certified direct-path collinearity — 2026-08-26
-
-The Az/El adapter now preserves the Euclidean path for a certified direct
-fixed-position request when endpoint velocity and acceleration are parallel to
-that path and one axis governs every finite normalized velocity, acceleration,
-and jerk limit. The common-bottleneck condition prevents a spatial preference
-from tightening the earliest-arrival bound in mixed-axis cases. Obstacle-free
-requests are certified directly; obstacle-present requests require the spatial
-visibility certificate, while collinear timed-search seeds retain their
-time-aware provenance. Moving targets and incompatible endpoint derivatives
-remain unrestricted. The dimension-neutral `hs3/` product is unchanged.
-
-The saved `Rogue Examples/Bend2.mat` request is the primary measured gate. At
-baseline `69cef57`, its straight 94.4183046111-degree seed became a
-95.3959651184-degree motion with 2.47268757136 degrees of line deviation. The
-retained implementation returns 94.4183046111 degrees with
-2.91322521662e-13-degree deviation. Arrival is unchanged at
-39.5285834641 seconds, and independent collision, velocity, acceleration,
-jerk, dynamics, and endpoint validation all pass. The measured planner time
-increased from the saved 0.8398472 seconds to 3.0007202 seconds because the
-fixed-time active-set QPs carry additional normal-jerk equations. This is an
-explicit correctness/shortest-path tradeoff, not a runtime improvement.
-
-A structurally different diagonal request with irrelevant protected geometry
-also attained its exact Euclidean lower bound after the visibility graph
-certified the direct edge. A nonparallel endpoint-velocity request remained
-unrestricted and valid. Exact directional-gradient coverage verifies the
-reduced terminal equations and normal-jerk rows. Code Analyzer reports zero
-findings for all six changed production/test files; the affected suites pass
-64/64 and the complete repository suite passes 112/112 in 62.332678 seconds.
-
-All 18 maintained examples ran serially in fresh MATLAB processes: 17 returned
-independently validated success and the expected no-path case returned an
-independently validated `noValidatedSeed` failure. Every successful result
-passed collision and kinematic certificates. The obstacle-free example and
-four-accelerating-circle demo both retained exact Euclidean motion length. A
-visible success created three figures, and the visible expected failure
-created two diagnostic figures. Existing near-singular `fmincon` warning
-floods remain visible in moving-barrier and opening-U; they are not caused or
-hidden by this change.
-
-## Two-product normal-folder architecture — 2026-08-26
-
-Production source now has two top-level ownership roots: `planAzElMotion/` and
-`hs3/`. The repository root contains no MATLAB functions or package folders.
-The Az/El product exposes three unqualified entry points for planning,
-interception, and independent validation; its obstacle and plotting APIs are
-owned directly by `azElObstacles.*` and `azElPlotting.plotMotion`. This removes
-the redundant plotting facade and four loose obstacle files.
-
-The dimension-neutral engine is now a normal `hs3/` folder with one public
-`solveTrajHS3.m` entry and a single `+hs3Internal/` implementation package.
-Az/El constraint adaptation still delegates optimization, polynomial
-reconstruction, evaluation, sensitivity, and Bernstein operations to that
-neutral engine. Architecture tests continue to reject numerical solver calls
-from the Az/El product and Az/El domain language from every HS3 source file.
-
-This is an intentional API migration: callers must add both product folders,
-use qualified obstacle and plotting functions, and replace `hs3.solve` with
-`solveTrajHS3`. No compatibility wrappers remain. The migration table is in
-`README.md`.
-
-Code Analyzer reports zero findings across both production products and the
-architecture test. Focused architecture, obstacle, and standalone-HS3 tests
-pass 29/29; example-requirement tests pass 6/6; and the complete suite passes
-108/108 in 63.545976 seconds. All 18 maintained examples ran serially and
-completed in 185.535980 seconds: 17 independently validated successes and the
-expected independently validated `noValidatedSeed` failure. Every successful
-motion passed collision and kinematic certificates. A visible success created
-three figures, and the hidden expected failure created two diagnostic figures.
-
-The example matrix used one MATLAB process because repeated fresh launches
-intermittently failed in the MathWorks launcher before repository code ran.
-Consequently its wall times are verification evidence, not a runtime
-comparison against earlier fresh-process matrices. Existing `fmincon`
-conditioning warnings remain visible in the moving-barrier and opening-U
-cases; independent validation passed both.
-
-## Fixed-arrival geometric lower-bound proof — 2026-08-26
-
-Dynamic fixed-arrival requests now evaluate retained topology seeds in
-increasing geometric length and stop only when an independently validated
-motion attains the Euclidean start-goal distance within numerical tolerance.
-This is an input-derived global spatial lower bound, not a scenario-specific
-route heuristic. If the bound is not attained, bounded multi-seed length-first
-selection remains active. Earliest-arrival behavior and frozen `+hs3` code are
-unchanged.
-
-The four-accelerating-circle demo now uses a 42-second conceptual smooth
-rest-to-rest obstacle profile but supplies only the 0--22-second planning
-history relevant to its fixed arrival. It independently validates the exact
-20-degree center-line motion at 22 seconds with collision and every derivative
-certificate passing. One of three available seeds is attempted because the
-first valid seed attains the geometric lower bound.
-
-Before retention, the same demo supplied 421 history slices and took
-62.021637 seconds with plots disabled. Exclusive planner timing attributed
-34.9519 seconds to corridor construction, 21.6022 seconds to collision
-checking, and only 2.1221 seconds to HS3 motion solving. `polyshape.union`
-accounted for 48.2364 profiled seconds. Clipping post-arrival history alone
-reduced wall time to 26.148349 seconds; lower-bound seed ordering and stopping
-reduced the final serial wall time to 5.634472 seconds, an 11.01x speedup.
-
-Fresh verification passes 106/106 tests and all 18 maintained examples. The
-matrix has 17 independently validated successes and the expected validated
-`noValidatedSeed` result. The final matrix used 297.286362 seconds. The
-earliest-arrival moving-circle case returned a valid 8.707031-second motion,
-0.0609997 seconds later than the preceding record; because the retained rule
-is fixed-arrival-only, this is reported as existing wall-budget variability,
-not hidden as an improvement.
-
-## Fixed-arrival length-first candidate quality — 2026-08-26
-
-Fixed-arrival planning now retains the shortest independently validated
-sampled motion within each HS3 seed and selects the shortest across every
-validated seed completed within the existing global work budget. Integrated
-squared jerk is only a path-length tie-breaker. Earliest-arrival ranking and
-refinement are unchanged. The dimension-neutral `+hs3` engine remains frozen;
-this policy uses only its returned motions and independent Az/El validation.
-
-Against clean commit `855a569`, the focused four-accelerating-circle case
-kept its exact 22-second arrival and shortened from 27.8702009821 to
-25.9348981999 degrees, a 1.9353027822-degree or 6.943986% improvement.
-The fixed alternating-occlusion intercept shortened from 14.2200520815 to
-13.6782719080 degrees (3.809973%), and target-exits-obstacle shortened from
-21.3509241121 to 20.3320561588 degrees (4.772009%). The straight specified-time
-intercept remained at its geometric lower bound of 9.53894054682 degrees.
-Every fixed arrival time, collision certificate, and kinematic certificate
-remained unchanged.
-
-The apparent 20-degree center-line route in the four-circle case is not
-physically feasible at 22 seconds. Protected geometry blocks the complete
-center line from 7.3664844164 through 12.6335155836 seconds. Early clearance
-needs at least 8.075 seconds even without acceleration. After reopening, an
-optimistic state already at the left protected boundary with maximum forward
-speed still fails the HS3 limits by 0.0880882; the jerk-limited cruise-and-stop
-lower bound is about 9.558 seconds versus 9.366 seconds available.
-
-Fresh verification contains 18/18 maintained outcomes in 254.1345943 seconds:
-17 independently validated, collision-free successes with passing kinematic
-certificates and the expected validated `noValidatedSeed` result. The focused
-planner suite passes 54/54. Fixed static multi-route coverage now asserts that
-all retained seeds are attempted and the minimum validated motion length is
-selected. The tradeoff is bounded extra work for static fixed-arrival requests:
-instead of stopping after the first valid seed, planning may evaluate up to
-`MaximumSeedCount` candidates within `MaximumPlanningTime_s`.
-
-## Flat architecture and frozen HS3 boundary — 2026-08-26
-
-Production code now has six one-level Az/El packages: input, obstacles,
-geometry, search, planner, and plotting. The separate root `+hs3` package is
-unchanged from commit `ad3139c`. The former nested `+azElInternal` and
-`+azElPlannerMethods` trees and their forwarding or duplicate implementations
-are removed. Root public entry points remain stable.
-
-The solver dependency is now explicit and tested. `+azElPlanner` translates
-unit-bearing Az/El state and corridor records into dimension-neutral HS3
-records. Optimization, polynomial reconstruction, and polynomial evaluation
-then run through `hs3.optimize`, `hs3.reconstructPolynomial`, and
-`hs3.evaluatePolynomial`. No Az/El package calls `fmincon`, `quadprog`, or
-`optimoptions`; those calls occur only in frozen `+hs3/optimize.m`. HS3 MATLAB
-source contains no Az/El, obstacle, visibility, topology, corridor, plotting,
-or planner dependency.
-
-Fresh evidence is 104/104 automated tests in 52.560 seconds, including seven
-new architecture-boundary tests, and zero Code Analyzer findings across the
-production and test MATLAB files. All 18 maintained examples ran serially in
-fresh headless processes in 241.822 seconds: 17 independently validated,
-collision-free successes with kinematic certificates and the expected
-independently validated `noValidatedSeed` failure. A visible success created
-three figures; the failure check created two diagnostic figures and retained
-its search grid. Exact rows are in `benchmark.csv` under
-`ad3139c+flat-architecture-worktree`.
-
-The largest remaining weakness is numerical conditioning inside the frozen
-HS3 nonlinear solve: the moving-barrier and opening-U runs emitted repeated
-near-singular or singular working-precision warnings even though their final
-trajectories passed independent collision and kinematic validation. This
-architecture change does not claim a solver-quality or runtime improvement.
-
-## Standalone dimension-neutral HS3 extraction — 2026-08-26
-
-The HS3 polynomial and optimization engine is now available through the root
-`hs3.solve(initialState, terminalState, limits, options, pathConstraints)`
-interface. It supports arbitrary state dimension, fixed and earliest arrival,
-continuous Bernstein position/velocity/acceleration/jerk bounds, and affine
-point or single-segment interval path constraints. Azimuth/elevation obstacle,
-visibility, topology, seed, moving-target, plotting, validation, and planner
-assembly concerns remain outside the engine. Existing production planning
-delegates the shared numerical solve and leaf mathematics to the new package;
-deprecated internal aliases preserve existing callers.
-
-Extraction evidence is frozen against commit `4827e47` and seed 325. The
-three-run scaling matrix passed all 15 candidate cases with independent
-validation and zero behavioral or numeric mismatches. Candidate versus
-baseline median planner times were 1.5928771 versus 1.6185557 seconds for one
-turn, 38.0545350 versus 37.9652044 for five turns, 49.1296070 versus
-49.9628830 for ten turns, 476.9026500 versus 476.8622450 for twenty turns,
-and 154.1580630 versus 154.6614689 for the 12-wall hairpin. The median
-five-case total was 721.395402 seconds versus 723.185449 seconds, within the
-required five-percent aggregate gate. This proves extraction parity only; it
-does not claim a new planning algorithm, broader completeness, or uniform
-speedup.
-
-The exact isolated commit passes 101/101 repository tests, including the 18
-standalone-kernel, 6 affine-sensitivity, 4 option-ownership, and 52 production
-planner tests. Code Analyzer reports zero findings across all 100 MATLAB files.
-All 18 maintained examples were then run serially in fresh headless MATLAB
-processes: 17 returned independently validated success with collision and
-kinematic certificates, and the expected no-path example returned an
-independently validated `noValidatedSeed` failure. A visible success created
-three figures, and the visible expected failure created two search-diagnostic
-figures. The exact per-example metrics and wall times are retained in
-`benchmark.csv` under source `725c91d`.
-
-## Severe-static fixed-time quality search — 2026-08-26
-
-The retained improvement addresses a severe static-route discretization local
-minimum without encoding example identity. On the first quality decision only,
-an earliest-arrival spatial candidate whose relative sampled-motion inflation
-exceeds `2.5 / segmentCount` is re-solved on the configured maximum mesh as a
-fixed-arrival feasibility problem. Existing timed bisection then shortens the
-horizon while retaining the original topology seed. Dynamic obstacles, timed
-topologies, fixed-arrival requests, later mesh passes, and less-inflated static
-routes keep their previous behavior. No public option or result field was
-added.
-
-Wide U now independently validates at 22.6308876389 seconds, with a
-34.9425880405-degree selected polyline, 41.5363500661-degree sampled motion,
-64 segments, and one mesh pass. Relative to the preceding
-`7661321+slack-quality-worktree` row, arrival improves by 0.4075710153 seconds
-and final wall time improves from 19.117491 to 17.688485 seconds. The sampled
-motion is 0.3257153577 degrees longer, so this is an arrival improvement rather
-than a uniform path-quality claim. The remaining like-for-like 325 gap is
-0.7981520967 seconds; wall time remains 11.9222537 seconds slower and sampled
-motion remains 1.8321728042 degrees longer than 325.
-
-The final `7661321+fixed-quality-worktree` matrix contains 18 fresh serial
-rows: 17 independently validated successes and the independently validated
-expected `noValidatedSeed` result. Two opposing U remains exactly
-21.9090824092 seconds, forty moving circles remains 61.2011842765 seconds,
-extreme U.S. remains 6.3679977362 seconds, and the moving/deforming U.S. remains
-8.75061035156 seconds. Tests pass 82/82 in 50.675781 seconds. Code Analyzer
-reports zero messages across 84 MATLAB files. Visible success and expected
-failure each produce two figures. The two rogue horizon replays remain
-independently valid at 88.2939404925 and 88.2939359679 seconds, a
-4.525-microsecond difference. The HS3 package contains exactly 2,000 nonblank,
-noncomment MATLAB lines, at the hard cap.
-
-Rejected broader variants remain visible. Applying the fixed-time search to
-all static candidates increased two-opposing-U wall time from about 14 to
-20 seconds and only reached 22.996 seconds for wide U. An
-interior-point-convex fixed solve restored feasibility where active-set could
-not, but individual probes took 80--87 seconds and a shorter target exceeded
-12 minutes. A 64-segment extreme-U.S. probe regressed arrival by
-0.00194985 seconds, and 80 segments regressed further. These variants were not
-retained.
-
-Remaining arrival gaps against the same 325 matrix are forty moving circles
-+0.8393466878 seconds, wide U +0.7981520967 seconds, and extreme U.S.
-+0.3610623598 seconds. Two opposing U is 0.2018852770 seconds earlier than
-325. Moving/deforming U.S. is 0.3892445513 seconds earlier, but its final wall
-time is 56.253798 seconds versus 18.2106663 seconds on 325, a
-38.0431317-second runtime regression. No global optimality, completeness, or
-uniform runtime claim is made.
-
-## Derivative-slack continuation quality pass — 2026-08-26
-
-The retained improvement addresses a time-discretization local minimum without
-encoding obstacle or example identity. After one valid same-mesh
-relinearization, an earliest-arrival spatial candidate receives one 2x
-continuation-seeded mesh pass only when every acceleration and jerk peak is
-below 75% of its applicable limit. The slack is input-derived evidence that
-the coarse motion is velocity-dominated and that a finer time mesh can improve
-arrival without asking for a new topology. Existing length-inflation passes
-continue to start from their original topology seed; this distinction prevents
-the forty-moving-circle and extreme-U.S. regressions observed in rejected
-probes.
-
-Two opposing U obstacles now independently validate at 21.9090824092 seconds,
-with a 24.5077116377-degree selected polyline, 24.4201122273-degree sampled
-motion, 20 segments, and one mesh pass. Two focused repeats and the final
-matrix reproduced the identical arrival. This is 0.9660319268 seconds earlier
-than the preceding `7661321+dynamic-quality-worktree` row and 0.2018852770
-seconds earlier than the like-for-like
-`da52da8+quintic-root-recovery-worktree` 325 row. The final wall time is
-13.972852 seconds, versus 4.6082376 seconds in the preceding worktree and
-8.5152389 seconds on 325, so the arrival gain is not presented as a runtime
-gain.
-
-The final `7661321+slack-quality-worktree` matrix contains 18 fresh serial
-rows: 17 independently validated successes and the independently validated
-expected `noValidatedSeed` result. All other arrival and path metrics match
-the preceding matrix. Tests pass 82/82 in 50.245827 seconds. Code Analyzer
-reports zero messages across 84 MATLAB files. Visible success produces three
-figures; expected failure produces two diagnostic figures. The two rogue
-horizon replays validate at 88.2939404925 and 88.2939359679 seconds, a
-4.525-microsecond difference. The HS3 package contains exactly 2,000 nonblank,
-noncomment MATLAB lines, at the hard cap.
-
-Remaining arrival gaps against the same 325 matrix are wide U
-+1.2057231120 seconds, forty moving circles +0.8393466878 seconds, and extreme
-U.S. +0.3610623598 seconds. Moving/deforming U.S. remains 0.3892445513 seconds
-earlier but its final measured wall time is 55.917228 seconds versus
-18.2106663 seconds on 325. No global optimality, completeness, or uniform
-runtime claim is made.
-
-## Dynamic spatial quality pass — 2026-08-26
-
-The largest remaining arrival gap was localized to dynamic spatial mesh
-resolution rather than topology. Forty moving circles already used the same
-110.807922148-degree polyline as the 325 comparator, but the 10-segment HS3
-motion inflated to 126.23121736 degrees and arrived at 64.5557730468 seconds.
-Starting every seed at a finer mesh improved arrival but repaid the failed
-direct seed: 20 segments reached 61.2011842765 seconds in 23.9281868 seconds
-wall, and 30 reached 60.1588345587 seconds in 31.5052284 seconds wall.
-
-The retained rule instead refines only an already validated earliest-arrival
-spatial candidate whose sampled motion is inflated by more than one coarse
-mesh interval. Changing-obstacle spatial routes receive one 2x pass;
-fixed-arrival cases and causal timed topologies are excluded. The authoritative
-default run reaches the same 20-segment, 61.2011842765-second motion in
-18.6109941 seconds wall. Relative to the preceding worktree row, arrival
-improves by 3.3545887703 seconds for 2.1703734 seconds additional wall. The
-like-for-like `da52da8+quintic-root-recovery-worktree` 325 gap falls from
-4.1939354581 to 0.8393466878 seconds. The 30-segment probe is 0.20300303
-seconds earlier than 325 but costs 12.8942343 seconds more wall than the
-retained 20-segment result, so it was rejected as the default.
-
-Structurally different controls preserve scope. Moving circle has only 6.4%
-motion inflation, stays at 10 segments with zero quality passes, and retains
-its 8.64603156476-second arrival. The moving/deforming U.S. result remains a
-`timeExpandedVisibilityGraph` seed at 8.75061035156 seconds with zero mesh
-passes. Fixed-arrival accelerating circles retains its 22-second motion.
-Single dense translating ellipses and circles with timed-search suppression
-measured 5.2%, 8.7%, and 6.7% inflation and correctly did not trigger the pass.
-
-The final `7661321+dynamic-quality-worktree` matrix contains 18 fresh serial
-rows: 17 independently validated successes and the independently validated
-expected `noValidatedSeed` result. Tests pass 82/82 in 50.3745157 seconds.
-Code Analyzer reports zero messages across 84 MATLAB files. Visible success
-produces three figures and 526 objects; expected failure produces two figures
-and 341 objects with 15 rejected transitions and 9 retained rejected edges.
-The HS3 package contains 1,999 nonblank, noncomment MATLAB lines, one below the
-hard cap.
-
-Remaining arrival gaps against the same 325 matrix are now wide U
-+1.205723112 seconds, forty moving circles +0.8393466878 seconds, two opposing
-U obstacles +0.7641466498 seconds, and extreme U.S. +0.36106235982 seconds.
-Moving/deforming U.S. remains 0.3892445513 seconds earlier but 31.5077561
-seconds slower wall. No global optimality, completeness, or uniform runtime
-claim is made.
-
-## Ordered-boundary and route-quality Pareto — 2026-08-26
-
-The largest new quality gain is shortest-route-first static proposal ordering.
-The extreme U.S. sequence previously attempted a 22.3733117302-degree,
-five-point route first because waypoint count inflated the ordering score; the
-shorter 22.2394635087-degree, seven-point route was never attempted. Per-seed
-work is already budgeted, so earliest-arrival ordering now uses geometric
-length alone. The final three-region example selects the shorter Philippines
-route and independently validates at 6.3679977362 seconds with a
-24.6064786878-degree sampled motion and 20 segments. This improves the prior
-worktree arrival by 1.85831341561 seconds and reduces the like-for-like
-`da52da8+quintic-root-recovery-worktree` gap on `325-full-suite` to
-0.36106235982 seconds. Its authoritative final wall time is 64.0234264 seconds,
-4.5955795 seconds slower than the preceding worktree row and far slower than
-the 9.8415693-second 325 row, so this is not presented as a uniform runtime
-gain.
-
-Static quality refinement remains one bounded pass. Motions inflated by more
-than one coarse mesh interval receive 2x segments; only severe inflation above
-2.5 intervals receives 3x. The wide-U coarse motion measures 2.586 intervals
-of inflation and therefore preserves its 30-segment, 23.0384586542-second
-validated result. Extreme U stays at 20 segments. The rogue horizon pair also
-uses 20 segments: the 180-second request validates at 88.2939404925 seconds in
-6.9218305 seconds wall, and the 360-second request validates at
-88.2939359679 seconds in 7.5901807 seconds wall, a 4.52-microsecond horizon
-difference. This deliberately gives back about 1.144 seconds versus the
-30-segment rogue result while cutting refinement work; it remains 2.725 seconds
-earlier than the coarse result and fully resolves the original horizon failure.
-
-Moving-obstacle corridor construction no longer rebuilds a `polyshape` merely
-to recover orientation and convexity from a canonical ordered single-region
-boundary. `shapeAtTime` reports those properties directly from the ordered
-vertices; multi-region and degenerate boundaries retain the existing
-`polyshape` fallback. A focused convex, concave, and multi-region regression
-freezes equivalence. Forty moving circles keeps the identical
-64.5557730468-second motion while wall time falls from 20.6046246 to
-16.4406207 seconds. Moving circle falls from 10.3724330 to 9.4004092 seconds,
-four accelerating circles from 28.6209839 to 25.5803952 seconds, and the
-moving/deforming U.S. example from 52.9070181 to 49.4045848 seconds, with all
-physical metrics and certificates unchanged.
-
-The authoritative final matrix under
-`7661321+geometry-fastpath-worktree` contains 18 serial fresh-process rows:
-17 independently validated successes and the independently validated expected
-`noValidatedSeed` failure. The repository suite passes 82/82 in
-49.6429588 seconds. Code Analyzer reports zero messages across 84 MATLAB files.
-Visible success produces three figures and 526 objects; expected failure
-produces two figures and 341 objects with 15 rejected transitions and 9
-retained rejected edges. The HS3 package contains 1,998 nonblank, noncomment
-MATLAB lines, two below its hard cap.
-
-Remaining arrival gaps against the like-for-like 325 matrix are explicit:
-forty moving circles +4.1939354581 seconds, wide U +1.205723112 seconds, two
-opposing U obstacles +0.7641466498 seconds, and extreme U.S. visibility
-+0.36106235982 seconds. Moving/deforming U.S. remains 0.3892445513 seconds
-earlier than its 325 row but 31.1939185 seconds slower wall. No global
-optimality, completeness, or uniform runtime claim is made.
-
-## Static quality and time-expanded retiming — 2026-08-26
-
-The largest current arrival gain is on the maintained moving/deforming U.S.
-case. The causal time-expanded topology previously validated at
-30.1605224609 seconds. One bounded alternative now removes zero-length waits,
-distributes that same input-derived topology by arc length, solves it at a
-physical-duration target, and retains it only after the ordinary independent
-validator passes. The final serial run selects that time-expanded seed at
-8.75061035156 seconds, with a 41.5785140688-degree polyline, a
-40.7424283094-degree sampled motion, passing collision and kinematic
-certificates, and 52.9070181 seconds wall. This is 21.4099121093 seconds
-earlier than the immediately preceding worktree result. It is about
-0.3892445513 seconds earlier than the like-for-like
-`da52da8+quintic-root-recovery-worktree` row on `325-full-suite`, while wall
-time is 34.6963518 seconds slower. The earlier commit-only comparator predates
-the extreme 25-slice deformation, so comparisons here use the later recorded
-branch matrix rather than infer parity from that older source state.
-
-The alternative retiming is limited by seed semantics, not an example name.
-Only `timeExpandedVisibilityGraph` seeds are eligible. A `directWait` seed's
-repeated point is its causal law and remains on the absolute-time bisection
-path. An intermediate broad implementation exposed this distinction:
-opening-U selected a physically valid direct-visibility motion that failed the
-example's required waiting demonstration. After the semantic restriction,
-opening-U reproducibly returns the direct-wait seed at 11.8560791016 seconds
-in 13.0011819 seconds wall, and moving barrier returns the direct-wait seed at
-10.2314453125 seconds in 12.4091501 seconds wall. Both independently validate.
-
-Static spatial candidates now receive at most one 3x mesh-quality pass when
-their sampled motion-length inflation exceeds one coarse mesh interval. The
-saved rogue detour improves from the horizon-invariant 91.0189-second result
-to 87.1503426168 seconds at a 180-second horizon and 87.1503401418 seconds at
-360 seconds. Both select seed 2, use 30 segments, and pass independent
-collision and kinematic validation; the horizon difference is about
-2.5 microseconds. The historical saved 86.5088536619-second, 40-segment
-trajectory also passes today's validator, so the remaining roughly
-0.6415-second local-quality gap stays visible. A nonfinite free-time duration
-probe is now mapped to a finite bound, and a nonfinite arrival objective is
-given a finite rejection value, which recovers feasible high-resolution
-iterates without accepting them unless independent validation passes.
-
-The authoritative post-fix matrix ran all 18 maintained examples serially in
-fresh MATLAB processes. Seventeen are independently validated successes and
-the expected no-path case is an independently validated `noValidatedSeed`
-failure. Exact rows are appended to `benchmark.csv` under
-`7661321+timed-retiming-worktree`. The complete repository test suite passes
-81/81 in 52.4952677 seconds. Code Analyzer reports zero messages across all 84
-MATLAB files, and `git diff --check` reports no whitespace errors beyond
-line-ending notices. A visible success creates three figures and 526 graphics
-objects. The expected failure creates two diagnostic figures, reports 15
-rejected transitions, and retains 9 rejected edges for plotting. The HS3
-package contains exactly 2,000 nonblank, noncomment MATLAB lines, so it passes
-but has no remaining size headroom.
-
-Unfavorable arrival gaps remain against the
-`da52da8+quintic-root-recovery-worktree` matrix on `325-full-suite`: forty
-moving circles is 4.1939354581 seconds later, extreme U.S. visibility is
-2.21937577543 seconds later, the wide U is 1.205723112 seconds later, and two
-opposing U obstacles is 0.7641466498 seconds later. Those rows are not hidden
-or reclassified. The moving/deforming U.S. example still spends roughly
-19 seconds in repeated protected-polygon construction (`polybuffer` dominates)
-and remains about 53 seconds wall even after the arrival repair. No global
-optimality, completeness, or uniform runtime claim is made.
-
-## Timed-arrival and exhaustive-failure repair — 2026-08-26
-
-The largest newly measured correctness gain is horizon invariance for a saved
-static detour. A prior edit reused the independent-axis velocity lower bound as
-the HS3 warm-start duration. On identical geometry this made the 180-second
-request lose its best topology and arrive at 98.7494014538 seconds, while the
-360-second request arrived at 88.29393436 seconds. Reachability and incumbent
-pruning now use only the physical per-axis bound; solver initialization uses a
-conservative route-length estimate clamped to the available horizon. Fresh
-serial replays select the same seed and arrive at 91.0188996291 and
-91.0189002025 seconds respectively, a 5.734e-7-second numerical difference.
-Both pass independent collision and kinematic validation. This repair is
-input-driven and has a structurally different tall-detour regression; it does
-not claim global optimality. The consistent 91.019-second result is still
-2.724965 seconds later than the pre-repair 360-second worktree run and
-4.510050 seconds later than the saved historical result, so arrival quality on
-this topology remains an explicit weakness.
-
-All four supplied rogue bundles now replay as independently validated
-successes. The unobstructed and concurrent-axis cases retain arrivals of
-57.5394882088 and 57.5394875671 seconds. The full repository suite passes
-79/79 in 51.045611 seconds, and Code Analyzer reports zero messages across all
-84 MATLAB files. Fresh maintained static, moving, and expected-no-path controls
-preserve their prior physical metrics. The complete 18-example matrix remains
-untested in this worktree, so no uniform suite-runtime claim is made.
-
-The current worktree preserves timed obstacle events while searching earlier
-fixed-time HS3 feasibility with exact QPs. Opening-U improved from 15 seconds
-and 57.61 seconds wall to 11.8560791016 seconds and 12.9626115 seconds wall.
-Moving barrier improved from 10.5 seconds and 25.18 seconds wall to
-10.2314453125 seconds and 12.6557865 seconds wall. Both pass independent
-collision and kinematic validation. Against commit `67bc087` on
-`325-full-suite`, opening-U remains 0.122795 seconds later and 1.20 times
-slower, while moving barrier remains 0.016544 seconds later and 1.75 times
-slower. Those unfavorable gaps remain open.
-
-An exact, exhaustive, untruncated static visibility failure now skips HS3
-instead of refining an impossible direct topology. The maintained no-path
-example retains `noValidatedSeed`, complete search diagnostics, and independent
-failure validation while improving from 53.8261095 seconds to 1.3769188
-seconds wall. Reduced or dynamic graphs do not use this certificate.
-
-The earlier full repository suite passed 78/78 in 44.1178 seconds. A visible successful
-example created three figures and 527 graphics objects; the expected no-path
-case created two diagnostic figures with 15 rejected transitions. Basic static
-planning remains 7.57952069664 seconds and moving circle preserves its earlier
-8.64603156476 seconds arrival, but moving-circle wall time is 10.7064233
-seconds versus the edited pre-repair 9.0140762 seconds. A complete 18-example
-final-source matrix has not been rerun because the user stopped that comparison
-after the focused regressions were identified. The HS3 package contains 1,927
-nonblank, noncomment MATLAB lines, below its 2,000-line ownership cap.
-
-## Sandbox export recovery — 2026-08-25
-
-Diagnosis export no longer depends exclusively on the save-dialog callback.
-Every live public sandbox snapshot now exposes
-`ExportBundle(filePath, modeName)`, which reads the current guidata-backed
-state and writes the same diagnosis bundle to an explicit path. The writer
-verifies a nonempty file and the required `diagnosisBundle` MAT variable before
-reporting success. UI export errors are surfaced in a modal dialog rather than
-being visible only in the tab log.
-
-The focused export suite passed 4/4, including a real no-dialog file write from
-the public sandbox state, and Code Analyzer reported zero messages in the two
-production files and focused test. Two visible user runs then isolated a
-cross-version UI defect missed by hidden tests: the `uiputfile` filter cell used
-MATLAB strings where that API requires character arrays. The filter, dialog,
-`save`, `whos -file`, `version`, and `datetime` compatibility boundaries now
-use character arguments. Export failures also report their identifier and
-earliest source line. A final visible rerun remains required.
-
-Pre-run export is now an explicit supported state. Export becomes available
-once a tab contains scene data; the bundle captures current controls and
-canonicalized geometry without invoking HS3. Complete Goal Mode scenes also
-include replayable planner inputs. The bundle reports `PlanningState =
-"notRun"`, `HasPlannerResult = false`, and an empty result rather than
-fabricating success, failure, or validation evidence.
-
-The expanded focused export suite passed 5/5 with zero Code Analyzer messages,
-including a public pre-run Goal Mode export that wrote, reloaded, and checked
-the exact requested endpoints and HS3 options.
-
-## HS3-only production cutover — 2026-08-25
-
-The branch now has one production planner implementation and one public
-selection: HS3. The corridor-quintic package, its private motion/search code,
-method-specific tests and benchmarks, and superseded spline benchmark artifacts
-are removed. Maintained examples, the moving-target wrapper, sandbox controls,
-test requirements, benchmark drivers, and active documentation now resolve HS3
-only. The production MATLAB surface decreased from 55 files and 10,346
-physical lines at `67bc087` to 44 files and 7,821 physical lines: 11 files and
-2,525 lines removed.
-
-The strongest current evidence is the complete post-cutover suite: 75/75 tests
-passed in 366.849286 seconds. The focused HS3 verification also passed 67/67 in
-388.369877 seconds, including option ownership, affine sensitivity, planner
-behavior, stage timing, and maintained example requirements. Code Analyzer
-reported zero messages across all 83 remaining MATLAB files, and a direct HS3
-request returned a successful independently validated five-second trajectory
-with `SelectedMotionSource = "hs3"`.
-
-The main remaining weakness is numerical conditioning. Moving-barrier and
-moving-target coverage still emits many near-singular `fmincon` warnings even
-though the returned trajectories pass independent validation. The required
-fresh serial example matrix, visible graphics smoke, and expected-failure
-figure check could not be rerun because their fresh MATLAB processes failed
-before user code with `System Error: File system inconsistency`. No new
-benchmark rows are recorded from those failed startups. Therefore the cutover
-does not claim a fresh full-matrix runtime or graphics result.
-
-## Current corridor-only assessment — compact C3 duration controller
-
-This section supersedes the older HS3-era judgment below for the current
-uncommitted `325-less-nlp` worktree. Production contains no HS3/NLP execution.
-HS3-only result and benchmark compatibility fields are now removed. The
-retained dynamic controller minimizes a sampled, limit-normalized integrated
-jerk quadratic while enforcing exchanged exact derivative bounds and
-time-local protected safe-side constraints. It backtracks and independently
-validates every retained update; eligibility depends on route dimension, not
-scenario identity.
-
-One additional bounded controller now handles compact static or dynamic topology. It
-fits an eight-span doubled-knot C3 quintic to the shortest validated eligible
-seed and solves fixed-duration convex minimum-jerk problems. An input-derived
-probe near the physical lower bound switches between lower-bound bisection and
-the established high-to-low continuation. Exact point-to-edge projection is
-batched for histories proven stationary; moving dense geometry retains the
-256-vertex cap. Eligibility remains input-driven: earliest arrival, three
-through ten vertices, and zero-length seeds only after successful hold recovery.
-It retains only a strictly shorter independently validated proposal.
-
-This improved forty moving circles to `62.477739862636 s` versus the frozen
-`64.555779916429 s` reference, with `15.3927512 s` fresh-process wall and
-`0.001843121779 deg` clearance. Moving circle improved to
-`8.751228736151 s`, with `6.9248772 s` wall and
-`0.001266077441 deg` clearance. Both passed independent continuous collision
-and exact kinematic validation. Batched stationary projection now makes dense
-geographic geometry tractable: extreme outline reaches `6.222166624146 s`
-versus frozen main `6.683971648809 s`, with `27.9310043 s` final wall and
-`0.00709851977447 deg` independently validated clearance.
-
-The same controller improved static basic planning to `7.649656344043 s`
-and dense concavity to `8.690573182986 s`, beating both frozen main rows with
-fresh walls of `4.0561583 s` and `3.9323402 s`. Ten-vertex eligibility improved
-slalom to `10.855664258356 s`; feasibility-switched continuation preserves U at
-`22.640860106984 s` with `5.5963246 s` wall. Opposing U now reaches
-`22.160945761398 s` versus frozen main `22.875124576026 s`, with `8.5208632 s`
-wall and `0.0143650783404 deg` clearance. Reshaping a recovered hold improved
-moving barrier to `10.371387562474 s`. A uniformly scaled analytic jerk-switching S-curve
-improved earliest intercept to `6.111534301758 s` without fixed-time regression.
-
-The final 18-example fresh-process wall sum is `167.0127367 s`, `33.74%`
-below the frozen optimized-main `252.0683835 s` matrix and `18.27%` below the
-prior complete corridor-only matrix. All 17 success durations meet or beat the
-frozen optimized-main row, and the expected no-path requirement passed. This is
-not a uniform wall-speed claim: forty moving circles, moving/deforming U.S.,
-and target-exits-obstacle remain slower than optimized main in isolated wall
-time.
-
-The moving/deforming U.S. example now reaches `12.873502939647 s`, beating
-the frozen `12.986386910606 s` reference by `0.112884 s`. It is independently
-collision- and kinematic-valid with `0.001768850899 deg` clearance. The
-final fresh-process no-plot wall is `53.0425551 s`, materially slower than the
-optimized-main `26.8349249 s` row, so this is a path-time result rather
-than a runtime improvement. Core production is 7,498 literal lines
-excluding 565 plotting lines, meeting the user-authorized conditional ceiling;
-maintained MATLAB excluding examples/scratch is 10,296 lines. The largest
-production file is 881 lines.
-
-The current full suite passed 56/56 in `28.7732939 s`, and Code Analyzer found
-zero messages across 66 nonscratch MATLAB files. Visible success created three
-figures and 529 graphics objects; expected no path created two diagnostic
-figures with two rejected transitions. A 12-wall hairpin passed independent
-validation and its corridor certificate in `9.3474237 s` total wall. These
-tests establish the exercised matrix, not global optimality or completeness.
-
-The prior exact-retimer assessment follows for historical context.
-
-## Previous corridor-only assessment — exact derivative retimer
-The retained small-system retimer derives affine velocity, acceleration, and
-jerk constraints from the spline, finds exact continuous polynomial extrema,
-and uses bounded convex exchange plus a secant feedback gain. It is input-driven:
-the exact exchange is eligible only for static, earliest-arrival,
-zero-endpoint-derivative systems with at most 100 decision-span work units.
-Larger systems retain the validated span-demand controller.
-
-The motivating U case now passes both declared gates: `23.746859860594 s` is
-4.07 percent above the frozen main-branch `22.818548735851 s` reference,
-and the final fresh-process headless wall was `5.9768360 s`. It passed
-independent collision and exact kinematic
-validation. The 12-wall hairpin remained corridor-certified and independently
-valid at `164.828287993153 s` duration, `0.02 deg` clearance, and
-`7.1631349 s` total wall. Opposing U improved from the prior corridor-only
-`31.9439273474 s` to `28.5759222913 s`. Alternating slalom retained
-`13.2008531355 s` exactly.
-
-All 18 maintained examples ran headlessly and serially in fresh MATLAB
-processes: 17 independently valid successes and one independently valid
-expected no-path result. Relative to the preceding corridor-only matrix,
-durations were preserved or improved. Relative to the frozen main/HS3 matrix,
-the branch still trails materially on dense concavity, 40 moving circles,
-moving/deforming U.S. geometry, opposing U, and extreme-outline cases. The
-exact retimer therefore solves the focused U/hairpin acceptance problem but
-does not yet meet or beat every historical NLP duration. No global optimality
-or completeness claim is made.
-
-The full suite passes 54/54, and Code Analyzer reports zero messages across 65
-maintained MATLAB files. A visible success created four figures and 643
-graphics objects; the expected no-path result created two diagnostic figures
-and retained two rejected transitions. Consolidating repeated point-to-polygon
-projection and one-use planner helpers reduced core production before the
-retained trust step; current core is 7,200 physical lines excluding 565
-plotting lines, 200 above the 7,000-line target. Maintained MATLAB excluding
-examples/scratch is 9,901 lines and remains below
-12,000. The production-size target and the historical all-example duration
-comparison remain completion blockers. LP feasibility plus active-set QP
-reduced dense-concavity wall from `63.7774602 s` to `3.7330015 s` with
-bit-identical duration. The complete isolated example wall sum decreased
-28.64 percent, but individual wall variation prevents a uniform speed claim.
-
-A bounded control-law experiment confirmed that the gain is not a
-scenario-independent scalar optimum. Unit log-time gain improved U to
-`23.746859860594 s` but regressed planning and slalom. A continuous
-error-scheduled gain improved U to `23.752030563984 s` but regressed planning
-by `0.001269743990 s`; a two-band variant entered a worse `24.277638906889 s`
-U basin. All variants were removed, and U recovered to
-`23.801121658982 s`. The corridor QP changes geometry between timing trials,
-so further controller work requires a local geometry-response Jacobian or a
-trust-region acceptance test rather than scalar gain tuning.
-
-The retained controller now performs that trust-region acceptance once: for
-the first exact-exchange response it evaluates the unit and established
-damped steps, retains the shorter validated response, and then resumes secant
-feedback. The full 18-example fresh-process matrix preserved every prior
-duration except U, which improved to `23.746859860594 s`; U wall was
-`5.9768360 s`. This is bounded response selection, not a scenario branch.
-
-## Evidence scope
-
-This assessment covers pushed commit `2074c14` plus the current loop-free,
-lazy-output evaluator, batched reconstruction, and batched seed-corridor
-worktree, plus the corridor-invariant hoist, fixed-arrival speed-aware
-initialization, geometry-conditioned solver choice, and constraint-feasibility
-recovery. It also covers affine fixed-arrival constraints, the exact jerk
-gradient, and batched complete-history envelope containment. Earlier user
-changes remain preserved in the checkpoint.
-
-- All 18 maintained examples ran serially and headlessly on the final
-  combined source. Seventeen returned independently validated
-  success and the no-path example returned its expected validated failure.
-- The final full suite passed 59 of 59 tests. Code Analyzer checked all 56
-  MATLAB files present in the worktree and reported zero messages.
-- A visible success created four figures and 643 graphics objects. A visible
-  expected failure created two diagnostic figures with 341 graphics objects
-  and retained two rejected transitions.
-- Maintained production has 30 files and 7,231 physical lines. The maintained
-  planner/test tree excluding `examples/` has 33 files and 8,748 physical
-  lines. The 24 example files total 3,920 lines, including the 694-line
-  interactive sandbox; examples have no repository line cap and are excluded
-  from planner-growth accounting.
-
-## Current judgment
-
-Plan 325 remains a compact, physically validated planner with materially
-better runtime and earlier arrival on the affected static-visibility cases.
-The current size policy keeps the 7,500-line production target and requires a
-minimum 25 percent wall-time reduction for every 100 production lines above
-that target; example files are uncapped but cannot justify planner growth.
-The most important change is input-driven: an exact multi-obstacle visibility
-seed may now receive the same early HS3 opportunity as the prior single- or
-reduced-obstacle cases. The analytic stop-at-waypoint motion remains the
-validated fallback, and all early and later HS3 work shares one bounded time
-budget.
-
-Earliest-arrival HS3 now preserves a constraint-feasible primary minimum-time
-solution instead of always spending a second nonlinear solve to trade up to
-one millisecond of arrival for lower integrated jerk. The second solve remains
-available only to recover a primary result whose nonlinear residual exceeds
-the configured constraint tolerance. Independent validation remains the final
-success gate.
-
-The planner does not claim global optimality or search completeness. It returns
-the fastest independently validated candidate found within deterministic
-proposal limits and bounded local optimization work.
-
-## Largest strengths
-
-### 1. The wall-hugging failure class now receives an early smooth-motion test
-
-The old eligibility condition suppressed early HS3 whenever more than one
-exact obstacle was present. In the two-polygon interactive case, this allowed
-the analytic boundary-following fallback to win before a wider smooth arc was
-tested. The general fix depends only on seed provenance and obstacle count; it
-contains no scenario names, route directions, hidden waypoints, or fixture
-geometry.
-
-The sandbox case decreased arrival from about 20.718 to 8.859 seconds while
-selecting a wider smooth route and passing independent validation. The final
-maintained two-opposing-U case selected HS3 at 22.875124576026 seconds. Its
-24.370904895056-degree smooth motion is wider than the
-23.853720883753-degree visibility seed and ran in 21.7702201 seconds. The
-diagnostic rerun selected seed 1 from `directVisibilityEdge`; all five seeds
-received HS3 attempts, four validated, and each analytic first motion remained
-available as fallback.
-
-### 2. Polynomial and continuous-bound evaluation are batched exactly
-
-Polynomial histories are evaluated by sample batches instead of repeated
-per-sample helper calls. Bernstein conversion accepts multiple polynomial
-columns, HS3 converts segment/axis bounds in batches, and all seed-corridor
-projections share one matrix conversion while reconstructing the legacy
-inequality ordering exactly.
-
-The frozen corridor time vector is computed once per HS3 setup instead of in
-every finite-difference callback. The pre-change extreme profile recomputed
-that invariant 34,203 times. Constraint arrays now use one final concatenation.
-The primary or recovery constraint arrays are also reused for final diagnostics
-instead of evaluating the selected decision a second time.
-
-Uniform- and nonuniform-duration polynomial checks were bit-for-bit equal to
-the scalar calculation. Matrix Bernstein conversion and complete bound vectors
-were also bit-for-bit equal, including azimuth-wrapping mode. The optimization
-therefore changes evaluation cost, not constraint meaning or tolerance.
-
-### 3. Arrival and runtime improved without weakening validation
-
-On the latest feasibility-recovery 18-example sweep:
-
-- extreme outlines reached 6.683971648809 seconds in 35.1960021 seconds wall;
-- dense concave reached 8.797638855700 seconds and ran in 12.1487701 seconds;
-- the wide U reached 22.818548735851 seconds in 7.6498733 seconds wall;
-- 40 moving circles reached 64.555779916429 seconds and ran in 4.1723092
-  seconds wall;
-- moving/deforming U.S. reached 12.986386910606 seconds and ran in
-  26.8349249 seconds wall;
-- two opposing U shapes reached 22.875124576026 seconds and ran in
-  21.7702201 seconds wall;
-- obstacle-free planning reached 4.612405963436 seconds and ran in
-  3.1649118 seconds wall.
-
-Every successful motion passed collision and applicable kinematic certificate
-checks. The expected no-path result remained a stable failure with diagnostics.
-Every selected HS3 primary solution is about one millisecond earlier than the
-preceding jerk-relaxed result. The gain is small in absolute time but exact in
-policy: the planner no longer deliberately gives it back. Runtime reductions
-are material on wide U, 40 circles, opposing U shapes, and extreme outlines.
-
-### 4. Runtime evidence is reproducible and production passes directly
-
-The user explicitly raised the production target from 7,000 to 7,500 physical
-lines. Production is now 7,231 lines, so it passes directly by 269 lines; the
-previous proportional allowance is no longer required.
-
-The earlier declared A/B evidence against clean `a023f1c` remains useful:
-
-| Example | Baseline wall (s) | Candidate wall (s) | Reduction | Arrival result |
-| --- | ---: | ---: | ---: | --- |
-| Extreme outlines | 83.8056819 | 48.2212733 | 42.46% | identical |
-| Dense concave | 43.6252843 | 16.8686791 | 61.34% | identical |
-| U-shaped time-space | 89.9305427 | 17.1115690 | 80.97% | improved |
-
-The final loop-free evaluator also removes seven production lines. Its helper
-microbenchmark improved 68.25 percent with bit-identical values. Paired
-three-run medians improved 40-circle wall time from 8.2798430 to 8.2064235
-seconds and obstacle-free wall time from 6.1738282 to 6.1303500 seconds. Those
-end-to-end gains are below one percent and are not presented as a broad speed
-guarantee.
-
-The later reconstruction batch preserves coefficient and terminal-state bits
-for 1, 2, 7, and 19 segments. Repeated dense-concave runs were 15.9953 and
-16.0208 seconds, 40-circle runs were 7.7309 and 7.7121 seconds, and extreme
-runs were 47.5820 and 47.2180 seconds. The final two-U sweep improved from
-34.7071 to 32.0304 seconds with exact arrival retained.
-
-The final lazy-output evaluator preserves every requested output bit for two-
-through five-output calls. Its position-only helper path is 54.84 percent
-faster. Final dense-concave and extreme walls are 15.3269 and 47.3506 seconds;
-40-circle repeated timing overlaps the reconstruction range. The final two-U
-wall decreases further to 30.6768 seconds.
-
-The seed-corridor batch matched the scalar inequality vector bit for bit and
-reduced its isolated helper time by 78.22 percent. Repeated 40-circle runs
-were 7.2551 and 7.2014 seconds, and repeated extreme runs were 46.1842 and
-45.9486 seconds. The final sweep retained all arrivals and validations while
-recording 7.2062 seconds for 40 circles and 46.0246 seconds for extreme
-outlines. Dense concave remained inside prior process variation at 15.6605
-seconds, so no uniform per-scenario speedup claim is made.
-
-Hoisting the frozen corridor times retained exact arrivals in two serial
-gates. Dense concave ran in 14.7514 and 14.5419 seconds, 40 circles in 7.1021
-and 7.1510 seconds, and extreme outlines in 45.8169 and 45.7517 seconds. The
-single final sweep was slower for dense concave and 40 circles at 16.1936 and
-7.8605 seconds. Those unfavorable values remain visible, and the evidence is
-treated as process variation rather than a uniform speed claim.
-
-Fixed-arrival HS3 now caps desired seed speed at the route's average speed
-over the available duration instead of always using the axis-limited maximum.
-The alternating-occlusion motion decreased from 19.229413227596 to
-15.324880519000 degrees after the fixed-time CG follow-up, a 20.30 percent
-reduction. Four accelerating circles decreased from 43.0900 to 29.1694
-seconds wall in the preceding sweep.
-
-CG is now also used for untimed earliest-arrival seeds with one exact obstacle
-or reduced geometry. Timed seeds and multiple exact obstacles retain
-factorization because those constraint systems regressed under broader CG.
-This latest form improved dense-concave arrival by 0.018969702412 seconds and
-reduced the recorded extreme-outline wall from 45.7787 to 40.8815 seconds.
-The moving-barrier CG trial regressed wall time from 24.8248 to 28.2319
-seconds, so timed seeds were removed from that form before the final sweep.
-
-## Main weaknesses
-
-### 1. Search and optimality remain bounded
-
-Spatial and timed proposals use finite samples and deterministic caps. HS3 is
-local and time bounded. A missed topology or poor local basin can still prevent
-the globally fastest motion. Final validation prevents false success but does
-not prove global infeasibility or global minimum arrival.
-
-### 2. Conditioning warnings remain
-
-The 40-circle and four-accelerating-circle cases emit large streams of MATLAB
-matrix-conditioning warnings. Returned motions pass independent polynomial,
-collision, endpoint, and kinematic validation, but variable scaling remains
-the best next numerical target.
-
-### 3. Minimum-time priority produces wider motions
-
-Skipping the optional jerk-relaxation solve when the primary constraints are
-already feasible increases sampled motion length on some cases: dense concave
-from 12.808111324296 to 13.431299536656 degrees, 40 circles from
-122.955082873284 to 126.114009817632 degrees, and wide U from
-42.754420388989 to 43.259235381251 degrees. These motions arrive one
-millisecond earlier, run materially faster, and remain within hard jerk and
-other physical limits. They are minimum-time local solutions, not minimum-
-jerk solutions within a one-millisecond arrival band.
-
-`exampleStraightTargetAlternatingOcclusion` now has a 15.324880519000-degree
-motion for a 13.341664064126-degree polyline, down from 19.229413227596. It is
-valid and meets its fixed arrival, but the remaining excess length and
-wall-time-sensitive topology convergence still merit a general improvement.
-
-### 4. Repository size has very little maintained-tree headroom
-
-Production is 269 lines below the user-approved 7,500-line target. The
-maintained planner/test tree excluding examples is 3,252 lines below the
-12,000-line cap. The HS3 solver is 885 lines. Example files are uncapped and
-their 3,920-line total is reported separately.
-
-### 5. Fixed-arrival constraints now avoid nonlinear finite differences
-
-For fixed arrival, final time and obstacle query times are constants, making
-the complete HS3 constraint vector affine in jerk. The planner now builds the
-affine basis once and uses fmincon linear constraints. Four serial examples
-retained independent collision and kinematic certificates while wall times
-changed from 29.0747 to 25.2320, 3.4576 to 2.9311, 22.8904 to 20.9312, and
-6.9459 to 4.5879 seconds. The accelerating-circle motion shortened from
-27.7125 to 20.3724 degrees and alternating occlusion from 15.3249 to 14.2202
-degrees. Target-exit motion changed by 0.0000233 degrees while its jerk
-objective and final violation both decreased.
-
-Earliest arrival retains the nonlinear time-decision representation. All 14
-earliest-arrival maintained examples were bit exact to the preceding accepted
-sweep, including the 22.875124576026-second opposing-U result and
-22.818548735851-second wider-U result.
-
-The fixed-time jerk objective now supplies its exact analytic gradient.
-Central differences matched to 5.33e-10 relative error, and set-time fmincon
-objective evaluations decreased from 1,032 to 24. The largest serial wall
-improvement was accelerating circles, 25.2320 to 23.6113 seconds. Smaller
-cases are dominated by startup and showed changes from -0.9 to 1.3 percent;
-no broad runtime claim is made from those individual timings.
-
-Convex buffered seed-envelope membership now uses vectorized polygon queries
-instead of repeated polyshape method dispatch after convexity is proved. The
-accelerating-circle serial-pair median improved 2.7 percent, from 23.5632 to
-22.9181 seconds, with bit-exact motion. The moving/deforming U.S. serial sweep
-improved about 2.0 percent. Every maintained trajectory metric remained exact
-and all final 59 tests passed.
-
-Complete canonical histories are concatenated before the polygon query. This
-deleted eight production lines and improved the accelerating-circle serial-
-pair median another 4.35 percent, from 22.9181 to 21.9214 seconds, while a
-mixed inside/outside history regression proves the complete-history rule is
-retained. Relative to the pre-affine 29.0747-second sweep, the final
-22.5888-second run is 22.3 percent faster, but only this scenario family is
+# Novel replacement branch assessment
+
+## Certified continuous polynomial bounds - 2026-09-02
+
+Continuous position, velocity, acceleration, and jerk checks now use a
+degree-neutral Bernstein fast path. A complete in-range hull proves an interval;
+a hull wholly outside one limit proves failure; one outlying control remains
+ambiguous. Ambiguous intervals receive at most two midpoint de Casteljau
+subdivisions before the established endpoint and stationary-point evaluation
+resolves the result. Degree-specific power-to-Bernstein maps are cached because
+reconstructing their binomial coefficients dominated the first implementation.
+
+The focused cubic validation benchmark improved from a 0.225285700-second
+median to 0.107645900 seconds per 100 validations, a 52.218 percent reduction.
+On the structurally different degree-16, 18-segment obstacle trajectory, an
+interleaved same-session comparison produced identical bound decisions and
+improved the polynomial-validation-stage median from 0.957598300 to
+0.183847000 seconds per 100 calls, an 80.801 percent reduction. The rejected
+uncached implementation is recorded in `verification.md`; it was more than five
+times slower and is not retained.
+
+MATLAB Code Analyzer reported zero findings, and the complete test suite passed
+118/118. All 17 maintained examples ran serially against the final code:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` result, with established physical metrics unchanged. The
+final sweep took 451.1994148 seconds. This is 10.5 percent below the rejected
+uncached sweep but 41.9 percent above the older 317.9755667-second record, so no
+end-to-end speedup is claimed from those non-interleaved runs. The current
+strength is a certified fast path that never treats one Bernstein coefficient
+as exact rejection evidence. The remaining weakness is that ambiguous cases
+still depend on polynomial-root conditioning in the conservative stationary
+fallback.
+
+## Remove benchmark-shaped orthogonal planners - 2026-09-01
+
+At the user's direction, the branch removes the complete orthogonal-cavity and
+timed-orthogonal-opening family rather than retaining it as a benchmark
+shortcut. Six production helpers are deleted: both motion constructors, both
+request/cavity certifiers, their private guarded-rectangle predicate, and the
+now-unreferenced arrival-certificate portfolio. `planCorridorQuintic` no longer
+detects an orthogonal cavity, constructs a cavity-shaped motion, recognizes an
+opening event specially, or ranks those special candidates. Dedicated tests
+and manual sections are removed, while both maintained U-shaped examples stay.
+
+The retained planner passes both U examples through ordinary mechanisms.
+Static U uses visibility-graph seed 3 and `bmtpStaticDegree16`, independently
+validates its certificate, and returns a 39.4001427062-degree sampled motion in
+20.7814508253 seconds. The prior cavity shortcut returned 40.255028504 degrees
+in 20.712447786 seconds. Opening U uses the general `directWait` seed,
+independently validates a 10-degree motion, and arrives in 13.6175223541
+seconds versus 11.5843333838 seconds for the removed opening shortcut. These
+quality and runtime costs are explicit; passing the examples no longer depends
+on recognizing their orthogonal geometry.
+
+Code Analyzer found no issue, focused architecture/contract tests passed
+42/42, and the complete suite passed 108/108. All 17 maintained examples ran
+serially: sixteen independently validated successes and the expected validated
+`noValidatedSeed` result. Fifteen examples retained their established physical
+metrics; only the two U examples changed as described above. Serial wall time
+was 242.4110337 seconds versus 205.3929177 seconds at `0f9c268`, an 18.023
+percent increase concentrated in the general U paths. No speedup is claimed.
+
+This milestone removes 1,804 additional non-test MATLAB lines and reduces
+`planCorridorQuintic.m` from 1,023 to 875 physical lines. The branch is now
+2,317 non-test MATLAB lines smaller than `5c0a6c9`. Its largest strength is
+that U-shaped examples remain real general-planner regressions instead of
+being owned by shape detectors. Its largest weakness is that the general
+paths are slower and do not reproduce the deleted shortcuts' arrival times;
+improving that gap must come from a structurally general timed or static motion
+algorithm, not a restored U/cavity detector.
+
+## Timed BMTP follows the search-layer budget - 2026-09-01
+
+The completion audit caught one result regression that the maintained suite did
+not expose: removing `CollocationSegmentCount` had changed timed BMTP from the
+saved Rogue fixtures' 16 segments to an unrelated internal cap of 20. The
+`non-ideal` fixture still validated, but sampled travel grew from
+228.491135293 to 228.680505208 degrees. A detached milestone bisect localized
+the change to `5a8eee0`.
+
+The public collocation option remains removed. Timed BMTP now enforces the
+input-driven invariant that its time-cell count cannot exceed the search-layer
+budget that authored the seed. With 17 search layers, the planner uses at most
+16 timed segments. This restores the saved `non-ideal` result exactly and adds
+a focused contract test without exposing conic dimension as a user choice.
+
+The full test tree passed 111/111. All 17 maintained examples retained their
+established physical metrics: sixteen independently validated successes and
+the expected validated `noValidatedSeed` result. Their serial wall time was
+205.3929177 seconds versus 211.8586926 seconds at `df6a85c`; cold-run timing
+noise prevents a speed claim. Visible-success and hidden-failure diagnostic
+gates passed.
+
+All five supplied Rogue sentinels also succeeded and independently validated.
+`sinetraj`, `newheart`, balanced `shrimp`, balanced `non-ideal`, and
+`hiddenruckigfallback` retained sampled travel of 146.928879089,
+199.268051966, 175.703912280, 228.491135293, and 233.911502487 degrees,
+respectively. The largest current strength is therefore a 513-line-smaller
+non-test MATLAB core with preserved measured outcomes across maintained and
+external regression families. The largest remaining weakness is structural:
+the retained general BMTP engine and corridor orchestrator are still large,
+solver-dependent functions, while the audited timed-opening, direct-wait,
+orthogonal-cavity, fixed-clock, travel-refinement, Ruckig, and timed-cell paths
+are all load-bearing on distinct inputs. Further deletion needs a new bounded
+hypothesis rather than another broad pruning pass.
+
+## One moving-obstacle spatial projection - 2026-09-01
+
+The sixteenth accepted `bmtp-cleanup-codex` milestone removes the opportunistic
+static-only BMTP solve from moving-obstacle planning. Eligible dynamic topology
+seeds now use one conservative swept protected-history projection before the
+existing true timed-cell BMTP solver. Full-scene public validation remains
+authoritative, and no option, fallback, solver, or scenario branch was added.
+
+A static concave U plus distant translating polygon moved from the removed
+static-only route to the swept projection with maximum numeric difference zero
+across success, validation, termination, selected seed and source, arrival,
+lengths, and sampled time, position, velocity, acceleration, and jerk. Its
+plane certificate and full-scene validation passed. A structurally different
+moving-circle plus static-concave case still fell through the conservative
+swept representation and selected true timed-cell BMTP, also with maximum
+physical difference zero and a valid certificate.
+
+Code Analyzer found no issue, focused orchestration tests passed 39/39, and the
+complete suite passed 110/110. All 17 maintained examples retained their
+established physical metrics: sixteen independently validated successes and
+the expected validated `noValidatedSeed` result. Both visualization gates
+passed. Serial maintained-example wall time grew 3.772 percent, from
+204.1579553 to 211.8586926 seconds. The focused swept winner grew from
+12.5067717 to 12.7454047 seconds in one cold run; no speedup is claimed.
+
+The milestone removes 62 net production MATLAB lines and reduces
+`+obstacleAvoidance/+planner/planCorridorQuintic.m` from 1,085 to 1,023
+physical lines. Across sixteen accepted milestones, the branch is 512 non-test
+MATLAB lines smaller than `5c0a6c9`. Swept geometry remains conservative and
+can reject a motion that true time-dependent geometry permits; timed-cell BMTP
+is retained for that general case.
+
+## Uniform BMTP final certification - 2026-09-01
+
+The fifteenth accepted `bmtp-cleanup-codex` milestone removes the separate
+retained-parent-plane restriction path from final BMTP certification. Every
+applicable final output-span and obstacle-region pair now uses the same
+degree-one maximum-margin conic solver. Optimizer plane reuse remains active
+inside the outer BMTP solve; it is no longer treated as an alternative final
+certificate algorithm.
+
+Saved Obstacle Avoidance and moving fixed-arrival Target Exits results matched
+the exact `514185b` baseline with maximum numeric difference zero across
+success, validation, termination, selected seed, arrival, lengths, and sampled
+time, position, velocity, acceleration, and jerk histories. Their certificates
+remained independently valid. Ordinary BMTP certification now reports all 18
+and all 12 applicable pairs, respectively, as conic pairs and zero as reused
+pairs. Code Analyzer found no issue, focused tests passed 24/24, and the full
+test tree passed 110/110.
+
+All 17 maintained examples preserved their established physical results:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` failure. The focused warmed Obstacle Avoidance median grew
+1.985 percent, from 2.2880017 to 2.3334234 seconds. Serial maintained-example
+wall time grew 2.227 percent, from 199.7103879 to 204.1579553 seconds. The
+runtime cost is accepted for one final-certificate algorithm; no speedup is
 claimed.
 
-The final profile attributes the gain to the intended mechanism: envelope
-polygon calls decreased from 6,452 to 292 and helper time from 3.0510 to
-1.9240 profiled seconds. Profiler wall time is excluded from serial benchmark
-comparisons.
+The milestone removes 33 net production MATLAB lines and reduces
+`trajectory/+bmtpEngine/solve.m` from 1,191 to 1,158 physical lines. Across
+fifteen accepted milestones, the branch is 450 non-test MATLAB lines smaller
+than `5c0a6c9`. The conic separator remains solver-dependent, and exact results
+on the maintained families do not establish identical numerical behavior for
+every unseen region geometry.
 
-Across all 18 rows, summed wall time decreased 7.13 percent and the median case
-decreased 4.11 percent relative to the feasibility-recovery sweep. Opposing-U
-was the only slower row at +1.50 percent, with bit-exact motion; this is treated
-as an unfavorable timing observation rather than a guaranteed regression or a
-hidden exception.
+## General BMTP final-plane solver - 2026-09-01
 
-### 6. Shared example defaults are now actually resolved
+The fourteenth `bmtp-cleanup-codex` milestone removes the BMTP engine's
+cardinal-axis final-certificate shortcut. Every output span/region pair whose
+retained optimizer plane cannot be reused now goes through the existing
+degree-one maximum-margin conic solver. This deletes one separate certificate
+algorithm without adding an option, fallback, helper, or replacement branch.
 
-The final headless sweep initially exposed that two U.S.-outline examples
-could read `Verbose` before the public planner filled omitted defaults. The
-shared resolver now begins with the sole public default structure, then applies
-scenario and user overrides. A dedicated test covers default and explicit
-values. Moving/deforming and extreme-outline headless examples both pass.
+Saved Obstacle Avoidance and moving fixed-arrival Target Exits results matched
+baseline with maximum numeric difference zero across time, position, velocity,
+acceleration, jerk, arrival, duration, selected seed, and motion length. Their
+plane certificates remained independently valid. Obstacle Avoidance shifted
+12 analytic pairs to 12 conic pairs while retaining six parent planes; Target
+Exits shifted five analytic plus one conic pair to six conic pairs while also
+retaining six. Code Analyzer found no issue, focused tests passed 24/24, and
+the complete suite passed 110/110 in 86.9001094 seconds wall time.
 
-## Rejected experiments and recovery
+All 17 maintained examples preserved their established physical results:
+sixteen independently validated successes and the expected validated
+`noValidatedSeed` failure. The runtime cost is visible. The focused warmed
+Obstacle Avoidance median grew 5.323 percent, from 2.1769730 to 2.2928512
+seconds. Serial maintained-example wall time grew 18.010 percent in aggregate,
+from the immediately preceding 169.2320276-second record to 199.7103879
+seconds. The largest single cold movement was Straight Target, from 24.2076020
+to 34.6242062 seconds (43.030 percent); Target Exits grew 20.070 percent and US
+Outline Extreme grew 23.701 percent. Those are accepted maintainability costs,
+not speed improvements or noise claims.
 
-- Stopping after the first early multi-obstacle HS3 result regressed the
-  two-opposing-U arrival from 22.8761246 to 23.9675706 seconds. That form was
-  removed; remaining unattempted exact topologies now share the residual HS3
-  budget.
-- Continuing early HS3 too broadly increased the 40-circle wall time from its
-  roughly 9-second reference to 24.217 seconds. Continuation was narrowed to
-  multiple exact obstacles; the accepted seed-batch run was 7.2061601
-  seconds and the latest feasibility-recovery sweep was 4.4305056 seconds.
-- A bit-exact vectorized static-corridor fast path improved dense-concave wall
-  time from 17.1341 to 15.5618 seconds but repeatedly regressed the extreme
-  case in serial pairs: 48.2099 to 48.4887 seconds and 48.4303 to 48.7783
-  seconds. The complete fast path was removed.
-- Direct cached Bernstein matrices improved isolated conversion calls by up to
-  71.82 percent but repeatedly increased dense-concave planning to 16.2591 and
-  16.3256 seconds. The complete change was removed.
-- SQP did not finish the basic example inside a 60-second proof window versus
-  the 10.1412-second interior-point baseline. Interior-point CG removed the
-  recurring conditioning warning and improved several cases, but regressed
-  two opposing U shapes from 30.74 to 38.35 seconds. SQP and global CG were
-  removed. The later retained CG use is restricted to fixed arrival or
-  untimed earliest-arrival seeds with one exact obstacle or reduced geometry.
-  A timed moving-barrier CG trial also regressed wall time from 24.8248 to
-  28.2319 seconds; timed seeds therefore retain factorization.
-- Applying average-speed initialization to earliest-arrival cases regressed
-  dense concave from 8.8176085 to 8.9027893 seconds. The broad form was
-  removed; the retained condition applies only to fixed arrival.
-- Tightening `ArrivalTimeTolerance_s` recovered 0.99 milliseconds but made the
-  exact opposing-U second solve take 34.31 seconds. Removing the second solve
-  globally made alternating slalom return `noValidatedSeed`. Both broad forms
-  were removed. The accepted form skips the jerk-relaxation solve only when
-  the primary nonlinear residual already meets `ConstraintTolerance` and
-  retains the second solve as infeasibility recovery.
-- Limited-memory BFGS increased dense-concave wall time from 13.09 to 13.59
-  seconds. PCG tolerances 0.01 and 0.2 gave 13.23 and 13.15 seconds without
-  changing iteration counts. Feasible-guess `TypicalX` scaling improved an
-  extreme serial pair by only 0.35 percent. All three unverified forms were
-  removed.
-- Nargout-sized allocation in the polynomial evaluator preserved requested
-  outputs but took 1.1225 seconds versus 1.0924 seconds for 20,000 calls. It
-  was removed.
-- Increasing shape-relative clearance expansion from 2 to 5 percent reduced
-  extreme-outline runtime but regressed wide-U arrival from 22.8196 to
-  24.3270 seconds. The production value remains 2 percent.
-- A template-consolidation edit initially left one stale local constructor
-  call. The focused suite exposed 14 errors. The call was fixed and all 43
-  focused tests then passed before the full 56-test run.
+The milestone removes 40 net production MATLAB lines and reduces
+`trajectory/+bmtpEngine/solve.m` from 1,231 to 1,191 physical lines. Across
+fourteen milestones, the branch is 417 non-test MATLAB lines smaller than
+`5c0a6c9`. The general conic separator remains solver-dependent, and exact
+results on the maintained families do not prove identical numerical behavior
+for every unseen region geometry.
 
-Unfavorable evidence remains part of the assessment rather than being replaced
-by the accepted measurements.
+## Deprecated BMTP facade removal - 2026-09-01
 
-## Recommended next work
+The thirteenth `bmtp-cleanup-codex` milestone deletes the 58-line
+`planTrajBmtp` compatibility facade. Maintained planners already called
+`bmtpEngine.solve` directly; only restart-migration tests and current appendix
+text referenced the facade. The maintained public planner remains
+`obstacleAvoidance.planTrajectory`, and the package engine remains directly
+tested.
 
-1. Reduce maintained-tree size before adding further production machinery;
-   only 26 lines remain below the hard cap.
-2. Improve the alternating-occlusion route length through a general
-   through-velocity or topology-ranking improvement.
-3. Keep the user-authorized interactive sandbox labeled auxiliary and separate
-   from maintained planner accounting.
-4. Keep runtime changes under the same serial A/B recovery rule and avoid
-   growing the 885- and 888-line core files.
+Before deletion, the facade and package engine returned recursively identical
+fixed-arrival candidates and diagnostics. After deletion, the direct package
+engine plus complete Obstacle Free and Target Exits results matched saved
+baselines with maximum numeric difference zero after excluding only runtime.
+Code Analyzer found no issues, focused tests passed 18/18, and the complete
+suite passed 110/110 in 86.8524662 seconds wall time. The three removed tests
+covered only the deleted restart and invalid-arity surface.
 
-## Final claim
+All 17 maintained examples retained established metrics: sixteen independently
+validated successes and the expected validated `noValidatedSeed`. Both
+visualization gates passed. This deliberately breaking direct-caller cleanup
+removes one competing public function and 58 production MATLAB lines. The
+thirteen-milestone branch is now 377 non-test MATLAB lines smaller than
+`5c0a6c9`.
 
-Plan 325 now tests wider smooth motion earlier for exact multi-obstacle
-visibility routes, evaluates polynomial constraints faster, and avoids
-nonlinear finite differences for fixed-arrival affine constraints. It supports
-static, moving, and deforming obstacles, target interception, timed waits,
-finite jerk, and stable no-path diagnostics.
+## Travel-refinement trace retirement - 2026-09-01
 
-It is a bounded, independently validated planner—not a complete or globally
-optimal solver.
+The twelfth `bmtp-cleanup-codex` milestone removes fifteen private
+`TravelRefinement*` diagnostic fields and their assignments. No planner,
+example, test, plotter, exporter, or sandbox consumed them. The balanced and
+fixed-arrival refinement algorithms remain unchanged: rate portfolios,
+collision-driven plane updates, objective comparisons, and accepted control
+nets are still executed. One local boolean now owns the only behavior-bearing
+accepted-state decision.
 
-## 325-less-nlp evidence-gated spline assessment — 2026-08-21
+Explicit balanced Obstacle Avoidance accepted refinement from a three-rate
+portfolio, while fixed Target Exits accepted its one-rate refinement. Both
+complete candidate results matched saved baselines recursively with maximum
+numeric difference zero after excluding only runtime and the retired trace
+fields. Code Analyzer found no issues, focused tests passed 27/27, and the full
+suite passed 113/113 in 87.9262869 seconds wall time.
 
-This isolated worktree starts at exact `plan-325` commit
-`5a067112a9f880d015f52fb97538a99010871478`. Production planner selection is
-unchanged: HS3 remains the maintained motion constructor.
+All 17 maintained examples retained their established metrics: sixteen
+independently validated successes and the expected validated
+`noValidatedSeed`. Both visualization gates passed. The milestone removes 46
+net core MATLAB lines and fifteen fields from every BMTP diagnostics record.
+The twelve-milestone branch is now 319 non-test MATLAB lines smaller than
+`5c0a6c9`.
 
-### Largest measured strength
+## Dead planner-option shim retirement - 2026-09-01
 
-The research-only bounded quintic B-spline constructor produces independently
-validated repeated-turn motions with much smaller decision records and lower
-motion-construction wall time on the accepted 1-, 2-, and 5-turn scope:
+The eleventh `bmtp-cleanup-codex` milestone removes special compatibility
+handling for ten planner fields that had already stopped affecting behavior.
+Direct planner calls now report them through the maintained aggregate
+`planTrajectory:UnknownOptions` warning, and examples reject obsolete
+planner-only fields at their own boundary instead of forwarding them. The live
+example display `Verbose` control remains; only the dead planner field with the
+same spelling lost bespoke handling.
 
-| Turns | HS3 stage (s) | Spline optimizer (s) | Reduction | Spline decisions | Exact validation |
-| ---: | ---: | ---: | ---: | ---: | :---: |
-| 1 | 7.5631 | 1.3008 | 82.80% | 1 | pass |
-| 2 | 13.2254 | 0.8039 | 93.92% | 2 | pass |
-| 5 | 13.1546 | 9.4410 | 28.23% | 6 | pass |
+Default, live override, example-chain, and display-option records match their
+saved baselines exactly. Complete Obstacle Free and Target Exits results also
+match recursively with maximum numeric difference zero after excluding only
+runtime fields. Code Analyzer found no issues, focused tests passed 14/14, and
+the complete test tree passed 113/113 in 88.1141873 seconds wall time. The
+smaller test count is the intentional consolidation of twelve legacy-specific
+warning and forwarding tests into two behavior-focused tests, not lost
+live-option coverage.
 
-This speed result is not a production acceptance result. The spline motions
-are 34.96, 16.53, and 14.34 percent longer in duration than the corresponding
-HS3 motions. Minimum continuous clearance falls to 0.015047, 0.000426, and
-0.000256 degrees. The last two values are positive under the maintained
-validator but leave little numerical or modeling reserve.
-
-### Largest measured weaknesses
-
-1. The 10-turn spline gate failed. The retained mean-penalty formulation took
-   131.70 seconds and remained in collision. A worst-clearance retry took
-   59.81 seconds and remained at -0.14462 degrees sampled clearance; a
-   per-obstacle retry took 63.35 seconds and remained at -0.10607 degrees.
-   Both retry objectives were removed.
-2. The 20-turn spline case was not run because the prerequisite 10-turn gate
-   had already failed. No high-turn completeness or scaling claim is made.
-3. The selected quintic B-spline does not interpolate interior route vertices.
-   It therefore depends on exact post-construction collision validation rather
-   than inheriting geometric-route clearance.
-4. The rejected fixed-stop septic Bezier interpolated all route vertices but
-   required 28 to 84 seconds of motion on the multi-turn representation cases
-   and did not satisfy the maintained quintic polynomial format. Its code was
-   removed; the measured comparison remains in the Phase B CSV.
-5. No supervised imitation or reinforcement-learning phase was started. The
-   deterministic prerequisite failed, and learned output would not constitute
-   a safety certificate in any case.
-6. The final `exampleFourAcceleratingCircles` run passed every independent
-   certificate but emitted extensive near-singular interior-point warnings.
-   This numerical-conditioning weakness remains visible and was not relabeled
-   as a harmless success condition.
-7. A bounded interior-route interpolation experiment was rejected. It reduced
-   10-turn wall time from 90.31 to 55.77 seconds but worsened continuous
-   clearance from -0.011725 to -0.544570 degrees because its derivative demand
-   forced route reduction from 14 to 8 vertices. All candidate code and tests
-   were removed, and the recovered baseline reproduced the same route count,
-   decision count, evaluation count, motion duration, clearance, and
-   termination reason. This rules out interpolation alone; it does not rule
-   out a corridor-constrained representation with independent time handling.
-8. Five isolated option experiments showed that retaining route detail is
-   necessary but not sufficient. `TimingReserveFraction=1.0` retained 24
-   vertices and produced the first independently validated 10-turn spline,
-   but its clearance was only 0.000144580 degrees and wall time was 140.74
-   seconds. Reducing duration weight by 100 times and increasing collision
-   penalty by 10 times reproduced the default decision exactly. A finer
-   coordinate step and wider normal-offset bound worsened clearance to
-   -0.393003 and -0.353569 degrees. These results reject further scalar option
-   tuning as the next step; they do not establish that the retained 24-vertex
-   result has a material safety reserve.
-9. A feasibility-first, seed-corridor-constrained quintic candidate failed its
-   focused one-turn proof: it produced no validated motion, corridor
-   certificate, or finite clearance. The candidate was removed before a
-   10-turn run, and exact recovery reproduced the frozen default deterministic
-   result. This rejects the tested combination of hard Bernstein corridor
-   ranking and the existing normal-offset coordinate search; it does not reject
-   corridor methods paired with a different decision representation or solver.
-10. A worst-clearance-first ranking candidate also failed. It improved over
-    the retained optimizer's selected sampled collision but still returned an
-    invalid 10-turn motion at -0.075959 degrees clearance and took 100.53
-    seconds. Exact recovery restored the deterministic baseline. Together with
-    the earlier worst-clearance and per-obstacle trials, this is evidence that
-    objective reformulation alone is not the missing high-turn mechanism.
-11. The earliest high-turn spline defect is now localized to route reduction.
-    The original visibility route is sampled-clear, while uniform arc-length
-    reduction creates thousands of occupied edge samples before smoothing.
-    A 5-turn profile also assigns about 80 percent of optimizer time to scalar
-    sampled-clearance queries. The next justified work is a topology-preserving
-    reducer with behavior-equivalent static batching, not another objective,
-    tolerance, seed, or validation change.
-12. Behavior-equivalent batching removed the sampled-clearance runtime
-    bottleneck for the frozen static cases and retained exact 5-turn and
-    10-turn deterministic outputs. Protected-route reduction then produced
-    independently valid 10-turn splines in 5.22 to 8.45 seconds, proving the
-    topology defect was repairable, but their continuous clearances were only
-    0.000912 and 0.000155 degrees. Continuing the coordinate search with a
-    hard 0.02-degree acceptance reserve reached only 0.000786 degrees; a
-    worst-deficit objective regressed to 0.000343 degrees and 107.35 seconds.
-    Every reducer and reserve-search edit was recovered. The remaining defect
-    is lack of explicit full-span corridor enforcement in the noninterpolating
-    quintic construction, not measured evidence for more scalar tuning.
-13. A retained affine corridor-constrained research prototype now supplies the
-    missing full-span enforcement. With an explicit 22-vertex representation,
-    it passed the frozen 10-turn independent validator and existing corridor
-    certificate at 0.0200000000000009 degrees clearance, 60.2576877911092
-    seconds motion, and 4.0949002 seconds method wall time. The same code passed
-    a single rectangle, a moving-history envelope, adaptive protected-route
-    growth, and a stable unclear-source-route failure. A new 12-wall alternating
-    end maze required repeated near-180-degree turns. The sparse visibility
-    graph was disconnected, so an exhaustive graph was used only because its
-    estimated work fit the existing budget. Compression grew from 22 to 26
-    vertices, proved infeasible, and recovered once to the complete 50-vertex
-    route. The resulting C3-continuous motion independently validated and
-    certified at 0.02 degrees clearance, 369.337421187 seconds arrival, and
-    16.0761214 seconds wall time. This is the branch's strongest deterministic
-    hairpin evidence, but it is not global minimum-arrival or production
-    replacement evidence.
-14. The same recovery does not satisfy every high-turn arrival policy. The
-    20-turn repeated-barrier case now reaches a certified full 61-vertex spline
-    at 0.02 degrees clearance, but its 122.474368665-second arrival exceeds the
-    115.5-second horizon and correctly returns `trajectoryValidationFailed`.
-    The feasibility problem is repaired; the remaining failure is timing
-    quality under that deadline.
-
-### Frozen HS3 scaling diagnosis
-
-The HS3 decision vector remains 35 variables from 1 through 20 turns, while
-nonlinear inequalities grow from 641 to 1,876. The final Phase A runs validate
-at 1, 2, and 5 turns and fail at 10 and 20 turns after 75.13 and 193.30 seconds
-in the cumulative HS3 stage. The 10-turn topology search is not truncated; its
-31-vertex visibility seed is analytically time-window infeasible and its
-optimized trajectory still collides. The 20-turn 61-vertex seed is also
-time-window infeasible and both bounded HS3 results remain constraint
-infeasible. These are motion-construction failures, not demonstrated topology
-failures.
-
-### Current scope and size
-
-The replacement-branch spline code remains under `scratch/learnedSplinePolicy`
-but counts as production under the repository change-discipline rule. Current
-production MATLAB is 9,206 physical lines versus the 7,000 target; the complete
-MATLAB tree is 16,483 lines versus the 12,000 cap. `HEAD` was already oversized
-at 8,389 production and 14,690 complete-tree lines, and the current work worsens
-both totals. The largest production files remain individually compliant:
-`solveAzElHs3.m` is 894 lines, while `generateAzElTopologySeeds.m` and
-`planAzElMotion.m` are each 888 lines. Branch-wide size compliance is not
-established and no performance allowance can waive the 12,000-line cap.
-
-Eighteen noninteractive maintained examples were rerun serially after the
-topology change. Seventeen returned independently valid, collision-free,
-kinematically certified motions; the expected no-path example returned
-`noValidatedSeed`, passed its example-level failure validation, and created two
-hidden diagnostic figures. `exampleAzElInteractiveSandbox` remains unexecuted
-because it requires live mouse input. Several HS3 examples retained extensive
-near-singular interior-point warnings. Keep HS3 until the new method passes the
-remaining integration, size, and compatibility gates, and do not describe the
-hairpin proof as globally optimal or production-ready.
-
-## Corridor-only replacement assessment — 2026-08-22
-
-The replacement is now integrated into the public planner. `planAzElMotion`
-accepts only `MotionMethod="corridorQuintic"`; the dormant HS3 solver,
-stop-at-waypoint constructor, NLP options, direct legacy tests, superseded
-prototype scripts, and HS3 scaling benchmark were removed. Zero-valued HS3
-diagnostic fields remain so callers can prove that no NLP attempt occurred.
-
-The retained algorithm is input-driven. A disconnected visibility graph uses
-exhaustive visibility only inside the existing work budget, then finishes a
-bounded obstacle-offset ladder to give the recovered topology continuous-motion
-reserve. Initially connected graphs retain their base offset. Static and dynamic
-routes may use bounded exact-geometry densification, and every candidate is
-checked against the original protected geometry, complete timed collisions,
-workspace, endpoint states, and exact polynomial kinematic extrema. No example
-name, obstacle name, expected route, hidden waypoint, or scenario branch is
-consulted.
-
-All 18 noninteractive maintained examples passed a final isolated-process gate.
-Seventeen returned independently valid `corridorQuintic` motions; the declared
-no-path case returned `noValidatedSeed` and passed its failure requirement. Every
-case reported zero HS3 attempts. The target-exit example reaches its exact
-24-second fixed arrival. The 10-hairpin guard remains independently valid and
-corridor-certified at 137.287 seconds and 0.02 degrees clearance; prior
-20-hairpin evidence remains valid at 274.993 seconds and 0.02 degrees clearance.
-These are bounded deterministic results, not completeness or global-optimum
-certificates.
-
-The final automated suite passes 53/53. A visible slalom run created three valid
-figures, and the expected no-path run created two diagnostic figures without
-rerunning planning. Core production excluding plotting is 6,954 physical MATLAB
-lines, plotting is 565 lines, examples total 3,910 lines, and the maintained
-tree excluding examples/scratch is 9,709 lines. The 7,000 production target,
-900-line per-file limit, and 12,000 maintained-tree cap pass directly without a
-performance allowance. The interactive sandbox remains unexecuted because it
-requires live mouse input.
-
-## Span-demand controller assessment — 2026-08-22
-
-The 180-trial span coordinate search is replaced by a bounded proportional
-controller using per-span velocity, acceleration, and jerk time demand. On the
-single U it reduces timing wall time from 32.890 to 5.991 seconds while changing
-arrival from 24.740511444152 to 24.973219952131 seconds. That is a verified
-5.49-times speedup with a 0.94-percent arrival penalty; the result remains 9.44
-percent slower than the frozen 22.818548735851-second HS3 reference. It does not
-prove reproduction of HS3's exact geometric path or global minimum arrival.
-
-All 53 automated tests and all 18 isolated maintained examples pass with zero
-HS3 time. The selected single-U motion uses 11 controller trials and saturates
-the velocity and acceleration limits without exceeding velocity, acceleration,
-or jerk certificates. Alternating slalom also improves in arrival. The dense
-concavity case remains a visible performance concern at 49.84 seconds, but its
-selected motion uses no controller trials; investigate exact concave-corridor
-construction separately rather than attributing that cost to retiming.
-
-The current recount is 7,171 core production lines, 565 plotting lines, and
-9,928 maintained lines excluding examples/scratch. The largest production file
-is 900 lines and the 12,000-line maintained-tree cap passes, but core production
-is 171 lines above the 7,000-line target. Because dense concavity has a confirmed
-runtime regression outside controller work, the controller speedup cannot
-justify a performance-based size allowance. The branch is not merge-ready until
-at least 171 production lines are removed without weakening supported behavior.
-
-## Batched affine corridor runtime assessment — 2026-08-22
-
-The retained controller now terminates on the first non-improving certified
-duration, preserving the selected U motion while reducing its 11 trials to 6.
-Protected-route sampling batches identical edge samples by start vertex, and
-zero-endpoint-derivative affine corridor systems build one exact polynomial
-basis map instead of one validated trajectory per decision column. Nonzero
-endpoint derivatives retain the established path; empty corridors build no
-unneeded Jacobian.
-
-The 12-wall hairpin candidate median decreased from `17.2736906` to
-`8.3679933 s` (`51.56%`) across three independently valid runs; total-wall
-median is `9.7478098 s`. Motion duration (`164.828287993221 s`), 0.02-degree
-clearance, collision freedom, and the full-span certificate were unchanged.
-The final U run also stayed below ten seconds at `8.3241566 s`, with zero HS3
-time and unchanged independently valid `24.973219952159 s` motion.
-
-Arrival quality remains the principal blocker: U is `9.44%` slower than the
-frozen `22.818548735851 s` main-branch reference and therefore fails the
-required five-percent limit (`23.959476172644 s`). Convex geometric-jerk and
-Bernstein derivative-minimax objectives were valid but substantially slower in
-motion time and were removed. A less-conservative direct time-parameterization
-method is still required before comparing every maintained example against the
-main-branch arrival table. The automated suite passes 53/53; the complete
-maintained-example matrix was not rerun after this runtime-only change.
-Current size is 7,267 core production lines, 565 plotting lines, and 10,024
-maintained lines excluding examples/scratch. The hard maintained-tree cap
-passes, but the 267-line core overage remains a merge-readiness blocker.
-
-## Dynamic seed-slot coverage assessment — 2026-08-22
-
-The planner now reserves bounded seed capacity for an extended temporal route
-only when that route is actually nonempty and distinct. This preserves the
-existing direct-wait and spatial-before-extended ordering while converting one
-of eight fixed-seed moving-circle failures into an independently valid motion.
-All 18 maintained examples retain their frozen motion durations and the full
-57-test suite passes.
-
-The largest remaining weakness is dynamic route scaling. A 42-vertex moving
-maze requires the original full timed topology to retain success; two faster
-22-vertex pruning variants lost that solution. Similar high-dimensional
-dynamic routes can therefore remain expensive, and the random moving-circle
-probe still succeeds in only three of eight feasible fields. No completeness
-or general runtime improvement is claimed.
-
-## Shallow collision-residual feedback assessment — 2026-08-22
-
-The dynamic retimer now applies signed-clearance feedback only to a failed
-candidate whose penetration is no deeper than `0.005 deg`. The gain is derived
-from each active barrier row's control-point sensitivity and the current trust
-radius; a minimum-norm bounded QP supplies the correction. Negative signed
-clearance uses the outward interior gradient, and every accepted step must
-strictly improve independent clearance while retaining kinematic validity.
-
-This recovers one additional fixed moving-circle field, improving the final
-deterministic sweep from `3/8` to `4/8`. Its selected motion has
-`0.00570897255047 deg` independent clearance. An initially unbounded recovery
-was rejected: it changed the extreme-outline benchmark from
-`6.22216662414646 s` to `8.39529809634767 s`. The retained local-residual bound
-restores the exact benchmark path and excludes all three deeper residuals seen
-in that sequence. All 18 maintained examples and all 58 tests pass. The four
-remaining circle fields still return explicit `noValidatedSeed`; topology and
-large-residual collision recovery remain known limitations.
-
-## Retry-exhausted boundary-support assessment — 2026-08-22
-
-The largest current strength is deterministic coverage with preserved
-benchmark quality. A visibility graph that remains disconnected after the
-existing third offset/exhaustive retry now tests the four input workspace
-corners as bounded support nodes and preserves one spatial seed opportunity.
-The fixed moving-circle sweep improves from 4/8 to 8/8 independently validated
-solutions. All four formerly failing cases use a selected spatial visibility
-seed with positive continuous clearance; the unchanged workspace-spanning wall
-still returns the expected diagnosable `noValidatedSeed` result.
-
-The rule is deliberately inactive on connected retry-zero graphs. An earlier
-broader seed replacement regressed the maintained moving-circle duration from
-`8.75122873615098 s` to `8.77956166926098 s`; the retained retry-three gate
-restores it exactly. The final fresh-process 18-example matrix has 17 validated
-successes and one validated expected failure, with every successful path metric
-exact to pushed evidence. The 59-test suite passes and Code Analyzer reports no
-messages.
-
-The largest remaining weakness is runtime and the absence of completeness.
-The final eight-case sweep takes `232.089424 s`; boundary routes often use a
-workspace corner and all eight clearances are positive but as small as
-`0.000355731152304 deg`. The fresh example wall sum is an unfavorable
-`205.6452420 s`, with `61.1979723 s` for the moving/deforming outline and
-`39.7610225 s` for the extreme outline. This is a focused coverage improvement,
-not a global completeness, optimality, or runtime claim. Production remains at
-the exact 7,500-line conditional ceiling, leaving no growth margin.
-
-## Repository module assessment — 2026-08-22
-
-The largest maintainability strength is now explicit module ownership. Public
-entry points remain at the root, while internal geometry, obstacle
-preparation, visibility/timed search, continuous motion, and certification are
-separate MATLAB subpackages with concise names and documented dependency
-boundaries. The refactor removes 18 executable lines despite adding two shared
-geometry helpers. It also stops each corridor candidate from discarding and
-rebuilding the planner's immutable prepared-obstacle cache.
-
-Behavioral evidence is unchanged: all 59 tests pass; 17 maintained examples
-remain independently valid; the expected no-path example retains stable
-diagnostics; and every recorded route and duration exactly matches the prior
-boundary-support evidence. The flat-package refactor therefore has regression
-evidence across static obstacles, moving/deforming obstacles, moving targets,
-waiting, wrapping, dense fields, expected failure, and physical certificates.
-
-The largest weaknesses remain algorithmic rather than organizational. The
-finite seed portfolio is not complete, small-clearance boundary routes remain,
-and the fresh example wall sum is an unfavorable `222.7331866 s`. The inert
-public `RandomSeed` compatibility field remains intentionally retained rather
-than removed by an internal cleanup. Physical core size is 7,773 lines because
-the user authorized helpful comments above the ceiling; executable core size
-is 6,450 lines, 18 below the pre-refactor executable count.
-
-## Readability assessment — 2026-08-23
-
-The strongest current readability property is a consistent two-level comment
-requirement: the primary function owns the complete Section 0 readme, while every
-local function starts with a direct explanation and relies on nearby comments
-for loops, decisions, state transitions, and failure paths. No local Section 0
-or duplicate local `PURPOSE` block remains. The largest planner and search
-files also explain why bounded fallbacks and candidate transitions occur, not
-only what each condition tests.
-
-The short-file audit found no unused production MATLAB file below 100 code
-lines. The four single-caller helpers remain separate because merging them
-would hide a stable result format or add a distinct algorithm to an existing
-486-, 847-, or 898-line orchestrator. This improves navigation without claiming
-that file count alone proves good modularity.
-
-The latest pass was not regression-tested because the user explicitly disabled
-tests for the session. Structural text audits and `git diff --check` passed;
-the earlier planner, example, and Code Analyzer evidence remains historical
-evidence from before the final comments-only edits.
-
-## Persistent sandbox assessment — 2026-08-23
-
-The branch now includes a persistent manual scene-building UI under `sandbox/`.
-Its strongest usability property is guided input: the first scene advances
-from start to goal or first endpoint and then to the first obstacle without
-separate mode buttons. Both tabs provide an explicit Add Obstacle action for
-later strokes. Reset clears retained state and all axes children, including
-hidden freehand traces.
-
-The controls use shared columns and three labeled groups instead of repeating
-axis sublabels for every value. The plot reserves its outer rectangle so
-azimuth ticks and labels do not overlap the action row. The principal weakness
-is size: the supplied UI is a 1,714-line standalone sandbox and is intentionally
-kept outside production and maintained examples. It exercises public planner
-and validator interfaces but adds no planner correctness evidence. Per the
-user's instruction, only structural checks and `git diff --check` were run;
-no MATLAB, Code Analyzer, example, or regression execution is claimed.
-
-## Combined method-suite assessment — 2026-08-23
-
-The branch now exposes two genuine planner choices without blending their
-internals. `corridorQuintic` preserves the no-NLP `325-less-nlp` engine and is
-the backward-compatible default. `hs3` preserves the `plan-325` analytic/HS3
-engine and must be selected explicitly. Each package owns obstacle preparation,
-search, motion construction, validation, result construction, and its original
-moving-target adapter. The public dispatcher runs one package only and records
-the choice in result options and diagnostics.
-
-The strongest evidence is source-baseline reproduction rather than a claim
-that the methods are equivalent. Fresh processes produced 18/18 exact gated
-matches for corridor and 18/18 for HS3. Each set contains 17 independently
+All 17 maintained examples retained their prior metrics: 16 independently
 validated successes and the expected validated `noValidatedSeed` failure.
-Corridor's fresh wall sum was `163.9501049 s`; HS3's was `238.5162172 s`.
-Wall time was retained but not equality-gated. Both directions of physical
-folder removal also passed an obstacle-free maintained example with independent
-validation and the correct surviving method echo.
+Visible-success and failure-figure gates passed. This intentionally breaking
+warning-surface cleanup removes 60 net production MATLAB lines. The
+eleven-milestone branch is now 273 non-test MATLAB lines smaller than
+`5c0a6c9`.
 
-The main maintainability cost is intentional duplication: similar low-level
-helpers exist inside both method packages so a change to one cannot silently
-change the other. This trades repository size for removability and baseline
-fidelity. Obsolete planner copies at the root were not kept—22 unreachable
-search, motion, validation, and result-builder files were deleted. The remaining
-root internals have real plotting, constructor, or option-handling callers.
+## Detailed plane-reuse trace retirement - 2026-09-01
 
-Repository-wide static evidence is clean. MATLAB Code Analyzer checked 109
-intended MATLAB files with zero messages. Text audits found all 368 loops
-directly explained, primary-only Section 0 headers, no local PURPOSE boilerplate,
-and no unused production MATLAB file. Canonical comparison also found no
-executable drift from either selected source snapshot after approved namespace
-and entry-point renames.
+The tenth `bmtp-cleanup-codex` milestone removes diagnostic-only state around
+automatic plane reuse. `PlaneReuseIterationHistory`,
+`PlaneReuseControlDifference_deg`, and
+`PlaneReuseDurationDifference_s` no longer appear in solver diagnostics. Their
+pending control-net and duration snapshots never influenced a solver input,
+continuation, convergence decision, retained candidate, or certificate.
 
-The methods retain different option sets and different earliest moving-target
-policies. Users must not assume that switching only the method produces the
-same arrival interpretation or trajectory. Neither finite proposal portfolio
-is complete, neither result proves global optimality, and HS3 retains local NLP
-conditioning/failure risk. The full automated regression suite was not run
-because the user prohibited tests in this session; the 36 fresh example runs
-are direct combined-branch evidence but are not represented as an unrun test
+The behavior-bearing mechanism remains intact. `PlaneReuseApplied` and
+`PlaneReuseCount` still summarize use; the arrival-tolerance condition, stable
+tagged-pair requirement, plane-preserving `continue`, collision histories,
+retained-best evidence, and convergence diagnostics are unchanged. The focused
+contract still requires reuse, convergence, initial collision evidence, and the
+exact minimum collision-free retained duration.
+
+Target Exits at `1e-4 deg` clearance and Extreme US Outline both reused once at
+iteration 7 and finished at iteration 8. After removing only runtime fields and
+the three retired arrays, their complete baseline/candidate results matched
+recursively with maximum numeric difference zero. Target Exits retained 24
+seconds and 21.9416287312 degrees; Extreme retained 5.81065318159 seconds and
+23.3457566443 degrees. Code Analyzer reported zero findings, focused tests
+passed 49/49, and the full suite passed 123/123 in 88.5057376 seconds wall time.
+
+All 17 maintained examples retained their prior metrics: 16 independently
+validated successes plus the expected validated `noValidatedSeed`. Visible and
+failure-figure gates passed. The milestone removes exactly 17 engine lines and
+adds no production replacement. The ten-milestone branch is now 213 non-test
+MATLAB lines smaller than `5c0a6c9`.
+
+## External BMTP restart retirement - 2026-09-01
+
+The ninth `bmtp-cleanup-codex` milestone removes externally supplied restart
+state from the BMTP engine. Neither maintained planner adapter consumed this
+state: static and timed planning both called the engine with seven inputs and
+two outputs. The core now has one seed-derived initialization path and no
+restart validation, alternate initial-best branch, template allocation, or
+restart export.
+
+`planTrajBmtp` remains as a one-release compatibility facade. Ordinary
+seven-input/two-output use is unchanged. A former eighth input or requested
+third output warns once with `planTrajBmtp:DeprecatedRestart`; supplied state
+is ignored and the returned restart record is empty. This is an intentional
+compatibility loss for direct external callers: the measured test restart cut
+one repeated direct solve from 1.0651848 to 0.2434276 seconds. No maintained
+planner path received that benefit, and the old warm and cold fixture motions
+were exactly identical.
+
+Saved static degree-16, true timed-cell degree-7, and direct cold results
+matched recursively with maximum numeric difference zero after removing only
+runtime fields. The deprecated direct call also reproduced the old warm
+trajectory exactly. Focused engine tests passed 12/12, the broader focused gate
+passed 37/37, Code Analyzer reported zero findings, and the full suite passed
+123/123 in 88.4909933 seconds wall time. All 17 examples retained their prior
+metrics: 16 independently validated successes and the expected validated
+`noValidatedSeed`. Visible and failure-figure gates passed.
+
+The engine removes 44 net production lines; the migration facade adds four,
+for a net 40-line non-test MATLAB reduction. The nine-milestone branch is now
+196 non-test MATLAB lines smaller than `5c0a6c9`. Plane reuse, three-rate travel
+refinement, timed cells, conservative grouping, specialized input-driven
+constructors, certificates, validation, and failure diagnostics remain because
+their maintained result ownership has not been replaced.
+
+## Internal BMTP segmentation ownership - 2026-09-01
+
+The eighth `bmtp-cleanup-codex` milestone removes the last public option used
+only to size BMTP's conic construction. `CollocationSegmentCount` is no longer
+resolved or echoed. Static warm routes and timed-cell routes retain the former
+default effective cap of 20 spans. Legacy input warns once, is ignored, and
+cannot retune segmentation. The timed helper also drops its now-unused options
+argument.
+
+Saved static-U and true timed-cell BMTP results matched recursively at `1e-9`
+after removing only runtime evidence and the retired field. The timed fixture
+retained `bmtpTimedCell`, seven optimizer spans, seven timed cells, 35 seconds,
+36.6949453597 degrees, full coverage, planes, validation, and certificates.
+The existing dense 30-edge engine fixture still resamples to exactly 20 spans.
+A legacy value of 2 warned, disappeared, and matched automatic static-U output
+recursively.
+
+Focused tests passed 56/56. Sandbox diagnosis took 10.1182416 seconds versus
+10.3521119 before the change; route economy took 14.8954734 versus
+14.6741929 seconds, ordinary run noise. All 17 maintained examples then ran
+serially with exact prior trajectory metrics: 16 validated successes plus the
+expected independently checked `noValidatedSeed`. Visible and failure plotting
+passed, Code Analyzer reported zero findings, and the full suite passed 123/123
+in 88.5229176 seconds wall time.
+
+The required migration shim makes this milestone two net non-test MATLAB lines
+larger even though the public interface and two consumer paths are smaller.
+Under the established accounting, the eight-milestone branch remains 156 lines
+smaller than `5c0a6c9`. Public defaults now contain 14 meaningful fields, and
+the audited public surface has no remaining solver-construction-only control.
+
+## Internal trajectory-solver cap ownership - 2026-09-01
+
+The seventh `bmtp-cleanup-codex` milestone removes the obsolete public
+`MaximumNlpIterations` field without deleting its active safeguard. BMTP now
+owns one fixed trajectory `coneprog` iteration cap of 300, equal to the former
+public default. Legacy direct-planner input warns once, is ignored, and is not
+returned. The sandbox and examples no longer present private solver tuning as
+a request-level choice.
+
+The former unsupported-topology integration fixture was not independent of
+this option: `MaximumNlpIterations=1` manufactured a solver failure. With the
+real cap it instead returned `goalReached` after about 66 seconds. The revised
+fixture uses a physically infeasible eight-second fixed-arrival deadline, so
+the default policy genuinely refuses fallback and the explicit policy genuinely
+attempts it. The separate Ruckig unit test continues to own the two-segment
+limit. Revised policy tests pass 2/2 in 2.9632806 seconds.
+
+The measured tradeoff is unfavorable but bounded in one deliberately low-cap
+test: timed BMTP rose from 9.9854775 to 15.0755105 seconds while retaining a
+validated smooth result. Sandbox route economy remained effectively unchanged
+at 14.6741929 versus 14.7555260 seconds. The combined focused gate passed
+40/40; all changed MATLAB files had zero Code Analyzer findings; and the full
+suite passed 121/121 in 88.5048981 seconds wall time.
+
+All 17 maintained examples ran serially in fresh MATLAB processes. Sixteen
+succeeded with independent validation, collision freedom, and kinematic
+compliance; `exampleNoPath` retained its expected independently checked
+`noValidatedSeed`. Every trajectory metric matched the preceding committed
+milestone. Visible success created two figures without warnings and hidden
+failure created one diagnostic figure containing the reason. The manual-data
+exporter passed in 5.7923965 seconds. The milestone removes six net non-test
+MATLAB lines under the established branch accounting, leaving the branch 158
+lines smaller than `5c0a6c9`. The remaining active implementation option is
+`CollocationSegmentCount`, which requires its own bounded experiment.
+
+## Automatic plane-reuse ownership - 2026-09-01
+
+The sixth `bmtp-cleanup-codex` milestone keeps BMTP separating-plane reuse and
+its diagnostics while removing two public implementation controls:
+`EnablePlaneReuse` and `PlaneReuseImprovementTolerance_s`. Reuse is now an
+internal continuation invariant: the retained-best duration improvement must
+be within `ArrivalTimeTolerance_s`, and the tagged path--region pair set must
+be unchanged. Direct legacy fields warn once, are ignored, and cannot disable
+or retune the mechanism.
+
+This removes two false user choices and one duplicated tolerance relationship,
+but the one-release migration shim costs three net production MATLAB lines.
+The six-milestone branch total is therefore 152 production lines smaller than
+`5c0a6c9`. The benefit is interface and ownership reduction, not a runtime or
+physical-line claim.
+
+Three pre-edit results were saved and compared recursively after removing only
+elapsed-time evidence and the two retired option fields. The tight-clearance
+Target Exits case remained 24 seconds and 21.9416287311844 degrees with reuse
+count 1, 60 plane SOCPs, and 8 trajectory SOCPs. The structurally different
+timed alternating-occlusion case remained 20.8695652173913 seconds and
+13.571326600194 degrees, with per-seed reuse counts `[0 1 1 0 1]`. Static U,
+which did not activate reuse, also remained exact at 20.7124477860115 seconds
+and 40.2550285040009 degrees. A legacy `false` plus custom tolerance reproduced
+the automatic Target Exits result exactly.
+
+Broad verification passed 120/120 tests in 81.7413358 seconds wall time and
+Code Analyzer reported zero findings. All 17 maintained examples ran in fresh
+serial processes: 16 independently validated successes plus the expected
+validated `noValidatedSeed`. Visible success and hidden failure plotting both
+passed. The manual-data exporter ran successfully and now records plane reuse
+as `automatic`.
+
+The remaining public-surface candidates are active solver controls, not dead
+fields. `MaximumNlpIterations` owns the `coneprog` iteration cap despite its
+obsolete name, while `CollocationSegmentCount` bounds static/timed BMTP route
+segmentation. Evaluate each independently; do not remove or retune either
+without exact-result evidence.
+
+## Dead planner verbosity option removal - 2026-09-01
+
+The fifth `bmtp-cleanup-codex` milestone removes the public planner `Verbose`
+field. A complete read audit found that the field was resolved, validated,
+echoed, and forwarded but never read by planning, search, motion generation,
+validation, or plotting. The live obstacle-construction verbosity controls
+remain separate. The sandbox also retains its top-level verbosity checkbox,
+which now owns console capture outside the planner instead of injecting dead
+planner state. Direct legacy planner input warns once, is ignored, and is not
+returned.
+
+This is an interface reduction rather than a physical-line reduction. The
+one-release compatibility shim and its ownership plumbing cost eight net
+production MATLAB lines, so the branch total changes from 163 to 155 removed lines
+across five milestones. That unfavorable line-count delta is explicit; the
+benefit is one fewer false planner capability and clearer logging ownership.
+
+Default and legacy-`Verbose` obstacle-free runs matched exactly after removing
+only measured runtime fields. All 17 maintained examples then ran in separate
+fresh MATLAB processes: 16 successes independently passed collision and
+kinematic validation, and `exampleNoPath` retained the expected validated
+`noValidatedSeed`. The complete suite passed 118/118 in 81.436094 seconds wall
+time, Code Analyzer reported zero findings, the visible success created two
+figures without warnings, and the hidden failure created its diagnostic figure.
+
+The remaining option audit found no other unread default. At that milestone,
+collocation, solver-iteration, and plane-reuse controls were all still active;
+the later automatic plane-reuse milestone internalized only the two reuse
+fields under exact-result gates.
+
+## Dormant seed-clustering removal - 2026-09-01
+
+The fourth `bmtp-cleanup-codex` milestone removes optional conservative hull
+clustering from topology-seed generation. `SeedClusterDistance_deg` previously
+defaulted to zero and no current maintained example, test, benchmark, or
+sandbox enabled it. The 85-line `clusterSeedShape.m` helper is deleted and
+route candidates always use the unclustered protected swept geometry. A
+one-release option shim warns that a supplied legacy distance is deprecated
+and ignored. The existing `SearchDiagnostics.Grid.SeedCluster` record remains
+with its exact default values and source-region count so default diagnostic
+schema and plotting consumers do not change.
+
+The measurable maintainability benefit is a net reduction of 83 production
+MATLAB lines: 100 removed and 17 added after the compatibility and diagnostic
+cost. The branch has now removed 163 production lines across four committed
+milestones while preserving route generation, continuous BMTP, separating-
+plane reuse, static and time-varying obstacle handling, time policies, motion
+constraints, validation, certificates, failure diagnostics, and the public
+result/restart contracts.
+
+The strongest correctness evidence is recursive comparison of every current
+maintained example against frozen commit `11582e3`. All 17 results match at
+`1e-9` outside the intentionally removed option and runtime fields. This
+includes seed ordering, visibility graph counts, coverage flags, the retained
+zero-valued cluster diagnostic, route and trajectory histories, validation,
+certificates, and termination. Sixteen examples succeeded and independently
+validated; the expected no-path example retained its validated
+`noValidatedSeed` failure. The extreme outline retained 5.81065318159 seconds
+arrival and 23.3457566443 degrees of motion, with 67.5731971 seconds wall time
+versus 67.4136091 seconds at baseline.
+
+A structurally different three-region fixture proved the removed behavior was
+actually exercised. At distance zero the frozen baseline used 26 nodes and 46
+visibility edges. At one degree it formed one conservative group and reduced
+the graph to 10 nodes and 16 edges, while both returned the same validated
+8.08716891419-degree motion at 6.5 seconds. The candidate legacy replay warned
+once, used the unclustered 26-node/46-edge graph, and matched the zero-distance
+baseline recursively. Its 4.3206596-second wall time was close to the
+4.2952183-second clustered run; this small fixture does not establish a global
+runtime ratio for fragmented fields.
+
+Broad verification passed 117/117 tests. A hidden no-path run retained the
+termination reason and search counts in its figure title, and a visible
+obstacle-free run created two visible figures. MATLAB Code Analyzer reported
+zero findings in the three changed production files, documentation no longer
+claims the helper exists, benchmark rows record every executed example, and
+`git diff --check` passed.
+
+The largest remaining option-surface issue is not simple dead state.
+`CollocationSegmentCount` actively caps BMTP warm-route and timed segmentation,
+and `MaximumNlpIterations` actively sets the trajectory `coneprog` iteration
+limit despite its outdated name. They should be evaluated for internal
+ownership or clearer naming in independent bounded changes, not deleted as
+unused. The next option audit should trace every remaining default and rank
+truly unread fields ahead of active solver controls.
+
+## Wall-clock seed cutoff removal - 2026-09-01
+
+The third `bmtp-cleanup-codex` milestone removes the planner's
+machine-load-dependent per-seed wall-clock cutoff. Every admitted seed now
+runs to the existing deterministic BMTP iteration and cone-program limits, or
+to the existing explicit cancellation boundary. The public
+`PerSeedWorkBudgetMultiplier` is recognized for one release, warned as
+deprecated and ignored, then stripped before ordinary option resolution. The
+private `MaximumSolverTime_s`, `WorkLimitReached`, and
+`seedWorkBudgetExhausted` paths are gone. `MaximumSeedCount`, the 35 BMTP
+outer-iteration bound, nonlinear and cone-program limits, validation,
+diagnostics, and the tested public restart API remain.
+
+The measurable maintainability benefit is a net reduction of 40 production
+MATLAB lines: 57 removed and 17 added, including the compatibility shim and
+example-boundary forwarding. Together with the first two milestones, the
+branch has removed 80 production lines while retaining the continuous BMTP
+solver, separating-plane reuse, static and time-varying obstacle support,
+arrival policies, motion limits, validation, certificates, failure
+diagnostics, and public result contract.
+
+The strongest correctness evidence is recursive comparison against frozen
+commit `dd7a674` at `1e-9`. Fixed-arrival alternating occlusion, earliest and
+balanced obstacle avoidance, the extreme outline, moving/deforming geometry,
+and expected no-path results matched their completed-seed baselines outside
+the declared option and diagnostic removal. Alternating occlusion now
+deterministically completes seed 5 and selects its 13.5713266002-degree motion
+instead of sometimes discarding it and selecting the 13.5986641387-degree
+motion; arrival remains 20.8695652174 seconds. Earliest arrival remains
+7.57454176632 seconds with 11.4118613877 degrees of motion. Balanced arrival
+remains 7.54855735896 seconds, 11.2161345431 degrees of motion, and
+18.764691902 degrees of declared composite cost.
+
+Broad verification passed 115/115 tests. All 17 maintained examples ran in
+separate serial headless processes: 16 planner/example-validation successes
+and the expected validated `noValidatedSeed` result. Every successful motion
+passed collision and kinematic checks. A hidden no-path run created one
+diagnostic figure titled with `noValidatedSeed`, one seed, one expanded state,
+and two rejected transitions. A visible obstacle-free run created two visible
+figures. MATLAB Code Analyzer reported zero findings in all four changed
+production files, and `git diff --check` passed.
+
+The explicit unfavorable tradeoff is runtime. The extreme-outline default
+wall time increased from the prior cutoff run's 42.1929796 seconds to
+67.4136091 seconds in the full sweep. A controlled completed-seed comparison
+was much closer: 72.2275885 seconds before the edit and 72.80709 seconds after
+it, with exact non-runtime results. This is accepted because the user
+prioritized a smaller deterministic core over early runtime and because the
+old cutoff could discard a better valid result. Runtime ratios remain
+case-specific; this milestone does not claim a universal slowdown bound.
+
+The next highest-confidence cleanup candidate is dormant seed-region
+clustering. Its default is zero, no maintained example or test enables it,
+and a separate bounded experiment could remove approximately 90-100
+production lines while requiring exact default-result equality. Plane reuse
+itself remains explicitly retained: its completed removal experiment worsened
+motion length and approximately doubled runtime.
+
+## Dormant waypoint warm-start option removal - 2026-09-01
+
+The second `bmtp-cleanup-codex` milestone removes the planner-option surface
+for an implementation that is not present in the repository. No production
+planner or trajectory engine consumed `WaypointWarmStartMode`,
+`RequestedWaypointWarmStartMode`, or `IsWaypointWarmStartAvailable`; their
+only behavior was validation, probing for the absent `ruckigWarmStart.m`, and
+echoing fallback state. Current defaults and results no longer contain those
+fields. A one-release migration shim recognizes all three legacy names, emits
+one explicit deprecation warning, and strips them before ordinary option
+resolution. The example option boundary forwards legacy names to that single
+warning/strip owner instead of misclassifying them as unknown example fields.
+
+The measurable maintainability benefit is a net reduction of 16 production
+lines in `resolvePlannerOptions.m` and 10 production lines overall after the
+six-line example-boundary compatibility cost. The tested public BMTP
+eight-input/three-output restart interface is unchanged. Together with the
+first milestone, the branch has removed 40 production lines while preserving
+the active trajectory engine, route families, plane reuse, validation, and
+diagnostics.
+
+The strongest result-retention evidence is two controlled comparisons against
+the exact accepted baseline commit `93a28e6`. Four paired obstacle-free runs
+with a legacy option replay matched at `1e-9` for all non-runtime result data
+outside the three intentionally removed option fields. Warmed medians were
+0.0777916 s baseline and 0.0835580 s candidate, a 7.413% difference within the
+declared 10% noise allowance. A structurally different fixed-arrival,
+alternating-occlusion comparison used the existing
+`PerSeedWorkBudgetMultiplier=100` diagnostic to remove wall-clock cutoff
+variability. Both sides selected seed 5 and returned exactly
+27.950433436 deg polyline, 13.5713266002 deg smoothed motion, and
+20.8695652174 s duration; recursive comparison found no non-runtime result
+difference, and wall time changed from 24.8525406 s to 25.1338125 s (+1.132%).
+
+Broad verification passed 113/113 tests. All 17 maintained examples ran in
+separate serial headless processes: 16 planner/example-validation successes
+and the expected validated `noValidatedSeed` result. A hidden no-path run
+created one diagnostic figure with the reason and search counts; a visible
+obstacle-free run created two visible figures. MATLAB Code Analyzer reported
+zero findings in both changed production files, and `git diff --check` passed.
+
+The largest observed weakness is the existing wall-clock per-seed work budget.
+One default alternating-occlusion run allowed seed 5 to finish and selected a
+27.950433436 deg conservative seed whose final motion was 13.5713266002 deg;
+other baseline and candidate runs stopped that seed at
+`seedWorkBudgetExhausted` and selected the 13.3416640641 deg direct seed with
+13.5986641387 deg final motion. Arrival and validity were identical, and the
+alternate final motion was shorter rather than worse, but default selected
+seed identity is timing-sensitive. The controlled high-budget comparison
+shows this cleanup did not create the difference; deterministic work budgeting
+remains a separate core-maintainability candidate.
+
+## Self-contained BMTP SOCP construction - 2026-09-01
+
+The first `bmtp-cleanup-codex` milestone removes the immutable trajectory-SOCP
+template threaded through the BMTP alternation and travel-refinement loops.
+Each trajectory solve now constructs its own equality rows, derivative rows,
+bounds, time/travel cones, and active separating-plane rows in execution order.
+The final-sized sparse inequality matrix is allocated once, so the prior base
+matrix cache plus later enlargement/copy path is gone. Public planner inputs,
+options, result fields, diagnostics, solver arguments, and selection policies
+are unchanged. The edit is confined to `trajectory/+bmtpEngine/solve.m` and
+reduces it from 1,380 to 1,350 physical lines and from 1,235 to 1,205
+nonblank/noncomment lines.
+
+The largest measured strength is exact result retention under a controlled
+baseline/candidate comparison. The frozen baseline revision was
+`5c0a6c97bf68e9db03ace5281bda2e0f84243a8c`. Four paired runs of
+`exampleTargetExitsObstacle`, including one warmup and three timed repetitions
+per side, had identical success, independent validation, termination, selected
+seed/source, certificate decisions, non-runtime diagnostics, and sampled time,
+position, velocity, acceleration, and jerk histories. The maximum sampled
+numerical difference was zero against a `1e-9` gate. Both sides returned a
+24 s motion, 21.7425467317 deg selected polyline, and 21.9416287312 deg
+smoothed path.
+
+The explicit unfavorable tradeoff is runtime. The warmed median increased from
+10.7475989 s to 11.7573298 s, or 9.395%, on that repeated-SOCP case. This is
+inside the predeclared 25% limit and was retained because eliminating hidden
+cache state makes the optimization kernel smaller and self-contained. It is
+one measured fixed-arrival case, not a general runtime ratio.
+
+Verification covered the structurally different static degree-16 and timed
+degree-7 BMTP paths, moving and deforming obstacles, fixed and earliest arrival,
+successful and expected no-path outcomes, and graphics diagnostics. The full
+test tree passed 111/111 with zero failed or incomplete tests. All 17 maintained
+examples ran in separate serial headless processes: 16 planner/example-
+validation successes and the expected validated `noValidatedSeed` result. A
+hidden failure plot included the reason and search counts, a visible
+obstacle-free run created two visible figures, Code Analyzer reported zero
+findings for both baseline and candidate `solve.m`, and `git diff --check`
+passed.
+
+The largest remaining weakness is that this is intentionally only the first
+cleanup milestone. The repository still contains plane reuse, the three-rate
+travel-refinement portfolio, specialized exact-clock/timed-opening/cavity
+constructors, and an externally visible restart surface. Several are measured
+load-bearing for arrival or path length and cannot be deleted honestly until a
+general mechanism reproduces their results. This milestone establishes neither
+planner completeness nor global optimality; the next bounded experiment is to
+evaluate plane-reuse removal independently.
+
+## HTML bundle replay and velocity-authored obstacle motion - 2026-08-31
+
+The HTML sandbox can now load an
+`obstacleAvoidanceSandboxDiagnosis-v2` MAT file in live mode and run its
+canonical request through the current planner. Replay reconstructs the initial
+state, goal, limits, resolved options, original obstacle keyframes, and safety
+margins; it does not reuse the result stored in the bundle. The reproduced
+result becomes the current downloadable diagnosis bundle, so replay remains a
+complete inspect-run-save workflow rather than a display-only import.
+
+Moving-obstacle authoring now follows an explicit Set Motion interaction. The
+selected polygon's arrow is a velocity vector in deg/s: its component values
+and Euclidean magnitude are displayed, and its length in planning coordinates
+equals that magnitude. Constant, zero-start, trapezoidal, and out-and-back
+velocity laws are integrated into the 21 position keyframes supplied to the
+planner. In particular, zero-start treats the arrow as final velocity, while
+trapezoidal and out-and-back treat it as peak velocity. This replaces the old
+and easily misread total-displacement arrow.
+
+The measured strength is end-to-end reproduction without a second planner
+interface. A raw MAT upload through `/run-bundle` returned a fresh
+`goalReached` result in 1.498398 server seconds; its independent validation
+passed. A moving-obstacle unit replay preserved both keyframe times and the
+final original polygon slice. The complete test tree passed 111/111 in
+123.685910 seconds, and Code Analyzer reported no findings in the changed
+MATLAB files.
+
+The largest current limitation is that MAT replay requires the loopback MATLAB
+server and is capped at 128 MiB. The in-app browser policy blocked opening the
+local `file://` page, so no browser-driven visual claim is made; production
+JavaScript syntax, the extracted velocity-profile integration, HTML wiring,
+MATLAB replay, and the live HTTP endpoint were verified independently. Two
+fresh attempts to rerun the maintained example matrix were blocked before the
+first example by MATLAB's already-recorded host startup error, `System Error:
+File system inconsistency`. Planner sources were not changed by this UI and
+transport work; the immediately preceding 17-example matrix remains the exact
+planner baseline.
+
+## Balanced travel-time planning and bounded waypoint fallback - 2026-08-31
+
+The planner now separates hard feasibility from preference. `GoalTimeMode`
+defaults to `balancedArrival`, whose explicit
+`MinimumTravelSavingsRate_deg_s=1` policy selects a later validated motion only
+when it saves more than one degree per second of delay. Jerk remains a hard
+validated limit and is not a selection cost. Equal-cost candidates prefer the
+earlier arrival, then greater mean normalized peak velocity, acceleration, and
+jerk utilization. Every seed summary reports its degree-valued tradeoff cost
+and utilization, and search diagnostics state the formula and retain the
+secondary conic portfolio's trial rates, durations, lengths, and costs.
+
+The largest measured strength is that one input-driven policy now corrects
+three different failure mechanisms without scenario branches. The supplied
+static shrimp already had a 175.168391-degree upper-boundary seed, but the
+time-only BMTP kernel expanded it to 192.556229 degrees and 56.293 degrees of
+elevation. A two-stage solve now first establishes a collision-free homotopy,
+then minimizes a convex Bezier control-edge travel bound under retained and
+newly discovered separating planes. A bounded three-rate portfolio rejects
+dominated local scalarizations. The retained shrimp motion is 175.780063
+degrees at 82.389498 s, never exceeds 39.288753 degrees elevation, and passes
+independent collision, velocity, acceleration, and jerk validation.
+
+For moving obstacles, balanced timed search retains the shortest ancestry at
+the mission horizon but removes terminal goal dwell before motion realization.
+That supplies a moving-aware later/shorter candidate while the spatial search
+supplies the faster end of the comparison. On the supplied non-ideal case the
+planner compares a validated 144 s / 228.491135-degree timed motion (cost
+372.491135 degrees) with a validated 119.473594 s / 260.029509-degree detour
+(cost 379.503102 degrees) and selects the former. This is a measured incumbent
+comparison, not a completeness or global-Pareto-optimality claim.
+
+The fixed-clock excursion now validates and compares its progress-polynomial
+and one-sided families by actual travel at the identical physical clock. The
+supplied sine case falls from 153.472521 to 146.976783 degrees without changing
+its 70.344251 s duration or any constraint. Candidate selection no longer uses
+integrated squared jerk.
+
+Ruckig waypoint composition now has a visible two-segment hard limit. A route
+with more segments returns `ruckigWaypointSegmentLimitExceeded` before Ruckig
+runs. The supplied six-segment hidden-fallback request still succeeds through
+velocity-carried BMTP at 104.261457 s and 233.911502 degrees; it is not
+misreported as no-path and no interior state is forced to rest. The maintained
+alternating-occlusion example was moved from explicit Ruckig to BMTP because
+its route genuinely exceeds that public limit.
+
+The main unfavorable tradeoff is runtime and boundedness. The shrimp balanced
+solve took 32.54 s versus the saved pre-change planner result's 13.08 s; this
+comparison includes different MATLAB sessions and is not a controlled speed
+ratio. The three-rate refinement is deliberately bounded, and timed search is
+still bounded by its node, layer, cell, and seed caps. A returned solution is
+independently valid, but failure does not prove that no continuous trajectory
+exists and success does not prove the complete Pareto frontier was found.
+
+Code Analyzer reported zero findings on all changed MATLAB files. The full
+suite initially passed 107/108 tests; the sole failure was a certificate fixture
+that had unintentionally inherited the new default. After declaring its
+intended `earliestArrival` policy, the focused certificate suite passed 3/3,
+and the final complete suite passed 108/108 in 111.388 s. All 17 maintained
+examples ran in separate headless MATLAB processes: 16 independently validated
+successes and the expected `exampleNoPath` failure. A hidden no-path run created
+one diagnostic figure, and a visible obstacle-avoidance run created one visible
+validated figure.
+
+## Sandbox route-economy coverage - 2026-08-31
+
+Sandbox-scale route tests now measure accumulated two-axis travel and
+meaningful lateral velocity reversals for a static circle, an irregular
+concave static outline, and the same irregular outline moving across the
+direct route. Each case also requires independent collision, velocity,
+acceleration, and jerk validation. The static-circle guard compares the
+returned motion with the exact tangent-and-arc geometric lower bound; the
+irregular cases use direct endpoint distance as a conservative lower bound.
+
+Before clearance-boundary refinement, the centered protected circle returned
+a validated 7.333333-second fixed-clock motion of 16.822181 degrees. Refining
+the coarse failing/passing amplitude bracket with authoritative continuous
+validation retains the same arrival time and reduces travel to 16.700092
+degrees. The protected-radius tangent-and-arc lower bound is about 16.638
+degrees. The retained motion is therefore within one percent of that geometric
+lower bound and contains one lateral reversal. A visibility-route alternative has a
+16.636942-degree geometric seed, but its smooth realization is 17.216282
+degrees and takes 8.169085 seconds. A waypoint-stop realization preserves the
+16.636942-degree geometry but takes 15.675572 seconds and stops at every
+interior point. Those alternatives were rejected because they increase time,
+joint cycling, or both.
+
+The route-economy checks limit regressions; they do not prove global
+minimum-wear motion. The planner still prioritizes earliest validated arrival,
+then path length and integrated squared jerk. Mechanical wear also depends on
+loads, backlash, lubrication, and controller behavior that are not modeled.
+The refined boundary requires additional full validation calls. The centered
+circle planning call took 3.123552 seconds in the retained focused run; an
+identically instrumented pre-change runtime was not recorded, so no runtime
+ratio is claimed.
+
+This file records the authoritative state of `novel-rep` and a concise ledger
+of approaches already tried. Superseded benchmark matrices remain in
+`benchmark.csv`; verification details remain in `verification.md`. Historical
+work is retained here only when it records a mechanism, outcome, or warning
+that should influence future planner work.
+
+## Current state: smooth timed multi-waypoint BMTP - 2026-08-31
+
+The planner now has a general smooth path for time-expanded multi-waypoint
+seeds. It partitions each moving obstacle history into physical-time cells,
+uses the convex hull of protected endpoint and midpoint geometry as a
+conservative cell superset, and applies each cell only to overlapping equal-
+duration Bezier spans. Static concave geometry remains exactly decomposed and
+active for the complete motion. Interior search points guide the warm route;
+they are not constrained to zero velocity or acceleration.
+
+The primary frozen baseline at `fe076fe` was a moving circle plus a static
+concave U, with two admitted seeds and the default fail policy. It returned
+`unsupportedTimedMultiWaypointRoute` after 4.790300 s. With the retained
+changes, that exact request returned an independently validated smooth motion
+at 14.634958917 s with 39.676450938 deg sampled length; its minimum speed at
+the four interior timed-seed points was 3.644660375 deg/s.
+
+A stronger version held the circle in the detour for the first 10 s, which
+made both static and swept projections fail. The time-cell solver then selected
+the time-expanded seed and returned an independently certified 35 s motion:
+45.574198839 deg selected polyline, 45.517670812 deg sampled smooth length,
+and 1.469097516 deg/s minimum speed at interior timed-seed points. Its complete
+91-pair time-cell certificate reconstructed every static region and moving
+cell from the original protected obstacles before verifying the degree-one
+Bernstein planes. A structurally different four-span translating-polygon
+engine test also verifies that a region is enforced only on its overlapping
+time spans.
+
+The contact-linearization correction is also retained. A solved separator for
+a visibility seed that merely touches protected geometry may initialize the
+next alternating trajectory step even when it does not yet have the required
+positive gap. It is never an acceptance certificate: final Bernstein plane
+verification and public trajectory validation remain mandatory. This removed
+a measured `3.3e-8 deg` numerical-contact dead end without relaxing collision
+clearance or any public tolerance.
+
+The largest current weakness is completeness and conservatism. Time cells use
+convex supersets, the solver currently maps the search-layer clock to at most
+the existing BMTP span budget, and earliest-arrival work is bounded to the
+search estimate plus the request horizon. A failure is therefore evidence that
+these bounded representations found no validated trajectory, not proof that
+no dynamic path exists or that a returned arrival is globally optimal.
+
+Final verification passed Code Analyzer on all six changed MATLAB files and
+101/101 tests. All 17 maintained examples ran in separate serial headless
+MATLAB processes: 16 independently validated successes and the expected
+validated `exampleNoPath` failure. The visible moving-circle example created
+two figures and passed. Existing static-U and moving-barrier sentinels retained
+20.7124477860115 s and 10.0903015136719 s durations, respectively.
+
+## Current state: stagnation stop trade - 2026-08-31
+
+The earlier statement that the stagnation stop was dead on the default path is
+wrong. The stop worked and was the more accurate of the two measured methods
+on `exampleUSOutlineExtremeVisibility`.
+
+| setting | arrival (s) | length (deg) | plane solves | wall (s) |
+| --- | ---: | ---: | ---: | ---: |
+| neither | 5.794009507455 | 23.354756039381 | 776 | 88.39 |
+| stagnation stop | 5.794009507455 | 23.354756039381 | 468 | 64.73 |
+| plane reuse | 5.810653181589 | 23.345756644341 | 160 | 52.42 |
+
+The stagnation stop reached the exact original arrival and was 27% faster.
+Plane reuse was 41% faster and arrived 0.016643674134 s later. Kevin chose
+plane reuse, accepted that arrival-time cost, and chose to retain one method
+rather than two.
+
+At baseline `9d18840`, counted production lines were 11,618, the full suite
+passed 92 of 92 tests, and all 17 reference examples verified. Earlier
+stagnation-stop numbers below are historical records and do not supersede this
+current-state decision.
+
+## BMTP unchanged-plane reuse, initially gated off - 2026-08-30
+
+`EnablePlaneReuse=false` preserves the existing plane reset and re-derivation
+path. The four supplied default sentinels were bit-identical to their required
+arrivals and sampled motion lengths: Target Exits
+`24 / 22.554006042022394`, Obstacle Avoidance
+`7.574541766321258 / 11.411861387735195`, Static U
+`20.712447786011488 / 40.255028504000862`, and Two Opposing U
+`21.633333333333336 / 24.096812127187516` (seconds / degrees). All passed
+independent validation. The clean MATLAB suite passed 96/96, the changed files
+were Code Analyzer clean, and `exampleNoPath` retained `noValidatedSeed`.
+
+The enabled gate requires both a retained-best improvement no greater than
+`PlaneReuseImprovementTolerance_s` and an unchanged tagged-pair set. It skips
+only the reset/re-derivation and performs the next trajectory solve. In the
+`1e-4 deg` Target case that repeated SOCP was bit-identical on this machine:
+the maximum control-net and duration differences were both zero, then the
+existing convergence test fired. Baseline / stagnation-only / reuse-only
+respectively used `42 / 18 / 15` outer and trajectory SOCPs and `391 / 141 /
+93` plane SOCPs. Their warmed minimum / median walls were
+`53.0606007 / 53.5620057`, `23.8239231 / 24.4742484`, and
+`19.5354281 / 19.7202448 s`; all retained the `24 s` arrival and
+`22.555163889326948 deg` path. Reuse therefore achieved more plane-SOCP and
+wall reduction than the existing stagnation stop in the measured wandering
+case; they are not redundant there.
+
+At default clearance, Target Exits similarly changed from `17 / 121` outer /
+plane SOCPs to `12 / 73`, with a `20.8999410 s` baseline median and
+`16.3771825 s` reuse median, with no result movement. Obstacle Avoidance did
+not trigger the gate (`7 / 13` outer / plane SOCPs in both modes); Static U and
+Two Opposing U did no BMTP conic work in either mode. The read-only Rogue
+bundle was also a gate-null at both tested horizons: 180 s stayed at
+`22 / 576`, `100.664824112242897 s`, and `221.885353904752918 deg`; 360 s
+stayed at `20 / 507`, `100.675947361398343 s`, and
+`220.666927423424511 deg`. Its warmed medians changed only within ordinary
+wall variance (`25.0848222` to `24.8300924 s` at 180 and `23.0830120` to
+`23.4646274 s` at 360). The supplied bundle succeeds at 180 s on this branch;
+the measured 180 result agrees with the supplied known-good arrival and length
+despite the brief's historical failure description.
+
+The option remains off because this is a measured diagnostic/runtime tradeoff,
+not a proof that every future alternating problem has deterministic SOCP
+repeats. The retained reset remains load-bearing whenever the incumbent is
+still improving or tagged pairs change.
+
+### Reverted, then restored - decision record
+
+This mechanism was reverted once (`438c0be`) and then restored. The revert
+applied a kill criterion worded as "Regime C regresses in any way", against a
+warmed 360 s median moving from 23.0830120 to 23.4646274 s. That criterion was
+too strict for wall time and the rejection was wrong:
+
+- The gate does not trigger at all on the Rogue bundle. Counts, arrival,
+  length, and validation were identical at both horizons.
+- The only added work on that path is one small logical-array copy and one
+  `isequal` per outer iteration - microseconds across 20 iterations, not the
+  0.38 s the median moved.
+- The two horizons moved in opposite directions: 180 s improved from
+  25.0848222 to 24.8300924 s while 360 s worsened. Opposite-signed movement on
+  a gate-inert path is variance, not effect. The section above had already
+  described it as ordinary wall variance.
+
+Wall-clock variance on this machine has exceeded 30% between sessions, larger
+than the difference that triggered the rejection. Behavioural invariance, not
+wall time, is the criterion that should gate a change on a path the option
+never touches.
+
+
+## Historical: BMTP retained-best stagnation stop, off by default - 2026-08-30
+
+The optional retained-best stop is inert at its default. Four supplied
+sentinels kept their recorded arrivals and smoothed lengths: Target Exits
+`24 / 22.554006042022394`, Obstacle Avoidance
+`7.574541766321258 / 11.411861387735195`, Static U
+`20.712447786011488 / 40.255028504000862`, and Two Opposing U
+`21.633333333333336 / 24.096812127187516` (seconds / degrees). All four
+passed independent validation.
+
+With `EnableStagnationStop=true`, `StagnationIterationLimit=5`, and the
+resolved arrival tolerance, the diagnostic `1e-4 deg` Target case reduced
+from 42 outer iterations and 433 conic calls to 18 and 159 without moving its
+returned `24 s` arrival or `22.555163889326948 deg` smoothed path. The default
+Target case also triggered, reducing 17 / 138 to 15 / 120 while retaining its
+exact returned result. The other three production sentinels executed no BMTP
+conic calls, so the option was a mechanical null there.
+
+After one discarded warm-up, the `1e-4 deg` raw off walls were
+`57.1787115 / 56.4846390 / 55.8231577 s`; enabled walls were
+`24.9188578 / 26.2214737 / 25.3317567 s`. Thus the observed min / median
+changed from `55.8231577 / 56.4846390 s` to `24.9188578 / 25.3317567 s`.
+This is a diagnostic-clearance benefit, not a claim about every production
+scene or a reason to enable the option by default.
+
+The adverse horizon sentinel is also a null: at 180 s, both modes returned
+the independently validated `100.664824112242897 s` motion with 22 / 598
+outer / conic work and no stagnation trigger. The 360 s control stayed at
+`100.675947361398343 s`, also with no trigger. This does not establish a
+production-wide performance win. The documented default remains off; enable
+only as an explicit diagnostic/runtime tradeoff because the retained
+best-before-stop can be worse than a later oscillating iterate even when the
+returned example result does not move.
+
+## BMTP immutable SOCP cache retained - 2026-08-30
+
+The measured reconstruction bottleneck was reduced without moving an answer.
+The maintained Target Exits warm median changed from `15.7403272` to
+`14.1946827 s`, and its `1e-4 deg` diagnostic changed from `41.7338001` to
+`35.3340565 s`. Corresponding `solveTrajectorySocp` profiler self time fell
+from `2.882206656` to `0.394152606 s` at default clearance and from
+`7.664537344` to `0.448020402 s` at `1e-4 deg`.
+
+The cache is deliberately narrow: it reuses only immutable per-seed
+trajectory-SOCP structure while rebuilding plane rows and horizon bounds in
+their original order. A temporary legacy-versus-cache oracle found exact
+trajectory `coneprog` arguments across all 17 trajectory calls in the
+138-conic-call default Target sequence, all 42 trajectory calls in the
+433-call slow sequence, and a horizon expansion. All 17 maintained examples
+had exactly zero arrival, selected-polyline, and smoothed-path movement against
+the archived `747f46c` baseline; aggregate solver structure was also exact.
+Focused tests passed 31/31 and the staged gate passed 94/94.
+
+The original instability remains visible. At `1e-4 deg`, seed 2 still
+oscillates to the 35-iteration cap; the cache reduces reconstruction cost but
+does not alter that stopping path. Maintained Straight Target remains a
+zero-BMTP Ruckig control. Its explicit BMTP diagnostic is wall-budgeted, so
+outer and conic call counts can vary with wall timing even when its answer is
+unchanged.
+
+The branch also remains oversized. Counted production is now 12,015 lines,
+40 above the 11,975 baseline and 4,515 above the literal 7,500 target.
+`solve.m` is 1,065 physical and 936 noncomment lines, above its 900-line
+target. The runtime and exactness evidence supports retaining the cache, but
+it is not a size-compliance result and does not resolve the slow-clearance
+alternation mechanism.
+
+## BMTP conic runtime localization - 2026-08-30
+
+Fresh warmed, repeated profiling corrects two runtime attributions. Maintained
+Straight Target is a Ruckig waypoint case: its three-run wall was
+`5.2936647 s` minimum and `5.4580266 s` median with zero BMTP and zero
+`coneprog` calls. Its 5.5--6 second runtime must not be used as evidence about
+the conic solver. An explicitly labeled BMTP override measured `20.9824146 s`
+minimum and `21.2219000 s` median.
+
+Maintained Target Exits at the default `1e-7 deg` clearance measured
+`17.6197381 s` minimum and `17.6795313 s` median. The otherwise identical
+`1e-4 deg` diagnostic measured `48.2423766 s` minimum and `49.1185155 s`
+median. The slow regime was reproduced in every recorded repetition.
+
+The adverse mechanism is now measured. Both modes reached the seed-2 first
+collision-free iterate at outer iteration 2 and used no horizon expansion or
+caller restart. Default seed 2 converged in 5 iterations; `1e-4` stayed
+collision-free but its objective oscillated until the 35-iteration cap. The
+total therefore changed from 17 outer iterations and 138 conic calls to 42 and
+433. All Target Exits calls exited `+1`. Individual seed-2 trajectory-call
+medians changed only from `0.6687750` to `0.7168136 s`; repeated calls, not a
+single pathological solve, dominate the near-threefold wall swing.
+
+MATLAB profiler self time identifies immutable trajectory-SOCP reconstruction
+as the largest engine-owned cost outside `coneprog`: `2.882206656 s` over 17
+calls at default clearance and `7.664537344 s` over 42 calls at `1e-4`.
+The next bounded experiment may reuse only those immutable per-seed matrices,
+bounds, and cones. Plane-dependent rows and horizon limits must remain fresh;
+all solver tolerances, acceptance rules, and outputs remain frozen. A movement
+over `1e-9` in any maintained arrival or path length is an immediate revert.
+
+## Ruckig-to-BMTP warm-start experiment stopped at step 2 — 2026-08-30
+
+The approach failed its predeclared collision-survival gate and is not wired
+into the planner. Across five maintained static cases, eight Ruckig route
+motions first passed the unchanged public endpoint, dynamics, and collision
+validation. All eight converted successfully to the exact degree-16 BMTP span
+count, but only one converted control net passed the complete degree-one
+Bernstein plane check: `1/8`, or 12.5%. The declared kill threshold was fewer
+than one-third of at least six validated conversions.
+
+| Case | Converted seeds | Maximum conversion error (deg) | Certified |
+| --- | --- | ---: | ---: |
+| `exampleObstacleAvoidance` | 2, 3 | 1.74313715049989e-5 each | 0/2 |
+| `exampleStaticUShapedObstacle` | 2, 3 | 7.85168079719939e-5 each | 0/2 |
+| `exampleTargetExitsObstacle` | 2, 3 | 1.34309047285578e-5; 5.68171630073286e-5 | 1/2 |
+| `exampleAlternatingSlalom` | 2 | 9.50061068454221e-6 | 0/1 |
+| `exampleDenseConcaveObstacle` | 2 | 9.59122759523563e-6 | 0/1 |
+
+The census used an extended earliest-arrival horizon only for the intermediate
+Ruckig source, then independently validated that complete source motion before
+conversion. Direct seeds that failed collision validation were excluded from
+the denominator. A preliminary constant-plane-only result of 0/8 was discarded
+because it did not implement the specified degree-one validator; the 1/8 result
+above uses the same conic plane form and direct Bernstein-product inequalities
+as BMTP.
+
+No planner option or caller was added, so no arrival, route, or cold BMTP
+behavior changed. In accordance with the kill criterion, outer iterations to
+first feasibility and repeated warm/cold wall times were not measured. Step 2
+adds 323 counted production lines, taking the experimental total to 11,975;
+this dead-end code has no measured performance allowance.
+
+## Ruckig-to-BMTP warm-start experiment, step 1 — 2026-08-30
+
+The standalone equal-duration converter is implemented but remains unreachable
+from the planner. It fits each requested Bernstein span at Chebyshev-Lobatto
+times and reports independently sampled position error; it does not claim that
+the converted curve is collision-free or suitable for BMTP yet.
+
+On one exact six-phase Ruckig rest-to-rest profile, degree 7 with 64 uniform
+spans reproduced spans containing no interior jerk switch to
+`4.96506830649455e-15 deg`; the maximum over all 64 spans was
+`4.97014121608466e-9 deg`. With two uniform spans, each containing two
+interior switches, the measured maximum was `0.000534264339868523 deg` at
+degree 7 and `3.52475369970282e-5 deg` at degree 16. These are sampled errors
+for one fixture, not general bounds.
+
+The final step-1 edit passed the fast sentinel gate, the two converter tests,
+and all nine architecture-boundary tests; Code Analyzer reported no findings
+in the three changed MATLAB files. The production audit moved from the exact
+branch baseline of 11,524 to 11,652 nonblank, noncomment lines: the unwired
+converter adds 128 counted lines. Retention therefore remains conditional on
+the later collision-survival and first-feasibility iteration gates.
+
+## Static earliest-arrival horizon monotonicity — 2026-08-30
+
+The frozen `180bad360good` request disproved the suspected seed-admission
+failure. At both 180 s and 360 s the search generated and admitted the same two
+seeds: a 153.358411534181 deg direct seed estimated at 76.6792057670906 s and a
+281.401707597662 deg visibility seed estimated at 140.700853798831 s. Before
+the correction, the visibility seed ended as `noOptimizedFeasibleIterate` at
+180 s but reached 100.675947361398 s at 360 s.
+
+The earliest divergence was inside the static BMTP biconvex solve. Six
+horizon-bounded trajectory SOCPs remained colliding at durations through
+179.203882993999 s, and the seventh became infeasible. The 360 s solve used the
+same plane sequence to find a temporary 191.541694821082 s collision-free
+iterate, then descended to the roughly 100.676 s validated motion. Thus the
+request horizon incorrectly bounded a feasibility iterate even though final
+horizon enforcement already existed in BMTP and public validation.
+
+The retained correction activates only when the horizon-bounded SOCP reports
+infeasibility before any collision-free iterate. It doubles the intermediate
+horizon, capped by the finite 454.754593605252 s kinematic duration of the
+seed-warm control net, and restores the request horizon immediately after the
+first collision-free iterate. Work remains bounded by the existing 35 outer
+iterations, per-SOCP iteration cap, and any active per-seed solver-time budget.
+No seed gate, public validator, tolerance, obstacle geometry, or scenario rule
+changed.
+
+In the final single-process gate, the 180 s request succeeded with independent
+validation at 100.664824112243 s in 19.2650543 s wall. The unchanged 360 s
+request succeeded at 100.675947361398 s in 16.2218415 s wall. All 17 maintained
+examples passed serial headless validation; `exampleNoPath` remained the
+expected `noValidatedSeed` failure; visible success and hidden failure plots
+were created. Code Analyzer reported zero findings, the complete suite passed
+84/84 in 22.2649327 s, and production remained exactly 11,524 counted lines.
+
+## Dynamic-scene findings — 2026-08-30
+
+These supersede two claims in commit `4138f26`'s message, which were wrong.
+
+### Correction to `4138f26`
+
+That message states the rogue bundle "still takes about 177.8 s wall" and that
+edge-query batching "is not attempted here". Both are false. The 177.8 s figure
+was a bad measurement taken under process contention. Two independent
+measurements of the same commit give **12.9 s and 14.5 s**, and the committed
+reachability-frontier search already groups edge queries by layer pair:
+`edgeIsClear` calls fell from 23,040 to 82, and `queryObstacleOccupancyAtTime`
+from 23,093 to 222. The commit is pushed, so the record is corrected here
+rather than by rewriting history.
+
+### Sandbox bundle `az_el_sandbox_goal_20260829_212652`
+
+Two moving obstacles, 180 s horizon, about 203 degrees of azimuth travel at
+2 deg/s. Before `4138f26` this request never returned: cancelled at 180 s,
+150 s, and 120 s. It now succeeds in about 12.9 s with independent validation,
+arrival 107.632292801 s and length 227.751816227 deg. `HS3-planner` solves the
+same request at 155.205670334 s, so this branch arrives 47.573378 s earlier.
+
+The failure had two causes. The time-expanded search built the complete edge
+list for every free node at every layer with no bound. Separately, with dynamic
+obstacles `supportsStaticHorizon` is false, so every seed routed to
+`createTimedSeedCandidate`, which accepts only `directWait` seeds and returned
+`unsupportedTimedTopology` in about one millisecond — discarding the entire
+topology search. A `noValidatedSeed` result with that per-seed signature is a
+false negative, not evidence of infeasibility.
+
+### The orthogonal-cavity path is load-bearing
+
+A removal experiment deleted `createOrthogonalCavityMotion`,
+`certifyOrthogonalCavityLowerBound`, `evaluateArrivalCertificatePortfolio`, and
+their planner wiring, then measured the sentinels.
+`exampleStaticUShapedObstacle` regressed from 20.7124477849715 s to
+20.7814828183771 s, so the deletion was reverted in full. Those roughly 880
+lines earn their keep and are not size-reduction candidates.
+
+That experiment also invalidated an attribution method worth recording. Reading
+the winning construction from `result.Seeds(SelectedSeedIndex).Source`
+misreports cavity wins: when the cavity portfolio wins, `planCorridorQuintic`
+passes the original topology seed to `finishFastPath`, so the source still
+reads `visibilityGraph`. A census built that way reported zero cavity wins for
+code that measurably changes the result. Attribute constructions from
+`SearchDiagnostics`, not from the seed source.
+
+### Roundoff reserve consistency correction
+
+Unifying the plane-certificate `roundoffReserve_deg` formulas moved
+`exampleStaticUShapedObstacle` from 20.7124477849715 s to
+20.7124477860115 s, a measured +1.04e-9 s change. The constructor's
+`eps(coordinateScale_deg)` form was the outlier; the shared helper now uses the
+more conservative validator-owned `eps * coordinateScale_deg` formula so the
+constructor and authoritative certificate check reason in the same reserve.
+
+### Closed moving-barrier arrival gap
+
+At `d0f00e1+worktree`, `exampleMovingBarrierWait` arrives at
+10.0903015136719 s on the unchanged 10 deg path, improving both the prior
+10.5 s branch result and `HS3-planner`'s recorded 10.2314453125 s result. The
+accepted `directWait` seed now validates a zero-wait lower trial and bisects
+the measured infeasible/feasible bracket through the unchanged public
+validator. Sixteen deterministic trials refined the wait from 3 s to
+2.59030151367188 s; the final measured infeasible lower wait was
+2.5902099609375 s. This is a bounded refinement of one validated direct-wait
+construction, not a request-wide minimum-arrival proof.
+
+## Current verdict — 2026-08-29
+
+The branch is a working research milestone, not yet the requested beta. It has
+one public planner, separated BMTP and Ruckig trajectory engines, stable failure
+diagnostics, and independent continuous validation. The last complete matrix
+had 16 validated successes and one expected validated failure, but the branch
+still misses the combined size, runtime, arrival, and path-record gates. That
+matrix does not prove general completeness or global optimality.
+
+- Current integration and cooperative-cancellation suite: 84/84 tests passed
+  after the reachability-frontier timed-search port. The rogue bundle now
+  terminates as `noValidatedSeed` in 149.484 seconds under its 180-second poll.
+- The sandbox now has a Stop action that remains enabled during synchronous
+  planning, polls the time-expanded and homology searches plus planner-stage
+  boundaries, restores idle state, and enables a replayable pre-run export.
+  Cancellation cannot preempt MATLAB inside one atomic solver or vectorized
+  geometry call; it takes effect at the next safe checkpoint.
+- Production size audit rule: 11,524 nonblank, noncomment lines across 72
+  files at HEAD. That measured size is now the ceiling, replacing the
+  earlier 4,999 target. The audit counts only `+obstacleAvoidance` and
+  `trajectory`; `tests/`, `examples/`, `benchmarks/`, and `sandbox/` are
+  outside the counted roots, so adding coverage costs nothing against it.
+- Strongest result: Two opposing U reaches the exact `649/30 s` physical
+  arrival floor with a 24.0968121271875 deg path and 3.0005152 s full wall.
+- Straight Target now explicitly selects exact Ruckig waypoint composition. It
+  retains the 20.8695652173913 s clock and passes every public check with a
+  20.7720160748 deg path, 5.8749177 s planner time, and 10.1040635 s wall.
+  Target Exits remains at the `944a738` BMTP result pending a fresh Ruckig gate.
+- In that matrix, Obstacle Avoidance is about 46.57 ms late. Extreme is
+  1.179 ms late, inside the user's 2.07 ms allowance but still above the
+  literal historical record.
+- Straight Target and same-input Target Exits remain longer than their
+  historical records; the restored Ruckig route stops at its intermediate
+  vertices and is not a claim of locally time-optimal waypoint motion.
+
+## Current invariant boundary
+
+- `obstacleAvoidance.planTrajectory` remains the sole public fixed-goal
+  planner; obstacle construction, planning, validation, and frozen plotting
+  remain separate.
+- The public validator independently owns endpoint, time, workspace,
+  derivative, collision, safety-margin, and certificate acceptance.
+- Expected no-path and bounded-work outcomes retain stable results and search
+  diagnostics. Obstacle grouping remains admissible only with reconstructed
+  exact-region coverage.
+- Every counted production file has a production or contract-test caller. The
+  sub-5,000 target therefore needs a behavior-preserving algorithm cutover,
+  not dead-file deletion. No transitive compact implementation has yet proved
+  current diagnostics, continuous validation, and plane-certificate parity.
+
+## Strongest current evidence
+
+The Two-U request requires 20 degrees of elevation travel from rest to rest
+under `1 deg/s`, `0.75 deg/s^2`, and `2.5 deg/s^3`. The independent scalar
+switching lower bound is exactly `649/30 s`. A retained degree-15 progress
+polynomial attains it and passes every public continuous check with
+0.00618966852407 deg protected clearance. This proves globally minimum arrival
+for that request, not globally minimum path length.
+
+## Current blockers and next bounded gate
+
+1. Do not grow past the 11,524-line ceiling. Reduction is welcome but is no
+   longer a release gate: the one measured attempt, deleting the
+   orthogonal-cavity path, regressed `exampleStaticUShapedObstacle` and was
+   reverted, so remaining size is not obviously recoverable without losing
+   capability. `trajectory/+ruckigEngine` (2,083 counted lines) is shared
+   with other projects and `+obstacleAvoidance/+plotting` (425) is frozen,
+   leaving about 7,138 counted lines in scope for any future reduction.
+2. Recover pass-through path quality without relabeling the local state-to-state
+   Ruckig engine as a waypoint-optimal solver.
+3. Close the Obstacle Avoidance arrival gap and both path-record gaps without
+   scenario branches or relaxed tolerances.
+4. Reduce Extreme planner and scenario-construction wall while preserving
+   exact protected geometry and the accepted arrival tolerance.
+5. Rerun all maintained examples sequentially before another release claim.
+
+The current fixed-arrival gate retains 20.8695652173913 s but still must reduce
+Straight Target from 20.7720160748 deg and 10.1040635 s wall to the comparable
+13.678271907957 deg and 2.0964864 s records. Target Exits must retain 24 s,
+reach at most 20.6764423274 deg, and beat the 5.167399 s same-input wall record.
+The older 20.2803317257 deg and 1.9774286 s rows used a different randomized
+target endpoint and are not comparable to the maintained deterministic fixture.
+
+Headless profiling at `4ed7f46` localized the Straight Target loss to motion,
+not topology: BMTP spent 70.6255 of 75.4950 planner seconds and
+selected a longer seed even though a shorter valid seed was available. Its
+output uses 48 degree-16 certified spans, while the same-input historical path
+record used ten quintic spans. The Target Exits profile spent 22.1507 of
+31.3204 planner seconds in motion. Comparisons must include like-for-like
+planner work and pass the unchanged public validator.
+
+## Experiment ledger
+
+### 2026-08-21 — early low-dimensional spline replacement
+
+- **Bounded quintic B-spline:** one-, two-, and five-turn cases constructed
+  faster than HS3 but arrived 14–35% later. Ten turns remained colliding after
+  mean, worst-clearance, and per-obstacle objectives; 20 turns was not run.
+- **Fixed-stop septic Bezier:** interpolated vertices but required 28–84 s
+  motion and violated the maintained polynomial format; removed.
+- **Interior-route interpolation:** reduced 10-turn wall but worsened
+  clearance because route reduction discarded topology; removed.
+- **Scalar option sweeps:** timing reserve retained route detail but took
+  140.74 s with only 0.000145 deg clearance. Duration weight, collision
+  penalty, step size, and offset-bound changes did not repair the mechanism.
+- **Feasibility-first hard corridor and worst-clearance ranking:** both failed
+  focused gates and were removed.
+- **Topology-preserving batching/reduction:** produced valid 10-turn splines
+  in 5.22–8.45 s but with less than 0.001 deg clearance.
+- **Affine corridor prototype:** reached certified 0.02 deg clearance on a
+  10-turn route and a 12-wall maze. The 20-turn motion exceeded its horizon,
+  so no production replacement was established.
+### 2026-08-22 — corridor-only replacement development
+
+- **Corridor-only cutover:** removed dormant HS3/NLP paths and established an
+  input-driven visibility/corridor planner. It passed maintained cases but did
+  not meet global arrival or size requirements.
+- **Span-demand controller:** replaced 180 timing trials with bounded
+  per-span feedback. It was faster on Single U with a measured arrival
+  penalty; later superseded.
+- **Batched affine corridor work:** reduced repeated timing and constraint
+  construction. Broader timing variants regressed records and were removed.
+- **Dynamic seed-slot reservation:** recovered one moving-circle field while
+  preserving deterministic order; broader timed-route replacement failed.
+- **Shallow collision-residual feedback:** recovered narrow penetrations.
+  Applying it to deeper residuals regressed Extreme to 8.395298096 s, so the
+  broad form was rejected.
+- **Retry-exhausted boundary support:** workspace-corner nodes recovered the
+  fixed moving-circle sweep. Earlier activation regressed a maintained result.
+
+### 2026-08-23 to 2026-08-25 — broad phase and legacy cutovers
+
+- **Ungrouped collision broad phase:** materially accelerated 40 circles with
+  exact trajectory parity.
+- **Legacy cutovers:** **Combined method suite**, **Compact corridor cutover**,
+  **Standalone Hermite-Simpson sequence**, and **HS3-only production cutover**
+  were exercised. A cross-frame stress case exposed a compact-corridor seed
+  collision; standalone HS3 had weak conditioning, runtime, and record
+  quality; the HS3-only cutover removed 2,525 lines but kept those weaknesses.
+- **Legacy recovery:** **Corridor regression recovery**, **Compact C3 duration
+  controller**, and **Exact derivative retimer** repaired dense-route or
+  selected U cases, but not every maintained arrival record.
+
+### 2026-08-26 — quality, timing, and architecture experiments
+
+- **Mesh and refinement family:** **Dynamics-timescale mesh start**, **Direct
+  long-detour refinement**, **Severe-static fixed-time quality solve**,
+  **Derivative-slack continuation**, and **Dynamic spatial quality** improved
+  selected cases. Broader static, all-seed, or continuation use regressed
+  arrival, runtime, or quality.
+- **Route, ranking, and retiming family:** **Obstacle-free bounded arrival**,
+  **Same-homology shortcutting**, **Certified direct collinearity**,
+  **Fixed-arrival geometric lower bound**, **Fixed-arrival length-first
+  ranking**, **Shortest-route-first ordering**, **Time-expanded retiming**, and
+  **Timed-arrival repair** were tried. Benefits were local; one final matrix
+  was slower and one timed case remained late.
+- **Deforming-outline localization:** polygon buffering and nonlinear
+  constraints were dominant; a classification micro-optimization was removed.
+- **Two-product and flat architectures:** both package layouts were tried and
+  superseded; they did not change the algorithmic limits.
+
+### 2026-08-27 — performance and invariant consolidation
+
+- **Direct motion and moving geometry:** **Exact third-order switching and
+  scalar progress**, **Prepared dynamic boundary queries**,
+  **Convex direct-route arrival search**, and **Monotonic direct-line progress**
+  improved eligible direct cases, but one moving-target timing observation was
+  adverse.
+- **Invariant batching and caching:** **Batched occupancy and deferred
+  allocation**, **Static geometry and polynomial-map caches**, and
+  **Prepared constraint-layout reuse** produced measured local wins. A timed
+  moving-barrier CG variant regressed.
+- **Bounded sandbox planning** made one moving result 26.93% later.
+  **Unified seed equivalence** reduced ownership but missed its runtime gate.
+
+### 2026-08-28 — hybrid replacement experiments
+
+- **Direct Ruckig before topology**, **Optional pass-through warm start**, and
+  **Nonuniform mesh** each gave a local benefit or retained engine capability
+  but no general runtime or selection win; their broad policies were removed.
+- **Adaptive static hybrid** and **Alternating-slalom hybrid** improved selected
+  cases, including a 10.7625 s validated slalom, but variability and a broader
+  near-direct trigger prevented a general replacement.
+- **Moving/deforming runtime gate:** query reuse was 9.02%; skipping the coarse
+  basin took 192.03 s, and a short iteration cap regressed path quality.
+
+### 2026-08-29 — BMTP replacement branch
+
+- **Restored exact Ruckig engine and explicit route method:** restored the
+  independent state-to-state switching engine and facade, added the general
+  `TrajectoryMethod="ruckigWaypoint"` route adapter, and wired Straight Target
+  through it without a BMTP fallback. The engine tests passed 10/10, the full
+  suite passed 78/78, and a structurally different static-box detour passed
+  earliest and fixed arrival. Straight Target passed at the exact fixed clock,
+  but its stop-at-waypoint path and wall remain above the historical records.
+- **Exact waypoint fallback:** composed exact jerk-limited stops along a failed
+  spatial seed and recovered a failed multi-edge request. Swept-envelope HS3
+  was rejected.
+- **BMTP cutover:** replaced legacy production with a separated Bezier/plane
+  engine, exact direct/event kernels, and complete region certificates.
+- **Exact-clock progress polynomial:** attained the Two-U global arrival lower
+  bound with sub-10-second wall and truthful route provenance.
+- **Full fixed-corridor Bezier QP:** rejected. Static U produced
+  30.047333018 s and about 45.6554866 deg versus retained 20.712447785 s and
+  40.2550285 deg. Missing certificate ownership was diagnosed, but quality
+  already failed, so experiment code and artifacts were removed.
+- **Fixed-clock null-space family:** a 109-variable form beat the dense path
+  target and validated but took 35.14 s. A seven-coefficient form retained
+  quality, then passed Straight Target with a fully plane-certified
+  13.582258304 deg path at the exact 20.869565217 s clock in 8.03538 helper
+  seconds. Target Exits remained valid but took 22.1424908 helper seconds and
+  produced 21.811076622 deg versus the comparable 20.676442327 deg record.
+  Shared preparation and direct validation were excluded from that timer, so
+  no general or end-to-end speed claim was retained.
+- **Rest-state safe-interval search:** rejected as a universal replacement.
+  On Alternating Slalom, its 8-vertex visibility route was only
+  16.0193197983 deg, but exact rest-to-rest jerk primitives summed to
+  24.6732769008 s versus the retained 10.5 s fly-through motion. Stopping at
+  every graph vertex cannot meet the maintained arrival records.
+- **Open-quintic route smoother:** rejected at its first frozen gate. It made
+  a fully validated Straight Target trajectory in 3.0661778 s candidate scope
+  at the exact 20.869565217 s clock, but its 13.7395585901 deg path missed the
+  13.678271908 deg record. Target Exits was not run after that gate failed.
+- **Historical eight-span C3 sampled-barrier QP:** rejected at its first
+  frozen gate. Straight Target remained fully valid at the exact
+  20.869565217 s clock, but its 13.7165279811 deg path missed the
+  13.678271908 deg record and projected planner scope was 5.0271313 s versus
+  the 2.0964864 s wall record. Target Exits was not run, and all experiment
+  code and artifacts were removed. A later same-input reconstruction confirmed
+  that length-first selection cannot improve it because seed 2 is already its
+  shortest validated motion. Increasing the compact basis through 9, 10, 12,
+  and 14 spans preserved every public check but only reached 13.7164337975 deg;
+  warm walls were 4.4719357, 3.4983968, 3.8779253, and 5.1402292 s. The quality
+  gap is therefore representation-level, not a candidate-ranking defect.
+- **Fixed-clock velocity-energy C3 QP:** rejected after the Straight Target
+  gate. Six relinearized QPs passed continuous motion validation and beat the
+  path record at 13.6049323647 deg on the exact 20.869565217 s clock, but took
+  3.5579439 s in candidate scope and did not provide the required current
+  plane-certificate parity. A one-QP form took 2.7812950 s and regressed path
+  length to 14.1539862749 deg. Both missed the 2.0964864 s wall record; Target
+  Exits was not run, and the experiment code was removed.
+- **One-shot eight-span Bernstein velocity-energy QP:** rejected at the
+  Straight Target runtime gate. The 447-line experiment eliminated 96 control
+  scalars to 28 QP variables and reached the common exporter, but the focused
+  end-to-end example did not finish within 30 measured seconds versus the
+  2.0964864 s record. It was stopped before a valid path or certificate result
+  was available; Target Exits was not run, and the hook and helper were removed.
+- **Fixed-clock QP witness reuse and active-set solve:** rejected at the
+  Straight Target gate. Directly retained constant support planes certified all
+  288 output span-region pairs with zero analytic or conic fallbacks in
+  0.0554667 s. Switching the same 28-variable QP from interior point
+  (7.2986105 s) to MATLAB's active-set algorithm reduced successful seed solves
+  to 0.1599676 s, 0.0308900 s, and 0.0235469 s. All five seeds were attempted,
+  and the selected motion passed the exact 20.8695652173913 s clock, public
+  collision, kinematic, and plane-certificate checks. Its 14.2707707658 deg
+  path and 10.0545878 s full wall still missed the 13.678271908 deg and
+  2.0964864 s records; topology alone took 2.3570636 s. Target Exits was not
+  run, and all probe code and instrumentation were removed.
+- **Continuous Bernstein safe-corridor QP:** rejected at its first frozen gate.
+  Its 451-line candidate passed the public collision, kinematic, exact-clock,
+  and seed-corridor checks on Straight Target, but produced a
+  14.1505333646 deg path in 90.488413 s candidate scope versus the
+  13.678271908 deg and 2.0964864 s records. Target Exits was not run, and all
+  experiment code and artifacts were removed.
+
+## Cross-cutting rejected solver and micro-optimization trials
+
+- First-valid stopping, broad early continuation, average-speed starts,
+  tighter arrival tolerance, globally skipped recovery, and larger clearance
+  expansion each regressed a maintained arrival, failure, or runtime case.
+- Vectorized static corridors, Bernstein and other cache variants, `TypicalX`,
+  sparse Jacobians, repeated-query removal, and nargout-sized polynomial
+  allocation won only microbenchmarks or missed their end-to-end gates.
+- Broad SQP, conjugate-gradient, limited-memory BFGS, PCG, Parallel Computing
+  Toolbox, and `parfor` variants timed out, regressed, or established no sound
+  end-to-end benefit.
+
+## Per-Seed Work Budget Verification — 2026-08-29
+
+The README fixed-goal protected-rectangle request was rerun on
+`422f887+worktree` with `PerSeedWorkBudgetMultiplier=3`. The retained selected
+motion is seed 3 with a 7.574541766-second arrival and 11.411861388-degree
+motion length. Final wall time was 14.060 seconds. The losing fourth BMTP seed
+ended after 4.857 seconds with `seedWorkBudgetExhausted`, rather than an
+independent-validation failure. Exclusive final stage timing was 0.4830 seconds
+topology, 12.0845 seconds motion solving, 0.3230 seconds collision checking,
+0.3292 seconds final validation, and 0.7899 seconds unattributed, totaling
+14.0096 seconds. This is one measured static request, not a general runtime or
+optimality claim. The full MATLAB suite passed 84/84; the timed and cavity
+certificate coverage is direct, while the geometric lower-bound pruning proposal
+was deliberately not implemented because a topology seed is not a mandatory
+optimized vertex chain.
+
+## Explicit timed-topology policy and conservative moving BMTP — 2026-08-31
+
+The largest current strength is that a changing obstacle no longer causes an
+undocumented switch to rest-to-rest waypoint composition. The public
+`UnsupportedTimedTopologyPolicy` defaults to `"fail"`; an intentionally
+work-limited static-U-plus-mover request returned the earliest accurate
+`unsupportedTimedMultiWaypointRoute` reason with zero fallback attempts. The
+same request succeeded at 31.4265 s only when
+`"ruckigStopAtWaypoints"` was explicit, and diagnostics retained the original
+failure plus every forced zero-velocity and zero-acceleration interior state.
+
+Candidate-specific relevance removes the old request-wide static-kernel veto.
+A static U with a distant moving obstacle succeeded through static BMTP at
+20.8454 s and 39.5987 deg under the default fail policy after full continuous
+validation against both obstacles. A structurally different translating
+rectangle used the conservative protected-history convex-hull projection and
+produced one globally smooth 20 s, 10.7117850149 deg BMTP motion with
+0.0657896049 deg minimum clearance against the original moving geometry.
+
+The largest current weakness remains genuine time dependence. The retained
+projection is a conservative static swept-history superset; it cannot exploit
+an obstacle opening later, couple separating planes to physical-time cells, or
+guarantee a wait-plus-detour solution. Those cases still return
+`unsupportedTimedMultiWaypointRoute` unless the explicitly labeled
+stop-at-waypoints recovery is enabled. This branch therefore demonstrates one
+moving-detour family, not a general dynamic BMTP completeness or optimality
 result.
 
-## Compact instrumentation assessment — 2026-08-23
-
-The current recommendation is to retain the compact instrumentation. Both
-methods now expose the same stable seven-field `StageTiming` record:
-`TopologyElapsedTime_s`, `CorridorConstructionElapsedTime_s`,
-`MotionSolvingElapsedTime_s`, `CollisionCheckingElapsedTime_s`,
-`FinalValidationElapsedTime_s`, `UnattributedElapsedTime_s`, and
-`TotalElapsedTime_s`. The five named stages are exclusive, unattributed time
-reconciles them to the independently measured total, and attempted candidate
-work is accumulated before selection so failed or discarded work remains
-visible instead of being overwritten.
-
-The fixed-duration constraint construction is also materially healthier. One
-shared affine builder now serves the direct, Compact C3, exact-traversal, and
-dynamic-repair motion paths, removing divergent copies of the same
-coefficient-to-state mapping. The public timing format and this shared builder
-are the useful core of the change; the prototype solver microtimers, activity
-trees, and public HS3 attempt ledger should remain removed.
-
-Both planners passed all 18 maintained examples in fresh processes: 17
-independently validated successes and the expected validated `noValidatedSeed`
-failure for each method. The alternating three-repetition A/B used 48 fresh
-serial MATLAB processes against frozen `27070ac`. Status, validation, selected
-seed, and physical requirements matched; the largest physical numeric difference
-was only `1.3056223108405e-13 deg` in corridor U-case clearance, far below the
-`1e-6` audit threshold.
-
-The final source also passed all 127 automated tests with no failure or
-incomplete result, and MATLAB Code Analyzer reported zero findings across all
-93 maintained production and test files.
-
-Positive percentages below are slower candidate medians; negative values are
-faster. The mixed directions are evidence against claiming a uniform speedup.
-
-| Method | Representative case | Direct wall | Harness wall | Planner median (baseline -> candidate) | Planner change |
-| --- | --- | ---: | ---: | ---: | ---: |
-| HS3 | Obstacle free | +1.308% | -9.959% | 3.8779488 -> 3.6864421 s | -4.938% |
-| HS3 | U shaped | +2.650% | +0.111% | 7.7324331 -> 7.9896984 s | +3.327% |
-| HS3 | Four accelerating circles | -0.198% | -3.193% | 23.5276799 -> 22.7331264 s | -3.377% |
-| HS3 | Expected no path | -4.035% | -4.995% | 27.3161664 -> 25.9819868 s | -4.884% |
-| Corridor | Obstacle free | -5.652% | -0.090% | 1.7478295 -> 1.8684094 s | +6.899% |
-| Corridor | U shaped | +0.848% | -1.667% | 7.5230662 -> 7.5110127 s | -0.160% |
-| Corridor | Four accelerating circles | -3.841% | -6.203% | 5.8348097 -> 5.5424184 s | -5.011% |
-| Corridor | Expected no path | +2.899% | +5.907% | 1.1005869 -> 1.2595498 s | **+14.443%** |
-
-The final compact recount, after consolidating timing and canonical obstacle
-infrastructure, is 76 production MATLAB files and 15,140 physical lines versus
-76 files and 15,634 lines at `27070ac`: 494 fewer lines with no file-count
-growth. The maintained non-example, non-scratch tree is 84 files and 18,609
-lines versus 84 files and 19,057 lines: 448 fewer lines. The former 12,000-line
-maintained-tree cap is still exceeded.
-
-`+azElInternal` is retained as the neutral shared obstacle layer. Both planners
-now use its canonical boundary traversal and signed clearance, while root
-utilities also use its option, preparation, and interpolation requirements. No
-method calls its sibling package.
-
-One known HS3 limitation remains pre-existing: time spent in a failed embedded
-HS3 attempt does not reduce the later global improvement allowance. The new
-timing counts that discarded work, but changing the allowance would alter
-planner behavior and is outside this behavior-preserving checkpoint. Static
-comparison confirmed the same budget behavior in frozen `27070ac`.
-
-Immediately after the A/B run, timer boundaries were tightened and one unused
-internal output was removed. That follow-up only reclassified already measured
-elapsed work and reduced internal plumbing; it changed no topology, motion,
-selection, collision, or validation algorithm. On balance, retain this compact
-version and its honest unfavorable evidence, without restoring the prototype
-microtimers or attempt ledger.
-
-## Corridor helper consolidation checkpoint — 2026-08-23
-
-The corridor fixed-goal runtime closure now contains 36 MATLAB files and 7,366
-physical lines, down from 42 files and 7,713 lines at task baseline
-`3280bb0`. Five corridor-local helpers that were executable copies of the
-neutral `azElInternal` boundary, obstacle-preparation, interpolation, option,
-and logical-normalization helpers were removed. The closed-form straight
-jerk-profile implementation was moved into its sole caller,
-`buildQuinticSpline`, without changing its equations or returned motion
-format.
-
-Repository production, counted as MATLAB outside examples, tests, benchmarks,
-and sandbox, is now 70 files and 14,787 physical lines versus 76 files and
-15,133 lines at the task baseline. Production plus tests is 78 files and
-18,256 lines versus 84 files and 18,602 lines. These counts use PowerShell
-`Get-Content` physical rows consistently on both sides; earlier sections retain
-their historical counting records rather than being rewritten.
-
-The focused behavior gate passed 52/52 before and 52/52 after consolidation.
-It covers shared obstacle infrastructure and corridor static, moving,
-fixed/earliest-arrival, wrapping, expected-failure, trajectory, and independent
-validation behavior. MATLAB Code Analyzer reported zero messages across all 14
-changed MATLAB callers. A static call audit found all 36 runtime files
-reachable from `azElPlannerMethods.corridor.plan`, with no reference to a
-deleted helper. `git diff --check` also passed.
-
-This checkpoint improves ownership and deployment size; it is not a runtime or
-trajectory-quality claim. The complete maintained-example, visible-graphics,
-and full 127-test matrices were not rerun. No benchmark row was appended
-because no maintained example benchmark was executed.
-
-## Ungrouped corridor and stronger U.S. deformation assessment — 2026-08-23
-
-Retain the corridor collision broad phase. In the maintained 40-moving-circle
-case with seed clustering disabled, median planner time improved from 14.5690
-to 7.0040 seconds (-51.925%) and collision time improved from 8.2384 to 0.5109
-seconds (-93.799%). All three fresh-process pairs preserved the exact selected
-route, sampled motion, 62.4777398626363-second duration, minimum clearance,
-success, collision state, and kinematic certificate. The default example's
-2-degree cluster request creates zero groups, so this is genuinely ungrouped
-evidence rather than a reduced-geometry substitute.
-
-The mechanism reads each incoming obstacle's prepared complete-history bounds
-and never assumes fixed speed, rigidity, size, route, or example identity.
-Near-path obstacles still receive exact time-slice polygon queries and adaptive
-certification. The full 132-test suite, all 18 corridor examples, the expected
-no-path result, and a visible three-figure smoke passed.
-
-The moving/deforming U.S. example now supplies visibly stronger growth and
-rotation. Protected extents grow by 16.805% azimuth and 22.920% elevation, and
-the new motion remains independently valid. This is an intentional input
-requirement change, so its new route and duration are not presented as a runtime
-speedup against the easier former geometry.
-
-The principal remaining runtime weakness in the 40-circle candidate is
-corridor construction, roughly 4.6 seconds of a 7.0-second median planner run.
-No claim is made that history boxes help when supplied bounds overlap most of
-the path, or that absent evolution may be guessed. Production must receive
-updated histories or caller-supplied uncertainty bounds and replan fail-safely.
-
-Production grew by 35 MATLAB lines and remains at 14,013 lines, above the
-7,000-line target. The smallest paired planner reduction (50.067%) exceeds the
-10.5% task-growth allowance for those 35 lines, but does not erase the
-pre-existing overall size excess. Raw A/B and final example rows are retained
-in `benchmark.csv`.
-
-## Dynamics-timescale HS3 mesh start — 2026-08-26
-
-The largest newly measured arrival improvement is on long multi-leg detours
-whose default HS3 segment duration exceeds a complete acceleration/deceleration
-cycle derived from the supplied velocity and acceleration limits. Starting
-those untimed detours at twice the base mesh reduced the maintained 40-moving-
-circle arrival from 61.2011842765 to 58.6189853057 seconds (-4.219%). This also
-beats the final `325-full-suite` corridor baseline of 60.3618375887 seconds by
-1.7428522830 seconds. The smoothed path shortened from 125.185941203 to
-123.380530717 degrees and independent collision and kinematic validation pass.
-
-The structurally different preserved rogue horizon pair improved from
-88.2939404925/88.2939359679 seconds to 86.5467293065/86.5467226767 seconds.
-Both results independently validate, and their 6.630-microsecond difference
-preserves the repaired horizon-invariance behavior. The mechanism uses only
-route point count, estimated duration, public collocation count, physical
-velocity/acceleration limits, and timed-seed provenance; it does not inspect an
-example, obstacle name, horizon, expected route, or stored outcome.
-
-The cost is visible. A fresh same-session 40-circle control took 18.873958
-seconds before the change and the exact-current rerun took 24.875451 seconds,
-an increase of 6.001493 seconds (+31.798%). A blanket 20-segment start was
-rejected: the static U arrival regressed from 22.6308876389 to 22.6623174130
-seconds, and the short moving-circle runtime rose to 16.976155 seconds. The
-retained dynamics-timescale gate leaves those cases unchanged at
-22.6308876389 and 8.64603156476 seconds respectively.
-
-Fresh evidence is 18/18 maintained outcomes (17 independently validated
-successes plus the expected validated no-path result), 82/82 automated tests,
-zero Code Analyzer findings in the changed planner, a visible three-figure
-success, and a two-figure expected-failure diagnostic. HS3 remains exactly
-2,000 noncomment production lines. The moving/deforming U.S. example still
-takes 49.394024 seconds, with obstacle protection remaining the dominant
-whole-pipeline bottleneck; attempted polygon simplification, batching, shape-
-property skipping, and interval-union caching did not earn retention.
-
-## Shared helper consolidation checkpoint — 2026-08-23
-
-Both planner methods now use `+azElInternal` as the single owner of option
-merging, logical normalization, fixed/moving-goal evaluation, dynamic-obstacle
-preparation, shape-at-time interpolation, polynomial evaluation, and
-power-to-Bernstein conversion. Ten behavior-equivalent private MATLAB
-implementations were removed: three corridor helpers and seven HS3 helpers.
-Planner-specific search, motion construction, certification, result
-construction, and independent validation remain isolated, and neither method
-calls its sibling package.
-
-Against task baseline `a51f6e9`, production MATLAB decreased from 70 files and
-14,822 physical lines to 62 files and 14,256 lines: eight fewer files and 566
-fewer lines. Production plus tests decreased from 78 files and 18,291 lines to
-70 files and 17,725 lines. The focused pre-change baseline passed 33/33. After
-consolidation, the complete shared-obstacle, HS3, and corridor unit files
-plus the fixed-duration polynomial tests passed 101/101. MATLAB Code Analyzer
-reported zero messages across all 20
-modified MATLAB files, the stale-reference and cross-method audits found zero
-matches, and `git diff --check` passed with line-ending conversion warnings
-only.
-
-This is an ownership and deployment-size improvement, not a runtime or
-trajectory-quality claim. Planner constants, decisions, candidate order,
-certificates, collision policy, and returned formats were not changed. The
-maintained examples, visible graphics, and complete repository suite were not
-rerun, and no benchmark row was added because no maintained example benchmark
-was executed.
-
-## Shared validation and timed-search ownership checkpoint — 2026-08-23
-
-The strongest measured result is a 510-line reduction in non-comment MATLAB
-across production and tests while preserving all 132 automated requirements and
-both 18-example method matrices. Production owns 340 fewer non-comment lines;
-tests own 170 fewer. The corridor and HS3 packages still retain their distinct
-planner, graph-construction, solver, range-certificate, and diagnostic policy.
-
-Shared ownership now covers seed-corridor Bernstein inequalities, common
-polynomial format/dynamics/history validation, and time-expanded visibility
-search. Corridor continues to certify exact stationary-point polynomial extrema
-and HS3 continues to use conservative Bernstein bounds through an explicit
-callback. Twenty-four common per-method test requirements and seven fixture
-builders have one implementation with thin method-visible wrappers.
-
-Fresh evidence is 132/132 tests, zero Code Analyzer messages across 102 intended
-MATLAB files, 18/18 corridor examples, and 18/18 HS3 examples. Each matrix has
-17 independently validated successes plus the expected validated no-path
-failure. A visible success created three figures, and the expected failure
-created two hidden diagnostic figures with no selected trajectory.
-
-The largest remaining weakness is HS3 numerical conditioning: maintained runs
-still emit extensive near-singular or singular `fmincon` warnings even when the
-returned motion passes independent validation. The full-suite wall time was
-245.517 seconds versus a 174.860-second pre-change baseline; one run does not
-establish causality, so no runtime improvement is claimed. Method-specific
-envelope, clustering, graph construction, result formats, and collision
-certificates remain separate where their requirements differ.
-
-## Compact corridor cutover — 2026-08-24
-
-The largest current strength is that one 1,023-noncomment-line compact
-obstacle-path implementation now owns the corridor method. It supports static,
-moving, deforming, timed-hold, and nonzero endpoint-derivative requests; the
-small direct analytic quintic remains separate for static straight motion.
-Four superseded legacy motion files containing 1,011 noncomment lines at
-committed `8111d0f` were removed after a zero-caller audit.
-
-The final evidence is 133/133 automated tests, zero Code Analyzer messages
-across 99 intended MATLAB files, 18/18 maintained-example outcomes, and five of
-five repeated-turn/hairpin benchmarks. The example matrix contains 17
-independently validated successes plus the expected validated no-path result;
-every successful arrival met or beat its frozen legacy duration. A distinct
-nonzero-velocity/acceleration detour also passed with endpoint errors no larger
-than `1.37e-12` in the applicable derivative units. Success and expected-
-failure graphics both rendered from returned diagnostics.
-
-The most important limitation is still finite search. Neither bounded topology
-generation nor bounded duration exchange supplies completeness or a global
-optimality certificate. The moving/deforming U.S. case remains the slowest
-recorded example at 21.32539 s wall time, and the results do not establish a
-uniform runtime speedup. The next HS3 reduction must therefore compare every
-arrival and wall time against this committed compact baseline rather than rely
-on aggregate averages or fallback claims.
-
-## Standalone Hermite-Simpson restoration — 2026-08-24
-
-The branch again contains two genuinely separate motion methods. Compact owns
-its corridor-constrained quintic implementation. HS3 now owns a standalone
-third-order Hermite-Simpson transcription and returns only HS3-generated motion
-on success. Static search geometry and request normalization are neutral shared
-infrastructure; no compact planner result, warm start, fallback, or merged
-acceptance path crosses the HS3 boundary.
-
-The implementation is within its size and runtime gates: 1,602 noncomment HS3
-production lines against a 2,000-line cap, and an independently validated
-12-hairpin run in 93.339104 seconds total against the 120-second requirement.
-All 18 maintained example outcomes and all 137 automated tests passed. The
-public 1/5/10/20-turn benchmark also passed independent validation at every
-scale.
-
-This is not yet method-quality parity. HS3 beats the frozen compact arrival on
-5 turns, 10 turns, and the 12-hairpin case, but trails by 0.006849 seconds on
-one turn and by 46.202735 seconds on 20 turns. Static scenes intentionally stop
-at the first independently valid topology, and timed seeds use their
-input-derived arrival during the local solve. Those bounded choices make the
-runtime gate practical but can leave a better topology or timing local optimum
-unexplored. HS3 therefore remains a finite, locally optimized planner without a
-global optimality or completeness certificate.
-
-## Extreme deforming U.S. scenario — 2026-08-24
-
-The moving/deforming U.S. example now supplies a materially harder obstacle
-history: 8%-to-135% growth, interior deformation, a full 180-degree rotation,
-disappearance after 240 seconds, and a separate moving starburst sun along the
-bottom. Geometry assertions are part of `ExampleValidation`, so a valid path
-alone cannot conceal loss of any requested stage. Compact and standalone HS3
-both pass independent and scenario validation.
-
-The main unfavorable result is cost: the new compact example took 40.659661 s
-wall time and produced a 9.14130766846 s motion, while HS3 took 108.428247 s
-and produced a 75 s motion. This scenario therefore strengthens dynamic and
-topology-change coverage but does not support a speed or arrival-quality claim
-for HS3.
-
-## Diagnosis export and cross-frame polygon stress — 2026-08-24
-
-The persistent sandbox can now export a versioned diagnosis bundle after any
-successful or failed run. Focused tests prove that the saved request and result
-round-trip, reproduce, preserve an expected endpoint failure, and remain
-available from both tabs without serializing graphics state.
-
-A new deterministic benchmark stresses large multi-vertex obstacles that
-translate across the frame and rotate by at least 180 degrees. Compact passed
-11/12 tested seeds; standalone HS3 passed all seven exercised seeds, including
-compact's seed-1011 failure. The failing compact scene has a conservatively
-clear boundary witness and is physically feasible under the identical public
-requirement.
-
-The isolated weakness is exact workspace feasibility during compact motion
-construction. Sampled QP bounds allow a minimum-jerk spline placed on the
-workspace boundary to undershoot between samples by as much as 0.000642
-degrees. The independent continuous validator correctly rejects it. This
-checkpoint exposes and preserves the regression but does not conceal it with a
-larger tolerance, expanded workspace, scenario special case, or HS3 fallback.
-
-## Unified obstacle construction ownership — 2026-08-24
-
-Fresh construction, imported canonical normalization, and absolute safety-
-margin reconstruction now have one public owner in `makeAzElObstacleData`.
-The separate normalizer and inflater files are removed, all maintained callers
-use the unified call forms, and the idempotent original-to-protected geometry
-invariant remains covered by both planner requirement suites.
-
-This consolidation improves ownership but increases source size: the former
-three files contained 533 physical / 339 noncomment lines, while the unified
-owner contains 576 / 464. With the combiner call-site change, production grows
-by 44 physical / 126 noncomment lines. That unfavorable size cost is retained
-explicitly rather than presented as cleanup savings. The compensating evidence
-is one implementation boundary, two fewer public files, zero remaining callers
-of the removed names, 140/140 tests, and 18/18 maintained outcomes for each
-separate planner method.
-
-## Corridor-quintic regression recovery — 2026-08-24
-
-The largest newly measured strength is that compact motion construction now
-scales its exact spline representation from route complexity and assigns time
-from actual refined geometry. On the first exported Rogue bundle this preserves
-the selected motion bit-for-bit while cutting wall time from 77.9230 to 9.2078 s.
-On `173vs131`, it removes 37.2076 s of a 41.6076 s arrival regression and also
-beats HS3 on smoothed path length and integrated jerk-squared. The mechanism is
-not scenario keyed: a structurally distinct 12-hairpin route and all 18
-maintained compact examples pass independent validation, and the full suite is
-144/144.
-
-The principal remaining weakness is local arrival quality. Compact still
-arrives 4.400014 s (3.34%) after standalone HS3 on `173vs131`, so this evidence
-does not establish uniform superiority or global optimality. Bounded topology
-enumeration and duration exchange remain finite, and existing HS3 moving-target
-coverage still produces near-singular `fmincon` warnings even when independent
-validation passes.
-
-## Direct long-detour mesh refinement — 2026-08-26
-
-The strongest current HS3 quality result is retained while the redundant
-mid-resolution transcription is avoided. Long untimed multi-leg routes whose
-base segment time exceeds a complete input-derived acceleration cycle make one
-quality refinement directly from 10 to 40 segments. Forty moving circles
-retain the 58.6189853057-second arrival that beats the final `325-full-suite`
-row by 1.7428522830 seconds; final wall time is 22.727164 seconds rather than
-24.875451 seconds for the pushed 20-to-40 flow. Both supplied 180/360-second
-rogue horizons independently validate at 86.5467293065/86.5467226767 seconds,
-only 6.630 microseconds apart.
-
-This is a bounded local-quality policy, not an optimality or completeness
-claim. The neutral-circle control improves arrival from 80.2105179472 to
-78.7444420156 seconds but costs 7.139318 rather than 4.140629 seconds wall.
-The rejected 30-segment point is faster on the 40-circle case at 19.113692
-seconds but arrives 1.5398492530 seconds later than the retained result. The
-moving/deforming U.S. example still takes 49.573514 seconds, and known
-near-singular `fmincon` warnings remain visible on timed moving-obstacle cases.
-Production size does not grow: the HS3 package remains at its exact 2,000-line
-cap, with 82/82 tests and all 18 maintained outcomes passing.
-
-## Deforming-outline runtime localization — 2026-08-26
-
-The largest current stage-level weakness remains the moving/deforming U.S.
-example. Profiling attributes 20.669104 of 51.619861 seconds to scenario
-construction and 26.1176 seconds to planning; exact polygon buffering alone
-costs 16.556995 seconds. A classification micro-optimization was rejected
-because its 57% isolated gain produced contradictory end-to-end measurements
-of 52.626923 seconds profiled and 49.326170 seconds fresh. No production code
-or geometry change was retained. Exact translated-shape reuse already covers
-the sun, while nonlinear deformation and varying scale prevent exact U.S.
-buffer reuse. This bottleneck remains measured and visible rather than being
-hidden through reduced geometry or a coarser obstacle history.
-
-## Obstacle-free bounded arrival search — 2026-08-26
-
-The largest current strength is that a single compact HS3 implementation now
-uses its existing convex fixed-time feasibility search for obstacle-free
-earliest-arrival requests. It starts that bracket at twice the configured mesh
-and remains capped by `MaximumCollocationSegmentCount`; nonempty obstacles,
-timed seeds, fixed-arrival requests, public options, and result fields are
-unchanged. The maintained obstacle-free example improves from 4.60777936881 to
-4.5458984375 seconds while wall time improves from 3.882538 to 2.956477
-seconds. A structurally different direct request independently validates at
-5.70751953125 seconds on 20 segments. The implementation removes the former
-segment-count helper while inlining the input-driven bound, so the nine-file
-HS3 package remains exactly 2,000 nonblank, noncomment lines.
-
-Against the isolated `67bc087` 325-full-suite baseline, current obstacle-free
-arrival remains 0.01476956335 seconds later but wall time is 1.631599 seconds
-lower. Wide U remains 0.7981520967 seconds later than its isolated 325 result;
-80 segments recovered only 0.0511143 seconds while raising wall time from
-13.019699 to 18.815125 seconds, so that broader mesh increase was rejected.
-The rogue 180- and 360-second inputs remain independently valid at
-86.5467293065 and 86.5467226767 seconds, a 6.630-microsecond difference.
-
-All 18 maintained outcomes pass in fresh serial processes, the warnings-enabled
-suite passes 83/83, and Code Analyzer reports zero findings across 84 MATLAB
-files. The dominant weakness remains the 49--51-second moving/deforming U.S.
-case, split between exact scenario construction and planning. No global
-optimality, completeness, or uniform runtime claim is made. Further generic
-mesh tuning is not justified by the measured arrival/runtime tradeoff; the
-next improvement should target a newly localized invariant rather than extend
-this search.
-
-## Shared helpers and HS3 internal subpackages — 2026-08-26
-
-The current worktree removes four duplicated local invariants and organizes
-the neutral HS3 implementation into `polynomial`, `constraints`, and `solver`
-subpackages. Dependency inspection shows solver code depending on constraints
-and polynomial mechanics, constraint code depending on polynomial mechanics,
-and no higher-layer dependency from the polynomial package. HS3 remains free
-of Az/El domain terminology, and the Az/El adapter uses the qualified neutral
-engine functions rather than owning numerical solver calls.
-
-Focused fresh-process evidence covers a moving circle, an opening U, and a
-static U. All three planner results and independent example validations pass,
-including collision and jerk/kinematic certificates. Their polyline lengths,
-smoothed lengths, and durations exactly match the preceding
-`de372d5+spatial-route-cleanup-worktree` records. Wall times were 13.708932,
-14.261098, and 15.192708 seconds respectively; they are single runs and do not
-support a performance claim. The opening-U case retains its known repeated
-ill-conditioned `fmincon` warning flood despite producing a validated result.
-
-This is only a focused architecture smoke test. The remaining maintained
-examples, expected failure visualization, visible graphics, complete unit
-suite, and Code Analyzer have not yet been rerun against this worktree.
-
-## Prepared constraint-layout reuse — 2026-08-27
-
-The largest newly measured runtime strength is that one HS3 solve now prepares
-its immutable corridor interval maps, constraint-row offsets, and safeguarded
-final-time event locations once. Constraint callbacks continue to reevaluate
-the polynomial and every moving-geometry value; only topology that cannot change
-during that solve is reused. The neutral HS3 sensitivity builder also skips its
-sampled position and velocity maps when the obstacle adapter needs coefficient
-Jacobians only.
-
-On the identical Opening-U input, a matched MATLAB profile improved from
-41.5774063 to 40.2039387 seconds, or 3.30%. Time attributed to
-`evaluateTrajectoryConstraints` fell from 5.45811353 to 4.13240582 seconds
-(24.3%), `createConstraintMatrices` fell from 2.31449291 to 1.83661551
-seconds (20.6%), and corridor constraint evaluation fell from 1.25470921 to
-0.641739103 seconds (48.8%). The selected 10-degree polyline,
-10.0912159691-degree smoothed path, and 11.8560791016-second duration are
-unchanged. A direct dynamic-geometry test proves prepared and unprepared value
-and gradient outputs are exactly equal.
-
-Every maintained example ran serially in a fresh MATLAB process. All 16
-expected successes and the expected `noValidatedSeed` result passed independent
-validation with unchanged path and arrival metrics. The moving/deforming U.S.
-case first measured an unfavorable 200.066640 seconds, then repeated at
-182.935442 seconds against the 183.4952231-second baseline with identical
-trajectory metrics; the first result is retained here as visible runtime noise,
-not hidden. The complete suite passes 120/120. A visible success produced three
-figures and six axes, while the expected failure produced two diagnostic figures
-and two axes.
-
-The dominant weakness remains nonlinear solver factorization: it consumes
-22.1272051 of the 40.2039387 profiled Opening-U seconds. Timed-seed conjugate
-gradient was not retried because repository evidence already records a
-24.8248-to-28.2319-second Moving-Barrier regression. The retained refactor adds
-layout plumbing and compatibility fallbacks, so its source-size and branching
-cost are real. It is retained for measured callback reduction, not as an
-optimality, completeness, or uniform wall-time claim.
-
-## Rogue sandbox route-quality correction — 2026-08-27
-
-The saved `az_el_sandbox_goal_20260826_192542.mat` case exposed two distinct
-failures. A two-seed sandbox budget was completely consumed by the direct and
-direct-wait candidates, so the visibility search could not return a spatial
-detour. The earliest-arrival nonlinear solve then returned a valid but visibly
-looping 112.432758778-degree motion for an 87.6756595117-degree direct seed.
-
-The sandbox now permits three seeds, and timed-candidate reservation leaves one
-slot for spatial visibility search whenever the budget can represent all three
-roles. This is an input-driven portfolio invariant rather than a waypoint or
-scenario-specific preference. If spatial search finds nothing, the timed seed
-can still reuse the slot. A validated earliest-arrival motion whose length
-exceeds its seed by more than five percent receives one bounded fixed-arrival
-shape cleanup. The cleanup is retained only when it independently validates,
-keeps the same arrival, and strictly shortens the motion.
-
-On the saved case, the corrected run selected a 90.1324376889-degree
-`visibilityGraph` seed. The initial motion was 99.8503182971 degrees and the
-accepted cleanup returned 90.3025879374 degrees at 50.9444849555 seconds. This
-is 19.683% shorter and 4.9035 seconds earlier than the saved valid loop. It does
-not establish global shortest-path or global earliest-arrival optimality.
-
-The focused HS3 and sandbox suites pass 72/72. Structurally different moving
-and static maintained examples also passed independent validation:
-`exampleMovingCircleNoAzimuthWrap` returned 12.7171175863 degrees in
-8.64603261241 seconds, and `exampleObstacleAvoidance` returned
-11.4464747617 degrees in 7.57952069664 seconds. Two earlier moving-example
-invocations completed planning but their reporting commands referenced invalid
-display/validation fields; those harness errors are not counted as test passes.
-
-## Sandbox obstacle-constructor panel — 2026-08-27
-
-The sandbox now places a titled `Add` panel at the far left of each mode. Its
-Polygon, Circle, Hand Drawn, and Square controls all feed the existing line or
-polygon obstacle representation, so planning, safety-margin application,
-motion assignment, validation, and plotting remain centralized. Circle uses a
-center and edge click, Square uses one corner and an equal-length opposite
-direction, Polygon retains vertex clicks plus right-click completion, and Hand
-Drawn uses press-drag-release. Endpoint placement no longer forces Polygon
-mode, allowing the user to choose the constructor explicitly.
-
-The focused sandbox suite passes 8/8 and Code Analyzer reports zero findings.
-Interactive mouse geometry was covered by the existing callback paths and UI
-contract checks; an automated pixel-level layout test was not added.
-
-## Named trajectory entry points — 2026-08-27
-
-The trajectory root now exposes `planTrajHs3` and `planTrajRuckig` as the two
-maintained public motion-planning names. Engine packages retain ownership of
-their numerical implementations, polynomial utilities, constraints, and
-validation. Their existing `solve` functions remain deprecated compatibility
-paths for one release, avoiding a breaking namespace migration.
-
-The obstacle planner now routes eligible direct motion through
-`planTrajRuckig`. HS3 obstacle-corridor planning still calls engine-owned
-optimization and polynomial primitives because it constructs a specialized
-constrained problem rather than invoking the generic state-to-state entry.
-Architecture tests pass 14/14, Ruckig tests pass 8/8, and a named HS3
-fixed-time solve passes independent engine validation. This is an interface
-clarification, not a planner-quality or runtime change.
-
-The sandbox Run animation now advances twenty samples per frame with a
-0.001-second inter-frame pause by default, replacing five samples and a
-0.01-second pause. User overrides remain supported, and hidden figures still
-do not sleep for animation.
-
-## Completed multi-seed diagnostic mode — 2026-08-28
-
-`CollectAllSeedCandidates=true` now disables normal arrival-bound and
-first-success pruning, retains each attempted candidate's completed timed path,
-and automatically enables the labeled seed-path overlay. Labels report seed
-source, geometric seed length, final motion length, arrival time, and
-independent validation status. Ordinary planning retains its existing pruning,
-result selection, and runtime behavior.
-
-The diagnostic mode gives each seed a wall budget of `30 + 15 * obstacleCount`
-seconds. A two-second internal reserve leaves time for independent continuous
-validation and result assembly. On the two-obstacle gate, the three 60-second
-budgets measured 58.297863, 5.806901, and 45.916104 seconds. All three paths
-were retained; two validated and one remained explicitly
-`optimizerInfeasible`. The selected overall trajectory independently validated.
-
-For `exampleMovingCircleNoAzimuthWrap`, the normal three-seed comparison proves
-the direct seed was selected correctly: its 8.64603261240521-second arrival is
-0.00000076226416 seconds earlier than the visibility candidate, its motion is
-12.7171175863 versus 12.9249981707 degrees, and its integrated squared jerk is
-6.84138672765 versus 7.38459816076 deg^2/s^5. A five-seed diagnostic also
-exercised the upper visibility route; it arrived at 8.61481291141 seconds with
-a 13.5662813685-degree final motion, while the direct candidate arrived at
-8.50652835070 seconds. This establishes ranking only among attempted validated
-candidates, not global optimality.
+Final verification on `f383ae4+worktree` passed 98/98 tests in 69.6771 s.
+All 17 maintained examples ran in separate serial headless MATLAB processes:
+16 independently validated successes and the expected validated
+`exampleNoPath` failure. A visible obstacle-free run also passed. The static-U
+sentinel remained 20.712447786 s and the moving-barrier direct-wait sentinel
+remained 10.0903015137 s.
+
+## Balanced Selection And One-Sided Exact-Clock Economy — 2026-08-31
+
+The largest current strength is that route choice now represents the stated
+gimbal-wear trade rather than using jerk as a preference or choosing arrival
+time lexicographically. The default balanced objective is actual motion travel
+plus `MinimumTravelSavingsRate_deg_s` times elapsed time; jerk remains a hard
+constraint, and normalized kinematic utilization is only a deterministic
+tie-break. Static exact-clock detours now enumerate asymmetric, one-sided
+progress polynomials whose peak locations are derived from direct-path
+collision progress. Every proposal retains the clock-owning coordinate's
+physical-limit motion and is accepted only after the unchanged continuous
+validator passes.
+
+On the motivating `newheart` bundle, the prior alternating fixed-clock motion
+was 201.070948503 deg at the 100.970425693 s physical time floor. The retained
+`oneSidedBeta_1_4` motion is 199.268051966 deg at the identical clock, has no
+sign reversal relative to the direct chord, and passes continuous collision,
+workspace, velocity, acceleration, and jerk checks. This removes
+1.802896537 deg of travel. A structurally different near-start rectangle also
+selected a one-sided exact-clock basis: 20.493950992 deg versus
+20.585690610 deg for the validated alternating family.
+
+The same change improved, rather than traded against, the existing rogue
+sentinels: `sinetraj` reached 146.928879089 deg at 70.344250998 s, and balanced
+`shrimp` reached 175.703912280 deg at 81.455142283 s. Balanced `non-ideal`
+remained 228.491135293 deg at 144 s, while `hiddenruckigfallback` remained a
+validated velocity-carried BMTP result with no silent Ruckig substitution.
+
+The largest current weakness is bounded family coverage and runtime. The
+one-sided portfolio applies only to static, two-axis, rest-to-rest requests
+with one straight-progress coordinate owning the physical clock. It does not
+prove globally shortest travel, and alternating/multi-obstacle homotopies may
+still require topology BMTP. `newheart` used 154 full validation calls and
+65.7788 planner seconds versus the saved 32.7045-second prior run. Runtime is
+therefore an explicit regression on that rogue case, retained because
+correctness and 1.8029 deg less gimbal travel have higher repository priority.
+
+Final verification passed 110/110 tests in 126.782359 s. All 17 maintained
+examples ran serially and headlessly: 16 continuously validated successes and
+the expected `noValidatedSeed` result without an example-validation warning.
+A visible obstacle-free smoke passed and created two figures. A fresh repeat
+of the hidden failure-figure smoke was blocked after the example pass by
+MATLAB's environment-level `System Error: File system inconsistency`; the same
+worktree's earlier failure-plot check had already created the diagnostic figure,
+and no plotting source changed in this final algorithm step.
+
+## Request-Owned Obstacle Preparation And Explicit History Contract — 2026-09-01
+
+The largest current strength is that one request-owned obstacle collection now
+normalizes, protects, and prepares source geometry before endpoint checks,
+proposal creation, motion solving, wait refinement, and authoritative
+validation. Preparation retains an exact public-source snapshot and version,
+so any public geometry mutation rebuilds the collection rather than reusing
+stale shapes, interval bounds, or boundary edges. The documented history model
+uses verified linear corresponding-vertex motion, exact static equivalence,
+and a conservative nested occupied-set transition when one endpoint set is
+contained in the other. Nonnested unproven transitions retain the endpoint
+convex-hull enclosure.
+
+Tracing the unchanged opening-U example located the prior failure at the
+earliest broken stage: an unconditional endpoint convex hull filled the U
+cavity during its topology change, invalidated the wait state, and left no
+validated seed. The nested-set contract preserves the larger exact occupied
+set without filling its cavity. The unchanged example now selects the general
+`directWait` seed and independently validates a 10-degree motion arriving at
+13.6175223541 s, with 0.0000842562 degree minimum clearance. A structurally
+different nested-L test and the existing separated-endpoint swept-gap test
+protect both sides of the rule.
+
+The largest current weakness remains dynamic multi-waypoint completeness and
+runtime. Static spatial proposals still use a whole-history convex hull, which
+can discard usable dynamic free space; timed BMTP supports only its current
+bounded topology set. The request-local cache removes repeated preparation but
+does not make those algorithms complete. `parfor` was evaluated separately,
+but the parallel runtime entry points were unavailable in this environment, so
+the serial seed loop remains and no nested parallel work was introduced.
+
+In the closest same-process comparison, the pre-fix 17-example sweep used
+282.4631766 s and the retained sweep used 317.9755667 s, an increase of
+35.5123901 s or 12.572 percent. That aggregate is unfavorable but not a clean
+performance comparison: opening U failed after 0.80716 s in the baseline and
+succeeded with full validation in 26.1968938 s after the fix. Excluding that
+failed-versus-successful case, the other 16 examples increased from
+281.6560166 s to 291.7786729 s, or 10.1226563 s and 3.594 percent. No speedup
+claim is made. All 17 expected example outcomes passed, the complete
+non-example suite passed 106/106, and Code Analyzer reported zero findings.
+
+## Certified Final-Plane Fast Path And Mixed Dynamic Example — 2026-09-02
+
+The measured runtime owner is conic optimization inside BMTP. Before this
+change, representative profiles attributed 57 to 5,240 calls per maintained
+example to `coneprog`; in static U, 1,598 calls consumed 30.976 seconds and
+motion solving consumed 39.858 of 41.099 planner seconds. Final collision-plane
+certification was a material but redundant subset: the selected trajectory was
+already fixed before every output-span/region pair solved another maximum-margin
+SOCP.
+
+The retained fast path tests separating axes from both the convex obstacle and
+the final Bezier control hull. A pair is accepted only when the unchanged
+`verifyPlane` routine proves the complete Bernstein control net, obstacle side,
+normal bound, roundoff reserve, and required clearance. Hull overlap is
+ambiguous rather than a rejection; it retains the tight `coneprog` fallback.
+This is therefore a sufficient certificate, not a single-coefficient exact
+rejection test.
+
+Four-repeat controlled comparisons against clean `ca51871` used one warm-up
+and three measured runs. Success, termination reason, selected seed, arrival,
+both reported lengths, and complete sampled time, position, velocity,
+acceleration, and jerk histories were exactly equal in every comparison.
+
+| Example | Baseline median (s) | Candidate median (s) | Improvement | Final analytic / conic pairs |
+| --- | ---: | ---: | ---: | ---: |
+| `exampleObstacleAvoidance` | 2.683438 | 2.430598 | 9.422% | 18 / 0 |
+| `exampleStaticUShapedObstacle` | 36.439496 | 32.801454 | 9.984% | 498 / 6 |
+| `exampleStraightTargetAlternatingOcclusion` | 37.381200 | 26.072233 | 30.253% | 863 / 1 |
+| `exampleUSOutlineExtremeVisibility` | 93.018745 | 74.159052 | 20.275% | 319 / 1 |
+
+The 37-line production increase required a 9.25% measured benefit under the
+declared bounded-change gate; the smallest measured benefit was 9.422%.
+Post-change static-U profiling leaves trajectory optimization as the dominant
+cost: `solveTrajectorySocp` used 29.631 seconds, and 601 remaining `coneprog`
+calls used 26.492 seconds. Final certification fell to 0.387 seconds, including
+0.292 seconds for 1,008 hull tests. Further trajectory-SOCP reduction was not
+attempted because it participates in path and arrival selection rather than
+replaying a fixed result.
+
+`exampleMovingRotatingObstacleField` is now the eighteenth maintained example.
+It plans without waypoints through three static centerline obstacles while a
+five-slice rectangle translates and rotates across the competing route. It
+independently validated at 20.7160388668 degrees and 9.04166666667 seconds.
+The full serial matrix produced 17 validated successes plus the validated
+`exampleNoPath` failure. The test audit reduced the suite from 119 to 110 tests
+despite adding the new regression, consolidating duplicated example source
+contracts and removing historical negative assertions; all 110 tests passed.
+
+## Identical Trajectory SOCP Termination — 2026-09-02
+
+The remaining BMTP cost was trajectory-generating `coneprog` work. When a
+collision-free iterate did not improve the retained best motion, the engine
+could retain unchanged separating planes and invoke the same earliest-arrival
+trajectory SOCP again. At the request horizon every solver input was identical;
+the repeated solve returned the same motion and convergence was then reported
+from its zero improvement.
+
+The engine now terminates at that fixed point. Expanded-horizon recovery still
+continues because its next request-horizon SOCP is different. Controlled warm
+medians improved 6.493% for static U, 5.237% for fixed-arrival occlusion, and
+4.622% for the complex outline. The small-static no-op sentinel had unchanged
+solver work and a noise-level favorable shift. All compared routes, arrivals,
+motion lengths, and complete sampled histories were exactly unchanged.
+
+The implementation adds six production lines and no function, option, public
+field, or dependency. Its 1.5% size threshold was met by the smallest 4.622%
+affected-case gain. All 18 maintained examples matched the prior physical
+metrics and validated; the complete suite passed 110/110.
+
+## Direct Sparse Derivative Rows — 2026-09-02
+
+Trajectory-SOCP profiling localized 3.058 seconds in static U to 55,350
+full-width sparse-row negations used to create lower derivative bounds. Each
+row had only a short control-point stencil and one time-power entry. Writing
+those entries directly creates the exact same sparse matrix without copying
+the complete preceding row.
+
+The source replacement is +2/-2 production lines and adds no interface,
+helper, option, diagnostic, or dependency. Static-U and fixed-arrival warm
+medians improved 7.332% and 9.460%; the small-static sentinel remained exact
+with a noise-level 0.507% favorable shift. The targeted profiled line fell
+from 3.058 to 0.587 seconds. All 18 examples retained their physical metrics
+and validated, and all 110 tests passed.
+
+## Block-Sparse Derivative Bounds — 2026-09-02
+
+The remaining scalar sparse writes now assemble as one exact block per segment
+and derivative order. Fifty-six degree/segment construction cases produced
+bit-for-bit equal inequality matrices. Static-U profiling reduced
+`solveTrajectorySocp` from 25.265 to 23.941 seconds without changing its 31
+calls, and the controlled warm median improved 4.009%. A fixed-arrival sentinel
+was exact and 1.678% favorable relative to the current baseline record.
+
+The production implementation is three lines smaller and adds no interface,
+helper, option, or dependency. All 18 maintained examples preserved path length
+and arrival time and independently validated, and all 110 tests passed. The
+full-matrix wall sum was only 0.469% favorable, so the profile and controlled
+static-U comparison—not the aggregate—are the evidence for retention.
+
+## Shared Dynamic Shape Differences — 2026-09-02
+
+Dynamic preparation no longer repeats the same two directed `polyshape`
+subtractions when classifying a non-equivalent endpoint pair as nested or
+non-nested. One comparison now derives both predicates from the same areas
+with the same tolerance and branch outcomes.
+
+The change removes 13 production lines. The moving/deforming-outline controlled
+warm median improved 5.344%, while the structurally different moving/rotating
+sentinel was exact and 0.790% favorable. All 18 maintained examples preserved
+path length and arrival time and independently validated, all 110 tests passed,
+and the complete serial matrix was 1.348% favorable as a secondary observation.
+
+## Heuristic Completeness And Runtime Safety — 2026-09-03
+
+The supplied `Rogue Examples/failed.mat` artifact is now an exact regression
+fixture rather than a manually interpreted screenshot. Its unchanged request
+selects a 143.928296-degree visibility polyline, produces a
+145.143798-degree validated smooth motion, and arrives at 71.282812 seconds.
+The complete replay test took 41.812 seconds in the final test sequence, while
+the trajectory arrived within the requested 80-second planning horizon. Before
+the retained changes, the same test sequence took 67.365 seconds. Because
+MATLAB warm-up affects wall time, the
+stronger localized evidence is topology work: route-cleanup candidates fell
+from 32,312 to 590 and measured route-search time fell from 5.819 to
+0.663 seconds without changing either selected spatial route.
+
+The retained changes remove three unsupported rejection mechanisms. Spatial
+route duration guesses no longer discard seeds or shorten their request
+horizon. Time-expanded edges use only the componentwise velocity lower bound;
+the prior rest-to-rest acceleration expression was not valid at through-moving
+intermediate nodes. Estimated-time BMTP and direct-wait attempts now preserve
+the full request horizon, and direct waits repair an optimistic search schedule
+with the exact direct-motion duration. A coarse moving-obstacle time-cell solve
+is still tried first, but failure retries the full search-layer resolution.
+Similarly, static convex-region grouping remains an inexpensive first attempt,
+but a grouped failure retries every exact region. The balanced-arrival
+`[0.1, 1, 10]` objective-rate portfolio and the same-class waypoint sweep were
+removed; only the caller's declared exchange rate and the primary shortest
+route in each discovered class remain.
+
+The current heuristics fall into two materially different groups:
+
+- Recoverable proposal accelerators cannot authorize final failure by
+  themselves: exact direct and fixed-clock proposal families, greedy
+  class-preserving route shortening, sampled BMTP overlap tags, conservative
+  static grouping with exact fallback, coarse timed cells with fine fallback,
+  and the endpoint-velocity duration lower bound. Every retained motion still
+  passes the authoritative continuous validator.
+- Explicit work bounds can still make the planner incomplete: the default
+  five-seed budget (maximum nine), input-derived discrete time layers,
+  10,000-vertex proposal
+  switch, 1,000,000 pair-edge visibility budget, sparse Delaunay graph,
+  13-sample timed-edge screen, one winding reference per connected occupied
+  region, the requested route-class count, and finite BMTP degree, segment,
+  and iteration budgets. Dense-envelope use defers timed search until every
+  cheaper validated-motion source fails. Higher winding components are no
+  longer discarded; their already-found routes are solved if all ordinary
+  winding candidates fail. These limits are reported, but they are not a proof
+  of no path. `HomologySearchTruncated` now means only that the requested class
+  count stopped exploration.
+
+The optional moving-target wrapper retains another bounded method for cases
+outside its exact obstacle-free piecewise-linear kernel: 16 chronological
+fixed-time intervals followed by at most 16 refinement trials. The optional
+Ruckig stop-at-waypoint recovery also supports at most two normalized route
+segments. Neither is claimed complete or globally optimal.
+
+The structurally different regressions now protect a nonrest intermediate-node
+timed route, an under-timed direct-wait proposal with ample horizon, fine
+time-cell recovery after coarse overconstraint, and 66 separated static regions
+whose grouped hulls close a valid corridor. The final serial shipped-example
+gate passed 19/19 expected outcomes, including the expected validated no-path
+case, and the complete MATLAB suite passed 117/117 tests. No scenario name,
+expected route, or supplied-artifact geometry was added to production logic.
+
+## Deferred Dense Timed-Search Recovery — 2026-09-03
+
+A dense spatial proposal previously disabled exact-history timed search with
+the reason `timedQueryWorkLimit`. That work threshold could therefore authorize
+`noValidatedSeed` even though a wait or time-dependent passage existed. A
+discriminating contract test first reproduced the suppression. A structurally
+different 1,200-vertex moving barrier then showed the end-to-end consequence:
+the cheap direct and spatial attempts failed, while the deferred exact-history
+search created a direct-wait seed that passed full independent validation.
+
+The retained coordinator now treats the dense shortcut only as work ordering.
+It resumes timed search after all initially offered candidates fail validation,
+unless a separately generated exact motion has already passed. Only the newly
+recovered timed seed is solved; unchanged direct and spatial attempts are not
+repeated. The existing `searchRoutes` coordinator now accepts its prior deferred
+route set for recovery, runs only the timed portion, and returns before its one
+spatial-search call site. Stable diagnostics preserve the initial deferral,
+recovery attempt, timed-search record, recovered seed, and candidate validation.
+The regression also preserves a sentinel in the prior spatial-search record,
+proving recovery reused rather than rebuilt it.
+
+An always-on version was rejected before retention. The dense deforming-outline
+sentinel crossed 90 seconds before the post-run reporting expression failed,
+whereas the prior warm record was 29.292 seconds. Those failed reporting calls
+are not benchmark rows. With lazy recovery, the valid maintained run was
+29.108917 seconds with the unchanged 40.2805679610824-degree geometric and
+smoothed path and 7.91666666666667-second duration. That timing difference is
+within normal noise and is treated as neutral, not as a speedup.
+
+The exact supplied-bundle suite passed 4/4; its unchanged feasible replay took
+41.938 seconds and still arrived at 71.282812 seconds. The complete MATLAB suite
+passed 119/119 tests in the final 147.042709-second run. The final required
+fresh-process example matrix also passed 19/19 with 199.959769 seconds summed
+example wall time; path lengths and physical arrival times were identical. A
+visible success created two visible figures, and the expected no-path plot
+created 158 graphics objects with `noValidatedSeed` in its title. This change
+removes one false-negative authority without claiming completeness for the
+remaining node, edge, seed, time-layer, winding, or solver work bounds.
+
+The final production change is 94 added and 10 removed lines relative to the
+pre-existing dirty baseline, for 84 lines of growth and no new production file.
+A rejected intermediate commit introduced an 86-line timed-search wrapper; the
+follow-up consolidation deletes it and is net 36 production lines smaller than
+that commit. The production tree remains materially above its 7,500-line target,
+so no size or runtime-efficiency claim is made for this correctness milestone.
+
+One fresh-process moving/rotating run was an unfavorable 6.096837-second
+outlier versus the wrapper version's 3.663449 seconds. Three immediate retained
+code repeats measured 3.501831, 3.620015, and 3.589213 seconds with identical
+physics. Their 3.589213-second median does not support a regression, but the
+small favorable difference is treated as noise rather than a speedup.
+
+## Unbounded Winding With Lazy Motion Recovery — 2026-09-03
+
+The former `[-1, 1]` winding-component rejection was an explicit completeness
+defect, not a validity rule. A 25-edge spiral-chain counterexample has one
+collision-free start-to-goal route with winding magnitude two. The old search
+returned no route after rejecting that transition; the retained search returns
+the class-two route. Ordinary graph reachability is checked first so an
+unreachable goal beside a reachable winding cycle terminates with one stored
+start state instead of creating an unbounded lifted search.
+
+Eagerly solving every newly visible winding class was rejected. On the extreme
+geographic-outline example it found four classes and 177 lifted states, then
+raised wall time from a controlled capped 62.296466 seconds to 78.213287
+seconds while selecting the exact same 22.0706469074562-degree polyline,
+23.3604967801989-degree smooth motion, and 5.80443397354784-second arrival.
+The cost was not route search: the returned region's topology time changed
+from 1.212179 to 1.595468 seconds, while motion solving changed from 20.300903
+to 35.450938 seconds.
+
+The retained design performs the unbounded winding search once, stores higher
+winding routes in the existing route set, and solves those routes only if every
+ordinary winding candidate and exact motion fails validation. It does not
+repeat graph construction, spatial search, or a lower-winding motion solve.
+Diagnostics expose both the deferred-route count and whether recovery consumed
+it. This scheduling rule prevents a winding restriction from authorizing
+`noValidatedSeed`; because the planner already has a finite route-class budget,
+it does not claim that a successful bounded run compared every possible winding
+class for global objective optimality.
+
+With lazy motion recovery, the same extreme example found four classes and 177
+states but left its one multi-winding motion unsolved after an ordinary route
+validated. Focused wall time was 61.977703 seconds and the final fresh-matrix
+run was 62.704676 seconds, consistent with the controlled capped baseline.
+The exact supplied bundle retained its 143.92829584254-degree polyline,
+145.143797542061-degree smooth motion, 71.2828117654205-second arrival, and
+independent collision, kinematic, and certificate validation; direct replay
+took 42.867156 seconds and its four-test suite passed 4/4 in 46.868438 seconds.
+
+The final complete MATLAB suite, including the exact bundle, passed 120/120 in
+151.611569 seconds. The final fresh-process example matrix passed 19/19 with
+203.090791 seconds summed wall time and exact prior path and arrival values.
+Code Analyzer reported zero findings in the five changed MATLAB files. The
+milestone adds no production file, wrapper, public option, or dependency.
+Relative to the pre-existing dirty baseline it is +98/-46 production lines,
+net +52; the working production tree is 19,733 physical lines. The 12,233-line
+excess above the 7,500-line target would require a 3,058.25% wall-time reduction
+under the documented allowance, which is absent. This is therefore recorded as
+a correctness recovery with neutral controlled runtime, not as a size or
+speedup claim.
+
+## Complete Input-Derived Time Layers — 2026-09-03
+
+Baseline commit was `a7ef285` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. The deleted time-layer selector could reduce
+105 supplied planning times to 17 uniformly distributed representatives. In a
+moving-barrier graph, it dropped the brief opening around 4.0--4.2 seconds and
+returned no route; the complete supplied set returned a route arriving at
+4.1 seconds. The retained 51-layer regression uses a different horizon and
+reaches the same structural opening at 4.0 seconds.
+
+Timed visibility search now keeps every supplied endpoint, obstacle source,
+midpoint, and uniform request time. `MaximumTimeLayerCount` remains one option
+with one responsibility: it bounds timed BMTP segments plus one. The 62-line
+`boundedTimeLayers.m` helper was deleted. No replacement helper, wrapper,
+fallback search, public option, or dependency was added. Layer parent indices
+use `uint32`, so removing the former 65,535-layer option bound does not create
+an index overflow.
+
+A 24-node complete moving-obstacle graph exercised the prior performance
+signature. Seventeen layers took 0.847459 seconds and expanded 275 states;
+all 41 supplied layers took 0.861912 seconds and expanded 702 states, a
+1.017055 wall-time ratio. This single smoke comparison is evidence against a
+large regression after batched edge checking, not a speedup claim.
+
+The supplied `Rogue Examples/failed.mat` replay remained physically exact:
+143.92829584254 degrees selected polyline, 145.143797542061 degrees smooth
+motion, and 71.2828117654205 seconds arrival. Independent validation,
+collision, kinematic, and certificate checks passed; wall time was 45.883803
+seconds. Its timed search was not invoked, so this is a regression sentinel
+rather than benefit evidence.
+
+The complete suite passed 121/121 with no failures or incomplete tests in
+154.377006 seconds. The final single-session example matrix passed all 19
+expected outcomes in 163.823447 summed planner seconds. Every successful
+example passed independent collision and kinematic validation, while
+`exampleNoPath` retained its independently validated `noValidatedSeed`
+outcome. Physical metrics matched the `a7ef285` benchmark rows. Repeated
+fresh-process launches reported a MATLAB startup `File system inconsistency`
+before any example code ran; the aggregate is therefore not compared with the
+prior fresh-process sum.
+
+Relative to `a7ef285`, production is 59 physical lines smaller. The working
+production tree contains 19,674 physical MATLAB lines and 13,845
+nonblank/noncomment lines. This milestone removes one production file and one
+false-negative heuristic; it makes no performance-based size allowance or
+global completeness claim. Finite seed/node budgets, input-derived temporal
+discretization, sampled timed-edge screening, and finite solver budgets remain
+explicit completeness limits.
+
+## Safe-Wait Arrival Dominance — 2026-09-03
+
+The time-expanded search still had an implicit false-negative rule after time
+layer thinning was removed: for each spatial edge it tested only the first
+velocity-feasible target layer. A collision at that time discarded the edge,
+although a slower traversal could be clear and the source node could be unsafe
+to wait at. The retained search tests the first clear arrival in each target
+interval connected by verified stationary waits. That arrival dominates later
+entries in the same interval because it has the same spatial cost and can
+reproduce their state and time by following the already-validated waits.
+
+Enumerating every later target layer was rejected because it nearly doubled
+warm scaling-probe time. The retained dominance implementation stays inside
+the existing search, batches the same collision predicate, and adds no helper,
+wrapper, option, diagnostic field, production file, or dependency. Its claim is
+exact only relative to the supplied time layers and existing 13-sample edge
+predicate; those discretizations remain explicit completeness limits.

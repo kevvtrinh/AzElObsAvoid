@@ -7,21 +7,17 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % PURPOSE
 %   - Open one azimuth/elevation planning UI.
-%   - Keep Goal Mode and Free Mode data independent.
-%   - Keep drawing and latest-tested-arrival search outside the production
-%     planner.
+%   - Keep interactive drawing outside the production planner.
 %**************************************************************************
 % INPUTS
 %   - sandboxOverrides (scalar struct, optional; default struct())
 %       Empty fields retain defaults. Supported fields are FigureVisible,
-%       FigurePosition, MissionTime_s, MaximumSegmentDuration_s,
+%       FigurePosition, MissionTime_s,
 %       MaxVelocity_deg_s, MaxAcceleration_deg_s2, MaxJerk_deg_s3,
 %       PathObstacleRadius_deg, PathSafetyMargin_deg,
 %       ObstacleSafetyMargin_deg, WorkspaceAzimuthInterval_deg,
 %       WorkspaceElevationInterval_deg, Verbose, AnimateOnRun,
-%       AnimationFrameStride, AnimationPause_s,
-%       LatestArrivalCoarseCandidateCount,
-%       LatestArrivalRefinementCandidateCount, and PlannerOptions.
+%       AnimationFrameStride, AnimationPause_s, and PlannerOptions.
 %       PlannerOptions is a partial planTrajectory options struct. Its
 %       sandbox defaults bound interactive HS3 work and favor responsiveness
 %       over the production planner's finer earliest-arrival search.
@@ -29,7 +25,7 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %**************************************************************************
 % OUTPUTS
 %   - sandboxState (scalar struct)
-%       Initial data structure, figure handle, and independent mode records.
+%       Initial data structure, figure handle, and Goal Mode record.
 %       ReadState and ExportBundle function handles. Call ReadState() after
 %       interaction to inspect the current guidata-backed state. Call
 %       ExportBundle(filePath, modeName) to save without a file dialog.
@@ -49,9 +45,9 @@ if nargin < 1 || isempty(sandboxOverrides)
 end
 options = resolveSandboxOptions(sandboxOverrides);
 
-%% Section 2: Create Figure And Tabs
+%% Section 2: Create The Goal-Mode Figure
 
-% Create one shared figure and two independent tabs. The figure stores the
+% Create one Goal Mode tab. The figure stores the
 % current application data in guidata. Callbacks always read the latest guidata
 % value instead of keeping stale copies in nested functions.
 
@@ -69,30 +65,22 @@ tabGroupHandle = uitabgroup(figureHandle, ...
     "Position", [0 0 1 1], ...
     "SelectionChangedFcn", @handleTabSelection);
 goalTabHandle = uitab(tabGroupHandle, "Title", "Goal Mode", "Tag", "goal");
-freeTabHandle = uitab(tabGroupHandle, "Title", "Free Mode", "Tag", "free");
 goalHandles = createModeTab(goalTabHandle, "goal", options);
-freeHandles = createModeTab(freeTabHandle, "free", options);
 
 %% Section 3: Initialize Goal Mode
 
 % Goal Mode plans one motion from a start point to one goal point. It keeps its
 % own controls, obstacles, result, validation, status, and log.
 
-applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles);
+applicationState = initializeApplicationState( ...
+    figureHandle, options, goalHandles);
 guidata(figureHandle, applicationState);
 
-%% Section 4: Initialize Free Mode
-
-% Free Mode plans an ordered chain of requested endpoints. Each successful
-% segment starts where the previous segment ended. A failed segment stops the
-% chain and keeps earlier validated segments.
-
-applyDefaultControls(goalHandles.Controls, "goal", options);
-applyDefaultControls(freeHandles.Controls, "free", options);
+applyDefaultControls(goalHandles.Controls, options);
 refreshApplication(figureHandle);
 beginGuidedScene(figureHandle, "goal");
 
-%% Section 5: Return Initial Sandbox State
+%% Section 4: Return Initial Sandbox State
 
 % Return a plain snapshot plus functions that read current state and export a
 % diagnosis file. The initial snapshot does not update after UI interaction.
@@ -111,7 +99,6 @@ defaults = struct( ...
     "FigureVisible", "on", ...
     "FigurePosition", [60 60 1460 860], ...
     "MissionTime_s", 180, ...
-    "MaximumSegmentDuration_s", 30, ...
     "MaxVelocity_deg_s", [2 2], ...
     "MaxAcceleration_deg_s2", [0.75 0.75], ...
     "MaxJerk_deg_s3", [2.5 2.5], ...
@@ -124,23 +111,14 @@ defaults = struct( ...
     "AnimateOnRun", true, ...
     "AnimationFrameStride", 20, ...
     "AnimationPause_s", 0.001, ...
-    "LatestArrivalCoarseCandidateCount", 5, ...
-    "LatestArrivalRefinementCandidateCount", 3, ...
     "PlannerOptions", interactivePlannerDefaults());
 end
 
 function options = interactivePlannerDefaults()
 % Bound nonlinear work for an interactive preview. Returned motions still pass
 % the public planner's collision, kinematic, and independent validation gates.
-% Callers can replace these values through sandboxOverrides.PlannerOptions when
-% finer arrival-time quality is more important than UI response time.
 options = struct( ...
     "MaximumSeedCount", 3, ...
-    "CollocationSegmentCount", 8, ...
-    "MaximumCollocationSegmentCount", 16, ...
-    "MaximumMeshRefinementPasses", 0, ...
-    "MaximumNlpIterations", 80, ...
-    "MaximumNlpFunctionEvaluations", 5000, ...
     "ArrivalTimeTolerance_s", 0.05);
 end
 
@@ -179,7 +157,7 @@ options.AnimateOnRun = obstacleAvoidance.input.normalizeLogicalScalar( ...
     "obstacleAvoidanceSandbox:InvalidLogicalOption");
 validateattributes(options.FigurePosition, {'numeric'}, {'real', 'finite', 'vector', 'numel', 4});
 options.FigurePosition = reshape(double(options.FigurePosition), 1, 4);
-positiveScalarNames = ["MissionTime_s", "MaximumSegmentDuration_s", "PathObstacleRadius_deg"];
+positiveScalarNames = ["MissionTime_s", "PathObstacleRadius_deg"];
 
 % Validate each duration or radius that must be strictly positive.
 for name = positiveScalarNames
@@ -211,8 +189,7 @@ for name = intervalNames
         "obstacleAvoidanceSandbox", name);
     options.(name) = reshape(double(options.(name)), 1, 2);
 end
-countNames = ["LatestArrivalCoarseCandidateCount", ...
-    "LatestArrivalRefinementCandidateCount", "AnimationFrameStride"];
+countNames = "AnimationFrameStride";
 
 % Candidate counts limit the number of latest-arrival planner calls.
 for name = countNames
@@ -220,12 +197,11 @@ for name = countNames
         {'real', 'finite', 'scalar', 'integer', 'nonnegative'}, ...
         "obstacleAvoidanceSandbox", name);
 end
-if options.LatestArrivalCoarseCandidateCount < 1
-    error("obstacleAvoidanceSandbox:InvalidCandidateCount", "LatestArrivalCoarseCandidateCount must be at least one.");
-end
 if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("obstacleAvoidanceSandbox:InvalidPlannerOptions", "PlannerOptions must be a scalar partial options struct.");
 end
+options.PlannerOptions = ...
+    obstacleAvoidance.input.resolvePlannerOptions(options.PlannerOptions);
 validateattributes(options.AnimationPause_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'nonnegative'}, ...
     "obstacleAvoidanceSandbox", "AnimationPause_s");
@@ -276,13 +252,8 @@ controls.AccelerationHandles = addCompactPairControl( ...
     options.MaxAcceleration_deg_s2);
 controls.JerkHandles = addCompactPairControl(controlPanelHandle, "Jerk (deg/s^3)", 0.38, options.MaxJerk_deg_s3);
 
-if modeName == "goal"
-    horizonLabel = "Mission horizon (s)";
-    horizonValue = options.MissionTime_s;
-else
-    horizonLabel = "Maximum segment duration (s)";
-    horizonValue = options.MaximumSegmentDuration_s;
-end
+horizonLabel = "Mission horizon (s)";
+horizonValue = options.MissionTime_s;
 
 addControlSectionLabel(controlPanelHandle, "Timing and obstacle geometry", 0.295);
 controls.HorizonHandle = addScalarControl(controlPanelHandle, horizonLabel, 0.235, horizonValue);
@@ -326,21 +297,12 @@ addLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
 actions = createAddButtons(addPanelHandle, modeName, addNames, addLabels);
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", ...
     "Units", "normalized", "Position", [0.265 0.275 0.42 0.052]);
-if modeName == "goal"
-    actionNames = [ ...
-        "SetMotion", "Run", "Reset", ...
-        "Diagnostics", "Export"];
-    actionLabels = [ ...
-        "Set Motion", "Run", "Reset", ...
-        "Diagnostics", "Export Bundle"];
-else
-    actionNames = [ ...
-        "SetMotion", "AddSegment", "Recalculate", "Undo", ...
-        "Reset", "Diagnostics", "Export"];
-    actionLabels = [ ...
-        "Set Motion", "Add Segment", "Recalculate", "Undo Point", ...
-        "Reset", "Diagnostics", "Export Bundle"];
-end
+actionNames = [ ...
+    "SetMotion", "Run", "Stop", "Reset", ...
+    "Diagnostics", "Export"];
+actionLabels = [ ...
+    "Set Motion", "Run", "Stop", "Reset", ...
+    "Diagnostics", "Export Bundle"];
 actionButtons = createActionButtons( ...
     actionPanelHandle, modeName, actionNames, actionLabels);
 actionFields = fieldnames(actionButtons);
@@ -351,7 +313,7 @@ end
 statusPanelHandle = uipanel(tabHandle, ...
     "Title", "Mode status and planner log", ...
     "Units", "normalized", ...
-    "Position", [0.045 0.025 0.94 0.23]);
+    "Position", [0.045 0.025 0.64 0.23]);
 statusHandle = uicontrol(statusPanelHandle, ...
     "Style", "text", ...
     "String", "Ready", ...
@@ -366,6 +328,36 @@ logHandle = uicontrol(statusPanelHandle, ...
     "HorizontalAlignment", "left", ...
     "Min", 0, ...
     "Max", 2);
+plannerOptionsPanelHandle = uipanel(tabHandle, ...
+    "Title", "Planner options", ...
+    "Units", "normalized", ...
+    "Position", [0.71 0.025 0.275 0.23]);
+controls.UnsupportedTimedTopologyHandle = addPopupControl( ...
+    plannerOptionsPanelHandle, "Unsupported timed route", 0.76, ...
+    ["Fail and diagnose", "Ruckig stop at waypoints"], ...
+    1 + double(options.PlannerOptions.UnsupportedTimedTopologyPolicy == ...
+        "ruckigStopAtWaypoints"), ...
+    "Choose whether an unsupported smooth timed route may stop at every waypoint.");
+controls.GoalTimeModeHandle = addPopupControl( ...
+    plannerOptionsPanelHandle, "Goal timing", 0.49, ...
+    ["Balanced travel/time", "Earliest arrival", ...
+    "Minimum travel at horizon"], ...
+    find(options.PlannerOptions.GoalTimeMode == ...
+    ["balancedArrival", "earliestArrival", "fixedArrival"], 1), ...
+    "Choose an explicit travel/time tradeoff or either endpoint policy.");
+controls.MinimumTravelSavingsRateHandle = addScalarControl( ...
+    plannerOptionsPanelHandle, "Travel threshold (deg/s)", 0.28, ...
+    options.PlannerOptions.MinimumTravelSavingsRate_deg_s);
+controls.AllowAzimuthWrappingHandle = uicontrol( ...
+    plannerOptionsPanelHandle, ...
+    "Style", "checkbox", ...
+    "String", "Allow azimuth wrapping", ...
+    "Units", "normalized", ...
+    "Position", [0.05 0.08 0.90 0.18], ...
+    "Value", options.PlannerOptions.AllowAzimuthWrapping, ...
+    "HorizontalAlignment", "left", ...
+    "TooltipString", ...
+        "Allow equivalent azimuth positions separated by 360 degrees.");
 handles = struct( ...
     "Tab", tabHandle, ...
     "Axes", axesHandle, ...
@@ -375,6 +367,7 @@ handles = struct( ...
     "ActionPanel", actionPanelHandle, ...
     "Actions", actions, ...
     "StatusPanel", statusPanelHandle, ...
+    "PlannerOptionsPanel", plannerOptionsPanelHandle, ...
     "StatusHandle", statusHandle, ...
     "LogHandle", logHandle, ...
     "DiagnosticPlotHandles", struct(), ...
@@ -483,8 +476,9 @@ for actionIndex = 1:numel(actionNames)
 end
 end
 
-function applicationState = initializeApplicationState( figureHandle, options, goalHandles, freeHandles)
-% Create stable independent tab records and application interaction state.
+function applicationState = initializeApplicationState( ...
+        figureHandle, options, goalHandles)
+% Create the stable Goal Mode record and application interaction state.
 applicationState = struct( ...
     "FigureHandle", figureHandle, ...
     "Options", options, ...
@@ -492,27 +486,19 @@ applicationState = struct( ...
     "InteractionState", "idle", ...
     "ActiveStroke_deg", zeros(0, 2), ...
     "ActiveTraceHandle", gobjects(0), ...
-    "GoalMode", emptyModeState("goal", goalHandles), ...
-    "FreeMode", emptyModeState("free", freeHandles));
+    "GoalMode", emptyModeState(goalHandles));
 end
 
-function modeState = emptyModeState(modeName, graphicsHandles)
+function modeState = emptyModeState(graphicsHandles)
 % Define all fields in one mode record. Initialization and Reset use the same
 % field set so callbacks can read state without optional-field branches.
-if modeName == "goal"
-    instruction = ...
-        "Click the start and goal. Choose an obstacle from the Add panel, " + ...
-        "then Run.";
-else
-    instruction = ...
-        "Click the start and first endpoint. Choose an obstacle from the " + ...
-        "Add panel, then recalculate.";
-end
+instruction = ...
+    "Click the start and goal. Choose an obstacle from the Add panel, " + ...
+    "then Run.";
 
 modeState = struct( ...
     "StartPosition_deg", zeros(0, 2), ...
     "GoalPosition_deg", zeros(0, 2), ...
-    "WaypointPositions_deg", zeros(0, 2), ...
     "RawObstacleStrokes_deg", {cell(0, 1)}, ...
     "LineObstaclePositions_deg", {cell(0, 1)}, ...
     "PolygonObstaclePositions_deg", {cell(0, 1)}, ...
@@ -520,50 +506,31 @@ modeState = struct( ...
     "PolygonMotionProfiles", strings(0, 1), ...
     "SelectedPolygonIndex", 0, ...
     "CanonicalObstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
-    "SegmentResults", repmat(emptySegmentRecord(), 0, 1), ...
-    "CombinedTrajectory", emptyCombinedTrajectory(), ...
     "LastPlannerResult", struct(), ...
     "LastValidation", obstacleAvoidance.validateTrajectory(), ...
     "GraphicsHandles", graphicsHandles, ...
     "InteractionState", "idle", ...
     "Status", instruction, ...
     "PlannerLog", strings(0, 1), ...
-    "ResolvedControls", struct(), ...
-    "SolvedSegmentCount", 0, ...
-    "FirstFailureSegmentIndex", 0, ...
-    "FirstFailureReason", "", ...
-    "LatestValidatedArrival_s", zeros(0, 1), ...
-    "LatestArrivalSearchResolution_s", zeros(0, 1));
+    "ResolvedControls", struct());
 end
 
-function trajectory = emptyCombinedTrajectory()
-% Define an empty combined trajectory for Free Mode. This is sandbox data. It
-% is not a result from one global planner call.
-trajectory = struct( ...
-    "time_s", zeros(0, 1), ...
-    "position_deg", zeros(0, 2), ...
-    "velocity_deg_s", zeros(0, 2), ...
-    "acceleration_deg_s2", zeros(0, 2), ...
-    "jerk_deg_s3", zeros(0, 2), ...
-    "SegmentStartIndices", zeros(0, 1));
-end
-
-function segment = emptySegmentRecord()
-% Define all fields for one independently planned Free Mode segment.
-segment = struct( ...
-    "RequestedStart_deg", [NaN NaN], ...
-    "RequestedStop_deg", [NaN NaN], ...
-    "StartTime_s", NaN, ...
-    "ArrivalTime_s", NaN, ...
-    "PlannerResult", struct(), ...
-    "Validation", obstacleAvoidance.validateTrajectory(), ...
-    "Success", false, ...
-    "TerminationReason", "", ...
-    "LatestValidatedArrival_s", NaN, ...
-    "LatestArrivalSearchResolution_s", NaN, ...
-    "TestedArrivalTimes_s", zeros(0, 1), ...
-    "TestedArrivalSuccess", false(0, 1), ...
-    "SearchStatement", "No arrival candidates were tested.");
+function popupHandle = addPopupControl( ...
+        panelHandle, labelText, rowPosition, choices, selectedIndex, tooltip)
+% Add one labeled planner-choice popup with a stable string-to-index mapping.
+uicontrol(panelHandle, ...
+    "Style", "text", ...
+    "String", labelText, ...
+    "Units", "normalized", ...
+    "Position", [0.05 rowPosition 0.44 0.18], ...
+    "HorizontalAlignment", "left");
+popupHandle = uicontrol(panelHandle, ...
+    "Style", "popupmenu", ...
+    "String", cellstr(choices), ...
+    "Units", "normalized", ...
+    "Position", [0.51 rowPosition 0.44 0.20], ...
+    "Value", selectedIndex, ...
+    "TooltipString", tooltip);
 end
 
 % --- Interaction State And Callbacks ------------------------------------
@@ -588,14 +555,10 @@ try
             activateInteraction(figureHandle, modeName, "addingSquare");
         case "SetMotion"
             activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
-        case "AddSegment"
-            activateInteraction(figureHandle, modeName, "placingWaypoint");
         case "Run"
             executeGoalPlan(figureHandle);
-        case "Recalculate"
-            executeFreePlan(figureHandle, "Manual full-chain recalculation");
-        case "Undo"
-            undoFreeWaypoint(figureHandle);
+        case "Stop"
+            requestPlanningStop(figureHandle, modeName);
         case "Reset"
             resetMode(figureHandle, modeName);
         case "Diagnostics"
@@ -608,9 +571,16 @@ catch exception
     applicationState = guidata(figureHandle);
     modeState = getModeState(applicationState, modeName);
     exceptionText = formatSandboxException(exception);
-    modeState.Status = "Input or planning error: " + string(exceptionText);
-    modeState = appendLogLines( ...
-        modeState, "[Sandbox error] " + string(exceptionText));
+    if string(exception.identifier) == "planTrajectory:UserCancelled"
+        modeState.Status = ...
+            "Planning stopped. Export Bundle is available for this request.";
+        modeState = appendLogLines(modeState, ...
+            "[Planner stopped] " + string(exception.message));
+    else
+        modeState.Status = "Input or planning error: " + string(exceptionText);
+        modeState = appendLogLines( ...
+            modeState, "[Sandbox error] " + string(exceptionText));
+    end
     applicationState = setModeState( applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
@@ -620,6 +590,23 @@ catch exception
             'Sandbox export failed', 'modal');
     end
 end
+end
+
+function requestPlanningStop(figureHandle, modeName)
+% Record a cooperative stop request while retaining the scene for export.
+applicationState = guidata(figureHandle);
+if applicationState.InteractionState ~= "planning"
+    return;
+end
+setappdata(figureHandle, "SandboxStopRequested", true);
+modeState = getModeState(applicationState, modeName);
+modeState.Status = "Stopping planning at the next safe checkpoint...";
+modeState = appendLogLines(modeState, "[Stop requested]");
+applicationState = setModeState(applicationState, modeName, modeState);
+guidata(figureHandle, applicationState);
+set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
+updateModeStatusDisplay(modeState);
+drawnow limitrate;
 end
 
 function exceptionText = formatSandboxException(exception)
@@ -651,12 +638,6 @@ switch requestedState
     case "placingGoal"
         interactionState = "placingGoalStop";
         modeState.Status = "Place or replace the goal with one left click.";
-    case "placingWaypoint"
-        interactionState = "placingFreeWaypoint";
-        modeState.Status = "Place the next requested endpoint with one left click.";
-    case "placingInitialGoal"
-        interactionState = "placingFreeGoal";
-        modeState.Status = "Place the first requested endpoint with one left click.";
     case "addingPolygon"
         interactionState = "adding" + upperFirst(modeName) + "Polygon";
         modeState.Status = ...
@@ -698,10 +679,8 @@ modeState = getModeState(applicationState, modeName);
 
 if isempty(modeState.StartPosition_deg)
     requestedState = "placingStart";
-elseif modeName == "goal" && isempty(modeState.GoalPosition_deg)
+elseif isempty(modeState.GoalPosition_deg)
     requestedState = "placingGoal";
-elseif modeName == "free" && isempty(modeState.WaypointPositions_deg)
-    requestedState = "placingInitialGoal";
 else
     requestedState = "";
 end
@@ -882,7 +861,6 @@ if contains(applicationState.InteractionState, "drawing")
     set(figureHandle, "WindowButtonMotionFcn", @handleFigureMouseMotion, "WindowButtonUpFcn", @handleFigureMouseUp);
     return;
 end
-shouldRecalculateFree = false;
 nextInteraction = "";
 switch applicationState.InteractionState
     case "placingGoalStart"
@@ -890,32 +868,17 @@ switch applicationState.InteractionState
         modeState = clearModeSolution(modeState);
         modeState.Status = "Start point set. Click the goal next.";
         nextInteraction = "placingGoal";
-    case "placingFreeStart"
-        modeState.StartPosition_deg = point_deg;
-        modeState = clearModeSolution(modeState);
-        modeState.Status = "Start point set. Click the first endpoint next.";
-        nextInteraction = "placingInitialGoal";
     case "placingGoalStop"
         modeState.GoalPosition_deg = point_deg;
         modeState = clearModeSolution(modeState);
         modeState.Status = ...
             "Goal point set. Choose a shape from the Add panel, or Run.";
-    case "placingFreeGoal"
-        modeState.WaypointPositions_deg = point_deg;
-        modeState = clearModeSolution(modeState);
-        modeState.Status = ...
-            "First endpoint set. Choose a shape from the Add panel.";
-    case "placingFreeWaypoint"
-        modeState.WaypointPositions_deg(end + 1, :) = point_deg;
-        shouldRecalculateFree = true;
 end
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 if strlength(nextInteraction) > 0
     activateInteraction(figureHandle, modeName, nextInteraction);
-elseif shouldRecalculateFree
-    executeFreePlan(figureHandle, "Endpoint committed; replanning the chain");
 else
     refreshApplication(figureHandle);
 end
@@ -1012,7 +975,6 @@ if area(polygonShape) <= eps
     updateModeStatusDisplay(modeState);
     return;
 end
-wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
 modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
@@ -1023,12 +985,7 @@ modeState.Status = ...
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
-if modeName == "free" && wasPreviouslySolved
-    executeFreePlan( ...
-        figureHandle, "Polygon completed; recalculating the full chain");
-else
-    refreshApplication(figureHandle);
-end
+refreshApplication(figureHandle);
 end
 
 function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
@@ -1036,7 +993,6 @@ function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
 applicationState = guidata(figureHandle);
 modeName = applicationState.ActiveMode;
 modeState = getModeState(applicationState, modeName);
-wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
 modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
@@ -1047,12 +1003,7 @@ modeState.Status = shapeName + ...
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
-if modeName == "free" && wasPreviouslySolved
-    executeFreePlan( ...
-        figureHandle, shapeName + " completed; recalculating the full chain");
-else
-    refreshApplication(figureHandle);
-end
+refreshApplication(figureHandle);
 end
 
 function polygonIndex = polygonIndexAtPoint(polygonCollection_deg, point_deg)
@@ -1088,7 +1039,6 @@ if norm(motionVector_deg) <= 1e-9
     updateModeStatusDisplay(modeState);
     return;
 end
-wasPreviouslySolved = modeState.SolvedSegmentCount > 0;
 profile = selectedMotionProfile( ...
     modeState.GraphicsHandles.Controls.MotionProfileHandle);
 modeState.PolygonMotionVectors_deg(polygonIndex, :) = motionVector_deg;
@@ -1100,12 +1050,7 @@ modeState.Status = ...
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
-if modeName == "free" && wasPreviouslySolved
-    executeFreePlan( ...
-        figureHandle, "Obstacle motion changed; recalculating the full chain");
-else
-    refreshApplication(figureHandle);
-end
+refreshApplication(figureHandle);
 end
 
 function profile = selectedMotionProfile(profileHandle)
@@ -1173,16 +1118,7 @@ end
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
-applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
-shouldRecalculateFree = modeName == "free" && ...
-    modeState.SolvedSegmentCount > 0 && ...
-    ~isempty(modeState.StartPosition_deg) && ...
-    ~isempty(modeState.WaypointPositions_deg) && ...
-    size(simplifiedStroke_deg, 1) >= 2;
-if shouldRecalculateFree
-    executeFreePlan( figureHandle, "Obstacle completed; recalculating the full chain");
-elseif size(simplifiedStroke_deg, 1) >= 2
+if size(simplifiedStroke_deg, 1) >= 2
     refreshApplication(figureHandle);
 else
     % A rejected trace leaves no obstacle, so keep the initial draw step active.
@@ -1263,8 +1199,17 @@ canonicalObstacles = buildCanonicalObstacles( modeState, obstacleTime_s, control
     modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
     0, controls.MissionTime_s, controls);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.GoalTimeMode = "earliestArrival";
-plannerOptions.Verbose = controls.Verbose;
+plannerOptions.GoalTimeMode = controls.GoalTimeMode;
+plannerOptions.MinimumTravelSavingsRate_deg_s = ...
+    controls.MinimumTravelSavingsRate_deg_s;
+plannerOptions.UnsupportedTimedTopologyPolicy = ...
+    controls.UnsupportedTimedTopologyPolicy;
+plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
+callerCancellationCheckFcn = plannerOptions.CancellationCheckFcn;
+setappdata(figureHandle, "SandboxStopRequested", false);
+plannerOptions.CancellationCheckFcn = ...
+    @() sandboxStopRequested(figureHandle, callerCancellationCheckFcn);
+stopCleanup = onCleanup(@() clearPlanningStopRequest(figureHandle));
 modeState = clearModeSolution(modeState);
 modeState.CanonicalObstacles = canonicalObstacles;
 modeState.ResolvedControls = controls;
@@ -1278,7 +1223,8 @@ refreshApplication(figureHandle);
 drawnow;
 [result, validation, logLines] = callPlanner( ...
     canonicalObstacles, initialState, goalState, limits, ...
-    plannerOptions, "Goal Mode");
+    plannerOptions, controls.Verbose, "Goal Mode");
+result.Options.CancellationCheckFcn = [];
 applicationState = guidata(figureHandle);
 modeState = applicationState.GoalMode;
 modeState.LastPlannerResult = result;
@@ -1340,282 +1286,14 @@ guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
 end
 
-function executeFreePlan(figureHandle, reasonText)
-% Replan all requested Free Mode segments from the original start. Stop at the
-% first failed segment. Keep earlier validated segments and report the first
-% failure separately.
-cancelInteraction(figureHandle);
-applicationState = guidata(figureHandle);
-modeState = applicationState.FreeMode;
-if isempty(modeState.StartPosition_deg) || isempty(modeState.WaypointPositions_deg)
-    error("obstacleAvoidanceSandbox:IncompleteFreeScene", "Free Mode requires a start and at least one requested endpoint.");
-end
-controls = readModeControls(applicationState, "free");
-requestedSegmentCount = size(modeState.WaypointPositions_deg, 1);
-obstacleEndTime_s = requestedSegmentCount * controls.MaximumSegmentDuration_s;
-canonicalObstacles = buildCanonicalObstacles( modeState, [0; obstacleEndTime_s], controls);
-modeState = clearModeSolution(modeState);
-modeState.CanonicalObstacles = canonicalObstacles;
-modeState.ResolvedControls = controls;
-modeState.PlannerLog = ["[Free Mode]"; string(reasonText)];
-modeState.Status = "Planning segment 1/" + requestedSegmentCount + "...";
-modeState.InteractionState = "planning";
-applicationState.FreeMode = modeState;
-applicationState.InteractionState = "planning";
-guidata(figureHandle, applicationState);
-refreshApplication(figureHandle);
-drawnow;
-currentStart_deg = modeState.StartPosition_deg;
-currentStartTime_s = 0;
-
-% Solve Free Mode segments in order. Each arrival is the next segment start.
-for segmentIndex = 1:requestedSegmentCount
-    applicationState = guidata(figureHandle);
-    modeState = applicationState.FreeMode;
-    modeState.Status = "Planning segment " + segmentIndex + "/" + requestedSegmentCount + "...";
-    applicationState.FreeMode = modeState;
-    guidata(figureHandle, applicationState);
-    refreshApplication(figureHandle);
-    drawnow;
-    requestedStop_deg = modeState.WaypointPositions_deg(segmentIndex, :);
-    [segmentRecord, segmentLog] = solveLatestValidatedSegment( ...
-        canonicalObstacles, currentStart_deg, requestedStop_deg, ...
-        currentStartTime_s, controls, applicationState.Options, ...
-        segmentIndex);
-    applicationState = guidata(figureHandle);
-    modeState = applicationState.FreeMode;
-    modeState.SegmentResults(end + 1, 1) = segmentRecord;
-    modeState.PlannerLog = [modeState.PlannerLog; segmentLog];
-    modeState.LastPlannerResult = segmentRecord.PlannerResult;
-    modeState.LastValidation = segmentRecord.Validation;
-    if ~segmentRecord.Success
-        modeState.FirstFailureSegmentIndex = segmentIndex;
-        modeState.FirstFailureReason = segmentRecord.TerminationReason;
-        modeState.Status = "Segment " + segmentIndex + " failed: " + ...
-            segmentRecord.TerminationReason + ...
-            ". Downstream timing was not fabricated.";
-        applicationState.FreeMode = modeState;
-        guidata(figureHandle, applicationState);
-        break;
-    end
-    modeState = appendLogLines(modeState, sprintf( ...
-        "Selected segment %d: arrival=%.6g s, resolution=%.6g s. %s", ...
-        segmentIndex, segmentRecord.LatestValidatedArrival_s, ...
-        segmentRecord.LatestArrivalSearchResolution_s, ...
-        segmentRecord.SearchStatement));
-    modeState.SolvedSegmentCount = segmentIndex;
-    modeState.LatestValidatedArrival_s(end + 1, 1) = segmentRecord.LatestValidatedArrival_s;
-    modeState.LatestArrivalSearchResolution_s(end + 1, 1) = segmentRecord.LatestArrivalSearchResolution_s;
-    modeState.CombinedTrajectory = appendSegmentTrajectory( modeState.CombinedTrajectory, segmentRecord.PlannerResult);
-    modeState.Status = "Segment " + segmentIndex + " solved at t=" + sprintf("%.6g", segmentRecord.ArrivalTime_s) + " s.";
-    applicationState.FreeMode = modeState;
-    guidata(figureHandle, applicationState);
-    currentStart_deg = requestedStop_deg;
-    currentStartTime_s = segmentRecord.ArrivalTime_s;
-end
-applicationState = guidata(figureHandle);
-modeState = applicationState.FreeMode;
-if modeState.FirstFailureSegmentIndex == 0
-    modeState.Status = formatFreeStatus( modeState, requestedSegmentCount);
-end
-modeState.InteractionState = "idle";
-applicationState.FreeMode = modeState;
-applicationState.InteractionState = "idle";
-guidata(figureHandle, applicationState);
-refreshApplication(figureHandle);
-end
-
-function [segment, logLines] = solveLatestValidatedSegment( ...
-        obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
-        controls, sandboxOptions, segmentIndex)
-% Find the latest tested arrival that passes independent validation. This is a
-% bounded numerical search. It is not proof of the globally latest arrival.
-segment = emptySegmentRecord();
-segment.RequestedStart_deg = startPosition_deg;
-segment.RequestedStop_deg = stopPosition_deg;
-segment.StartTime_s = startTime_s;
-latestAllowedTime_s = startTime_s + controls.MaximumSegmentDuration_s;
-plannerOptions = sandboxOptions.PlannerOptions;
-plannerOptions.Verbose = controls.Verbose;
-logLines = "[Free Mode Segment " + segmentIndex + "]";
-testedTimes_s = zeros(0, 1);
-testedSuccess = false(0, 1);
-
-% Test the user-supplied segment time first. If it passes, it is the latest
-% allowed time in this sandbox search.
-[upperResult, upperValidation, upperLog] = runSegmentCandidate( ...
-    obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
-    latestAllowedTime_s, controls, plannerOptions, "fixedArrival", ...
-    "upper bound");
-logLines = [logLines; upperLog];
-testedTimes_s(end + 1, 1) = latestAllowedTime_s;
-testedSuccess(end + 1, 1) = upperResult.Success && upperValidation.Passed;
-if testedSuccess(end)
-    segment = populateSuccessfulSegment( ...
-        segment, upperResult, upperValidation, 0, ...
-        testedTimes_s, testedSuccess, ...
-        "The finite upper bound passed; it is the latest allowed arrival.");
-    return;
-end
-
-% Drawn sandbox obstacles are static during planning. If the endpoint is inside
-% an obstacle at the upper time, it is blocked at all candidate times. Do not
-% repeat the same endpoint test.
-if upperResult.TerminationReason == "endpointBlocked"
-    segment.PlannerResult = upperResult;
-    segment.Validation = upperValidation;
-    segment.Success = false;
-    segment.TerminationReason = upperResult.TerminationReason;
-    segment.TestedArrivalTimes_s = testedTimes_s;
-    segment.TestedArrivalSuccess = testedSuccess;
-    segment.SearchStatement = "Static protected geometry blocks a segment endpoint.";
-    return;
-end
-
-bestResult = struct();
-bestValidation = obstacleAvoidance.validateTrajectory();
-failureResult = upperResult;
-failureValidation = upperValidation;
-
-% Earliest-arrival planning provides a fallback if fixed-time samples all fail.
-% Treat this result as one validated candidate. Do not label it as proof of the
-% globally earliest arrival.
-[earliestResult, earliestValidation, earliestLog] = runSegmentCandidate( ...
-    obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
-    latestAllowedTime_s, controls, plannerOptions, "earliestArrival", ...
-    "earliest fallback");
-logLines = [logLines; earliestLog];
-if earliestResult.Success && earliestValidation.Passed
-    bestResult = earliestResult;
-    bestValidation = earliestValidation;
-end
-
-maximumDuration_s = controls.MaximumSegmentDuration_s;
-velocityLowerBound_s = max( abs(stopPosition_deg - startPosition_deg) ./ controls.MaxVelocity_deg_s);
-minimumTestDuration_s = max( min(maximumDuration_s, velocityLowerBound_s), min(0.05, maximumDuration_s));
-coarseCount = sandboxOptions.LatestArrivalCoarseCandidateCount;
-coarseDurations_s = linspace( maximumDuration_s, minimumTestDuration_s, coarseCount + 1).';
-coarseDurations_s = coarseDurations_s(2:end);
-previousFailedTime_s = latestAllowedTime_s;
-fixedResult = struct();
-fixedValidation = obstacleAvoidance.validateTrajectory();
-fixedTime_s = NaN;
-
-% Test coarse arrival times from latest to earliest. Keep the first result that
-% passes independent validation.
-for candidateIndex = 1:numel(coarseDurations_s)
-    candidateTime_s = startTime_s + coarseDurations_s(candidateIndex);
-    [candidateResult, candidateValidation, candidateLog] = runSegmentCandidate( ...
-        obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
-        candidateTime_s, controls, plannerOptions, "fixedArrival", ...
-        "coarse " + candidateIndex + "/" + numel(coarseDurations_s));
-    logLines = [logLines; candidateLog]; %#ok<AGROW>
-    candidatePassed = candidateResult.Success && candidateValidation.Passed;
-    testedTimes_s(end + 1, 1) = candidateTime_s; %#ok<AGROW>
-    testedSuccess(end + 1, 1) = candidatePassed; %#ok<AGROW>
-    if candidatePassed
-        fixedResult = candidateResult;
-        fixedValidation = candidateValidation;
-        fixedTime_s = candidateTime_s;
-        break;
-    end
-    failureResult = candidateResult;
-    failureValidation = candidateValidation;
-    previousFailedTime_s = candidateTime_s;
-end
-
-searchResolution_s = maximumDuration_s / coarseCount;
-selectionStatement = "The public earliest-arrival fallback was the only validated call; " + ...
-    "no fixed-time or global latest-arrival certificate is claimed.";
-selectedResolution_s = NaN;
-if ~isempty(fieldnames(fixedResult))
-    refinementCount = sandboxOptions.LatestArrivalRefinementCandidateCount;
-    if refinementCount > 0 && previousFailedTime_s > fixedTime_s
-        refinementTimes_s = linspace( previousFailedTime_s, fixedTime_s, refinementCount + 2).';
-        refinementTimes_s = refinementTimes_s(2:end - 1);
-        searchResolution_s = (previousFailedTime_s - fixedTime_s) / (refinementCount + 1);
-
-        % Refine only between one failed time and one passed time from the coarse
-        % search. This interval limits extra planner calls.
-        for candidateIndex = 1:numel(refinementTimes_s)
-            candidateTime_s = refinementTimes_s(candidateIndex);
-            [candidateResult, candidateValidation, candidateLog] = runSegmentCandidate( ...
-                obstacles, startPosition_deg, stopPosition_deg, ...
-                startTime_s, candidateTime_s, controls, plannerOptions, ...
-                "fixedArrival", "refinement " + candidateIndex + "/" + ...
-                numel(refinementTimes_s));
-            logLines = [logLines; candidateLog]; %#ok<AGROW>
-            candidatePassed = candidateResult.Success && candidateValidation.Passed;
-            testedTimes_s(end + 1, 1) = candidateTime_s; %#ok<AGROW>
-            testedSuccess(end + 1, 1) = candidatePassed; %#ok<AGROW>
-            if candidatePassed
-                fixedResult = candidateResult;
-                fixedValidation = candidateValidation;
-                break;
-            end
-            failureResult = candidateResult;
-            failureValidation = candidateValidation;
-        end
-    end
-    bestResult = fixedResult;
-    bestValidation = fixedValidation;
-    selectionStatement = "Latest validated arrival among bounded descending fixed-time " + ...
-        "samples; no global latest-arrival certificate.";
-    selectedResolution_s = searchResolution_s;
-end
-
-if ~isempty(fieldnames(bestResult))
-    segment = populateSuccessfulSegment( ...
-        segment, bestResult, bestValidation, selectedResolution_s, ...
-        testedTimes_s, testedSuccess, selectionStatement);
-else
-    segment.PlannerResult = failureResult;
-    segment.Validation = failureValidation;
-    segment.Success = false;
-    segment.TerminationReason = failureResult.TerminationReason;
-    segment.TestedArrivalTimes_s = testedTimes_s;
-    segment.TestedArrivalSuccess = testedSuccess;
-    segment.SearchStatement = "No tested arrival passed inside the finite segment horizon.";
-end
-end
-
-function [result, validation, logLines] = runSegmentCandidate( ...
-        obstacles, startPosition_deg, stopPosition_deg, startTime_s, ...
-        goalTime_s, controls, plannerOptions, goalTimeMode, labelText)
-% Run one labeled segment candidate through public planner and validation
-% functions. Keep the label in logs to identify the failing candidate.
-[initialState, goalState, limits] = buildPlannerInputs( ...
-    startPosition_deg, stopPosition_deg, startTime_s, goalTime_s, controls);
-plannerOptions.GoalTimeMode = goalTimeMode;
-[result, validation, plannerLog] = callPlanner( ...
-    obstacles, initialState, goalState, limits, plannerOptions, ...
-    "Candidate " + labelText + " at t=" + sprintf("%.6g", goalTime_s));
-logLines = plannerLog;
-end
-
-function segment = populateSuccessfulSegment( ...
-        segment, result, validation, resolution_s, testedTimes_s, ...
-        testedSuccess, statement)
-% Store one successful segment. Do not present it as one global multi-segment
-% planner result.
-segment.ArrivalTime_s = result.ArrivalTime_s;
-segment.PlannerResult = result;
-segment.Validation = validation;
-segment.Success = true;
-segment.TerminationReason = result.TerminationReason;
-segment.LatestValidatedArrival_s = result.ArrivalTime_s;
-segment.LatestArrivalSearchResolution_s = resolution_s;
-segment.TestedArrivalTimes_s = testedTimes_s;
-segment.TestedArrivalSuccess = testedSuccess;
-segment.SearchStatement = statement;
-end
-
-function [result, validation, logLines] = callPlanner( obstacles, initialState, goalState, limits, options, labelText)
+function [result, validation, logLines] = callPlanner( ...
+        obstacles, initialState, goalState, limits, options, ...
+        captureVerbose, labelText)
 % Capture optional verbose text for the sandbox log. Keep structured planner
 % diagnostics in the returned result.
 result = struct();
 plannerText = "";
-if options.Verbose
+if captureVerbose
     plannerText = string(evalc( 'result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
 else
     result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
@@ -1660,27 +1338,6 @@ limits = struct( ...
     "elevationInterval_deg", controls.WorkspaceElevationInterval_deg);
 end
 
-function combined = appendSegmentTrajectory(combined, result)
-% Join validated segment histories. Remove the repeated sample at each shared
-% segment endpoint. A knot is the shared endpoint between two segments.
-if isempty(combined.time_s)
-    firstRetainedIndex = 1;
-    segmentStartIndex = 1;
-else
-    firstRetainedIndex = 2;
-    segmentStartIndex = numel(combined.time_s) + 1;
-end
-retainedIndices = firstRetainedIndex:numel(result.time_s);
-combined.time_s = [combined.time_s; result.time_s(retainedIndices)];
-combined.position_deg = [ combined.position_deg; result.position_deg(retainedIndices, :)];
-combined.velocity_deg_s = [ combined.velocity_deg_s; result.velocity_deg_s(retainedIndices, :)];
-combined.acceleration_deg_s2 = [combined.acceleration_deg_s2; result.acceleration_deg_s2(retainedIndices, :)];
-combined.jerk_deg_s3 = [ combined.jerk_deg_s3; result.jerk_deg_s3(retainedIndices, :)];
-combined.SegmentStartIndices(end + 1, 1) = segmentStartIndex;
-end
-
-% --- Controls And Obstacle Canonicalization -----------------------------
-
 function controls = readModeControls(applicationState, modeName)
 % Read physical and geometry controls from one tab. Validate them before any
 % obstacle construction or planner call.
@@ -1706,22 +1363,52 @@ horizon_s = readScalarControl( handles.HorizonHandle, "Planning horizon (s)", tr
 pathObstacleRadius_deg = readScalarControl( handles.PathRadiusHandle, "Line/capsule radius (deg)", true);
 pathSafetyMargin_deg = readScalarControl( handles.PathMarginHandle, "Line safety margin (deg)", false);
 obstacleSafetyMargin_deg = readScalarControl( handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
+goalTimeModes = ["balancedArrival", "earliestArrival", "fixedArrival"];
+minimumTravelSavingsRate_deg_s = readScalarControl( ...
+    handles.MinimumTravelSavingsRateHandle, ...
+    "Minimum travel savings rate (deg/s)", true);
+unsupportedTimedTopologyPolicies = ["fail", "ruckigStopAtWaypoints"];
 controls = struct( ...
     "WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
     "WorkspaceElevationInterval_deg", workspaceElevationInterval_deg, ...
     "MaxVelocity_deg_s", maxVelocity_deg_s, ...
     "MaxAcceleration_deg_s2", maxAcceleration_deg_s2, ...
     "MaxJerk_deg_s3", maxJerk_deg_s3, ...
-    "MissionTime_s", NaN, ...
-    "MaximumSegmentDuration_s", NaN, ...
+    "MissionTime_s", horizon_s, ...
     "PathObstacleRadius_deg", pathObstacleRadius_deg, ...
     "PathSafetyMargin_deg", pathSafetyMargin_deg, ...
     "ObstacleSafetyMargin_deg", obstacleSafetyMargin_deg, ...
+    "GoalTimeMode", goalTimeModes( ...
+        get(handles.GoalTimeModeHandle, "Value")), ...
+    "MinimumTravelSavingsRate_deg_s", ...
+    minimumTravelSavingsRate_deg_s, ...
+    "UnsupportedTimedTopologyPolicy", ...
+    unsupportedTimedTopologyPolicies( ...
+        get(handles.UnsupportedTimedTopologyHandle, "Value")), ...
+    "AllowAzimuthWrapping", logical(get( ...
+        handles.AllowAzimuthWrappingHandle, "Value")), ...
     "Verbose", logical(get(handles.VerboseHandle, "Value")));
-if modeName == "goal"
-    controls.MissionTime_s = horizon_s;
-else
-    controls.MaximumSegmentDuration_s = horizon_s;
+end
+
+function stopRequested = sandboxStopRequested( ...
+        figureHandle, callerCancellationCheckFcn)
+% Combine the Stop button with any programmatic caller cancellation policy.
+if isempty(figureHandle) || ~isgraphics(figureHandle)
+    stopRequested = true;
+    return;
+end
+stopRequested = isappdata(figureHandle, "SandboxStopRequested") && ...
+    logical(getappdata(figureHandle, "SandboxStopRequested"));
+if ~stopRequested && ~isempty(callerCancellationCheckFcn)
+    stopRequested = callerCancellationCheckFcn();
+end
+end
+
+function clearPlanningStopRequest(figureHandle)
+% Remove the transient callback flag from a surviving sandbox figure.
+if ~isempty(figureHandle) && isgraphics(figureHandle) && ...
+        isappdata(figureHandle, "SandboxStopRequested")
+    rmappdata(figureHandle, "SandboxStopRequested");
 end
 end
 
@@ -1747,24 +1434,30 @@ end
 value = double(value);
 end
 
-function applyDefaultControls(handles, modeName, options)
+function applyDefaultControls(handles, options)
 % Restore one tab's editable values without touching the other tab.
 writeAxisPair(handles.WorkspaceAzimuthHandles, options.WorkspaceAzimuthInterval_deg);
 writeAxisPair(handles.WorkspaceElevationHandles, options.WorkspaceElevationInterval_deg);
 writeAxisPair(handles.VelocityHandles, options.MaxVelocity_deg_s);
 writeAxisPair(handles.AccelerationHandles, options.MaxAcceleration_deg_s2);
 writeAxisPair(handles.JerkHandles, options.MaxJerk_deg_s3);
-if modeName == "goal"
-    horizon_s = options.MissionTime_s;
-else
-    horizon_s = options.MaximumSegmentDuration_s;
-end
+horizon_s = options.MissionTime_s;
 set(handles.HorizonHandle, "String", sprintf("%.8g", horizon_s));
 set(handles.PathRadiusHandle, "String", sprintf("%.8g", options.PathObstacleRadius_deg));
 set(handles.PathMarginHandle, "String", sprintf("%.8g", options.PathSafetyMargin_deg));
 set(handles.ObstacleMarginHandle, "String", sprintf("%.8g", options.ObstacleSafetyMargin_deg));
 set(handles.VerboseHandle, "Value", options.Verbose);
 set(handles.MotionProfileHandle, "Value", 1);
+set(handles.UnsupportedTimedTopologyHandle, "Value", 1 + double( ...
+    options.PlannerOptions.UnsupportedTimedTopologyPolicy == ...
+    "ruckigStopAtWaypoints"));
+set(handles.GoalTimeModeHandle, "Value", find( ...
+    options.PlannerOptions.GoalTimeMode == ...
+    ["balancedArrival", "earliestArrival", "fixedArrival"], 1));
+set(handles.MinimumTravelSavingsRateHandle, "String", sprintf("%.8g", ...
+    options.PlannerOptions.MinimumTravelSavingsRate_deg_s));
+set(handles.AllowAzimuthWrappingHandle, "Value", ...
+    options.PlannerOptions.AllowAzimuthWrapping);
 end
 
 function writeAxisPair(handles, values)
@@ -1916,15 +1609,13 @@ end
 % --- Rendering, Status, Reset, And State Access -------------------------
 
 function refreshApplication(figureHandle)
-% Redraw both tabs. Update status text and enabled controls from current state.
+% Redraw Goal Mode and update status text and enabled controls.
 if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
 applicationState = guidata(figureHandle);
 redrawMode(applicationState, "goal");
-redrawMode(applicationState, "free");
 updateModeStatusDisplay(applicationState.GoalMode);
-updateModeStatusDisplay(applicationState.FreeMode);
 updateControlEnablement(applicationState);
 end
 
@@ -1950,6 +1641,10 @@ try
 catch
     azimuthInterval_deg = applicationState.Options.WorkspaceAzimuthInterval_deg;
     elevationInterval_deg = applicationState.Options.WorkspaceElevationInterval_deg;
+    controls = struct( ...
+        "WorkspaceAzimuthInterval_deg", azimuthInterval_deg, ...
+        "AllowAzimuthWrapping", ...
+        applicationState.Options.PlannerOptions.AllowAzimuthWrapping);
 end
 axis(axesHandle, [azimuthInterval_deg, elevationInterval_deg]);
 axis(axesHandle, "equal");
@@ -2012,19 +1707,11 @@ if ~isempty(modeState.StartPosition_deg)
         "MarkerFaceColor", "g", "MarkerSize", 8, ...
         "LineWidth", 1.2, "DisplayName", "Start");
 end
-if modeName == "goal"
-    redrawGoalRequest(axesHandle, modeState);
-else
-    redrawFreeRequest(axesHandle, modeState);
-end
+redrawGoalRequest(axesHandle, modeState, controls);
 if ~isempty(findobj(axesHandle, "-property", "DisplayName"))
     legend(axesHandle, "Location", "best");
 end
-if modeName == "goal"
-    title(axesHandle, "Goal Mode: requested geometry and solved motion");
-else
-    title(axesHandle, "Free Mode: latest validated tested arrivals, not a global optimum");
-end
+title(axesHandle, "Goal Mode: requested geometry and solved motion");
 end
 
 function label = motionProfileLabel(profile)
@@ -2043,7 +1730,7 @@ switch string(profile)
 end
 end
 
-function redrawGoalRequest(axesHandle, modeState)
+function redrawGoalRequest(axesHandle, modeState, controls)
 % Show Goal Mode request geometry. Show the result or retained partial route
 % when available.
 if ~isempty(modeState.GoalPosition_deg)
@@ -2054,6 +1741,14 @@ if ~isempty(modeState.GoalPosition_deg)
 end
 if ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg)
     request_deg = [modeState.StartPosition_deg; modeState.GoalPosition_deg];
+    if controls.AllowAzimuthWrapping
+        period_deg = diff(controls.WorkspaceAzimuthInterval_deg);
+        request_deg(2, 1) = request_deg(2, 1) + period_deg * round( ...
+            (request_deg(1, 1) - request_deg(2, 1)) / period_deg);
+    end
+    request_deg = obstacleAvoidance.plotting.createWrappedSpatialPath( ...
+        request_deg, controls.WorkspaceAzimuthInterval_deg, ...
+        controls.AllowAzimuthWrapping);
     plot(axesHandle, request_deg(:, 1), request_deg(:, 2), ...
         "--", "Color", [0.35 0.55 0.85], "LineWidth", 1.2, ...
         "DisplayName", "Requested direct geometry");
@@ -2063,45 +1758,23 @@ if isempty(fieldnames(result))
     return;
 end
 if result.Success
-    plot(axesHandle, result.position_deg(:, 1), result.position_deg(:, 2), ...
+    displayPosition_deg = ...
+        obstacleAvoidance.plotting.createWrappedSpatialPath( ...
+        result.position_deg, result.Inputs.limits.azimuthInterval_deg, ...
+        result.Options.AllowAzimuthWrapping);
+    plot(axesHandle, displayPosition_deg(:, 1), ...
+        displayPosition_deg(:, 2), ...
         "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
 elseif result.SearchDiagnostics.BestPartialSeedIndex > 0
     partialIndex = result.SearchDiagnostics.BestPartialSeedIndex;
     partialRoute_deg = result.Seeds(partialIndex).position_deg;
+    partialRoute_deg = ...
+        obstacleAvoidance.plotting.createWrappedSpatialPath( ...
+        partialRoute_deg, result.Inputs.limits.azimuthInterval_deg, ...
+        result.Options.AllowAzimuthWrapping);
     plot(axesHandle, partialRoute_deg(:, 1), partialRoute_deg(:, 2), ...
         "-.", "Color", [0.90 0.55 0.10], "LineWidth", 1.8, ...
         "DisplayName", "Best partial route");
-end
-end
-
-function redrawFreeRequest(axesHandle, modeState)
-% Use different graphics for requested endpoints, the solved segment chain, and
-% the first failed segment.
-if ~isempty(modeState.StartPosition_deg)
-    request_deg = [ modeState.StartPosition_deg; modeState.WaypointPositions_deg];
-    if size(request_deg, 1) > 1
-        plot(axesHandle, request_deg(:, 1), request_deg(:, 2), ...
-            "o--", "Color", [0.25 0.45 0.85], ...
-            "MarkerFaceColor", [0.75 0.85 1], "LineWidth", 1.2, ...
-            "DisplayName", "User-requested segment chain");
-    end
-end
-if ~isempty(modeState.CombinedTrajectory.time_s)
-    motion_deg = modeState.CombinedTrajectory.position_deg;
-    plot(axesHandle, motion_deg(:, 1), motion_deg(:, 2), "k-", "LineWidth", 2.4, "DisplayName", "Cumulative solved motion");
-end
-failureIndex = modeState.FirstFailureSegmentIndex;
-if failureIndex > 0 && failureIndex <= size(modeState.WaypointPositions_deg, 1)
-    if failureIndex == 1
-        failureStart_deg = modeState.StartPosition_deg;
-    else
-        failureStart_deg = modeState.WaypointPositions_deg(failureIndex - 1, :);
-    end
-    failureStop_deg = modeState.WaypointPositions_deg(failureIndex, :);
-    failureSegment_deg = [failureStart_deg; failureStop_deg];
-    plot(axesHandle, failureSegment_deg(:, 1), failureSegment_deg(:, 2), ...
-        "r--", "LineWidth", 2.6, ...
-        "DisplayName", "Failed/unresolved segment");
 end
 end
 
@@ -2140,11 +1813,7 @@ function updateControlEnablement(applicationState)
 % Disable actions that are not valid for current state. Disable all geometry
 % edits during a synchronous planner call.
 isPlanning = applicationState.InteractionState == "planning";
-modeNames = ["goal" "free"];
-
-% Update both tabs together. A plan in one tab blocks competing edits in both.
-for modeName = modeNames
-    modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
     actionNames = string(fieldnames(modeState.GraphicsHandles.Actions));
 
     % Start from the common planning lock before applying mode-specific availability.
@@ -2157,33 +1826,23 @@ for modeName = modeNames
     set(modeState.GraphicsHandles.Controls.MotionProfileHandle, ...
         "Enable", onOff(~isPlanning));
     if isPlanning
-        continue;
+        set(modeState.GraphicsHandles.Actions.Stop, "Enable", "on");
+        return;
     end
-    if modeName == "goal"
-        canRun = ~isempty(modeState.StartPosition_deg) && ~isempty(modeState.GoalPosition_deg);
-        setObstacleConstructorAvailability(modeState, canRun);
-        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
-            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
-        set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
-    else
-        hasStart = ~isempty(modeState.StartPosition_deg);
-        hasSegments = hasStart && ~isempty(modeState.WaypointPositions_deg);
-        setObstacleConstructorAvailability(modeState, hasSegments);
-        set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
-            onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
-        set(modeState.GraphicsHandles.Actions.AddSegment, "Enable", onOff(hasStart));
-        set(modeState.GraphicsHandles.Actions.Recalculate, "Enable", onOff(hasSegments));
-        set(modeState.GraphicsHandles.Actions.Undo, "Enable", onOff(~isempty(modeState.WaypointPositions_deg)));
-    end
+    canRun = ~isempty(modeState.StartPosition_deg) && ...
+        ~isempty(modeState.GoalPosition_deg);
+    setObstacleConstructorAvailability(modeState, canRun);
+    set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
+        onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
+    set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
+    set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
     hasSceneData = ~isempty(modeState.StartPosition_deg) || ...
         ~isempty(modeState.GoalPosition_deg) || ...
-        ~isempty(modeState.WaypointPositions_deg) || ...
         ~isempty(modeState.RawObstacleStrokes_deg);
     set(modeState.GraphicsHandles.Actions.Diagnostics, "Enable", onOff(hasResult));
     set(modeState.GraphicsHandles.Actions.Export, ...
         "Enable", onOff(hasResult || hasSceneData));
-end
 end
 
 function value = onOff(condition)
@@ -2206,30 +1865,6 @@ status = [ ...
     "Independent validation: " + logicalText(validation.Passed)];
 end
 
-function status = formatFreeStatus(modeState, requestedSegmentCount)
-% Report cumulative Free Mode results. State that latest-arrival results come
-% from a bounded set of tested times.
-if isempty(modeState.CombinedTrajectory.time_s)
-    totalElapsedTime_s = NaN;
-    currentEnd_deg = [NaN NaN];
-else
-    totalElapsedTime_s = modeState.CombinedTrajectory.time_s(end) - modeState.CombinedTrajectory.time_s(1);
-    currentEnd_deg = modeState.CombinedTrajectory.position_deg(end, :);
-end
-status = [ ...
-    "SolvedSegmentCount: " + modeState.SolvedSegmentCount; ...
-    "RequestedSegmentCount: " + requestedSegmentCount; ...
-    "TotalElapsedMotionTime_s: " + sprintf("%.6g", totalElapsedTime_s); ...
-    "CurrentEndPosition_deg: [" + sprintf("%.6g %.6g", currentEnd_deg) + "]"; ...
-    "LatestValidatedArrival_s: [" + formatNumericVector( ...
-        modeState.LatestValidatedArrival_s) + "]"; ...
-    "LatestArrivalSearchResolution_s: [" + formatNumericVector( ...
-        modeState.LatestArrivalSearchResolution_s) + "]"; ...
-    "FirstFailureSegmentIndex: " + modeState.FirstFailureSegmentIndex; ...
-    "FirstFailureReason: " + modeState.FirstFailureReason; ...
-    "Arrival claim: latest validated tested time within each finite horizon."];
-end
-
 function text = formatNumericVector(values)
 % Format one diagnostic vector without hiding NaN or unavailable values.
 if isempty(values)
@@ -2250,16 +1885,9 @@ function modeState = clearModeSolution(modeState)
 % Clear solved data after geometry or controls change. An old plan is not valid
 % for a changed request.
 modeState.CanonicalObstacles = obstacleAvoidance.obstacles.combineObstacles();
-modeState.SegmentResults = repmat(emptySegmentRecord(), 0, 1);
-modeState.CombinedTrajectory = emptyCombinedTrajectory();
 modeState.LastPlannerResult = struct();
 modeState.LastValidation = obstacleAvoidance.validateTrajectory();
 modeState.ResolvedControls = struct();
-modeState.SolvedSegmentCount = 0;
-modeState.FirstFailureSegmentIndex = 0;
-modeState.FirstFailureReason = "";
-modeState.LatestValidatedArrival_s = zeros(0, 1);
-modeState.LatestArrivalSearchResolution_s = zeros(0, 1);
 end
 
 function resetMode(figureHandle, modeName)
@@ -2268,33 +1896,11 @@ cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
 modeState = getModeState(applicationState, modeName);
 graphicsHandles = modeState.GraphicsHandles;
-applyDefaultControls( graphicsHandles.Controls, modeName, applicationState.Options);
-modeState = emptyModeState(modeName, graphicsHandles);
+applyDefaultControls(graphicsHandles.Controls, applicationState.Options);
+modeState = emptyModeState(graphicsHandles);
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 beginGuidedScene(figureHandle, modeName);
-end
-
-function undoFreeWaypoint(figureHandle)
-% Remove only the last requested endpoint and recompute retained timing.
-cancelInteraction(figureHandle);
-applicationState = guidata(figureHandle);
-modeState = applicationState.FreeMode;
-if isempty(modeState.WaypointPositions_deg)
-    return;
-end
-modeState.WaypointPositions_deg(end, :) = [];
-modeState = clearModeSolution(modeState);
-applicationState.FreeMode = modeState;
-guidata(figureHandle, applicationState);
-if isempty(modeState.WaypointPositions_deg)
-    modeState.Status = "Last endpoint removed. Add a new segment when ready.";
-    applicationState.FreeMode = modeState;
-    guidata(figureHandle, applicationState);
-    refreshApplication(figureHandle);
-else
-    executeFreePlan(figureHandle, "Undo completed; replanning retained segments");
-end
 end
 
 function openDiagnostics(figureHandle, modeName)
@@ -2369,29 +1975,26 @@ function applicationState = prepareSandboxStateForExport( ...
 modeState = getModeState(applicationState, modeName);
 controls = readModeControls(applicationState, modeName);
 plannerOptions = applicationState.Options.PlannerOptions;
-plannerOptions.Verbose = controls.Verbose;
+plannerOptions.UnsupportedTimedTopologyPolicy = ...
+    controls.UnsupportedTimedTopologyPolicy;
+plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
+plannerOptions.CancellationCheckFcn = [];
 plannerInputs = struct();
-if modeName == "goal"
-    obstacleEndTime_s = controls.MissionTime_s;
-    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
-        ~isempty(modeState.GoalPosition_deg);
-    plannerOptions.GoalTimeMode = "earliestArrival";
-    if hasCompleteScene
-        [initialState, goalState, limits] = buildPlannerInputs( ...
-            modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
-            0, controls.MissionTime_s, controls);
-        plannerInputs = struct( ...
-            "obstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
-            "initialState", initialState, ...
-            "goalState", goalState, ...
-            "limits", limits);
-    end
-else
-    requestedSegmentCount = size(modeState.WaypointPositions_deg, 1);
-    obstacleEndTime_s = max(1, requestedSegmentCount) * ...
-        controls.MaximumSegmentDuration_s;
-    hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
-        requestedSegmentCount > 0;
+obstacleEndTime_s = controls.MissionTime_s;
+hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
+    ~isempty(modeState.GoalPosition_deg);
+plannerOptions.GoalTimeMode = controls.GoalTimeMode;
+plannerOptions.MinimumTravelSavingsRate_deg_s = ...
+    controls.MinimumTravelSavingsRate_deg_s;
+if hasCompleteScene
+    [initialState, goalState, limits] = buildPlannerInputs( ...
+        modeState.StartPosition_deg, modeState.GoalPosition_deg, ...
+        0, controls.MissionTime_s, controls);
+    plannerInputs = struct( ...
+        "obstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
+        "initialState", initialState, ...
+        "goalState", goalState, ...
+        "limits", limits);
 end
 canonicalObstacles = buildCanonicalObstacles( ...
     modeState, [0; obstacleEndTime_s], controls);
@@ -2405,27 +2008,27 @@ modeState.ExportRequest = struct( ...
     "PlannerInputs", plannerInputs, ...
     "PlannerOptions", plannerOptions, ...
     "RequestedStart_deg", modeState.StartPosition_deg, ...
-    "RequestedGoal_deg", modeState.GoalPosition_deg, ...
-    "RequestedWaypoints_deg", modeState.WaypointPositions_deg);
+    "RequestedGoal_deg", modeState.GoalPosition_deg);
 applicationState = setModeState(applicationState, modeName, modeState);
 end
 
 function modeState = getModeState(applicationState, modeName)
-% Read one named mode without duplicating dynamic-field spelling.
-if modeName == "goal"
-    modeState = applicationState.GoalMode;
-else
-    modeState = applicationState.FreeMode;
+% Read Goal Mode and reject removed mode identifiers.
+if modeName ~= "goal"
+    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
+        "Only Goal Mode is supported.");
 end
+modeState = applicationState.GoalMode;
 end
 
-function applicationState = setModeState( applicationState, modeName, modeState)
-% Write one named mode while preserving the independent peer record.
-if modeName == "goal"
-    applicationState.GoalMode = modeState;
-else
-    applicationState.FreeMode = modeState;
+function applicationState = setModeState( ...
+        applicationState, modeName, modeState)
+% Write Goal Mode and reject removed mode identifiers.
+if modeName ~= "goal"
+    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
+        "Only Goal Mode is supported.");
 end
+applicationState.GoalMode = modeState;
 end
 
 function snapshot = publicStateSnapshot(figureHandle)

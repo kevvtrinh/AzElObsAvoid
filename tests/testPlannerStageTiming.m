@@ -62,14 +62,12 @@ verifyEqual(testCase, ...
     failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
 end
 
-function testHs3SolverWorkReconcilesTiming(testCase)
-% Keep actual HS3 solver and validation work visible in exclusive stages.
+function testMotionSolverWorkReconcilesTiming(testCase)
+% Keep selected-engine solver and validation work visible in exclusive stages.
 initialState = state(0, [0 0]);
 goalState = state(3, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
-options.CollocationSegmentCount = 2;
-options.MaximumCollocationSegmentCount = 2;
 farObstacle = rectangleObstacle([0 3], [-100 -90 70 80], 0);
 result = obstacleAvoidance.planTrajectory( ...
     farObstacle, initialState, goalState, limits, options);
@@ -77,8 +75,10 @@ result = obstacleAvoidance.planTrajectory( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
-verifyTrue(testCase, any([result.SeedSummaries.Hs3Attempted]));
-verifyGreaterThan(testCase, result.SearchDiagnostics.Hs3ElapsedTime_s, 0);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+verifyTrue(testCase, isstruct(summary.SolverDiagnostics));
+verifyTrue(testCase, isfield(summary.SolverDiagnostics, "ElapsedTime_s"));
+verifyGreaterThan(testCase, summary.SeedPlanningElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
     result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
 verifyStageTiming(testCase, result);
@@ -144,11 +144,7 @@ function options = fixedHs3Options()
 options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
 options.MaximumSeedCount = 1;
-options.CollocationSegmentCount = 3;
-options.MaximumCollocationSegmentCount = 3;
-options.MaximumMeshRefinementPasses = 0;
 options.SampleTime_s = 0.05;
-options.Verbose = false;
 end
 
 function value = state(time_s, position_deg)

@@ -1,0 +1,4591 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Az/El Planner Sandbox</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background: #07111e;
+      --surface: #0d1928;
+      --surface-raised: #122235;
+      --surface-soft: #0a1624;
+      --border: #26394d;
+      --border-bright: #39536c;
+      --text: #eaf2f7;
+      --muted: #91a6b8;
+      --quiet: #60778c;
+      --cyan: #39d0d8;
+      --cyan-soft: rgba(57, 208, 216, 0.14);
+      --green: #73d99a;
+      --red: #ff7a83;
+      --orange: #ffbd69;
+      --blue: #6aa9ff;
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+      --radius: 14px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system,
+        BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 320px;
+      background: var(--background);
+    }
+
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 15% -10%, rgba(57, 208, 216, 0.12),
+          transparent 30rem),
+        linear-gradient(180deg, #081422 0%, var(--background) 42rem);
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    button,
+    .file-button {
+      border: 1px solid var(--border-bright);
+      border-radius: 9px;
+      color: var(--text);
+      background: #14263a;
+      cursor: pointer;
+      transition: border-color 120ms ease, background 120ms ease,
+        transform 120ms ease;
+    }
+
+    button:hover,
+    .file-button:hover {
+      border-color: #5c7892;
+      background: #193047;
+    }
+
+    button:active,
+    .file-button:active {
+      transform: translateY(1px);
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    canvas:focus-visible,
+    .file-button:focus-within {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    button:disabled,
+    input:disabled,
+    select:disabled,
+    .file-button[aria-disabled="true"] {
+      cursor: not-allowed;
+      opacity: 0.45;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      min-height: 72px;
+      padding: 0.8rem clamp(1rem, 2.5vw, 2.25rem);
+      border-bottom: 1px solid rgba(57, 83, 108, 0.6);
+      background: rgba(7, 17, 30, 0.86);
+      backdrop-filter: blur(14px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      display: grid;
+      flex: 0 0 auto;
+      width: 43px;
+      height: 43px;
+      place-items: center;
+      border: 1px solid rgba(57, 208, 216, 0.5);
+      border-radius: 12px;
+      color: var(--cyan);
+      background: var(--cyan-soft);
+      font: 700 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      letter-spacing: 0.04em;
+    }
+
+    .brand h1 {
+      margin: 0;
+      overflow: hidden;
+      font-size: clamp(1rem, 2.2vw, 1.3rem);
+      font-weight: 680;
+      letter-spacing: -0.01em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .brand p {
+      margin: 0.14rem 0 0;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .mode-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.48rem;
+      flex: 0 0 auto;
+      padding: 0.48rem 0.72rem;
+      border: 1px solid rgba(115, 217, 154, 0.35);
+      border-radius: 999px;
+      color: #b8f1cb;
+      background: rgba(115, 217, 154, 0.08);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+    }
+
+    .mode-badge::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 11px rgba(115, 217, 154, 0.75);
+      content: "";
+    }
+
+    .mode-badge[data-mode="checking"] {
+      border-color: rgba(106, 169, 255, 0.35);
+      color: #c9ddff;
+      background: rgba(106, 169, 255, 0.08);
+    }
+
+    .mode-badge[data-mode="checking"]::before {
+      background: var(--blue);
+      box-shadow: 0 0 11px rgba(106, 169, 255, 0.75);
+    }
+
+    .mode-badge[data-mode="offline"] {
+      border-color: rgba(255, 189, 105, 0.4);
+      color: #ffe0b7;
+      background: rgba(255, 189, 105, 0.09);
+    }
+
+    .mode-badge[data-mode="offline"]::before {
+      background: var(--orange);
+      box-shadow: 0 0 11px rgba(255, 189, 105, 0.72);
+    }
+
+    .app-shell {
+      width: min(1880px, 100%);
+      margin: 0 auto;
+      padding: 1rem clamp(0.75rem, 2vw, 1.7rem) 2rem;
+    }
+
+    .workbench {
+      display: grid;
+      grid-template-columns: minmax(620px, 1fr) 360px;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    .panel {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(180deg, rgba(18, 34, 53, 0.96),
+        rgba(10, 22, 36, 0.96));
+      box-shadow: var(--shadow);
+    }
+
+    .canvas-panel {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .tool-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.65rem;
+      min-height: 58px;
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(13, 25, 40, 0.94);
+    }
+
+    .tool-group,
+    .tool-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.42rem;
+    }
+
+    .tool-button,
+    .compact-button {
+      min-height: 34px;
+      padding: 0.42rem 0.65rem;
+      font-size: 0.76rem;
+      font-weight: 650;
+    }
+
+    .tool-button[aria-pressed="true"] {
+      border-color: rgba(57, 208, 216, 0.72);
+      color: #d9fdff;
+      background: rgba(57, 208, 216, 0.17);
+      box-shadow: inset 0 0 0 1px rgba(57, 208, 216, 0.13);
+    }
+
+    .tool-key {
+      display: inline-grid;
+      min-width: 1.25rem;
+      height: 1.25rem;
+      margin-right: 0.34rem;
+      place-items: center;
+      border: 1px solid rgba(145, 166, 184, 0.38);
+      border-radius: 4px;
+      color: var(--muted);
+      font: 650 0.65rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .canvas-wrap {
+      position: relative;
+      min-height: clamp(470px, 61vh, 760px);
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(36, 65, 89, 0.18),
+          transparent 65%),
+        #07111c;
+    }
+
+    #workspaceCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      min-height: inherit;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .coordinate-readout {
+      position: absolute;
+      top: 0.7rem;
+      right: 0.75rem;
+      min-width: 190px;
+      padding: 0.45rem 0.6rem;
+      border: 1px solid rgba(57, 83, 108, 0.8);
+      border-radius: 8px;
+      color: #dbeaf3;
+      background: rgba(7, 17, 30, 0.88);
+      font: 600 0.73rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .canvas-hint {
+      position: absolute;
+      left: 50%;
+      bottom: 0.72rem;
+      max-width: min(650px, calc(100% - 2rem));
+      padding: 0.44rem 0.7rem;
+      border: 1px solid rgba(57, 83, 108, 0.6);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(7, 17, 30, 0.84);
+      font-size: 0.72rem;
+      text-align: center;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    .canvas-legend {
+      position: absolute;
+      top: 0.7rem;
+      left: 0.75rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.38rem;
+      max-width: calc(100% - 240px);
+      pointer-events: none;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.34rem;
+      padding: 0.3rem 0.44rem;
+      border: 1px solid rgba(57, 83, 108, 0.58);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(7, 17, 30, 0.8);
+      font-size: 0.66rem;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--legend-color);
+    }
+
+    .timeline {
+      display: grid;
+      grid-template-columns: auto minmax(160px, 1fr) auto auto;
+      gap: 0.68rem;
+      align-items: center;
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+      background: #0b1725;
+    }
+
+    .play-button {
+      width: 38px;
+      height: 36px;
+      padding: 0;
+      font-size: 0.9rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--cyan);
+    }
+
+    .time-value {
+      min-width: 124px;
+      color: #d7e7ef;
+      font: 650 0.75rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-align: right;
+    }
+
+    .kinematics-panel {
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+      background: #091522;
+    }
+
+    .kinematics-heading {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 0.58rem;
+    }
+
+    .kinematics-heading h2 {
+      margin: 0;
+      font-size: 0.78rem;
+    }
+
+    .kinematics-heading span {
+      color: var(--quiet);
+      font-size: 0.65rem;
+    }
+
+    .kinematics-charts {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.6rem;
+    }
+
+    .kinematic-chart {
+      min-width: 0;
+      margin: 0;
+      padding: 0.42rem;
+      border: 1px solid rgba(57, 83, 108, 0.65);
+      border-radius: 8px;
+      background: #07111c;
+    }
+
+    .kinematic-chart figcaption {
+      margin: 0 0 0.28rem 0.2rem;
+      color: #dbe8ef;
+      font-size: 0.67rem;
+      font-weight: 650;
+    }
+
+    .kinematic-chart canvas {
+      display: block;
+      width: 100%;
+      height: 150px;
+    }
+
+    .kinematics-empty {
+      margin: 0;
+      color: var(--quiet);
+      font-size: 0.7rem;
+    }
+
+    .speed-select {
+      width: 76px;
+      min-height: 34px;
+    }
+
+    .sidebar {
+      display: grid;
+      gap: 0.85rem;
+      min-width: 0;
+    }
+
+    .card {
+      padding: 0.9rem;
+    }
+
+    .card-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      margin-bottom: 0.7rem;
+    }
+
+    .card h2,
+    .card h3 {
+      margin: 0;
+      font-size: 0.88rem;
+      font-weight: 700;
+      letter-spacing: 0.015em;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      font-size: 0.63rem;
+      font-weight: 750;
+      letter-spacing: 0.11em;
+      text-transform: uppercase;
+    }
+
+    .workflow-steps {
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .mode-description,
+    .offline-mode-note {
+      margin: 0 0 0.65rem;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.45;
+    }
+
+    .offline-mode-note {
+      margin: 0.65rem 0 0;
+      color: var(--quiet);
+    }
+
+    .offline-mode-note code {
+      color: #bfd0dc;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .live-actions {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.55rem;
+    }
+
+    .live-actions .workflow-button {
+      min-width: 0;
+    }
+
+    .live-actions .cancel-button {
+      width: auto;
+      color: #ffc3c7;
+    }
+
+    .live-actions #downloadBundleButton {
+      grid-column: 1 / -1;
+    }
+
+    .live-actions .live-bundle-button {
+      grid-column: 1 / -1;
+    }
+
+    .workflow-button,
+    .file-button {
+      display: flex;
+      width: 100%;
+      min-height: 43px;
+      align-items: center;
+      justify-content: center;
+      gap: 0.55rem;
+      padding: 0.62rem 0.8rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .workflow-button.primary {
+      border-color: rgba(57, 208, 216, 0.65);
+      color: #e4feff;
+      background: linear-gradient(135deg, rgba(23, 128, 139, 0.84),
+        rgba(20, 86, 105, 0.9));
+    }
+
+    .step-number {
+      display: grid;
+      width: 1.4rem;
+      height: 1.4rem;
+      place-items: center;
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      font-size: 0.66rem;
+    }
+
+    #resultFileInput {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .matlab-command {
+      position: relative;
+      padding: 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      color: #bfd0dc;
+      background: #07111c;
+      font: 0.67rem/1.48 ui-monospace, SFMono-Regular, Consolas, monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .copy-button {
+      width: 100%;
+      min-height: 32px;
+      margin-top: 0.45rem;
+      font-size: 0.7rem;
+    }
+
+    .status-box {
+      padding: 0.62rem 0.7rem;
+      border: 1px solid rgba(57, 83, 108, 0.75);
+      border-left: 3px solid var(--cyan);
+      border-radius: 8px;
+      color: #c9d9e3;
+      background: rgba(7, 17, 30, 0.72);
+      font-size: 0.73rem;
+      line-height: 1.45;
+    }
+
+    .status-box[data-tone="success"] {
+      border-left-color: var(--green);
+    }
+
+    .status-box[data-tone="warning"] {
+      border-left-color: var(--orange);
+    }
+
+    .status-box[data-tone="error"] {
+      border-left-color: var(--red);
+    }
+
+    details {
+      border-top: 1px solid rgba(57, 83, 108, 0.65);
+    }
+
+    details:first-of-type {
+      border-top: 0;
+    }
+
+    summary {
+      padding: 0.72rem 0;
+      color: #dbe8ef;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+      user-select: none;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.52rem;
+      padding-bottom: 0.8rem;
+    }
+
+    .form-grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .field {
+      display: grid;
+      gap: 0.28rem;
+      min-width: 0;
+    }
+
+    .field.full {
+      grid-column: 1 / -1;
+    }
+
+    .field label,
+    .field-label {
+      color: var(--muted);
+      font-size: 0.66rem;
+      line-height: 1.25;
+    }
+
+    input[type="number"],
+    input[type="text"],
+    select {
+      width: 100%;
+      min-height: 34px;
+      padding: 0.42rem 0.48rem;
+      border: 1px solid var(--border-bright);
+      border-radius: 7px;
+      color: var(--text);
+      background: #091522;
+    }
+
+    .checkbox-field {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      min-height: 34px;
+      color: var(--muted);
+      font-size: 0.7rem;
+    }
+
+    .obstacle-list {
+      display: grid;
+      gap: 0.38rem;
+      max-height: 150px;
+      margin-bottom: 0.65rem;
+      overflow: auto;
+    }
+
+    .empty-state {
+      padding: 0.8rem;
+      border: 1px dashed var(--border-bright);
+      border-radius: 8px;
+      color: var(--quiet);
+      font-size: 0.72rem;
+      text-align: center;
+    }
+
+    .obstacle-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 0.45rem;
+      align-items: center;
+      width: 100%;
+      padding: 0.48rem 0.55rem;
+      text-align: left;
+    }
+
+    .obstacle-row.selected {
+      border-color: rgba(57, 208, 216, 0.65);
+      background: rgba(57, 208, 216, 0.11);
+    }
+
+    .obstacle-name {
+      overflow: hidden;
+      font-size: 0.72rem;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .obstacle-kind {
+      color: var(--muted);
+      font-size: 0.62rem;
+    }
+
+    .editor-actions {
+      display: flex;
+      gap: 0.45rem;
+      padding-bottom: 0.75rem;
+    }
+
+    .editor-actions button {
+      flex: 1 1 0;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+
+    .metric {
+      min-width: 0;
+      padding: 0.55rem;
+      border: 1px solid rgba(57, 83, 108, 0.65);
+      border-radius: 8px;
+      background: rgba(7, 17, 30, 0.52);
+    }
+
+    .metric-label {
+      display: block;
+      margin-bottom: 0.22rem;
+      color: var(--quiet);
+      font-size: 0.6rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      display: block;
+      overflow: hidden;
+      color: #edf7fa;
+      font: 650 0.75rem/1.3 ui-monospace, SFMono-Regular, Consolas, monospace;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .metric-value.good {
+      color: var(--green);
+    }
+
+    .metric-value.bad {
+      color: var(--red);
+    }
+
+    .result-message {
+      margin: 0.65rem 0 0;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.45;
+    }
+
+    .diagnostics-panel {
+      margin-top: 1rem;
+      padding: 1rem;
+    }
+
+    .diagnostics-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .diagnostics-header h2 {
+      margin: 0.16rem 0 0;
+      font-size: 1rem;
+    }
+
+    .overlay-toggle {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+
+    .overlay-controls {
+      display: grid;
+      justify-items: end;
+      gap: 0.34rem;
+    }
+
+    .overlay-note {
+      max-width: 285px;
+      color: var(--quiet);
+      font-size: 0.66rem;
+      line-height: 1.35;
+      text-align: right;
+    }
+
+    .diagnostics-layout {
+      display: grid;
+      grid-template-columns: minmax(250px, 0.72fr) minmax(480px, 1.28fr);
+      gap: 1rem;
+    }
+
+    .diagnostic-block {
+      min-width: 0;
+      padding: 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(7, 17, 30, 0.52);
+    }
+
+    .diagnostic-block h3 {
+      margin: 0 0 0.68rem;
+      font-size: 0.78rem;
+    }
+
+    .timing-list {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .timing-row {
+      display: grid;
+      grid-template-columns: minmax(115px, 1fr) 2fr auto;
+      gap: 0.5rem;
+      align-items: center;
+      color: var(--muted);
+      font-size: 0.66rem;
+    }
+
+    .timing-track {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #17283a;
+    }
+
+    .timing-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2297a5, var(--cyan));
+    }
+
+    .timing-value {
+      color: #cadbe4;
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .table-wrap {
+      overflow: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.67rem;
+      white-space: nowrap;
+    }
+
+    th,
+    td {
+      padding: 0.46rem 0.5rem;
+      border-bottom: 1px solid rgba(57, 83, 108, 0.48);
+      text-align: left;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      color: var(--muted);
+      background: #0a1624;
+      font-weight: 700;
+    }
+
+    td {
+      color: #c9d8e1;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 0.18rem 0.38rem;
+      border-radius: 999px;
+      color: var(--muted);
+      background: #17283a;
+    }
+
+    .pill.good {
+      color: #baf0cb;
+      background: rgba(115, 217, 154, 0.13);
+    }
+
+    .pill.bad {
+      color: #ffc3c7;
+      background: rgba(255, 122, 131, 0.13);
+    }
+
+    .page-note {
+      margin: 0.85rem 0 0;
+      color: var(--quiet);
+      font-size: 0.66rem;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 1120px) {
+      .workbench {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .sidebar .panel:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .diagnostics-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .app-header {
+        align-items: flex-start;
+      }
+
+      .brand p,
+      .mode-badge {
+        display: none;
+      }
+
+      .tool-row {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .canvas-wrap {
+        min-height: 430px;
+      }
+
+      .canvas-legend {
+        display: none;
+      }
+
+      .kinematics-charts {
+        grid-template-columns: 1fr;
+      }
+
+      .coordinate-readout {
+        min-width: 160px;
+      }
+
+      .timeline {
+        grid-template-columns: auto minmax(120px, 1fr) auto;
+      }
+
+      .speed-select {
+        grid-column: 2 / -1;
+        justify-self: end;
+      }
+
+      .sidebar {
+        grid-template-columns: 1fr;
+      }
+
+      .sidebar .panel:last-child {
+        grid-column: auto;
+      }
+
+      .form-grid.three {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">AZ/EL</div>
+      <div>
+        <h1>Planner Sandbox</h1>
+        <p>Draw in degrees, solve in MATLAB, inspect here.</p>
+      </div>
+    </div>
+    <div id="modeBadge" class="mode-badge" data-mode="checking"
+      role="status" aria-live="polite">CHECKING · LOCAL MATLAB</div>
+  </header>
+
+  <div class="app-shell">
+    <main class="workbench">
+      <section class="panel canvas-panel" aria-label="Azimuth elevation workspace">
+        <div class="tool-row">
+          <div class="tool-group" role="toolbar" aria-label="Canvas tools">
+            <button class="tool-button" type="button" data-mode="select"
+              aria-pressed="false"><span class="tool-key">V</span>Select</button>
+            <button class="tool-button" type="button" data-mode="start"
+              aria-pressed="true"><span class="tool-key">S</span>Set start</button>
+            <button class="tool-button" type="button" data-mode="goal"
+              aria-pressed="false"><span class="tool-key">G</span>Set goal</button>
+            <button class="tool-button" type="button" data-mode="polygon"
+              aria-pressed="false"><span class="tool-key">P</span>Polygon</button>
+            <button class="tool-button" type="button" data-mode="circle"
+              aria-pressed="false">Circle</button>
+            <button class="tool-button" type="button" data-mode="freehand"
+              aria-pressed="false">Freehand</button>
+          </div>
+          <div class="tool-actions">
+            <button id="undoVertexButton" class="compact-button" type="button"
+              disabled>Undo vertex</button>
+            <button id="finishPolygonButton" class="compact-button" type="button"
+              disabled>Finish polygon</button>
+            <button id="deleteObstacleButton" class="compact-button" type="button"
+              disabled>Delete selected</button>
+          </div>
+        </div>
+
+        <div id="canvasWrap" class="canvas-wrap">
+          <canvas id="workspaceCanvas" tabindex="0"
+            aria-label="Azimuth elevation plotting workspace. Use the toolbar to place points and draw polygons."></canvas>
+          <div id="coordinateReadout" class="coordinate-readout"
+            aria-live="polite">Az —° · El —°</div>
+          <div class="canvas-legend" aria-hidden="true">
+            <span class="legend-item"><span class="legend-dot"
+              style="--legend-color:#73d99a"></span>Start</span>
+            <span class="legend-item"><span class="legend-dot"
+              style="--legend-color:#ff7a83"></span>Goal</span>
+            <span class="legend-item"><span class="legend-dot"
+              style="--legend-color:#6aa9ff"></span>Obstacle</span>
+            <span class="legend-item"><span class="legend-dot"
+              style="--legend-color:#39d0d8"></span>Solved motion</span>
+          </div>
+          <div id="canvasHint" class="canvas-hint">
+            Click once to place the start point. Grid coordinates are degrees.
+          </div>
+        </div>
+        <p class="page-note">
+          Drawing tools add geometry only. Select an obstacle and use Set
+          Motion to draw its velocity; arrow length is speed in deg/s.
+        </p>
+
+        <div class="timeline" aria-label="Mission playback">
+          <button id="playButton" class="play-button" type="button"
+            aria-label="Play mission animation">▶</button>
+          <input id="timeSlider" type="range" min="0" max="180" step="0.1"
+            value="0" aria-label="Mission time in seconds">
+          <output id="timeReadout" class="time-value" for="timeSlider">
+            0.00 / 180.00 s
+          </output>
+          <select id="playbackSpeed" class="speed-select"
+            aria-label="Playback speed">
+            <option value="1">1×</option>
+            <option value="5">5×</option>
+            <option value="10" selected>10×</option>
+            <option value="25">25×</option>
+          </select>
+        </div>
+        <section class="kinematics-panel" aria-label="Motion kinematics">
+          <div class="kinematics-heading">
+            <h2>Motion kinematics</h2>
+            <span>Azimuth — cyan · Elevation — violet · cursor follows time</span>
+          </div>
+          <p id="kinematicsEmpty" class="kinematics-empty">
+            Load a successful result to inspect returned motion histories.
+          </p>
+          <div id="kinematicsCharts" class="kinematics-charts" hidden>
+            <figure class="kinematic-chart">
+              <figcaption>Turning speed (deg/s)</figcaption>
+              <canvas id="velocityChart" aria-label="Turning speed against time"></canvas>
+            </figure>
+            <figure class="kinematic-chart">
+              <figcaption>Acceleration (deg/s²)</figcaption>
+              <canvas id="accelerationChart" aria-label="Acceleration against time"></canvas>
+            </figure>
+            <figure class="kinematic-chart">
+              <figcaption>Jerk (deg/s³)</figcaption>
+              <canvas id="jerkChart" aria-label="Jerk against time"></canvas>
+            </figure>
+          </div>
+        </section>
+      </section>
+
+      <aside class="sidebar" aria-label="Planning controls and file handoff">
+        <section class="panel card">
+          <div class="card-title-row">
+            <div>
+              <div id="workflowEyebrow" class="eyebrow">Connection</div>
+              <h2 id="workflowTitle">Checking local MATLAB</h2>
+            </div>
+          </div>
+          <p id="modeDescription" class="mode-description">
+            Probing the MATLAB loopback server.
+          </p>
+          <div id="liveWorkflow" hidden>
+            <div class="live-actions">
+              <button id="planButton" class="workflow-button primary"
+                type="button">Plan in MATLAB</button>
+              <button id="cancelPlanButton"
+                class="workflow-button cancel-button" type="button"
+                disabled>Cancel</button>
+              <button id="downloadBundleButton" class="workflow-button"
+                type="button" disabled>Save diagnosis bundle</button>
+              <label id="bundleFileLabel"
+                class="file-button live-bundle-button"
+                for="bundleFileInput">
+                Load &amp; run diagnosis bundle
+                <input id="bundleFileInput" type="file"
+                  accept="application/vnd.matlab.mat-file,.mat">
+              </label>
+            </div>
+          </div>
+          <div id="offlineWorkflow" hidden>
+            <div class="workflow-steps">
+              <button id="downloadRequestButton"
+                class="workflow-button primary" type="button">
+                <span class="step-number">1</span>Download request JSON
+              </button>
+              <div id="matlabCommand" class="matlab-command"
+                aria-label="MATLAB command"></div>
+              <button id="copyCommandButton" class="copy-button" type="button">
+                Copy MATLAB command
+              </button>
+              <label class="file-button" for="resultFileInput">
+                <span class="step-number">3</span>Load result JSON
+                <input id="resultFileInput" type="file"
+                  accept="application/json,.json">
+              </label>
+            </div>
+            <p id="offlineModeNote" class="offline-mode-note">
+              Live mode needs <code>offlineSandbox.serveSandbox</code>
+              running in MATLAB.
+            </p>
+          </div>
+          <div id="statusBox" class="status-box" data-tone="info"
+            role="status" aria-live="polite">
+            Place a start, a goal, and any polygon obstacles.
+          </div>
+        </section>
+
+        <section class="panel card" aria-label="Planner inputs">
+          <div class="card-title-row">
+            <div>
+              <div class="eyebrow">Request</div>
+              <h2>Limits &amp; mission</h2>
+            </div>
+            <button id="resetButton" class="compact-button" type="button">
+              Reset
+            </button>
+          </div>
+
+          <details open>
+            <summary>Exact endpoint coordinates</summary>
+            <div class="form-grid">
+              <div class="field">
+                <label for="startAzimuth">Start azimuth (deg)</label>
+                <input id="startAzimuth" type="number" step="0.1"
+                  placeholder="Not set">
+              </div>
+              <div class="field">
+                <label for="startElevation">Start elevation (deg)</label>
+                <input id="startElevation" type="number" step="0.1"
+                  placeholder="Not set">
+              </div>
+              <div class="field">
+                <label for="goalAzimuth">Goal azimuth (deg)</label>
+                <input id="goalAzimuth" type="number" step="0.1"
+                  placeholder="Not set">
+              </div>
+              <div class="field">
+                <label for="goalElevation">Goal elevation (deg)</label>
+                <input id="goalElevation" type="number" step="0.1"
+                  placeholder="Not set">
+              </div>
+              <button id="applyEndpointsButton"
+                class="compact-button field full" type="button">
+                Apply endpoint values
+              </button>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Workspace in degrees</summary>
+            <div class="form-grid">
+              <div class="field">
+                <label for="azimuthMin">Azimuth lower</label>
+                <input id="azimuthMin" type="number" value="-180" step="1">
+              </div>
+              <div class="field">
+                <label for="azimuthMax">Azimuth upper</label>
+                <input id="azimuthMax" type="number" value="180" step="1">
+              </div>
+              <div class="field">
+                <label for="elevationMin">Elevation lower</label>
+                <input id="elevationMin" type="number" value="-90" step="1">
+              </div>
+              <div class="field">
+                <label for="elevationMax">Elevation upper</label>
+                <input id="elevationMax" type="number" value="90" step="1">
+              </div>
+            </div>
+          </details>
+
+          <details open>
+            <summary>Physical limits</summary>
+            <div class="form-grid three">
+              <div class="field">
+                <label for="velocityAz">Velocity Az<br>(deg/s)</label>
+                <input id="velocityAz" type="number" value="2" min="0"
+                  step="0.1">
+              </div>
+              <div class="field">
+                <label for="velocityEl">Velocity El<br>(deg/s)</label>
+                <input id="velocityEl" type="number" value="2" min="0"
+                  step="0.1">
+              </div>
+              <div class="field">
+                <label for="missionTime">Mission<br>(s)</label>
+                <input id="missionTime" type="number" value="180" min="0"
+                  step="1">
+              </div>
+              <div class="field">
+                <label for="accelerationAz">Acceleration Az<br>(deg/s²)</label>
+                <input id="accelerationAz" type="number" value="0.75"
+                  min="0" step="0.05">
+              </div>
+              <div class="field">
+                <label for="accelerationEl">Acceleration El<br>(deg/s²)</label>
+                <input id="accelerationEl" type="number" value="0.75"
+                  min="0" step="0.05">
+              </div>
+              <div class="field">
+                <label for="defaultMargin">New obstacle<br>margin (deg)</label>
+                <input id="defaultMargin" type="number" value="0.2"
+                  min="0" step="0.05">
+              </div>
+              <div class="field">
+                <label for="jerkAz">Jerk Az<br>(deg/s³)</label>
+                <input id="jerkAz" type="number" value="2.5" min="0"
+                  step="0.1">
+              </div>
+              <div class="field">
+                <label for="jerkEl">Jerk El<br>(deg/s³)</label>
+                <input id="jerkEl" type="number" value="2.5" min="0"
+                  step="0.1">
+              </div>
+            </div>
+          </details>
+
+          <details>
+            <summary>Planner options</summary>
+            <div class="form-grid">
+              <div class="field full">
+                <label for="goalTimeMode">Goal timing</label>
+                <select id="goalTimeMode">
+                  <option value="balancedArrival" selected>Balanced travel and arrival</option>
+                  <option value="earliestArrival">Earliest arrival</option>
+                  <option value="fixedArrival">Minimum travel at mission time</option>
+                </select>
+              </div>
+              <div class="field full">
+                <label for="minimumTravelSavingsRate">
+                  Required travel saving (deg per second delayed)
+                </label>
+                <input id="minimumTravelSavingsRate" type="number"
+                  value="1" min="0.001" step="0.1">
+              </div>
+              <div class="field full">
+                <label for="unsupportedTimedTopologyPolicy">
+                  Unsupported timed route
+                </label>
+                <select id="unsupportedTimedTopologyPolicy">
+                  <option value="fail" selected>Fail and diagnose</option>
+                  <option value="ruckigStopAtWaypoints">
+                    Ruckig stop at waypoints
+                  </option>
+                </select>
+              </div>
+              <label class="checkbox-field field full">
+                <input id="allowWrapping" type="checkbox">
+                Allow azimuth wrapping (obstacle-free requests only)
+              </label>
+            </div>
+          </details>
+        </section>
+
+        <section class="panel card" aria-label="Obstacle editor">
+          <div class="card-title-row">
+            <div>
+              <div class="eyebrow">Geometry</div>
+              <h2>Polygon obstacles</h2>
+            </div>
+            <span id="obstacleCount" class="obstacle-kind">0 obstacles</span>
+          </div>
+          <div id="obstacleList" class="obstacle-list"></div>
+          <div id="obstacleEditor" hidden>
+            <div class="form-grid">
+              <div class="field">
+                <label for="selectedMargin">Safety margin (deg)</label>
+                <input id="selectedMargin" type="number" min="0" step="0.05">
+              </div>
+              <div class="field">
+                <label for="motionProfile">Motion profile</label>
+                <select id="motionProfile">
+                  <option value="stationary">Stationary</option>
+                  <option value="nonzeroVelocity">Constant velocity</option>
+                  <option value="zeroStart">Zero-start acceleration</option>
+                  <option value="trapezoidal">Trapezoidal</option>
+                  <option value="oscillating">Out and back</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="motionAzimuth">Azimuth speed (deg/s)</label>
+                <input id="motionAzimuth" type="number" step="0.5">
+              </div>
+              <div class="field">
+                <label for="motionElevation">Elevation speed (deg/s)</label>
+                <input id="motionElevation" type="number" step="0.5">
+              </div>
+            </div>
+            <p id="motionSpeedReadout" class="page-note">
+              Speed magnitude: 0.000 deg/s
+            </p>
+            <p id="motionProfileNote" class="page-note">
+              Arrow length is speed. Profiles integrate that speed command
+              over mission time to create obstacle positions.
+            </p>
+            <div class="editor-actions">
+              <button id="setMotionButton" class="compact-button" type="button">
+                Set motion
+              </button>
+              <button id="zeroMotionButton" class="compact-button" type="button">
+                Make stationary
+              </button>
+              <button id="deleteEditorButton" class="compact-button" type="button">
+                Delete obstacle
+              </button>
+            </div>
+          </div>
+          <p class="page-note">
+            The page exports original polygons. MATLAB applies each safety
+            margin once and returns the protected geometry for display. Circle and
+            freehand tools create ordinary polygons (24 and at most 40 vertices).
+            A circle is round in planning degrees, not merely in screen pixels.
+          </p>
+        </section>
+
+        <section class="panel card" aria-label="Latest planner result">
+          <div class="card-title-row">
+            <div>
+              <div class="eyebrow">Returned result</div>
+              <h2>Plan status</h2>
+            </div>
+          </div>
+          <div id="resultEmpty" class="empty-state">
+            Run or load an offlineSandboxResult/v1 response to inspect a plan.
+          </div>
+          <div id="resultContent" hidden>
+            <div class="result-grid">
+              <div class="metric">
+                <span class="metric-label">Planner</span>
+                <span id="plannerSuccess" class="metric-value">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Validation</span>
+                <span id="validationPassed" class="metric-value">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Arrival</span>
+                <span id="arrivalTime" class="metric-value">—</span>
+              </div>
+              <div class="metric">
+                <span class="metric-label">Planning time</span>
+                <span id="planningTime" class="metric-value">—</span>
+              </div>
+              <div class="metric full">
+                <span class="metric-label">Termination reason</span>
+                <span id="terminationReason" class="metric-value">—</span>
+              </div>
+            </div>
+            <p id="resultMessage" class="result-message"></p>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <section id="diagnosticsPanel" class="panel diagnostics-panel" hidden>
+      <div class="diagnostics-header">
+        <div>
+          <div class="eyebrow">SearchDiagnostics</div>
+          <h2>Search evidence &amp; stage timing</h2>
+        </div>
+        <div class="overlay-controls">
+          <label class="overlay-toggle">
+            <input id="searchOverlayToggle" type="checkbox">
+            Show visibility graph on workspace
+          </label>
+          <span id="searchOverlayNote" class="overlay-note"></span>
+          <label class="overlay-toggle">
+            <input id="selectedSeedToggle" type="checkbox">
+            Show selected seed on workspace
+          </label>
+          <span id="selectedSeedNote" class="overlay-note"></span>
+        </div>
+      </div>
+      <div class="result-grid" style="margin-bottom:1rem">
+        <div class="metric">
+          <span class="metric-label">Attempted seeds</span>
+          <span id="attemptedSeedCount" class="metric-value">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Validated candidates</span>
+          <span id="validatedCandidateCount" class="metric-value">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Expanded states</span>
+          <span id="expandedStateCount" class="metric-value">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Rejected transitions</span>
+          <span id="rejectedTransitionCount" class="metric-value">—</span>
+        </div>
+      </div>
+      <div class="diagnostics-layout">
+        <div class="diagnostic-block">
+          <h3>Exclusive stage timing</h3>
+          <div id="timingList" class="timing-list"></div>
+        </div>
+        <div class="diagnostic-block">
+          <h3>Seed summaries</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Source</th>
+                  <th>Optimizer</th>
+                  <th>Validated</th>
+                  <th>Collision</th>
+                  <th>Arrival (s)</th>
+                  <th>Work (s)</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="seedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="page-note">
+      This page makes no external network requests. Live mode talks only to
+      MATLAB on 127.0.0.1; offline request download and result selection remain
+      available when that loopback server is absent.
+    </p>
+  </div>
+
+  <script>
+    "use strict";
+
+    (() => {
+      const REQUEST_SCHEMA = "offlineSandboxRequest/v1";
+      const RESULT_SCHEMA = "offlineSandboxResult/v1";
+      const TRANSPORT_SCHEMA = "offlineSandboxTransport/v1";
+      const DEFAULT_SERVER_ORIGIN = "http://127.0.0.1:52731";
+      const PROBE_TIMEOUT_MS = 800;
+      const HEALTH_POLL_MS = 3000;
+      const CIRCLE_VERTEX_COUNT = 24;
+      const FREEHAND_MAXIMUM_VERTICES = 40;
+      const HANDLE_RADIUS_PX = 10;
+      const defaultControls = Object.freeze({
+        azimuthMin: -180,
+        azimuthMax: 180,
+        elevationMin: -90,
+        elevationMax: 90,
+        velocityAz: 2,
+        velocityEl: 2,
+        accelerationAz: 0.75,
+        accelerationEl: 0.75,
+        jerkAz: 2.5,
+        jerkEl: 2.5,
+        missionTime: 180,
+        defaultMargin: 0.2,
+        goalTimeMode: "balancedArrival",
+        unsupportedTimedTopologyPolicy: "fail",
+        allowWrapping: false
+      });
+
+      const state = {
+        mode: "start",
+        start: null,
+        goal: null,
+        polygonDraft: [],
+        freehandDraft: [],
+        circlePreview: null,
+        activeDrag: null,
+        obstacles: [],
+        selectedObstacleIndex: -1,
+        nextObstacleNumber: 1,
+        cursor: null,
+        plotRect: null,
+        lastValidWorkspace: {
+          azimuth: [-180, 180],
+          elevation: [-90, 90]
+        },
+        currentTime_s: 0,
+        playing: false,
+        animationFrame: 0,
+        animationLastTime_ms: 0,
+        result: null,
+        validation: null,
+        responseObstacles: [],
+        lastRequestId: "",
+        bundleRequestId: "",
+        showSearchOverlay: false,
+        showSelectedSeed: false,
+        importedSceneIsReadOnly: false,
+        applyingResult: false,
+        connectionMode: "checking",
+        serverOrigin: "",
+        sandboxFolder: "",
+        isPlanning: false,
+        activeRequestId: "",
+        cancellationRequested: false,
+        probeInProgress: false
+      };
+
+      const canvas = document.getElementById("workspaceCanvas");
+      const context = canvas.getContext("2d");
+      const canvasWrap = document.getElementById("canvasWrap");
+      const coordinateReadout = document.getElementById("coordinateReadout");
+      const canvasHint = document.getElementById("canvasHint");
+      const statusBox = document.getElementById("statusBox");
+      const timeSlider = document.getElementById("timeSlider");
+      const timeReadout = document.getElementById("timeReadout");
+      const playButton = document.getElementById("playButton");
+      const kinematicCharts = {
+        velocity: document.getElementById("velocityChart"),
+        acceleration: document.getElementById("accelerationChart"),
+        jerk: document.getElementById("jerkChart")
+      };
+      const obstacleList = document.getElementById("obstacleList");
+      const obstacleEditor = document.getElementById("obstacleEditor");
+
+      const controlIds = [
+        "azimuthMin", "azimuthMax", "elevationMin", "elevationMax",
+        "velocityAz", "velocityEl", "accelerationAz", "accelerationEl",
+        "jerkAz", "jerkEl", "missionTime", "defaultMargin",
+        "goalTimeMode", "minimumTravelSavingsRate",
+        "unsupportedTimedTopologyPolicy", "allowWrapping"
+      ];
+
+      function element(id) {
+        return document.getElementById(id);
+      }
+
+      function finiteNumber(value) {
+        return typeof value === "number" && Number.isFinite(value);
+      }
+
+      function numberFromInput(id) {
+        const value = Number(element(id).value);
+        return Number.isFinite(value) ? value : NaN;
+      }
+
+      function setStatus(message, tone = "info") {
+        statusBox.textContent = message;
+        statusBox.dataset.tone = tone;
+      }
+
+      function candidateServerOrigin() {
+        const isServedLoopback = window.location.protocol === "http:" &&
+          window.location.hostname === "127.0.0.1";
+        return isServedLoopback ? window.location.origin :
+          DEFAULT_SERVER_ORIGIN;
+      }
+
+      function updatePlanningControls() {
+        const isLive = state.connectionMode === "live";
+        const editingDisabled = state.isPlanning ||
+          state.importedSceneIsReadOnly;
+        setRequestEditingDisabled(editingDisabled);
+        element("planButton").disabled = !isLive || editingDisabled;
+        element("cancelPlanButton").disabled = !isLive ||
+          !state.isPlanning || state.cancellationRequested;
+        element("downloadBundleButton").disabled = !isLive ||
+          state.isPlanning || !state.bundleRequestId;
+        const bundleInputDisabled = !isLive || state.isPlanning;
+        element("bundleFileInput").disabled = bundleInputDisabled;
+        element("bundleFileLabel").setAttribute("aria-disabled",
+          String(bundleInputDisabled));
+        element("resetButton").disabled = state.isPlanning;
+        element("resultFileInput").disabled = state.isPlanning;
+        document.querySelectorAll(".obstacle-row").forEach((button) => {
+          button.disabled = state.isPlanning;
+        });
+      }
+
+      function setConnectionMode(mode, reason = "", announce = true) {
+        const labels = {
+          checking: "CHECKING · LOCAL MATLAB",
+          live: "LIVE · MATLAB CONNECTED",
+          offline: "OFFLINE · FILE HANDOFF"
+        };
+        const descriptions = {
+          checking: "Checking for MATLAB on the local loopback interface.",
+          live: "Live mode: planning requests go directly to local MATLAB.",
+          offline: "Offline mode: use the request/result file handoff below."
+        };
+        const previousMode = state.connectionMode;
+        state.connectionMode = mode;
+        element("modeBadge").dataset.mode = mode;
+        element("modeBadge").textContent = labels[mode];
+        element("modeDescription").textContent = descriptions[mode] +
+          (reason ? ` ${reason}` : "");
+        element("liveWorkflow").hidden = mode !== "live";
+        element("offlineWorkflow").hidden = mode !== "offline";
+        if (mode === "live") {
+          element("workflowEyebrow").textContent = "MATLAB loopback";
+          element("workflowTitle").textContent = "Plan directly";
+        } else if (mode === "offline") {
+          element("workflowEyebrow").textContent = "File handoff";
+          element("workflowTitle").textContent = "Plan without a server";
+        } else {
+          element("workflowEyebrow").textContent = "Connection";
+          element("workflowTitle").textContent = "Checking local MATLAB";
+        }
+        const needsLocalFile = mode === "offline" &&
+          window.location.protocol !== "file:" && !state.sandboxFolder;
+        element("offlineModeNote").innerHTML = needsLocalFile ?
+          "Live mode needs <code>offlineSandbox.serveSandbox</code> running " +
+            "in MATLAB. Reopen the local HTML file to use file handoff." :
+          "Live mode needs <code>offlineSandbox.serveSandbox</code> running " +
+            "in MATLAB.";
+        element("matlabCommand").textContent = matlabCommandText();
+        updatePlanningControls();
+        if (announce && mode !== "checking" && previousMode !== mode) {
+          if (mode === "live") {
+            setStatus(
+              "Live mode connected. Place the scene, then select Plan in MATLAB.",
+              "success"
+            );
+          } else {
+            setStatus(
+              reason || "MATLAB is not reachable; offline file handoff is active.",
+              "warning"
+            );
+          }
+        }
+      }
+
+      async function probeServer(showChecking = false) {
+        if (state.probeInProgress || state.isPlanning) {
+          return state.connectionMode === "live";
+        }
+        state.probeInProgress = true;
+        if (showChecking) {
+          setConnectionMode("checking", "", false);
+        }
+        const origin = state.serverOrigin || candidateServerOrigin();
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(),
+          PROBE_TIMEOUT_MS);
+        try {
+          const response = await fetch(`${origin}/health`, {
+            cache: "no-store",
+            credentials: "omit",
+            signal: controller.signal
+          });
+          if (!response.ok) {
+            throw new Error(`Health probe returned HTTP ${response.status}.`);
+          }
+          const health = await response.json();
+          const identified = health &&
+            health.schemaVersion === TRANSPORT_SCHEMA &&
+            (health.status === "ready" || health.status === "planning");
+          if (!identified) {
+            throw new Error("The process on the port is not this MATLAB server.");
+          }
+          if (state.isPlanning) {
+            return true;
+          }
+          state.serverOrigin = origin;
+          if (typeof health.sandboxFolder === "string" &&
+              health.sandboxFolder.length > 0) {
+            state.sandboxFolder = health.sandboxFolder;
+          }
+          setConnectionMode("live", "", true);
+          return true;
+        } catch (error) {
+          if (state.isPlanning) {
+            return state.connectionMode === "live";
+          }
+          const reason = error.name === "AbortError" ?
+            "The local MATLAB probe timed out." :
+            "The local MATLAB server is not reachable.";
+          setConnectionMode("offline", reason, true);
+          return false;
+        } finally {
+          window.clearTimeout(timeout);
+          state.probeInProgress = false;
+        }
+      }
+
+      function readControls(throwOnInvalid = true) {
+        const controls = {
+          azimuthMin: numberFromInput("azimuthMin"),
+          azimuthMax: numberFromInput("azimuthMax"),
+          elevationMin: numberFromInput("elevationMin"),
+          elevationMax: numberFromInput("elevationMax"),
+          velocityAz: numberFromInput("velocityAz"),
+          velocityEl: numberFromInput("velocityEl"),
+          accelerationAz: numberFromInput("accelerationAz"),
+          accelerationEl: numberFromInput("accelerationEl"),
+          jerkAz: numberFromInput("jerkAz"),
+          jerkEl: numberFromInput("jerkEl"),
+          missionTime: numberFromInput("missionTime"),
+          defaultMargin: numberFromInput("defaultMargin"),
+          goalTimeMode: element("goalTimeMode").value,
+          minimumTravelSavingsRate: numberFromInput(
+            "minimumTravelSavingsRate"
+          ),
+          unsupportedTimedTopologyPolicy: element(
+            "unsupportedTimedTopologyPolicy"
+          ).value,
+          allowWrapping: element("allowWrapping").checked
+        };
+        const allFinite = Object.entries(controls)
+          .filter(([, value]) => typeof value === "number")
+          .every(([, value]) => Number.isFinite(value));
+        const intervalsValid = controls.azimuthMax > controls.azimuthMin &&
+          controls.elevationMax > controls.elevationMin;
+        const positive = [
+          controls.velocityAz, controls.velocityEl,
+          controls.accelerationAz, controls.accelerationEl,
+          controls.minimumTravelSavingsRate,
+          controls.jerkAz, controls.jerkEl, controls.missionTime
+        ].every((value) => value > 0);
+        const marginValid = controls.defaultMargin >= 0;
+        if (!allFinite || !intervalsValid || !positive || !marginValid) {
+          if (throwOnInvalid) {
+            throw new Error(
+              "Workspace bounds must increase; mission time and physical " +
+              "limits must be positive; safety margins must be nonnegative."
+            );
+          }
+          return null;
+        }
+        return controls;
+      }
+
+      function workspace() {
+        return state.lastValidWorkspace;
+      }
+
+      function syncValidControls() {
+        const controls = readControls(false);
+        if (controls) {
+          state.lastValidWorkspace = {
+            azimuth: [controls.azimuthMin, controls.azimuthMax],
+            elevation: [controls.elevationMin, controls.elevationMax]
+          };
+          configureTimeline();
+        }
+        draw();
+      }
+
+      function invalidateResult(reason) {
+        if (state.applyingResult) {
+          return;
+        }
+        state.lastRequestId = "";
+        state.bundleRequestId = "";
+        updatePlanningControls();
+        if (!state.result) {
+          return;
+        }
+        stopPlayback();
+        state.result = null;
+        state.validation = null;
+        state.responseObstacles = [];
+        renderResult();
+        configureTimeline();
+        const nextAction = state.connectionMode === "live" ?
+          " Select Plan in MATLAB to solve the updated request." :
+          " Export a new request before loading another result.";
+        setStatus(reason + nextAction, "warning");
+      }
+
+      function activateMode(mode) {
+        if (state.isPlanning && mode !== "select") {
+          setStatus("Planning is active; request editing is temporarily locked.",
+            "warning");
+          return;
+        }
+        if (state.importedSceneIsReadOnly && mode !== "select") {
+          setStatus(
+            "This imported obstacle scene is inspection-only. Select Reset " +
+            "before creating a new request.", "warning"
+          );
+          return;
+        }
+        if (mode !== "polygon" && state.polygonDraft.length > 0) {
+          state.polygonDraft = [];
+        }
+        if (mode !== "freehand") {
+          state.freehandDraft = [];
+        }
+        if (mode !== "circle") {
+          state.circlePreview = null;
+        }
+        state.mode = mode;
+        document.querySelectorAll("[data-mode]").forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+        });
+        updateActionAvailability();
+        const messages = {
+          select: "Select picks; drag endpoints, polygons, vertices, or an existing velocity handle.",
+          start: "Click once in the workspace to place or replace the start.",
+          goal: "Click once in the workspace to place or replace the goal.",
+          polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
+          circle: "Drag from the center to set a radius in degrees. Nothing is draggable.",
+          freehand: "Drag a closed outline. It is simplified to an ordinary polygon. Nothing is draggable.",
+          motion: "Drag from the selected polygon's center to set its velocity in deg/s."
+        };
+        canvasHint.textContent = messages[mode];
+        draw();
+      }
+
+      function updateActionAvailability() {
+        const editingDisabled = state.importedSceneIsReadOnly ||
+          state.isPlanning;
+        element("undoVertexButton").disabled = editingDisabled ||
+          state.polygonDraft.length === 0;
+        element("finishPolygonButton").disabled =
+          editingDisabled || state.polygonDraft.length < 3;
+        const hasSelection = state.selectedObstacleIndex >= 0 &&
+          state.selectedObstacleIndex < state.obstacles.length;
+        element("deleteObstacleButton").disabled =
+          editingDisabled || !hasSelection;
+        element("setMotionButton").disabled = editingDisabled || !hasSelection;
+      }
+
+      function writeEndpointInputs() {
+        element("startAzimuth").value = state.start ? state.start[0] : "";
+        element("startElevation").value = state.start ? state.start[1] : "";
+        element("goalAzimuth").value = state.goal ? state.goal[0] : "";
+        element("goalElevation").value = state.goal ? state.goal[1] : "";
+      }
+
+      function applyEndpointInputs() {
+        if (state.importedSceneIsReadOnly) {
+          setStatus(
+            "This imported obstacle scene is inspection-only. Select Reset " +
+            "before creating a new request.", "warning"
+          );
+          return;
+        }
+        const endpointIds = ["startAzimuth", "startElevation",
+          "goalAzimuth", "goalElevation"];
+        if (endpointIds.some((id) => element(id).value.trim() === "")) {
+          setStatus("Enter Az/El values for both start and goal.", "error");
+          return;
+        }
+        const values = [
+          numberFromInput("startAzimuth"),
+          numberFromInput("startElevation"),
+          numberFromInput("goalAzimuth"),
+          numberFromInput("goalElevation")
+        ];
+        if (!values.every(Number.isFinite)) {
+          setStatus("Enter finite Az/El values for both start and goal.", "error");
+          return;
+        }
+        const requestedStart = values.slice(0, 2);
+        const requestedGoal = values.slice(2, 4);
+        if (!pointInsideWorkspace(requestedStart) ||
+            !pointInsideWorkspace(requestedGoal)) {
+          setStatus("Endpoint values must lie inside the workspace bounds.",
+            "error");
+          return;
+        }
+        state.start = requestedStart;
+        state.goal = requestedGoal;
+        invalidateResult("Endpoint coordinates changed.");
+        activateMode("select");
+        setStatus("Start and goal applied from the numeric coordinates.",
+          "success");
+        draw();
+      }
+
+      function setRequestEditingDisabled(disabled) {
+        controlIds.forEach((id) => {
+          element(id).disabled = disabled;
+        });
+        ["startAzimuth", "startElevation", "goalAzimuth", "goalElevation",
+          "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
+          "motionProfile", "motionAzimuth", "motionElevation",
+          "deleteEditorButton", "setMotionButton", "zeroMotionButton"
+        ].forEach((id) => {
+          element(id).disabled = disabled;
+        });
+        document.querySelectorAll("[data-mode]").forEach((button) => {
+          if (button.dataset.mode !== "select") {
+            button.disabled = disabled;
+          }
+        });
+        updateActionAvailability();
+      }
+
+      function pointInsideWorkspace(point) {
+        const bounds = workspace();
+        return point[0] >= bounds.azimuth[0] &&
+          point[0] <= bounds.azimuth[1] &&
+          point[1] >= bounds.elevation[0] &&
+          point[1] <= bounds.elevation[1];
+      }
+
+      function polygonArea(vertices) {
+        let twiceArea = 0;
+        for (let index = 0; index < vertices.length; index += 1) {
+          const nextIndex = (index + 1) % vertices.length;
+          twiceArea += vertices[index][0] * vertices[nextIndex][1] -
+            vertices[nextIndex][0] * vertices[index][1];
+        }
+        return Math.abs(twiceArea) / 2;
+      }
+
+      function finishPolygon() {
+        if (state.importedSceneIsReadOnly) {
+          setStatus(
+            "This imported obstacle scene is inspection-only. Select Reset " +
+            "before creating a new request.", "warning"
+          );
+          return;
+        }
+        if (state.polygonDraft.length < 3) {
+          setStatus("A polygon needs at least three distinct vertices.", "error");
+          return;
+        }
+        if (polygonArea(state.polygonDraft) <= 1e-10) {
+          setStatus("The polygon has no enclosed area. Add non-collinear vertices.",
+            "error");
+          return;
+        }
+        addObstacle(state.polygonDraft);
+        state.polygonDraft = [];
+        invalidateResult("Obstacle geometry changed.");
+        activateMode("select");
+        renderObstacleEditor();
+        setStatus("Polygon added. Select it to set a motion profile or margin.",
+          "success");
+      }
+
+      function pointInPolygon(point, vertices) {
+        let inside = false;
+        for (let first = 0, second = vertices.length - 1;
+          first < vertices.length; second = first, first += 1) {
+          const xi = vertices[first][0];
+          const yi = vertices[first][1];
+          const xj = vertices[second][0];
+          const yj = vertices[second][1];
+          const crosses = (yi > point[1]) !== (yj > point[1]) &&
+            point[0] < (xj - xi) * (point[1] - yi) /
+              (yj - yi || Number.EPSILON) + xi;
+          if (crosses) {
+            inside = !inside;
+          }
+        }
+        return inside;
+      }
+
+      function selectObstacleAt(point) {
+        state.selectedObstacleIndex = -1;
+        for (let index = state.obstacles.length - 1; index >= 0; index -= 1) {
+          if (pointInPolygon(point, state.obstacles[index].vertices_deg)) {
+            state.selectedObstacleIndex = index;
+            break;
+          }
+        }
+        renderObstacleEditor();
+        updateActionAvailability();
+        if (state.selectedObstacleIndex < 0) {
+          setStatus("No drawn polygon contains that position.", "warning");
+        }
+        draw();
+      }
+
+      function deleteSelectedObstacle() {
+        const index = state.selectedObstacleIndex;
+        if (index < 0 || index >= state.obstacles.length) {
+          return;
+        }
+        const removedName = state.obstacles[index].name;
+        state.obstacles.splice(index, 1);
+        state.selectedObstacleIndex = -1;
+        invalidateResult("Obstacle geometry changed.");
+        renderObstacleEditor();
+        updateActionAvailability();
+        setStatus(`${removedName} deleted.`, "success");
+        draw();
+      }
+
+      function renderObstacleEditor() {
+        obstacleList.replaceChildren();
+        element("obstacleCount").textContent =
+          `${state.obstacles.length} obstacle${state.obstacles.length === 1 ? "" : "s"}`;
+        if (state.obstacles.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = "Choose Polygon, then click vertices on the workspace.";
+          obstacleList.append(empty);
+        } else {
+          state.obstacles.forEach((obstacle, index) => {
+            const row = document.createElement("button");
+            row.type = "button";
+            row.className = "obstacle-row" +
+              (index === state.selectedObstacleIndex ? " selected" : "");
+            const name = document.createElement("span");
+            name.className = "obstacle-name";
+            name.textContent = obstacle.name;
+            const kind = document.createElement("span");
+            kind.className = "obstacle-kind";
+            const isMoving = obstacle.motionProfile !== "stationary" &&
+              Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+            const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+            kind.textContent = isMoving ?
+              `${speed_deg_s.toFixed(3)} deg/s` : "static";
+            row.append(name, kind);
+            row.addEventListener("click", () => {
+              state.selectedObstacleIndex = index;
+              renderObstacleEditor();
+              updateActionAvailability();
+              draw();
+            });
+            obstacleList.append(row);
+          });
+        }
+
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        obstacleEditor.hidden = !selected;
+        if (!selected) {
+          return;
+        }
+        element("selectedMargin").value = selected.safetyMargin_deg;
+        element("motionProfile").value = selected.motionProfile;
+        element("motionAzimuth").value = selected.motionVelocity_deg_s[0];
+        element("motionElevation").value = selected.motionVelocity_deg_s[1];
+        updateMotionSpeedReadout(selected.motionVelocity_deg_s);
+        const profileDescriptions = {
+          stationary: "Stationary: speed is zero and position does not change.",
+          nonzeroVelocity: "Constant: the arrow is the velocity for the full mission.",
+          zeroStart: "Zero-start: speed ramps linearly from zero to the arrow value.",
+          trapezoidal: "Trapezoidal: the arrow is peak speed after ramp-up and before ramp-down.",
+          oscillating: "Out and back: the arrow is peak speed; the polygon returns to its start."
+        };
+        element("motionProfileNote").textContent =
+          profileDescriptions[selected.motionProfile];
+      }
+
+      function updateSelectedObstacle() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected) {
+          return;
+        }
+        const margin = numberFromInput("selectedMargin");
+        const motionAzimuth = numberFromInput("motionAzimuth");
+        const motionElevation = numberFromInput("motionElevation");
+        if (!Number.isFinite(margin) || margin < 0 ||
+            !Number.isFinite(motionAzimuth) ||
+            !Number.isFinite(motionElevation)) {
+          setStatus("Obstacle margin must be nonnegative and motion values finite.",
+            "error");
+          return;
+        }
+        selected.safetyMargin_deg = margin;
+        selected.motionProfile = element("motionProfile").value;
+        selected.motionVelocity_deg_s = [motionAzimuth, motionElevation];
+        invalidateResult("Obstacle settings changed.");
+        renderObstacleEditor();
+        configureTimeline();
+        draw();
+      }
+
+      function activateMotionDrawing() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected) {
+          setStatus("Select a polygon before setting its motion.", "warning");
+          return;
+        }
+        stopPlayback();
+        state.currentTime_s = 0;
+        syncTimelineControl();
+        activateMode("motion");
+        setStatus(
+          "Drag from the selected polygon's center. Arrow length is speed in deg/s.",
+          "info"
+        );
+      }
+
+      function motionOffset_deg(obstacle, time_s, missionTime_s) {
+        const boundedTime_s = Math.max(0, Math.min(missionTime_s, time_s));
+        const boundedPhase = boundedTime_s / missionTime_s;
+        let integratedTime_s = 0;
+        if (obstacle.motionProfile === "nonzeroVelocity") {
+          integratedTime_s = boundedTime_s;
+        } else if (obstacle.motionProfile === "zeroStart") {
+          integratedTime_s = 0.5 * missionTime_s * boundedPhase * boundedPhase;
+        } else if (obstacle.motionProfile === "trapezoidal") {
+          const accelerationFraction = 0.25;
+          if (boundedPhase < accelerationFraction) {
+            integratedTime_s = 0.5 * missionTime_s / accelerationFraction *
+              boundedPhase * boundedPhase;
+          } else if (boundedPhase <= 1 - accelerationFraction) {
+            integratedTime_s = missionTime_s *
+              (boundedPhase - 0.5 * accelerationFraction);
+          } else {
+            integratedTime_s = missionTime_s *
+              (1 - accelerationFraction - 0.5 / accelerationFraction *
+              (1 - boundedPhase) * (1 - boundedPhase));
+          }
+        } else if (obstacle.motionProfile === "oscillating") {
+          integratedTime_s = missionTime_s / (2 * Math.PI) *
+            (1 - Math.cos(2 * Math.PI * boundedPhase));
+        }
+        return obstacle.motionVelocity_deg_s.map((velocity_deg_s) =>
+          velocity_deg_s * integratedTime_s
+        );
+      }
+
+      function buildObstacleKeyframes(obstacle, missionTime_s) {
+        const moving = obstacle.motionProfile !== "stationary" &&
+          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+        const sampleCount = moving ? 21 : 2;
+        const keyframes = [];
+        for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+          const phase = sampleCount === 1 ? 0 :
+            sampleIndex / (sampleCount - 1);
+          const offset = moving ? motionOffset_deg(
+            obstacle, missionTime_s * phase, missionTime_s
+          ) : [0, 0];
+          keyframes.push({
+            time_s: missionTime_s * phase,
+            vertices_deg: obstacle.vertices_deg.map((point) => [
+              point[0] + offset[0], point[1] + offset[1]
+            ])
+          });
+        }
+        return keyframes;
+      }
+
+      function validateScene(controls) {
+        if (!state.start || !state.goal) {
+          throw new Error("Place both the start and goal before exporting.");
+        }
+        if (state.polygonDraft.length > 0) {
+          throw new Error(
+            "Finish or cancel the active polygon before exporting the request."
+          );
+        }
+        if (!pointInsideWorkspace(state.start) || !pointInsideWorkspace(state.goal)) {
+          throw new Error("Start and goal must lie inside the workspace bounds.");
+        }
+        if (controls.allowWrapping && state.obstacles.length > 0) {
+          throw new Error(
+            "The maintained planner supports azimuth wrapping only for " +
+            "obstacle-free fixed-position goals."
+          );
+        }
+        state.obstacles.forEach((obstacle) => {
+          if (obstacle.vertices_deg.length < 3 ||
+              polygonArea(obstacle.vertices_deg) <= 1e-10) {
+            throw new Error(`${obstacle.name} is not a valid area polygon.`);
+          }
+          if (!finiteNumber(obstacle.safetyMargin_deg) ||
+              obstacle.safetyMargin_deg < 0) {
+            throw new Error(`${obstacle.name} has an invalid safety margin.`);
+          }
+          const keyframes = buildObstacleKeyframes(obstacle,
+            controls.missionTime);
+          const outside = keyframes.some((keyframe) =>
+            keyframe.vertices_deg.some((point) => !pointInsideWorkspace(point))
+          );
+          if (outside) {
+            throw new Error(
+              `${obstacle.name} leaves the workspace during its motion. ` +
+              "Reduce its translation or expand the workspace."
+            );
+          }
+        });
+      }
+
+      function createRequest() {
+        if (state.importedSceneIsReadOnly) {
+          throw new Error(
+            "This result was loaded without its editable request scene. " +
+            "Select Reset and create a new scene before exporting."
+          );
+        }
+        const controls = readControls(true);
+        state.lastValidWorkspace = {
+          azimuth: [controls.azimuthMin, controls.azimuthMax],
+          elevation: [controls.elevationMin, controls.elevationMax]
+        };
+        validateScene(controls);
+        const requestId = "az-el-" + new Date().toISOString()
+          .replace(/[-:.TZ]/g, "");
+        const request = {
+          schemaVersion: REQUEST_SCHEMA,
+          requestId,
+          obstacles: state.obstacles.map((obstacle) => ({
+            name: obstacle.name,
+            safetyMargin_deg: obstacle.safetyMargin_deg,
+            keyframes: buildObstacleKeyframes(obstacle, controls.missionTime)
+          })),
+          initialState: {
+            time_s: 0,
+            position_deg: state.start.slice(),
+            velocity_deg_s: [0, 0],
+            acceleration_deg_s2: [0, 0]
+          },
+          goalState: {
+            time_s: controls.missionTime,
+            position_deg: state.goal.slice(),
+            velocity_deg_s: [0, 0],
+            acceleration_deg_s2: [0, 0]
+          },
+          limits: {
+            maxVelocity_deg_s: [controls.velocityAz, controls.velocityEl],
+            maxAcceleration_deg_s2: [
+              controls.accelerationAz, controls.accelerationEl
+            ],
+            maxJerk_deg_s3: [controls.jerkAz, controls.jerkEl],
+            azimuthInterval_deg: [controls.azimuthMin, controls.azimuthMax],
+            elevationInterval_deg: [
+              controls.elevationMin, controls.elevationMax
+            ]
+          },
+          options: {
+            MaximumSeedCount: 3,
+            ArrivalTimeTolerance_s: 0.05,
+            GoalTimeMode: controls.goalTimeMode,
+            MinimumTravelSavingsRate_deg_s:
+              controls.minimumTravelSavingsRate,
+            UnsupportedTimedTopologyPolicy:
+              controls.unsupportedTimedTopologyPolicy,
+            AllowAzimuthWrapping: controls.allowWrapping
+          }
+        };
+        state.lastRequestId = requestId;
+        return request;
+      }
+
+      function downloadRequest() {
+        try {
+          const request = createRequest();
+          const json = JSON.stringify(request, null, 2);
+          const blob = new Blob([json], { type: "application/json" });
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = "az-el-request.json";
+          document.body.append(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          setStatus(
+            "Request downloaded. Run the shown MATLAB command, then load " +
+            "az-el-result.json.", "success"
+          );
+        } catch (error) {
+          setStatus(error.message, "error");
+        }
+      }
+
+      async function readJsonResponse(response) {
+        const text = await response.text();
+        let payload;
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          const protocolError = new Error(
+            `MATLAB returned invalid JSON (HTTP ${response.status}).`
+          );
+          protocolError.isProtocolError = true;
+          throw protocolError;
+        }
+        if (!response.ok) {
+          const errorRecord = payload && payload.error;
+          const message = errorRecord && errorRecord.message ?
+            errorRecord.message : `MATLAB returned HTTP ${response.status}.`;
+          const httpError = new Error(message);
+          httpError.isHttpError = true;
+          httpError.status = response.status;
+          httpError.identifier = errorRecord && errorRecord.identifier || "";
+          throw httpError;
+        }
+        return payload;
+      }
+
+      async function requestJson(url, options) {
+        try {
+          const response = await fetch(url, options);
+          return await readJsonResponse(response);
+        } catch (error) {
+          if (error instanceof TypeError || error.name === "AbortError") {
+            error.isTransportError = true;
+          }
+          throw error;
+        }
+      }
+
+      async function planLive() {
+        if (state.connectionMode !== "live" || state.isPlanning) {
+          return;
+        }
+        let request;
+        try {
+          request = createRequest();
+        } catch (error) {
+          setStatus(error.message, "error");
+          return;
+        }
+
+        state.isPlanning = true;
+        state.activeRequestId = request.requestId;
+        state.cancellationRequested = false;
+        updatePlanningControls();
+        setStatus(
+          "Planning in MATLAB. Cancel stops at the next safe planner checkpoint.",
+          "info"
+        );
+        let probeAfterCompletion = false;
+        try {
+          const payload = await requestJson(`${state.serverOrigin}/plan`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify(request),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          loadResponse(payload, "live MATLAB response");
+          state.bundleRequestId = payload.requestId;
+          updatePlanningControls();
+        } catch (error) {
+          if (error.identifier === "planTrajectory:UserCancelled") {
+            probeAfterCompletion = true;
+            setStatus("Planning canceled at a safe checkpoint.", "warning");
+          } else if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during planning.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The live planning request failed.",
+              "error");
+          }
+        } finally {
+          state.isPlanning = false;
+          state.activeRequestId = "";
+          state.cancellationRequested = false;
+          updatePlanningControls();
+        }
+        if (probeAfterCompletion) {
+          await probeServer(false);
+        }
+      }
+
+      async function runBundleFile(file) {
+        const maximumBundleBytes = 128 * 1024 * 1024;
+        if (state.connectionMode !== "live" || state.isPlanning) {
+          setStatus(
+            "Diagnosis bundles can run only while the local MATLAB server is connected.",
+            "warning"
+          );
+          return;
+        }
+        if (!file.name.toLowerCase().endsWith(".mat")) {
+          setStatus("Select a .mat diagnosis bundle.", "error");
+          return;
+        }
+        if (file.size > maximumBundleBytes) {
+          setStatus("Diagnosis bundles may not exceed 128 MiB.", "error");
+          return;
+        }
+
+        state.isPlanning = true;
+        state.activeRequestId = "bundle-replay";
+        state.cancellationRequested = false;
+        state.lastRequestId = "";
+        state.bundleRequestId = "";
+        updatePlanningControls();
+        setStatus(`Running ${file.name} through the current MATLAB planner.`,
+          "info");
+        let probeAfterCompletion = false;
+        try {
+          const payload = await requestJson(
+            `${state.serverOrigin}/run-bundle`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/vnd.matlab.mat-file"
+              },
+              body: file,
+              cache: "no-store",
+              credentials: "omit"
+            }
+          );
+          loadResponse(payload, `${file.name} replay`);
+          state.bundleRequestId = payload.requestId;
+          setStatus(
+            `Replayed ${file.name} with the current planner. The displayed ` +
+            "result is a fresh run, not the result stored in the bundle.",
+            "success"
+          );
+        } catch (error) {
+          if (error.identifier === "planTrajectory:UserCancelled") {
+            probeAfterCompletion = true;
+            setStatus("Bundle replay canceled at a safe checkpoint.", "warning");
+          } else if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during bundle replay.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The diagnosis bundle could not be run.",
+              "error");
+          }
+        } finally {
+          state.isPlanning = false;
+          state.activeRequestId = "";
+          state.cancellationRequested = false;
+          element("bundleFileInput").value = "";
+          updatePlanningControls();
+        }
+        if (probeAfterCompletion) {
+          await probeServer(false);
+        }
+      }
+
+      async function cancelLivePlan() {
+        if (!state.isPlanning || state.cancellationRequested ||
+            state.connectionMode !== "live") {
+          return;
+        }
+        const requestId = state.activeRequestId;
+        state.cancellationRequested = true;
+        updatePlanningControls();
+        setStatus(
+          "Cancellation requested. Waiting for a safe planner checkpoint.",
+          "warning"
+        );
+        try {
+          await requestJson(`${state.serverOrigin}/cancel`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify({ requestId }),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          if (state.isPlanning && state.activeRequestId === requestId) {
+            setStatus(
+              "MATLAB accepted cancellation and will stop at a safe checkpoint.",
+              "warning"
+            );
+          }
+        } catch (error) {
+          if (!state.isPlanning || state.activeRequestId !== requestId) {
+            return;
+          }
+          if (error.isTransportError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during cancellation.",
+              true
+            );
+          } else {
+            state.cancellationRequested = false;
+            updatePlanningControls();
+            setStatus(error.message || "Cancellation was not accepted.",
+              "error");
+          }
+        }
+      }
+
+      async function downloadLiveBundle() {
+        if (state.connectionMode !== "live" || state.isPlanning ||
+            !state.bundleRequestId) {
+          return;
+        }
+        const requestId = state.bundleRequestId;
+        element("downloadBundleButton").disabled = true;
+        setStatus("Preparing the MATLAB diagnosis bundle.", "info");
+        try {
+          const response = await fetch(`${state.serverOrigin}/bundle`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=UTF-8" },
+            body: JSON.stringify({ requestId }),
+            cache: "no-store",
+            credentials: "omit"
+          });
+          if (!response.ok) {
+            await readJsonResponse(response);
+          }
+          const bundleBlob = await response.blob();
+          const objectUrl = URL.createObjectURL(bundleBlob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          link.download = `${requestId}-diagnosis.mat`;
+          document.body.append(link);
+          link.click();
+          link.remove();
+          window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+          setStatus(
+            "Diagnosis bundle saved. Load diagnosisBundle from the MAT file " +
+            "to reproduce or inspect this exact live plan.", "success"
+          );
+        } catch (error) {
+          if (error instanceof TypeError) {
+            setConnectionMode(
+              "offline",
+              "The MATLAB server connection was lost during bundle export.",
+              true
+            );
+          } else {
+            setStatus(error.message || "The diagnosis bundle could not be saved.",
+              "error");
+          }
+        } finally {
+          updatePlanningControls();
+        }
+      }
+
+      function asArray(value) {
+        if (Array.isArray(value)) {
+          return value;
+        }
+        if (value && typeof value === "object") {
+          return [value];
+        }
+        return [];
+      }
+
+      function numericArray(value) {
+        if (finiteNumber(value)) {
+          return [value];
+        }
+        if (!Array.isArray(value)) {
+          return [];
+        }
+        return value.filter(finiteNumber);
+      }
+
+      function matrix(value, columnCount) {
+        if (!Array.isArray(value) || value.length === 0) {
+          return [];
+        }
+        if (value.every((item) => item === null || finiteNumber(item))) {
+          return value.length === columnCount ? [value.slice()] : [];
+        }
+        return value
+          .filter((row) => Array.isArray(row) && row.length >= columnCount)
+          .map((row) => row.slice(0, columnCount));
+      }
+
+      function normalizeHistory(value, timeCount) {
+        if (!Array.isArray(value) || value.length === 0) {
+          return [];
+        }
+        const looksLikeOneVertexMatrix = Array.isArray(value[0]) &&
+          value[0].length >= 2 &&
+          (value[0][0] === null || finiteNumber(value[0][0]));
+        if (timeCount === 1 && looksLikeOneVertexMatrix) {
+          return [value];
+        }
+        return value;
+      }
+
+      function readResultFile(file) {
+        const reader = new FileReader();
+        reader.onerror = () => {
+          setStatus("The selected result file could not be read.", "error");
+        };
+        reader.onload = () => {
+          try {
+            const response = JSON.parse(String(reader.result));
+            state.bundleRequestId = "";
+            loadResponse(response, file.name);
+          } catch (error) {
+            setStatus(`Invalid result JSON: ${error.message}`, "error");
+          } finally {
+            element("resultFileInput").value = "";
+          }
+        };
+        reader.readAsText(file, "UTF-8");
+      }
+
+      function pairFrom(value, fallback) {
+        const values = numericArray(value);
+        return values.length >= 2 ? values.slice(0, 2) : fallback.slice();
+      }
+
+      function loadResponse(response, fileName) {
+        if (!response || response.schemaVersion !== RESULT_SCHEMA) {
+          throw new Error(
+            `Expected schemaVersion '${RESULT_SCHEMA}'.`
+          );
+        }
+        if (!response.result || typeof response.result !== "object" ||
+            !response.validation || typeof response.validation !== "object") {
+          throw new Error("The result and validation objects are required.");
+        }
+        const requestMatches = Boolean(state.lastRequestId) &&
+          response.requestId === state.lastRequestId;
+        const importedObstacles = asArray(response.obstacles);
+        if (!requestMatches) {
+          state.obstacles = [];
+          state.polygonDraft = [];
+          state.selectedObstacleIndex = -1;
+          renderObstacleEditor();
+        }
+        state.importedSceneIsReadOnly = !requestMatches &&
+          importedObstacles.length > 0;
+        updatePlanningControls();
+        if (state.importedSceneIsReadOnly) {
+          activateMode("select");
+          setStatus(
+            `Loaded ${fileName} for inspection. Its returned obstacle ` +
+            "histories are not an editable request; select Reset before " +
+            "creating another request.", "warning"
+          );
+        } else if (state.lastRequestId &&
+            response.requestId !== state.lastRequestId) {
+          setStatus(
+            "Loaded result requestId does not match the most recent request. " +
+            "The response is displayed, but may describe a different scene.",
+            "warning"
+          );
+        } else {
+          setStatus(`Loaded ${fileName}.`, "success");
+        }
+        stopPlayback();
+        state.result = response.result;
+        state.validation = response.validation;
+        state.showSearchOverlay = false;
+        state.showSelectedSeed = false;
+        element("searchOverlayToggle").checked = false;
+        element("selectedSeedToggle").checked = false;
+        state.responseObstacles = importedObstacles.map((obstacle) => {
+          const times = numericArray(obstacle.time_s);
+          return {
+            ...obstacle,
+            time_s: times,
+            OriginalVerticesByTime_deg: normalizeHistory(
+              obstacle.OriginalVerticesByTime_deg, times.length
+            ),
+            ProtectedVerticesByTime_deg: normalizeHistory(
+              obstacle.ProtectedVerticesByTime_deg, times.length
+            )
+          };
+        });
+        applyResultInputs();
+        renderResult();
+        configureTimeline();
+        state.currentTime_s = timelineBounds()[0];
+        syncTimelineControl();
+        draw();
+      }
+
+      function applyResultInputs() {
+        const inputs = state.result && state.result.Inputs;
+        if (!inputs) {
+          return;
+        }
+        state.applyingResult = true;
+        try {
+          if (inputs.initialState) {
+            state.start = pairFrom(inputs.initialState.position_deg, [0, 0]);
+          }
+          if (inputs.goalState) {
+            state.goal = pairFrom(inputs.goalState.position_deg, [0, 0]);
+            if (finiteNumber(inputs.goalState.time_s)) {
+              element("missionTime").value = inputs.goalState.time_s;
+            }
+          }
+          const limits = inputs.limits || {};
+          const azimuth = pairFrom(limits.azimuthInterval_deg,
+            state.lastValidWorkspace.azimuth);
+          const elevation = pairFrom(limits.elevationInterval_deg,
+            state.lastValidWorkspace.elevation);
+          element("azimuthMin").value = azimuth[0];
+          element("azimuthMax").value = azimuth[1];
+          element("elevationMin").value = elevation[0];
+          element("elevationMax").value = elevation[1];
+          state.lastValidWorkspace = { azimuth, elevation };
+          const velocity = pairFrom(limits.maxVelocity_deg_s,
+            [defaultControls.velocityAz, defaultControls.velocityEl]);
+          const acceleration = pairFrom(limits.maxAcceleration_deg_s2,
+            [defaultControls.accelerationAz, defaultControls.accelerationEl]);
+          const jerk = pairFrom(limits.maxJerk_deg_s3,
+            [defaultControls.jerkAz, defaultControls.jerkEl]);
+          element("velocityAz").value = velocity[0];
+          element("velocityEl").value = velocity[1];
+          element("accelerationAz").value = acceleration[0];
+          element("accelerationEl").value = acceleration[1];
+          element("jerkAz").value = jerk[0];
+          element("jerkEl").value = jerk[1];
+          const options = state.result.Options || {};
+          if (typeof options.GoalTimeMode === "string") {
+            element("goalTimeMode").value = options.GoalTimeMode;
+          }
+          if (Number.isFinite(options.MinimumTravelSavingsRate_deg_s)) {
+            element("minimumTravelSavingsRate").value =
+              options.MinimumTravelSavingsRate_deg_s;
+          }
+          if (typeof options.UnsupportedTimedTopologyPolicy === "string") {
+            element("unsupportedTimedTopologyPolicy").value =
+              options.UnsupportedTimedTopologyPolicy;
+          }
+          element("allowWrapping").checked = Boolean(
+            options.AllowAzimuthWrapping
+          );
+          writeEndpointInputs();
+        } finally {
+          state.applyingResult = false;
+        }
+      }
+
+      function displayNumber(value, digits = 3, suffix = "") {
+        return finiteNumber(value) ? `${value.toFixed(digits)}${suffix}` : "—";
+      }
+
+      function setBooleanMetric(id, value, trueLabel, falseLabel) {
+        const target = element(id);
+        if (typeof value !== "boolean") {
+          target.textContent = "—";
+          target.className = "metric-value";
+          return;
+        }
+        target.textContent = value ? trueLabel : falseLabel;
+        target.className = "metric-value " + (value ? "good" : "bad");
+      }
+
+      function renderResult() {
+        const hasResult = Boolean(state.result);
+        element("resultEmpty").hidden = hasResult;
+        element("resultContent").hidden = !hasResult;
+        element("diagnosticsPanel").hidden = !hasResult;
+        if (!hasResult) {
+          return;
+        }
+        setBooleanMetric("plannerSuccess", Boolean(state.result.Success),
+          "SUCCESS", "FAILURE");
+        setBooleanMetric("validationPassed",
+          Boolean(state.validation && state.validation.Passed),
+          "PASSED", "FAILED");
+        element("arrivalTime").textContent = displayNumber(
+          state.result.ArrivalTime_s, 3, " s"
+        );
+        element("planningTime").textContent = displayNumber(
+          state.result.ElapsedPlanningTime_s, 3, " s"
+        );
+        element("terminationReason").textContent =
+          state.result.TerminationReason || "—";
+        element("resultMessage").textContent = state.result.Message || "";
+        renderDiagnostics();
+      }
+
+      function renderDiagnostics() {
+        const diagnostics = state.result.SearchDiagnostics || {};
+        const grid = diagnostics.Grid || {};
+        element("attemptedSeedCount").textContent =
+          finiteNumber(diagnostics.AttemptedSeedCount) ?
+            String(diagnostics.AttemptedSeedCount) : "—";
+        element("validatedCandidateCount").textContent =
+          finiteNumber(diagnostics.ValidatedCandidateCount) ?
+            String(diagnostics.ValidatedCandidateCount) : "—";
+        element("expandedStateCount").textContent =
+          finiteNumber(grid.ExpandedCount) ? String(grid.ExpandedCount) : "—";
+        element("rejectedTransitionCount").textContent =
+          finiteNumber(grid.RejectedTransitionCount) ?
+            String(grid.RejectedTransitionCount) : "—";
+        renderStageTiming(diagnostics.StageTiming || {});
+        renderSeedSummaries(diagnostics.SeedSummaries);
+        updateOverlayControls(grid);
+      }
+
+      function addObstacle(vertices) {
+        const controls = readControls(false);
+        const margin = controls ? controls.defaultMargin : 0.2;
+        state.obstacles.push({
+          name: `Obstacle ${state.nextObstacleNumber}`,
+          vertices_deg: vertices.map((point) => point.slice()),
+          safetyMargin_deg: margin,
+          motionVelocity_deg_s: [0, 0],
+          motionProfile: "stationary"
+        });
+        state.nextObstacleNumber += 1;
+        state.selectedObstacleIndex = state.obstacles.length - 1;
+      }
+
+      function pointsClose(first, second, tolerance = 1e-8) {
+        return Math.hypot(first[0] - second[0], first[1] - second[1]) <= tolerance;
+      }
+
+      function orientation(first, second, third) {
+        return (second[0] - first[0]) * (third[1] - first[1]) -
+          (second[1] - first[1]) * (third[0] - first[0]);
+      }
+
+      function segmentsIntersect(first, second, third, fourth) {
+        const firstSide = orientation(first, second, third);
+        const secondSide = orientation(first, second, fourth);
+        const thirdSide = orientation(third, fourth, first);
+        const fourthSide = orientation(third, fourth, second);
+        return ((firstSide > 0 && secondSide < 0) || (firstSide < 0 && secondSide > 0)) &&
+          ((thirdSide > 0 && fourthSide < 0) || (thirdSide < 0 && fourthSide > 0));
+      }
+
+      function polygonSelfIntersects(vertices) {
+        for (let firstIndex = 0; firstIndex < vertices.length; firstIndex += 1) {
+          const firstEndIndex = (firstIndex + 1) % vertices.length;
+          for (let secondIndex = firstIndex + 1;
+            secondIndex < vertices.length; secondIndex += 1) {
+            const secondEndIndex = (secondIndex + 1) % vertices.length;
+            const sharesEndpoint = firstIndex === secondIndex ||
+              firstEndIndex === secondIndex || secondEndIndex === firstIndex;
+            if (!sharesEndpoint && segmentsIntersect(vertices[firstIndex],
+                vertices[firstEndIndex], vertices[secondIndex],
+                vertices[secondEndIndex])) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function perpendicularDistance(point, first, second) {
+        const deltaAzimuth = second[0] - first[0];
+        const deltaElevation = second[1] - first[1];
+        const length = Math.hypot(deltaAzimuth, deltaElevation);
+        if (length <= Number.EPSILON) {
+          return Math.hypot(point[0] - first[0], point[1] - first[1]);
+        }
+        return Math.abs(deltaElevation * point[0] - deltaAzimuth * point[1] +
+          second[0] * first[1] - second[1] * first[0]) / length;
+      }
+
+      function simplifyPolyline(points, tolerance_deg) {
+        if (points.length < 3) {
+          return points.slice();
+        }
+        let maximumDistance = 0;
+        let splitIndex = -1;
+        for (let index = 1; index < points.length - 1; index += 1) {
+          const distance = perpendicularDistance(points[index], points[0],
+            points[points.length - 1]);
+          if (distance > maximumDistance) {
+            maximumDistance = distance;
+            splitIndex = index;
+          }
+        }
+        if (splitIndex < 0 || maximumDistance <= tolerance_deg) {
+          return [points[0], points[points.length - 1]];
+        }
+        return simplifyPolyline(points.slice(0, splitIndex + 1), tolerance_deg)
+          .slice(0, -1)
+          .concat(simplifyPolyline(points.slice(splitIndex), tolerance_deg));
+      }
+
+      function simplifyFreehand(points) {
+        let tolerance_deg = 1e-5;
+        let simplified = points;
+        while (simplified.length > FREEHAND_MAXIMUM_VERTICES && tolerance_deg < 360) {
+          simplified = simplifyPolyline(points, tolerance_deg);
+          tolerance_deg *= 1.8;
+        }
+        return simplified;
+      }
+
+      function circleVertices(center, radius_deg) {
+        return Array.from({ length: CIRCLE_VERTEX_COUNT }, (_, index) => {
+          const angle = 2 * Math.PI * index / CIRCLE_VERTEX_COUNT;
+          return [center[0] + radius_deg * Math.cos(angle),
+            center[1] + radius_deg * Math.sin(angle)];
+        });
+      }
+
+      function updateOverlayControls(grid) {
+        const searchCount = matrix(grid.AcceptedEdges_deg, 4).length +
+          matrix(grid.RejectedEdges_deg, 4).length +
+          matrix(grid.ExploredNodes_deg, 2).length +
+          matrix(grid.FrontierNodes_deg, 2).length +
+          matrix(grid.BestPartialRoute_deg, 2).length;
+        const seedCount = matrix(state.result.SelectedSeed_deg, 2).length;
+        const searchToggle = element("searchOverlayToggle");
+        const seedToggle = element("selectedSeedToggle");
+        const noSearchMessage = "No route search was needed for this request.";
+        const noSeedMessage = "No selected seed was returned for this request.";
+        searchToggle.disabled = searchCount === 0;
+        seedToggle.disabled = seedCount < 2;
+        if (searchToggle.disabled) {
+          searchToggle.checked = false;
+          state.showSearchOverlay = false;
+        }
+        if (seedToggle.disabled) {
+          seedToggle.checked = false;
+          state.showSelectedSeed = false;
+        }
+        element("searchOverlayNote").textContent = searchToggle.disabled ?
+          noSearchMessage : "Accepted and rejected graph transitions.";
+        element("selectedSeedNote").textContent = seedToggle.disabled ?
+          noSeedMessage : "Geometric route used to initialize the motion.";
+      }
+
+      function humanizeTimingName(name) {
+        return name
+          .replace("ElapsedTime_s", "")
+          .replace(/([a-z])([A-Z])/g, "$1 $2")
+          .replace(/^./, (letter) => letter.toUpperCase());
+      }
+
+      function renderStageTiming(timing) {
+        const list = element("timingList");
+        list.replaceChildren();
+        const entries = Object.entries(timing).filter(([name, value]) =>
+          name !== "TotalElapsedTime_s" && finiteNumber(value)
+        );
+        const total = finiteNumber(timing.TotalElapsedTime_s) ?
+          timing.TotalElapsedTime_s : entries.reduce((sum, entry) =>
+            sum + entry[1], 0);
+        if (entries.length === 0) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = "No stage timing was returned.";
+          list.append(empty);
+          return;
+        }
+        entries.forEach(([name, value]) => {
+          const row = document.createElement("div");
+          row.className = "timing-row";
+          const label = document.createElement("span");
+          label.textContent = humanizeTimingName(name);
+          const track = document.createElement("span");
+          track.className = "timing-track";
+          const fill = document.createElement("span");
+          fill.className = "timing-fill";
+          fill.style.width = `${total > 0 ? Math.max(1, 100 * value / total) : 0}%`;
+          track.append(fill);
+          const number = document.createElement("span");
+          number.className = "timing-value";
+          number.textContent = `${value.toFixed(4)} s`;
+          row.append(label, track, number);
+          list.append(row);
+        });
+      }
+
+      function booleanPill(value, yesText = "yes", noText = "no") {
+        const pill = document.createElement("span");
+        pill.className = "pill " + (value ? "good" : "bad");
+        pill.textContent = value ? yesText : noText;
+        return pill;
+      }
+
+      function renderSeedSummaries(value) {
+        const body = element("seedTableBody");
+        body.replaceChildren();
+        const summaries = asArray(value);
+        if (summaries.length === 0) {
+          const row = document.createElement("tr");
+          const cell = document.createElement("td");
+          cell.colSpan = 8;
+          cell.textContent = "No seed summaries were returned.";
+          row.append(cell);
+          body.append(row);
+          return;
+        }
+        summaries.forEach((summary) => {
+          const row = document.createElement("tr");
+          const cells = [
+            finiteNumber(summary.SeedIndex) ? String(summary.SeedIndex) : "—",
+            summary.SeedSource || "—"
+          ];
+          cells.forEach((text) => {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            row.append(cell);
+          });
+          const optimizer = document.createElement("td");
+          optimizer.append(booleanPill(Boolean(summary.OptimizerFeasible)));
+          row.append(optimizer);
+          const validation = document.createElement("td");
+          validation.append(booleanPill(Boolean(summary.ValidationPassed)));
+          row.append(validation);
+          const collision = document.createElement("td");
+          collision.append(booleanPill(Boolean(summary.CollisionFree),
+            "free", "not free"));
+          row.append(collision);
+          [
+            displayNumber(summary.ArrivalTime_s, 3),
+            displayNumber(summary.SeedPlanningElapsedTime_s, 3),
+            summary.TerminationReason || "—"
+          ].forEach((text) => {
+            const cell = document.createElement("td");
+            cell.textContent = text;
+            row.append(cell);
+          });
+          body.append(row);
+        });
+      }
+
+      function timelineBounds() {
+        let startTime_s = 0;
+        let endTime_s = numberFromInput("missionTime");
+        if (!finiteNumber(endTime_s) || endTime_s <= startTime_s) {
+          endTime_s = defaultControls.missionTime;
+        }
+        if (state.result && state.result.Inputs) {
+          const initialTime = state.result.Inputs.initialState &&
+            state.result.Inputs.initialState.time_s;
+          const goalTime = state.result.Inputs.goalState &&
+            state.result.Inputs.goalState.time_s;
+          if (finiteNumber(initialTime)) {
+            startTime_s = initialTime;
+          }
+          if (finiteNumber(goalTime) && goalTime > startTime_s) {
+            endTime_s = goalTime;
+          }
+        }
+        state.responseObstacles.forEach((obstacle) => {
+          const times = obstacle.time_s || [];
+          if (times.length > 0) {
+            startTime_s = Math.min(startTime_s, times[0]);
+            endTime_s = Math.max(endTime_s, times[times.length - 1]);
+          }
+        });
+        return [startTime_s, endTime_s];
+      }
+
+      function configureTimeline() {
+        const [minimum, maximum] = timelineBounds();
+        timeSlider.min = String(minimum);
+        timeSlider.max = String(maximum);
+        timeSlider.step = String(Math.max(0.01, (maximum - minimum) / 1200));
+        state.currentTime_s = Math.max(minimum,
+          Math.min(maximum, state.currentTime_s));
+        syncTimelineControl();
+      }
+
+      function syncTimelineControl() {
+        const [minimum, maximum] = timelineBounds();
+        state.currentTime_s = Math.max(minimum,
+          Math.min(maximum, state.currentTime_s));
+        timeSlider.value = String(state.currentTime_s);
+        timeReadout.textContent =
+          `${state.currentTime_s.toFixed(2)} / ${maximum.toFixed(2)} s`;
+      }
+
+      function stopPlayback() {
+        state.playing = false;
+        if (state.animationFrame) {
+          cancelAnimationFrame(state.animationFrame);
+          state.animationFrame = 0;
+        }
+        playButton.textContent = "▶";
+        playButton.setAttribute("aria-label", "Play mission animation");
+      }
+
+      function startPlayback() {
+        const [minimum, maximum] = timelineBounds();
+        if (state.currentTime_s >= maximum - 1e-9) {
+          state.currentTime_s = minimum;
+        }
+        state.playing = true;
+        state.animationLastTime_ms = performance.now();
+        playButton.textContent = "❚❚";
+        playButton.setAttribute("aria-label", "Pause mission animation");
+        state.animationFrame = requestAnimationFrame(advancePlayback);
+      }
+
+      function advancePlayback(now_ms) {
+        if (!state.playing) {
+          return;
+        }
+        const elapsed_s = Math.max(0,
+          (now_ms - state.animationLastTime_ms) / 1000);
+        state.animationLastTime_ms = now_ms;
+        const speed = Number(element("playbackSpeed").value) || 1;
+        const maximum = timelineBounds()[1];
+        state.currentTime_s += elapsed_s * speed;
+        if (state.currentTime_s >= maximum) {
+          state.currentTime_s = maximum;
+          stopPlayback();
+        }
+        syncTimelineControl();
+        draw();
+        if (state.playing) {
+          state.animationFrame = requestAnimationFrame(advancePlayback);
+        }
+      }
+
+      function niceStep(range, targetCount) {
+        const rough = Math.max(Number.EPSILON, range / targetCount);
+        const power = 10 ** Math.floor(Math.log10(rough));
+        const scaled = rough / power;
+        const multiplier = scaled <= 1 ? 1 : scaled <= 2 ? 2 :
+          scaled <= 5 ? 5 : 10;
+        return multiplier * power;
+      }
+
+      function calculatePlotRect(width, height) {
+        const margin = { left: 68, right: 24, top: 34, bottom: 58 };
+        const availableWidth = Math.max(100, width - margin.left - margin.right);
+        const availableHeight = Math.max(100,
+          height - margin.top - margin.bottom);
+        const bounds = workspace();
+        const worldWidth = bounds.azimuth[1] - bounds.azimuth[0];
+        const worldHeight = bounds.elevation[1] - bounds.elevation[0];
+        const worldAspect = worldWidth / worldHeight;
+        let plotWidth = availableWidth;
+        let plotHeight = availableHeight;
+        if (availableWidth / availableHeight > worldAspect) {
+          plotWidth = availableHeight * worldAspect;
+        } else {
+          plotHeight = availableWidth / worldAspect;
+        }
+        return {
+          left: margin.left + (availableWidth - plotWidth) / 2,
+          top: margin.top + (availableHeight - plotHeight) / 2,
+          width: plotWidth,
+          height: plotHeight
+        };
+      }
+
+      function worldToScreen(point) {
+        const bounds = workspace();
+        const rect = state.plotRect;
+        return [
+          rect.left + (point[0] - bounds.azimuth[0]) /
+            (bounds.azimuth[1] - bounds.azimuth[0]) * rect.width,
+          rect.top + (bounds.elevation[1] - point[1]) /
+            (bounds.elevation[1] - bounds.elevation[0]) * rect.height
+        ];
+      }
+
+      function screenToWorld(screenPoint) {
+        const bounds = workspace();
+        const rect = state.plotRect;
+        return [
+          bounds.azimuth[0] + (screenPoint[0] - rect.left) / rect.width *
+            (bounds.azimuth[1] - bounds.azimuth[0]),
+          bounds.elevation[1] - (screenPoint[1] - rect.top) / rect.height *
+            (bounds.elevation[1] - bounds.elevation[0])
+        ];
+      }
+
+      function pointInPlot(screenPoint) {
+        const rect = state.plotRect;
+        return rect && screenPoint[0] >= rect.left &&
+          screenPoint[0] <= rect.left + rect.width &&
+          screenPoint[1] >= rect.top &&
+          screenPoint[1] <= rect.top + rect.height;
+      }
+
+      function canvasPoint(event) {
+        const rectangle = canvas.getBoundingClientRect();
+        return [event.clientX - rectangle.left, event.clientY - rectangle.top];
+      }
+
+      function drawAxes(width, height) {
+        const rect = state.plotRect;
+        const bounds = workspace();
+        context.save();
+        context.fillStyle = "#081522";
+        context.fillRect(rect.left, rect.top, rect.width, rect.height);
+        context.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
+        context.textBaseline = "middle";
+        const xStep = niceStep(bounds.azimuth[1] - bounds.azimuth[0], 9);
+        const yStep = niceStep(bounds.elevation[1] - bounds.elevation[0], 7);
+        const xStart = Math.ceil(bounds.azimuth[0] / xStep) * xStep;
+        const yStart = Math.ceil(bounds.elevation[0] / yStep) * yStep;
+        context.lineWidth = 1;
+        for (let value = xStart;
+          value <= bounds.azimuth[1] + xStep * 1e-8; value += xStep) {
+          const screen = worldToScreen([value, bounds.elevation[0]]);
+          context.strokeStyle = Math.abs(value) < xStep * 1e-8 ?
+            "rgba(95,139,166,0.48)" : "rgba(70,104,130,0.24)";
+          context.beginPath();
+          context.moveTo(screen[0], rect.top);
+          context.lineTo(screen[0], rect.top + rect.height);
+          context.stroke();
+          context.fillStyle = "#8fa7b8";
+          context.textAlign = "center";
+          context.fillText(`${formatTick(value)}°`, screen[0],
+            rect.top + rect.height + 18);
+        }
+        for (let value = yStart;
+          value <= bounds.elevation[1] + yStep * 1e-8; value += yStep) {
+          const screen = worldToScreen([bounds.azimuth[0], value]);
+          context.strokeStyle = Math.abs(value) < yStep * 1e-8 ?
+            "rgba(95,139,166,0.48)" : "rgba(70,104,130,0.24)";
+          context.beginPath();
+          context.moveTo(rect.left, screen[1]);
+          context.lineTo(rect.left + rect.width, screen[1]);
+          context.stroke();
+          context.fillStyle = "#8fa7b8";
+          context.textAlign = "right";
+          context.fillText(`${formatTick(value)}°`, rect.left - 9, screen[1]);
+        }
+        context.strokeStyle = "#65829a";
+        context.lineWidth = 1.2;
+        context.strokeRect(rect.left, rect.top, rect.width, rect.height);
+        context.fillStyle = "#b9ccd7";
+        context.font = "600 12px ui-sans-serif, system-ui, sans-serif";
+        context.textAlign = "center";
+        context.fillText("Azimuth (deg)", rect.left + rect.width / 2,
+          height - 16);
+        context.save();
+        context.translate(17, rect.top + rect.height / 2);
+        context.rotate(-Math.PI / 2);
+        context.fillText("Elevation (deg)", 0, 0);
+        context.restore();
+        context.restore();
+      }
+
+      function formatTick(value) {
+        const rounded = Math.abs(value) < 1e-10 ? 0 : value;
+        return Math.abs(rounded) >= 10 || Number.isInteger(rounded) ?
+          rounded.toFixed(0) : rounded.toFixed(1);
+      }
+
+      function splitRegions(vertices) {
+        const regions = [];
+        let current = [];
+        asArray(vertices).forEach((point) => {
+          const valid = Array.isArray(point) && point.length >= 2 &&
+            finiteNumber(point[0]) && finiteNumber(point[1]);
+          if (valid) {
+            current.push([point[0], point[1]]);
+          } else if (current.length > 0) {
+            regions.push(current);
+            current = [];
+          }
+        });
+        if (current.length > 0) {
+          regions.push(current);
+        }
+        return regions;
+      }
+
+      function strokePath(points, style = {}) {
+        if (!points || points.length < 2) {
+          return;
+        }
+        context.save();
+        context.strokeStyle = style.stroke || "#ffffff";
+        context.lineWidth = style.width || 1.5;
+        context.globalAlpha = style.alpha === undefined ? 1 : style.alpha;
+        context.setLineDash(style.dash || []);
+        context.lineJoin = "round";
+        context.lineCap = "round";
+        context.beginPath();
+        points.forEach((point, index) => {
+          const screen = worldToScreen(point);
+          if (index === 0) {
+            context.moveTo(screen[0], screen[1]);
+          } else {
+            context.lineTo(screen[0], screen[1]);
+          }
+        });
+        if (style.close) {
+          context.closePath();
+        }
+        if (style.fill) {
+          context.fillStyle = style.fill;
+          context.fill();
+        }
+        context.stroke();
+        context.restore();
+      }
+
+      function drawPoint(point, color, label, shape = "circle") {
+        if (!point) {
+          return;
+        }
+        const screen = worldToScreen(point);
+        context.save();
+        context.fillStyle = color;
+        context.strokeStyle = "#07111e";
+        context.lineWidth = 2.5;
+        context.beginPath();
+        if (shape === "diamond") {
+          context.moveTo(screen[0], screen[1] - 7);
+          context.lineTo(screen[0] + 7, screen[1]);
+          context.lineTo(screen[0], screen[1] + 7);
+          context.lineTo(screen[0] - 7, screen[1]);
+          context.closePath();
+        } else {
+          context.arc(screen[0], screen[1], 6.5, 0, Math.PI * 2);
+        }
+        context.fill();
+        context.stroke();
+        context.fillStyle = "#dfeef4";
+        context.font = "650 11px ui-sans-serif, system-ui, sans-serif";
+        context.textAlign = "left";
+        context.fillText(label, screen[0] + 10, screen[1] - 10);
+        context.restore();
+      }
+
+      function interpolateRows(first, second, factor) {
+        if (!Array.isArray(first) || !Array.isArray(second) ||
+            first.length !== second.length) {
+          return factor < 0.5 ? first : second;
+        }
+        const compatible = first.every((point, index) => {
+          const other = second[index];
+          const firstFinite = Array.isArray(point) && point.length >= 2 &&
+            finiteNumber(point[0]) && finiteNumber(point[1]);
+          const secondFinite = Array.isArray(other) && other.length >= 2 &&
+            finiteNumber(other[0]) && finiteNumber(other[1]);
+          return firstFinite === secondFinite;
+        });
+        if (!compatible) {
+          return factor < 0.5 ? first : second;
+        }
+        return first.map((point, index) => {
+          const other = second[index];
+          if (!Array.isArray(point) || !finiteNumber(point[0])) {
+            return [null, null];
+          }
+          return [
+            point[0] + factor * (other[0] - point[0]),
+            point[1] + factor * (other[1] - point[1])
+          ];
+        });
+      }
+
+      function historyAtTime(obstacle, historyName, time_s) {
+        const times = obstacle.time_s || [];
+        const history = obstacle[historyName] || [];
+        if (times.length === 0 || history.length === 0 ||
+            time_s < times[0] - 1e-9 ||
+            time_s > times[times.length - 1] + 1e-9) {
+          return null;
+        }
+        if (times.length === 1 || time_s <= times[0]) {
+          return history[0];
+        }
+        for (let index = 0; index < times.length - 1; index += 1) {
+          if (time_s <= times[index + 1] + 1e-12) {
+            const duration = times[index + 1] - times[index];
+            const factor = duration > 0 ? (time_s - times[index]) / duration : 0;
+            return interpolateRows(history[index], history[index + 1], factor);
+          }
+        }
+        return history[history.length - 1];
+      }
+
+      function drawResponseObstacles() {
+        state.responseObstacles.forEach((obstacle) => {
+          const original = historyAtTime(obstacle,
+            "OriginalVerticesByTime_deg", state.currentTime_s);
+          const protectedVertices = historyAtTime(obstacle,
+            "ProtectedVerticesByTime_deg", state.currentTime_s);
+          splitRegions(original).forEach((region) => strokePath(region, {
+            stroke: "#91a6b8",
+            width: 1.2,
+            fill: "rgba(145,166,184,0.20)",
+            close: true
+          }));
+          splitRegions(protectedVertices).forEach((region) => strokePath(region, {
+            stroke: "#ff7a83",
+            width: 1.7,
+            dash: [7, 5],
+            close: true
+          }));
+        });
+      }
+
+      function centroid(vertices) {
+        if (!vertices.length) {
+          return [0, 0];
+        }
+        return vertices.reduce((sum, point) => [
+          sum[0] + point[0], sum[1] + point[1]
+        ], [0, 0]).map((value) => value / vertices.length);
+      }
+
+      function drawArrow(start, end, isHandle = false) {
+        const startScreen = worldToScreen(start);
+        const endScreen = worldToScreen(end);
+        const angle = Math.atan2(endScreen[1] - startScreen[1],
+          endScreen[0] - startScreen[0]);
+        context.save();
+        context.strokeStyle = "rgba(115,217,154,0.72)";
+        context.fillStyle = "rgba(115,217,154,0.72)";
+        context.lineWidth = 1.6;
+        context.beginPath();
+        context.moveTo(...startScreen);
+        context.lineTo(...endScreen);
+        context.stroke();
+        context.beginPath();
+        context.moveTo(...endScreen);
+        context.lineTo(endScreen[0] - 9 * Math.cos(angle - Math.PI / 6),
+          endScreen[1] - 9 * Math.sin(angle - Math.PI / 6));
+        context.lineTo(endScreen[0] - 9 * Math.cos(angle + Math.PI / 6),
+          endScreen[1] - 9 * Math.sin(angle + Math.PI / 6));
+        context.closePath();
+        context.fill();
+        if (isHandle) {
+          context.fillStyle = "#07111c";
+          context.beginPath();
+          context.arc(endScreen[0], endScreen[1], HANDLE_RADIUS_PX - 2,
+            0, Math.PI * 2);
+          context.fill();
+          context.strokeStyle = "#76e5eb";
+          context.lineWidth = 2;
+          context.beginPath();
+          context.arc(endScreen[0], endScreen[1], HANDLE_RADIUS_PX - 2,
+            0, Math.PI * 2);
+          context.stroke();
+        }
+        context.restore();
+      }
+
+      function drawMotionVector(obstacle, displayedVertices, isSelected) {
+        const hasMotion = obstacle.motionProfile !== "stationary" &&
+          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+        if (!hasMotion) {
+          return;
+        }
+        const center = centroid(displayedVertices);
+        const end = [center[0] + obstacle.motionVelocity_deg_s[0],
+          center[1] + obstacle.motionVelocity_deg_s[1]];
+        drawArrow(center, end, isSelected &&
+          (state.mode === "select" || state.mode === "motion"));
+        const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+        const endScreen = worldToScreen(end);
+        context.save();
+        context.fillStyle = "#9cf2d0";
+        context.font = "650 11px ui-monospace, SFMono-Regular, Consolas, monospace";
+        context.textAlign = "left";
+        context.textBaseline = "bottom";
+        context.fillText(`${speed_deg_s.toFixed(3)} deg/s`,
+          endScreen[0] + 9, endScreen[1] - 7);
+        context.restore();
+      }
+
+      function drawVertexHandles(vertices) {
+        context.save();
+        context.fillStyle = "#07111c";
+        context.strokeStyle = "#76e5eb";
+        context.lineWidth = 1.5;
+        vertices.forEach((point) => {
+          const screen = worldToScreen(point);
+          context.beginPath();
+          context.arc(screen[0], screen[1], 4.5, 0, Math.PI * 2);
+          context.fill();
+          context.stroke();
+        });
+        context.restore();
+      }
+
+      function drawRequestObstacles() {
+        const missionTime = Math.max(Number.EPSILON,
+          numberFromInput("missionTime") || defaultControls.missionTime);
+        state.obstacles.forEach((obstacle, index) => {
+          const offset_deg = motionOffset_deg(
+            obstacle, state.currentTime_s, missionTime
+          );
+          const moved = obstacle.vertices_deg.map((point) => [
+            point[0] + offset_deg[0], point[1] + offset_deg[1]
+          ]);
+          strokePath(moved, {
+            stroke: index === state.selectedObstacleIndex ? "#76e5eb" : "#6aa9ff",
+            width: index === state.selectedObstacleIndex ? 2.2 : 1.4,
+            fill: index === state.selectedObstacleIndex ?
+              "rgba(57,208,216,0.15)" : "rgba(106,169,255,0.13)",
+            close: true
+          });
+          drawMotionVector(obstacle, moved,
+            index === state.selectedObstacleIndex);
+          if (index === state.selectedObstacleIndex && state.mode === "select") {
+            drawVertexHandles(obstacle.vertices_deg);
+          }
+        });
+      }
+
+      function wrapPoint(point) {
+        const controls = readControls(false);
+        if (!controls || !controls.allowWrapping) {
+          return point.slice();
+        }
+        const lower = controls.azimuthMin;
+        const period = controls.azimuthMax - controls.azimuthMin;
+        const wrappedAzimuth = lower +
+          ((point[0] - lower) % period + period) % period;
+        return [wrappedAzimuth, point[1]];
+      }
+
+      function wrappedSegments(points) {
+        if (!points.length) {
+          return [];
+        }
+        const controls = readControls(false);
+        if (!controls || !controls.allowWrapping) {
+          return [points];
+        }
+        const period = controls.azimuthMax - controls.azimuthMin;
+        const segments = [];
+        let current = [wrapPoint(points[0])];
+        for (let index = 1; index < points.length; index += 1) {
+          const wrapped = wrapPoint(points[index]);
+          if (Math.abs(wrapped[0] - current[current.length - 1][0]) >
+              period / 2) {
+            segments.push(current);
+            current = [wrapped];
+          } else {
+            current.push(wrapped);
+          }
+        }
+        segments.push(current);
+        return segments;
+      }
+
+      function drawSearchDiagnostics() {
+        if (!state.result || !state.showSearchOverlay) {
+          return;
+        }
+        const diagnostics = state.result.SearchDiagnostics || {};
+        const grid = diagnostics.Grid || {};
+        matrix(grid.AcceptedEdges_deg, 4).forEach((edge) => {
+          if (edge.every(finiteNumber)) {
+            strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
+              stroke: "#4b7891", width: 0.8, alpha: 0.48
+            });
+          }
+        });
+        matrix(grid.RejectedEdges_deg, 4).forEach((edge) => {
+          if (edge.every(finiteNumber)) {
+            strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
+              stroke: "#ff7a83", width: 0.8, alpha: 0.45, dash: [3, 4]
+            });
+          }
+        });
+        drawDiagnosticNodes(matrix(grid.ExploredNodes_deg, 2),
+          "rgba(106,169,255,0.55)", 2);
+        drawDiagnosticNodes(matrix(grid.FrontierNodes_deg, 2),
+          "rgba(255,189,105,0.85)", 3);
+        const partial = matrix(grid.BestPartialRoute_deg, 2)
+          .filter((point) => point.every(finiteNumber));
+        if (partial.length > 1) {
+          strokePath(partial, {
+            stroke: "#ffbd69", width: 2, dash: [8, 5]
+          });
+        }
+      }
+
+      function drawSelectedSeed() {
+        if (!state.result || !state.showSelectedSeed) {
+          return;
+        }
+        const seed = matrix(state.result.SelectedSeed_deg, 2)
+          .filter((point) => point.every(finiteNumber));
+        if (seed.length >= 2) {
+          wrappedSegments(seed).forEach((segment) => strokePath(segment, {
+            stroke: "#be84ff", width: 2.1, dash: [9, 5], alpha: 0.9
+          }));
+        }
+      }
+
+      function drawDiagnosticNodes(points, color, radius) {
+        context.save();
+        context.fillStyle = color;
+        points.forEach((point) => {
+          if (!point.every(finiteNumber)) {
+            return;
+          }
+          const screen = worldToScreen(point);
+          context.beginPath();
+          context.arc(screen[0], screen[1], radius, 0, Math.PI * 2);
+          context.fill();
+        });
+        context.restore();
+      }
+
+      function trajectoryData() {
+        if (!state.result) {
+          return { times: [], positions: [] };
+        }
+        return {
+          times: numericArray(state.result.time_s),
+          positions: matrix(state.result.position_deg, 2)
+            .filter((point) => point.every(finiteNumber))
+        };
+      }
+
+      function kinematicHistory(fieldName) {
+        if (!state.result) {
+          return [];
+        }
+        const times = numericArray(state.result.time_s);
+        const rows = matrix(state.result[fieldName], 2);
+        const sampleCount = Math.min(times.length, rows.length);
+        const history = [];
+        for (let index = 0; index < sampleCount; index += 1) {
+          if (finiteNumber(times[index]) && rows[index].every(finiteNumber)) {
+            history.push({ time_s: times[index], values: rows[index] });
+          }
+        }
+        return history;
+      }
+
+      function kinematicLimit(fieldName) {
+        const limits = state.result && state.result.Inputs &&
+          state.result.Inputs.limits || {};
+        const limitFields = {
+          velocity_deg_s: "maxVelocity_deg_s",
+          acceleration_deg_s2: "maxAcceleration_deg_s2",
+          jerk_deg_s3: "maxJerk_deg_s3"
+        };
+        return numericArray(limits[limitFields[fieldName]]).slice(0, 2);
+      }
+
+      function resizeChartCanvas(chartCanvas) {
+        const rectangle = chartCanvas.getBoundingClientRect();
+        const ratio = Math.max(1, window.devicePixelRatio || 1);
+        const width = Math.max(1, Math.round(rectangle.width * ratio));
+        const height = Math.max(1, Math.round(rectangle.height * ratio));
+        if (chartCanvas.width !== width || chartCanvas.height !== height) {
+          chartCanvas.width = width;
+          chartCanvas.height = height;
+        }
+        const chartContext = chartCanvas.getContext("2d");
+        chartContext.setTransform(ratio, 0, 0, ratio, 0, 0);
+        return { chartContext, width: rectangle.width, height: rectangle.height };
+      }
+
+      function drawKinematicChart(chartCanvas, fieldName, yLabel) {
+        const { chartContext, width, height } = resizeChartCanvas(chartCanvas);
+        chartContext.clearRect(0, 0, width, height);
+        const history = kinematicHistory(fieldName);
+        if (history.length < 2) {
+          chartContext.fillStyle = "#8298a8";
+          chartContext.font = "11px ui-sans-serif, system-ui, sans-serif";
+          chartContext.textAlign = "center";
+          chartContext.fillText("No returned history", width / 2, height / 2);
+          return false;
+        }
+        const margins = { left: 44, right: 8, top: 8, bottom: 25 };
+        const plotWidth = Math.max(1, width - margins.left - margins.right);
+        const plotHeight = Math.max(1, height - margins.top - margins.bottom);
+        const [timeStart_s, timeEnd_s] = timelineBounds();
+        const safeEnd_s = timeEnd_s > timeStart_s ? timeEnd_s : timeStart_s + 1;
+        const limits = kinematicLimit(fieldName);
+        const magnitudes = history.flatMap((sample) => sample.values.map(Math.abs));
+        limits.forEach((limit) => {
+          if (finiteNumber(limit)) {
+            magnitudes.push(Math.abs(limit));
+          }
+        });
+        const maximum = Math.max(1e-9, ...magnitudes);
+        const yExtent = maximum * 1.12;
+        const xAt = (time_s) => margins.left + (time_s - timeStart_s) /
+          (safeEnd_s - timeStart_s) * plotWidth;
+        const yAt = (value) => margins.top + (yExtent - value) /
+          (2 * yExtent) * plotHeight;
+        chartContext.fillStyle = "#091522";
+        chartContext.fillRect(margins.left, margins.top, plotWidth, plotHeight);
+        chartContext.strokeStyle = "rgba(95,139,166,0.34)";
+        chartContext.lineWidth = 1;
+        chartContext.beginPath();
+        chartContext.moveTo(margins.left, yAt(0));
+        chartContext.lineTo(margins.left + plotWidth, yAt(0));
+        chartContext.stroke();
+        const limitColors = ["rgba(57,208,216,0.74)", "rgba(190,132,255,0.74)"];
+        limits.forEach((limit, axisIndex) => {
+          if (!finiteNumber(limit) || limit <= 0) {
+            return;
+          }
+          chartContext.save();
+          chartContext.strokeStyle = limitColors[axisIndex];
+          chartContext.lineWidth = 1;
+          chartContext.setLineDash([4, 3]);
+          [-limit, limit].forEach((signedLimit) => {
+            chartContext.beginPath();
+            chartContext.moveTo(margins.left, yAt(signedLimit));
+            chartContext.lineTo(margins.left + plotWidth, yAt(signedLimit));
+            chartContext.stroke();
+          });
+          chartContext.restore();
+        });
+        [[0, "#39d0d8"], [1, "#be84ff"]].forEach(([axisIndex, color]) => {
+          chartContext.save();
+          chartContext.strokeStyle = color;
+          chartContext.lineWidth = 1.6;
+          chartContext.lineJoin = "round";
+          chartContext.beginPath();
+          history.forEach((sample, index) => {
+            const x = xAt(sample.time_s);
+            const y = yAt(sample.values[axisIndex]);
+            if (index === 0) {
+              chartContext.moveTo(x, y);
+            } else {
+              chartContext.lineTo(x, y);
+            }
+          });
+          chartContext.stroke();
+          chartContext.restore();
+        });
+        const cursorTime_s = Math.max(timeStart_s,
+          Math.min(safeEnd_s, state.currentTime_s));
+        chartContext.save();
+        chartContext.strokeStyle = "#ffbd69";
+        chartContext.lineWidth = 1.1;
+        chartContext.setLineDash([3, 3]);
+        chartContext.beginPath();
+        chartContext.moveTo(xAt(cursorTime_s), margins.top);
+        chartContext.lineTo(xAt(cursorTime_s), margins.top + plotHeight);
+        chartContext.stroke();
+        chartContext.restore();
+        chartContext.fillStyle = "#9eb4c2";
+        chartContext.font = "10px ui-monospace, SFMono-Regular, Consolas, monospace";
+        chartContext.textAlign = "right";
+        chartContext.fillText(yExtent.toPrecision(3), margins.left - 4,
+          margins.top + 5);
+        chartContext.fillText((-yExtent).toPrecision(3), margins.left - 4,
+          margins.top + plotHeight);
+        chartContext.textAlign = "center";
+        chartContext.fillText("Time (s)", margins.left + plotWidth / 2,
+          height - 3);
+        chartContext.save();
+        chartContext.translate(10, margins.top + plotHeight / 2);
+        chartContext.rotate(-Math.PI / 2);
+        chartContext.fillText(yLabel, 0, 0);
+        chartContext.restore();
+        return true;
+      }
+
+      function drawKinematicCharts() {
+        const chartDefinitions = [
+          [kinematicCharts.velocity, "velocity_deg_s", "deg/s"],
+          [kinematicCharts.acceleration, "acceleration_deg_s2", "deg/s²"],
+          [kinematicCharts.jerk, "jerk_deg_s3", "deg/s³"]
+        ];
+        const hasKinematics = chartDefinitions.some((definition) =>
+          kinematicHistory(definition[1]).length >= 2
+        );
+        element("kinematicsCharts").hidden = !hasKinematics;
+        element("kinematicsEmpty").hidden = hasKinematics;
+        if (!hasKinematics) {
+          element("kinematicsEmpty").textContent = state.result ?
+            "No returned kinematic history is available for this result." :
+            "Load a successful result to inspect returned motion histories.";
+          return;
+        }
+        chartDefinitions.forEach(([chartCanvas, fieldName, yLabel]) => {
+          drawKinematicChart(chartCanvas, fieldName, yLabel);
+        });
+      }
+
+      function trajectoryPointAt(time_s) {
+        const data = trajectoryData();
+        const sampleCount = Math.min(data.times.length, data.positions.length);
+        if (sampleCount === 0) {
+          return null;
+        }
+        if (time_s <= data.times[0]) {
+          return data.positions[0];
+        }
+        if (time_s >= data.times[sampleCount - 1]) {
+          return data.positions[sampleCount - 1];
+        }
+        for (let index = 0; index < sampleCount - 1; index += 1) {
+          if (time_s <= data.times[index + 1]) {
+            const duration = data.times[index + 1] - data.times[index];
+            const factor = duration > 0 ?
+              (time_s - data.times[index]) / duration : 0;
+            return [
+              data.positions[index][0] + factor *
+                (data.positions[index + 1][0] - data.positions[index][0]),
+              data.positions[index][1] + factor *
+                (data.positions[index + 1][1] - data.positions[index][1])
+            ];
+          }
+        }
+        return data.positions[sampleCount - 1];
+      }
+
+      function elapsedTrajectory(time_s) {
+        const data = trajectoryData();
+        const sampleCount = Math.min(data.times.length, data.positions.length);
+        if (sampleCount === 0 || time_s < data.times[0]) {
+          return [];
+        }
+        const elapsed = [];
+        for (let index = 0; index < sampleCount; index += 1) {
+          if (data.times[index] <= time_s) {
+            elapsed.push(data.positions[index]);
+          } else {
+            break;
+          }
+        }
+        const current = trajectoryPointAt(time_s);
+        if (current && (elapsed.length === 0 ||
+            current[0] !== elapsed[elapsed.length - 1][0] ||
+            current[1] !== elapsed[elapsed.length - 1][1])) {
+          elapsed.push(current);
+        }
+        return elapsed;
+      }
+
+      function drawTrajectory() {
+        const data = trajectoryData();
+        if (data.positions.length < 2) {
+          return;
+        }
+        wrappedSegments(data.positions).forEach((segment) => strokePath(segment, {
+          stroke: "rgba(233,244,248,0.62)", width: 2.2
+        }));
+        wrappedSegments(elapsedTrajectory(state.currentTime_s))
+          .forEach((segment) => strokePath(segment, {
+            stroke: "#39d0d8", width: 3.2
+          }));
+        const current = trajectoryPointAt(state.currentTime_s);
+        if (current) {
+          // The moving marker passes over the start and goal labels. Measure
+          // the text instead of guessing a distance, and drop the marker
+          // label only when its box would actually overlap one of them. The
+          // diamond shape still identifies the marker without a label.
+          const labelBox = (point, text) => {
+            const screen = worldToScreen(point);
+            const width = context.measureText(text).width;
+            return [screen[0] + 10, screen[1] - 21,
+              screen[0] + 10 + width, screen[1] - 8];
+          };
+          const overlaps = (a, b) => a[0] < b[2] && b[0] < a[2] &&
+            a[1] < b[3] && b[1] < a[3];
+          context.save();
+          context.font = "650 11px ui-sans-serif, system-ui, sans-serif";
+          const markerBox = labelBox(wrapPoint(current), "Pointing");
+          const anchors = [[state.start, "Start"], [state.goal, "Goal"]];
+          const collides = anchors.some(([anchor, text]) =>
+            anchor && overlaps(markerBox, labelBox(anchor, text)));
+          context.restore();
+          drawPoint(wrapPoint(current), "#39d0d8",
+            collides ? "" : "Pointing", "diamond");
+        }
+      }
+
+      function drawDraft() {
+        if (state.polygonDraft.length === 0) {
+          return;
+        }
+        strokePath(state.polygonDraft, {
+          stroke: "#76e5eb", width: 1.7, dash: [6, 4]
+        });
+        context.save();
+        context.fillStyle = "#76e5eb";
+        state.polygonDraft.forEach((point) => {
+          const screen = worldToScreen(point);
+          context.beginPath();
+          context.arc(screen[0], screen[1], 3.5, 0, Math.PI * 2);
+          context.fill();
+        });
+        context.restore();
+      }
+
+      function drawTransientDrafts() {
+        if (state.circlePreview) {
+          const vertices = circleVertices(state.circlePreview.center,
+            state.circlePreview.radius_deg);
+          strokePath(vertices, {
+            stroke: "#76e5eb", width: 1.7, dash: [6, 4],
+            fill: "rgba(118,229,235,0.08)", close: true
+          });
+        }
+        if (state.freehandDraft.length > 1) {
+          strokePath(state.freehandDraft, {
+            stroke: "#76e5eb", width: 1.7, dash: [4, 3]
+          });
+        }
+      }
+
+      function drawCrosshair() {
+        if (!state.cursor || !pointInsideWorkspace(state.cursor)) {
+          return;
+        }
+        const screen = worldToScreen(state.cursor);
+        const rect = state.plotRect;
+        context.save();
+        context.strokeStyle = "rgba(214,235,242,0.27)";
+        context.lineWidth = 0.8;
+        context.setLineDash([3, 4]);
+        context.beginPath();
+        context.moveTo(rect.left, screen[1]);
+        context.lineTo(rect.left + rect.width, screen[1]);
+        context.moveTo(screen[0], rect.top);
+        context.lineTo(screen[0], rect.top + rect.height);
+        context.stroke();
+        context.restore();
+      }
+
+      function draw() {
+        const rectangle = canvas.getBoundingClientRect();
+        const width = Math.max(1, rectangle.width);
+        const height = Math.max(1, rectangle.height);
+        const ratio = Math.max(1, window.devicePixelRatio || 1);
+        const targetWidth = Math.round(width * ratio);
+        const targetHeight = Math.round(height * ratio);
+        if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+          canvas.width = targetWidth;
+          canvas.height = targetHeight;
+        }
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.clearRect(0, 0, width, height);
+        state.plotRect = calculatePlotRect(width, height);
+        drawAxes(width, height);
+        context.save();
+        context.beginPath();
+        context.rect(state.plotRect.left, state.plotRect.top,
+          state.plotRect.width, state.plotRect.height);
+        context.clip();
+        drawSearchDiagnostics();
+        drawSelectedSeed();
+        if (state.responseObstacles.length > 0) {
+          drawResponseObstacles();
+        } else {
+          drawRequestObstacles();
+        }
+        if (state.start && state.goal) {
+          wrappedSegments([state.start, state.goal]).forEach((segment) =>
+            strokePath(segment, {
+              stroke: "#6aa9ff", width: 1.1, dash: [7, 6], alpha: 0.62
+            })
+          );
+        }
+        drawTrajectory();
+        drawDraft();
+        drawTransientDrafts();
+        drawPoint(state.start, "#73d99a", "Start");
+        drawPoint(state.goal, "#ff7a83", "Goal");
+        drawCrosshair();
+        context.restore();
+        drawKinematicCharts();
+      }
+
+      function updateCoordinateReadout(point) {
+        if (!point || !pointInsideWorkspace(point)) {
+          coordinateReadout.textContent = "Az —° · El —°";
+          return;
+        }
+        coordinateReadout.textContent =
+          `Az ${point[0].toFixed(3)}° · El ${point[1].toFixed(3)}°`;
+      }
+
+      function clampToWorkspace(point) {
+        const bounds = workspace();
+        return [Math.max(bounds.azimuth[0], Math.min(bounds.azimuth[1], point[0])),
+          Math.max(bounds.elevation[0], Math.min(bounds.elevation[1], point[1]))];
+      }
+
+      function screenDistance(point, screenPoint) {
+        const screen = worldToScreen(point);
+        return Math.hypot(screen[0] - screenPoint[0], screen[1] - screenPoint[1]);
+      }
+
+      function selectedMotionHandle() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected || selected.motionProfile === "stationary" ||
+            Math.hypot(...selected.motionVelocity_deg_s) <= 1e-12) {
+          return null;
+        }
+        const missionTime_s = Math.max(Number.EPSILON,
+          numberFromInput("missionTime") || defaultControls.missionTime);
+        const offset_deg = motionOffset_deg(
+          selected, state.currentTime_s, missionTime_s
+        );
+        const initialCenter = centroid(selected.vertices_deg);
+        const center = [initialCenter[0] + offset_deg[0],
+          initialCenter[1] + offset_deg[1]];
+        return [center[0] + selected.motionVelocity_deg_s[0],
+          center[1] + selected.motionVelocity_deg_s[1]];
+      }
+
+      function selectDragTarget(point, screenPoint) {
+        const motionHandle = selectedMotionHandle();
+        if (motionHandle && screenDistance(motionHandle, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "motion", obstacleIndex: state.selectedObstacleIndex };
+        }
+        for (let obstacleIndex = state.obstacles.length - 1;
+          obstacleIndex >= 0; obstacleIndex -= 1) {
+          const vertices = state.obstacles[obstacleIndex].vertices_deg;
+          for (let vertexIndex = 0; vertexIndex < vertices.length; vertexIndex += 1) {
+            if (screenDistance(vertices[vertexIndex], screenPoint) <= HANDLE_RADIUS_PX) {
+              return { type: "vertex", obstacleIndex, vertexIndex };
+            }
+          }
+        }
+        if (state.start && screenDistance(state.start, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "start" };
+        }
+        if (state.goal && screenDistance(state.goal, screenPoint) <= HANDLE_RADIUS_PX) {
+          return { type: "goal" };
+        }
+        for (let obstacleIndex = state.obstacles.length - 1;
+          obstacleIndex >= 0; obstacleIndex -= 1) {
+          if (pointInPolygon(point, state.obstacles[obstacleIndex].vertices_deg)) {
+            return { type: "obstacle", obstacleIndex };
+          }
+        }
+        return null;
+      }
+
+      function beginSceneDrag(target, point, pointerId) {
+        const drag = { ...target, pointerId, startPoint: point.slice(), wasClamped: false };
+        if (target.type === "vertex" || target.type === "obstacle") {
+          const obstacle = state.obstacles[target.obstacleIndex];
+          drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
+          if (target.type === "obstacle") {
+            const azimuthValues = obstacle.vertices_deg.map((vertex) => vertex[0]);
+            const elevationValues = obstacle.vertices_deg.map((vertex) => vertex[1]);
+            const bounds = workspace();
+            drag.offsetBounds = {
+              azimuth: [bounds.azimuth[0] - Math.min(...azimuthValues),
+                bounds.azimuth[1] - Math.max(...azimuthValues)],
+              elevation: [bounds.elevation[0] - Math.min(...elevationValues),
+                bounds.elevation[1] - Math.max(...elevationValues)]
+            };
+          }
+        } else if (target.type === "motion") {
+          const obstacle = state.obstacles[target.obstacleIndex];
+          drag.originalVelocity_deg_s = obstacle.motionVelocity_deg_s.slice();
+          drag.originalProfile = obstacle.motionProfile;
+          const handle = selectedMotionHandle();
+          drag.origin_deg = [
+            handle[0] - obstacle.motionVelocity_deg_s[0],
+            handle[1] - obstacle.motionVelocity_deg_s[1]
+          ];
+        }
+        state.activeDrag = drag;
+        if (target.obstacleIndex !== undefined) {
+          state.selectedObstacleIndex = target.obstacleIndex;
+          renderObstacleEditor();
+          updateActionAvailability();
+        }
+      }
+
+      function markDragChanged(drag, point) {
+        if (drag.didChange || pointsClose(drag.startPoint, point)) {
+          return;
+        }
+        drag.didChange = true;
+        invalidateResult("Scene changed while dragging.");
+      }
+
+      function updateMotionInputs(vector) {
+        element("motionAzimuth").value = vector[0].toFixed(3);
+        element("motionElevation").value = vector[1].toFixed(3);
+        updateMotionSpeedReadout(vector);
+      }
+
+      function updateMotionSpeedReadout(vector) {
+        const speed_deg_s = Math.hypot(...vector);
+        element("motionSpeedReadout").textContent =
+          `Speed magnitude: ${speed_deg_s.toFixed(3)} deg/s`;
+      }
+
+      function updateActiveDrag(point) {
+        const drag = state.activeDrag;
+        if (!drag) {
+          return;
+        }
+        if (drag.type === "circle") {
+          const maximumRadius = Math.min(drag.center[0] - workspace().azimuth[0],
+            workspace().azimuth[1] - drag.center[0],
+            drag.center[1] - workspace().elevation[0],
+            workspace().elevation[1] - drag.center[1]);
+          const radius_deg = Math.min(maximumRadius,
+            Math.hypot(point[0] - drag.center[0], point[1] - drag.center[1]));
+          state.circlePreview = { center: drag.center, radius_deg };
+          coordinateReadout.textContent = `Radius ${radius_deg.toFixed(3)} deg`;
+          draw();
+          return;
+        }
+        if (drag.type === "freehand") {
+          const clamped = clampToWorkspace(point);
+          if (!pointsClose(clamped, state.freehandDraft[state.freehandDraft.length - 1], 1e-4)) {
+            state.freehandDraft.push(clamped);
+          }
+          updateCoordinateReadout(clamped);
+          draw();
+          return;
+        }
+        if (drag.type === "motion") {
+          const obstacle = state.obstacles[drag.obstacleIndex];
+          const center = drag.origin_deg;
+          markDragChanged(drag, point);
+          obstacle.motionVelocity_deg_s = [
+            point[0] - center[0], point[1] - center[1]
+          ];
+          updateMotionInputs(obstacle.motionVelocity_deg_s);
+          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+          coordinateReadout.textContent = `Speed ${speed_deg_s.toFixed(3)} deg/s`;
+          draw();
+          return;
+        }
+        let clamped = clampToWorkspace(point);
+        drag.wasClamped ||= !pointsClose(point, clamped);
+        markDragChanged(drag, clamped);
+        if (drag.type === "start" || drag.type === "goal") {
+          state[drag.type] = clamped;
+          writeEndpointInputs();
+        } else if (drag.type === "vertex") {
+          state.obstacles[drag.obstacleIndex].vertices_deg[drag.vertexIndex] = clamped;
+        } else if (drag.type === "obstacle") {
+          const requestedOffset = [clamped[0] - drag.startPoint[0],
+            clamped[1] - drag.startPoint[1]];
+          const offset = [Math.max(drag.offsetBounds.azimuth[0],
+            Math.min(drag.offsetBounds.azimuth[1], requestedOffset[0])),
+          Math.max(drag.offsetBounds.elevation[0],
+            Math.min(drag.offsetBounds.elevation[1], requestedOffset[1]))];
+          drag.wasClamped ||= !pointsClose(requestedOffset, offset);
+          state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices
+            .map((vertex) => [vertex[0] + offset[0], vertex[1] + offset[1]]);
+          clamped = [drag.startPoint[0] + offset[0], drag.startPoint[1] + offset[1]];
+        }
+        updateCoordinateReadout(clamped);
+        draw();
+      }
+
+      function finishActiveDrag() {
+        const drag = state.activeDrag;
+        if (!drag) {
+          return;
+        }
+        state.activeDrag = null;
+        if (drag.type === "circle") {
+          const preview = state.circlePreview;
+          state.circlePreview = null;
+          if (!preview || preview.radius_deg <= 1e-6) {
+            setStatus("Circle radius must be greater than zero.", "warning");
+          } else {
+            addObstacle(circleVertices(preview.center, preview.radius_deg));
+            invalidateResult("Obstacle geometry changed.");
+            renderObstacleEditor();
+            activateMode("select");
+            setStatus(`24-vertex circle added (radius ${preview.radius_deg.toFixed(3)} deg).`,
+              "success");
+          }
+        } else if (drag.type === "freehand") {
+          const raw = state.freehandDraft;
+          state.freehandDraft = [];
+          const vertices = simplifyFreehand(raw);
+          if (vertices.length < 3 || polygonArea(vertices) <= 1e-10) {
+            setStatus("The polygon has no enclosed area. Draw a wider outline.", "error");
+          } else if (polygonSelfIntersects(raw) || polygonSelfIntersects(vertices)) {
+            setStatus("The outline crosses itself, please redraw.", "error");
+          } else {
+            addObstacle(vertices);
+            invalidateResult("Obstacle geometry changed.");
+            renderObstacleEditor();
+            activateMode("select");
+            setStatus(`Freehand polygon added with ${vertices.length} vertices.`, "success");
+          }
+        } else if (drag.type === "vertex") {
+          const vertices = state.obstacles[drag.obstacleIndex].vertices_deg;
+          if (polygonArea(vertices) <= 1e-10) {
+            state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices;
+            setStatus("The polygon has no enclosed area. Vertex move was refused.", "error");
+          } else if (drag.wasClamped) {
+            setStatus("Move stopped at the workspace boundary.", "warning");
+          }
+        } else if ((drag.type === "start" || drag.type === "goal") && drag.wasClamped) {
+          setStatus("Endpoint move stopped at the workspace boundary.", "warning");
+        } else if (drag.type === "obstacle" && drag.wasClamped) {
+          setStatus("Polygon move stopped at the workspace boundary.", "warning");
+        } else if (drag.type === "motion") {
+          const obstacle = state.obstacles[drag.obstacleIndex];
+          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+          if (speed_deg_s <= 1e-9) {
+            obstacle.motionVelocity_deg_s = drag.originalVelocity_deg_s.slice();
+            obstacle.motionProfile = drag.originalProfile;
+            setStatus("The motion vector must have nonzero speed.", "warning");
+          } else {
+            if (obstacle.motionProfile === "stationary") {
+              obstacle.motionProfile = "nonzeroVelocity";
+            }
+            setStatus(
+              `${obstacle.name} speed set to ${speed_deg_s.toFixed(3)} deg/s.`,
+              "success"
+            );
+          }
+          if (drag.startedBySetMotion) {
+            activateMode("select");
+          }
+        }
+        renderObstacleEditor();
+        updateActionAvailability();
+        draw();
+      }
+
+      function handleCanvasPointerDown(event) {
+        if (event.button !== 0) {
+          return;
+        }
+        if (state.isPlanning) {
+          setStatus("Planning is active; request editing is temporarily locked.",
+            "warning");
+          return;
+        }
+        const screenPoint = canvasPoint(event);
+        if (!pointInPlot(screenPoint)) {
+          setStatus("The selected point is outside the workspace rectangle.",
+            "warning");
+          return;
+        }
+        const point = screenToWorld(screenPoint);
+        if (!pointInsideWorkspace(point)) {
+          return;
+        }
+        if (state.importedSceneIsReadOnly && state.mode !== "select") {
+          setStatus(
+            "This imported obstacle scene is inspection-only. Select Reset " +
+            "before creating a new request.", "warning"
+          );
+          return;
+        }
+        if (state.mode === "select") {
+          if (state.importedSceneIsReadOnly) {
+            setStatus("This imported result is inspection-only. Select Reset to edit a scene.",
+              "warning");
+            return;
+          }
+          const target = selectDragTarget(point, screenPoint);
+          if (!target) {
+            selectObstacleAt(point);
+            return;
+          }
+          beginSceneDrag(target, point, event.pointerId);
+          canvas.setPointerCapture(event.pointerId);
+          draw();
+        } else if (state.mode === "start") {
+          state.start = point;
+          writeEndpointInputs();
+          invalidateResult("Start position changed.");
+          activateMode("goal");
+          setStatus("Start set. Click once to place the goal.", "success");
+        } else if (state.mode === "goal") {
+          state.goal = point;
+          writeEndpointInputs();
+          invalidateResult("Goal position changed.");
+          activateMode("polygon");
+          setStatus(
+            "Goal set. Draw polygon vertices, or download an obstacle-free request.",
+            "success"
+          );
+        } else if (state.mode === "polygon") {
+          const previous = state.polygonDraft[state.polygonDraft.length - 1];
+          if (previous && Math.hypot(point[0] - previous[0],
+              point[1] - previous[1]) <= 1e-6) {
+            setStatus("That vertex duplicates the previous vertex.", "warning");
+            return;
+          }
+          state.polygonDraft.push(point);
+          updateActionAvailability();
+          setStatus(
+            `Polygon has ${state.polygonDraft.length} vertices. ` +
+            "Right-click or press Enter to finish.", "info"
+          );
+          draw();
+        } else if (state.mode === "circle") {
+          state.activeDrag = { type: "circle", pointerId: event.pointerId,
+            center: point.slice() };
+          state.circlePreview = { center: point.slice(), radius_deg: 0 };
+          canvas.setPointerCapture(event.pointerId);
+        } else if (state.mode === "freehand") {
+          state.activeDrag = { type: "freehand", pointerId: event.pointerId };
+          state.freehandDraft = [point.slice()];
+          canvas.setPointerCapture(event.pointerId);
+        } else if (state.mode === "motion") {
+          const obstacleIndex = state.selectedObstacleIndex;
+          const obstacle = state.obstacles[obstacleIndex];
+          if (!obstacle) {
+            activateMode("select");
+            setStatus("Select a polygon before setting its motion.", "warning");
+            return;
+          }
+          const center = centroid(obstacle.vertices_deg);
+          state.activeDrag = {
+            type: "motion",
+            obstacleIndex,
+            pointerId: event.pointerId,
+            startPoint: center,
+            originalVelocity_deg_s: obstacle.motionVelocity_deg_s.slice(),
+            originalProfile: obstacle.motionProfile,
+            origin_deg: center,
+            startedBySetMotion: true,
+            wasClamped: false
+          };
+          if (obstacle.motionProfile === "stationary") {
+            obstacle.motionProfile = "nonzeroVelocity";
+          }
+          updateActiveDrag(point);
+          canvas.setPointerCapture(event.pointerId);
+        }
+      }
+
+      function resetScene() {
+        stopPlayback();
+        state.start = null;
+        state.goal = null;
+        state.polygonDraft = [];
+        state.freehandDraft = [];
+        state.circlePreview = null;
+        state.activeDrag = null;
+        state.obstacles = [];
+        state.selectedObstacleIndex = -1;
+        state.nextObstacleNumber = 1;
+        state.cursor = null;
+        state.result = null;
+        state.validation = null;
+        state.responseObstacles = [];
+        state.lastRequestId = "";
+        state.bundleRequestId = "";
+        state.showSearchOverlay = false;
+        state.showSelectedSeed = false;
+        element("searchOverlayToggle").checked = false;
+        element("selectedSeedToggle").checked = false;
+        state.importedSceneIsReadOnly = false;
+        state.currentTime_s = 0;
+        Object.entries(defaultControls).forEach(([id, value]) => {
+          const input = element(id);
+          if (!input) {
+            return;
+          }
+          if (input.type === "checkbox") {
+            input.checked = value;
+          } else {
+            input.value = value;
+          }
+        });
+        state.lastValidWorkspace = {
+          azimuth: [defaultControls.azimuthMin, defaultControls.azimuthMax],
+          elevation: [defaultControls.elevationMin, defaultControls.elevationMax]
+        };
+        updatePlanningControls();
+        writeEndpointInputs();
+        renderObstacleEditor();
+        renderResult();
+        configureTimeline();
+        activateMode("start");
+        updateCoordinateReadout(null);
+        const action = state.connectionMode === "live" ?
+          "then select Plan in MATLAB." : "then download a request.";
+        setStatus(
+          `Scene reset. Place a start, a goal, and any polygon obstacles, ${action}`,
+          "success"
+        );
+      }
+
+      function windowsFilePathFromLocation() {
+        if (window.location.protocol !== "file:") {
+          return "<repository>\\offlinesandbox";
+        }
+        let path = decodeURIComponent(window.location.pathname);
+        if (/^\/[A-Za-z]:\//.test(path)) {
+          path = path.slice(1);
+        }
+        path = path.replace(/\//g, "\\");
+        return path.slice(0, path.lastIndexOf("\\"));
+      }
+
+      function matlabCommandText() {
+        const localFileFolder = windowsFilePathFromLocation();
+        const discoveredFolder = window.location.protocol === "file:" ?
+          localFileFolder : state.sandboxFolder || localFileFolder;
+        const sandboxFolder = discoveredFolder.replace(/"/g, '""');
+        return `addpath("${sandboxFolder}");\n` +
+          "requestFile = fullfile(getenv(\"USERPROFILE\"), " +
+          "\"Downloads\", \"az-el-request.json\");\n" +
+          "resultFile = fullfile(getenv(\"USERPROFILE\"), " +
+          "\"Downloads\", \"az-el-result.json\");\n" +
+          "offlineSandbox.runPlanningRequest(requestFile, resultFile);";
+      }
+
+      function copyMatlabCommand() {
+        const text = matlabCommandText();
+        const fallback = () => {
+          const textArea = document.createElement("textarea");
+          textArea.value = text;
+          textArea.style.position = "fixed";
+          textArea.style.opacity = "0";
+          document.body.append(textArea);
+          textArea.select();
+          const copied = document.execCommand("copy");
+          textArea.remove();
+          setStatus(copied ? "MATLAB command copied." :
+            "Copy was blocked. Select the command text manually.",
+          copied ? "success" : "warning");
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text)
+            .then(() => setStatus("MATLAB command copied.", "success"))
+            .catch(fallback);
+        } else {
+          fallback();
+        }
+      }
+
+      document.querySelectorAll("[data-mode]").forEach((button) => {
+        button.addEventListener("click", () => activateMode(button.dataset.mode));
+      });
+      element("finishPolygonButton").addEventListener("click", finishPolygon);
+      element("applyEndpointsButton").addEventListener("click",
+        applyEndpointInputs);
+      element("undoVertexButton").addEventListener("click", () => {
+        state.polygonDraft.pop();
+        updateActionAvailability();
+        draw();
+      });
+      element("deleteObstacleButton").addEventListener("click",
+        deleteSelectedObstacle);
+      element("deleteEditorButton").addEventListener("click",
+        deleteSelectedObstacle);
+      element("setMotionButton").addEventListener("click",
+        activateMotionDrawing);
+      element("zeroMotionButton").addEventListener("click", () => {
+        element("motionAzimuth").value = 0;
+        element("motionElevation").value = 0;
+        element("motionProfile").value = "stationary";
+        updateSelectedObstacle();
+      });
+      ["selectedMargin", "motionProfile", "motionAzimuth", "motionElevation"]
+        .forEach((id) => element(id).addEventListener("change",
+          updateSelectedObstacle));
+      controlIds.forEach((id) => {
+        const input = element(id);
+        input.addEventListener("change", () => {
+          syncValidControls();
+          invalidateResult("Planner inputs changed.");
+        });
+        if (input.type === "number") {
+          input.addEventListener("input", syncValidControls);
+        }
+      });
+      element("planButton").addEventListener("click", planLive);
+      element("cancelPlanButton").addEventListener("click", cancelLivePlan);
+      element("downloadBundleButton").addEventListener(
+        "click", downloadLiveBundle);
+      element("bundleFileInput").addEventListener("change", (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (file) {
+          runBundleFile(file);
+        }
+      });
+      element("downloadRequestButton").addEventListener("click", downloadRequest);
+      element("resultFileInput").addEventListener("change", (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (file) {
+          readResultFile(file);
+        }
+      });
+      element("copyCommandButton").addEventListener("click", copyMatlabCommand);
+      element("resetButton").addEventListener("click", resetScene);
+      element("searchOverlayToggle").addEventListener("change", (event) => {
+        state.showSearchOverlay = event.target.checked;
+        draw();
+      });
+      element("selectedSeedToggle").addEventListener("change", (event) => {
+        state.showSelectedSeed = event.target.checked;
+        draw();
+      });
+      playButton.addEventListener("click", () => {
+        if (state.playing) {
+          stopPlayback();
+        } else {
+          startPlayback();
+        }
+      });
+      timeSlider.addEventListener("input", () => {
+        stopPlayback();
+        state.currentTime_s = Number(timeSlider.value);
+        syncTimelineControl();
+        draw();
+      });
+      canvas.addEventListener("pointerdown", handleCanvasPointerDown);
+      canvas.addEventListener("pointermove", (event) => {
+        const screenPoint = canvasPoint(event);
+        state.cursor = pointInPlot(screenPoint) ? screenToWorld(screenPoint) : null;
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          updateActiveDrag(state.cursor || clampToWorkspace(screenToWorld(screenPoint)));
+        } else {
+          updateCoordinateReadout(state.cursor);
+          draw();
+        }
+      });
+      canvas.addEventListener("pointerup", (event) => {
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+          finishActiveDrag();
+        }
+      });
+      canvas.addEventListener("pointercancel", (event) => {
+        if (state.activeDrag && state.activeDrag.pointerId === event.pointerId) {
+          if (canvas.hasPointerCapture(event.pointerId)) {
+            canvas.releasePointerCapture(event.pointerId);
+          }
+          finishActiveDrag();
+        }
+      });
+      canvas.addEventListener("pointerleave", () => {
+        if (state.activeDrag) {
+          return;
+        }
+        state.cursor = null;
+        updateCoordinateReadout(null);
+        draw();
+      });
+      canvas.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        if (state.mode === "polygon") {
+          finishPolygon();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.target instanceof HTMLInputElement ||
+            event.target instanceof HTMLSelectElement) {
+          return;
+        }
+        if (state.isPlanning) {
+          return;
+        }
+        const key = event.key.toLowerCase();
+        if (key === "v") {
+          activateMode("select");
+        } else if (key === "s") {
+          activateMode("start");
+        } else if (key === "g") {
+          activateMode("goal");
+        } else if (key === "p") {
+          activateMode("polygon");
+        } else if (key === "c") {
+          activateMode("circle");
+        } else if (key === "f") {
+          activateMode("freehand");
+        } else if (event.key === "Enter" && state.mode === "polygon") {
+          finishPolygon();
+        } else if (event.key === "Escape" && state.polygonDraft.length > 0) {
+          state.polygonDraft = [];
+          updateActionAvailability();
+          setStatus("Unfinished polygon canceled.", "warning");
+          draw();
+        } else if (event.key === "Backspace" &&
+            state.mode === "polygon" && state.polygonDraft.length > 0) {
+          event.preventDefault();
+          state.polygonDraft.pop();
+          updateActionAvailability();
+          draw();
+        }
+      });
+
+      const resizeObserver = new ResizeObserver(draw);
+      resizeObserver.observe(canvasWrap);
+      element("matlabCommand").textContent = matlabCommandText();
+      writeEndpointInputs();
+      renderObstacleEditor();
+      renderResult();
+      configureTimeline();
+      activateMode("start");
+      setConnectionMode("checking", "", false);
+      draw();
+      probeServer(true);
+      window.setInterval(() => probeServer(false), HEALTH_POLL_MS);
+    })();
+  </script>
+</body>
+</html>

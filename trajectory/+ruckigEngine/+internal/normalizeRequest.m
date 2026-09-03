@@ -11,12 +11,15 @@ function [initialState, terminalState, limits, pathConstraints] = ...
 %**************************************************************************
 % INPUTS
 %   - initialState (scalar struct)
-%       Fields time, position, velocity, and acceleration are required.
+%       Fields time, position, and velocity are required. Acceleration may
+%       be omitted only together with terminal acceleration and maximumJerk
+%       to request the second-order acceleration-controlled interface.
 %   - terminalState (scalar struct)
-%       Position, velocity, acceleration, and maximumTime are required.
+%       Position, velocity, and maximumTime are required. Acceleration
+%       follows the same all-present or all-omitted rule as initialState.
 %   - limits (scalar struct)
-%       Positive maximum derivative limits are required; optional lower and
-%       upper bounds may be asymmetric.
+%       Positive velocity and acceleration limits are required. maximumJerk
+%       is required only for the third-order jerk-controlled interface.
 %   - pathConstraints (scalar struct or empty)
 %       Tau/TauEnd, Normal, and LowerBound describe affine path rows.
 %**************************************************************************
@@ -34,18 +37,31 @@ function [initialState, terminalState, limits, pathConstraints] = ...
 
 %% Section 1: Normalize States
 
-requiredInitial = ["time", "position", "velocity", "acceleration"];
-requiredTerminal = [ ...
-    "position", "velocity", "acceleration", "maximumTime"];
+requiredInitial = ["time", "position", "velocity"];
+requiredTerminal = ["position", "velocity", "maximumTime"];
 if ~isstruct(initialState) || ~isscalar(initialState) || ...
         ~all(isfield(initialState, requiredInitial))
     error("ruckigEngine:InvalidInitialState", ...
-        "initialState must define time, position, velocity, and acceleration.");
+        "initialState must define time, position, and velocity.");
 end
 if ~isstruct(terminalState) || ~isscalar(terminalState) || ...
         ~all(isfield(terminalState, requiredTerminal))
     error("ruckigEngine:InvalidTerminalState", ...
-        "terminalState must define position, velocity, acceleration, and maximumTime.");
+        "terminalState must define position, velocity, and maximumTime.");
+end
+hasInitialAcceleration = hasFiniteVector(initialState, "acceleration");
+hasTerminalAcceleration = hasFiniteVector(terminalState, "acceleration");
+hasMaximumJerk = hasFiniteVector(limits, "maximumJerk");
+usesThirdOrderControl = hasInitialAcceleration || ...
+    hasTerminalAcceleration || hasMaximumJerk;
+if usesThirdOrderControl && ~(hasInitialAcceleration && ...
+        hasTerminalAcceleration && hasMaximumJerk)
+    error("ruckigEngine:IncompleteControlInterface", ...
+        "Acceleration states and limits.maximumJerk must be supplied together or all omitted.");
+end
+if ~usesThirdOrderControl
+    initialState.acceleration = zeros(size(initialState.position));
+    terminalState.acceleration = zeros(size(terminalState.position));
 end
 validateattributes(initialState.time, {'numeric'}, ...
     {'real', 'finite', 'scalar'});
@@ -63,20 +79,25 @@ end
 
 %% Section 2: Normalize Limits
 
-requiredLimits = [ ...
-    "maximumVelocity", "maximumAcceleration", "maximumJerk"];
+requiredLimits = ["maximumVelocity", "maximumAcceleration"];
 if ~isstruct(limits) || ~isscalar(limits) || ...
         ~all(isfield(limits, requiredLimits))
     error("ruckigEngine:InvalidLimits", ...
-        "limits must define maximumVelocity, maximumAcceleration, and maximumJerk.");
+        "limits must define maximumVelocity and maximumAcceleration.");
 end
 limits.maximumVelocity = expandLimit( ...
     limits.maximumVelocity, dimensionCount, "maximumVelocity", true);
 limits.maximumAcceleration = expandLimit( ...
     limits.maximumAcceleration, dimensionCount, ...
     "maximumAcceleration", true);
-limits.maximumJerk = expandLimit( ...
-    limits.maximumJerk, dimensionCount, "maximumJerk", true);
+if usesThirdOrderControl
+    limits.maximumJerk = expandLimit( ...
+        limits.maximumJerk, dimensionCount, "maximumJerk", true);
+    limits.ControlOrder = 3;
+else
+    limits.maximumJerk = Inf(1, dimensionCount);
+    limits.ControlOrder = 2;
+end
 limits = resolveBoundPair(limits, "position", ...
     -Inf(1, dimensionCount), Inf(1, dimensionCount), dimensionCount);
 limits = resolveBoundPair(limits, "velocity", ...
@@ -95,6 +116,22 @@ pathConstraints = normalizePathConstraints(pathConstraints, dimensionCount);
 end
 
 %% Section 4: Local Functions
+
+function value = hasFiniteVector(record, fieldName)
+% Treat omitted, empty, or entirely NaN optional derivative data as absent.
+value = isstruct(record) && isfield(record, fieldName) && ...
+    ~isempty(record.(fieldName));
+if ~value
+    return;
+end
+fieldValue = record.(fieldName);
+if isnumeric(fieldValue) && all(isnan(fieldValue), "all")
+    value = false;
+    return;
+end
+validateattributes(fieldValue, {'numeric'}, ...
+    {'real', 'finite', 'vector', 'nonempty'});
+end
 
 function state = normalizeStateRows(state, stateName)
 % Validate one motion state and standardize every coordinate vector to a row.

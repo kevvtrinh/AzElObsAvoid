@@ -33,7 +33,8 @@ function [resolvedOptions, unknownNames] = resolveOptions(defaultOptions, option
 
 % Unknown names are returned to the public owner so it can emit one warning
 % with the correct identifier. They are never copied into runtime behavior.
-if ~isstruct(defaultOptions) || ~isscalar(defaultOptions) || ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
+if ~isstruct(defaultOptions) || ~isscalar(defaultOptions) || ...
+        ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("resolveOptions:InvalidStructures", ...
         "defaultOptions and optionOverrides must be scalar structs.");
 end
@@ -55,11 +56,7 @@ knownNames = intersect(overrideNames, defaultNames, "stable");
 % rule prevents individual planner stages from interpreting partial options
 % differently.
 resolvedOptions = defaultOptions;
-
-% An empty override means "no preference" rather than "replace the default with
-% empty." This is useful when an options structure is assembled conditionally.
-for fieldIndex = 1:numel(knownNames)
-    fieldName = knownNames(fieldIndex);
+for fieldName = reshape(knownNames, 1, [])
     if ~isempty(optionOverrides.(fieldName))
         resolvedOptions.(fieldName) = optionOverrides.(fieldName);
     end

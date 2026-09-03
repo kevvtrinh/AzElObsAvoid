@@ -32,16 +32,22 @@ function profile = createSynchronizedJerkProfile( ...
 
 dimensionCount = numel(initialState.position);
 minimumProfiles = cell(dimensionCount, 1);
+minimumCandidateSets = cell(dimensionCount, 1);
+synchronizationBlocks = cell(dimensionCount, 1);
 minimumDuration = NaN(1, dimensionCount);
 for dimensionIndex = 1:dimensionCount
     [axisInitialState, axisTerminalState, axisLimits] = ...
         extractAxisProblem(initialState, terminalState, limits, dimensionIndex);
-    minimumProfiles{dimensionIndex} = ...
+    [minimumProfiles{dimensionIndex}, minimumCandidateSets{dimensionIndex}] = ...
         ruckigEngine.createMinimumTimeAxisProfile( ...
         axisInitialState, axisTerminalState, axisLimits);
     if minimumProfiles{dimensionIndex}.Success
         minimumDuration(dimensionIndex) = ...
             minimumProfiles{dimensionIndex}.Duration;
+        synchronizationBlocks{dimensionIndex} = ...
+            createSynchronizationBlock( ...
+            minimumProfiles{dimensionIndex}, ...
+            minimumCandidateSets{dimensionIndex});
     end
 end
 profile = createEmptyProfile(dimensionCount, minimumDuration);
@@ -53,7 +59,8 @@ end
 
 minimumCommonDuration = max(minimumDuration);
 if isempty(requestedFinalTime)
-    commonDuration = minimumCommonDuration;
+    commonDuration = selectEarliestSynchronizationDuration( ...
+        synchronizationBlocks, minimumCommonDuration);
 else
     commonDuration = requestedFinalTime - initialState.time;
     timeTolerance = 256 * eps(max([1, commonDuration, minimumCommonDuration]));
@@ -71,7 +78,23 @@ axisCandidateSets = cell(dimensionCount, 1);
 for dimensionIndex = 1:dimensionCount
     timeTolerance = 256 * eps(max([ ...
         1, commonDuration, minimumDuration(dimensionIndex)]));
-    if abs(minimumDuration(dimensionIndex) - commonDuration) <= timeTolerance
+    if minimumProfiles{dimensionIndex}.Family == "stationary"
+        axisProfiles{dimensionIndex} = createStationaryProfile( ...
+            minimumProfiles{dimensionIndex}, commonDuration, ...
+            initialState.time);
+        axisCandidateSets{dimensionIndex} = ...
+            axisProfiles(dimensionIndex);
+        continue;
+    end
+    boundaryProfile = findBlockBoundaryProfile( ...
+        synchronizationBlocks{dimensionIndex}, ...
+        commonDuration, timeTolerance);
+    if ~isempty(boundaryProfile)
+        axisProfiles{dimensionIndex} = boundaryProfile;
+        axisCandidateSets{dimensionIndex} = {boundaryProfile};
+        continue;
+    elseif abs(minimumDuration(dimensionIndex) - commonDuration) <= ...
+            timeTolerance
         axisProfiles{dimensionIndex} = minimumProfiles{dimensionIndex};
         axisCandidateSets{dimensionIndex} = minimumProfiles(dimensionIndex);
         continue;
@@ -100,12 +123,10 @@ for dimensionIndex = 1:dimensionCount
     axisTime(end) = commonDuration;
     switchTime = [switchTime, axisTime]; %#ok<AGROW>
 end
-switchTime = unique(round(switchTime, 12));
-switchTolerance = 1e-11 * max(1, commonDuration);
-switchTime = switchTime(switchTime >= -switchTolerance & ...
-    switchTime <= commonDuration + switchTolerance);
-switchTime(1) = 0;
-switchTime(end) = commonDuration;
+% Decimal rounding changes phase durations and can accumulate into a false
+% endpoint error. Merge only machine-indistinguishable switch times while
+% retaining an actual time from the exact axis profiles.
+switchTime = mergeSwitchTimes(switchTime, commonDuration);
 segmentDuration = diff(switchTime).';
 segmentStartTime = initialState.time + switchTime(1:end - 1).';
 segmentCount = numel(segmentDuration);
@@ -145,9 +166,16 @@ profile.MinimumFinalTime = initialState.time + minimumCommonDuration;
 profile.IntegratedSquaredJerk = sum(sum( ...
     controlJerk .^ 2 .* segmentDuration));
 profile.MinimumAxisDuration = minimumDuration;
+profile.BlockedInterval = NaN(dimensionCount, 4);
 profile.AxisPathLength = zeros(1, dimensionCount);
 profile.AxisFamily = strings(1, dimensionCount);
 for dimensionIndex = 1:dimensionCount
+    block = synchronizationBlocks{dimensionIndex};
+    for intervalIndex = 1:block.IntervalCount
+        columns = (2 * intervalIndex - 1):(2 * intervalIndex);
+        profile.BlockedInterval(dimensionIndex, columns) = ...
+            [block.Left(intervalIndex), block.Right(intervalIndex)];
+    end
     profile.AxisPathLength(dimensionIndex) = ...
         axisProfiles{dimensionIndex}.PathLength;
     profile.AxisFamily(dimensionIndex) = axisProfiles{dimensionIndex}.Family;
@@ -156,6 +184,143 @@ end
 
 %% Section 5: Local Functions
 
+function profile = createStationaryProfile( ...
+        minimumProfile, duration, initialTime)
+% Hold one unchanged rest axis while the moving axes determine the clock.
+profile = minimumProfile;
+profile.PhaseDuration = zeros(1, 7);
+profile.PhaseDuration(4) = duration;
+profile.PhaseJerk = zeros(1, 7);
+profile.Duration = duration;
+profile.FinalTime = initialTime + duration;
+profile.Position = repmat(minimumProfile.Position(1), 1, 8);
+profile.Velocity = zeros(1, 8);
+profile.Acceleration = zeros(1, 8);
+profile.Family = "stationary";
+profile.PathLength = 0;
+end
+
+function block = createSynchronizationBlock(minimumProfile, candidates)
+% Convert certified extremal profiles into at most two infeasible time intervals.
+block = struct( ...
+    "MinimumDuration", minimumProfile.Duration, ...
+    "IntervalCount", 0, ...
+    "Left", [NaN, NaN], ...
+    "Right", [NaN, NaN], ...
+    "RightProfile", {cell(1, 2)});
+if numel(candidates) <= 1
+    return;
+end
+
+% Numerically identical opposite-direction roots represent one boundary.
+duration = [candidates.Duration];
+keepCandidate = true(size(candidates));
+durationTolerance = 256 * eps(max([1, duration]));
+for candidateIndex = 2:numel(candidates)
+    earlierIndex = find(keepCandidate(1:candidateIndex - 1) & ...
+        abs(duration(1:candidateIndex - 1) - duration(candidateIndex)) <= ...
+        durationTolerance, 1);
+    if ~isempty(earlierIndex)
+        keepCandidate(candidateIndex) = false;
+    end
+end
+candidates = candidates(keepCandidate);
+duration = [candidates.Duration];
+candidateCount = numel(candidates);
+[~, minimumIndex] = min(duration);
+if candidateCount == 1
+    return;
+elseif candidateCount == 2
+    block = appendBlockInterval(block, ...
+        candidates(minimumIndex), candidates(3 - minimumIndex));
+    return;
+elseif candidateCount == 3
+    otherIndices = setdiff(1:3, minimumIndex, "stable");
+    block = appendBlockInterval(block, ...
+        candidates(otherIndices(1)), candidates(otherIndices(2)));
+    return;
+elseif candidateCount ~= 5
+    % Unexpected candidate topology is left to the complete fixed-time
+    % equations instead of inventing unsupported interval pairings.
+    return;
+end
+
+otherIndices = mod((minimumIndex:(minimumIndex + 3)) - 1, 5) + 1;
+if candidates(otherIndices(1)).Direction == ...
+        candidates(otherIndices(2)).Direction
+    pairs = otherIndices([1, 2; 3, 4]);
+else
+    pairs = otherIndices([1, 4; 2, 3]);
+end
+for pairIndex = 1:2
+    block = appendBlockInterval(block, ...
+        candidates(pairs(pairIndex, 1)), ...
+        candidates(pairs(pairIndex, 2)));
+end
+end
+
+function block = appendBlockInterval(block, firstProfile, secondProfile)
+% Store an open infeasible interval and the exact profile at its right edge.
+block.IntervalCount = block.IntervalCount + 1;
+intervalIndex = block.IntervalCount;
+if firstProfile.Duration < secondProfile.Duration
+    leftProfile = firstProfile;
+    rightProfile = secondProfile;
+else
+    leftProfile = secondProfile;
+    rightProfile = firstProfile;
+end
+block.Left(intervalIndex) = leftProfile.Duration;
+block.Right(intervalIndex) = rightProfile.Duration;
+block.RightProfile{intervalIndex} = rightProfile;
+end
+
+function duration = selectEarliestSynchronizationDuration( ...
+        blocks, minimumDuration)
+% Test only certified interval boundaries in ascending order, as upstream does.
+possibleDuration = minimumDuration;
+for dimensionIndex = 1:numel(blocks)
+    block = blocks{dimensionIndex};
+    possibleDuration = [possibleDuration, ...
+        block.Right(1:block.IntervalCount)]; %#ok<AGROW>
+end
+possibleDuration = sort(possibleDuration);
+duration = NaN;
+for candidateDuration = possibleDuration
+    if candidateDuration < minimumDuration
+        continue;
+    end
+    isBlocked = false;
+    for dimensionIndex = 1:numel(blocks)
+        block = blocks{dimensionIndex};
+        for intervalIndex = 1:block.IntervalCount
+            if candidateDuration > block.Left(intervalIndex) && ...
+                    candidateDuration < block.Right(intervalIndex)
+                isBlocked = true;
+                break;
+            end
+        end
+        if isBlocked
+            break;
+        end
+    end
+    if ~isBlocked
+        duration = candidateDuration;
+        return;
+    end
+end
+end
+
+function profile = findBlockBoundaryProfile(block, duration, tolerance)
+% Reuse the extremal profile that proves feasibility at a block's right edge.
+profile = [];
+for intervalIndex = 1:block.IntervalCount
+    if abs(duration - block.Right(intervalIndex)) <= tolerance
+        profile = block.RightProfile{intervalIndex};
+        return;
+    end
+end
+end
 function [axisInitialState, axisTerminalState, axisLimits] = ...
         extractAxisProblem(initialState, terminalState, limits, dimensionIndex)
 % Isolate one coordinate without changing its units or boundary meaning.
@@ -172,6 +337,25 @@ axisLimits = struct( ...
     "maximumVelocity", limits.maximumVelocity(dimensionIndex), ...
     "maximumAcceleration", limits.maximumAcceleration(dimensionIndex), ...
     "maximumJerk", limits.maximumJerk(dimensionIndex));
+end
+
+function switchTime = mergeSwitchTimes(switchTime, commonDuration)
+% Remove numerical duplicates without perturbing distinct physical switches.
+switchTime = sort(switchTime(:).');
+switchTolerance = 512 * eps(max(1, commonDuration));
+switchTime = switchTime(switchTime >= -switchTolerance & ...
+    switchTime <= commonDuration + switchTolerance);
+switchTime(abs(switchTime) <= switchTolerance) = 0;
+switchTime(abs(switchTime - commonDuration) <= switchTolerance) = ...
+    commonDuration;
+keepSwitch = [true, diff(switchTime) > switchTolerance];
+switchTime = switchTime(keepSwitch);
+if switchTime(1) ~= 0
+    switchTime = [0, switchTime];
+end
+if switchTime(end) ~= commonDuration
+    switchTime = [switchTime, commonDuration];
+end
 end
 
 function [polynomial, position, velocity, acceleration] = createPolynomial( ...
@@ -295,6 +479,7 @@ profile = struct( ...
     "MinimumFinalTime", NaN, ...
     "IntegratedSquaredJerk", Inf, ...
     "MinimumAxisDuration", minimumDuration, ...
+    "BlockedInterval", NaN(dimensionCount, 4), ...
     "AxisPathLength", NaN(1, dimensionCount), ...
     "AxisFamily", strings(1, dimensionCount));
 end

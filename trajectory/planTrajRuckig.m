@@ -39,8 +39,10 @@ elseif nargin == 3
     result = ruckigEngine.solve(initialState, terminalState, limits);
 elseif nargin == 4
     result = ruckigEngine.solve(initialState, terminalState, limits, options);
-else
+elseif nargin == 5
     result = ruckigEngine.solve( ...
         initialState, terminalState, limits, options, pathConstraints);
+else
+    error("planTrajRuckig:InvalidCall", "Use zero, three, four, or five inputs as documented.");
 end
 end

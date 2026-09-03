@@ -211,9 +211,12 @@ verifyFalse(testCase, ...
 [~, multiRegionGeometry] = ...
     obstacleAvoidance.obstacles.shapeAtTime( ...
     preparedMultiRegionObstacle, 1, true);
-verifyFalse(testCase, multiRegionGeometry.HasOrderedSingleRegion);
-verifyFalse(testCase, multiRegionGeometry.IsConvex);
-verifyTrue(testCase, isnan(multiRegionGeometry.OutwardSign));
+verifyTrue(testCase, multiRegionGeometry.HasOrderedSingleRegion);
+verifyTrue(testCase, multiRegionGeometry.IsConvex);
+verifyFalse(testCase, isnan(multiRegionGeometry.OutwardSign));
+verifyFalse(testCase, multiRegionGeometry.TopologyIsInterpolated);
+verifyEqual(testCase, multiRegionGeometry.GeometryModel, ...
+    "conservativeEndpointConvexHull");
 end
 
 function testShapeQueryPreservesOutputTypesAcrossControlPaths(testCase)
@@ -237,7 +240,9 @@ verifyEqual(testCase, geometryOnlyRecord, inactiveGeometry);
 verifyClass(testCase, interpolatedShape, "polyshape");
 verifyNotEmpty(testCase, interpolatedShape.Vertices);
 verifyTrue(testCase, interpolatedGeometry.Active);
-verifyTrue(testCase, interpolatedGeometry.TopologyIsInterpolated);
+verifyFalse(testCase, interpolatedGeometry.TopologyIsInterpolated);
+verifyEqual(testCase, interpolatedGeometry.GeometryModel, ...
+    "conservativeEndpointConvexHull");
 
 singleSliceObstacle = obstacleAvoidance.obstacles.createObstacle( ...
     "single slice", 0, [-1; 1; 1; -1], [-1; -1; 1; 1], 0);
@@ -260,6 +265,41 @@ verifyEqual(testCase, geometryOnlyUnion, unionGeometry);
 verifyFalse(testCase, unionGeometry.TopologyIsInterpolated);
 end
 
+function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
+% Rebuild cached shapes after any canonical public source field changes.
+obstacle = rectangleObstacle("cache source", [0; 4], [-2 2 -1 1]);
+prepared = obstacleAvoidance.obstacles.prepareDynamic(obstacle);
+preparation = prepared.InternalPreparation;
+verifyEqual(testCase, preparation.PreparationVersion, 1);
+verifySize(testCase, preparation.SampleBounds_deg, [2 4]);
+verifySize(testCase, preparation.IntervalBounds_deg, [1 4]);
+verifyEqual(testCase, size(preparation.SampleEdgeStart_deg{1}, 1), 4);
+verifyEqual(testCase, preparation.SampleEdgeStart_deg{1}, ...
+    preparation.SampleEdgeEnd_deg{1}([4 1 2 3], :), "AbsTol", 0);
+
+mutated = prepared;
+for sampleIndex = 1:numel(mutated.az_deg)
+    mutated.az_deg{sampleIndex} = mutated.az_deg{sampleIndex} + 5;
+end
+[shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime(mutated, 2);
+verifyTrue(testCase, geometry.Active);
+verifyEqual(testCase, min(shape.Vertices(:, 1)), 3, "AbsTol", 1e-12);
+verifyFalse(testCase, ...
+    obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    mutated, 0, 0, 2));
+[~, projection] = ...
+    obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
+    mutated, 0, 4);
+verifyEqual(testCase, min(projection.Records.Boundary_deg(:, 1)), ...
+    3, "AbsTol", 1e-12);
+reprepared = obstacleAvoidance.obstacles.prepareDynamic(mutated);
+verifyNotEqual(testCase, reprepared.InternalPreparation.SourceSnapshot, ...
+    preparation.SourceSnapshot);
+verifyEqual(testCase, ...
+    reprepared.InternalPreparation.SampleBounds_deg(:, 1), [3; 3], ...
+    "AbsTol", 1e-12);
+end
+
 function testChangingHistoryClassifiesSpanAndGeometry(testCase)
 % Verify one owner classifies static, partial-span, and moving histories.
 staticObstacle = rectangleObstacle("static", [0; 20], [-2 2 -1 1]);
@@ -275,109 +315,33 @@ movingObstacle = staticObstacle;
 movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
 verifyTrue(testCase, obstacleAvoidance.obstacles.hasChangingHistory( ...
     movingObstacle, 0, 20));
-end
 
-function testCanonicalBoundaryEdgeOrder(testCase)
-% Verify open and explicitly closed rings share deterministic edge order.
-geometry = struct( ...
-    "azimuth_deg", [0; 1; 0; 0; NaN; 2; 3; 2], ...
-    "elevation_deg", [0; 0; 1; 0; NaN; 0; 0; 1]);
-expectedStart_deg = [ ...
-    0 0; 1 0; 0 1; ...
-    2 0; 3 0; 2 1];
-expectedEnd_deg = [ ...
-    1 0; 0 1; 0 0; ...
-    3 0; 2 1; 2 0];
+% Verify shared static-horizon semantics, union reuse, and safe empty history.
+staticObstacle = rectangleObstacle("static horizon", [0; 4], [-2 2 -1 1]);
+preparedStatic = obstacleAvoidance.obstacles.prepareDynamic(staticObstacle);
+[isStaticHorizon, occupiedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(preparedStatic, 0, 4);
+verifyTrue(testCase, isStaticHorizon);
+verifyEqual(testCase, area(occupiedShape), ...
+    area(preparedStatic.InternalPreparation.StaticShape), "AbsTol", 1e-12);
 
-[edgeStart_deg, edgeEnd_deg] = ...
-    obstacleAvoidance.geometry.canonicalBoundaryToEdges(geometry);
-verifyEqual(testCase, edgeStart_deg, expectedStart_deg);
-verifyEqual(testCase, edgeEnd_deg, expectedEnd_deg);
-end
+[coversLongHorizon, unsupportedShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(preparedStatic, -1, 4);
+verifyFalse(testCase, coversLongHorizon);
+verifyEmpty(testCase, unsupportedShape.Vertices);
 
-function testPreparedBoundaryEdgeQueryMatchesCanonicalOrder(testCase)
-% Compare the selected-edge query with the complete canonical edge oracle.
-explicitLower_deg = [-1 -1; 1 -1; 1 1; -1 1; -1 -1];
-explicitUpper_deg = explicitLower_deg + [1 0];
-explicitObstacle = rawObstacle( ...
-    [0; 2], {explicitLower_deg; explicitUpper_deg});
-closureLower_deg = [0 0; 1 0; 1 1; -1 0];
-closureUpper_deg = [0 0; 1 0; 1 1; 1 0];
-interiorClosureObstacle = rawObstacle( ...
-    [0; 2], {closureLower_deg; closureUpper_deg});
-singleSliceObstacle = rawObstacle( ...
-    0, {[-1 -1; 1 -1; 1 1; -1 1]});
-obstacleCases = { ...
-    explicitObstacle; interiorClosureObstacle; ...
-    movingMultiRingObstacle(); topologyChangingObstacle(); ...
-    singleSliceObstacle};
-queryTimes_s = [-1 0 0.5 1 1.5 2 3];
+movingObstacle = staticObstacle;
+movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
+preparedMoving = obstacleAvoidance.obstacles.prepareDynamic(movingObstacle);
+verifyFalse(testCase, obstacleAvoidance.obstacles.queryStaticHorizon( ...
+    preparedMoving, 0, 4));
 
-for obstacleIndex = 1:numel(obstacleCases)
-    preparedObstacle = obstacleAvoidance.obstacles.prepareDynamic( ...
-        obstacleCases{obstacleIndex});
-    for queryTime_s = queryTimes_s
-        [~, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
-            preparedObstacle, queryTime_s, true);
-        [edgeStartRows_deg, edgeEndRows_deg] = ...
-            obstacleAvoidance.geometry.canonicalBoundaryToEdges(geometry);
-        for edgeIndex = 1:size(edgeStartRows_deg, 1) + 1
-            [active, hasEdge, edgeStart_deg, edgeEnd_deg] = ...
-                obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
-                preparedObstacle, queryTime_s, edgeIndex);
-            expectedHasEdge = geometry.Active && ...
-                edgeIndex <= size(edgeStartRows_deg, 1);
-            verifyEqual(testCase, active, geometry.Active);
-            verifyEqual(testCase, hasEdge, expectedHasEdge);
-            if expectedHasEdge
-                verifyEqual(testCase, edgeStart_deg, ...
-                    edgeStartRows_deg(edgeIndex, :));
-                verifyEqual(testCase, edgeEnd_deg, ...
-                    edgeEndRows_deg(edgeIndex, :));
-            else
-                verifySize(testCase, edgeStart_deg, [0 2]);
-                verifySize(testCase, edgeEnd_deg, [0 2]);
-            end
-        end
-    end
-end
-
-% A saved preparation record from before ring-bound caching must preserve
-% the complete-boundary fallback instead of becoming unreadable.
-staleObstacle = obstacleAvoidance.obstacles.prepareDynamic(explicitObstacle);
-staleObstacle.InternalPreparation = rmfield( ...
-    staleObstacle.InternalPreparation, "SampleBoundaryRunBounds");
-[active, hasEdge, edgeStart_deg, edgeEnd_deg] = ...
-    obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
-    staleObstacle, 1, 2);
-[~, staleGeometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
-    staleObstacle, 1, true);
-[expectedStart_deg, expectedEnd_deg] = ...
-    obstacleAvoidance.geometry.canonicalBoundaryToEdges(staleGeometry);
-verifyTrue(testCase, active);
-verifyTrue(testCase, hasEdge);
-verifyEqual(testCase, edgeStart_deg, expectedStart_deg(2, :));
-verifyEqual(testCase, edgeEnd_deg, expectedEnd_deg(2, :));
-verifyError(testCase, @() ...
-    obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
-    staleObstacle, 1, 0), ...
-    "queryBoundaryEdgeAtTime:InvalidEdgeIndex");
-verifyError(testCase, @() ...
-    obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
-    staleObstacle, NaN, 1), ...
-    "queryBoundaryEdgeAtTime:InvalidQueryTime");
-partiallyStaleObstacle = ...
-    obstacleAvoidance.obstacles.prepareDynamic(explicitObstacle);
-partiallyStaleObstacle.InternalPreparation = rmfield( ...
-    partiallyStaleObstacle.InternalPreparation, ...
-    "IntervalUnionBoundaryRunBounds");
-[active, hasEdge, edgeStart_deg, edgeEnd_deg] = ...
-    obstacleAvoidance.obstacles.queryBoundaryEdgeAtTime( ...
-    partiallyStaleObstacle, 1, 2);
-verifyTrue(testCase, active);
-verifyTrue(testCase, hasEdge);
-verifyEqual(testCase, edgeStart_deg, expectedStart_deg(2, :));
-verifyEqual(testCase, edgeEnd_deg, expectedEnd_deg(2, :));
+emptyTimeObstacle = preparedStatic;
+emptyTimeObstacle.time_s = zeros(0, 1);
+[supportsEmptyTime, emptyTimeShape] = ...
+    obstacleAvoidance.obstacles.queryStaticHorizon(emptyTimeObstacle, 0, 4);
+verifyFalse(testCase, supportsEmptyTime);
+verifyEmpty(testCase, emptyTimeShape.Vertices);
 end
 
 function obstacle = normalizationFixture()

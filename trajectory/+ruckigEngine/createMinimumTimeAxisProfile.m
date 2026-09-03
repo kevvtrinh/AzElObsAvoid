@@ -1,8 +1,10 @@
-function profile = createMinimumTimeAxisProfile( ...
+function [profile, candidates] = createMinimumTimeAxisProfile( ...
         initialState, terminalState, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   profile = ruckigEngine.createMinimumTimeAxisProfile( ...
+%       initialState, terminalState, limits)
+%   [profile, candidates] = ruckigEngine.createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
 %**************************************************************************
 % PURPOSE
@@ -23,6 +25,9 @@ function profile = createMinimumTimeAxisProfile( ...
 %       Success, seven phase durations and jerks, minimum duration, and the
 %       exact phase-boundary state histories. Unsupported numerical edge
 %       cases return Success = false so the caller receives an identified unsupported result.
+%   - candidates (structure array)
+%       Every certified extremal profile used to derive synchronization
+%       block intervals, including duration and signed initial direction.
 %**************************************************************************
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
@@ -35,6 +40,39 @@ function profile = createMinimumTimeAxisProfile( ...
 
 context = createContext(initialState, terminalState, limits);
 candidates = repmat(createEmptyCandidate(), 0, 1);
+stateScale = max(1, max(abs([context.p0, context.pf, context.v0, ...
+    context.vf, context.a0, context.af])));
+stationaryTolerance = 256 * eps(stateScale);
+isStationary = abs(context.displacement) <= stationaryTolerance && ...
+    max(abs([context.v0, context.vf, context.a0, context.af])) <= ...
+        stationaryTolerance;
+if isStationary
+    % A stationary degree of freedom has a certified zero-time minimum and
+    % can later remain idle while other axes synchronize. Treating the lack
+    % of switching events as an unsupported family incorrectly rejects
+    % ordinary multidimensional motions with one unchanged coordinate.
+    candidate = createEmptyCandidate();
+    candidate.Position(:) = context.p0;
+    candidate.Velocity(:) = 0;
+    candidate.Acceleration(:) = 0;
+    candidate.Family = "stationary";
+    candidate.PathLength = 0;
+    candidate.Duration = 0;
+    candidates = candidate;
+    profile = createEmptyProfile();
+    profile.Success = true;
+    profile.Message = "The axis is stationary.";
+    profile.PhaseDuration = candidate.PhaseDuration;
+    profile.PhaseJerk = candidate.PhaseJerk;
+    profile.Duration = 0;
+    profile.FinalTime = initialState.time;
+    profile.Position = candidate.Position;
+    profile.Velocity = candidate.Velocity;
+    profile.Acceleration = candidate.Acceleration;
+    profile.Family = candidate.Family;
+    profile.PathLength = 0;
+    return;
+end
 directions = [1, -1];
 
 for direction = directions
@@ -144,9 +182,11 @@ phase(7) = phase(5) + context.af / jMaximum;
 candidates = appendCandidate(candidates, context, limits, ...
     phase, "accelerationVelocity");
 
-timeAcceleration0 = safeSqrt(context.a0Squared / (2 * jSquared) + ...
+timeAcceleration0 = ruckigEngine.internal.safeSqrt( ...
+    context.a0Squared / (2 * jSquared) + ...
     (vMaximum - context.v0) / jMaximum);
-timeAcceleration1 = safeSqrt(context.afSquared / (2 * jSquared) + ...
+timeAcceleration1 = ruckigEngine.internal.safeSqrt( ...
+    context.afSquared / (2 * jSquared) + ...
     (vMaximum - context.vf) / jMaximum);
 if isfinite(timeAcceleration0)
     phase(1:3) = [timeAcceleration0 - context.a0 / jMaximum, ...
@@ -425,6 +465,8 @@ candidate.Velocity = evaluated.Velocity;
 candidate.Acceleration = evaluated.Acceleration;
 candidate.Family = family;
 candidate.PathLength = evaluated.PathLength;
+candidate.Duration = sum(evaluated.PhaseDuration);
+candidate.Direction = sign(limits.jMaximum);
 candidates(end + 1, 1) = candidate;
 end
 
@@ -436,15 +478,6 @@ isReal = abs(imag(allRoots)) <= imaginaryTolerance;
 values = sort(real(allRoots(isReal))).';
 end
 
-function value = safeSqrt(radicand)
-% Return NaN for a genuinely negative radical while accepting roundoff at zero.
-if radicand < -64 * eps(max(1, abs(radicand)))
-    value = NaN;
-else
-    value = sqrt(max(0, radicand));
-end
-end
-
 function candidate = createEmptyCandidate()
 % Define one exact switching candidate with stable diagnostic fields.
 candidate = struct( ...
@@ -454,7 +487,9 @@ candidate = struct( ...
     "Velocity", zeros(1, 8), ...
     "Acceleration", zeros(1, 8), ...
     "Family", "", ...
-    "PathLength", Inf);
+    "PathLength", Inf, ...
+    "Duration", NaN, ...
+    "Direction", 0);
 end
 
 function profile = createEmptyProfile()

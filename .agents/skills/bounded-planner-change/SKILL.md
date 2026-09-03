@@ -25,6 +25,34 @@ Do not treat more code, more metrics, a solver exit flag, or a favorable plot as
 an improvement. Sub-tolerance differences and ordinary wall-clock noise are
 equivalent results.
 
+## Protect Completeness From Heuristics
+
+Classify every heuristic before retaining it. A heuristic may order work,
+propose a warm start, or provide a lower bound. It may not discard a seed,
+shorten the admissible time horizon, stop route exploration, or authorize a
+no-path result unless the rejected set is excluded by a documented conservative
+bound or an authoritative validator.
+
+In particular, a duration estimate is not a feasibility certificate. If an
+estimated-time attempt fails construction or validation, preserve the original
+horizon and continue the non-pruned attempt. Do not bisect or otherwise infer a
+feasibility boundary without proving the required monotonicity.
+
+When the user supplies a diagnosis bundle or other exact failure artifact:
+
+- add its unmodified replay to the focused regression suite before the repair;
+- assert planner success and independent validation when the request is known
+  to be feasible, rather than merely asserting a changed termination reason;
+- retain the artifact test after the fix so the same false negative cannot
+  silently return; and
+- verify the same invariant on one structurally different case before claiming
+  that the fix is general.
+
+Prefer removing an unproven pruning heuristic over adding thresholds or
+exceptions. Reintroduce it only through the retention gate with measured runtime
+benefit and unchanged completeness on the focused and structurally different
+checks.
+
 ## Evidence Ladder
 
 1. Run the smallest end-to-end baseline that measures the declared benefit.

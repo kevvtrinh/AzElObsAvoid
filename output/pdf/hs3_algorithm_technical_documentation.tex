@@ -1234,7 +1234,6 @@ Option & Default & Meaning \\
 \file{StepTolerance} & $10^{-10}$ & Local solver step tolerance. \\
 \file{CollisionClearanceTolerance_deg} & $10^{-7}$ & Clearance tolerance for validation. \\
 \file{CollisionMinimumTimeStep_s} & 0.00025 & Fail-closed adaptive collision resolution floor. \\
-\file{Verbose} & false & Console progress disabled. \\
 \file{RandomSeed} & 0 & Echoed deterministic seed; search is deterministic. \\
 \bottomrule
 \end{longtable}
@@ -1449,20 +1448,10 @@ uses polynomial coefficients rather than trusting samples alone.}
 
 \subsection{Production: search and certification}
 
-\scriptentry{+obstacleAvoidance/+search/boundedTimeLayers.m}{Combines source-aware
-and uniformly spaced time layers, retains endpoints, and applies a deterministic
-cap. Route generation and the time-expanded search use it to bound work without
-discarding event provenance silently.}
-
 \scriptentry{+obstacleAvoidance/+search/certifySeedCorridor.m}{Independently
 verifies a solver-supplied static corridor certificate. It checks schema,
 complete obstacle-envelope containment, supporting half-spaces, and the entire
 returned polynomial through Bernstein inequalities; uncertainty fails closed.}
-
-\scriptentry{+obstacleAvoidance/+search/clusterSeedShape.m}{Optionally merges
-nearby groups of at least three swept obstacle regions into conservative convex
-hulls for topology seed generation. Original protected geometry remains the
-authority for optimization associations and collision validation.}
 
 \scriptentry{+obstacleAvoidance/+search/createRouteCandidates.m}{Creates the
 bounded deterministic route portfolio and first-class search diagnostics. It
@@ -1491,9 +1480,10 @@ of every protected obstacle. Incomplete containment prevents a static corridor
 from being treated as a certificate.}
 
 \scriptentry{+obstacleAvoidance/+search/timeExpandedVisibilitySearch.m}{Searches
-a forward layered graph whose state is time layer plus visibility node. It
-supports waiting and motion arcs, uses bounded sampled collision filtering, and
-returns route positions, absolute route times, parents, costs, and work counts.}
+a forward layered graph over every supplied planning time; each state is a time
+layer plus visibility node. It supports waiting and motion arcs, uses sampled
+edge-collision filtering, and returns route positions, absolute route times,
+parents, costs, and work counts.}
 
 \subsection{Production: public APIs and plotting}
 

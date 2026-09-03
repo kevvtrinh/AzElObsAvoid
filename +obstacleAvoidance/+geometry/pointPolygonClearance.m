@@ -1,7 +1,8 @@
 function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(shape, point_deg)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [clearance_deg, nearestPoint_deg, edgeIndex] = obstacleAvoidance.geometry.pointPolygonClearance(shape, point_deg)
+%   [clearance_deg, nearestPoint_deg, edgeIndex] = ...
+%       obstacleAvoidance.geometry.pointPolygonClearance(shape, point_deg)
 %**************************************************************************
 % PURPOSE
 %   - Compute signed Euclidean clearance from points to one polyshape.
@@ -89,7 +90,8 @@ for blockStart = 1:64:queryCount
     distanceSquared_deg2 = (point_deg(selectedQuery, 1) - projectedAzimuth_deg) .^ 2 + ...
         (point_deg(selectedQuery, 2) - projectedElevation_deg) .^ 2;
     [minimumDistanceSquared_deg2, selectedEdgeIndex] = min(distanceSquared_deg2, [], 2);
-    selectedLinearIndex = sub2ind(size(projectionFraction), (1:numel(selectedQuery)).', selectedEdgeIndex);
+    selectedLinearIndex = sub2ind(size(projectionFraction), ...
+        (1:numel(selectedQuery)).', selectedEdgeIndex);
     selectedFraction = projectionFraction(selectedLinearIndex);
     nearestPoint_deg(selectedQuery, :) = edgeStart_deg(selectedEdgeIndex, :) + ...
         selectedFraction .* edgeDelta_deg(selectedEdgeIndex, :);

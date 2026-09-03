@@ -2,6 +2,9 @@
 
 # Reproducible local profiling, benchmark, and scratch outputs stay untracked.
 scratch/
+tmp/
+output/
+.claude/
 benchmarks/*.mat
 benchmarks/*.png
 benchmarks/*_runs.csv

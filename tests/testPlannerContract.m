@@ -1,0 +1,886 @@
+function tests = testPlannerContract
+%% Section 0: Header & Readme
+% SYNTAX
+%   tests = testPlannerContract
+%**************************************************************************
+% PURPOSE
+%   - Verify the maintained public planner contract without legacy-engine
+%     names, private entry points, or implementation-specific solver counts.
+%**************************************************************************
+% INPUTS
+%   - None.
+%**************************************************************************
+% OUTPUTS
+%   - tests (matlab.unittest function test array)
+%       Deterministic public success, failure, validation, and diagnostic tests.
+%**************************************************************************
+% UNITS
+%   - Position is degrees; time is seconds; derivatives use deg/s powers.
+%**************************************************************************
+tests = functiontests(localfunctions);
+end
+
+function setupOnce(~)
+% Add the public planner and independent BMTP engine to the MATLAB path.
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
+end
+
+function testPlanningRequestOwnsResolvedNormalizedInputs(testCase)
+% Keep option resolution and physical-input normalization in one stage.
+initialState = struct("time_s", 0, "position_deg", [0 0]);
+goalState = struct("time_s", 12, "position_deg", [4 2]);
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], initialState, goalState, physicalLimits(), ...
+    struct("MaximumSeedCount", 2));
+
+verifyEqual(testCase, fieldnames(request), ...
+    {'obstacles'; 'initialState'; 'goalState'; 'limits'; 'options'});
+verifyEqual(testCase, request.options.MaximumSeedCount, 2);
+verifyEqual(testCase, request.initialState.velocity_deg_s, [0 0]);
+verifyEqual(testCase, request.initialState.acceleration_deg_s2, [0 0]);
+verifyEqual(testCase, request.goalState.velocity_deg_s, [0 0]);
+verifyEqual(testCase, request.goalState.acceleration_deg_s2, [0 0]);
+end
+
+function testPlanningSceneOwnsPreparedHistoriesAndHorizon(testCase)
+% Expose prepared obstacle details and one shared horizon classification.
+obstacleTime_s = [0; 10];
+staticObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "static", obstacleTime_s, [-1 1 1 -1], [-1 -1 1 1], 0.1);
+movingStart_deg = [4 -1; 6 -1; 6 1; 4 1];
+movingEnd_deg = movingStart_deg + [1 0];
+movingObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "moving", obstacleTime_s, ...
+    {movingStart_deg(:, 1); movingEnd_deg(:, 1)}, ...
+    {movingStart_deg(:, 2); movingEnd_deg(:, 2)}, 0.1);
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    obstacleAvoidance.obstacles.combineObstacles( ...
+    staticObstacle, movingObstacle), ...
+    restState(0, [-4 0]), restState(10, [8 0]), ...
+    physicalLimits(), plannerOptions("earliestArrival"));
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+
+verifyEqual(testCase, scene.startTime_s, 0);
+verifyEqual(testCase, scene.endTime_s, 10);
+verifyFalse(testCase, scene.isStaticHorizon);
+verifyEqual(testCase, numel(scene.preparedObstacles), 2);
+verifyEqual(testCase, [scene.obstacleDetails.SampleCount], [2 2]);
+verifyTrue(testCase, scene.obstacleDetails(1).IsTimeInvariant);
+verifyFalse(testCase, scene.obstacleDetails(2).IsTimeInvariant);
+verifyEqual(testCase, scene.obstacleDetails(2).IntervalGeometryMethod, ...
+    "linearCorrespondingVertices");
+
+proposal = obstacleAvoidance.search.createProposalGeometry(scene, request);
+verifyEqual(testCase, proposal.start_deg, [-4 0]);
+verifyEqual(testCase, proposal.goal_deg, [8 0]);
+verifyEqual(testCase, proposal.sampleTimes_s, ...
+    linspace(0, 10, 9).');
+maximumVerticesPerObstacle = zeros(1, numel(scene.preparedObstacles));
+for obstacleIndex = 1:numel(scene.preparedObstacles)
+    maximumVerticesPerObstacle(obstacleIndex) = max(cellfun( ...
+        @numel, scene.preparedObstacles(obstacleIndex).az_deg));
+end
+expectedVertexWork = numel(proposal.sampleTimes_s) * ...
+    sum(maximumVerticesPerObstacle);
+verifyEqual(testCase, proposal.estimatedVertexWork, expectedVertexWork);
+verifyEqual(testCase, proposal.representation, "sampledObstacleUnion");
+verifyFalse(testCase, proposal.usedDenseEnvelope);
+verifyEqual(testCase, proposal.sampledShapeCount, 18);
+verifyEqual(testCase, size(proposal.edgeStart_deg), ...
+    size(proposal.edgeEnd_deg));
+
+visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
+    proposal, request);
+verifyGreaterThanOrEqual(testCase, ...
+    visibilityGraph.FinalAttemptIndex, 1);
+verifyEqual(testCase, numel(visibilityGraph.Attempts), ...
+    visibilityGraph.FinalAttemptIndex);
+verifyEqual(testCase, visibilityGraph.NodePosition_deg, ...
+    visibilityGraph.Attempts(end).Nodes.Positions_deg);
+verifyEqual(testCase, visibilityGraph.EdgeCost_deg, ...
+    visibilityGraph.Attempts(end).Cost_deg);
+verifyEqual(testCase, ...
+    visibilityGraph.Attempts(end).OffsetRetryCount, ...
+    visibilityGraph.Record.CandidateOffsetRetryCount);
+verifyTrue(testCase, isfield(visibilityGraph.Attempts, ...
+    "FinalCandidatePairs"));
+verifyTrue(testCase, isfield(visibilityGraph.Attempts, ...
+    "EdgeRejectionReasons"));
+verifyTrue(testCase, isfield(visibilityGraph.Attempts, ...
+    "RecoverySteps"));
+
+routeSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph);
+seedSet = obstacleAvoidance.search.createSeeds( ...
+    routeSet, proposal, request);
+verifyEqual(testCase, seedSet(1).Source, "directVisibilityEdge");
+verifyEqual(testCase, [seedSet.Index], 1:numel(seedSet));
+verifyTrue(testCase, isfield(routeSet, "TimedSearchRecord"));
+verifyTrue(testCase, isfield(routeSet, "SpatialSearchRecord"));
+verifyTrue(testCase, isfield(routeSet, "RouteClassPattern"));
+end
+
+function testSpatialSeedEstimateNeverRejectsLongGuideRoute(testCase)
+% Keep route-shaped timing guesses from pruning a solver proposal.
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 2];
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], restState(0, [0 0]), restState(1, [1 0]), limits, ...
+    plannerOptions("earliestArrival"));
+spatialRoute_deg = [0 0; 0 8; 1 8; 1 0];
+routeSet = struct( ...
+    "TimedRoute_deg", zeros(0, 2), ...
+    "TimedRouteTime_s", zeros(0, 1), ...
+    "SpatialRoutes_deg", {{spatialRoute_deg}}, ...
+    "UsesReducedGeometry", false);
+proposal = struct("shape", polyshape());
+
+seedSet = obstacleAvoidance.search.createSeeds( ...
+    routeSet, proposal, request);
+
+verifyEqual(testCase, numel(seedSet), 2);
+verifyEqual(testCase, seedSet(2).position_deg, spatialRoute_deg);
+verifyEqual(testCase, seedSet(2).EstimatedDuration_s, 0.5, ...
+    "AbsTol", 1e-12);
+verifyGreaterThan(testCase, seedSet(2).Length_deg, ...
+    request.goalState.time_s - request.initialState.time_s);
+end
+
+function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
+% Remove arbitrary winding rejection without losing finite disconnected exit.
+angle_rad = linspace(0, 4 * pi, 25).';
+radius_deg = 1 + 0.1 * angle_rad;
+spiralPath_deg = [radius_deg .* cos(angle_rad), ...
+    radius_deg .* sin(angle_rad)];
+nodePosition_deg = [spiralPath_deg(1, :); spiralPath_deg(end, :); ...
+    spiralPath_deg(2:end - 1, :)];
+pathNodeIndex = [1, 3:size(nodePosition_deg, 1), 2];
+edgeCost_deg = Inf(size(nodePosition_deg, 1));
+for edgeIndex = 1:numel(pathNodeIndex) - 1
+    firstNode = pathNodeIndex(edgeIndex);
+    secondNode = pathNodeIndex(edgeIndex + 1);
+    edgeLength_deg = norm( ...
+        nodePosition_deg(firstNode, :) - nodePosition_deg(secondNode, :));
+    edgeCost_deg(firstNode, secondNode) = edgeLength_deg;
+    edgeCost_deg(secondNode, firstNode) = edgeLength_deg;
+end
+[routes_deg, classPattern, record] = ...
+    obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
+    edgeCost_deg, nodePosition_deg, [0 0], 1, ...
+    @(first_deg, second_deg) true, struct("CancellationCheckFcn", []));
+verifyNumElements(testCase, routes_deg, 1);
+verifyEqual(testCase, abs(classPattern), 2);
+verifyEqual(testCase, record.WindingComponentLimit, Inf);
+verifyEqual(testCase, record.WindingLimitRejectedCount, 0);
+
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], restState(0, nodePosition_deg(1, :)), ...
+    restState(20, nodePosition_deg(2, :)), physicalLimits(), struct( ...
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2));
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+proposal = struct( ...
+    "usedDenseEnvelope", false, "sampleTimes_s", [0; 20], ...
+    "goal_deg", nodePosition_deg(2, :), "shape", polyshape(), ...
+    "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
+visibilityGraph = struct( ...
+    "NodePosition_deg", nodePosition_deg, "EdgeCost_deg", edgeCost_deg, ...
+    "ObstacleReferencePoints_deg", [0 0]);
+routeSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph);
+verifyEmpty(testCase, routeSet.SpatialRoutes_deg);
+verifyNumElements(testCase, routeSet.DeferredSpatialRoutes_deg, 1);
+verifyFalse(testCase, routeSet.DeferredSpatialSolveAttempted);
+
+nodePosition_deg = [1 0; 4 0; 0 1; -1 0; 0 -1];
+edgeCost_deg = Inf(5);
+cycleNodeIndex = [1 3 4 5 1];
+for edgeIndex = 1:numel(cycleNodeIndex) - 1
+    firstNode = cycleNodeIndex(edgeIndex);
+    secondNode = cycleNodeIndex(edgeIndex + 1);
+    edgeCost_deg(firstNode, secondNode) = 1;
+    edgeCost_deg(secondNode, firstNode) = 1;
+end
+[routes_deg, ~, record] = ...
+    obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
+    edgeCost_deg, nodePosition_deg, [0 0], 2, ...
+    @(first_deg, second_deg) true, struct("CancellationCheckFcn", []));
+verifyEmpty(testCase, routes_deg);
+verifyEqual(testCase, record.StateCount, 1);
+verifyFalse(testCase, record.Truncated);
+end
+
+function testDenseProposalDefersThenRunsExactTimedSearch(testCase)
+% Dense spatial work may reorder exact timed search but cannot discard it.
+obstacleTime_s = [0; 10];
+firstVertices_deg = [20 -2; 22 -2; 22 2; 20 2];
+secondVertices_deg = firstVertices_deg + [0 1];
+movingObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "moving", obstacleTime_s, ...
+    {firstVertices_deg(:, 1); secondVertices_deg(:, 1)}, ...
+    {firstVertices_deg(:, 2); secondVertices_deg(:, 2)}, 0.1);
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    movingObstacle, restState(0, [0 0]), restState(10, [2 0]), ...
+    physicalLimits(), struct( ...
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 1, ...
+    "MaximumTimeLayerCount", 3));
+scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
+proposal = struct( ...
+    "usedDenseEnvelope", true, "sampleTimes_s", [0; 5; 10], ...
+    "goal_deg", [2 0], "shape", polyshape(), ...
+    "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
+visibilityGraph = struct( ...
+    "NodePosition_deg", [0 0; 2 0], ...
+    "EdgeCost_deg", [0 2; 2 0], ...
+    "ObstacleReferencePoints_deg", zeros(0, 2));
+
+routeSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph);
+
+verifyFalse(testCase, routeSet.TimedSearchAttempted);
+verifyTrue(testCase, routeSet.TimedSearchDeferred);
+verifyEqual(testCase, routeSet.TimedSearchSuppressionReason, ...
+    "deferredDenseTimedSearch");
+
+routeSet.SpatialSearchRecord.RecoverySentinel = 314;
+recoveredRouteSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph, routeSet);
+
+verifyTrue(testCase, recoveredRouteSet.TimedSearchAttempted);
+verifyTrue(testCase, recoveredRouteSet.TimedSearchDeferred);
+verifyTrue(testCase, recoveredRouteSet.TimedSearchRecoveryAttempted);
+verifyEqual(testCase, recoveredRouteSet.TimedSearchSuppressionReason, "");
+verifyFalse(testCase, isempty(recoveredRouteSet.TimedRoute_deg));
+verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(1, :), [0 0]);
+verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(end, :), [2 0]);
+verifyEqual(testCase, ...
+    recoveredRouteSet.SpatialSearchRecord.RecoverySentinel, 314);
+end
+
+function testTimedSearchDoesNotImposeRestAtIntermediateNodes(testCase)
+% Preserve a feasible constant-velocity route through an intermediate node.
+nodePosition_deg = [0 0; 4 0; 2 0];
+edgeCost_deg = Inf(3);
+edgeCost_deg(1:4:end) = 0;
+edgeCost_deg(1, 3) = 2;
+edgeCost_deg(3, 1) = 2;
+edgeCost_deg(2, 3) = 2;
+edgeCost_deg(3, 2) = 2;
+initialState = restState(0, nodePosition_deg(1, :));
+initialState.velocity_deg_s = [2 0];
+goalState = restState(2, nodePosition_deg(2, :));
+goalState.velocity_deg_s = [2 0];
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 2];
+limits.maxAcceleration_deg_s2 = [0.01 0.01];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival", ...
+    "MaximumTimeLayerCount", 3));
+
+[route_deg, routeTime_s] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, struct.empty(0, 1), initialState, ...
+    goalState, limits, [0; 1; 2], options);
+
+verifyEqual(testCase, route_deg, nodePosition_deg([1 3 2], :));
+verifyEqual(testCase, routeTime_s, [0; 1; 2]);
+end
+
+function testTimedSearchRetainsEverySuppliedTime(testCase)
+% Keep a brief input-defined opening that layer thinning would erase.
+blockedVertices_deg = [-0.15 -2; 0.15 -2; 0.15 2; -0.15 2];
+clearVertices_deg = blockedVertices_deg + [0 30];
+obstacleTime_s = [0; 3.8; 3.9; 4.2; 4.3; 5];
+barrier = obstacleAvoidance.obstacles.createObstacle( ...
+    "briefOpening", obstacleTime_s, ...
+    {blockedVertices_deg(:, 1); blockedVertices_deg(:, 1); ...
+    clearVertices_deg(:, 1); clearVertices_deg(:, 1); ...
+    blockedVertices_deg(:, 1); blockedVertices_deg(:, 1)}, ...
+    {blockedVertices_deg(:, 2); blockedVertices_deg(:, 2); ...
+    clearVertices_deg(:, 2); clearVertices_deg(:, 2); ...
+    blockedVertices_deg(:, 2); blockedVertices_deg(:, 2)}, 0);
+nodePosition_deg = [-2 0; 2 0; 0 0];
+edgeCost_deg = Inf(3);
+edgeCost_deg(1, 3) = 2;
+edgeCost_deg(3, 1) = 2;
+edgeCost_deg(2, 3) = 2;
+edgeCost_deg(3, 2) = 2;
+initialState = restState(0, nodePosition_deg(1, :));
+goalState = restState(5, nodePosition_deg(2, :));
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [20 20];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival", ...
+    "MaximumTimeLayerCount", 17));
+sampleTimes_s = (0:0.1:5).';
+
+[route_deg, routeTime_s, record] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, barrier, initialState, goalState, ...
+    limits, sampleTimes_s, options);
+
+verifyEqual(testCase, record.LayerTimes_s, sampleTimes_s, ...
+    "AbsTol", eps(5));
+verifyEqual(testCase, record.CandidateLayerCount, numel(sampleTimes_s));
+verifyGreaterThan(testCase, ...
+    record.CandidateLayerCount, options.MaximumTimeLayerCount);
+verifyFalse(testCase, record.LayerLimitApplied);
+verifyFalse(testCase, isempty(route_deg));
+verifyEqual(testCase, route_deg(1, :), initialState.position_deg);
+verifyEqual(testCase, route_deg(end, :), goalState.position_deg);
+verifyEqual(testCase, routeTime_s(end), 4, "AbsTol", 1e-12);
+end
+
+function testTimedSearchCanArriveLaterWithoutWaitingAtBlockedSource(testCase)
+% Advance within one safe-wait interval after an earlier edge collision.
+square_deg = [-0.1 -0.1; 0.1 -0.1; 0.1 0.1; -0.1 0.1];
+obstacleTime_s = [0; 0.25; 0.5; 1; 2];
+azimuthAtSource_deg = repmat({square_deg(:, 1) - 2}, 5, 1);
+azimuthOnEdge_deg = repmat({square_deg(:, 1)}, 5, 1);
+sourceElevation_deg = { ...
+    square_deg(:, 2) + 3; square_deg(:, 2); square_deg(:, 2); ...
+    square_deg(:, 2) + 3; square_deg(:, 2) + 3};
+edgeElevation_deg = { ...
+    square_deg(:, 2) + 3; square_deg(:, 2); ...
+    square_deg(:, 2) + 3; square_deg(:, 2) + 3; ...
+    square_deg(:, 2) + 3};
+sourceBlocker = obstacleAvoidance.obstacles.createObstacle( ...
+    "sourceBlocker", obstacleTime_s, azimuthAtSource_deg, ...
+    sourceElevation_deg, 0);
+edgeBlocker = obstacleAvoidance.obstacles.createObstacle( ...
+    "edgeBlocker", obstacleTime_s, azimuthOnEdge_deg, ...
+    edgeElevation_deg, 0);
+obstacles = obstacleAvoidance.obstacles.combineObstacles( ...
+    sourceBlocker, edgeBlocker);
+nodePosition_deg = [-2 0; 2 0];
+edgeCost_deg = [0 4; 4 0];
+initialState = restState(0, nodePosition_deg(1, :));
+initialState.velocity_deg_s = [4 0];
+goalState = restState(2, nodePosition_deg(2, :));
+goalState.velocity_deg_s = [4 0];
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [10 10];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival"));
+
+[route_deg, routeTime_s] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, obstacles, initialState, goalState, ...
+    limits, obstacleTime_s, options);
+
+fineTime_s = linspace(0, 1, 101).';
+finePosition_deg = initialState.position_deg + ...
+    fineTime_s .* ...
+    (goalState.position_deg - initialState.position_deg);
+occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    obstacles, finePosition_deg(:, 1), finePosition_deg(:, 2), fineTime_s);
+verifyFalse(testCase, any(occupied));
+verifyEqual(testCase, route_deg, nodePosition_deg);
+verifyEqual(testCase, routeTime_s, [0; 1]);
+end
+
+function testDenseMovingBarrierRecoversDeferredTimedSeed(testCase)
+% Recover a wait route after dense spatial proposals yield no valid motion.
+angle_rad = (0:1199).' * (2 * pi / 1200);
+blockedVertices_deg = [0.15 * cos(angle_rad), 10 * sin(angle_rad)];
+clearVertices_deg = blockedVertices_deg + [0 30];
+obstacleTime_s = [0; 6; 7; 10];
+barrier = obstacleAvoidance.obstacles.createObstacle( ...
+    "movingDenseBarrier", obstacleTime_s, ...
+    {blockedVertices_deg(:, 1); blockedVertices_deg(:, 1); ...
+    clearVertices_deg(:, 1); clearVertices_deg(:, 1)}, ...
+    {blockedVertices_deg(:, 2); blockedVertices_deg(:, 2); ...
+    clearVertices_deg(:, 2); clearVertices_deg(:, 2)}, 0.05);
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 0.5];
+limits.maxAcceleration_deg_s2 = [4 1];
+limits.maxJerk_deg_s3 = [20 4];
+limits.azimuthInterval_deg = [-3 3];
+limits.elevationInterval_deg = [-12 12];
+options = struct( ...
+    "GoalTimeMode", "fixedArrival", "MaximumSeedCount", 2, ...
+    "MaximumTimeLayerCount", 17, "SampleTime_s", 0.1);
+
+result = obstacleAvoidance.planTrajectory( ...
+    barrier, restState(0, [-2 0]), restState(10, [2 0]), ...
+    limits, options);
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, result.SearchDiagnostics.Grid.DenseSeedEnvelopeUsed);
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.TimedSearchInitialDeferred);
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.TimedSearchRecoveryAttempted);
+verifyTrue(testCase, ...
+    result.SearchDiagnostics.Grid.Coverage.TimedSearchAttempted);
+end
+
+function testDirectWaitRetriesFullHorizonAfterShortTimingEstimate(testCase)
+% Keep a short schedule estimate from rejecting an ample request horizon.
+initialState = restState(0, [0 0]);
+goalState = restState(20, [2 0]);
+limits = physicalLimits();
+limits.maxAcceleration_deg_s2 = [0.1 0.1];
+limits.maxJerk_deg_s3 = [0.1 0.1];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival"));
+seed = obstacleAvoidance.search.createSeed();
+seed.Index = 1;
+seed.Source = "directWait";
+seed.position_deg = [0 0; 0 0; 2 0];
+seed.tau = [0; 0.5; 1];
+seed.EstimatedDuration_s = 2;
+seed.Length_deg = 2;
+
+[candidate, diagnostics] = ...
+    obstacleAvoidance.planner.createDirectWaitMotion( ...
+    seed, initialState, goalState, limits, options, [], []);
+
+verifyTrue(testCase, candidate.Success, candidate.Message);
+verifyTrue(testCase, diagnostics.HorizonRetryAttempted);
+verifyNotEqual(testCase, diagnostics.InitialTimingTerminationReason, "");
+verifyEqual(testCase, candidate.FinalTime_s, goalState.time_s, ...
+    "AbsTol", 1e-12);
+end
+
+function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
+% Require a finite rest-to-rest direct motion inside the supplied horizon.
+initialState = restState(0, [0 0]);
+goalState = restState(20, [4 2]);
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, result.Validation.CollisionFree);
+verifyTrue(testCase, result.Validation.VelocityWithinLimits);
+verifyTrue(testCase, result.Validation.AccelerationWithinLimits);
+verifyTrue(testCase, result.Validation.JerkWithinLimits);
+verifyEqual(testCase, result.TerminationReason, "goalReached");
+verifyEqual(testCase, result.SeedSummaries(1).SeedSource, ...
+    "directRestToRest");
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
+    "notApplicableExactPath");
+verifyLessThan(testCase, result.TrajectoryDuration_s, ...
+    goalState.time_s - initialState.time_s);
+end
+
+function testBernsteinOutlierIsNotAnExactRangeRejection(testCase)
+% Require subdivision because one control can exceed the polynomial range.
+safePower = [0; 4; -4];
+within = obstacleAvoidance.validation.certifyPolynomialRange( ...
+    safePower, -0.1, 1.1, 0);
+verifyTrue(testCase, within);
+end
+
+function testBernsteinSubdivisionFindsInteriorViolation(testCase)
+% Reject a true interior peak even though both endpoints satisfy the bounds.
+violatingPower = [0; 4.4; -4.4];
+within = obstacleAvoidance.validation.certifyPolynomialRange( ...
+    violatingPower, -0.1, 0.5, 0);
+verifyFalse(testCase, within);
+end
+
+function testStationaryFallbackAcceptsNondyadicTangent(testCase)
+% Keep exact stationary-point resolution for a boundary tangent at tau=1/3.
+tangentPower = [8 / 9; 2 / 3; -1];
+within = obstacleAvoidance.validation.certifyPolynomialRange( ...
+    tangentPower, -0.1, 1, 1e-12);
+verifyTrue(testCase, within);
+end
+
+function testSuccessAndEndpointFailureShareResultShape(testCase)
+% Preserve every public field on expected failure as well as success.
+initialState = restState(0, [-2 0]);
+goalState = restState(10, [2 0]);
+limits = physicalLimits();
+options = plannerOptions("earliestArrival");
+success = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, options);
+blocking = obstacleAvoidance.obstacles.createObstacle( ...
+    "blocked start", [0; 10], [-3 -1 -1 -3], [-1 -1 1 1], 0);
+failure = obstacleAvoidance.planTrajectory( ...
+    blocking, initialState, goalState, limits, options);
+
+verifyTrue(testCase, success.Success);
+verifyFalse(testCase, failure.Success);
+verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
+verifyEqual(testCase, fieldnames(failure), fieldnames(success));
+verifyEqual(testCase, fieldnames(failure.Validation), ...
+    fieldnames(success.Validation));
+verifyEqual(testCase, fieldnames(failure.PlaneCertificate), ...
+    fieldnames(success.PlaneCertificate));
+end
+
+function testStaticDetourReturnsCertifiedCollisionFreeMotion(testCase)
+% Exercise topology generation, BMTP, and independent static-plane replay.
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "center box", [0; 30], [-1 1 1 -1], [-1 -1 1 1], 0.2);
+initialState = restState(0, [-4 0]);
+goalState = restState(30, [4 0]);
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, physicalLimits(), ...
+    plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, result.Validation.CollisionFree);
+verifyTrue(testCase, result.Validation.CollisionResolved);
+verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
+verifyGreaterThan(testCase, ...
+    sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+end
+
+function testBalancedArrivalRefinesObjectiveRelevantDirectWait(testCase)
+% Remove avoidable wait when time contributes to the balanced objective.
+obstacleTime_s = [0; 6; 6.5; 12];
+barrierCenterElevation_deg = [0; 0; 8; 8];
+sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
+elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+for sampleIndex = 1:numel(obstacleTime_s)
+    translatedPosition_deg = sourcePosition_deg + ...
+        [0 barrierCenterElevation_deg(sampleIndex)];
+    azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
+    elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
+end
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "balanced direct wait", obstacleTime_s, ...
+    azimuthBySlice_deg, elevationBySlice_deg, 0.1);
+initialState = restState(0, [-5 0]);
+goalState = restState(12, [5 0]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-6 6];
+limits.elevationInterval_deg = [-3 3];
+options = struct( ...
+    "GoalTimeMode", "balancedArrival", ...
+    "MaximumSeedCount", 5, ...
+    "SampleTime_s", 0.05);
+
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, options);
+directWaitIndex = find( ...
+    string({result.Seeds.Source}) == "directWait", 1);
+verifyTrue(testCase, result.Success, result.Message);
+verifyNotEmpty(testCase, directWaitIndex);
+diagnostics = result.SeedSummaries(directWaitIndex).SolverDiagnostics;
+verifyTrue(testCase, diagnostics.TimingRepairAttempted);
+verifyTrue(testCase, isfinite(diagnostics.ExactMinimumDirectDuration_s));
+verifyGreaterThan(testCase, diagnostics.RefinementCount, 0);
+verifyLessThan(testCase, diagnostics.FinalWaitTime_s, ...
+    diagnostics.InitialWaitTime_s);
+end
+
+function testPlaneReuseSummaryAndRetainedBestTrial(testCase)
+% Preserve behavior-bearing reuse summary and best-trial evidence.
+repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+addpath(fullfile(repositoryRoot, "examples"));
+overrides = struct( ...
+    "CollisionClearanceTolerance_deg", 1e-4, ...
+    "MaximumSeedCount", 2, ...
+    "FigureVisible", "off", "PlotOutputs", false, ...
+    "ShowAnimation", false, "ShowKinematicPlot", false);
+result = exampleTargetExitsObstacle(overrides);
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
+verifyFalse(testCase, any(startsWith( ...
+    string(fieldnames(diagnostics)), "TravelRefinement")));
+verifyTrue(testCase, diagnostics.PlaneReuseApplied);
+verifyGreaterThan(testCase, diagnostics.PlaneReuseCount, 0);
+verifyTrue(testCase, diagnostics.Converged);
+verifyEqual(testCase, diagnostics.SolverMessage, ...
+    "The next trajectory SOCP would be unchanged.");
+verifyGreaterThan(testCase, diagnostics.CollisionPairCountHistory(1), 0);
+collisionFreeTrials_s = diagnostics.TrialDuration_s( ...
+    diagnostics.TrialWasCollisionFree);
+verifyEqual(testCase, diagnostics.RetainedBestTrialDuration_s, ...
+    min(collisionFreeTrials_s), "AbsTol", 1e-12);
+end
+
+function testReflectedProgressAxisRanksValidatedFamiliesByLength(testCase)
+% Rank two validated fixed-clock families under negative first-axis progress.
+obstacleTime_s = [0; 30];
+firstObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "first floating barrier", obstacleTime_s, ...
+    [4.4 5.6 5.6 4.4], [-0.45 -0.45 0.45 0.45], 0.1);
+secondObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "second floating barrier", obstacleTime_s, ...
+    [-5.6 -4.4 -4.4 -5.6], [-0.45 -0.45 0.45 0.45], 0.1);
+obstacles = obstacleAvoidance.obstacles.combineObstacles( ...
+    firstObstacle, secondObstacle);
+initialState = restState(0, [10 0]);
+goalState = restState(30, [-10 0]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-12 12];
+limits.elevationInterval_deg = [-4 4];
+result = obstacleAvoidance.planTrajectory( ...
+    obstacles, initialState, goalState, limits, ...
+    plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+verifyTrue(testCase, result.Validation.CollisionFree);
+verifyTrue(testCase, result.Validation.CollisionResolved);
+diagnostics = result.SearchDiagnostics.FixedClockExcursion;
+verifyTrue(testCase, diagnostics.Success, diagnostics.Message);
+verifyEqual(testCase, diagnostics.SelectedMode, "singleAmplitude");
+verifyTrue(testCase, diagnostics.ProgressPolynomial.Success, ...
+    diagnostics.ProgressPolynomial.Message);
+verifyEqual(testCase, ...
+    diagnostics.ProgressPolynomial.ProgressAxisIndex, 1);
+verifyEqual(testCase, ...
+    diagnostics.ProgressPolynomial.LateralAxisIndex, 2);
+verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, ...
+    "AbsTol", 1e-9);
+verifyEqual(testCase, result.SelectedSeed_deg, result.position_deg);
+verifyEqual(testCase, result.Seeds(1).Length_deg, ...
+    sum(vecnorm(diff(result.position_deg), 2, 2)), "AbsTol", 1e-12);
+verifyLessThan(testCase, result.Seeds(1).Length_deg, ...
+    diagnostics.ProgressPolynomial.SelectedMotionLength_deg, ...
+    "The planner did not retain the shorter validated fixed-clock family.");
+end
+
+function testNearStartBarrierUsesShorterOneSidedExactClockFamily(testCase)
+% A local static obstruction must not force an alternating full-path tail.
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "offset rectangle", [0; 30], [-9 -6 -6 -9], [0 0 2.8 2.8], 0.1);
+initialState = restState(0, [-10 3.2]);
+goalState = restState(30, [10 -1]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-20 20];
+limits.elevationInterval_deg = [-10 10];
+result = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, ...
+    plannerOptions("earliestArrival"));
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+progressReport = result.SearchDiagnostics.FixedClockExcursion.ProgressPolynomial;
+verifyTrue(testCase, startsWith( ...
+    progressReport.SelectedBasis, "oneSidedBeta_"));
+alternatingIndex = find([progressReport.BasisReports.Name] == ...
+    "alternatingDegreeFive", 1, "first");
+verifyNotEmpty(testCase, alternatingIndex);
+verifyLessThan(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), ...
+    progressReport.BasisReports(alternatingIndex).SelectedMotionLength_deg);
+progress = (result.position_deg(:, 1) - initialState.position_deg(1)) / ...
+    (goalState.position_deg(1) - initialState.position_deg(1));
+directElevation_deg = initialState.position_deg(2) + ...
+    (goalState.position_deg(2) - initialState.position_deg(2)) * progress;
+verifyGreaterThanOrEqual(testCase, ...
+    min(result.position_deg(:, 2) - directElevation_deg), -1e-9);
+end
+
+function testBalancedDefaultReportsTradeoffAndUtilization(testCase)
+% Expose the declared selection cost and measured envelope use on success.
+initialState = restState(0, [0 0]);
+goalState = restState(20, [4 2]);
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits());
+
+verifyTrue(testCase, result.Success, result.Message);
+summary = result.SeedSummaries(result.SelectedSeedIndex);
+expectedCost_deg = summary.MotionLength_deg + ...
+    result.Options.MinimumTravelSavingsRate_deg_s * ...
+    summary.MotionDuration_s;
+verifyEqual(testCase, summary.TravelTimeTradeoffCost_deg, ...
+    expectedCost_deg, "AbsTol", 1e-10);
+verifyGreaterThan(testCase, summary.KinematicUtilization, 0);
+verifyLessThanOrEqual(testCase, summary.KinematicUtilization, 1 + 1e-6);
+verifyEqual(testCase, ...
+    result.SearchDiagnostics.SelectionPolicy.JerkRole, ...
+    "hardConstraintOnly");
+end
+
+function testRankingUsesOnlyDeclaredObjectiveQuantities(testCase)
+% Prefer shorter equal-arrival motions without a hidden utilization policy.
+summary = repmat(struct( ...
+    "MotionLength_deg", 10, "KinematicUtilization", 1, ...
+    "ArrivalTime_s", 5, "TravelTimeTradeoffCost_deg", 20), 2, 1);
+summary(2).MotionLength_deg = 9;
+summary(2).KinematicUtilization = 0.1;
+for mode = ["fixedArrival", "earliestArrival", "balancedArrival"]
+    ranking = obstacleAvoidance.planner.createCandidateRanking( ...
+        summary, [1 2], struct("GoalTimeMode", mode));
+    verifyEqual(testCase, ranking.OrderedCandidateIndices(1), 2);
+    verifyFalse(testCase, any(contains( ...
+        ranking.ColumnNames, "KinematicUtilization")));
+end
+end
+
+function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)
+% An infeasible clock is an expected result rather than a thrown error.
+initialState = restState(0, [0 0]);
+goalState = restState(0.25, [1 0]);
+limits = physicalLimits();
+result = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, limits, plannerOptions("fixedArrival"));
+
+verifyFalse(testCase, result.Success);
+verifyNotEmpty(testCase, result.Message);
+verifyTrue(testCase, any(result.TerminationReason == ...
+    ["noValidatedSeed", "fixedArrivalInfeasible", "timeWindowInfeasible"]));
+verifyEmpty(testCase, result.time_s);
+verifyTrue(testCase, isfield(result.SearchDiagnostics, "StageTiming"));
+end
+
+function testUnsupportedEndpointDerivativesThrowNamedError(testCase)
+% The compact BMTP scope rejects non-rest endpoints explicitly.
+initialState = restState(0, [0 0]);
+initialState.velocity_deg_s = [0.1 0];
+goalState = restState(10, [2 0]);
+request = @() obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits(), ...
+    plannerOptions("earliestArrival"));
+verifyError(testCase, request, "bmtpEngine:UnsupportedRequest");
+end
+
+function testNoPathReturnsRecognizedDiagnostics(testCase)
+% A full-height wall must fail with retained search evidence.
+wall = obstacleAvoidance.obstacles.createObstacle( ...
+    "full-height wall", [0; 20], [-0.5 0.5 0.5 -0.5], ...
+    [-90 -90 90 90], 0);
+initialState = restState(0, [-5 0]);
+goalState = restState(12, [5 0]);
+limits = physicalLimits();
+limits.elevationInterval_deg = [-10 10];
+options = plannerOptions("earliestArrival");
+options.MaximumSeedCount = 3;
+result = obstacleAvoidance.planTrajectory( ...
+    wall, initialState, goalState, limits, options);
+
+verifyFalse(testCase, result.Success);
+verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
+verifyEmpty(testCase, result.time_s);
+verifyTrue(testCase, isfield(result.SearchDiagnostics.Grid, ...
+    "ExpandedCount"));
+verifyGreaterThanOrEqual(testCase, ...
+    result.SearchDiagnostics.AttemptedSeedCount, 1);
+verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
+    "lowerBoundNotReached");
+end
+
+function testRepeatedDirectRequestIsDeterministic(testCase)
+% Identical input must reproduce every selected motion sample exactly.
+initialState = restState(0, [-1 0.5]);
+goalState = restState(12, [3 -1]);
+options = plannerOptions("earliestArrival");
+first = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits(), options);
+second = obstacleAvoidance.planTrajectory( ...
+    [], initialState, goalState, physicalLimits(), options);
+
+verifyEqual(testCase, second.TerminationReason, first.TerminationReason);
+verifyEqual(testCase, second.time_s, first.time_s);
+verifyEqual(testCase, second.position_deg, first.position_deg);
+verifyEqual(testCase, second.velocity_deg_s, first.velocity_deg_s);
+verifyEqual(testCase, second.acceleration_deg_s2, ...
+    first.acceleration_deg_s2);
+verifyEqual(testCase, second.jerk_deg_s3, first.jerk_deg_s3);
+end
+
+function testInterceptValidatesInitialStateBeforeFieldAccess(testCase)
+% Use the shared identified state error for malformed public input.
+targetMotion = struct("time_s", [0; 1], ...
+    "position_deg", [0 0; 1 0]);
+verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept( ...
+    struct(), targetMotion, physicalLimits(), struct()), ...
+    "planTrajectory:InvalidState");
+end
+
+function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
+% Intercept trials select one terminal time, regardless of the caller mode.
+targetMotion = struct("time_s", [0; 5], ...
+    "position_deg", [0 0; 4 0]);
+interceptOptions = struct("InterceptMode", "specifiedTime", ...
+    "SpecifiedInterceptTime_s", 5, ...
+    "PlannerOptions", plannerOptions("earliestArrival"));
+result = obstacleAvoidance.planMovingTargetIntercept( ...
+    restState(0, [0 0]), targetMotion, physicalLimits(), interceptOptions);
+
+verifyTrue(testCase, result.Success, result.Message);
+verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
+verifyEqual(testCase, result.Intercept.Options.PlannerOptions.GoalTimeMode, ...
+    "fixedArrival");
+verifyEqual(testCase, result.Intercept.Search.OptimalityStatus, ...
+    "notAnOptimization");
+
+% Generated target cases retain nonzero initial derivatives, so select the
+% arbitrary-boundary Ruckig method explicitly. BMTP remains rest-to-rest and
+% is never silently substituted with a different motion engine.
+movingInitialState = restState(0, [0 0]);
+movingInitialState.velocity_deg_s = [0.2 -0.1];
+movingInitialState.acceleration_deg_s2 = [0.1 0.05];
+movingTarget = struct( ...
+    "time_s", (0:0.5:12).', ...
+    "position_deg", repmat([6 1], 25, 1), ...
+    "InterpolationMethod", "pchip");
+asapOptions = struct( ...
+    "InterceptMode", "earliest", ...
+    "MaximumSearchDuration_s", 12, ...
+    "PlannerOptions", struct("TrajectoryMethod", "ruckigWaypoint"));
+asapResult = obstacleAvoidance.planMovingTargetIntercept( ...
+    movingInitialState, movingTarget, physicalLimits(), asapOptions);
+verifyTrue(testCase, asapResult.Success, asapResult.Message);
+verifyTrue(testCase, asapResult.Validation.Passed, ...
+    asapResult.Validation.Message);
+verifyEqual(testCase, asapResult.Intercept.Mode, "earliest");
+verifyEqual(testCase, asapResult.Intercept.Search.OptimalityStatus, ...
+    "resolutionBounded");
+verifyEqual(testCase, asapResult.Intercept.Search.MaximumCoarseStep_s, ...
+    0.5, "AbsTol", 1e-12);
+
+atTimeOptions = asapOptions;
+atTimeOptions.InterceptMode = "specifiedTime";
+atTimeOptions.SpecifiedInterceptTime_s = 10;
+atTimeResult = obstacleAvoidance.planMovingTargetIntercept( ...
+    movingInitialState, movingTarget, physicalLimits(), atTimeOptions);
+verifyTrue(testCase, atTimeResult.Success, atTimeResult.Message);
+verifyTrue(testCase, atTimeResult.Validation.Passed, ...
+    atTimeResult.Validation.Message);
+verifyEqual(testCase, atTimeResult.Intercept.Mode, "specifiedTime");
+verifyEqual(testCase, atTimeResult.Intercept.Time_s, 10, ...
+    "AbsTol", 1e-12);
+verifyLessThan(testCase, asapResult.Intercept.Time_s, ...
+    atTimeResult.Intercept.Time_s);
+
+certifiedOptions = struct( ...
+    "InterceptMode", "earliest", ...
+    "MaximumSearchDuration_s", 12, ...
+    "PlannerOptions", struct("TrajectoryMethod", "bmtp"));
+certifiedTarget = movingTarget;
+certifiedTarget.InterpolationMethod = "linear";
+certifiedResult = obstacleAvoidance.planMovingTargetIntercept( ...
+    restState(0, [0 0]), certifiedTarget, physicalLimits(), ...
+    certifiedOptions);
+verifyTrue(testCase, certifiedResult.Success, certifiedResult.Message);
+verifyEqual(testCase, certifiedResult.Intercept.Search.OptimalityStatus, ...
+    "certifiedEarliest");
+end
+
+function state = restState(time_s, position_deg)
+% Create one two-axis rest endpoint.
+state = struct("time_s", time_s, "position_deg", position_deg, ...
+    "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+end
+
+function limits = physicalLimits()
+% Create neutral two-axis bounds used by the public-contract cases.
+limits = struct("maxVelocity_deg_s", [2 2], ...
+    "maxAcceleration_deg_s2", [1 1], ...
+    "maxJerk_deg_s3", [2 2], ...
+    "azimuthInterval_deg", [-180 180], ...
+    "elevationInterval_deg", [-90 90]);
+end
+
+function options = plannerOptions(goalTimeMode)
+% Resolve only behavior-level public choices for deterministic tests.
+options = struct("GoalTimeMode", goalTimeMode, ...
+    "SampleTime_s", 0.05);
+end

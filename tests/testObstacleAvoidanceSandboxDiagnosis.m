@@ -7,6 +7,7 @@ function tests = testObstacleAvoidanceSandboxDiagnosis
 %   - Verify sandbox diagnosis bundles preserve pre-run requests plus
 %     successful and failed planner calls without graphics handles.
 %   - Verify a reloaded success bundle can reproduce the exact public call.
+%   - Verify visible planner choices drive the same options saved for replay.
 %**************************************************************************
 % INPUTS
 %   - None.
@@ -51,7 +52,7 @@ exportInfo = exportSandboxDiagnosis( ...
 loaded = load(char(filePath), "diagnosisBundle");
 bundle = loaded.diagnosisBundle;
 verifyEqual(testCase, exportInfo.Format, ...
-    "obstacleAvoidanceSandboxDiagnosis-v1");
+    "obstacleAvoidanceSandboxDiagnosis-v2");
 verifyGreaterThan(testCase, exportInfo.Bytes, 0);
 verifyTrue(testCase, exportInfo.HasPlannerResult);
 verifyEqual(testCase, bundle.Mode, "goal");
@@ -77,7 +78,7 @@ verifyEqual(testCase, reproduced.ArrivalTime_s, ...
 end
 
 function testPersistentSandboxCreatesExportActions(testCase)
-% Verify both tabs expose an export button and the direct export API.
+% Verify Goal Mode exposes its actions and the direct export API.
 sandboxState = obstacleAvoidanceSandbox( ...
     struct("FigureVisible", "off"));
 testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
@@ -85,11 +86,10 @@ currentState = sandboxState.ReadState();
 verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "Export"));
 verifyTrue(testCase, isfield( ...
-    currentState.FreeMode.GraphicsHandles.Actions, "Export"));
-verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "SetMotion"));
 verifyTrue(testCase, isfield( ...
-    currentState.FreeMode.GraphicsHandles.Actions, "SetMotion"));
+    currentState.GoalMode.GraphicsHandles.Actions, "Stop"));
+verifyFalse(testCase, isfield(currentState, "FreeMode"));
 constructorNames = [ ...
     "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
 constructorLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
@@ -107,6 +107,8 @@ for constructorIndex = 1:numel(constructorNames)
 end
 verifyTrue(testCase, isgraphics( ...
     currentState.GoalMode.GraphicsHandles.Controls.MotionProfileHandle));
+verifyTrue(testCase, isgraphics( ...
+    currentState.GoalMode.GraphicsHandles.PlannerOptionsPanel));
 verifyEqual(testCase, ...
     currentState.GoalMode.PolygonMotionVectors_deg, zeros(0, 2));
 verifyEqual(testCase, ...
@@ -115,9 +117,66 @@ verifyEqual(testCase, get( ...
     currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
 verifyEqual(testCase, get( ...
-    currentState.FreeMode.GraphicsHandles.Actions.Export, "Enable"), ...
+    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), ...
     'off');
 verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
+end
+
+function testStopRestoresExportableRequest(testCase)
+% Stop a synchronous run cooperatively and retain a pre-run diagnosis bundle.
+sandboxState = obstacleAvoidanceSandbox(struct( ...
+    "FigureVisible", "off", "MissionTime_s", 6));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.StartPosition_deg = [0 0];
+applicationState.GoalMode.GoalPosition_deg = [4 0];
+guidata(sandboxState.FigureHandle, applicationState);
+runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
+stopHandle = applicationState.GoalMode.GraphicsHandles.Actions.Stop;
+runCallback = get(runHandle, "Callback");
+stopCallback = get(stopHandle, "Callback");
+
+% Exercise the button callback while the UI is in its planning state.
+applicationState.InteractionState = "planning";
+applicationState.GoalMode.InteractionState = "planning";
+guidata(sandboxState.FigureHandle, applicationState);
+stopCallback(stopHandle, []);
+verifyTrue(testCase, getappdata( ...
+    sandboxState.FigureHandle, "SandboxStopRequested"));
+stoppingState = sandboxState.ReadState();
+verifyTrue(testCase, contains(stoppingState.GoalMode.Status, ...
+    "Stopping planning"));
+
+% A programmatic policy uses the same planner checkpoint and makes the
+% synchronous recovery path deterministic in a headless test process.
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.InteractionState = "idle";
+applicationState.GoalMode.InteractionState = "idle";
+applicationState.Options.PlannerOptions.CancellationCheckFcn = @() true;
+guidata(sandboxState.FigureHandle, applicationState);
+
+runCallback(runHandle, []);
+
+currentState = sandboxState.ReadState();
+verifyEqual(testCase, currentState.InteractionState, "idle");
+verifyEmpty(testCase, fieldnames(currentState.GoalMode.LastPlannerResult));
+verifyTrue(testCase, contains(currentState.GoalMode.Status, ...
+    "Export Bundle is available"));
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), 'off');
+verifyEqual(testCase, get( ...
+    currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), 'on');
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+currentState.ExportBundle(filePath, "goal");
+loaded = load(char(filePath), "diagnosisBundle");
+verifyEqual(testCase, loaded.diagnosisBundle.PlanningState, "notRun");
+verifyEmpty(testCase, ...
+    loaded.diagnosisBundle.PlannerOptions.CancellationCheckFcn);
+verifyEqual(testCase, ...
+    loaded.diagnosisBundle.PlannerInputs.initialState.position_deg, [0 0]);
+verifyEqual(testCase, ...
+    loaded.diagnosisBundle.PlannerInputs.goalState.position_deg, [4 0]);
 end
 
 function testSandboxDefaultsBoundInteractivePlannerWork(testCase)
@@ -129,15 +188,84 @@ verifyTrue(testCase, sandboxState.Options.AnimateOnRun);
 verifyEqual(testCase, sandboxState.Options.AnimationFrameStride, 20);
 verifyEqual(testCase, sandboxState.Options.AnimationPause_s, 0.001);
 verifyEqual(testCase, plannerOptions.MaximumSeedCount, 3);
-verifyEqual(testCase, plannerOptions.CollocationSegmentCount, 8);
-verifyEqual(testCase, plannerOptions.MaximumCollocationSegmentCount, 16);
-verifyEqual(testCase, plannerOptions.MaximumMeshRefinementPasses, 0);
-verifyEqual(testCase, plannerOptions.MaximumNlpIterations, 80);
-verifyEqual(testCase, plannerOptions.MaximumNlpFunctionEvaluations, 5000);
+verifyFalse(testCase, isfield(plannerOptions, "CollocationSegmentCount"));
+verifyFalse(testCase, isfield(plannerOptions, "MaximumNlpIterations"));
 verifyEqual(testCase, plannerOptions.ArrivalTimeTolerance_s, 0.05);
+verifyFalse(testCase, isfield(plannerOptions, "WaypointWarmStartMode"));
+verifyFalse(testCase, ...
+    isfield(plannerOptions, "RequestedWaypointWarmStartMode"));
+verifyFalse(testCase, ...
+    isfield(plannerOptions, "IsWaypointWarmStartAvailable"));
+verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "balancedArrival");
+verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 1);
+verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, productionOptions.MaximumSeedCount, 5);
-verifyEqual(testCase, productionOptions.MaximumMeshRefinementPasses, 2);
+end
+
+function testPlannerOptionControlsDriveExport(testCase)
+% Preserve the three user-facing planner choices in a pre-run replay bundle.
+sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+currentState = sandboxState.ReadState();
+controls = currentState.GoalMode.GraphicsHandles.Controls;
+set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
+set(controls.GoalTimeModeHandle, "Value", 3);
+set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+filePath = string(tempname) + ".mat";
+testCase.addTeardown(@() deleteIfPresent(filePath));
+
+currentState.ExportBundle(filePath, "goal");
+
+loaded = load(char(filePath), "diagnosisBundle");
+plannerOptions = loaded.diagnosisBundle.PlannerOptions;
+verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, ...
+    "ruckigStopAtWaypoints");
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
+verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 12.5);
+verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
+end
+
+function testPlannerOptionControlsDriveRun(testCase)
+% Pass the selected options through the Run action into the public result.
+sandboxState = obstacleAvoidanceSandbox(struct( ...
+    "FigureVisible", "off", "MissionTime_s", 6));
+testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
+applicationState = guidata(sandboxState.FigureHandle);
+applicationState.GoalMode.StartPosition_deg = [179 0];
+applicationState.GoalMode.GoalPosition_deg = [-179 0];
+guidata(sandboxState.FigureHandle, applicationState);
+controls = applicationState.GoalMode.GraphicsHandles.Controls;
+set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
+set(controls.GoalTimeModeHandle, "Value", 3);
+set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
+runCallback = get(runHandle, "Callback");
+
+runCallback(runHandle, []);
+
+currentState = sandboxState.ReadState();
+result = currentState.GoalMode.LastPlannerResult;
+verifyTrue(testCase, result.Success, result.Message);
+verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
+    "ruckigStopAtWaypoints");
+verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
+verifyEqual(testCase, result.Options.MinimumTravelSavingsRate_deg_s, 12.5);
+verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
+verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
+verifyEqual(testCase, result.position_deg(end, 1), 181, "AbsTol", 1e-9);
+solvedMotionHandle = findobj( ...
+    currentState.GoalMode.GraphicsHandles.Axes, ...
+    "DisplayName", "Solved motion");
+verifyNotEmpty(testCase, solvedMotionHandle);
+verifyTrue(testCase, any(isnan(solvedMotionHandle.XData)));
+verifyGreaterThanOrEqual(testCase, ...
+    min(solvedMotionHandle.XData, [], "omitnan"), -180);
+verifyLessThanOrEqual(testCase, ...
+    max(solvedMotionHandle.XData, [], "omitnan"), 180);
 end
 
 function testPreRunGoalBundlePreservesRequest(testCase)
@@ -292,7 +420,6 @@ function sandboxState = syntheticSandboxState( ...
 modeState = struct( ...
     "StartPosition_deg", initialState.position_deg, ...
     "GoalPosition_deg", goalState.position_deg, ...
-    "WaypointPositions_deg", zeros(0, 2), ...
     "RawObstacleStrokes_deg", {cell(0, 1)}, ...
     "LineObstaclePositions_deg", {cell(0, 1)}, ...
     "PolygonObstaclePositions_deg", {cell(0, 1)}, ...
@@ -300,14 +427,6 @@ modeState = struct( ...
     "PolygonMotionProfiles", strings(0, 1), ...
     "SelectedPolygonIndex", 0, ...
     "CanonicalObstacles", obstacles, ...
-    "SegmentResults", repmat(struct(), 0, 1), ...
-    "CombinedTrajectory", struct( ...
-        "time_s", zeros(0, 1), ...
-        "position_deg", zeros(0, 2), ...
-        "velocity_deg_s", zeros(0, 2), ...
-        "acceleration_deg_s2", zeros(0, 2), ...
-        "jerk_deg_s3", zeros(0, 2), ...
-        "SegmentStartIndices", zeros(0, 1)), ...
     "LastPlannerResult", result, ...
     "LastValidation", validation, ...
     "Status", result.Message, ...
@@ -315,7 +434,7 @@ modeState = struct( ...
     "ResolvedControls", struct());
 sandboxState = struct( ...
     "Options", struct("PlannerOptions", result.Options), ...
-    "GoalMode", modeState, "FreeMode", modeState);
+    "GoalMode", modeState);
 end
 
 function deleteIfPresent(filePath)

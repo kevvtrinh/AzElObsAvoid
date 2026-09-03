@@ -1,0 +1,77 @@
+\appendix
+\section{Engineering appendix: current implementation notes}
+
+This appendix keeps the function detail behind the plain-language story. Every
+statement here was checked against the named source files. It omits the deleted
+warm-start conversion path and the removed stagnation stop.
+
+\subsection{Public entry points and responsibility}
+
+\begin{tabularx}{\textwidth}{p{.28\textwidth}X}
+\toprule
+File & Current responsibility \\
+\midrule
+\scriptsize\url{+obstacleAvoidance/planTrajectory.m} & Public planner entry point. It accepts obstacles, an initial state, a goal state, limits, and optional overrides; a zero-input call returns defaults. \\
+\scriptsize\url{+obstacleAvoidance/+planner/planCorridorQuintic.m} & Internal orchestrator. It normalizes requests, makes route proposals, asks a motion method to construct candidates, invokes the separate validator, and selects only a passed candidate. \\
+\scriptsize\url{trajectory/+bmtpEngine/solve.m} & Seven-input, two-output BMTP engine. It alternates a trajectory calculation with separating-plane calculations, retains a safe best-known result, then performs engine-side checks before public validation. \\
+\scriptsize\url{+obstacleAvoidance/validateTrajectory.m} & Independent public validation of histories, endpoints, continuous bounds, motion limits, collision freedom, safety-margin provenance, and wrapping policy. \\
+\bottomrule
+\end{tabularx}
+
+\sourcefile{+obstacleAvoidance/planTrajectory.m; +obstacleAvoidance/+planner/planCorridorQuintic.m; trajectory/+bmtpEngine/solve.m; +obstacleAvoidance/validateTrajectory.m}
+
+\subsection{Maintained function index}
+
+\begin{tabularx}{\textwidth}{p{.38\textwidth}X}
+\toprule
+Function & Role in the current planner \\
+\midrule
+\scriptsize\url{obstacleAvoidance.obstacles.createObstacle} & Creates canonical obstacle data and applies the requested safety margin once. \\
+\scriptsize\url{obstacleAvoidance.search.createRouteCandidates} & Creates bounded static or timed route proposals and search evidence; proposals are not final collision certificates. \\
+\scriptsize\url{obstacleAvoidance.planner.solveBmtpTrajectory} & Converts static protected geometry to the BMTP engine's convex exclusion regions and coverage record. \\
+\scriptsize\url{bmtpEngine.createDirectMotion} & Constructs an exact direct rest-to-rest motion attempt before route detours are considered. \\
+\scriptsize\url{bmtpEngine.evaluatePolynomial} & Evaluates stored piecewise motion records at requested times. \\
+\scriptsize\url{bmtpEngine.maximumRestToRestDistance} & Returns the maximum one-axis rest-to-rest distance for a specified time and motion limits. \\
+\bottomrule
+\end{tabularx}
+
+\sourcefile{+obstacleAvoidance/+obstacles/createObstacle.m; +obstacleAvoidance/+search/createRouteCandidates.m; +obstacleAvoidance/+planner/solveBmtpTrajectory.m; trajectory/+bmtpEngine/createDirectMotion.m; trajectory/+bmtpEngine/evaluatePolynomial.m; trajectory/+bmtpEngine/maximumRestToRestDistance.m}
+
+\subsection{Current settings and a deliberate trade}
+
+\begin{tabularx}{\textwidth}{p{.30\textwidth}X}
+\toprule
+Setting or behavior & Current source-checked meaning \\
+\midrule
+Automatic plane reuse & After a collision-free trial changes the retained safe duration by no more than the arrival-time tolerance and the same path--region pairs remain involved, the engine reuses its separating planes on the next trajectory calculation. This continuation rule is not a planner option. \\
+Reuse tolerance & The existing \texttt{ArrivalTimeTolerance\_s} owns both convergence and the automatic reuse boundary. \\
+Repeat limit & The BMTP loop has at most 35 iterations. It can stop when the safe arrival improvement reaches the arrival-time tolerance or a time/work limit is reached. There is no stagnation-stop setting or diagnostic in current source. \\
+Removed settings & \texttt{EnablePlaneReuse}, \texttt{PlaneReuseImprovementTolerance\_s}, \texttt{CollocationSegmentCount}, \texttt{MaximumCollocationSegmentCount}, \texttt{MaximumMeshRefinementPasses}, \texttt{MaximumNlpFunctionEvaluations}, \texttt{OptimalityTolerance}, and \texttt{StepTolerance} are not planner options in the current resolver. \\
+\bottomrule
+\end{tabularx}
+
+On the recorded reference comparison, plane reuse was 41\% faster and arrived
+0.016643674134 seconds later; that time cost was accepted. This is one reference
+measurement, not a general performance claim.
+
+\sourcefile{+obstacleAvoidance/+input/resolvePlannerOptions.m:21--23, 49, 95--97; trajectory/+bmtpEngine/solve.m:218--266; branch_assessment.md:19--23}
+
+\subsection{Changes that made the old material wrong}
+
+The old engine-design document is wrong where it describes two former
+warm-start helper functions. Neither exists in the current source tree. It is
+also wrong where it says the stagnation stop is part of the engine, and where
+it says separating-plane reuse is off by default. Current source sets that
+option to true. These are corrections, not editorial choices.
+
+\sourcefile{_srcdocs/bmtp_engine_design.tex:133, 156--157, 194, 362--397, 443--445; +obstacleAvoidance/+input/resolvePlannerOptions.m:49; trajectory/+bmtpEngine/solve.m:218--266}
+
+\subsection{Limits of the documentation record}
+
+The engine records trial durations, collision-pair counts, collision-free flags,
+and reuse diagnostics. It does not retain every intermediate trial curve. That
+is why Figure~\ref{fig:repeats} plainly labels its three curve shapes as
+explanatory sketches, while the times and statuses are exported data. I did not
+infer missing intermediate geometry.
+
+\sourcefile{trajectory/+bmtpEngine/solve.m:193--198, 1073--1083; output/pdf/data/exportPlannerManualData.m}
