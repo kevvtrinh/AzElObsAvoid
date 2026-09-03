@@ -1754,3 +1754,63 @@ warm median improved 5.344%, while the structurally different moving/rotating
 sentinel was exact and 0.790% favorable. All 18 maintained examples preserved
 path length and arrival time and independently validated, all 110 tests passed,
 and the complete serial matrix was 1.348% favorable as a secondary observation.
+
+## Heuristic Completeness And Runtime Safety — 2026-09-03
+
+The supplied `Rogue Examples/failed.mat` artifact is now an exact regression
+fixture rather than a manually interpreted screenshot. Its unchanged request
+selects a 143.928296-degree visibility polyline, produces a
+145.143798-degree validated smooth motion, and arrives at 71.282812 seconds.
+The complete replay test took 41.812 seconds in the final test sequence, while
+the trajectory arrived within the requested 80-second planning horizon. Before
+the retained changes, the same test sequence took 67.365 seconds. Because
+MATLAB warm-up affects wall time, the
+stronger localized evidence is topology work: route-cleanup candidates fell
+from 32,312 to 590 and measured route-search time fell from 5.819 to
+0.663 seconds without changing either selected spatial route.
+
+The retained changes remove three unsupported rejection mechanisms. Spatial
+route duration guesses no longer discard seeds or shorten their request
+horizon. Time-expanded edges use only the componentwise velocity lower bound;
+the prior rest-to-rest acceleration expression was not valid at through-moving
+intermediate nodes. Estimated-time BMTP and direct-wait attempts now preserve
+the full request horizon, and direct waits repair an optimistic search schedule
+with the exact direct-motion duration. A coarse moving-obstacle time-cell solve
+is still tried first, but failure retries the full search-layer resolution.
+Similarly, static convex-region grouping remains an inexpensive first attempt,
+but a grouped failure retries every exact region. The balanced-arrival
+`[0.1, 1, 10]` objective-rate portfolio and the same-class waypoint sweep were
+removed; only the caller's declared exchange rate and the primary shortest
+route in each discovered class remain.
+
+The current heuristics fall into two materially different groups:
+
+- Recoverable proposal accelerators cannot authorize final failure by
+  themselves: exact direct and fixed-clock proposal families, greedy
+  class-preserving route shortening, sampled BMTP overlap tags, conservative
+  static grouping with exact fallback, coarse timed cells with fine fallback,
+  and the endpoint-velocity duration lower bound. Every retained motion still
+  passes the authoritative continuous validator.
+- Explicit work bounds can still make the planner incomplete: the default
+  five-seed budget (maximum nine), 17 time layers, 10,000-vertex proposal
+  switch, 1,000,000 pair-edge visibility budget, sparse Delaunay graph,
+  13-sample timed-edge screen, one winding reference per connected occupied
+  region, winding components limited to `[-1, 1]`, and finite BMTP degree,
+  segment, and iteration budgets. Dense-envelope use also suppresses timed
+  search. These limits are reported, but they are not a proof of no path.
+  In particular, `HomologySearchTruncated` is true when the winding cap or
+  requested class count stops exploration.
+
+The optional moving-target wrapper retains another bounded method for cases
+outside its exact obstacle-free piecewise-linear kernel: 16 chronological
+fixed-time intervals followed by at most 16 refinement trials. The optional
+Ruckig stop-at-waypoint recovery also supports at most two normalized route
+segments. Neither is claimed complete or globally optimal.
+
+The structurally different regressions now protect a nonrest intermediate-node
+timed route, an under-timed direct-wait proposal with ample horizon, fine
+time-cell recovery after coarse overconstraint, and 66 separated static regions
+whose grouped hulls close a valid corridor. The final serial shipped-example
+gate passed 19/19 expected outcomes, including the expected validated no-path
+case, and the complete MATLAB suite passed 117/117 tests. No scenario name,
+expected route, or supplied-artifact geometry was added to production logic.
