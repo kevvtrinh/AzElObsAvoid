@@ -6,7 +6,7 @@ function ranking = createCandidateRanking(summaries, indices, options)
 %**************************************************************************
 % PURPOSE
 %   - Create the declared deterministic ranking for passing candidates.
-%   - Expose objective columns and final order for independent inspection.
+%   - Expose objective columns and stable final order for inspection.
 %**************************************************************************
 % INPUTS
 %   - summaries (candidate-summary struct array)
@@ -29,30 +29,26 @@ function ranking = createCandidateRanking(summaries, indices, options)
 %% Section 1: Create Policy-Specific Ranking Columns
 
 % Ranking is allowed to compare only motions that passed the full trajectory
-% check. Keep the established lexicographic tie breaks visible instead of
-% hiding them in a one-line sort expression.
+% check. Compare only quantities named by the selected objective, then use
+% candidate order as the deterministic final tie break.
 
 indices = indices(:);
 length_deg = [summaries(indices).MotionLength_deg].';
-utilization = [summaries(indices).KinematicUtilization].';
 if options.GoalTimeMode == "fixedArrival"
-    columnNames = ["MotionLength_deg", ...
-        "NegativeKinematicUtilization", "CandidateIndex"];
-    values = [length_deg, -utilization, indices];
+    columnNames = ["MotionLength_deg", "CandidateIndex"];
+    values = [length_deg, indices];
 elseif options.GoalTimeMode == "earliestArrival"
-    columnNames = ["ArrivalTime_s", ...
-        "NegativeKinematicUtilization", "MotionLength_deg", ...
+    columnNames = ["ArrivalTime_s", "MotionLength_deg", ...
         "CandidateIndex"];
     values = [[summaries(indices).ArrivalTime_s].', ...
-        -utilization, length_deg, indices];
+        length_deg, indices];
 else
     columnNames = ["TravelTimeTradeoffCost_deg", "ArrivalTime_s", ...
-        "NegativeKinematicUtilization", "MotionLength_deg", ...
-        "CandidateIndex"];
+        "MotionLength_deg", "CandidateIndex"];
     values = [ ...
         [summaries(indices).TravelTimeTradeoffCost_deg].', ...
         [summaries(indices).ArrivalTime_s].', ...
-        -utilization, length_deg, indices];
+        length_deg, indices];
 end
 
 %% Section 2: Sort Deterministically

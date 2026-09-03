@@ -697,6 +697,22 @@ verifyEqual(testCase, ...
     "hardConstraintOnly");
 end
 
+function testRankingUsesOnlyDeclaredObjectiveQuantities(testCase)
+% Prefer shorter equal-arrival motions without a hidden utilization policy.
+summary = repmat(struct( ...
+    "MotionLength_deg", 10, "KinematicUtilization", 1, ...
+    "ArrivalTime_s", 5, "TravelTimeTradeoffCost_deg", 20), 2, 1);
+summary(2).MotionLength_deg = 9;
+summary(2).KinematicUtilization = 0.1;
+for mode = ["fixedArrival", "earliestArrival", "balancedArrival"]
+    ranking = obstacleAvoidance.planner.createCandidateRanking( ...
+        summary, [1 2], struct("GoalTimeMode", mode));
+    verifyEqual(testCase, ranking.OrderedCandidateIndices(1), 2);
+    verifyFalse(testCase, any(contains( ...
+        ranking.ColumnNames, "KinematicUtilization")));
+end
+end
+
 function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)
 % An infeasible clock is an expected result rather than a thrown error.
 initialState = restState(0, [0 0]);
