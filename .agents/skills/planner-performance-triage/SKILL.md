@@ -109,6 +109,11 @@ arrival. Its `+search/boundedTimeLayers.m` selector is a negative precedent:
 thinning supplied obstacle times can erase a brief feasible opening and must
 not authorize `noValidatedSeed`.
 
+Testing only the first velocity-feasible arrival layer is also a negative
+precedent. A later traversal can be collision-free even when the source cannot
+wait. Discard later arrivals only after a clear earlier arrival and clear
+target waits establish state-and-cost dominance.
+
 ## Never Do These Things
 
 - Never weaken `obstacleAvoidance.validateTrajectory`, a tolerance, or an

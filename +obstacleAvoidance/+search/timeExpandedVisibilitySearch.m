@@ -45,6 +45,33 @@ for layerIndex = 1:layerCount
         obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
         repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
+waitIsClear = false(max(0, layerCount - 1), nodeCount);
+for layerIndex = 1:layerCount - 1
+    candidateNodeIndices = find( ...
+        nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
+    if ~isempty(candidateNodeIndices)
+        waitIsClear(layerIndex, candidateNodeIndices) = edgeIsClear( ...
+            obstacles, nodePosition_deg(candidateNodeIndices, :), ...
+            nodePosition_deg(candidateNodeIndices, :), ...
+            layerTimes_s(layerIndex), layerTimes_s(layerIndex + 1));
+    end
+end
+
+% Arrival layers connected by clear waits form dominance intervals. Within
+% one interval, its first clear arrival reproduces every later arrival.
+isWaitComponentStart = nodeIsFree;
+isWaitComponentStart(2:end, :) = ...
+    nodeIsFree(2:end, :) & ~waitIsClear;
+waitComponentCount = sum(isWaitComponentStart, 1);
+waitComponentFinalLayerIndex = repmat( ...
+    uint32((1:layerCount).'), 1, nodeCount);
+for layerIndex = layerCount - 1:-1:1
+    continuingNodeIndices = find(waitIsClear(layerIndex, :));
+    waitComponentFinalLayerIndex(layerIndex, continuingNodeIndices) = ...
+        waitComponentFinalLayerIndex(layerIndex + 1, continuingNodeIndices);
+end
+motionEdgeExists = isfinite(edgeCost_deg);
+motionEdgeExists(1:nodeCount + 1:end) = false;
 reachable = false(layerCount, nodeCount);
 spatialCost_deg = Inf(layerCount, nodeCount);
 parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
@@ -59,29 +86,30 @@ for layerIndex = 1:layerCount - 1
         break;
     end
     currentNodeIndices = find(reachable(layerIndex, :));
-    maximumTransitionCount = numel(currentNodeIndices) * nodeCount;
-    transitionSourceNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionTargetNodeIndex = zeros(maximumTransitionCount, 1, "uint16");
-    transitionTargetLayerIndex = zeros(maximumTransitionCount, 1, "uint32");
-    transitionLength_deg = zeros(maximumTransitionCount, 1);
-    transitionIsWait = false(maximumTransitionCount, 1);
-    transitionNeedsQuery = false(maximumTransitionCount, 1);
-    transitionCount = 0;
+    maximumMotionCandidateCount = max(1, ...
+        sum(motionEdgeExists(currentNodeIndices, :) * ...
+            waitComponentCount.'));
+    % Columns are source node, target node, current target layer, final
+    % layer in the same safe-wait interval, and spatial length in degrees.
+    motionCandidates = zeros(maximumMotionCandidateCount, 5);
+    motionCandidateCount = 0;
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         if mod(expandedCount - 1, 8) == 0
             obstacleAvoidance.input.throwIfCancellationRequested(options);
         end
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
-        transitionCount = transitionCount + 1;
-        transitionSourceNodeIndex(transitionCount) = uint16(currentNodeIndex);
-        transitionTargetNodeIndex(transitionCount) = uint16(currentNodeIndex);
-        transitionTargetLayerIndex(transitionCount) = uint32(layerIndex + 1);
-        transitionIsWait(transitionCount) = true;
-        transitionNeedsQuery(transitionCount) = ...
-            nodeIsFree(layerIndex + 1, currentNodeIndex);
-        targets = find(isfinite(edgeCost_deg(currentNodeIndex, :)));
-        targets(targets == currentNodeIndex) = [];
+        if waitIsClear(layerIndex, currentNodeIndex)
+            waitCount = waitCount + 1;
+            [reachable, spatialCost_deg, parentLayerIndex, ...
+                parentNodeIndex] = updateTemporalState( ...
+                reachable, spatialCost_deg, parentLayerIndex, ...
+                parentNodeIndex, layerIndex, currentNodeIndex, ...
+                layerIndex + 1, currentNodeIndex, 0);
+        else
+            rejectedCount = rejectedCount + 1;
+        end
+        targets = find(motionEdgeExists(currentNodeIndex, :));
         for targetNodeIndex = reshape(targets, 1, [])
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
                 nodePosition_deg(currentNodeIndex, :);
@@ -92,53 +120,73 @@ for layerIndex = 1:layerCount - 1
             minimumDuration_s = max( ...
                 abs(displacement_deg) ./ limits.maxVelocity_deg_s);
             earliestTime_s = layerTimes_s(layerIndex) + minimumDuration_s - 1e-12;
-            targetLayerIndex = find(layerTimes_s > earliestTime_s, 1, "first");
-            transitionCount = transitionCount + 1;
-            transitionSourceNodeIndex(transitionCount) = uint16(currentNodeIndex);
-            transitionTargetNodeIndex(transitionCount) = uint16(targetNodeIndex);
-            transitionLength_deg(transitionCount) = norm(displacement_deg);
-            if ~isempty(targetLayerIndex)
-                transitionTargetLayerIndex(transitionCount) = ...
-                    uint32(targetLayerIndex);
-                transitionNeedsQuery(transitionCount) = ...
-                    nodeIsFree(targetLayerIndex, targetNodeIndex);
+            firstFeasibleLayerIndex = find( ...
+                layerTimes_s > earliestTime_s, 1, "first");
+            if isempty(firstFeasibleLayerIndex)
+                rejectedCount = rejectedCount + 1;
+                continue;
             end
+            isCandidateStart = isWaitComponentStart( ...
+                firstFeasibleLayerIndex:end, targetNodeIndex);
+            isCandidateStart(1) = nodeIsFree( ...
+                firstFeasibleLayerIndex, targetNodeIndex);
+            firstLayerIndices = find(isCandidateStart) + ...
+                firstFeasibleLayerIndex - 1;
+            if isempty(firstLayerIndices)
+                rejectedCount = rejectedCount + 1;
+                continue;
+            end
+            newMotionCandidateCount = numel(firstLayerIndices);
+            motionIndices = motionCandidateCount + ...
+                (1:newMotionCandidateCount);
+            finalLayerIndices = double(waitComponentFinalLayerIndex( ...
+                firstLayerIndices, targetNodeIndex));
+            motionCandidates(motionIndices, :) = [repmat( ...
+                [currentNodeIndex, targetNodeIndex], ...
+                newMotionCandidateCount, 1), firstLayerIndices, ...
+                finalLayerIndices, repmat(norm(displacement_deg), ...
+                newMotionCandidateCount, 1)];
+            motionCandidateCount = ...
+                motionCandidateCount + newMotionCandidateCount;
         end
     end
-    transitionSourceNodeIndex = transitionSourceNodeIndex(1:transitionCount);
-    transitionTargetNodeIndex = transitionTargetNodeIndex(1:transitionCount);
-    transitionTargetLayerIndex = transitionTargetLayerIndex(1:transitionCount);
-    transitionLength_deg = transitionLength_deg(1:transitionCount);
-    transitionIsWait = transitionIsWait(1:transitionCount);
-    transitionNeedsQuery = transitionNeedsQuery(1:transitionCount);
-    transitionIsClear = false(transitionCount, 1);
-    queriedTargetLayers = unique(transitionTargetLayerIndex(transitionNeedsQuery));
-    for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
-        queryIndices = find(transitionNeedsQuery & ...
-            transitionTargetLayerIndex == targetLayerIndex);
-        transitionIsClear(queryIndices) = edgeIsClear(obstacles, ...
-            nodePosition_deg(double(transitionSourceNodeIndex(queryIndices)), :), ...
-            nodePosition_deg(double(transitionTargetNodeIndex(queryIndices)), :), ...
-            layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
-    end
-    for transitionIndex = 1:transitionCount
-        if ~transitionIsClear(transitionIndex)
-            rejectedCount = rejectedCount + 1;
-            continue;
+    motionCandidates = motionCandidates(1:motionCandidateCount, :);
+    pendingMotion = true(motionCandidateCount, 1);
+
+    % Within each safe-wait interval, stop at its first clear entry edge;
+    % every later entry is dominated by that edge followed by clear waits.
+    while any(pendingMotion)
+        obstacleAvoidance.input.throwIfCancellationRequested(options);
+        queriedTargetLayers = unique( ...
+            motionCandidates(pendingMotion, 3));
+        for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
+            queryIndices = find(pendingMotion & ...
+                motionCandidates(:, 3) == targetLayerIndex);
+            queryIsClear = edgeIsClear(obstacles, ...
+                nodePosition_deg(motionCandidates(queryIndices, 1), :), ...
+                nodePosition_deg(motionCandidates(queryIndices, 2), :), ...
+                layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
+            clearIndices = queryIndices(queryIsClear);
+            motionCount = motionCount + numel(clearIndices);
+            for motionIndex = reshape(clearIndices, 1, [])
+                [reachable, spatialCost_deg, parentLayerIndex, ...
+                    parentNodeIndex] = updateTemporalState( ...
+                    reachable, spatialCost_deg, parentLayerIndex, ...
+                    parentNodeIndex, layerIndex, ...
+                    motionCandidates(motionIndex, 1), ...
+                    motionCandidates(motionIndex, 3), ...
+                    motionCandidates(motionIndex, 2), ...
+                    motionCandidates(motionIndex, 5));
+            end
+            rejectedCount = rejectedCount + nnz(~queryIsClear);
+            pendingMotion(queryIndices) = false;
+            advanceIndices = queryIndices(~queryIsClear & ...
+                motionCandidates(queryIndices, 3) < ...
+                motionCandidates(queryIndices, 4));
+            motionCandidates(advanceIndices, 3) = ...
+                motionCandidates(advanceIndices, 3) + 1;
+            pendingMotion(advanceIndices) = true;
         end
-        sourceNodeIndex = double(transitionSourceNodeIndex(transitionIndex));
-        targetNodeIndex = double(transitionTargetNodeIndex(transitionIndex));
-        targetLayerIndex = double(transitionTargetLayerIndex(transitionIndex));
-        edgeLength_deg = transitionLength_deg(transitionIndex);
-        if transitionIsWait(transitionIndex)
-            waitCount = waitCount + 1;
-        else
-            motionCount = motionCount + 1;
-        end
-            [reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex] = ...
-                updateTemporalState(reachable, spatialCost_deg, parentLayerIndex, ...
-                parentNodeIndex, layerIndex, sourceNodeIndex, targetLayerIndex, ...
-                targetNodeIndex, edgeLength_deg);
     end
 end
 %% Section 2: Reconstruct Goal And Best-Partial Routes

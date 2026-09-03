@@ -1968,3 +1968,21 @@ false-negative heuristic; it makes no performance-based size allowance or
 global completeness claim. Finite seed/node budgets, input-derived temporal
 discretization, sampled timed-edge screening, and finite solver budgets remain
 explicit completeness limits.
+
+## Safe-Wait Arrival Dominance — 2026-09-03
+
+The time-expanded search still had an implicit false-negative rule after time
+layer thinning was removed: for each spatial edge it tested only the first
+velocity-feasible target layer. A collision at that time discarded the edge,
+although a slower traversal could be clear and the source node could be unsafe
+to wait at. The retained search tests the first clear arrival in each target
+interval connected by verified stationary waits. That arrival dominates later
+entries in the same interval because it has the same spatial cost and can
+reproduce their state and time by following the already-validated waits.
+
+Enumerating every later target layer was rejected because it nearly doubled
+warm scaling-probe time. The retained dominance implementation stays inside
+the existing search, batches the same collision predicate, and adds no helper,
+wrapper, option, diagnostic field, production file, or dependency. Its claim is
+exact only relative to the supplied time layers and existing 13-sample edge
+predicate; those discretizations remain explicit completeness limits.

@@ -6989,3 +6989,45 @@ wrapper, option, or dependency. The working production tree is 19,674 physical
 MATLAB lines and 13,845 nonblank/noncomment lines. The result removes both a
 false-negative heuristic and its abstraction rather than layering a recovery
 mechanism over it.
+
+## Safe-Wait Arrival Dominance — 2026-09-03
+
+Baseline commit was `08c3171` on `bmtp-cleanup-codex`, with the documented
+user-owned dirty files preserved. A two-node moving-obstacle probe made the
+source unsafe to wait at 0.25 seconds and blocked the first velocity-feasible
+0.5-second traversal. The same direct edge was collision-free at 1 second, but
+the baseline returned no route. The retained regression reaches the goal at 1
+second and independently samples that motion at 101 times.
+
+An exhaustive candidate tested every later layer and fixed the probe, but was
+rejected: its warm 24-node, 41-layer complete-graph run took 1.618--1.707
+seconds versus the committed 0.861912-second smoke baseline. The retained
+search instead partitions target layers by verified safe waits, tests arrivals
+only until the first clear entry in each partition, and batches equal target
+layers through the existing collision query. Warm repeats were 0.887845,
+0.894181, and 0.956589 seconds. The difference is treated as runtime noise;
+no speedup is claimed.
+
+A seeded differential oracle enumerated every feasible temporal edge for 60
+random moving-obstacle graphs under earliest, balanced, and fixed arrival. All
+180 comparisons matched route existence, selected goal layer, and spatial
+cost. The focused timed-search gate passed 4/4, the planner contract passed
+27/27, and Code Analyzer reported zero findings in the changed production
+file. The complete suite, including `Rogue Examples/failed.mat`, passed 122/122
+in 155.942464 seconds.
+
+The direct supplied-bundle replay retained its 143.92829584254-degree polyline,
+145.143797542061-degree smooth motion, and 71.2828117654205-second arrival.
+Independent validation, collision, kinematic, and certificate checks passed in
+43.155695 seconds. The 19-file headless example matrix passed 19/19 expected
+outcomes in 163.692676 summed planner seconds. The prior matrix was 163.823447
+seconds, so the aggregate observation is neutral. Every success passed
+independent collision and kinematic validation; `exampleNoPath` returned the
+expected independently validated `noValidatedSeed`.
+
+The milestone adds no production file, helper, wrapper, option, diagnostic
+field, or dependency. Production is +108/-60 lines relative to `08c3171`, a net
+48 physical lines for the completeness repair. The working production tree is
+19,722 physical MATLAB lines and 13,885 nonblank/noncomment lines. The 13-sample
+timed-edge predicate and finite supplied time grid remain disclosed
+completeness limits; this change does not claim continuous-time completeness.
