@@ -49,8 +49,8 @@ bounded decision that prevented a useful candidate:
    traversal collides. An earlier arrival dominates a later one only within a
    target-layer interval joined by verified clear stationary waits.
 4. A cheap conservative representation may run first, but its failure must not
-   be final. Dense-envelope timed search, coarse timed cells, grouped static
-   regions, and deferred multi-winding routes all have existing recovery paths;
+   be final. Dense-envelope timed search, grouped static regions, and deferred
+   multi-winding routes all have existing recovery paths;
    reuse their prior work instead of rebuilding the stage.
 5. Before the first collision-free static BMTP iterate, an infeasible
    trajectory SOCP may expand only to the finite warm duration. Final dilation

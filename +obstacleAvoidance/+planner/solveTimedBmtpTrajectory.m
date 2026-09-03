@@ -66,96 +66,78 @@ else
 end
 trialTime_s = unique(double(trialTime_s(:)), "stable");
 maximumTimedSegmentCount = options.MaximumTimeLayerCount - 1;
-timedSegmentCounts = createTimedSegmentCounts( ...
-    seed, maximumTimedSegmentCount);
+timedSegmentCounts = maximumTimedSegmentCount;
 trialTemplate = struct( ...
     "FinalTime_s", NaN, "TimedSegmentCount", 0, ...
     "Coverage", struct(), ...
     "Success", false, "TerminationReason", "notRun", ...
     "ValidationPassed", false, "ValidationMessage", "", ...
     "ElapsedTime_s", 0, "ValidationElapsedTime_s", 0);
-maximumTrialCount = numel(trialTime_s) * numel(timedSegmentCounts);
+maximumTrialCount = numel(trialTime_s);
 trials = repmat(trialTemplate, maximumTrialCount, 1);
-candidate = bmtpEngine.createMotionRecord( ...
-    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
 checkResult = obstacleAvoidance.validateTrajectory();
 validationElapsedTime_s = 0;
-diagnostics = struct( ...
-    "Identifier", "bmtpTimedCell", "Attempted", true, ...
-    "Accepted", false, "TrialCount", maximumTrialCount, ...
-    "TimedSegmentCounts", timedSegmentCounts, ...
-    "SegmentCountFallbackAttempted", false, ...
-    "Trials", trials, "ElapsedTime_s", 0, ...
-    "TerminationReason", "noTimedCellTrajectory");
 totalTimer = tic;
 
-%% Section 2: Solve Each Conservative Time-Cell Representation
+%% Section 2: Solve Each Full-Resolution Time-Cell Representation
 
 fixedOptions = options;
 fixedOptions.GoalTimeMode = "fixedArrival";
 completedTrialCount = 0;
 for timeIndex = 1:numel(trialTime_s)
     fixedGoalState = createFixedGoalState(goalState, trialTime_s(timeIndex));
-    for segmentCountIndex = 1:numel(timedSegmentCounts)
-        completedTrialCount = completedTrialCount + 1;
-        timedSegmentCount = timedSegmentCounts(segmentCountIndex);
-        [regions_deg, coverage] = createTimeCellRegions( ...
-            obstacles, startTime_s, trialTime_s(timeIndex), ...
-            timedSegmentCount);
-        trialTimer = tic;
-        [trialCandidate, trialDiagnostics] = bmtpEngine.solve( ...
-            seed, regions_deg, coverage, initialState, fixedGoalState, ...
-            limits, fixedOptions);
-        trials(completedTrialCount).FinalTime_s = trialTime_s(timeIndex);
-        trials(completedTrialCount).TimedSegmentCount = timedSegmentCount;
-        trials(completedTrialCount).Coverage = coverage;
-        trials(completedTrialCount).Success = trialCandidate.Success;
-        trials(completedTrialCount).TerminationReason = ...
-            trialCandidate.TerminationReason;
-        trials(completedTrialCount).ElapsedTime_s = toc(trialTimer);
+    completedTrialCount = completedTrialCount + 1;
+    [regions_deg, coverage] = createTimeCellRegions( ...
+        obstacles, startTime_s, trialTime_s(timeIndex), ...
+        maximumTimedSegmentCount);
+    trialTimer = tic;
+    [trialCandidate, trialDiagnostics] = bmtpEngine.solve( ...
+        seed, regions_deg, coverage, initialState, fixedGoalState, ...
+        limits, fixedOptions);
+    trials(completedTrialCount).FinalTime_s = trialTime_s(timeIndex);
+    trials(completedTrialCount).TimedSegmentCount = ...
+        maximumTimedSegmentCount;
+    trials(completedTrialCount).Coverage = coverage;
+    trials(completedTrialCount).Success = trialCandidate.Success;
+    trials(completedTrialCount).TerminationReason = ...
+        trialCandidate.TerminationReason;
+    trials(completedTrialCount).ElapsedTime_s = toc(trialTimer);
+    candidate = trialCandidate;
+    diagnostics = trialDiagnostics;
+    diagnostics.Identifier = "bmtpTimedCell";
+    diagnostics.TrialCount = maximumTrialCount;
+    diagnostics.TimeCellTrials = trials;
+    diagnostics.TimedCellTrialCount = completedTrialCount;
+    diagnostics.TimedSegmentCounts = timedSegmentCounts;
+    diagnostics.SegmentCountFallbackAttempted = false;
+    diagnostics.DynamicObstacleRepresentation = ...
+        "perIntervalProtectedGeometryConvexHull";
+    if trialCandidate.Success
+        [trialCandidate, trialCheck, trialValidationTime_s, ...
+            stageTiming] = ...
+            obstacleAvoidance.planner.checkCandidateMotion( ...
+            trialCandidate, obstacles, initialState, goalState, limits, ...
+            options, stageTiming, ...
+            "The timed-cell BMTP kernel returned no trajectory.");
+        validationElapsedTime_s = validationElapsedTime_s + ...
+            trialValidationTime_s;
+        trials(completedTrialCount).ValidationPassed = trialCheck.Passed;
+        trials(completedTrialCount).ValidationMessage = trialCheck.Message;
+        trials(completedTrialCount).ValidationElapsedTime_s = ...
+            trialValidationTime_s;
         candidate = trialCandidate;
-        diagnostics = trialDiagnostics;
-        diagnostics.Identifier = "bmtpTimedCell";
-        diagnostics.TrialCount = maximumTrialCount;
+        checkResult = trialCheck;
         diagnostics.TimeCellTrials = trials;
-        diagnostics.TimedCellTrialCount = completedTrialCount;
-        diagnostics.TimedSegmentCounts = timedSegmentCounts;
-        diagnostics.SegmentCountFallbackAttempted = segmentCountIndex > 1;
-        diagnostics.DynamicObstacleRepresentation = ...
-            "perIntervalProtectedGeometryConvexHull";
-        if trialCandidate.Success
-            [trialCandidate, trialCheck, trialValidationTime_s, ...
-                stageTiming] = ...
-                obstacleAvoidance.planner.checkCandidateMotion( ...
-                trialCandidate, obstacles, initialState, goalState, limits, ...
-                options, stageTiming, ...
-                "The timed-cell BMTP kernel returned no trajectory.");
-            validationElapsedTime_s = validationElapsedTime_s + ...
-                trialValidationTime_s;
-            trials(completedTrialCount).ValidationPassed = trialCheck.Passed;
-            trials(completedTrialCount).ValidationMessage = trialCheck.Message;
-            trials(completedTrialCount).ValidationElapsedTime_s = ...
-                trialValidationTime_s;
-            candidate = trialCandidate;
-            checkResult = trialCheck;
-            diagnostics.TimeCellTrials = trials;
-        end
-        if trialCandidate.Success && trialCheck.Passed
-            diagnostics.Accepted = true;
-            diagnostics.TerminationReason = "goalReached";
-            break;
-        end
     end
-    if diagnostics.Accepted
+    if trialCandidate.Success && trialCheck.Passed
+        diagnostics.Accepted = true;
+        diagnostics.TerminationReason = "goalReached";
         break;
     end
 end
 diagnostics.TimeCellTrials = trials;
 diagnostics.TimedCellTrialCount = completedTrialCount;
-diagnostics.SegmentCountFallbackAttempted = ...
-    timedSegmentCounts(1) ~= maximumTimedSegmentCount && ...
-    any([trials(1:completedTrialCount).TimedSegmentCount] == ...
-    maximumTimedSegmentCount);
+diagnostics.SegmentCountFallbackAttempted = false;
 diagnostics.ElapsedTime_s = toc(totalTimer);
 candidate.SolverDiagnostics = diagnostics;
 end
@@ -260,20 +242,6 @@ for eventIndex = 1:numel(obstacleTimes_s)
     candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);
 end
 cellEdges_s = unique(candidateEdges_s, "sorted");
-end
-
-function segmentCounts = createTimedSegmentCounts(seed, maximumSegmentCount)
-% Try a cheap seed clock first, then the least-conservative allowed clock.
-tau = double(seed.tau(:));
-minimumInterval = min(diff(tau));
-coarseSegmentCount = max(1, round(1 / minimumInterval));
-clockResidual = max(abs( ...
-    tau * coarseSegmentCount - round(tau * coarseSegmentCount)));
-if clockResidual > 1e-8 || coarseSegmentCount > maximumSegmentCount
-    coarseSegmentCount = maximumSegmentCount;
-end
-segmentCounts = unique( ...
-    [coarseSegmentCount maximumSegmentCount], "stable");
 end
 
 function vertices_deg = finiteVertices(vertices_deg)

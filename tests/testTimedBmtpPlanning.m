@@ -69,13 +69,15 @@ verifyNotEmpty(testCase, ...
     completedTrials(acceptedTrialIndex).ValidationMessage);
 end
 
-function testTimedCellsRespectSearchLayerBudget(testCase)
-% Keep the continuous optimizer no finer than the search clock it receives.
+function testTimedCellsUseFullSearchLayerBudget(testCase)
+% Use one full-resolution clock instead of a coarse/fine solve portfolio.
 result = testCase.TestData.Result;
 acceptedIndex = find([result.SeedSummaries.ValidationPassed], 1, "first");
 diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
 maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
-verifyTrue(testCase, diagnostics.SegmentCountFallbackAttempted);
+verifyFalse(testCase, diagnostics.SegmentCountFallbackAttempted);
+verifyEqual(testCase, diagnostics.TimedSegmentCounts, ...
+    maximumTimedSegmentCount);
 verifyEqual(testCase, diagnostics.Coverage.TimedSegmentCount, ...
     maximumTimedSegmentCount);
 verifyLessThanOrEqual(testCase, ...
