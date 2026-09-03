@@ -5,11 +5,11 @@ description: Triage Az/El planner runs that stall, consume excessive time, or re
 
 # Planner Performance Triage
 
-Use this companion after performance or a known false-negative signature points
-to a concrete planner path. For unexplained failures and general stage tracing,
-use `planner-failure-diagnosis`; do not restate or bypass its methodology.
+Use this companion only after runtime or a known false-negative signature points
+to a concrete planner path. For unexplained failures, start with
+`planner-failure-diagnosis`; do not duplicate its stage-tracing procedure here.
 
-## Bound A Run And Locate The Atomic Cost
+## Bound And Attribute The Run
 
 Do not wait indefinitely. `planTrajectory` calls `CancellationCheckFcn` at
 stage boundaries. Bound a run with a deadline closure:
@@ -19,50 +19,47 @@ runTimer = tic;
 options.CancellationCheckFcn = @() toc(runTimer) >= deadline_s;
 ```
 
-Catch `planTrajectory:UserCancelled`. To attribute wall time, call `dbstack`
-inside the callback and record the stack frame and elapsed time at every
-checkpoint. Differences between consecutive timestamps belong to the work
-between those checkpoints. The largest gap identifies the atomic call that
-cancellation cannot preempt. Rebuild this as a local diagnostic callback; do
-not depend on a session scratchpad file.
-
-Cancellation cannot interrupt MATLAB while it is inside one atomic solver or
-vectorized geometry call.
+Catch `planTrajectory:UserCancelled`. A callback cannot interrupt one active
+solver or vectorized geometry call, so record `dbstack` and callback times when
+an atomic cost must be localized. Attribute work from returned `StageTiming`,
+`SearchDiagnostics`, and per-seed `SolverDiagnostics`; do not infer the hot
+stage from total wall time or create a persistent diagnostic wrapper.
 
 ## Check Known Cost Centres In This Order
 
 | Cost centre | Measured signature | Consequence |
 | --- | --- | --- |
-| `+search/timeExpandedVisibilitySearch.m` edge generation | Moving-obstacle scene: 41 layers, 23,040 `edgeIsClear` calls, about 299,520 point-time collision samples, 91% of wall time, and no finish within 180 s. Cost is layers x nodes x targets x 13 samples; `edgeIsClear` always uses 13 samples regardless of edge length. | Inspect topology-search work before blaming motion solving. |
-| Per-seed motion solving | Before `26050af`, one losing seed used 55.271 s of a 58.17 s README quick-start plan. | `PerSeedWorkBudgetMultiplier` bounds work only after a seed passes independent validation. It never arms when nothing validates. |
-| `StageTiming` attribution | Fast-path constructors call `validateTrajectory` internally. | Their reported validation time is moved out of `MotionSolvingElapsedTime_s`. A new constructor that omits validation timing silently charges it to motion solving again. |
+| Timed visibility edges | Cost scales with input-derived layers, reached nodes, candidate target layers, and 13 collision samples per edge. | Inspect `MotionEdgeCount`, `WaitEdgeCount`, and temporal state counts before blaming motion solving. |
+| BMTP motion solving | Cost scales with optimizer spans, active curve-region pairs, outer iterations, and trajectory/plane SOCP counts. | A 35-iteration run can retain a valid incumbent; inspect `TrialWasCollisionFree` and `RetainedBestTrialDuration_s` before calling the seed a failure. |
+| `StageTiming` attribution | Exact constructors and timed motion stages can call `validateTrajectory` internally. | Keep nested validation out of `MotionSolvingElapsedTime_s`; do not count the same wall interval twice. |
 
-Prefer a work bound that does not depend on prior success. An incumbent-armed
-bound does nothing on the hard scenes that need it most.
+## Audit `noValidatedSeed` As A Bounded Result
 
-## Recognize The Critical False Negative
+`noValidatedSeed` means only that no attempted motion passed independent
+validation. It is not proof that no physical path exists. Locate the earliest
+bounded decision that prevented a useful candidate:
 
-`TerminationReason = "noValidatedSeed"` does not establish infeasibility.
-Inspect every `SeedSummaries(k).TerminationReason` first.
+1. Confirm that direct, timed, and spatial seeds were retained.
+   `EstimatedDuration_s` is advisory: it must not discard a spatial seed or
+   shorten the motion horizon.
+2. For timed search, retain every input-derived layer. The componentwise
+   velocity bound may exclude physically impossible early arrivals, but a
+   rest-to-rest acceleration estimate is invalid at through-moving nodes.
+3. Do not discard later arrivals merely because the first velocity-feasible
+   traversal collides. An earlier arrival dominates a later one only within a
+   target-layer interval joined by verified clear stationary waits.
+4. A cheap conservative representation may run first, but its failure must not
+   be final. Dense-envelope timed search, coarse timed cells, grouped static
+   regions, and deferred multi-winding routes all have existing recovery paths;
+   reuse their prior work instead of rebuilding the stage.
+5. Before the first collision-free static BMTP iterate, an infeasible
+   trajectory SOCP may expand only to the finite warm duration. Final dilation
+   and validation must still enforce the requested horizon.
 
-If every seed reports `unsupportedTimedTopology` with solve times near
-0.001--0.002 s, the planner discarded the topology search. With dynamic
-obstacles, `supportsStaticHorizon` is false, so seeds route to
-`createTimedSeedCandidate`, which accepts only `directWait` seeds.
-
-Measured on one moving-obstacle bundle with the identical request and
-`WaypointWarmStartMode = "none"` in both legs. The warm-start path was not
-involved, so this signature is not evidence for restoring deleted warm-start
-code:
-
-| Method | Result | Seed evidence |
-| --- | --- | --- |
-| `TrajectoryMethod = "bmtp"` | `success=0`, `noValidatedSeed` | All seeds `unsupportedTimedTopology`, about 0.001 s each. |
-| `TrajectoryMethod = "ruckigWaypoint"` | `success=1`, `validation=1`, arrival 107.632292801 s, length 227.751816227 deg | Winning seeds solved in 0.027 s and 0.083 s. |
-
-The complete run took about 144 s while motion solving took 0.027--0.083 s.
-Treat essentially all cost in this signature as topology search, not solver
-cost.
+Finite route-class, visibility, timed-cell, timed-edge, polynomial, segment,
+and solver budgets remain explicit completeness limits. Change one only with a
+counterexample, a structurally different sentinel, and a measured runtime
+bound; never relabel it as a proof of infeasibility.
 
 ## Stop On Regression Sentinel Movement
 
@@ -70,28 +67,19 @@ Do not judge or bless a change that moves any sentinel. Stop and report it.
 
 | Sentinel | Required value |
 | --- | --- |
-| `exampleTwoOpposingUVisibilityGraph` | arrival 21.6333333333333 s (`649/30`, certified physical floor) |
-| `exampleStaticUShapedObstacle` | duration 20.7124477860115 s; smoothed path 40.2550285040009 deg (selected polyline 34.9425880404659 deg). The duration moved by +1.04e-9 s when the outlying `eps(scale)` reserve was replaced by the authoritative validator's conservative `eps * scale` formula. |
-| README quick-start (`exampleObstacleAvoidance`) | arrival 7.5745417663213 s; length 11.411861 deg. Older records quote `7.574542`; that is a rounded value, so compare at 1e-6, not tighter. |
+| `Rogue Examples/failed.mat` | success and independent validation; polyline 143.92829584254 deg, smooth length 145.143797542061 deg, arrival 71.2828117654205 s |
+| `exampleTwoOpposingUVisibilityGraph` | arrival 21.6333333333333 s |
+| `exampleStaticUShapedObstacle` | polyline 34.9425880404659 deg, smooth length 39.1412774270613 deg, arrival 20.7865397074203 s |
+| README quick-start (`exampleObstacleAvoidance`) | polyline 11.1521195190242 deg, smooth length 11.4116854105306 deg, arrival 7.52917416639509 s |
 | `exampleMovingBarrierWait` | arrival 10.0903015136719 s |
 | `exampleMovingCircleNoAzimuthWrap` | arrival 8.5 s |
 | `exampleMovingDeformingUSOutlineVisibility` | arrival 7.91666666666667 s |
-| Full suite | 84/84 |
-| `exampleNoPath` | Must remain a failure. |
+| Full suite | Zero failed or incomplete tests, including the exact saved bundle |
+| `exampleNoPath` | Independently validated expected failure; do not manufacture success |
 
-Treat `exampleNoPath` as the negative control for every fallback. Making a
-genuinely infeasible request succeed is worse than the bug being fixed.
-
-## Attribute A Winning Construction Correctly
-
-Do not read the winning construction from
-`result.Seeds(result.SelectedSeedIndex).Source`. When a fast path such as the
-cavity portfolio wins, `planCorridorQuintic` passes the original topology seed
-to `finishFastPath`, so the source still reads `visibilityGraph`. A census
-built that way reported zero cavity wins for code whose removal measurably
-regressed `exampleStaticUShapedObstacle` by 0.069 s. Attribute from
-`SearchDiagnostics` instead, and treat "wins no maintained example" as a
-hypothesis to test by removal-and-measure, never as grounds for deletion.
+Treat `exampleNoPath` as the negative control for every recovery. Whenever a
+maintained example runs, report every required metric in the chat as required
+by `AGENTS.md`; an artifact or benchmark row is not a substitute.
 
 ## Use Cross-Branch Evidence Carefully
 
@@ -124,17 +112,11 @@ target waits establish state-and-cost dominance.
 - Never restore the HS3 engine tree. `tests/testArchitectureBoundaries.m`
   enforces `testDeletedHs3EngineTreeRemainsAbsent`.
 - Never let `trajectory/+bmtpEngine` reference `obstacleAvoidance.*`.
-- Never present an incumbent-dependent work bound as protection for scenes
-  where no candidate validates.
+- Never add a wrapper, option, fallback, or diagnostic field when an existing
+  owner can express the invariant directly.
+- Never retain neutral cleanup or speculative optimization. Revert it when the
+  declared correctness, quality, size, or runtime benefit is not demonstrated.
 
-## Consolidate Known Divergence When In Scope
-
-- The predicate "every obstacle is static and active over the horizon" is
-  implemented five times with divergent semantics. One copy lacks an
-  `~isempty` guard and errors on empty `time_s`; another safely returns false.
-- The seed struct literal appears four times. `certificateTemplate` and
-  `candidateTemplate` each exist as local functions in two files.
-
-Consolidate only when the task owns that invariant. Preserve behavior and use
-the authoritative validator's semantics; do not mix cleanup into a focused
-performance change without measured benefit.
+Prefer deletion and one-source-of-truth changes. Run focused tests after each
+coherent edit and the full suite plus maintained example matrix only at major
+behavioral milestones.
