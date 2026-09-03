@@ -1861,3 +1861,9 @@ A rejected intermediate commit introduced an 86-line timed-search wrapper; the
 follow-up consolidation deletes it and is net 36 production lines smaller than
 that commit. The production tree remains materially above its 7,500-line target,
 so no size or runtime-efficiency claim is made for this correctness milestone.
+
+One fresh-process moving/rotating run was an unfavorable 6.096837-second
+outlier versus the wrapper version's 3.663449 seconds. Three immediate retained
+code repeats measured 3.501831, 3.620015, and 3.589213 seconds with identical
+physics. Their 3.589213-second median does not support a regression, but the
+small favorable difference is treated as noise rather than a speedup.

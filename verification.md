@@ -6878,3 +6878,10 @@ expected no-path result passed failure-diagnostic validation. A visible success
 created two visible figures in 4.874535 seconds, and the expected-failure plot
 created 158 graphics objects with `noValidatedSeed` in its title in 5.841729
 seconds.
+
+The fresh-process matrix contained one moving/rotating wall-time outlier at
+6.096837 seconds, compared with 3.663449 seconds for the wrapper version. Three
+repeats on retained code measured 3.501831, 3.620015, and 3.589213 seconds with
+identical path and arrival. The 3.589213-second median shows no retained
+regression; its small favorable difference is below the evidence threshold for
+a speedup claim.
