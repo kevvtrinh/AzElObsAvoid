@@ -97,11 +97,11 @@ end
 spatialTemplate = template;
 spatialTemplate.CorridorBoundary_deg = proposal.shape.Vertices;
 spatialTemplate.UsesReducedGeometry = routeSet.UsesReducedGeometry;
+distinctLengthTolerance_deg = 1e-9 * max(1, directLength_deg);
 for routeIndex = 1:numel(routeSet.SpatialRoutes_deg)
     route_deg = routeSet.SpatialRoutes_deg{routeIndex};
     seed = createSpatialSeed(spatialTemplate, numel(seedSet) + 1, ...
         route_deg, directDuration_s);
-    distinctLengthTolerance_deg = 1e-9 * max(1, directLength_deg);
     if seed.Length_deg > ...
             directLength_deg + distinctLengthTolerance_deg
         seedSet(end + 1, 1) = seed; %#ok<AGROW>
