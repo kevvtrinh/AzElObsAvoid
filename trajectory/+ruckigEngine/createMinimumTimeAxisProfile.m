@@ -40,6 +40,39 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 
 context = createContext(initialState, terminalState, limits);
 candidates = repmat(createEmptyCandidate(), 0, 1);
+stateScale = max(1, max(abs([context.p0, context.pf, context.v0, ...
+    context.vf, context.a0, context.af])));
+stationaryTolerance = 256 * eps(stateScale);
+isStationary = abs(context.displacement) <= stationaryTolerance && ...
+    max(abs([context.v0, context.vf, context.a0, context.af])) <= ...
+        stationaryTolerance;
+if isStationary
+    % A stationary degree of freedom has a certified zero-time minimum and
+    % can later remain idle while other axes synchronize. Treating the lack
+    % of switching events as an unsupported family incorrectly rejects
+    % ordinary multidimensional motions with one unchanged coordinate.
+    candidate = createEmptyCandidate();
+    candidate.Position(:) = context.p0;
+    candidate.Velocity(:) = 0;
+    candidate.Acceleration(:) = 0;
+    candidate.Family = "stationary";
+    candidate.PathLength = 0;
+    candidate.Duration = 0;
+    candidates = candidate;
+    profile = createEmptyProfile();
+    profile.Success = true;
+    profile.Message = "The axis is stationary.";
+    profile.PhaseDuration = candidate.PhaseDuration;
+    profile.PhaseJerk = candidate.PhaseJerk;
+    profile.Duration = 0;
+    profile.FinalTime = initialState.time;
+    profile.Position = candidate.Position;
+    profile.Velocity = candidate.Velocity;
+    profile.Acceleration = candidate.Acceleration;
+    profile.Family = candidate.Family;
+    profile.PathLength = 0;
+    return;
+end
 directions = [1, -1];
 
 for direction = directions

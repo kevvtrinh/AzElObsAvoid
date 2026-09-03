@@ -78,6 +78,14 @@ axisCandidateSets = cell(dimensionCount, 1);
 for dimensionIndex = 1:dimensionCount
     timeTolerance = 256 * eps(max([ ...
         1, commonDuration, minimumDuration(dimensionIndex)]));
+    if minimumProfiles{dimensionIndex}.Family == "stationary"
+        axisProfiles{dimensionIndex} = createStationaryProfile( ...
+            minimumProfiles{dimensionIndex}, commonDuration, ...
+            initialState.time);
+        axisCandidateSets{dimensionIndex} = ...
+            axisProfiles(dimensionIndex);
+        continue;
+    end
     boundaryProfile = findBlockBoundaryProfile( ...
         synchronizationBlocks{dimensionIndex}, ...
         commonDuration, timeTolerance);
@@ -175,6 +183,22 @@ end
 end
 
 %% Section 5: Local Functions
+
+function profile = createStationaryProfile( ...
+        minimumProfile, duration, initialTime)
+% Hold one unchanged rest axis while the moving axes determine the clock.
+profile = minimumProfile;
+profile.PhaseDuration = zeros(1, 7);
+profile.PhaseDuration(4) = duration;
+profile.PhaseJerk = zeros(1, 7);
+profile.Duration = duration;
+profile.FinalTime = initialTime + duration;
+profile.Position = repmat(minimumProfile.Position(1), 1, 8);
+profile.Velocity = zeros(1, 8);
+profile.Acceleration = zeros(1, 8);
+profile.Family = "stationary";
+profile.PathLength = 0;
+end
 
 function block = createSynchronizationBlock(minimumProfile, candidates)
 % Convert certified extremal profiles into at most two infeasible time intervals.
