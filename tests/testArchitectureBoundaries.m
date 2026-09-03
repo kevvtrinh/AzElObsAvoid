@@ -178,12 +178,37 @@ for stageIndex = 1:numel(stageCalls)
     location = strfind(plannerExecutable, stageCalls(stageIndex));
     verifyNotEmpty(testCase, location, sprintf( ...
         "Planner trunk omits required stage: %s", stageCalls(stageIndex)));
-    % The exact-candidate stage also supports a zero-input stable template;
-    % the final occurrence is the executable request-dependent stage call.
-    stageLocations(stageIndex) = location(end);
+    if stageCalls(stageIndex) == "solveExactCandidates("
+        % The exact-candidate stage also supports a zero-input stable template;
+        % its final occurrence is the request-dependent stage call.
+        stageLocations(stageIndex) = location(end);
+    else
+        % Primary stages precede any recovery that deliberately resumes search.
+        stageLocations(stageIndex) = location(1);
+    end
 end
 verifyGreaterThan(testCase, diff(stageLocations), 0, ...
     "Planner stage calls must remain in production execution order.");
+routeLocations = strfind(plannerExecutable, "searchRoutes(");
+timedRecoveryLocations = strfind(plannerExecutable, "searchTimedRoute(");
+seedLocations = strfind(plannerExecutable, "createSeeds(");
+verifyEqual(testCase, numel(routeLocations), 1, ...
+    "The planner must run the spatial route search exactly once.");
+verifyEqual(testCase, numel(timedRecoveryLocations), 1, ...
+    "The planner must own one recovery-only timed search.");
+verifyEqual(testCase, numel(seedLocations), 3, ...
+    "The planner must own two exclusive primary and one recovered conversion.");
+verifyLessThan(testCase, seedLocations(1:2), ...
+    stageLocations(stageCalls == "solveSeeds("), ...
+    "Both mutually exclusive primary seed conversions must precede solving.");
+verifyGreaterThan(testCase, timedRecoveryLocations, ...
+    stageLocations(stageCalls == "solveSeeds("), ...
+    "Deferred timed search must follow rejection of primary seeds.");
+verifyGreaterThan(testCase, seedLocations(3), timedRecoveryLocations, ...
+    "Recovered seed conversion must follow deferred timed search.");
+verifyLessThan(testCase, seedLocations(3), ...
+    stageLocations(stageCalls == "selectValidatedCandidate("), ...
+    "Every recovered seed must exist before final candidate selection.");
 end
 
 function testScenarioSpecificOrthogonalPlannersRemainAbsent(testCase)

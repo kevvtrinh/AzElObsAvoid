@@ -1796,8 +1796,9 @@ The current heuristics fall into two materially different groups:
   switch, 1,000,000 pair-edge visibility budget, sparse Delaunay graph,
   13-sample timed-edge screen, one winding reference per connected occupied
   region, winding components limited to `[-1, 1]`, and finite BMTP degree,
-  segment, and iteration budgets. Dense-envelope use also suppresses timed
-  search. These limits are reported, but they are not a proof of no path.
+  segment, and iteration budgets. Dense-envelope use defers timed search until
+  every cheaper validated-motion source fails. These limits are reported, but
+  they are not a proof of no path.
   In particular, `HomologySearchTruncated` is true when the winding cap or
   requested class count stops exploration.
 
@@ -1814,3 +1815,50 @@ whose grouped hulls close a valid corridor. The final serial shipped-example
 gate passed 19/19 expected outcomes, including the expected validated no-path
 case, and the complete MATLAB suite passed 117/117 tests. No scenario name,
 expected route, or supplied-artifact geometry was added to production logic.
+
+## Deferred Dense Timed-Search Recovery — 2026-09-03
+
+A dense spatial proposal previously disabled exact-history timed search with
+the reason `timedQueryWorkLimit`. That work threshold could therefore authorize
+`noValidatedSeed` even though a wait or time-dependent passage existed. A
+discriminating contract test first reproduced the suppression. A structurally
+different 1,200-vertex moving barrier then showed the end-to-end consequence:
+the cheap direct and spatial attempts failed, while the deferred exact-history
+search created a direct-wait seed that passed full independent validation.
+
+The retained coordinator now treats the dense shortcut only as work ordering.
+It resumes timed search after all initially offered candidates fail validation,
+unless a separately generated exact motion has already passed. Only the newly
+recovered timed seed is solved; unchanged direct and spatial attempts are not
+repeated. Normal and deferred calls share one `searchTimedRoute` implementation,
+and recovery does not rebuild the spatial graph or spatial route classes.
+Stable diagnostics preserve the initial deferral, recovery attempt, timed-search
+record, recovered seed, and candidate validation. The architecture test verifies
+one spatial search and the explicit timed-search-to-seed recovery sequence
+before final candidate selection.
+
+An always-on version was rejected before retention. The dense deforming-outline
+sentinel crossed 90 seconds before the post-run reporting expression failed,
+whereas the prior warm record was 29.292 seconds. Those failed reporting calls
+are not benchmark rows. With lazy recovery, the valid maintained run was
+29.108917 seconds with the unchanged 40.2805679610824-degree geometric and
+smoothed path and 7.91666666666667-second duration. That timing difference is
+within normal noise and is treated as neutral, not as a speedup.
+
+The exact supplied-bundle suite passed 4/4; its unchanged feasible replay took
+41.938 seconds and still arrived at 71.282812 seconds. The complete MATLAB suite
+passed 119/119 tests in 143.548523 seconds. A warm serial headless gate passed
+all 19 expected outcomes with 162.276219 seconds summed example wall time. The
+required fresh-process rerun also passed 19/19 with 195.818790 seconds summed
+example wall time; path lengths and physical arrival times were identical.
+A visible success created two visible figures, and the expected no-path plot
+created 158 graphics objects with `noValidatedSeed` in its title. This change
+removes one false-negative authority without claiming completeness for the
+remaining node, edge, seed, time-layer, winding, or solver work bounds.
+
+The retained production change is 161 added and 41 removed lines relative to
+the pre-existing dirty baseline, for 120 lines of growth. Of that, 86 lines are
+the single shared timed-search owner required by both normal and recovery calls;
+the remaining growth adds lazy coordination and stable diagnostic evidence. The
+production tree remains materially above its 7,500-line target, so no size or
+runtime-efficiency claim is made for this correctness milestone.

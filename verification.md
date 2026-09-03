@@ -6832,3 +6832,45 @@ the independently validated `noValidatedSeed` outcome reproduced every prior
 path length and duration. Their 194.5266044-second wall sum was 1.348% below
 the immediately preceding 197.1835107-second matrix; the controlled dynamic
 median, not that aggregate observation, supports retention.
+
+## Deferred Dense Timed-Search Recovery — 2026-09-03
+
+The baseline was committed `aed8123` on `bmtp-cleanup-codex`, with unrelated
+user-owned changes already present and preserved. The retained change fixes a
+correctness defect: dense proposal geometry may defer exact-history timed
+search, but that work threshold can no longer authorize `noValidatedSeed`.
+Recovery reuses the existing proposal and visibility graph, invokes the one
+shared timed-search owner, and solves only the newly recovered timed seed.
+
+The current production tree contains 19,717 physical MATLAB lines. The
+repository target is 7,500 lines, leaving 12,217 excess lines. The documented
+performance allowance would therefore require
+`0.25 * 12217 / 100 = 30.5425`, or a 3,054.25% wall-time reduction. No such
+reduction exists and no performance-based size allowance or speedup is
+claimed. The closest unchanged dense sentinel moved from a prior warm record
+of 29.291917 seconds to 29.104198 seconds, a 0.641% observation treated as
+ordinary noise. The correctness fix is retained under the repository priority
+that correctness and general behavior outrank size and runtime.
+
+The maintained planner/test tree contains 24,836 physical lines excluding the
+2,651 example lines, so it also remains above the separate 12,000-line cap.
+
+Relative to the pre-existing dirty baseline, experiment-owned production code
+is +161/-41 lines, net +120. The new 86-line `searchTimedRoute.m` file owns the
+exact-history timed-search setup, execution, and terminal-goal-dwell cleanup
+used by both normal and deferred calls. `planTrajectory.m` adds 54 recovery
+lines; its displayed +55/-2 cumulative diff also contains the user's earlier
++1/-2 formatting hunk, which is excluded from this milestone. Diagnostics add
+six fields/assignments, while `searchRoutes.m` is net 26 lines smaller because
+the duplicated timed-search implementation moved to its shared owner.
+
+The focused architecture and contract gate passed 31/31 in 41.826 seconds,
+and Code Analyzer reported zero findings in all six changed MATLAB files. The
+complete suite, including the exact saved failure bundle, passed 119/119 in
+143.548523 seconds. A warm serial maintained-example run passed 19/19 with
+162.276219 seconds summed example wall time. The required fresh-process run
+also passed 19/19 with 195.818790 seconds summed example wall time. Every
+successful motion passed independent collision and kinematic validation; the
+expected no-path result passed failure-diagnostic validation. A visible success
+created two visible figures, and the expected-failure plot created 158 graphics
+objects with `noValidatedSeed` in its title.

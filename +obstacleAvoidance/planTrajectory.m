@@ -236,6 +236,60 @@ end
 candidateSet = obstacleAvoidance.planner.solveSeeds( ...
     seeds, seedSolveContext, stageTiming, ...
     physicalArrivalLowerBound_s, planningTimer);
+
+% A dense spatial envelope may defer exact timed search, but it cannot
+% authorize a no-trajectory result. Pay that cost only when every initially
+% offered candidate and the separately validated exact motion have failed.
+needsDeferredTimedRecovery = needsRouteSearch && ...
+    routeSet.TimedSearchDeferred && ...
+    ~any([candidateSet.CheckResults.Passed]) && ...
+    ~exactMotionSet.ExcursionIsValidated;
+if needsDeferredTimedRecovery
+    recoverySearchTimer = tic;
+    timedSearch = obstacleAvoidance.search.searchTimedRoute( ...
+        scene, request, proposal, visibilityGraph);
+    recoverySearchElapsedTime_s = toc(recoverySearchTimer);
+    routeSet.TimedRoute_deg = timedSearch.Route_deg;
+    routeSet.TimedRouteTime_s = timedSearch.RouteTime_s;
+    routeSet.TimedSearchRecord = timedSearch.Record;
+    routeSet.TimedSearchOptions = timedSearch.Options;
+    routeSet.TimedSearchAttempted = true;
+    routeSet.TimedSearchRecoveryAttempted = true;
+    routeSet.TimedSearchSuppressionReason = "";
+    stageTiming = candidateSet.StageTiming;
+    stageTiming.TopologyElapsedTime_s = ...
+        stageTiming.TopologyElapsedTime_s + recoverySearchElapsedTime_s;
+    candidateSet.StageTiming = stageTiming;
+    if ~isempty(routeSet.TimedRoute_deg)
+        timedOnlyRouteSet = routeSet;
+        timedOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
+        recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
+            timedOnlyRouteSet, proposal, request);
+        recoveredSeed = recoveredSeeds(2);
+        recoveredSeed.Index = numel(candidateSet.Seeds) + 1;
+        [recoveredCandidate, recoveredSummary, recoveredCheck, ...
+            stageTiming] = obstacleAvoidance.planner.solveOneSeed( ...
+            recoveredSeed, seedSolveContext, stageTiming);
+        candidateSet.Seeds(end + 1, 1) = recoveredSeed;
+        candidateSet.Candidates{end + 1, 1} = recoveredCandidate;
+        candidateSet.Summaries(end + 1, 1) = recoveredSummary;
+        candidateSet.CheckResults(end + 1, 1) = recoveredCheck;
+        if recoveredCheck.Passed && ...
+                isnan(candidateSet.FirstValidatedMotionTime_s)
+            candidateSet.FirstValidatedMotionTime_s = toc(planningTimer);
+        end
+        candidateSet.StageTiming = stageTiming;
+    end
+    gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
+        proposal, visibilityGraph, routeSet, candidateSet.Seeds);
+    gridDiagnostics.ElapsedTime_s = ...
+        candidateSet.StageTiming.TopologyElapsedTime_s;
+    result.SearchDiagnostics.Grid = gridDiagnostics;
+    result.SearchDiagnostics.StageOutputs.RouteSet = routeSet;
+    result.SearchDiagnostics.StageOutputs.SeedSet = candidateSet.Seeds;
+    result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
+        gridDiagnostics.ElapsedTime_s;
+end
 seeds = candidateSet.Seeds;
 candidates = candidateSet.Candidates;
 seedSummaries = candidateSet.Summaries;

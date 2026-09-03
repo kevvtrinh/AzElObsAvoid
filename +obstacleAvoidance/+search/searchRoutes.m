@@ -31,13 +31,14 @@ function routeSet = searchRoutes(scene, request, proposal, visibilityGraph)
 %% Section 1: Search Complete Input-Derived Time Layers
 
 % Changing obstacle histories may admit waits or time-dependent passages that
-% a spatial union hides. Search the exact histories unless proposal work was
-% already reduced; that conservative reduction remains explicit in coverage.
+% a spatial union hides. Defer the expensive exact-history search for a dense
+% proposal until the caller confirms that every cheap motion attempt failed.
+% The planner-level recovery stage owns resuming deferred work; this initial
+% search records the deferral but cannot authorize final failure.
 
 obstacles = scene.preparedObstacles;
 initialState = request.initialState;
 goalState = request.goalState;
-limits = request.limits;
 options = request.options;
 nodePosition_deg = visibilityGraph.NodePosition_deg;
 timedRoute_deg = zeros(0, 2);
@@ -45,31 +46,22 @@ timedRouteTime_s = zeros(0, 1);
 timedRecord = struct();
 timedSearchOptions = options;
 timedSearchAttempted = false;
+timedSearchDeferred = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
 hasChangingHistory = obstacleAvoidance.obstacles.hasChangingHistory( ...
     obstacles, initialState.time_s, goalState.time_s);
 if hasChangingHistory && proposal.usedDenseEnvelope
-    timedSearchSuppressionReason = "timedQueryWorkLimit";
+    timedSearchDeferred = true;
+    timedSearchSuppressionReason = "deferredDenseTimedSearch";
 elseif hasChangingHistory
+    timedSearch = obstacleAvoidance.search.searchTimedRoute( ...
+        scene, request, proposal, visibilityGraph);
+    timedRoute_deg = timedSearch.Route_deg;
+    timedRouteTime_s = timedSearch.RouteTime_s;
+    timedRecord = timedSearch.Record;
+    timedSearchOptions = timedSearch.Options;
     timedSearchAttempted = true;
     timedSearchSuppressionReason = "";
-    timedCost_deg = hypot( ...
-        nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', ...
-        nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
-    if options.GoalTimeMode == "balancedArrival"
-        % The spatial candidates supply the fast end of the later selection.
-        % Preserve final-horizon ancestry here, then remove irrelevant dwell
-        % at the goal so this route represents obstacle-dependent timing.
-        timedSearchOptions.GoalTimeMode = "fixedArrival";
-    end
-    [timedRoute_deg, timedRouteTime_s, timedRecord] = ...
-        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-        nodePosition_deg, timedCost_deg, obstacles, initialState, ...
-        goalState, limits, proposal.sampleTimes_s, timedSearchOptions);
-    if options.GoalTimeMode == "balancedArrival"
-        [timedRoute_deg, timedRouteTime_s] = trimTerminalGoalDwell( ...
-            timedRoute_deg, timedRouteTime_s, proposal.goal_deg);
-    end
 end
 
 %% Section 2: Search Distinct Spatial Route Classes
@@ -104,6 +96,8 @@ routeSet = struct( ...
     "TimedSearchRecord", timedRecord, ...
     "TimedSearchOptions", timedSearchOptions, ...
     "TimedSearchAttempted", timedSearchAttempted, ...
+    "TimedSearchDeferred", timedSearchDeferred, ...
+    "TimedSearchRecoveryAttempted", false, ...
     "TimedSearchSuppressionReason", timedSearchSuppressionReason, ...
     "SpatialRoutes_deg", {spatialRoutes_deg}, ...
     "RouteClassPattern", routeClassPattern, ...
@@ -112,24 +106,4 @@ routeSet = struct( ...
     "ObstacleReferencePoints_deg", ...
     visibilityGraph.ObstacleReferencePoints_deg, ...
     "UsesReducedGeometry", proposal.usedDenseEnvelope);
-end
-
-%% Section 4: Local Functions
-
-function [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
-        route_deg, routeTime_s, goal_deg)
-% Remove only repeated goal occupancy after the first verified arrival.
-if isempty(route_deg)
-    return;
-end
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    route_deg, goal_deg);
-goalTolerance_deg = 256 * eps(coordinateScale_deg);
-firstGoalIndex = find(vecnorm(route_deg - goal_deg, 2, 2) <= ...
-    goalTolerance_deg, 1, "first");
-if isempty(firstGoalIndex)
-    return;
-end
-route_deg = route_deg(1:firstGoalIndex, :);
-routeTime_s = routeTime_s(1:firstGoalIndex);
 end
