@@ -1,8 +1,12 @@
-function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
+function [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
+        denseSweptEnvelope( ...
         obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [envelopeShape, usedEnvelope] = ...
+%       obstacleAvoidance.search.denseSweptEnvelope( ...
+%       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
+%   [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       obstacleAvoidance.search.denseSweptEnvelope( ...
 %       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
 %**************************************************************************
@@ -25,6 +29,8 @@ function [envelopeShape, usedEnvelope] = denseSweptEnvelope( ...
 %       Separate conservative history hulls, or empty when unused.
 %   - usedEnvelope (logical scalar)
 %       True only when dense fallback was needed and protects both endpoints.
+%   - estimatedVertexWork (nonnegative integer scalar)
+%       Sample-time count times the maximum stored vertices per obstacle.
 %**************************************************************************
 % UNITS
 %   - Position is degrees; time is seconds; work is a vertex count.
@@ -46,7 +52,8 @@ for obstacleIndex = 1:numel(obstacles)
 end
 envelopeShape = polyshape();
 usedEnvelope = false;
-if numel(sampleTimes_s) * verticesPerLayer <= vertexWorkBudget
+estimatedVertexWork = numel(sampleTimes_s) * verticesPerLayer;
+if estimatedVertexWork <= vertexWorkBudget
     return;
 end
 

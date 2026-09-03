@@ -48,31 +48,15 @@ end
 sampleTimes_s = createObstacleSampleTimes( ...
     obstacles, scene.startTime_s, scene.endTime_s);
 
-%% Section 2: Estimate Sampled-Union Work
-
-% Very dense histories can make the ordinary sampled union disproportionately
-% expensive. Estimate its vertex work before selecting the representation.
-
-vertexWorkBudget = 10e3;
-verticesPerTime = 0;
-for obstacleIndex = 1:numel(obstacles)
-    maximumVertexCount = 0;
-    for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-        maximumVertexCount = max(maximumVertexCount, ...
-            numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
-    end
-    verticesPerTime = verticesPerTime + maximumVertexCount;
-end
-estimatedVertexWork = numel(sampleTimes_s) * verticesPerTime;
-
-%% Section 3: Select The Proposal Representation
+%% Section 2: Select The Proposal Representation
 
 % Try the dense-history envelope only when sampled-union work exceeds its
 % limit. If that envelope covers an endpoint, use the exact sampled union so
 % conservative proposal geometry does not erase the planning request.
 
+vertexWorkBudget = 10e3;
 obstacleAvoidance.input.throwIfCancellationRequested(request.options);
-[proposalShape, usedDenseEnvelope] = ...
+[proposalShape, usedDenseEnvelope, estimatedVertexWork] = ...
     obstacleAvoidance.search.denseSweptEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
 if usedDenseEnvelope
@@ -85,7 +69,7 @@ else
     representation = "sampledObstacleUnion";
 end
 
-%% Section 4: Create Reusable Proposal Edges
+%% Section 3: Create Reusable Proposal Edges
 
 % Visibility attempts and spatial route cleanup query the same selected shape.
 % Create its ordered edges once so those later stages cannot diverge.
@@ -93,7 +77,7 @@ end
 [edgeStart_deg, edgeEnd_deg] = ...
     obstacleAvoidance.geometry.boundaryToEdges(proposalShape, 1e-12);
 
-%% Section 5: Assemble The Proposal
+%% Section 4: Assemble The Proposal
 
 % Retain the decision inputs and chosen geometry. Plotting and diagnosis can
 % inspect this stage without rerunning obstacle queries or route planning.
@@ -112,7 +96,7 @@ proposal = struct( ...
     "edgeEnd_deg", edgeEnd_deg);
 end
 
-%% Section 6: Local Functions
+%% Section 5: Local Functions
 
 function sampleTimes_s = createObstacleSampleTimes( ...
         obstacles, startTime_s, endTime_s)
