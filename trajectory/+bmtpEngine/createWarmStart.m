@@ -24,17 +24,21 @@ function warmStart = createWarmStart(request)
 
 % A usable starting curve gives the alternating solver a topology-consistent
 % homotopy before separating lines are introduced. Timed coverage preserves
-% its cells; ordinary routes retain the historical segment cap and split order.
+% its cells. Spatial routes preserve every genuine turn while redistributing
+% their existing optimizer spans by distance, so input vertex spacing cannot
+% give a long edge the same representation as a nearly zero-length edge.
 
 seed = request.Seed;
 if request.UsesTimedCells
     route_deg = createTimedWarmRoute( ...
         seed, request.Coverage.TimedSegmentCount, ...
         request.MaximumWarmSegmentCount);
+    warmRouteResampled = size(seed.position_deg, 1) - 1 > ...
+        request.MaximumWarmSegmentCount;
 else
-    route_deg = limitWarmRouteSegments( ...
-        double(seed.position_deg), request.MaximumWarmSegmentCount);
-    route_deg = splitRoute(route_deg, request.SplitCount);
+    [route_deg, warmRouteResampled] = createSpatialWarmRoute( ...
+        double(seed.position_deg), request.SplitCount, ...
+        request.MaximumWarmSegmentCount);
 end
 route_deg([1 end], :) = [request.InitialState.position_deg; ...
     request.GoalState.position_deg];
@@ -60,8 +64,7 @@ warmStart = struct( ...
     "SegmentCount", segmentCount, ...
     "RegionActiveBySegment", regionActiveBySegment, ...
     "OriginalSeedSegmentCount", originalSeedSegmentCount, ...
-    "WarmRouteResampled", ...
-    originalSeedSegmentCount > request.MaximumWarmSegmentCount);
+    "WarmRouteResampled", warmRouteResampled);
 end
 %% Section 3: Local Functions
 
@@ -88,34 +91,123 @@ route_deg = interp1(double(seed.tau(:)), double(seed.position_deg), ...
     queryTau, "linear");
 end
 
-function route_deg = splitRoute(seedRoute_deg, splitCount)
-% Split each authored edge uniformly without introducing route preference.
-edgeCount = size(seedRoute_deg, 1) - 1;
-route_deg = zeros(edgeCount * splitCount + 1, 2);
-fractions = repmat((0:splitCount - 1).' / splitCount, edgeCount, 1);
-edgeStart_deg = repelem(seedRoute_deg(1:end - 1, :), splitCount, 1);
-edgeDelta_deg = repelem(diff(seedRoute_deg, 1, 1), splitCount, 1);
-route_deg(1:end - 1, :) = edgeStart_deg + fractions .* edgeDelta_deg;
-route_deg(end, :) = seedRoute_deg(end, :);
+function [route_deg, wasCanonicalized] = createSpatialWarmRoute( ...
+        seedRoute_deg, splitCount, maximumSegmentCount)
+% Preserve true corners while making the optimizer independent of vertex density.
+[canonicalRoute_deg, wasCanonicalized] = ...
+    removeRedundantRoutePoints(seedRoute_deg);
+edgeCount = size(canonicalRoute_deg, 1) - 1;
+
+% The existing split count remains the representation budget per genuine
+% edge. More than the nominal cap is allowed only when required to retain
+% genuine corners; silently deleting a corner could change the route class.
+subdivisionEdgeCount = min(edgeCount, maximumSegmentCount);
+targetSegmentCount = max(edgeCount, subdivisionEdgeCount * splitCount);
+segmentCountByEdge = allocateSegmentsByLength( ...
+    canonicalRoute_deg, targetSegmentCount);
+route_deg = splitRouteByCount(canonicalRoute_deg, segmentCountByEdge);
+wasCanonicalized = wasCanonicalized || edgeCount > maximumSegmentCount;
 end
 
-function route_deg = limitWarmRouteSegments(route_deg, maximumSegmentCount)
-% Resample only oversized warm routes; final feasibility is independently checked.
-segmentCount = size(route_deg, 1) - 1;
-if segmentCount <= maximumSegmentCount
+function [route_deg, wasReduced] = removeRedundantRoutePoints(route_deg)
+% Remove only roundoff-scale duplicates and points lying on a straight edge.
+[~, geometryTolerance_deg] = ...
+    bmtpEngine.createCoordinateTolerances(route_deg);
+originalPointCount = size(route_deg, 1);
+
+distinctRoute_deg = zeros(size(route_deg));
+distinctPointCount = 1;
+distinctRoute_deg(1, :) = route_deg(1, :);
+for pointIndex = 2:originalPointCount
+    if norm(route_deg(pointIndex, :) - ...
+            distinctRoute_deg(distinctPointCount, :)) > ...
+            geometryTolerance_deg
+        distinctPointCount = distinctPointCount + 1;
+        distinctRoute_deg(distinctPointCount, :) = route_deg(pointIndex, :);
+    end
+end
+distinctRoute_deg = distinctRoute_deg(1:distinctPointCount, :);
+if distinctPointCount == 1
+    route_deg = [distinctRoute_deg; distinctRoute_deg];
+    wasReduced = originalPointCount > 2;
     return;
 end
-distance_deg = [0; cumsum(vecnorm(diff(route_deg, 1, 1), 2, 2))];
-keepPoint = [true; diff(distance_deg) > 0];
-distance_deg = distance_deg(keepPoint);
-route_deg = route_deg(keepPoint, :);
-if distance_deg(end) <= 0
-    route_deg = repmat(route_deg(1, :), maximumSegmentCount + 1, 1);
+
+route_deg = zeros(size(distinctRoute_deg));
+retainedPointCount = 0;
+for pointIndex = 1:distinctPointCount
+    retainedPointCount = retainedPointCount + 1;
+    route_deg(retainedPointCount, :) = distinctRoute_deg(pointIndex, :);
+    while retainedPointCount >= 3 && pointLiesOnSegment( ...
+            route_deg(retainedPointCount - 1, :), ...
+            route_deg(retainedPointCount - 2, :), ...
+            route_deg(retainedPointCount, :), geometryTolerance_deg)
+        route_deg(retainedPointCount - 1, :) = ...
+            route_deg(retainedPointCount, :);
+        retainedPointCount = retainedPointCount - 1;
+    end
+end
+route_deg = route_deg(1:retainedPointCount, :);
+wasReduced = retainedPointCount < originalPointCount;
+end
+
+function isOnSegment = pointLiesOnSegment( ...
+        point_deg, start_deg, finish_deg, tolerance_deg)
+% Recognize subdivision points without erasing reversals or genuine turns.
+chord_deg = finish_deg - start_deg;
+chordLengthSquared_deg2 = dot(chord_deg, chord_deg);
+if chordLengthSquared_deg2 <= tolerance_deg ^ 2
+    isOnSegment = false;
     return;
 end
-queryDistance_deg = linspace(0, distance_deg(end), ...
-    maximumSegmentCount + 1).';
-route_deg = interp1(distance_deg, route_deg, queryDistance_deg, "linear");
+progress = dot(point_deg - start_deg, chord_deg) / ...
+    chordLengthSquared_deg2;
+projection_deg = start_deg + progress * chord_deg;
+isOnSegment = progress >= 0 && progress <= 1 && ...
+    norm(point_deg - projection_deg) <= tolerance_deg;
+end
+
+function segmentCountByEdge = allocateSegmentsByLength( ...
+        route_deg, targetSegmentCount)
+% Give each true edge one span, then allocate the remainder by arc length.
+edgeLength_deg = vecnorm(diff(route_deg, 1, 1), 2, 2);
+edgeCount = numel(edgeLength_deg);
+segmentCountByEdge = ones(edgeCount, 1);
+remainingSegmentCount = targetSegmentCount - edgeCount;
+if remainingSegmentCount <= 0 || sum(edgeLength_deg) <= 0
+    segmentCountByEdge(1) = ...
+        segmentCountByEdge(1) + remainingSegmentCount;
+    return;
+end
+
+exactAdditionalCount = remainingSegmentCount * edgeLength_deg / ...
+    sum(edgeLength_deg);
+additionalCount = floor(exactAdditionalCount);
+segmentCountByEdge = segmentCountByEdge + additionalCount;
+unassignedCount = remainingSegmentCount - sum(additionalCount);
+fractionalCount = exactAdditionalCount - additionalCount;
+[~, allocationOrder] = sortrows( ...
+    [-fractionalCount, (1:edgeCount).'], [1 2]);
+segmentCountByEdge(allocationOrder(1:unassignedCount)) = ...
+    segmentCountByEdge(allocationOrder(1:unassignedCount)) + 1;
+end
+
+function route_deg = splitRouteByCount(seedRoute_deg, segmentCountByEdge)
+% Subdivide each straight edge without moving any original corner.
+edgeCount = size(seedRoute_deg, 1) - 1;
+route_deg = zeros(sum(segmentCountByEdge) + 1, 2);
+routePointIndex = 1;
+for edgeIndex = 1:edgeCount
+    segmentCount = segmentCountByEdge(edgeIndex);
+    fractions = (0:segmentCount - 1).' / segmentCount;
+    routePointIndices = routePointIndex: ...
+        routePointIndex + segmentCount - 1;
+    route_deg(routePointIndices, :) = seedRoute_deg(edgeIndex, :) + ...
+        fractions .* (seedRoute_deg(edgeIndex + 1, :) - ...
+        seedRoute_deg(edgeIndex, :));
+    routePointIndex = routePointIndex + segmentCount;
+end
+route_deg(end, :) = seedRoute_deg(end, :);
 end
 
 

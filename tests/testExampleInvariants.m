@@ -169,9 +169,9 @@ result = exampleObstacleAvoidance(struct( ...
     "PlotOutputs", false, "FigureVisible", "off"));
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyEqual(testCase, result.ArrivalTime_s, 7.574542, "AbsTol", 1e-6);
+verifyEqual(testCase, result.ArrivalTime_s, 7.529174, "AbsTol", 1e-6);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyEqual(testCase, summary.MotionLength_deg, 11.411861, "AbsTol", 1e-6);
+verifyEqual(testCase, summary.MotionLength_deg, 11.411685, "AbsTol", 1e-6);
 verifyEqual(testCase, ...
     result.SearchDiagnostics.Grid.SeedCluster.Distance_deg, 0);
 verifyGreaterThan(testCase, ...
