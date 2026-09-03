@@ -60,6 +60,13 @@ diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
 verifyEqual(testCase, diagnostics.Identifier, "bmtpTimedCell");
 verifyEqual(testCase, diagnostics.TimedBmtp.Outcome, ...
     "acceptedAfterFullValidation");
+completedTrials = diagnostics.TimeCellTrials( ...
+    [diagnostics.TimeCellTrials.ElapsedTime_s] > 0);
+acceptedTrialIndex = find([completedTrials.ValidationPassed], 1, "first");
+verifyNotEmpty(testCase, acceptedTrialIndex);
+verifyTrue(testCase, completedTrials(acceptedTrialIndex).Success);
+verifyNotEmpty(testCase, ...
+    completedTrials(acceptedTrialIndex).ValidationMessage);
 end
 
 function testTimedCellsRespectSearchLayerBudget(testCase)
@@ -68,6 +75,9 @@ result = testCase.TestData.Result;
 acceptedIndex = find([result.SeedSummaries.ValidationPassed], 1, "first");
 diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
 maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
+verifyTrue(testCase, diagnostics.SegmentCountFallbackAttempted);
+verifyEqual(testCase, diagnostics.Coverage.TimedSegmentCount, ...
+    maximumTimedSegmentCount);
 verifyLessThanOrEqual(testCase, ...
     diagnostics.Coverage.TimedSegmentCount, maximumTimedSegmentCount);
 end

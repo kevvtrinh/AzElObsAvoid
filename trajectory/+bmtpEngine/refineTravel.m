@@ -51,9 +51,6 @@ selectedLength_deg = baseLength_deg;
 selectedCost_deg = baseLength_deg + request.TravelSavingsRate_deg_s * ...
     segmentCount * baseSegmentTime_s;
 trialSavingsRates_deg_s = request.TravelSavingsRate_deg_s;
-if request.Options.GoalTimeMode == "balancedArrival"
-    trialSavingsRates_deg_s = request.TravelSavingsRate_deg_s * [0.1 1 10];
-end
 travelRefinementAccepted = false;
 for portfolioIndex = 1:numel(trialSavingsRates_deg_s)
     travelPlanes = result.Planes;

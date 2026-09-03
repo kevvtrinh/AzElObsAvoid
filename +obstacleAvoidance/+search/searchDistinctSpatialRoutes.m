@@ -65,6 +65,7 @@ parentState = zeros(1, stateCapacity);
 closed = false(1, stateCapacity);
 stateLookup = dictionary(stateKey(1, stateClass(1, :)), 1);
 rejectedCount = 0;
+windingLimitRejectedCount = 0;
 phase = zeros(nodeCount, classWidth);
 if referenceCount > 0
     phase(:, 1:referenceCount) = atan2( ...
@@ -100,16 +101,6 @@ while numel(routes_deg) < maximumClassCount
         [route_deg, routeCleanup] = ...
             obstacleAvoidance.geometry.shortenVisibilityRoute( ...
             route_deg, edgeCheck, classFunction, requiredClass);
-        if routeCleanup.AcceptedCount > 0
-            [route_deg, alternativeCleanup] = cleanupRouteAlternatives( ...
-                route_deg, stateNode(statePath), edgeCost_deg, ...
-                nodePosition_deg, edgeCheck, classFunction, requiredClass);
-            for fieldIndex = 1:numel(cleanupFields)
-                fieldName = cleanupFields(fieldIndex);
-                routeCleanup.(fieldName) = routeCleanup.(fieldName) + ...
-                    alternativeCleanup.(fieldName);
-            end
-        end
         routes_deg{end + 1, 1} = route_deg; %#ok<AGROW>
         if referenceCount > 0
             classPattern(end + 1, :) = requiredClass; %#ok<AGROW>
@@ -136,6 +127,7 @@ while numel(routes_deg) < maximumClassCount
         trialClass = int8(double(stateClass(currentState, :)) + classStep);
         if any(abs(double(trialClass)) > 1)
             rejectedCount = rejectedCount + 1;
+            windingLimitRejectedCount = windingLimitRejectedCount + 1;
             continue;
         end
         trialKey = stateKey(neighbor, trialClass);
@@ -186,12 +178,18 @@ if any(finiteState)
         parentState, finiteIndex(bestIndex));
     bestPartial_deg = nodePosition_deg(stateNode(bestStatePath), :);
 end
+stoppedAtClassLimit = maximumClassCount > 0 && ...
+    numel(routes_deg) >= maximumClassCount && any(frontierState);
 searchRecord = struct("ExpandedCount", nnz(expandedState), ...
     "RejectedTransitionCount", rejectedCount, ...
     "ExploredNodes_deg", nodePosition_deg(activeNode(expandedState), :), ...
     "FrontierNodes_deg", nodePosition_deg(activeNode(frontierState), :), ...
     "BestPartialRoute_deg", bestPartial_deg, "StateCount", stateCount, ...
-    "Truncated", false, "RouteCleanupAttemptedCount", numel(routes_deg), ...
+    "Truncated", windingLimitRejectedCount > 0 || stoppedAtClassLimit, ...
+    "WindingComponentLimit", 1, ...
+    "WindingLimitRejectedCount", windingLimitRejectedCount, ...
+    "StoppedAtClassLimit", stoppedAtClassLimit, ...
+    "RouteCleanupAttemptedCount", numel(routes_deg), ...
     "RouteCleanupCandidateCount", cleanup.CandidateCount, ...
     "RouteCleanupVisibilityRejectedCount", cleanup.VisibilityRejectedCount, ...
     "RouteCleanupHomologyRejectedCount", cleanup.HomologyRejectedCount, ...
@@ -203,57 +201,6 @@ end
 end
 
 %% Section 3: Local Functions
-
-function [bestRoute_deg, record] = cleanupRouteAlternatives( ...
-        bestRoute_deg, primaryNodePath, edgeCost_deg, nodePosition_deg, ...
-        edgeCheck, classFunction, requiredClass)
-% Evaluate each unique graph-valid waypoint route in one discovered class.
-fields = ["CandidateCount", "VisibilityRejectedCount", ...
-    "HomologyRejectedCount", "AcceptedCount", "LengthReduction_deg"];
-record = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
-    "HomologyRejectedCount", 0, "AcceptedCount", 0, ...
-    "LengthReduction_deg", 0);
-searchGraph = graph(edgeCost_deg, "upper", "omitselfloops");
-seenPaths = cell(size(nodePosition_deg, 1) + 1, 1);
-seenPaths{1} = primaryNodePath;
-seenCount = 1;
-bestLength_deg = obstacleAvoidance.geometry.routeLength(bestRoute_deg);
-for waypointIndex = 1:size(nodePosition_deg, 1)
-    firstPath = shortestpath(searchGraph, 1, waypointIndex);
-    secondPath = shortestpath(searchGraph, waypointIndex, 2);
-    if isempty(firstPath) || isempty(secondPath)
-        continue;
-    end
-    nodePath = [firstPath, secondPath(2:end)];
-    isDuplicate = false;
-    for seenIndex = 1:seenCount
-        if isequal(nodePath, seenPaths{seenIndex})
-            isDuplicate = true;
-            break;
-        end
-    end
-    if isDuplicate
-        continue;
-    end
-    seenCount = seenCount + 1;
-    seenPaths{seenCount} = nodePath;
-    candidate_deg = nodePosition_deg(nodePath, :);
-    candidateClass = classFunction(candidate_deg);
-    [cleaned_deg, cleanup] = ...
-        obstacleAvoidance.geometry.shortenVisibilityRoute( ...
-        candidate_deg, edgeCheck, classFunction, candidateClass);
-    for fieldIndex = 1:numel(fields)
-        fieldName = fields(fieldIndex);
-        record.(fieldName) = record.(fieldName) + cleanup.(fieldName);
-    end
-    cleanedLength_deg = obstacleAvoidance.geometry.routeLength(cleaned_deg);
-    if isequal(candidateClass, requiredClass) && ...
-            cleanedLength_deg < bestLength_deg - 1e-12
-        bestRoute_deg = cleaned_deg;
-        bestLength_deg = cleanedLength_deg;
-    end
-end
-end
 
 function statePath = reconstructStatePath(parentState, targetState)
 % Recover stored augmented-state ancestry without recomputing decisions.

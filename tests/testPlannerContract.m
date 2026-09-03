@@ -121,6 +121,89 @@ verifyTrue(testCase, isfield(routeSet, "SpatialSearchRecord"));
 verifyTrue(testCase, isfield(routeSet, "RouteClassPattern"));
 end
 
+function testSpatialSeedEstimateNeverRejectsLongGuideRoute(testCase)
+% Keep route-shaped timing guesses from pruning a solver proposal.
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 2];
+request = obstacleAvoidance.input.createPlanningRequest( ...
+    [], restState(0, [0 0]), restState(1, [1 0]), limits, ...
+    plannerOptions("earliestArrival"));
+spatialRoute_deg = [0 0; 0 8; 1 8; 1 0];
+routeSet = struct( ...
+    "TimedRoute_deg", zeros(0, 2), ...
+    "TimedRouteTime_s", zeros(0, 1), ...
+    "SpatialRoutes_deg", {{spatialRoute_deg}}, ...
+    "UsesReducedGeometry", false);
+proposal = struct("shape", polyshape());
+
+seedSet = obstacleAvoidance.search.createSeeds( ...
+    routeSet, proposal, request);
+
+verifyEqual(testCase, numel(seedSet), 2);
+verifyEqual(testCase, seedSet(2).position_deg, spatialRoute_deg);
+verifyEqual(testCase, seedSet(2).EstimatedDuration_s, 0.5, ...
+    "AbsTol", 1e-12);
+verifyGreaterThan(testCase, seedSet(2).Length_deg, ...
+    request.goalState.time_s - request.initialState.time_s);
+end
+
+function testTimedSearchDoesNotImposeRestAtIntermediateNodes(testCase)
+% Preserve a feasible constant-velocity route through an intermediate node.
+nodePosition_deg = [0 0; 4 0; 2 0];
+edgeCost_deg = Inf(3);
+edgeCost_deg(1:4:end) = 0;
+edgeCost_deg(1, 3) = 2;
+edgeCost_deg(3, 1) = 2;
+edgeCost_deg(2, 3) = 2;
+edgeCost_deg(3, 2) = 2;
+initialState = restState(0, nodePosition_deg(1, :));
+initialState.velocity_deg_s = [2 0];
+goalState = restState(2, nodePosition_deg(2, :));
+goalState.velocity_deg_s = [2 0];
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 2];
+limits.maxAcceleration_deg_s2 = [0.01 0.01];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival", ...
+    "MaximumTimeLayerCount", 3));
+
+[route_deg, routeTime_s] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, struct.empty(0, 1), initialState, ...
+    goalState, limits, [0; 1; 2], options);
+
+verifyEqual(testCase, route_deg, nodePosition_deg([1 3 2], :));
+verifyEqual(testCase, routeTime_s, [0; 1; 2]);
+end
+
+function testDirectWaitRetriesFullHorizonAfterShortTimingEstimate(testCase)
+% Keep a short schedule estimate from rejecting an ample request horizon.
+initialState = restState(0, [0 0]);
+goalState = restState(20, [2 0]);
+limits = physicalLimits();
+limits.maxAcceleration_deg_s2 = [0.1 0.1];
+limits.maxJerk_deg_s3 = [0.1 0.1];
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival"));
+seed = obstacleAvoidance.search.createSeed();
+seed.Index = 1;
+seed.Source = "directWait";
+seed.position_deg = [0 0; 0 0; 2 0];
+seed.tau = [0; 0.5; 1];
+seed.EstimatedDuration_s = 2;
+seed.Length_deg = 2;
+
+[candidate, diagnostics] = ...
+    obstacleAvoidance.planner.createDirectWaitMotion( ...
+    seed, initialState, goalState, limits, options, [], []);
+
+verifyTrue(testCase, candidate.Success, candidate.Message);
+verifyTrue(testCase, diagnostics.HorizonRetryAttempted);
+verifyNotEqual(testCase, diagnostics.InitialTimingTerminationReason, "");
+verifyEqual(testCase, candidate.FinalTime_s, goalState.time_s, ...
+    "AbsTol", 1e-12);
+end
+
 function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
 % Require a finite rest-to-rest direct motion inside the supplied horizon.
 initialState = restState(0, [0 0]);
@@ -244,6 +327,8 @@ directWaitIndex = find( ...
 verifyTrue(testCase, result.Success, result.Message);
 verifyNotEmpty(testCase, directWaitIndex);
 diagnostics = result.SeedSummaries(directWaitIndex).SolverDiagnostics;
+verifyTrue(testCase, diagnostics.TimingRepairAttempted);
+verifyTrue(testCase, isfinite(diagnostics.ExactMinimumDirectDuration_s));
 verifyGreaterThan(testCase, diagnostics.RefinementCount, 0);
 verifyLessThan(testCase, diagnostics.FinalWaitTime_s, ...
     diagnostics.InitialWaitTime_s);

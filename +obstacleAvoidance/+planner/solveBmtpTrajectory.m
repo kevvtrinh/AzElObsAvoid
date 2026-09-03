@@ -52,6 +52,34 @@ coverage.ConservativeGrouping = grouping;
 
 [candidate, diagnostics] = bmtpEngine.solve( ...
     seed, regions_deg, coverage, initialState, goalState, limits, options);
+fallback = struct( ...
+    "Attempted", false, ...
+    "PrimaryTerminationReason", candidate.TerminationReason, ...
+    "Outcome", "notApplicable", ...
+    "ExactRegionCount", numel(exactRegions_deg), ...
+    "PrimarySolverDiagnostics", struct());
+if grouping.Applied
+    fallback.Outcome = "groupedAttemptAccepted";
+end
+if grouping.Applied && ~candidate.Success
+    % Conservative hulls are useful only as a first attempt. They can bridge
+    % free gaps, so a grouped failure cannot reject the exact request.
+    fallback.Attempted = true;
+    fallback.Outcome = "exactRegionAttemptFailed";
+    fallback.PrimarySolverDiagnostics = diagnostics;
+    exactCoverage = coverage;
+    exactCoverage.SolverRegionCount = numel(exactRegions_deg);
+    exactCoverage.ConservativeGrouping = ...
+        createExactGroupingRecord(numel(exactRegions_deg));
+    [candidate, diagnostics] = bmtpEngine.solve( ...
+        seed, exactRegions_deg, exactCoverage, initialState, goalState, ...
+        limits, options);
+    if candidate.Success
+        fallback.Outcome = "exactRegionAttemptAccepted";
+    end
+end
+diagnostics.ExactRegionFallback = fallback;
+candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 3: Local Functions
@@ -137,4 +165,15 @@ record.Applied = true;
 record.SolverRegionCount = activeGroupCount;
 record.RelationToExactGeometry = "conservativeSuperset";
 record.GroupMemberIndices = groups;
+end
+
+function record = createExactGroupingRecord(regionCount)
+% Describe an exact one-to-one solver representation for fallback evidence.
+record = struct( ...
+    "Applied", false, "ExactRegionCount", regionCount, ...
+    "SolverRegionCount", regionCount, ...
+    "MaximumExactRegionCount", 64, ...
+    "TargetGroupCount", 8, ...
+    "RelationToExactGeometry", "equal", ...
+    "GroupMemberIndices", {num2cell((1:regionCount).')});
 end

@@ -82,9 +82,12 @@ for layerIndex = 1:layerCount - 1
         for targetNodeIndex = reshape(targets, 1, [])
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
                 nodePosition_deg(currentNodeIndex, :);
-            minimumDuration_s = max([abs(displacement_deg) ./ ...
-                limits.maxVelocity_deg_s, 2 * sqrt(abs(displacement_deg) ./ ...
-                limits.maxAcceleration_deg_s2)]);
+            % Intermediate graph nodes do not impose a stop. Acceleration
+            % timing for a rest-to-rest edge can therefore overestimate a
+            % through-moving transition and erase a feasible time layer.
+            % The velocity bound is the conservative state-independent floor.
+            minimumDuration_s = max( ...
+                abs(displacement_deg) ./ limits.maxVelocity_deg_s);
             earliestTime_s = layerTimes_s(layerIndex) + minimumDuration_s - 1e-12;
             targetLayerIndex = find(layerTimes_s > earliestTime_s, 1, "first");
             transitionCount = transitionCount + 1;
