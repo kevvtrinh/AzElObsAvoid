@@ -1830,12 +1830,12 @@ The retained coordinator now treats the dense shortcut only as work ordering.
 It resumes timed search after all initially offered candidates fail validation,
 unless a separately generated exact motion has already passed. Only the newly
 recovered timed seed is solved; unchanged direct and spatial attempts are not
-repeated. Normal and deferred calls share one `searchTimedRoute` implementation,
-and recovery does not rebuild the spatial graph or spatial route classes.
-Stable diagnostics preserve the initial deferral, recovery attempt, timed-search
-record, recovered seed, and candidate validation. The architecture test verifies
-one spatial search and the explicit timed-search-to-seed recovery sequence
-before final candidate selection.
+repeated. The existing `searchRoutes` coordinator now accepts its prior deferred
+route set for recovery, runs only the timed portion, and returns before its one
+spatial-search call site. Stable diagnostics preserve the initial deferral,
+recovery attempt, timed-search record, recovered seed, and candidate validation.
+The regression also preserves a sentinel in the prior spatial-search record,
+proving recovery reused rather than rebuilt it.
 
 An always-on version was rejected before retention. The dense deforming-outline
 sentinel crossed 90 seconds before the post-run reporting expression failed,
@@ -1847,18 +1847,17 @@ within normal noise and is treated as neutral, not as a speedup.
 
 The exact supplied-bundle suite passed 4/4; its unchanged feasible replay took
 41.938 seconds and still arrived at 71.282812 seconds. The complete MATLAB suite
-passed 119/119 tests in 143.548523 seconds. A warm serial headless gate passed
-all 19 expected outcomes with 162.276219 seconds summed example wall time. The
-required fresh-process rerun also passed 19/19 with 195.818790 seconds summed
-example wall time; path lengths and physical arrival times were identical.
-A visible success created two visible figures, and the expected no-path plot
+passed 119/119 tests in the final 147.042709-second run. The final required
+fresh-process example matrix also passed 19/19 with 199.959769 seconds summed
+example wall time; path lengths and physical arrival times were identical. A
+visible success created two visible figures, and the expected no-path plot
 created 158 graphics objects with `noValidatedSeed` in its title. This change
 removes one false-negative authority without claiming completeness for the
 remaining node, edge, seed, time-layer, winding, or solver work bounds.
 
-The retained production change is 161 added and 41 removed lines relative to
-the pre-existing dirty baseline, for 120 lines of growth. Of that, 86 lines are
-the single shared timed-search owner required by both normal and recovery calls;
-the remaining growth adds lazy coordination and stable diagnostic evidence. The
-production tree remains materially above its 7,500-line target, so no size or
-runtime-efficiency claim is made for this correctness milestone.
+The final production change is 94 added and 10 removed lines relative to the
+pre-existing dirty baseline, for 84 lines of growth and no new production file.
+A rejected intermediate commit introduced an 86-line timed-search wrapper; the
+follow-up consolidation deletes it and is net 36 production lines smaller than
+that commit. The production tree remains materially above its 7,500-line target,
+so no size or runtime-efficiency claim is made for this correctness milestone.

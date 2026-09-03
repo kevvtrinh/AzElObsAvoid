@@ -179,12 +179,19 @@ verifyTrue(testCase, routeSet.TimedSearchDeferred);
 verifyEqual(testCase, routeSet.TimedSearchSuppressionReason, ...
     "deferredDenseTimedSearch");
 
-timedSearch = obstacleAvoidance.search.searchTimedRoute( ...
-    scene, request, proposal, visibilityGraph);
+routeSet.SpatialSearchRecord.RecoverySentinel = 314;
+recoveredRouteSet = obstacleAvoidance.search.searchRoutes( ...
+    scene, request, proposal, visibilityGraph, routeSet);
 
-verifyFalse(testCase, isempty(timedSearch.Route_deg));
-verifyEqual(testCase, timedSearch.Route_deg(1, :), [0 0]);
-verifyEqual(testCase, timedSearch.Route_deg(end, :), [2 0]);
+verifyTrue(testCase, recoveredRouteSet.TimedSearchAttempted);
+verifyTrue(testCase, recoveredRouteSet.TimedSearchDeferred);
+verifyTrue(testCase, recoveredRouteSet.TimedSearchRecoveryAttempted);
+verifyEqual(testCase, recoveredRouteSet.TimedSearchSuppressionReason, "");
+verifyFalse(testCase, isempty(recoveredRouteSet.TimedRoute_deg));
+verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(1, :), [0 0]);
+verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(end, :), [2 0]);
+verifyEqual(testCase, ...
+    recoveredRouteSet.SpatialSearchRecord.RecoverySentinel, 314);
 end
 
 function testTimedSearchDoesNotImposeRestAtIntermediateNodes(testCase)

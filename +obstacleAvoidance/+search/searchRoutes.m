@@ -1,8 +1,11 @@
-function routeSet = searchRoutes(scene, request, proposal, visibilityGraph)
+function routeSet = searchRoutes( ...
+        scene, request, proposal, visibilityGraph, priorRouteSet)
 %% Section 0: Header & Readme
 % SYNTAX
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
 %       scene, request, proposal, visibilityGraph)
+%   routeSet = obstacleAvoidance.search.searchRoutes( ...
+%       scene, request, proposal, visibilityGraph, priorRouteSet)
 %**************************************************************************
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
@@ -17,6 +20,9 @@ function routeSet = searchRoutes(scene, request, proposal, visibilityGraph)
 %       Spatial route-guidance geometry and sample times.
 %   - visibilityGraph (scalar visibility-graph struct)
 %       Final nodes, edge costs, and obstacle reference points.
+%   - priorRouteSet (scalar route-set struct, optional)
+%       Initial deferred result to resume with exact timed search. Its
+%       spatial routes and search record are reused without recomputation.
 %**************************************************************************
 % OUTPUTS
 %   - routeSet (scalar struct)
@@ -33,8 +39,17 @@ function routeSet = searchRoutes(scene, request, proposal, visibilityGraph)
 % Changing obstacle histories may admit waits or time-dependent passages that
 % a spatial union hides. Defer the expensive exact-history search for a dense
 % proposal until the caller confirms that every cheap motion attempt failed.
-% The planner-level recovery stage owns resuming deferred work; this initial
-% search records the deferral but cannot authorize final failure.
+% A fifth-input call resumes only that timed work and returns before spatial
+% search, so recovery cannot repeat graph or route-class work.
+
+isTimedRecovery = nargin >= 5 && ~isempty(priorRouteSet);
+if isTimedRecovery && (~isstruct(priorRouteSet) || ...
+        ~isscalar(priorRouteSet) || ...
+        ~isfield(priorRouteSet, "TimedSearchDeferred") || ...
+        ~priorRouteSet.TimedSearchDeferred)
+    error("searchRoutes:InvalidRecoveryState", ...
+        "priorRouteSet must be a deferred scalar route-set record.");
+end
 
 obstacles = scene.preparedObstacles;
 initialState = request.initialState;
@@ -50,18 +65,40 @@ timedSearchDeferred = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
 hasChangingHistory = obstacleAvoidance.obstacles.hasChangingHistory( ...
     obstacles, initialState.time_s, goalState.time_s);
-if hasChangingHistory && proposal.usedDenseEnvelope
+if hasChangingHistory && proposal.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
 elseif hasChangingHistory
-    timedSearch = obstacleAvoidance.search.searchTimedRoute( ...
-        scene, request, proposal, visibilityGraph);
-    timedRoute_deg = timedSearch.Route_deg;
-    timedRouteTime_s = timedSearch.RouteTime_s;
-    timedRecord = timedSearch.Record;
-    timedSearchOptions = timedSearch.Options;
     timedSearchAttempted = true;
     timedSearchSuppressionReason = "";
+    timedCost_deg = hypot( ...
+        nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', ...
+        nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
+    if options.GoalTimeMode == "balancedArrival"
+        % Preserve final-horizon ancestry, then remove goal dwell so this
+        % route represents obstacle-dependent timing rather than waiting.
+        timedSearchOptions.GoalTimeMode = "fixedArrival";
+    end
+    [timedRoute_deg, timedRouteTime_s, timedRecord] = ...
+        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+        nodePosition_deg, timedCost_deg, obstacles, initialState, ...
+        goalState, request.limits, proposal.sampleTimes_s, ...
+        timedSearchOptions);
+    if options.GoalTimeMode == "balancedArrival"
+        [timedRoute_deg, timedRouteTime_s] = trimTerminalGoalDwell( ...
+            timedRoute_deg, timedRouteTime_s, proposal.goal_deg);
+    end
+end
+if isTimedRecovery
+    routeSet = priorRouteSet;
+    routeSet.TimedRoute_deg = timedRoute_deg;
+    routeSet.TimedRouteTime_s = timedRouteTime_s;
+    routeSet.TimedSearchRecord = timedRecord;
+    routeSet.TimedSearchOptions = timedSearchOptions;
+    routeSet.TimedSearchAttempted = true;
+    routeSet.TimedSearchRecoveryAttempted = true;
+    routeSet.TimedSearchSuppressionReason = "";
+    return;
 end
 
 %% Section 2: Search Distinct Spatial Route Classes
@@ -106,4 +143,24 @@ routeSet = struct( ...
     "ObstacleReferencePoints_deg", ...
     visibilityGraph.ObstacleReferencePoints_deg, ...
     "UsesReducedGeometry", proposal.usedDenseEnvelope);
+end
+
+%% Section 4: Local Functions
+
+function [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
+        route_deg, routeTime_s, goal_deg)
+% Remove only repeated goal occupancy after the first verified arrival.
+if isempty(route_deg)
+    return;
+end
+coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
+    route_deg, goal_deg);
+goalTolerance_deg = 256 * eps(coordinateScale_deg);
+firstGoalIndex = find(vecnorm(route_deg - goal_deg, 2, 2) <= ...
+    goalTolerance_deg, 1, "first");
+if isempty(firstGoalIndex)
+    return;
+end
+route_deg = route_deg(1:firstGoalIndex, :);
+routeTime_s = routeTime_s(1:firstGoalIndex);
 end

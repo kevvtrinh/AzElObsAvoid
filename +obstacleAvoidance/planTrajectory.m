@@ -246,16 +246,9 @@ needsDeferredTimedRecovery = needsRouteSearch && ...
     ~exactMotionSet.ExcursionIsValidated;
 if needsDeferredTimedRecovery
     recoverySearchTimer = tic;
-    timedSearch = obstacleAvoidance.search.searchTimedRoute( ...
-        scene, request, proposal, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes( ...
+        scene, request, proposal, visibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
-    routeSet.TimedRoute_deg = timedSearch.Route_deg;
-    routeSet.TimedRouteTime_s = timedSearch.RouteTime_s;
-    routeSet.TimedSearchRecord = timedSearch.Record;
-    routeSet.TimedSearchOptions = timedSearch.Options;
-    routeSet.TimedSearchAttempted = true;
-    routeSet.TimedSearchRecoveryAttempted = true;
-    routeSet.TimedSearchSuppressionReason = "";
     stageTiming = candidateSet.StageTiming;
     stageTiming.TopologyElapsedTime_s = ...
         stageTiming.TopologyElapsedTime_s + recoverySearchElapsedTime_s;
