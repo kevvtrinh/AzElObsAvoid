@@ -65,12 +65,11 @@ timedSearchOptions = options;
 timedSearchAttempted = false;
 timedSearchDeferred = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
-hasChangingHistory = obstacleAvoidance.obstacles.hasChangingHistory( ...
-    obstacles, initialState.time_s, goalState.time_s);
-if hasChangingHistory && proposal.usedDenseEnvelope && ~isTimedRecovery
+requiresTimedSearch = ~scene.isStaticHorizon;
+if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
-elseif hasChangingHistory
+elseif requiresTimedSearch
     timedSearchAttempted = true;
     timedSearchSuppressionReason = "";
     timedCost_deg = hypot( ...

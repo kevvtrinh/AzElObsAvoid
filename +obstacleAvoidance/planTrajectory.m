@@ -74,25 +74,23 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
         "optionOverrides must be a scalar struct.");
 end
 
-%% Section 3: Create The Request And Prepare The Scene
-
-% Search, motion construction, and final validation require one normalized
-% request and one prepared obstacle history. Establish those representations
-% before endpoint checks and fast paths so every later stage reads the same
-% physical inputs and geometry.
+%% Section 3: Normalize The Request And Prepare The Scene
 
 planningTimer = tic;
 
-% Search, motion construction, and final validation require the same resolved
-% options and normalized physical inputs. Create one request here so later
-% stages cannot interpret the caller's raw structures differently.
-request = obstacleAvoidance.input.createPlanningRequest( ...
-    obstacles, initialState, goalState, limits, optionOverrides);
-obstacles = request.obstacles;
-initialState = request.initialState;
-goalState = request.goalState;
-limits = request.limits;
-options = request.options;
+% Resolve and normalize the caller's inputs directly. The shared record keeps
+% downstream stage interfaces compact without a separate construction layer.
+options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
+[obstacles, initialState, goalState, limits] = ...
+    obstacleAvoidance.input.normalizePlannerRequest( ...
+    obstacles, initialState, goalState, limits, options);
+request = struct( ...
+    "obstacles", obstacles, ...
+    "initialState", initialState, ...
+    "goalState", goalState, ...
+    "limits", limits, ...
+    "options", options);
 useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
 [result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
     obstacles, initialState, goalState, limits, options, ...
@@ -105,7 +103,6 @@ scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
 preparedObstacles = scene.preparedObstacles;
 useStaticKernel = scene.isStaticHorizon;
 stageTiming = result.SearchDiagnostics.StageTiming;
-result.SearchDiagnostics.StageOutputs.Scene = scene;
 exactMotionSet = obstacleAvoidance.planner.solveExactCandidates();
 result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
 result.SearchDiagnostics.FixedClockExcursion = ...
@@ -125,8 +122,7 @@ result.SearchDiagnostics.SelectionPolicy = struct( ...
     preparedObstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
-    result = obstacleAvoidance.planner.stageTiming( ...
-        result, planningTimer, stageTiming);
+    result = obstacleAvoidance.planner.stageTiming(result, planningTimer, stageTiming);
     return;
 end
 
@@ -252,10 +248,6 @@ gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
 gridDiagnostics.ElapsedTime_s = ...
     candidateSet.StageTiming.TopologyElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
-result.SearchDiagnostics.StageOutputs.Proposal = proposal;
-result.SearchDiagnostics.StageOutputs.VisibilityGraph = visibilityGraph;
-result.SearchDiagnostics.StageOutputs.RouteSet = routeSet;
-result.SearchDiagnostics.StageOutputs.SeedSet = generatedSeeds;
 result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
     gridDiagnostics.ElapsedTime_s;
 seeds = candidateSet.Seeds;
@@ -264,7 +256,6 @@ seedSummaries = candidateSet.Summaries;
 firstValidatedMotionTime_s = ...
     candidateSet.FirstValidatedMotionTime_s;
 stageTiming = candidateSet.StageTiming;
-result.SearchDiagnostics.StageOutputs.CandidateSet = candidateSet;
 
 % Balanced and fixed policies compare every validated special motion against
 % the topology candidates; their physical arrival lower bounds are not travel
@@ -293,12 +284,31 @@ end
 selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
     seedSummaries, options);
 
-% The final stage preserves one result shape on success and expected failure.
-% It copies trajectory fields only from the selected fully checked candidate;
-% plotting and callers therefore consume returned work without rerunning it.
-result = obstacleAvoidance.planner.createPlannerResult( ...
-    result, seeds, candidates, seedSummaries, selection, ...
-    firstValidatedMotionTime_s, planningTimer, stageTiming);
+% Attach evidence on both success and failure. Copy motion only from the
+% candidate selected from the independently validated set.
+result.Seeds = seeds;
+result.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
+result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
+    firstValidatedMotionTime_s;
+result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
+result.SearchDiagnostics.ValidatedCandidateCount = ...
+    selection.ValidatedCandidateCount;
+result.SearchDiagnostics.BestPartialSeedIndex = ...
+    selection.BestPartialSeedIndex;
+result.Message = selection.Message;
+result.TerminationReason = selection.TerminationReason;
+if selection.Success
+    selectedIndex = selection.SelectedCandidateIndex;
+    result.Success = true;
+    result.SelectedSeedIndex = selectedIndex;
+    result.SelectedSeed_deg = seeds(selectedIndex).position_deg;
+    result = copyMotion(result, candidates{selectedIndex});
+end
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+result = obstacleAvoidance.planner.stageTiming( ...
+    result, planningTimer, stageTiming);
 end
 
 %% Section 8: Local Functions

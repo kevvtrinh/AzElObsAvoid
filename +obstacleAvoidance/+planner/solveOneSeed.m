@@ -84,7 +84,7 @@ if ~candidateWasPrechecked
         candidate, preparedObstacles, initialState, goalState, limits, ...
         options, stageTiming, "The motion kernel returned no trajectory.");
 
-    %% Section 3: Refine A Passing Direct Wait When Useful
+    % --- Refine A Passing Direct Wait When Useful -----------------
 
     % Only policies whose objective changes with arrival time benefit from
     % reducing a wait. Every refinement trial is checked in full and the best
@@ -98,7 +98,7 @@ if ~candidateWasPrechecked
             waitRefinementAffectsObjective
         [candidate, checkResult, solverDiagnostics, ...
             refinementElapsedTime_s, stageTiming] = ...
-            obstacleAvoidance.planner.refineDirectWait( ...
+            refineDirectWait( ...
             seed, candidate, checkResult, solverDiagnostics, ...
             preparedObstacles, initialState, goalState, limits, options, ...
             stageTiming);
@@ -109,7 +109,7 @@ if ~candidateWasPrechecked
     end
 end
 
-%% Section 4: Create The Candidate Summary
+%% Section 3: Create The Candidate Summary
 
 % Candidate selection consumes only stable summaries. Preserve all primary,
 % backup, and validation evidence here so ranking never needs to reconstruct
@@ -118,4 +118,66 @@ end
 summary = obstacleAvoidance.planner.createCandidateSummary( ...
     candidate, checkResult, solverDiagnostics, elapsedTime_s, ...
     context.SummaryTemplate, limits, options, initialState.time_s);
+end
+
+%% Section 4: Local Functions
+
+function [candidate, checkResult, diagnostics, motionElapsedTime_s, ...
+        stageTiming] = refineDirectWait( ...
+        seed, candidate, checkResult, diagnostics, obstacles, initialState, ...
+        goalState, limits, options, stageTiming)
+% Reduce a passing direct wait through a fully checked time bracket.
+initialWaitTime_s = diagnostics.WaitTime_s;
+diagnostics.InitialWaitTime_s = initialWaitTime_s;
+diagnostics.FinalWaitTime_s = initialWaitTime_s;
+motionElapsedTime_s = 0;
+if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
+    candidate.SolverDiagnostics = diagnostics;
+    return;
+end
+directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
+lowerWaitTime_s = 0;
+upperWaitTime_s = initialWaitTime_s;
+bestCandidate = candidate;
+bestCheckResult = checkResult;
+
+% Every trial must pass the authoritative trajectory check. Bisection never
+% promotes a solver result or sampled obstacle query to final acceptance.
+for refinementIndex = 1:options.MaximumWaitRefinementIterations
+    if refinementIndex == 1
+        trialWaitTime_s = lowerWaitTime_s;
+    else
+        trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
+    end
+    motionTimer = tic;
+    [trialCandidate, ~] = ...
+        obstacleAvoidance.planner.createDirectWaitMotion( ...
+        seed, initialState, goalState, limits, options, ...
+        trialWaitTime_s, directMotionDuration_s);
+    motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
+    [trialCandidate, trialCheckResult, ~, stageTiming] = ...
+        obstacleAvoidance.planner.checkCandidateMotion( ...
+        trialCandidate, obstacles, initialState, goalState, limits, ...
+        options, stageTiming, ...
+        "The refined direct-wait kernel returned no trajectory.");
+    diagnostics.RefinementCount = refinementIndex;
+    if trialCheckResult.Passed
+        bestCandidate = trialCandidate;
+        bestCheckResult = trialCheckResult;
+        upperWaitTime_s = trialWaitTime_s;
+        if trialWaitTime_s == 0
+            break;
+        end
+    else
+        lowerWaitTime_s = trialWaitTime_s;
+        diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
+    end
+end
+candidate = bestCandidate;
+checkResult = bestCheckResult;
+diagnostics.WaitTime_s = upperWaitTime_s;
+diagnostics.FinalWaitTime_s = upperWaitTime_s;
+diagnostics.ElapsedTime_s = ...
+    diagnostics.ElapsedTime_s + motionElapsedTime_s;
+candidate.SolverDiagnostics = diagnostics;
 end

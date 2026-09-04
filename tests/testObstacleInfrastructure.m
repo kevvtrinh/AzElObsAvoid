@@ -300,23 +300,8 @@ verifyEqual(testCase, ...
     "AbsTol", 1e-12);
 end
 
-function testChangingHistoryClassifiesSpanAndGeometry(testCase)
-% Verify one owner classifies static, partial-span, and moving histories.
-staticObstacle = rectangleObstacle("static", [0; 20], [-2 2 -1 1]);
-verifyFalse(testCase, obstacleAvoidance.obstacles.hasChangingHistory( ...
-    staticObstacle, 0, 20));
-
-partialSpanObstacle = rectangleObstacle( ...
-    "partial span", [5; 15], [-2 2 -1 1]);
-verifyTrue(testCase, obstacleAvoidance.obstacles.hasChangingHistory( ...
-    partialSpanObstacle, 0, 20));
-
-movingObstacle = staticObstacle;
-movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
-verifyTrue(testCase, obstacleAvoidance.obstacles.hasChangingHistory( ...
-    movingObstacle, 0, 20));
-
-% Verify shared static-horizon semantics, union reuse, and safe empty history.
+function testStaticHorizonClassifiesSpanAndGeometry(testCase)
+% Verify static, partial-span, moving, and empty-history classifications.
 staticObstacle = rectangleObstacle("static horizon", [0; 4], [-2 2 -1 1]);
 preparedStatic = obstacleAvoidance.obstacles.prepareDynamic(staticObstacle);
 [isStaticHorizon, occupiedShape] = ...

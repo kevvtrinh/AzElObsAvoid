@@ -120,8 +120,7 @@ while goalIsReachable && numel(routes_deg) < maximumClassCount
         statePath = reconstructStatePath(parentState, currentState);
         route_deg = nodePosition_deg(stateNode(statePath), :);
         requiredClass = stateClass(currentState, 1:referenceCount);
-        [route_deg, routeCleanup] = ...
-            obstacleAvoidance.geometry.shortenVisibilityRoute( ...
+        [route_deg, routeCleanup] = shortenVisibilityRoute( ...
             route_deg, edgeCheck, classFunction, requiredClass);
         routes_deg{end + 1, 1} = route_deg; %#ok<AGROW>
         if referenceCount > 0
@@ -273,4 +272,62 @@ end
 function angle = principalAngle(angle)
 % Normalize angular change to the deterministic principal interval.
 angle = atan2(sin(angle), cos(angle));
+end
+
+function [cleanedRoute_deg, record] = shortenVisibilityRoute( ...
+        route_deg, visibilityFunction, signatureFunction, requiredSignature)
+% Shorten a route only with visible chords that preserve its route class.
+cleanedRoute_deg = route_deg;
+initialLength_deg = obstacleAvoidance.geometry.routeLength(route_deg);
+record = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...
+    "HomologyRejectedCount", 0, "AcceptedCount", 0, ...
+    "LengthReduction_deg", 0);
+if size(route_deg, 1) < 3 || ...
+        ~isequal(signatureFunction(route_deg), requiredSignature)
+    return;
+end
+while size(cleanedRoute_deg, 1) >= 3
+    currentLength_deg = ...
+        obstacleAvoidance.geometry.routeLength(cleanedRoute_deg);
+    lengthTolerance_deg = max(1e-12, 1e-12 * currentLength_deg);
+    bestReduction_deg = 0;
+    bestRoute_deg = cleanedRoute_deg;
+    for firstIndex = 1:size(cleanedRoute_deg, 1) - 2
+        for secondIndex = firstIndex + 2:size(cleanedRoute_deg, 1)
+            record.CandidateCount = record.CandidateCount + 1;
+            reduction_deg = obstacleAvoidance.geometry.routeLength( ...
+                cleanedRoute_deg(firstIndex:secondIndex, :)) - ...
+                norm(cleanedRoute_deg(secondIndex, :) - ...
+                cleanedRoute_deg(firstIndex, :));
+            if reduction_deg <= lengthTolerance_deg
+                continue;
+            end
+            if ~visibilityFunction(cleanedRoute_deg(firstIndex, :), ...
+                    cleanedRoute_deg(secondIndex, :))
+                record.VisibilityRejectedCount = ...
+                    record.VisibilityRejectedCount + 1;
+                continue;
+            end
+            candidate_deg = [cleanedRoute_deg(1:firstIndex, :); ...
+                cleanedRoute_deg(secondIndex:end, :)];
+            if ~isequal(signatureFunction(candidate_deg), requiredSignature)
+                record.HomologyRejectedCount = ...
+                    record.HomologyRejectedCount + 1;
+                continue;
+            end
+            if reduction_deg <= bestReduction_deg + lengthTolerance_deg
+                continue;
+            end
+            bestReduction_deg = reduction_deg;
+            bestRoute_deg = candidate_deg;
+        end
+    end
+    if bestReduction_deg <= lengthTolerance_deg
+        break;
+    end
+    cleanedRoute_deg = bestRoute_deg;
+    record.AcceptedCount = record.AcceptedCount + 1;
+end
+record.LengthReduction_deg = initialLength_deg - ...
+    obstacleAvoidance.geometry.routeLength(cleanedRoute_deg);
 end
