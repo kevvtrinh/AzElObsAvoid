@@ -319,6 +319,34 @@
       pointer-events: none;
     }
 
+    .obstacle-action-menu {
+      position: absolute;
+      z-index: 4;
+      display: flex;
+      gap: 0.25rem;
+      padding: 0.28rem;
+      border: 1px solid rgba(118, 229, 235, 0.58);
+      border-radius: 10px;
+      background: rgba(7, 17, 30, 0.94);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.34);
+      transform: translate(-50%, -100%);
+    }
+
+    .obstacle-action-menu[hidden] {
+      display: none;
+    }
+
+    .obstacle-action-button {
+      display: grid;
+      width: 2rem;
+      height: 2rem;
+      padding: 0;
+      place-items: center;
+      color: #d9fdff;
+      font-size: 1.05rem;
+      line-height: 1;
+    }
+
     .legend-item {
       display: inline-flex;
       align-items: center;
@@ -1028,6 +1056,22 @@
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="workspaceCanvas" tabindex="0"
             aria-label="Azimuth elevation plotting workspace. Use the toolbar to place points and draw polygons."></canvas>
+          <div id="obstacleActionMenu" class="obstacle-action-menu" hidden
+            role="toolbar" aria-label="Selected obstacle actions">
+            <button id="copyObstacleButton" class="obstacle-action-button"
+              type="button" title="Copy obstacle" aria-label="Copy obstacle">
+              <span aria-hidden="true">⧉</span>
+            </button>
+            <button id="rotateObstacleButton" class="obstacle-action-button"
+              type="button" title="Rotate by entered angle"
+              aria-label="Rotate by entered angle">
+              <span aria-hidden="true">↻</span>
+            </button>
+            <button id="setMotionButton" class="obstacle-action-button"
+              type="button" title="Set motion" aria-label="Set motion">
+              <span aria-hidden="true">➜</span>
+            </button>
+          </div>
           <div id="coordinateReadout" class="coordinate-readout"
             aria-live="polite">Az —° · El —°</div>
           <div class="canvas-legend" aria-hidden="true">
@@ -1045,8 +1089,8 @@
           </div>
         </div>
         <p class="page-note">
-          Drawing tools add geometry only. Select an obstacle and use Set
-          Motion to draw its velocity; arrow length is speed in deg/s.
+          Drawing tools add geometry only. Select an obstacle for copy, rotate,
+          and motion actions; arrow length is speed in deg/s.
         </p>
 
         <div class="timeline" aria-label="Mission playback">
@@ -1320,24 +1364,27 @@
               </div>
               <div class="field">
                 <label for="motionAzimuth">Azimuth speed (deg/s)</label>
-                <input id="motionAzimuth" type="number" step="0.5">
+                <input id="motionAzimuth" type="number" min="-2" max="2"
+                  step="0.5">
               </div>
               <div class="field">
                 <label for="motionElevation">Elevation speed (deg/s)</label>
-                <input id="motionElevation" type="number" step="0.5">
+                <input id="motionElevation" type="number" min="-2" max="2"
+                  step="0.5">
+              </div>
+              <div class="field full">
+                <label for="rotationAngle">Rotate by (deg, +counter-clockwise)</label>
+                <input id="rotationAngle" type="number" value="15" step="5">
               </div>
             </div>
             <p id="motionSpeedReadout" class="page-note">
               Speed magnitude: 0.000 deg/s
             </p>
             <p id="motionProfileNote" class="page-note">
-              Arrow length is speed. Profiles integrate that speed command
-              over mission time to create obstacle positions.
+              Dragging from the center to the frame edge scales speed from
+              zero to 2 deg/s. Profiles integrate that command over time.
             </p>
             <div class="editor-actions">
-              <button id="setMotionButton" class="compact-button" type="button">
-                Set motion
-              </button>
               <button id="zeroMotionButton" class="compact-button" type="button">
                 Make stationary
               </button>
@@ -1351,6 +1398,8 @@
             margin once and returns the protected geometry for display. Circle and
             freehand tools create ordinary polygons (24 and at most 40 vertices).
             A circle is round in planning degrees, not merely in screen pixels.
+            Moving polygons may leave the frame; while fully outside, they do
+            not obstruct the visible planning workspace.
           </p>
         </section>
 
@@ -1478,6 +1527,7 @@
       const CIRCLE_VERTEX_COUNT = 24;
       const FREEHAND_MAXIMUM_VERTICES = 40;
       const HANDLE_RADIUS_PX = 10;
+      const MAXIMUM_OBSTACLE_SPEED_DEG_S = 2;
       const defaultControls = Object.freeze({
         azimuthMin: -180,
         azimuthMax: 180,
@@ -1551,6 +1601,7 @@
       };
       const obstacleList = document.getElementById("obstacleList");
       const obstacleEditor = document.getElementById("obstacleEditor");
+      const obstacleActionMenu = document.getElementById("obstacleActionMenu");
 
       const controlIds = [
         "azimuthMin", "azimuthMax", "elevationMin", "elevationMax",
@@ -1825,7 +1876,8 @@
         });
         updateActionAvailability();
         const messages = {
-          select: "Select picks; drag endpoints, polygons, vertices, or an existing velocity handle.",
+          select: "Select a polygon for its action menu; drag endpoints, " +
+            "polygons, vertices, or a velocity handle.",
           start: "Click once in the workspace to place or replace the start.",
           goal: "Click once in the workspace to place or replace the goal.",
           polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
@@ -1847,6 +1899,10 @@
         const hasSelection = state.selectedObstacleIndex >= 0 &&
           state.selectedObstacleIndex < state.obstacles.length;
         element("deleteObstacleButton").disabled =
+          editingDisabled || !hasSelection;
+        element("copyObstacleButton").disabled =
+          editingDisabled || !hasSelection;
+        element("rotateObstacleButton").disabled =
           editingDisabled || !hasSelection;
         element("setMotionButton").disabled = editingDisabled || !hasSelection;
       }
@@ -1906,6 +1962,7 @@
         ["startAzimuth", "startElevation", "goalAzimuth", "goalElevation",
           "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
           "motionProfile", "motionAzimuth", "motionElevation",
+          "rotationAngle", "copyObstacleButton", "rotateObstacleButton",
           "deleteEditorButton", "setMotionButton", "zeroMotionButton"
         ].forEach((id) => {
           element(id).disabled = disabled;
@@ -2011,6 +2068,56 @@
         draw();
       }
 
+      function copySelectedObstacle() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected) {
+          return;
+        }
+        const sourceName = selected.name;
+        addObstacle(selected.vertices_deg, selected);
+        const copyName = state.obstacles[state.selectedObstacleIndex].name;
+        invalidateResult("Obstacle geometry changed.");
+        renderObstacleEditor();
+        activateMode("select");
+        setStatus(`${sourceName} copied as ${copyName}. Drag it to move it.`,
+          "success");
+      }
+
+      function rotateSelectedObstacle() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        const angle_deg = numberFromInput("rotationAngle");
+        if (!selected || !Number.isFinite(angle_deg)) {
+          setStatus("Enter a finite rotation angle.", "error");
+          return;
+        }
+        const normalizedAngle_deg = angle_deg % 360;
+        if (Math.abs(normalizedAngle_deg) <= Number.EPSILON) {
+          setStatus("Enter a rotation angle other than a full turn.", "warning");
+          return;
+        }
+        const center_deg = centroid(selected.vertices_deg);
+        const angle_rad = normalizedAngle_deg * Math.PI / 180;
+        const cosine = Math.cos(angle_rad);
+        const sine = Math.sin(angle_rad);
+        selected.vertices_deg = selected.vertices_deg.map((point_deg) => {
+          const relativeAzimuth_deg = point_deg[0] - center_deg[0];
+          const relativeElevation_deg = point_deg[1] - center_deg[1];
+          return [
+            center_deg[0] + cosine * relativeAzimuth_deg -
+              sine * relativeElevation_deg,
+            center_deg[1] + sine * relativeAzimuth_deg +
+              cosine * relativeElevation_deg
+          ];
+        });
+        invalidateResult("Obstacle geometry changed.");
+        renderObstacleEditor();
+        activateMode("select");
+        setStatus(
+          `${selected.name} rotated ${normalizedAngle_deg.toFixed(3)} deg.`,
+          "success"
+        );
+      }
+
       function renderObstacleEditor() {
         obstacleList.replaceChildren();
         element("obstacleCount").textContent =
@@ -2065,7 +2172,8 @@
           oscillating: "Out and back: the arrow is peak speed; the polygon returns to its start."
         };
         element("motionProfileNote").textContent =
-          profileDescriptions[selected.motionProfile];
+          profileDescriptions[selected.motionProfile] +
+          " Drag to the frame edge for the 2 deg/s maximum.";
       }
 
       function updateSelectedObstacle() {
@@ -2083,13 +2191,23 @@
             "error");
           return;
         }
+        const requestedVelocity_deg_s = [motionAzimuth, motionElevation];
+        const limitedVelocity_deg_s = limitMotionVelocity(
+          requestedVelocity_deg_s
+        );
+        const speedWasLimited = !pointsClose(
+          requestedVelocity_deg_s, limitedVelocity_deg_s
+        );
         selected.safetyMargin_deg = margin;
         selected.motionProfile = element("motionProfile").value;
-        selected.motionVelocity_deg_s = [motionAzimuth, motionElevation];
+        selected.motionVelocity_deg_s = limitedVelocity_deg_s;
         invalidateResult("Obstacle settings changed.");
         renderObstacleEditor();
         configureTimeline();
         draw();
+        if (speedWasLimited) {
+          setStatus("Obstacle speed was limited to 2 deg/s.", "warning");
+        }
       }
 
       function activateMotionDrawing() {
@@ -2103,7 +2221,7 @@
         syncTimelineControl();
         activateMode("motion");
         setStatus(
-          "Drag from the selected polygon's center. Arrow length is speed in deg/s.",
+          "Drag from the polygon center; the frame edge is 2 deg/s.",
           "info"
         );
       }
@@ -2185,17 +2303,6 @@
           if (!finiteNumber(obstacle.safetyMargin_deg) ||
               obstacle.safetyMargin_deg < 0) {
             throw new Error(`${obstacle.name} has an invalid safety margin.`);
-          }
-          const keyframes = buildObstacleKeyframes(obstacle,
-            controls.missionTime);
-          const outside = keyframes.some((keyframe) =>
-            keyframe.vertices_deg.some((point) => !pointInsideWorkspace(point))
-          );
-          if (outside) {
-            throw new Error(
-              `${obstacle.name} leaves the workspace during its motion. ` +
-              "Reduce its translation or expand the workspace."
-            );
           }
         });
       }
@@ -2796,15 +2903,18 @@
         updateOverlayControls(grid);
       }
 
-      function addObstacle(vertices) {
+      function addObstacle(vertices, sourceObstacle = null) {
         const controls = readControls(false);
         const margin = controls ? controls.defaultMargin : 0.2;
         state.obstacles.push({
           name: `Obstacle ${state.nextObstacleNumber}`,
           vertices_deg: vertices.map((point) => point.slice()),
-          safetyMargin_deg: margin,
-          motionVelocity_deg_s: [0, 0],
-          motionProfile: "stationary"
+          safetyMargin_deg: sourceObstacle ?
+            sourceObstacle.safetyMargin_deg : margin,
+          motionVelocity_deg_s: sourceObstacle ?
+            sourceObstacle.motionVelocity_deg_s.slice() : [0, 0],
+          motionProfile: sourceObstacle ?
+            sourceObstacle.motionProfile : "stationary"
         });
         state.nextObstacleNumber += 1;
         state.selectedObstacleIndex = state.obstacles.length - 1;
@@ -3441,8 +3551,9 @@
           return;
         }
         const center = centroid(displayedVertices);
-        const end = [center[0] + obstacle.motionVelocity_deg_s[0],
-          center[1] + obstacle.motionVelocity_deg_s[1]];
+        const end = motionVectorDisplayEnd(
+          center, obstacle.motionVelocity_deg_s
+        );
         drawArrow(center, end, isSelected &&
           (state.mode === "select" || state.mode === "motion"));
         const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
@@ -3473,15 +3584,8 @@
       }
 
       function drawRequestObstacles() {
-        const missionTime = Math.max(Number.EPSILON,
-          numberFromInput("missionTime") || defaultControls.missionTime);
         state.obstacles.forEach((obstacle, index) => {
-          const offset_deg = motionOffset_deg(
-            obstacle, state.currentTime_s, missionTime
-          );
-          const moved = obstacle.vertices_deg.map((point) => [
-            point[0] + offset_deg[0], point[1] + offset_deg[1]
-          ]);
+          const moved = obstacleVerticesAtCurrentTime(obstacle);
           strokePath(moved, {
             stroke: index === state.selectedObstacleIndex ? "#76e5eb" : "#6aa9ff",
             width: index === state.selectedObstacleIndex ? 2.2 : 1.4,
@@ -3495,6 +3599,17 @@
             drawVertexHandles(obstacle.vertices_deg);
           }
         });
+      }
+
+      function obstacleVerticesAtCurrentTime(obstacle) {
+        const missionTime_s = Math.max(Number.EPSILON,
+          numberFromInput("missionTime") || defaultControls.missionTime);
+        const offset_deg = motionOffset_deg(
+          obstacle, state.currentTime_s, missionTime_s
+        );
+        return obstacle.vertices_deg.map((point_deg) => [
+          point_deg[0] + offset_deg[0], point_deg[1] + offset_deg[1]
+        ]);
       }
 
       function wrapPoint(point) {
@@ -3954,6 +4069,43 @@
         drawCrosshair();
         context.restore();
         drawKinematicCharts();
+        positionObstacleActionMenu();
+      }
+
+      function positionObstacleActionMenu() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        const canShow = selected && state.mode === "select" &&
+          !state.activeDrag && !state.importedSceneIsReadOnly &&
+          !state.isPlanning;
+        if (!canShow) {
+          obstacleActionMenu.hidden = true;
+          return;
+        }
+        const vertices_deg = obstacleVerticesAtCurrentTime(selected);
+        const bounds = workspace();
+        const azimuth_deg = vertices_deg.map((point_deg) => point_deg[0]);
+        const elevation_deg = vertices_deg.map((point_deg) => point_deg[1]);
+        const overlapsWorkspace = Math.max(...azimuth_deg) >= bounds.azimuth[0] &&
+          Math.min(...azimuth_deg) <= bounds.azimuth[1] &&
+          Math.max(...elevation_deg) >= bounds.elevation[0] &&
+          Math.min(...elevation_deg) <= bounds.elevation[1];
+        if (!overlapsWorkspace) {
+          obstacleActionMenu.hidden = true;
+          return;
+        }
+        obstacleActionMenu.hidden = false;
+        const center = worldToScreen(centroid(vertices_deg));
+        const halfWidth = obstacleActionMenu.offsetWidth / 2;
+        const menuHeight = obstacleActionMenu.offsetHeight;
+        const inset = 8;
+        const left = Math.max(state.plotRect.left + halfWidth + inset,
+          Math.min(state.plotRect.left + state.plotRect.width - halfWidth - inset,
+            center[0]));
+        const top = Math.max(state.plotRect.top + menuHeight + inset,
+          Math.min(state.plotRect.top + state.plotRect.height - inset,
+            center[1] - 12));
+        obstacleActionMenu.style.left = `${left}px`;
+        obstacleActionMenu.style.top = `${top}px`;
       }
 
       function updateCoordinateReadout(point) {
@@ -3982,16 +4134,18 @@
             Math.hypot(...selected.motionVelocity_deg_s) <= 1e-12) {
           return null;
         }
-        const missionTime_s = Math.max(Number.EPSILON,
-          numberFromInput("missionTime") || defaultControls.missionTime);
-        const offset_deg = motionOffset_deg(
-          selected, state.currentTime_s, missionTime_s
+        const center = selectedMotionCenter();
+        return motionVectorDisplayEnd(
+          center, selected.motionVelocity_deg_s
         );
-        const initialCenter = centroid(selected.vertices_deg);
-        const center = [initialCenter[0] + offset_deg[0],
-          initialCenter[1] + offset_deg[1]];
-        return [center[0] + selected.motionVelocity_deg_s[0],
-          center[1] + selected.motionVelocity_deg_s[1]];
+      }
+
+      function selectedMotionCenter() {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (!selected) {
+          return null;
+        }
+        return centroid(obstacleVerticesAtCurrentTime(selected));
       }
 
       function selectDragTarget(point, screenPoint) {
@@ -4043,11 +4197,7 @@
           const obstacle = state.obstacles[target.obstacleIndex];
           drag.originalVelocity_deg_s = obstacle.motionVelocity_deg_s.slice();
           drag.originalProfile = obstacle.motionProfile;
-          const handle = selectedMotionHandle();
-          drag.origin_deg = [
-            handle[0] - obstacle.motionVelocity_deg_s[0],
-            handle[1] - obstacle.motionVelocity_deg_s[1]
-          ];
+          drag.origin_deg = selectedMotionCenter();
         }
         state.activeDrag = drag;
         if (target.obstacleIndex !== undefined) {
@@ -4075,6 +4225,89 @@
         const speed_deg_s = Math.hypot(...vector);
         element("motionSpeedReadout").textContent =
           `Speed magnitude: ${speed_deg_s.toFixed(3)} deg/s`;
+      }
+
+      function limitMotionVelocity(vector_deg_s) {
+        const speed_deg_s = Math.hypot(...vector_deg_s);
+        if (speed_deg_s <= MAXIMUM_OBSTACLE_SPEED_DEG_S ||
+            speed_deg_s <= Number.EPSILON) {
+          return vector_deg_s.slice();
+        }
+        const scale = MAXIMUM_OBSTACLE_SPEED_DEG_S / speed_deg_s;
+        return vector_deg_s.map((component_deg_s) =>
+          component_deg_s * scale
+        );
+      }
+
+      function distanceToWorkspaceBoundary(origin_deg, direction) {
+        const bounds = workspace();
+        const distances_deg = [];
+        if (direction[0] > 1e-12) {
+          distances_deg.push(
+            (bounds.azimuth[1] - origin_deg[0]) / direction[0]
+          );
+        } else if (direction[0] < -1e-12) {
+          distances_deg.push(
+            (bounds.azimuth[0] - origin_deg[0]) / direction[0]
+          );
+        }
+        if (direction[1] > 1e-12) {
+          distances_deg.push(
+            (bounds.elevation[1] - origin_deg[1]) / direction[1]
+          );
+        } else if (direction[1] < -1e-12) {
+          distances_deg.push(
+            (bounds.elevation[0] - origin_deg[1]) / direction[1]
+          );
+        }
+        const positiveDistances_deg = distances_deg.filter(
+          (distance_deg) => Number.isFinite(distance_deg) &&
+            distance_deg >= 0
+        );
+        return positiveDistances_deg.length > 0 ?
+          Math.min(...positiveDistances_deg) : 0;
+      }
+
+      function motionVelocityFromDrag(origin_deg, point_deg) {
+        const delta_deg = [point_deg[0] - origin_deg[0],
+          point_deg[1] - origin_deg[1]];
+        const distance_deg = Math.hypot(...delta_deg);
+        if (distance_deg <= Number.EPSILON) {
+          return [0, 0];
+        }
+        const direction = delta_deg.map((value_deg) =>
+          value_deg / distance_deg
+        );
+        const boundaryDistance_deg = distanceToWorkspaceBoundary(
+          origin_deg, direction
+        );
+        if (boundaryDistance_deg <= Number.EPSILON) {
+          return [0, 0];
+        }
+        const speed_deg_s = MAXIMUM_OBSTACLE_SPEED_DEG_S *
+          Math.min(1, distance_deg / boundaryDistance_deg);
+        return direction.map((component) => component * speed_deg_s);
+      }
+
+      function motionVectorDisplayEnd(center_deg, velocity_deg_s) {
+        const speed_deg_s = Math.hypot(...velocity_deg_s);
+        if (speed_deg_s <= Number.EPSILON) {
+          return center_deg.slice();
+        }
+        const direction = velocity_deg_s.map((component_deg_s) =>
+          component_deg_s / speed_deg_s
+        );
+        const boundaryDistance_deg = distanceToWorkspaceBoundary(
+          center_deg, direction
+        );
+        if (boundaryDistance_deg <= Number.EPSILON) {
+          return center_deg.slice();
+        }
+        const displayDistance_deg = boundaryDistance_deg *
+          Math.min(1, speed_deg_s / MAXIMUM_OBSTACLE_SPEED_DEG_S);
+        return direction.map((component, axisIndex) =>
+          center_deg[axisIndex] + component * displayDistance_deg
+        );
       }
 
       function updateActiveDrag(point) {
@@ -4107,9 +4340,9 @@
           const obstacle = state.obstacles[drag.obstacleIndex];
           const center = drag.origin_deg;
           markDragChanged(drag, point);
-          obstacle.motionVelocity_deg_s = [
-            point[0] - center[0], point[1] - center[1]
-          ];
+          obstacle.motionVelocity_deg_s = motionVelocityFromDrag(
+            center, point
+          );
           updateMotionInputs(obstacle.motionVelocity_deg_s);
           const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
           coordinateReadout.textContent = `Speed ${speed_deg_s.toFixed(3)} deg/s`;
@@ -4434,6 +4667,10 @@
         deleteSelectedObstacle);
       element("deleteEditorButton").addEventListener("click",
         deleteSelectedObstacle);
+      element("copyObstacleButton").addEventListener("click",
+        copySelectedObstacle);
+      element("rotateObstacleButton").addEventListener("click",
+        rotateSelectedObstacle);
       element("setMotionButton").addEventListener("click",
         activateMotionDrawing);
       element("zeroMotionButton").addEventListener("click", () => {
