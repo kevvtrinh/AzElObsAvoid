@@ -561,6 +561,60 @@ verifyLessThanOrEqual(testCase, ...
     recoveredResult.ArrivalTime_s, missionEndTime_s);
 end
 
+function testDirectWaitDoesNotFreezeHorizonStretchedMotion(testCase)
+% A larger deadline must not hide a known earlier feasible direct motion.
+vertices_deg = [4 -1; 6 -1; 6 1; 4 1];
+firstObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "first", [3; 4.5], vertices_deg(:, 1), vertices_deg(:, 2), 0);
+secondObstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "second", [8; 9.5], vertices_deg(:, 1), vertices_deg(:, 2), 0);
+obstacles = obstacleAvoidance.obstacles.combineObstacles( ...
+    firstObstacle, secondObstacle);
+initialState = restState(0, [0 0]);
+limits = physicalLimits();
+limits.azimuthInterval_deg = [-1 11];
+limits.elevationInterval_deg = [-0.5 0.5];
+options = plannerOptions("earliestArrival");
+for horizon_s = [12 16 24 32]
+    goalState = restState(horizon_s, [10 0]);
+    result = obstacleAvoidance.planTrajectory( ...
+        obstacles, initialState, goalState, limits, options);
+    validation = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, validation.Passed, validation.Message);
+    verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 9.5);
+    if result.Success
+        verifyEqual(testCase, ...
+            sum(vecnorm(diff(result.position_deg), 2, 2)), 10, ...
+            "AbsTol", 1e-9);
+    end
+end
+end
+
+function testDirectWaitRetimingHandlesTranslationAndOffsetClock(testCase)
+% Preserve a diagonal path while shortening a horizon-stretched moving body.
+vertices_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+obstacles = obstacleAvoidance.obstacles.createObstacle("obstacle", ...
+    [3; 9; 9.5; 23], repmat({vertices_deg(:, 1)}, 4, 1), ...
+    {vertices_deg(:, 2); vertices_deg(:, 2); ...
+    vertices_deg(:, 2) + 8; vertices_deg(:, 2) + 8}, 0.1);
+initialState = restState(3, [-5 0]);
+goalState = restState(23, [5 2]);
+limits = struct("maxVelocity_deg_s", [2 1], ...
+    "maxAcceleration_deg_s2", [1 0.5], "maxJerk_deg_s3", [2 1], ...
+    "azimuthInterval_deg", [-6 6], "elevationInterval_deg", [-0.5 2.5]);
+result = obstacleAvoidance.planTrajectory(obstacles, initialState, ...
+    goalState, limits, struct("GoalTimeMode", "earliestArrival"));
+validation = obstacleAvoidance.validateTrajectory(result);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, validation.Passed, validation.Message);
+if result.Success
+    verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 14.5);
+    verifyEqual(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), ...
+        norm(goalState.position_deg - initialState.position_deg), "AbsTol", 1e-9);
+end
+end
+
 function testBalancedArrivalRefinesObjectiveRelevantDirectWait(testCase)
 % Remove avoidable wait when time contributes to the balanced objective.
 obstacleTime_s = [0; 6; 6.5; 12];

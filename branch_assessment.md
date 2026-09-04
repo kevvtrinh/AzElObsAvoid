@@ -1,5 +1,101 @@
 # Novel replacement branch assessment
 
+## Direct-wait motion retiming - 2026-09-04
+
+The timing repair adds 30 net physical production lines in the existing
+direct-wait constructor/refiner, alongside the two-line projection change
+below. A velocity-only seed estimate can fail construction and then stretch
+its motion body to fill the request horizon. The old wait refinement froze
+that unnecessarily long body, sometimes retaining a late arrival and sometimes
+rejecting a request with an independently demonstrated feasible motion.
+
+The refiner now proposes one shorter body using complete derivative bounds,
+then sends it through the same full trajectory validator as every wait trial.
+It replaces the incumbent only when that check passes. A collision-invalid
+constructed body can also reach this repair; wait refinement still requires
+a validated incumbent. Fixed-arrival requests and zero-refinement settings
+retain their prior behavior. Four stable diagnostic fields report the trial
+and its original/final direct-motion durations. No option or production file
+was added. This is a bounded improvement proposal, not a minimum-time proof.
+
+For a 10-degree path with two finite obstacle-activity intervals, earliest
+requests with horizons 12 and 16 seconds changed from false failure to valid
+8.750061035156-second arrivals. Horizons 24 and 32 changed from
+21.400360107422 and 29 seconds to the same 8.750061035156 seconds. A translated
+barrier with a diagonal path and initial time 3 seconds improved arrival from
+20 to 13.149078369141 seconds; length stayed 10.198039027186 degrees. Common
+normalized polynomial samples agreed within 1.1e-14 degrees on the successful
+comparison cases. All final focused successes passed independent validation.
+
+The repair is not a uniform runtime improvement. In warmed three-repeat
+comparisons against HEAD plus projection batching, median runtime was
+0.2338856 -> 0.3722676 seconds for the recovered failure, 0.5202663 ->
+0.3767518 for the long-arrival case, 0.3381238 -> 0.6140266 for translation,
+and 0.5487427 -> 0.5669623 for the unchanged moving barrier. The implementation
+subsequently combined both trial kinds into one loop, removing duplicate
+construction/check code; its focused trajectory results were reproduced.
+
+Remaining proven timing defects are separate: the horizon-10 earliest and
+horizon-12 balanced requests still reject a zero-dwell timed route despite a
+known feasible solution, and non-monotone wait windows can still be missed by
+the existing bisection. No path-length reduction or completeness claim is made.
+All 124 tests pass, including the three example-executing tests run separately.
+All 18 maintained examples were verified headlessly: 17 validated successes
+and the expected independently validated `noValidatedSeed` failure. Every
+successful motion passes collision, velocity, acceleration, jerk, and applicable
+certificate checks. Default and explicit visible controls pass on the
+obstacle-free example, and a hidden failure figure was created from retained
+diagnostics without replanning. Code Analyzer reports no changed-file issues.
+The graphics were inspected; the existing long success-workspace title clips
+at the default figure width. Algorithm changes did not alter plotting code.
+
+The final slow-dynamic replay with both retained changes returned exactly the
+baseline motion arrays and passed fresh independent validation. Its single
+wall time was 29.4817251 seconds; the warmed projection comparisons below,
+not this single replay, support the speedup claim. The maintained opening-U
+case rejected its new timing proposal and retained the original valid motion,
+exercising the incumbent-preservation path.
+
+## Projection-query batching by matrix size - 2026-09-04
+
+The current retained change against `31d90843272c2bbf55b15ffb19c9492ba44160fc`
+replaces the fixed 64-point projection block in `pointPolygonClearance` with
+a 65,536-element target per temporary projection matrix. Small polygons can
+process more points together; very large polygons process at least one complete
+point-versus-edge row. The projection formula, edge order, occupancy sign,
+tolerances, and all three public outputs are unchanged. This is two net
+physical production lines, with no new option or production file.
+
+Warmed 4,000-call kernel blocks, interleaved across the original and changed
+bodies, reduced median runtime from 5.5589664 to 4.3462502 seconds for a
+49-edge/320-query case, and from 18.0502134 to 13.7082648 seconds for a
+64-edge holed/1,024-query case: 21.8% and 24.1%. An initial 400-call measurement
+was too variable to support the first result and was repeated with longer
+blocks without changing the implementation or acceptance threshold.
+
+Complete warmed planner requests reduced median runtime from 41.5132825 to
+35.5981197 seconds for the unchanged `runtimediagnosis.mat` request, and from
+1.0005301 to 0.7198244 seconds for the stored moving-barrier request. Selected
+routes, time/position/velocity/acceleration arrays, temporal counts, and explored
+nodes matched exactly, and independent validation passed. Arrival and sampled
+length remained 128.747653905761 seconds / 266.550824223376 degrees and
+10.0903015136719 seconds / 10 degrees, respectively. No arrival-time or
+path-length reduction is claimed for this change.
+
+Exact geometry comparisons also cover empty, rectangular, concave, holed,
+translated, and 4,000-edge polygons. Focused obstacle tests, all 124 tests,
+the 18 maintained examples, and default/visible/failure plotting checks have
+been completed as recorded above. Repository-wide size targets remain exceeded;
+verification of these changes does not establish branch-wide completeness.
+
+Four alternatives were rejected and completely removed: deleting the balanced
+temporal objective override (no final quality gain and 97.4% slower on one
+request), instantaneous bounding boxes (7.48% dynamic speedup below its 10%
+gate), reducing static segmentation (arrival and length worsened), and batching
+temporal queries across arrival layers (9.20% slower). Reproduction notes are in
+`output/algorithm-improvements/negative-results.md`. Pre-existing user edits
+and deleted documents were preserved.
+
 ## Collapse zero-information planner layers - 2026-09-03
 
 Excluding pre-existing user edits in the working tree based on `1e321ce`, this

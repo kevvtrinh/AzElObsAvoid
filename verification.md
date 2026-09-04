@@ -1,5 +1,114 @@
 # Plan 325 verification
 
+## Projection blocks and direct retiming - 2026-09-04
+
+Baseline: `31d90843272c2bbf55b15ffb19c9492ba44160fc`, branch
+`bmtp-cleanup-codex`, MATLAB R2024b Update 4. The baseline snapshot also
+preserved the pre-existing working-copy `solve.m` and `AGENTS.md`. Existing
+document deletions and untracked Rogue input bundles were not changed. The
+changes are committed as separate local milestones for projection batching
+and direct-wait retiming. No push was requested.
+
+Production changes are +7/-5 lines in `pointPolygonClearance.m`, +33/-7 in
+`solveOneSeed.m`, and +4/-0 in `createDirectWaitMotion.m`: 32 net physical
+lines, three existing files, no option or new production file. The two
+retiming regressions add 54 test lines. Temporary result-capture statements
+used for the three example-executing tests were removed after those runs.
+
+Projection acceptance used unchanged numerical operations and exact output
+comparisons on empty, rectangular, concave, holed, translated, and dense
+4,000-edge polygons. Warmed 4,000-call kernel blocks reduced median time
+21.8% and 24.1%. Full-request minimum/median times were 40.9713624/41.5132825
+-> 32.2621130/35.5981197 seconds for the unchanged dynamic diagnosis bundle,
+and 0.9341968/1.0005301 -> 0.6610286/0.7198244 for the stored moving barrier.
+All trajectory arrays and selected search traces/counts matched exactly;
+independent validation passed. The matrix-size target only bounds projection
+temporaries, not the separate `polyshape.isinterior` allocation.
+
+The direct-wait regression was run red before repair. Complete derivative
+bounds now propose a shorter moving body, with authoritative validation
+required for replacement. Four earliest-arrival requests at horizons
+12/16/24/32 seconds all independently pass at 8.750061035156 seconds; the
+baseline failed the first two and arrived at 21.400360107422/29 seconds on the
+last two. Translation/diagonal/offset-clock verification improved 20 seconds
+to 13.149078369141 seconds. Geometric path error on common normalized motion
+samples was at most 1.1e-14 degrees. No path-length reduction is claimed.
+
+Retiming comparison minimum/median wall times (seconds), against projection
+only, with one warmup and three measurements per source in the same session:
+
+| Request | Baseline min/median | Changed min/median |
+|---|---:|---:|
+| Horizon 12, recovered failure | 0.1998856 / 0.2338856 | 0.3434485 / 0.3722676 |
+| Horizon 24, earlier arrival | 0.4344255 / 0.5202663 | 0.3593599 / 0.3767518 |
+| Translating barrier | 0.2468417 / 0.3381238 | 0.5791345 / 0.6140266 |
+| Existing moving barrier | 0.4542887 / 0.5487427 | 0.5537548 / 0.5669623 |
+
+The slower cases are retained for recovered feasibility/earlier arrival, not
+as speedups. These timings preceded consolidation of duplicate trial code
+into the existing validation loop; focused final-code results were reproduced.
+The initial comparison script stopped during geometry inspection because it
+removed its engine path too soon; the complete corrected comparison is the
+table above. Neither script error was a planner failure.
+
+The current static-U example takes 17.0495455 seconds: 16.2486479 inside the
+planner and 0.8008976 for example setup/checks outside it. Planner stages are
+14.8779667 motion solving, 0.3717306 topology, 0.2854352 collision checking,
+0.1025955 remaining validation, and 0.6109199 unattributed seconds. Candidate
+solving takes 1.8101824 seconds for the unaccepted seed and 12.6032465 for the
+accepted seed. The earlier matched-baseline profile attributes 13.235869 of
+16.304548 seconds to `coneprog`; 21 degree-16 optimizer spans produce 718
+trajectory variables. This static case remains solver-dominated. Its returned
+polyline/smooth length/duration still match 34.9425880405/39.3787713567 degrees
+and 20.8323620005 seconds; the projection change is not claimed to accelerate
+its trajectory solves.
+
+All 121 non-example tests passed in 130.3935836 seconds, and the three
+example-executing tests subsequently passed in individual MATLAB processes.
+Code Analyzer found zero issues in the four changed MATLAB files. The first
+example capture used a relative path after MATLAB changed its test working
+directory, so that capture failed; its metrics are recorded as NaN and the
+successful rerun is separate in `benchmark.csv`. All 18 maintained examples
+were then checked headlessly, one example per MATLAB process: 17 independently
+validated successes and the expected validated `noValidatedSeed` failure.
+The two relevant contract-test runs supply the obstacle-avoidance and
+moving/rotating examples; the target-exit example also ran with its standard
+options separately. Each executed example and its physical metrics was
+reported directly in chat, and all measured runs were appended to the CSV.
+All saved results use `TrajectoryMethod = "bmtp"`; no selected seed reports
+an attempted fallback.
+
+The default obstacle-free example took 10.9809269 seconds including graphics
+and animation; the explicit visible run took 18.6226974 seconds. Both retain
+the 4.472135955-degree path and 4.531128874149-second duration and pass all
+validation checks. Three figures from each run and the hidden failure figure
+were inspected. The failure title includes `noValidatedSeed`, one seed, zero
+expanded states, and one rejected transition. The existing long workspace
+success title clips at the default figure width; no plotting source changed.
+
+The final unmodified dynamic-request replay with both retained changes took
+29.4817251 seconds and returned exactly the baseline time, position, velocity,
+acceleration, and selected-route arrays. Independent validation passed with
+arrival 128.747653905761 seconds and sampled length 266.550824223376 degrees.
+This single run is a final non-regression check, not a new speedup estimate.
+The maintained opening-U example rejected the shorter-body proposal and kept
+its original valid incumbent, also exercising the unsuccessful-trial path.
+
+Size remains a failed repository gate: physical production is 17,330 lines
+(baseline 17,298), tests 5,337 (baseline 5,283), total 22,667. Examples contain
+3,020 physical lines. The largest production file is 635 lines, below 900.
+`auditProductionSize` reports 12,625 noncomment lines against the unchanged
+11,482 ceiling, versus 12,596 at baseline. The physical overage is 9,830 lines;
+the written formula `0.25 * excess / 100` would require 2,457.50% reduction.
+That allowance cannot justify the existing repository-wide overage or turn
+this change into a size-gate pass. The measured retiming slowdown also fails
+any claim of a uniform runtime-based size allowance. No limits were raised.
+
+Remaining proven gaps: non-monotone wait-window coverage and zero-dwell timed
+seed dispatch. Four unsuccessful optimization alternatives were fully removed;
+their concise measurements remain in
+`output/algorithm-improvements/negative-results.md`.
+
 ## Certified continuous polynomial bounds - 2026-09-02
 
 The baseline was commit `d5cd59aadc6e74bb7e6f3b7101056cf8a033783e` on

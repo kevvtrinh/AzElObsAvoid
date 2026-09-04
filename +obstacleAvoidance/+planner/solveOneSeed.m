@@ -84,7 +84,7 @@ if ~candidateWasPrechecked
         candidate, preparedObstacles, initialState, goalState, limits, ...
         options, stageTiming, "The motion kernel returned no trajectory.");
 
-    % --- Refine A Passing Direct Wait When Useful -----------------
+    % --- Refine Direct Motion And Wait When Useful ----------------
 
     % Only policies whose objective changes with arrival time benefit from
     % reducing a wait. Every refinement trial is checked in full and the best
@@ -94,7 +94,7 @@ if ~candidateWasPrechecked
         options.GoalTimeMode == "earliestArrival" || ...
         (options.GoalTimeMode == "balancedArrival" && ...
         options.MinimumTravelSavingsRate_deg_s > 0);
-    if checkResult.Passed && string(seed.Source) == "directWait" && ...
+    if candidate.Success && string(seed.Source) == "directWait" && ...
             waitRefinementAffectsObjective
         [candidate, checkResult, solverDiagnostics, ...
             refinementElapsedTime_s, stageTiming] = ...
@@ -126,7 +126,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, ...
         stageTiming] = refineDirectWait( ...
         seed, candidate, checkResult, diagnostics, obstacles, initialState, ...
         goalState, limits, options, stageTiming)
-% Reduce a passing direct wait through a fully checked time bracket.
+% Retain only fully checked improvements to a direct motion and its wait.
 initialWaitTime_s = diagnostics.WaitTime_s;
 diagnostics.InitialWaitTime_s = initialWaitTime_s;
 diagnostics.FinalWaitTime_s = initialWaitTime_s;
@@ -136,6 +136,16 @@ if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
     return;
 end
 directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
+diagnostics.InitialDirectMotionDuration_s = directMotionDuration_s;
+diagnostics.FinalDirectMotionDuration_s = directMotionDuration_s;
+% Uniform time compression preserves the path. Complete derivative bounds
+% propose a shorter body; moving obstacles still require full validation.
+durationScale = max([checkResult.PeakVelocity_deg_s ./ ...
+    limits.maxVelocity_deg_s, sqrt(checkResult.PeakAcceleration_deg_s2 ./ ...
+    limits.maxAcceleration_deg_s2), nthroot(checkResult.PeakJerk_deg_s3 ./ ...
+    limits.maxJerk_deg_s3, 3)]);
+% Leave roundoff slack when converting derivative ratios back to a duration.
+shorterDuration_s = directMotionDuration_s * durationScale * (1 + 64 * eps);
 lowerWaitTime_s = 0;
 upperWaitTime_s = initialWaitTime_s;
 bestCandidate = candidate;
@@ -143,8 +153,19 @@ bestCheckResult = checkResult;
 
 % Every trial must pass the authoritative trajectory check. Bisection never
 % promotes a solver result or sampled obstacle query to final acceptance.
-for refinementIndex = 1:options.MaximumWaitRefinementIterations
-    if refinementIndex == 1
+for refinementIndex = 0:options.MaximumWaitRefinementIterations
+    trialDuration_s = directMotionDuration_s;
+    if refinementIndex == 0
+        if ~isfinite(shorterDuration_s) || shorterDuration_s >= ...
+                directMotionDuration_s - options.ArrivalTimeTolerance_s
+            continue;
+        end
+        diagnostics.DirectRetimingAttempted = true;
+        trialDuration_s = shorterDuration_s;
+        trialWaitTime_s = initialWaitTime_s;
+    elseif ~bestCheckResult.Passed
+        break;
+    elseif refinementIndex == 1
         trialWaitTime_s = lowerWaitTime_s;
     else
         trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
@@ -153,7 +174,7 @@ for refinementIndex = 1:options.MaximumWaitRefinementIterations
     [trialCandidate, ~] = ...
         obstacleAvoidance.planner.createDirectWaitMotion( ...
         seed, initialState, goalState, limits, options, ...
-        trialWaitTime_s, directMotionDuration_s);
+        trialWaitTime_s, trialDuration_s);
     motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
     [trialCandidate, trialCheckResult, ~, stageTiming] = ...
         obstacleAvoidance.planner.checkCandidateMotion( ...
@@ -165,10 +186,15 @@ for refinementIndex = 1:options.MaximumWaitRefinementIterations
         bestCandidate = trialCandidate;
         bestCheckResult = trialCheckResult;
         upperWaitTime_s = trialWaitTime_s;
+        if refinementIndex == 0
+            directMotionDuration_s = trialDuration_s;
+            diagnostics.DirectRetimingAccepted = true;
+            diagnostics.FinalDirectMotionDuration_s = trialDuration_s;
+        end
         if trialWaitTime_s == 0
             break;
         end
-    else
+    elseif refinementIndex > 0
         lowerWaitTime_s = trialWaitTime_s;
         diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
     end
