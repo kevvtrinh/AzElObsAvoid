@@ -76,14 +76,45 @@ for corridorIndex = 1:numel(corridor)
         return;
     end
 end
-inequality_deg = obstacleAvoidance.search.seedCorridorInequality( ...
-    trajectory.Polynomial, corridor);
+coefficientCount = size(trajectory.Polynomial.positionPower_deg, 3);
+corridorCount = numel(corridor);
+segmentIndex = [corridor.SegmentIndex].';
+normal = vertcat(corridor.Normal);
+selectedPower_deg = ...
+    trajectory.Polynomial.positionPower_deg(segmentIndex, :, :);
+azimuthPower_deg = reshape( ...
+    selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
+elevationPower_deg = reshape( ...
+    selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
+projectionPower_deg = normal(:, 1) .* azimuthPower_deg + ...
+    normal(:, 2) .* elevationPower_deg;
+projectionBernstein_deg = ...
+    convertPowerToBernstein(projectionPower_deg.');
+offset_deg = [corridor.BoundaryOffset_deg] + ...
+    [corridor.Clearance_deg];
+inequalityMatrix_deg = offset_deg - projectionBernstein_deg;
+inequality_deg = inequalityMatrix_deg(:);
 if isempty(inequality_deg) || any(~isfinite(inequality_deg)) || ...
         any(inequality_deg > tolerance_deg)
     return;
 end
-coefficientCount = size(trajectory.Polynomial.positionPower_deg, 3);
 clearance_deg = repelem([corridor.Clearance_deg].', coefficientCount) - inequality_deg;
 minimumClearance_deg = min(clearance_deg);
 certified = true;
+end
+
+%% Section 3: Local Functions
+
+function coefficient = convertPowerToBernstein(powerCoefficient)
+% Independently convert ascending powers on [0, 1] for certification.
+degree = size(powerCoefficient, 1) - 1;
+persistent conversionMatrixByDegree
+if numel(conversionMatrixByDegree) <= degree || ...
+        isempty(conversionMatrixByDegree{degree + 1})
+    conversionMatrix = pascal(degree + 1, 1);
+    conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
+    conversionMatrixByDegree{degree + 1} = conversionMatrix;
+end
+coefficient = conversionMatrixByDegree{degree + 1} * ...
+    double(powerCoefficient);
 end
