@@ -99,8 +99,23 @@ end
 
 % Synchronization is itself a transformation, so evaluate the final polynomial
 % at uniform and switching times before checking the returned vector motion.
-result = ruckigEngine.evaluateSynchronizedMotion( ...
-    result, profileAttempt.Profile, initialState, options);
+profile = profileAttempt.Profile;
+result.FinalTime = profile.FinalTime;
+result.Duration = profile.FinalTime - initialState.time;
+result.ControlJerk = profile.ControlJerk;
+result.Polynomial = profile.Polynomial;
+result.IntegratedSquaredJerk = profile.IntegratedSquaredJerk;
+uniformTime = (initialState.time:options.SampleTime:profile.FinalTime).';
+sampleTime = unique([uniformTime; ...
+    profile.Polynomial.SegmentStartTime; profile.FinalTime]);
+[sampleTime, position, velocity, acceleration, jerk] = ...
+    ruckigEngine.internal.evaluatePolynomial( ...
+    profile.Polynomial, sampleTime);
+result.time = sampleTime;
+result.position = position;
+result.velocity = velocity;
+result.acceleration = acceleration;
+result.jerk = jerk;
 
 %% Section 4: Check And Classify The Returned Motion
 
@@ -108,8 +123,23 @@ result = ruckigEngine.evaluateSynchronizedMotion( ...
 % Re-evaluate continuous limits and optional affine rows, then classify the
 % engine outcome. This dimension-neutral check cannot approve obstacle safety;
 % the calling planner's full trajectory validator retains that responsibility.
-result = ruckigEngine.internal.checkResult( ...
-    result, profileAttempt.Profile, terminalState, limits, pathConstraints);
+result.Validation = ruckigEngine.internal.validateResult(result);
+result.MaximumConstraintViolation = max( ...
+    result.Validation.MaximumInequalityViolation, ...
+    result.Validation.MaximumEqualityViolation);
+result.Success = result.Validation.Passed;
+if result.Success
+    result.Message = ...
+        "A kinematically constrained trajectory was found and independently validated.";
+    result.TerminationReason = "goalReached";
+elseif ~isempty(pathConstraints.Tau)
+    result.Message = "The exact switching profile violates an affine " + ...
+        "path constraint. " + result.Validation.Message;
+    result.TerminationReason = "pathConstraintViolation";
+else
+    result.Message = result.Validation.Message;
+    result.TerminationReason = "exactProfileValidationFailed";
+end
 end
 
 %% Section 5: Local Functions
