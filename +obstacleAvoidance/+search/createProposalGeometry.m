@@ -63,9 +63,22 @@ if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
     representation = "denseHistoryEnvelope";
 else
-    [proposalShape, sampledShapeCount] = ...
-        obstacleAvoidance.search.createSampledObstacleUnion( ...
-        obstacles, sampleTimes_s);
+    parts = cell(numel(sampleTimes_s) * numel(obstacles), 1);
+    sampledShapeCount = 0;
+    for timeIndex = 1:numel(sampleTimes_s)
+        for obstacleIndex = 1:numel(obstacles)
+            part = obstacleAvoidance.obstacles.shapeAtTime( ...
+                obstacles(obstacleIndex), sampleTimes_s(timeIndex));
+            if ~isempty(part.Vertices)
+                sampledShapeCount = sampledShapeCount + 1;
+                parts{sampledShapeCount} = part;
+            end
+        end
+    end
+    proposalShape = polyshape();
+    if sampledShapeCount > 0
+        proposalShape = union([parts{1:sampledShapeCount}]);
+    end
     representation = "sampledObstacleUnion";
 end
 

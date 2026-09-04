@@ -29,7 +29,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [plannerOptions, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct("MaximumSeedCount", 1), [2 2]);
+    exampleOverrides, struct(), [2 2]);
 
 %% Section 2: Create Obstacles
 

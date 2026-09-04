@@ -258,16 +258,35 @@ verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
 end
 
 function obstacles = protectObstacles(obstacles, safetyMargin_deg, verbose)
-% Rebuild every protected slice from its authoritative original history.
+% Rebuild each history; futures resize once per obstacle above 500,000 vertices.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     sampleCount = numel(obstacle.time_s);
     protectedAzimuth_deg = cell(sampleCount, 1);
     protectedElevation_deg = cell(sampleCount, 1);
-    for sampleIndex = 1:sampleCount
-        [protectedAzimuth_deg{sampleIndex}, protectedElevation_deg{sampleIndex}] = inflateSlice( ...
-            obstacle.originalAz_deg{sampleIndex}, ...
-            obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+    vertexCount = numel(vertcat(obstacle.originalAz_deg{:}));
+    useBackgroundWorkers = false;
+    if safetyMargin_deg > 0 && vertexCount >= 500000 && exist("backgroundPool", "builtin") == 5
+        workerPool = backgroundPool;
+        useBackgroundWorkers = workerPool.NumWorkers > 1 && ~workerPool.Busy;
+    end
+    if useBackgroundWorkers
+        futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
+        for sampleIndex = 1:sampleCount
+            futures(sampleIndex) = parfeval( ...
+                workerPool, @inflateSlice, 2, ...
+                obstacle.originalAz_deg{sampleIndex}, ...
+                obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+        end
+        [protectedAzimuth_deg, protectedElevation_deg] = ...
+            fetchOutputs(futures, "UniformOutput", false);
+    else
+        for sampleIndex = 1:sampleCount
+            [protectedAzimuth_deg{sampleIndex}, ...
+                protectedElevation_deg{sampleIndex}] = inflateSlice( ...
+                obstacle.originalAz_deg{sampleIndex}, ...
+                obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+        end
     end
     if verbose
         fprintf("[az/el protect] obstacle %d/%d: %d slices complete.\n", ...

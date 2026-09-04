@@ -1,5 +1,48 @@
 # Novel replacement branch assessment
 
+## Collapse zero-information planner layers - 2026-09-03
+
+Excluding pre-existing user edits in the working tree based on `1e321ce`, this
+cleanup removes nine production MATLAB files and 357 physical production
+lines: 129 files and 19,671 lines become 120 files and 19,314 lines. No public
+option, result field, algorithm, or diagnostic was added. The deleted files
+were forwarding aliases, subordinate construction steps with one caller, a
+misplaced validation inequality, and a duplicated Ruckig result pass.
+
+Polynomial and corridor callers now invoke their authoritative validators
+directly. Endpoint validation no longer has a one-call forwarding alias.
+Proposal geometry owns its sampled obstacle-union loop, and a visibility
+attempt owns the sparse pair list that exists only for that attempt. Corridor
+certification now owns its Bernstein inequality conversion instead of reaching
+back into the search package. Ruckig solve now evaluates synchronized motion
+inline and lets `validateResult` remain the single continuous-constraint
+evaluation owner; the public values and rejection classification are
+unchanged.
+
+The complete suite passed 123/123 in 158.487585 seconds, including all planner
+contract, timed BMTP, Ruckig, and offline-diagnosis tests. Code Analyzer found
+zero issues in every changed MATLAB file, and the scoped diff passed whitespace
+validation. All 19 maintained examples ran in fresh MATLAB processes with jerk
+enabled. Eighteen independently validated successes and the expected validated
+`noValidatedSeed` failure matched the `1e321ce` baseline's route lengths and
+motion durations within `1e-9`. A visible successful example created both
+expected figures, and a hidden failed example created its diagnostic figure.
+
+The isolated 200-solve Ruckig benchmark improved from a 0.371088-second
+baseline median to 0.285004 seconds, a 23.2 percent reduction; a separate
+baseline repeat had a 0.492362-second median, so the deleted duplicate
+validation was a measured cost rather than a source-only inference. The
+extreme-visibility example remained runtime-neutral in the controlled repeat:
+77.361609 seconds at baseline and 77.102002 seconds after cleanup, with exact
+physical outputs. No end-to-end speedup is claimed.
+
+The cleanup stops before helpers that own substantive mathematics, independent
+validation, repeated loop invariants, stable public diagnostics, or deprecated
+one-release compatibility. Inlining those would move complexity into larger
+files rather than remove it. The principal remaining weakness is planner-wide
+size, but another deletion pass needs a new, evidenced ownership boundary—not
+a target file count.
+
 ## Certified continuous polynomial bounds - 2026-09-02
 
 Continuous position, velocity, acceleration, and jerk checks now use a
@@ -1986,3 +2029,59 @@ the existing search, batches the same collision predicate, and adds no helper,
 wrapper, option, diagnostic field, production file, or dependency. Its claim is
 exact only relative to the supplied time layers and existing 13-sample edge
 predicate; those discretizations remain explicit completeness limits.
+
+## Background Protection Of Dense Histories — 2026-09-04
+
+The largest measured runtime strength is now dense obstacle construction.
+Positive-margin histories with at least 500,000 supplied vertex samples use
+MATLAB's six-worker background pool to run the existing independent slice
+buffers concurrently. Smaller histories, zero-margin histories, older MATLAB
+releases, one-worker installations, and a busy background pool keep the
+existing serial path. The change adds no geometry approximation, public
+option, wrapper, production file, or toolbox dependency.
+
+On the 716,037-vertex moving/deforming U.S. history, the warmed full-example
+median fell from 28.7382835 to 14.5639991 seconds, a 49.321959 percent
+reduction. The selected and smoothed paths remained exactly
+40.2805679610824 degrees and the independently validated motion duration
+remained 7.91666666666667 seconds. A structurally different 524,288-vertex
+moving polygon was bit-identical to the serial constructor and improved from
+3.7730391 to 3.4153157 seconds in a fresh process, including worker startup.
+
+The main limit is that the automatic threshold was measured only on MATLAB
+R2024b Update 4 and an AMD Ryzen 5 3600. Below that scale, worker startup can
+cost more than it saves, so the implementation intentionally stays serial.
+The improvement reduces obstacle-construction wall time; it does not make the
+planner's search or motion solver faster. The retained production diff is
++24/-5 lines, net +19, explicitly accepted for this measured large-history
+gain even though the repository remains above its production-size target.
+
+## Exact Static Occupancy Batching — 2026-09-04
+
+Prepared obstacles already prove when a complete history is time invariant.
+The shared occupancy query now uses that existing proof to classify all points
+inside the obstacle's active span against one cached shape. Moving histories
+keep the same time-by-time query path. The loop remains in the existing public
+query and adds no heuristic, pruning decision, option, wrapper, helper file, or
+dependency.
+
+For the exact `Rogue Examples/failed.mat` request, the warmed planner median
+fell from 26.7229846 to 19.8143866 seconds, a 25.852644 percent reduction. The
+143.92829584254-degree route, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival were bit-identical and independently valid.
+The fixed-clock screen fell from 7.8687329 to 0.8869675 seconds. Profiling
+confirmed the cause: repeated `shapeAtTime` calls fell from 17,074 to 65 and
+`pointPolygonClearance` calls fell from 17,047 to 38.
+
+A structurally different static U-shaped example improved from a 10.0607444-
+second warmed median to 9.5346848 seconds while retaining exact physical
+outputs. A moving-barrier control measured 0.3268389 seconds before and
+0.3715701 seconds after; its ranges overlapped, the absolute difference was
+0.0447312 seconds, and its dynamic execution path and physical outputs were
+unchanged, so no moving-case speedup is claimed. The remaining Rogue cost is
+the unchanged BMTP solve, especially its repeated `coneprog` calls.
+
+The retained production hunk is +20/-5 lines, net +15, in one existing file.
+One 18-line contract test preserves finite-history and single-sample activity
+semantics. The repository remains above its production-size target, so the
+performance-based size allowance is not met and is not claimed.

@@ -65,12 +65,11 @@ timedSearchOptions = options;
 timedSearchAttempted = false;
 timedSearchDeferred = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
-hasChangingHistory = obstacleAvoidance.obstacles.hasChangingHistory( ...
-    obstacles, initialState.time_s, goalState.time_s);
-if hasChangingHistory && proposal.usedDenseEnvelope && ~isTimedRecovery
+requiresTimedSearch = ~scene.isStaticHorizon;
+if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
-elseif hasChangingHistory
+elseif requiresTimedSearch
     timedSearchAttempted = true;
     timedSearchSuppressionReason = "";
     timedCost_deg = hypot( ...
@@ -111,8 +110,9 @@ end
 
 hasTimedRoute = ~isempty(timedRoute_deg) && ...
     timedRouteTime_s(end) > timedRouteTime_s(1);
+reservesTimedRoute = hasTimedRoute || timedSearchDeferred;
 maximumClassCount = max( ...
-    0, options.MaximumSeedCount - 1 - double(hasTimedRoute));
+    0, options.MaximumSeedCount - 1 - double(reservesTimedRoute));
 visibilityFunction = @(first_deg, second_deg) ...
     obstacleAvoidance.search.checkVisibilitySegments( ...
     first_deg, second_deg, proposal.shape, ...

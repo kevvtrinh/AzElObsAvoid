@@ -201,7 +201,7 @@ verifyEqual(testCase, plannerOptions.GoalTimeMode, "balancedArrival");
 verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 1);
 verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
-verifyEqual(testCase, productionOptions.MaximumSeedCount, 5);
+verifyEqual(testCase, productionOptions.MaximumSeedCount, 2);
 end
 
 function testPlannerOptionControlsDriveExport(testCase)

@@ -28,7 +28,7 @@ if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
 [options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct( "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 5), [2 2]);
+    exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
 
 %% Section 2: Create Obstacles
 

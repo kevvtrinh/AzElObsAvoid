@@ -49,8 +49,9 @@ regions = obstacleAvoidance.geometry.convexPolygonRegions(shape);
 corridor = trajectory.SeedCorridor;
 segmentCount = trajectory.Polynomial.SegmentCount;
 regionCount = numel(regions);
-if segmentCount < 1 || regionCount < 1 || numel(corridor) ~= segmentCount * regionCount || ...
-        ~obstacleAvoidance.validation.seedEnvelopeContainsObstacles( ...
+if segmentCount < 1 || regionCount < 1 || ...
+        numel(corridor) ~= segmentCount * regionCount || ...
+        ~seedEnvelopeContainsObstacles( ...
         boundary_deg, obstacles, tolerance_deg)
     return;
 end
@@ -76,14 +77,109 @@ for corridorIndex = 1:numel(corridor)
         return;
     end
 end
-inequality_deg = obstacleAvoidance.search.seedCorridorInequality( ...
-    trajectory.Polynomial, corridor);
+coefficientCount = size(trajectory.Polynomial.positionPower_deg, 3);
+corridorCount = numel(corridor);
+segmentIndex = [corridor.SegmentIndex].';
+normal = vertcat(corridor.Normal);
+selectedPower_deg = ...
+    trajectory.Polynomial.positionPower_deg(segmentIndex, :, :);
+azimuthPower_deg = reshape( ...
+    selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
+elevationPower_deg = reshape( ...
+    selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
+projectionPower_deg = normal(:, 1) .* azimuthPower_deg + ...
+    normal(:, 2) .* elevationPower_deg;
+projectionBernstein_deg = ...
+    convertPowerToBernstein(projectionPower_deg.');
+offset_deg = [corridor.BoundaryOffset_deg] + ...
+    [corridor.Clearance_deg];
+inequalityMatrix_deg = offset_deg - projectionBernstein_deg;
+inequality_deg = inequalityMatrix_deg(:);
 if isempty(inequality_deg) || any(~isfinite(inequality_deg)) || ...
         any(inequality_deg > tolerance_deg)
     return;
 end
-coefficientCount = size(trajectory.Polynomial.positionPower_deg, 3);
 clearance_deg = repelem([corridor.Clearance_deg].', coefficientCount) - inequality_deg;
 minimumClearance_deg = min(clearance_deg);
 certified = true;
+end
+
+%% Section 3: Local Functions
+
+function coefficient = convertPowerToBernstein(powerCoefficient)
+% Independently convert ascending powers on [0, 1] for certification.
+degree = size(powerCoefficient, 1) - 1;
+persistent conversionMatrixByDegree
+if numel(conversionMatrixByDegree) <= degree || ...
+        isempty(conversionMatrixByDegree{degree + 1})
+    conversionMatrix = pascal(degree + 1, 1);
+    conversionMatrix = conversionMatrix ./ conversionMatrix(end, :);
+    conversionMatrixByDegree{degree + 1} = conversionMatrix;
+end
+coefficient = conversionMatrixByDegree{degree + 1} * ...
+    double(powerCoefficient);
+end
+
+function containsAllObstacles = seedEnvelopeContainsObstacles( ...
+        boundary_deg, obstacles, tolerance_deg)
+% Verify one envelope region contains every complete obstacle history.
+validateattributes(tolerance_deg, {'numeric'}, ...
+    {'real', 'finite', 'scalar', 'nonnegative'});
+containsAllObstacles = false;
+if isempty(boundary_deg) || ~isnumeric(boundary_deg) || ...
+        size(boundary_deg, 2) ~= 2
+    return;
+end
+boundary_deg = double(boundary_deg);
+if any(xor(isfinite(boundary_deg(:, 1)), ...
+        isfinite(boundary_deg(:, 2))))
+    return;
+end
+shape = polyshape( ...
+    boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
+envelopeRegions = regions(shape);
+if isempty(envelopeRegions)
+    return;
+end
+for regionIndex = 1:numel(envelopeRegions)
+    envelopeRegions(regionIndex) = polybuffer( ...
+        envelopeRegions(regionIndex), max(1e-9, tolerance_deg));
+end
+for obstacleIndex = 1:numel(obstacles)
+    obstacle = obstacleAvoidance.obstacles.prepareDynamic( ...
+        obstacles(obstacleIndex));
+    preparation = obstacle.InternalPreparation;
+    if preparation.IsTimeInvariant
+        sweptShape = preparation.StaticShape;
+    else
+        vertices_deg = zeros(0, 2);
+        for sampleIndex = 1:numel(obstacle.az_deg)
+            sample_deg = [obstacle.az_deg{sampleIndex}(:), ...
+                obstacle.el_deg{sampleIndex}(:)];
+            vertices_deg = [vertices_deg; ...
+                sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>
+        end
+        vertices_deg = unique(vertices_deg, "rows", "stable");
+        if size(vertices_deg, 1) < 3
+            return;
+        end
+        hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
+        sweptShape = polyshape( ...
+            vertices_deg(hullIndex(1:end - 1), :), ...
+            "Simplify", false, "KeepCollinearPoints", true);
+    end
+    areaTolerance_deg2 = 256 * eps(max(1, area(sweptShape)));
+    isContained = false;
+    for regionIndex = 1:numel(envelopeRegions)
+        if area(subtract(sweptShape, envelopeRegions(regionIndex))) <= ...
+                areaTolerance_deg2
+            isContained = true;
+            break;
+        end
+    end
+    if ~isContained
+        return;
+    end
+end
+containsAllObstacles = true;
 end

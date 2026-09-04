@@ -74,25 +74,23 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
         "optionOverrides must be a scalar struct.");
 end
 
-%% Section 3: Create The Request And Prepare The Scene
-
-% Search, motion construction, and final validation require one normalized
-% request and one prepared obstacle history. Establish those representations
-% before endpoint checks and fast paths so every later stage reads the same
-% physical inputs and geometry.
+%% Section 3: Normalize The Request And Prepare The Scene
 
 planningTimer = tic;
 
-% Search, motion construction, and final validation require the same resolved
-% options and normalized physical inputs. Create one request here so later
-% stages cannot interpret the caller's raw structures differently.
-request = obstacleAvoidance.input.createPlanningRequest( ...
-    obstacles, initialState, goalState, limits, optionOverrides);
-obstacles = request.obstacles;
-initialState = request.initialState;
-goalState = request.goalState;
-limits = request.limits;
-options = request.options;
+% Resolve and normalize the caller's inputs directly. The shared record keeps
+% downstream stage interfaces compact without a separate construction layer.
+options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
+[obstacles, initialState, goalState, limits] = ...
+    obstacleAvoidance.input.normalizePlannerRequest( ...
+    obstacles, initialState, goalState, limits, options);
+request = struct( ...
+    "obstacles", obstacles, ...
+    "initialState", initialState, ...
+    "goalState", goalState, ...
+    "limits", limits, ...
+    "options", options);
 useRuckigWaypoint = options.TrajectoryMethod == "ruckigWaypoint";
 [result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
     obstacles, initialState, goalState, limits, options, ...
@@ -105,7 +103,6 @@ scene = obstacleAvoidance.obstacles.preparePlanningScene(request);
 preparedObstacles = scene.preparedObstacles;
 useStaticKernel = scene.isStaticHorizon;
 stageTiming = result.SearchDiagnostics.StageTiming;
-result.SearchDiagnostics.StageOutputs.Scene = scene;
 exactMotionSet = obstacleAvoidance.planner.solveExactCandidates();
 result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
 result.SearchDiagnostics.FixedClockExcursion = ...
@@ -118,21 +115,14 @@ result.SearchDiagnostics.SelectionPolicy = struct( ...
     "JerkRole", "hardConstraintOnly", ...
     "UtilizationTieBreak", ...
     "mean normalized peak velocity, acceleration, and jerk");
-result.SearchDiagnostics.SeedEarlyExit = struct( ...
-    "Applied", false, ...
-    "Reason", "notApplicableExactPath", ...
-    "PhysicalArrivalLowerBound_s", NaN, ...
-    "ReachedBySeedIndex", 0);
-
 %% Section 4: Check Physical Endpoints
 
 [endpointFeasible, result.Message, result.TerminationReason] = ...
-    obstacleAvoidance.input.checkPlannerEndpoints( ...
+    obstacleAvoidance.input.validatePlannerEndpoints( ...
     preparedObstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
     result.SearchDiagnostics.TerminationReason = result.TerminationReason;
-    result = obstacleAvoidance.planner.stageTiming( ...
-        result, planningTimer, stageTiming);
+    result = obstacleAvoidance.planner.stageTiming(result, planningTimer, stageTiming);
     return;
 end
 
@@ -156,7 +146,6 @@ if exactMotionSet.FastPath.Available
         fastPath.Message, planningTimer, stageTiming);
     return;
 end
-directCandidate = exactMotionSet.DirectCandidate;
 
 %% Section 6: Create Proposal Geometry And Search Routes
 
@@ -199,21 +188,7 @@ else
     seeds = obstacleAvoidance.search.createSeeds([], [], request);
 end
 
-% Search diagnostics copy only work already returned by the stages above.
-% Keeping assembly separate prevents plotting or reporting from recreating
-% graph decisions after an early return or expected no-path outcome.
-gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
-    proposal, visibilityGraph, routeSet, seeds);
-gridDiagnostics.ElapsedTime_s = toc(topologyTimer);
-stageTiming.TopologyElapsedTime_s = gridDiagnostics.ElapsedTime_s;
-result.SearchDiagnostics.Grid = gridDiagnostics;
-result.SearchDiagnostics.StageOutputs.Proposal = proposal;
-result.SearchDiagnostics.StageOutputs.VisibilityGraph = ...
-    visibilityGraph;
-result.SearchDiagnostics.StageOutputs.RouteSet = routeSet;
-result.SearchDiagnostics.StageOutputs.SeedSet = seeds;
-result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
-    gridDiagnostics.ElapsedTime_s;
+stageTiming.TopologyElapsedTime_s = toc(topologyTimer);
 seedSolveContext = struct( ...
     "UseRuckigWaypoint", useRuckigWaypoint, ...
     "UseStaticKernel", useStaticKernel, ...
@@ -223,91 +198,64 @@ seedSolveContext = struct( ...
     "Limits", limits, ...
     "Options", options, ...
     "SummaryTemplate", summaryTemplate);
-hasFixedGoal = ~isfield(goalState, "targetTime_s") || ...
-    isempty(goalState.targetTime_s);
-physicalArrivalLowerBound_s = NaN;
-if hasFixedGoal && isfinite(directCandidate.MotionDuration_s)
-    physicalArrivalLowerBound_s = initialState.time_s + ...
-        directCandidate.MotionDuration_s;
+% Solve at most the first two ordinary seeds on the common path. A larger
+% MaximumSeedCount enables failure-only recovery without making successful
+% requests pay for additional motion solves.
+primarySeedCount = min(2, numel(seeds));
+primarySeeds = seeds(1:primarySeedCount);
+primarySummaries = repmat(summaryTemplate, primarySeedCount, 1);
+primaryCandidates = cell(primarySeedCount, 1);
+checkTemplate = obstacleAvoidance.validateTrajectory();
+primaryChecks = repmat(checkTemplate, primarySeedCount, 1);
+firstValidatedMotionTime_s = NaN;
+for seedIndex = 1:primarySeedCount
+    [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
+        primaryChecks(seedIndex), stageTiming] = ...
+        obstacleAvoidance.planner.solveOneSeed( ...
+        primarySeeds(seedIndex), seedSolveContext, stageTiming);
+    if primaryChecks(seedIndex).Passed && ...
+            isnan(firstValidatedMotionTime_s)
+        firstValidatedMotionTime_s = toc(planningTimer);
+    end
 end
-% Every geometric seed must become a timed candidate and pass the full motion
-% check before selection. Solve them as one inspectable stage, retaining the
-% existing proven earliest-arrival exit without hiding unattempted seeds.
-candidateSet = obstacleAvoidance.planner.solveSeeds( ...
-    seeds, seedSolveContext, stageTiming, ...
-    physicalArrivalLowerBound_s, planningTimer);
+candidateSet = struct( ...
+    "Seeds", primarySeeds, ...
+    "Candidates", {primaryCandidates}, ...
+    "Summaries", primarySummaries, ...
+    "CheckResults", primaryChecks, ...
+    "FirstValidatedMotionTime_s", firstValidatedMotionTime_s, ...
+    "StageTiming", stageTiming);
 
-% Dense histories and multi-winding routes are expensive fallback work, not
-% permission to return no trajectory. If every ordinary candidate fails,
-% consume the deferred work without repeating its search or any prior solve.
-initialCandidatePassed = any([candidateSet.CheckResults.Passed]);
-needsDeferredTimedRecovery = needsRouteSearch && ...
-    routeSet.TimedSearchDeferred;
-needsDeferredSpatialRecovery = needsRouteSearch && ...
-    ~isempty(routeSet.DeferredSpatialRoutes_deg);
-needsCandidateRecovery = ...
-    (needsDeferredTimedRecovery || needsDeferredSpatialRecovery) && ...
-    ~initialCandidatePassed && ~exactMotionSet.ExcursionIsValidated;
-if needsCandidateRecovery
-    stageTiming = candidateSet.StageTiming;
-    if needsDeferredTimedRecovery
-        recoverySearchTimer = tic;
-        routeSet = obstacleAvoidance.search.searchRoutes( ...
-            scene, request, proposal, visibilityGraph, routeSet);
-        recoverySearchElapsedTime_s = toc(recoverySearchTimer);
-        stageTiming.TopologyElapsedTime_s = ...
-            stageTiming.TopologyElapsedTime_s + recoverySearchElapsedTime_s;
-    end
-    routeSet.DeferredSpatialSolveAttempted = ...
-        needsDeferredSpatialRecovery;
-    recoveredOnlyRouteSet = routeSet;
-    if ~needsDeferredTimedRecovery
-        recoveredOnlyRouteSet.TimedRoute_deg = zeros(0, 2);
-        recoveredOnlyRouteSet.TimedRouteTime_s = zeros(0, 1);
-    end
-    if needsDeferredSpatialRecovery
-        recoveredOnlyRouteSet.SpatialRoutes_deg = ...
-            routeSet.DeferredSpatialRoutes_deg;
-    else
-        recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
-    end
-    recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
-        recoveredOnlyRouteSet, proposal, request);
-    recoveredSeeds = recoveredSeeds(2:end);
-    for recoveryIndex = 1:numel(recoveredSeeds)
-        recoveredSeed = recoveredSeeds(recoveryIndex);
-        recoveredSeed.Index = numel(candidateSet.Seeds) + 1;
-        [recoveredCandidate, recoveredSummary, recoveredCheck, ...
-            stageTiming] = obstacleAvoidance.planner.solveOneSeed( ...
-            recoveredSeed, seedSolveContext, stageTiming);
-        candidateSet.Seeds(end + 1, 1) = recoveredSeed;
-        candidateSet.Candidates{end + 1, 1} = recoveredCandidate;
-        candidateSet.Summaries(end + 1, 1) = recoveredSummary;
-        candidateSet.CheckResults(end + 1, 1) = recoveredCheck;
-        if recoveredCheck.Passed && ...
-                isnan(candidateSet.FirstValidatedMotionTime_s)
-            candidateSet.FirstValidatedMotionTime_s = toc(planningTimer);
-        end
-    end
-    candidateSet.StageTiming = stageTiming;
-    gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
-        proposal, visibilityGraph, routeSet, candidateSet.Seeds);
-    gridDiagnostics.ElapsedTime_s = ...
-        candidateSet.StageTiming.TopologyElapsedTime_s;
-    result.SearchDiagnostics.Grid = gridDiagnostics;
-    result.SearchDiagnostics.StageOutputs.RouteSet = routeSet;
-    result.SearchDiagnostics.StageOutputs.SeedSet = candidateSet.Seeds;
-    result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
-        gridDiagnostics.ElapsedTime_s;
-end
+% All work after the first two seeds is isolated here. Setting
+% MaximumSeedCount to 2 disables ordinary later-seed recovery; values through
+% 5 enable it only after the initial candidates fail full validation.
+recoveryContext = struct( ...
+    "Scene", scene, ...
+    "Request", request, ...
+    "Proposal", proposal, ...
+    "VisibilityGraph", visibilityGraph, ...
+    "SeedSolveContext", seedSolveContext, ...
+    "HasValidatedExactMotion", exactMotionSet.ExcursionIsValidated, ...
+    "PlanningTimer", planningTimer);
+[candidateSet, routeSet, generatedSeeds] = ...
+    obstacleAvoidance.planner.recoverAdditionalSeeds( ...
+    candidateSet, routeSet, seeds, recoveryContext);
+
+% Assemble diagnostics once, after optional recovery has returned every route
+% and seed it generated. CandidateSet separately records which seeds ran.
+gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
+    proposal, visibilityGraph, routeSet, generatedSeeds);
+gridDiagnostics.ElapsedTime_s = ...
+    candidateSet.StageTiming.TopologyElapsedTime_s;
+result.SearchDiagnostics.Grid = gridDiagnostics;
+result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
+    gridDiagnostics.ElapsedTime_s;
 seeds = candidateSet.Seeds;
 candidates = candidateSet.Candidates;
 seedSummaries = candidateSet.Summaries;
 firstValidatedMotionTime_s = ...
     candidateSet.FirstValidatedMotionTime_s;
 stageTiming = candidateSet.StageTiming;
-result.SearchDiagnostics.SeedEarlyExit = candidateSet.SeedEarlyExit;
-result.SearchDiagnostics.StageOutputs.CandidateSet = candidateSet;
 
 % Balanced and fixed policies compare every validated special motion against
 % the topology candidates; their physical arrival lower bounds are not travel
@@ -336,12 +284,31 @@ end
 selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
     seedSummaries, options);
 
-% The final stage preserves one result shape on success and expected failure.
-% It copies trajectory fields only from the selected fully checked candidate;
-% plotting and callers therefore consume returned work without rerunning it.
-result = obstacleAvoidance.planner.createPlannerResult( ...
-    result, seeds, candidates, seedSummaries, selection, ...
-    firstValidatedMotionTime_s, planningTimer, stageTiming);
+% Attach evidence on both success and failure. Copy motion only from the
+% candidate selected from the independently validated set.
+result.Seeds = seeds;
+result.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.SeedSummaries = seedSummaries;
+result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
+result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
+    firstValidatedMotionTime_s;
+result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
+result.SearchDiagnostics.ValidatedCandidateCount = ...
+    selection.ValidatedCandidateCount;
+result.SearchDiagnostics.BestPartialSeedIndex = ...
+    selection.BestPartialSeedIndex;
+result.Message = selection.Message;
+result.TerminationReason = selection.TerminationReason;
+if selection.Success
+    selectedIndex = selection.SelectedCandidateIndex;
+    result.Success = true;
+    result.SelectedSeedIndex = selectedIndex;
+    result.SelectedSeed_deg = seeds(selectedIndex).position_deg;
+    result = copyMotion(result, candidates{selectedIndex});
+end
+result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+result = obstacleAvoidance.planner.stageTiming( ...
+    result, planningTimer, stageTiming);
 end
 
 %% Section 8: Local Functions

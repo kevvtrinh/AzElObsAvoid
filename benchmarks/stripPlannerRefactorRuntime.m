@@ -22,11 +22,8 @@ function value = stripPlannerRefactorRuntime(value)
 
 %% Section 1: Remove Runtime Fields Recursively
 
-% Only elapsed measurements and the additive StageOutputs inspection cache
-% are removed. StageOutputs repeats decisions already compared through seeds,
-% summaries, and established search diagnostics; retaining it would make a
-% behavior-preserving diagnostic addition fail every historical record.
-% Physical fields such as ArrivalTime_s and SegmentDuration_s remain intact.
+% Elapsed measurements and the retired StageOutputs inspection cache do not
+% describe physical behavior. Ignore both when comparing historical captures.
 
 if isstruct(value)
     fieldNames = string(fieldnames(value));
