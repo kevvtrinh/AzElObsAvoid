@@ -1,5 +1,26 @@
 # Novel replacement branch assessment
 
+## Runtime-first evaluation - 2026-09-04
+
+Runtime is the current optimization priority; arrival and path length are
+regression checks. No additional production change survived this evaluation.
+The retained projection improvement remains 14.2% on the exact dynamic bundle
+and 28.1% on the moving-barrier comparison below. Static-U solver runtime has
+not demonstrated an improvement.
+
+Three more alternatives were rejected and removed. Fixed-clock path refinement
+increased final certified arrival despite holding the raw optimizer clock fixed.
+Analytic C0-C3 variable elimination increased sampled length beyond its declared
+0.001-degree allowance. Exact evaluated-shape caching preserved all compared
+trajectory arrays and search counts, but its 9.5% median runtime reduction
+missed the declared 15% gate for adding 32 net lines and persistent cache state.
+The restored static and dynamic requests passed independent validation and
+reproduced their baseline physical results. These negative results support
+keeping the current implementation small; they do not establish that all
+equivalent solver representations or geometry reuse strategies are ineffective.
+The precise measurements and remaining verification limits are in
+`verification.md`; no maintained example was executed in this evaluation.
+
 ## Direct-wait motion retiming - 2026-09-04
 
 The timing repair adds 30 net physical production lines in the existing

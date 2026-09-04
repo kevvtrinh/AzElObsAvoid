@@ -1,5 +1,44 @@
 # Plan 325 verification
 
+## Runtime-first experiment checkpoint - 2026-09-04
+
+Baseline `aac222f`, branch `bmtp-cleanup-codex`, MATLAB R2024b Update 4,
+Optimization Toolbox, rng(0), one MATLAB workload, unchanged saved public
+Inputs/Options. All experiment-owned production changes were reverted. The
+current priority is runtime, with independent feasibility and final trajectory
+quality protected. No production lines, options, fields, or dependencies were
+retained by this checkpoint; the production line count is unchanged.
+
+- Fixed-clock refinement failed its arrival gate: static-U duration changed
+  from 20.8323620005277 to 20.934285578268 s. Both independently validated.
+  Equal raw optimizer duration did not preserve the final export/kinematic
+  dilation. Restoring `refineTravel.m` reproduced baseline physical metrics.
+- Analytic continuity elimination failed its length gate: static-U sampled
+  length changed from 39.3787713567495 to 39.3806651322692 deg, exceeding the
+  predeclared 0.001-deg allowance. Arrival was 20.8058338166805 s and independent
+  validation passed. Baseline/changed single-run wall times 17.7284766 and
+  18.1952609 s do not establish a speedup. The +33/-19 hunk was removed;
+  restoration reproduced the original duration/length exactly in 17.0877951 s.
+- Exact evaluated-shape caching failed its 15% median-runtime gate. A warmup
+  plus three interleaved measurements, with a cold cache at each request,
+  preserved every compared trajectory array, selected seed, and temporal
+  search count on the exact `runtimediagnosis.mat` request. All passed fresh
+  independent validation. Baseline min/median/max were
+  29.5564144 / 29.7256155 / 30.1888202 s; candidate values were
+  24.4154071 / 26.8882977 / 27.1837027 s: 9.545026% median reduction.
+  Duration stayed 128.747653905761 s and sampled length 266.550824223376 deg.
+  The +34/-2 hunk was removed. Cache capacity was not tuned after rejection.
+  The restored replay independently passed with exact baseline arrays in
+  26.9498121 s; this single time is not a speedup estimate.
+
+Each failed gate stopped its experiment before structural comparison or broader
+verification. No new maintained-example run or benchmark row is claimed; the
+last complete 124-test / 18-example verification below remains the retained
+implementation's evidence. Exact source diffs verify restoration, and the
+unchanged static and dynamic requests were replayed after the respective
+reverts. Temporary instrumentation and failed experiment artifacts were removed.
+Pre-existing user edits, deleted documents, and Rogue inputs were preserved.
+
 ## Projection blocks and direct retiming - 2026-09-04
 
 Baseline: `31d90843272c2bbf55b15ffb19c9492ba44160fc`, branch
