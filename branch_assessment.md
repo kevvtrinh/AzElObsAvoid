@@ -2,6 +2,11 @@
 
 ## Degree-seven runtime trial rejected - 2026-09-04
 
+The user explicitly wants to keep this trial as a candidate to revisit because
+the runtime reduction may justify its quality tradeoff later. Preserve the
+measurements and reconstruction details below. It remains disabled while the
+current search prioritizes runtime improvements that preserve motion quality.
+
 The zero-net-line trial changed ordinary exact-region curves from degree 16
 to degree 7 while preserving three spans per seed edge, all solver controls,
 protected geometry, and authoritative validation. This is a heuristic model

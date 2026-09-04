@@ -2,6 +2,10 @@
 
 ## Degree-seven representation trial - 2026-09-04
 
+User follow-up: keep the degree-seven choice on the shortlist for a later
+runtime/quality decision. The recorded rejection does not mean the approach is
+abandoned permanently; it remains reverted during the current search.
+
 Baseline `2bb1776`, branch `bmtp-cleanup-codex`, MATLAB R2024b Update 4,
 Optimization Toolbox, Ryzen 5 3600, rng(0), one MATLAB workload. The only
 production trial was +6/-6 lines in `createSolveRequest.m`: degree 16 -> 7
