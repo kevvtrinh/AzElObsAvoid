@@ -259,7 +259,6 @@ returned motion or preserved failure diagnostics.
 trajectory/                         independent dimension-neutral motion
 `-- +bmtpEngine/
     |-- solve.m                     numeric-region SOCP/Bezier generator
-    |-- createDelayedMotion.m       dwell and event-time repartitioning
     |-- createDirectMotion.m        exact synchronized jerk switching
     |-- createMotionRecord.m        event-word integration and sampling
     |-- createOffsetSplineMotion.m  fixed-clock quintic composition
