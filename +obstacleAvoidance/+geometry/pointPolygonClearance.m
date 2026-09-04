@@ -62,8 +62,6 @@ end
 % positive distance outside. A wrong sign usually points to occupancy testing.
 
 % Projection onto every segment gives exact Euclidean boundary distance.
-% Processing 64 queries at a time bounds the temporary query-by-edge matrices
-% for dense validation histories.
 edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
 edgeLengthSquared_deg2 = sum(edgeDelta_deg .^ 2, 2);
 nonzeroEdge = edgeLengthSquared_deg2 > 0;
@@ -73,9 +71,13 @@ nonzeroEdge = edgeLengthSquared_deg2 > 0;
 edgeLengthSquared_deg2(~nonzeroEdge) = 1;
 clearance_deg = zeros(queryCount, 1);
 
-% Bound temporary query-by-edge matrices by projecting 64 query points at a time.
-for blockStart = 1:64:queryCount
-    selectedQuery = blockStart:min(queryCount, blockStart + 63);
+% Target 512 KiB per double projection matrix, permitting one complete edge
+% row for larger polygons. Small polygons can process more queries together.
+maximumProjectionElementCount = 65536;
+blockQueryCount = max(1, floor( ...
+    maximumProjectionElementCount / size(edgeStart_deg, 1)));
+for blockStart = 1:blockQueryCount:queryCount
+    selectedQuery = blockStart:min(queryCount, blockStart + blockQueryCount - 1);
     azimuthOffset_deg = point_deg(selectedQuery, 1) - edgeStart_deg(:, 1).';
     elevationOffset_deg = point_deg(selectedQuery, 2) - edgeStart_deg(:, 2).';
     projectionFraction = (azimuthOffset_deg .* edgeDelta_deg(:, 1).' + ...
