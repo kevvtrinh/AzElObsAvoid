@@ -1,5 +1,40 @@
 # Plan 325 verification
 
+## Fixed time-power bound screen - 2026-09-04
+
+Baseline `c188106`, MATLAB R2024b Update 4 / Optimization Toolbox / rng(0).
+The trial changed only the constant p0=1 representation in
+`solveTrajectoryStep.m`: set lb(p0)=1 beside the existing ub(p0)=1 and remove
+the corresponding equality row. Other coefficients, variables, degree/span
+choices, options, solvers/tolerances, protected geometry, and validators were
+unchanged. Production was +2/-5 lines, net -3. The exact mathematical feasible
+set was preserved, but finite numerical solver behavior need not be identical.
+
+All three unchanged saved requests returned independently valid motions and
+the same selected geometric route. Measurements below are single unprofiled
+probes, not paired or repeated runtime evidence.
+
+| Request | Baseline duration -> trial (s) | Baseline length -> trial (deg) | Trial wall (s) |
+|---|---:|---:|---:|
+| Static-U | 20.832362000528 -> 20.813375973741 | 39.378771356750 -> 39.212018209774 | 14.4596145 |
+| Tracked Rogue | 71.282811765421 -> 71.278818289029 | 145.143797542061 -> 145.142116157488 | 73.9599094 |
+| Fixed-arrival target exits | 24 -> 24 | 20.610068208467 -> 20.612611037524 | 15.7406723 |
+
+The third request increased sampled length by 0.002542829057 deg, failing the
+predeclared 1e-6-deg gate. The entire hunk was reverted without tuning. Its
+restored replay passed independent validation at the original 24-s duration
+and 20.610068208467-deg length (single wall 46.6423355 s). Runtime variability
+and the absence of repeated comparisons preclude a speedup claim. No broad
+tests or maintained example functions were run; no benchmark.csv rows added.
+
+The original second-probe session disappeared with an empty log and no result;
+after confirming no MATLAB process remained, the same request was resumed.
+The resumed process stayed live until returning the result above. A later
+process snapshot showed another MATLAB workload; no unrelated process was
+stopped or modified. Saved inputs, results, source baseline, and gate are in
+`output/fixed-time-power/`. The replacement AGENTS.md supplied by the user was
+applied without changing the experiment's predeclared criteria.
+
 ## Exact sparse-cone storage - 2026-09-04
 
 Baseline `5ec04f3` production, MATLAB R2024b Update 4 / Optimization Toolbox /

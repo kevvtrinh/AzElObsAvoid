@@ -1,5 +1,21 @@
 # Novel replacement branch assessment
 
+## Fixed time-power bound rejected - 2026-09-04
+
+An exact mathematical reformulation replaced the p0=1 equality with matching
+lower/upper bounds and removed three net production lines. Static-U duration
+improved 20.8323620005277 -> 20.8133759737414 s and sampled length
+39.3787713567495 -> 39.2120182097737 deg. The tracked Rogue request also improved
+slightly: 71.2828117654205 -> 71.2788182890289 s and
+145.143797542061 -> 145.142116157488 deg. Both passed independent validation.
+
+The fixed-arrival target-exits request stayed valid at 24 s but length increased
+20.610068208467 -> 20.612611037524 deg, exceeding the predeclared 1e-6-deg
+regression allowance. The full hunk was removed before repeated timing or broad
+tests. Restoration reproduced the original fixed-arrival length and passed
+fresh independent validation. Equivalent feasible sets can still change the
+finite numerical iterations and resulting motion; no runtime gain is claimed.
+
 ## Exact sparse-cone storage screened out - 2026-09-04
 
 The next runtime experiment preserved the complete polynomial model and every
