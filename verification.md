@@ -7099,3 +7099,76 @@ adding 22 net lines and accepting a route false-negative risk. Dropping exact
 collinear vertices accelerated one real buffer by only 1.051135x. Plain
 `parfor` remained serial without the missing pool support. No code or benchmark
 row from these rejected experiments remains.
+
+## Exact Static Occupancy Batching — 2026-09-04
+
+The baseline was commit `138b9e0` on `bmtp-cleanup-codex` plus the preserved
+pre-existing user changes. Tests used MATLAB R2024b Update 4 on the AMD Ryzen
+5 3600, finite jerk limits, disabled plotting for timing, and the public
+independent validator. The isolated change is in
+`queryObstacleOccupancyAtTime.m`: a preparation-proven time-invariant obstacle
+is evaluated once for all query points in its authoritative active span.
+Moving histories retain distinct-time evaluation. No result is accepted or
+discarded by this optimization.
+
+The primary comparison used one warm-up and three measured direct planner
+runs with the exact unmodified `Rogue Examples/failed.mat` inputs:
+
+| Case | Baseline min/median/max (s) | Candidate min/median/max (s) | Median change |
+| --- | --- | --- | ---: |
+| Supplied Rogue bundle | 26.5923576 / 26.7229846 / 27.3858489 | 19.6828681 / 19.8143866 / 20.2782903 | 25.852644% faster |
+| Static U-shaped example | 9.7881965 / 10.0607444 / 10.3850794 | 9.3372455 / 9.5346848 / 9.7994263 | 5.228834% faster |
+| Moving-barrier control | 0.3078661 / 0.3268389 / 0.3915193 | 0.3503479 / 0.3715701 / 0.4092834 | 13.686009% slower; ranges overlap |
+
+The moving-control difference is 0.0447312 seconds and its baseline and
+candidate ranges overlap. Its obstacle is not time invariant, so the same
+dynamic evaluation path ran before and after; no dynamic speedup is claimed.
+All measured physical outputs were identical. The Rogue route remained
+143.92829584254 degrees, its smooth motion remained 145.143797542061 degrees,
+and arrival remained 71.2828117654205 seconds. The static U retained
+34.9425880404659 degrees, 39.3787713567495 degrees, and
+20.8323620005277 seconds. The barrier retained 10 degrees, 10 degrees, and
+10.0903015136719 seconds. Every successful result passed collision, velocity,
+acceleration, jerk, endpoint, workspace, and applicable certificate checks.
+
+The Rogue fixed-clock screen median fell from 7.8687329 to 0.8869675 seconds.
+Before the change, a profile recorded 17,074 `shapeAtTime` calls, 17,047
+`pointPolygonClearance` calls, and 10.8365733 seconds in the shared occupancy
+query. After the change, the corresponding counts were 65 and 38, and query
+time was 0.9742440 seconds. The same 208 candidate motions were screened.
+`coneprog` remained the dominant unmodified cost with 305 calls. A final fresh
+end-to-end bundle replay took 25.2946341 seconds versus the pre-change
+30.9766864-second replay, an 18.342996 percent reduction including adapter,
+serialization, and independent validation.
+
+A deterministic 4,096-query differential oracle combined two static activity
+models with a moving obstacle, inactive times, nonfinite input, detailed and
+fast outputs, and both boundary policies. Every output was bit-identical.
+Focused obstacle tests passed 16/16, including the new finite-span and
+single-sample activity assertions. Code Analyzer reported zero findings in the
+changed production file.
+
+All 19 maintained examples ran headlessly in separate fresh MATLAB processes.
+Eighteen independently validated successes and the expected independently
+validated `exampleNoPath` outcome passed. Their summed wall time was
+103.6696748 seconds versus the prior 112.7450124-second observation, an
+8.049436 percent favorable aggregate that is secondary evidence because the
+runs were not interleaved. Exact per-example values are in `benchmark.csv`.
+The visible obstacle-free run produced two figures; the no-path graphics run
+produced one diagnostic figure containing its termination reason. The full
+suite passed 125/125 with no failures or incomplete tests in 136.6522181
+seconds. Two attempted loop-launched example processes encountered MATLAB's
+startup-level file-system inconsistency before example code ran; direct serial
+launches completed the entire matrix and are the recorded results.
+
+The production diff is +20/-5 lines, net +15, in one existing file. The test
+diff is +18 lines. No file, helper, wrapper, option, diagnostic field, artifact,
+or dependency was added. The current recorded production count is 18,104
+physical MATLAB lines and 13,707 nonblank/noncomment lines; production plus
+tests is 23,085 lines, and examples remain 2,649 lines. Against the 7,500-line
+production target, the 10,604-line excess requires
+`0.25 * 10604 / 100 = 26.51`, or a 2,651 percent wall-time reduction. The
+smallest measured improvement in the affected static set is 5.228834 percent,
+so the repository-wide performance size allowance is not met and is not
+claimed. The implementation is retained as a small exact reuse of preparation
+already owned by the obstacle subsystem; remaining BMTP runtime is unchanged.

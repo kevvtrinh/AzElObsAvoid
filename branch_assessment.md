@@ -2055,3 +2055,33 @@ The improvement reduces obstacle-construction wall time; it does not make the
 planner's search or motion solver faster. The retained production diff is
 +24/-5 lines, net +19, explicitly accepted for this measured large-history
 gain even though the repository remains above its production-size target.
+
+## Exact Static Occupancy Batching — 2026-09-04
+
+Prepared obstacles already prove when a complete history is time invariant.
+The shared occupancy query now uses that existing proof to classify all points
+inside the obstacle's active span against one cached shape. Moving histories
+keep the same time-by-time query path. The loop remains in the existing public
+query and adds no heuristic, pruning decision, option, wrapper, helper file, or
+dependency.
+
+For the exact `Rogue Examples/failed.mat` request, the warmed planner median
+fell from 26.7229846 to 19.8143866 seconds, a 25.852644 percent reduction. The
+143.92829584254-degree route, 145.143797542061-degree smooth motion, and
+71.2828117654205-second arrival were bit-identical and independently valid.
+The fixed-clock screen fell from 7.8687329 to 0.8869675 seconds. Profiling
+confirmed the cause: repeated `shapeAtTime` calls fell from 17,074 to 65 and
+`pointPolygonClearance` calls fell from 17,047 to 38.
+
+A structurally different static U-shaped example improved from a 10.0607444-
+second warmed median to 9.5346848 seconds while retaining exact physical
+outputs. A moving-barrier control measured 0.3268389 seconds before and
+0.3715701 seconds after; its ranges overlapped, the absolute difference was
+0.0447312 seconds, and its dynamic execution path and physical outputs were
+unchanged, so no moving-case speedup is claimed. The remaining Rogue cost is
+the unchanged BMTP solve, especially its repeated `coneprog` calls.
+
+The retained production hunk is +20/-5 lines, net +15, in one existing file.
+One 18-line contract test preserves finite-history and single-sample activity
+semantics. The repository remains above its production-size target, so the
+performance-based size allowance is not met and is not claimed.

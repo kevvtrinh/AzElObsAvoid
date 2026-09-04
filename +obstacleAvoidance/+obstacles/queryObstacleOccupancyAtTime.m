@@ -84,7 +84,7 @@ end
 [azimuth_deg, elevation_deg, queryTime_s, outputSize] = ...
     broadcastQueries(azimuth_deg, elevation_deg, queryTime_s);
 
-%% Section 2: Evaluate Each Distinct Time Once
+%% Section 2: Evaluate Each Distinct Geometry Once
 
 isOccupied = false(numel(queryTime_s), 1);
 blockingObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
@@ -100,9 +100,24 @@ else
     preparation = [obstacles.InternalPreparation];
     obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
 end
-for timeIndex = 1:numel(uniqueTime_s)
-    queryIndices = find(finiteQuery & queryTime_s == uniqueTime_s(timeIndex));
-    for obstacleIndex = 1:numel(obstacles)
+for obstacleIndex = 1:numel(obstacles)
+    obstacle = obstacles(obstacleIndex);
+    obstacleIsTimeInvariant = ...
+        obstacle.InternalPreparation.IsTimeInvariant;
+    obstacleQueryTime_s = uniqueTime_s;
+    activeQuery = finiteQuery;
+    if obstacleIsTimeInvariant
+        % One exact static shape can classify every active-time point in the
+        % same vectorized clearance call without changing its finite lifespan.
+        obstacleTime_s = double(obstacle.time_s(:));
+        obstacleQueryTime_s = obstacleTime_s(1);
+        activeQuery = finiteQuery & (isscalar(obstacleTime_s) | ...
+            (queryTime_s >= obstacleTime_s(1) & ...
+            queryTime_s <= obstacleTime_s(end)));
+    end
+    for timeIndex = 1:numel(obstacleQueryTime_s)
+        queryIndices = find(activeQuery & (obstacleIsTimeInvariant | ...
+            queryTime_s == obstacleQueryTime_s(timeIndex)));
         candidate = queryIndices;
         if nargout < 2
             candidate = candidate(~isOccupied(candidate));
@@ -117,7 +132,7 @@ for timeIndex = 1:numel(uniqueTime_s)
             continue;
         end
         shape = obstacleAvoidance.obstacles.shapeAtTime( ...
-            obstacles(obstacleIndex), uniqueTime_s(timeIndex));
+            obstacle, obstacleQueryTime_s(timeIndex));
         points_deg = [azimuth_deg(candidate), elevation_deg(candidate)];
         clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
         if nargout >= 2
