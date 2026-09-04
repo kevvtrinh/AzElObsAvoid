@@ -1,5 +1,89 @@
 # Plan 325 verification
 
+## Degree-seven representation trial - 2026-09-04
+
+Baseline `2bb1776`, branch `bmtp-cleanup-codex`, MATLAB R2024b Update 4,
+Optimization Toolbox, Ryzen 5 3600, rng(0), one MATLAB workload. The only
+production trial was +6/-6 lines in `createSolveRequest.m`: degree 16 -> 7
+for ordinary exact regions, retaining three subspans per seed edge. Timed and
+grouped representations, options, solvers, geometry, tolerances, and physics
+were unchanged. This reduces feasible curve freedom and is a heuristic model
+choice, not a proof of equivalent search or universal improvement.
+
+Full-planner comparisons discarded one warmup per variant and interleaved
+three repeats of identical saved public requests in one MATLAB session.
+
+| Request/source | Minimum (s) | Median (s) | Maximum (s) |
+|---|---:|---:|---:|
+| Static-U / baseline | 12.9377253 | 12.9614717 | 13.5256157 |
+| Static-U / trial | 6.1263743 | 6.1450158 | 6.1996870 |
+| Tracked Rogue / baseline | 25.3378057 | 25.7838108 | 25.8006406 |
+| Tracked Rogue / trial | 12.3140102 | 12.5930101 | 12.9016614 |
+
+The reductions were 52.590138% and 51.159236%, exceeding the respective
+40%/25% runtime screens. Both requests passed independent validation every
+time, and selected geometric routes were identical. Static-U duration changed
+20.8323620005277 -> 20.8897527040179 s and sampled length
+39.3787713567495 -> 39.6252468090549 deg. Dense 10001-point lengths were
+39.3791067851905 -> 39.6255876854499 deg. Rogue duration changed
+71.2828117654205 -> 71.5501125258977 s; sampled length
+145.143797542061 -> 145.335263464762 deg; dense length
+145.144000878245 -> 145.335458463001 deg. Its balanced objective, with unchanged
+1-deg/s weight, worsened 216.426609307481 -> 216.885375990660 deg.
+
+At the user's request, the complete 18-example suite ran even after an
+unfavorable result. All examples had jerk enabled. Seventeen succeeded with
+fresh independent collision, velocity/acceleration/jerk, dynamics, and
+applicable certificate checks. The expected `exampleNoPath` outcome remained
+`noValidatedSeed`, with valid failure diagnostics and NaN motion metrics.
+Six examples had longer sampled paths: slalom +0.463111%, obstacle avoidance
++0.170076%, static-U +0.625909%, alternating occlusion +0.102999%, target exits
++0.557740%, and opposing-U +0.197048%. Opposing-U duration increased
+21.8475039511026 -> 22.2739116477848 s (+1.951746%), failing the 1% screen.
+Static-U and obstacle avoidance also arrived later; slalom arrived sooner.
+No loss of physical validity was observed, but these results do not support
+benefit on every case or unchanged objective quality.
+
+The entire trial hunk was removed. Fresh restored static-U and opposing-U
+request replays passed independent validation and matched baseline selected
+route, time, position, velocity, and acceleration arrays exactly. Single wall
+times were 14.4808853 and 2.4296078 s; these are restoration checks, not speedup
+estimates. No new tests, production options, helpers, or model paths remain.
+The last complete 124-test result still applies to the restored production
+content; that test suite was not rerun for the rejected representation.
+
+The restored baseline then ran all 18 maintained examples in the same order
+as the candidate, with the same headless controls in a fresh MATLAB session.
+Both complete passes gave 17 independently valid successes and the expected
+validated failure. Summed example wall times were 76.8598485 s baseline and
+59.0117140 s trial: -17.8481345 s (-23.221662%). The timer includes example
+construction/planning/own validation but excludes MATLAB startup and the
+recording helper's extra independent validation. This one-pass-per-version
+screen is not an interleaved, repeated suite speedup estimate. Three trial
+times were higher: fixed-time intercept +0.0013590 s, moving circle
++0.0087036 s, and moving/deforming outline +1.1553146 s. Their execution paths
+and physical outputs were unchanged; these samples do not establish caused
+slowdowns. All 36 actual example executions are appended to `benchmark.csv`.
+The discarded saved-request broad-screen script was never executed. Preserved
+trial and baseline logs/results are under `output/static-degree-seven/`.
+
+Other rejected experiments against the same baseline:
+
+- Clearance-only diagnostic suppression: exact geometry/output checks passed,
+  but warmed kernel baseline min/median/max 3.3642911/3.4000989/3.6537150 s
+  became 3.4632567/3.7680059/3.8406475 s (10.82% slower). Removed +19/-9 lines;
+  exact geometry checks passed again after restoration.
+- Schur trajectory solver: both static-U seeds exited -7 on their first SOCP,
+  returning the false failure `noValidatedSeed` in 5.2644738 s. This is not a
+  speedup over the valid 14.7771670-s baseline. Removed +2/-1 lines; restoration
+  passed with original physical metrics in 15.6023731 s. No backend sweep.
+- Shared prepared-shape evaluation: 10 geometry tests and an exact-output
+  oracle passed. Dynamic baseline min/median/max
+  26.8595686/27.0461431/27.4242131 s became
+  24.7283065/25.0104581/26.1442922 s (7.526711% reduction), missing the 10% gate
+  for 32 net production lines. The helper and call-site changes were removed.
+  Restored geometry and dynamic replay checks passed with exact baseline arrays.
+
 ## Runtime-first experiment checkpoint - 2026-09-04
 
 Baseline `aac222f`, branch `bmtp-cleanup-codex`, MATLAB R2024b Update 4,

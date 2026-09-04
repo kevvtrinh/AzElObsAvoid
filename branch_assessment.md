@@ -1,5 +1,47 @@
 # Novel replacement branch assessment
 
+## Degree-seven runtime trial rejected - 2026-09-04
+
+The zero-net-line trial changed ordinary exact-region curves from degree 16
+to degree 7 while preserving three spans per seed edge, all solver controls,
+protected geometry, and authoritative validation. This is a heuristic model
+choice: it restricts representational freedom and is not an equivalent-work
+optimization. It cannot establish faster or better behavior for every input.
+
+Against `2bb1776`, one warmup and three interleaved full-planner repeats gave
+static-U median 12.9614717 -> 6.1450158 s (52.590138% reduction) and the tracked
+Rogue request 25.7838108 -> 12.5930101 s (51.159236% reduction). Both remained
+independently valid, but both had longer paths and later arrivals. The Rogue
+balanced objective also worsened from 216.426609307481 to 216.885375990660 deg.
+These are rejected-trial measurements, not retained branch speedups.
+
+All 18 maintained examples then ran headlessly with jerk enabled. Seventeen
+motions passed independent collision, kinematic, and certificate validation;
+the expected `exampleNoPath` failure remained independently valid. Six paths
+became longer. The opposing-U duration increased 1.951746%, exceeding the
+predeclared 1% screen. The trial was reverted without a degree/tolerance sweep.
+Restored static-U and opposing-U requests reproduced the original motion
+arrays exactly and passed fresh independent validation. Executed example rows
+remain in `benchmark.csv`; detailed evidence is in `verification.md`.
+
+One full headless pass per version, in identical example order and separate
+fresh MATLAB sessions, measured 76.8598485 -> 59.0117140 s summed example wall
+time (-17.8481345 s, -23.221662%). This includes example construction and its
+own validation, excluding MATLAB startup and the recording helper's extra
+validation. It is a screening comparison, not a repeated suite speedup estimate.
+Three examples recorded higher trial times on paths unaffected by this change;
+timing noise cannot be separated from those single-pass differences. The
+restored suite again gave 17 independently valid successes and one valid
+expected failure. The runtime benefit is not universal, and no degree change
+is retained.
+
+Three other runtime trials were removed before this suite: suppressing unused
+clearance outputs slowed its warmed kernel by 10.82%; the Schur trajectory
+solver falsely failed a known-feasible request; sharing prepared-shape
+evaluation reduced dynamic median time 7.53%, below its 10% gate for 32 net
+production lines. No production code from these four trials is retained.
+The retained production change remains net +32 lines against `31d9084`.
+
 ## Runtime-first evaluation - 2026-09-04
 
 Runtime is the current optimization priority; arrival and path length are
