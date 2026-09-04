@@ -7031,3 +7031,71 @@ field, or dependency. Production is +108/-60 lines relative to `08c3171`, a net
 19,722 physical MATLAB lines and 13,885 nonblank/noncomment lines. The 13-sample
 timed-edge predicate and finite supplied time grid remain disclosed
 completeness limits; this change does not claim continuous-time completeness.
+
+## Background Protection Of Dense Histories — 2026-09-04
+
+The baseline was `1502ebc` on `bmtp-cleanup-codex`, with the pre-existing dirty
+files preserved. Measurements used MATLAB R2024b Update 4, an AMD Ryzen 5 3600,
+figures and animation disabled, the default two-seed limit, finite jerk limits,
+and the existing independent validator. `backgroundPool` reported six workers;
+`parpool` was not installed. MATLAB's base background pool and `parfeval` were
+therefore used without adding Parallel Computing Toolbox or another dependency.
+
+Profiling had assigned 15.76697 seconds of the dense example to 110 independent
+`polybuffer` calls. On 12 real transformed U.S. slices, warmed background
+execution reduced the median from 4.1006070 to 1.3266005 seconds, a 3.091064x
+speedup, with zero symmetric polygon difference. A structurally different
+24-slice, 196,608-vertex moving polygon measured 0.3073915 seconds in the
+warmed background path versus 1.2265152 seconds forced serial, a 3.990075x
+speedup with zero polygon difference. Its cold worker startup was too costly,
+so it is deliberately below the retained threshold. At 524,288 vertices, a
+fresh structurally different case measured 3.4153157 seconds background versus
+3.7730391 seconds serial, a 10.474095 percent reduction with exact output. This
+supports the input-derived 500,000-vertex cold-start threshold.
+
+The primary full-example comparison used one warm-up and three measured runs
+in one MATLAB process:
+
+| Case | Baseline min/median/max (s) | Candidate min/median/max (s) | Median change |
+| --- | --- | --- | ---: |
+| Moving/deforming U.S. | 28.5911999 / 28.7382835 / 29.5801369 | 14.4202828 / 14.5639991 / 14.5957925 | 49.321959% faster |
+| Moving barrier | 0.3333316 / 0.4033433 / 0.5392678 | 0.3783166 / 0.4022955 / 0.5801929 | 0.259779% faster; neutral |
+| Moving/rotating field | 1.8159018 / 1.8510121 / 1.9984906 | 1.8436720 / 1.8836494 / 2.0916451 | 1.763214% slower; overlapping noise |
+
+Every measured run succeeded and independently validated. The dense candidate
+kept the exact 40.2805679610824-degree polyline, 40.2805679610824-degree smooth
+length, and 7.91666666666667-second duration. The barrier retained 10 degrees,
+10 degrees, and 10.0903015136719 seconds. The moving/rotating field retained
+20.7160388667952 degrees, 20.7160388667952 degrees, and
+9.04166666666667 seconds. Collision, velocity, acceleration, and jerk checks
+passed throughout. The dense planner-only median was 3.9123333 seconds versus
+3.7785141 seconds at baseline; this change targets construction wall time and
+does not claim a solver speedup.
+
+The final fresh-process dense example took 18.6329200 seconds including worker
+startup, a 35.163421 percent reduction from the warmed serial baseline median.
+All 19 maintained examples then ran in separate fresh MATLAB processes. Their
+summed wall time was 112.7450124 seconds. Eighteen returned independently
+validated success; `exampleNoPath` returned the expected independently
+validated `noValidatedSeed`. Exact per-example physical values and runtimes are
+in `benchmark.csv`. A visible obstacle-free run produced two figures, and the
+failure-graphics run produced one no-path diagnostic figure. The complete test
+suite passed 124/124 in 148.760502 seconds. Code Analyzer reported zero findings
+in `createObstacle.m`.
+
+The retained implementation changes only `createObstacle.m`: +24/-5 physical
+lines, net +19. It adds no file, wrapper, public option, diagnostic field, or
+dependency. The current production tree has 18,089 physical MATLAB lines and
+13,694 nonblank/noncomment lines; production plus tests has 23,054 physical
+lines, and examples have 2,649. Against the 7,500-line production target, the
+10,589-line excess would require
+`0.25 * 10589 / 100 = 26.4725`, or a 2,647.25 percent wall-time reduction.
+That repository-wide allowance is not met and is not claimed. The user
+explicitly accepted the net 19 lines for the measured dense-history gain.
+
+Two smaller candidates were rejected and removed. The AABB containment gate
+reduced the dense median only from 28.7382835 to 25.6339322 seconds while
+adding 22 net lines and accepting a route false-negative risk. Dropping exact
+collinear vertices accelerated one real buffer by only 1.051135x. Plain
+`parfor` remained serial without the missing pool support. No code or benchmark
+row from these rejected experiments remains.

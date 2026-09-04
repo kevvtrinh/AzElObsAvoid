@@ -2029,3 +2029,29 @@ the existing search, batches the same collision predicate, and adds no helper,
 wrapper, option, diagnostic field, production file, or dependency. Its claim is
 exact only relative to the supplied time layers and existing 13-sample edge
 predicate; those discretizations remain explicit completeness limits.
+
+## Background Protection Of Dense Histories — 2026-09-04
+
+The largest measured runtime strength is now dense obstacle construction.
+Positive-margin histories with at least 500,000 supplied vertex samples use
+MATLAB's six-worker background pool to run the existing independent slice
+buffers concurrently. Smaller histories, zero-margin histories, older MATLAB
+releases, one-worker installations, and a busy background pool keep the
+existing serial path. The change adds no geometry approximation, public
+option, wrapper, production file, or toolbox dependency.
+
+On the 716,037-vertex moving/deforming U.S. history, the warmed full-example
+median fell from 28.7382835 to 14.5639991 seconds, a 49.321959 percent
+reduction. The selected and smoothed paths remained exactly
+40.2805679610824 degrees and the independently validated motion duration
+remained 7.91666666666667 seconds. A structurally different 524,288-vertex
+moving polygon was bit-identical to the serial constructor and improved from
+3.7730391 to 3.4153157 seconds in a fresh process, including worker startup.
+
+The main limit is that the automatic threshold was measured only on MATLAB
+R2024b Update 4 and an AMD Ryzen 5 3600. Below that scale, worker startup can
+cost more than it saves, so the implementation intentionally stays serial.
+The improvement reduces obstacle-construction wall time; it does not make the
+planner's search or motion solver faster. The retained production diff is
++24/-5 lines, net +19, explicitly accepted for this measured large-history
+gain even though the repository remains above its production-size target.
