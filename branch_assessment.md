@@ -1,5 +1,48 @@
 # Novel replacement branch assessment
 
+## Collapse zero-information planner layers - 2026-09-03
+
+Excluding pre-existing user edits in the working tree based on `1e321ce`, this
+cleanup removes nine production MATLAB files and 357 physical production
+lines: 129 files and 19,671 lines become 120 files and 19,314 lines. No public
+option, result field, algorithm, or diagnostic was added. The deleted files
+were forwarding aliases, subordinate construction steps with one caller, a
+misplaced validation inequality, and a duplicated Ruckig result pass.
+
+Polynomial and corridor callers now invoke their authoritative validators
+directly. Endpoint validation no longer has a one-call forwarding alias.
+Proposal geometry owns its sampled obstacle-union loop, and a visibility
+attempt owns the sparse pair list that exists only for that attempt. Corridor
+certification now owns its Bernstein inequality conversion instead of reaching
+back into the search package. Ruckig solve now evaluates synchronized motion
+inline and lets `validateResult` remain the single continuous-constraint
+evaluation owner; the public values and rejection classification are
+unchanged.
+
+The complete suite passed 123/123 in 158.487585 seconds, including all planner
+contract, timed BMTP, Ruckig, and offline-diagnosis tests. Code Analyzer found
+zero issues in every changed MATLAB file, and the scoped diff passed whitespace
+validation. All 19 maintained examples ran in fresh MATLAB processes with jerk
+enabled. Eighteen independently validated successes and the expected validated
+`noValidatedSeed` failure matched the `1e321ce` baseline's route lengths and
+motion durations within `1e-9`. A visible successful example created both
+expected figures, and a hidden failed example created its diagnostic figure.
+
+The isolated 200-solve Ruckig benchmark improved from a 0.371088-second
+baseline median to 0.285004 seconds, a 23.2 percent reduction; a separate
+baseline repeat had a 0.492362-second median, so the deleted duplicate
+validation was a measured cost rather than a source-only inference. The
+extreme-visibility example remained runtime-neutral in the controlled repeat:
+77.361609 seconds at baseline and 77.102002 seconds after cleanup, with exact
+physical outputs. No end-to-end speedup is claimed.
+
+The cleanup stops before helpers that own substantive mathematics, independent
+validation, repeated loop invariants, stable public diagnostics, or deprecated
+one-release compatibility. Inlining those would move complexity into larger
+files rather than remove it. The principal remaining weakness is planner-wide
+size, but another deletion pass needs a new, evidenced ownership boundary—not
+a target file count.
+
 ## Certified continuous polynomial bounds - 2026-09-02
 
 Continuous position, velocity, acceleration, and jerk checks now use a
