@@ -31,13 +31,20 @@ A partial options structure can override only the controls it needs:
 
 ```matlab
 options = struct( ...
-    "MaximumSeedCount", 3, ...
+    "MaximumSeedCount", 5, ...
     "UnsupportedTimedTopologyPolicy", "fail");
 ```
 
 Planner options select work and display policy; they do not expose internal
 engine constants. Per-seed engine and independent-validation evidence is
 retained in `result.SearchDiagnostics.SeedSummaries`.
+
+`MaximumSeedCount` defaults to `2`. The planner compares at most those first
+two seeds on the normal path. Values from `3` through `5` enable failure-only
+recovery: later seeds are tried in order only when neither initial seed nor an
+exact motion passed full validation, and recovery stops at its first validated
+motion. Set the value to `2` to disable all later-seed recovery or `5` to allow
+all three additional attempts.
 
 `GoalTimeMode` defaults to `"balancedArrival"`. A validated later motion is
 preferred only when its travel saving exceeds

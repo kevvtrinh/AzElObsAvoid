@@ -460,9 +460,6 @@ verifyTrue(testCase, result.Validation.JerkWithinLimits);
 verifyEqual(testCase, result.TerminationReason, "goalReached");
 verifyEqual(testCase, result.SeedSummaries(1).SeedSource, ...
     "directRestToRest");
-verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
-verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
-    "notApplicableExactPath");
 verifyLessThan(testCase, result.TrajectoryDuration_s, ...
     goalState.time_s - initialState.time_s);
 end
@@ -531,7 +528,43 @@ verifyTrue(testCase, result.Validation.CollisionResolved);
 verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
 verifyGreaterThan(testCase, ...
     sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
-verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
+end
+
+function testLaterSeedsRunOnlyAfterFirstTwoFail(testCase)
+% Require seed 3 to recover a tight horizon without running after success.
+missionEndTime_s = 21;
+obstaclePosition_deg = [ ...
+    -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
+obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+    "tight static U", [0; missionEndTime_s], ...
+    obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), 0.2);
+initialState = restState(0, [0 0]);
+goalState = restState(missionEndTime_s, [0 -10]);
+limits = physicalLimits();
+limits.maxVelocity_deg_s = [2 2];
+limits.maxAcceleration_deg_s2 = [0.75 0.75];
+limits.maxJerk_deg_s3 = [2.5 2.5];
+
+twoSeedOptions = struct( ...
+    "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2);
+twoSeedResult = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, twoSeedOptions);
+verifyFalse(testCase, twoSeedResult.Success);
+verifyEqual(testCase, ...
+    twoSeedResult.SearchDiagnostics.AttemptedSeedCount, 2);
+
+recoveryOptions = twoSeedOptions;
+recoveryOptions.MaximumSeedCount = 5;
+recoveredResult = obstacleAvoidance.planTrajectory( ...
+    obstacle, initialState, goalState, limits, recoveryOptions);
+validation = obstacleAvoidance.validateTrajectory(recoveredResult);
+
+verifyTrue(testCase, recoveredResult.Success, recoveredResult.Message);
+verifyTrue(testCase, validation.Passed, validation.Message);
+verifyEqual(testCase, recoveredResult.SelectedSeedIndex, 3);
+verifyEqual(testCase, recoveredResult.SearchDiagnostics.AttemptedSeedCount, 3);
+verifyLessThanOrEqual(testCase, ...
+    recoveredResult.ArrivalTime_s, missionEndTime_s);
 end
 
 function testBalancedArrivalRefinesObjectiveRelevantDirectWait(testCase)
@@ -761,9 +794,6 @@ verifyTrue(testCase, isfield(result.SearchDiagnostics.Grid, ...
     "ExpandedCount"));
 verifyGreaterThanOrEqual(testCase, ...
     result.SearchDiagnostics.AttemptedSeedCount, 1);
-verifyFalse(testCase, result.SearchDiagnostics.SeedEarlyExit.Applied);
-verifyEqual(testCase, result.SearchDiagnostics.SeedEarlyExit.Reason, ...
-    "lowerBoundNotReached");
 end
 
 function testRepeatedDirectRequestIsDeterministic(testCase)
