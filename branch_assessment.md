@@ -1,5 +1,29 @@
 # Novel replacement branch assessment
 
+## Exact sparse-cone storage screened out - 2026-09-04
+
+The next runtime experiment preserved the complete polynomial model and every
+optimization coefficient. Replacing dense A/d allocations in the two existing
+trajectory-cone helpers with sparse storage was +12/-12 production lines. An
+isolated coefficient oracle passed 12 degree/span/objective combinations. For
+36 degree-16 spans with travel bounds, cone-factor payload fell from 25,025,088
+to 8,401,840 bytes (66.426332%); this is not a whole-process memory measurement.
+
+Both static-U and tracked Rogue probes retained exact motion arrays and passed
+fresh independent validation. One warmup plus three interleaved Rogue timings
+gave baseline min/median/max 34.8299620/35.1832482/43.4353643 s and trial
+30.7914931/33.5089032/35.0078188 s. The 4.758927% median reduction missed the
+predeclared 5% gate, with overlapping ranges and concurrent desktop load.
+The storage change was removed before broader tests/examples. It remains useful
+memory evidence, not a retained runtime improvement or proof of no benefit.
+
+Fresh restored-source profiles explain the priority: trajectory solver calls
+owned 10.399 of 15.135 static-U seconds and 22.611 of 30.680 Rogue seconds;
+the trajectory-assembly function's direct self time was only 0.170/0.362 s.
+Small loop cleanups alone have limited scope for the desired runtime reduction.
+Numerical solver work remains the measured static bottleneck. These profiled
+times include instrumentation and are not unprofiled speedup estimates.
+
 ## Degree-seven runtime trial rejected - 2026-09-04
 
 The user explicitly wants to keep this trial as a candidate to revisit because

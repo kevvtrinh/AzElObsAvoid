@@ -1,5 +1,50 @@
 # Plan 325 verification
 
+## Exact sparse-cone storage - 2026-09-04
+
+Baseline `5ec04f3` production, MATLAB R2024b Update 4 / Optimization Toolbox /
+Ryzen 5 3600 / rng(0). Commit `1cc3f12` only recorded the user's request to retain
+degree seven as a future runtime tradeoff; it did not affect this comparison.
+The trial was +12/-12 lines in `solveTrajectoryStep.m`, storing the A/d factors
+of time-power and control-edge cones sparsely. Model coefficients, degree/span
+selection, geometry, options, numerical solvers/tolerances, and validation were
+unchanged. No option, helper, or fallback was added to production.
+
+An isolated fake solver captured optimization inputs without solving. All
+f/A/b/Aeq/beq/lb/ub values, cone coefficients, and options matched the frozen
+source exactly across 12 combinations: degrees 7/16, spans 1/36, and earliest,
+balanced, or fixed arrival, including active/inactive planes. The real solver
+was restored before public-planner runs. MATLAB retained sparse cone factors.
+The largest case reduced measured A/d payload from 25,025,088 to 8,401,840 bytes
+(66.426332%). This measures cone arrays, not peak MATLAB memory.
+
+Real static-U and tracked Rogue probes passed independent validation and
+matched baseline time, position, velocity, acceleration, and selected-route
+arrays exactly. Rogue full-request timing then discarded one warmup per source
+and interleaved three repetitions per variant. Every repetition also matched
+temporal layer/node/edge/expanded/rejected counts and explored-node arrays.
+
+| Source | Minimum (s) | Median (s) | Maximum (s) |
+|---|---:|---:|---:|
+| Baseline | 34.8299620 | 35.1832482 | 43.4353643 |
+| Sparse factors | 30.7914931 | 33.5089032 | 35.0078188 |
+
+The 4.758927% median reduction missed the predeclared 5% gate. Ranges overlapped;
+a five-second process sample showed other desktop applications active and the
+existing desktop MATLAB idle. No other processes were stopped or modified.
+The complete trial was removed without tuning. The restored Rogue replay
+passed fresh independent validation with exact original motion arrays, duration
+71.2828117654205 s, and length 145.143797542061 deg. Its single 37.9062230-s wall
+time is a restoration check, not a speedup estimate. The static-U timing control
+and broader tests/example suite were not run after this failed gate. No maintained
+example file was executed and no new benchmark.csv row is claimed here.
+
+The first comparison invocation stopped at a Windows path-separator assertion
+before any timed planner call; normalization was corrected before taking the
+reported samples. The coefficient and real-planner checks passed independently
+of that harness correction. Evidence remains in `output/sparse-cone-storage/`
+and restored-source profiles in `output/runtime-investigation/`.
+
 ## Degree-seven representation trial - 2026-09-04
 
 User follow-up: keep the degree-seven choice on the shortlist for a later
