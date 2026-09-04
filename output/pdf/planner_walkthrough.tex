@@ -403,33 +403,25 @@ two-coordinate direct record whose duration matches its componentwise lower
 bound, plus a direct validation that failed only on collision-related grounds.
 
 \arrival{2. What this station does to it.}
-It first tries a static sequence of barriers attached to a workspace side. If
-that is not available, it tries an endpoint-flat alternating progress
-polynomial, then enumerates sideways axis excursions and checks screened
-motions independently. The documented purpose is to preserve the direct clock
-while adding a lateral detour; beyond that operational description, the source
-does not state a broader reason for this ordering.
+It enumerates sideways axis excursions and checks screened motions
+independently. The construction preserves the direct clock while adding the
+first independently validated one-sided detour found by the bounded search.
 
 \arrival{3. What leaves.}
-In our request the barrier-sequence form was skipped because the rectangle is
-not attached to exactly one lateral workspace side
-(\texttt{\WalkBarrierReason}). The progress form was tried but had no
-sampled-clear amplitude (\texttt{\WalkProgressReason}). The axis enumeration
-screened \WalkFixedClockScreeningCount\ proposals and independently checked
+In our request the axis enumeration screened
+\WalkFixedClockScreeningCount\ proposals and independently checked
 \WalkFixedClockValidationCount; none passed, producing
 \texttt{\WalkFixedClockReason}. If one had passed, the caller would receive
 the same immediate completed success result as the direct early finish, now
 with a seed whose source records the fixed-clock construction.
 
 \arrival{4. What can go wrong here, and what it is called.}
-The diagnostic distinguishes unsupported request shapes from failed proposals:
-for example \texttt{unsupportedChangingRequest},
-\texttt{unsupportedClockOwnership}, and \texttt{noExcursionRoom} say this
-restricted construction cannot be used; \texttt{noValidatedExcursion} says its
-enumerated proposals did not pass. Neither is a statement that no motion
-exists.
+The diagnostic distinguishes ineligible axis proposals such as
+\texttt{governingAxisHasNoCertifiedSlack} and \texttt{noExcursionRoom} from
+\texttt{noValidatedExcursion}, which says the enumerated proposals did not
+pass. Neither is a statement that no motion exists.
 
-\stationSource{+obstacleAvoidance/+planner/createFixedClockLateralExcursion.m:50--169, 171--320, 324--445, 566--690; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
+\stationSource{+obstacleAvoidance/+planner/createFixedClockLateralExcursion.m:47--272, 274--450; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
 
 \section{Station 9: create route candidates}
 
@@ -459,8 +451,8 @@ changes during the request.
 The graph accepted \WalkVisibilityAcceptedCount\ candidate lines and rejected
 \WalkVisibilityRejectedCount. It found \WalkHomologyClassCount\ distinct
 spatial route families and emitted \WalkGeneratedSeedCount\ ordered proposals:
-the direct chord and two visibility routes. The exported seed lengths are
-\WalkSeedOneLength, \WalkSeedTwoLength, and \WalkSeedThreeLength. They leave
+the direct chord and one visibility route. The exported seed lengths are
+\WalkSeedOneLength\ and \WalkSeedTwoLength. They leave
 with graph counts, explored states, frontier states, and the best partial route
 for later motion construction.
 
@@ -476,9 +468,9 @@ ruled out. The direct proposal is still retained first.
 
 \arrival{1. What arrives here.}
 The \WalkGeneratedSeedCount\ route proposals created above arrive as seed
-records. In this request seed 1 is \texttt{\WalkSeedOneSource}; seeds 2 and 3
-are both \texttt{\WalkSeedTwoSource}. Their estimated durations are
-\WalkSeedOneDuration, \WalkSeedTwoDuration, and \WalkSeedThreeDuration.
+records. In this request seed 1 is \texttt{\WalkSeedOneSource}, and seed 2 is
+\texttt{\WalkSeedTwoSource}. Their estimated durations are
+\WalkSeedOneDuration\ and \WalkSeedTwoDuration.
 
 \arrival{2. What this station does to it.}
 A seed stores an index, source label, ordered polyline, normalized route
@@ -487,11 +479,11 @@ length. It is a geometric or timed proposal that later code uses to initialize
 one motion attempt. It is not a trajectory and has not earned a success flag.
 
 \arrival{3. What leaves.}
-All three seeds leave in deterministic order for the later BMTP stage. The
-eventual selected answer is seed \WalkSelectedSeedIndex, the upper visibility
-route, but that fact is not decided here: seed 2 also later produces a valid
-motion, and seed 1 does not. The next milestone explains how these proposals
-become motion candidates and why seed 3 is selected.
+Both seeds leave in deterministic order for the later BMTP stage. The eventual
+selected answer is seed \WalkSelectedSeedIndex, the lower visibility route,
+but that fact is not decided here: seed 1 later fails and seed 2 produces a
+valid motion. The next milestone explains how these proposals become motion
+candidates.
 
 \arrival{4. What can go wrong here, and what it is called.}
 A seed can be empty or later fail its motion solve or independent validation.
@@ -518,9 +510,9 @@ to the explicitly enabled waypoint fallback. Thus the choice follows the
 selected method and obstacle history, not a preferred side of an obstacle.
 
 \arrival{3. What leaves.}
-For each of our three seeds, a static BMTP call leaves this station. The
+For each of our two seeds, a static BMTP call leaves this station. The
 selected route is seed \WalkSelectedSeedIndex, whose exported four polyline
-points go round the upper side of the rectangle. The later result selection is
+points go round the lower side of the rectangle. The later result selection is
 not performed here.
 
 \arrival{4. What can go wrong here, and what it is called.}
@@ -837,9 +829,9 @@ keys are, in order: \texttt{MotionLength\_deg},
 \texttt{IntegratedSquaredJerk\_deg2\_s5}, and seed index. For the
 earliest-arrival request in this walkthrough, it prepends
 \texttt{ArrivalTime\_s}: arrival time, motion length, integrated squared jerk,
-then seed index. The final key makes an exact tie deterministic. Our two
-validated visibility-route candidates therefore reach this comparison, and
-seed \WalkSelectedSeedIndex, the upper route, wins under that ordering.
+then seed index. The final key makes an exact tie deterministic. Our validated
+visibility-route candidate reaches this comparison, and seed
+\WalkSelectedSeedIndex\ wins under that ordering.
 
 \arrival{3. What happens when none passed.}
 The planner returns the stable empty-result shape with
@@ -880,10 +872,10 @@ motion exists.
 
 The request that began at $[-5,0]$ degrees at time 0 reached $[5,0]$ degrees
 at \WalkArrivalTime. Its published motion length is \WalkMotionLength. The
-winning candidate is seed \WalkSelectedSeedIndex, the upper visibility route;
+winning candidate is seed \WalkSelectedSeedIndex, the lower visibility route;
 its complete smooth motion, polynomial record, safety-line certificate, and
-independent validation accompany the result. The diagnostics retain the three
-route proposals, the direct and restricted-construction outcomes, the search
+independent validation accompany the result. The diagnostics retain the two
+route proposals, the direct and fixed-clock-excursion outcomes, the search
 counts, each candidate summary, the selected seed, collision and clearance
 evidence, and stage timings.
 
