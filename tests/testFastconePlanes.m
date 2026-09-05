@@ -7,6 +7,29 @@ function setupOnce(~)
 root=fileparts(fileparts(mfilename('fullpath'))); addpath(root,fullfile(root,'trajectory'));
 end
 
+function testMultipleContactsOnDifferentPolygons(testCase)
+% Curved spans require exchanging contacts on two structurally different hulls.
+options=optimoptions('coneprog','Display','none', ...
+    'ConstraintTolerance',1e-8,'OptimalityTolerance',1e-8);
+for vertexCount=[5 7]
+    phase=.61; angle=(0:vertexCount-1)'*2*pi/vertexCount+phase;
+    vertices=[.4*cos(angle),.7*sin(angle)];
+    theta=linspace(phase,phase+1.3*pi,17)';
+    points=[2*cos(theta),1.4*sin(theta)];
+    [A,b,cones]=makeProblem(points,vertices,.01);
+    args={[zeros(6,1);1],cones,A,b,[],[],[],[],options};
+    [~,reference,referenceFlag]=coneprog(args{:});
+    [x,value,flag,out]=fastcone.solve(args{:});
+    verifyGreaterThan(testCase,referenceFlag,0);
+    verifyEqual(testCase,flag,1);
+    verifyFalse(testCase,out.FallbackUsed);
+    verifyEqual(testCase,out.Method,'direct contact equations');
+    verifyLessThanOrEqual(testCase,fastcone.residual(x,args{:}),options.ConstraintTolerance);
+    verifyLessThanOrEqual(testCase,abs(value-reference),2*options.OptimalityTolerance*(1+abs(reference)));
+    verifyLessThanOrEqual(testCase,out.Prototype.Gap,options.OptimalityTolerance*(1+abs(value)));
+end
+end
+
 function testRandomSeparatedAndOverlappingPolygons(testCase)
 rng(107,'twister');
 acceptedCount = 0; oracleStalls = 0;

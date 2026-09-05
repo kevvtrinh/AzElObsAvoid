@@ -9,14 +9,16 @@ function stats=accumulate(stats,output)
 %% Section 1: Initialize Or Accumulate One Solve
 if nargin==0
     stats=struct('Solver','fastcone','CallCount',0,'NativeAcceptedCount',0, ...
-        'AnalyticalPlaneCount',0,'RecoveryCount',0,'TotalTime_s',0, ...
+        'MatlabAcceptedCount',0,'AnalyticalPlaneCount',0,'CertifiedInfeasibleCount',0,'RecoveryCount',0,'TotalTime_s',0, ...
         'LastMethod','','LastRecoveryReason','');
     return
 end
 stats.CallCount=stats.CallCount+1;
 stats.NativeAcceptedCount=stats.NativeAcceptedCount+double(output.NativeAccepted);
+stats.MatlabAcceptedCount=stats.MatlabAcceptedCount+double(output.MatlabAccepted);
+stats.CertifiedInfeasibleCount=stats.CertifiedInfeasibleCount+double(output.CertifiedInfeasible);
 stats.AnalyticalPlaneCount=stats.AnalyticalPlaneCount+ ...
-    double(~output.FallbackUsed && ~output.NativeAccepted);
+    double(~output.FallbackUsed && ~output.NativeAccepted && ~output.MatlabAccepted && ~output.CertifiedInfeasible);
 stats.RecoveryCount=stats.RecoveryCount+double(output.FallbackUsed);
 stats.TotalTime_s=stats.TotalTime_s+output.TotalTime_s;
 stats.LastMethod=output.Method;

@@ -169,11 +169,11 @@ result = exampleObstacleAvoidance(struct( ...
     "PlotOutputs", false, "FigureVisible", "off"));
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-% The accepted native fastcone result improves the former coneprog reference
-% (7.553888427 s, 11.430861536 deg). Keep the original regression tolerance.
-verifyEqual(testCase, result.ArrivalTime_s, 7.52479716350113, "AbsTol", 1e-6);
+% MATLAB contact equations select a different independently validated curve
+% from the retired native solver. Preserve the original regression tolerance.
+verifyEqual(testCase, result.ArrivalTime_s, 7.52479393397023, "AbsTol", 1e-6);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyEqual(testCase, summary.MotionLength_deg, 11.4274584581313, ...
+verifyEqual(testCase, summary.MotionLength_deg, 11.4270998053383, ...
     "AbsTol", 1e-6);
 end
 

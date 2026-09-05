@@ -1,14 +1,15 @@
 function [x,fval,exitflag,output] = solve(f,cones,A,b,E,d,lb,ub,options)
 %% Section 0: Header & Readme
-% SYNTAX: [x,fval,exitflag,output] = fastcone.solve(f,cones,A,b,E,d,lb,ub,options)
+% SYNTAX: [x,fval,exitflag,output] = solve(f,cones,A,b,E,d,lb,ub,options)
 % PURPOSE: Certified analytical cone blocks with reported coneprog recovery.
 % INPUTS: The identical nine arguments from HS's conic call sites.
 % OUTPUTS: Standard solver outputs plus Method, FallbackUsed and TotalTime_s.
 % UNITS: Unchanged from HS. Used by both BMTP conic call sites.
 
 %% Section 1: Try A Certified Analytical Plane Or The Reduced Solver
+
 timer = tic; args = {f,cones,A,b,E,d,lb,ub,options};
-nativeAvailable=exist(fullfile(fileparts(mfilename('fullpath')),['core.' mexext]),'file')==3;
+nativeAvailable=false;
 planeProblem = numel(f)==7 && isequal(f(:),[zeros(6,1);1]) && ...
     isempty(E) && isempty(d) && isempty(lb) && isempty(ub) && numel(cones)==2 && ...
     size(A,2)==7 && size(A,1)==numel(b);
@@ -42,10 +43,26 @@ try
         end
         accepted = accepted && selectionValid && ...
             fastcone.residual(x,args{:})<=options.ConstraintTolerance;
+        if ~accepted && prototype.Gap>options.OptimalityTolerance*(1+abs(fval))
+            [directX,directValue,directAccepted,directCertificate]= ...
+                fastcone.contactPlanes(A,b,options.OptimalityTolerance);
+            if directAccepted && fastcone.residual(directX,args{:})<=options.ConstraintTolerance
+                x=directX; fval=directValue; accepted=true; prototype=directCertificate;
+                method='direct contact equations';
+            end
+        end
     else
-        [x,fval,flag,prototype] = fastcone.solveNative(args{:});
+        [x,fval,flag,prototype] = fastcone.solveConic(args{:});
+        if flag==-2 && prototype.originalInfeasibility.Certified
+            exitflag=-2;
+            output=struct('message',prototype.message,'Method','original-input infeasibility certificate', ...
+                'FallbackUsed',false,'CertifiedInfeasible',true,'NativeAvailable',false, ...
+                'NativeAccepted',false,'MatlabAccepted',false,'Prototype',prototype, ...
+                'PrototypeTime_s',toc(timer),'TotalTime_s',toc(timer));
+            return;
+        end
         accepted = flag==1;
-        method = 'prepared analytical cone blocks';
+        method = 'MATLAB conic predictor-corrector';
     end
 catch exception
     prototype = struct('message',exception.message);
@@ -54,17 +71,17 @@ end
 prototypeTime = toc(timer);
 if accepted
     exitflag = 1;
-    output = struct('message','Experimental solver acceptance checks passed.', ...
+    output = struct('message','Original feasibility and objective-bound checks passed.', ...
         'Method',method,'FallbackUsed',false,'Prototype',prototype, ...
-        'NativeAvailable',nativeAvailable,'NativeAccepted',~planeProblem, ...
+        'NativeAvailable',nativeAvailable,'NativeAccepted',false,'MatlabAccepted',~planeProblem,'CertifiedInfeasible',false, ...
         'PrototypeTime_s',prototypeTime,'TotalTime_s',toc(timer));
     return
 end
 
 %% Section 2: Account For Recovery Without Changing The Problem
-[x,fval,exitflag,output] = coneprog(args{:});
+[x,fval,exitflag,output] = fastcone.reference(args{:});
 output.Method = 'coneprog recovery'; output.FallbackUsed = true;
-output.NativeAvailable=nativeAvailable; output.NativeAccepted=false;
+output.NativeAvailable=nativeAvailable; output.NativeAccepted=false; output.MatlabAccepted=false;
 output.Prototype = prototype; output.PrototypeTime_s = prototypeTime;
 output.TotalTime_s = toc(timer);
 end

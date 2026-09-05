@@ -28,17 +28,9 @@ result = obstacleAvoidance.planTrajectory( ...
 ```
 
 BMTP's trajectory and separating-plane conic programs use `fastcone.solve`.
-Build its native kernel once to enable the measured acceleration:
-
-```matlab
-fastcone.build;
-% Alternatively, select an installed Windows MinGW compiler explicitly:
-% fastcone.build('C:\msys64\mingw64\bin\g++.exe');
-```
-
-The sources and pinned Eigen headers are included; native binaries are built
-locally. Unsupported or uncertified solves recover through MATLAB `coneprog`,
-and diagnostics report that recovery. Optimization Toolbox remains required.
+Fastcone runs entirely in MATLAB and needs no compiler, MEX binary, or Python.
+Uncertified or unsupported programs recover through MATLAB `coneprog`, with
+that recovery reported in diagnostics. Optimization Toolbox remains required.
 See [fastcone usage and equations](docs/fastcone.md),
 [per-case runtime measurements](benchmarks/results/fastcone/README.md), and
 [integration verification](verification.md#fastcone-integration---2026-09-04).
@@ -362,9 +354,7 @@ No network service, learned model, or external planner process is required.
 The maintained documentation is this guide, [repository rules](AGENTS.md),
 the [obstacle history contract](obstacle_history_contract.md), and the
 [fastcone guide](docs/fastcone.md). The browser sandbox has its own
-[usage guide](offlinesandbox/README.md); Eigen's
-[dependency notice](trajectory/+fastcone/third_party/eigen/README.md) records
-its source and licenses.
+[usage guide](offlinesandbox/README.md).
 
 Exact measurements, source revisions, and known limitations remain in
 `benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical

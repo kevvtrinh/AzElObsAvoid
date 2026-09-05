@@ -7764,3 +7764,17 @@ smallest measured improvement in the affected static set is 5.228834 percent,
 so the repository-wide performance size allowance is not met and is not
 claimed. The implementation is retained as a small exact reuse of preparation
 already owned by the obstacle subsystem; remaining BMTP runtime is unchanged.
+
+## MATLAB-only fastcone production verification (2026-09-05)
+
+The production suite passed 151/151 tests with no incomplete tests. All 200
+captured conic requests were bit-identical to the verified MATLAB prototype
+in candidate, objective, status and recovery choice (199 positive, 12 explicit
+coneprog recoveries). No native calls executed. All 18 maintained examples
+passed expected outcomes: 17 independently validated successes and NoPath's
+expected noValidatedSeed failure. Actual runs are in benchmark.csv. The exact
+unchanged user diagnosis bundle independently validated in 27.1458707 s on one
+run, with path length 143.44415659 deg and duration 69.06222507996 s. The public
+interface does not support infinite jerk limits; a jerk-disabled attempt was
+rejected before planning, separately from code failures. See branch_assessment
+for timing comparisons, unfavorable measurements, and certificate limitations.

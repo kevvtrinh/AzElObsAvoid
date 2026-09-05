@@ -721,7 +721,7 @@ verifyFalse(testCase, any(startsWith( ...
     string(fieldnames(diagnostics)), "TravelRefinement")));
 verifyFalse(testCase, diagnostics.PlaneReuseApplied);
 verifyEqual(testCase, diagnostics.PlaneReuseCount, 0);
-verifyGreaterThan(testCase, diagnostics.ConicSolver.NativeAcceptedCount, 0);
+verifyGreaterThan(testCase, diagnostics.ConicSolver.MatlabAcceptedCount, 0);
 verifyTrue(testCase, diagnostics.Converged);
 verifyEqual(testCase, diagnostics.SolverMessage, ...
     "The feasible arrival improvement reached tolerance.");

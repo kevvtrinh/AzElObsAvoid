@@ -1,5 +1,271 @@
 # Novel replacement branch assessment
 
+## MATLAB-only production integration - 2026-09-05
+
+Production fastcone now uses MATLAB contact equations and a MATLAB conic
+predictor-corrector kernel. Both BMTP call sites execute it. Native source,
+builder and Eigen dependencies have been removed; the locked retired binary
+was moved into ignored output without interrupting the user's MATLAB desktop.
+Unresolved programs retain explicit coneprog recovery. Positive results require
+original feasibility and objective-bound checks; negative certificates require
+the original tolerance-expanded program to be excluded by a raw dual witness.
+No claim of solving every possible conic program or uniform speedup is made.
+
+All 18 maintained examples ran on actual production with no native calls:
+17 independently validated successes and the expected NoPath failure. Their
+actual metrics are appended to benchmark.csv. Every successful run passed
+collision, kinematic and continuous-collision checks; applicable plane
+certificates passed. The unchanged user diagnosis bundle also passed with its
+original options: wall 27.1458707 s (single observation), polyline/smoothed
+length 143.44415659 deg, motion duration 69.06222507996 s, goalReached.
+Its representation does not use a plane certificate. Jerk-disabled verification
+was not executed: the public interface rejects infinite jerk limits before
+planning. No input validation was weakened to manufacture that mode.
+
+The two slow plane requests improved 18-20x in warmed complete-adapter tests.
+The original-input infeasibility certificate reduced tight-U median runtime
+from native 3.3026244 s to MATLAB 2.0265543 s. Batched Lorentz Gram preparation
+then reduced the moving-occlusion replay to native 0.5217166 s versus MATLAB
+0.5673396 s (8.7448% slower, within the declared 10% gate; nine interleaved
+measurements after three warmups). Its previous 14.55% regression is retained
+below as unfavorable history. Six reduced-program comparisons verified
+bit-identical Gram maps; the largest favorable setup/solve measurement was
+42.0913 to 26.3969 ms, while one case regressed 12.2162 to 13.3030 ms.
+These prototype timings must not be confused with fresh production timings.
+
+The final production suite passed 151/151 tests, zero failures or incomplete
+tests. All 200 captured requests matched the verified prototype bit-for-bit
+in candidate, objective, status and recovery choice: 199 positive results,
+12 explicit recoveries, zero native calls. The original residual gate passed
+for every positive result. These checks supersede older pending-migration
+statements below; the requested code-pruning stage follows the first commit.
+
+## Original-input infeasibility certificate - 2026-09-05, isolated
+
+The remaining tight-U overhead was mostly coneprog recovery after the MATLAB
+kernel already found a reduced infeasibility ray. The expensive requests are
+not identical: requests 63 and 64 have different A/b, so result caching is not
+an appropriate explanation or repair. Each spends about 0.04 s in the MATLAB
+candidate and another 0.4 s in coneprog.
+
+The new candidate reverses row scaling and exact cone simplifications only to
+propose a dual witness. Acceptance uses the original, unscaled matrices, not
+the reduced bound. For raw cone-feasible z and arbitrary equality multiplier
+lambda, it bounds the zero objective by
+
+`-h'*z - d'*lambda + min_box (G'*z+E'*lambda)'*x`.
+
+The box is expanded outward by ConstraintTolerance and rounding allowance.
+The bound additionally subtracts the tolerance times scalar/head dual weights
+and absolute equality multipliers, plus a dimension-scaled arithmetic error
+allowance. A strictly positive remaining bound excludes even the original
+tolerance-expanded feasible set. Otherwise the original recovery remains.
+The witness and its raw bound, tolerance, allowance, and margin are retained.
+Certified failure returns -2 explicitly, never positive acceptance.
+
+Four expensive tight-U requests have raw margins 0.0291-0.1128, versus arithmetic
+allowances below 1.8e-7, and no longer need reference recovery. Two near-boundary
+failed controls did not certify and retain coneprog. Seventy independent
+small checks passed: linear/equality and Lorentz infeasibility, near-boundary
+tolerance controls, and 64 constructed feasible random programs (seed 58031).
+
+With three warmups and three interleaved measurements and both frozen engine
+variants resident, tight U measured native 3.3026244 s versus MATLAB 2.0265543 s
+(1.6297x faster). Its third-seed selection, validated motion and arrival remain
+the same as the plane-recovery candidate below. Every successful motion check
+passed and the candidate executed no native code. The wider validation and
+production migration remain pending; this is not yet a committed replacement.
+
+## MATLAB plane-selection recovery - 2026-09-05, isolated
+
+The tight-U correctness regression below now has a verified experimental
+recovery. When a trajectory solve fails after direct multiple-contact planes,
+the engine recomputes those planes with coneprog using the exact stored source
+curves and original plane options, then retries the trajectory. Each plane
+source is consumed once; reference calls and recovery events are counted.
+No seed, horizon, protected geometry or feasibility tolerance is discarded.
+This reorders recovery work; it does not label the failed direct plane optimum
+invalid or prove a route infeasible. The requested deadline still constrains
+the final independently validated motion.
+
+The first version recovered the third tight-U seed but measured 4.655211 s
+versus native 3.2797149 s (41.9% slower). Saved per-call timings identified
+duplicate infeasible trajectory solves costing about 0.4 s each. Applying the
+existing allowed warm-start horizon expansion before the reference-plane retry
+reduced the candidate median to 3.7105884 s versus 3.2875076 s (12.9% slower),
+with the same motion. Both variants used three warmups and three interleaved
+measurements. A separate comparison kept frozen copies of both complete engine
+packages loaded to avoid repeated package/JIT invalidation: native 3.2872557 s,
+MATLAB 3.7056346 s, ratio 1.127273. Thus the remaining overhead is not explained
+by that measurement concern. The declared 10% full-planner speed gate still
+fails; production remains unchanged and no commit or push has been made.
+
+The recovery-enabled prototype also replayed the other four saved requests:
+
+| Request | Native median (s) | MATLAB median (s) | MATLAB/native |
+|---|---:|---:|---:|
+| Obstacle avoidance | 0.2451889 | 0.2525531 | 1.030035 |
+| Moving alternating occlusion | 0.5206881 | 0.5743166 | 1.102995 |
+| Static U | 1.5562432 | 1.6106196 | 1.034941 |
+| No path | 0.1565575 | 0.1410910 | 0.9012088 |
+
+All successful jerk-enabled replays passed planner and independent collision,
+kinematic, continuous-collision and plane-certificate checks (goalReached).
+Tight-U MATLAB polyline/smoothed length/duration were 34.94258804047 deg,
+39.1469628764 deg, 20.76809864315 s; native values were 34.94258804047 deg,
+39.1459691515 deg, 20.76813613373 s. The other successful MATLAB motion metrics
+match the contact-exchange table below. NoPath retained noValidatedSeed,
+planner/validation false, all certificate flags false and numeric motion
+metrics NaN. Every MATLAB replay executed zero native calls. These are saved
+public-request replays, not maintained example invocations; benchmark.csv was
+not appended. Recovery remains an ignored experiment pending the speed gate,
+structurally broader production verification, and integration.
+
+## Two-plane contact exchange - 2026-09-05
+
+This supersedes the earlier prototype speed-gate status below; unfavorable
+historical measurements remain recorded. The first full MATLAB planner replay
+regressed 64% on obstacle avoidance and 45% on moving alternating occlusion.
+Two multiple-contact plane requests spent about 62 ms enumerating 52,224
+profiles. Contact exchange now solves a small working set using scalar
+distance derivatives, quadratic unit-normal equations, and four-contact
+determinants. Certified contact bases and previous support vertices order
+work. Every original product row is checked after each exchange; the original
+primal/dual gap and physical residual authorize acceptance. Unresolved cases
+retain explicit coneprog recovery.
+
+Four warmups and seven interleaved complete-adapter timings gave:
+
+| Captured plane | Exhaustive MATLAB (ms) | Contact exchange (ms) | Native adapter (ms) | MATLAB improvement |
+|---|---:|---:|---:|---:|
+| Obstacle avoidance request 9 | 67.0441 | 3.7652 | 5.8145 | 17.8063x |
+| Obstacle avoidance request 11 | 65.3146 | 3.2686 | 4.4802 | 19.9824x |
+
+Both passed original feasibility and objective checks, residuals below 2.3e-16.
+Twelve deterministic structurally different plane requests also ran: two
+degree-16 cases obtained direct certificates, while ten explicitly remained
+unresolved. This is not evidence of a complete analytical solver.
+
+A separate conic stall reached 300 iterations. A positive weak-dual bound on
+the zero objective, with an arithmetic allowance, now requests reference
+recovery after eight iterations. It does not return infeasibility itself.
+The recovered flag and original residual remain visible. One captured program
+has a coneprog-positive result above its requested physical residual tolerance
+in both versions; it is not a certified intermediate solve.
+
+Three warmups and three interleaved complete public saved-request replays,
+MATLAB R2024b Update 4, seed 0, original jerk-enabled options, measured:
+
+| Saved request | Native median (s) | MATLAB median (s) | MATLAB/native |
+|---|---:|---:|---:|
+| exampleObstacleAvoidance | 0.2726315 | 0.2591129 | 0.9504144 |
+| exampleStraightTargetAlternatingOcclusion | 0.5780752 | 0.6244180 | 1.080167 |
+| exampleStaticUShapedObstacle | 1.5439314 | 1.6278869 | 1.054378 |
+| exampleNoPath | 0.1660474 | 0.1425973 | 0.8587747 |
+
+All three successful motions passed independent collision, kinematic,
+continuous-collision and plane-certificate checks, terminating goalReached.
+Polyline/smoothed lengths (deg), duration (s) respectively:
+11.15211951902/11.42709980534/7.52479393397;
+13.34166406413/13.6172278486/20.86956521739;
+34.94258804047/39.39028420716/20.76786694392.
+Arrival differences were below 2.2e-5 s versus the unchanged 0.001 s tolerance.
+NoPath retained noValidatedSeed, planner/validation false and unavailable
+lengths/duration NaN. No MATLAB candidate invoked native code. These saved
+requests pass the declared 10% full-planner regression gate; they are not
+maintained example invocations or a broad production test pass. Generic MATLAB
+kernel calls can still be slower than native. Production migration and broader
+verification follow. Ignored experiment logs preserve the measurements.
+
+### Production integration rejected by broader correctness check
+
+The isolated solver was migrated temporarily into +fastcone. The first 15
+solver tests passed. A missing package qualifier in the new recursive contact
+call was found and fixed; the multiple-contact polygon regression then passed.
+All 200 captured production calls matched the measured prototype bit-for-bit
+in primal variables, objective and exit flag, with matching recovery usage.
+
+Broader planner tests nevertheless found a new failure in
+testPlannerContract/testLaterSeedsRunOnlyAfterFirstTwoFail: the exact 21-second
+static U request no longer recovered a validated third seed. This is distinct
+from the pre-existing obstacle-avoidance numeric-reference mismatch, which
+also remains. The broad correctness gate therefore fails despite the four
+favorable saved-request replays. Production integration was restored in full;
+the native implementation, builder, dependency files and MEX remain intact.
+The candidate and regression logs are saved only in ignored output. No commit
+or push was made. The user-owned failed.mat SHA256 remains E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625.
+Unchanged-input owner isolation found: native planes + MATLAB kernel succeeds
+and validates (arrival 20.7680820879 s); MATLAB planes + native kernel fails,
+as does the fully MATLAB candidate. Fully native succeeds and validates
+(arrival 20.7681361337 s). These are single diagnostic timings, not benchmarks.
+The first changed plane output is captured call 22; five plane choices change
+before trajectory-program input 35 differs. These direct three-contact planes
+pass their conic gates but choose very different normals from coneprog's
+approximate solutions. Thus individually better conic optima are insufficient
+to establish preserved feasibility of the alternating planner. The plane-stage
+cause is isolated; a general repair preserving the tight-horizon motion
+capability has not been established. No tolerance or assertion was weakened.
+After restoration, the original production testLaterSeedsRunOnlyAfterFirstTwoFail
+passed again in a fresh MATLAB process. Tight-U native replay metrics were
+polyline 34.94258804047 deg, smoothed 39.1459691515 deg, duration 20.76813613373 s;
+native planes plus MATLAB kernel gave 34.94258804047 deg, 39.14303481687 deg,
+20.76808208792 s. Both passed independent collision, kinematic, continuous and
+plane checks with goalReached. Both MATLAB-plane variants had noValidatedSeed,
+planner/validation false, all certificate flags false and lengths/duration NaN.
+
+## MATLAB-only fastcone investigation - in progress, 2026-09-05
+
+The production engine remains the native `36512e2` implementation. An isolated
+MATLAB port preserves the selected conic certificates but still takes about
+39-44 ms on large programs versus 25-31 ms natively. Direct three-contact plane
+profiles now use circle/quadratic equations and nonnegative dual certificates.
+Seven focused cases passed, with measured speedups ranging from 1.18x to 5.96x
+in one warmed comparison; those plane baselines include coneprog recovery.
+They do not measure the native Newton kernel alone.
+
+The first complete 200-program replay replaced 45 coneprog recoveries, but its
+sum of per-program median times was 1.1423772 s versus 0.9073317 s (26% slower).
+Case 200 changed from native-adapter status -7 to a directly certified solution.
+Case 198 exceeded its requested tolerance in both existing recovery paths.
+No maintained examples were rerun for this prototype. The speed gate has not
+passed; no MATLAB-only replacement or subsequent cleanup has been committed.
+Ignored experiment outputs retain per-case timings and unfavorable results.
+
+The next isolated replay added four-contact determinant profiles and reduced
+recoveries to ten. Six background workers processed the same 200 independent
+requests in a warmed median 0.6264373 s versus 1.1159425 s serially (1.78141x),
+including client-side coneprog recovery. All serial/background outcomes matched
+and every successful background solution passed the original residual and
+objective-comparison gates. The first background batch was slower: 3.9044163 s
+versus 1.8144198 s serially. These are independent-request throughput timings,
+not a full planner speedup or evidence that dependent solves can run together.
+R2024b rejected coneprog's optim.coneprog.socp on background thread workers;
+the analytical and MATLAB Newton paths ran successfully. Production is unchanged.
+
+The four-contact proposal ordering is not ready for production: it certified ten
+additional captured cases, but cases 50, 63, and 199 regressed relative to the
+previous MATLAB profile ordering. The general MATLAB kernel still misses the
+native speed gate. Sparse border splitting, scalar boundary vectorization, and
+compact scalar scaling experiments did not pass their retention gates; their
+kernel edits were restored. Changed-value and changed-pattern cache checks gave
+bit-identical cached/fresh solutions on three representative conic requests.
+
+A direct comparison against MATLAB coneprog (three warmups and three interleaved
+measurements per original request) measured 8.5836286 s versus 1.0102061 s for
+the current serial MATLAB prototype, summing the 200 per-request medians:
+8.49691x overall. The prototype was faster on 166 requests and slower on 34,
+with ten explicit coneprog recoveries. All 199 successful candidate results
+passed original feasibility and objective-comparison checks; the remaining
+request retained the expected failure. This does not establish universal speed,
+full-planner speed, or parity with the existing native fastcone implementation.
+
+An independently valid native replay captured eleven real alternating-planner
+plane groups of sizes [2 7 6 13 26 4 30 1 31 31 31]. Replaying those groups with
+the MATLAB prototype gave sum-of-group-medians 0.384121 s serially versus
+0.3077873 s with background workers (1.248008x). Small groups often slowed down;
+the earlier 1.78141x aggregate-batch result must not be applied to these smaller
+dependent planner phases. No background planner integration has been retained.
+
 ## Overwritten diagnosis bundle runtime - 2026-09-05
 
 The replacement `Rogue Examples/failed.mat` (SHA256 prefix `E754CF5D4C1E`)

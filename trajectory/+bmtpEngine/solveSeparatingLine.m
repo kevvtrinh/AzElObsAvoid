@@ -1,9 +1,9 @@
 function [plane, exitFlag, output] = solveSeparatingLine( ...
-        controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
+        controlPoint_deg, vertices_deg, target_deg, reserve_deg, options, solver)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
-%       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
+%       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options, solver)
 %**************************************************************************
 % PURPOSE
 %   - Solve and directly verify one degree-one maximum-margin separating line
@@ -18,6 +18,8 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 %       Obstacle-side target and trajectory-side numerical reserve.
 %   - options (coneprog options)
 %       Numerical solver controls.
+%   - solver (function handle, optional)
+%       Defaults to fastcone.solve; internal recovery uses fastcone.reference.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
@@ -33,6 +35,7 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 
 %% Section 1: Solve The Maximum-Margin Line
 
+if nargin<6 || isempty(solver), solver=@fastcone.solve; end
 offsetIndex = 5:6;
 marginIndex = 7;
 variableCount = 7;
@@ -48,7 +51,7 @@ for planeIndex = 0:1
     cones(planeIndex + 1) = secondordercone( ...
         coneA, zeros(2, 1), zeros(variableCount, 1), -1);
 end
-[x, ~, exitFlag, output] = fastcone.solve( ...
+[x, ~, exitFlag, output] = solver( ...
     f, cones, A, b, [], [], [], [], options);
 plane = emptyPlane();
 plane.ExitFlag = exitFlag;

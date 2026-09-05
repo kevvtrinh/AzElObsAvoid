@@ -43,6 +43,7 @@ diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
 taggedPairs = false(segmentCount, numel(regions_deg));
 planes = repmat(createEmptyPlane(), ...
     segmentCount, numel(regions_deg));
+contactSources=cell(size(planes)); diagnostics.ContactPlaneRecoveryCount=0;
 optimizationHorizon_s = request.MotionHorizon_s;
 solverMessage = "The biconvex iteration limit was reached.";
 
@@ -52,16 +53,43 @@ for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
     usedRequestHorizon = ...
         optimizationHorizon_s == request.MotionHorizon_s;
-    [trialControl_deg, trialTime_s, exitFlag, output] = ...
-        bmtpEngine.solveTrajectoryStep( ...
-        segmentCount, degree, request.InitialState.position_deg, ...
-        request.GoalState.position_deg, request.Limits, planes, ...
-        roundoffReserve_deg, optimizationHorizon_s, ...
-        "earliestArrival", 0, feasibleSegmentTime_s, ...
-        request.TrajectoryOptions);
-    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
-    diagnostics.ConicSolver = fastcone.accumulate(diagnostics.ConicSolver, output);
-    diagnostics.FinalTrajectoryExitFlag = exitFlag;
+    for contactAttempt=1:2
+        [trialControl_deg, trialTime_s, exitFlag, output] = ...
+            bmtpEngine.solveTrajectoryStep( ...
+            segmentCount, degree, request.InitialState.position_deg, ...
+            request.GoalState.position_deg, request.Limits, planes, ...
+            roundoffReserve_deg, optimizationHorizon_s, ...
+            "earliestArrival", 0, feasibleSegmentTime_s, ...
+            request.TrajectoryOptions);
+        diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
+        diagnostics.ConicSolver = fastcone.accumulate(diagnostics.ConicSolver, output);
+        diagnostics.FinalTrajectoryExitFlag = exitFlag;
+        if exitFlag>0 && ~isempty(trialControl_deg), break; end
+        pending=find(~cellfun('isempty',contactSources));
+        if contactAttempt==2 || isempty(pending), break; end
+        recoveryFailed=false;
+        for pendingIndex=reshape(pending,1,[])
+            [span,region]=ind2sub(size(planes),pendingIndex);
+            source=contactSources{pendingIndex}; contactSources{pendingIndex}=[];
+            [recoveredPlane,recoveryFlag,recoveryOutput]=bmtpEngine.solveSeparatingLine( ...
+                source,regions_deg{region},obstacleTarget_deg,roundoffReserve_deg, ...
+                request.PlaneOptions,@fastcone.reference);
+            diagnostics.PlaneSocpCount=diagnostics.PlaneSocpCount+1;
+            diagnostics.ConicSolver=fastcone.accumulate(diagnostics.ConicSolver,recoveryOutput);
+            if recoveryFlag<=0 || ~recoveredPlane.Active
+                recoveryFailed=true;
+            else
+                planes(span,region)=recoveredPlane;
+            end
+        end
+        diagnostics.ContactPlaneRecoveryCount=diagnostics.ContactPlaneRecoveryCount+1;
+        if recoveryFailed, break; end
+        if exitFlag==-2 && isempty(bestControl_deg) && ...
+                optimizationHorizon_s<diagnostics.WarmStartDuration_s
+            optimizationHorizon_s=min(2*optimizationHorizon_s,diagnostics.WarmStartDuration_s);
+            usedRequestHorizon=false;
+        end
+    end
     if exitFlag <= 0 || isempty(trialControl_deg)
         % The requested horizon constrains the returned motion, but the first
         % useful iterate may need the longer warm-start duration to establish
@@ -125,7 +153,7 @@ for iterationIndex = 1:35
             end
             continue;
         end
-        planes(:) = createEmptyPlane();
+        planes(:) = createEmptyPlane(); contactSources(:)={[]};
         activePairs = taggedPairs;
     elseif any(newPairs, "all")
         activePairs = newPairs;
@@ -162,6 +190,10 @@ for iterationIndex = 1:35
                 diagnostics.UnverifiedPlaneInitializationCount + 1;
         end
         planes(segmentIndex, regionIndex) = plane;
+        contactSources{segmentIndex,regionIndex}=[];
+        if strcmp(planeOutput.Method,'direct contact equations')
+            contactSources{segmentIndex,regionIndex}=squeeze(feasibleControl_deg(segmentIndex,:,:));
+        end
     end
     if updateFailed
         break;
