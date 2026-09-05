@@ -1,5 +1,56 @@
 # Novel replacement branch assessment
 
+## Overwritten diagnosis bundle runtime - 2026-09-05
+
+The replacement `Rogue Examples/failed.mat` (SHA256 prefix `E754CF5D4C1E`)
+records a successful, independently valid plan in 90.0742 **seconds**, not
+minutes. Its selected motion lasts 69.0622 s. Topology/search owns 86.7068 s
+of the saved runtime, versus 2.8230 s of motion solving. A fresh MATLAB
+profile attributes most search time to repeated timed-edge collision queries:
+76 nodes, 41 retained time layers, and roughly 1.68 million rejected
+transitions against one moving obstacle with 21 time samples of 49 vertices.
+This case's bottleneck is search work, not the fastcone numerical kernel.
+
+The focused optimization rejects a strictly more expensive incoming motion
+before collision queries when a cheaper reachable arrival can traverse the
+same verified safe-wait component. It preserves cost ties, every supplied
+time layer, geometry, objective, and validation tolerance. It applies only
+to full-horizon searches: the first unrestricted trial changed the future
+frontier of an early-stopping search, despite preserving its selected route.
+The corrected version preserves routes, times, explored states, frontiers,
+and reachable goal-layer counts on 36 deterministic graphs (seed 4701)
+covering empty/static/moving geometry and all three arrival policies.
+Single small-graph timing probes are mixed; no universal speedup is claimed.
+
+Against the frozen `5efbea3` search implementation, one warmup per variant
+and three interleaved full-planner repeats in MATLAB R2024b Update 4 gave:
+
+| Full planner | Minimum (s) | Median (s) | Maximum (s) |
+|---|---:|---:|---:|
+| Baseline | 67.6591 | 102.1505 | 129.7499 |
+| Cost pruning | 25.6147 | 29.2417 | 33.3816 |
+
+The median improvement is 3.4933x (71.37% less runtime), exceeding the
+predeclared 30% reduction gate. All eight warmup/measured replays passed
+fresh independent validation. Selected seed arrays match exactly, motion
+histories match within 1e-9, and retained search states/frontiers match.
+Desktop timing varies substantially; the ranges are retained rather than
+presenting a single favorable run. The remaining runtime is still dominated
+by topology work. Worst-case search complexity and bounded completeness are
+unchanged. The optimization adds 19 production lines and no option,
+dependency, tolerance change, or benchmark source file.
+
+All 18 maintained examples passed independent validation with their default
+jerk limits, including the expected `exampleNoPath` failure. Failure graphics
+and a visible successful example were verified. The test assessment is
+145 passed, one pre-existing numeric-reference failure, zero incomplete.
+The static quick-start test expects 7.52479716350113 s and
+11.4274584581313 deg; the installed baseline and candidate both produce
+7.52479561971388 s and 11.4270648853893 deg, with identical full motion
+histories and valid physical certificates. A baseline profile confirms zero
+calls to the changed timed-search function in that example. Its original
+1e-6 assertions are preserved; the full suite is not reported as green.
+
 ## Fastcone dependency ownership - 2026-09-04
 
 Eigen now lives at `trajectory/+fastcone/third_party/eigen`, beside the solver

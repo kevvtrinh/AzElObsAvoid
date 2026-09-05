@@ -1,5 +1,101 @@
 # Plan 325 verification
 
+## Timed search cost pruning - 2026-09-05
+
+Baseline: `5efbea3202d8a8d11de3bd96aa4e9cca5b2a7288`, MATLAB R2024b Update 4,
+current Microsoft Visual C++ fastcone MEX. The user-replaced diagnosis input
+has SHA256
+`E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625`.
+Its bytes are preserved. A frozen copy and all diagnostic runners/results
+remain ignored under `output/failed-runtime-e754cf5d/`.
+
+The saved successful result records 90.0742 seconds, including 86.7068 seconds
+in topology and 2.8230 seconds in motion solving. It does not explain a
+90-minute wait outside the planner. The exact request has 76 search nodes,
+41 time layers, and one moving obstacle with 21 samples of 49 vertices.
+A bounded fresh profile locates the expensive work in timed-edge occupancy
+queries; profile timings include instrumentation and are not speedup data.
+
+The first unrestricted cost filter preserved the saved motion but changed
+the future frontier of an early-exit graph test. Restricting it to searches
+that process the full horizon preserves that diagnostic contract. The
+unrestricted version is not retained. With the correction,
+`compareTimedGraphs` passed 36 deterministic comparisons at seed 4701:
+5-12 nodes, 13 time layers, empty/static/moving obstacles, and all three
+arrival modes. Exact routes, times, explored/frontier states, best partial
+routes, and reachable goal-layer counts match the frozen baseline.
+Those single small-case timing probes are mixed and are equivalence evidence,
+not a claim of universal acceleration.
+
+`runRepeatedComparison` used the exact frozen physical inputs/options,
+`rng(0,'twister')`, a cooperative 180-second deadline, one warmup per variant,
+and three interleaved unprofiled full-planner measurements. The deadline
+never fired. The verified package lookup selected the frozen baseline or
+current production search as requested. Warmup times were 94.5399060 and
+34.9408771 seconds. Measured baseline/candidate pairs were:
+
+| Repeat | Baseline (s) | Candidate (s) |
+|---|---:|---:|
+| 1 | 102.1505092 | 33.3815529 |
+| 2 | 129.7499124 | 29.2417209 |
+| 3 | 67.6591036 | 25.6146648 |
+
+Median runtime improves 3.493314x, from 102.1505092 to 29.2417209 seconds.
+All replays succeed and pass fresh independent validation. Selected seed
+coordinates are identical; time, position, velocity, and acceleration
+histories match within 1e-9. Time layers, expanded/explored states, frontier,
+and best partial route also match. The motion duration remains 69.0622 seconds.
+No motion model, physical limit, obstacle detail, solver, or public option
+changed. Runtime ranges and existing bounded-search limits remain visible
+in `branch_assessment.md`.
+
+MATLAB `checkcode(...,'-id')` reports zero findings for the changed production
+function and test file. The broad run exercised all tests except the three
+that execute maintained examples, to keep those examples in separate MATLAB
+processes. It passed 142 tests and failed one newly written tie-ancestry
+expectation. A frozen-baseline oracle showed that the shortest route waits
+at the intermediate node rather than the start; both implementations return
+identical ancestry. Correcting that new expected value, without changing any
+production code or tolerance, gave six passing focused timed-search tests.
+The broad non-example set therefore has 143 passing cases across the runs.
+
+The three example-dependent tests ran separately using ignored local copies
+that only rename the test entry point and capture the result immediately
+after the example call; original assertions and inputs are unchanged. The
+rotating-field and convergence tests pass. The static quick-start test fails
+its old numeric references: duration 7.52479561971388 s instead of
+7.52479716350113 s, and length 11.4270648853893 deg instead of
+11.4274584581313 deg, both checked at the existing 1e-6 tolerance. Replaying
+that exact static request with the frozen baseline returns identical time,
+position, velocity, acceleration, and selected-seed arrays, passes independent
+validation, and makes zero timed-search calls. This mismatch predates the
+optimization; its assertions remain unchanged. Overall: 145 tests pass,
+one existing reference test fails, none are incomplete.
+
+Every one of the 18 maintained examples ran headlessly, one separate MATLAB
+process at a time, with plots and animation disabled and the default finite
+jerk limits. Seventeen successful motions passed independent collision,
+kinematic, and applicable continuous-collision certificates. `exampleNoPath`
+returned `noValidatedSeed`, empty motion metrics, and independently valid
+failure diagnostics. Its diagnostic figure was generated from the saved
+result without rerunning the planner. `exampleObstacleFree` also ran visibly;
+workspace and kinematic figures were inspected. All 22 actual example runs
+(18 headless, three isolated test calls, one visible) are appended to the
+existing `benchmark.csv` schema and reported in chat.
+
+The local runner initially had a console-formatting error after the no-path
+result, validation, MAT, and CSV were saved. Only that ignored logging format
+was corrected; the already completed planner run was retained, and the next
+example was not started until diagnosis. No benchmark script is added to the
+tracked tree. Commands use MATLAB `-batch` with the local
+`runNonExampleTests`, selected `testsuite` timed-search cases,
+`runCapturedExampleTest`, `runExampleVerification`, and
+`auditBaselineAndGraphics` runners. Logs and full results are local beside
+the frozen input. Broad test runtime was 84.734118 s; full-planner benchmark
+timings above exclude MATLAB startup and independent revalidation after the
+planner returns. Example runtimes include setup and example validation.
+`git diff --check` passes and the supplied MAT hash remains unchanged.
+
 ## Fastcone dependency relocation - 2026-09-04
 
 Moved `third_party/eigen` to `trajectory/+fastcone/third_party/eigen`.

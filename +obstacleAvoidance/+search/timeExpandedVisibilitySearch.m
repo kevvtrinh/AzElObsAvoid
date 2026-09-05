@@ -162,6 +162,25 @@ for layerIndex = 1:layerCount - 1
         for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
             queryIndices = find(pendingMotion & ...
                 motionCandidates(:, 3) == targetLayerIndex);
+            if options.GoalTimeMode ~= "earliestArrival"
+                trialCost_deg = reshape(spatialCost_deg(layerIndex, ...
+                    motionCandidates(queryIndices, 1)), [], 1) + ...
+                    motionCandidates(queryIndices, 5);
+                storedCost_deg = reshape(spatialCost_deg(targetLayerIndex, ...
+                    motionCandidates(queryIndices, 2)), [], 1);
+                % A cheaper arrival can follow the verified waits through
+                % this component. Full-horizon searches will propagate it;
+                % an early exit could otherwise lose future frontier states.
+                % Match updateTemporalState's tolerance and retain cost ties
+                % so final-layer parent choices do not change.
+                isDominated = trialCost_deg > storedCost_deg + 1e-12;
+                pendingMotion(queryIndices(isDominated)) = false;
+                rejectedCount = rejectedCount + nnz(isDominated);
+                queryIndices = queryIndices(~isDominated);
+            end
+            if isempty(queryIndices)
+                continue;
+            end
             queryIsClear = edgeIsClear(obstacles, ...
                 nodePosition_deg(motionCandidates(queryIndices, 1), :), ...
                 nodePosition_deg(motionCandidates(queryIndices, 2), :), ...

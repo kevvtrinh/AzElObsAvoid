@@ -280,6 +280,54 @@ verifyEqual(testCase, route_deg, nodePosition_deg([1 3 2], :));
 verifyEqual(testCase, routeTime_s, [0; 1; 2]);
 end
 
+function testTimedSearchPreservesCostTiesAndCompleteFrontier(testCase)
+% Keep optimal through-node ancestry when more expensive cycles are pruned.
+nodePosition_deg = [0 0; 4 0; 2 0; 2 2];
+edgeCost_deg = zeros(4);
+initialState = restState(0, nodePosition_deg(1, :));
+goalState = restState(5, nodePosition_deg(2, :));
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "fixedArrival"));
+sampleTimes_s = (0:5).';
+
+[route_deg, routeTime_s, record] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, edgeCost_deg, struct.empty(0, 1), ...
+    initialState, goalState, physicalLimits(), sampleTimes_s, options);
+
+verifyEqual(testCase, route_deg, nodePosition_deg([1 3 3 3 3 2], :));
+verifyEqual(testCase, routeTime_s, sampleTimes_s);
+verifyEqual(testCase, sum(vecnorm(diff(route_deg), 2, 2)), 4);
+verifyEqual(testCase, record.FrontierNodes_deg, nodePosition_deg);
+verifyEqual(testCase, record.ReachableGoalLayerCount, 4);
+end
+
+function testTimedSearchPreservesFutureFrontierAtEarlyExit(testCase)
+% An early goal exit still exposes later states discovered by colliding edges.
+nodePosition_deg = [0 0; 2 0; 0 1; 1 1];
+blocked_deg = [0.4 0.9; 0.6 0.9; 0.6 1.1; 0.4 1.1];
+clear_deg = blocked_deg + [0 3];
+obstacles = obstacleAvoidance.obstacles.createObstacle( ...
+    "moving barrier", [0; 1; 1.5; 3], ...
+    {blocked_deg(:, 1); blocked_deg(:, 1); ...
+    clear_deg(:, 1); clear_deg(:, 1)}, ...
+    {blocked_deg(:, 2); blocked_deg(:, 2); ...
+    clear_deg(:, 2); clear_deg(:, 2)}, 0);
+options = obstacleAvoidance.input.resolvePlannerOptions(struct( ...
+    "GoalTimeMode", "earliestArrival"));
+
+[route_deg, routeTime_s, record] = ...
+    obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
+    nodePosition_deg, zeros(4), obstacles, ...
+    restState(0, nodePosition_deg(1, :)), ...
+    restState(3, nodePosition_deg(2, :)), ...
+    physicalLimits(), (0:0.5:3).', options);
+
+verifyEqual(testCase, route_deg, nodePosition_deg(1:2, :));
+verifyEqual(testCase, routeTime_s, [0; 1]);
+verifyEqual(testCase, record.FrontierNodes_deg, nodePosition_deg(3:4, :));
+end
+
 function testTimedSearchRetainsEverySuppliedTime(testCase)
 % Keep a brief input-defined opening that layer thinning would erase.
 blockedVertices_deg = [-0.15 -2; 0.15 -2; 0.15 2; -0.15 2];
