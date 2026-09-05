@@ -169,11 +169,11 @@ result = exampleObstacleAvoidance(struct( ...
     "PlotOutputs", false, "FigureVisible", "off"));
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-% MATLAB contact equations select a different independently validated curve
-% from the retired native solver. Preserve the original regression tolerance.
-verifyEqual(testCase, result.ArrivalTime_s, 7.52479393397023, "AbsTol", 1e-6);
+% The degree-eight coneprog engine selects this independently validated curve
+% with the original regression tolerance.
+verifyEqual(testCase, result.ArrivalTime_s, 7.56468149867628, "AbsTol", 1e-6);
 summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyEqual(testCase, summary.MotionLength_deg, 11.4270998053383, ...
+verifyEqual(testCase, summary.MotionLength_deg, 11.4406845061664, ...
     "AbsTol", 1e-6);
 end
 

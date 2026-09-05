@@ -572,8 +572,8 @@ verifyGreaterThan(testCase, ...
     sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
 end
 
-function testLaterSeedsRunOnlyAfterFirstTwoFail(testCase)
-% Require seed 3 to recover a tight horizon without running after success.
+function testTightHorizonContinuesBeforeLaterSeedRecovery(testCase)
+% Meet the unchanged tight deadline and stop before later-seed recovery.
 missionEndTime_s = 21;
 obstaclePosition_deg = [ ...
     -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
@@ -591,7 +591,13 @@ twoSeedOptions = struct( ...
     "GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2);
 twoSeedResult = obstacleAvoidance.planTrajectory( ...
     obstacle, initialState, goalState, limits, twoSeedOptions);
-verifyFalse(testCase, twoSeedResult.Success);
+verifyTrue(testCase, twoSeedResult.Success, twoSeedResult.Message);
+twoSeedValidation = obstacleAvoidance.validateTrajectory(twoSeedResult);
+verifyTrue(testCase, twoSeedValidation.Passed, twoSeedValidation.Message);
+verifyEqual(testCase, twoSeedResult.SelectedSeedIndex, 2);
+diagnostics = twoSeedResult.SeedSummaries(2).SolverDiagnostics;
+verifyGreaterThan(testCase, diagnostics.RetainedHorizonRetryCount, 0);
+verifyLessThanOrEqual(testCase, diagnostics.IterationCount, 35);
 verifyEqual(testCase, ...
     twoSeedResult.SearchDiagnostics.AttemptedSeedCount, 2);
 
@@ -603,8 +609,10 @@ validation = obstacleAvoidance.validateTrajectory(recoveredResult);
 
 verifyTrue(testCase, recoveredResult.Success, recoveredResult.Message);
 verifyTrue(testCase, validation.Passed, validation.Message);
-verifyEqual(testCase, recoveredResult.SelectedSeedIndex, 3);
-verifyEqual(testCase, recoveredResult.SearchDiagnostics.AttemptedSeedCount, 3);
+verifyEqual(testCase, recoveredResult.SelectedSeedIndex, 2);
+verifyEqual(testCase, recoveredResult.SearchDiagnostics.AttemptedSeedCount, 2);
+verifyEqual(testCase, recoveredResult.ArrivalTime_s, ...
+    twoSeedResult.ArrivalTime_s, "AbsTol", 1e-6);
 verifyLessThanOrEqual(testCase, ...
     recoveredResult.ArrivalTime_s, missionEndTime_s);
 end
@@ -704,7 +712,7 @@ verifyLessThan(testCase, diagnostics.FinalWaitTime_s, ...
 end
 
 function testConvergenceSummaryAndRetainedBestTrial(testCase)
-% Native fastcone reaches arrival tolerance before the former reuse stop.
+% Preserve convergence evidence and the best validated trajectory trial.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(fullfile(repositoryRoot, "examples"));
 overrides = struct( ...
@@ -719,12 +727,13 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
 verifyFalse(testCase, any(startsWith( ...
     string(fieldnames(diagnostics)), "TravelRefinement")));
-verifyFalse(testCase, diagnostics.PlaneReuseApplied);
-verifyEqual(testCase, diagnostics.PlaneReuseCount, 0);
-verifyGreaterThan(testCase, diagnostics.ConicSolver.MatlabAcceptedCount, 0);
+verifyTrue(testCase, diagnostics.PlaneReuseApplied);
+verifyEqual(testCase, diagnostics.PlaneReuseCount, 1);
+verifyEqual(testCase, diagnostics.ConicSolver.Solver, 'coneprog');
+verifyGreaterThan(testCase, diagnostics.ConicSolver.CallCount, 0);
 verifyTrue(testCase, diagnostics.Converged);
 verifyEqual(testCase, diagnostics.SolverMessage, ...
-    "The feasible arrival improvement reached tolerance.");
+    "The next trajectory SOCP would be unchanged.");
 verifyGreaterThan(testCase, diagnostics.CollisionPairCountHistory(1), 0);
 collisionFreeTrials_s = diagnostics.TrialDuration_s( ...
     diagnostics.TrialWasCollisionFree);

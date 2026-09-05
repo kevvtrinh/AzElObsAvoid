@@ -41,7 +41,7 @@ function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %   - segmentTime_s (scalar numeric)
 %       Common segment time, or NaN on expected solve failure.
 %   - exitFlag (numeric scalar), output (solver record)
-%       Fastcone method, acceptance checks, and original coneprog recovery.
+%       Original coneprog status and measured solver time.
 %**************************************************************************
 % UNITS
 %   - Position is degrees and time is seconds.
@@ -181,8 +181,10 @@ if goalTimeMode == "balancedArrival"
     f(powerIndex(4)) = travelSavingsRate_deg_s * segmentCount / ...
         (3 * referenceSegmentTime_s ^ 2);
 end
-[x, ~, exitFlag, output] = fastcone.solve( ...
+solverTimer = tic;
+[x, ~, exitFlag, output] = coneprog( ...
     f, cones, A, b, Aeq, beq, lb, ub, options);
+output.TotalTime_s = toc(solverTimer);
 if exitFlag <= 0 || isempty(x) || any(~isfinite(x))
     controlPoint_deg = zeros(0, degree + 1, 2);
     segmentTime_s = NaN;

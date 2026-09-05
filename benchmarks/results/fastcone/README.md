@@ -1,4 +1,8 @@
-# Accepted fastcone runtime measurements
+# Historical fastcone runtime measurements
+
+Fastcone has been removed. Production now uses degree-eight curves with MATLAB
+coneprog; these older measurements do not describe the current engine. See
+[the current branch assessment](../../../branch_assessment.md).
 
 These are the completed research measurements accepted before branch
 integration, not a new repeated benchmark of the integration checkout.

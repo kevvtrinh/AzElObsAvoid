@@ -1,9 +1,9 @@
 function [plane, exitFlag, output] = solveSeparatingLine( ...
-        controlPoint_deg, vertices_deg, target_deg, reserve_deg, options, solver)
+        controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
-%       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options, solver)
+%       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %**************************************************************************
 % PURPOSE
 %   - Solve and directly verify one degree-one maximum-margin separating line
@@ -18,16 +18,14 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 %       Obstacle-side target and trajectory-side numerical reserve.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%   - solver (function handle, optional)
-%       Defaults to fastcone.solve; internal recovery uses fastcone.reference.
 %**************************************************************************
 % OUTPUTS
 %   - plane (scalar struct)
 %       Line normals, offsets, verified gap, and active state.
 %   - exitFlag (numeric scalar)
-%       Fastcone acceptance or original coneprog recovery exit flag.
+%       Original coneprog exit flag.
 %   - output (scalar struct, optional output)
-%       Executed method, certificates, elapsed time, and recovery diagnostics.
+%       Original coneprog diagnostics and measured solver time.
 %**************************************************************************
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are degrees.
@@ -35,7 +33,6 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 
 %% Section 1: Solve The Maximum-Margin Line
 
-if nargin<6 || isempty(solver), solver=@fastcone.solve; end
 offsetIndex = 5:6;
 marginIndex = 7;
 variableCount = 7;
@@ -51,8 +48,10 @@ for planeIndex = 0:1
     cones(planeIndex + 1) = secondordercone( ...
         coneA, zeros(2, 1), zeros(variableCount, 1), -1);
 end
-[x, ~, exitFlag, output] = solver( ...
+solverTimer = tic;
+[x, ~, exitFlag, output] = coneprog( ...
     f, cones, A, b, [], [], [], [], options);
+output.TotalTime_s = toc(solverTimer);
 plane = emptyPlane();
 plane.ExitFlag = exitFlag;
 if isempty(x) || any(~isfinite(x))

@@ -1,4 +1,931 @@
-# Novel replacement branch assessment
+# BMTP branch assessment
+
+## Adopted degree-eight MATLAB configuration - 2026-09-05
+
+The user ended the solver research and selected uniform degree eight with
+MATLAB only. Production now uses degree-eight Bezier curves for ordinary,
+timed and conservatively grouped conic requests, retaining the original span
+allocations of three and one respectively. Trajectory and separating-plane
+programs use MATLAB coneprog. The superseded fastcone package and its tests,
+documentation and benchmark entry points are removed; the native hybrid
+prototype, portable build tools and binaries are also removed. No external MEX
+solver is required. Geometry, search horizons, physical limits, numerical
+tolerances and the independent validator are unchanged.
+
+This decision supersedes the open research plans and adoption gates in the
+dated history below. Research is closed at the user's request; a 3x cold-start
+speedup was not demonstrated. The accepted degree reduction trades some motion
+quality for runtime, as measured and disclosed before adoption.
+
+The initial adoption matched the previously executed degree-eight candidate
+file for file, except for explanatory comments in createSolveRequest.m. That
+18-example fresh-process suite passed all 17 feasible examples and preserved
+the expected noValidatedSeed outcome. All successful collision, kinematic and
+continuous checks passed, including the applicable plane certificates. Across
+the eight examples that called coneprog, cold example time totaled 63.9495 s
+versus 105.2679 s for the original degree-16/7 coneprog configuration: 1.646x
+observed speedup, or 39.25% less time. These were single fresh passes rather
+than interleaved medians; setup and validation are included and MATLAB process
+launch is excluded. Nonconic examples are excluded from the speedup claim.
+
+The accepted differences include +0.0107931 s arrival for ObstacleAvoidance,
++0.0176447 s for StaticU, and +0.2531241 s for TwoOpposingU. At fixed arrival,
+Occlusion uses +0.0117515 deg travel and TargetExits uses +0.0750785 deg.
+All remain independently valid. The unchanged failed.mat replay took
+40.1713 s versus 66.6826 s originally and selected identical motion; subsequent
+degree-eight controls took 41.7647 and 35.7660 s. The user-owned bundle remains
+untouched, SHA256 E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625.
+
+Initial production verification passed 123/126 tests. One tight 21 s static
+recovery fixture failed: its third seed retained a collision-free 23.7150 s
+iterate, then coneprog rejected the next fixed-plane problem at 21 s and the
+alternation stopped. This is a motion-construction horizon transition failure,
+not evidence that the route is infeasible. Two timed tests instead assumed a
+particular method even though the public planner found valid static-projection
+motion against the full moving scene.
+
+Bounded correction: when the deadline-constrained fixed-plane
+subproblem is infeasible and a longer collision-free iterate is retained,
+continue alternating at that retained duration inside the existing iteration
+budget. Reimpose the original deadline for the next trial; final acceptance
+still requires the original horizon and independent validation. This permits
+the separating planes to improve instead of treating a local convex problem
+as a proof of route infeasibility. RetainedHorizonRetryCount exposes these
+extra attempts; conic counts and timing include all their work. The unchanged
+21 s fixture now succeeds and independently validates at 20.8537 s on seed 2,
+so no later-seed recovery is necessary. Its regression now requires this
+earlier success with both MaximumSeedCount=2 and 5 and still checks the original
+deadline. The static-box contract also passed. All three timed tests passed
+after exercising the timed kernel directly, preserving their full-resolution
+coverage and independent validation assertions while allowing the public
+planner to retain an earlier valid static-projection motion. Focused result:
+5/5 passed. The complete production regression rerun then passed 126/126 tests
+with zero failures or incomplete tests. Its three maintained headless example
+invocations also passed extra independent validation and were appended to
+benchmark.csv, with NaN wall time because those individual test calls were not
+separately timed. Their metrics match the preceding test pass. Temporary
+capture calls were removed from maintained tests after recording the results.
+
+Final cold recheck: all eight conic examples retained their expected outcomes,
+and their polyline length, smoothed length and motion duration exactly match
+the initial degree-eight CSV measurements. All seven successful examples
+passed independent collision, kinematic, continuous and plane checks; NoPath
+remained the expected noValidatedSeed. Total fresh example time was 77.3941 s
+versus the recorded original 105.2679 s, or 1.360x observed speedup. This repeat
+was slower than the initial degree-eight pass (63.9495 s, 1.646x); neither
+single-pass ratio is a repeated median or evidence of 3x performance.
+
+| Conic example | Final cold wall (s) | Polyline (deg) | Smoothed (deg) | Motion (s) |
+|---|---:|---:|---:|---:|
+| AlternatingSlalom | 8.8033652 | 16.0193197983 | 16.3388514176 | 10.5409567875 |
+| NoPath | 3.7854072 | NaN | NaN | NaN |
+| ObstacleAvoidance | 5.9834265 | 11.1521195190 | 11.4406845062 | 7.5646814987 |
+| StaticUShapedObstacle | 10.5738140 | 34.9425880405 | 39.3840155922 | 20.8500067174 |
+| StraightTargetAlternatingOcclusion | 7.8729552 | 13.3416640641 | 13.6104156607 | 20.8695652174 |
+| TargetExitsObstacle | 9.1607790 | 20.1357890335 | 20.6851467568 | 24.0000000000 |
+| TwoOpposingUVisibilityGraph | 5.8933688 | 24.0357847150 | 24.7050424912 | 22.1006280522 |
+| USOutlineExtremeVisibility | 25.3209624 | 22.0706469075 | 23.3542523251 | 5.7964986754 |
+
+The final unchanged failed.mat replay took 51.8916 s and passed independently
+with identical selected fixedClockLateralExcursion motion: polyline and
+smoothed length 143.444156590 deg, duration 69.062225080 s, goalReached.
+Collision, kinematic and continuous checks passed; plane certification was
+not applicable to the selected motion. It executed degree-eight conic work.
+All cold checks used fresh MATLAB R2024b processes, seed 0 and six computational
+threads. Example wall times include setup and extra independent validation;
+the saved bundle covers planning and extra validation. Process launch is
+excluded. The eight actual maintained examples were appended to benchmark.csv;
+the saved-request replay was not appended as an example invocation.
+
+Benchmark scripts and measurement artifacts remain under ignored output and
+are not source changes. The user reviewed the 41-file change set and authorized
+its commit and push. The user-owned modified failed.mat is excluded.
+
+The native hybrid screen completed before the MATLAB-only steering was
+processed: StaticU baseline 19.6839123 s, hybrid 11.7619320 s. Both passed
+planner and independent collision, kinematic, continuous and plane checks,
+with polyline 34.9425880405 deg. Baseline smoothed length/duration were
+39.3787713567 deg / 20.8323620005 s; hybrid values were 39.3957010744 deg /
+20.8368376206 s. Both ended goalReached, but the hybrid failed its original
+arrival-quality gate. It was not adopted or tested further. These were saved
+request replays, not maintained-example invocations; their evidence is preserved
+under ignored output and adds no benchmark.csv example rows.
+
+## Historical research record
+
+The following entries preserve the decisions and measurements at their dates;
+references to ongoing research or the original degree-16/7 production baseline
+are superseded by the adoption decision above.
+
+## Parametric-duration LP outcome - 2026-09-05
+
+The latest goal turn made progress through a measured rejection. A fixed-plane
+duration-root formulation, using MATLAB's HiGHS LP solver with dual updates,
+was tested on the original degree-16 StaticU planner request. Fresh cold
+baseline 20.6156600 s; candidate 23.4968329 s. The candidate accepted one of
+14 trajectory replacements, fell back to coneprog 13 times and spent 3.1987 s
+in 20 LP calls. It was 13.98% slower and its isolated source was removed.
+Fresh recovery took 19.4847235 s and retained exactly the baseline result.
+All three runs passed planner and independent collision, kinematic, continuous
+and plane-certificate checks: polyline 34.9425880405 deg, smoothed
+39.3787713567 deg, duration 20.8323620005 s, goalReached. The full hypothesis,
+gate and diagnostic limitations are recorded at the end of this assessment.
+
+These were saved-request replays; no maintained-example rows were appended.
+The unchanged failed.mat hash was reverified, production stayed on the
+uncommitted coneprog reset, and git diff --check passed. No broad tests or
+commit were justified by this rejected experiment. The original eight-case
+3x cold-start goal remains active and unproven.
+
+## Residual planner-cost investigation - 2026-09-05
+
+The previous goal turn made progress: 19 cold degree-eight runs completed,
+quality changes were measured and the executed degree was verified. The 3x
+goal remains active and unproven. Current worktree inspection confirms the
+production coneprog reset and existing dirty user bundle; no active MATLAB job
+is being restarted. Lower-degree models remain isolated user-requested research.
+
+Investigation completed: the failed bundle's dominant measured owner was timed
+search occupancy, while U.S. planner time was mainly motion solving. A single
+prepared-boundary boolean-query prototype was slower (49.9830 s versus a fresh
+41.7647 s degree-eight control) and was removed immediately. The recovery control
+then succeeded in 35.7660 s with identical motion and independent checks. This
+also demonstrates material cold-run variation: successive degree-eight bundle
+controls were 40.1713, 41.7647 and 35.7660 s. No new algorithm was retained or
+committed. Details and the negative evidence are recorded below; the original
+eight-case 3x goal still requires a complete qualified candidate.
+
+Before another algorithm change, inspect residual cost in the degree-eight
+planner on the unchanged failed bundle and the U.S. saved request. Existing
+timers separate U.S. full-example wall 20.9108 s from planner 7.0408 s and extra
+validation 0.1822 s; setup is not solver time. Profile fresh first planner calls
+for ownership only, with original geometry and tolerances and a 300 s profiling
+cancellation guard. Report inclusive/self/call counts without summing nested
+timers. Save profiles and stage/seed attribution under ignored output; profiled
+timings are not speedup measurements. These are saved-request replays and do
+not append maintained-example benchmark rows. Choose one next bounded
+mechanism from the measured owner, not another unrequested degree sweep.
+
+## Degree-eight cold suite requested - 2026-09-05
+
+The user explicitly requested degree eight across the entire example suite.
+Run all 18 maintained examples and the previously requested unchanged failed.mat
+replay in separate fresh MATLAB R2024b processes, seed 0, six computational
+threads, headless controls and original physical/numerical tolerances. This
+user-authorized degree comparison is isolated under output/cold-method-research-
+20260905/degree8-planner. Production remains HEAD 3d60f83 plus the uncommitted
+coneprog reset; preserve all existing dirty work and the unchanged user bundle.
+
+Use degree eight for every conic trajectory request: ordinary degree 16 becomes
+8, and timed/grouped degree 7 becomes 8. Keep original span allocations (three
+for ordinary and one for timed/grouped models), horizon, seed search, coneprog
+options and complete public validation unchanged. No coarse initialization is
+added. Verify executed diagnostic degrees after timing. This uniform degree-
+eight interpretation is explicit; prior 5->10 retained timed/grouped degree 7.
+
+Measure the same cold full-example scope as the preceding degree-seven pass,
+including setup, example checks and extra public validation; record MATLAB
+launch separately. The bundle timer covers planner plus public validation after
+loading the unchanged bundle, with only its unavailable cancellation callback
+cleared identically to prior comparisons. Compare with existing fresh original,
+5->10 and degree-seven measurements, disclose quality/failure results and do not
+claim repeated-median qualification from this single pass. Append actual
+maintained runs to benchmark.csv and retain unfavorable measurement history.
+No commit or production adoption before the complete 3x cold retention gate.
+
+Completed 19 fresh processes: 18 maintained examples and the exact bundle.
+The suite returned 17 independently valid successes and the expected
+noValidatedSeed failure. Every successful run passed collision, kinematic and
+continuous checks; all successful conic examples passed plane certification.
+Actual engine diagnostics confirmed degree 8 for every executed conic model.
+The ten non-conic examples retained their original motion results and did not
+call coneprog. Their plane certificates are not applicable. All 18 maintained
+invocations were appended to benchmark.csv; the bundle replay was saved apart.
+
+| Conic example | Original cold s | Degree 7 cold s | Degree 8 cold s | Observed degree 8 speedup vs original |
+| --- | ---: | ---: | ---: | ---: |
+| AlternatingSlalom | 10.8050191 | 7.2534432 | 5.9829056 | 1.806 |
+| NoPath | 4.6713839 | 4.3233119 | 3.1909797 | 1.464 |
+| ObstacleAvoidance | 6.6057899 | 5.0450972 | 4.3681097 | 1.512 |
+| StaticUShapedObstacle | 20.9892007 | 9.2528887 | 10.3848825 | 2.021 |
+| StraightTargetAlternatingOcclusion | 10.1097185 | 5.5816085 | 5.6431306 | 1.791 |
+| TargetExitsObstacle | 14.7640674 | 7.0798060 | 7.7364299 | 1.908 |
+| TwoOpposingUVisibilityGraph | 9.3890009 | 6.2946245 | 5.7322623 | 1.638 |
+| USOutlineExtremeVisibility | 27.9337322 | 22.9480395 | 20.9108075 | 1.336 |
+
+Degree-eight sum 63.9495078 s versus original 105.2679126 and degree seven
+67.7788195 s: observed 1.6461x versus original and 1.0599x versus degree seven
+(5.6497% less runtime). These compare successive single cold passes, not
+interleaved repeats or medians. Unchanged non-conic cases also shifted in runtime
+(for example DenseConcave 2.8271 -> 2.0145 s between the earlier 5->10 and current
+passes). Thus the small aggregate advantage over degree seven is tentative and
+must not be attributed wholly to the polynomial degree without repeated controls.
+
+There are five strict objective regressions versus the original, all smaller
+than the corresponding degree-seven regression: ObstacleAvoidance motion
+7.5646814987 s (+0.0107930717), StaticU 20.8500067174 s (+0.0176447169),
+Opposing U 22.1006280522 s (+0.2531241011). Fixed-arrival smoothed travel is
+13.6104156607 deg for Alternating Occlusion (+0.0117515220) and
+20.6851467568 deg for Target Exits (+0.0750785484). All are physically valid;
+these differences do not meet the original objective tolerance. The ordinary
+polylines stay unchanged. The grouped U.S. model really ran degree eight and
+improved motion from 5.8044339735 to 5.7964986754 s and smoothed length from
+23.3604967802 to 23.3542523251 deg.
+
+The unchanged failed.mat replay took 40.1712728 s, versus preceding original
+66.6826051 s, 5->10 59.4638917 s and degree seven 45.7997495 s. All returned
+the identical independently validated fixed-clock excursion: polyline and
+smoothed length 143.444156590 deg, duration 69.0622250800 s, goalReached,
+collision/kinematic/continuous checks passed and plane certification not
+applicable to the selected motion. Conic work was executed and its degree-eight
+diagnostics were verified. Source SHA256 stayed
+E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625.
+
+The package audit confirmed only the two degree assignments differ from the
+production engine; every other engine source file matches it. No production
+algorithm was changed or committed. Full measurements are retained in ignored
+degree-eight-comparison.csv, degree-eight-suite-results.csv,
+degree-eight-bundle-comparison.csv and degree-eight-summary.json. The requested
+comparison is complete; the 3x cold adoption goal remains unachieved.
+
+## Degree-seven and unchanged diagnosis-bundle comparison requested - 2026-09-05
+
+After the completed 5->10 full-example pass, the user requested comparison
+with degree seven alone and specifically requested both methods on the failed
+case. Interpret that as the supplied Rogue Examples/failed.mat, whose SHA256
+was rechecked unchanged: E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625.
+Run three fresh planner-plus-public-validator bundle replays: original
+coneprog, 5->10 and degree seven alone, without the older replay helper's
+solver/property warm-up. Clear only the unavailable cancellation callback,
+identically for all methods. Do not rewrite, resave, stage or regenerate the
+bundle. Its expected success requires independent physical validation.
+
+Also run the eight original conic-using maintained examples with degree seven
+alone in fresh MATLAB processes. Compare with the just-completed original and
+5->10 full-example runs, preserving their timing scope and data. Degree seven
+alone changes ordinary degree 16 to 7 and retains three spans per edge; original
+timed/grouped degree-seven models remain unchanged. All solvers remain coneprog.
+The previous specific StaticU degree-seven arrival tradeoff stays accepted;
+other quality differences are measured and disclosed. User-authorized research
+is isolated in output; no production adoption or commit is earned by a single
+screen. Append actual maintained invocations to benchmark.csv; bundle replays
+are saved separately. Pending results do not complete the 3x cold goal.
+
+Completed the 11 fresh processes. The exact unchanged bundle succeeded and
+independently validated with all three methods. Its selected fixed-clock
+excursion was identical in every run: polyline and smoothed length
+143.444156590 deg, motion 69.0622250800 s, goalReached. Collision, kinematic
+and continuous checks passed; plane certification was not applicable to the
+selected motion. Conic attempts were present in all three planner diagnostics.
+
+| Unchanged failed.mat replay | Cold planner + validation s | Speedup vs original |
+| --- | ---: | ---: |
+| Original coneprog | 66.6826051 | 1.000 |
+| 5 -> 10 | 59.4638917 | 1.121 |
+| Degree 7 alone | 45.7997495 | 1.456 |
+
+Degree seven used 22.98% less runtime than 5->10 on this bundle, with identical
+selected motion quality and full validation. This compares with the current
+coneprog reset, not the historical 90-minute run. Source bundle SHA256 remained
+unchanged after all measurements. Bundle replays did not append benchmark.csv.
+
+| Maintained conic example | Original cold s | 5->10 cold s | Degree 7 cold s | Degree 7 speedup vs original |
+| --- | ---: | ---: | ---: | ---: |
+| AlternatingSlalom | 10.8050191 | 7.7762545 | 7.2534432 | 1.490 |
+| NoPath | 4.6713839 | 4.7029084 | 4.3233119 | 1.081 |
+| ObstacleAvoidance | 6.6057899 | 6.1148164 | 5.0450972 | 1.309 |
+| StaticUShapedObstacle | 20.9892007 | 11.0482246 | 9.2528887 | 2.268 |
+| StraightTargetAlternatingOcclusion | 10.1097185 | 7.2571064 | 5.5816085 | 1.811 |
+| TargetExitsObstacle | 14.7640674 | 11.8029039 | 7.0798060 | 2.085 |
+| TwoOpposingUVisibilityGraph | 9.3890009 | 9.4575299 | 6.2946245 | 1.492 |
+| USOutlineExtremeVisibility | 27.9337322 | 26.6727321 | 22.9480395 | 1.217 |
+
+All seven degree-seven successes independently validated with collision,
+kinematic, continuous and plane checks passing; the expected NoPath returned
+noValidatedSeed. Degree-seven sum 67.7788195 s versus original 105.2679126 and
+5->10 84.8324762 s: 1.5531x versus original and 1.2516x versus multilevel
+(20.1027% less runtime). These are single cold example trials, with setup and
+example checks included, not repeated medians. The ten previously non-conic
+examples were not rerun for degree seven; the affected conic cohort is explicit.
+
+Degree seven has five strict quality regressions relative to the original,
+including the already accepted StaticU +0.0573907035 s tradeoff. Additional
+ones are ObstacleAvoidance +0.0146854645 s and Opposing U +0.4264076967 s;
+fixed-arrival smoothed travel rises 13.5986641387 -> 13.6126705616 deg for
+Alternating Occlusion and 20.6100682085 -> 20.7250188732 deg for Target Exits.
+Opposing U smoothed length is 24.7138421607 deg, compared with original
+24.6652397599 deg. These are objective changes, not physical validation failures.
+No quality waiver is inferred for the additional cases. Full precision, flags
+and paths are preserved in ignored degree-seven-comparison.csv,
+degree-seven-summary.json and failed-bundle-comparison.csv. The eight actual
+maintained degree-seven invocations were appended to benchmark.csv.
+
+Neither 5->10 nor degree seven alone earns the requested 3x cold adoption or a
+commit. Production remains the uncommitted coneprog reset. The user-requested
+comparison is complete; the broader optimization goal remains active. No new
+production algorithm or tests were introduced by this comparison.
+
+## Full cold maintained-example pass requested - 2026-09-05
+
+The user requested a quick cold pass of the 5->10 candidate through all
+examples. Run each of the 18 maintained example functions in its own fresh
+MATLAB R2024b process, headless with default finite jerk limits and seed 0.
+Run matching original coneprog examples for the eight original conic-using
+cases, alternating method order between cases. One trial per method only;
+do not call this repeated-median qualification. Keep numerical and physical
+validation unchanged and continue recording unfavorable cases. No concurrent
+MATLAB benchmarking. The isolated degree-five-to-ten source is frozen during
+this pass; its timed/grouped degree-seven behavior stays original.
+
+Unlike prior saved-request probes, these execute actual example functions.
+Primary reported cold wall time includes example construction and checks plus
+an additional independent public validation; process launch is recorded
+separately. Also retain the planner's internal elapsed time and the additional
+validation time for attribution. Do not directly equate the new full-example
+times to prior planner-only probes. Append every actual invocation to the
+existing benchmark.csv schema with the method and timing scope in Notes.
+Research scripts and MAT/CSV/log artifacts stay ignored under output. Pending
+results do not earn a commit or complete the full 3x cold goal.
+
+Completed all 26 fresh processes: 18 candidate maintained examples and eight
+matched original conic examples. Candidate results were 17 independently valid
+successes and the expected noValidatedSeed failure. Every success passed
+collision, kinematic and continuous checks; conic-selected motions passed plane
+certification. The ten original non-conic examples stayed non-conic and matched
+their original motion metrics. Actual invocations were appended to benchmark.csv.
+
+| Original conic example | Original cold s | 5->10 cold s | Observed speedup |
+| --- | ---: | ---: | ---: |
+| AlternatingSlalom | 10.8050191 | 7.7762545 | 1.389 |
+| NoPath | 4.6713839 | 4.7029084 | 0.993 |
+| ObstacleAvoidance | 6.6057899 | 6.1148164 | 1.080 |
+| StaticUShapedObstacle | 20.9892007 | 11.0482246 | 1.900 |
+| StraightTargetAlternatingOcclusion | 10.1097185 | 7.2571064 | 1.393 |
+| TargetExitsObstacle | 14.7640674 | 11.8029039 | 1.251 |
+| TwoOpposingUVisibilityGraph | 9.3890009 | 9.4575299 | 0.993 |
+| USOutlineExtremeVisibility | 27.9337322 | 26.6727321 | 1.047 |
+
+Sum 105.2679126 -> 84.8324762 s: 1.2409x, a 19.4128% reduction. Internal
+planner time plus the separately timed extra validation summed 78.1832665 ->
+60.1936654 s (1.2989x); this is attribution and does not replace the externally
+timed full-example result. Single probes, not repeated medians; near-unity
+differences are not established improvements. The requested 3x gate is unmet.
+
+Three quality regressions must remain visible: fixed-arrival Alternating
+Occlusion kept duration 20.8695652174 s but smoothed travel rose
+13.5986641387 -> 13.6101924710 deg; fixed-arrival Target Exits kept 24 s but
+travel rose 20.6100682085 -> 20.6369503298 deg. Opposing U motion duration rose
+21.8475039511 -> 21.9346437965 s (+0.0871398454 s), despite its shorter path
+24.6652397599 -> 24.3886482215 deg and essentially unchanged runtime. These
+do not pass the original quality gate. No safety, numerical or geometric
+tolerance was weakened. The candidate remains unadopted; production is the
+unchanged requested coneprog reset. Full measurements are in ignored
+all-cold-example-comparison.csv, all-cold-example-results.csv and
+all-cold-example-summary.json. The user has now requested the separate
+degree-seven and exact-bundle comparison recorded above.
+
+## User-requested lower-degree coarse-to-fine comparison - 2026-09-05
+
+The user explicitly requested coarse degree 4 / fine degree 10 and other
+degrees; the fine model no longer needs to return to degree 16. Run the bounded
+grid 4->10, 5->10, 7->10 on StaticU and Slalom, with fresh MATLAB processes and
+all original physical checks. This explicit request authorizes the degree
+comparison. Preserve original input geometry, route search and numerical
+tolerances. Compare against original degree-16 coneprog and disclose motion
+quality changes, coarse failures and all initialization costs. No prior-request
+numerical warm start. No production adoption or commit before the complete
+runtime/correctness gate. The accepted degree-seven StaticU tradeoff persists.
+
+The first 7->16 screen failed the runtime gate on StaticU: original 21.2820108 s,
+multilevel 23.7845558 s, identical independently valid 20.8323620005 s motion
+and 34.9425880405 / 39.3787713567 deg lengths. Its direct coarse proposal was
+unavailable (0.5393 s); the detour's transferred separator failed verification
+(1.7500 s), so the original initialization was correctly retained. Slalom's
+transfer applied: 11.2000020 -> 8.3094041 s, motion 10.6126605873 ->
+10.6136435510 s (within original 1 ms tolerance), polyline 16.0193197983 deg,
+smooth 16.2829658411 -> 16.4208284859 deg. Both methods passed independent
+collision, kinematic, continuous and plane checks, goalReached. These are
+single cold probes, not adoption proof. Exact transfer passed 12 deterministic
+mesh cases with maximum position-through-jerk discrepancy 2.4568e-10.
+
+The lower-degree engine and request harness remain isolated under ignored
+output/cold-method-research-20260905. Degree four cannot represent a nonzero
+rest-to-rest move with one polynomial span. Give its single-edge coarse request
+three spans (matching the fine mesh), and use finite route-shaped quartic
+initial controls solely as a proposal; the coarse optimizer still imposes
+endpoint position/velocity/acceleration and C3 knot continuity. This avoids the
+original degree>=5 initialization formula's division by zero without relaxing
+any motion acceptance condition. Other coarse requests keep one span per true
+route edge; fine requests keep three. Timed and grouped compact models retain
+their original degree-seven representation.
+
+The requested degree grid passed both saved requests in every variant. Before
+retaining coarse-stage complexity, measure a degree-ten-only control on the
+same two requests in fresh MATLAB processes. It uses the identical final
+engine and original initialization, bypassing only the coarse proposal. This
+control attributes the benefit between a smaller final model and multilevel
+initialization; it does not change physical or numerical acceptance.
+
+Measured results (first planner call plus additional public validation in each
+fresh MATLAB R2024b process, six computational threads, seed 0; process launch
+excluded). Every row passed planning, independent validation, collision,
+kinematics, continuous resolution and plane certification, with goalReached.
+Polyline lengths stayed 34.9425880405 deg for StaticU and 16.0193197983 deg for
+Slalom. These are saved-request replays, not maintained-example invocations;
+benchmark.csv was not appended. No repeated-median adoption claim is made.
+
+| Case | Degree method | Cold s | Speedup | Motion s | Smoothed deg |
+| --- | --- | ---: | ---: | ---: | ---: |
+| StaticU | original 16 | 21.7026776 | 1.000 | 20.8323620005 | 39.3787713567 |
+| StaticU | 4 -> 10 | 15.8018256 | 1.373 | 20.8281223123 | 39.5557247674 |
+| StaticU | 5 -> 10 | 10.8403515 | 2.002 | 20.8289361627 | 39.5973651055 |
+| StaticU | 7 -> 10 | 16.1112293 | 1.347 | 20.8281223123 | 39.5557247674 |
+| StaticU | 10 alone | 14.0707393 | 1.542 | 20.8281223123 | 39.5557247674 |
+| Slalom | original 16 | 9.6059765 | 1.000 | 10.6126605873 | 16.2829658411 |
+| Slalom | 4 -> 10 | 9.1067265 | 1.055 | 10.5555866339 | 16.2630920826 |
+| Slalom | 5 -> 10 | 7.8179461 | 1.229 | 10.5562283432 | 16.4591331378 |
+| Slalom | 7 -> 10 | 7.8959849 | 1.217 | 10.5914111948 | 16.4432921567 |
+| Slalom | 10 alone | 8.5138105 | 1.128 | 10.5787785107 | 16.3341253044 |
+
+Degree-five initialization is the strongest measured candidate on this screen,
+though its Slalom timing is effectively tied with degree seven at this sample
+count. Its transfer applied to each selected detour. StaticU's expensive final
+degree-ten trajectory solves fell from 12 to 4 on the selected seed; Slalom's
+fell from 5 to 2. Total coarse work across both attempted seeds was 1.3112 s
+and 1.1742 s respectively, included in wall time. Each direct-route coarse
+attempt failed and retained original initialization. StaticU degrees four and
+seven also rejected the detour's unverified transferred separator, so those
+variants paid coarse work and then used the degree-ten-only initialization.
+No unsupported separator or sampled-only collision result authorized success.
+
+The ratio of summed two-case cold times is about 1.68x for 5->10 against the
+original planner, and 1.21x against degree ten alone. The requested 3x full
+eight-case, repeated-cold gate remains unmet and unproven. The shorter measured
+motion durations mean these two cases do not need the user's previously
+accepted degree-seven arrival tradeoff; their longer smoothed lengths remain
+disclosed. Keep only the 5->10 prototype and degree-ten control for further
+qualification. Removed the quartic-only initialization path, unsupported degree
+selectors and obsolete experiment runners; preserved measured MAT/CSV/log
+evidence, including unfavorable coarse failures. Production is still the
+requested coneprog reset, uncommitted. No push. The unchanged user bundle hash
+was rechecked and git diff --check passed. Transfer verification for the lower
+degrees passed 18 deterministic meshes, maximum discrepancy 7.0429e-11 through
+jerk. No new production tests were run for these isolated experiments.
+
+## Coarse-to-fine planner experiment - 2026-09-05
+
+User steering: if coarse-to-fine does not work, the measured degree-seven
+StaticU tradeoff is acceptable: 20.8897527040 s motion instead of 20.8323620005 s
+(+0.0573907035 s), with the observed approximately halved cold runtime and
+unchanged independent physical validation. This conditional acceptance persists.
+Do not reject that specific result again solely for its arrival difference.
+Other cases' quality changes must still be measured and disclosed. The user
+has not waived full physical validation or the overall 3x cold-runtime target.
+
+The preceding goal turn made progress: analytical whole-planner shortcuts were
+measured, native status disagreements were diagnosed, and a faster but lower-
+quality curve representation was rejected and removed. Production remains the
+uncommitted coneprog reset at HEAD 3d60f833e9d72baef2008c0a34548e8a66e17c59 plus
+the previously recorded reset changes. The user-owned failed.mat is preserved.
+
+Bounded hypothesis: compute a degree-seven proposal with one span per true
+route edge, then exactly subdivide and elevate it into the original degree-16,
+three-span representation. Use the transferred curve and directly verified
+separator constraints to initialize the original alternating solve. The coarse
+result is a proposal only; it cannot authorize success, discard a seed, shorten
+the horizon, or replace final original-model optimization and public validation.
+If coarse construction or exact nested-mesh transfer is unavailable, retain the
+original seed initialization and record all additional work. No prior planner
+call supplies an initial solution, cached factorization or cached trajectory.
+
+Acceptance remains >=3x summed cold case medians across all eight original
+conic-using requests, no >10% case slowdown, original arrival/travel objective
+and full independent physical validation. All initialization, transfer and
+fallback work is inside the timed first planner call. First verify subdivision
+and degree elevation preserve position through jerk on deterministic different
+meshes. Then one focused cold StaticU comparison and a structurally different
+Slalom check. Reject on a quality/validity failure or absent useful runtime
+benefit, without a degree sweep. Owned code is only the ignored multilevel-
+planner package and transfer/test helpers under output/cold-method-research-
+20260905. No commit is earned before the complete gate, including maintained
+examples, regressions and the exact unchanged diagnosis bundle.
+
+## Analytical fixed-clock research continuation - 2026-09-05
+
+The previous answer-only goal turn made no experimental progress. Current
+worktree inspection confirms production remains the uncommitted coneprog reset;
+the user-owned diagnosis bundle is excluded from this work.
+
+An isolated constant-jerk outward/return lobe on a stationary coordinate can
+preserve the direct motion's certified componentwise time floor. Scaling one
+feasible jerk word reduces static obstacle bounding rectangles to forbidden
+amplitude intervals; the public continuous validator still approves every
+returned motion against the original protected geometry. This is a C2 analytic
+motion proposal, not a claim that all C3 BMTP problems have closed forms.
+
+The first amplitude-equation cold ObstacleAvoidance probe took 2.2937787 s
+versus 8.2766373 s for a separate matching neutral-directory coneprog probe
+(3.608x single pair). It passed planning, independent collision, kinematic,
+and continuous validation; plane certificates are not applicable. Polyline
+and sampled smoothed length were 11.334098922 deg, motion 7.500000000 s,
+goalReached. The reference retained 11.152119519 / 11.430861536 deg and
+7.553888427 s. This is promising screening evidence, not repeated adoption
+proof. Slalom fell back to BMTP in 13.3832024 s, preserving validated lengths
+16.019319798 / 16.282965841 deg and duration 10.612660587 s. A matching cold
+reference is being measured; historical timings are not used for its ratio.
+
+Before extending the experiment, restore the original spline proposal loop
+after the new analytic attempt, including when a constructed jerk lobe fails
+validation. No original proposal family is to be removed. All sources remain
+ignored under output/cold-method-research-20260905.
+
+Next bounded hypothesis: a static protected polygon can certify a completely
+occupied straight cut across the allowed workspace. If the endpoints lie on
+opposite sides, continuity rules out every workspace-contained trajectory.
+Prove the complete cut lies strictly inside one actual polygon ring using
+oriented edge halfspaces plus an interior anchor, never a bounding box. Require
+the obstacle to remain active for the entire request horizon. The same proof
+on one half-workspace can skip only new one-sided jerk proposals while leaving
+the original spline attempts intact. Focused cases: NoPath and Slalom; verify
+different cut orientations, a concave non-cut, and inactive/moving rejection.
+Reject the isolated proof if any invalid certificate or useful-runtime failure
+occurs. The full eight-request cold 3x gate remains unchanged; neither this
+certificate nor one successful analytical example completes the goal.
+
+The workspace-cut prototype passed ten deterministic geometry gates (including
+both orientations, a slanted ring, misleading concavity, finite inactivity,
+motion, and workspace roundoff). The saved NoPath request retained recognized
+failure diagnostics with zero attempted seeds and was plotted successfully.
+Its first cold pair was 5.3753935 s coneprog versus 1.4874787 s with the cut.
+Both had no returned motion, NaN motion metrics, and noValidatedSeed; public
+motion-validation flags are false because there is no trajectory. The new
+record separately exposes the static infeasibility certificate.
+
+After restoring all original spline attempts and using half-workspace cuts
+only to skip impossible new one-sided jerk proposals, cold Slalom took
+9.2850546 s versus its preceding neutral-directory baseline 11.2610543 s.
+Both retained the exact independently validated motion reported above.
+ObstacleAvoidance took 2.3100406 s, again independently valid at 7.5 s and
+11.334098922 deg. These are isolated screening probes, not interleaved repeated
+medians. The benchmark harness now checks the original travel objective for
+fixed arrival and travel-plus-time for balanced arrival, in addition to time
+and physical checks. It records executed conic diagnostics and selected source.
+
+Next independent solver hypothesis: test Clarabel's native primal-dual conic
+method on the captured original trajectory models. Its C API can be called
+from a small MATLAB MEX gateway without a Python runtime. Source reference:
+https://github.com/oxfordcontrol/Clarabel.cpp (Apache-2.0). Start with the six
+ObstacleAvoidance programs and the fourteen structurally different StaticU
+programs, retaining all statuses, original matrix residuals, and objectives.
+Only a passing numerical screen permits full-planner integration. No relaxed
+tolerances or unreported solver recovery; the existing full cold retention
+gate still applies. All toolchain, source, binaries and scripts are owned by
+the ignored research output directory, and production remains coneprog.
+
+Clarabel's first program passed in 0.076891 s versus coneprog's 0.370060 s.
+The second returned primal infeasible while coneprog reported success, so the
+initial status-matching screen stopped and no planner integration occurred.
+Postmortem evidence changes the interpretation: the returned dual ray passed
+an independent bounded Farkas check using every finite decision bound,
+dual-cone membership, nonzero stationarity, and conservative floating-point
+dot-product error. Its unnormalised certificate margin was approximately 1;
+the ray-normalised gap was 1.003e-9. Coneprog's original endpoint-equality
+residual was 3.842e-5. This is an inconsistent intermediate conic model, not
+evidence that the final independently validated baseline motion is invalid.
+
+The numerical screen is therefore corrected to accept either a sufficiently
+accurate optimal solution or an independently verified infeasibility ray;
+matching coneprog's positive flag on a disproven-feasible model is not a valid
+correctness requirement. This changes no physical tolerance or full-planner
+quality/runtime gate. An unverified ray remains an unresolved solver failure.
+No new solver is accepted for production on this basis. The next screen records
+every such disagreement explicitly before any full-planner evaluation.
+
+The corrected screen passed the six ObstacleAvoidance models, including the
+certified inconsistent model, then stopped on StaticU program 5 at a reduced-
+accuracy native exit. Its independently bounded objective gap was 1.6287e-5
+against the original 1e-6 optimality tolerance. The native reported gap was
+6.8227e-7, but that alone did not meet the declared independent bound check.
+No physical invalidity is inferred from this subproblem screen; it is an
+unqualified replacement and was not integrated. The original offending plane
+rows had coefficient norms near 2.01e-9 and RHS -1.864e-7. This explains the
+earlier status disagreement without accusing the valid final motion of failure.
+
+The user explicitly reiterated that every planner stage may change. The next
+bounded hypothesis changes the motion representation while retaining coneprog:
+use the existing degree-seven C3 Bezier representation on ordinary static
+regions, with the original three spans per true route edge. This halves the
+number of controls per span and reduces third-derivative coefficient scale
+from 3360 to 210. It is a different admissible curve family, so success and
+runtime alone are insufficient: retain the original arrival/travel quality
+gate and independent full-motion checks. No route, margin, tolerance, or seed
+budget changes. Focused full cold comparison: StaticU; structurally different
+case: Slalom. Reject rather than tune a degree sweep if either fails. Owned
+sources are output/cold-method-research-20260905/compact-planner. Production
+still uses the original degree selection and coneprog; no commit is earned.
+
+The compact representation failed the focused quality gate. StaticU cold
+runtime was 22.4896238 s baseline versus 11.2850466 s candidate (1.993x), with
+both passing planner, independent, collision, kinematic, continuous, and plane
+checks and goalReached. The selected polyline stayed 34.9425880405 deg; the
+smoothed length changed 39.3787713567 -> 39.6252468091 deg and motion duration
+20.8323620005 -> 20.8897527040 s. The 0.0573907035 s delay exceeds the unchanged
+0.001 s tolerance. The different-case run was correctly skipped, and the
+isolated compact implementation was removed. This is a rejected planner-level
+speed/quality tradeoff, not an accepted speedup.
+
+Next planner-level hypothesis to investigate: coarse-to-fine continuation can
+use a small model only to construct a feasible curve, then transfer that exact
+curve by Bezier subdivision and degree elevation into the original degree-16
+space. This retains the original final admissible family while potentially
+avoiding expensive collision-discovery iterations. It is not yet implemented
+or timed. Keep the same seed families, final model, original public quality,
+physical validation and cold full-planner gates; prior solves from other
+planner calls remain forbidden. The smaller model alone does not qualify.
+
+After removal, the original StaticU request again passed planner, independent,
+collision, kinematic, continuous, and plane checks with goalReached, exact
+baseline lengths 34.9425880405 / 39.3787713567 deg and duration 20.8323620005 s.
+The fresh replay took 20.5270977 s internally and 40.0567705 s launch-to-exit.
+The baseline variation reinforces that the reported single pairs are screening
+observations rather than repeatable speed claims. The final diff check passed;
+the user-owned failed.mat hash remained unchanged. All new research sources
+remain ignored, rejected native/compact implementations were removed, and no
+commit or push occurred. The full eight-case 3x cold target remains unproven.
+
+## Corridor initialization research continuation - 2026-09-05
+
+The prior goal turn made progress by rejecting five isolated candidates with
+measured status, quality, or runtime failures; none changed production. A
+subsequent single-computational-thread cold probe preserved ObstacleAvoidance
+success and every independent check, with motion 7.5538884272 s, but took
+7.2426022 s versus the preceding default-thread 7.4854214 s observation.
+The process default was six computational threads; restoration was asserted.
+The approximately 1.03x single-sample ratio is not useful speed evidence.
+The experimental thread override was removed. No pool or global setting was
+left changed. Reference: https://www.mathworks.com/help/matlab/ref/maxnumcompthreads.html.
+
+New bounded hypothesis: analytically construct an initial convex corridor
+around every separable input-route span, removing only halfspaces whose
+redundancy is verified against the retained corridor polygon. Use its
+certified planes in the first existing trajectory SOCP to avoid unconstrained
+collision-discovery rounds. If a complete seed corridor cannot be certified,
+keep the original initialization and report that outcome. All obstacles,
+seeds, horizons, later plane updates, and public validators remain in force.
+This changes initialization from current inputs, never reuses a prior run.
+First full-planner check: ObstacleAvoidance; second: StaticU. The same cold
+3x aggregate and per-case quality/validity gate governs retention. Experimental
+package ownership is output/cold-method-research-20260905/corridor-planner;
+no production or benchmark helper commit is authorized without proof.
+
+The corridor first-call screen passed all physical checks but failed the
+arrival/runtime gate: 7.4287746 s wall time, motion 7.567957385 s versus the
+baseline 7.553888427 s (0.014069 s later, public tolerance 0.001 s). Selected
+polyline was 11.152119519 deg, smoothed length 11.431862080 deg, termination
+goalReached, with planning, independent validation, collision, kinematic,
+continuous, and plane checks true. The candidate was rejected and removed;
+its initial geometric certificate did not demonstrate a useful overall gain.
+
+## Requested coneprog reset and cold-only research gate - 2026-09-05
+
+Production now calls MATLAB coneprog directly in both trajectory and plane
+solves. The MATLAB fastcone package, associated tests, guide, benchmark
+helpers, and obsolete recovery path were removed at the user's request.
+The preserved experimental native binaries and old implementation copies
+were also deleted; historical measurements below describe removed methods.
+The stable conic diagnostics schema remains, with retired method counts zero.
+These changes are uncommitted. No new method earns a commit unless the
+user's cold-start performance gate is proven.
+
+The full restored-baseline suite initially passed 124/126 tests. The two
+failures were the package file inventory and a backend-specific convergence
+expectation. After correcting those expectations, all 39 architecture and
+planner-contract tests passed. Every current test was therefore covered by
+the full run plus focused rerun; this is not a claim of a single 126/126 run.
+All 18 maintained examples produced their expected outcomes: 17 independently
+validated successes and the expected NoPath/noValidatedSeed failure. Actual
+run metrics were appended to benchmark.csv. These behavior checks ran in one
+MATLAB process and are not cold timing evidence. The user-owned failed.mat
+is unchanged (SHA256 E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625).
+
+Research gate: identical saved inputs/options, seed 0, first planner call plus
+independent validation in a fresh MATLAB R2024b process; no numerical warmup.
+Report launch-to-exit separately. Require at least 3x by summed case medians
+across the eight conic-using maintained requests, disclose each case, reject
+any greater-than-10% case slowdown, preserve original arrival tolerance,
+physical constraints, public validation, and exact diagnosis-bundle behavior.
+A kernel-only or warmed benefit cannot qualify. Scripts remain ignored under
+output/cold-method-research-20260905, outside the committed engine.
+
+Cold profiling (attribution only, not speedup evidence) found coneprog used
+1.385 s of a 4.009 s ObstacleAvoidance run and 15.835 s of a profiled 22.521 s
+StaticU run. Options construction, geometry, and independent validation are
+material costs. Merely replacing the numerical solver cannot be assumed to
+provide 3x for the whole planner.
+
+The first new hypothesis eliminates time cones analytically for a fixed-plane
+earliest-arrival subproblem: with q=T^3, derivative bounds have concave right
+sides q^(1/3), q^(2/3), and q. Supporting tangents yield LP lower bounds;
+direct derivative maxima give feasible upper bounds on time. This monotonicity
+is local to fixed normalized planes and does not assert moving-obstacle
+feasibility is monotone. Its 20-program screen failed: 47.813 s versus
+coneprog's 11.894 s, with only 16/20 matching the required status, feasibility,
+and objective checks. One LP reported infeasibility where coneprog returned
+success; three hit the iteration cap. This is not cold full-planner evidence.
+The candidate was rejected without production integration or a commit.
+
+The next isolated hypothesis analytically eliminates Bezier endpoint and C3
+continuity equalities before calling coneprog. It preserves polynomial degree,
+spans, objective, inequalities, and cone tolerances. Its acceptance gate is
+unchanged; reduced dimension alone is not evidence of speed.
+
+The unscaled equality elimination failed its first screen: 0.218 s versus
+0.375 s, but a reconstructed derivative inequality was violated by 0.312 in
+original matrix units despite coneprog reporting success. The retained
+baseline's maximum endpoint-equality error was 5.08e-5, so raw solver
+residuals cannot replace physical validation of either formulation. No
+integration was retained. A separate, explicitly scaled formulation will
+use an exactly feasible quintic endpoint curve as its affine origin and
+normalize the transformed rows; its physical acceptance gates stay fixed.
+
+That separate scaled formulation also failed screening at the third
+ObstacleAvoidance program: motion time 7.525718 s versus 7.524976 s, beyond
+the declared tolerance, with only a 1.15x subproblem timing ratio. The first
+call was slower (0.357 s versus 0.255 s). It was rejected without integration.
+The next reference candidate is the independent ECOS native MATLAB solver
+(https://github.com/embotech/ecos-matlab); its source stays in ignored output
+for experimentation. Its GPL-3.0 license is a deployment consideration if it
+ever qualifies. No native replacement has been retained or committed.
+
+The exact unchanged diagnosis bundle passed a separate restored-coneprog
+replay and independent validation: 53.8944204 s wall time, 69.06222508 s
+motion duration, goalReached. This single replay is not speedup evidence.
+The full baseline test suite also passed the supplied-bundle regression.
+
+ECOS (MATLAB interface commit 2acb7f472f0021a3d226da187cd2941341199893,
+core 2954b2a640f2194bf91dbf51e682be17012d7698) was compiled locally with
+Microsoft Visual C++ 2022. Its first six captured trajectory programs were
+6-22x faster, but this did not survive the full-planner gate. A single fresh
+ObstacleAvoidance pair was 6.397730 s coneprog versus 4.355865 s ECOS (1.47x),
+both independently valid. ECOS motion duration was 7.524794 s versus 7.553888 s;
+smoothed length 11.499835 deg versus 11.430862 deg, with identical 11.152120 deg
+selected polylines. ECOS made 12 calls, taking 0.117092 s, with no fallback.
+The structurally different StaticU request failed with noValidatedSeed after
+4.313587 s, 36 ECOS calls, and one nonoptimal solver exit. All success,
+validation, collision, kinematic, continuous, and plane flags were false;
+motion metrics were NaN. The baseline is known feasible. ECOS was rejected
+and its experimental source, native binary, and integration were removed.
+These single cold probes do not establish repeatable timing statistics.
+
+Correction to the scaled-Bezier screen: its preliminary 1e-6 subproblem
+objective threshold was stricter than the public 1e-3 arrival tolerance.
+The 0.000743 s subproblem time difference alone does not establish a public
+quality regression. It was not independently validated in the full planner,
+and its small measured runtime benefit did not justify integration.
+
+Next hypothesis: choose coneprog's documented prodchol trajectory step solver
+for the sparse trajectory matrix with dense time-power columns. Keep plane
+solver, original model, default tolerances, and all planning stages unchanged.
+Reference: https://www.mathworks.com/help/optim/ug/compare-speeds-coneprog-algorithms.html.
+The cold full-planner retention gate remains unchanged.
+
+The prodchol trajectory-step variant failed the first cold full-planner
+case: ObstacleAvoidance returned noValidatedSeed after 7.3830203 s. Planner,
+independent validation, collision, kinematic, continuous, and plane flags
+were false, with NaN motion metrics. Its isolated package was removed.
+No tested candidate currently qualifies for the requested 3x cold speedup.
+Production remains the uncommitted coneprog reset; no new solver was retained.
+After removal, the original ObstacleAvoidance request again passed planning,
+independent validation, collision, kinematic, continuous, and plane checks:
+7.4854214 s cold wall time, polyline 11.152119519 deg, smoothed length
+11.430861536 deg, motion 7.553888427 s, goalReached. The difference from the
+preceding 6.3977298 s baseline probe reinforces that these single samples
+are screening evidence, not stable speedup estimates. The final diff check
+passed, and the user-owned diagnosis bundle hash remained unchanged.
+
+## Fresh-process cold comparison, including prior MEX fastcone - 2026-09-05
+
+Each of the same eight saved conic-using requests ran once per fresh MATLAB
+R2024b process, seed 0, original limits/options and independent validation.
+There were three fresh processes per method per case: 48 launches alternating
+coneprog/current MATLAB fastcone, followed by 24 launches of the saved prior
+MEX-backed fastcone at the user's request. No warmup preceded the timed call.
+These are fresh-process measurements with Windows file caching intact, not
+cold-boot tests. Input loading precedes the inner timer. The outer timer spans
+process launch through exit, including setup, reporting and shutdown.
+
+| Request | coneprog first-call median (s) | MATLAB fastcone (s) | Prior MEX fastcone (s) |
+|---|---:|---:|---:|
+| AlternatingSlalom | 5.5084287 | 4.2180411 | 3.6886754 |
+| NoPath | 2.2834241 | 2.5805275 | 2.5407968 |
+| ObstacleAvoidance | 3.8650023 | 3.4693862 | 3.0217061 |
+| StaticUShapedObstacle | 12.3548761 | 5.1173693 | 4.5515608 |
+| StraightTargetAlternatingOcclusion | 4.8066317 | 4.0084202 | 3.5840305 |
+| TargetExitsObstacle | 8.1528264 | 5.6479202 | 5.2168433 |
+| TwoOpposingUVisibilityGraph | 4.3998600 | 4.4519761 | 3.8311501 |
+| USOutlineExtremeVisibility | 7.0616042 | 6.7674912 | 5.8347846 |
+| Sum of case medians | 48.4326535 | 36.2611318 | 32.2695476 |
+
+Current MATLAB fastcone is 1.3357x faster than coneprog by summed first-call
+medians; its NoPath result is 13.01% slower and TwoOpposingU is effectively
+tied (1.18% slower with overlapping ranges). MEX is 1.1237x faster than current
+MATLAB and 1.5009x faster than coneprog on that aggregate. MEX/Matlab NoPath
+ranges overlap and do not establish a meaningful difference.
+
+Summed launch-to-exit medians were 133.1285768 / 121.0192690 / 116.6766350 s
+for coneprog / MATLAB / MEX: only 1.1001x for MATLAB versus coneprog, and
+1.0372x for MEX versus MATLAB. MEX was measured as a later follow-up cohort,
+not interleaved with the other two; small differences should not be attributed
+solely to its compiled kernel. The prior MEX version also has different plane
+and recovery algorithms from the current MATLAB solver. This is not a test of
+compiling today's direct equations.
+
+All 72 launches exited successfully: 63 goalReached motions passed every
+independent collision, kinematic, continuous and plane-certificate check;
+the nine NoPath runs retained noValidatedSeed with planner/validator/certificate
+flags false and NaN motion metrics. Current MATLAB and coneprog cold motion
+metrics matched their warmed results within 1e-9. MEX kernel execution was
+confirmed in all 24 MEX runs; reference recovery remained explicit. Full
+per-run motion metrics, min/max timing ranges, launch records and the MEX
+comparison are ignored under output/cold-coneprog-3d60f83-20260905.
+
+The MEX binary was the preserved benchmark copy under +nativeBaseline,
+SHA256 35782568E5BE5AC15B4FD441106ED72EF1A9E9D5E1FDC7AA0A5E28B74A964DCB.
+Production remains MATLAB-only. No benchmark script or binary was added to
+source control, and benchmark.csv was not appended for saved-request replays.
+
+## Full planner comparison with coneprog on 3d60f83 - 2026-09-05
+
+The eight maintained examples with actual conic calls were replayed from their
+saved public inputs/options in MATLAB R2024b, seed 0, headless, with default
+finite jerk limits. Production was unchanged. An ignored dispatch harness
+selected a frozen copy of the current MATLAB fastcone package or coneprog for
+every conic call. Executed-call counts confirmed the selected backend, with
+zero native calls. Two warmups and three interleaved measured runs per method
+gave 80 total runs. Wall time includes the public planner and an additional
+independent validation; it excludes artifact saving and MATLAB startup.
+
+| Request | coneprog median (s) | fastcone median (s) | Speedup | fastcone recoveries/calls |
+|---|---:|---:|---:|---:|
+| AlternatingSlalom | 2.6475373 | 0.7395568 | 3.5799x | 8/38 |
+| NoPath | 0.1957021 | 0.1454587 | 1.3454x | 2/3 |
+| ObstacleAvoidance | 1.2260341 | 0.2659976 | 4.6092x | 3/12 |
+| StaticUShapedObstacle | 9.7713896 | 1.5944930 | 6.1282x | 17/199 |
+| StraightTargetAlternatingOcclusion | 1.9217796 | 0.6135839 | 3.1321x | 8/27 |
+| TargetExitsObstacle | 5.5039130 | 2.2903646 | 2.4031x | 23/56 |
+| TwoOpposingUVisibilityGraph | 1.5954299 | 0.8050170 | 1.9819x | 13/46 |
+| USOutlineExtremeVisibility | 4.2649666 | 2.9231906 | 1.4590x | 33/134 |
+
+The sum of case medians decreased from 27.1267522 to 9.3776622 s: 2.8927x,
+or 65.4302% less wall time. All eight measured ranges were disjoint in favor
+of fastcone. Conic-solver timer medians summed to 22.3084619 versus 4.6182110 s
+(4.8305x); these are nested attribution times, not additive to total runtime.
+The planners may take different iterations, so these are end-to-end results,
+not same-program microbenchmarks. No 10x general planner speedup is claimed.
+
+All successful runs on both methods passed the planner, independent validator,
+collision, kinematic, continuous-collision and plane-certificate checks and
+returned goalReached. NoPath returned noValidatedSeed on both: planner and
+validator false, certificate flags false, motion metrics NaN. Polyline lengths
+were identical between methods. Final coneprog/fastcone smoothed lengths and
+motion durations were:
+
+| Request | Smoothed length (deg), coneprog / fastcone | Duration (s), coneprog / fastcone |
+|---|---:|---:|
+| AlternatingSlalom | 16.2829658411 / 16.2930579142 | 10.6126605873 / 10.5049858565 |
+| ObstacleAvoidance | 11.4308615359 / 11.4270998053 | 7.5538884270 / 7.5247939340 |
+| StaticUShapedObstacle | 39.3787713567 / 39.3902842072 | 20.8323620005 / 20.7678669439 |
+| StraightTargetAlternatingOcclusion | 13.5986641387 / 13.6172278486 | 20.8695652174 / 20.8695652174 |
+| TargetExitsObstacle | 20.6100682085 / 20.6095651504 | 24 / 24 |
+| TwoOpposingUVisibilityGraph | 24.6652397599 / 24.7642513406 | 21.8475039511 / 21.8341992694 |
+| USOutlineExtremeVisibility | 23.3604967802 / 23.3649471841 | 5.8044339735 / 5.7999328153 |
+
+Fastcone's motion durations were equal or shorter, while smoothed length was
+up to 0.4014% longer. Original tolerances and independent validation remained
+unchanged. All per-run metrics, min/max timing ranges, final results and the
+temporary harness are ignored under output/coneprog-planner-3d60f83-20260905.
+These were saved-request replays, so benchmark.csv was not appended again.
+
+## Fresh full example run on 3d60f83 - 2026-09-05
+
+All 18 maintained example functions ran headlessly in one MATLAB R2024b
+process, with seed 0 and original default motion/jerk limits. Seventeen
+returned goalReached and passed independent collision, kinematic and
+continuous-collision validation; all applicable plane certificates passed.
+NoPath returned the expected noValidatedSeed failure, with planner/validator
+false and unavailable motion metrics NaN. There were no execution errors and
+no native solver calls. All seven successful examples with conic calls used
+explicit coneprog recovery somewhere in their search; NoPath also did so.
+
+Summed example wall time was 51.4668492 s, including example setup and its own
+validation but excluding MATLAB startup and the additional independent check.
+The slowest observations were MovingDeformingUSOutlineVisibility 16.6991703 s,
+USOutlineExtremeVisibility 11.3470044 s and AlternatingSlalom 8.7458688 s.
+These are single sequential runs with shared JIT/cache state, not warmed
+interleaved speedup measurements. Eighteen actual rows with source commit
+3d60f833e9d72baef2008c0a34548e8a66e17c59 were appended to benchmark.csv.
+Detailed results and the temporary harness remain ignored under
+output/all-examples-3d60f83-20260905. The user's failed.mat was not modified.
 
 ## Committed MATLAB solver and focused cleanup - 2026-09-05
 
@@ -2715,3 +3642,182 @@ The retained production hunk is +20/-5 lines, net +15, in one existing file.
 One 18-line contract test preserves finite-history and single-sample activity
 semantics. The repository remains above its production-size target, so the
 performance-based size allowance is not met and is not claimed.
+
+### Prepared-boundary occupancy experiment gate - 2026-09-05
+
+Profiles completed on the degree-eight saved requests. Failed bundle: planner
+56.041 s inclusive; timed search 45.909 s; occupancy 46.997 s / 1,880 calls;
+point clearance 27.778 s / 21,369 calls; shapeAtTime 12.910 s / 21,410 calls;
+coneprog seed diagnostics total 0.593 s / 8 calls. U.S.: planner 11.937 s,
+coneprog 3.614 s / 134 calls, occupancy 2.630 s / 12 calls. Nested profile
+times are attribution only and cannot be added or used as cold speedups.
+Both replays passed independent collision, kinematic and continuous checks;
+failed bundle retained 143.444156590 deg / 69.062225080 s; U.S. retained
+polyline 22.0706469075 deg, smooth 23.3542523251 deg, duration 5.7964986754 s
+and its plane certificate. No maintained-example benchmark rows were added.
+
+One isolated hypothesis: boolean occupancy can use verified numeric boundary
+edges, avoiding repeated polyshape construction, edge extraction and nearest-
+point output work. Keep authoritative shapeAtTime interval selection, source
+cache checks, all 13 search samples, all candidate transitions and public
+validation. A direct winding/projection calculation handles only points safely
+away from numerical/occupancy boundaries; ambiguous points use the original
+polyshape/pointPolygonClearance decision. Detailed query outputs remain original.
+No cross-request caches, changed obstacle protection, seeds or horizon pruning.
+The input scale is queried time groups times boundary edges times query points;
+bounded vector blocks keep projection memory linear in a fixed working block.
+
+Baseline: HEAD 3d60f83 plus existing dirty coneprog reset, unchanged failed.mat
+SHA256 E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625,
+isolated degree-eight source from completed suite, MATLAB R2024b, six threads,
+seed 0, original options and no warmup. Experiment-owned copy and harnesses
+under ignored output/cold-method-research-20260905/prepared-query-planner only.
+First compare unchanged failed bundle end to end, then structurally different
+moving/concave/hole/boundary query tests and U.S. saved request. Require identical
+query decisions, routes, selected motion and independent checks; retain this
+component only if at least 20% failed-bundle cold improvement survives three
+interleaved fresh-process comparisons without a >10% sentinel slowdown.
+Remove the isolated source if the focused correctness/benefit gate fails.
+This is a component gate; the original eight-case 3x adoption gate remains.
+
+Rejected the prepared-boundary occupancy prototype after its first focused
+cold end-to-end comparison. Degree-eight reference: 41.7647137 s; prepared
+query: 49.9830390 s (19.6777% slower). Both succeeded with identical selected
+polyline/smoothed length 143.444156590 deg and duration 69.062225080 s, passed
+independent collision, kinematic and continuous checks, and goalReached.
+The selected excursion does not use a plane certificate. No performance
+benefit was demonstrated, so no repeats, further tuning or broader tests were
+justified. The drafted structural query verification did not run. Removed the
+entire isolated prepared-query package, temporary reference/query verification
+functions, focused controller and method selectors. Retained the unfavorable
+MAT/CSV/log evidence and this note, as required by AGENTS.md. Production was
+never changed. A fresh degree-eight recovery control follows after deletion.
+
+## Parametric-duration LP experiment - 2026-09-05
+
+Previous turn classification: progress. The prepared-query hypothesis was
+measured, rejected and removed; recovery confirmed the untouched degree-eight
+result. Current worktree was inspected: only the requested uncommitted coneprog
+reset, existing assessment/benchmark edits and protected dirty failed.mat remain.
+No live MATLAB process was found. The 3x eight-case goal remains unchanged.
+
+Measured owner: original StaticU profile spends 15.2101 s in 14 trajectory-step
+calls out of 22.2087 s planner, with coneprog interior-point work dominant. A
+bounded new hypothesis is to solve the unchanged fixed-plane earliest-arrival
+model as a one-dimensional duration root over linear programs. Unlike the
+rejected tangent-envelope LP, this changes only right-hand-side duration powers
+in a fixed LP matrix, using dual sensitivity to update duration. Original
+polynomial degrees (16 ordinary, 7 timed/grouped) and span allocations remain.
+
+Derivation: for p0=1, p1^2<=p2 and p2^2<=p1*p3 imply p1<=p3^(1/3) and
+p2<=p3^(2/3). Replacing them by T and T^2 at fixed p3=T^3 only enlarges the
+derivative limits and satisfies both cones. Thus the earliest-arrival
+fixed-plane model can minimize T subject to linear controls with derivative
+right-hand sides limit*T^order. This monotonicity applies only to one fixed
+plane/active-region model, never global moving-obstacle time feasibility.
+A derivative-only phase-I LP in q=(T/Tref)^3 has decreasing convex value;
+its dual supplies a duration update. A candidate's required duration is
+recomputed directly from all original derivative rows. Original plane rows,
+endpoint/continuity equations, workspace and horizon are checked explicitly.
+Unqualified LP status, residual, duration gap or exhausted iteration budget
+returns to the original coneprog solve; disclose and count all attempt costs.
+Travel-weighted/fixed-arrival SOCPs and plane solvers stay coneprog.
+
+Baseline: HEAD 3d60f83 plus existing reset, MATLAB R2024b, six computational
+threads, fresh process first planner call, original saved StaticU request,
+seed 0 and unchanged options/validation. No saved solution enters the solver.
+Experiment copy: output/cold-method-research-20260905/parametric-lp-planner;
+helper/runner under the same ignored research root. First run original and
+candidate full StaticU planner+validator cold. Require at least 20% focused
+benefit and unchanged physical validation/arrival tolerance before retaining
+or broadening. If favorable, verify structurally different ObstacleAvoidance
+and the exact unchanged failed.mat, then interleave three cold repeats and
+qualify the original full eight-case >=3x gate before production integration.
+If the focused gate fails, remove experiment-owned source and method selector,
+retain the negative measurements and verify recovery. No tuning sweep.
+
+Primary references inspected: MATLAB R2024b local linprog code confirms
+available dual-simplex-highs and lambda outputs; current MathWorks docs
+https://www.mathworks.com/help/optim/ug/linprog.html and
+https://www.mathworks.com/help/optim/ug/linear-programming-algorithms.html.
+Do not use newer R2026a sixth-output sensitivity APIs. Dual sensitivity
+background: Boyd/Vandenberghe, Convex Optimization, perturbation/sensitivity,
+https://web.stanford.edu/~boyd/cvxbook/. The duration reduction above is our
+problem-specific derivation and still requires measured numerical qualification.
+
+Rejected after the first full-planner cold StaticU comparison: original
+20.6156600 s; parametric LP 23.4968329 s (13.98% slower). Both returned planner
+success and independent collision, kinematic, continuous and plane-certificate
+success, goalReached, polyline 34.9425880405 deg, smoothed 39.3787713567 deg
+and duration 20.8323620005 s. The candidate ran 20 LPs in 14 trajectory attempts,
+accepted one small-model replacement, and fell back to coneprog 13 times.
+All 12 large-model first LPs were unqualified under the configured LP budget;
+the recorded diagnostics do not distinguish the exact underlying LP exit flag.
+Do not infer infeasibility from that generic research reason. Total attempted
+LP work was 3.1987 s. No structural or broad example suite was run after failure
+of the focused benefit gate. These were saved-request replays, not maintained
+example invocations; benchmark.csv was not appended.
+
+Removed the complete isolated LP engine package, focused controller, method
+selector and mixed-solver allowance from the shared research harness. Kept
+MAT/CSV/log measurements, including parametric-lp-trials.csv. The initial trial
+export had an empty-struct assignment error; corrected only the export and read
+the same saved result successfully, without rerunning or altering measurement.
+Production remained coneprog throughout. Fresh baseline recovery follows.
+
+## Certificate-gated native hybrid experiment - 2026-09-05
+
+Previous goal turn: progress through measured LP rejection and verified
+recovery. Current worktree and saved evidence were rechecked; no MATLAB process
+was live, and both rejected prepared-query and parametric-LP sources are absent.
+The production reset and all user work remain unchanged. No degree reduction,
+additional tuning sweep or tolerance change is part of this experiment.
+
+Hypothesis: use Clarabel for a trajectory subproblem only when independent
+original-row primal and bounded dual-objective checks pass the previously
+required tolerances; otherwise execute the unchanged coneprog subproblem.
+This is a certificate-gated hybrid, not the previously rejected standalone
+backend. No native infeasibility result becomes a planner rejection: the
+original coneprog attempt still executes, including on a certified inconsistent
+intermediate model, because the existing planner can derive a valid final motion
+from its numerical iterate. Full public validation remains authoritative.
+The rejected reduced-accuracy kernel stays rejected under the same bound check.
+There are no case detectors, hidden fallbacks, omitted candidate seeds, reduced
+horizons, new public options or weakened geometry/kinematic tolerances.
+
+Evidence motivating a hybrid: saved native trajectory kernel times were
+0.01-0.14 s versus coneprog 0.09-1.20 s, but the standalone screen stopped at
+an independent bound failure. A hybrid may preserve correctness while keeping
+enough accepted native solves to improve full cold runtime. Its total runtime
+must include conversion, fresh native construction, independent certificates,
+failed native work, all coneprog fallbacks and final public validation.
+No numerical solver object, factorization, solution or cache crosses requests.
+
+Baseline: HEAD 3d60f83 plus uncommitted coneprog reset; original degree 16/7,
+span allocations, saved inputs/options, seed 0, MATLAB R2024b and unchanged six
+MATLAB computational threads. Build the C API MEX in an isolated output-owned
+folder, with portable Rust tooling there; the runtime itself requires no
+Python or Rust toolchain. Keep upstream licenses and exact source revisions.
+The implementation and all build artifacts are owned by ignored
+output/cold-method-research-20260905/native-hybrid. Prototype planner copies
+are isolated in native-hybrid-planner. Strict native acceptance: original
+primal residual <=1e-7 and an independently conservative original-objective
+gap bound <= original coneprog OptimalityTolerance (1e-6 default), plus finite
+values and valid dual-cone membership. Solver-reported convergence alone is
+insufficient; an unqualified result falls back without changing any coefficient.
+Plane solvers initially remain coneprog; actual native/coneprog calls and
+fallback reasons must be explicit in experimental diagnostics.
+
+First verify gateway matrix/sign conventions on analytical LP/equality/SOC
+problems without planner timing claims. Then fresh cold original versus hybrid
+StaticU full planner+validator, requiring >=20% benefit and original public
+arrival/physical/certificate gates. Only a favorable focused result permits
+ObstacleAvoidance and exact unchanged failed.mat, then three interleaved cold
+repeats and original eight-case >=3x aggregate gate before production adoption.
+If focused benefit or correctness fails, remove experiment-owned source,
+portable tools and binaries, preserve unfavorable measurements, and recheck
+baseline. No commit until the whole objective is verified.
+
+Primary source: https://github.com/oxfordcontrol/Clarabel.cpp (Apache-2.0),
+C/C++ wrapper over Clarabel.rs. The preceding standalone numerical failure
+remains recorded and is not relabeled a passing result.

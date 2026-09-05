@@ -27,13 +27,11 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
-BMTP's trajectory and separating-plane conic programs use `fastcone.solve`.
-Fastcone runs entirely in MATLAB and needs no compiler, MEX binary, or Python.
-Uncertified or unsupported programs recover through MATLAB `coneprog`, with
-that recovery reported in diagnostics. Optimization Toolbox remains required.
-See [fastcone usage and equations](docs/fastcone.md),
-[per-case runtime measurements](benchmarks/results/fastcone/README.md), and
-[integration verification](verification.md#fastcone-integration---2026-09-04).
+BMTP uses degree-eight Bezier curves and MATLAB `coneprog` for trajectory and
+separating-plane conic programs. Optimization Toolbox is required; no external
+MEX solver or Python runtime is needed. Ordinary regions use three spans per
+segment, while timed and conservatively grouped regions use one. Solver counts
+and timings remain in the returned diagnostics.
 
 A partial options structure can override only the controls it needs:
 
@@ -352,9 +350,8 @@ No network service, learned model, or external planner process is required.
 ## Verification and historical evidence
 
 The maintained documentation is this guide, [repository rules](AGENTS.md),
-the [obstacle history contract](obstacle_history_contract.md), and the
-[fastcone guide](docs/fastcone.md). The browser sandbox has its own
-[usage guide](offlinesandbox/README.md).
+and the [obstacle history contract](obstacle_history_contract.md). The browser
+sandbox has its own [usage guide](offlinesandbox/README.md).
 
 Exact measurements, source revisions, and known limitations remain in
 `benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical

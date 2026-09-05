@@ -1,5 +1,12 @@
 # Plan 325 verification
 
+Current configuration (2026-09-05): the user selected degree-eight Bezier
+trajectories with MATLAB coneprog and ended the replacement-solver research.
+The fastcone implementations and native build dependency are removed. See
+[the current branch assessment](branch_assessment.md) for cold-run evidence,
+accepted motion-quality tradeoffs and adoption verification. Earlier entries
+below describe their recorded revisions, not the current solver.
+
 ## Timed search cost pruning - 2026-09-05
 
 Baseline: `5efbea3202d8a8d11de3bd96aa4e9cca5b2a7288`, MATLAB R2024b Update 4,

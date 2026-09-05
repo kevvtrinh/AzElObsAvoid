@@ -30,6 +30,20 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 testCase.TestData.Result = result;
 testCase.TestData.Validation = obstacleAvoidance.validateTrajectory(result);
+% The public portfolio can accept a static projection before timed BMTP.
+% Exercise the timed owner explicitly so its coverage contract remains tested.
+timedSeedIndex = find(string({result.Seeds.Source}) == ...
+    "timeExpandedVisibilityGraph", 1, "first");
+assertNotEmpty(testCase, timedSeedIndex);
+inputs = result.Inputs;
+[timedCandidate, timedValidation, timedDiagnostics] = ...
+    obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
+    result.Seeds(timedSeedIndex), inputs.obstacles, ...
+    inputs.initialState, inputs.goalState, inputs.limits, result.Options, ...
+    obstacleAvoidance.planner.stageTiming());
+testCase.TestData.TimedCandidate = timedCandidate;
+testCase.TestData.TimedValidation = timedValidation;
+testCase.TestData.TimedDiagnostics = timedDiagnostics;
 end
 
 function testMovingCircleAndStaticUSucceeds(testCase)
@@ -55,11 +69,12 @@ interiorTime_s = result.time_s(1) + seed.tau(2:end - 1) * ...
 [~, ~, velocity_deg_s] = bmtpEngine.evaluatePolynomial( ...
     result.Polynomial, interiorTime_s);
 verifyGreaterThan(testCase, min(vecnorm(velocity_deg_s, 2, 2)), 1e-3);
-acceptedIndex = find([result.SeedSummaries.ValidationPassed], 1, "first");
-diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
+verifyTrue(testCase, testCase.TestData.TimedCandidate.Success, ...
+    testCase.TestData.TimedCandidate.Message);
+verifyTrue(testCase, testCase.TestData.TimedValidation.Passed, ...
+    testCase.TestData.TimedValidation.Message);
+diagnostics = testCase.TestData.TimedDiagnostics;
 verifyEqual(testCase, diagnostics.Identifier, "bmtpTimedCell");
-verifyEqual(testCase, diagnostics.TimedBmtp.Outcome, ...
-    "acceptedAfterFullValidation");
 completedTrials = diagnostics.TimeCellTrials( ...
     [diagnostics.TimeCellTrials.ElapsedTime_s] > 0);
 acceptedTrialIndex = find([completedTrials.ValidationPassed], 1, "first");
@@ -72,8 +87,7 @@ end
 function testTimedCellsUseFullSearchLayerBudget(testCase)
 % Use one full-resolution clock instead of a coarse/fine solve portfolio.
 result = testCase.TestData.Result;
-acceptedIndex = find([result.SeedSummaries.ValidationPassed], 1, "first");
-diagnostics = result.SeedSummaries(acceptedIndex).SolverDiagnostics;
+diagnostics = testCase.TestData.TimedDiagnostics;
 maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
 verifyFalse(testCase, diagnostics.SegmentCountFallbackAttempted);
 verifyEqual(testCase, diagnostics.TimedSegmentCounts, ...

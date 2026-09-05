@@ -45,14 +45,14 @@ usesTimedCells = isfield(coverage, "RegionActiveTauInterval");
 
 %% Section 2: Select The Polynomial Representation
 
-% Conservative grouped outlines and timed cells use the established compact
-% degree-seven curve. Ordinary exact regions retain the higher-degree split
-% representation; this is a representation choice, not a new planning method.
+% Use degree eight for every conic trajectory. Conservative grouped outlines
+% and timed cells retain one span per segment; ordinary exact regions retain
+% three spans. Region coverage and numerical tolerances are unchanged.
 
 if usesConservativeGrouping || usesTimedCells
-    [degree, splitCount] = deal(7, 1);
+    [degree, splitCount] = deal(8, 1);
 else
-    [degree, splitCount] = deal(16, 3);
+    [degree, splitCount] = deal(8, 3);
 end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
