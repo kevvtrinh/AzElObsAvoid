@@ -1,5 +1,47 @@
 # Plan 325 verification
 
+## Fastcone dependency relocation - 2026-09-04
+
+Moved `third_party/eigen` to `trajectory/+fastcone/third_party/eigen`.
+All 345 file hashes match before and after the move, including headers and
+license notices. Updated the package-relative build path and documentation.
+The builder changes by +2/-3 lines; numerical MATLAB and C++ sources, tests,
+examples, benchmark scripts, and `benchmark.csv` are unchanged.
+
+MATLAB R2024b ran `checkcode('trajectory/+fastcone/build.m','-id')`, followed
+by `fastcone.build` and `runtests` on `testFastcone`, `testFastconeDualBound`,
+`testFastconeEqualityBasis`, `testFastconeKernel`, `testFastconePlanes`, and
+`testArchitectureBoundaries` under `tests/`. The default configured compiler
+was Microsoft Visual C++ 2022. Build time was 18.3750641 s; all 27 tests passed
+in 10.5139538 s, with no failures or incomplete results. Native acceptance,
+original-solver recovery, polynomial equalities, independent bounds, geometric
+planes, and package ownership were exercised. The plane oracle retains its
+diagnostic that 22 strict solver stopping flags differ from 1 while all 32
+independent oracle certificates pass.
+
+Raw checks remain local in `output/eigen-relocation-validation.log`, its MAT
+file, and `output/eigen-relocation-manifest.csv`. The rebuilt MEX is ignored.
+No planner examples, full-planner benchmarks, or graphics were rerun for this
+path-only change; no numerical performance comparison is claimed.
+
+## Documentation cleanup - 2026-09-04
+
+Removed obsolete architecture/planning documents and the duplicate ignored
+workspace note. Consolidated all five references into `README.md` and retained
+the distinct rejected pre-screen measurement in `branch_assessment.md`.
+The root now contains five Markdown files: `README.md`, `AGENTS.md`,
+`obstacle_history_contract.md`, `branch_assessment.md`, and this record.
+Historical entries below retain filenames from their recorded revisions;
+removed documents remain available in Git history.
+
+This is a documentation-only change. No MATLAB tests, planner examples, or
+runtime benchmarks were rerun, and `benchmark.csv` is unchanged. Verification
+checks cover relative Markdown links, removal of obsolete active references,
+and an unchanged production/test/example tree. No benchmark script was added.
+All 14 relative link targets exist across the 16 retained tracked Markdown
+files. `git diff --check` passes. Remaining references to retired filenames
+occur only in historical verification entries and the historical HS3 manual.
+
 ## Fastcone integration - 2026-09-04
 
 Base `a07203732ef1d8746334b67821e6290e151b2f6c`, branch

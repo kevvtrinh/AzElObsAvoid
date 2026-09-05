@@ -1,5 +1,50 @@
 # Novel replacement branch assessment
 
+## Fastcone dependency ownership - 2026-09-04
+
+Eigen now lives at `trajectory/+fastcone/third_party/eigen`, beside the solver
+that owns the dependency. All 345 dependency files, including original license
+notices, match their pre-move SHA256 hashes. The build resolves Eigen relative
+to the fastcone package; the repository-level `third_party` folder is removed.
+The default MATLAB build succeeds with Microsoft Visual C++ 2022, and all 27
+focused solver and architecture tests pass. No numerical algorithm, benchmark
+script, or benchmark record changed, and no runtime improvement is claimed.
+
+## Documentation cleanup - 2026-09-04
+
+The root Markdown set is reduced from eleven files to five. Removed the
+superseded architecture audit, two implementation plans, old engine file-size
+rationale, and duplicate local workspace note. References are consolidated in
+`README.md`, with retired HS3 and waypoint-refinement methods labeled historical.
+The public obstacle contract, solver guide, repository rules, dependency
+notices, and measured verification records remain. No engine, solver, test,
+example, benchmark script, or measured CSV changed in this cleanup.
+
+One removed proposal held distinct negative evidence, retained here: a
+historical Ruckig pre-screen reordered all BMTP seeds but preserved arrival
+and path length while increasing total measured runtime by about 14 percent.
+The recorded statistic was the warmed minimum of three runs, not a median:
+
+| Historical case | Baseline (s) | Pre-screen (s) |
+|---|---:|---:|
+| exampleObstacleAvoidance | 2.472 | 2.380 |
+| exampleStaticUShapedObstacle | 1.912 | 1.579 |
+| exampleStraightTargetAlternatingOcclusion | 5.488 | 6.013 |
+| exampleTargetExitsObstacle | 18.073 | 20.731 |
+| rogueBundle | 7.575 | 9.888 |
+
+The source revision was not identified in that table; do not compare it to
+current fastcone timings. The proposed Ruckig-to-Bernstein warm-start converter
+was never implemented, and its external restart interface has since been
+removed. Unequal jerk-phase intervals cannot generally be represented exactly
+by one polynomial per equal-duration span. These are historical limits and
+negative results, not a current implementation plan or a new measurement.
+
+That proposal also reported a 38-row kernel comparison with no arrival wins
+and no additional validated cases over BMTP. It did not identify the raw
+corpus or source revision there. Preserve this as a historical reported
+negative result, not a fresh verification or a universal impossibility claim.
+
 ## Accepted fastcone integration - 2026-09-04
 
 The user accepted the measured blocks engine and explicitly requested adding

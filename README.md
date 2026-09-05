@@ -359,6 +359,13 @@ No network service, learned model, or external planner process is required.
 
 ## Verification and historical evidence
 
+The maintained documentation is this guide, [repository rules](AGENTS.md),
+the [obstacle history contract](obstacle_history_contract.md), and the
+[fastcone guide](docs/fastcone.md). The browser sandbox has its own
+[usage guide](offlinesandbox/README.md); Eigen's
+[dependency notice](trajectory/+fastcone/third_party/eigen/README.md) records
+its source and licenses.
+
 Exact measurements, source revisions, and known limitations remain in
 `benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical
 records predate the separated-engine architecture and therefore name implementations that
@@ -389,3 +396,26 @@ assertSuccess(results);
 
 Keep unfavorable failures and runtime results visible. A successful example
 demonstrates only the exercised case family, not universal feasibility.
+
+## Mathematical references
+
+- Bhattacharya, S., Likhachev, M., and Kumar, V. (2012).
+  [Search-Based Path Planning with Homotopy Class Constraints in 3D](https://doi.org/10.1609/aaai.v26i1.8435).
+  The spatial search uses a bounded 2-D angle signature adapted from this
+  approach. It is not the paper's 3-D construction or a continuous
+  azimuth/elevation/time homotopy certificate.
+- Farouki, R. T. (2012).
+  [The Bernstein Polynomial Basis: A Centennial Retrospective](https://doi.org/10.1016/j.cagd.2012.03.001).
+  Bernstein convex-hull bounds certify complete polynomial intervals in the
+  solver and independent validator.
+- Perlin, K. (2002).
+  [Improving Noise](https://doi.org/10.1145/566570.566636).
+  Moving-obstacle scenarios use the quintic smoothstep
+  `10*u^3 - 15*u^4 + 6*u^5` for zero endpoint velocity and acceleration.
+- Historical HS3 implementation: Moreno-Martin, S., Ros, L., and Celaya, E.
+  (2024), [Collocation Methods for Second and Higher Order Systems](https://doi.org/10.1007/s10514-023-10155-z).
+  This reference explains the retired separated third-order collocation chain.
+- Historical waypoint-state refinement: Koskela, P.,
+  [rsruckig](https://github.com/petrikosk/rsruckig), MIT-licensed.
+  The retired pass-through warm-start search adapted its local waypoint-state
+  method in MATLAB; it did not embed or call the Rust implementation.

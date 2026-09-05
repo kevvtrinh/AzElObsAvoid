@@ -8,12 +8,11 @@ function binary=build(compiler)
 
 %% Section 1: Locate The Pinned Sources And Compiler
 package=fileparts(mfilename('fullpath'));
-root=fileparts(fileparts(package));
 source=fullfile(package,'native','fastcone_core.cpp');
-eigen=fullfile(root,'third_party','eigen');
+eigen=fullfile(package,'third_party','eigen');
 binary=fullfile(package,['core.' mexext]);
 assert(isfile(fullfile(eigen,'Eigen','Sparse')),'fastcone:MissingEigen', ...
-    'The pinned Eigen headers are missing from third_party/eigen.');
+    'The pinned Eigen headers are missing from %s.',eigen);
 if nargin==0
     compiler='';
     if ispc && isempty(mex.getCompilerConfigurations('C++','Selected')) && ...

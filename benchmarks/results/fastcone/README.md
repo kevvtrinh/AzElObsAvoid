@@ -5,10 +5,12 @@ integration, not a new repeated benchmark of the integration checkout.
 MATLAB R2024b ran a source-hashed snapshot of the then-current HS working
 folder, with one warmup per method and three interleaved measured repeats.
 The selected engine is the MATLAB/MEX blocks adapter. The adjacent manifests
-retain the measured source identities. Raw MAT inputs, returned trajectories,
-dispatch traces, and MATLAB metadata remain in the research workspace's
+retain the measured source identities. The raw research archive was deleted
+at the user's request on 2026-09-04. Its original
 `output/hs-examples-blocks/`, `output/hs-examples-blocks-saved/`, and
-`output/blocks-corpus.mat`; large raw artifacts are not vendored here.
+`output/blocks-corpus.mat` are no longer available in this checkout. The CSV
+measurements and manifests here remain; exact replay requires recapturing the
+original inputs.
 
 Full-planner times include internal validation, failed attempts, and coneprog
 recovery. They exclude example construction, plotting, saving, and the

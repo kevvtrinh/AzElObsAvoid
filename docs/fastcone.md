@@ -30,12 +30,14 @@ returned unchanged. An unresolved attempt is never labeled infeasible by
 fastcone itself. Recovery retains coneprog's original numerical behavior;
 the public planner still independently validates any returned trajectory.
 
-MATLAB R2024b / Optimization Toolbox and Windows MinGW were exercised here.
-Configured MEX compiler support on other platforms is provided but untested.
+MATLAB R2024b / Optimization Toolbox with Windows MinGW and Microsoft Visual
+C++ 2022 have been exercised. Configured MEX compiler support on other
+platforms is provided but untested.
 The builder does not download dependencies and never runs during planning.
-Eigen 3.4.0 is pinned in `third_party/eigen`; its original notices and license
-files are retained. The locally built `trajectory/+fastcone/core.mex*` is
-ignored by Git. After pulling this branch onto another machine, build it there.
+Eigen 3.4.0 is pinned in `trajectory/+fastcone/third_party/eigen`; its original
+notices and license files are retained. The locally built
+`trajectory/+fastcone/core.mex*` is ignored by Git. After pulling this branch
+onto another machine, build it there.
 Without the binary, geometric plane profiles can still run, while the native
 path reports recovery. Full native regression tests require a successful build.
 
