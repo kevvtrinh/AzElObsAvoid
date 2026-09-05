@@ -9,7 +9,6 @@ function [x,fval,exitflag,output] = solve(f,cones,A,b,E,d,lb,ub,options)
 %% Section 1: Try A Certified Analytical Plane Or The Reduced Solver
 
 timer = tic; args = {f,cones,A,b,E,d,lb,ub,options};
-nativeAvailable=false;
 planeProblem = numel(f)==7 && isequal(f(:),[zeros(6,1);1]) && ...
     isempty(E) && isempty(d) && isempty(lb) && isempty(ub) && numel(cones)==2 && ...
     size(A,2)==7 && size(A,1)==numel(b);
@@ -29,7 +28,7 @@ if planeProblem
         all(b(first|second)==b(find(first,1))) && all(b(products)==0) && ...
         all(sum(A(products,5:6),2)==1);
 end
-accepted = false; prototype = struct();
+accepted = false;
 try
     if planeProblem
         [x,fval,accepted,prototype] = fastcone.separatingLine(A,b,options.OptimalityTolerance);
@@ -73,15 +72,13 @@ if accepted
     exitflag = 1;
     output = struct('message','Original feasibility and objective-bound checks passed.', ...
         'Method',method,'FallbackUsed',false,'Prototype',prototype, ...
-        'NativeAvailable',nativeAvailable,'NativeAccepted',false,'MatlabAccepted',~planeProblem,'CertifiedInfeasible',false, ...
+        'NativeAvailable',false,'NativeAccepted',false,'MatlabAccepted',~planeProblem,'CertifiedInfeasible',false, ...
         'PrototypeTime_s',prototypeTime,'TotalTime_s',toc(timer));
     return
 end
 
 %% Section 2: Account For Recovery Without Changing The Problem
 [x,fval,exitflag,output] = fastcone.reference(args{:});
-output.Method = 'coneprog recovery'; output.FallbackUsed = true;
-output.NativeAvailable=nativeAvailable; output.NativeAccepted=false; output.MatlabAccepted=false;
 output.Prototype = prototype; output.PrototypeTime_s = prototypeTime;
 output.TotalTime_s = toc(timer);
 end

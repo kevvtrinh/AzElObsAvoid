@@ -126,8 +126,11 @@ Run `runtests(fullfile(repositoryRoot,'tests'))` for maintained regressions.
 validation. Existing `benchmarkFastcone` compares identical captured programs,
 including setup and explicit recovery. Benchmark artifacts stay under output.
 
-The two previously slow captured plane requests improved from 67.04/65.31 ms
-to 3.77/3.27 ms in an isolated MATLAB prototype, with original certificates.
+The two previously slow captured plane requests improved from 62.10/62.96 ms
+with exhaustive MATLAB profiles to 3.40/3.22 ms in current production, with
+original certificates (four warmups, nine interleaved measurements). Coneprog
+measured 3.96/3.72 ms; its first result slightly exceeds the original residual
+tolerance despite a positive status, as recorded in the assessment.
 The tight-U planner replay, including explicit plane recovery, measured 2.03 s
 versus 3.30 s native; the moving-occlusion replay measured 0.567 s versus 0.522 s
 native after batched preparation. These results do not establish uniform

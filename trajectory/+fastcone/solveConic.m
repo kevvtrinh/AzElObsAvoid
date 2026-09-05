@@ -54,7 +54,7 @@ end
 if coneCount==0
     originalConeG=sparse(0,n); originalConeH=zeros(0,1);
     keepRows=false(0,1); scales=zeros(0,1);
-    C=sparse(0,nf); rhs=zeros(0,1); coneSizes=zeros(0,1);
+    C=sparse(0,nf); rhs=zeros(0,1);
 else
     head=-sparse(horzcat(cones.d)'); tail=-sparse(vertcat(coneA{:}));
     packedG=[head;tail]; packedH=[-[cones.gamma]';-vertcat(cones.b)];
@@ -68,7 +68,6 @@ else
     scales=max(scales,1e-12); scales=repelem(scales,3); scales=scales(:);
     keepRows=repelem(~constantSatisfied,3); keepRows=keepRows(:);
     C=C(keepRows,:)./scales(keepRows); rhs=rhs(keepRows)./scales(keepRows);
-    coneSizes=3*ones(nnz(~constantSatisfied),1);
 end
 G=[G;C]; h=[h;rhs];
 % Eliminate the exact endpoint/continuity equalities before Newton iteration.
@@ -105,7 +104,7 @@ if ~isempty(E)
     end
     h = h-G*base; G = G*basis; cost = basis'*cost;
     sourceIndex=free(independent);
-    nf = numel(independent); E = sparse(0,nf); d = zeros(0,1);
+    nf = numel(independent);
 end
 objectiveConstant=offset+f(free)'*base;
 % A constant norm is an affine inequality. A one-component norm is two
@@ -139,8 +138,8 @@ newG(constantRows,:)=[]; newH(constantRows)=[];
 linearCount=size(newG,1); coneSizes=3*ones(nnz(keep),1);
 G=[newG;keptG]; h=[newH;keptH];
 % Scale columns without changing any conic inequality.
-columnScale = 1./max(full(max(abs([G;E]),[],1))',1e-8);
-G = G.*columnScale'; E = E.*columnScale'; cost = cost.*columnScale;
+columnScale = 1./max(full(max(abs(G),[],1))',1e-8);
+G = G.*columnScale'; cost = cost.*columnScale;
 costScale = max(norm(cost,inf),1e-8); cost = cost/costScale;
 reducedLower=lb(sourceIndex)./columnScale;
 reducedUpper=ub(sourceIndex)./columnScale;
@@ -160,24 +159,6 @@ if any(minimumRows-roundoff>h(1:linearCount))
     output=struct('iterations',0,'message','A linear row conflicts with inherited variable bounds.');
     return
 end
-if ~isempty(E)
-    eqScale = max(full(max(abs(E),[],2)),1e-12);
-    E = E./eqScale; d = d./eqScale;
-end
-% Offsets of the exact Lorentz Jordan blocks; all other blocks are scalar.
-starts = linearCount + 1 + [0; cumsum(coneSizes(1:end-1))];
-starts = starts(1:numel(coneSizes));
-m = numel(h); ne = size(E,1);
-identity = [ones(linearCount,1); zeros(m-linearCount,1)];
-identity(starts) = 1;
-blockCount = linearCount + numel(coneSizes);
-z = identity; s = identity;
-xReduced = zeros(nf,1); y = zeros(ne,1);
-setupTime = toc(timer);
-exitflag = 0; message = 'Iteration limit or numerical failure.';
-primal = inf; dual = inf; gap = inf;
-certifiedLower=-inf; certifiedGap=inf; boundCertificate=struct();
-originalResidual=inf;
 
 %% Section 2: MATLAB Evaluation Of The Analytical Cone Equations
 % Independently recheck the kernel certificate in the original MATLAB inputs.

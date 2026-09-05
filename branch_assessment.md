@@ -1,5 +1,40 @@
 # Novel replacement branch assessment
 
+## Committed MATLAB solver and focused cleanup - 2026-09-05
+
+The MATLAB replacement was committed first as 9dec1bf. The subsequent cleanup
+removed unused cone initialization, unreachable equality scaling after exact
+elimination, and duplicated recovery metadata. Fastcone now has 1,328 physical
+MATLAB lines versus 1,350 in that commit. Its 15-file mathematical structure,
+public diagnostics, certificate gates and explicit reference recovery remain.
+There are no production MEX files, native sources or Eigen dependencies.
+
+All 200 saved requests retained bit-identical numerical results and non-timing
+diagnostics against a frozen copy of 9dec1bf. All 64 affected solver/BMTP/planner
+contract tests passed; the complete 151-test suite and all 18 maintained
+examples had passed before this behavior-preserving cleanup. No additional
+benchmark script or generated artifact is tracked. The user-owned failed.mat
+is unchanged by this work and excluded from both commits.
+
+Fresh complete-adapter measurements used four warmups and nine interleaved
+measurements per method, identical inputs/options and MATLAB R2024b:
+
+| Captured plane | Exhaustive MATLAB (ms) | Native (ms) | 9dec1bf (ms) | Cleaned MATLAB (ms) | coneprog (ms) | Exhaustive/current |
+|---|---:|---:|---:|---:|---:|---:|
+| 9 | 62.0974 | 5.8277 | 3.2364 | 3.4019 | 3.9646 | 18.2537x |
+| 11 | 62.9616 | 4.7971 | 3.2944 | 3.2232 | 3.7181 | 19.5339x |
+
+Current MATLAB is 1.1654x/1.1535x faster than coneprog on these two requests.
+The cleanup itself is retained for removing dead work, not a claimed speedup:
+its measurements vary +5.1%/-2.2% relative to the preceding commit. Both current
+MATLAB results pass the original residual and objective gates, residuals
+2.22e-16/1.87e-16. On request 9, native recovery and coneprog both report success
+but have original residual 1.0811e-6 against tolerance 1e-6. The benchmark first
+stopped on that baseline assertion; its corrected reporting preserves this
+unfavorable result instead of weakening the candidate's gate. Request 11's
+reference residual is zero. Timings above are not evidence of uniform speedup
+or a general closed-form solution for every conic program.
+
 ## MATLAB-only production integration - 2026-09-05
 
 Production fastcone now uses MATLAB contact equations and a MATLAB conic
