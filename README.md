@@ -27,6 +27,22 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
+BMTP's trajectory and separating-plane conic programs use `fastcone.solve`.
+Build its native kernel once to enable the measured acceleration:
+
+```matlab
+fastcone.build;
+% Alternatively, select an installed Windows MinGW compiler explicitly:
+% fastcone.build('C:\msys64\mingw64\bin\g++.exe');
+```
+
+The sources and pinned Eigen headers are included; native binaries are built
+locally. Unsupported or uncertified solves recover through MATLAB `coneprog`,
+and diagnostics report that recovery. Optimization Toolbox remains required.
+See [fastcone usage and equations](docs/fastcone.md),
+[per-case runtime measurements](benchmarks/results/fastcone/README.md), and
+[integration verification](verification.md#fastcone-integration---2026-09-04).
+
 A partial options structure can override only the controls it needs:
 
 ```matlab

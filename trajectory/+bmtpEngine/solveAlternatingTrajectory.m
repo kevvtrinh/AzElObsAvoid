@@ -30,6 +30,7 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 %% Section 1: Initialize The Alternating State
 
 segmentCount = warmStart.SegmentCount;
+diagnostics.ConicSolver = fastcone.accumulate();
 degree = request.Degree;
 regions_deg = request.Regions_deg;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
@@ -59,6 +60,7 @@ for iterationIndex = 1:35
         "earliestArrival", 0, feasibleSegmentTime_s, ...
         request.TrajectoryOptions);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
+    diagnostics.ConicSolver = fastcone.accumulate(diagnostics.ConicSolver, output);
     diagnostics.FinalTrajectoryExitFlag = exitFlag;
     if exitFlag <= 0 || isempty(trialControl_deg)
         % The requested horizon constrains the returned motion, but the first
@@ -141,11 +143,12 @@ for iterationIndex = 1:35
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex] = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag] = bmtpEngine.solveSeparatingLine( ...
+        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine( ...
             squeeze(feasibleControl_deg(segmentIndex, :, :)), ...
             regions_deg{regionIndex}, obstacleTarget_deg, ...
             roundoffReserve_deg, request.PlaneOptions);
         diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
+        diagnostics.ConicSolver = fastcone.accumulate(diagnostics.ConicSolver, planeOutput);
         if planeExitFlag <= 0 || ~plane.Active
             [diagnostics.FailedPlaneSegmentIndex, ...
                 diagnostics.FailedPlaneRegionIndex, diagnostics.FailedPlane] = ...

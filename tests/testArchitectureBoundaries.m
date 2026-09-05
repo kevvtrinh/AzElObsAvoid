@@ -71,7 +71,7 @@ actualRootSources = string({dir(fullfile(trajectoryRoot, "*.m")).name});
 verifyEqual(testCase, sort(actualRootSources), "planTrajRuckig.m");
 packageRecords = dir(fullfile(trajectoryRoot, "+*"));
 actualNames = sort(string({packageRecords([packageRecords.isdir]).name}));
-verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
+verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine", "+fastcone"]));
 actualSources = sort(string({dir(fullfile( ...
     testCase.TestData.EngineRoot, "*.m")).name}));
 expectedSources = sort([ ...

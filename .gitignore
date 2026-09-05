@@ -9,3 +9,7 @@ benchmarks/*.mat
 benchmarks/*.png
 benchmarks/*_runs.csv
 benchmarks/*_summary.csv
+trajectory/+fastcone/core.mex*
+trajectory/+fastcone/core.pdb
+trajectory/+fastcone/core.exp
+trajectory/+fastcone/core.lib

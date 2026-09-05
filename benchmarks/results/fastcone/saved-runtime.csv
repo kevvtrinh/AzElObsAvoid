@@ -1,0 +1,4 @@
+Example,ConeprogPlanner_s,CandidatePlanner_s,Speedup,Reduction_pct,ConeprogMin_s,ConeprogMax_s,CandidateMin_s,CandidateMax_s,ConeprogConic_s,CandidateConic_s,ConeprogConicCalls,CandidateConicCalls,CandidateRecoveryCalls,ConeprogPassed,CandidatePassed,IdenticalInputs
+failed,31.4032188,4.6927896,6.69180199342412,85.0563420587956,30.3979235,34.6300363,4.3775817,6.3932579,28.759197,2.0071296,305,308,67,1,1,1
+inefficientroute,4.6538018,0.8789431,5.29477027580056,81.1134393389938,4.5806487,5.3503564,0.8512206,0.9725051,4.2047045,0.3819631,41,40,11,1,1,1
+inefficientroute_2,4.4400249,0.8373766,5.302303527469,81.1402724340577,4.3138701,4.908252,0.8199157,0.8798299,4.0335063,0.3566819,39,39,11,1,1,1

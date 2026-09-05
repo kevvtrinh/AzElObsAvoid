@@ -1,0 +1,2 @@
+Case,Coneprog_s,Fastcone_s,Speedup,ConeprogMin_s,ConeprogMax_s,FastconeMin_s,FastconeMax_s,RecoveryCalls,ConeprogPositiveFlags,FastconePositiveFlags,ConeprogMaxResidual,FastconeMaxResidual
+known Lorentz optimum,0.0082977,0.0115331,0.719468312942747,0.0079934,0.0094833,0.0078196,0.0143772,0,3,3,4.47128661873464e-09,0

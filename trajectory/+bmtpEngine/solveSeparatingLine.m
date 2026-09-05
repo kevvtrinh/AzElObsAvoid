@@ -1,8 +1,8 @@
-function [plane, exitFlag] = solveSeparatingLine( ...
+function [plane, exitFlag, output] = solveSeparatingLine( ...
         controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [plane, exitFlag] = bmtpEngine.solveSeparatingLine( ...
+%   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
 %       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %**************************************************************************
 % PURPOSE
@@ -23,7 +23,9 @@ function [plane, exitFlag] = solveSeparatingLine( ...
 %   - plane (scalar struct)
 %       Line normals, offsets, verified gap, and active state.
 %   - exitFlag (numeric scalar)
-%       Unmodified coneprog exit flag.
+%       Fastcone acceptance or original coneprog recovery exit flag.
+%   - output (scalar struct, optional output)
+%       Executed method, certificates, elapsed time, and recovery diagnostics.
 %**************************************************************************
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are degrees.
@@ -46,7 +48,7 @@ for planeIndex = 0:1
     cones(planeIndex + 1) = secondordercone( ...
         coneA, zeros(2, 1), zeros(variableCount, 1), -1);
 end
-[x, ~, exitFlag] = coneprog( ...
+[x, ~, exitFlag, output] = fastcone.solve( ...
     f, cones, A, b, [], [], [], [], options);
 plane = emptyPlane();
 plane.ExitFlag = exitFlag;

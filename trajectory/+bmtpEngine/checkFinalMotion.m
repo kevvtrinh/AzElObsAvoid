@@ -49,6 +49,7 @@ planes = repmat(createEmptyPlane(), segmentCount, regionCount);
 verifiedCount = 0;
 conicCount = 0;
 analyticCount = 0;
+conicSolver = fastcone.accumulate();
 minimumGap_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectory_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
@@ -61,10 +62,11 @@ for segmentIndex = 1:segmentCount
         if plane.Verified
             analyticCount = analyticCount + 1;
         else
-            [plane, ~] = bmtpEngine.solveSeparatingLine( ...
+            [plane, ~, output] = bmtpEngine.solveSeparatingLine( ...
                 trajectory_deg, regions_deg{regionIndex}, target_deg, ...
                 reserve_deg, solverOptions);
             conicCount = conicCount + 1;
+            conicSolver = fastcone.accumulate(conicSolver, output);
         end
         planes(segmentIndex, regionIndex) = plane;
         if plane.Verified
@@ -94,7 +96,7 @@ certificate = struct("Kind", certificateKind, ...
     "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
     "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
     "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
-    "ConicPairCount", conicCount);
+    "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 
 function plane = checkHullSeparationLine( ...

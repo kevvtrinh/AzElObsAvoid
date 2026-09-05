@@ -655,8 +655,8 @@ verifyLessThan(testCase, diagnostics.FinalWaitTime_s, ...
     diagnostics.InitialWaitTime_s);
 end
 
-function testPlaneReuseSummaryAndRetainedBestTrial(testCase)
-% Preserve behavior-bearing reuse summary and best-trial evidence.
+function testConvergenceSummaryAndRetainedBestTrial(testCase)
+% Native fastcone reaches arrival tolerance before the former reuse stop.
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(fullfile(repositoryRoot, "examples"));
 overrides = struct( ...
@@ -671,11 +671,12 @@ verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 diagnostics = result.SeedSummaries(result.SelectedSeedIndex).SolverDiagnostics;
 verifyFalse(testCase, any(startsWith( ...
     string(fieldnames(diagnostics)), "TravelRefinement")));
-verifyTrue(testCase, diagnostics.PlaneReuseApplied);
-verifyGreaterThan(testCase, diagnostics.PlaneReuseCount, 0);
+verifyFalse(testCase, diagnostics.PlaneReuseApplied);
+verifyEqual(testCase, diagnostics.PlaneReuseCount, 0);
+verifyGreaterThan(testCase, diagnostics.ConicSolver.NativeAcceptedCount, 0);
 verifyTrue(testCase, diagnostics.Converged);
 verifyEqual(testCase, diagnostics.SolverMessage, ...
-    "The next trajectory SOCP would be unchanged.");
+    "The feasible arrival improvement reached tolerance.");
 verifyGreaterThan(testCase, diagnostics.CollisionPairCountHistory(1), 0);
 collisionFreeTrials_s = diagnostics.TrialDuration_s( ...
     diagnostics.TrialWasCollisionFree);

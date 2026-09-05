@@ -1,5 +1,143 @@
 # Plan 325 verification
 
+## Fastcone integration - 2026-09-04
+
+Base `a07203732ef1d8746334b67821e6290e151b2f6c`, branch
+`bmtp-cleanup-codex`, isolated integration worktree. MATLAB R2024b Update 4
+with Optimization Toolbox; native build uses installed Windows MinGW g++
+and bundled Eigen 3.4.0 headers. `fastcone.build` produced the local package
+MEX. All 337 copied Eigen headers match the pinned research dependency
+byte-for-byte; original license notices are retained. No generated binary
+is committed. The native algorithm matches the accepted blocks implementation.
+
+Both BMTP conic call sites route through `fastcone.solve`. Alternating,
+travel-refinement, and final-certificate phases retain method/recovery
+statistics. Physical model coefficients, protected regions, polynomial
+degree/span choices, coneprog tolerance options, and canonical validation are
+unchanged. The candidate uses original-unit primal and weak-dual checks;
+unresolved attempts recover with the identical coneprog input arguments.
+
+The public adapter's five tests passed before native compilation, proving
+explicit missing-binary recovery. Initial post-build checks exposed MATLAB's
+package-name `exist` lookup returning zero for an installed MEX; availability
+now checks the complete binary path, and the known-optimum test requires
+actual native acceptance. The native mathematical checks subsequently passed.
+An independent equality test initially used unsupported `diff(x,0)`; that
+test construction was corrected to handle zeroth derivatives directly.
+
+The complete suite then ran 144 tests: 142 passed, two solver-dependent
+reference expectations failed, and none were incomplete. The rectangle's
+accepted native result is 7.52479716350113 s / 11.4274584581313 deg versus
+the former coneprog reference 7.553888427 s / 11.430861536 deg. Its golden
+values were updated with the same 1e-6 tolerance. The target-exits fixture
+now converges by arrival tolerance before the former plane-reuse stop; its
+termination expectation was updated while retaining independent feasibility
+and best-trial checks at their original tolerances. Both affected test files
+then passed all 36 tests. Every test in the final 144-test set has therefore
+passed, with no skipped/incomplete result; the earlier failures remain here
+rather than being discarded. No production logic changed between those runs.
+
+Exact commands and logs are retained in local `output/fastcone-full-tests.*`
+and `output/fastcone-updated-reference-tests.*`. Native conic mathematics,
+geometric planes, weak-dual bounds, and independent C3 equality tests are in
+`tests/testFastcone*.m`.
+
+All 18 maintained examples subsequently completed in separate headless MATLAB
+processes with their default finite jerk limits and physical inputs. Seventeen
+returned independently valid motions; NoPath preserved the expected
+`noValidatedSeed` failure, empty motion, and search diagnostics. Its generic
+trajectory validator correctly returns false; the expected-failure check
+passes. The geographic example independently validates all three regions
+internally and returns only its final regional result. No sequence-validation
+warning occurred. Each of the eight conic-using examples recorded native
+acceptance and explicit coneprog recovery. The root `benchmark.csv` contains
+all 18 actual headless runs plus two actual graphics runs. Those cold diagnostic
+wall times include example setup/validation and are not paired speedups.
+
+| Conic-using example | Polyline / smooth length (deg) | Duration (s) |
+|---|---:|---:|
+| AlternatingSlalom | 16.0193197983 / 16.2952696408 | 10.5050051585 |
+| NoPath | NaN / NaN | NaN |
+| ObstacleAvoidance | 11.1521195190 / 11.4274584581 | 7.5247971635 |
+| StaticUShapedObstacle | 34.9425880405 / 39.4396505765 | 20.7677583326 |
+| StraightTargetAlternatingOcclusion | 13.3416640641 / 13.6172257504 | 20.8695652174 |
+| TargetExitsObstacle | 20.1357890335 / 20.6095651496 | 24 |
+| TwoOpposingUVisibilityGraph | 24.0357847150 / 24.7620903059 | 21.8341991971 |
+| USOutlineExtremeVisibility (returned final region) | 22.0706469075 / 23.3650742239 | 5.7999449556 |
+
+Every successful row above has planner/independent/collision/kinematic/plane
+and continuous-collision checks true and termination `goalReached`.
+The recorded NoPath trajectory checks are false, with its expected failure
+checked separately. Saved `Rogue Examples/failed.mat` was replayed unchanged
+through the integrated planner: duration 71.2637210984 s, smooth length
+145.184781951 deg, independently valid, with native and recovery calls.
+Its 6.81623-s single cold diagnostic time is not a repeated speedup estimate.
+
+Visible NoPath and rectangle examples ran successfully and their exported
+figures were inspected. The no-path diagnostics, selected route, protected
+geometry, continuous motion, and limit-bearing kinematic plots render. Long
+existing plot titles are clipped at the export edge; plotting code was not
+changed as part of solver integration. Artifacts are in local
+`output/fastcone-example*-headless.mat`, `*-plots.mat`, and PNG files.
+
+`benchmarkFastcone` was exercised on a known two-variable Lorentz optimum with
+one warmup and three interleaved repetitions. All native results passed with
+zero recoveries and zero measured primal residual. Median coneprog/fastcone
+times were 0.0082977 / 0.0115331 s (0.71947x): a small-problem slowdown, retained
+in `benchmarks/results/fastcone/integration-smoke-runtime.csv`. This smoke
+check verifies the helper, not representative HS acceleration. Its raw MAT
+file is `output/fastcone-benchmark.mat`. Static `checkcode` completed with 38
+nonfatal style, unused-value, and sparse-indexing advisories; the benchmarked
+numerical implementation was retained, and no analyzer-clean claim is made.
+The saved request, analyzer, smoke benchmark, and graphics process exited zero;
+see `output/fastcone-postflight.log`. The authored changes pass
+`git diff --cached --check -- . ':(exclude)third_party/eigen'`. The complete
+staged patch reports upstream whitespace in the unmodified Eigen dependency;
+those headers and license texts were preserved rather than reformatted.
+
+### Source-size accounting
+
+The existing `auditProductionSize` counts nonblank MATLAB lines whose first
+nonspace character is not `%` under `+obstacleAvoidance` and `trajectory`.
+It reports **13,188 lines / 107 files versus ceiling 11,482: failed**.
+The baseline already had 12,625 such lines / 98 files. The integration adds
+563 noncomment production MATLAB lines; the ceiling is unchanged.
+
+| Scope | Baseline physical .m lines | Integration physical .m lines |
+|---|---:|---:|
+| `+obstacleAvoidance` | 10,417 | 10,417 |
+| `trajectory` | 6,913 | 7,570 |
+| `tests` | 5,337 | 5,677 |
+| `benchmarks` | 1,046 | 1,190 |
+| `examples` | 3,020 | 3,020 |
+
+Physical production MATLAB totals 17,330 -> 17,987 (+657); native C++ adds
+279 physical lines separately. The largest production MATLAB file is 635
+lines, below 900. Production plus tests totals 23,664 physical MATLAB lines;
+including benchmark helpers gives 24,854. Both exceed the old 12,000-line
+planner/test-tree target, as did the baseline. Vendored Eigen's 337 headers
+occupy 6,263,600 bytes and are reported separately from authored planner code.
+
+Under the old physical-line formula, the 17,987-line total exceeds 7,500 by
+10,487, requiring `0.25 * 10487 / 100 = 26.2175`, or **2,621.75% reduction**.
+The smallest measured reduction over the eleven affected full-planner cases
+is 27.164471% (NoPath: 0.2926385 -> 0.2131448 s); it cannot satisfy that
+formula. The fixed-arrival conic replay also contains a slowdown. The size
+allowance and zero-quality-regression rules do not pass. The user expressly
+accepted the current measured engine and requested its integration and push;
+the implementation is retained as that authorized scope, with these failed
+limits visible, rather than claiming a policy-compliant runtime allowance.
+Machine-readable counts are in `benchmarks/results/fastcone/integration-size.json`.
+
+New files over 50 lines have bounded responsibilities: `build` compiles the
+kernel; `solve` dispatches and reports recovery; `solveNative` prepares and
+checks native programs; `hsEqualityBasis` removes recognized C3 equalities;
+`separatingLine` certifies geometric contacts; `centerEndpointPlane` resolves
+free endpoint normals; `dualBoxBound` verifies objective bounds; native
+`fastcone_core.cpp` evaluates and solves analytical cone blocks. The new test
+files exercise those contracts, and `verifyFastconeExample` preserves real
+example validation evidence. No existing production file grows by 50 lines.
+
 ## Fixed time-power bound screen - 2026-09-04
 
 Baseline `c188106`, MATLAB R2024b Update 4 / Optimization Toolbox / rng(0).

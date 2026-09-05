@@ -1,5 +1,34 @@
 # Novel replacement branch assessment
 
+## Accepted fastcone integration - 2026-09-04
+
+The user accepted the measured blocks engine and explicitly requested adding
+it to `bmtp-cleanup-codex`, wiring BMTP to it, and pushing the branch. Both
+conic construction paths now use `fastcone.solve`. The original problem,
+physical limits, solver tolerances, candidate comparison, and independent
+trajectory validation remain in place. Native or analytical acceptance and
+original-coneprog recovery are visible in phase diagnostics.
+
+The accepted pre-integration measurements give 3.774x across eleven qualifying
+full-planner examples and 9.50836x for 1,028 identical conic programs. These
+are different benchmark boundaries. The fixed-arrival degree-7/eight-span
+replay slows to 0.656x, and two full-planner objectives regress slightly.
+Those outcomes remain in the [per-case records](benchmarks/results/fastcone/README.md).
+This is user-authorized adoption of the measured tradeoff; it is not a claim
+that the earlier zero-quality-regression gates or the initial 10x target pass.
+
+The package adds the selected MATLAB setup, analytical equality and plane
+profiles, independently checked native kernel, explicit recovery, local MEX
+builder, and pinned Eigen headers. New ordered-kernel and plane-box experiments
+are excluded. Build instructions and mathematical scope are in
+[docs/fastcone.md](docs/fastcone.md). Source-size overages, exact validation,
+and prior failed reference checks are recorded in `verification.md`; existing
+size thresholds have not been raised to manufacture a passing result.
+
+Integration was prepared against `a072037` in an isolated worktree so the
+original HS checkout's unrelated changes could be preserved. Existing branch
+history is retained; this work does not stage those unrelated changes.
+
 ## Fixed time-power bound rejected - 2026-09-04
 
 An exact mathematical reformulation replaced the p0=1 equality with matching

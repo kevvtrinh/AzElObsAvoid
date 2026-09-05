@@ -1,0 +1,5 @@
+Profile,Programs,Baseline_s,Candidate_s,Speedup,RecoveryCalls,MeasuredCalls,BaselineUnsuccessful,CandidateUnsuccessful,BaselinePositiveFlagPrimalFailures,CandidatePositiveFlagPrimalFailures
+Earliest arrival,70,69.1642058,3.1155184,22.1999028476288,15,210,3,3,67,2
+Separating planes,942,4.6385685,2.6922634,1.7229252160097,828,2826,1,1,65,36
+Balanced arrival,8,4.1681279,0.2229794,18.6928832887702,0,24,0,0,7,0
+Fixed arrival,8,2.8611997,2.4704039,1.15819105531691,9,24,1,0,4,3
