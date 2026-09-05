@@ -1,5 +1,56 @@
 # BMTP branch assessment
 
+## HTML sandbox final-pose editing - 2026-09-05
+
+Added Delete to the selected polygon's floating menu. Set motion now exposes a
+mission-end ghost with direct body/corner/rotation-handle editing, a finish
+checkmark, and collapsed numeric controls in the sidebar. No transform-tool
+buttons or top pose bar remain. A local obstacle preview animates without
+endpoints, a result, or MATLAB and shows only untraveled centroid paths and retains final-pose
+ghosts. Ending preview restores editing and preserves any existing planner result. Copy retains final-pose settings;
+Make stationary resets them. Initial geometry is preserved. Translation keeps
+the existing center-speed limit; angular and scale motion are separate inputs.
+The handoff schema is unchanged: the browser samples transformed vertices and
+uses matching piecewise linear interpolation for request preview. Angular steps
+are at most 5 degrees. This is sampled polygon motion, not exact rigid arcs;
+MATLAB's existing correspondence/enclosure contract still applies.
+
+The obstacle-speed control is now a 0–10 deg/s slider with a live readout inside
+the canvas for the selected editable obstacle;
+exact components are collapsed and accept -10 to 10 deg/s. Slider, vector,
+and destination checks use the 10 deg/s magnitude limit requested by the user. It retains direction through zero and preserves
+the selected profile. New motion defaults to +Az when no direction was set.
+
+The Rectangle tool (R) creates ordinary four-vertex polygons by dragging
+opposite corners; drafts are bounded to the workspace and zero-area drafts
+are refused. Escape and pointer cancellation discard the rectangle draft.
+
+Verification: 20 focused Node tests pass for distinct convex/concave shapes,
+rotation-only and combined motion, stretch in rotated axes, angle-wrap handling,
+preview/export consistency across translation profiles, edit locks, invalid
+inputs, copy independence, ghost dragging, playback-time selection, deletion,
+icon/menu structure, offline preview advancement, direct handle hit testing,
+remaining preview paths (including reverse scrubbing) and persistent final
+ghosts, returning to editing, and speed-slider
+direction retention, bounds, edit locks, canvas-overlay placement, and
+rectangle drawing in all four directions with degenerate rejection. JavaScript syntax and
+static markup checks pass. Visual browser interaction and MATLAB integration
+remain unverified; browser policy previously blocked the local-file preview.
+No MATLAB examples were run and benchmark.csv has no new rows for this change.
+
+
+## HTML sandbox visual refresh - 2026-09-05
+
+Refreshed the standalone HTML sandbox with light surfaces and canvas, stronger
+plot colors, larger controls, a three-step orientation guide, explicit offline
+command numbering, and collapsed workspace bounds. Planner behavior and
+request/result interfaces are unchanged. Verification: JavaScript syntax,
+existing element IDs and script behavior equivalence apart from color literals,
+and HTML nesting checked statically. Browser visual and interaction checks
+remain unverified because browser policy blocked the local file URL. No MATLAB
+examples were executed and no benchmark rows were added for this UI change.
+
+
 ## Adopted degree-eight MATLAB configuration - 2026-09-05
 
 The user ended the solver research and selected uniform degree eight with

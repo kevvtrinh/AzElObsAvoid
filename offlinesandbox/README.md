@@ -13,6 +13,21 @@ The page always displays one explicit mode:
 - **Offline · file handoff** preserves the numbered download, MATLAB command,
   and result-file selection steps.
 
+## Scene editor
+
+The light workspace follows three steps: build your scene, plan in MATLAB,
+and inspect the returned motion. Choose a drawing tool above the canvas;
+the active tool is highlighted in blue and the canvas hint explains its action.
+Exact endpoints and physical limits are visible in the controls. Expand
+**Workspace bounds (deg)** or **Planner options** for additional settings.
+The connection badge stays visible on small screens, and offline handoff
+labels each of its three steps, including the MATLAB command.
+
+Choose **Rectangle** (or press R), then drag between opposite corners to add a
+four-vertex polygon. Drawing works in any direction and stops at workspace
+bounds. Escape or a canceled pointer gesture discards the draft. Rectangles
+use the same editing, motion, safety-margin, and export behavior as polygons.
+
 ## Live mode: MATLAB serves the page and planner
 
 In MATLAB, add this folder's parent to the path and start the blocking server:
@@ -45,13 +60,59 @@ options, then runs the current planner. The displayed result is therefore a
 fresh reproduction, not the result stored in the bundle. Replayed bundles may
 be saved again, and cooperative cancellation remains available while they run.
 
-For moving polygons, select the polygon and press **Set motion**, then drag
-from its centroid. The arrow components and length are velocity in deg/s, and
-the speed magnitude is printed at the arrow head and in the obstacle editor.
-Constant-velocity motion uses that vector directly; zero-start uses it as
-final velocity; trapezoidal and out-and-back motion use it as peak velocity.
-The browser integrates the selected velocity profile into the 21 position
-keyframes sent to MATLAB.
+Select a polygon to open its floating **Copy**, **Rotate**, **Set motion**, and
+**Delete** actions. **Set motion** rewinds to mission start and displays a purple
+ghost of its final pose. Edit the ghost directly using its outline; no move,
+stretch, or rotate tool selection is needed. Its small floating menu contains
+only **Preview** and the green **Finish final pose** checkmark:
+
+- **Move:** grab the ghost body or center, or expand **Exact final pose values** in the obstacle
+  sidebar to enter its final center. This sets constant translation to reach that center at mission end.
+  Destinations requiring more than the existing 10 deg/s center-speed limit are
+  refused; increase mission time or choose a nearer destination.
+- **Stretch:** drag an always-visible purple corner to change width and height about the
+  ghost's center, along its rotated local axes. Numeric width/height factors
+  are also available; 1× retains the original size and 0.01× is the minimum.
+- **Rotate:** drag the round handle extending from the ghost, or enter **Turn from start (deg)**.
+  Positive turns are counter-clockwise, negative turns clockwise, with a
+  supported range of -360 to 360 degrees. Pure rotation needs no translation.
+
+Select the green checkmark, press Escape, or start mission playback to leave final-pose editing.
+The original polygon remains the mission-start shape; turn and scale progress
+over the mission. Copy preserves these settings. **Make stationary** clears
+translation, turn, and stretch. Rotation and scale edits preserve the selected
+translation profile; changing destination explicitly selects constant velocity.
+The **Obstacle speed** slider overlays the lower-right corner of the canvas
+when an editable obstacle is selected. It controls commanded translation speed from
+0 to 10 deg/s, with a live numeric readout. It preserves direction through zero
+and retains the selected motion profile; starting a new stationary obstacle
+defaults to constant motion toward +Az. Drag the ghost to choose another
+direction. Exact velocity fields are under **Direction components**.
+The velocity fields and arrow handle remain available for zero-start,
+trapezoidal, and out-and-back translation. Changing mission duration retains
+the commanded velocity, so the ghost destination updates accordingly.
+
+The ghost's play icon and **Preview obstacles** below the canvas run obstacle
+animation locally, without MATLAB, start/goal points, or a planner result.
+The preview includes translation, rotation, and stretch. Each obstacle's remaining
+centroid path appears as a dashed line and its final shape stays visible as a
+purple ghost throughout playback, including for imported result histories.
+The line disappears behind the obstacle and is gone at the end; scrubbing
+backward restores the remaining path for that earlier time.
+Use the timeline to pause or scrub, then **End preview** to return to editing.
+Preview preserves any existing planner result, while
+hiding its path and kinematic charts until the preview ends. It does not run
+planning or collision validation. Exact numeric pose fields are collapsed in
+the sidebar rather than displayed in a bar above the canvas.
+
+Preview and export use the same sampled motion. Translation or stretch uses at
+least 20 intervals; rotation adds intervals to keep each angular step at most
+5 degrees. Between samples, corresponding vertices follow straight segments,
+not exact rigid rotation arcs. This is the existing polygon-history model in
+`obstacle_history_contract.md`. MATLAB may conservatively enclose unsupported
+history intervals; the response retains its protected geometry. Safety margins
+are still applied only by MATLAB, and rotation/scale do not inherit the 10 deg/s
+translation limit as a bound on every boundary vertex's speed.
 
 Select **Cancel** to request cooperative cancellation. The server accepts that
 request out of band and supplies a trusted MATLAB-only `CancellationCheckFcn`
@@ -217,8 +278,9 @@ The browser writes this shape:
 - `obstacles` may be `[]`. Each nonempty obstacle has a nonnegative margin and
   one or more strictly increasing keyframes. Every `vertices_deg` value is a
   finite N-by-2 array with at least three rows.
-- The page repeats a static polygon at mission start and end. Moving polygons
-  use 21 keyframes with the same profiles as the MATLAB sandbox.
+- The page repeats a static polygon at mission start and end. Translation and
+  stretch use at least 21 keyframes. Rotation uses additional samples as needed
+  to limit angular steps to 5 degrees; see the final-pose controls above.
 - `options` is a partial public planner-options structure. JSON callbacks are
   prohibited; in particular, `CancellationCheckFcn` is not accepted. Live
   cancellation is injected only as a trusted MATLAB argument after this check.
