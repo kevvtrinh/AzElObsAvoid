@@ -67,7 +67,7 @@ end
 
 function [A, b] = maximumMarginRows( ...
         controlPoint_deg, vertices_deg, target_deg)
-% Create linear inequalities for one maximum-margin line solve.
+% Build inequalities for the maximum-margin separating line.
 degree = size(controlPoint_deg, 1) - 1;
 variableCount = 7;
 offsetIndex = 5:6;
@@ -90,7 +90,7 @@ A(targets, marginIndex) = -1;
 end
 
 function rows = variablePlaneRows(controlPoint_deg, variableCount)
-% Expand a decision-valued line times one fixed trajectory control net.
+% Multiply a variable separating line by fixed trajectory controls.
 degree = size(controlPoint_deg, 1) - 1;
 [alpha, beta] = productWeights(degree);
 rows = zeros(degree + 2, variableCount);
@@ -106,7 +106,7 @@ alpha = 1 - beta;
 end
 
 function plane = emptyPlane()
-% Define the stable inactive degree-one separating-line record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

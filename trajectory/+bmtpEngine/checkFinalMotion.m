@@ -27,8 +27,8 @@ function certificate = checkFinalMotion( ...
 
 %% Section 1: Check All Curve And Obstacle Pairs
 
-% Splitting each optimized segment creates two output spans, so repeat the
-% original applicability mask exactly once to preserve timed-region coverage.
+% Each optimized segment becomes two output spans.
+% Repeat its timed-region mask for both spans.
 regionActiveBySegment = repelem( ...
     warmStart.RegionActiveBySegment, 2, 1);
 certificate = checkAllCurveObstaclePairs( ...
@@ -130,7 +130,7 @@ plane = bmtpEngine.verifySeparatingLine( ...
 end
 
 function plane = createEmptyPlane()
-% Define the stable inactive or verified degree-one plane record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

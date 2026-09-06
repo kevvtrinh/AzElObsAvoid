@@ -29,7 +29,7 @@ testCase.TestData.Request = createRequest();
 end
 
 function testSavedLongPath(testCase)
-% Replay the user's exact request without modifying its balanced objective.
+% Migrate the saved options while preserving its arrival clock and shorter path.
 verifySavedRoute(testCase, "pathtoolong", 233.058989023, 117.744031226);
 end
 

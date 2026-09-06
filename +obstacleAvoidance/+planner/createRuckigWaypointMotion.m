@@ -197,7 +197,7 @@ end
 end
 
 function polynomial = convertPolynomial(enginePolynomial, initialTime_s)
-% Translate engine names into the planner's shared polynomial contract.
+% Convert engine field names to the planner's polynomial format.
 terminalState = enginePolynomial.TerminalState;
 duration_s = enginePolynomial.FinalTime - initialTime_s;
 segmentBreakTau = [enginePolynomial.SegmentStartTime; ...

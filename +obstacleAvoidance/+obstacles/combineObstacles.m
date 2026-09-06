@@ -25,7 +25,7 @@ function obstacleField = combineObstacles(varargin)
 
 %% Section 1: Flatten Nested Inputs
 
-% Flatten each top-level input independently so errors retain its public index.
+% Flatten inputs while keeping their original index for error messages.
 if nargin == 0
     obstacleField = createEmptyObstacleArray();
     return;
@@ -50,7 +50,7 @@ obstacleField = vertcat(normalized{:});
 end
 
 function items = flattenValue(value, owner)
-% Flatten one nested container in caller order and retain its top-level owner.
+% Flatten nested cells in input order.
 if isnumeric(value) && isempty(value)
     items = cell(0, 1);
 elseif isstruct(value)
@@ -67,7 +67,7 @@ end
 end
 
 function obstacleField = createEmptyObstacleArray()
-% Preserve canonical field order even when the collection has no records.
+% Keep the same fields for an empty obstacle array.
 template = struct("targetName", "", "time_s", zeros(0, 1), ...
     "az_deg", {cell(0, 1)}, "el_deg", {cell(0, 1)}, "originalAz_deg", {cell(0, 1)}, ...
     "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));

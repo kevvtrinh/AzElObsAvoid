@@ -124,7 +124,7 @@ end
 %% Section 4: Local Functions
 
 function diagnostics = appendSearchDiagnostics(diagnostics, record)
-% Append returned search traces and full counts without recreating decisions.
+% Append search traces and counts.
 diagnostics.ExpandedCount = diagnostics.ExpandedCount + record.ExpandedCount;
 diagnostics.RejectedTransitionCount = ...
     diagnostics.RejectedTransitionCount + record.RejectedTransitionCount;
@@ -138,7 +138,7 @@ end
 end
 
 function diagnostics = emptyDiagnostics(start_deg, goal_deg)
-% Initialize every stable field before direct-only and no-path exits.
+% Initialize diagnostics, including direct-only and no-path cases.
 coverage = struct("ExactSpatialProposalUsed", false, ...
     "ReducedSpatialProposalUsed", false, "TimedSearchAttempted", false, ...
     "TimedSearchInitialDeferred", false, ...

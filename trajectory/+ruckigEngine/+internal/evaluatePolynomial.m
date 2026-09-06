@@ -88,7 +88,7 @@ end
 %% Section 3: Local Functions
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-% Evaluate selected coordinate records together without sample dispatch.
+% Evaluate all requested axes and times together.
 coefficientCount = size(coefficientArray, 3);
 power = reshape(localTau .^ (0:coefficientCount - 1), ...
     [], 1, coefficientCount);

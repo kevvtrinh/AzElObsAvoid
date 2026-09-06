@@ -21,9 +21,7 @@ function obstacles = prepareDynamic(obstacles)
 
 %% Section 1: Reuse Only Current Complete Preparation
 
-% Prepared geometry is queried throughout search and validation. Reuse it only
-% when every record has the current layout and an exact matching source copy;
-% otherwise rebuild the collection so callers never mix cache generations.
+% Reuse cached geometry only when its layout and source data match.
 
 if isempty(obstacles)
     return;
@@ -54,9 +52,7 @@ end
 
 %% Section 2: Prepare Each Complete History
 
-% Each obstacle needs the same ordered sample and interval work. Delegate one
-% complete record at a time so its method choices and derived values can be
-% inspected without collection-level cache logic obscuring them.
+% Prepare each obstacle separately.
 
 for obstacleIndex = 1:numel(obstacles)
     preparedObstacle = ...
@@ -70,7 +66,7 @@ end
 %% Section 3: Local Functions
 
 function snapshot = createSourceSnapshot(obstacle)
-% Retain an exact immutable copy of every canonical public source field.
+% Store the source fields for cache checks.
 snapshot = struct( ...
     "targetName", obstacle.targetName, ...
     "time_s", obstacle.time_s, ...

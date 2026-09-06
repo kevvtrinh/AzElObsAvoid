@@ -24,9 +24,8 @@ function kernelGoalState = createFixedKernelGoalState(goalState, options)
 
 %% Section 1: Remove Inapplicable Target History
 
-% A motion engine should not interpret obstacle-planner target history. It can
-% be removed only when fixed-arrival resolution selected the same physical
-% endpoint represented by goalState.position_deg.
+% Remove target history only when fixed-arrival resolution has selected
+% the same endpoint as goalState.position_deg.
 
 kernelGoalState = goalState;
 hasTargetHistory = isfield(goalState, "targetTime_s") && ...

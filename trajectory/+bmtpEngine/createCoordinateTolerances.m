@@ -53,7 +53,7 @@ end
 %% Section 3: Local Functions
 
 function coordinateScale_deg = updateScale(coordinateScale_deg, values_deg)
-% Include finite numeric coordinates without allowing separators to dominate.
+% Ignore nonfinite ring separators when measuring coordinate scale.
 if ~isnumeric(values_deg)
     error("createCoordinateTolerances:InvalidCoordinates", ...
         "Each coordinate collection must be numeric or a cell of numeric arrays.");

@@ -130,7 +130,7 @@ map = [1, 0, 0, 0, 0, 0; 0, h, 0, 0, 0, 0; ...
 end
 
 function polynomial = combinePolynomials(direct, lateral, break_s, axisIndex)
-% Add one scalar polynomial to a base coordinate on their union of breaks.
+% Split at both sets of breakpoints, then add the offset polynomial.
 duration_s = diff(break_s);
 segmentCount = numel(duration_s);
 dimensionCount = size(direct.positionPower_deg, 2);
@@ -173,7 +173,7 @@ end
 
 function power = translatePolynomial( ...
         polynomial, startTime_s, duration_s, outputCount)
-% Translate one source segment to a contained normalized-time interval.
+% Re-express a segment on a normalized subinterval.
 sourceIndex = min(polynomial.SegmentCount, ...
     1 + sum(startTime_s >= polynomial.SegmentStartTime_s(2:end)));
 sourceDuration_s = polynomial.SegmentDuration_s(sourceIndex);

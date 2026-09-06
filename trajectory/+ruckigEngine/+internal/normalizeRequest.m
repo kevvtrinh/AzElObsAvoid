@@ -118,7 +118,7 @@ end
 %% Section 4: Local Functions
 
 function value = hasFiniteVector(record, fieldName)
-% Treat omitted, empty, or entirely NaN optional derivative data as absent.
+% Treat omitted, empty, or all-NaN derivatives as unspecified.
 value = isstruct(record) && isfield(record, fieldName) && ...
     ~isempty(record.(fieldName));
 if ~value
@@ -194,7 +194,7 @@ end
 
 function pathConstraints = normalizePathConstraints( ...
         pathConstraints, dimensionCount)
-% Publish one stable affine path structure for Ruckig validation.
+% Initialize affine path constraints for validation.
 if ~isstruct(pathConstraints) || ~isscalar(pathConstraints)
     error("ruckigEngine:InvalidPathConstraints", ...
         "pathConstraints must be a scalar struct or empty.");

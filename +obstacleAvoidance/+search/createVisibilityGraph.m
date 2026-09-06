@@ -1,18 +1,20 @@
-function visibilityGraph = createVisibilityGraph(proposal, request)
+function visibilityGraph = createVisibilityGraph( ...
+        obstacles, initialState, goalState, limits, options, proposal)
 %% Section 0: Header & Readme
 % SYNTAX
-%   visibilityGraph = ...
-%       obstacleAvoidance.search.createVisibilityGraph(proposal, request)
+%   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
+%       obstacles, initialState, goalState, limits, options, proposal)
 %**************************************************************************
 % PURPOSE
 %   - Retry offset visibility attempts until endpoints connect or bounds end.
 %   - Return all attempts and the final graph used by route search.
 %**************************************************************************
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order. Unused inputs
+%       are accepted to keep stage signatures consistent.
 %   - proposal (scalar proposal-geometry struct)
 %       Spatial shape, endpoints, and reusable boundary edges.
-%   - request (scalar planning-request struct)
-%       Normalized limits and resolved planner options.
 %**************************************************************************
 % OUTPUTS
 %   - visibilityGraph (scalar struct)
@@ -25,15 +27,11 @@ function visibilityGraph = createVisibilityGraph(proposal, request)
 
 %% Section 1: Create The Offset Schedule Inputs
 
-% Visibility nodes must sit outside proposal obstacles, but a small offset can
-% leave components disconnected near narrow geometry. Derive the initial
-% numerical offset and maximum physical retry from the supplied geometry and
-% workspace rather than a scenario-specific schedule.
+% Choose initial and retry offsets from obstacle and workspace dimensions.
 
 shape = proposal.shape;
 start_deg = proposal.start_deg;
 goal_deg = proposal.goal_deg;
-limits = request.limits;
 allPositions_deg = [start_deg; goal_deg; shape.Vertices];
 coordinateScale_deg = ...
     bmtpEngine.createCoordinateTolerances(allPositions_deg);
@@ -44,10 +42,8 @@ workBudget = 1e6;
 
 %% Section 2: Retry Visibility Attempts
 
-% Each attempt owns node selection, pair construction, segment checks, and
-% bounded connectivity recovery. Only its graph connectivity determines
-% whether a wider offset is needed; none of these spatial checks can approve
-% the eventual timed motion.
+% Retry disconnected visibility graphs with a wider offset.
+% These spatial checks do not validate the final timed motion.
 
 attempts = repmat(createEmptyAttempt(), 0, 1);
 candidateOffset_deg = baseOffset_deg;
@@ -55,7 +51,7 @@ offsetRetryCount = 0;
 anyExhaustiveUsed = false;
 anyExhaustiveFallbackUsed = false;
 while true
-    obstacleAvoidance.input.throwIfCancellationRequested(request.options);
+    obstacleAvoidance.input.throwIfCancellationRequested(options);
     attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
         shape, start_deg, goal_deg, limits, candidateOffset_deg, ...
         offsetRetryCount, workBudget);
@@ -74,9 +70,7 @@ end
 
 %% Section 3: Create The Final Graph Record
 
-% Existing route diagnostics consume the final attempt while two exhaustive
-% flags historically summarize every retry. Preserve that contract and keep
-% the complete attempts beside it for direct stage inspection.
+% Keep final-attempt diagnostics and aggregate the exhaustive-search flags.
 
 finalAttempt = attempts(end);
 minimum_deg = min(allPositions_deg, [], 1);
@@ -113,7 +107,7 @@ end
 %% Section 4: Local Functions
 
 function attempt = createEmptyAttempt()
-% Define stable field order for the dynamically sized attempt collection.
+% Initialize visibility-attempt records.
 attempt = struct( ...
     "OffsetRetryCount", 0, ...
     "CandidateOffset_deg", NaN, ...

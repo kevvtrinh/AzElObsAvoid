@@ -99,7 +99,7 @@ obstacleData = protectObstacles(obstacleData, safetyMargin_deg, resolveVerbose(o
 end
 
 function obstacle = normalizeOne(inputData)
-% Validate and column-normalize one canonical record while dropping stale cache.
+% Validate the obstacle, use column vectors, and discard stale caches.
 requiredFields = {'targetName', 'time_s', 'az_deg', 'el_deg', 'status'};
 requireCondition(isstruct(inputData) && isscalar(inputData) && ...
     all(isfield(inputData, requiredFields)), "createObstacle:InvalidInput", ...
@@ -173,7 +173,7 @@ end
 function [azimuthHistory_deg, elevationHistory_deg, removedCount, ...
         removalBySample] = normalizeHistory( ...
         azimuthInput_deg, elevationInput_deg, sampleCount, role)
-% Normalize every protected or original slice with role-specific mismatch IDs.
+% Normalize original and protected slices with distinct error identifiers.
 azimuthHistory_deg = reshape(azimuthInput_deg, [], 1);
 elevationHistory_deg = reshape(elevationInput_deg, [], 1);
 removedCount = 0;
@@ -202,7 +202,7 @@ end
 
 function [azimuth_deg, elevation_deg, removedCount] = ...
         normalizeSlice(azimuth_deg, elevation_deg, sampleIndex, role)
-% Reject malformed rings, remove only zero-area two-vertex regions, keep order.
+% Reject malformed rings; remove two-vertex regions with no area.
 azimuthFinite = isfinite(azimuth_deg);
 elevationFinite = isfinite(elevation_deg);
 requireCondition(~any(xor(azimuthFinite, elevationFinite)), ...
@@ -244,7 +244,7 @@ elevation_deg = newElevation_deg;
 end
 
 function verbose = resolveVerbose(options)
-% Resolve the one construction option and warn once about ignored fields.
+% Resolve construction options and warn about unknown fields.
 requireCondition(isstruct(options) && isscalar(options), ...
     "createObstacle:InvalidProtectionOptions", "options must be a scalar struct.");
 [options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
@@ -258,7 +258,7 @@ verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
 end
 
 function obstacles = protectObstacles(obstacles, safetyMargin_deg, verbose)
-% Rebuild each history; futures resize once per obstacle above 500,000 vertices.
+% Buffer large histories in parallel when background workers are available.
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
     sampleCount = numel(obstacle.time_s);
@@ -301,7 +301,7 @@ end
 
 function [protectedAzimuth_deg, protectedElevation_deg] = ...
         inflateSlice(azimuth_deg, elevation_deg, safetyMargin_deg)
-% Apply one square-joint outward buffer without reordering zero-margin input.
+% Apply the margin with square joins; preserve order when the margin is zero.
 azimuth_deg = double(azimuth_deg(:));
 elevation_deg = double(elevation_deg(:));
 if safetyMargin_deg == 0
@@ -330,7 +330,7 @@ protectedElevation_deg = protectedElevation_deg(1:lastFinite);
 end
 
 function requireCondition(condition, identifier, message, varargin)
-% Throw one stable public diagnostic when a structural invariant fails.
+% Report invalid input with the supplied error identifier.
 if ~condition
     error(identifier, message, varargin{:});
 end

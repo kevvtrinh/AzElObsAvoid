@@ -30,6 +30,24 @@ testCase.TestData.EngineRoot = fullfile(trajectoryRoot, "+bmtpEngine");
 testCase.TestData.RuckigRoot = fullfile(trajectoryRoot, "+ruckigEngine");
 end
 
+function testPlannerStagesUseExplicitInputsInOrder(testCase)
+% Keep the five planning inputs explicit and in the same order at each stage.
+stages = ["obstacles.preparePlanningScene", "search.createProposalGeometry", ...
+    "search.createVisibilityGraph", "search.createSeeds", "search.searchRoutes", ...
+    "planner.solveExactCandidates", "planner.solveOneSeed", ...
+    "planner.solveDynamicSeed", "planner.recoverAdditionalSeeds"];
+argumentCounts = [5 6 6 7 9 7 8 7 9];
+for index = 1:numel(stages)
+    name = "obstacleAvoidance." + stages(index);
+    verifyEqual(testCase, nargin(str2func(name)), argumentCounts(index));
+    source = fileread(which(name));
+    signature = extractBefore(string(source), "%% Section 0:");
+    signature = regexprep(signature, '\.\.\.|\s', '');
+    verifyTrue(testCase, contains(signature, ...
+        "(obstacles,initialState,goalState,limits,options"), name);
+end
+end
+
 function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
 % Require one shallow package for each planner-owned responsibility.
 productRoot = testCase.TestData.ProductRoot;
@@ -159,7 +177,7 @@ verifyTrue(testCase, contains(plannerText, ...
     "obstacleAvoidance.planner.solveExactCandidates("));
 verifyTrue(testCase, contains(exactStageText, ...
     "bmtpEngine.createDirectMotion("));
-verifyTrue(testCase, contains(exactStageText, ...
+verifyFalse(testCase, contains(exactStageText, ...
     "obstacleAvoidance.planner.createRuckigWaypointMotion("));
 verifyTrue(testCase, contains(fixedClockText, ...
     "bmtpEngine.createOffsetSplineMotion("));

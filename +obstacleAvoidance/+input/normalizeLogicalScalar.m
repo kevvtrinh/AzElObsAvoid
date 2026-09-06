@@ -27,14 +27,8 @@ function value = normalizeLogicalScalar(value, fieldName, errorIdentifier)
 
 %% Section 1: Accept Only Unambiguous Scalar Logical Values
 
-% Accept true, false, 1, or 0 as one value. Reject arrays and other numbers.
-% This prevents an option such as [true false] from reaching an if statement
-% with unclear meaning.
+% Accept only scalar logicals or numeric 0/1.
 
-% MATLAB commonly receives 0/1 configuration values from files and tables.
-% The function also accepts these two numeric values. Other numbers are not
-% safe. MATLAB converts 2, -1, and NaN to true. The scalar check also rejects a
-% value such as [true false].
 isLogicalScalar = islogical(value) && isscalar(value);
 isBinaryNumericScalar = isnumeric(value) && isscalar(value) && ...
     isreal(value) && isfinite(value) && any(value == [0 1]);
@@ -42,6 +36,4 @@ if ~(isLogicalScalar || isBinaryNumericScalar)
     error(errorIdentifier, "%s must be scalar logical or binary numeric.", fieldName);
 end
 value = logical(value);
-% Callers now receive one MATLAB logical value. The input can be true, false,
-% zero, or one.
 end

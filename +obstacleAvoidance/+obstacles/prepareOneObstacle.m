@@ -24,8 +24,7 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion)
 
 %% Section 1: Prepare Sample Geometry
 
-% Later interval checks and occupancy queries need the same shapes, bounds,
-% edges, and boundary runs. Create them once from every authoritative sample.
+% Cache shapes, bounds, and edges for repeated queries.
 
 validateattributes(preparationVersion, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
@@ -70,9 +69,8 @@ end
 
 %% Section 2: Check Every History Interval
 
-% A verified corresponding-vertex interval can be queried by interpolation.
-% Other intervals need conservative source-derived geometry so later planning
-% cannot assume a correspondence that was not proved by the obstacle history.
+% Interpolate only when vertex correspondence is verified.
+% Otherwise use geometry that conservatively covers the interval.
 
 intervalDuration_s = diff(double(obstacle.time_s(:)));
 for intervalIndex = 1:intervalCount
@@ -106,8 +104,7 @@ for intervalIndex = 1:intervalCount
             intervalGeometryMethod(intervalIndex) = ...
                 "staticEquivalentSamples";
         elseif shapesAreNested
-            % A nested transition uses its exact union without filling a real
-            % hole or concavity as a convex hull would.
+            % Use the exact union for nested shapes to preserve holes and concavities.
             unionShapes{intervalIndex} = union( ...
                 sampleShapes{intervalIndex}, ...
                 sampleShapes{intervalIndex + 1});
@@ -137,8 +134,7 @@ end
 
 %% Section 3: Calculate Speed Bounds And Static Status
 
-% Occupancy checks use adjacent interval speeds at each sample. Solver routing
-% also needs to know whether this complete history is truly time invariant.
+% Cache sample speeds and whether the whole history is static.
 
 sampleSpeed_deg_s = zeros(sampleCount, 1);
 for intervalIndex = 1:intervalCount
@@ -161,8 +157,7 @@ end
 
 %% Section 4: Create The Prepared Obstacle Record
 
-% Keep a source snapshot beside every derived value. Collection preparation
-% can then reject stale caches without guessing which source field changed.
+% Save source data so later calls can detect stale caches.
 
 preparation = struct( ...
     "PreparationVersion", preparationVersion, ...
@@ -194,7 +189,7 @@ end
 %% Section 5: Local Functions
 
 function snapshot = createSourceSnapshot(obstacle)
-% Retain an exact immutable copy of every canonical public source field.
+% Store the source fields for cache checks.
 snapshot = struct( ...
     "targetName", obstacle.targetName, ...
     "time_s", obstacle.time_s, ...
@@ -208,7 +203,7 @@ end
 
 function [bounds_deg, edgeStart_deg, edgeEnd_deg, runBounds_deg] = ...
         createShapeCache(shape)
-% Cache bounds and ordered edges once for repeated source-derived queries.
+% Cache bounds and edges for repeated queries.
 vertices_deg = shape.Vertices;
 bounds_deg = finiteBounds(vertices_deg);
 [edgeStart_deg, edgeEnd_deg] = ...
@@ -240,7 +235,7 @@ end
 function [verified, alignedUpper_deg] = alignVerifiedSingleRing( ...
         lowerAzimuth_deg, lowerElevation_deg, ...
         upperAzimuth_deg, upperElevation_deg)
-% Canonicalize ring representation and prove safe linear interpolation.
+% Normalize rings and check whether linear vertex interpolation is safe.
 lower_deg = [lowerAzimuth_deg(:), lowerElevation_deg(:)];
 upper_deg = [upperAzimuth_deg(:), upperElevation_deg(:)];
 verified = false;
@@ -282,7 +277,7 @@ end
 
 function verified = remainsStrictlyConvex( ...
         lower_deg, upper_deg, coordinateScale_deg)
-% Prove every interpolated turn retains one nonzero orientation on [0, 1].
+% Check that interpolated turns keep the same nonzero sign on [0, 1].
 lowerEdge_deg = circshift(lower_deg, -1, 1) - lower_deg;
 upperEdge_deg = circshift(upper_deg, -1, 1) - upper_deg;
 lowerTurn_deg2 = cross2d( ...
@@ -328,7 +323,7 @@ value = first_deg(:, 1) .* second_deg(:, 2) - ...
 end
 
 function [equivalent, nested] = compareShapes(firstShape, secondShape)
-% Classify equality and containment from one pair of Boolean differences.
+% Check equality and containment using shape differences.
 areaScale_deg2 = max([1, area(firstShape), area(secondShape)]);
 areaTolerance_deg2 = 512 * eps(areaScale_deg2);
 firstIsContained = area(subtract(firstShape, secondShape)) <= ...
@@ -342,7 +337,7 @@ end
 function shape = createEndpointConvexHull( ...
         lowerAzimuth_deg, lowerElevation_deg, ...
         upperAzimuth_deg, upperElevation_deg)
-% Enclose endpoint shapes and admitted linear vertex paths between them.
+% Enclose both endpoint shapes and their linear vertex paths.
 vertices_deg = [ ...
     lowerAzimuth_deg(:), lowerElevation_deg(:); ...
     upperAzimuth_deg(:), upperElevation_deg(:)];

@@ -139,7 +139,7 @@ for segmentIndex = 1:numel(targetTime_s) - 1
     end
     transitionTime_s = unique(sort(transitionTime_s));
 
-    % --- Select The First Common Feasible Algebraic Cell -----------------
+    % Select the earliest interval where all axes can reach the target.
 
     for probeIndex = 1:(2 * numel(transitionTime_s) - 1)
         boundaryIndex = ceil(probeIndex / 2);
@@ -206,7 +206,7 @@ end
 %% Section 4: Local Functions
 
 function value = stateDerivative(state, fieldName, dimensionCount)
-% Resolve an omitted derivative and enforce request dimension.
+% Default missing derivatives and check their dimensions.
 value = zeros(1, dimensionCount);
 if isfield(state, fieldName) && ~isempty(state.(fieldName))
     value = double(state.(fieldName)(:).');
@@ -216,7 +216,7 @@ end
 end
 
 function value = limitRow(limits, fieldName, dimensionCount)
-% Read one positive componentwise motion limit.
+% Read a positive limit for each axis.
 if ~isstruct(limits) || ~isscalar(limits) || ~isfield(limits, fieldName)
     error("findEarliestLinearIntercept:MissingLimit", ...
         "limits.%s is required.", fieldName);
@@ -256,7 +256,7 @@ end
 end
 
 function root_s = realRoots(power, lower_s, upper_s)
-% Return all real roots in one closed algebraic slab.
+% Find real roots within this closed interval.
 scale = max(1, max(abs(power)));
 lastIndex = find(abs(power) > 64 * eps(scale), 1, "last");
 if isempty(lastIndex) || lastIndex == 1

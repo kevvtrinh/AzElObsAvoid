@@ -235,7 +235,7 @@ end
 end
 
 function configureSpatialAxes(axesHandle, result)
-% Apply the shared periodic spatial-axis policy.
+% Apply periodic-axis display settings.
 hold(axesHandle, "on");
 grid(axesHandle, "on");
 box(axesHandle, "on");
@@ -246,14 +246,14 @@ end
 end
 
 function [position_deg, sourceIndex] = displayPath(result, position_deg)
-% Map one path through the result's periodic display policy.
+% Apply the result's wrap settings to the displayed path.
 [position_deg, sourceIndex] = obstacleAvoidance.plotting.createWrappedSpatialPath( ...
     position_deg, result.Inputs.limits.azimuthInterval_deg, ...
     result.Options.AllowAzimuthWrapping);
 end
 
 function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
-% Show the unchanged unwrapped solution and every crossed periodic seam.
+% Show the unwrapped path and crossed wrap boundaries.
 figureHandle = figure("Name", options.Title + " continuous azimuth", ...
     "Visible", options.FigureVisible);
 axesHandle = axes(figureHandle);
@@ -304,7 +304,7 @@ lineHandle = plot(axesHandle, position_deg(:, 1), position_deg(:, 2), style, ...
 end
 
 function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
-% Draw retained accepted/rejected transitions, explored nodes, and frontier.
+% Draw explored nodes, accepted/rejected edges, and the search frontier.
 edgeNames = ["AcceptedEdges_deg", "RejectedEdges_deg"];
 edgeStyles = ["-", ":"];
 edgeLabels = ["Accepted visibility edge", "Collision-rejected edge"];
@@ -358,7 +358,7 @@ end
 end
 
 function drawTarget(axesHandle, result, displayTime_s)
-% Draw the retained moving-target track and synchronized position.
+% Draw the moving target's track and current position.
 goalState = result.Inputs.goalState;
 if ~hasData(goalState, "targetPosition_deg")
     return;
@@ -372,7 +372,7 @@ plot(axesHandle, target_deg(1), target_deg(2), "md", ...
 end
 
 function axesHandles = createKinematicPanels(layout, result, animated)
-% Create four physical histories and their positive and negative limit lines.
+% Plot position, velocity, acceleration, and jerk with their limits.
 quantityNames = ["position_deg", "velocity_deg_s", "acceleration_deg_s2", "jerk_deg_s3"];
 yLabels = ["Position (deg)", "Velocity (deg/s)", "Acceleration (deg/s^2)", "Jerk (deg/s^3)"];
 limits = [nan(1, 2); result.Inputs.limits.maxVelocity_deg_s; ...
@@ -400,7 +400,7 @@ legend(axesHandles(1), "Location", "best");
 end
 
 function finishAxes(axesHandle, result, prefix)
-% Label one spatial diagnostic view and expose its key retained counts.
+% Label the plot with search counts.
 xlabel(axesHandle, "Azimuth (deg)");
 ylabel(axesHandle, "Elevation (deg)");
 title(axesHandle, diagnosticTitle(result, prefix));
@@ -408,12 +408,12 @@ legend(axesHandle, "Location", "best");
 end
 
 function value = hasData(record, fieldName)
-% Test one optional retained field without reconstructing it.
+% Check whether an optional result field is present and nonempty.
 value = isfield(record, fieldName) && ~isempty(record.(fieldName));
 end
 
 function textValue = diagnosticTitle(result, prefix)
-% Include termination reason and complete retained search counts.
+% Show the termination reason and search counts.
 gridRecord = result.SearchDiagnostics.Grid;
 expandedCount = optionalValue(gridRecord, "ExpandedCount");
 rejectedCount = optionalValue(gridRecord, "RejectedTransitionCount");
@@ -430,7 +430,7 @@ end
 end
 
 function handles = createEmptyHandles(options)
-% Define every public graphics field before any display branch runs.
+% Initialize graphics handles before choosing a display mode.
 none = gobjects(0);
 handles = struct("WorkspaceFigure", none, "WorkspaceAxes", none, ...
     "ContinuousWorkspaceFigure", none, "ContinuousWorkspaceAxes", none, ...

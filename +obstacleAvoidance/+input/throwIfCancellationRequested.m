@@ -28,9 +28,7 @@ if ~isfield(options, "CancellationCheckFcn") || ...
     return;
 end
 
-% A synchronous MATLAB callback cannot run until the planner yields to the
-% event queue. Limiting redraw rate keeps polling inexpensive while preserving
-% button and timer callbacks.
+% Process button and timer callbacks without redrawing on every poll.
 drawnow limitrate;
 stopRequested = options.CancellationCheckFcn();
 if ~(islogical(stopRequested) || ...

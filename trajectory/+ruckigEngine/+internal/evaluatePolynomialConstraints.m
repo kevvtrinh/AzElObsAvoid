@@ -48,7 +48,7 @@ end
 %% Section 2: Local Functions
 
 function inequality = continuousBoundConstraints(polynomial, limits)
-% Check every scalar segment without treating hull controls as curve samples.
+% Check segment extrema; control points are not curve samples.
 coefficientFields = [ ...
     "positionPower", "velocityPower", ...
     "accelerationPower", "jerkPower"];

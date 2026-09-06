@@ -99,7 +99,7 @@ end
 %% Section 2: Local Functions
 
 function key = regionSortKey(region)
-% Create deterministic spatial ordering evidence for mixed coarsened output.
+% Sort mixed-size regions consistently by position.
 vertices_deg = region.Vertices;
 vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
 key = [min(vertices_deg, [], 1), max(vertices_deg, [], 1), area(region)];
@@ -230,7 +230,7 @@ end
 end
 
 function rootIndex = findRoot(parentIndex, cellIndex)
-% Follow the deterministic disjoint-set forest to its current live root.
+% Find the current root of the merged region.
 rootIndex = cellIndex;
 while parentIndex(rootIndex) ~= rootIndex
     rootIndex = parentIndex(rootIndex);
@@ -239,7 +239,7 @@ end
 
 function [mergedCycle, isValid] = mergeBoundaryCycles( ...
         firstCycle, secondCycle, pointCount)
-% Cancel identical shared atomic edges and reconstruct the surviving cycle.
+% Remove shared edges and trace the remaining boundary.
 firstCycle = firstCycle(:);
 secondCycle = secondCycle(:);
 edgeStartIndex = [firstCycle; secondCycle];
@@ -308,7 +308,7 @@ end
 end
 
 function isConvex = cycleIsConvex(point_deg, cycle)
-% Accept a simple CCW cycle only when every exact turn is nonnegative.
+% Accept counterclockwise boundaries with no inward turns.
 if numel(cycle) < 3
     isConvex = false;
     return;
@@ -329,7 +329,7 @@ isConvex = hasPositiveTurn;
 end
 
 function cycle = canonicalizeCycle(point_deg, cycle)
-% Rotate one CCW cycle to its lexicographically first coordinate and index.
+% Start the counterclockwise boundary at its lowest coordinate/index pair.
 coordinates = point_deg(cycle, :);
 [~, order] = sortrows([coordinates, cycle(:)], [1 2 3]);
 startIndex = order(1);

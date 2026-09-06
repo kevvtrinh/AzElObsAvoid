@@ -3937,3 +3937,109 @@ ObstacleAvoidance and MovingBarrierWait pass independent validation; NoPath
 returns expected noValidatedSeed. Actual example metrics appended to
 benchmark.csv. No full example sweep or graphical UI verification claimed.
 Existing unrelated UI/socket work and user artifacts remain intact.
+
+## 2026-09-05: Concise implementation comments
+
+Reviewed all 99 MATLAB files under +obstacleAvoidance and trajectory.
+Simplified 322 comment blocks across 77 files, removing 246 comment lines net.
+Removed repeated control-flow narration and replaced vague wording with direct
+explanations. Kept numerical assumptions, collision/validation distinctions,
+units, public help sections, and third-party license notices.
+
+Compared every file with its pre-edit snapshot: all non-comment lines match,
+and public help/license blocks match after normalizing line endings.
+No planner behavior changed. No planner examples or runtime tests were rerun
+for this comment-only change; benchmark.csv is unchanged.
+
+## 2026-09-05: BMTP-only planner selection
+
+Removed the selectable ruckigWaypoint path from planTrajectory, solveOneSeed,
+and solveExactCandidates. TrajectoryMethod remains in the options schema for
+saved BMTP requests, but accepts only bmtp; old Ruckig selections raise
+planTrajectory:InvalidTrajectoryMethod rather than silently changing methods.
+The HTML sandbox already uses BMTP and had no method selector to remove.
+Standalone Ruckig utilities and the explicitly enabled ruckigStopAtWaypoints
+fallback remain intact. The fallback remains disabled by default.
+
+Updated option, architecture, waypoint-utility and intercept tests. Intercept
+coverage now uses BMTP-compatible rest states instead of selecting Ruckig for
+nonzero endpoint derivatives. Existing unsupported-derivative checks remain.
+MATLAB R2024b: 52/52 tests pass across planner options, planner contract,
+architecture, retained Ruckig waypoint composition, and route economy. Both
+saved long-path bundles still pass the shortening and independent-validation
+gates. No maintained examples were executed for this selection-only change;
+benchmark.csv is unchanged. Earlier comment edits and unrelated user work
+remain in the working tree.
+
+## 2026-09-05: Explicit planner-stage inputs
+
+Replaced the five-field request wrapper with explicit arguments in scene
+preparation, proposal geometry, visibility graph construction, route search,
+seed creation, exact candidate solving, seed solving, dynamic seed solving,
+and recovery. These nine stage interfaces begin with obstacles, initialState,
+goalState, limits, options; stage-specific data follows. Removed duplicate
+planning inputs from seedSolveContext and recoveryContext. Generated scene,
+graph, candidate and timing records remain separate stage data.
+
+Updated all production callers, direct stage tests, and public help. The
+public planTrajectory signature and returned result schema are unchanged.
+The zero-input exact-candidate diagnostic call remains supported. Deferred
+route-search recovery still distinguishes its optional priorRouteSet argument
+at the updated position. No motion/search algorithms or tolerances changed.
+
+MATLAB R2024b: all 52 existing option, planner-contract, architecture, Ruckig
+utility and route-economy regressions pass. The added argument-order guard
+also passes in the eight-test architecture suite: 53 distinct passing tests.
+Checks include static/moving geometry, deferred recovery and both saved
+long-path bundles with independent validation. No maintained examples were
+executed and benchmark.csv is unchanged. Earlier local comment and BMTP-only
+selection edits remain uncommitted alongside this refactor.
+
+## 2026-09-05: Remove the obsolete trajectory-method field
+
+Removed TrajectoryMethod from planner defaults, validation rules, the option
+reference, and active callers. BMTP is implicit. Old saved requests follow
+the existing unknown-option rule: warn once and ignore the retired field;
+resolved options no longer contain it. This supersedes the earlier temporary
+compatibility field and InvalidTrajectoryMethod rejection policy.
+
+MATLAB R2024b: 43/43 planner-option, planner-contract, and route-economy tests
+pass. Both unmodified saved long-path bundles replay successfully, issue the
+expected unknown-field warning, and pass independent validation. No maintained
+examples were executed; benchmark.csv is unchanged.
+
+## 2026-09-05: Simplify arrival modes and validation ownership
+
+Earliest arrival is the default, ranking validated motions by arrival time and
+then travel length. Fixed arrival remains supported. Removed balanced-arrival
+ranking, its savings-rate option, and both sandbox controls for that rate.
+Legacy balancedArrival requests warn and migrate to earliestArrival. The two
+saved long-path requests still pass their shorter-path and unchanged-clock
+regressions. The existing fixed-clock refinement and all motion validators
+retain their constraints and tolerances; no global shortest-path claim is made.
+
+Default-only option calls now return constants directly. Removed duplicate
+public-option checks in planTrajectory and trusted-input guards in prepared-scene,
+proposal-geometry, and exact-candidate stages. The shared option merger trusts
+caller-owned defaults. User overrides still receive validation at the boundary;
+being an advanced caller does not bypass physical validation.
+
+MATLAB R2024b: 74 distinct tests pass across options (7), planner contract (32),
+route economy (5), architecture (8), MATLAB sandbox (11), BMTP engine (7), and
+offline bundles (4). Node: 23/23 standalone-page tests pass. Initial runs exposed
+obsolete assertions requiring balanced-mode timing repair, the retired 2 deg/s
+UI limit, and route-class diagnostics after a validated exact fast path. Those
+assertions were updated to the current contracts, preserving independent motion
+validation, wait reduction, and the historical travel-plus-duration bound.
+The affected failed tests passed on rerun. Option tests passed again after the
+last default-validation cleanup. No browser visual verification was performed.
+
+The contract suite invokes exampleTargetExitsObstacle with jerk limits enabled;
+it passed but did not retain separate numeric metrics (NaN in benchmark.csv).
+A measured rerun passed planning and independent validation, including collision,
+kinematic, and applicable certificate checks: polyline 21.742546732 deg, smoothed
+length 21.932157017 deg, duration 24 s, wall time 9.9252707 s, goalReached.
+Both actual invocations are appended to benchmark.csv. An initial measurement
+runner failed before invoking the example because its path was incorrect; the
+corrected runner produced the recorded result. Unrelated user bundle changes
+remain untouched. Changes are local and have not been pushed.

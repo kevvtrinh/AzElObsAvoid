@@ -1,11 +1,11 @@
 function routeSet = searchRoutes( ...
-        scene, request, proposal, visibilityGraph, priorRouteSet)
+        obstacles, initialState, goalState, limits, options, ...
+        scene, proposal, visibilityGraph, priorRouteSet)
 %% Section 0: Header & Readme
 % SYNTAX
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
-%       scene, request, proposal, visibilityGraph)
-%   routeSet = obstacleAvoidance.search.searchRoutes( ...
-%       scene, request, proposal, visibilityGraph, priorRouteSet)
+%       obstacles, initialState, goalState, limits, options, ...
+%       scene, proposal, visibilityGraph, priorRouteSet)
 %**************************************************************************
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
@@ -13,10 +13,10 @@ function routeSet = searchRoutes( ...
 %   - Return route suggestions and complete search records before seeding.
 %**************************************************************************
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacle histories and request horizon.
-%   - request (scalar planning-request struct)
-%       Normalized states, limits, and resolved planner options.
 %   - proposal (scalar proposal-geometry struct)
 %       Spatial route-guidance geometry and sample times.
 %   - visibilityGraph (scalar visibility-graph struct)
@@ -38,13 +38,10 @@ function routeSet = searchRoutes( ...
 
 %% Section 1: Search Complete Input-Derived Time Layers
 
-% Changing obstacle histories may admit waits or time-dependent passages that
-% a spatial union hides. Defer the expensive exact-history search for a dense
-% proposal until the caller confirms that every cheap motion attempt failed.
-% A fifth-input call resumes only that timed work and returns before spatial
-% search, so recovery cannot repeat graph or route-class work.
+% Defer costly timed search for dense histories until cheap attempts fail.
+% Supplying priorRouteSet resumes timed search without repeating spatial search.
 
-isTimedRecovery = nargin >= 5 && ~isempty(priorRouteSet);
+isTimedRecovery = nargin >= 9 && ~isempty(priorRouteSet);
 if isTimedRecovery && (~isstruct(priorRouteSet) || ...
         ~isscalar(priorRouteSet) || ...
         ~isfield(priorRouteSet, "TimedSearchDeferred") || ...
@@ -54,9 +51,6 @@ if isTimedRecovery && (~isstruct(priorRouteSet) || ...
 end
 
 obstacles = scene.preparedObstacles;
-initialState = request.initialState;
-goalState = request.goalState;
-options = request.options;
 nodePosition_deg = visibilityGraph.NodePosition_deg;
 timedRoute_deg = zeros(0, 2);
 timedRouteTime_s = zeros(0, 1);
@@ -75,20 +69,11 @@ elseif requiresTimedSearch
     timedCost_deg = hypot( ...
         nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', ...
         nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
-    if options.GoalTimeMode == "balancedArrival"
-        % Preserve final-horizon ancestry, then remove goal dwell so this
-        % route represents obstacle-dependent timing rather than waiting.
-        timedSearchOptions.GoalTimeMode = "fixedArrival";
-    end
     [timedRoute_deg, timedRouteTime_s, timedRecord] = ...
         obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
         nodePosition_deg, timedCost_deg, obstacles, initialState, ...
-        goalState, request.limits, proposal.sampleTimes_s, ...
+        goalState, limits, proposal.sampleTimes_s, ...
         timedSearchOptions);
-    if options.GoalTimeMode == "balancedArrival"
-        [timedRoute_deg, timedRouteTime_s] = trimTerminalGoalDwell( ...
-            timedRoute_deg, timedRouteTime_s, proposal.goal_deg);
-    end
 end
 if isTimedRecovery
     routeSet = priorRouteSet;
@@ -104,9 +89,7 @@ end
 
 %% Section 2: Search Distinct Spatial Route Classes
 
-% Spatial visibility can suggest obstacle-passing classes that timed search
-% did not retain. Reserve seed capacity for a usable timed route, then search
-% only the remaining class count using the exact graph and visibility rule.
+% Reserve a seed slot for a timed route, then find distinct spatial routes.
 
 hasTimedRoute = ~isempty(timedRoute_deg) && ...
     timedRouteTime_s(end) > timedRouteTime_s(1);
@@ -123,19 +106,15 @@ visibilityFunction = @(first_deg, second_deg) ...
     visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, ...
     visibilityFunction, options);
 
-% Multi-winding routes remain available, but their usually expensive motion
-% solves cannot improve availability after an ordinary class already passes.
-% Defer only the solve; a failure recovery consumes these already-found routes
-% without repeating spatial search or lower-winding motion work.
+% Defer multi-winding motion solves until ordinary routes fail.
+% Keep the routes so recovery does not repeat spatial search.
 isDeferredSpatialRoute = any(abs(routeClassPattern) > 1, 2);
 deferredSpatialRoutes_deg = spatialRoutes_deg(isDeferredSpatialRoute);
 spatialRoutes_deg = spatialRoutes_deg(~isDeferredSpatialRoute);
 
 %% Section 3: Assemble The Route Set
 
-% Keep the search records beside their routes. Seed creation can then remain
-% a deterministic conversion stage, while diagnostics and plotters inspect
-% the actual search decisions without rerunning either algorithm.
+% Keep routes with their search diagnostics.
 
 routeSet = struct( ...
     "TimedRoute_deg", timedRoute_deg, ...
@@ -155,24 +134,4 @@ routeSet = struct( ...
     "ObstacleReferencePoints_deg", ...
     visibilityGraph.ObstacleReferencePoints_deg, ...
     "UsesReducedGeometry", proposal.usedDenseEnvelope);
-end
-
-%% Section 4: Local Functions
-
-function [route_deg, routeTime_s] = trimTerminalGoalDwell( ...
-        route_deg, routeTime_s, goal_deg)
-% Remove only repeated goal occupancy after the first verified arrival.
-if isempty(route_deg)
-    return;
-end
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    route_deg, goal_deg);
-goalTolerance_deg = 256 * eps(coordinateScale_deg);
-firstGoalIndex = find(vecnorm(route_deg - goal_deg, 2, 2) <= ...
-    goalTolerance_deg, 1, "first");
-if isempty(firstGoalIndex)
-    return;
-end
-route_deg = route_deg(1:firstGoalIndex, :);
-routeTime_s = routeTime_s(1:firstGoalIndex);
 end

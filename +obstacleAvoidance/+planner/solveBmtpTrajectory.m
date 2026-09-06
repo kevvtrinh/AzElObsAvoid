@@ -62,8 +62,7 @@ if grouping.Applied
     fallback.Outcome = "groupedAttemptAccepted";
 end
 if grouping.Applied && ~candidate.Success
-    % Conservative hulls are useful only as a first attempt. They can bridge
-    % free gaps, so a grouped failure cannot reject the exact request.
+    % Convex hulls may close real gaps. Retry the exact regions if grouping fails.
     fallback.Attempted = true;
     fallback.Outcome = "exactRegionAttemptFailed";
     fallback.PrimarySolverDiagnostics = diagnostics;
@@ -91,7 +90,7 @@ end
 
 function [regions_deg, coverage] = createExactRegions( ...
         occupiedShape, obstacleCount)
-% Decompose the protected union; public validation owns coverage acceptance.
+% Split protected geometry into convex regions.
 exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
 regions_deg = cell(numel(exactRegions), 1);
 for regionIndex = 1:numel(exactRegions)
@@ -108,7 +107,7 @@ coverage = struct( ...
 end
 
 function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
-% Bound separator work with conservative hulls only for complex outlines.
+% Group complex outlines to limit separating-plane solves.
 maximumExactRegionCount = 64;
 targetGroupCount = 8;
 regionCount = numel(regions_deg);

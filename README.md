@@ -15,6 +15,11 @@ one engine-owned representation.
 
 ## Quick start
 
+Planner stages take `obstacles, initialState, goalState, limits, options`
+explicitly in that order. Stage-specific data follows those inputs; scene,
+graph, and diagnostic structures hold generated data rather than a duplicate
+planning request.
+
 Add both production parents. The zero-input call then returns obstacle-planner
 defaults:
 
@@ -52,14 +57,16 @@ exact motion passed full validation, and recovery stops at its first validated
 motion. Set the value to `2` to disable all later-seed recovery or `5` to allow
 all three additional attempts.
 
-`GoalTimeMode` defaults to `"balancedArrival"`. A validated later motion is
-preferred only when its travel saving exceeds
-`MinimumTravelSavingsRate_deg_s` times its delay; the default rate is 1 deg/s.
-Thus a 0.1 s delay must save more than 0.1 degree. The returned seed summaries
-report the degree-valued tradeoff cost and measured kinematic utilization.
-Jerk is a hard limit, not a selection cost. Set `GoalTimeMode` to
-`"earliestArrival"` for strict time-first behavior or `"fixedArrival"` for
-minimum travel at the mission horizon.
+BMTP is the obstacle-planning method; there is no method-selection option.
+Old saved requests containing `TrajectoryMethod` receive the standard
+unknown-option warning, and that field is ignored.
+Standalone Ruckig utilities and the explicit `ruckigStopAtWaypoints` fallback
+remain available; that fallback is disabled by default.
+
+`GoalTimeMode` defaults to `"earliestArrival"`: prioritize arrival time and
+break ties by shorter travel. Set `"fixedArrival"` to minimize travel at the
+mission horizon. Jerk remains a hard limit. Old saved `balancedArrival`
+requests warn and use earliest arrival; the retired savings-rate field is ignored.
 
 For an eligible rest-to-rest request with one coordinate owning the physical
 clock, the planner compares fixed-clock offset splines whose peaks come from

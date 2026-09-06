@@ -27,9 +27,7 @@ function isVisible = checkVisibilitySegments( ...
 
 %% Section 1: Reject Interior And Boundary Intersections
 
-% Midpoint containment catches segments through occupied interiors. The
-% vectorized boundary test also rejects crossings and collinear overlap so
-% graph construction and route shortening cannot disagree about visibility.
+% Reject interior crossings, boundary crossings, and collinear overlaps.
 
 isVisible = true(size(first_deg, 1), 1);
 if isempty(shape.Vertices)

@@ -1,18 +1,19 @@
-function proposal = createProposalGeometry(scene, request)
+function proposal = createProposalGeometry( ...
+        obstacles, initialState, goalState, limits, options, scene)
 %% Section 0: Header & Readme
 % SYNTAX
 %   proposal = obstacleAvoidance.search.createProposalGeometry( ...
-%       scene, request)
+%       obstacles, initialState, goalState, limits, options, scene)
 %**************************************************************************
 % PURPOSE
 %   - Create one spatial obstacle representation for route proposals.
 %   - Expose sample times, work estimate, geometry choice, shape, and edges.
 %**************************************************************************
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacles and physical request horizon.
-%   - request (scalar planning-request struct)
-%       Normalized endpoint states, limits, and resolved options.
 %**************************************************************************
 % OUTPUTS
 %   - proposal (scalar struct)
@@ -25,23 +26,13 @@ function proposal = createProposalGeometry(scene, request)
 
 %% Section 1: Resolve Endpoints And Sample Times
 
-% Proposal geometry spans the same physical horizon as later timed search.
-% Resolve azimuth wrapping here so its edges and all routes share one endpoint.
+% Use the planning horizon and resolve the wrapped endpoint.
 
-requiredSceneFields = {'preparedObstacles', 'startTime_s', 'endTime_s'};
-requiredRequestFields = {'initialState', 'goalState', 'options'};
-if ~isstruct(scene) || ~isscalar(scene) || ...
-        ~all(isfield(scene, requiredSceneFields)) || ...
-        ~isstruct(request) || ~isscalar(request) || ...
-        ~all(isfield(request, requiredRequestFields))
-    error("createProposalGeometry:InvalidInput", ...
-        "scene and request must contain prepared obstacles, horizon, endpoints, and options.");
-end
 obstacles = scene.preparedObstacles;
-start_deg = request.initialState.position_deg;
+start_deg = initialState.position_deg;
 goal_deg = obstacleAvoidance.input.goalPositionAtTime( ...
-    request.goalState, scene.endTime_s);
-if request.options.AllowAzimuthWrapping
+    goalState, scene.endTime_s);
+if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * round( ...
         (start_deg(1) - goal_deg(1)) / 360);
 end
@@ -50,12 +41,11 @@ sampleTimes_s = createObstacleSampleTimes( ...
 
 %% Section 2: Select The Proposal Representation
 
-% Try the dense-history envelope only when sampled-union work exceeds its
-% limit. If that envelope covers an endpoint, use the exact sampled union so
-% conservative proposal geometry does not erase the planning request.
+% For dense histories, try a conservative envelope first.
+% Use the sampled union if the envelope covers an endpoint.
 
 vertexWorkBudget = 10e3;
-obstacleAvoidance.input.throwIfCancellationRequested(request.options);
+obstacleAvoidance.input.throwIfCancellationRequested(options);
 [proposalShape, usedDenseEnvelope, estimatedVertexWork] = ...
     obstacleAvoidance.search.denseSweptEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
@@ -84,16 +74,14 @@ end
 
 %% Section 3: Create Reusable Proposal Edges
 
-% Visibility attempts and spatial route cleanup query the same selected shape.
-% Create its ordered edges once so those later stages cannot diverge.
+% Cache proposal edges for visibility checks and route shortening.
 
 [edgeStart_deg, edgeEnd_deg] = ...
     obstacleAvoidance.geometry.boundaryToEdges(proposalShape, 1e-12);
 
 %% Section 4: Assemble The Proposal
 
-% Retain the decision inputs and chosen geometry. Plotting and diagnosis can
-% inspect this stage without rerunning obstacle queries or route planning.
+% Save geometry choices for diagnostics and plots.
 
 proposal = struct( ...
     "start_deg", start_deg, ...

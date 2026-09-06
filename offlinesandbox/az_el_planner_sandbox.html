@@ -1441,17 +1441,9 @@
               <div class="field full">
                 <label for="goalTimeMode">Goal timing</label>
                 <select id="goalTimeMode">
-                  <option value="balancedArrival" selected>Balanced travel and arrival</option>
-                  <option value="earliestArrival">Earliest arrival</option>
+                  <option value="earliestArrival" selected>Earliest arrival</option>
                   <option value="fixedArrival">Minimum travel at mission time</option>
                 </select>
-              </div>
-              <div class="field full">
-                <label for="minimumTravelSavingsRate">
-                  Required travel saving (deg per second delayed)
-                </label>
-                <input id="minimumTravelSavingsRate" type="number"
-                  value="1" min="0.001" step="0.1">
               </div>
               <div class="field full">
                 <label for="unsupportedTimedTopologyPolicy">
@@ -1694,7 +1686,7 @@
         jerkEl: 2.5,
         missionTime: 180,
         defaultMargin: 0.2,
-        goalTimeMode: "balancedArrival",
+        goalTimeMode: "earliestArrival",
         unsupportedTimedTopologyPolicy: "fail",
         allowWrapping: false
       });
@@ -1763,7 +1755,7 @@
         "azimuthMin", "azimuthMax", "elevationMin", "elevationMax",
         "velocityAz", "velocityEl", "accelerationAz", "accelerationEl",
         "jerkAz", "jerkEl", "missionTime", "defaultMargin",
-        "goalTimeMode", "minimumTravelSavingsRate",
+        "goalTimeMode",
         "unsupportedTimedTopologyPolicy", "allowWrapping"
       ];
 
@@ -1934,9 +1926,6 @@
           missionTime: numberFromInput("missionTime"),
           defaultMargin: numberFromInput("defaultMargin"),
           goalTimeMode: element("goalTimeMode").value,
-          minimumTravelSavingsRate: numberFromInput(
-            "minimumTravelSavingsRate"
-          ),
           unsupportedTimedTopologyPolicy: element(
             "unsupportedTimedTopologyPolicy"
           ).value,
@@ -1950,7 +1939,6 @@
         const positive = [
           controls.velocityAz, controls.velocityEl,
           controls.accelerationAz, controls.accelerationEl,
-          controls.minimumTravelSavingsRate,
           controls.jerkAz, controls.jerkEl, controls.missionTime
         ].every((value) => value > 0);
         const marginValid = controls.defaultMargin >= 0;
@@ -2683,8 +2671,6 @@
             MaximumSeedCount: 3,
             ArrivalTimeTolerance_s: 0.05,
             GoalTimeMode: controls.goalTimeMode,
-            MinimumTravelSavingsRate_deg_s:
-              controls.minimumTravelSavingsRate,
             UnsupportedTimedTopologyPolicy:
               controls.unsupportedTimedTopologyPolicy,
             AllowAzimuthWrapping: controls.allowWrapping
@@ -3153,11 +3139,8 @@
           element("jerkEl").value = jerk[1];
           const options = state.result.Options || {};
           if (typeof options.GoalTimeMode === "string") {
-            element("goalTimeMode").value = options.GoalTimeMode;
-          }
-          if (Number.isFinite(options.MinimumTravelSavingsRate_deg_s)) {
-            element("minimumTravelSavingsRate").value =
-              options.MinimumTravelSavingsRate_deg_s;
+            element("goalTimeMode").value = options.GoalTimeMode === "fixedArrival"
+              ? "fixedArrival" : "earliestArrival";
           }
           if (typeof options.UnsupportedTimedTopologyPolicy === "string") {
             element("unsupportedTimedTopologyPolicy").value =

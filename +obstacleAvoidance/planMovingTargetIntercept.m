@@ -168,7 +168,7 @@ end
 
 function [result, search] = searchEarliest( ...
         obstacles, initialState, targetMotion, limits, options)
-% Use the complete direct event kernel when applicable, else a bounded grid.
+% Use the exact direct-intercept solver when eligible; otherwise search a time grid.
 plannerDefaults = obstacleAvoidance.planTrajectory();
 tolerance_s = plannerDefaults.ArrivalTimeTolerance_s;
 if isfield(options.PlannerOptions, "ArrivalTimeTolerance_s")
@@ -247,14 +247,14 @@ search.MaximumCoarseStep_s = max(diff(coarseTime_s));
 end
 
 function isZero = derivativeIsZero(state, fieldName)
-% Recognize the exact rest state required by the algebraic kernel.
+% Check for the rest state required by the exact solver.
 isZero = ~isfield(state, fieldName) || isempty(state.(fieldName)) || ...
     all(double(state.(fieldName)) == 0, "all");
 end
 
 function [result, search] = planAtTime( ...
         obstacles, initialState, targetMotion, limits, options, interceptTime_s)
-% Solve one fixed-time intercept through the maintained public planner path.
+% Call the public planner for one fixed-time intercept.
 terminalPosition_deg = targetAtTime(targetMotion, interceptTime_s);
 terminalVelocity_deg_s = [0 0];
 terminalAcceleration_deg_s2 = [0 0];
@@ -286,7 +286,7 @@ search = searchRecord("specifiedFixedTime", 1, 0, 0, ...
 end
 
 function position_deg = targetAtTime(targetMotion, queryTime_s)
-% Evaluate the normalized target representation without extrapolation.
+% Evaluate the target without extrapolating its history.
 position_deg = interp1(targetMotion.time_s, targetMotion.position_deg, ...
     queryTime_s, targetMotion.InterpolationMethod);
 end
@@ -312,7 +312,7 @@ end
 function search = searchRecord(policy, trialCount, coarseCount, ...
         refinementCount, startTime_s, endTime_s, upperTime_s, ...
         lowerTime_s, tolerance_s, exactDiagnostics)
-% Assemble one stable intercept-search diagnostic record.
+% Assemble intercept-search diagnostics.
 if policy == "completePiecewisePolynomialDirect"
     optimalityStatus = "certifiedEarliest";
 elseif policy == "boundedChronologicalFixedTime"

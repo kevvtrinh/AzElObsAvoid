@@ -57,15 +57,14 @@ for iterationIndex = 1:35
         segmentCount, degree, request.InitialState.position_deg, ...
         request.GoalState.position_deg, request.Limits, planes, ...
         roundoffReserve_deg, optimizationHorizon_s, ...
-        "earliestArrival", 0, feasibleSegmentTime_s, ...
+        "earliestArrival", ...
         request.TrajectoryOptions);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     diagnostics.FinalTrajectoryExitFlag = exitFlag;
     if exitFlag <= 0 || isempty(trialControl_deg)
-        % The requested horizon constrains the returned motion, but the first
-        % useful iterate may need the longer warm-start duration to establish
-        % separating lines before the horizon is imposed again.
+        % Allow the longer starting duration while finding separating planes.
+        % The final motion must still meet the requested horizon.
         canExpandHorizon = exitFlag == -2 && isempty(bestControl_deg) && ...
             optimizationHorizon_s < diagnostics.WarmStartDuration_s;
         if canExpandHorizon
@@ -73,10 +72,8 @@ for iterationIndex = 1:35
                 diagnostics.WarmStartDuration_s);
             continue;
         end
-        % Fixed separating planes can make the deadline infeasible before
-        % the alternating curve has reached it. Keep improving the retained
-        % collision-free curve at its own duration within this same budget;
-        % every accepted motion still has to meet the requested horizon.
+        % If fixed planes make the deadline infeasible, continue improving the
+        % collision-free curve at its current duration within the iteration budget.
         if exitFlag == -2 && ~isempty(bestControl_deg) && ...
                 optimizationHorizon_s < bestDuration_s
             diagnostics.RetainedHorizonRetryCount = ...
@@ -146,9 +143,7 @@ for iterationIndex = 1:35
         break;
     end
 
-    % A sampled overlap only identifies where a separator is needed. Solve
-    % and retain a line for each newly active curve-region pair; final direct
-    % certification remains a later, independent stage.
+    % Add separating lines where samples overlap. Final certification follows later.
     updateFailed = false;
     activePairIndices = reshape(find(activePairs), 1, []);
     for activeIndex = 1:numel(activePairIndices)
@@ -195,7 +190,7 @@ end
 %% Section 4: Local Functions
 
 function plane = createEmptyPlane()
-% Define the stable inactive or verified degree-one plane record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

@@ -197,8 +197,7 @@ verifyFalse(testCase, ...
 verifyFalse(testCase, ...
     isfield(plannerOptions, "IsWaypointWarmStartAvailable"));
 verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
-verifyEqual(testCase, plannerOptions.GoalTimeMode, "balancedArrival");
-verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 1);
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, productionOptions.MaximumSeedCount, 2);
@@ -211,8 +210,7 @@ testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
 currentState = sandboxState.ReadState();
 controls = currentState.GoalMode.GraphicsHandles.Controls;
 set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
-set(controls.GoalTimeModeHandle, "Value", 3);
-set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 filePath = string(tempname) + ".mat";
 testCase.addTeardown(@() deleteIfPresent(filePath));
@@ -224,7 +222,6 @@ plannerOptions = loaded.diagnosisBundle.PlannerOptions;
 verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 12.5);
 verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
 end
 
@@ -239,8 +236,7 @@ applicationState.GoalMode.GoalPosition_deg = [-179 0];
 guidata(sandboxState.FigureHandle, applicationState);
 controls = applicationState.GoalMode.GraphicsHandles.Controls;
 set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
-set(controls.GoalTimeModeHandle, "Value", 3);
-set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
 runCallback = get(runHandle, "Callback");
@@ -253,7 +249,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, result.Options.MinimumTravelSavingsRate_deg_s, 12.5);
 verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
 verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
 verifyEqual(testCase, result.position_deg(end, 1), 181, "AbsTol", 1e-9);

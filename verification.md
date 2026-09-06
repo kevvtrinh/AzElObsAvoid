@@ -1,5 +1,14 @@
 # Plan 325 verification
 
+BMTP is now the only selectable obstacle-planning method. Historical entries
+using `TrajectoryMethod="ruckigWaypoint"` below describe earlier revisions.
+Standalone Ruckig utilities and the explicit, default-disabled waypoint
+fallback remain available.
+
+Goal timing now defaults to `earliestArrival`, with shorter travel breaking
+arrival-time ties. `fixedArrival` remains available. Historical balanced-arrival
+results below predate removal of that mode and its savings-rate option.
+
 Current configuration (2026-09-05): the user selected degree-eight Bezier
 trajectories with MATLAB coneprog and ended the replacement-solver research.
 The fastcone implementations and native build dependency are removed. See

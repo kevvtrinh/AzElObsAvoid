@@ -27,8 +27,7 @@ function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(sh
 
 %% Section 1: Validate Inputs
 
-% Accept one polygon and one or more two-axis query points. Keep query rows in
-% input order so a bad result maps back to the same point.
+% Check polygon and query-point dimensions.
 
 if ~isa(shape, "polyshape") || ~isscalar(shape)
     error("pointPolygonClearance:InvalidShape", ...
@@ -40,34 +39,25 @@ queryCount = size(point_deg, 1);
 nearestPoint_deg = nan(queryCount, 2);
 edgeIndex = zeros(queryCount, 1);
 if isempty(shape.Vertices)
-    % Empty geometry has no boundary and cannot occupy any point. Infinite
-    % positive clearance communicates that no finite obstacle is nearby.
+    % Empty geometry has infinite clearance.
     clearance_deg = inf(queryCount, 1);
     return;
 end
 
 %% Section 2: Traverse Boundary Edges
 
-% Convert every polygon ring to line segments. Clearance is the shortest
-% Euclidean distance from a query point to any segment, not only to vertices.
+% Measure distance to edges, not just vertices.
 
-% Edge order is stable and shared with visibility tests, so the returned edge
-% index remains meaningful diagnostic information.
 [edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
 
 %% Section 3: Project Query Blocks And Apply The Occupancy Sign
 
-% Project each point onto each edge and clamp the projection to the edge ends.
-% Return negative distance inside the polygon, zero on its boundary, and
-% positive distance outside. A wrong sign usually points to occupancy testing.
+% Project onto each finite edge; use a negative distance inside the polygon.
 
-% Projection onto every segment gives exact Euclidean boundary distance.
 edgeDelta_deg = edgeEnd_deg - edgeStart_deg;
 edgeLengthSquared_deg2 = sum(edgeDelta_deg .^ 2, 2);
 nonzeroEdge = edgeLengthSquared_deg2 > 0;
-% Replacing a zero denominator with one is numerically safe because the matching
-% projection fraction is forced to zero immediately afterward. The degenerate
-% edge then behaves as a single boundary point.
+% Treat zero-length edges as points and avoid division by zero.
 edgeLengthSquared_deg2(~nonzeroEdge) = 1;
 clearance_deg = zeros(queryCount, 1);
 
@@ -84,9 +74,7 @@ for blockStart = 1:blockQueryCount:queryCount
         elevationOffset_deg .* edgeDelta_deg(:, 2).') ./ edgeLengthSquared_deg2.';
     projectionFraction(:, ~nonzeroEdge) = 0;
     projectionFraction = min(1, max(0, projectionFraction));
-    % The dot product gives projection onto the infinite supporting line.
-    % Clamping to [0,1] moves projections beyond an endpoint back onto the
-    % finite segment, which is required for true point-to-edge distance.
+    % Clamp projections to the finite segment.
     projectedAzimuth_deg = edgeStart_deg(:, 1).' + projectionFraction .* edgeDelta_deg(:, 1).';
     projectedElevation_deg = edgeStart_deg(:, 2).' + projectionFraction .* edgeDelta_deg(:, 2).';
     distanceSquared_deg2 = (point_deg(selectedQuery, 1) - projectedAzimuth_deg) .^ 2 + ...
@@ -101,12 +89,9 @@ for blockStart = 1:blockQueryCount:queryCount
     clearance_deg(selectedQuery) = sqrt(max(0, minimumDistanceSquared_deg2));
 end
 isInside = isinterior(shape, point_deg(:, 1), point_deg(:, 2));
-% Distance magnitude alone cannot distinguish safe exterior points from
-% occupied interior points; the sign supplies that semantic distinction.
+% Make clearance negative inside the polygon.
 clearance_deg(isInside) = -clearance_deg(isInside);
 coordinateScale_deg = max(1, max(abs(point_deg), [], 2));
-% Values within roughly one trillionth of the coordinate scale are numerical
-% boundary noise. Snapping only these tiny values to exactly zero gives callers
-% a stable boundary result without erasing meaningful small clearances.
+% Snap boundary noise below 1e-12 of the coordinate scale to zero.
 clearance_deg(abs(clearance_deg) <= 1e-12 * coordinateScale_deg) = 0;
 end

@@ -51,8 +51,7 @@ if numel(powerCoefficient) <= 2
 end
 
 bernsteinControl = convertPowerToBernstein(powerCoefficient);
-% Two bisections expose four tighter hulls while keeping an unsuccessful
-% proof cheaper than allowing recursive work to compete with the fallback.
+% Try two subdivisions before falling back to polynomial extrema.
 maximumSubdivisionDepth = 2;
 decision = classifyBernsteinRange(bernsteinControl, ...
     certifiedLowerBound, certifiedUpperBound, maximumSubdivisionDepth);
@@ -78,8 +77,7 @@ needsTransform = isempty(transformByCoefficientCount) || ...
     numel(transformByCoefficientCount) < coefficientCount || ...
     isempty(transformByCoefficientCount{coefficientCount});
 if needsTransform
-    % The basis map depends only on degree; rebuilding it for every trajectory
-    % segment would make the proof path more expensive than root evaluation.
+    % Cache the degree-dependent basis conversion.
     transform = zeros(coefficientCount);
     for bernsteinIndex = 0:degree
         for powerIndex = 0:bernsteinIndex
@@ -146,7 +144,7 @@ end
 
 function within = stationaryPointsWithinBounds( ...
         powerCoefficient, lowerBound, upperBound)
-% Retain the established endpoint and finite stationary-point fallback.
+% Fall back to endpoints and real stationary points.
 derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* ...
     powerCoefficient(2:end);
 lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");

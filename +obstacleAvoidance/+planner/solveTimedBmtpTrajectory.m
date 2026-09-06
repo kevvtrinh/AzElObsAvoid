@@ -233,7 +233,7 @@ end
 
 function cellEdges_s = snapCellEdgesToObstacleTimes( ...
         candidateEdges_s, obstacleTimes_s)
-% Coalesce roundoff-equivalent solver-grid and obstacle-event times.
+% Merge event times that differ only by roundoff.
 timeScale_s = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
 timeTolerance_s = 4096 * eps(timeScale_s);
 for eventIndex = 1:numel(obstacleTimes_s)

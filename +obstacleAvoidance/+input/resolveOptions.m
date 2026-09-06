@@ -27,34 +27,24 @@ function [resolvedOptions, unknownNames] = resolveOptions(defaultOptions, option
 
 %% Section 1: Classify Override Names Without Reordering Defaults
 
-% Separate known and unknown field names. Preserve default field order so
-% resolved options remain easy to compare. Unknown names produce one warning
-% and do not alter behavior.
+% Find unknown options without changing defaults.
 
-% Unknown names are returned to the public owner so it can emit one warning
-% with the correct identifier. They are never copied into runtime behavior.
-if ~isstruct(defaultOptions) || ~isscalar(defaultOptions) || ...
-        ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
+% Return unknown names so the caller can issue one warning.
+if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("resolveOptions:InvalidStructures", ...
-        "defaultOptions and optionOverrides must be scalar structs.");
+        "optionOverrides must be a scalar struct.");
 end
 
 defaultNames = string(fieldnames(defaultOptions));
 overrideNames = string(fieldnames(optionOverrides));
-% "stable" retains the user's field order in diagnostics. The known names are
-% also visited in that order, while assignment into an existing structure
-% preserves the published ordering of the default fields.
+% Keep unknown names in the user's input order.
 unknownNames = setdiff(overrideNames, defaultNames, "stable");
 knownNames = intersect(overrideNames, defaultNames, "stable");
 
 %% Section 2: Apply Only Known Nonempty Overrides
 
-% An empty known value means "use the default." Copy each nonempty known value
-% without interpreting it. The option owner performs type and range checks.
+% Apply nonempty overrides; the caller checks their types and ranges.
 
-% Empty means "use the default" throughout the repository. Centralizing that
-% rule prevents individual planner stages from interpreting partial options
-% differently.
 resolvedOptions = defaultOptions;
 for fieldName = reshape(knownNames, 1, [])
     if ~isempty(optionOverrides.(fieldName))

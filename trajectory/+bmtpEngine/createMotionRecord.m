@@ -187,7 +187,7 @@ end
 %% Section 4: Local Functions
 
 function certificate = emptyPlaneCertificate()
-% Define the stable empty separation-certificate record.
+% Initialize an empty separation certificate.
 emptyPlane = struct("Active", false, "Normal", zeros(2, 2), ...
     "Offset_deg", zeros(1, 2), "SignedGap_deg", NaN, ...
     "Verified", false, "ExitFlag", NaN);

@@ -81,10 +81,8 @@ cleanupFields = string(fieldnames(cleanup));
 pollStride = 32;
 expandedCount = 0;
 
-% Without an arbitrary winding cap, a disconnected cyclic component could
-% contain infinitely many lifted states. Prove ordinary graph reachability
-% first. Expand each reached adjacency row once so this guard stays linear in
-% the stored graph size.
+% Check ordinary reachability first: a disconnected cyclic component
+% can otherwise generate infinitely many winding states.
 reachableNode = false(1, nodeCount);
 reachableNode(1) = true;
 reachableQueue = zeros(1, nodeCount);
@@ -217,7 +215,7 @@ end
 %% Section 3: Local Functions
 
 function statePath = reconstructStatePath(parentState, targetState)
-% Recover stored augmented-state ancestry without recomputing decisions.
+% Reconstruct the route from stored parent states.
 statePath = targetState;
 while statePath(1) ~= 1
     statePath = [parentState(statePath(1)), statePath]; %#ok<AGROW>
@@ -225,7 +223,7 @@ end
 end
 
 function key = stateKey(nodeIndex, classPattern)
-% Encode one augmented state without floating-point or ordering ambiguity.
+% Build a unique key for a node and winding state.
 key = strjoin([string(nodeIndex), ...
     string(double(classPattern(:).'))], ":");
 end
@@ -233,7 +231,7 @@ end
 function [stateNode, stateClass, stateCost_deg, parentState, closed] = ...
         growStateStorage(stateNode, stateClass, stateCost_deg, ...
         parentState, closed, newCapacity)
-% Double state storage without changing the input-driven search frontier.
+% Double state storage when it fills.
 oldCapacity = numel(stateNode);
 nextNode = zeros(1, newCapacity);
 nextNode(1:oldCapacity) = stateNode;
@@ -253,7 +251,7 @@ closed = nextClosed;
 end
 
 function pattern = routeClassPattern(route_deg, referencePoints_deg)
-% Evaluate the same open-route class pattern used by search transitions.
+% Compute the route's winding class using the search transition rule.
 pattern = zeros(1, size(referencePoints_deg, 1));
 if isempty(referencePoints_deg)
     return;
@@ -270,13 +268,13 @@ end
 end
 
 function angle = principalAngle(angle)
-% Normalize angular change to the deterministic principal interval.
+% Wrap angular change to the principal interval.
 angle = atan2(sin(angle), cos(angle));
 end
 
 function [cleanedRoute_deg, record] = shortenVisibilityRoute( ...
         route_deg, visibilityFunction, signatureFunction, requiredSignature)
-% Shorten a route only with visible chords that preserve its route class.
+% Take visible shortcuts only when they preserve the winding class.
 cleanedRoute_deg = route_deg;
 initialLength_deg = obstacleAvoidance.geometry.routeLength(route_deg);
 record = struct("CandidateCount", 0, "VisibilityRejectedCount", 0, ...

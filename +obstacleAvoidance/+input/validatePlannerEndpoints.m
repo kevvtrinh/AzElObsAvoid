@@ -105,6 +105,6 @@ end
 %% Section 4: Local Functions
 
 function [feasible, message, reason] = failure(message, reason)
-% Return the stable expected-failure triple without throwing.
+% Return an expected failure without throwing an error.
 feasible = false;
 end

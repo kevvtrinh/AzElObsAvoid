@@ -59,9 +59,8 @@ end
 
 %% Section 2: Enclose Every Complete Stored History
 
-% Linear corresponding-vertex motion lies in the convex hull of its endpoint
-% vertices. A topology-change query uses endpoint geometry, which is contained
-% by the same hull. Separate hulls do not bridge unrelated obstacles.
+% Endpoint convex hulls cover linear vertex motion and topology changes.
+% Use a separate hull for each obstacle to avoid joining unrelated shapes.
 envelopes = cell(numel(obstacles), 1);
 envelopeCount = 0;
 for obstacleIndex = 1:numel(obstacles)

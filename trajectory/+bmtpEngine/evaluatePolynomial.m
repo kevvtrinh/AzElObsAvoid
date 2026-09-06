@@ -81,7 +81,7 @@ end
 %% Section 3: Local Functions
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-% Evaluate selected coordinate records with ascending local-time powers.
+% Evaluate the selected polynomial segments in local time.
 coefficientCount = size(coefficientArray, 3);
 power = reshape(localTau .^ (0:coefficientCount - 1), ...
     [], 1, coefficientCount);

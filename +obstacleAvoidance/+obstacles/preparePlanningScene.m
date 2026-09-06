@@ -1,15 +1,18 @@
-function scene = preparePlanningScene(request)
+function scene = preparePlanningScene( ...
+        obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   scene = obstacleAvoidance.obstacles.preparePlanningScene(request)
+%   scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
+%       obstacles, initialState, goalState, limits, options)
 %**************************************************************************
 % PURPOSE
 %   - Prepare obstacle histories once for repeated planning queries.
 %   - Describe the request horizon and reusable obstacle preparation details.
 %**************************************************************************
 % INPUTS
-%   - request (scalar planning-request struct)
-%       Must contain normalized obstacles, initialState, and goalState.
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order. Unused inputs
+%       are accepted to keep stage signatures consistent.
 %**************************************************************************
 % OUTPUTS
 %   - scene (scalar struct)
@@ -21,42 +24,28 @@ function scene = preparePlanningScene(request)
 %   - Geometry is degrees, time is seconds, and speed is degrees per second.
 %**************************************************************************
 
-%% Section 1: Check The Request Record
+%% Section 1: Read The Planning Horizon
 
-% This stage is called after public input normalization. Check its small
-% internal interface here so a broken stage handoff fails at its source.
-
-requiredFields = {'obstacles', 'initialState', 'goalState'};
-if ~isstruct(request) || ~isscalar(request) || ...
-        ~all(isfield(request, requiredFields))
-    error("preparePlanningScene:InvalidRequest", ...
-        "request must be a scalar struct with obstacles, initialState, and goalState.");
-end
-startTime_s = request.initialState.time_s;
-endTime_s = request.goalState.time_s;
+startTime_s = initialState.time_s;
+endTime_s = goalState.time_s;
 
 %% Section 2: Prepare Complete Obstacle Histories
 
-% Graph construction, motion solving, and the final motion check repeatedly
-% query the same histories. Prepare shapes, bounds, edges, and interpolation
-% data once so those stages cannot rebuild different geometry independently.
+% Prepare shared obstacle geometry once for search and validation.
 
 preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic( ...
-    request.obstacles);
+    obstacles);
 
 %% Section 3: Check The Request Horizon
 
-% Static BMTP is valid only when every obstacle is unchanged over the complete
-% physical request interval. Keep this decision beside the prepared histories
-% that support it so later solver routing uses one shared result.
+% Use static BMTP only if every obstacle is unchanged over the full horizon.
 
 isStaticHorizon = obstacleAvoidance.obstacles.queryStaticHorizon( ...
     preparedObstacles, startTime_s, endTime_s);
 
 %% Section 4: Create Inspectable Preparation Details
 
-% These details explain which source histories and interval models planning
-% will query. They are diagnostic data and do not replace final motion checks.
+% Record the histories and interval models used by planning.
 
 obstacleCount = numel(preparedObstacles);
 detailTemplate = struct( ...
@@ -86,8 +75,7 @@ end
 
 %% Section 5: Assemble The Scene
 
-% The scene keeps prepared geometry separate from normalized public inputs.
-% Proposal, search, and solver stages can inspect it without changing request.
+% Keep cached geometry separate from the caller's inputs.
 
 scene = struct( ...
     "preparedObstacles", preparedObstacles, ...

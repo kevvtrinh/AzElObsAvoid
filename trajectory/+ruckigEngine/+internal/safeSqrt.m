@@ -20,8 +20,7 @@ function value = safeSqrt(radicand)
 
 %% Section 1: Distinguish Roundoff From A Negative Root
 
-% The factor 64 is inherited from the two original copies; its basis is not
-% documented in the repository.
+% The inherited factor 64 has no documented derivation.
 if radicand < -64 * eps(max(1, abs(radicand)))
     value = NaN;
 else

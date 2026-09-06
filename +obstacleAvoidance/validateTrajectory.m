@@ -212,7 +212,7 @@ end
 end
 
 function satisfied = safetyMarginProvenanceSatisfied(obstacles)
-% Require original geometry and one finite nonnegative applied margin.
+% Require original geometry and a finite, nonnegative safety margin.
 if isempty(obstacles)
     satisfied = true;
     return;
@@ -233,7 +233,7 @@ end
 end
 
 function validation = createEmptyValidation()
-% Define every stable validation field before checks are available.
+% Initialize all validation fields.
 values = {false, "No trajectory was validated.", false, false, false, ...
     false, false, false, false, false, false, false, false, false, false, ...
     NaN, NaN, false, false, false, false, false, NaN, false, false, false, ...
@@ -243,7 +243,7 @@ validation = createValidationRecord(values);
 end
 
 function validation = createValidationRecord(values)
-% Assemble values once in stable public field order.
+% Assemble validation results in public field order.
 names = ["Passed", "Message", "HistorySizesMatch", "TimeIsFinite", ...
     "TimeIsStrictlyIncreasing", "HistoryIsFinite", "InitialStateMatched", ...
     "TerminalStateMatched", "GoalTimeSatisfied", "PolynomialFormatValid", ...

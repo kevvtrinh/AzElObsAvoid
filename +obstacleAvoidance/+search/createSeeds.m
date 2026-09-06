@@ -1,20 +1,22 @@
-function seedSet = createSeeds(routeSet, proposal, request)
+function seedSet = createSeeds( ...
+        obstacles, initialState, goalState, limits, options, routeSet, proposal)
 %% Section 0: Header & Readme
 % SYNTAX
 %   seedSet = obstacleAvoidance.search.createSeeds( ...
-%       routeSet, proposal, request)
+%       obstacles, initialState, goalState, limits, options, routeSet, proposal)
 %**************************************************************************
 % PURPOSE
 %   - Convert direct, timed, and spatial routes into deterministic seeds.
 %   - Preserve spatial routes while keeping duration estimates advisory.
 %**************************************************************************
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order. Unused inputs
+%       are accepted to keep stage signatures consistent.
 %   - routeSet (scalar struct or empty)
 %       Timed and spatial route suggestions returned by searchRoutes.
 %   - proposal (scalar struct or empty)
 %       Proposal geometry that supplies spatial seed corridor provenance.
-%   - request (scalar planning-request struct)
-%       Normalized endpoint states, limits, and resolved options.
 %**************************************************************************
 % OUTPUTS
 %   - seedSet (struct array)
@@ -27,14 +29,9 @@ function seedSet = createSeeds(routeSet, proposal, request)
 
 %% Section 1: Create The Required Direct Seed
 
-% The direct route is always the first proposal and supports early planner
-% exits before graph construction. Its duration estimate is only the proven
-% endpoint velocity lower bound and never defines a seed horizon.
+% Always propose the direct route first. Its velocity-based duration
+% is a lower bound, not a deadline for solving the seed.
 
-initialState = request.initialState;
-goalState = request.goalState;
-limits = request.limits;
-options = request.options;
 start_deg = initialState.position_deg;
 goal_deg = obstacleAvoidance.input.goalPositionAtTime( ...
     goalState, goalState.time_s);
@@ -61,9 +58,7 @@ end
 
 %% Section 2: Append The Timed Seed
 
-% A timed route may encode waiting that a spatial polyline cannot represent.
-% Preserve its absolute duration class and source before spatial candidates
-% consume the remaining deterministic indices.
+% Keep timed routes before spatial routes so their waits are preserved.
 
 if ~isempty(routeSet.TimedRoute_deg) && ...
         routeSet.TimedRouteTime_s(end) > routeSet.TimedRouteTime_s(1)
@@ -89,10 +84,8 @@ end
 
 %% Section 3: Append Distinct Spatial Seeds
 
-% A route-shaped duration estimate can exceed the duration of the smooth
-% motion later found from that seed. Never use it as a feasibility test.
-% Retain each non-direct route and give it only the endpoint velocity lower
-% bound used by the direct seed.
+% A smooth motion can be faster than its guide polyline. Use only the
+% endpoint velocity lower bound; do not reject seeds by estimated duration.
 
 spatialTemplate = template;
 spatialTemplate.CorridorBoundary_deg = proposal.shape.Vertices;
@@ -112,7 +105,7 @@ end
 %% Section 4: Local Functions
 
 function seed = createSpatialSeed(template, index, route_deg, directDuration_s)
-% Create one spatial proposal without treating route timing as feasibility.
+% Create a spatial seed with a duration estimate, not a feasibility test.
 seed = template;
 seed.Index = index;
 seed.Source = "visibilityGraph";

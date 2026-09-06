@@ -45,9 +45,7 @@ function [candidate, checkResult, elapsedTime_s, stageTiming] = ...
 
 %% Section 1: Run The Authoritative Motion Check
 
-% Empty kernel outputs cannot be approved, but they still need the same stable
-% validation record. Nonempty motions are checked only by validateTrajectory;
-% no solver-owned flag is promoted to obstacle-avoidance acceptance here.
+% Validate nonempty motions; return an empty validation record otherwise.
 
 checkResult = obstacleAvoidance.validateTrajectory();
 elapsedTime_s = 0;

@@ -72,7 +72,7 @@ end
 
 function power_deg = stabilizePolynomialEndpoints( ...
         power_deg, controlPoint_deg)
-% Project power roundoff onto exact Bernstein C0-C3 endpoints.
+% Correct roundoff so position through jerk match at Bernstein endpoints.
 degree = size(controlPoint_deg, 2) - 1;
 segmentCount = size(controlPoint_deg, 1);
 endPower = degree - 3:degree;

@@ -76,8 +76,7 @@ if dimensionCount ~= 2
         "The independent validator currently requires two coordinates.", timer);
     return;
 end
-% A moving-target adapter may retain its sampled history after evaluating the
-% fixed capture position and time. That metadata does not alter this motion.
+% Moving-target history may remain after the capture position and time are fixed.
 duration_s = double(directCandidate.MotionDuration_s);
 lowerBound_s = max(double(directCandidate.MinimumAxisDuration_s));
 clockTolerance_s = max(double(options.ConstraintTolerance), ...
@@ -202,9 +201,8 @@ for axisIndex = 1:dimensionCount
                 continue;
             end
 
-            % Six bisections reduce one coarse interval to less than 1/512
-            % of the available amplitude while avoiding near-identical full
-            % validations. The retained upper endpoint is always validated.
+            % Refine the bracket to at most 1/512 of the available amplitude.
+            % Keep the validated upper endpoint.
             refinementCount = 0;
             while upperMagnitude_deg - lowerMagnitude_deg > ...
                     boundaryResolution_deg && refinementCount < 6
@@ -240,10 +238,8 @@ for axisIndex = 1:dimensionCount
             report.TerminationReason = "validatedFeasibleBoundary";
             axisReports(reportIndex) = report;
 
-            % Every candidate shares the certified arrival clock. Compare
-            % travel across signed peaks rather than accepting enumeration
-            % order as a path-quality decision. This does not assert global
-            % optimality or exclude the later route-search candidates.
+            % All candidates have the same arrival time; keep the shortest.
+            % Later route search may still find a better motion.
             if diagnostics.Success && ...
                     upperCandidate.MotionLength_deg >= candidate.MotionLength_deg
                 continue;
@@ -288,9 +284,8 @@ end
 
 function [candidate, diagnostics] = refineOffsetTravel(candidate, direct, ...
         diagnostics, obstacles, initialState, goalState, limits, options)
-% Optimize free spline offsets while preserving the governing coordinate and
-% clock. These are numerical degrees of freedom, not prescribed route points.
-% Every retained trial passes the full continuous and physical validation.
+% Adjust spline offsets without changing the governing axis or arrival time.
+% Accept only shorter motions that pass full validation.
 axisIndex = diagnostics.SelectedAxisIndex;
 reports = diagnostics.AxisReports;
 selectedReport = find([reports.AxisIndex] == axisIndex & ...
@@ -348,7 +343,7 @@ end
 end
 
 function record = createTravelRefinement()
-% Retain the starting lobe's reports separately from the final free offsets.
+% Store refinement details separately from the starting lobe.
 record = struct('Attempted', false, 'AcceptedCount', 0, 'TrialCount', 0, ...
     'InitialLength_deg', NaN, 'FinalLength_deg', NaN, ...
     'KnotTime_s', zeros(0, 1), 'KnotOffset_deg', zeros(0, 1));
@@ -357,10 +352,7 @@ end
 function candidate = createExcursion( ...
         directCandidate, amplitude_deg, axisIndex, peakTime_s, ...
         initialState, options)
-% Add a minimum-jerk lobe whose interior velocity and acceleration stay free.
-% Forcing both derivatives to zero at the peak creates an artificial dwell
-% that can intersect a broad obstacle even when a smoother fixed-clock lobe
-% has ample physical margin. The unchanged validator remains authoritative.
+% Leave velocity and acceleration free at the peak to avoid an artificial dwell.
 startTime_s = initialState.time_s;
 endTime_s = directCandidate.FinalTime_s;
 candidate = bmtpEngine.createOffsetSplineMotion( ...
@@ -370,7 +362,7 @@ candidate = bmtpEngine.createOffsetSplineMotion( ...
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
-% Derive shifted excursion peaks from direct-path collision intervals.
+% Place peaks within direct-path collision intervals.
 startTime_s = directCandidate.time_s(1);
 endTime_s = directCandidate.time_s(end);
 midpointTime_s = 0.5 * (startTime_s + endTime_s);
@@ -409,13 +401,13 @@ peakTime_s = peakTime_s(retainedPeak);
 end
 
 function valid = directMotionIsPhysical(validation)
-% Exclude collision fields while requiring every other authoritative gate.
+% Require all checks except collision checks to pass.
 allowedIssues = ["collision freedom", "collision resolution"];
 valid = all(ismember(validation.Issues, allowedIssues));
 end
 
 function isClear = sampledCandidatesAreClear(candidates, obstacles, options)
-% Batch equal-time sampled histories so each moving shape is evaluated once.
+% Batch histories with matching times to reuse obstacle queries.
 candidateCount = numel(candidates);
 sampleCount = numel(candidates{1}.time_s);
 azimuth_deg = zeros(sampleCount, candidateCount);
@@ -470,7 +462,7 @@ report = struct( ...
 end
 
 function report = createProgressBasisReport()
-% Preserve physical bounds and the best validated result for one basis.
+% Store bounds and the best validated candidate for this basis.
 report = struct( ...
     "Name", "", "Power", zeros(1, 0), "PeakProgress", NaN, ...
     "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
@@ -479,7 +471,7 @@ report = struct( ...
 end
 
 function report = createAxisReport()
-% Define one stable record for every coordinate and signed direction.
+% Initialize diagnostics for each axis and direction.
 report = struct( ...
     "AxisIndex", 0, "Direction", 0, "AxisGovernsClock", false, ...
     "PeakTime_s", NaN, "Eligible", false, "MaximumMagnitude_deg", 0, ...
@@ -492,7 +484,7 @@ report = struct( ...
 end
 
 function diagnostics = createDiagnostics()
-% Define stable success, failure, selection, and enumeration evidence.
+% Initialize excursion diagnostics.
 diagnostics = struct( ...
     "Attempted", false, "Success", false, ...
     "Message", "The fixed-clock excursion was not attempted.", ...
@@ -514,7 +506,7 @@ diagnostics = struct( ...
 end
 
 function diagnostics = addValidationTiming(diagnostics, validation, elapsedTime_s)
-% Keep nested public-validation work separable from construction time.
+% Count validation time separately from motion construction.
 diagnostics.ValidationCount = diagnostics.ValidationCount + 1;
 diagnostics.ValidationElapsedTime_s = diagnostics.ValidationElapsedTime_s + ...
     elapsedTime_s;
@@ -524,7 +516,7 @@ diagnostics.CollisionCheckingElapsedTime_s = ...
 end
 
 function diagnostics = finishFailure(diagnostics, reason, message, timer)
-% Preserve an explicit terminal reason and elapsed work on every failure.
+% Record the failure and elapsed time.
 diagnostics.Success = false;
 diagnostics.TerminationReason = reason;
 diagnostics.Message = message;

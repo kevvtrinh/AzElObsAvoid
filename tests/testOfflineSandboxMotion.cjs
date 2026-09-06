@@ -425,3 +425,11 @@ test('original rotation preserves size and updates geometry about its center', (
     center[1] + p[0] - center[0]]));
   near(c.polygonArea(o.vertices_deg), c.polygonArea(triangle));
 });
+
+test('arrival controls offer only earliest and fixed timing', () => {
+  const select = html.match(/<select id="goalTimeMode">([\s\S]*?)<\/select>/)[1];
+  assert.equal((select.match(/<option /g) || []).length, 2);
+  assert.match(select, /value="earliestArrival" selected/);
+  assert.doesNotMatch(html, /minimumTravelSavingsRate|balancedArrival/);
+  new vm.Script(script);
+});

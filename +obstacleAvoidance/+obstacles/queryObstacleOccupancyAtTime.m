@@ -107,8 +107,7 @@ for obstacleIndex = 1:numel(obstacles)
     obstacleQueryTime_s = uniqueTime_s;
     activeQuery = finiteQuery;
     if obstacleIsTimeInvariant
-        % One exact static shape can classify every active-time point in the
-        % same vectorized clearance call without changing its finite lifespan.
+        % Query a static shape once for all points within its active times.
         obstacleTime_s = double(obstacle.time_s(:));
         obstacleQueryTime_s = obstacleTime_s(1);
         activeQuery = finiteQuery & (isscalar(obstacleTime_s) | ...

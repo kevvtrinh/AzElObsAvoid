@@ -123,9 +123,8 @@ for dimensionIndex = 1:dimensionCount
     axisTime(end) = commonDuration;
     switchTime = [switchTime, axisTime]; %#ok<AGROW>
 end
-% Decimal rounding changes phase durations and can accumulate into a false
-% endpoint error. Merge only machine-indistinguishable switch times while
-% retaining an actual time from the exact axis profiles.
+% Merge only roundoff-equivalent switch times, keeping an actual source time.
+% Decimal rounding can accumulate into an endpoint error.
 switchTime = mergeSwitchTimes(switchTime, commonDuration);
 segmentDuration = diff(switchTime).';
 segmentStartTime = initialState.time + switchTime(1:end - 1).';
@@ -186,7 +185,7 @@ end
 
 function profile = createStationaryProfile( ...
         minimumProfile, duration, initialTime)
-% Hold one unchanged rest axis while the moving axes determine the clock.
+% Hold an unchanged axis while the other axes move.
 profile = minimumProfile;
 profile.PhaseDuration = zeros(1, 7);
 profile.PhaseDuration(4) = duration;
@@ -240,8 +239,7 @@ elseif candidateCount == 3
         candidates(otherIndices(1)), candidates(otherIndices(2)));
     return;
 elseif candidateCount ~= 5
-    % Unexpected candidate topology is left to the complete fixed-time
-    % equations instead of inventing unsupported interval pairings.
+    % Use the full fixed-time equations when the candidate pattern is unexpected.
     return;
 end
 
@@ -277,7 +275,7 @@ end
 
 function duration = selectEarliestSynchronizationDuration( ...
         blocks, minimumDuration)
-% Test only certified interval boundaries in ascending order, as upstream does.
+% Try certified interval boundaries in time order.
 possibleDuration = minimumDuration;
 for dimensionIndex = 1:numel(blocks)
     block = blocks{dimensionIndex};
@@ -323,7 +321,7 @@ end
 end
 function [axisInitialState, axisTerminalState, axisLimits] = ...
         extractAxisProblem(initialState, terminalState, limits, dimensionIndex)
-% Isolate one coordinate without changing its units or boundary meaning.
+% Extract one axis's state and limits.
 axisInitialState = struct( ...
     "time", initialState.time, ...
     "position", initialState.position(dimensionIndex), ...
@@ -360,7 +358,7 @@ end
 
 function [polynomial, position, velocity, acceleration] = createPolynomial( ...
         initialState, segmentStartTime, segmentDuration, controlJerk)
-% Integrate the union of every axis switch time into the common polynomial format.
+% Combine all axis switch times into the shared polynomial format.
 segmentCount = numel(segmentDuration);
 dimensionCount = numel(initialState.position);
 positionPower = zeros(segmentCount, dimensionCount, 6);
@@ -406,7 +404,7 @@ end
 
 function selectedProfiles = selectSpatiallyShortestProfiles( ...
         selectedProfiles, candidateSets, commonDuration)
-% Coordinate descent chooses synchronized families by multidimensional path length.
+% Choose axis-profile combinations by coordinate descent to reduce path length.
 dimensionCount = numel(selectedProfiles);
 for sweepIndex = 1:2
     selectionChanged = false;
@@ -441,7 +439,7 @@ end
 end
 
 function lengthValue = sampledSpatialPathLength(axisProfiles, commonDuration)
-% Rank profile combinations on one shared dense time base without changing feasibility.
+% Compare profile combinations on a shared time grid.
 sampleTime = linspace(0, commonDuration, 1001).';
 dimensionCount = numel(axisProfiles);
 position = zeros(numel(sampleTime), dimensionCount);
@@ -469,7 +467,7 @@ lengthValue = sum(vecnorm(diff(position, 1, 1), 2, 2));
 end
 
 function profile = createEmptyProfile(dimensionCount, minimumDuration)
-% Define stable fields for an accepted profile or an identified engine failure.
+% Initialize profile fields for success and failure.
 profile = struct( ...
     "Success", false, ...
     "Message", "No synchronized jerk-switching profile was created.", ...

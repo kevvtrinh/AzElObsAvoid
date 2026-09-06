@@ -53,8 +53,7 @@ else
     endpointErrors = Inf(1, 6);
 end
 if limits.ControlOrder == 2
-    % Acceleration is the discontinuous control for the second-order
-    % interface, not a requested endpoint state.
+    % In second-order mode, acceleration is a control input, not an endpoint constraint.
     endpointErrors([3, 6]) = 0;
 end
 

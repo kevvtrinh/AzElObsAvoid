@@ -39,9 +39,7 @@ function [candidate, diagnostics] = createDirectWaitMotion( ...
 
 %% Section 1: Check The Timed Seed Form
 
-% The compact construction can represent only an initial dwell followed by a
-% direct move. Identify unsupported multi-waypoint topology here so the caller
-% can apply only the explicitly selected backup policy.
+% Support only an initial wait followed by a direct move.
 
 timer = tic;
 candidate = bmtpEngine.createMotionRecord( ...
@@ -109,8 +107,7 @@ end
 
 %% Section 2: Create The Delayed Direct Motion
 
-% Resolve the dwell and direct interval in physical time, then let the shared
-% direct engine create the motion segment under a fixed-arrival request.
+% Compute wait and move durations, then solve the fixed-arrival direct motion.
 
 duration_s = double(seed.EstimatedDuration_s);
 waitTime_s = duration_s * double(seed.tau(firstMotionIndex - 1));
@@ -139,9 +136,8 @@ if ~direct.Success && canRetryAtHorizon
         delayedInitialState, delayedGoalState, limits, fixedOptions);
 end
 if ~direct.Success && isempty(waitOverride_s) && waitTime_s > 0
-    % Search-layer timing is only a proposal. Recover the largest dwell that
-    % leaves the exact direct kernel enough motion time, so an optimistic
-    % transition estimate cannot turn an ample request horizon into failure.
+    % If the estimated move time fails, retry with the exact minimum duration
+    % to avoid rejecting a feasible request because of the estimate.
     diagnostics.TimingRepairAttempted = true;
     if strlength(diagnostics.InitialTimingTerminationReason) == 0
         diagnostics.InitialTimingTerminationReason = ...
@@ -178,8 +174,7 @@ end
 
 %% Section 3: Prepend The Constant Dwell
 
-% Express wait and motion through one polynomial record so later validation
-% sees the complete physical history instead of a hidden time offset.
+% Include the wait in the polynomial so validation checks the full motion.
 
 directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
     direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
@@ -213,7 +208,7 @@ end
 %% Section 4: Local Functions
 
 function hasWait = hasRepeatedWaypoint(position_deg)
-% Treat a repeated consecutive guide point as an explicit spatial dwell.
+% Repeated consecutive guide points represent a wait.
 if size(position_deg, 1) < 2
     hasWait = false;
     return;

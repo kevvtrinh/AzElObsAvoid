@@ -84,7 +84,7 @@ end
 %% Section 4: Local Functions
 
 function subdivided_deg = subdivideMidpoint(controlPoint_deg)
-% Restrict every Bezier span to exact half intervals by de Casteljau averaging.
+% Split each Bezier span in half using de Casteljau subdivision.
 segmentCount = size(controlPoint_deg, 1);
 degree = size(controlPoint_deg, 2) - 1;
 subdivided_deg = zeros(2 * segmentCount, degree + 1, 2);
@@ -105,7 +105,7 @@ end
 end
 
 function controlPoint_deg = powerToBernsteinControls(positionPower_deg)
-% Reconstruct the exact control net represented by exported position powers.
+% Reconstruct Bezier controls from the exported power coefficients.
 degree = size(positionPower_deg, 3) - 1;
 transform = zeros(degree + 1);
 for bernsteinIndex = 0:degree
@@ -121,7 +121,7 @@ controlPoint_deg = permute( ...
 end
 
 function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
-% Record the exact derivative-control timing inequality used for dilation.
+% Record the derivative bound used to stretch time.
 motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
     "SegmentTime_s", segmentTime_s, ...
     "RequiredSegmentTime_s", requiredTime_s, ...

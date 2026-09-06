@@ -64,8 +64,8 @@ end
 
 %% Section 2: Resolve Rejection Or Ambiguity At Stationary Points
 
-% An outlying Bernstein coefficient is not a curve sample. Even when a hull
-% cannot prove inclusion, evaluate all true extrema before rejecting it.
+% A control point outside the limits does not prove a curve violation.
+% Check actual extrema if the Bernstein hull is inconclusive.
 [minimumValue, maximumValue] = polynomialExtrema(powerCoefficient);
 within = minimumValue >= checkedLowerBound && ...
     maximumValue <= checkedUpperBound;

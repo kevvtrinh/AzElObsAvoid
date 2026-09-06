@@ -44,9 +44,7 @@ function [collisionFree, collisionResolved, seedCorridorCertified, ...
 
 %% Section 1: Check Complete Separation Evidence
 
-% Static and moving plane certificates are independently reconstructed before
-% use. If neither passes, seed-side guidance is checked; remaining ambiguity
-% falls through to conservative adaptive checks over every polynomial segment.
+% Check plane certificates, then seed corridors, then adaptive interval bounds.
 
 [collisionFree, collisionResolved, seedCorridorCertified, ...
     planeCertificateCertified, minimumClearance_deg, collisionCheckCount, ...
@@ -83,7 +81,7 @@ end
 
 function [certified, minimumClearance_deg] = ...
         checkStaticObstacleClearance(trajectory, obstacles, options)
-% Independently verify complete static obstacle/curve plane separation.
+% Verify separating planes against the static geometry and curve.
 certified = false;
 minimumClearance_deg = NaN;
 if ~isfield(trajectory, "PlaneCertificate") || isempty(obstacles)
@@ -133,7 +131,7 @@ end
 
 function [certified, minimumClearance_deg] = ...
         checkMovingObstacleClearance(trajectory, obstacles, options)
-% Reconstruct timed cells and independently verify every applicable plane.
+% Rebuild timed cells and verify their separating planes.
 [certified, minimumClearance_deg] = deal(false, NaN);
 if ~isfield(trajectory, "PlaneCertificate") || isempty(obstacles)
     return;
@@ -293,7 +291,7 @@ failure = "";
 end
 
 function cellEdges_s = snapTimedCellEdges(candidateEdges_s, obstacleTimes_s)
-% Coalesce roundoff-equivalent certificate-grid and obstacle-event times.
+% Merge certificate and obstacle event times that differ only by roundoff.
 timeScale_s = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
 timeTolerance_s = 4096 * eps(timeScale_s);
 for eventIndex = 1:numel(obstacleTimes_s)
@@ -306,7 +304,7 @@ end
 
 function [certified, minimumClearance_deg] = verifyDegreeOneCertificate( ...
         trajectory, regionVertices, planes, activePairs, options)
-% Verify polynomial controls against caller-reconstructed convex regions.
+% Check polynomial controls against independently rebuilt regions.
 certified = false;
 regionCount = numel(regionVertices);
 segmentCount = trajectory.Polynomial.SegmentCount;
@@ -367,7 +365,7 @@ end
 
 function [regions_deg, passed] = ...
         reconstructCertificateRegions(certificate, occupiedShape)
-% Rebuild every certified region from the authoritative exact decomposition.
+% Rebuild certified regions from the exact obstacle decomposition.
 exactRecords = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
 exactRegionCount = numel(exactRecords);
 regions_deg = cell(exactRegionCount, 1);
@@ -455,7 +453,7 @@ end
 end
 
 function regions_deg = regions_degForMembers(exactRecords, memberIndex)
-% Extract finite exact-cell vertices for one independently replayed hull.
+% Extract finite vertices for the region's convex hull.
 regions_deg = cell(numel(memberIndex), 1);
 for localIndex = 1:numel(memberIndex)
     vertices_deg = exactRecords(memberIndex(localIndex)).Vertices;
@@ -476,9 +474,8 @@ valid = isstruct(plane) && isscalar(plane) && ...
 end
 
 function bernstein = powerToBernstein(power)
-% Deliberately independent from motion construction so a shared arithmetic
-% error cannot make generated motions and independent checking agree.
-% Convert ascending power coefficients to same-degree Bernstein controls.
+% Convert powers to Bernstein controls independently of the motion engine
+% so a shared conversion bug cannot make an invalid curve pass validation.
 degree = size(power, 1) - 1;
 transform = zeros(degree + 1);
 for bernsteinIndex = 0:degree
@@ -494,7 +491,7 @@ end
 function [collisionFree, resolved, minimumClearance_deg, ...
         checkCount, unresolvedCount] = ...
         checkCurveObstacleSeparation(polynomial, obstacles, limits, options)
-% Prove moving-obstacle clearance or fail closed at the minimum time step.
+% Check moving-obstacle clearance; reject unresolved minimum-step intervals.
 if isempty(obstacles)
     [collisionFree, resolved, minimumClearance_deg, ...
         checkCount, unresolvedCount] = deal(true, true, Inf, 0, 0);
@@ -517,10 +514,8 @@ for segmentIndex = 1:polynomial.SegmentCount
     durationIndex = min(segmentIndex, numel(polynomial.SegmentDuration_s));
     segmentEnd_s = segmentStart_s + ...
         polynomial.SegmentDuration_s(durationIndex);
-    % Independently computed switching laws and obstacle histories can encode
-    % the same physical event a few ULPs apart. Snap only that roundoff-sized
-    % disagreement so a zero-width interval is not assigned an infinite
-    % topology-change speed and rejected without evaluating its clearance.
+    % Merge event times differing by only a few floating-point steps.
+    % Otherwise a near-zero interval can falsely imply infinite obstacle speed.
     eventScale_s = max([1; abs(segmentStart_s); abs(segmentEnd_s); ...
         abs(obstacleEventTimes_s)]);
     eventTolerance_s = 1024 * eps(eventScale_s);
@@ -617,7 +612,7 @@ end
 end
 
 function time_s = snapToEventTime(time_s, eventTimes_s, tolerance_s)
-% Coalesce only floating representations of the same physical event time.
+% Merge roundoff-equivalent event times.
 if isempty(eventTimes_s)
     return;
 end

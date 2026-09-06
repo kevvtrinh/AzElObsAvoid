@@ -50,7 +50,7 @@ end
 %% Section 2: Local Functions
 
 function sampled = samplePolynomial(polynomial, sampleTime_s)
-% Sample through the same public polynomial evaluator used by validation.
+% Sample the output polynomial.
 initialTime_s = polynomial.SegmentStartTime_s(1);
 duration_s = polynomial.FinalTime_s - initialTime_s;
 segmentTime_s = polynomial.SegmentDuration_s(1);

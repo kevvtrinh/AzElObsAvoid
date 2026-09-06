@@ -104,8 +104,8 @@ elseif duration_s > requestedDuration_s + constraintTolerance
     return;
 end
 
-% A shared progress law preserves the straight path when that law can attain
-% the common physical clock. Otherwise, stretch each exact axis minimum.
+% Use shared straight-line progress if it can meet the minimum clock.
+% Otherwise synchronize the individual axis profiles by time scaling.
 activeAxis = displacement_deg ~= 0;
 [progressPhase_s, progressJerk_1_s3] = minimumProfile(1, ...
     min(maximumVelocity_deg_s(activeAxis) ./ abs(displacement_deg(activeAxis))), ...
@@ -165,7 +165,7 @@ end
 
 function [time_s, position_deg, velocity_deg_s, acceleration_deg_s2] = ...
         readState(state, stateName, dimensionCount)
-% Normalize one finite state and resolve omitted derivatives to zero.
+% Validate the state and default missing derivatives to zero.
 requiredFields = {'time_s', 'position_deg'};
 if ~isstruct(state) || ~isscalar(state) || ...
         ~all(isfield(state, requiredFields))
@@ -206,7 +206,7 @@ end
 
 function [maximumVelocity_deg_s, maximumAcceleration_deg_s2, ...
         maximumJerk_deg_s3] = readLimits(limits, dimensionCount)
-% Read all positive per-axis physical limits without relaxing dimensions.
+% Check positive limits and axis counts.
 names = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3"];
 values = zeros(3, dimensionCount);
 if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, names))
@@ -232,7 +232,7 @@ maximumJerk_deg_s3 = values(3, :);
 end
 
 function [goalTimeMode, sampleTime_s, tolerance] = readOptions(options)
-% Normalize the two required options and optional endpoint-rest tolerance.
+% Resolve sampling, arrival mode, and endpoint-rest tolerance.
 if ~isstruct(options) || ~isscalar(options) || ...
         ~all(isfield(options, {'GoalTimeMode', 'SampleTime_s'}))
     error("createDirectMotion:InvalidOptions", ...
@@ -241,9 +241,9 @@ end
 goalTimeMode = string(options.GoalTimeMode);
 if ~isscalar(goalTimeMode) || ...
         ~any(goalTimeMode == ...
-        ["balancedArrival", "earliestArrival", "fixedArrival"])
+        ["earliestArrival", "fixedArrival"])
     error("createDirectMotion:InvalidGoalTimeMode", ...
-        "GoalTimeMode must be balancedArrival, earliestArrival, or " + ...
+        "GoalTimeMode must be earliestArrival or " + ...
         "fixedArrival.");
 end
 validateattributes(options.SampleTime_s, {'numeric'}, ...
@@ -297,7 +297,7 @@ jerk_deg_s3 = sign(displacement_deg) * jerkLimit_deg_s3 * ...
 end
 
 function [duration_s, jerk] = stretchProfile(duration_s, jerk, targetDuration_s)
-% Uniform time scaling preserves endpoints while reducing every limit peak.
+% Stretch time to reduce derivative peaks without moving endpoints.
 sourceDuration_s = sum(duration_s);
 scale = targetDuration_s / sourceDuration_s;
 cumulativeFraction = cumsum(duration_s / sourceDuration_s);
@@ -346,7 +346,7 @@ merged_s([1, end]) = [0; duration_s];
 end
 
 function polynomial = emptyPolynomial(dimensionCount)
-% Preserve polynomial field shape on an expected construction failure.
+% Keep polynomial fields consistent on failure.
 polynomial = struct("Degree", 3, "SegmentCount", 0, ...
     "SegmentStartTime_s", zeros(0, 1), "SegmentDuration_s", zeros(0, 1), ...
     "SegmentBreakTau", zeros(0, 1), "FinalTime_s", NaN, ...

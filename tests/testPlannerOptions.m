@@ -20,7 +20,6 @@ expected = obstacleAvoidance.planTrajectory();
 
 verifyEqual(testCase, options, expected);
 requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
-    'MinimumTravelSavingsRate_deg_s', ...
     'MaximumWaitRefinementIterations', ...
     'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping'};
 verifyTrue(testCase, isstruct(options) && isscalar(options));
@@ -40,8 +39,8 @@ verifyFalse(testCase, isfield(options, ...
 verifyFalse(testCase, isfield(options, "MaximumNlpIterations"));
 verifyFalse(testCase, isfield(options, "CollocationSegmentCount"));
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
-verifyEqual(testCase, options.GoalTimeMode, "balancedArrival");
-verifyEqual(testCase, options.MinimumTravelSavingsRate_deg_s, 1);
+verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
+verifyFalse(testCase, isfield(options, "MinimumTravelSavingsRate_deg_s"));
 verifyEqual(testCase, options.MaximumSeedCount, 2);
 verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
 end
@@ -71,7 +70,6 @@ function testPartialOverridesResolveAndNormalize(testCase)
 % Apply known nonempty fields, retain empty defaults, and normalize values.
 overrides = struct( ...
     "GoalTimeMode", 'fixedArrival', ...
-    "TrajectoryMethod", 'ruckigWaypoint', ...
     "UnsupportedTimedTopologyPolicy", 'ruckigStopAtWaypoints', ...
     "SampleTime_s", [], ...
     "MaximumSeedCount", 3, ...
@@ -80,7 +78,6 @@ overrides = struct( ...
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 
 verifyEqual(testCase, options.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, options.TrajectoryMethod, "ruckigWaypoint");
 verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, options.SampleTime_s, 0.05);
@@ -102,6 +99,19 @@ verifyFalse(testCase, isfield(options, "UnknownFirst"));
 verifyFalse(testCase, isfield(options, "UnknownSecond"));
 end
 
+function testRetiredTrajectoryMethodIsIgnored(testCase)
+% Old saved requests follow the standard unknown-option policy.
+defaults = obstacleAvoidance.input.resolvePlannerOptions();
+verifyFalse(testCase, isfield(defaults, "TrajectoryMethod"));
+for value = ["bmtp", "ruckigWaypoint", "invalid"]
+    overrides = struct("TrajectoryMethod", value);
+    verifyWarning(testCase, @() ...
+        obstacleAvoidance.input.resolvePlannerOptions(overrides), ...
+        "planTrajectory:UnknownOptions");
+    verifyEqual(testCase, callWithoutWarning(overrides), defaults);
+end
+end
+
 function testInvalidRequirementsRetainEstablishedErrors(testCase)
 % Preserve explicit errors for malformed, moved, and invalid values.
 verifyError(testCase, @() ...
@@ -113,9 +123,6 @@ verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
 verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
     struct("GoalTimeMode", "invalid")), ...
     "planTrajectory:InvalidGoalTimeMode");
-verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
-    struct("TrajectoryMethod", "invalid")), ...
-    "planTrajectory:InvalidTrajectoryMethod");
 verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
     struct("UnsupportedTimedTopologyPolicy", "invalid")), ...
     "planTrajectory:InvalidUnsupportedTimedTopologyPolicy");
@@ -135,4 +142,14 @@ function options = callWithoutWarning(overrides)
 warningState = warning("off", "planTrajectory:UnknownOptions");
 warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
+end
+
+function testLegacyArrivalModeMigrates(testCase)
+overrides = struct("GoalTimeMode", "balancedArrival");
+verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), ...
+    "planTrajectory:RetiredGoalTimeMode");
+state = warning("off", "planTrajectory:RetiredGoalTimeMode");
+cleanup = onCleanup(@() warning(state));
+verifyEqual(testCase, obstacleAvoidance.input.resolvePlannerOptions(overrides), ...
+    obstacleAvoidance.input.resolvePlannerOptions());
 end
