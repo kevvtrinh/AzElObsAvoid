@@ -18,6 +18,8 @@ time_s      = double(obstacle.time_s(:));
 shape       = [];
 if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
     geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive");
+    geometry.EdgeStart_deg = zeros(0, 2);
+    geometry.EdgeEnd_deg   = zeros(0, 2);
     if ~geometryOnly
         shape = polyshape();
     end
@@ -44,6 +46,8 @@ if lowerIndex == upperIndex
     if ~geometryOnly
         shape = preparation.SampleShapes{lowerIndex};
     end
+    edgeStart_deg = preparation.SampleEdgeStart_deg{lowerIndex};
+    edgeEnd_deg   = preparation.SampleEdgeEnd_deg{lowerIndex};
 elseif preparation.MatchingTopology(lowerIndex)
     azimuth_deg   = azimuth_deg + fraction * preparation.DeltaAzimuth_deg{lowerIndex};
     elevation_deg = elevation_deg + fraction * preparation.DeltaElevation_deg{lowerIndex};
@@ -52,12 +56,16 @@ elseif preparation.MatchingTopology(lowerIndex)
     if ~geometryOnly && speed_deg_s == 0
         shape = preparation.SampleShapes{lowerIndex};
     end
+    edgeStart_deg = [azimuth_deg, elevation_deg];
+    edgeEnd_deg   = circshift(edgeStart_deg, -1, 1);
 else
     shape = preparation.IntervalUnionShapes{lowerIndex};
     [azimuth_deg, elevation_deg] = boundary(shape);
     speed_deg_s            = 0;
     topologyIsInterpolated = false;
     geometryModel          = preparation.IntervalGeometryModel(lowerIndex);
+    edgeStart_deg          = preparation.IntervalUnionEdgeStart_deg{lowerIndex};
+    edgeEnd_deg            = preparation.IntervalUnionEdgeEnd_deg{lowerIndex};
 end
 azimuth_deg(~isfinite(azimuth_deg)) = NaN;
 elevation_deg(~isfinite(elevation_deg)) = NaN;
@@ -65,6 +73,8 @@ if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
     shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg);
 end
 geometry = boundaryGeometry(azimuth_deg, elevation_deg, speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel);
+geometry.EdgeStart_deg = edgeStart_deg;
+geometry.EdgeEnd_deg   = edgeEnd_deg;
 end
 
 function geometry = boundaryGeometry(azimuth_deg, elevation_deg, speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel)

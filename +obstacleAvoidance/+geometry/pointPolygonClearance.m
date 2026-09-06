@@ -1,4 +1,4 @@
-function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(shape, point_deg)
+function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(shape, point_deg, geometry)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [clearance_deg, nearestPoint_deg, edgeIndex] = ...
@@ -12,6 +12,8 @@ function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(sh
 %       Occupied polygon geometry.
 %   - point_deg (N-by-2 finite numeric array)
 %       Query points in [azimuth elevation] order.
+%   - geometry (optional prepared boundary record)
+%       Supplies cached edges and verified convex-ring classification.
 %
 % OUTPUTS
 %   - clearance_deg (N-by-1 vector)
@@ -47,7 +49,13 @@ end
 
 % Measure distance to edges, not just vertices.
 
-[edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
+usePreparedGeometry = nargin >= 3 && isstruct(geometry) && isscalar(geometry) && all(isfield(geometry, {'EdgeStart_deg', 'EdgeEnd_deg', 'HasOrderedSingleRegion', 'IsConvex', 'OutwardSign'}));
+if usePreparedGeometry
+    edgeStart_deg = geometry.EdgeStart_deg;
+    edgeEnd_deg   = geometry.EdgeEnd_deg;
+else
+    [edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(shape, 0);
+end
 
 %% Section 3: Project Query Blocks And Apply The Occupancy Sign
 
@@ -82,7 +90,12 @@ for blockStart = 1:blockQueryCount:queryCount
     edgeIndex(selectedQuery) = selectedEdgeIndex;
     clearance_deg(selectedQuery) = sqrt(max(0, minimumDistanceSquared_deg2));
 end
-isInside = isinterior(shape, point_deg(:, 1), point_deg(:, 2));
+if usePreparedGeometry && geometry.HasOrderedSingleRegion && geometry.IsConvex
+    outwardCross = geometry.OutwardSign * ((point_deg(:, 1) - edgeStart_deg(:, 1).') .* edgeDelta_deg(:, 2).' - (point_deg(:, 2) - edgeStart_deg(:, 2).') .* edgeDelta_deg(:, 1).');
+    isInside = all(outwardCross >= 0, 2);
+else
+    isInside = isinterior(shape, point_deg(:, 1), point_deg(:, 2));
+end
 % Make clearance negative inside the polygon.
 clearance_deg(isInside) = -clearance_deg(isInside);
 coordinateScale_deg = max(1, max(abs(point_deg), [], 2));

@@ -253,6 +253,26 @@ function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
     verifyEqual(testCase, reprepared.InternalPreparation.SampleBounds_deg(:, 1), [3; 3], "AbsTol", 1e-12);
 end
 
+function testPreparedConvexClearanceMatchesPolyshapePath(testCase)
+    % Verify cached clockwise and counterclockwise edges preserve signed clearance.
+    vertices_deg = [-2 -1; 2 -1; 2 1; -2 1];
+    shape        = polyshape(vertices_deg, "Simplify", false);
+    points_deg   = [-3 0; 0 0; 2 0; 3 0; 0 1 + 1e-13];
+    referenceClearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
+    vertexOrientations_deg = {vertices_deg, flipud(vertices_deg)};
+    for orientationIndex = 1:numel(vertexOrientations_deg)
+        orderedVertices_deg = vertexOrientations_deg{orientationIndex};
+        nextVertices_deg    = circshift(orderedVertices_deg, -1, 1);
+        signedDoubleArea    = sum(orderedVertices_deg(:, 1) .* nextVertices_deg(:, 2) - orderedVertices_deg(:, 2) .* nextVertices_deg(:, 1));
+        geometry = struct("EdgeStart_deg", orderedVertices_deg, ...
+            "EdgeEnd_deg", nextVertices_deg, ...
+            "HasOrderedSingleRegion", true, "IsConvex", true, ...
+            "OutwardSign", -sign(signedDoubleArea));
+        cachedClearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg, geometry);
+        verifyEqual(testCase, cachedClearance_deg, referenceClearance_deg, "AbsTol", 1e-12);
+    end
+end
+
 function testStaticHorizonClassifiesSpanAndGeometry(testCase)
     % Verify static, partial-span, moving, and empty-history classifications.
     staticObstacle = rectangleObstacle("static horizon", [0; 4], [-2 2 -1 1]);

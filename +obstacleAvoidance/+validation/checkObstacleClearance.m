@@ -430,8 +430,8 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
                     minimumClearance_deg = min(minimumClearance_deg, broadClearance_deg);
                     continue;
                 end
-                shape                = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(obstacleIndex), splitTimes_s(splitIndex));
-                clearance_deg        = obstacleAvoidance.geometry.pointPolygonClearance(shape, splitPoints_deg(splitIndex, :));
+                [shape, geometry]     = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(obstacleIndex), splitTimes_s(splitIndex));
+                clearance_deg        = obstacleAvoidance.geometry.pointPolygonClearance(shape, splitPoints_deg(splitIndex, :), geometry);
                 checkCount           = checkCount + 1;
                 minimumClearance_deg = min(minimumClearance_deg, clearance_deg);
                 if clearance_deg <= options.CollisionClearanceTolerance_deg
@@ -457,7 +457,7 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
                     continue;
                 end
                 [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(obstacleIndex), intervalMid_s);
-                clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, point_deg);
+                clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, point_deg, geometry);
                 checkCount    = checkCount + 1;
                 if clearance_deg <= options.CollisionClearanceTolerance_deg
                     minimumClearance_deg = min(minimumClearance_deg, clearance_deg);

@@ -150,3 +150,26 @@ passed all 154 repository tests, including the new contract cases, and Code
 Analyzer reported no messages in the four changed files. This establishes the
 supported one- and two-segment state-to-state cases exercised here; longer
 Ruckig waypoint routes still return their existing stable unsupported result.
+
+## Clearance optimization comparison (2026-09-06)
+
+Four bounded optimization candidates were evaluated against commit `a790424`
+on six maintained examples. Each timed candidate used identical inputs, one
+warm-up, and three measured repetitions. The accepted candidate reuses prepared
+polygon edges during clearance queries and uses exact oriented edge half-spaces
+for verified convex single-ring shapes. Its sum of per-example median runtimes
+fell from 42.2472 s to 36.7781 s, a 12.9456% reduction (1.1487x speedup), for 23
+net added production lines: 0.56285 percentage points or 0.23779 aggregate
+seconds saved per added line. An initially slow static-U measurement did not
+repeat in a separate five-run confirmation. All compared physical result fields
+were exactly unchanged, all six independent validations passed, and MATLAB
+R2024b passed all 155 repository tests.
+
+Three candidates were rejected and reverted. Cached Bernstein/binomial matrices
+added 29 production lines for only a 1.1229% aggregate reduction and regressed
+the dense-concave and accelerating-circle examples by 18.13% and 13.98%.
+Shape-comparison prefilters added 21 lines and reduced aggregate time by 10.5591%
+but regressed dense-concave by 24.04% and accelerating circles by 9.89%. A
+33-line constant separating-plane shortcut failed the correctness gate before
+timing because a retained plane invalidated a later trajectory iteration. No
+rejected experiment was retained or added to `benchmark.csv`.

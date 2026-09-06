@@ -61,9 +61,9 @@ for obstacleIndex = 1:numel(obstacles)
         if isempty(candidate)
             continue;
         end
-        shape         = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, obstacleQueryTime_s(timeIndex));
+        [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, obstacleQueryTime_s(timeIndex));
         points_deg    = [azimuth_deg(candidate), elevation_deg(candidate)];
-        clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
+        clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg, geometry);
         if nargout >= 3
             priorClearance_deg = minimumClearance_deg(candidate);
             closer             = clearance_deg < priorClearance_deg;
