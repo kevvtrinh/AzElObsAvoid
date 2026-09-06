@@ -401,12 +401,10 @@ The maintained documentation is this guide, [repository rules](AGENTS.md),
 and the [obstacle history contract](obstacle_history_contract.md). The browser
 sandbox has its own [usage guide](offlinesandbox/README.md).
 
-Exact measurements, source revisions, and known limitations remain in
-`benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical
-records predate the separated-engine architecture and therefore name implementations that
-are no longer active. Treat those rows only as evidence for the recorded
-revision; they do not describe the current public interface or prove current
-correctness or performance.
+Full recorded measurements remain in [benchmark.csv](benchmark.csv) and the CSVs
+under [benchmarks](benchmarks/). See [planner decisions](branch_assessment.md)
+for retained choices and [verification](verification.md) for the latest checked
+scope. Historical rows describe their recorded revision, not current performance.
 
 Run the tracked MATLAB test tree with:
 
