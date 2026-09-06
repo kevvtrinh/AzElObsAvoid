@@ -58,6 +58,7 @@ end
 %% Section 2: Verify Supports And Continuous Separation
 
 supportTolerance_deg = max(1e-9, 10 * tolerance_deg);
+% Process each corridor needed to verify seed corridor.
 for corridorIndex = 1:numel(corridor)
     record = corridor(corridorIndex);
     if abs(norm(record.Normal) - 1) > 1e-9 || record.Clearance_deg < 0
@@ -122,9 +123,11 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obst
     if isempty(envelopeRegions)
         return;
     end
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(envelopeRegions)
         envelopeRegions(regionIndex) = polybuffer(envelopeRegions(regionIndex), max(1e-9, tolerance_deg));
     end
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         obstacle    = obstacles(obstacleIndex);
         preparation = obstacle.InternalPreparation;
@@ -132,6 +135,7 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obst
             sweptShape = preparation.StaticShape;
         else
             vertices_deg = zeros(0, 2);
+            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:numel(obstacle.az_deg)
                 sample_deg = [obstacle.az_deg{sampleIndex}(:), ...
                     obstacle.el_deg{sampleIndex}(:)];
@@ -147,6 +151,7 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obst
         end
         areaTolerance_deg2 = 256 * eps(max(1, area(sweptShape)));
         isContained        = false;
+        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:numel(envelopeRegions)
             if area(subtract(sweptShape, envelopeRegions(regionIndex))) <= areaTolerance_deg2
                 isContained = true;

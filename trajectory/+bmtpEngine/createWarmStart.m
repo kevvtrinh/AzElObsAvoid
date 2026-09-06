@@ -26,6 +26,7 @@ function warmStart = createWarmStart(request)
 % allocate spatial spans by length rather than input vertex density.
 
 seed = request.Seed;
+% Interpolate the seed on timed cell boundaries when topology changes with time; static seeds use their spatial parameterization.
 if request.UsesTimedCells
     route_deg          = createTimedWarmRoute(seed, request.Coverage.TimedSegmentCount, request.MaximumWarmSegmentCount);
     warmRouteResampled = size(seed.position_deg, 1) - 1 > request.MaximumWarmSegmentCount;
@@ -96,13 +97,16 @@ function [route_deg, wasReduced] = removeRedundantRoutePoints(route_deg)
     distinctRoute_deg  = zeros(size(route_deg));
     distinctPointCount = 1;
     distinctRoute_deg(1, :) = route_deg(1, :);
+    % Process each point needed to complete remove redundant route points.
     for pointIndex = 2:originalPointCount
+        % Retain points separated beyond the geometry tolerance and drop near-duplicate consecutive points.
         if norm(route_deg(pointIndex, :) - distinctRoute_deg(distinctPointCount, :)) > geometryTolerance_deg
             distinctPointCount = distinctPointCount + 1;
             distinctRoute_deg(distinctPointCount, :) = route_deg(pointIndex, :);
         end
     end
     distinctRoute_deg = distinctRoute_deg(1:distinctPointCount, :);
+    % Duplicate the lone surviving waypoint so the motion engine still receives a valid two-endpoint route.
     if distinctPointCount == 1
         route_deg  = [distinctRoute_deg; distinctRoute_deg];
         wasReduced = originalPointCount > 2;
@@ -111,9 +115,11 @@ function [route_deg, wasReduced] = removeRedundantRoutePoints(route_deg)
 
     route_deg          = zeros(size(distinctRoute_deg));
     retainedPointCount = 0;
+    % Process each point needed to complete remove redundant route points.
     for pointIndex = 1:distinctPointCount
         retainedPointCount = retainedPointCount + 1;
         route_deg(retainedPointCount, :) = distinctRoute_deg(pointIndex, :);
+        % Continue iterating until the stopping condition for complete remove redundant route points is satisfied.
         while retainedPointCount >= 3 && pointLiesOnSegment(route_deg(retainedPointCount - 1, :), route_deg(retainedPointCount - 2, :), route_deg(retainedPointCount, :), geometryTolerance_deg)
             route_deg(retainedPointCount - 1, :) = route_deg(retainedPointCount, :);
             retainedPointCount = retainedPointCount - 1;
@@ -161,6 +167,7 @@ function route_deg = splitRouteByCount(seedRoute_deg, segmentCountByEdge)
     edgeCount       = size(seedRoute_deg, 1) - 1;
     route_deg       = zeros(sum(segmentCountByEdge) + 1, 2);
     routePointIndex = 1;
+    % Process each geometric edge while constructing or checking the region topology.
     for edgeIndex = 1:edgeCount
         segmentCount      = segmentCountByEdge(edgeIndex);
         fractions         = (0:segmentCount - 1).' / segmentCount;

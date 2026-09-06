@@ -77,6 +77,7 @@ function testNormalizeDiagnosticsAreEquivalent(testCase)
     cases(end + 1, :) = {@() setBoundaryPair(base, 0, 0), ...
         "createObstacle:BoundaryRingTooShort"};
 
+    % Exercise each case covered by this regression.
     for caseIndex = 1:size(cases, 1)
         inputData          = cases{caseIndex, 1}();
         expectedIdentifier = cases{caseIndex, 2};
@@ -140,11 +141,13 @@ function testBatchedMultiRingOccupancyMatchesPointwiseQueries(testCase)
     elevation_deg = zeros(size(azimuth_deg));
     queryTime_s   = 1;
 
+    % Exercise each boundary is occupied covered by this regression.
     for boundaryIsOccupied = [false true]
         options = struct("BoundaryIsOccupied", boundaryIsOccupied, ...
             "ClearanceTolerance_deg", 1e-10);
         batchedOccupied   = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, azimuth_deg, elevation_deg, queryTime_s, options);
         pointwiseOccupied = false(size(azimuth_deg));
+        % Exercise each point covered by this regression.
         for pointIndex = 1:numel(azimuth_deg)
             pointwiseOccupied(pointIndex) = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, azimuth_deg(pointIndex), elevation_deg(pointIndex), queryTime_s, options);
         end
@@ -239,6 +242,7 @@ function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
     verifyEqual(testCase, preparation.SampleEdgeStart_deg{1}, preparation.SampleEdgeEnd_deg{1}([4 1 2 3], :), "AbsTol", 0);
 
     mutated = prepared;
+    % Exercise each sample covered by this regression.
     for sampleIndex = 1:numel(mutated.az_deg)
         mutated.az_deg{sampleIndex} = mutated.az_deg{sampleIndex} + 5;
     end
@@ -260,6 +264,7 @@ function testPreparedConvexClearanceMatchesPolyshapePath(testCase)
     points_deg   = [-3 0; 0 0; 2 0; 3 0; 0 1 + 1e-13];
     referenceClearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
     vertexOrientations_deg = {vertices_deg, flipud(vertices_deg)};
+    % Exercise each orientation covered by this regression.
     for orientationIndex = 1:numel(vertexOrientations_deg)
         orderedVertices_deg = vertexOrientations_deg{orientationIndex};
         nextVertices_deg    = circshift(orderedVertices_deg, -1, 1);
@@ -334,6 +339,7 @@ function obstacle = rawObstacle(time_s, positionBySlice_deg)
     % Construct the minimum protected history consumed by preparation queries.
     azimuthBySlice_deg   = cell(numel(positionBySlice_deg), 1);
     elevationBySlice_deg = cell(numel(positionBySlice_deg), 1);
+    % Exercise each sample covered by this regression.
     for sampleIndex = 1:numel(positionBySlice_deg)
         position_deg = positionBySlice_deg{sampleIndex};
         azimuthBySlice_deg{sampleIndex} = position_deg(:, 1);

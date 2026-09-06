@@ -52,6 +52,7 @@ graphFields = ["Bounds_deg", "CandidateOffset_deg", ...
     "VisibilityCandidatePairCount", "VisibilityEdgeCount", ...
     "AcceptedEdges_deg", "RejectedEdges_deg", ...
     "RejectedTransitionCount"];
+% Apply the required validation or transfer to each field.
 for fieldIndex = 1:numel(graphFields)
     fieldName = graphFields(fieldIndex);
     diagnostics.(fieldName) = graphRecord.(fieldName);
@@ -90,6 +91,7 @@ end
 searchRecord = routeSet.SpatialSearchRecord;
 diagnostics  = appendSearchDiagnostics(diagnostics, searchRecord);
 diagnostics.SpatialBestPartialRoute_deg = searchRecord.BestPartialRoute_deg;
+% Fall back to the graph search's partial route when no evaluated seed produced a complete result.
 if ~isempty(diagnostics.TimedBestPartialRoute_deg)
     diagnostics.BestPartialRoute_deg = diagnostics.TimedBestPartialRoute_deg;
 else
@@ -105,10 +107,12 @@ cleanupFields = ["RouteShorteningAttemptedCount", ...
     "RouteShorteningCandidateCount", "RouteShorteningVisibilityRejectedCount", ...
     "RouteShorteningRouteClassRejectedCount", "RouteShorteningAcceptedCount", ...
     "RouteShorteningLengthReduction_deg"];
+% Apply the required validation or transfer to each field.
 for fieldIndex = 1:numel(cleanupFields)
     fieldName = cleanupFields(fieldIndex);
     diagnostics.(fieldName) = searchRecord.(fieldName);
 end
+% Attribute completeness loss to the reduced envelope when used; otherwise attribute it to the bounded graph search.
 if proposal.usedDenseEnvelope
     diagnostics.Coverage.CompletenessLossReason = "reducedSpatialProposalAndBoundedSearch";
 else

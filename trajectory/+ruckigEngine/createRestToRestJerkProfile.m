@@ -69,6 +69,7 @@ position          = initialState.position;
 velocity          = initialState.velocity;
 acceleration      = initialState.acceleration;
 
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     duration            = phaseDuration(segmentIndex);
     jerk                = phaseJerk(segmentIndex);

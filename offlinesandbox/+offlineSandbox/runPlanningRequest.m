@@ -224,6 +224,7 @@ function state = normalizeState(value, fieldName)
     state.time_s       = double(value.time_s);
     state.position_deg = normalizePair(value.position_deg, fieldName + ".position_deg", false);
     optionalPairNames = ["velocity_deg_s", "acceleration_deg_s2"];
+    % Process each name needed by the sandbox workflow.
     for name = optionalPairNames
         if isfield(value, name) && ~isempty(value.(name))
             state.(name) = normalizePair(value.(name), fieldName + "." + name, false);
@@ -238,10 +239,12 @@ function limits = normalizeLimits(value)
         "maxJerk_deg_s3"];
     requireFields(value, requiredNames, "request.limits");
     limits = value;
+    % Process each name needed by the sandbox workflow.
     for name = requiredNames
         limits.(name) = normalizePair(value.(name), "request.limits." + name, true);
     end
     intervalNames = ["azimuthInterval_deg", "elevationInterval_deg"];
+    % Process each name needed by the sandbox workflow.
     for name = intervalNames
         if isfield(value, name) && ~isempty(value.(name))
             interval = normalizePair(value.(name), "request.limits." + name, false);
@@ -272,6 +275,7 @@ function obstacles = createObstacles(obstacleInput)
         error("runPlanningRequest:InvalidObstacles", "request.obstacles must be a JSON array of objects or [].");
     end
     obstacleCells = cell(numel(obstacleInput), 1);
+    % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacleInput)
         obstacle = obstacleInput(obstacleIndex);
         context  = "request.obstacles(" + obstacleIndex + ")";
@@ -288,6 +292,7 @@ function obstacles = createObstacles(obstacleInput)
         time_s               = zeros(numel(keyframes), 1);
         azimuthBySlice_deg   = cell(numel(keyframes), 1);
         elevationBySlice_deg = cell(numel(keyframes), 1);
+        % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:numel(keyframes)
             keyframeContext = context + ".keyframes(" + sampleIndex + ")";
             requireFields(keyframes(sampleIndex), ["time_s", "vertices_deg"], keyframeContext);
@@ -372,6 +377,7 @@ function projection = projectSearchGrid(grid)
         return;
     end
     fieldNames = string(fieldnames(projection));
+    % Process each name needed by the sandbox workflow.
     for name = reshape(fieldNames, 1, [])
         if isfield(grid, name)
             projection.(name) = grid.(name);
@@ -382,8 +388,10 @@ end
 function projection = projectStructFields(records, fieldNames)
     % Copy records into cells so JSON collections stay arrays at every cardinality.
     projection = cell(numel(records), 1);
+    % Process each record needed by the sandbox workflow.
     for recordIndex = 1:numel(records)
         projectedRecord = struct();
+        % Process each name needed by the sandbox workflow.
         for name = reshape(fieldNames, 1, [])
             projectedRecord.(name) = records(recordIndex).(name);
         end
@@ -400,11 +408,13 @@ function projection = projectObstacles(obstacles)
         "OriginalVerticesByTime_deg", {cell(0, 1)}, ...
         "ProtectedVerticesByTime_deg", {cell(0, 1)});
     projection = cell(numel(obstacles), 1);
+    % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacles)
         obstacle          = obstacles(obstacleIndex);
         sampleCount       = numel(obstacle.time_s);
         originalVertices  = cell(sampleCount, 1);
         protectedVertices = cell(sampleCount, 1);
+        % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:sampleCount
             originalVertices{sampleIndex} = [ ...
                 obstacle.originalAz_deg{sampleIndex}, ...

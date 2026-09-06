@@ -83,6 +83,7 @@ result.SearchDiagnostics.SelectionPolicy = struct("GoalTimeMode", options.GoalTi
 %% Section 4: Check Physical Endpoints
 
 [endpointFeasible, result.Message, result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints(preparedObstacles, initialState, goalState, limits, options);
+% Reject the request before route search when endpoint states violate motion limits.
 if ~endpointFeasible
     emptyMotions = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions();
     result.SearchDiagnostics.DirectAttempt       = emptyMotions.DirectAttempt;
@@ -147,9 +148,11 @@ primarySeedCount  = min(2, numel(seeds));
 primarySeeds      = seeds(1:primarySeedCount);
 primarySummaries  = repmat(summaryTemplate, primarySeedCount, 1);
 primaryCandidates = cell(primarySeedCount, 1);
+% Evaluate each seed before retaining the best admissible candidate.
 for seedIndex = 1:primarySeedCount
     [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
         stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(preparedObstacles, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
+    % Record the first validation time once; later successful candidates must not overwrite that milestone.
     if primarySummaries(seedIndex).ValidationPassed && isnan(firstValidatedMotionTime_s)
         firstValidatedMotionTime_s = toc(planningTimer);
     end
@@ -211,12 +214,14 @@ result.SearchDiagnostics.ValidatedCandidateCount = selection.ValidatedCandidateC
 result.SearchDiagnostics.BestPartialSeedIndex    = selection.BestPartialSeedIndex;
 result.Message                                   = selection.Message;
 result.TerminationReason                         = selection.TerminationReason;
+% Publish the selected validated motion on success; failure branches retain partial-route diagnostics instead.
 if selection.Success
     selectedIndex = selection.SelectedCandidateIndex;
     result.Success           = true;
     result.SelectedSeedIndex = selectedIndex;
     result.SelectedSeed_deg  = seeds(selectedIndex).position_deg;
     result = copyMotion(result, candidates{selectedIndex});
+% Expose the best partial seed only when no complete candidate succeeded.
 elseif selection.BestPartialSeedIndex > 0
     partialCandidate = candidates{selection.BestPartialSeedIndex};
     if ~isempty(partialCandidate.time_s)

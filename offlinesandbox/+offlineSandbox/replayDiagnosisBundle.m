@@ -114,6 +114,7 @@ function obstacleInput = createWireObstacles(obstacles)
     obstacleInput = repmat(obstacleTemplate, numel(obstacles), 1);
     requiredNames = ["targetName", "time_s", "originalAz_deg", ...
         "originalEl_deg", "safetyMargin_deg"];
+    % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         context  = "diagnosisBundle.PlannerInputs.obstacles(" + obstacleIndex + ")";
@@ -129,6 +130,7 @@ function obstacleInput = createWireObstacles(obstacles)
         keyframeTemplate.time_s       = 0;
         keyframeTemplate.vertices_deg = zeros(0, 2);
         keyframes = repmat(keyframeTemplate, numel(time_s), 1);
+        % Process each sample needed by the sandbox workflow.
         for sampleIndex = 1:numel(time_s)
             azimuth_deg   = reshape(double(obstacle.originalAz_deg{sampleIndex}), [], 1);
             elevation_deg = reshape(double(obstacle.originalEl_deg{sampleIndex}), [], 1);
@@ -151,12 +153,15 @@ function value = removeFunctionHandles(value)
         value = [];
     elseif isstruct(value)
         names = string(fieldnames(value));
+        % Process each element needed by the sandbox workflow.
         for elementIndex = 1:numel(value)
+            % Process each name needed by the sandbox workflow.
             for name = reshape(names, 1, [])
                 value(elementIndex).(name) = removeFunctionHandles(value(elementIndex).(name));
             end
         end
     elseif iscell(value)
+        % Process each element needed by the sandbox workflow.
         for elementIndex = 1:numel(value)
             value{elementIndex} = removeFunctionHandles(value{elementIndex});
         end

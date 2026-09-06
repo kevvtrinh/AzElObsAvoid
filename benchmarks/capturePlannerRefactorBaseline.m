@@ -74,6 +74,7 @@ exampleDiagnoses  = cell(exampleCount, 1);
 independentChecks = cell(exampleCount, 1);
 physicalRecords   = cell(exampleCount, 1);
 elapsedTime_s     = zeros(exampleCount, 1);
+% Process each example included in this benchmark measurement.
 for exampleIndex = 1:exampleCount
     exampleName  = exampleNames(exampleIndex);
     exampleTimer = tic;
@@ -114,6 +115,7 @@ baseline       = struct("SchemaVersion", 2, ...
     "ElapsedTime_s", elapsedTime_s);
 save(outputPath, "baseline", "-v7.3");
 passedCount = 0;
+% Process each example included in this benchmark measurement.
 for exampleIndex = 1:exampleCount
     passedCount = passedCount + independentChecks{exampleIndex}.Passed;
 end

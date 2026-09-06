@@ -55,6 +55,7 @@ function testPlanningSceneOwnsPreparedHistoriesAndHorizon(testCase)
     verifyEqual(testCase, proposal.goal_deg, [8 0]);
     verifyEqual(testCase, proposal.sampleTimes_s, linspace(0, 10, 9).');
     maximumVerticesPerObstacle = zeros(1, numel(scene.preparedObstacles));
+    % Exercise each obstacle covered by this regression.
     for obstacleIndex = 1:numel(scene.preparedObstacles)
         maximumVerticesPerObstacle(obstacleIndex) = max(cellfun(@numel, scene.preparedObstacles(obstacleIndex).az_deg));
     end
@@ -118,6 +119,7 @@ function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
         spiralPath_deg(2:end - 1, :)];
     pathNodeIndex = [1, 3:size(nodePosition_deg, 1), 2];
     edgeCost_deg  = Inf(size(nodePosition_deg, 1));
+    % Exercise each edge covered by this regression.
     for edgeIndex = 1:numel(pathNodeIndex) - 1
         firstNode      = pathNodeIndex(edgeIndex);
         secondNode     = pathNodeIndex(edgeIndex + 1);
@@ -148,6 +150,7 @@ function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
     nodePosition_deg = [1 0; 4 0; 0 1; -1 0; 0 -1];
     edgeCost_deg     = Inf(5);
     cycleNodeIndex   = [1 3 4 5 1];
+    % Exercise each edge covered by this regression.
     for edgeIndex = 1:numel(cycleNodeIndex) - 1
         firstNode  = cycleNodeIndex(edgeIndex);
         secondNode = cycleNodeIndex(edgeIndex + 1);
@@ -495,6 +498,7 @@ function testDirectWaitDoesNotFreezeHorizonStretchedMotion(testCase)
     limits.azimuthInterval_deg   = [-1 11];
     limits.elevationInterval_deg = [-0.5 0.5];
     options = plannerOptions("earliestArrival");
+    % Exercise each horizon s covered by this regression.
     for horizon_s = [12 16 24 32]
         goalState  = restState(horizon_s, [10 0]);
         result     = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
@@ -537,6 +541,7 @@ function testEarliestArrivalRefinesObjectiveRelevantDirectWait(testCase)
     sourcePosition_deg         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
     azimuthBySlice_deg         = cell(numel(obstacleTime_s), 1);
     elevationBySlice_deg       = cell(numel(obstacleTime_s), 1);
+    % Exercise each sample covered by this regression.
     for sampleIndex = 1:numel(obstacleTime_s)
         translatedPosition_deg = sourcePosition_deg + [0 barrierCenterElevation_deg(sampleIndex)];
         azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
@@ -663,6 +668,7 @@ function testRankingUsesOnlyDeclaredObjectiveQuantities(testCase)
     summary = repmat(struct("MotionLength_deg", 10, "KinematicUtilization", 1, "ArrivalTime_s", 5, "ValidationPassed", true), 2, 1);
     summary(2).MotionLength_deg = 9;
     summary(2).KinematicUtilization = 0.1;
+    % Exercise each mode covered by this regression.
     for mode = ["fixedArrival", "earliestArrival"]
         selection = obstacleAvoidance.planner.selectValidatedCandidate(summary, struct("GoalTimeMode", mode));
         ranking   = selection.Ranking;
@@ -801,6 +807,7 @@ function testSpecifiedInterceptMatchesTargetDerivatives(testCase)
         "InterpolationMethod", "pchip");
     cases    = [true false; false true; true true];
     policies = ["zero", "target"];
+    % Exercise each case covered by this regression.
     for caseIndex = 1:size(cases, 1)
         interceptOptions = struct("InterceptMode", "specifiedTime", ...
             "SpecifiedInterceptTime_s", 10, ...

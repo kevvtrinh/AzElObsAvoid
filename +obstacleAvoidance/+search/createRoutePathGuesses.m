@@ -23,6 +23,7 @@ if ~isempty(routeSet.TimedRoute_deg) && routeSet.TimedRouteTime_s(end) > routeSe
     seed.Index  = numel(seedSet) + 1;
     seed.Source = "timeExpandedVisibilityGraph";
     positionChanges = [true; vecnorm(diff(routeSet.TimedRoute_deg, 1, 1), 2, 2) > 1e-12];
+    % Collapse a timed wait-then-move route to its spatial endpoints so duplicate wait positions do not define a false spatial bend.
     if any(~positionChanges(2:end)) && nnz(positionChanges) == 2
         seed.Source = "directWait";
     end
@@ -43,9 +44,11 @@ spatialTemplate = template;
 spatialTemplate.ObstacleEnvelope_deg     = obstacleEnvelope_deg;
 spatialTemplate.UsesConservativeEnvelope = routeSet.UsesConservativeEnvelope;
 distinctLengthTolerance_deg = 1e-9 * max(1, directLength_deg);
+% Evaluate each route before retaining the best admissible candidate.
 for routeIndex = 1:numel(routeSet.SpatialRoutes_deg)
     route_deg = routeSet.SpatialRoutes_deg{routeIndex};
     seed      = createSpatialSeed(spatialTemplate, numel(seedSet) + 1, route_deg, directDuration_s);
+    % Keep only route seeds that are meaningfully distinct in length from the direct path.
     if seed.Length_deg > directLength_deg + distinctLengthTolerance_deg
         seedSet(end + 1, 1) = seed; %#ok<AGROW>
     end

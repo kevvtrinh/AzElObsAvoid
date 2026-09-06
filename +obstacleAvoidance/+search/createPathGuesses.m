@@ -30,6 +30,7 @@ function seedSet = createPathGuesses(initialState, goalState, limits, options, r
 
 start_deg = initialState.position_deg;
 goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
+% Build wrapped route alternatives when enabled; otherwise search only in the supplied azimuth interval.
 if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
@@ -50,6 +51,7 @@ if isempty(routeSet) || isempty(fieldnames(routeSet))
 end
 
 routeGuesses = obstacleAvoidance.search.createRoutePathGuesses(routeSet, obstacleEnvelope_deg, directDuration_s, directLength_deg);
+% Process each item needed to build path guesses.
 for index = 1:numel(routeGuesses)
     routeGuesses(index).Index = index + 1;
 end

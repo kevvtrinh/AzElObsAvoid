@@ -106,6 +106,7 @@ else
     position_deg             = initialState.position_deg;
     velocity_deg_s           = initialState.velocity_deg_s;
     acceleration_deg_s2      = initialState.acceleration_deg_s2;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         step_s      = segmentDuration_s(segmentIndex);
         jerk_deg_s3 = segmentJerk_deg_s3(segmentIndex, :);
@@ -152,7 +153,9 @@ if polynomial.Degree <= 3
     candidate.IntegratedSquaredJerk_deg2_s5 = sum(segmentDuration_s .* sum(jerk .^ 2, 2));
 else
     integratedSquaredJerk_deg2_s5 = 0;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
+        % Evaluate each coordinate axis and combine its limiting result.
         for axisIndex = 1:dimensionCount
             jerkPower                     = reshape(polynomial.jerkPower_deg_s3(segmentIndex, axisIndex, :), 1, []);
             squaredPower                  = conv(jerkPower, jerkPower);

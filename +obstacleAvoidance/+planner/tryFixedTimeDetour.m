@@ -64,6 +64,7 @@ if ~isstruct(directCandidate) || ~isscalar(directCandidate) ||  ~all(isfield(dir
     diagnostics = finishFailure(diagnostics, "invalidDirectCandidate",  "The direct candidate lacks the required stable motion fields.", timer);
     return;
 end
+% Promote the successful candidate; otherwise continue the configured fallback or search path.
 if ~directCandidate.Success || isempty(directCandidate.position_deg)
     diagnostics = finishFailure(diagnostics, "directMotionUnavailable",  "A successful direct motion is required before an excursion is tried.", timer);
     return;
@@ -122,7 +123,9 @@ reportIndex = 0;
 for axisIndex = 1:dimensionCount
     axisMinimum_s    = directCandidate.MinimumAxisDuration_s(axisIndex);
     axisGovernsClock = axisMinimum_s >= duration_s - clockTolerance_s;
+    % Repeat the direction alternatives needed to refine the current solution.
     for direction = [-1, 1]
+        % Process each peak needed to find fixed time detour.
         for peakIndex = 1:numel(peakTime_s)
             reportIndex = reportIndex + 1;
             report      = createAxisReport();
@@ -185,10 +188,12 @@ for axisIndex = 1:dimensionCount
                 if passingLevel > 1
                     lowerMagnitude_deg = trialMagnitudes_deg(passingLevel - 1);
                 end
+                % Repeat the level alternatives needed to refine the current solution.
                 for levelIndex = passingLevel:coarseLevelCount
                     validationTimer = tic;
                     trialValidation = obstacleAvoidance.validation.validatePreparedTrajectory(trialCandidates{levelIndex}, obstacles, initialState,  goalState, limits, options);
                     diagnostics     = addValidationTiming(diagnostics, trialValidation, toc(validationTimer));
+                    % Use the first coarse detour magnitude that validates as the upper passing bound for refinement.
                     if trialValidation.Passed
                         upperMagnitude_deg = trialMagnitudes_deg(levelIndex);
                         upperCandidate     = trialCandidates{levelIndex};
@@ -211,6 +216,7 @@ for axisIndex = 1:dimensionCount
             % a fully validated candidate at the upper end. Other valid sizes
             % may exist outside this interval; this is not a global search.
             refinementCount = 0;
+            % Refine the passing detour magnitude until resolution or iteration limits stop the search.
             while upperMagnitude_deg - lowerMagnitude_deg > boundaryResolution_deg && refinementCount < 6
                 midpointMagnitude_deg = 0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
                 midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options);
@@ -218,6 +224,7 @@ for axisIndex = 1:dimensionCount
                 midpointValidation    = obstacleAvoidance.validation.validatePreparedTrajectory(midpointCandidate, obstacles, initialState, goalState, limits, options);
                 diagnostics           = addValidationTiming(diagnostics, midpointValidation, toc(validationTimer));
                 refinementCount       = refinementCount + 1;
+                % Move the passing bound inward when the midpoint validates; otherwise raise the failing lower bound.
                 if midpointValidation.Passed
                     upperMagnitude_deg = midpointMagnitude_deg;
                     upperCandidate     = midpointCandidate;
@@ -264,6 +271,7 @@ end
 %% Section 3: Shorten A Passing Detour Or Report That None Passed
 
 diagnostics.AxisReports = axisReports;
+% Retain a locally improved detour only when reconstruction succeeds; failed perturbations leave the incumbent unchanged.
 if diagnostics.Success
     [candidate, diagnostics] = refineOffsetTravel(candidate, directCandidate,  diagnostics, obstacles, initialState, goalState, limits, options);
     diagnostics.ElapsedTime_s = toc(timer);
@@ -298,8 +306,11 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
     % step size let later improvements influence earlier adjustment points.
     for level = 0:7
         step_deg = initialStep_deg / 2^level;
+        % Repeat the sweep alternatives needed to refine the current solution.
         for sweep = 1:2
+            % Process each knot needed to find offset travel.
             for knotIndex = 2:numel(knotTime_s)-1
+                % Repeat the direction alternatives needed to refine the current solution.
                 for direction = [-1 1]
                     trialOffset_deg            = offset_deg;
                     trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
@@ -313,6 +324,7 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
                     validationTimer = tic;
                     validation      = obstacleAvoidance.validation.validatePreparedTrajectory(trial, obstacles,  initialState, goalState, limits, options);
                     diagnostics     = addValidationTiming(diagnostics, validation, toc(validationTimer));
+                    % Accept only validated knot perturbations as detour candidates; invalid perturbations are discarded.
                     if validation.Passed
                         trial.Validation = validation;
                         candidate  = trial;
@@ -328,6 +340,7 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
     diagnostics.TravelRefinement   = record;
     diagnostics.MotionLength_deg   = candidate.MotionLength_deg;
     diagnostics.SelectedValidation = candidate.Validation;
+    % Replace the original detour only when at least one perturbation was accepted.
     if record.AcceptedCount > 0
         diagnostics.SelectedMode = "refinedOffsetSpline";
         diagnostics.Message      = "A refined fixed-clock offset spline passed independent validation.";
@@ -386,6 +399,7 @@ function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, optio
     peakTime_s              = peakTime_s(peakTime_s > startTime_s + endpointReserve_s &  peakTime_s < endTime_s - endpointReserve_s);
     minimumPeakSeparation_s = max(endpointReserve_s, 0.5 * options.SampleTime_s);
     retainedPeak            = false(size(peakTime_s));
+    % Process each peak needed to build peak time candidates.
     for peakIndex = 1:numel(peakTime_s)
         retainedPeak(peakIndex) = ~any(abs(peakTime_s(1:peakIndex - 1) -  peakTime_s(peakIndex)) < minimumPeakSeparation_s &  retainedPeak(1:peakIndex - 1));
     end
@@ -408,6 +422,7 @@ function isClear = sampledCandidatesAreClear(candidates, obstacles, options)
     azimuth_deg    = zeros(sampleCount, candidateCount);
     elevation_deg  = zeros(sampleCount, candidateCount);
     time_s         = repmat(candidates{1}.time_s, 1, candidateCount);
+    % Evaluate each candidate before retaining the best admissible candidate.
     for candidateIndex = 1:candidateCount
         azimuth_deg(:, candidateIndex)   = candidates{candidateIndex}.position_deg(:, 1);
         elevation_deg(:, candidateIndex) = candidates{candidateIndex}.position_deg(:, 2);

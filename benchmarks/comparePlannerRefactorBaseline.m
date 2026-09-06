@@ -44,6 +44,7 @@ baselineChecksPassed  = checkCaptureValidity(baselineCapture);
 candidateChecksPassed = checkCaptureValidity(candidateCapture);
 examplePassed         = false(exampleCount, 1);
 runtimeRatio          = NaN(exampleCount, 1);
+% Process each example included in this benchmark measurement.
 for exampleIndex = 1:exampleCount
     examplePassed(exampleIndex) = isequaln(stripPlannerRefactorRuntime(baselineCapture.PhysicalRecords{exampleIndex}), stripPlannerRefactorRuntime(candidateCapture.PhysicalRecords{exampleIndex}));
     baselineRuntime_s  = baselineCapture.ElapsedTime_s(exampleIndex);
@@ -98,6 +99,7 @@ function passed = checkCaptureValidity(capture)
         error("comparePlannerRefactorBaseline:InvalidCapture", "Every example must retain one physical record and independent check.");
     end
     passed = false(count, 1);
+    % Process each item included in this benchmark measurement.
     for index = 1:count
         record = capture.PhysicalRecords{index};
         check  = capture.IndependentChecks{index};

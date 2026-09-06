@@ -33,6 +33,7 @@ dimensionCount  = numel(initialState.position);
 minimumProfiles = cell(dimensionCount, 1);
 candidateSets   = cell(dimensionCount, 1);
 minimumDuration = NaN(1, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     [minimumProfiles{dimensionIndex}, candidateSets{dimensionIndex}] = createMinimumAxisProfile(initialState, terminalState, limits, dimensionIndex);
     if minimumProfiles{dimensionIndex}.Success
@@ -67,6 +68,7 @@ else
 end
 
 axisProfiles = cell(dimensionCount, 1);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     timeTolerance   = 256 * eps(max([1, commonDuration, minimumDuration(dimensionIndex)]));
     boundaryProfile = findCandidateAtDuration(candidateSets{dimensionIndex}, commonDuration, timeTolerance);
@@ -98,6 +100,7 @@ profile.IntegratedSquaredJerk = 0;
 profile.MinimumAxisDuration   = minimumDuration;
 profile.AxisFamily            = strings(1, dimensionCount);
 profile.AxisPathLength        = zeros(1, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     profile.AxisFamily(dimensionIndex) = axisProfiles{dimensionIndex}.Family;
     profile.AxisPathLength(dimensionIndex) = axisProfiles{dimensionIndex}.PathLength;
@@ -116,6 +119,7 @@ function [profile, candidates] = createMinimumAxisProfile(initialState, terminal
     maximumVelocity     = limits.maximumVelocity(dimensionIndex);
     maximumAcceleration = limits.maximumAcceleration(dimensionIndex);
     candidates          = repmat(createEmptyAxisProfile(), 0, 1);
+    % Repeat the direction alternatives needed to refine the current solution.
     for direction = [1, -1]
         vMaximum           = direction * maximumVelocity;
         aMaximum           = direction * maximumAcceleration;
@@ -140,6 +144,7 @@ function [profile, candidates] = createMinimumAxisProfile(initialState, terminal
     end
 
     profile = createEmptyAxisProfile();
+    % Leave the axis infeasible when no family works; otherwise choose the minimum-duration family.
     if isempty(candidates)
         return;
     end
@@ -158,6 +163,7 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
     candidates          = repmat(createEmptyAxisProfile(), 0, 1);
     positionDifference  = pf - p0;
     velocityDifference  = vf - v0;
+    % Repeat the direction alternatives needed to refine the current solution.
     for direction = [1, -1]
         aMaximum = direction * maximumAcceleration;
         aMinimum = -direction * maximumAcceleration;
@@ -199,6 +205,7 @@ function profile = createFixedAxisProfile(initialState, terminalState, limits, d
     end
 
     profile = createEmptyAxisProfile();
+    % Leave the fixed-time axis infeasible when no family works; otherwise choose the shortest spatial family.
     if isempty(candidates)
         return;
     end
@@ -222,6 +229,7 @@ function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVel
     velocity      = position;
     position(1) = p0;
     velocity(1) = v0;
+    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         duration     = phaseDuration(phaseIndex);
         acceleration = phaseAcceleration(phaseIndex);
@@ -250,22 +258,27 @@ end
 function duration = selectEarliestCommonDuration(candidateSets, minimumDuration)
     % Advance only to certified extremal boundaries when a minimum is blocked.
     possibleDuration = minimumDuration;
+    % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:numel(candidateSets)
         candidates       = candidateSets{dimensionIndex};
         possibleDuration = [possibleDuration, [candidates.Duration]]; %#ok<AGROW>
     end
     possibleDuration = unique(sort(possibleDuration));
     duration         = minimumDuration;
+    % Evaluate each candidate duration before retaining the best admissible candidate.
     for candidateDuration = possibleDuration(possibleDuration >= minimumDuration)
         allAxesFeasible = true;
+        % Evaluate each coordinate axis and combine its limiting result.
         for dimensionIndex = 1:numel(candidateSets)
             candidates      = candidateSets{dimensionIndex};
             shorterDuration = sort([candidates.Duration]);
+            % Reject durations inside the known synchronization gap between shorter feasible families.
             if numel(shorterDuration) >= 3 && candidateDuration > shorterDuration(2) && candidateDuration < shorterDuration(3)
                 allAxesFeasible = false;
                 break;
             end
         end
+        % Accept the earliest duration that every axis can realize; otherwise test the next boundary.
         if allAxesFeasible
             duration = candidateDuration;
             return;
@@ -276,7 +289,9 @@ end
 function profile = findCandidateAtDuration(candidates, duration, tolerance)
     % Reuse an exact extremal profile at a synchronization boundary.
     profile = [];
+    % Evaluate each candidate before retaining the best admissible candidate.
     for candidateIndex = 1:numel(candidates)
+        % Select the profile that realizes this synchronization boundary within numerical tolerance.
         if abs(candidates(candidateIndex).Duration - duration) <= tolerance
             profile = candidates(candidateIndex);
             return;
@@ -288,6 +303,7 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     % Combine all axis acceleration switches on a shared timeline.
     dimensionCount = numel(axisProfiles);
     switchTime     = [0, commonDuration];
+    % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
         axisTime = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
         axisTime(end) = commonDuration;
@@ -302,9 +318,11 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     segmentStartTime    = initialState.time + switchTime(1:end - 1).';
     segmentCount        = numel(segmentDuration);
     controlAcceleration = zeros(segmentCount, dimensionCount);
+    % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
         axisEndTime      = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
         axisAcceleration = axisProfiles{dimensionIndex}.PhaseAcceleration;
+        % Process each segment while assembling the complete motion or interval result.
         for segmentIndex = 1:segmentCount
             middleTime = 0.5 * (switchTime(segmentIndex) + switchTime(segmentIndex + 1));
             phaseIndex = find(middleTime < axisEndTime + 1e-12, 1);
@@ -318,6 +336,7 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     jerkPower         = zeros(segmentCount, dimensionCount, 3);
     position          = initialState.position;
     velocity          = initialState.velocity;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         duration            = segmentDuration(segmentIndex);
         acceleration        = controlAcceleration(segmentIndex, :);

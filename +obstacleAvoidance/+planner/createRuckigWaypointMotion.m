@@ -55,6 +55,7 @@ engineLimits = struct("maximumVelocity", limits.maxVelocity_deg_s, ...
     "maximumJerk", limits.maxJerk_deg_s3, ...
     "positionLower", [limits.azimuthInterval_deg(1), ...
     limits.elevationInterval_deg(1)], "positionUpper", [limits.azimuthInterval_deg(2), limits.elevationInterval_deg(2)]);
+% Build wrapped route alternatives when enabled; otherwise search only in the supplied azimuth interval.
 if options.AllowAzimuthWrapping
     engineLimits.positionLower(1) = -Inf;
     engineLimits.positionUpper(1) = Inf;
@@ -77,6 +78,7 @@ diagnostics               = struct("Identifier", "ruckigWaypointComposition", ..
     "InteriorWaypointPosition_deg", route_deg(2:end - 1, :), ...
     "InteriorWaypointVelocity_deg_s", ...
     zeros(max(0, partCount - 1), 2), "InteriorWaypointAcceleration_deg_s2", zeros(max(0, partCount - 1), 2), "AllInteriorWaypointsConstrainedToRest", true, "ElapsedTime_s", 0);
+% Return the documented unsupported result instead of approximating a route with more motion parts than the engine can preserve.
 if partCount > maximumSupportedPartCount
     diagnostics.EngineTerminationReason = "ruckigWaypointSegmentLimitExceeded";
     diagnostics.ElapsedTime_s           = toc(solveTimer);
@@ -91,6 +93,7 @@ end
 polynomialParts            = cell(partCount, 1);
 maximumConstraintViolation = 0;
 currentTime_s              = initialState.time_s;
+% Process each part while assembling the complete motion or interval result.
 for partIndex = 1:partCount
     engineInitialState = struct("time", currentTime_s, ...
         "position", route_deg(partIndex, :), ...
@@ -104,6 +107,7 @@ for partIndex = 1:partCount
     if partIndex == partCount
         terminalVelocity_deg_s      = goalState.velocity_deg_s;
         terminalAcceleration_deg_s2 = goalState.acceleration_deg_s2;
+        % Use fixed-arrival construction and ranking when the arrival time is prescribed; otherwise optimize earliest arrival.
         if options.GoalTimeMode == "fixedArrival"
             engineOptions.TimeMode  = "fixed";
             engineOptions.FinalTime = goalState.time_s;
@@ -115,6 +119,7 @@ for partIndex = 1:partCount
         "maximumTime", goalState.time_s);
     part                       = ruckigEngine.solve(engineInitialState, engineTerminalState, engineLimits, engineOptions);
     maximumConstraintViolation = max(maximumConstraintViolation, part.MaximumConstraintViolation);
+    % Reject the complete waypoint motion if any constituent part fails, preserving that part's reason for diagnostics.
     if ~part.Success
         diagnostics.FailedPartIndex         = partIndex;
         diagnostics.EngineTerminationReason = part.TerminationReason;
@@ -153,6 +158,7 @@ end
 function combined = combinePolynomials(parts)
     % Concatenate exact switching segments without altering local coefficients.
     combined = parts{1};
+    % Process each part while assembling the complete motion or interval result.
     for partIndex = 2:numel(parts)
         part = parts{partIndex};
         combined.SegmentStartTime = [ ...

@@ -78,7 +78,9 @@ function testGroupedFailureRetriesSeparatedExactRegions(testCase)
     % Prevent conservative grouping from closing an exact free corridor.
     obstacleCells = cell(66, 1);
     obstacleIndex = 0;
+    % Exercise each column covered by this regression.
     for columnIndex = 1:33
+        % Exercise each elevation sign covered by this regression.
         for elevationSign = [-1 1]
             obstacleIndex = obstacleIndex + 1;
             center_deg    = [columnIndex - 1, elevationSign];

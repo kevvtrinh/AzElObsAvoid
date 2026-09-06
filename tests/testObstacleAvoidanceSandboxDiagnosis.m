@@ -79,6 +79,7 @@ function testPersistentSandboxCreatesExportActions(testCase)
     constructorLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
     verifyTrue(testCase, isgraphics(currentState.GoalMode.GraphicsHandles.AddPanel));
     verifyEqual(testCase, get(currentState.GoalMode.GraphicsHandles.AddPanel, "Title"), 'Add');
+    % Exercise each constructor covered by this regression.
     for constructorIndex = 1:numel(constructorNames)
         constructorName = constructorNames(constructorIndex);
         verifyTrue(testCase, isfield(currentState.GoalMode.GraphicsHandles.Actions, constructorName));
@@ -227,6 +228,7 @@ function testPolygonMotionProfilesFollowSelectedTiming(testCase)
         "nonzeroVelocity", "zeroStart", "trapezoidal", "oscillating"];
     expectedMiddle_deg = [2 1; 1 0.5; 2 1; 4 2];
     expectedFinal_deg  = [4 2; 4 2; 4 2; 0 0];
+    % Exercise each profile covered by this regression.
     for profileIndex = 1:numel(profiles)
         [profileTime_s, azimuthBySlice_deg, elevationBySlice_deg] = createSandboxPolygonMotionHistory(polygon_deg, time_s, motionVector_deg, profiles(profileIndex));
         middleIndex     = ceil(numel(profileTime_s) / 2);

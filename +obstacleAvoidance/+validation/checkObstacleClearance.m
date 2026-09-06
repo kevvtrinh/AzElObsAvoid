@@ -94,6 +94,7 @@ function [certified, minimumClearance_deg] = checkStaticObstacleClearance(trajec
     if ~hasStaticHorizon
         return;
     end
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         preparation = obstacles(obstacleIndex).InternalPreparation;
         if isempty(preparation.StaticShape.Vertices)
@@ -163,6 +164,7 @@ function [passed, failure] = timedRegionCoverageMatches(regions_deg, activeTau, 
         return;
     end
     baseEdges_s = linspace(startTime_s, finishTime_s, baseTimeCellCount + 1).';
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         [isStatic, staticShape] = obstacleAvoidance.obstacles.queryStaticHorizon(obstacle, startTime_s, finishTime_s);
@@ -174,6 +176,7 @@ function [passed, failure] = timedRegionCoverageMatches(regions_deg, activeTau, 
                 return;
             end
             unionShape = polyshape();
+            % Process each geometric region while constructing or checking the region topology.
             for regionIndex = reshape(find(staticRegion), 1, [])
                 unionShape = union(unionShape, polyshape(regions_deg{regionIndex}(:, 1), regions_deg{regionIndex}(:, 2)));
             end
@@ -188,12 +191,14 @@ function [passed, failure] = timedRegionCoverageMatches(regions_deg, activeTau, 
         obstacleTimes_s = double(obstacle.time_s(:));
         internalEdges_s = obstacleTimes_s(obstacleTimes_s > startTime_s & obstacleTimes_s < finishTime_s);
         cellEdges_s     = snapTimedCellEdges([baseEdges_s; internalEdges_s], obstacleTimes_s);
+        % Process each geometric cell while constructing or checking the region topology.
         for cellIndex = 1:numel(cellEdges_s) - 1
             cellStart_s  = cellEdges_s(cellIndex);
             cellFinish_s = cellEdges_s(cellIndex + 1);
             queryTime_s  = [cellStart_s; ...
                 0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
             expectedVertices_deg = zeros(0, 2);
+            % Process each query in temporal order and accumulate its result.
             for queryIndex = 1:numel(queryTime_s)
                 shape                = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s(queryIndex));
                 vertices_deg         = double(shape.Vertices);
@@ -241,6 +246,7 @@ function cellEdges_s = snapTimedCellEdges(candidateEdges_s, obstacleTimes_s)
     % Merge certificate and obstacle event times that differ only by roundoff.
     timeScale_s     = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
     timeTolerance_s = 4096 * eps(timeScale_s);
+    % Process each event in temporal order and accumulate its result.
     for eventIndex = 1:numel(obstacleTimes_s)
         nearEvent = abs(candidateEdges_s - obstacleTimes_s(eventIndex)) <= timeTolerance_s;
         candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);
@@ -254,16 +260,19 @@ function [certified, minimumClearance_deg] = verifyDegreeOneCertificate(trajecto
     regionCount            = numel(regionVertices);
     segmentCount           = trajectory.Polynomial.SegmentCount;
     trajectoryControls_deg = cell(segmentCount, 1);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         positionPower = reshape(trajectory.Polynomial.positionPower_deg(segmentIndex, :, :), 2, []).';
         trajectoryControls_deg{segmentIndex} = powerToBernstein(positionPower);
     end
     [~, ~, roundoffReserve_deg] = bmtpEngine.createCoordinateTolerances(trajectoryControls_deg, regionVertices);
     minimumClearance_deg = Inf;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectoryControl_deg = trajectoryControls_deg{segmentIndex};
         degree                = size(trajectoryControl_deg, 1) - 1;
         fraction              = (0:degree + 1).' / (degree + 1);
+        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~activePairs(segmentIndex, regionIndex)
                 continue;
@@ -302,6 +311,7 @@ function [regions_deg, passed] = reconstructCertificateRegions(certificate, occu
     exactRecords     = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
     exactRegionCount = numel(exactRecords);
     regions_deg      = cell(exactRegionCount, 1);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:exactRegionCount
         vertices_deg = exactRecords(regionIndex).Vertices;
         vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
@@ -330,6 +340,7 @@ function [regions_deg, passed] = reconstructCertificateRegions(certificate, occu
         return;
     end
     memberCount = 0;
+    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:planeRegionCount
         memberIndex     = grouping.GroupMemberIndices{groupIndex};
         membersAreValid = isnumeric(memberIndex) && isreal(memberIndex) && isvector(memberIndex) && ~isempty(memberIndex) && all(isfinite(memberIndex)) && all(memberIndex == fix(memberIndex)) && all(memberIndex >= 1 & memberIndex <= exactRegionCount);
@@ -344,6 +355,7 @@ function [regions_deg, passed] = reconstructCertificateRegions(certificate, occu
     allMemberIndices = zeros(exactRegionCount, 1);
     regions_deg      = cell(planeRegionCount, 1);
     nextMemberIndex  = 1;
+    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:planeRegionCount
         memberIndex = reshape(grouping.GroupMemberIndices{groupIndex}, [], 1);
         targets     = nextMemberIndex:(nextMemberIndex + numel(memberIndex) - 1);
@@ -363,6 +375,7 @@ end
 function regions_deg = regions_degForMembers(exactRecords, memberIndex)
     % Extract finite vertices for the region's convex hull.
     regions_deg = cell(numel(memberIndex), 1);
+    % Process each local needed to complete regions deg for members.
     for localIndex = 1:numel(memberIndex)
         vertices_deg = exactRecords(memberIndex(localIndex)).Vertices;
         regions_deg{localIndex} = vertices_deg(all(isfinite(vertices_deg), 2), :);
@@ -379,7 +392,9 @@ function bernstein = powerToBernstein(power)
     % so a shared conversion bug cannot make an invalid curve pass validation.
     degree    = size(power, 1) - 1;
     transform = zeros(degree + 1);
+    % Process each bernstein needed to complete power to bernstein.
     for bernsteinIndex = 0:degree
+        % Process each power needed to complete power to bernstein.
         for powerIndex = 0:bernsteinIndex
             transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
         end
@@ -399,12 +414,14 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
     pathSpeedBound_deg_s = norm(limits.maxVelocity_deg_s);
     historyBounds_deg    = zeros(numel(obstacles), 4);
     obstacleEventTimes_s = zeros(0, 1);
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         historyBounds_deg(obstacleIndex, :) = obstacles(obstacleIndex).InternalPreparation.HistoryBounds_deg;
         obstacleEventTimes_s = [obstacleEventTimes_s; ...
             obstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
     end
     obstacleEventTimes_s = unique(obstacleEventTimes_s);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:polynomial.SegmentCount
         segmentStart_s = polynomial.SegmentStartTime_s(segmentIndex);
         durationIndex  = min(segmentIndex, numel(polynomial.SegmentDuration_s));
@@ -416,6 +433,7 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
         segmentStart_s   = snapToEventTime(segmentStart_s, obstacleEventTimes_s, eventTolerance_s);
         segmentEnd_s     = snapToEventTime(segmentEnd_s, obstacleEventTimes_s, eventTolerance_s);
         splitTimes_s     = [segmentStart_s; segmentEnd_s];
+        % Evaluate each obstacle against the current geometry or motion.
         for obstacleIndex = 1:numel(obstacles)
             obstacleTimes_s = obstacles(obstacleIndex).time_s(:);
             splitTimes_s    = [splitTimes_s; obstacleTimes_s(obstacleTimes_s > segmentStart_s & ...
@@ -423,7 +441,9 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
         end
         splitTimes_s = unique(splitTimes_s);
         [~, splitPoints_deg] = bmtpEngine.evaluatePolynomial(polynomial, splitTimes_s, segmentIndex);
+        % Process each split needed to verify curve obstacle separation.
         for splitIndex = 1:numel(splitTimes_s)
+            % Evaluate each obstacle against the current geometry or motion.
             for obstacleIndex = 1:numel(obstacles)
                 broadClearance_deg = pointBoxClearance(splitPoints_deg(splitIndex, :), historyBounds_deg(obstacleIndex, :));
                 if broadClearance_deg > options.CollisionClearanceTolerance_deg
@@ -441,6 +461,7 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
             end
         end
         stack_s = [splitTimes_s(1:end - 1), splitTimes_s(2:end)];
+        % Continue iterating until the stopping condition for verify curve obstacle separation is satisfied.
         while ~isempty(stack_s)
             interval_s = stack_s(end, :);
             stack_s(end, :) = [];
@@ -450,6 +471,7 @@ function [collisionFree, resolved, minimumClearance_deg, checkCount, unresolvedC
             pathDisplacement_deg  = pathSpeedBound_deg_s * halfDuration_s;
             intervalResolved      = true;
             intervalClearance_deg = Inf;
+            % Evaluate each obstacle against the current geometry or motion.
             for obstacleIndex = 1:numel(obstacles)
                 broadClearance_deg = pointBoxClearance(point_deg, historyBounds_deg(obstacleIndex, :)) - pathDisplacement_deg;
                 if broadClearance_deg > options.CollisionClearanceTolerance_deg

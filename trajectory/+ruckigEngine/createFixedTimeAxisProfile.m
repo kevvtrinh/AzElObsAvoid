@@ -40,6 +40,7 @@ candidates = repmat(createEmptyProfile(), 0, 1);
 % Use zero jerk when constant acceleration already connects the endpoint states.
 candidates     = appendEvaluated(candidates, initialState, terminalState, limits, duration, 0, "constantAcceleration");
 minimumProfile = ruckigEngine.createMinimumTimeAxisProfile(initialState, terminalState, limits);
+% Reuse the minimum-time family when it can be stretched to the requested duration; otherwise solve the full fixed-time family.
 if minimumProfile.Success && duration >= minimumProfile.Duration
     dwellDuration = duration - minimumProfile.Duration;
     if isRest(initialState)
@@ -49,6 +50,7 @@ if minimumProfile.Success && duration >= minimumProfile.Duration
         candidates = appendEvaluated(candidates, initialState, terminalState, limits, [minimumProfile.PhaseDuration, dwellDuration], [minimumProfile.PhaseJerk, 0], "terminalDwell");
     end
 end
+% Repeat the direction alternatives needed to refine the current solution.
 for direction = [1, -1]
     directed   = createDirectedLimits(context, direction);
     candidates = appendAccelerationVelocityProfiles(candidates, context, directed);
@@ -60,6 +62,7 @@ end
 %% Section 2: Select The Shortest Spatial Profile
 
 profile = createEmptyProfile();
+% Return the stable failure when no exact switching family works; otherwise rank the available families by path length.
 if isempty(candidates)
     profile.Message = "No fixed-time jerk-switching family satisfied the boundary states.";
     return;
@@ -67,6 +70,7 @@ end
 
 pathLength            = [candidates.PathLength];
 integratedSquaredJerk = zeros(numel(candidates), 1);
+% Evaluate each candidate before retaining the best admissible candidate.
 for candidateIndex = 1:numel(candidates)
     integratedSquaredJerk(candidateIndex) = sum(candidates(candidateIndex).PhaseJerk .^ 2 .* candidates(candidateIndex).PhaseDuration);
 end
@@ -183,6 +187,7 @@ function candidates = appendInitialAccelerationVelocityProfiles(candidates, cont
     rootsFound     = realNonnegativeRoots(polynomial);
     minimumTime    = -context.af / jMaximum;
     maximumTime    = min(duration - (2 * aMaximum - context.a0) / jMaximum, -aMinimum / jMaximum);
+    % Process each root needed to complete append initial acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         time = rootsFound(rootIndex);
         if time < minimumTime || time > maximumTime
@@ -215,6 +220,7 @@ function candidates = appendInitialAccelerationVelocityProfiles(candidates, cont
     rootsFound     = realNonnegativeRoots(polynomial);
     minimumTime    = context.af / jMaximum;
     maximumTime    = min(duration - aMaximum / jMaximum, aMaximum / jMaximum);
+    % Process each root needed to complete append initial acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         time = rootsFound(rootIndex);
         if time < minimumTime || time > maximumTime
@@ -248,6 +254,7 @@ function candidates = appendTerminalAccelerationVelocityProfiles(candidates, con
     lower      = -context.a0 / jMaximum;
     upper      = min((duration + 2 * aMinimum / jMaximum - (context.a0 + context.af) / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
     rootsFound = findProfileRoots(@createUdduPhase, lower, upper, context, limits, "UDDU");
+    % Process each root needed to complete append terminal acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createUdduPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, -1, 0, 1], "synchronizedTerminalAccelerationVelocity");
@@ -255,6 +262,7 @@ function candidates = appendTerminalAccelerationVelocityProfiles(candidates, con
 
     upper      = min((duration + context.accelerationDifference / jMaximum - 2 * aMaximum / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
     rootsFound = findProfileRoots(@createUdudPhase, lower, upper, context, limits, "UDUD");
+    % Process each root needed to complete append terminal acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createUdudPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, 1, 0, -1], "synchronizedAlternatingTerminalAccelerationVelocity");
@@ -293,12 +301,14 @@ function candidates = appendVelocityProfiles(candidates, context, limits)
     upper    = min((context.duration - context.a0 / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
 
     rootsFound = findProfileRoots(@createVelocityUdduPhase, lower, upper, context, limits, "UDDU");
+    % Process each root needed to complete append velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createVelocityUdduPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, -1, 0, 1], "synchronizedVelocity");
     end
 
     rootsFound = findProfileRoots(@createVelocityUdudPhase, lower, upper, context, limits, "UDUD");
+    % Process each root needed to complete append velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createVelocityUdudPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, 1, 0, -1], "synchronizedAlternatingVelocity");
@@ -338,11 +348,13 @@ function rootsFound = findProfileRoots(phaseFunction, lower, upper, context, lim
     residual    = NaN(size(sample));
     rootsFound  = zeros(1, 2 * sampleCount + 1);
     rootCount   = 0;
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:sampleCount
         residual(sampleIndex) = positionResidual(sample(sampleIndex), phaseFunction, context, limits, controlSigns);
     end
     scale         = max(1, abs(context.displacement));
     zeroTolerance = 1e-9 * scale;
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:(sampleCount - 1)
         leftValue  = residual(sampleIndex);
         rightValue = residual(sampleIndex + 1);
@@ -393,6 +405,7 @@ function residual = positionResidual(time, phaseFunction, context, limits, contr
     position     = context.p0;
     velocity     = context.v0;
     acceleration = context.a0;
+    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:7
         duration     = phase(phaseIndex);
         position     = position + duration * (velocity + duration * (acceleration / 2 + duration * jerk(phaseIndex) / 6));
@@ -405,6 +418,7 @@ end
 function candidates = appendEvaluated(candidates, initialState, terminalState, limits, phaseDuration, phaseJerk, family)
     % Accept a profile only after integration and continuous checks pass.
     candidate = ruckigEngine.evaluateAxisSwitchingProfile(initialState, terminalState, limits, phaseDuration, phaseJerk, family);
+    % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success
         candidate.Message = "";
         candidate = orderfields(candidate, createEmptyProfile());

@@ -32,6 +32,7 @@ candidate.TrajectoryDuration_s          = polynomial.FinalTime_s - request.Initi
 candidate.MotionLength_deg              = sum(vecnorm(diff(sampled.position_deg, 1, 1), 2, 2));
 candidate.IntegratedSquaredJerk_deg2_s5 = integratedSquaredJerk(polynomial);
 candidate.MaximumConstraintViolation    = preparedMotion.MotionCertificate.MaximumViolation;
+% Apply the required validation or transfer to each field name.
 for fieldName = ["time_s", "position_deg", "velocity_deg_s", ...
         "acceleration_deg_s2", "jerk_deg_s3"]
     candidate.(fieldName) = sampled.(fieldName);

@@ -2,7 +2,9 @@ function buildShortcutCases(root)
 addpath(fullfile(root,'on'),fullfile(root,'on','trajectory'),fullfile(root,'on','examples'));
 cases    = cell(24,1);
 families = ["static", "moving", "diagonal", "weave"];
+% Process each family included in this benchmark measurement.
 for familyIndex=1:4
+    % Process each member included in this benchmark measurement.
     for member=1:5
         index        =(familyIndex-1)*5+member;
         seed         =6100+index; rng(seed,'twister');
@@ -26,6 +28,7 @@ for familyIndex=1:4
         if family=="static" || family=="moving", count=1+mod(member,3); end
         if family=="weave", count=3; end
         items=cell(count,1);
+        % Process each obstacle included in this benchmark measurement.
         for obstacleIndex=1:count
             halfWidth =0.3+0.6*rand; halfHeight=0.7+1.5*rand;
             center    =[-3+6*rand, -0.6+1.2*rand];
@@ -39,6 +42,7 @@ for familyIndex=1:4
             if family=="moving", times=(0:6:24).'; end
             az     =cell(numel(times),1); el=az;
             travel =2+2*rand; rotation=pi*(rand-0.5); phase=2*pi*rand;
+            % Process each k included in this benchmark measurement.
             for k=1:numel(times)
                 position=center; angle=0;
                 if family=="moving"

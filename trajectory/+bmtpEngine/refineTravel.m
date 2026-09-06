@@ -29,6 +29,7 @@ function [result, diagnostics] = refineTravel(request, warmStart, alternatingRes
 
 result = struct("ControlPoint_deg", alternatingResult.ControlPoint_deg, ...
     "SegmentTime_s", alternatingResult.SegmentTime_s);
+% Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
 if request.Options.GoalTimeMode == "earliestArrival"
     return;
 end
@@ -46,6 +47,7 @@ selectedLength_deg       = baseLength_deg;
 travelRefinementAccepted = false;
 travelPlanes             = alternatingResult.Planes;
 taggedPairs              = alternatingResult.TaggedPairs;
+% Repeat the refinement alternatives needed to refine the current solution.
 for refinementIndex = 1:8
     [refinedControl_deg, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_deg, request.GoalState.position_deg, request.Limits, travelPlanes, roundoffReserve_deg, request.MotionHorizon_s, request.Options.GoalTimeMode, request.TrajectoryOptions);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
@@ -61,6 +63,7 @@ for refinementIndex = 1:8
             break;
         end
         planeUpdateFailed = false;
+        % Process each new pair needed to find travel.
         for newPairIndex = newPairIndices
             [segmentIndex, regionIndex]               = ind2sub(size(newPairs), newPairIndex);
             [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine(squeeze(baseControl_deg(segmentIndex, :, :)), request.Regions_deg{regionIndex}, obstacleTarget_deg, roundoffReserve_deg, request.PlaneOptions);
@@ -71,6 +74,7 @@ for refinementIndex = 1:8
             end
             travelPlanes(segmentIndex, regionIndex) = travelPlane;
         end
+        % Terminate with the recorded failure if an alternating update cannot produce a valid control or separating plane.
         if planeUpdateFailed
             break;
         end
@@ -78,6 +82,7 @@ for refinementIndex = 1:8
     end
     refinedLength_deg  = controlPolygonLength(refinedControl_deg);
     refinementIsBetter = refinedLength_deg < selectedLength_deg;
+    % Replace the current travel profile only when refinement improves the declared objective and remains feasible.
     if refinementIsBetter
         selectedControl_deg      = refinedControl_deg;
         selectedSegmentTime_s    = refinedSegmentTime_s;

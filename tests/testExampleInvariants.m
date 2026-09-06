@@ -39,6 +39,7 @@ function testPhysicalRequirementHashes(testCase)
         "0be77543e72ee4ffc39caca63f5252c65612c312fcb8ef3335339e291c3c300b", ...
         "475b0edab7baeff5ff342037ac3d9de33b11fb57bc40ab90d62c19595a96fdef", ...
         "68a16c8932466edb06ac00a05c56588981b22c46d1770c4a4cb13c983ad69e64"];
+    % Exercise each requirement covered by this regression.
     for requirementIndex = 1:numel(relativePaths)
         requirementPath = fullfile(testCase.TestData.RepositoryRoot, relativePaths(requirementIndex));
         sourceText      = string(fileread(requirementPath));
@@ -78,6 +79,7 @@ function testMaintainedExampleSourceContracts(testCase)
         "exampleTargetExitsObstacle"];
     earliestArrivalExamples = setdiff(allExampleNames, fixedArrivalExamples, "stable");
 
+    % Exercise each example name covered by this regression.
     for exampleName = allExampleNames
         examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
         sourceText  = string(fileread(examplePath));
@@ -86,6 +88,7 @@ function testMaintainedExampleSourceContracts(testCase)
         addedField = regexp(sourceText, '(?m)^\s*result\.[A-Za-z]\w*\s*=', 'once');
         verifyEmpty(testCase, addedField, exampleName + " must not append fields to the planner result.");
     end
+    % Exercise each example name covered by this regression.
     for exampleName = earliestArrivalExamples
         examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
         sourceText  = fileread(examplePath);
@@ -138,6 +141,7 @@ function testExampleResolverRejectsRetiredPlannerOptions(testCase)
     warningState   = warning("off", "resolveExampleOptions:UnknownOptions");
     warningCleanup = onCleanup(@() warning(warningState));
     [plannerOptions, ~] = resolveExampleOptions(retiredOptions, struct());
+    % Exercise each field name covered by this regression.
     for fieldName = retiredNames
         verifyFalse(testCase, isfield(plannerOptions, fieldName));
     end

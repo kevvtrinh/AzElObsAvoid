@@ -31,10 +31,12 @@ validateattributes(maximumLineCount, {'numeric'}, {'real', 'finite', 'scalar', '
 repositoryRoot  = fileparts(fileparts(mfilename("fullpath")));
 productionRoots = ["+obstacleAvoidance", "trajectory"];
 filePaths       = strings(0, 1);
+% Process each root name included in this benchmark measurement.
 for rootName = productionRoots
     rootPath = fullfile(repositoryRoot, rootName);
     if isfolder(rootPath)
         found = dir(fullfile(rootPath, "**", "*.m"));
+        % Process each found included in this benchmark measurement.
         for foundIndex = 1:numel(found)
             filePaths(end + 1, 1) = fullfile(found(foundIndex).folder, found(foundIndex).name); %#ok<AGROW>
         end
@@ -45,6 +47,7 @@ end
 
 relativePath        = strings(numel(filePaths), 1);
 noncommentLineCount = zeros(numel(filePaths), 1);
+% Process each file included in this benchmark measurement.
 for fileIndex = 1:numel(filePaths)
     filePath         = filePaths(fileIndex);
     sourceLines      = readlines(filePath);

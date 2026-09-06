@@ -30,6 +30,7 @@ validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
 validateattributes(state.position_deg, {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
 state.time_s       = double(state.time_s);
 state.position_deg = double(state.position_deg(:).');
+% Apply the required validation or transfer to each field name.
 for fieldName = ["velocity_deg_s", "acceleration_deg_s2"]
     if ~isfield(state, fieldName) || isempty(state.(fieldName))
         state.(fieldName) = [0 0];

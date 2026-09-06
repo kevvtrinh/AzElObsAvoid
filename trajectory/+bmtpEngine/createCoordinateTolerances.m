@@ -31,9 +31,11 @@ function [coordinateScale_deg, geometryTolerance_deg, roundoffReserve_deg] = cre
 %% Section 1: Accumulate The Finite Coordinate Scale
 
 coordinateScale_deg = 1;
+% Process each input needed to build coordinate tolerances.
 for inputIndex = 1:nargin
     values_deg = varargin{inputIndex};
     if iscell(values_deg)
+        % Process each geometric cell while constructing or checking the region topology.
         for cellIndex = 1:numel(values_deg)
             coordinateScale_deg = updateScale(coordinateScale_deg, values_deg{cellIndex});
         end

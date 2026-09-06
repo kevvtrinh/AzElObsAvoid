@@ -76,7 +76,9 @@ function bernsteinControl = convertPowerToBernstein(powerCoefficient)
     needsTransform = isempty(transformByCoefficientCount) || numel(transformByCoefficientCount) < coefficientCount || isempty(transformByCoefficientCount{coefficientCount});
     if needsTransform
         transform = zeros(coefficientCount);
+        % Process each bernstein needed to complete convert power to bernstein.
         for bernsteinIndex = 0:degree
+            % Process each power needed to complete convert power to bernstein.
             for powerIndex = 0:bernsteinIndex
                 transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
             end
@@ -124,6 +126,7 @@ function [leftControl, rightControl] = subdivideAtMidpoint(control)
     work         = control;
     leftControl(1) = work(1);
     rightControl(end) = work(end);
+    % Repeat the level alternatives needed to refine the current solution.
     for levelIndex = 2:controlCount
         work = 0.5 * (work(1:end - 1) + work(2:end));
         leftControl(levelIndex) = work(1);

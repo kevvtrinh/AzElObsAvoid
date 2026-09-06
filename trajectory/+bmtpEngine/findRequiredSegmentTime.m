@@ -27,6 +27,7 @@ degree      = size(controlPoint_deg, 2) - 1;
 limitValues = [limits.maxVelocity_deg_s; ...
     limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
 segmentTime_s = 0;
+% Process each derivative order needed to find required segment time.
 for derivativeOrder = 1:3
     scale         = factorial(degree) / factorial(degree - derivativeOrder);
     peak          = squeeze(max(abs(scale * diff(controlPoint_deg, derivativeOrder, 2)), [], [1 2]));

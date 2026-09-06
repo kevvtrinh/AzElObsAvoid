@@ -89,6 +89,7 @@ end
 sliceCount           = numel(profileTime_s);
 azimuthBySlice_deg   = cell(sliceCount, 1);
 elevationBySlice_deg = cell(sliceCount, 1);
+% Process each sample needed by the sandbox workflow.
 for sampleIndex = 1:sliceCount
     offset_deg       = displacementFactor(sampleIndex) * motionVector_deg;
     movedPolygon_deg = polygon_deg + offset_deg;

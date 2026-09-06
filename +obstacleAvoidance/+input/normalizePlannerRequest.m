@@ -72,12 +72,14 @@ physicalNames = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", ...
 if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, cellstr(physicalNames)))
     error("planTrajectory:InvalidLimits", "limits must contain velocity, acceleration, and jerk limits.");
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = physicalNames
     validateattributes(limits.(fieldName), {'numeric'}, {'real', 'finite', 'positive', 'vector', 'numel', 2});
     limits.(fieldName) = double(limits.(fieldName)(:).');
 end
 intervalDefaults = {"azimuthInterval_deg", [-180 180]; ...
     "elevationInterval_deg", [-90 90]};
+% Process each interval while assembling the complete motion or interval result.
 for intervalIndex = 1:size(intervalDefaults, 1)
     fieldName = intervalDefaults{intervalIndex, 1};
     if ~isfield(limits, fieldName) || isempty(limits.(fieldName))

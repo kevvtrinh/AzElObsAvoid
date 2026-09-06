@@ -62,6 +62,7 @@ if ~eligibility.Supported
 end
 
 [hasBoundaryInfeasibility, boundaryMessage] = detectBoundaryKinematicInfeasibility(initialState, terminalState, limits);
+% Report boundary infeasibility directly; other failures continue through the general solver result path.
 if hasBoundaryInfeasibility
     result.Message           = boundaryMessage;
     result.TerminationReason = "kinematicallyInfeasibleBoundaryState";
@@ -133,6 +134,7 @@ function options = normalizeEngineOptions(options)
     if ~isempty(unknownNames)
         warning("ruckigEngine:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
     end
+    % Apply the required validation or transfer to each field name.
     for fieldName = string(fieldnames(resolvedOptions)).'
         if isfield(options, fieldName) && ~isempty(options.(fieldName))
             resolvedOptions.(fieldName) = options.(fieldName);
@@ -146,6 +148,7 @@ function options = normalizeEngineOptions(options)
         validateattributes(resolvedOptions.FinalTime, {'numeric'}, {'real', 'finite', 'scalar'});
         resolvedOptions.FinalTime = double(resolvedOptions.FinalTime);
     end
+    % Apply the required validation or transfer to each field name.
     for fieldName = ["SampleTime", "ConstraintTolerance", ...
             "ArrivalTimeTolerance"]
         validateattributes(resolvedOptions.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});

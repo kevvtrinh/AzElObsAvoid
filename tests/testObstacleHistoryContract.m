@@ -35,6 +35,7 @@ function testEquivalentRingOrderDoesNotCreateMotion(testCase)
     obstacle       = obstacleAvoidance.obstacles.createObstacle("equivalent ring order", [0; 1; 2], {base_deg(:, 1); shifted_deg(:, 1); reversed_deg(:, 1)}, {base_deg(:, 2); shifted_deg(:, 2); reversed_deg(:, 2)}, 0);
     referenceShape = polyshape(base_deg, "Simplify", false);
 
+    % Exercise each query time s covered by this regression.
     for queryTime_s = [0.5 1.5]
         [shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime(obstacle, queryTime_s);
         verifyEqual(testCase, area(subtract(shape, referenceShape)), 0, "AbsTol", 1e-12);

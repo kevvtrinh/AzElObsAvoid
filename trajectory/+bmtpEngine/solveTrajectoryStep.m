@@ -64,6 +64,7 @@ lb(powerIndex) = 0;
 lb(powerIndex(2)) = eps;
 lb(travelBoundIndex) = 0;
 equalityIndex = 0;
+% Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:2
     equalityIndex = equalityIndex + 1;
     Aeq(equalityIndex, ...
@@ -72,6 +73,7 @@ for axisIndex = 1:2
     equalityIndex = equalityIndex + 1;
     Aeq(equalityIndex, controlIndexOf(segmentCount, degree, axisIndex, degree)) = 1; %#ok<SPRIX>
     beq(equalityIndex) = goal_deg(axisIndex);
+    % Process each endpoint order needed to find trajectory step.
     for endpointOrder = 1:2
         equalityIndex = equalityIndex + 1;
         indices       = controlIndexOf(1, [endpointOrder 0], axisIndex, degree);
@@ -81,10 +83,13 @@ for axisIndex = 1:2
         Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
     end
 end
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount - 1
+    % Process each order needed to find trajectory step.
     for order = 0:3
         coefficients     = differenceCoefficients{order + 1};
         coefficientIndex = 0:order;
+        % Evaluate each coordinate axis and combine its limiting result.
         for axisIndex = 1:2
             equalityIndex = equalityIndex + 1;
             left          = controlIndexOf(segmentIndex, degree - order + coefficientIndex, axisIndex, degree);
@@ -104,8 +109,10 @@ beq(equalityIndex) = 1;
 limitValues = [limits.maxVelocity_deg_s; ...
     limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
 inequalityIndex = 0;
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     controlColumns = (segmentIndex - 1) * 2 * (degree + 1) + (1:2 * (degree + 1));
+    % Process each order needed to find trajectory step.
     for order = 1:3
         coefficients    = differenceCoefficients{order + 1};
         scale           = factorial(degree) / factorial(degree - order);
@@ -122,7 +129,9 @@ for segmentIndex = 1:segmentCount
 end
 b               = zeros(inequalityCount, 1);
 inequalityIndex = baseInequalityCount;
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:size(planes, 2)
         plane = planes(segmentIndex, regionIndex);
         if ~plane.Active
@@ -173,6 +182,7 @@ function soc = createTimePowerCones(variableCount, powerIndex)
     % Create p0*p2>=p1^2 and p1*p3>=p2^2 as standard cones.
     emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0);
     soc       = repmat(emptyCone, 2, 1);
+    % Process each cone needed to build time power cones.
     for coneIndex = 1:2
         coneA = zeros(2, variableCount);
         coneA(1, powerIndex(coneIndex + 1)) = 2;
@@ -192,10 +202,13 @@ function soc = createTravelBoundCones(variableCount, travelBoundIndex, segmentCo
     end
     soc        = repmat(secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0), numel(travelBoundIndex), 1);
     boundIndex = 0;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
+        % Process each control needed to build travel bound cones.
         for controlIndex = 0:degree - 1
             boundIndex = boundIndex + 1;
             coneA      = zeros(2, variableCount);
+            % Evaluate each coordinate axis and combine its limiting result.
             for axisIndex = 1:2
                 firstIndex  = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree);
                 secondIndex = controlIndexOf(segmentIndex, controlIndex + 1, axisIndex, degree);
@@ -214,6 +227,7 @@ function [rows, offset_deg] = fixedPlaneRows(plane, degree, variableCount, segme
     beta  = (0:degree + 1).' / (degree + 1);
     alpha = 1 - beta;
     rows = spalloc(degree + 2, variableCount, 4 * (degree + 2));
+    % Process each product needed to complete fixed plane rows.
     for productIndex = 1:degree + 2
         if alpha(productIndex) > 0
             indices = controlIndexOf(segmentIndex, productIndex - 1, 1:2, degree);

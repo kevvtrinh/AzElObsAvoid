@@ -77,6 +77,7 @@ area_deg2            = zeros(sliceCount, 1);
 aspectRatio          = zeros(sliceCount, 1);
 centroid_deg         = zeros(sliceCount, 2);
 bounds_deg           = zeros(sliceCount, 4);
+% Process each sample in temporal order and accumulate its result.
 for sampleIndex = 1:sliceCount
     position_deg = sliceTransform(sourcePosition_deg, time_s(sampleIndex), sampleIndex);
     validateattributes(position_deg, {'numeric'}, {'real', '2d', 'ncols', 2, 'nonempty'});

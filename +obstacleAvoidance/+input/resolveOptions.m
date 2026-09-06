@@ -45,6 +45,7 @@ knownNames   = intersect(overrideNames, defaultNames, "stable");
 % Apply nonempty overrides; the caller checks their types and ranges.
 
 resolvedOptions = defaultOptions;
+% Apply the required validation or transfer to each field name.
 for fieldName = reshape(knownNames, 1, [])
     if ~isempty(optionOverrides.(fieldName))
         resolvedOptions.(fieldName) = optionOverrides.(fieldName);

@@ -38,6 +38,7 @@ else
     preparation        = [obstacles.InternalPreparation];
     obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
 end
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacle                = obstacles(obstacleIndex);
     obstacleIsTimeInvariant = obstacle.InternalPreparation.IsTimeInvariant;
@@ -49,6 +50,7 @@ for obstacleIndex = 1:numel(obstacles)
         obstacleQueryTime_s = obstacleTime_s(1);
         activeQuery         = finiteQuery & (isscalar(obstacleTime_s) | (queryTime_s >= obstacleTime_s(1) & queryTime_s <= obstacleTime_s(end)));
     end
+    % Process each time in temporal order and accumulate its result.
     for timeIndex = 1:numel(obstacleQueryTime_s)
         queryIndices = find(activeQuery & (obstacleIsTimeInvariant | queryTime_s == obstacleQueryTime_s(timeIndex)));
         candidate    = queryIndices;
@@ -91,6 +93,7 @@ if nargout < 3, return; end
 minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
 obstacleNames        = strings(outputSize);
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacleNames(nearestObstacleIndex == obstacleIndex) = obstacles(obstacleIndex).targetName;
 end
@@ -109,6 +112,7 @@ function [azimuth_deg, elevation_deg, time_s, outputSize] = broadcastQueries(azi
         error("queryObstacleOccupancyAtTime:SizeMismatch", "Non-scalar azimuth, elevation, and time must have equal counts.");
     end
     outputSize = size(values{find(counts == queryCount, 1)});
+    % Process each value needed to complete broadcast queries.
     for valueIndex = 1:3
         if counts(valueIndex) == 1
             values{valueIndex} = repmat(values{valueIndex}, queryCount, 1);

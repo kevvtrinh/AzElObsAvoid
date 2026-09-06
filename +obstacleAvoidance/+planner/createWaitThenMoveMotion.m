@@ -65,6 +65,7 @@ diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "FallbackAvailable", true, "FallbackAttempted", false, ...
     "FallbackMethod", "", "FallbackOutcome", "notApplicable", ...
     "AllInteriorWaypointsConstrainedToRest", false);
+% Only direct-wait seeds use this constructor; other seed types continue through their matching motion method.
 if string(seed.Source) ~= "directWait"
     diagnostics.FirstUnsupportedTransitionIndex = 1;
     diagnostics.FirstUnsupportedFeature         = "multiWaypointTimedRoute";
@@ -82,6 +83,7 @@ positionTolerance_deg = 256 * eps(coordinateScale_deg);
 isInitialPosition     = vecnorm(seed.position_deg - initialState.position_deg, 2, 2) <= positionTolerance_deg;
 firstMotionIndex      = find(~isInitialPosition, 1, "first");
 isDirectWait          = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - goalState.position_deg, 2, 2) <= positionTolerance_deg);
+% Reject non-wait seeds here so they can be handled by their corresponding motion constructor.
 if ~isDirectWait
     diagnostics.TerminationReason               = "invalidDirectWaitSeed";
     diagnostics.FirstUnsupportedTransitionIndex = firstMotionIndex;
@@ -113,6 +115,7 @@ fixedOptions = options;
 fixedOptions.GoalTimeMode = "fixedArrival";
 direct            = bmtpEngine.createDirectMotion(delayedInitialState, delayedGoalState, limits, fixedOptions);
 canRetryAtHorizon = isempty(waitOverride_s) && options.GoalTimeMode ~= "fixedArrival" && duration_s < goalState.time_s - initialState.time_s - options.ArrivalTimeTolerance_s;
+% Abandon wait refinement when the post-wait direct move is infeasible; the caller can try another seed.
 if ~direct.Success && canRetryAtHorizon
     diagnostics.HorizonRetryAttempted          = true;
     diagnostics.InitialTimingTerminationReason = direct.TerminationReason;
@@ -142,6 +145,7 @@ if ~direct.Success && isempty(waitOverride_s) && waitTime_s > 0
         end
     end
 end
+% Abandon wait refinement when the post-wait direct move is infeasible; the caller can try another seed.
 if ~direct.Success
     candidate = direct;
     candidate.SeedIndex  = seed.Index;

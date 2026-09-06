@@ -20,20 +20,24 @@ names = ["Success", "Message", "TerminationReason", "Inputs", "Options", ...
     "SeedCorridorBoundary_deg", "Validation", "ArrivalTime_s", ...
     "TrajectoryDuration_s", "ElapsedPlanningTime_s"];
 result = struct();
+% Apply the required validation or transfer to each name.
 for name = names
     result.(name) = record.(name);
 end
 result.Route_deg            = record.SelectedSeed_deg;
 result.BestPartialRoute_deg = zeros(0, 2);
 search = record.SearchDiagnostics;
+% Expose the best partial seed only when no complete candidate succeeded.
 if search.BestPartialSeedIndex > 0 && ~record.Success
     result.BestPartialRoute_deg = record.Seeds(search.BestPartialSeedIndex).position_deg;
+% Use the graph search's partial route only when no seed produced a more concrete failed motion.
 elseif isfield(search.GraphSearch, "BestPartialRoute_deg") && ~record.Success
     result.BestPartialRoute_deg = search.GraphSearch.BestPartialRoute_deg;
 end
 
 %% Section 2: Assemble Optional Diagnosis Without Duplicate Records
 diagnosis = struct();
+% Skip optional diagnostic assembly when the caller requested only the planning result.
 if ~includeDiagnosis, return; end
 attempts           = rmfield(record.SeedSummaries, "SolverDiagnostics");
 solverDetails      = flattenAttempts({record.SeedSummaries.SolverDiagnostics});
@@ -66,6 +70,7 @@ function combined = flattenAttempts(records)
     % Preserve per-attempt evidence in one shallow table.
     combined = table(zeros(0,1), strings(0,1), cell(0,1), ...
         'VariableNames', {'Attempt', 'Field', 'Value'});
+    % Process each item needed to complete flatten attempts.
     for index = 1:numel(records)
         details  = obstacleAvoidance.planner.flattenDiagnosis(records{index});
         combined = [combined; table(repmat(index,height(details),1), ...

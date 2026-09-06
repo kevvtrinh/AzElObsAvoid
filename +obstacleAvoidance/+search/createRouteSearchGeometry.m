@@ -48,7 +48,9 @@ if usedDenseEnvelope
 else
     parts             = cell(numel(sampleTimes_s) * numel(obstacles), 1);
     sampledShapeCount = 0;
+    % Process each time in temporal order and accumulate its result.
     for timeIndex = 1:numel(sampleTimes_s)
+        % Evaluate each obstacle against the current geometry or motion.
         for obstacleIndex = 1:numel(obstacles)
             part = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(obstacleIndex), sampleTimes_s(timeIndex));
             if ~isempty(part.Vertices)
@@ -93,6 +95,7 @@ function sampleTimes_s = createObstacleSampleTimes(obstacles, startTime_s, endTi
     % Retain all source, midpoint, endpoint, and uniform request times.
     sampleTimes_s = [startTime_s; ...
         linspace(startTime_s, endTime_s, 9).'; endTime_s];
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         sourceTime_s      = obstacles(obstacleIndex).time_s(:);
         intervalMidTime_s = (sourceTime_s(1:end - 1) + sourceTime_s(2:end)) / 2;

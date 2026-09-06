@@ -72,6 +72,7 @@ clearance_deg = zeros(queryCount, 1);
 % row for larger polygons. Small polygons can process more queries together.
 maximumProjectionElementCount = 65536;
 blockQueryCount               = max(1, floor(maximumProjectionElementCount / size(edgeStart_deg, 1)));
+% Process each block start needed to complete point polygon clearance.
 for blockStart = 1:blockQueryCount:queryCount
     selectedQuery       = blockStart:min(queryCount, blockStart + blockQueryCount - 1);
     azimuthOffset_deg   = point_deg(selectedQuery, 1) - edgeStart_deg(:, 1).';

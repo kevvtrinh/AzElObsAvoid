@@ -35,6 +35,7 @@ function testMovingHistoryProjectionIsStaticAndContainsSamples(testCase)
     verifyTrue(testCase, obstacleAvoidance.obstacles.queryStaticHorizon(obstacleAvoidance.obstacles.prepareObstacles(projectionObstacles), 0, 20));
     verifyEqual(testCase, projection.Records.Method, "conservativeProtectedHistoryConvexHull");
     boundary_deg = projection.Records.Boundary_deg;
+    % Exercise each sample covered by this regression.
     for sampleIndex = 1:numel(obstacle.time_s)
         vertices_deg = [obstacle.az_deg{sampleIndex}, ...
             obstacle.el_deg{sampleIndex}];

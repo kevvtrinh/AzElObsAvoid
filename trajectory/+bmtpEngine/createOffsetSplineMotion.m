@@ -75,6 +75,7 @@ function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_deg)
     jerkMap           = [zeros(3), diag([6, 24, 60])];
     moment            = [1, 1 / 2, 1 / 3; 1 / 2, 1 / 3, 1 / 4; ...
         1 / 3, 1 / 4, 1 / 5];
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:knotCount - 1
         duration_s = segmentDuration_s(segmentIndex);
         coefficientMap(:, :, segmentIndex) = quinticHermiteMap(duration_s);
@@ -88,6 +89,7 @@ function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_deg)
     isFixed([2, 3, stateCount - 1, stateCount]) = true;
     knotState(~isFixed) = -hessian(~isFixed, ~isFixed) \ (hessian(~isFixed, isFixed) * knotState(isFixed));
     positionPower_deg = zeros(knotCount - 1, 1, 6);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:knotCount - 1
         rows = 3 * segmentIndex - 2:3 * segmentIndex + 3;
         positionPower_deg(segmentIndex, 1, :) = coefficientMap(:, :, segmentIndex) * knotState(rows);
@@ -116,6 +118,7 @@ function polynomial = combinePolynomials(direct, lateral, break_s, axisIndex)
     dimensionCount    = size(direct.positionPower_deg, 2);
     coefficientCount  = max(size(direct.positionPower_deg, 3), size(lateral.positionPower_deg, 3));
     positionPower_deg = zeros(segmentCount, dimensionCount, coefficientCount);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         startTime_s  = break_s(segmentIndex);
         step_s       = duration_s(segmentIndex);
@@ -150,7 +153,9 @@ function power = translatePolynomial(polynomial, startTime_s, duration_s, output
     durationRatio    = duration_s / sourceDuration_s;
     source           = reshape(polynomial.positionPower_deg(sourceIndex, :, :), size(polynomial.positionPower_deg, 2), []);
     power            = zeros(size(source, 1), outputCount);
+    % Process each target power needed to complete translate polynomial.
     for targetPower = 0:size(source, 2) - 1
+        % Process each source power needed to complete translate polynomial.
         for sourcePower = targetPower:size(source, 2) - 1
             power(:, targetPower + 1) = power(:, targetPower + 1) + source(:, sourcePower + 1) * nchoosek(sourcePower, targetPower) * sourceTau ^ (sourcePower - targetPower) * durationRatio ^ targetPower;
         end

@@ -87,6 +87,7 @@ function closePlotFigures(handles)
     figureNames = [ ...
         "WorkspaceFigure", "ContinuousWorkspaceFigure", ...
         "VisibilityFigure", "KinematicFigure", "AnimationFigure"];
+    % Exercise each name covered by this regression.
     for name = figureNames
         if isfield(handles, name)
             figureHandles = handles.(name);

@@ -77,12 +77,14 @@ function subdivided_deg = subdivideMidpoint(controlPoint_deg)
     segmentCount   = size(controlPoint_deg, 1);
     degree         = size(controlPoint_deg, 2) - 1;
     subdivided_deg = zeros(2 * segmentCount, degree + 1, 2);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         work_deg  = squeeze(controlPoint_deg(segmentIndex, :, :));
         left_deg  = zeros(degree + 1, 2);
         right_deg = zeros(degree + 1, 2);
         left_deg(1, :) = work_deg(1, :);
         right_deg(end, :) = work_deg(end, :);
+        % Repeat the level alternatives needed to refine the current solution.
         for levelIndex = 1:degree
             work_deg = (work_deg(1:end - 1, :) + work_deg(2:end, :)) / 2;
             left_deg(levelIndex + 1, :) = work_deg(1, :);
@@ -97,7 +99,9 @@ function controlPoint_deg = powerToBernsteinControls(positionPower_deg)
     % Reconstruct Bezier controls from the exported power coefficients.
     degree    = size(positionPower_deg, 3) - 1;
     transform = zeros(degree + 1);
+    % Process each bernstein needed to complete power to bernstein controls.
     for bernsteinIndex = 0:degree
+        % Process each power needed to complete power to bernstein controls.
         for powerIndex = 0:bernsteinIndex
             transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
         end

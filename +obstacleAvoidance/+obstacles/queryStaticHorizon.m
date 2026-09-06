@@ -36,6 +36,7 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, 
 
 obstaclesRemainStatic = true;
 occupiedShape         = polyshape();
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacle     = obstacles(obstacleIndex);
     sourceTime_s = double(obstacle.time_s(:));
@@ -51,6 +52,7 @@ end
 if nargout < 2
     return;
 end
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     occupiedShape = union(occupiedShape, obstacles(obstacleIndex).InternalPreparation.StaticShape);
 end

@@ -40,6 +40,7 @@ f = zeros(variableCount, 1);
 f(marginIndex) = 1;
 emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), -1);
 cones     = repmat(emptyCone, 2, 1);
+% Process each plane needed to find separating line.
 for planeIndex = 0:1
     coneA = zeros(2, variableCount);
     coneA(:, planeIndex * 2 + (1:2)) = eye(2);
@@ -68,6 +69,7 @@ function [A, b] = maximumMarginRows(controlPoint_deg, vertices_deg, target_deg)
     A             = zeros(2 * size(vertices_deg, 1) + degree + 2, variableCount);
     b             = zeros(size(A, 1), 1);
     rowIndex      = 0;
+    % Process each plane needed to complete maximum margin rows.
     for planeIndex = 0:1
         targets = rowIndex + (1:size(vertices_deg, 1));
         normal  = planeIndex * 2 + (1:2);

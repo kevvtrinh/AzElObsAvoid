@@ -96,6 +96,7 @@ function points_deg = edgeSegments(edges_deg)
     % Convert edge records to NaN-separated polylines for the LaTeX plots.
     edgeCount  = size(edges_deg, 1);
     points_deg = NaN(3 * edgeCount, 2);
+    % Process each geometric edge while constructing or checking the region topology.
     for edgeIndex = 1:edgeCount
         rows = 3 * (edgeIndex - 1) + (1:3);
         points_deg(rows(1:2), :) = [edges_deg(edgeIndex, 1:2); ...
@@ -178,6 +179,7 @@ function writeWalkthroughValues(dataDirectory, result, selectedSummary, obstacle
     fprintf(fileIdentifier, "\\newcommand{\\WalkTemporalLayerCount}{%d}\n", grid.TemporalLayerCount);
     fprintf(fileIdentifier, "\\newcommand{\\WalkTimedSuppressionReason}{%s}\n", grid.Coverage.TimedSearchSuppressionReason);
     seedNames = ["One", "Two", "Three"];
+    % Evaluate each seed before retaining the best admissible candidate.
     for seedIndex = 1:numel(diagnosis.Routes)
         seed     = diagnosis.Routes(seedIndex);
         seedName = seedNames(seedIndex);

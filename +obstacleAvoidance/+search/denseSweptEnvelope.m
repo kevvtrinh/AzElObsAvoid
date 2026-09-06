@@ -40,8 +40,10 @@ validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, {'real', 'finite', 'size', [2 2]});
 validateattributes(vertexWorkBudget, {'numeric'}, {'real', 'finite', 'positive', 'scalar'});
 verticesPerLayer = 0;
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     maximumVertexCount = 0;
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
         maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
     end
@@ -60,9 +62,11 @@ end
 % Use a separate hull for each obstacle to avoid joining unrelated shapes.
 envelopes     = cell(numel(obstacles), 1);
 envelopeCount = 0;
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacle     = obstacles(obstacleIndex);
     vertices_deg = zeros(0, 2);
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacle.az_deg)
         sample_deg   = [obstacle.az_deg{sampleIndex}(:), obstacle.el_deg{sampleIndex}(:)];
         vertices_deg = [vertices_deg; sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>

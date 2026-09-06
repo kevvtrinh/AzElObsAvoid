@@ -23,8 +23,10 @@ candidateWasPrechecked = false;
 precheckElapsedTime_s  = 0;
 checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
 preparedObstacles      = obstacles;
+% Dispatch non-rest endpoint requests to the state-to-state engine; rest-to-rest requests use the specialized planner paths.
 if context.UseStateToStateSolver
     [candidate, solverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
+% Use exact static-region BMTP when geometry is stationary; moving geometry proceeds through the dynamic solver.
 elseif context.UseStaticSolver
     if isempty(fieldnames(context.StaticGeometry))
         context.StaticGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(preparedObstacles, initialState.time_s, goalState.time_s);
@@ -41,12 +43,14 @@ end
 
 elapsedTime_s = toc(motionTimer) - precheckElapsedTime_s;
 stageTiming.MotionSolvingElapsedTime_s = stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
+% Validate newly constructed candidates here; prechecked candidates reuse the earlier independent verdict.
 if ~candidateWasPrechecked
     [candidate, checkResult, ~, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(candidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "The motion kernel returned no trajectory.");
 
     % Refine the wait for earliest arrival.
 
     waitRefinementAffectsObjective = options.GoalTimeMode == "earliestArrival";
+    % Refine a successful direct-wait motion only when waiting can change the selected objective.
     if candidate.Success && string(seed.Source) == "directWait" && waitRefinementAffectsObjective
         [candidate, checkResult, solverDiagnostics, ...
             refinementElapsedTime_s, stageTiming] = refineDirectWait(seed, candidate, checkResult, solverDiagnostics, preparedObstacles, initialState, goalState, limits, options, stageTiming);
@@ -70,6 +74,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
     diagnostics.InitialWaitTime_s = initialWaitTime_s;
     diagnostics.FinalWaitTime_s   = initialWaitTime_s;
     motionElapsedTime_s = 0;
+    % Keep the initial direct-wait candidate when refinement is disabled or there is no positive wait to shorten.
     if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
         candidate.SolverDiagnostics = diagnostics;
         return;
@@ -97,6 +102,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
             diagnostics.DirectRetimingAttempted = true;
             trialDuration_s = shorterDuration_s;
             trialWaitTime_s = initialWaitTime_s;
+        % If no candidate validates, return the best failed check so the caller receives actionable diagnostics.
         elseif ~bestCheckResult.Passed
             break;
         elseif refinementIndex == 1
@@ -109,6 +115,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
         motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
         [trialCandidate, trialCheckResult, ~, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(trialCandidate, obstacles, initialState, goalState, limits, options, stageTiming, "The refined direct-wait kernel returned no trajectory.");
         diagnostics.RefinementCount = refinementIndex;
+        % Promote a shortened wait only after independent validation; invalid trials leave the prior passing wait unchanged.
         if trialCheckResult.Passed
             bestCandidate   = trialCandidate;
             bestCheckResult = trialCheckResult;
@@ -121,6 +128,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
             if trialWaitTime_s == 0
                 break;
             end
+        % Report refinement-budget exhaustion only after at least one refinement trial was attempted.
         elseif refinementIndex > 0
             lowerWaitTime_s = trialWaitTime_s;
             diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;

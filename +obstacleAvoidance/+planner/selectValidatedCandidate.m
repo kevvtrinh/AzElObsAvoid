@@ -47,11 +47,14 @@ selection = struct("Success", false, ...
 if isempty(validatedIndices)
     bestIndex = bestPartialSeed(summaries);
     selection.BestPartialSeedIndex = bestIndex;
+    % Return the highest-ranked validated candidate when one exists; otherwise leave the stable failure result intact.
     if bestIndex > 0
         bestReason = string(summaries(bestIndex).TerminationReason);
+        % Preserve the unsupported-topology reason when it is the most informative explanation for the failed selection.
         if bestReason == "unsupportedTimedMultiWaypointRoute"
             selection.TerminationReason = bestReason;
             selection.Message           = "A geometric route was found, but the smooth " + "timed-motion kernel does not yet support its multi-waypoint " + "topology. The stop-at-waypoint fallback was disabled by policy.";
+        % Use the selected candidate's diagnostic message when available; otherwise report the generic no-valid-candidate reason.
         elseif strlength(summaries(bestIndex).Message) > 0
             selection.Message = selection.Message + " Best attempt: " + summaries(bestIndex).Message;
         end
@@ -90,6 +93,7 @@ function ranking = createCandidateRanking(summaries, indices, options)
     % Rank valid motions by the requested objective.
     indices    = indices(:);
     length_deg = [summaries(indices).MotionLength_deg].';
+    % Use fixed-arrival construction and ranking when the arrival time is prescribed; otherwise optimize earliest arrival.
     if options.GoalTimeMode == "fixedArrival"
         columnNames = ["MotionLength_deg", "CandidateIndex"];
         values      = [length_deg, indices];

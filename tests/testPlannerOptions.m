@@ -99,6 +99,7 @@ function testRetiredTrajectoryMethodIsIgnored(testCase)
     % Old saved requests follow the standard unknown-option policy.
     defaults = obstacleAvoidance.input.resolvePlannerOptions();
     verifyFalse(testCase, isfield(defaults, "TrajectoryMethod"));
+    % Exercise each value covered by this regression.
     for value = ["bmtp", "ruckigWaypoint", "invalid"]
         overrides = struct("TrajectoryMethod", value);
         verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), "planTrajectory:UnknownOptions");

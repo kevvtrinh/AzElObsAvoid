@@ -72,10 +72,12 @@ if ~isscalar(options.Title) || ~isscalar(options.AnimationGifFile) || strlength(
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", "ShowSeedPaths", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", "SaveAnimationGif"];
+% Apply the required validation or transfer to each name.
 for name = logicalNames
     options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name), name, "plotTrajectory:InvalidLogicalOption");
 end
 nonnegativeNames = ["Pause_s", "AnimationGifDelay_s"];
+% Apply the required validation or transfer to each name.
 for name = nonnegativeNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end
@@ -96,6 +98,7 @@ if options.ShowWorkspace
     drawObstacles(workspaceAxes, obstacles, result.Inputs.initialState.time_s);
     drawSearchDiagnostics(workspaceAxes, gridRecord, options.ShowSearchEdges);
     if options.ShowSeedPaths
+        % Evaluate each seed before retaining the best admissible candidate.
         for seedIndex = 1:numel(routes)
             route_deg = displayPath(result, routes(seedIndex).position_deg);
             label     = "Route " + seedIndex + ": " + routes(seedIndex).Source;
@@ -166,6 +169,7 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     frameIndices    = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
     [complete_deg, sourceIndex] = displayPath(result, result.position_deg);
     gifFrameCount = 0;
+    % Process each frame in temporal order and accumulate its result.
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes, result);
@@ -220,6 +224,7 @@ function options = normalizePlotAliases(options)
     end
     aliases = ["AnimationFrameStride", "FrameStride"; ...
         "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
+    % Process each alias needed to prepare plot aliases.
     for aliasIndex = 1:size(aliases, 1)
         oldName = aliases(aliasIndex, 1);
         newName = aliases(aliasIndex, 2);
@@ -260,6 +265,7 @@ function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
     interval_deg    = result.Inputs.limits.azimuthInterval_deg;
     period_deg      = diff(interval_deg);
     seamMultipliers = ceil((min(result.position_deg(:, 1)) - interval_deg(1)) / period_deg): floor((max(result.position_deg(:, 1)) - interval_deg(1)) / period_deg);
+    % Process each seam deg needed to build continuous workspace.
     for seam_deg = interval_deg(1) + period_deg * seamMultipliers
         xline(axesHandle, seam_deg, ":", "HandleVisibility", "off");
     end
@@ -300,6 +306,7 @@ function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
     edgeStyles = ["-", ":"];
     edgeLabels = ["Accepted visibility edge", "Collision-rejected edge"];
     if showEdges
+        % Process each category needed to complete s.
         for categoryIndex = 1:2
             if hasData(gridRecord, edgeNames(categoryIndex))
                 edges_deg     = gridRecord.(edgeNames(categoryIndex));
@@ -312,6 +319,7 @@ function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
     end
     pointNames  = ["ExploredNodes_deg", "FrontierNodes_deg"];
     pointLabels = ["Expanded search node", "Final search frontier"];
+    % Process each category needed to complete s.
     for categoryIndex = 1:2
         if hasData(gridRecord, pointNames(categoryIndex))
             points_deg = gridRecord.(pointNames(categoryIndex));
@@ -323,6 +331,7 @@ end
 function drawObstacles(axesHandle, obstacles, time_s)
     % Draw original and safety-adjusted geometry from retained obstacle histories.
     colors = lines(max(1, numel(obstacles)));
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         original = obstacle;
@@ -365,6 +374,7 @@ function axesHandles = createKinematicPanels(layout, result, animated)
     limits        = [nan(1, 2); result.Inputs.limits.maxVelocity_deg_s; ...
         result.Inputs.limits.maxAcceleration_deg_s2; result.Inputs.limits.maxJerk_deg_s3];
     axesHandles = gobjects(4, 1);
+    % Process each quantity needed to build kinematic panels.
     for quantityIndex = 1:4
         tileIndex = quantityIndex * (1 + animated);
         axesHandles(quantityIndex) = nexttile(layout, tileIndex);

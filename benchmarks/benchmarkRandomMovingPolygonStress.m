@@ -73,6 +73,7 @@ randomSeeds = double(randomSeeds(:));
 
 recordCount = numel(randomSeeds);
 records     = repmat(emptyRecord(), recordCount, 1);
+% Process each seed included in this benchmark measurement.
 for seedIndex = 1:numel(randomSeeds)
     randomSeed = randomSeeds(seedIndex);
     [obstacles, initialState, goalState, limits, scenario] = createStressScenario(randomSeed, controls);

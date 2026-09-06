@@ -80,6 +80,7 @@ options.InterceptMode = string(options.InterceptMode);
 if ~isscalar(options.InterceptMode) || ~any(options.InterceptMode == ["earliest", "specifiedTime"])
     error("planMovingTargetIntercept:InvalidMode", "InterceptMode must be 'earliest' or 'specifiedTime'.");
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = ["MatchTargetVelocity", "MatchTargetAcceleration"]
     options.(fieldName) = obstacleAvoidance.input.normalizeLogicalScalar(options.(fieldName), fieldName, "planMovingTargetIntercept:InvalidLogicalOption");
 end
@@ -182,6 +183,7 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
     selectedTime_s      = NaN;
     lowerTime_s         = searchStart_s;
     result              = [];
+    % Process each query time s in temporal order and accumulate its result.
     for queryTime_s = coarseTime_s.'
         [trial, trialDiagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, queryTime_s, includeDiagnosis);
         trialCount = trialCount + 1;
@@ -195,6 +197,7 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
     end
     initialUpperTime_s = selectedTime_s;
     refinementCount    = 0;
+    % Continue iterating until the stopping condition for find earliest is satisfied.
     while isfinite(selectedTime_s) && selectedTime_s - lowerTime_s > tolerance_s && refinementCount < 16
         queryTime_s = 0.5 * (lowerTime_s + selectedTime_s);
         [trial, trialDiagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, queryTime_s, includeDiagnosis);

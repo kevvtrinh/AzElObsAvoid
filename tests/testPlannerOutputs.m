@@ -50,8 +50,10 @@ function testSolverEvidenceHasNoNestedStructures(testCase)
     d = testCase.TestData.Diagnosis;
     verifyEqual(testCase, numel(d.Routes), numel(d.Attempts));
     verifyFalse(testCase, isfield(d.Attempts, 'SolverDiagnostics'));
+    % Exercise each details covered by this regression.
     for details = {d.SolverDetails, d.DirectMotion, d.PathRefinement}
         values = details{1}.Value;
+        % Exercise each item covered by this regression.
         for index = 1:numel(values)
             verifyFalse(testCase, isstruct(values{index}));
             verifyFalse(testCase, iscell(values{index}));

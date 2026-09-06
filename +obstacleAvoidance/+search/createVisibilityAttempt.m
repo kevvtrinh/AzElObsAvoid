@@ -107,6 +107,7 @@ function nodes = createVisibilityNodes(shape, start_deg, goal_deg, limits, candi
     discardReasons    = repmat("", size(rawNodes_deg, 1), 1);
     discardReasons(~isInsideWorkspace) = "outsideWorkspace";
     candidateNodes_deg = unique(rawNodes_deg(isInsideWorkspace, :), "rows", "stable");
+    % Rank and truncate excess visibility nodes so the bounded search keeps the most relevant candidates.
     if size(candidateNodes_deg, 1) > candidateLimit
         candidateNodes_deg = selectVisibilityCandidates(candidateNodes_deg, start_deg, goal_deg, candidateLimit);
     end
@@ -132,6 +133,7 @@ function selected_deg = selectVisibilityCandidates(candidates_deg, start_deg, go
         [~, support] = max(candidates_deg * direction.', [], 1);
         selected = [selected; support(:)];
     end
+    % Process each reference deg needed to complete select visibility candidates.
     for reference_deg = [start_deg; goal_deg].'
         [~, order] = sort(vecnorm(candidates_deg - reference_deg.', 2, 2));
         selected = [selected; order(1:endpointCount)]; %#ok<AGROW>
@@ -168,6 +170,7 @@ function recovery = recoverVisibilityConnectivity(nodes, pairSet, edgeCheck, sha
 
     % Use all-pairs visibility only within the work budget.
     usedFallback = component(1) ~= component(2) && ~usedExhaustive && pairSet.EstimatedExhaustiveWork <= pairSet.WorkBudget;
+    % Record that fallback geometry supplied the proposal so downstream diagnostics can distinguish it from the primary method.
     if usedFallback
         pairMask       = triu(true(nodeCount), 1);
         edgeCheck      = evaluateVisibilityPairs(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg);

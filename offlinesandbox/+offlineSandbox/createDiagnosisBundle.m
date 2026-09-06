@@ -52,6 +52,7 @@ plannerInputs  = sanitizedResult.Inputs;
 
 rawObstacleStrokes_deg       = cell(numel(request.obstacles), 1);
 polygonObstaclePositions_deg = cell(numel(request.obstacles), 1);
+% Process each obstacle needed by the sandbox workflow.
 for obstacleIndex = 1:numel(request.obstacles)
     keyframes = request.obstacles(obstacleIndex).keyframes;
     rawObstacleStrokes_deg{obstacleIndex} = keyframes(1).vertices_deg;
@@ -116,12 +117,15 @@ function value = removeCallbacks(value)
         value = [];
     elseif isstruct(value)
         fieldNames = string(fieldnames(value));
+        % Process each element needed by the sandbox workflow.
         for elementIndex = 1:numel(value)
+            % Process each field name needed by the sandbox workflow.
             for fieldName = reshape(fieldNames, 1, [])
                 value(elementIndex).(fieldName) = removeCallbacks(value(elementIndex).(fieldName));
             end
         end
     elseif iscell(value)
+        % Process each element needed by the sandbox workflow.
         for elementIndex = 1:numel(value)
             value{elementIndex} = removeCallbacks(value{elementIndex});
         end
@@ -131,6 +135,7 @@ end
 function keyframes = extractObstacleKeyframes(obstacles)
     % Preserve the exact browser motion history without inferring profile controls.
     keyframes = cell(numel(obstacles), 1);
+    % Process each obstacle needed by the sandbox workflow.
     for obstacleIndex = 1:numel(obstacles)
         keyframes{obstacleIndex} = obstacles(obstacleIndex).keyframes;
     end

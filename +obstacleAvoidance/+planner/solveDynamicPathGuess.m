@@ -43,6 +43,7 @@ if trySweptProjection
     [sweptCandidate, sweptCheck, sweptCheckTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(sweptCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "The swept-projection BMTP kernel returned no trajectory.");
     precheckElapsedTime_s = precheckElapsedTime_s + sweptCheckTime_s;
     sweptAttempt          = createSweptProjectionRecord(sweptDiagnostics, sweptCheck, projection);
+    % Retain the rejected motion as diagnostic evidence while excluding it from final selection.
     if ~sweptCheck.Passed && ~isempty(sweptCandidate.time_s)
         rejectedCandidates{end + 1} = sweptCandidate;
         rejectedChecks{end + 1} = sweptCheck;
@@ -72,6 +73,7 @@ if tryTimedBmtp
         "SolverDiagnostics", timedBmtpDiagnostics, ...
         "FullObstacleValidation", timedCheck, ...
         "Outcome", "rejectedByFullValidation");
+    % Retain the rejected motion as diagnostic evidence while excluding it from final selection.
     if ~timedCheck.Passed && ~isempty(timedCandidate.time_s)
         rejectedCandidates{end + 1} = timedCandidate;
         rejectedChecks{end + 1} = timedCheck;
@@ -93,6 +95,7 @@ end
 % Try an initial wait and direct move; handle unsupported routes explicitly.
 
 if ~candidateWasPrechecked
+    % Only direct-wait seeds use this constructor; other seed types continue through their matching motion method.
     if string(seed.Source) == "directWait"
         [candidate, solverDiagnostics] = obstacleAvoidance.planner.createWaitThenMoveMotion(seed, initialState, goalState, limits, options, [], []);
     else
@@ -116,6 +119,7 @@ if timedTopologyIsUnsupported
     if options.UnsupportedTimedTopologyPolicy == "ruckigStopAtWaypoints"
         [candidate, fallbackDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
         solverDiagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiagnostics, timedTerminationReason, true);
+        % Adopt the fallback motion only after its own checks accept it; otherwise preserve the original failure evidence.
         if fallbackDiagnostics.Accepted
             candidate.Message = candidate.Message + " Every interior waypoint was constrained to rest " + "by the explicitly enabled Ruckig fallback.";
         else
@@ -133,6 +137,7 @@ end
 % eligibility failure. Preserve all attempted-method diagnostics separately.
 if ~candidate.Success && ~isempty(rejectedCandidates)
     summaries = repmat(context.SummaryTemplate, numel(rejectedCandidates), 1);
+    % Process each item needed to find dynamic path guess.
     for index = 1:numel(rejectedCandidates)
         summaries(index) = obstacleAvoidance.planner.createCandidateSummary(rejectedCandidates{index}, rejectedChecks{index}, struct(), 0, context.SummaryTemplate, limits);
     end
@@ -160,6 +165,7 @@ function diagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiag
     end
     diagnostics.FallbackOutcome     = string(fallbackDiagnostics.EngineTerminationReason);
     diagnostics.FallbackDiagnostics = fallbackDiagnostics;
+    % Apply the required validation or transfer to each field name.
     for fieldName = ["InteriorWaypointTime_s", ...
             "InteriorWaypointPosition_deg", ...
             "InteriorWaypointVelocity_deg_s", ...
@@ -189,6 +195,7 @@ function [candidate, diagnostics] = unsupportedPathGuess(seed, initialState, opt
     candidate.SeedIndex = seed.Index;
     reason  = "unsupportedTimedMultiWaypointRoute";
     feature = "multiWaypointTimedRoute";
+    % Classify two-point seeds as unsupported direct guesses; longer seeds remain unsupported timed multi-waypoint routes.
     if size(seed.position_deg, 1) <= 2
         reason  = "unsupportedDynamicDirectGuess";
         feature = "directGuessWithoutWaitSchedule";

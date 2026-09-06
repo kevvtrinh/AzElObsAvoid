@@ -31,6 +31,7 @@ end
 preparationVersion = 1;
 if isfield(obstacles, "InternalPreparation")
     preparationIsCurrent = true(numel(obstacles), 1);
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         preparation      = obstacles(obstacleIndex).InternalPreparation;
         hasCurrentLayout = isstruct(preparation) && isscalar(preparation) && isfield(preparation, "PreparationVersion") && isequal(preparation.PreparationVersion, preparationVersion) && isfield(preparation, "SourceSnapshot");

@@ -100,6 +100,7 @@ function verifyAdditiveTiming(testCase, timing)
     % Verify finite nonnegative exclusive fields, residual, and total.
     values = struct2array(timing);
 
+    % Exercise each value covered by this regression.
     for value = values
         verifyTrue(testCase, isnumeric(value) && isreal(value) && isscalar(value));
         verifyTrue(testCase, isfinite(value));
@@ -195,6 +196,7 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
         goal.time_s = max(direct.MinimumAxisDuration_s);
         polygon  = vertices{1};
         obstacle = obstacleAvoidance.obstacles.createObstacle('timing detour', 0, polygon(:,1), polygon(:,2), 0.1);
+        % Exercise each mode covered by this regression.
         for mode = ["fixedArrival", "earliestArrival"]
             options.GoalTimeMode = mode;
             [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);

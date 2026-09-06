@@ -47,6 +47,7 @@ intervalBounds_deg             = NaN(intervalCount, 4);
 intervalUnionEdgeStart_deg     = cell(intervalCount, 1);
 intervalUnionEdgeEnd_deg       = cell(intervalCount, 1);
 intervalUnionBoundaryRunBounds = cell(intervalCount, 1);
+% Process each sample in temporal order and accumulate its result.
 for sampleIndex = 1:sampleCount
     azimuth_deg   = double(obstacle.az_deg{sampleIndex}(:));
     elevation_deg = double(obstacle.el_deg{sampleIndex}(:));
@@ -68,6 +69,7 @@ end
 % Otherwise use geometry that conservatively covers the interval.
 
 intervalDuration_s = diff(double(obstacle.time_s(:)));
+% Process each interval while assembling the complete motion or interval result.
 for intervalIndex = 1:intervalCount
     lowerAzimuth_deg   = double(obstacle.az_deg{intervalIndex}(:));
     lowerElevation_deg = double(obstacle.el_deg{intervalIndex}(:));
@@ -112,6 +114,7 @@ end
 % Cache sample speeds and whether the whole history is static.
 
 sampleSpeed_deg_s = zeros(sampleCount, 1);
+% Process each interval while assembling the complete motion or interval result.
 for intervalIndex = 1:intervalCount
     sampleSpeed_deg_s(intervalIndex) = max(sampleSpeed_deg_s(intervalIndex), intervalSpeed_deg_s(intervalIndex));
     sampleSpeed_deg_s(intervalIndex + 1) = max(sampleSpeed_deg_s(intervalIndex + 1), intervalSpeed_deg_s(intervalIndex));
@@ -167,6 +170,7 @@ function [bounds_deg, edgeStart_deg, edgeEnd_deg, runBounds_deg] = createShapeCa
     runStart      = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
     runEnd        = find(finiteRow & [~finiteRow(2:end); true]);
     runBounds_deg = NaN(numel(runStart), 4);
+    % Process each run needed to build shape cache.
     for runIndex = 1:numel(runStart)
         runBounds_deg(runIndex, :) = finiteBounds(boundary_deg(runStart(runIndex):runEnd(runIndex), :));
     end
@@ -195,14 +199,17 @@ function [verified, alignedUpper_deg] = alignVerifiedSingleRing(lowerAzimuth_deg
     end
     vertexCount   = size(lower_deg, 1);
     bestCost_deg2 = Inf;
+    % Process each orientation needed to complete align verified single ring.
     for orientationIndex = 1:2
         orientedUpper_deg = upper_deg;
         if orientationIndex == 2
             orientedUpper_deg = flipud(orientedUpper_deg);
         end
+        % Repeat the shift alternatives needed to refine the current solution.
         for shiftCount = 0:vertexCount - 1
             candidateUpper_deg = circshift(orientedUpper_deg, shiftCount, 1);
             cost_deg2          = sum((candidateUpper_deg - lower_deg) .^ 2, "all");
+            % Use the lower-cost vertex correspondence; ties retain the earlier deterministic match.
             if cost_deg2 < bestCost_deg2
                 bestCost_deg2    = cost_deg2;
                 alignedUpper_deg = candidateUpper_deg;
@@ -237,6 +244,7 @@ function verified = remainsStrictlyConvex(lower_deg, upper_deg, coordinateScale_
     linear_deg2       = cross2d(edgeDelta_deg, nextLowerEdge_deg) + cross2d(lowerEdge_deg, nextEdgeDelta_deg);
     quadratic_deg2    = cross2d(edgeDelta_deg, nextEdgeDelta_deg);
     verified          = true;
+    % Process each geometric vertex while constructing or checking the region topology.
     for vertexIndex = 1:size(lower_deg, 1)
         candidateTau = [0; 1];
         if quadratic_deg2(vertexIndex) ~= 0

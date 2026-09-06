@@ -99,6 +99,7 @@ function verifyExactDecomposition(testCase, shape, convexRegions)
     combined      = polyshape();
     areaScale     = max(1, area(shape));
     areaTolerance = 2 ^ 20 * eps(areaScale);
+    % Exercise each region covered by this regression.
     for regionIndex = 1:numel(convexRegions)
         region    = convexRegions(regionIndex);
         vertices  = region.Vertices;
@@ -106,6 +107,7 @@ function verifyExactDecomposition(testCase, shape, convexRegions)
         hullIndex = convhull(vertices(:, 1), vertices(:, 2));
         hull      = polyshape(vertices(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
         verifyLessThanOrEqual(testCase, abs(area(hull) - area(region)), areaTolerance);
+        % Exercise each previous covered by this regression.
         for previousIndex = 1:regionIndex - 1
             verifyLessThanOrEqual(testCase, area(intersect(region, convexRegions(previousIndex))), areaTolerance);
         end
@@ -121,6 +123,7 @@ function count = triangulationCellCount(shape)
     % Count cells in MATLAB's authoritative connected-region triangulations.
     connectedRegions = regions(shape);
     count            = 0;
+    % Exercise each region covered by this regression.
     for regionIndex = 1:numel(connectedRegions)
         regionTriangulation = triangulation(connectedRegions(regionIndex));
         count               = count + size(regionTriangulation.ConnectivityList, 1);
@@ -130,6 +133,7 @@ end
 function isContained = anyRegionContains(convexRegions, point)
     % Return whether any convex output contains or touches one probe point.
     isContained = false;
+    % Exercise each region covered by this regression.
     for regionIndex = 1:numel(convexRegions)
         isContained = isContained || isinterior(convexRegions(regionIndex), point(1), point(2));
     end
@@ -138,6 +142,7 @@ end
 function signatures = regionSignatures(convexRegions)
     % Canonicalize public polyshape vertices for deterministic comparison.
     signatures = cell(numel(convexRegions), 1);
+    % Exercise each region covered by this regression.
     for regionIndex = 1:numel(convexRegions)
         vertices = convexRegions(regionIndex).Vertices;
         vertices = vertices(all(isfinite(vertices), 2), :);

@@ -31,6 +31,7 @@ if nargin == 0
     return;
 end
 obstacleItems = cell(0, 1);
+% Process each input needed to complete combine obstacles.
 for inputIndex = 1:nargin
     obstacleItems = [obstacleItems; flattenValue(varargin{inputIndex}, inputIndex)]; %#ok<AGROW>
 end
@@ -42,6 +43,7 @@ if isempty(obstacleItems)
     return;
 end
 normalized = cell(size(obstacleItems));
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacleItems)
     normalized{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle(obstacleItems{obstacleIndex});
 end
@@ -56,6 +58,7 @@ function items = flattenValue(value, owner)
         items = num2cell(value(:));
     elseif iscell(value)
         items = cell(0, 1);
+        % Process each child needed to complete flatten value.
         for childIndex = 1:numel(value)
             items = [items; flattenValue(value{childIndex}, owner)]; %#ok<AGROW>
         end

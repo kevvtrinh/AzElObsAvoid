@@ -34,12 +34,15 @@ layerTimes_s = layerTimes_s(layerTimes_s >= initialState.time_s & layerTimes_s <
 layerCount   = numel(layerTimes_s);
 nodeCount    = size(nodePosition_deg, 1);
 nodeIsFree   = false(layerCount, nodeCount);
+% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles. queryPreparedObstacles(obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
 waitIsClear = false(max(0, layerCount - 1), nodeCount);
+% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount - 1
     candidateNodeIndices = find(nodeIsFree(layerIndex, :) & nodeIsFree(layerIndex + 1, :));
+    % Test a stationary wait only at nodes that are free in both adjacent layers; all other waits remain unavailable.
     if ~isempty(candidateNodeIndices)
         waitIsClear(layerIndex, candidateNodeIndices) = edgeIsClear(obstacles, nodePosition_deg(candidateNodeIndices, :), nodePosition_deg(candidateNodeIndices, :), layerTimes_s(layerIndex), layerTimes_s(layerIndex + 1));
     end
@@ -50,6 +53,7 @@ isWaitComponentStart = nodeIsFree;
 isWaitComponentStart(2:end, :) = nodeIsFree(2:end, :) & ~waitIsClear;
 waitComponentCount           = sum(isWaitComponentStart, 1);
 waitComponentFinalLayerIndex = repmat(uint32((1:layerCount).'), 1, nodeCount);
+% Process each layer needed to complete time expanded visibility search.
 for layerIndex = layerCount - 1:-1:1
     continuingNodeIndices = find(waitIsClear(layerIndex, :));
     waitComponentFinalLayerIndex(layerIndex, continuingNodeIndices) = waitComponentFinalLayerIndex(layerIndex + 1, continuingNodeIndices);
@@ -64,7 +68,9 @@ reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_deg(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
 exploredNodes_deg = zeros(0, 2);
+% Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount - 1
+    % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
     if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
         break;
     end
@@ -74,9 +80,11 @@ for layerIndex = 1:layerCount - 1
     % layer in the same safe-wait interval, and spatial length in degrees.
     motionCandidates     = zeros(maximumMotionCandidateCount, 5);
     motionCandidateCount = 0;
+    % Process each current node needed to complete time expanded visibility search.
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
+        % Add the same-node transition only when the obstacle sweep permits waiting through the full layer interval.
         if waitIsClear(layerIndex, currentNodeIndex)
             waitCount = waitCount + 1;
             [reachable, spatialCost_deg, parentLayerIndex, ...
@@ -85,6 +93,7 @@ for layerIndex = 1:layerCount - 1
             rejectedCount = rejectedCount + 1;
         end
         targets = find(motionEdgeExists(currentNodeIndex, :));
+        % Process each target node needed to complete time expanded visibility search.
         for targetNodeIndex = reshape(targets, 1, [])
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - nodePosition_deg(currentNodeIndex, :);
             % Intermediate nodes need not stop. Use a velocity-only time lower bound;
@@ -92,6 +101,7 @@ for layerIndex = 1:layerCount - 1
             minimumDuration_s       = max(abs(displacement_deg) ./ limits.maxVelocity_deg_s);
             earliestTime_s          = layerTimes_s(layerIndex) + minimumDuration_s - 1e-12;
             firstFeasibleLayerIndex = find(layerTimes_s > earliestTime_s, 1, "first");
+            % Drop transitions that cannot reach any later time layer even at the velocity limit.
             if isempty(firstFeasibleLayerIndex)
                 rejectedCount = rejectedCount + 1;
                 continue;
@@ -119,8 +129,10 @@ for layerIndex = 1:layerCount - 1
     % Keep the first clear entry per wait interval; later entries can be reached by waiting.
     while any(pendingMotion)
         queriedTargetLayers = unique(motionCandidates(pendingMotion, 3));
+        % Process each target layer needed to complete time expanded visibility search.
         for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
             queryIndices = find(pendingMotion & motionCandidates(:, 3) == targetLayerIndex);
+            % Use the prescribed final layer for fixed-arrival requests; earliest-arrival selection was resolved during forward search.
             if options.GoalTimeMode ~= "earliestArrival"
                 trialCost_deg  = reshape(spatialCost_deg(layerIndex, motionCandidates(queryIndices, 1)), [], 1) + motionCandidates(queryIndices, 5);
                 storedCost_deg = reshape(spatialCost_deg(targetLayerIndex, motionCandidates(queryIndices, 2)), [], 1);
@@ -137,6 +149,7 @@ for layerIndex = 1:layerCount - 1
             queryIsClear = edgeIsClear(obstacles, nodePosition_deg(motionCandidates(queryIndices, 1), :), nodePosition_deg(motionCandidates(queryIndices, 2), :), layerTimes_s(layerIndex), layerTimes_s(targetLayerIndex));
             clearIndices = queryIndices(queryIsClear);
             motionCount  = motionCount + numel(clearIndices);
+            % Process each motion needed to complete time expanded visibility search.
             for motionIndex = reshape(clearIndices, 1, [])
                 [reachable, spatialCost_deg, parentLayerIndex, ...
                     parentNodeIndex] = updateTemporalState(reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex, layerIndex, motionCandidates(motionIndex, 1), motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), motionCandidates(motionIndex, 5));
@@ -152,12 +165,14 @@ end
 %% Section 2: Reconstruct Goal And Best-Partial Routes
 deepestLayerIndex = find(any(reachable, 2), 1, "last");
 [frontier_deg, bestPartial_deg] = deal(zeros(0, 2));
+% Report no partial timed route when even the start layer has no reachable state.
 if ~isempty(deepestLayerIndex)
     frontierNodeIndices = find(reachable(deepestLayerIndex, :));
     frontier_deg        = nodePosition_deg(frontierNodeIndices, :);
     [~, bestIndex]       = min(vecnorm(frontier_deg - nodePosition_deg(2, :), 2, 2));
     [bestPartial_deg, ~] = reconstructTimedRoute(nodePosition_deg, layerTimes_s, parentLayerIndex, parentNodeIndex, deepestLayerIndex, frontierNodeIndices(bestIndex));
 end
+% Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
 if options.GoalTimeMode == "earliestArrival"
     goalLayerIndex = find(reachable(:, 2), 1, "first");
 else
@@ -180,6 +195,7 @@ function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s
     edgeCount    = size(first_deg, 1);
     position_deg = zeros(13 * edgeCount, 2);
     time_s       = first_s + fraction * (second_s - first_s);
+    % Process each geometric edge while constructing or checking the region topology.
     for edgeIndex = 1:edgeCount
         sampleIndices = (edgeIndex - 1) * 13 + (1:13);
         position_deg(sampleIndices, :) = first_deg(edgeIndex, :) + fraction .* (second_deg(edgeIndex, :) - first_deg(edgeIndex, :));
@@ -193,6 +209,7 @@ function [reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex] = updat
     storedCost_deg         = spatialCost_deg(targetLayerIndex, targetNodeIndex);
     costIsEqual            = abs(trialCost_deg - storedCost_deg) <= 1e-12;
     isLaterFinalTransition = targetLayerIndex == size(reachable, 1) && edgeLength_deg > 0 && sourceLayerIndex > double(parentLayerIndex(targetLayerIndex, targetNodeIndex));
+    % Discard transitions that are more expensive than the stored state, while allowing the designated equal-cost final transition.
     if trialCost_deg > storedCost_deg + 1e-12 || (costIsEqual && ~isLaterFinalTransition)
         return;
     end
@@ -210,9 +227,11 @@ function [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, laye
     end
     layerPath = goalLayerIndex;
     nodePath  = goalNodeIndex;
+    % Continue iterating until the stopping condition for complete reconstruct timed route is satisfied.
     while ~(layerPath(1) == 1 && nodePath(1) == 1)
         priorLayerIndex = double(parentLayerIndex(layerPath(1), nodePath(1)));
         priorNodeIndex  = double(parentNodeIndex(layerPath(1), nodePath(1)));
+        % Stop backtracking at the recorded start sentinel; encountering it earlier would indicate corrupt parent data.
         if priorLayerIndex == 0 || priorNodeIndex == 0
             route_deg   = zeros(0, 2);
             routeTime_s = zeros(0, 1);

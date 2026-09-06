@@ -32,7 +32,9 @@ if isstruct(value)
         value = rmfield(value, cellstr(fieldNames(isRuntimeField)));
     end
     remainingNames = string(fieldnames(value));
+    % Process each element included in this benchmark measurement.
     for elementIndex = 1:numel(value)
+        % Process each field included in this benchmark measurement.
         for fieldIndex = 1:numel(remainingNames)
             fieldName = remainingNames(fieldIndex);
             % TotalTime_s is runtime only inside the conic solver record.
@@ -43,6 +45,7 @@ if isstruct(value)
         end
     end
 elseif iscell(value)
+    % Process each element included in this benchmark measurement.
     for elementIndex = 1:numel(value)
         value{elementIndex} = stripPlannerRefactorRuntime(value{elementIndex});
     end

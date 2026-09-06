@@ -29,6 +29,7 @@ fallback = struct("Attempted", false, ...
     "Outcome", "notApplicable", ...
     "ExactRegionCount", numel(exactRegions_deg), ...
     "PrimarySolverDiagnostics", struct());
+% Try grouped static regions first to reduce solver size; the ungrouped retry remains available if grouping fails.
 if grouping.Applied
     fallback.Outcome = "groupedAttemptAccepted";
 end
@@ -46,6 +47,7 @@ if grouping.Applied && ~candidate.Success
     exactGrouping.GroupMemberIndices      = num2cell((1:numel(exactRegions_deg)).');
     exactCoverage.ConservativeGrouping = exactGrouping;
     [candidate, diagnostics] = bmtpEngine.solve(seed, exactRegions_deg, exactCoverage, initialState, goalState, limits, options);
+    % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success
         fallback.Outcome = "exactRegionAttemptAccepted";
     end

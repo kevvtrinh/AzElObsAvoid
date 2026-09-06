@@ -60,6 +60,7 @@ maximumVelocity_deg_s      = limitRow(limits, "maxVelocity_deg_s", dimensionCoun
 maximumAcceleration_deg_s2 = limitRow(limits, "maxAcceleration_deg_s2", dimensionCount);
 maximumJerk_deg_s3         = limitRow(limits, "maxJerk_deg_s3", dimensionCount);
 switchTime_s               = zeros(2, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:dimensionCount
     switchTime_s(:, axisIndex) = reachableSwitches(maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
 end
@@ -73,6 +74,7 @@ maximumRootResidual_deg = 0;
 selectedSlack_deg       = NaN(1, dimensionCount);
 selectedSegmentIndex    = 0;
 selectedElapsedTime_s   = NaN;
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:numel(targetTime_s) - 1
     segmentStart_s = max(initialTime_s, targetTime_s(segmentIndex));
     segmentEnd_s   = min(horizonTime_s, targetTime_s(segmentIndex + 1));
@@ -91,10 +93,12 @@ for segmentIndex = 1:numel(targetTime_s) - 1
     eventTime_s      = unique(eventTime_s(eventTime_s >= elapsedStart_s & eventTime_s <= elapsedEnd_s));
     transitionTime_s = eventTime_s;
 
+    % Process each slab in temporal order and accumulate its result.
     for slabIndex = 1:numel(eventTime_s) - 1
         slabStart_s    = eventTime_s(slabIndex);
         slabEnd_s      = eventTime_s(slabIndex + 1);
         slabMidpoint_s = 0.5 * (slabStart_s + slabEnd_s);
+        % Evaluate each coordinate axis and combine its limiting result.
         for axisIndex = 1:dimensionCount
             differencePower = reachablePower(slabMidpoint_s, maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
             targetSign      = sign(targetOffset_deg(axisIndex) + targetSlope_deg_s(axisIndex) * slabMidpoint_s);
@@ -122,14 +126,17 @@ for segmentIndex = 1:numel(targetTime_s) - 1
             elapsedTime_s = 0.5 * (transitionTime_s(boundaryIndex) + transitionTime_s(boundaryIndex + 1));
         end
         testedCount = testedCount + 1;
+        % Discard infeasible intercept times and continue searching later event intervals.
         if ~isFeasible(elapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3)
             continue;
         end
         [boundaryFeasible, boundarySlack_deg] = isFeasible(candidateElapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3);
+        % Skip infeasible boundary times; feasible boundaries remain candidates for the earliest intercept.
         if ~boundaryFeasible
             candidateElapsedTime_s = candidateElapsedTime_s + 64 * eps(max(1, candidateElapsedTime_s));
             [boundaryFeasible, boundarySlack_deg] = isFeasible(candidateElapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3);
         end
+        % Accept the first feasible boundary because times are examined in increasing order.
         if boundaryFeasible
             interceptTime_s       = initialTime_s + candidateElapsedTime_s;
             selectedElapsedTime_s = candidateElapsedTime_s;
@@ -234,6 +241,7 @@ end
 function [feasible, slack_deg] = isFeasible(elapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3)
     % Evaluate every componentwise reachable-distance inequality conservatively.
     slack_deg = zeros(size(targetOffset_deg));
+    % Evaluate each coordinate axis and combine its limiting result.
     for axisIndex = 1:numel(targetOffset_deg)
         power                = reachablePower(elapsedTime_s, maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
         requiredDistance_deg = abs(targetOffset_deg(axisIndex) + targetSlope_deg_s(axisIndex) * elapsedTime_s);

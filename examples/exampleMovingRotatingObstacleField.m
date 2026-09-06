@@ -41,6 +41,7 @@ staticBoundaryOffset_deg = [ ...
     -1 -1; 1 -1; 1 1; -1 1] .* staticHalfSize_deg;
 safetyMargin_deg = 0.12;
 obstacleItems    = cell(4, 1);
+% Build or inspect each obstacle used by this maintained example.
 for obstacleIndex = 1:size(staticCenter_deg, 1)
     boundary_deg = staticCenter_deg(obstacleIndex, :) + staticBoundaryOffset_deg;
     obstacleItems{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle("Static obstacle " + obstacleIndex, staticTime_s, boundary_deg(:, 1), boundary_deg(:, 2), safetyMargin_deg);
@@ -52,6 +53,7 @@ movingAngle_rad           = deg2rad([-40; -10; 30; 65; 100]);
 movingBase_deg            = [-1.25 -0.45; 1.25 -0.45; 1.25 0.45; -1.25 0.45];
 movingAzimuthByTime_deg   = cell(numel(movingTime_s), 1);
 movingElevationByTime_deg = cell(numel(movingTime_s), 1);
+% Build or inspect each sample used by this maintained example.
 for sampleIndex = 1:numel(movingTime_s)
     angle_rad = movingAngle_rad(sampleIndex);
     rotation  = [cos(angle_rad), -sin(angle_rad); ...

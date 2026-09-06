@@ -39,6 +39,7 @@ function routeSet = searchRoutes(initialState, goalState, limits, options, scene
 % Supplying priorRouteSet resumes timed search without repeating spatial search.
 
 isTimedRecovery = nargin >= 8 && ~isempty(priorRouteSet);
+% Reject timed-recovery calls unless the primary search explicitly deferred a timed stage.
 if isTimedRecovery && (~isstruct(priorRouteSet) || ~isscalar(priorRouteSet) || ~isfield(priorRouteSet, "TimedSearchDeferred") || ~priorRouteSet.TimedSearchDeferred)
     error("searchRoutes:InvalidRecoveryState", "priorRouteSet must be a deferred scalar route-set record.");
 end
@@ -53,15 +54,18 @@ timedSearchAttempted         = false;
 timedSearchDeferred          = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
 requiresTimedSearch          = ~scene.obstaclesRemainStatic;
+% Defer timed search after dense-envelope planning so recovery can reuse the spatial evidence without duplicating work.
 if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred          = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
+% Run the timed visibility search when dynamic geometry requires it and no deferred-recovery shortcut applies.
 elseif requiresTimedSearch
     timedSearchAttempted         = true;
     timedSearchSuppressionReason = "";
     timedCost_deg                = hypot(nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
     [timedRoute_deg, timedRouteTime_s, timedRecord] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, timedCost_deg, obstacles, initialState, goalState, limits, proposal.sampleTimes_s, timedSearchOptions);
 end
+% Reuse the prior spatial search evidence during timed recovery instead of rebuilding it.
 if isTimedRecovery
     routeSet = priorRouteSet;
     routeSet.TimedRoute_deg               = timedRoute_deg;

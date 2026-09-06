@@ -48,6 +48,7 @@ endpointDerivative      = [initialState.velocity_deg_s, initialState.acceleratio
 useStateToStateMotion   = any(abs(endpointDerivative) > options.ConstraintTolerance);
 directSuccessMessage    = "An exact direct rest-to-rest motion passed independent validation.";
 motionTimer             = tic;
+% Use state-to-state motion for non-rest endpoints; otherwise use the simpler rest-to-rest constructor.
 if useStateToStateMotion
     directSeed        = createDirectSeed(initialState, goalState, goalState.time_s - initialState.time_s);
     directSeed.Source = "directStateToState";
@@ -62,7 +63,9 @@ stageTiming.MotionSolvingElapsedTime_s = stageTiming.MotionSolvingElapsedTime_s 
 [directCandidate, directValidation, directValidationTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(directCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "");
 directAttempt = recordDirectAttempt(directCandidate, directValidation, directElapsedTime_s, directValidationTime_s);
 exactMotionSet.DirectAttempt = directAttempt;
+% Accept the direct route when independent validation passes; otherwise preserve its evidence and try obstacle-avoiding alternatives.
 if directValidation.Passed
+    % Use state-to-state motion for non-rest endpoints; otherwise use the simpler rest-to-rest constructor.
     if useStateToStateMotion
         directSeed = createMotionSeed(directCandidate, directCandidate.SeedSource);
     else
@@ -85,10 +88,12 @@ excursionElapsedTime_s = toc(motionTimer);
 exactMotionSet.ExcursionCandidate     = excursionCandidate;
 exactMotionSet.ExcursionDiagnostics   = excursionDiagnostics;
 exactMotionSet.ExcursionElapsedTime_s = excursionSolvingTime_s;
+% Accept the direct excursion only when construction and independent validation both pass; otherwise continue to route search.
 if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
     excursionSeed = createMotionSeed(excursionCandidate, "fixedClockLateralExcursion");
     exactMotionSet.ExcursionIsValidated = true;
     exactMotionSet.ExcursionSeed        = excursionSeed;
+    % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
     if options.GoalTimeMode == "earliestArrival"
         exactMotionSet.FastPath = createFastPath(excursionCandidate, excursionCandidate.Validation, excursionDiagnostics, excursionSolvingTime_s, excursionSeed, "A fixed-clock lateral excursion attained the physical time floor.");
     end
@@ -142,6 +147,7 @@ function record = recordDirectAttempt(candidate, validation, elapsedTime_s, vali
     record.Message                 = candidate.Message;
     record.ElapsedTime_s           = elapsedTime_s;
     record.ValidationElapsedTime_s = validationElapsedTime_s;
+    % Apply the required validation or transfer to each name.
     for name = ["TrajectoryDuration_s", "MotionLength_deg", "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", "UsedStraightProgress"]
         record.(name) = candidate.(name);
     end

@@ -85,6 +85,7 @@ for iterationIndex = 1:35
         feasibleSegmentTime_s     = trialTime_s;
         duration_s                = segmentCount * trialTime_s;
         retainedBestImprovement_s = bestDuration_s - duration_s;
+        % Promote this feasible trajectory only when its duration improves the incumbent.
         if duration_s < bestDuration_s
             bestControl_deg   = trialControl_deg;
             bestSegmentTime_s = trialTime_s;
@@ -112,6 +113,7 @@ for iterationIndex = 1:35
         end
         planes(:) = createEmptyPlane();
         activePairs = taggedPairs;
+    % Restart alternating optimization when new obstacle-time pairs are discovered; otherwise the active set has stabilized.
     elseif any(newPairs, "all")
         activePairs = newPairs;
     else
@@ -122,6 +124,7 @@ for iterationIndex = 1:35
     % Add separating lines where samples overlap. Final certification follows later.
     updateFailed      = false;
     activePairIndices = reshape(find(activePairs), 1, []);
+    % Process each active needed to find alternating trajectory.
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);
@@ -140,6 +143,7 @@ for iterationIndex = 1:35
         end
         planes(segmentIndex, regionIndex) = plane;
     end
+    % Terminate with the recorded failure if an alternating update cannot produce a valid control or separating plane.
     if updateFailed
         break;
     end

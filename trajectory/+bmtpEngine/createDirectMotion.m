@@ -66,6 +66,7 @@ displacement_deg      = goalPosition_deg - initialPosition_deg;
 phaseDuration_s       = zeros(dimensionCount, 7);
 phaseJerk_deg_s3      = zeros(dimensionCount, 7);
 minimumAxisDuration_s = zeros(1, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:dimensionCount
     [phaseDuration_s(axisIndex, :), phaseJerk_deg_s3(axisIndex, :)] = minimumProfile(displacement_deg(axisIndex), maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
     minimumAxisDuration_s(axisIndex) = sum(phaseDuration_s(axisIndex, :));
@@ -78,6 +79,7 @@ if minimumDuration_s <= 0
 end
 requestedDuration_s = goalTime_s - initialTime_s;
 duration_s          = minimumDuration_s;
+% Use fixed-arrival construction and ranking when the arrival time is prescribed; otherwise optimize earliest arrival.
 if goalTimeMode == "fixedArrival"
     duration_s = requestedDuration_s;
     if duration_s < minimumDuration_s - constraintTolerance
@@ -104,6 +106,7 @@ if usedStraightProgress
     phaseDuration_s  = repmat(progressPhase_s, dimensionCount, 1);
     phaseJerk_deg_s3 = displacement_deg(:) * progressJerk_1_s3;
 else
+    % Evaluate each coordinate axis and combine its limiting result.
     for axisIndex = 1:dimensionCount
         if minimumAxisDuration_s(axisIndex) == 0
             phaseDuration_s(axisIndex, 4) = duration_s;
@@ -175,6 +178,7 @@ function [maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3]
     if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, names))
         error("createDirectMotion:MissingLimit", "limits requires positive per-axis velocity, acceleration, and jerk.");
     end
+    % Process each limit needed to complete read limits.
     for limitIndex = 1:3
         value = limits.(names(limitIndex));
         validateattributes(value, {'numeric'}, {'real', 'finite', 'vector', 'nonempty'}, mfilename, "limits." + names(limitIndex));
@@ -258,8 +262,10 @@ function [relativeBreak_s, segmentJerk_deg_s3] = mergeProfiles(phaseDuration_s, 
     relativeBreak_s    = mergeBreaks([0; duration_s; axisBreak_s(:)], duration_s, 1024 * eps(max(1, duration_s)));
     segmentCount       = numel(relativeBreak_s) - 1;
     segmentJerk_deg_s3 = zeros(segmentCount, dimensionCount);
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         midpoint_s = 0.5 * sum(relativeBreak_s(segmentIndex:segmentIndex + 1));
+        % Evaluate each coordinate axis and combine its limiting result.
         for axisIndex = 1:dimensionCount
             phaseIndex = find(midpoint_s < axisBreak_s(axisIndex, 2:end), 1);
             if isempty(phaseIndex)
@@ -275,6 +281,7 @@ function merged_s = mergeBreaks(values_s, duration_s, tolerance_s)
     values_s    = sort(min(duration_s, max(0, double(values_s(:)))));
     merged_s    = zeros(size(values_s));
     mergedCount = 0;
+    % Process each value needed to complete merge breaks.
     for valueIndex = 1:numel(values_s)
         if mergedCount == 0 || values_s(valueIndex) - merged_s(mergedCount) > tolerance_s
             mergedCount = mergedCount + 1;

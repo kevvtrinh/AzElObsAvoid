@@ -65,6 +65,7 @@ powerArrays = {polynomial.positionPower_deg, ...
     polynomial.accelerationPower_deg_s2, polynomial.jerkPower_deg_s3};
 positionCoefficientCount = size(powerArrays{1}, 3);
 arraysAreValid           = numel(segmentStartTime_s) == segmentCount && all(isfinite(segmentStartTime_s));
+% Process each derivative order needed to verify polynomial trajectory.
 for derivativeOrder = 0:3
     array          = powerArrays{derivativeOrder + 1};
     arraysAreValid = arraysAreValid && isnumeric(array) && positionCoefficientCount >= 4 && size(array, 1) == segmentCount && size(array, 2) == 2 && size(array, 3) == positionCoefficientCount - derivativeOrder && all(isfinite(array), "all");
@@ -87,8 +88,11 @@ lowerLimits = {[limits.azimuthInterval_deg(1), ...
 upperLimits = {[limits.azimuthInterval_deg(2), ...
     limits.elevationInterval_deg(2)], limits.maxVelocity_deg_s, limits.maxAcceleration_deg_s2, limits.maxJerk_deg_s3};
 within = true(1, 4);
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
+    % Evaluate each coordinate axis and combine its limiting result.
     for axisIndex = 1:2
+        % Process each derivative order needed to verify polynomial trajectory.
         for derivativeOrder = 0:3
             shouldCheck = derivativeOrder > 0 || axisIndex > 1 || ~options.AllowAzimuthWrapping;
             if shouldCheck && within(derivativeOrder + 1)
@@ -101,6 +105,7 @@ end
 bounds           = createBounds(within);
 durationScale_s  = reshape(segmentDuration_s, [], 1, 1);
 dynamicsResidual = zeros(0, 1);
+% Process each derivative order needed to verify polynomial trajectory.
 for derivativeOrder = 0:2
     source           = powerArrays{derivativeOrder + 1};
     derivative       = source(:, :, 2:end) .* reshape(1:size(source, 3) - 1, 1, 1, []) ./ durationScale_s;

@@ -34,6 +34,7 @@ minimumProfiles       = cell(dimensionCount, 1);
 minimumCandidateSets  = cell(dimensionCount, 1);
 synchronizationBlocks = cell(dimensionCount, 1);
 minimumDuration       = NaN(1, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     [axisInitialState, axisTerminalState, axisLimits]                       = extractAxisProblem(initialState, terminalState, limits, dimensionIndex);
     [minimumProfiles{dimensionIndex}, minimumCandidateSets{dimensionIndex}] = ruckigEngine.createMinimumTimeAxisProfile(axisInitialState, axisTerminalState, axisLimits);
@@ -64,6 +65,7 @@ end
 
 axisProfiles      = cell(dimensionCount, 1);
 axisCandidateSets = cell(dimensionCount, 1);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     timeTolerance = 256 * eps(max([ 1, commonDuration, minimumDuration(dimensionIndex)]));
     if minimumProfiles{dimensionIndex}.Family == "stationary"
@@ -94,6 +96,7 @@ axisProfiles = selectSpatiallyShortestProfiles(axisProfiles, axisCandidateSets, 
 %% Section 3: Create One Multidimensional Polynomial
 
 switchTime = [0, commonDuration];
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     axisTime = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
     axisTime(end) = commonDuration;
@@ -107,10 +110,12 @@ segmentStartTime = initialState.time + switchTime(1:end - 1).';
 segmentCount     = numel(segmentDuration);
 controlJerk      = zeros(segmentCount, dimensionCount);
 
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     axisDuration = axisProfiles{dimensionIndex}.PhaseDuration;
     axisEndTime  = cumsum(axisDuration);
     axisJerk     = axisProfiles{dimensionIndex}.PhaseJerk;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         segmentMiddleTime = 0.5 * (switchTime(segmentIndex) + switchTime(segmentIndex + 1));
         phaseIndex        = find(segmentMiddleTime < axisEndTime + 1e-12, 1);
@@ -139,8 +144,10 @@ profile.MinimumAxisDuration   = minimumDuration;
 profile.BlockedInterval       = NaN(dimensionCount, 4);
 profile.AxisPathLength        = zeros(1, dimensionCount);
 profile.AxisFamily            = strings(1, dimensionCount);
+% Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     block = synchronizationBlocks{dimensionIndex};
+    % Process each interval while assembling the complete motion or interval result.
     for intervalIndex = 1:block.IntervalCount
         columns = (2 * intervalIndex - 1):(2 * intervalIndex);
         profile.BlockedInterval(dimensionIndex, columns) = [block.Left(intervalIndex), block.Right(intervalIndex)];
@@ -174,6 +181,7 @@ function block = createSynchronizationBlock(minimumProfile, candidates)
         "Left", [NaN, NaN], ...
         "Right", [NaN, NaN], ...
         "RightProfile", {cell(1, 2)});
+    % Skip profile comparison when the axis has no alternative family to choose.
     if numel(candidates) <= 1
         return;
     end
@@ -182,6 +190,7 @@ function block = createSynchronizationBlock(minimumProfile, candidates)
     duration          = [candidates.Duration];
     keepCandidate     = true(size(candidates));
     durationTolerance = 256 * eps(max([1, duration]));
+    % Evaluate each candidate before retaining the best admissible candidate.
     for candidateIndex = 2:numel(candidates)
         earlierIndex = find(keepCandidate(1:candidateIndex - 1) & abs(duration(1:candidateIndex - 1) - duration(candidateIndex)) <= durationTolerance, 1);
         if ~isempty(earlierIndex)
@@ -192,11 +201,14 @@ function block = createSynchronizationBlock(minimumProfile, candidates)
     duration       = [candidates.Duration];
     candidateCount = numel(candidates);
     [~, minimumIndex] = min(duration);
+    % A single extremal profile creates no blocked synchronization interval.
     if candidateCount == 1
         return;
+    % Two extremal profiles bound one blocked synchronization interval.
     elseif candidateCount == 2
         block = appendBlockInterval(block, candidates(minimumIndex), candidates(3 - minimumIndex));
         return;
+    % With three profiles, pair the two nonminimum profiles to bound the blocked interval.
     elseif candidateCount == 3
         otherIndices = setdiff(1:3, minimumIndex, "stable");
         block        = appendBlockInterval(block, candidates(otherIndices(1)), candidates(otherIndices(2)));
@@ -207,11 +219,13 @@ function block = createSynchronizationBlock(minimumProfile, candidates)
     end
 
     otherIndices = mod((minimumIndex:(minimumIndex + 3)) - 1, 5) + 1;
+    % Pair profiles by switching direction so each pair brackets one infeasible interval.
     if candidates(otherIndices(1)).Direction == candidates(otherIndices(2)).Direction
         pairs = otherIndices([1, 2; 3, 4]);
     else
         pairs = otherIndices([1, 4; 2, 3]);
     end
+    % Process each pair needed to build synchronization block.
     for pairIndex = 1:2
         block = appendBlockInterval(block, candidates(pairs(pairIndex, 1)), candidates(pairs(pairIndex, 2)));
     end
@@ -236,6 +250,7 @@ end
 function duration = selectEarliestSynchronizationDuration(blocks, minimumDuration)
     % Try certified interval boundaries in time order.
     possibleDuration = minimumDuration;
+    % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:numel(blocks)
         block            = blocks{dimensionIndex};
         possibleDuration = [possibleDuration, ...
@@ -243,14 +258,19 @@ function duration = selectEarliestSynchronizationDuration(blocks, minimumDuratio
     end
     possibleDuration = sort(possibleDuration);
     duration         = NaN;
+    % Evaluate each candidate duration before retaining the best admissible candidate.
     for candidateDuration = possibleDuration
+        % Discard synchronization times below the slowest axis's proven minimum duration.
         if candidateDuration < minimumDuration
             continue;
         end
         isBlocked = false;
+        % Evaluate each coordinate axis and combine its limiting result.
         for dimensionIndex = 1:numel(blocks)
             block = blocks{dimensionIndex};
+            % Process each interval while assembling the complete motion or interval result.
             for intervalIndex = 1:block.IntervalCount
+                % Mark this duration blocked when it lies strictly inside an axis's infeasible interval; interval boundaries remain feasible.
                 if candidateDuration > block.Left(intervalIndex) && candidateDuration < block.Right(intervalIndex)
                     isBlocked = true;
                     break;
@@ -270,6 +290,7 @@ end
 function profile = findBlockBoundaryProfile(block, duration, tolerance)
     % Reuse the extremal profile that proves feasibility at a block's right edge.
     profile = [];
+    % Process each interval while assembling the complete motion or interval result.
     for intervalIndex = 1:block.IntervalCount
         if abs(duration - block.Right(intervalIndex)) <= tolerance
             profile = block.RightProfile{intervalIndex};
@@ -320,6 +341,7 @@ function [polynomial, position, velocity, acceleration] = createPolynomial(initi
     velocity          = initialState.velocity;
     acceleration      = initialState.acceleration;
 
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         duration            = segmentDuration(segmentIndex);
         jerk                = controlJerk(segmentIndex, :);
@@ -355,30 +377,37 @@ end
 function selectedProfiles = selectSpatiallyShortestProfiles(selectedProfiles, candidateSets, commonDuration)
     % Choose axis-profile combinations by coordinate descent to reduce path length.
     dimensionCount = numel(selectedProfiles);
+    % Repeat the sweep alternatives needed to refine the current solution.
     for sweepIndex = 1:2
         selectionChanged = false;
+        % Evaluate each coordinate axis and combine its limiting result.
         for dimensionIndex = 1:dimensionCount
             candidates = candidateSets{dimensionIndex};
+            % Skip profile comparison when the axis has no alternative family to choose.
             if numel(candidates) <= 1
                 continue;
             end
             bestCandidate = selectedProfiles{dimensionIndex};
             bestLength    = sampledSpatialPathLength(selectedProfiles, commonDuration);
+            % Evaluate each candidate before retaining the best admissible candidate.
             for candidateIndex = 1:numel(candidates)
                 trialProfiles = selectedProfiles;
                 trialProfiles{dimensionIndex} = candidates{candidateIndex};
                 trialLength         = sampledSpatialPathLength(trialProfiles, commonDuration);
                 comparisonTolerance = 1e-10 * max(1, bestLength);
+                % Replace the selected axis profile only when it shortens the sampled spatial path beyond numerical tolerance.
                 if trialLength < bestLength - comparisonTolerance
                     bestCandidate = candidates{candidateIndex};
                     bestLength    = trialLength;
                 end
             end
+            % Track family changes so coordinate descent can stop once a full sweep makes no replacement.
             if bestCandidate.Family ~= selectedProfiles{dimensionIndex}.Family
                 selectionChanged = true;
             end
             selectedProfiles{dimensionIndex} = bestCandidate;
         end
+        % Stop coordinate descent when every axis kept its incumbent profile.
         if ~selectionChanged
             break;
         end
@@ -390,10 +419,12 @@ function lengthValue = sampledSpatialPathLength(axisProfiles, commonDuration)
     sampleTime     = linspace(0, commonDuration, 1001).';
     dimensionCount = numel(axisProfiles);
     position       = zeros(numel(sampleTime), dimensionCount);
+    % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
         axisProfile = axisProfiles{dimensionIndex};
         phaseStart  = [0, cumsum(axisProfile.PhaseDuration(1:end - 1))];
         phaseEnd    = cumsum(axisProfile.PhaseDuration);
+        % Process each phase while assembling the complete motion or interval result.
         for phaseIndex = 1:numel(axisProfile.PhaseDuration)
             if phaseIndex == numel(axisProfile.PhaseDuration)
                 isInPhase = sampleTime >= phaseStart(phaseIndex) & sampleTime <= phaseEnd(phaseIndex) + 1e-11;

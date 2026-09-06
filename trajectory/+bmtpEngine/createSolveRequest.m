@@ -56,6 +56,7 @@ end
 
 regionMinimum_deg = zeros(numel(regions_deg), 2);
 regionMaximum_deg = zeros(numel(regions_deg), 2);
+% Process each geometric region while constructing or checking the region topology.
 for regionIndex = 1:numel(regions_deg)
     regionMinimum_deg(regionIndex, :) = min(regions_deg{regionIndex}, [], 1);
     regionMaximum_deg(regionIndex, :) = max(regions_deg{regionIndex}, [], 1);
@@ -98,6 +99,7 @@ function validateKernelInputs(seed, regions_deg, coverage, initialState, goalSta
         error("bmtpEngine:InvalidSeedTau", "seed.position_deg must be finite N-by-2 and tau must increase 0 to 1.");
     end
     regionsAreValid = iscell(regions_deg) && iscolumn(regions_deg);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(regions_deg)
         region_deg      = regions_deg{regionIndex};
         regionsAreValid = regionsAreValid && isnumeric(region_deg) && size(region_deg, 2) == 2 && size(region_deg, 1) >= 3 && all(isfinite(region_deg), "all");

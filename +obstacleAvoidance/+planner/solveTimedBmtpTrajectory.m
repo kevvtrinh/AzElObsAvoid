@@ -80,6 +80,7 @@ totalTimer              = tic;
 fixedOptions = options;
 fixedOptions.GoalTimeMode = "fixedArrival";
 completedTrialCount = 0;
+% Process each time in temporal order and accumulate its result.
 for timeIndex = 1:numel(trialTime_s)
     fixedGoalState      = createFixedGoalState(goalState, trialTime_s(timeIndex));
     completedTrialCount = completedTrialCount + 1;
@@ -98,6 +99,7 @@ for timeIndex = 1:numel(trialTime_s)
     diagnostics.Identifier                    = "bmtpTimedCell";
     diagnostics.TimedSegmentCounts            = timedSegmentCounts;
     diagnostics.DynamicObstacleRepresentation = "perIntervalProtectedGeometryConvexHull";
+    % Independently check constructed timed candidates; failed constructions proceed to the next trial time.
     if trialCandidate.Success
         [trialCandidate, trialCheck, trialValidationTime_s, ...
             stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(trialCandidate, obstacles, initialState, goalState, limits, options, stageTiming, "The timed-cell BMTP kernel returned no trajectory.");
@@ -108,6 +110,7 @@ for timeIndex = 1:numel(trialTime_s)
         candidate   = trialCandidate;
         checkResult = trialCheck;
     end
+    % Return immediately only when construction and independent checking both accept the timed candidate.
     if trialCandidate.Success && trialCheck.Passed
         diagnostics.Accepted          = true;
         diagnostics.TerminationReason = "goalReached";
@@ -142,11 +145,13 @@ function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s,
     sourceCellIndex     = zeros(0, 1);
     timeCellCount       = timedSegmentCount;
     baseEdges_s         = linspace(startTime_s, finishTime_s, timeCellCount + 1).';
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         [isStatic, staticShape] = obstacleAvoidance.obstacles.queryStaticHorizon(obstacle, startTime_s, finishTime_s);
         if isStatic
             exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(staticShape);
+            % Process each geometric region while constructing or checking the region topology.
             for regionIndex = 1:numel(exactRegions)
                 vertices_deg = finiteVertices(exactRegions(regionIndex).Vertices);
                 if size(vertices_deg, 1) >= 3
@@ -161,12 +166,14 @@ function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s,
         obstacleTimes_s = double(obstacle.time_s(:));
         internalEdges_s = obstacleTimes_s(obstacleTimes_s > startTime_s & obstacleTimes_s < finishTime_s);
         cellEdges_s     = snapCellEdgesToObstacleTimes([baseEdges_s; internalEdges_s], obstacleTimes_s);
+        % Process each geometric cell while constructing or checking the region topology.
         for cellIndex = 1:numel(cellEdges_s) - 1
             cellStart_s  = cellEdges_s(cellIndex);
             cellFinish_s = cellEdges_s(cellIndex + 1);
             queryTime_s  = [cellStart_s; ...
                 0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
             vertices_deg = zeros(0, 2);
+            % Process each query in temporal order and accumulate its result.
             for queryIndex = 1:numel(queryTime_s)
                 shape        = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s(queryIndex));
                 vertices_deg = [vertices_deg; ...
@@ -204,6 +211,7 @@ function cellEdges_s = snapCellEdgesToObstacleTimes(candidateEdges_s, obstacleTi
     % Merge event times that differ only by roundoff.
     timeScale_s     = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
     timeTolerance_s = 4096 * eps(timeScale_s);
+    % Process each event in temporal order and accumulate its result.
     for eventIndex = 1:numel(obstacleTimes_s)
         nearEvent = abs(candidateEdges_s - obstacleTimes_s(eventIndex)) <= timeTolerance_s;
         candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);

@@ -64,6 +64,7 @@ obstacleTarget_deg = normalNormLimit * options.CollisionClearanceTolerance_deg +
 % Alternate trajectory and separating-line solves.
 % Keep the best sampled-clear candidate for final certification.
 [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_deg, roundoffReserve_deg);
+% Return the alternating optimizer's stable failure result instead of attempting final-motion preparation on invalid controls.
 if ~alternatingResult.Success
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
     return;
@@ -82,6 +83,7 @@ bestSegmentTime_s = selectedMotion.SegmentTime_s;
 preparedMotion = bmtpEngine.prepareFinalMotion(request, bestControl_deg, bestSegmentTime_s);
 diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale             = preparedMotion.DilationScale;
+% Return reconstruction failure without certification because no complete motion exists to certify.
 if ~preparedMotion.Success
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, preparedMotion.Message, preparedMotion.TerminationReason, true);
     return;
@@ -97,6 +99,7 @@ candidate.PlaneCertificate = certificate;
 candidate = bmtpEngine.createMotionOutput(candidate, request, preparedMotion);
 [candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal(true, preparedMotion.ArrivalAtHorizon);
 diagnostics.BestDuration_s = candidate.TrajectoryDuration_s;
+% Reject optimizer output that fails the independent certificate even when the numerical solver reported success.
 if ~certificate.Passed
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "The optimized motion requires independent collision validation.", "planeCertificateUnavailable", true);
     return;

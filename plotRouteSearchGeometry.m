@@ -38,10 +38,12 @@ snapshotAxes   = nexttile(geometryLayout);
 hold(snapshotAxes, 'on');
 snapshotIndices = unique(round(linspace(1, numel(proposal.sampleTimes_s), min(maximumDisplayedSnapshots, numel(proposal.sampleTimes_s)))));
 timeColors      = parula(256);
+% Process each sample in temporal order and accumulate its result.
 for sampleIndex = snapshotIndices
     sampleTime_s = proposal.sampleTimes_s(sampleIndex);
     timeFraction = (sampleTime_s - scene.startTime_s) / (scene.endTime_s - scene.startTime_s);
     colorIndex   = 1 + round(255 * timeFraction);
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(scene.preparedObstacles)
         snapshotShape = obstacleAvoidance.obstacles.preparedShapeAtTime(scene.preparedObstacles(obstacleIndex), sampleTime_s);
         if ~isempty(snapshotShape.Vertices)
@@ -67,6 +69,7 @@ edgeY_deg = [proposal.edgeStart_deg(:, 2), proposal.edgeEnd_deg(:, 2), ...
     nan(size(proposal.edgeStart_deg, 1), 1)].';
 plot(proposalAxes, edgeX_deg(:), edgeY_deg(:), 'k.-', 'LineWidth', 1);
 title(proposalAxes, proposal.representation, 'Interpreter', 'none');
+% Process each plot axes needed to draw route search geometry.
 for plotAxes = [snapshotAxes proposalAxes]
     plot(plotAxes, proposal.start_deg(1), proposal.start_deg(2), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 8);
     text(plotAxes, proposal.start_deg(1), proposal.start_deg(2), '  Start');

@@ -45,11 +45,13 @@ candidateOffset_deg       = baseOffset_deg;
 offsetRetryCount          = 0;
 anyExhaustiveUsed         = false;
 anyExhaustiveFallbackUsed = false;
+% Continue the search until build visibility graph reaches an explicit termination condition.
 while true
     attempt = obstacleAvoidance.search.createVisibilityAttempt(shape, start_deg, goal_deg, limits, candidateOffset_deg, offsetRetryCount, workBudget);
     attempts(end + 1, 1) = attempt; %#ok<AGROW>
     anyExhaustiveUsed         = anyExhaustiveUsed || attempt.ExhaustiveVisibilityUsed;
     anyExhaustiveFallbackUsed = anyExhaustiveFallbackUsed || attempt.ExhaustiveVisibilityFallbackUsed;
+    % Stop expanding the visibility offset after connectivity is achieved or the permitted offset is exhausted.
     if attempt.IsConnected || candidateOffset_deg >= maximumOffset_deg
         break;
     end
@@ -101,6 +103,7 @@ function referencePoints_deg = createObstacleReferencePoints(shape)
     % Select one guaranteed interior point for each connected occupied region.
     shapeRegions        = regions(shape);
     referencePoints_deg = zeros(numel(shapeRegions), 2);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(shapeRegions)
         [candidate_deg, radius_deg] = incenter(triangulation(shapeRegions(regionIndex)));
         [~, largestIndex]           = max(radius_deg);

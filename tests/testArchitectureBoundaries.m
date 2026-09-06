@@ -36,6 +36,7 @@ function testPlannerStagesUseOnlyTheirInputs(testCase)
         "search.createVisibilityGraph", "search.createPathGuesses", "search.searchRoutes", ...
         "planner.tryDirectAndFixedTimeMotions", "planner.solvePathGuess", ...
         "planner.solveDynamicPathGuess", "planner.tryAdditionalPathGuesses"];
+    % Exercise each item covered by this regression.
     for index = 1:numel(stages)
         name   = "obstacleAvoidance." + stages(index);
         issues = checkcode(which(name), '-id');
@@ -55,6 +56,7 @@ function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
     verifyEqual(testCase, publicSources, expectedSources);
     plottingRoot    = fullfile(productRoot, "+plotting");
     plottingSources = dir(fullfile(plottingRoot, "*.m"));
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(plottingSources)
         sourcePath    = fullfile(plottingSources(sourceIndex).folder, plottingSources(sourceIndex).name);
         sourceText    = string(fileread(sourcePath));
@@ -63,6 +65,7 @@ function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
     end
     searchRoot    = fullfile(productRoot, "+search");
     searchSources = dir(fullfile(searchRoot, "*.m"));
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(searchSources)
         sourcePath = fullfile(searchSources(sourceIndex).folder, searchSources(sourceIndex).name);
         sourceText = string(fileread(sourcePath));
@@ -84,6 +87,7 @@ end
 function testRuckigEngineHasNoObstaclePlannerDependency(testCase)
     % Keep exact switching equations independent of obstacle-route ownership.
     sourceRecords = dir(fullfile(testCase.TestData.RuckigRoot, "**", "*.m"));
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(sourceRecords)
         sourcePath       = fullfile(sourceRecords(sourceIndex).folder, sourceRecords(sourceIndex).name);
         sourceText       = lower(string(fileread(sourcePath)));
@@ -95,6 +99,7 @@ end
 function testBmtpEngineHasNoObstaclePlannerDependency(testCase)
     % Enforce the one-way dependency from obstacle avoidance into trajectory math.
     sourceRecords = dir(fullfile(testCase.TestData.EngineRoot, "**", "*.m"));
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(sourceRecords)
         sourcePath = fullfile(sourceRecords(sourceIndex).folder, sourceRecords(sourceIndex).name);
         sourceText = string(fileread(sourcePath));
@@ -107,6 +112,7 @@ function testNumericalSolverCallsRemainInsideEngine(testCase)
     sourceRecords  = dir(fullfile(testCase.TestData.ProductRoot, "**", "*.m"));
     solverPattern  = "(?<![A-Za-z0-9_])" + "(coneprog|fmincon|quadprog|optimoptions)\s*\(";
     offendingPaths = strings(0, 1);
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(sourceRecords)
         sourcePath = fullfile(sourceRecords(sourceIndex).folder, sourceRecords(sourceIndex).name);
         if ~isempty(regexp(string(fileread(sourcePath)), solverPattern, "once"))
@@ -129,6 +135,7 @@ function testScenarioSpecificOrthogonalPlannersRemainAbsent(testCase)
         "certifyTimedOpeningRequestLowerBound.m", ...
         "certifyGuardedRectangleContainment.m", ...
         "evaluateArrivalCertificatePortfolio.m"];
+    % Exercise each source covered by this regression.
     for sourceIndex = 1:numel(removedSources)
         verifyFalse(testCase, isfile(fullfile(plannerRoot, removedSources(sourceIndex))));
     end

@@ -61,6 +61,7 @@ end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("planTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
     if isfield(optionOverrides, fieldName)
         replacementName = lower(extractBefore(fieldName, "Interval")) + "Interval_deg";
@@ -84,6 +85,7 @@ textRules = {"GoalTimeMode", ...
     "planTrajectory:InvalidUnsupportedTimedTopologyPolicy", ...
     "UnsupportedTimedTopologyPolicy must be 'fail' or " + ...
     "'ruckigStopAtWaypoints'."};
+% Apply the required validation or transfer to each rule.
 for ruleIndex = 1:size(textRules, 1)
     fieldName = textRules{ruleIndex, 1};
     options.(fieldName) = string(options.(fieldName));
@@ -97,9 +99,11 @@ validateattributes(options.SampleTime_s, {'numeric'}, {'real', 'finite', 'scalar
 integerRules = {"MaximumSeedCount", 1, 5; ...
     "MaximumTimeLayerCount", 2, 65535; ...
     "MaximumWaitRefinementIterations", 0, 64};
+% Apply the required validation or transfer to each rule.
 for ruleIndex = 1:size(integerRules, 1)
     validateattributes(options.(integerRules{ruleIndex, 1}), {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', integerRules{ruleIndex, 2}, '<=', integerRules{ruleIndex, 3}});
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = ["ArrivalTimeTolerance_s", "ConstraintTolerance", ...
         "CollisionMinimumTimeStep_s"]
     validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});

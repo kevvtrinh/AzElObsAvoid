@@ -47,6 +47,7 @@ function testDefaultPolicyPreservesEarliestTimedFailure(testCase)
     verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
     verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, "fail");
     verifyNotEmpty(testCase, resultDiagnosis.Attempts);
+    % Exercise each seed covered by this regression.
     for seedIndex = 1:numel(resultDiagnosis.Attempts)
         diagnostics = testSupport.solverDetails(resultDiagnosis, seedIndex);
         verifyFalse(testCase, testSupport.diagnosisValue(diagnostics, "FallbackAttempted"));
@@ -70,6 +71,7 @@ function testExplicitPolicyAttemptsFallbackOnlyWhenEnabled(testCase)
     verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
     verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, "ruckigStopAtWaypoints");
     fallbackAttemptCount = 0;
+    % Exercise each seed covered by this regression.
     for seedIndex = 1:numel(resultDiagnosis.Attempts)
         diagnostics = testSupport.solverDetails(resultDiagnosis, seedIndex);
         if ~any(diagnostics.Field == "FallbackAttempted") || ~testSupport.diagnosisValue(diagnostics, "FallbackAttempted")

@@ -68,6 +68,7 @@ if isStationary
 end
 directions = [1, -1];
 
+% Repeat the direction alternatives needed to refine the current solution.
 for direction = directions
     directedLimits = createDirectedLimits(context, direction);
     candidates     = appendVelocityProfiles(candidates, context, directedLimits);
@@ -77,12 +78,14 @@ end
 %% Section 2: Select The Shortest Valid Profile
 
 profile = createEmptyProfile();
+% Return the stable failure when no exact switching family works; otherwise rank feasible families by duration and path length.
 if isempty(candidates)
     profile.Message = "No exact jerk-switching family satisfied the boundary states.";
     return;
 end
 
 durations = zeros(numel(candidates), 1);
+% Evaluate each candidate before retaining the best admissible candidate.
 for candidateIndex = 1:numel(candidates)
     durations(candidateIndex) = sum(candidates(candidateIndex).PhaseDuration);
 end
@@ -222,6 +225,7 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h2None        = (context.a0Squared - context.afSquared) / (2 * jMaximum) + context.vf - context.v0;
     h2NoneSquared = h2None^2;
     rootsNone     = realQuarticRoots([1, 0, -2 * (context.a0Squared + context.afSquared - 2 * jMaximum * (context.v0 + context.vf)) / jSquared, 4 * (context.a0Cubed - context.afCubed + 3 * jMaximum * (context.af * context.vf - context.a0 * context.v0)) / (3 * jMaximum * jSquared) - 4 * context.displacement / jMaximum, -h2NoneSquared / jSquared]);
+    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsNone)
         time = rootsNone(rootIndex);
         if time < (context.a0 - context.af) / jMaximum || time > (aMaximum - aMinimum) / jMaximum || time <= eps
@@ -244,6 +248,7 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h0Initial    = 3 * (context.afFourth - context.a0Fourth) + 8 * (context.a0Cubed - context.afCubed) * aMaximum + 24 * aMaximum * jMaximum * (context.af * context.vf - context.a0 * context.v0) - 6 * context.a0Squared * (aMaximum^2 - 2 * jMaximum * context.v0) + 6 * context.afSquared * (aMaximum^2 - 2 * jMaximum * context.vf) + 12 * jMaximum * (jMaximum * (context.vfSquared - context.v0Squared - 2 * aMaximum * context.displacement) - aMaximum^2 * (context.vf - context.v0));
     h2Initial    = -context.afSquared + aMaximum^2 + 2 * jMaximum * context.vf;
     rootsInitial = realQuarticRoots([1, -2 * aMaximum / jMaximum, h2Initial / jSquared, 0, h0Initial / (12 * jSquared^2)]);
+    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsInitial)
         time = rootsInitial(rootIndex);
         if time < (aMaximum - context.af) / jMaximum || time > (aMaximum - aMinimum) / jMaximum || time <= eps
@@ -265,11 +270,13 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h0Terminal    = (context.a0Fourth - context.afFourth) / 4 + 2 * (context.afCubed - context.a0Cubed) * aMinimum / 3 + (context.a0Squared - context.afSquared) * aMinimum^2 / 2 + jMaximum * (context.afSquared * context.vf + context.a0Squared * context.v0 + 2 * aMinimum * (jMaximum * context.displacement - context.a0 * context.v0 - context.af * context.vf) + aMinimum^2 * (context.v0 + context.vf) + jMaximum * (context.v0Squared - context.vfSquared));
     h2Terminal    = context.a0Squared - context.a0 * aMinimum + 2 * jMaximum * context.v0;
     rootsTerminal = realQuarticRoots([1, 2 * (2 * context.a0 - aMinimum) / jMaximum, (5 * context.a0Squared + aMinimum * (aMinimum - 6 * context.a0) + 2 * jMaximum * context.v0) / jSquared, 2 * (context.a0 - aMinimum) * h2Terminal / (jSquared * jMaximum), h0Terminal / jSquared^2]);
+    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsTerminal)
         time = rootsTerminal(rootIndex);
         if time < (aMinimum - context.a0) / jMaximum || time > (aMaximum - context.a0) / jMaximum || time <= eps
             continue;
         end
+        % Repeat the refinement alternatives needed to refine the current solution.
         for refinementIndex = 1:3
             h1         = jMaximum * time;
             residual   = -(h0Terminal / 2 + h1 * (context.a0Cubed + 2 * jMaximum * context.a0 * context.v0 + context.a0 * (aMinimum - 2 * h1) * (aMinimum - h1) + context.a0Squared * (5 * h1 / 2 - 2 * aMinimum) + aMinimum^2 * h1 / 2 + jMaximum * (h1 / 2 - aMinimum) * (h1 * time + 2 * context.v0))) / jMaximum;

@@ -30,6 +30,7 @@ function [regions_deg, coverage] = createExactRegions(occupiedShape, obstacleCou
     % Split protected geometry into convex regions.
     exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
     regions_deg  = cell(numel(exactRegions), 1);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(exactRegions)
         vertices_deg = exactRegions(regionIndex).Vertices;
         regions_deg{regionIndex} = vertices_deg(all(isfinite(vertices_deg), 2), :);
@@ -58,14 +59,17 @@ function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
     end
 
     centroid_deg = zeros(regionCount, 2);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:regionCount
         centroid_deg(regionIndex, :) = mean(regions_deg{regionIndex}, 1);
     end
     groups = cell(targetGroupCount, 1);
     groups{1} = (1:regionCount).';
     activeGroupCount = 1;
+    % Merge compatible region groups until the requested group count is reached.
     while activeGroupCount < targetGroupCount
         groupSizes = zeros(activeGroupCount, 1);
+        % Process each geometric group while constructing or checking the region topology.
         for groupIndex = 1:activeGroupCount
             groupSizes(groupIndex) = numel(groups{groupIndex});
         end
@@ -85,12 +89,14 @@ function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
     end
     groups           = groups(1:activeGroupCount);
     firstRegionIndex = zeros(activeGroupCount, 1);
+    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:activeGroupCount
         firstRegionIndex(groupIndex) = min(groups{groupIndex});
     end
     [~, groupOrder] = sort(firstRegionIndex);
     groups             = groups(groupOrder);
     groupedRegions_deg = cell(activeGroupCount, 1);
+    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:activeGroupCount
         vertices_deg = vertcat(regions_deg{groups{groupIndex}});
         hullIndex    = convhull(vertices_deg(:, 1), vertices_deg(:, 2));

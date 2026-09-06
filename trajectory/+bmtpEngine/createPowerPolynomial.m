@@ -68,14 +68,17 @@ function power_deg = stabilizePolynomialEndpoints(power_deg, controlPoint_deg)
     target       = zeros(segmentCount, 2, 4);
     power_deg(:, :, 1) = reshape(controlPoint_deg(:, 1, :), segmentCount, 2);
     target(:, :, 1) = reshape(controlPoint_deg(:, end, :), segmentCount, 2);
+    % Process each order needed to complete stabilize polynomial endpoints.
     for order = 1:3
         difference = diff(controlPoint_deg, order, 2);
         scale      = factorial(degree) / factorial(degree - order);
         power_deg(:, :, order + 1) = reshape(difference(:, 1, :), segmentCount, 2) * scale / factorial(order);
         target(:, :, order + 1) = reshape(difference(:, end, :), segmentCount, 2) * scale;
     end
+    % Process each projection pass needed to complete stabilize polynomial endpoints.
     for projectionPass = 1:2
         current = zeros(segmentCount, 2, 4);
+        % Process each order needed to complete stabilize polynomial endpoints.
         for order = 0:3
             indices     = order:degree;
             multipliers = reshape(factorial(indices) ./ factorial(indices - order), 1, 1, []);

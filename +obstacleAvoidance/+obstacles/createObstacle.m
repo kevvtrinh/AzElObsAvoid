@@ -160,6 +160,7 @@ function [azimuthHistory_deg, elevationHistory_deg, removedCount, removalBySampl
         "createObstacle:OriginalBoundarySizeMismatch"];
     fieldNames = ["az_deg", "el_deg"; "originalAz_deg", "originalEl_deg"];
     roleIndex  = 1 + (role == "original");
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:sampleCount
         validateattributes(azimuthHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
         validateattributes(elevationHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
@@ -202,6 +203,7 @@ function [azimuth_deg, elevation_deg, removedCount] = normalizeSlice(azimuth_deg
     newAzimuth_deg   = NaN(outputCount, 1);
     newElevation_deg = NaN(outputCount, 1);
     writeIndex       = 1;
+    % Process each retained needed to prepare slice.
     for retainedIndex = 1:numel(retainedRegions)
         regionIndex = retainedRegions(retainedIndex);
         inputRows   = regionStarts(regionIndex):regionStops(regionIndex);
@@ -239,11 +241,13 @@ function obstacles = protectObstacles(obstacles, safetyMargin_deg, verbose)
         end
         if useBackgroundWorkers
             futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
+            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 futures(sampleIndex) = parfeval(workerPool, @inflateSlice, 2, obstacle.originalAz_deg{sampleIndex}, obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
             end
             [protectedAzimuth_deg, protectedElevation_deg] = fetchOutputs(futures, "UniformOutput", false);
         else
+            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 [protectedAzimuth_deg{sampleIndex}, ...
                     protectedElevation_deg{sampleIndex}] = inflateSlice(obstacle.originalAz_deg{sampleIndex}, obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);

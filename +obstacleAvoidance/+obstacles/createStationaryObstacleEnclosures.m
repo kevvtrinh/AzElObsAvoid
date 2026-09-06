@@ -61,6 +61,7 @@ for obstacleIndex = 1:numel(obstacles)
     end
 
     historyVertices_deg = zeros(0, 2);
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacle.time_s)
         vertices_deg = [ ...
             obstacle.az_deg{sampleIndex}, obstacle.el_deg{sampleIndex}];

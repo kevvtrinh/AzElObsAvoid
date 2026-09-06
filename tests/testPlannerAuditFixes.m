@@ -36,6 +36,7 @@ end
 function testCorridorClearanceIsScalarAcrossDegreesAndRegions(testCase)
     upper = [0 2;1 2;1 3;0 3];
     lower = [0 -3;1 -3;1 -2;0 -2];
+    % Exercise each region covered by this regression.
     for regionCount = 1:2
         boundary = upper;
         if regionCount == 2
@@ -49,10 +50,12 @@ function testCorridorClearanceIsScalarAcrossDegreesAndRegions(testCase)
         obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
         regions  = obstacleAvoidance.geometry.convexPolygonRegions(polyshape(boundary(:, 1), boundary(:, 2)));
         corridor = repmat(struct('SegmentIndex', 1, 'RegionIndex', 0, 'Normal', [0 0], 'Clearance_deg', 0.5, 'BoundaryOffset_deg', -2), numel(regions), 1);
+        % Exercise each k covered by this regression.
         for k = 1:numel(regions)
             corridor(k).RegionIndex = k;
             corridor(k).Normal = [0 -sign(mean(regions(k).Vertices(:, 2)))];
         end
+        % Exercise each degree covered by this regression.
         for degree = [1 3]
             power = zeros(1, 2, degree+1);
             power(1, 1, 2) = 1;
@@ -67,6 +70,7 @@ function testCorridorClearanceIsScalarAcrossDegreesAndRegions(testCase)
 end
 
 function testOccupancyOutputsAgreeForStaticAndMovingHistories(testCase)
+    % Exercise each moving covered by this regression.
     for moving = [false true]
         times = 0;
         az    = [-1;1;1;-1];
@@ -136,6 +140,7 @@ function testRequestedPolynomialOutputsMatchFullEvaluation(testCase)
     s = testCase.TestData;
     [result, ~] = obstacleAvoidance.planTrajectory([], s.Initial, s.Goal, s.Limits);
     polynomial = result.Polynomial;
+    % Exercise each times covered by this regression.
     for times = {result.time_s, zeros(0, 1), NaN}
         t = times{1};
         [allTime, p, v, a, j]           = bmtpEngine.evaluatePolynomial(polynomial, t);

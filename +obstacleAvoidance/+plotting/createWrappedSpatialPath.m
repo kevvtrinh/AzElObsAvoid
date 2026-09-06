@@ -55,6 +55,7 @@ sourceIndex         = zeros(4 * sampleCount - 3, 1);
 displayCount        = 1;
 displayPosition_deg(1, :) = [wrappedAzimuth_deg(1), position_deg(1, 2)];
 sourceIndex(1) = 1;
+% Process each sample in temporal order and accumulate its result.
 for sampleIndex = 2:sampleCount
     previousIndex   = sampleIndex - 1;
     wrappedStep_deg = wrappedAzimuth_deg(sampleIndex) - wrappedAzimuth_deg(previousIndex);

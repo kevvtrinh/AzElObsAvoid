@@ -47,6 +47,7 @@ position(1) = initialState.position;
 velocity(1) = initialState.velocity;
 acceleration(1) = initialState.acceleration;
 
+% Process each phase while assembling the complete motion or interval result.
 for phaseIndex = 1:phaseCount
     duration = phaseDuration(phaseIndex);
     jerk     = phaseJerk(phaseIndex);
@@ -81,6 +82,7 @@ end
 function peak = maximumAbsoluteVelocity(phaseDuration, phaseJerk, velocity, acceleration)
     % Include interior velocity extrema where acceleration crosses zero.
     peak = max(abs(velocity));
+    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         jerk = phaseJerk(phaseIndex);
         if jerk == 0
@@ -98,6 +100,7 @@ end
 function lengthValue = continuousPathLength(phaseDuration, phaseJerk, position, velocity, acceleration)
     % Split each phase at velocity zeros so scalar path length is exact.
     lengthValue = 0;
+    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         duration      = phaseDuration(phaseIndex);
         jerk          = phaseJerk(phaseIndex);

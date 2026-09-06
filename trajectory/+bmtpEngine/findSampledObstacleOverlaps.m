@@ -35,11 +35,13 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_deg, regions_
 segmentCount   = size(controlPoint_deg, 1);
 collisionPairs = false(segmentCount, numel(regions_deg));
 tau            = linspace(0, 1, sampleCount).';
+% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     position_deg      = evaluateBezier(squeeze(controlPoint_deg(segmentIndex, :, :)), tau);
     sampleMinimum_deg = min(position_deg, [], 1);
     sampleMaximum_deg = max(position_deg, [], 1);
     overlaps          = regionActiveBySegment(segmentIndex, :).' & regionMinimum_deg(:, 1) <= sampleMaximum_deg(1) & regionMaximum_deg(:, 1) >= sampleMinimum_deg(1) & regionMinimum_deg(:, 2) <= sampleMaximum_deg(2) & regionMaximum_deg(:, 2) >= sampleMinimum_deg(2);
+    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = reshape(find(overlaps), 1, [])
         vertices_deg = regions_deg{regionIndex};
         [inside, on] = inpolygon(position_deg(:, 1), position_deg(:, 2), vertices_deg(:, 1), vertices_deg(:, 2));
@@ -55,6 +57,7 @@ function position_deg = evaluateBezier(controlPoint_deg, tau)
     degree   = size(controlPoint_deg, 1) - 1;
     tau      = reshape(double(tau), [], 1, 1);
     work_deg = repmat(reshape(controlPoint_deg, 1, degree + 1, []), numel(tau), 1, 1);
+    % Repeat the level alternatives needed to refine the current solution.
     for levelIndex = 1:degree
         work_deg = (1 - tau) .* work_deg(:, 1:end - 1, :) + tau .* work_deg(:, 2:end, :);
     end

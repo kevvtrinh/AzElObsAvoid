@@ -67,6 +67,7 @@ function testCancelEndpointIsRemoved(testCase)
     verifyFalse(testCase, wasBundle);
     client.setSoTimeout(int32(1000));
     stream = client.getInputStream(); bytes = uint8([]);
+    % Continue the search until complete d reaches an explicit termination condition.
     while true
         value = stream.read(); if value < 0, break; end
         bytes(end+1) = uint8(value);

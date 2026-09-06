@@ -43,8 +43,10 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_deg, regions_deg,
     analyticCount  = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_deg = Inf;
+    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
+        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;

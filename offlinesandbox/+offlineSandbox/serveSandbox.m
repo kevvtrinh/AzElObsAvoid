@@ -70,6 +70,7 @@ requestCount       = 0;
 planRequestCount   = 0;
 bundleRequestCount = 0;
 terminationReason  = "stopFile";
+% Continue iterating until the stopping condition for complete serve sandbox is satisfied.
 while ~isfile(stopFilePath)
     try
         clientSocket = serverSocket.accept();
@@ -281,6 +282,7 @@ function request = readHttpRequest(clientSocket, readTimeout_ms)
     headerBytes     = zeros(1, maximumHeaderBytes, 'uint8');
     headerByteCount = 0;
     headerComplete  = false;
+    % Continue iterating until the stopping condition for complete read http request is satisfied.
     while headerByteCount < maximumHeaderBytes
         value = inputStream.read();
         if value < 0
@@ -321,6 +323,7 @@ function request = readHttpRequest(clientSocket, readTimeout_ms)
     hasContentLength = false;
     origin           = "";
     hasOrigin        = false;
+    % Process each line needed by the sandbox workflow.
     for lineIndex = 2:numel(lines)
         line = lines{lineIndex};
         if isempty(line)
@@ -357,6 +360,7 @@ function request = readHttpRequest(clientSocket, readTimeout_ms)
     else
         bodyBuffer  = java.nio.ByteBuffer.allocate(int32(contentLength));
         bodyChannel = java.nio.channels.Channels.newChannel(inputStream);
+        % Continue iterating until the stopping condition for complete read http request is satisfied.
         while bodyBuffer.hasRemaining()
             readByteCount = bodyChannel.read(bodyBuffer);
             if readByteCount < 0

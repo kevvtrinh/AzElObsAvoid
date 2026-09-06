@@ -31,12 +31,14 @@ sortKeys                          = zeros(0, 5);
 minimumTriangleCountForCoarsening = 65;
 regionTriangulations              = cell(numel(connectedRegions), 1);
 totalTriangleCount                = 0;
+% Process each geometric connected region while constructing or checking the region topology.
 for connectedRegionIndex = 1:numel(connectedRegions)
     regionTriangulations{connectedRegionIndex} = triangulation(connectedRegions(connectedRegionIndex));
     totalTriangleCount = totalTriangleCount + size(regionTriangulations{connectedRegionIndex}.ConnectivityList, 1);
 end
 coarsenComplexOutline = totalTriangleCount >= minimumTriangleCountForCoarsening;
 usedCoarsening        = false;
+% Process each geometric connected region while constructing or checking the region topology.
 for connectedRegionIndex = 1:numel(connectedRegions)
     connectedRegion    = connectedRegions(connectedRegionIndex);
     finiteVertex_deg   = connectedRegion.Vertices;
@@ -58,6 +60,7 @@ for connectedRegionIndex = 1:numel(connectedRegions)
         continue;
     end
     if ~coarsenComplexOutline
+        % Process each geometric triangle while constructing or checking the region topology.
         for triangleIndex = 1:size(triangleVertexIndex, 1)
             triangle_deg = point_deg(triangleVertexIndex(triangleIndex, :), :);
             triangle     = polyshape(triangle_deg(:, 1), triangle_deg(:, 2), "Simplify", false);
@@ -73,6 +76,7 @@ for connectedRegionIndex = 1:numel(connectedRegions)
     usedCoarsening = true;
     [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, triangleVertexIndex);
     [cellCycles, isActive]          = coarsenCells(point_deg, cellCycles, edgeTriangleIndex);
+    % Process each geometric cell while constructing or checking the region topology.
     for cellIndex = reshape(find(isActive), 1, [])
         cycle  = cellCycles{cellIndex};
         region = polyshape(point_deg(cycle, :), "Simplify", false, "KeepCollinearPoints", true);
@@ -97,6 +101,7 @@ function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, t
     % Normalize triangles and create one deterministic list of internal edges.
     triangleCount = size(triangleVertexIndex, 1);
     cellCycles    = cell(triangleCount, 1);
+    % Process each geometric triangle while constructing or checking the region topology.
     for triangleIndex = 1:triangleCount
         cycle       = triangleVertexIndex(triangleIndex, :);
         orientation = orientationSign(point_deg(cycle(1), :), point_deg(cycle(2), :), point_deg(cycle(3), :));
@@ -125,8 +130,10 @@ function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, t
     edgeVertexIndex          = zeros(maximumInternalEdgeCount, 2);
     internalEdgeCount        = 0;
     groupStartIndex          = 1;
+    % Advance through the sorted entries one complete key group at a time.
     while groupStartIndex <= size(edgeKey, 1)
         groupEndIndex = groupStartIndex;
+        % Extend the current group across adjacent entries with the same key.
         while groupEndIndex < size(edgeKey, 1) && isequal(edgeKey(groupEndIndex + 1, :), edgeKey(groupStartIndex, :))
             groupEndIndex = groupEndIndex + 1;
         end
@@ -172,18 +179,22 @@ function [cellCycles, isActive] = coarsenCells(point_deg, cellCycles, edgeTriang
     parentIndex       = (1:cellCount).';
     isActive          = true(cellCount, 1);
     incidentEdgeIndex = cell(cellCount, 1);
+    % Process each geometric cell while constructing or checking the region topology.
     for cellIndex = 1:cellCount
         incidentEdgeIndex{cellIndex} = find(any(edgeTriangleIndex == cellIndex, 2));
     end
     isPending = true(edgeCount, 1);
+    % Continue merging pending components until no admissible merge remains.
     while any(isPending)
         edgeIndex = find(isPending, 1, "first");
         isPending(edgeIndex) = false;
         firstRootIndex = edgeTriangleIndex(edgeIndex, 1);
+        % Follow parent links to locate the first component root.
         while parentIndex(firstRootIndex) ~= firstRootIndex
             firstRootIndex = parentIndex(firstRootIndex);
         end
         secondRootIndex = edgeTriangleIndex(edgeIndex, 2);
+        % Follow parent links to locate the second component root.
         while parentIndex(secondRootIndex) ~= secondRootIndex
             secondRootIndex = parentIndex(secondRootIndex);
         end
@@ -223,8 +234,10 @@ function [mergedCycle, isValid] = mergeBoundaryCycles(firstCycle, secondCycle, p
     sharedEdgeCount = 0;
     isValid         = true;
     groupStartIndex = 1;
+    % Advance through the sorted entries one complete key group at a time.
     while groupStartIndex <= size(edgeKey, 1)
         groupEndIndex = groupStartIndex;
+        % Extend the current group across adjacent entries with the same key.
         while groupEndIndex < size(edgeKey, 1) && isequal(edgeKey(groupEndIndex + 1, :), edgeKey(groupStartIndex, :))
             groupEndIndex = groupEndIndex + 1;
         end
@@ -260,6 +273,7 @@ function [mergedCycle, isValid] = mergeBoundaryCycles(firstCycle, secondCycle, p
     nextVertexIndex(edgeStartIndex) = edgeEndIndex;
     mergedCycle        = zeros(1, numel(edgeStartIndex));
     currentVertexIndex = min(edgeStartIndex);
+    % Process each geometric vertex while constructing or checking the region topology.
     for vertexIndex = 1:numel(mergedCycle)
         mergedCycle(vertexIndex) = currentVertexIndex;
         currentVertexIndex = nextVertexIndex(currentVertexIndex);
@@ -281,6 +295,7 @@ function isConvex = cycleIsConvex(point_deg, cycle)
         return;
     end
     hasPositiveTurn = false;
+    % Process each geometric vertex while constructing or checking the region topology.
     for vertexIndex = 1:numel(cycle)
         previousIndex = mod(vertexIndex - 2, numel(cycle)) + 1;
         nextIndex     = mod(vertexIndex, numel(cycle)) + 1;
@@ -335,7 +350,9 @@ end
 function product = multiplyExpansions(firstExpansion, secondExpansion)
     % Multiply two short nonoverlapping expansions without losing roundoff terms.
     product = 0;
+    % Process each first needed to complete multiply expansions.
     for firstIndex = 1:numel(firstExpansion)
+        % Process each second needed to complete multiply expansions.
         for secondIndex = 1:numel(secondExpansion)
             term    = productExpansion(firstExpansion(firstIndex), secondExpansion(secondIndex));
             product = addExpansions(product, term);
@@ -363,6 +380,7 @@ end
 function result = addExpansions(firstExpansion, secondExpansion)
     % Add exact expansions one component at a time using error-free TwoSum.
     result = firstExpansion;
+    % Process each geometric component while constructing or checking the region topology.
     for componentIndex = 1:numel(secondExpansion)
         result = growExpansion(result, secondExpansion(componentIndex));
     end
@@ -374,6 +392,7 @@ function result = growExpansion(expansion, value)
     result      = zeros(1, numel(expansion) + 1);
     resultCount = 0;
     accumulator = value;
+    % Process each geometric component while constructing or checking the region topology.
     for componentIndex = 1:numel(expansion)
         [accumulator, roundoff] = twoSum(accumulator, expansion(componentIndex));
         if roundoff ~= 0

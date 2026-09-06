@@ -222,6 +222,7 @@ function handles = createGoalControls(tabHandle, options)
         "Diagnostics", "Export Bundle"];
     actionButtons = createActionButtons(actionPanelHandle, actionNames, actionLabels);
     actionFields  = fieldnames(actionButtons);
+    % Process each action needed by the sandbox workflow.
     for actionIndex = 1:numel(actionFields)
         actionName = actionFields{actionIndex};
         actions.(actionName) = actionButtons.(actionName);
@@ -303,6 +304,7 @@ end
 function actions = createAddButtons(panelHandle, actionNames, actionLabels)
     % Place four obstacle constructors in a compact two-by-two panel at the left.
     actions = struct();
+    % Process each action needed by the sandbox workflow.
     for actionIndex = 1:numel(actionNames)
         columnIndex = mod(actionIndex - 1, 2);
         rowIndex    = floor((actionIndex - 1) / 2);
@@ -536,6 +538,7 @@ function handleFigureMouseDown(figureHandle, ~)
         angle_rad         = linspace(0, 2 * pi, 25).';
         circle_deg        = center_deg + radius_deg * [ cos(angle_rad(1:end - 1)), sin(angle_rad(1:end - 1))];
         isInsideWorkspace = true;
+        % Process each vertex needed by the sandbox workflow.
         for vertexIndex = 1:size(circle_deg, 1)
             isInsideWorkspace = isInsideWorkspace && pointInWorkspace(circle_deg(vertexIndex, :), controls);
         end
@@ -567,6 +570,7 @@ function handleFigureMouseDown(figureHandle, ~)
             firstCorner_deg; ...
             oppositeCorner_deg(1), firstCorner_deg(2); oppositeCorner_deg; firstCorner_deg(1), oppositeCorner_deg(2)];
         isInsideWorkspace = true;
+        % Process each corner needed by the sandbox workflow.
         for cornerIndex = 1:4
             isInsideWorkspace = isInsideWorkspace && pointInWorkspace(square_deg(cornerIndex, :), controls);
         end
@@ -733,6 +737,7 @@ end
 function polygonIndex = polygonIndexAtPoint(polygonCollection_deg, point_deg)
     % Return the last drawn polygon that contains the selected point.
     polygonIndex = 0;
+    % Process each candidate needed by the sandbox workflow.
     for candidateIndex = numel(polygonCollection_deg):-1:1
         polygonShape = polyshape(polygonCollection_deg{candidateIndex});
         if isinterior(polygonShape, point_deg(1), point_deg(2))
@@ -1552,6 +1557,7 @@ function setObstacleConstructorAvailability(modeState, isEnabled)
     % Keep every constructor in the Add panel synchronized with scene readiness.
     constructorNames = [ ...
         "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
+    % Process each constructor name needed by the sandbox workflow.
     for constructorName = constructorNames
         set(modeState.GraphicsHandles.Actions.(constructorName), "Enable", onOff(isEnabled));
     end
