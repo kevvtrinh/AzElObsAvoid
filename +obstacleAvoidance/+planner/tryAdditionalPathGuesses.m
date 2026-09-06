@@ -1,50 +1,28 @@
 function [candidateSet, routeSet, generatedSeeds] = ...
-        recoverAdditionalSeeds( ...
+        tryAdditionalPathGuesses( ...
         initialState, goalState, limits, options, ...
         candidateSet, routeSet, generatedSeeds, recoveryContext)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [candidateSet, routeSet, generatedSeeds] = ...
-%       obstacleAvoidance.planner.recoverAdditionalSeeds( ...
+%   [candidateSet, routeSet, generatedSeeds] = tryAdditionalPathGuesses( ...
 %       initialState, goalState, limits, options, ...
 %       candidateSet, routeSet, generatedSeeds, recoveryContext)
-%
 % PURPOSE
-%   - Attempt seeds beyond the first two only after both initial seeds and
-%     any separately validated exact motion have failed.
-%   - Keep deferred timed and multi-winding recovery in the same removable
-%     implementation unit as all other later-seed work.
-%
+%   Try later guesses only after the initial guesses and exact motion fail.
+%   Stop at the first validated recovery or MaximumSeedCount.
 % INPUTS
-%   - initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
-%   - candidateSet (scalar candidate-set struct)
-%       Results from solving at most the first two generated seeds.
-%   - routeSet (scalar route-set struct)
-%       Initial timed, spatial, and deferred route-search results.
-%   - generatedSeeds (route-seed struct array)
-%       All ordinary seeds generated within MaximumSeedCount.
-%   - recoveryContext (scalar struct)
-%       Scene, Proposal, VisibilityGraph, SeedSolveContext,
-%       HasValidatedExactMotion, and PlanningTimer used by recovery.
-%
+%   Normalized states, limits, options, prior candidates, and searched routes.
+%   generatedSeeds contains existing guesses. recoveryContext holds the scene,
+%   proposal, visibility graph, solver context, exact-motion status, and timer.
 % OUTPUTS
-%   - candidateSet (scalar candidate-set struct)
-%       Initial attempts plus failure-only recovery attempts, stopping after
-%       the first later seed passes full validation.
-%   - routeSet (scalar route-set struct)
-%       Route diagnostics updated if deferred search was consumed.
-%   - generatedSeeds (route-seed struct array)
-%       Ordinary and subsequently generated deferred seeds.
-%
+%   Updated candidates, route evidence, and guesses, including deferred searches.
 % UNITS
-%   - Position is degrees; physical and measured times are seconds.
-%
+%   Position is degrees; physical and measured times are seconds.
 
 %% Section 1: Decide Whether Recovery Is Needed
 
 initialSeedCount = numel(candidateSet.Seeds);
-initialCandidatePassed = any([candidateSet.CheckResults.Passed]);
+initialCandidatePassed = any([candidateSet.Summaries.ValidationPassed]);
 if initialCandidatePassed || recoveryContext.HasValidatedExactMotion
     return;
 end
@@ -57,7 +35,7 @@ end
 lastOrdinarySeedIndex = min(numel(generatedSeeds), ...
     options.MaximumSeedCount);
 for seedIndex = initialSeedCount + 1:lastOrdinarySeedIndex
-    [candidateSet, passed] = solveAndAppend( ...
+    [candidateSet, passed, recoveryContext] = solveAndAppend( ...
         initialState, goalState, limits, options, ...
         candidateSet, generatedSeeds(seedIndex), recoveryContext);
     if passed
@@ -89,8 +67,8 @@ if needsDeferredTimedRecovery
         initialState, goalState, limits, options, ...
         recoveryContext.Scene, recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
-    candidateSet.StageTiming.TopologyElapsedTime_s = ...
-        candidateSet.StageTiming.TopologyElapsedTime_s + ...
+    candidateSet.StageTiming.RouteSearchElapsedTime_s = ...
+        candidateSet.StageTiming.RouteSearchElapsedTime_s + ...
         recoverySearchElapsedTime_s;
 end
 
@@ -105,10 +83,9 @@ if needsDeferredSpatialRecovery
 else
     recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
 end
-recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
-    initialState, goalState, limits, options, ...
-    recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices);
-recoveredSeeds = recoveredSeeds(2:end);
+recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses( ...
+    recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices, ...
+    generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
 
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
     recoveredSeed = recoveredSeeds(recoveryIndex);
@@ -118,7 +95,7 @@ for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
     if string(recoveredSeed.Source) == "visibilityGraph"
         routeSet.DeferredSpatialSolveAttempted = true;
     end
-    [candidateSet, passed] = solveAndAppend( ...
+    [candidateSet, passed, recoveryContext] = solveAndAppend( ...
         initialState, goalState, limits, options, ...
         candidateSet, recoveredSeed, recoveryContext);
     if passed
@@ -129,21 +106,20 @@ end
 
 %% Section 4: Local Functions
 
-function [candidateSet, passed] = solveAndAppend( ...
+function [candidateSet, passed, recoveryContext] = solveAndAppend( ...
         initialState, goalState, limits, options, ...
         candidateSet, seed, recoveryContext)
 % Solve an additional seed and append its diagnostics.
 seed.Index = numel(candidateSet.Seeds) + 1;
-[candidate, summary, checkResult, stageTiming] = ...
-    obstacleAvoidance.planner.solveOneSeed( ...
+[candidate, summary, stageTiming, recoveryContext.SeedSolveContext] = ...
+    obstacleAvoidance.planner.solvePathGuess( ...
         recoveryContext.Scene.preparedObstacles, initialState, goalState, limits, options, ...
         seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
 candidateSet.Seeds(end + 1, 1) = seed;
 candidateSet.Candidates{end + 1, 1} = candidate;
 candidateSet.Summaries(end + 1, 1) = summary;
-candidateSet.CheckResults(end + 1, 1) = checkResult;
 candidateSet.StageTiming = stageTiming;
-passed = checkResult.Passed;
+passed = summary.ValidationPassed;
 if passed && isnan(candidateSet.FirstValidatedMotionTime_s)
     candidateSet.FirstValidatedMotionTime_s = ...
         toc(recoveryContext.PlanningTimer);

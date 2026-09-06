@@ -28,14 +28,14 @@ Function & Role in the current planner \\
 \midrule
 \scriptsize\url{obstacleAvoidance.obstacles.createObstacle} & Creates canonical obstacle data and applies the requested safety margin once. \\
 \scriptsize\url{obstacleAvoidance.search.createRouteCandidates} & Creates bounded static or timed route proposals and search evidence; proposals are not final collision certificates. \\
-\scriptsize\url{obstacleAvoidance.planner.solveBmtpTrajectory} & Converts static protected geometry to the BMTP engine's convex exclusion regions and coverage record. \\
+\scriptsize\url{obstacleAvoidance.planner.solveStaticBmtpTrajectory} & Converts static protected geometry to the BMTP engine's convex exclusion regions and coverage record. \\
 \scriptsize\url{bmtpEngine.createDirectMotion} & Constructs an exact direct rest-to-rest motion attempt before route detours are considered. \\
 \scriptsize\url{bmtpEngine.evaluatePolynomial} & Evaluates stored piecewise motion records at requested times. \\
 \scriptsize\url{bmtpEngine.maximumRestToRestDistance} & Returns the maximum one-axis rest-to-rest distance for a specified time and motion limits. \\
 \bottomrule
 \end{tabularx}
 
-\sourcefile{+obstacleAvoidance/+obstacles/createObstacle.m; +obstacleAvoidance/+search/createRouteCandidates.m; +obstacleAvoidance/+planner/solveBmtpTrajectory.m; trajectory/+bmtpEngine/createDirectMotion.m; trajectory/+bmtpEngine/evaluatePolynomial.m; trajectory/+bmtpEngine/maximumRestToRestDistance.m}
+\sourcefile{+obstacleAvoidance/+obstacles/createObstacle.m; +obstacleAvoidance/+search/createRouteCandidates.m; +obstacleAvoidance/+planner/solveStaticBmtpTrajectory.m; trajectory/+bmtpEngine/createDirectMotion.m; trajectory/+bmtpEngine/evaluatePolynomial.m; trajectory/+bmtpEngine/maximumRestToRestDistance.m}
 
 \subsection{Current settings and a deliberate trade}
 

@@ -421,7 +421,7 @@ The diagnostic distinguishes ineligible axis proposals such as
 \texttt{noValidatedExcursion}, which says the enumerated proposals did not
 pass. Neither is a statement that no motion exists.
 
-\stationSource{+obstacleAvoidance/+planner/createFixedClockLateralExcursion.m:47--272, 274--450; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
+\stationSource{+obstacleAvoidance/+planner/tryFixedTimeDetour.m:47--272, 274--450; +obstacleAvoidance/+planner/planCorridorQuintic.m:124--146}
 
 \section{Station 9: create route candidates}
 
@@ -449,7 +449,7 @@ changes during the request.
 
 \arrival{3. What leaves.}
 The graph accepted \WalkVisibilityAcceptedCount\ candidate lines and rejected
-\WalkVisibilityRejectedCount. It found \WalkHomologyClassCount\ distinct
+\WalkVisibilityRejectedCount. It found \WalkRouteClassCount\ distinct
 spatial route families and emitted \WalkGeneratedSeedCount\ ordered proposals:
 the direct chord and one visibility route. The exported seed lengths are
 \WalkSeedOneLength\ and \WalkSeedTwoLength. They leave
@@ -490,7 +490,7 @@ A seed can be empty or later fail its motion solve or independent validation.
 That is why the stable record begins with empty route fields and \texttt{NaN}
 estimates. Calling a seed an answer would hide this distinction.
 
-\stationSource{+obstacleAvoidance/+search/createSeed.m:22--30; +obstacleAvoidance/+search/createRouteCandidates.m:401--415; +obstacleAvoidance/+planner/planCorridorQuintic.m:152--343}
+\stationSource{+obstacleAvoidance/+search/createEmptyPathGuess.m:22--30; +obstacleAvoidance/+search/createRouteCandidates.m:401--415; +obstacleAvoidance/+planner/planCorridorQuintic.m:152--343}
 
 \section{Station 11: choose the motion builder}
 
@@ -518,12 +518,12 @@ not performed here.
 \arrival{4. What can go wrong here, and what it is called.}
 BMTP requires every obstacle to be static and active over the horizon. A
 violation is
-\nolinkurl{solveBmtpTrajectory:UnsupportedDynamicObstacle}. The
+\nolinkurl{solveStaticBmtpTrajectory:UnsupportedDynamicObstacle}. The
 timed route branch can report \texttt{unsupportedTimedTopology} or
 \texttt{invalidDirectWaitSeed}; those are the two cases that cause the
 waypoint fallback. None applies to this static request.
 
-\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:47--65, 165--306; +obstacleAvoidance/+planner/solveBmtpTrajectory.m:33--55; trajectory/+bmtpEngine/solve.m:23--37}
+\stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:47--65, 165--306; +obstacleAvoidance/+planner/solveStaticBmtpTrajectory.m:33--55; trajectory/+bmtpEngine/solve.m:23--37}
 
 \section{Station 12: shape the BMTP curve}
 

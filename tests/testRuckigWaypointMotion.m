@@ -77,7 +77,7 @@ verifyTrue(testCase, fixedCandidate.OptimizerFeasible);
 verifyTrue(testCase, fixedDiagnostics.Accepted);
 verifyTrue(testCase, fixedValidation.Passed, fixedValidation.Message);
 verifyTrue(testCase, fixedValidation.CollisionFree);
-verifyEqual(testCase, fixedCandidate.FinalTime_s, goalState.time_s, ...
+verifyEqual(testCase, fixedCandidate.ArrivalTime_s, goalState.time_s, ...
     "AbsTol", 1e-10);
 end
 

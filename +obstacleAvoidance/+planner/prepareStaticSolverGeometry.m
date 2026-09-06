@@ -1,41 +1,22 @@
-function [candidate, diagnostics] = solveBmtpTrajectory( ...
-        seed, obstacles, initialState, goalState, limits, options)
+function geometry = prepareStaticSolverGeometry(obstacles, startTime_s, endTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [candidate, diagnostics] = ...
-%       obstacleAvoidance.planner.solveBmtpTrajectory( ...
-%       seed, obstacles, initialState, goalState, limits, options)
-%
+%   geometry = prepareStaticSolverGeometry(obstacles, startTime_s, endTime_s)
 % PURPOSE
-%   - Adapt one static obstacle-planner seed to the independent BMTP engine.
-%   - Own protected-geometry coverage while the engine owns trajectory math.
-%
+%   Prepare a static exclusion representation once for all path guesses.
 % INPUTS
-%   - seed (scalar struct)
-%       position_deg is N-by-2 and tau increases from zero through one.
-%   - obstacles (canonical or prepared obstacle struct array)
-%       Protected geometry must remain static over the request horizon.
-%   - initialState, goalState, limits, options (resolved scalar structs)
-%       Normalized planner request and fully resolved planner options.
-%
+%   Prepared obstacles and the inclusive planning horizon.
 % OUTPUTS
-%   - candidate (scalar struct)
-%       BMTP motion or stable expected-failure record for public validation.
-%   - diagnostics (scalar struct)
-%       Engine timing, convergence, motion, and plane-certificate evidence.
-%
+%   Exact regions, solver regions, grouping, and coverage provenance.
 % UNITS
-%   - Position is degrees and time is seconds. Derivatives use deg/s,
-%     deg/s^2, and deg/s^3. Histories are N-by-2.
-%
+%   Geometry is degrees; times are seconds.
 
-%% Section 1: Create The Static Exclusion Representation
-
+%% Section 1: Prepare The Exclusion Regions
 [obstaclesRemainStatic, occupiedShape] = ...
     obstacleAvoidance.obstacles.queryStaticHorizon( ...
-    obstacles, initialState.time_s, goalState.time_s);
+    obstacles, startTime_s, endTime_s);
 if ~obstaclesRemainStatic
-    error("solveBmtpTrajectory:UnsupportedDynamicObstacle", ...
+    error("solveStaticBmtpTrajectory:UnsupportedDynamicObstacle", ...
         "Every obstacle must be static and active over the horizon.");
 end
 [exactRegions_deg, coverage] = createExactRegions( ...
@@ -44,46 +25,11 @@ end
 coverage.SolverRegionCount = numel(regions_deg);
 coverage.ConservativeGrouping = grouping;
 
-%% Section 2: Generate The Motion In The Independent Engine
-
-[candidate, diagnostics] = bmtpEngine.solve( ...
-    seed, regions_deg, coverage, initialState, goalState, limits, options);
-fallback = struct( ...
-    "Attempted", false, ...
-    "PrimaryTerminationReason", candidate.TerminationReason, ...
-    "Outcome", "notApplicable", ...
-    "ExactRegionCount", numel(exactRegions_deg), ...
-    "PrimarySolverDiagnostics", struct());
-if grouping.Applied
-    fallback.Outcome = "groupedAttemptAccepted";
-end
-if grouping.Applied && ~candidate.Success
-    % Convex hulls may close real gaps. Retry the exact regions if grouping fails.
-    fallback.Attempted = true;
-    fallback.Outcome = "exactRegionAttemptFailed";
-    fallback.PrimarySolverDiagnostics = diagnostics;
-    exactCoverage = coverage;
-    exactCoverage.SolverRegionCount = numel(exactRegions_deg);
-    exactGrouping = grouping;
-    exactGrouping.Applied = false;
-    exactGrouping.SolverRegionCount = numel(exactRegions_deg);
-    exactGrouping.RelationToExactGeometry = "equal";
-    exactGrouping.GroupMemberIndices = ...
-        num2cell((1:numel(exactRegions_deg)).');
-    exactCoverage.ConservativeGrouping = exactGrouping;
-    [candidate, diagnostics] = bmtpEngine.solve( ...
-        seed, exactRegions_deg, exactCoverage, initialState, goalState, ...
-        limits, options);
-    if candidate.Success
-        fallback.Outcome = "exactRegionAttemptAccepted";
-    end
-end
-diagnostics.ExactRegionFallback = fallback;
-candidate.SolverDiagnostics = diagnostics;
+geometry = struct("ExactRegions_deg", {exactRegions_deg}, ...
+    "Regions_deg", {regions_deg}, "Grouping", grouping, "Coverage", coverage);
 end
 
-%% Section 3: Local Functions
-
+%% Section 2: Local Functions
 function [regions_deg, coverage] = createExactRegions( ...
         occupiedShape, obstacleCount)
 % Split protected geometry into convex regions.

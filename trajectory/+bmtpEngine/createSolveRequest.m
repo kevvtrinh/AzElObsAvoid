@@ -168,11 +168,3 @@ if ~requestIsSupported
         "The BMTP kernel requires a finite unwrapped rest-to-rest request.");
 end
 end
-
-function value = optionalField(record, name, defaultValue)
-% Read an option or use its default.
-value = defaultValue;
-if isfield(record, name) && ~isempty(record.(name))
-    value = record.(name);
-end
-end

@@ -1,43 +1,26 @@
 function [candidate, checkResult, solverDiagnostics, ...
-        candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
-        solveDynamicSeed( ...
-        obstacles, initialState, goalState, limits, options, seed, stageTiming)
+        candidateWasPrechecked, precheckElapsedTime_s, stageTiming, context] = ...
+        solveDynamicPathGuess( ...
+        obstacles, initialState, goalState, limits, options, seed, stageTiming, context)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [candidate, checkResult, solverDiagnostics, ...
-%       candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
-%       obstacleAvoidance.planner.solveDynamicSeed( ...
-%       obstacles, initialState, goalState, limits, options, seed, stageTiming)
-%
+%   [candidate, checkResult, solverDiagnostics, candidateWasPrechecked, ...
+%       precheckElapsedTime_s, stageTiming, context] = solveDynamicPathGuess( ...
+%       obstacles, initialState, goalState, limits, options, seed, stageTiming, context)
 % PURPOSE
-%   - Coordinate dynamic-obstacle motion methods and explicit backups.
-%   - Retain every attempted representation, check, and fallback outcome.
-%
+%   Try stationary enclosures, timed BMTP, wait-then-move, and explicit fallback.
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
-%   - seed (scalar route-seed struct)
-%       Indexed timed or spatial proposal.
-%   - stageTiming (scalar struct)
-%       Accumulated planner timing before this seed.
-%
+%   Normalized obstacles, states, limits, options, and indexed path guess.
+%   stageTiming contains accumulated times; context holds the summary template
+%   and reusable enclosure geometry for this request.
 % OUTPUTS
-%   - candidate (scalar motion struct)
-%       Selected dynamic-seed attempt or stable failure record.
-%   - checkResult (scalar validation struct)
-%       Authoritative check when an attempt already passed in this stage.
-%   - solverDiagnostics (scalar struct)
-%       Static projection, timed BMTP, direct-wait, and backup details.
-%   - candidateWasPrechecked (logical scalar)
-%       True only when candidate already passed validateTrajectory here.
-%   - precheckElapsedTime_s (nonnegative scalar)
-%       Full-validation time nested inside this motion stage.
-%   - stageTiming (scalar struct)
-%       Timing updated by nested authoritative checks.
-%
+%   candidate and checkResult retain paired motion and validation evidence.
+%   solverDiagnostics records attempts and fallback outcomes.
+%   candidateWasPrechecked says whether the returned motion was fully checked;
+%   precheckElapsedTime_s accounts for that nested validation time.
+%   Updated stageTiming and context are reused by later guesses.
 % UNITS
-%   - Position is degrees and time is seconds.
-%
+%   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
 
 %% Section 1: Try A Conservative Static Projection
 
@@ -52,16 +35,20 @@ trySweptProjection = string(seed.Source) ~= "directWait" && ...
     size(seed.position_deg, 1) > 2;
 sweptAttempt = struct();
 timedBmtpAttempt = struct();
+rejectedCandidates = {};
+rejectedChecks = {};
 if trySweptProjection
-    solverGoalState = ...
-        obstacleAvoidance.planner.createSolverGoalState( ...
-        goalState, options);
-    [planningObstacles, projection] = ...
-        obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
-        preparedObstacles, initialState.time_s, goalState.time_s);
+    if isempty(fieldnames(context.EnclosureGeometry))
+        [planningObstacles, context.Enclosure] = ...
+            obstacleAvoidance.obstacles.createStationaryObstacleEnclosures( ...
+            preparedObstacles, initialState.time_s, goalState.time_s);
+        context.EnclosureGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry( ...
+            planningObstacles, initialState.time_s, goalState.time_s);
+    end
+    projection = context.Enclosure;
     [sweptCandidate, sweptDiagnostics] = ...
-        obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, planningObstacles, initialState, solverGoalState, ...
+        obstacleAvoidance.planner.solveStaticBmtpTrajectory( ...
+        seed, context.EnclosureGeometry, initialState, goalState, ...
         limits, options);
     [sweptCandidate, sweptCheck, sweptCheckTime_s, stageTiming] = ...
         obstacleAvoidance.planner.checkCandidateMotion( ...
@@ -72,6 +59,10 @@ if trySweptProjection
         precheckElapsedTime_s + sweptCheckTime_s;
     sweptAttempt = createSweptProjectionRecord( ...
         sweptDiagnostics, sweptCheck, projection);
+    if ~sweptCheck.Passed && ~isempty(sweptCandidate.time_s)
+        rejectedCandidates{end + 1} = sweptCandidate;
+        rejectedChecks{end + 1} = sweptCheck;
+    end
     if sweptCheck.Passed
         candidate = sweptCandidate;
         checkResult = sweptCheck;
@@ -103,6 +94,10 @@ if tryTimedBmtp
         "SolverDiagnostics", timedBmtpDiagnostics, ...
         "FullObstacleValidation", timedCheck, ...
         "Outcome", "rejectedByFullValidation");
+    if ~timedCheck.Passed && ~isempty(timedCandidate.time_s)
+        rejectedCandidates{end + 1} = timedCandidate;
+        rejectedChecks{end + 1} = timedCheck;
+    end
     if timedCheck.Passed
         timedBmtpAttempt.Outcome = "acceptedAfterFullValidation";
         candidate = timedCandidate;
@@ -120,9 +115,13 @@ end
 % Try an initial wait and direct move; handle unsupported routes explicitly.
 
 if ~candidateWasPrechecked
-    [candidate, solverDiagnostics] = ...
-        obstacleAvoidance.planner.createDirectWaitMotion( ...
-        seed, initialState, goalState, limits, options, [], []);
+    if string(seed.Source) == "directWait"
+        [candidate, solverDiagnostics] = ...
+            obstacleAvoidance.planner.createWaitThenMoveMotion( ...
+            seed, initialState, goalState, limits, options, [], []);
+    else
+        [candidate, solverDiagnostics] = unsupportedPathGuess(seed, initialState, options);
+    end
     if trySweptProjection
         solverDiagnostics.SweptProjection = sweptAttempt;
         solverDiagnostics.TimedBmtp = timedBmtpAttempt;
@@ -136,7 +135,7 @@ end
 
 timedTerminationReason = string(candidate.TerminationReason);
 timedTopologyIsUnsupported = any(timedTerminationReason == ...
-    ["unsupportedTimedMultiWaypointRoute", "invalidDirectWaitSeed"]);
+    ["unsupportedTimedMultiWaypointRoute", "invalidDirectWaitSeed", "unsupportedDynamicDirectGuess"]);
 if timedTopologyIsUnsupported
     timedDiagnostics = solverDiagnostics;
     if options.UnsupportedTimedTopologyPolicy == ...
@@ -167,6 +166,23 @@ if timedTopologyIsUnsupported
         candidate.SolverDiagnostics = solverDiagnostics;
     end
 end
+% Keep a constructed rejected motion instead of replacing it with an empty
+% eligibility failure. Preserve all attempted-method diagnostics separately.
+if ~candidate.Success && ~isempty(rejectedCandidates)
+    summaries = repmat(context.SummaryTemplate, numel(rejectedCandidates), 1);
+    for index = 1:numel(rejectedCandidates)
+        summaries(index) = obstacleAvoidance.planner.createCandidateSummary( ...
+            rejectedCandidates{index}, rejectedChecks{index}, struct(), 0, ...
+            context.SummaryTemplate, limits);
+    end
+    selection = obstacleAvoidance.planner.selectValidatedCandidate(summaries, options);
+    index = selection.BestPartialSeedIndex;
+    candidate = rejectedCandidates{index};
+    checkResult = rejectedChecks{index};
+    candidate.SolverDiagnostics = solverDiagnostics;
+    candidateWasPrechecked = true;
+end
+
 end
 
 %% Section 5: Local Functions
@@ -208,4 +224,24 @@ record = struct( ...
 if checkResult.Passed
     record.Outcome = "acceptedAfterFullValidation";
 end
+end
+
+function [candidate, diagnostics] = unsupportedPathGuess(seed, initialState, options)
+% Record an ineligible guess without invoking the wait-motion constructor.
+candidate = bmtpEngine.createMotionRecord( ...
+    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
+candidate.SeedIndex = seed.Index;
+reason = "unsupportedTimedMultiWaypointRoute";
+feature = "multiWaypointTimedRoute";
+if size(seed.position_deg, 1) <= 2
+    reason = "unsupportedDynamicDirectGuess";
+    feature = "directGuessWithoutWaitSchedule";
+end
+candidate.TerminationReason = reason;
+candidate.Message = "This path guess has no supported timed-motion construction.";
+diagnostics = struct("Accepted", false, "TerminationReason", reason, ...
+    "OriginalTerminationReason", reason, "FirstUnsupportedFeature", feature, ...
+    "FirstUnsupportedTransitionIndex", 1, "FallbackPolicy", options.UnsupportedTimedTopologyPolicy, ...
+    "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau);
+candidate.SolverDiagnostics = diagnostics;
 end

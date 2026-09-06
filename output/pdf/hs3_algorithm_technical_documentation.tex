@@ -261,7 +261,7 @@ protection once, and prepare immutable time-history caches.};
 Reject occupied, out-of-workspace, dynamically invalid, or time-invalid
 requests as stable expected failures.};
 \node[stage,below=of s2] (s3) {\textbf{3. Propose route topologies.}
-Retain the direct seed; construct protected swept geometry, visibility/homology
+Retain the direct seed; construct protected swept geometry, visibility/route class
 routes, and a bounded time-expanded route when geometry changes.};
 \node[stage,below=of s3] (s4) {\textbf{4. Convert one seed to HS3.}
 Choose $N$ segments, create $2N+1$ jerk ordinates per axis, fit a warm start,
@@ -853,7 +853,7 @@ offset outward by at least $10^{-3}$ degree and clipped to the workspace.
 Delaunay edges provide a sparse candidate set with a bounded exhaustive
 fallback; visible edges use Euclidean degree length.
 
-The graph state is augmented with a bounded two-dimensional winding/homology
+The graph state is augmented with a bounded two-dimensional winding/route class
 signature so distinct sampled route classes can be retained. This is an
 implementation-specific planar adaptation inspired by search with homotopy
 class constraints\cite{bhattacharya2012}; it is not the cited paper's full
@@ -1219,7 +1219,7 @@ Option & Default & Meaning \\
 \file{SampleTime_s} & 0.05 & Returned uniform sampling interval; knots are also retained. \\
 \file{AllowAzimuthWrapping} & false & Periodic goal representation is disabled by default. \\
 \file{MaximumSeedCount} & 5 & Bounded topology proposal count. \\
-\file{DirectOnly} & false & Permit visibility, homology, and timed seeds. \\
+\file{DirectOnly} & false & Permit visibility, route class, and timed seeds. \\
 \file{ObstacleClusterDistance_deg} & 0 & Disable nearby-region seed clustering. \\
 \file{CollocationSegmentCount} & 10 & Initial equal-duration HS3 segment count. \\
 \file{MaximumCollocationSegmentCount} & 64 & Mesh-refinement cap. \\
@@ -1246,7 +1246,7 @@ constraint/optimality tolerances, $10^{-10}$ step tolerance, and quiet output.
 \subsection{First-class diagnostics}
 
 Search diagnostics are collected while searching. They include nodes, accepted
-and rejected edges, time layers, parent/cost relationships, homology/timed
+and rejected edges, time layers, parent/cost relationships, route class/timed
 coverage, work-limit evidence, seed provenance, and the best partial state.
 Candidate summaries retain optimizer status, maximum violation, collision
 resolution, clearance, mesh/relinearization counts, timing, and solver output.
@@ -1456,7 +1456,7 @@ returned polynomial through Bernstein inequalities; uncertainty fails closed.}
 \scriptentry{+obstacleAvoidance/+search/createRouteCandidates.m}{Creates the
 bounded deterministic route portfolio and first-class search diagnostics. It
 retains the direct proposal, builds swept geometry and visibility nodes/edges,
-adds a timed route for changing history, enumerates distinct homology classes,
+adds a timed route for changing history, enumerates distinct route class classes,
 and only shortens a route when visibility and signature are preserved.}
 
 \scriptentry{+obstacleAvoidance/+search/createSeedCorridor.m}{Converts convex
@@ -1670,7 +1670,7 @@ obstacle opening and adds a scenario-local post-validation that the timed
 opening, rather than an unintended route, was used.}
 
 \scriptentry{examples/exampleStaticUShapedObstacle.m}{Demonstrates escape from
-a protected static U cavity through visibility/homology proposals without
+a protected static U cavity through visibility/route class proposals without
 hidden waypoints.}
 
 \scriptentry{examples/exampleStraightTargetAlternatingOcclusion.m}{Tracks a
@@ -1682,7 +1682,7 @@ circle and later exits into free space while another obstacle affects transit;
 the wrapper must avoid declaring intercept while the target is occupied.}
 
 \scriptentry{examples/exampleTwoOpposingUVisibilityGraph.m}{Exercises automatic
-visibility and distinct homology choices around two opposing protected U
+visibility and distinct route class choices around two opposing protected U
 obstacles.}
 
 \scriptentry{examples/exampleUSOutlineExtremeVisibility.m}{Runs sequential
@@ -1749,7 +1749,7 @@ change behavior, and established error identifiers for invalid contracts.}
 
 \scriptentry{tests/testHs3Planner.m}{The main obstacle-aware integration suite.
 It covers public/direct calls, stable schemas, fixed/earliest behavior,
-direct-line preservation, topology/homology/timed seeds, clustering/envelopes,
+direct-line preservation, topology/route class/timed seeds, clustering/envelopes,
 moving/deforming obstacles, continuous bounds/collision, margins, no-path,
 plotting, determinism, and moving-target wrappers.}
 
@@ -1787,7 +1787,7 @@ The current commit also contains 17 tracked non-MATLAB files:
   weaknesses, retained/rejected experiments, runtime, and coverage evidence.
   \item \file{verification.md}: historical commands, example matrices,
   comparisons, and verification limitations.
-  \item \file{citation.md}: references for homology search, direct collocation,
+  \item \file{citation.md}: references for route class search, direct collocation,
   scenario motion, and Bernstein bounds.
   \item \file{plan.md}: HS3-only branch objective, completed cutover, startup
   verification limitation, and sandbox follow-up.

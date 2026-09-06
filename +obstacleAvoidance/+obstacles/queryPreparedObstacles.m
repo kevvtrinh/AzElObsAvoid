@@ -23,11 +23,15 @@ if ~isfield(options, "ClearanceTolerance_deg"), options.ClearanceTolerance_deg =
 %% Section 2: Evaluate Each Distinct Geometry Once
 
 isOccupied = false(numel(queryTime_s), 1);
-blockingObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
-minimumClearance_deg = Inf(numel(queryTime_s), 1);
-nearestObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
+if nargout >= 2
+    blockingObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
+end
+if nargout >= 3
+    minimumClearance_deg = Inf(numel(queryTime_s), 1);
+    nearestObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
+end
 finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & isfinite(queryTime_s);
-minimumClearance_deg(~finiteQuery) = NaN;
+if nargout >= 3, minimumClearance_deg(~finiteQuery) = NaN; end
 uniqueTime_s = unique(queryTime_s(finiteQuery));
 tolerance_deg = double(options.ClearanceTolerance_deg);
 if isempty(obstacles)
@@ -54,7 +58,7 @@ for obstacleIndex = 1:numel(obstacles)
         queryIndices = find(activeQuery & (obstacleIsTimeInvariant | ...
             queryTime_s == obstacleQueryTime_s(timeIndex)));
         candidate = queryIndices;
-        if nargout < 2
+        if nargout < 3
             candidate = candidate(~isOccupied(candidate));
             bound_deg = obstacleBounds_deg(obstacleIndex, :);
             inBounds = azimuth_deg(candidate) >= bound_deg(1) - tolerance_deg & ...
@@ -70,7 +74,7 @@ for obstacleIndex = 1:numel(obstacles)
             obstacle, obstacleQueryTime_s(timeIndex));
         points_deg = [azimuth_deg(candidate), elevation_deg(candidate)];
         clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
-        if nargout >= 2
+        if nargout >= 3
             priorClearance_deg = minimumClearance_deg(candidate);
             closer = clearance_deg < priorClearance_deg;
             priorClearance_deg(closer) = clearance_deg(closer);
@@ -79,8 +83,10 @@ for obstacleIndex = 1:numel(obstacles)
         end
         blocked = clearance_deg < -tolerance_deg | ...
             (options.BoundaryIsOccupied & clearance_deg <= tolerance_deg);
-        firstBlocker = blocked & blockingObstacleIndex(candidate) == 0;
-        blockingObstacleIndex(candidate(firstBlocker)) = uint32(obstacleIndex);
+        if nargout >= 2
+            firstBlocker = blocked & blockingObstacleIndex(candidate) == 0;
+            blockingObstacleIndex(candidate(firstBlocker)) = uint32(obstacleIndex);
+        end
         isOccupied(candidate(blocked)) = true;
     end
 end
@@ -92,6 +98,7 @@ if nargout < 2
     return;
 end
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
+if nargout < 3, return; end
 minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
 obstacleNames = strings(outputSize);

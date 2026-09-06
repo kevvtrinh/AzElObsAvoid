@@ -213,8 +213,20 @@ Specified-time interception performs one fixed-arrival trial.
 
 Internal solvers use prepared obstacles directly. Public geometry queries and
 `validateTrajectory` check and prepare caller-supplied data before using the
-same geometry and validation implementation. Safety margins are applied only
+same geometry and validation implementation. Solver regions and conservative
+moving-history enclosures are prepared once per request and reused across path
+guesses. Safety margins are applied only
 by obstacle construction, never again during preparation.
+
+The path-guess stages have distinct jobs:
+
+| Function | Job |
+| --- | --- |
+| `createEmptyPathGuess` | Define one empty record. |
+| `createPathGuesses` | Add the direct guess and guesses from searched routes. |
+| `createRoutePathGuesses` | Convert searched routes, including recovery routes. |
+| `solvePathGuess` | Construct and validate motion for one guess. |
+| `tryAdditionalPathGuesses` | Try later guesses only after the initial attempts fail. |
 
 Some engineering terms used in the code:
 
@@ -222,7 +234,8 @@ Some engineering terms used in the code:
 | --- | --- |
 | Path / route | Positions to pass through, without a motion schedule. |
 | Trajectory / motion | Position, velocity, acceleration, and jerk over time. |
-| Seed / warm start | An initial guess supplied to the solver. |
+| Path guess / seed | An initial path supplied to the motion solver; it is not a feasible motion yet. |
+| Obstacle envelope | An outline enclosing obstacles for search or conservative solving. |
 | Corridor | An allowed region around a proposed path. |
 | Visibility graph | Points connected where straight segments clear obstacles. |
 | Route class | A different way around the obstacles. |
@@ -253,11 +266,18 @@ obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
 `diagnosis` keeps the investigation data separate:
 
 - `Routes`, `Attempts`, `SelectedAttemptIndex`: tried paths and their outcomes.
-- `Search`, `SearchCoverage`: graph traces, complete counts, and search limitations.
+- `Search`, `SearchCoverage`: graph traces, complete counts, search limitations, and separate timed/spatial partial routes.
 - `Timing`: exclusive stage times that add up to total planning time.
-- `SolverDetails`: a table with `Attempt`, `Field`, and `Value` columns.
+- `SolverDetails`, `VisibilityAttempts`: tables with `Attempt`, `Field`, and `Value` columns, including rejected edges and graph connectivity.
 - `DirectMotion`, `PathRefinement`: field/value tables for the initial motion attempts.
-- `Selection`, attempt counts, and time to the first validated motion.
+- `Selection`: the actual ranking columns, values, and candidate order; jerk remains a hard constraint.
+- Attempt counts and time to the first validated motion.
+
+Candidate summaries use `ArrivalTime_s` and `TrajectoryDuration_s`, matching the
+result. `Routes.ParameterBasis` identifies whether `tau` is normalized distance
+or normalized time. `Routes.ObstacleEnvelope_deg` stores the search obstacle
+outline. `Validation.CertificateRejectionReason` explains a rejected timed
+coverage certificate when validation proceeds to adaptive collision checks.
 
 Detail tables use readable field paths instead of nested structures. For example,
 filter `diagnosis.SolverDetails.Attempt == diagnosis.SelectedAttemptIndex` to inspect
@@ -268,7 +288,11 @@ it assembles the optional detail tables only when the second output is requested
 achieved intercept and terminal policies; its diagnosis adds `InterceptSearch`
 and `InterceptOptions`.
 
-Expected planning failures return `Success=false` and a reason. Invalid inputs
+Expected planning failures return `Success=false` and a reason. If a rejected
+motion was constructed, its samples, polynomial, attempted arrival, and failed
+`Validation` remain available for inspection; they do not indicate executable
+motion. Otherwise those motion fields retain their documented empty values.
+Invalid inputs
 throw errors. `obstacleAvoidance.validateTrajectory(result)` checks the complete
 motion independently, including between-sample collisions.
 
@@ -280,10 +304,10 @@ motion independently, including between-sample collisions.
   BMTP alternates time-power and separating-plane SOCPs over composite Bezier
   curves. Plane witnesses certify only those supplied regions.
 - For a moving-obstacle multi-waypoint seed, the planner first tests whether a
-  static-only BMTP motion passes continuous validation against the complete
-  moving scene. If not, a conservative convex-hull projection of every
-  protected moving history can produce one globally smooth spatial detour.
-  The original moving geometry remains authoritative for acceptance.
+  stationary enclosure of every protected moving history permits a smooth
+  spatial detour. If that fails and the guess has a time schedule, timed-cell
+  BMTP constrains only the overlapping obstacle/motion intervals. Both attempts
+  are validated against the original moving geometry.
 - Input-driven cavity, timed-opening, and fixed-clock lateral constructions
   remain planner-owned because they interpret obstacle geometry and timing.
   Their event words and quintic polynomials are generated by BMTP.
@@ -305,7 +329,7 @@ motion independently, including between-sample collisions.
 |-- +input/                         request, endpoint, and option requirements
 |-- +obstacles/                     construction, queries, and history
 |-- +geometry/                      boundary and clearance primitives
-|-- +search/                        topology, visibility, and corridors
+|-- +search/                        visibility, route classes, and path guesses
 |-- +planner/                       engine routing and result assembly
 |-- +validation/                    planner-domain continuous certificates
 `-- +plotting/                      public result-driven plotting
@@ -419,9 +443,10 @@ assertSuccess(results);
 - BMTP and the bounded candidate portfolio do not prove global minimum arrival
   or global optimality.
 - Moving obstacles can require topology or timing proposals outside the
-  configured finite portfolio. The conservative swept BMTP projection does not
-  yet model time-dependent separating planes, so wait-plus-detour routes can
-  still return `unsupportedTimedMultiWaypointRoute`.
+  configured finite portfolio. The stationary enclosure can close
+  useful openings, and bounded timed-cell BMTP can fail on a feasible route.
+  Unsupported guesses remain explicit in attempt diagnostics; failure does not
+  establish physical infeasibility.
 - Azimuth wrapping with obstacles or moving goals remains unsupported.
 - Local nonlinear solves can fail or encounter poor conditioning.
 - Cooperative timeouts can overrun while an active callback or evaluation

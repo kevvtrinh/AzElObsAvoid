@@ -379,7 +379,7 @@ options.MaximumSeedCount = 3;
 [result, resultDiagnosis] = obstacleAvoidance.planTrajectory( obstacle, initialState, goalState, limits, options);
 verifyGreaterThanOrEqual(testCase, numel(resultDiagnosis.Routes), 3);
 verifyTrue(testCase, any([resultDiagnosis.Routes.Source] == "visibilityGraph"));
-verifyEqual(testCase, resultDiagnosis.Search.GraphType, "timeExpandedVisibilityGraph");
+verifyEqual(testCase, resultDiagnosis.Search.GraphType, "visibilityGraph");
 verifyGreaterThan(testCase, resultDiagnosis.Search.VisibilityEdgeCount, 0);
 verifyLessThan(testCase, ...
     resultDiagnosis.Search.VisibilityCandidatePairCount, ...
@@ -394,12 +394,12 @@ verifyTrue(testCase, resultDiagnosis.SearchCoverage.CompletenessLost);
 verifyEqual(testCase, ...
     resultDiagnosis.SearchCoverage.CompletenessLossReason, ...
     "boundedSeedNodeAndTimeSearch");
-verifySize(testCase, resultDiagnosis.Search.HomologyRepresentative_deg, [1 2]);
-verifyGreaterThanOrEqual(testCase, resultDiagnosis.Search.HomologyClassCount, 2);
+verifySize(testCase, resultDiagnosis.Search.RouteClassRepresentative_deg, [1 2]);
+verifyGreaterThanOrEqual(testCase, resultDiagnosis.Search.RouteClassCount, 2);
 signatureCount = size(unique( ...
-    resultDiagnosis.Search.HomologyClassSignatures, "rows"), 1);
+    resultDiagnosis.Search.RouteClassSignatures, "rows"), 1);
 verifyGreaterThanOrEqual(testCase, signatureCount, 2);
-verifyFalse(testCase, resultDiagnosis.Search.HomologySearchTruncated);
+verifyFalse(testCase, resultDiagnosis.Search.RouteClassSearchTruncated);
 minimumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
 maximumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
 

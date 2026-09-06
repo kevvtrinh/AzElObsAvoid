@@ -44,12 +44,12 @@ testCase.TestData.FallbackValidation = obstacleAvoidance.validateTrajectory( ...
 end
 
 function testDefaultPolicyPreservesEarliestTimedFailure(testCase)
-% Return the unsupported smooth topology without invoking Ruckig.
+% Retain the rejected motion and each eligibility failure without invoking Ruckig.
 result = testCase.TestData.FailResult;
 resultDiagnosis = testCase.TestData.FailResultDiagnosis;
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, ...
-    "unsupportedTimedMultiWaypointRoute");
+    "noValidatedSeed");
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, "fail");
 verifyNotEmpty(testCase, resultDiagnosis.Attempts);
 for seedIndex = 1:numel(resultDiagnosis.Attempts)
@@ -57,8 +57,11 @@ for seedIndex = 1:numel(resultDiagnosis.Attempts)
     verifyFalse(testCase, testSupport.diagnosisValue(diagnostics, "FallbackAttempted"));
     verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "FallbackOutcome"), ...
         "fallbackDisabledByPolicy");
-    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), ...
-        "unsupportedTimedMultiWaypointRoute");
+    expectedReason = "unsupportedTimedMultiWaypointRoute";
+    if seedIndex == 1
+        expectedReason = "unsupportedDynamicDirectGuess";
+    end
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), expectedReason);
 end
 end
 
@@ -67,6 +70,9 @@ function testExplicitPolicyAttemptsFallbackOnlyWhenEnabled(testCase)
 result = testCase.TestData.FallbackResult;
 resultDiagnosis = testCase.TestData.FallbackResultDiagnosis;
 verifyFalse(testCase, result.Success);
+verifyNotEmpty(testCase, result.time_s);
+verifyFalse(testCase, result.Validation.Passed);
+verifyFalse(testCase, testCase.TestData.FallbackValidation.Passed);
 verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
@@ -80,8 +86,11 @@ for seedIndex = 1:numel(resultDiagnosis.Attempts)
     fallbackAttemptCount = fallbackAttemptCount + 1;
     verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "FallbackMethod"), ...
         "ruckigStopAtWaypoints");
-    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), ...
-        "unsupportedTimedMultiWaypointRoute");
+    expectedReason = "unsupportedTimedMultiWaypointRoute";
+    if seedIndex == 1
+        expectedReason = "unsupportedDynamicDirectGuess";
+    end
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), expectedReason);
     fallback = diagnostics;
     verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(fallback, "FallbackDiagnostics.CompletedPartCount"), ...
         testSupport.diagnosisValue(fallback, "FallbackDiagnostics.MaximumSupportedPartCount"));

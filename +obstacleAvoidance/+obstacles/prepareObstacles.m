@@ -21,6 +21,8 @@ function obstacles = prepareObstacles(obstacles)
 
 %% Section 1: Reuse Only Current Complete Preparation
 
+preparationIsCurrent = false(numel(obstacles), 1);
+
 % Reuse cached geometry only when its layout and source data match.
 
 if isempty(obstacles)
@@ -47,7 +49,6 @@ if isfield(obstacles, "InternalPreparation")
     if all(preparationIsCurrent)
         return;
     end
-    obstacles = rmfield(obstacles, "InternalPreparation");
 end
 
 %% Section 2: Prepare Each Complete History
@@ -55,9 +56,11 @@ end
 % Prepare each obstacle separately.
 
 for obstacleIndex = 1:numel(obstacles)
+    if preparationIsCurrent(obstacleIndex), continue; end
     preparedObstacle = ...
         obstacleAvoidance.obstacles.prepareOneObstacle( ...
-        obstacles(obstacleIndex), preparationVersion);
+        obstacles(obstacleIndex), preparationVersion, ...
+        createSourceSnapshot(obstacles(obstacleIndex)));
     obstacles(obstacleIndex).InternalPreparation = ...
         preparedObstacle.InternalPreparation;
 end

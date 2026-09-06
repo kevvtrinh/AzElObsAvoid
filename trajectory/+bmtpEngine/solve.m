@@ -115,7 +115,7 @@ candidate = bmtpEngine.createMotionOutput( ...
     candidate, request, preparedMotion);
 [candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal( ...
     true, preparedMotion.ArrivalAtHorizon);
-diagnostics.BestDuration_s = candidate.MotionDuration_s;
+diagnostics.BestDuration_s = candidate.TrajectoryDuration_s;
 if ~certificate.Passed
     [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, ...
         "The optimized motion requires independent collision validation.", ...
@@ -129,7 +129,7 @@ end
     deal("A directly certified BMTP trajectory was found.", "goalReached");
 [candidate.Success, diagnostics.Accepted] = deal(true);
 [diagnostics.BestDuration_s, diagnostics.ElapsedTime_s] = ...
-    deal(candidate.MotionDuration_s, toc(totalTimer));
+    deal(candidate.TrajectoryDuration_s, toc(totalTimer));
 candidate.SolverDiagnostics = diagnostics;
 end
 
@@ -145,18 +145,14 @@ function candidate = createEmptyCandidate(seed, initialState, options)
 % Use the same candidate fields on success and failure.
 seedIndex = optionalField(seed, "Index", 0);
 seedSource = string(optionalField(seed, "Source", ""));
-corridorBoundary_deg = optionalField(seed, "CorridorBoundary_deg", zeros(0, 2));
+obstacleEnvelope_deg = optionalField(seed, "ObstacleEnvelope_deg", zeros(0, 2));
 [candidate, ~] = bmtpEngine.createMotionRecord( ...
     struct(), initialState, [], [], options.SampleTime_s, seedSource);
-extra = struct("OptimizerFeasible", false, "ArrivalAtHorizon", false, ...
-    "SeedIndex", seedIndex, "SeedSource", seedSource, "FinalTime_s", NaN, ...
-    "MotionDuration_s", NaN, "MotionLength_deg", Inf, ...
-    "IntegratedSquaredJerk_deg2_s5", Inf, "MaximumConstraintViolation", Inf, ...
-    "SolverDiagnostics", struct());
-for name = string(fieldnames(extra)).'
-    candidate.(name) = extra.(name);
-end
-candidate.SeedCorridorBoundary_deg = corridorBoundary_deg;
+candidate.ArrivalAtHorizon = false;
+candidate.SeedIndex = seedIndex;
+candidate.MotionLength_deg = Inf;
+candidate.IntegratedSquaredJerk_deg2_s5 = Inf;
+candidate.SeedCorridorBoundary_deg = obstacleEnvelope_deg;
 candidate.Message = "The BMTP kernel was not run.";
 end
 

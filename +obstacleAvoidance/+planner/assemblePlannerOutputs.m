@@ -1,7 +1,7 @@
-function [result, diagnosis] = createPublicOutputs(record, includeDiagnosis)
+function [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [result, diagnosis] = createPublicOutputs(record, includeDiagnosis)
+%   [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
 % PURPOSE
 %   Separate the usable motion from optional search and solver evidence.
 % INPUTS
@@ -28,22 +28,21 @@ result.BestPartialRoute_deg = zeros(0, 2);
 search = record.SearchDiagnostics;
 if search.BestPartialSeedIndex > 0 && ~record.Success
     result.BestPartialRoute_deg = record.Seeds(search.BestPartialSeedIndex).position_deg;
-elseif isfield(search.Grid, "BestPartialRoute_deg") && ~record.Success
-    result.BestPartialRoute_deg = search.Grid.BestPartialRoute_deg;
+elseif isfield(search.GraphSearch, "BestPartialRoute_deg") && ~record.Success
+    result.BestPartialRoute_deg = search.GraphSearch.BestPartialRoute_deg;
 end
 
 %% Section 2: Assemble Optional Diagnosis Without Duplicate Records
 diagnosis = struct();
 if ~includeDiagnosis, return; end
 attempts = rmfield(record.SeedSummaries, "SolverDiagnostics");
-solverDetails = table(zeros(0,1), strings(0,1), cell(0,1), ...
-    'VariableNames', {'Attempt', 'Field', 'Value'});
-for index = 1:numel(record.SeedSummaries)
-    details = obstacleAvoidance.planner.flattenDiagnosis(record.SeedSummaries(index).SolverDiagnostics);
-    solverDetails = [solverDetails; table(repmat(index,height(details),1), ...
-        details.Field, details.Value, 'VariableNames', {'Attempt','Field','Value'})]; %#ok<AGROW>
+solverDetails = flattenAttempts({record.SeedSummaries.SolverDiagnostics});
+searchRecord = search.GraphSearch;
+visibilityAttempts = flattenAttempts({});
+if isfield(searchRecord, "VisibilityAttempts")
+    visibilityAttempts = flattenAttempts(num2cell(searchRecord.VisibilityAttempts));
+    searchRecord = rmfield(searchRecord, "VisibilityAttempts");
 end
-searchRecord = search.Grid;
 coverage = struct();
 if isfield(searchRecord, "Coverage")
     coverage = searchRecord.Coverage;
@@ -58,8 +57,19 @@ diagnosis = struct( ...
     "Timing", search.StageTiming, ...
     "Search", searchRecord, "SearchCoverage", coverage, ...
     "Routes", record.Seeds, "Attempts", attempts, ...
-    "SolverDetails", solverDetails, ...
+    "SolverDetails", solverDetails, "VisibilityAttempts", visibilityAttempts, ...
     "DirectMotion", obstacleAvoidance.planner.flattenDiagnosis(search.DirectAttempt), ...
     "PathRefinement", obstacleAvoidance.planner.flattenDiagnosis(search.FixedClockExcursion), ...
     "Selection", search.SelectionPolicy);
+end
+
+function combined = flattenAttempts(records)
+% Preserve per-attempt evidence in one shallow table.
+combined = table(zeros(0,1), strings(0,1), cell(0,1), ...
+    'VariableNames', {'Attempt', 'Field', 'Value'});
+for index = 1:numel(records)
+    details = obstacleAvoidance.planner.flattenDiagnosis(records{index});
+    combined = [combined; table(repmat(index,height(details),1), ...
+        details.Field, details.Value, 'VariableNames', {'Attempt','Field','Value'})]; %#ok<AGROW>
+end
 end

@@ -1,40 +1,21 @@
-function [candidate, summary, checkResult, stageTiming] = ...
-        solveOneSeed( ...
+function [candidate, summary, stageTiming, context] = ...
+        solvePathGuess( ...
         obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [candidate, summary, checkResult, stageTiming] = ...
-%       obstacleAvoidance.planner.solveOneSeed( ...
+%   [candidate, summary, stageTiming, context] = solvePathGuess( ...
 %       obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
-%
 % PURPOSE
-%   - Select and run the primary motion method for one deterministic seed.
-%   - Apply explicit backups and retain only full-check acceptance evidence.
-%
+%   Construct and independently validate motion for one path guess.
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
-%   - seed (scalar route-seed struct)
-%       Indexed route suggestion and timing estimate.
-%   - context (scalar struct)
-%       UseStaticSolver and SummaryTemplate for this solve.
-%   - stageTiming (scalar struct)
-%       Accumulated planner timing before this seed.
-%
+%   Normalized obstacles, states, limits, options, and indexed path guess.
+%   context holds solver choice, summary template, and reusable geometry.
+%   stageTiming contains accumulated exclusive times.
 % OUTPUTS
-%   - candidate (scalar motion struct)
-%       Final attempted motion, including explicit fallback diagnostics.
-%   - summary (scalar candidate-summary struct)
-%       Stable solve, check, objective, and timing evidence.
-%   - checkResult (scalar validation struct)
-%       Same complete check used by the public validator.
-%   - stageTiming (scalar struct)
-%       Motion-solving and checking time accumulated through this seed.
-%
+%   candidate and summary retain the attempted motion, validation, and diagnostics.
+%   Updated stageTiming and context are reused by later guesses in this request.
 % UNITS
-%   - Position is degrees and time is seconds; derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
-%
+%   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
 
 %% Section 1: Choose And Solve The Primary Motion Method
 
@@ -45,19 +26,20 @@ precheckElapsedTime_s = 0;
 checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
 preparedObstacles = obstacles;
 if context.UseStaticSolver
-    solverGoalState = ...
-        obstacleAvoidance.planner.createSolverGoalState( ...
-        goalState, options);
+    if isempty(fieldnames(context.StaticGeometry))
+        context.StaticGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry( ...
+            preparedObstacles, initialState.time_s, goalState.time_s);
+    end
     [candidate, solverDiagnostics] = ...
-        obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, preparedObstacles, initialState, solverGoalState, ...
+        obstacleAvoidance.planner.solveStaticBmtpTrajectory( ...
+        seed, context.StaticGeometry, initialState, goalState, ...
         limits, options);
 else
     [candidate, checkResult, solverDiagnostics, ...
-        candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
-        obstacleAvoidance.planner.solveDynamicSeed( ...
+        candidateWasPrechecked, precheckElapsedTime_s, stageTiming, context] = ...
+        obstacleAvoidance.planner.solveDynamicPathGuess( ...
             preparedObstacles, initialState, goalState, limits, options, ...
-            seed, stageTiming);
+            seed, stageTiming, context);
 end
 
 %% Section 2: Run The Full Motion Check
@@ -72,8 +54,6 @@ if ~candidateWasPrechecked
         obstacleAvoidance.planner.checkCandidateMotion( ...
         candidate, preparedObstacles, initialState, goalState, limits, ...
         options, stageTiming, "The motion kernel returned no trajectory.");
-
-    % Refine the initial wait when it affects the objective.
 
     % Refine the wait for earliest arrival.
 
@@ -118,7 +98,7 @@ if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
     candidate.SolverDiagnostics = diagnostics;
     return;
 end
-directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
+directMotionDuration_s = candidate.TrajectoryDuration_s - initialWaitTime_s;
 diagnostics.InitialDirectMotionDuration_s = directMotionDuration_s;
 diagnostics.FinalDirectMotionDuration_s = directMotionDuration_s;
 % Time compression preserves the path but changes obstacle encounters.
@@ -154,7 +134,7 @@ for refinementIndex = 0:options.MaximumWaitRefinementIterations
     end
     motionTimer = tic;
     [trialCandidate, ~] = ...
-        obstacleAvoidance.planner.createDirectWaitMotion( ...
+        obstacleAvoidance.planner.createWaitThenMoveMotion( ...
         seed, initialState, goalState, limits, options, ...
         trialWaitTime_s, trialDuration_s);
     motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);

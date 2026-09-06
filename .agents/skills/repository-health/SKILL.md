@@ -62,3 +62,37 @@ At completion, state the inspected scope, healthy properties preserved,
 changes made, focused and broader checks actually run, runtime or size effects,
 unresolved candidates, untested paths, and final repository status. Do not call
 the repository production-ready while a known required blocker remains.
+
+## Execution And Data-Flow Audit
+
+When auditing unused code, redundant planning stages, or confusing data flow:
+
+- Freeze the source revision, dirty files, resolved requests, and outputs before
+  edits. Run the maintained examples across static, moving, success, and expected
+  failure cases with independent validation. Keep original CSV history and append
+  actual example runs using the existing schema.
+- Capture function and executed-line coverage. Use focused regressions or small
+  synthetic probes for fallback policies, recovery, capacity growth, optional
+  outputs, and display branches missed by examples. Distinguish no observed hits
+  from an unreachable branch or a helper with no callers; never delete based on
+  coverage alone.
+- Inspect discarded outputs, assignments overwritten before a read, duplicated
+  initialization, empty control blocks, write-only struct fields, constant
+  diagnostics, and expensive optional outputs computed without a consumer.
+  Trace values through struct copies, dynamic fields, callbacks, saved bundles,
+  public output assembly, and plots; text-match counts alone are insufficient.
+- Separate redundant work from lost evidence. Preserve useful rejection reasons,
+  attempt provenance, and competing partial routes instead of dropping them.
+  Verify that reported ranking and termination explanations match executed code.
+- Compare cold first calls separately from warmed repeated calls when evaluating
+  runtime. Use unprofiled matched runs for speed claims; profile data identifies
+  ownership and coverage and must be labeled as instrumented timing. Bound batch
+  runs externally and retain errors/timeouts as unfavorable evidence.
+- After a fix, compare physical inputs, routes, polynomial motion, arrival time,
+  and independent validation with the frozen baseline. Exercise the previously
+  unvisited branch and a structurally different case before broad verification.
+  Update renamed consumers, tests, and documentation together.
+
+Report confirmed dead work, reachable but rarely exercised paths, discarded
+useful evidence, and unmeasured optimization candidates separately. Keep durable
+notes concise; retain raw coverage and experimental runners outside source control.

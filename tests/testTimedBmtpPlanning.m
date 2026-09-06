@@ -41,7 +41,7 @@ inputs = result.Inputs;
     obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
     resultDiagnosis.Routes(timedSeedIndex), obstacleAvoidance.obstacles.prepareObstacles(inputs.obstacles), ...
     inputs.initialState, inputs.goalState, inputs.limits, result.Options, ...
-    obstacleAvoidance.planner.stageTiming());
+    obstacleAvoidance.planner.createStageTiming());
 testCase.TestData.TimedCandidate = timedCandidate;
 testCase.TestData.TimedValidation = timedValidation;
 testCase.TestData.TimedDiagnostics = timedDiagnostics;
@@ -93,13 +93,26 @@ result = testCase.TestData.Result;
 resultDiagnosis = testCase.TestData.ResultDiagnosis;
 diagnostics = testCase.TestData.TimedDiagnostics;
 maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
-verifyFalse(testCase, diagnostics.SegmentCountFallbackAttempted);
+verifyFalse(testCase, isfield(diagnostics, "SegmentCountFallbackAttempted"));
 verifyEqual(testCase, diagnostics.TimedSegmentCounts, ...
     maximumTimedSegmentCount);
 verifyEqual(testCase, diagnostics.Coverage.TimedSegmentCount, ...
     maximumTimedSegmentCount);
 verifyLessThanOrEqual(testCase, ...
     diagnostics.Coverage.TimedSegmentCount, maximumTimedSegmentCount);
+end
+
+function testRejectedCertificateExplainsAdaptiveValidation(testCase)
+% A corrupt timed certificate must not silently pass or lose its rejection reason.
+candidate = testCase.TestData.TimedCandidate;
+candidate.PlaneCertificate.Coverage.BaseTimeCellCount = 0;
+result = testCase.TestData.Result;
+inputs = result.Inputs;
+validation = obstacleAvoidance.validateTrajectory(candidate, inputs.obstacles, ...
+    inputs.initialState, inputs.goalState, inputs.limits, result.Options);
+verifyFalse(testCase, validation.PlaneCertificateCertified);
+verifyEqual(testCase, validation.CertificateRejectionReason, "baseTimeCellCount");
+verifyGreaterThan(testCase, validation.CollisionCheckCount, 0);
 end
 
 function [obstacles, initialState, goalState, limits, options] = createScenario()

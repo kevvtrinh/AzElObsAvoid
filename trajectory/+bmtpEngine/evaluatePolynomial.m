@@ -40,7 +40,7 @@ position_deg = NaN(sampleCount, dimensionCount);
 velocity_deg_s = position_deg;
 acceleration_deg_s2 = position_deg;
 jerk_deg_s3 = position_deg;
-if isempty(time_s) || any(~isfinite(time_s))
+if nargout < 2 || isempty(time_s) || any(~isfinite(time_s))
     return;
 end
 if nargin < 3 || isempty(segmentIndex)
@@ -70,12 +70,18 @@ localTau = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ ...
 localTau = min(1, max(0, localTau));
 position_deg = evaluateRecords( ...
     polynomial.positionPower_deg, segmentIndex, localTau);
-velocity_deg_s = evaluateRecords( ...
-    polynomial.velocityPower_deg_s, segmentIndex, localTau);
-acceleration_deg_s2 = evaluateRecords( ...
-    polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
-jerk_deg_s3 = evaluateRecords( ...
-    polynomial.jerkPower_deg_s3, segmentIndex, localTau);
+if nargout >= 3
+    velocity_deg_s = evaluateRecords( ...
+        polynomial.velocityPower_deg_s, segmentIndex, localTau);
+end
+if nargout >= 4
+    acceleration_deg_s2 = evaluateRecords( ...
+        polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
+end
+if nargout >= 5
+    jerk_deg_s3 = evaluateRecords( ...
+        polynomial.jerkPower_deg_s3, segmentIndex, localTau);
+end
 end
 
 %% Section 3: Local Functions

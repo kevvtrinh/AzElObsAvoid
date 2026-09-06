@@ -13,7 +13,7 @@ function [certified, minimumClearance_deg] = certifySeedCorridor( ...
 % INPUTS
 %   - trajectory (scalar struct)
 %       Polynomial, SeedCorridorBoundary_deg, and SeedCorridor are required.
-%   - obstacles (canonical protected obstacle struct array)
+%   - obstacles (prepared protected obstacle struct array)
 %       Complete histories that the supplied envelope must contain.
 %   - tolerance_deg (nonnegative numeric scalar)
 %       Certificate comparison tolerance.
@@ -56,7 +56,7 @@ if segmentCount < 1 || regionCount < 1 || ...
     return;
 end
 pairIndex = [[corridor.SegmentIndex].', [corridor.RegionIndex].'];
-expected = [repelem((1:segmentCount).', regionCount), ...
+expected = [reshape(repelem(1:segmentCount, regionCount), [], 1), ...
     repmat((1:regionCount).', segmentCount, 1)];
 if ~isequal(sortrows(pairIndex), expected)
     return;
@@ -99,8 +99,9 @@ if isempty(inequality_deg) || any(~isfinite(inequality_deg)) || ...
         any(inequality_deg > tolerance_deg)
     return;
 end
-clearance_deg = repelem([corridor.Clearance_deg].', coefficientCount) - inequality_deg;
-minimumClearance_deg = min(clearance_deg);
+requiredClearance_deg = reshape(repelem([corridor.Clearance_deg], coefficientCount), [], 1);
+clearance_deg = requiredClearance_deg - inequality_deg;
+minimumClearance_deg = min(clearance_deg, [], "all");
 certified = true;
 end
 

@@ -99,13 +99,10 @@ for timeIndex = 1:numel(trialTime_s)
         trialCandidate.TerminationReason;
     trials(completedTrialCount).ElapsedTime_s = toc(trialTimer);
     candidate = trialCandidate;
+    checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
     diagnostics = trialDiagnostics;
     diagnostics.Identifier = "bmtpTimedCell";
-    diagnostics.TrialCount = maximumTrialCount;
-    diagnostics.TimeCellTrials = trials;
-    diagnostics.TimedCellTrialCount = completedTrialCount;
     diagnostics.TimedSegmentCounts = timedSegmentCounts;
-    diagnostics.SegmentCountFallbackAttempted = false;
     diagnostics.DynamicObstacleRepresentation = ...
         "perIntervalProtectedGeometryConvexHull";
     if trialCandidate.Success
@@ -123,7 +120,6 @@ for timeIndex = 1:numel(trialTime_s)
             trialValidationTime_s;
         candidate = trialCandidate;
         checkResult = trialCheck;
-        diagnostics.TimeCellTrials = trials;
     end
     if trialCandidate.Success && trialCheck.Passed
         diagnostics.Accepted = true;
@@ -131,9 +127,9 @@ for timeIndex = 1:numel(trialTime_s)
         break;
     end
 end
-diagnostics.TimeCellTrials = trials;
+diagnostics.TimeCellTrials = trials(1:completedTrialCount);
+diagnostics.TrialCount = completedTrialCount;
 diagnostics.TimedCellTrialCount = completedTrialCount;
-diagnostics.SegmentCountFallbackAttempted = false;
 diagnostics.ElapsedTime_s = toc(totalTimer);
 candidate.SolverDiagnostics = diagnostics;
 end

@@ -19,7 +19,7 @@ function [result, diagnostics] = refineTravel( ...
 %
 % OUTPUTS
 %   - result (scalar struct)
-%       Selected controls, segment time, planes, and active-pair tags.
+%       Selected controls and segment time.
 %   - diagnostics (scalar struct)
 %       Updated active-pair count after optional refinement.
 %
@@ -31,9 +31,7 @@ function [result, diagnostics] = refineTravel( ...
 
 result = struct( ...
     "ControlPoint_deg", alternatingResult.ControlPoint_deg, ...
-    "SegmentTime_s", alternatingResult.SegmentTime_s, ...
-    "Planes", alternatingResult.Planes, ...
-    "TaggedPairs", alternatingResult.TaggedPairs);
+    "SegmentTime_s", alternatingResult.SegmentTime_s);
 if request.Options.GoalTimeMode == "earliestArrival"
     return;
 end
@@ -46,10 +44,11 @@ baseSegmentTime_s = result.SegmentTime_s;
 baseLength_deg = controlPolygonLength(baseControl_deg);
 selectedControl_deg = baseControl_deg;
 selectedSegmentTime_s = baseSegmentTime_s;
-selectedPlanes = result.Planes;
+selectedPlanes = alternatingResult.Planes;
 selectedLength_deg = baseLength_deg;
 travelRefinementAccepted = false;
-travelPlanes = result.Planes;
+travelPlanes = alternatingResult.Planes;
+taggedPairs = alternatingResult.TaggedPairs;
 for refinementIndex = 1:8
     [refinedControl_deg, refinedSegmentTime_s, travelExitFlag, output] = ...
         bmtpEngine.solveTrajectoryStep( ...
@@ -102,7 +101,6 @@ for refinementIndex = 1:8
         selectedControl_deg = refinedControl_deg;
         selectedSegmentTime_s = refinedSegmentTime_s;
         selectedPlanes = travelPlanes;
-        selectedLength_deg = refinedLength_deg;
         travelRefinementAccepted = true;
     end
     break;
@@ -113,11 +111,10 @@ end
 if travelRefinementAccepted
     result.ControlPoint_deg = selectedControl_deg;
     result.SegmentTime_s = selectedSegmentTime_s;
-    result.Planes = selectedPlanes;
-    result.TaggedPairs = result.TaggedPairs | reshape( ...
+    taggedPairs = taggedPairs | reshape( ...
         [selectedPlanes.Active], size(selectedPlanes));
 end
-diagnostics.TaggedPairCount = nnz(result.TaggedPairs);
+diagnostics.TaggedPairCount = nnz(taggedPairs);
 end
 
 %% Section 4: Local Functions
