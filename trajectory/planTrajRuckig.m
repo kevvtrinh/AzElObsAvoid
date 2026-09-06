@@ -1,5 +1,4 @@
-function result = planTrajRuckig( ...
-        initialState, terminalState, limits, options, pathConstraints)
+function result = planTrajRuckig(initialState, terminalState, limits, options, pathConstraints)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = planTrajRuckig()
@@ -40,8 +39,7 @@ elseif nargin == 3
 elseif nargin == 4
     result = ruckigEngine.solve(initialState, terminalState, limits, options);
 elseif nargin == 5
-    result = ruckigEngine.solve( ...
-        initialState, terminalState, limits, options, pathConstraints);
+    result = ruckigEngine.solve(initialState, terminalState, limits, options, pathConstraints);
 else
     error("planTrajRuckig:InvalidCall", "Use zero, three, four, or five inputs as documented.");
 end

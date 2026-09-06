@@ -68,6 +68,33 @@ Use judgment on implementation and workflow; keep changes focused on the task.
   approximations and tolerances; prefer clear loops or vectorization over
   `cellfun`/`arrayfun`. Avoid unrelated formatting and speculative abstractions.
 
+### Preferred Formatting and Comments
+
+- Keep the main function body flush left. Indent local helper function bodies
+  one level (four spaces, equivalent to one editor tab). Keep each function
+  declaration and its closing `end` at the outer level; indent nested blocks
+  further as usual.
+- Follow the user's edited examples as the formatting reference. Align assignment
+  equals signs within small, related groups, not across an entire function or
+  indentation level. Align local variables and structure fields separately;
+  avoid large padding gaps between unrelated assignments.
+- Keep the first argument on the same line as the function name. If a call
+  needs wrapping, wrap after an argument rather than immediately after `(`.
+- Prefer complete calls, assignments, and conditions on one line, even beyond
+  the editor's column guide. Do not introduce continuation lines merely to meet
+  a line-length target; wrap only when it improves readability.
+- Prefer explicit structure initialization followed by one field assignment per
+  line for reports and other multi-field records. Do not pack several field/value
+  pairs onto one line in a dense `struct(...)` constructor. Favor a longer,
+  readable block with aligned assignments over compact stacking. Keep the
+  constructor form when cell-valued arguments intentionally determine a struct
+  array's size; place its first field/value pair beside `struct(` and use one
+  field/value pair per continuation line where practical.
+- Write comments in plain language that a junior engineer can follow. Explain
+  what a block accomplishes, why a calculation or check is needed, and what its
+  result means. Explain unfamiliar terms and numerical tolerances where used;
+  avoid cryptic jargon and comments that merely repeat the code.
+
 ## Examples and Verification
 
 - Keep examples uniform and readable: controls -> obstacles -> explicit states,

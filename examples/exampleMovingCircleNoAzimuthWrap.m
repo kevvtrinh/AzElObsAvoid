@@ -28,48 +28,46 @@ function [result, diagnosis] = exampleMovingCircleNoAzimuthWrap(exampleOverrides
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival", ...
-    "AllowAzimuthWrapping", false), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival", "AllowAzimuthWrapping", false), [2 2]);
 
 %% Section 2: Create Obstacles
 
 % A circle rises across the direct path. The planner must start an immediate
 % detour because waiting or wrapping around the azimuth boundary is not allowed.
 
-obstacleTime_s = [0; 15];
+obstacleTime_s            = [0; 15];
 circleCenterElevation_deg = [0; 3];
-circleAngle_rad = (0:23).' * (2 * pi / 24);
-circleRadius_deg = 1.5;
-azimuthBySlice_deg = cell(2, 1);
-elevationBySlice_deg = cell(2, 1);
+circleAngle_rad           = (0:23).' * (2 * pi / 24);
+circleRadius_deg          = 1.5;
+azimuthBySlice_deg        = cell(2, 1);
+elevationBySlice_deg      = cell(2, 1);
 
 % Create the circle at both sampled elevations. Keep its azimuth outline fixed.
 for sampleIndex = 1:2
     azimuthBySlice_deg{sampleIndex} = circleRadius_deg * cos(circleAngle_rad);
-    elevationBySlice_deg{sampleIndex} = circleCenterElevation_deg(sampleIndex) + ...
-        circleRadius_deg * sin(circleAngle_rad);
+    elevationBySlice_deg{sampleIndex} = circleCenterElevation_deg(sampleIndex) + circleRadius_deg * sin(circleAngle_rad);
 end
 safetyMargin_deg = 0.1;
-obstacles = obstacleAvoidance.obstacles.createObstacle( ...
-    "rising circle", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+obstacles        = obstacleAvoidance.obstacles.createObstacle("rising circle", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 % Place the endpoints on opposite sides of the moving circle. Workspace bounds
 % make the non-wrapping requirement explicit.
 
-initialState = struct("time_s", 0, "position_deg", [-6 0]);
-goalState = struct("time_s", 15, "position_deg", [6 0]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [-6 0];
+goalState = struct();
+goalState.time_s       = 15;
+goalState.position_deg = [6 0];
+limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the same planner used by the other dynamic-obstacle examples.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -77,8 +75,7 @@ limits = struct( ...
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleMovingCircleNoAzimuthWrap:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleMovingCircleNoAzimuthWrap:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -86,8 +83,7 @@ end
 % The animation shows the detour and the vertical circle motion together.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

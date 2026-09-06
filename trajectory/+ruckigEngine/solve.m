@@ -1,5 +1,4 @@
-function result = solve( ...
-        initialState, terminalState, limits, options, pathConstraints)
+function result = solve(initialState, terminalState, limits, options, pathConstraints)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = ruckigEngine.solve()
@@ -51,26 +50,20 @@ end
 
 %% Section 1: Normalize And Check Eligibility
 
-[initialState, terminalState, limits, pathConstraints] = ...
-    ruckigEngine.internal.normalizeRequest( ...
-    initialState, terminalState, limits, pathConstraints);
-options = normalizeEngineOptions(options);
-result = ruckigEngine.internal.createEmptyResult( ...
-    initialState, terminalState, limits, options, pathConstraints);
-eligibility = ruckigEngine.checkEligibility( ...
-    initialState, terminalState, limits, options, pathConstraints);
+[initialState, terminalState, limits, pathConstraints] = ruckigEngine.internal.normalizeRequest(initialState, terminalState, limits, pathConstraints);
+options     = normalizeEngineOptions(options);
+result      = ruckigEngine.internal.createEmptyResult(initialState, terminalState, limits, options, pathConstraints);
+eligibility = ruckigEngine.checkEligibility(initialState, terminalState, limits, options, pathConstraints);
 result.Diagnostics = struct("Eligibility", eligibility);
 if ~eligibility.Supported
-    result.Message = eligibility.Message;
+    result.Message           = eligibility.Message;
     result.TerminationReason = eligibility.TerminationReason;
     return;
 end
 
-[hasBoundaryInfeasibility, boundaryMessage] = ...
-    detectBoundaryKinematicInfeasibility( ...
-    initialState, terminalState, limits);
+[hasBoundaryInfeasibility, boundaryMessage] = detectBoundaryKinematicInfeasibility(initialState, terminalState, limits);
 if hasBoundaryInfeasibility
-    result.Message = boundaryMessage;
+    result.Message           = boundaryMessage;
     result.TerminationReason = "kinematicallyInfeasibleBoundaryState";
     return;
 end
@@ -79,16 +72,14 @@ end
 
 % Synchronize the fastest eligible axis profiles on one timeline.
 if limits.ControlOrder == 2
-    profileAttempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
-        initialState, terminalState, limits, options);
+    profileAttempt = ruckigEngine.createSynchronizedAccelerationMotion(initialState, terminalState, limits, options);
 else
-    profileAttempt = ruckigEngine.createSynchronizedMotion( ...
-        initialState, terminalState, limits, options);
+    profileAttempt = ruckigEngine.createSynchronizedMotion(initialState, terminalState, limits, options);
 end
-result.Diagnostics.Profile = profileAttempt.Profile;
+result.Diagnostics.Profile     = profileAttempt.Profile;
 result.Diagnostics.ElapsedTime = profileAttempt.ElapsedTime;
 if ~profileAttempt.Success
-    result.Message = profileAttempt.Message;
+    result.Message           = profileAttempt.Message;
     result.TerminationReason = profileAttempt.TerminationReason;
     return;
 end
@@ -97,42 +88,35 @@ end
 
 % Evaluate the synchronized polynomial at uniform samples and switch times.
 profile = profileAttempt.Profile;
-result.FinalTime = profile.FinalTime;
-result.Duration = profile.FinalTime - initialState.time;
-result.ControlJerk = profile.ControlJerk;
-result.Polynomial = profile.Polynomial;
+result.FinalTime             = profile.FinalTime;
+result.Duration              = profile.FinalTime - initialState.time;
+result.ControlJerk           = profile.ControlJerk;
+result.Polynomial            = profile.Polynomial;
 result.IntegratedSquaredJerk = profile.IntegratedSquaredJerk;
 uniformTime = (initialState.time:options.SampleTime:profile.FinalTime).';
-sampleTime = unique([uniformTime; ...
-    profile.Polynomial.SegmentStartTime; profile.FinalTime]);
-[sampleTime, position, velocity, acceleration, jerk] = ...
-    ruckigEngine.internal.evaluatePolynomial( ...
-    profile.Polynomial, sampleTime);
-result.time = sampleTime;
-result.position = position;
-result.velocity = velocity;
+sampleTime  = unique([uniformTime; profile.Polynomial.SegmentStartTime; profile.FinalTime]);
+[sampleTime, position, velocity, acceleration, jerk] = ruckigEngine.internal.evaluatePolynomial(profile.Polynomial, sampleTime);
+result.time         = sampleTime;
+result.position     = position;
+result.velocity     = velocity;
 result.acceleration = acceleration;
-result.jerk = jerk;
+result.jerk         = jerk;
 
 %% Section 4: Check And Classify The Returned Motion
 
 % Check continuous limits and affine constraints on the assembled motion.
 % Obstacle safety is checked separately by the planner's validator.
-result.Validation = ruckigEngine.internal.validateResult(result);
-result.MaximumConstraintViolation = max( ...
-    result.Validation.MaximumInequalityViolation, ...
-    result.Validation.MaximumEqualityViolation);
-result.Success = result.Validation.Passed;
+result.Validation                 = ruckigEngine.internal.validateResult(result);
+result.MaximumConstraintViolation = max(result.Validation.MaximumInequalityViolation, result.Validation.MaximumEqualityViolation);
+result.Success                    = result.Validation.Passed;
 if result.Success
-    result.Message = ...
-        "A kinematically constrained trajectory was found and independently validated.";
+    result.Message           = "A kinematically constrained trajectory was found and independently validated.";
     result.TerminationReason = "goalReached";
 elseif ~isempty(pathConstraints.Tau)
-    result.Message = "The exact switching profile violates an affine " + ...
-        "path constraint. " + result.Validation.Message;
+    result.Message           = "The exact switching profile violates an affine " + "path constraint. " + result.Validation.Message;
     result.TerminationReason = "pathConstraintViolation";
 else
-    result.Message = result.Validation.Message;
+    result.Message           = result.Validation.Message;
     result.TerminationReason = "exactProfileValidationFailed";
 end
 end
@@ -140,120 +124,88 @@ end
 %% Section 5: Local Functions
 
 function options = normalizeEngineOptions(options)
-% Resolve only direct Ruckig settings; routing decisions belong to callers.
-if ~isstruct(options) || ~isscalar(options)
-    error("ruckigEngine:InvalidOptions", ...
-        "options must be a scalar struct or empty.");
-end
-resolvedOptions = ruckigEngine.defaultOptions();
-unknownNames = setdiff(string(fieldnames(options)), ...
-    string(fieldnames(resolvedOptions)), "stable");
-if ~isempty(unknownNames)
-    warning("ruckigEngine:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(unknownNames, ", "));
-end
-for fieldName = string(fieldnames(resolvedOptions)).'
-    if isfield(options, fieldName) && ~isempty(options.(fieldName))
-        resolvedOptions.(fieldName) = options.(fieldName);
+    % Resolve only direct Ruckig settings; routing decisions belong to callers.
+    if ~isstruct(options) || ~isscalar(options)
+        error("ruckigEngine:InvalidOptions", "options must be a scalar struct or empty.");
     end
-end
-resolvedOptions.TimeMode = string(resolvedOptions.TimeMode);
-if ~isscalar(resolvedOptions.TimeMode) || ...
-        ~any(resolvedOptions.TimeMode == ["fixed", "earliestArrival"])
-    error("ruckigEngine:InvalidTimeMode", ...
-        "TimeMode must be 'fixed' or 'earliestArrival'.");
-end
-if ~isempty(resolvedOptions.FinalTime)
-    validateattributes(resolvedOptions.FinalTime, {'numeric'}, ...
-        {'real', 'finite', 'scalar'});
-    resolvedOptions.FinalTime = double(resolvedOptions.FinalTime);
-end
-for fieldName = ["SampleTime", "ConstraintTolerance", ...
-        "ArrivalTimeTolerance"]
-    validateattributes(resolvedOptions.(fieldName), {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'positive'});
-    resolvedOptions.(fieldName) = double(resolvedOptions.(fieldName));
-end
-isLogical = islogical(resolvedOptions.Verbose) && ...
-    isscalar(resolvedOptions.Verbose);
-isBinaryNumeric = isnumeric(resolvedOptions.Verbose) && ...
-    isscalar(resolvedOptions.Verbose) && ...
-    isfinite(resolvedOptions.Verbose) && ...
-    any(resolvedOptions.Verbose == [0, 1]);
-if ~isLogical && ~isBinaryNumeric
-    error("ruckigEngine:InvalidVerbose", ...
-        "Verbose must be a scalar logical or binary numeric value.");
-end
-resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
-options = resolvedOptions;
+    resolvedOptions = ruckigEngine.defaultOptions();
+    unknownNames    = setdiff(string(fieldnames(options)), string(fieldnames(resolvedOptions)), "stable");
+    if ~isempty(unknownNames)
+        warning("ruckigEngine:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
+    end
+    for fieldName = string(fieldnames(resolvedOptions)).'
+        if isfield(options, fieldName) && ~isempty(options.(fieldName))
+            resolvedOptions.(fieldName) = options.(fieldName);
+        end
+    end
+    resolvedOptions.TimeMode = string(resolvedOptions.TimeMode);
+    if ~isscalar(resolvedOptions.TimeMode) || ~any(resolvedOptions.TimeMode == ["fixed", "earliestArrival"])
+        error("ruckigEngine:InvalidTimeMode", "TimeMode must be 'fixed' or 'earliestArrival'.");
+    end
+    if ~isempty(resolvedOptions.FinalTime)
+        validateattributes(resolvedOptions.FinalTime, {'numeric'}, {'real', 'finite', 'scalar'});
+        resolvedOptions.FinalTime = double(resolvedOptions.FinalTime);
+    end
+    for fieldName = ["SampleTime", "ConstraintTolerance", ...
+            "ArrivalTimeTolerance"]
+        validateattributes(resolvedOptions.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+        resolvedOptions.(fieldName) = double(resolvedOptions.(fieldName));
+    end
+    isLogical       = islogical(resolvedOptions.Verbose) && isscalar(resolvedOptions.Verbose);
+    isBinaryNumeric = isnumeric(resolvedOptions.Verbose) && isscalar(resolvedOptions.Verbose) && isfinite(resolvedOptions.Verbose) && any(resolvedOptions.Verbose == [0, 1]);
+    if ~isLogical && ~isBinaryNumeric
+        error("ruckigEngine:InvalidVerbose", "Verbose must be a scalar logical or binary numeric value.");
+    end
+    resolvedOptions.Verbose = logical(resolvedOptions.Verbose);
+    options = resolvedOptions;
 end
 
-function [value, message] = detectBoundaryKinematicInfeasibility( ...
-        initialState, terminalState, limits)
-% Prove endpoint states that no bounded-jerk continuation can make feasible.
-velocityScale = max([1, abs(limits.velocityLower), ...
-    abs(limits.velocityUpper)], [], 2);
-accelerationScale = max([1, abs(limits.accelerationLower), ...
-    abs(limits.accelerationUpper)], [], 2);
-velocityTolerance = 128 * eps(velocityScale);
-accelerationTolerance = 128 * eps(accelerationScale);
-initialVelocityViolation = max( ...
-    limits.velocityLower - initialState.velocity, ...
-    initialState.velocity - limits.velocityUpper);
-terminalVelocityViolation = max( ...
-    limits.velocityLower - terminalState.velocity, ...
-    terminalState.velocity - limits.velocityUpper);
-initialAccelerationViolation = max( ...
-    limits.accelerationLower - initialState.acceleration, ...
-    initialState.acceleration - limits.accelerationUpper);
-terminalAccelerationViolation = max( ...
-    limits.accelerationLower - terminalState.acceleration, ...
-    terminalState.acceleration - limits.accelerationUpper);
+function [value, message] = detectBoundaryKinematicInfeasibility(initialState, terminalState, limits)
+    % Prove endpoint states that no bounded-jerk continuation can make feasible.
+    velocityScale                 = max([1, abs(limits.velocityLower), abs(limits.velocityUpper)], [], 2);
+    accelerationScale             = max([1, abs(limits.accelerationLower), abs(limits.accelerationUpper)], [], 2);
+    velocityTolerance             = 128 * eps(velocityScale);
+    accelerationTolerance         = 128 * eps(accelerationScale);
+    initialVelocityViolation      = max(limits.velocityLower - initialState.velocity, initialState.velocity - limits.velocityUpper);
+    terminalVelocityViolation     = max(limits.velocityLower - terminalState.velocity, terminalState.velocity - limits.velocityUpper);
+    initialAccelerationViolation  = max(limits.accelerationLower - initialState.acceleration, initialState.acceleration - limits.accelerationUpper);
+    terminalAccelerationViolation = max(limits.accelerationLower - terminalState.acceleration, terminalState.acceleration - limits.accelerationUpper);
 
-% Canceling acceleration requires a velocity change of magnitude a^2/(2*j).
-% Reject the state if even maximum opposing jerk cannot avoid a velocity-limit violation.
-initialStoppingVelocity = initialState.velocity + ...
-    sign(initialState.acceleration) .* ...
-    initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
-terminalPredecessorVelocity = terminalState.velocity - ...
-    sign(terminalState.acceleration) .* ...
-    terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
-initialStoppingViolation = max( ...
-    limits.velocityLower - initialStoppingVelocity, ...
-    initialStoppingVelocity - limits.velocityUpper);
-terminalStoppingViolation = max( ...
-    limits.velocityLower - terminalPredecessorVelocity, ...
-    terminalPredecessorVelocity - limits.velocityUpper);
+    % Canceling acceleration requires a velocity change of magnitude a^2/(2*j).
+    % Reject the state if even maximum opposing jerk cannot avoid a velocity-limit violation.
+    initialStoppingVelocity     = initialState.velocity + sign(initialState.acceleration) .* initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    terminalPredecessorVelocity = terminalState.velocity - sign(terminalState.acceleration) .* terminalState.acceleration .^ 2 ./ (2 * limits.maximumJerk);
+    initialStoppingViolation    = max(limits.velocityLower - initialStoppingVelocity, initialStoppingVelocity - limits.velocityUpper);
+    terminalStoppingViolation   = max(limits.velocityLower - terminalPredecessorVelocity, terminalPredecessorVelocity - limits.velocityUpper);
 
-if limits.ControlOrder == 2
-    checks = [ ...
+    if limits.ControlOrder == 2
+        checks = [ ...
+            initialVelocityViolation > velocityTolerance; ...
+            terminalVelocityViolation > velocityTolerance];
+        descriptions = [ ...
+            "initial velocity is outside its supplied bound", ...
+            "terminal velocity is outside its supplied bound"];
+    else
+        checks = [ ...
         initialVelocityViolation > velocityTolerance; ...
-        terminalVelocityViolation > velocityTolerance];
-    descriptions = [ ...
-        "initial velocity is outside its supplied bound", ...
-        "terminal velocity is outside its supplied bound"];
-else
-    checks = [ ...
-    initialVelocityViolation > velocityTolerance; ...
-    terminalVelocityViolation > velocityTolerance; ...
-    initialAccelerationViolation > accelerationTolerance; ...
-    terminalAccelerationViolation > accelerationTolerance; ...
-    initialStoppingViolation > velocityTolerance; ...
-    terminalStoppingViolation > velocityTolerance];
-    descriptions = [ ...
-        "initial velocity is outside its supplied bound", ...
-        "terminal velocity is outside its supplied bound", ...
-        "initial acceleration is outside its supplied bound", ...
-        "terminal acceleration is outside its supplied bound", ...
-        "initial acceleration cannot be canceled before velocity crosses a bound", ...
-        "terminal acceleration requires a predecessor velocity outside a bound"];
-end
-[value, linearIndex] = max(checks(:));
-if ~value
-    message = "";
-    return;
-end
-[checkIndex, dimensionIndex] = ind2sub(size(checks), linearIndex);
-message = sprintf("Axis %d %s.", dimensionIndex, descriptions(checkIndex));
+        terminalVelocityViolation > velocityTolerance; ...
+        initialAccelerationViolation > accelerationTolerance; ...
+        terminalAccelerationViolation > accelerationTolerance; ...
+        initialStoppingViolation > velocityTolerance; ...
+        terminalStoppingViolation > velocityTolerance];
+        descriptions = [ ...
+            "initial velocity is outside its supplied bound", ...
+            "terminal velocity is outside its supplied bound", ...
+            "initial acceleration is outside its supplied bound", ...
+            "terminal acceleration is outside its supplied bound", ...
+            "initial acceleration cannot be canceled before velocity crosses a bound", ...
+            "terminal acceleration requires a predecessor velocity outside a bound"];
+    end
+    [value, linearIndex] = max(checks(:));
+    if ~value
+        message = "";
+        return;
+    end
+    [checkIndex, dimensionIndex] = ind2sub(size(checks), linearIndex);
+    message = sprintf("Axis %d %s.", dimensionIndex, descriptions(checkIndex));
 end

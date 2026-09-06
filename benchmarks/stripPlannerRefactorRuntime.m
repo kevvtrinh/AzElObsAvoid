@@ -26,11 +26,8 @@ function value = stripPlannerRefactorRuntime(value)
 % describe physical behavior. Ignore both when comparing historical captures.
 
 if isstruct(value)
-    fieldNames = string(fieldnames(value));
-    isRuntimeField = contains(fieldNames, "ElapsedTime") | ...
-        fieldNames == "ElapsedPlanningTime_s" | ...
-        fieldNames == "FirstValidatedMotionTime_s" | ...
-        fieldNames == "StageTiming" | fieldNames == "StageOutputs";
+    fieldNames     = string(fieldnames(value));
+    isRuntimeField = contains(fieldNames, "ElapsedTime") | fieldNames == "ElapsedPlanningTime_s" | fieldNames == "FirstValidatedMotionTime_s" | fieldNames == "StageTiming" | fieldNames == "StageOutputs";
     if any(isRuntimeField)
         value = rmfield(value, cellstr(fieldNames(isRuntimeField)));
     end
@@ -39,21 +36,15 @@ if isstruct(value)
         for fieldIndex = 1:numel(remainingNames)
             fieldName = remainingNames(fieldIndex);
             % TotalTime_s is runtime only inside the conic solver record.
-            if fieldName == "ConicSolver" && ...
-                    isstruct(value(elementIndex).(fieldName)) && ...
-                    isfield(value(elementIndex).(fieldName), "TotalTime_s")
-                value(elementIndex).(fieldName) = rmfield( ...
-                    value(elementIndex).(fieldName), "TotalTime_s");
+            if fieldName == "ConicSolver" && isstruct(value(elementIndex).(fieldName)) && isfield(value(elementIndex).(fieldName), "TotalTime_s")
+                value(elementIndex).(fieldName) = rmfield(value(elementIndex).(fieldName), "TotalTime_s");
             end
-            value(elementIndex).(fieldName) = ...
-                stripPlannerRefactorRuntime( ...
-                value(elementIndex).(fieldName));
+            value(elementIndex).(fieldName) = stripPlannerRefactorRuntime(value(elementIndex).(fieldName));
         end
     end
 elseif iscell(value)
     for elementIndex = 1:numel(value)
-        value{elementIndex} = stripPlannerRefactorRuntime( ...
-            value{elementIndex});
+        value{elementIndex} = stripPlannerRefactorRuntime(value{elementIndex});
     end
 end
 end

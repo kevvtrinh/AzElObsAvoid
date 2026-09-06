@@ -1,5 +1,4 @@
-function profile = createRestToRestJerkProfile( ...
-        initialState, terminalState, limits, requestedFinalTime)
+function profile = createRestToRestJerkProfile(initialState, terminalState, limits, requestedFinalTime)
 %% Section 0: Header & Readme
 % SYNTAX
 %   profile = ruckigEngine.createRestToRestJerkProfile( ...
@@ -31,52 +30,48 @@ function profile = createRestToRestJerkProfile( ...
 
 %% Section 1: Create The Minimum-Time Phase Law
 
-velocityLimit = limits.maximumVelocity;
+velocityLimit     = limits.maximumVelocity;
 accelerationLimit = limits.maximumAcceleration;
-jerkLimit = limits.maximumJerk;
-[jerkRampTime, constantAccelerationTime, cruiseTime] = ...
-    profileDurations(velocityLimit, accelerationLimit, jerkLimit);
+jerkLimit         = limits.maximumJerk;
+[jerkRampTime, constantAccelerationTime, cruiseTime] = profileDurations(velocityLimit, accelerationLimit, jerkLimit);
 
 % Add roundoff slack so analytic peaks remain within their limits.
-guardScale = 1 + 64 * eps;
-phaseDuration = guardScale * [ ...
-    jerkRampTime; constantAccelerationTime; jerkRampTime; ...
-    cruiseTime; jerkRampTime; constantAccelerationTime; jerkRampTime];
-phaseJerk = [1; 0; -1; 0; -1; 0; 1] * ...
+guardScale    = 1 + 64 * eps;
+phaseDuration = guardScale * [ jerkRampTime; constantAccelerationTime; jerkRampTime; cruiseTime; jerkRampTime; constantAccelerationTime; jerkRampTime];
+phaseJerk     = [1; 0; -1; 0; -1; 0; 1] * ...
     jerkLimit / guardScale^3;
-retainedPhase = phaseDuration > 64 * eps;
-phaseDuration = phaseDuration(retainedPhase);
-phaseJerk = phaseJerk(retainedPhase);
+retainedPhase    = phaseDuration > 64 * eps;
+phaseDuration    = phaseDuration(retainedPhase);
+phaseJerk        = phaseJerk(retainedPhase);
 minimumFinalTime = initialState.time + sum(phaseDuration);
 
 profile = createEmptyProfile(minimumFinalTime);
 if ~isempty(requestedFinalTime)
     requestedDuration = requestedFinalTime - initialState.time;
-    minimumDuration = minimumFinalTime - initialState.time;
-    timeTolerance = 256 * eps(max([1, requestedDuration, minimumDuration]));
+    minimumDuration   = minimumFinalTime - initialState.time;
+    timeTolerance     = 256 * eps(max([1, requestedDuration, minimumDuration]));
     if requestedDuration < minimumDuration - timeTolerance
-        profile.Message = ...
-            "The requested final time is below the jerk-switching minimum.";
+        profile.Message = "The requested final time is below the jerk-switching minimum.";
         return;
     end
-    stretch = max(1, requestedDuration / minimumDuration);
+    stretch       = max(1, requestedDuration / minimumDuration);
     phaseDuration = stretch * phaseDuration;
-    phaseJerk = phaseJerk / stretch^3;
+    phaseJerk     = phaseJerk / stretch^3;
 end
 %% Section 2: Integrate Every Constant-Jerk Phase Exactly
 
-segmentCount = numel(phaseDuration);
-positionPower = zeros(segmentCount, 1, 6);
-velocityPower = zeros(segmentCount, 1, 5);
+segmentCount      = numel(phaseDuration);
+positionPower     = zeros(segmentCount, 1, 6);
+velocityPower     = zeros(segmentCount, 1, 5);
 accelerationPower = zeros(segmentCount, 1, 4);
-jerkPower = zeros(segmentCount, 1, 3);
-position = initialState.position;
-velocity = initialState.velocity;
-acceleration = initialState.acceleration;
+jerkPower         = zeros(segmentCount, 1, 3);
+position          = initialState.position;
+velocity          = initialState.velocity;
+acceleration      = initialState.acceleration;
 
 for segmentIndex = 1:segmentCount
-    duration = phaseDuration(segmentIndex);
-    jerk = phaseJerk(segmentIndex);
+    duration            = phaseDuration(segmentIndex);
+    jerk                = phaseJerk(segmentIndex);
     positionCoefficient = [ ...
         position, velocity * duration, ...
         0.5 * acceleration * duration^2, jerk * duration^3 / 6, 0, 0];
@@ -89,16 +84,14 @@ for segmentIndex = 1:segmentCount
     velocityPower(segmentIndex, 1, :) = velocityCoefficient;
     accelerationPower(segmentIndex, 1, :) = accelerationCoefficient;
     jerkPower(segmentIndex, 1, :) = [jerk, 0, 0];
-    position = sum(positionCoefficient);
-    velocity = sum(velocityCoefficient);
+    position     = sum(positionCoefficient);
+    velocity     = sum(velocityCoefficient);
     acceleration = sum(accelerationCoefficient);
 end
 
-segmentStartTime = initialState.time + ...
-    [0; cumsum(phaseDuration(1:end - 1))];
-finalTime = initialState.time + sum(phaseDuration);
-polynomial = struct( ...
-    "SegmentCount", segmentCount, ...
+segmentStartTime = initialState.time + [0; cumsum(phaseDuration(1:end - 1))];
+finalTime        = initialState.time + sum(phaseDuration);
+polynomial       = struct("SegmentCount", segmentCount, ...
     "SegmentStartTime", segmentStartTime, ...
     "SegmentDuration", phaseDuration, ...
     "FinalTime", finalTime, ...
@@ -106,72 +99,60 @@ polynomial = struct( ...
     "velocityPower", velocityPower, ...
     "accelerationPower", accelerationPower, ...
     "jerkPower", jerkPower, ...
-    "TerminalState", struct( ...
-    "position", position, ...
+    "TerminalState", struct("position", position, ...
     "velocity", velocity, ...
     "acceleration", acceleration));
 
 %% Section 3: Assemble The Profile
 
 endpointTolerance = 256 * eps(max([1, abs(position)]));
-endpointError = max(abs([ ...
-    position - terminalState.position, ...
-    velocity - terminalState.velocity, ...
-    acceleration - terminalState.acceleration]));
-profile.Success = endpointError <= endpointTolerance;
-profile.Message = "The exact rest-to-rest jerk-switching profile was created.";
-profile.Polynomial = polynomial;
-profile.ControlJerk = phaseJerk;
-profile.FinalTime = finalTime;
+endpointError     = max(abs([ position - terminalState.position, velocity - terminalState.velocity, acceleration - terminalState.acceleration]));
+profile.Success               = endpointError <= endpointTolerance;
+profile.Message               = "The exact rest-to-rest jerk-switching profile was created.";
+profile.Polynomial            = polynomial;
+profile.ControlJerk           = phaseJerk;
+profile.FinalTime             = finalTime;
 profile.IntegratedSquaredJerk = sum(phaseJerk .^ 2 .* phaseDuration);
 if ~profile.Success
-    profile.Message = sprintf( ...
-        "Jerk-switching endpoint error %.9g exceeds tolerance %.9g.", ...
-        endpointError, endpointTolerance);
+    profile.Message = sprintf("Jerk-switching endpoint error %.9g exceeds tolerance %.9g.", endpointError, endpointTolerance);
 end
 end
 
 %% Section 4: Local Functions
 
-function [jerkRampTime, constantAccelerationTime, cruiseTime] = ...
-        profileDurations(velocityLimit, accelerationLimit, jerkLimit)
-% Solve the symmetric unit-distance jerk-limited switching durations.
-accelerationDistance = 2 * accelerationLimit^3 / jerkLimit^2;
-if accelerationDistance >= 1
-    jerkRampTime = nthroot(1 / (2 * jerkLimit), 3);
-    constantAccelerationTime = 0;
-else
-    jerkRampTime = accelerationLimit / jerkLimit;
-    constantAccelerationTime = 0.5 * ( ...
-        sqrt(jerkRampTime^2 + 4 / accelerationLimit) - 3 * jerkRampTime);
-end
-peakVelocity = jerkLimit * jerkRampTime * ...
-    (jerkRampTime + constantAccelerationTime);
-cruiseTime = 0;
-if peakVelocity <= velocityLimit
-    return;
-end
-if velocityLimit <= accelerationLimit^2 / jerkLimit
-    jerkRampTime = sqrt(velocityLimit / jerkLimit);
-    constantAccelerationTime = 0;
-else
-    jerkRampTime = accelerationLimit / jerkLimit;
-    constantAccelerationTime = velocityLimit / accelerationLimit - ...
-        jerkRampTime;
-end
-minimumDistance = velocityLimit * ...
-    (2 * jerkRampTime + constantAccelerationTime);
-cruiseTime = max(0, (1 - minimumDistance) / velocityLimit);
+function [jerkRampTime, constantAccelerationTime, cruiseTime] = profileDurations(velocityLimit, accelerationLimit, jerkLimit)
+    % Solve the symmetric unit-distance jerk-limited switching durations.
+    accelerationDistance = 2 * accelerationLimit^3 / jerkLimit^2;
+    if accelerationDistance >= 1
+        jerkRampTime             = nthroot(1 / (2 * jerkLimit), 3);
+        constantAccelerationTime = 0;
+    else
+        jerkRampTime             = accelerationLimit / jerkLimit;
+        constantAccelerationTime = 0.5 * (sqrt(jerkRampTime^2 + 4 / accelerationLimit) - 3 * jerkRampTime);
+    end
+    peakVelocity = jerkLimit * jerkRampTime * (jerkRampTime + constantAccelerationTime);
+    cruiseTime   = 0;
+    if peakVelocity <= velocityLimit
+        return;
+    end
+    if velocityLimit <= accelerationLimit^2 / jerkLimit
+        jerkRampTime             = sqrt(velocityLimit / jerkLimit);
+        constantAccelerationTime = 0;
+    else
+        jerkRampTime             = accelerationLimit / jerkLimit;
+        constantAccelerationTime = velocityLimit / accelerationLimit - jerkRampTime;
+    end
+    minimumDistance = velocityLimit * (2 * jerkRampTime + constantAccelerationTime);
+    cruiseTime      = max(0, (1 - minimumDistance) / velocityLimit);
 end
 
 function profile = createEmptyProfile(minimumFinalTime)
-% Initialize profile fields for success or a too-short requested duration.
-profile = struct( ...
-    "Success", false, ...
-    "Message", "No jerk-switching profile was created.", ...
-    "Polynomial", struct(), ...
-    "ControlJerk", zeros(0, 1), ...
-    "FinalTime", NaN, ...
-    "MinimumFinalTime", minimumFinalTime, ...
-    "IntegratedSquaredJerk", Inf);
+    % Initialize profile fields for success or a too-short requested duration.
+    profile = struct("Success", false, ...
+        "Message", "No jerk-switching profile was created.", ...
+        "Polynomial", struct(), ...
+        "ControlJerk", zeros(0, 1), ...
+        "FinalTime", NaN, ...
+        "MinimumFinalTime", minimumFinalTime, ...
+        "IntegratedSquaredJerk", Inf);
 end

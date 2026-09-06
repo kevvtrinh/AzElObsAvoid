@@ -21,183 +21,158 @@ tests = functiontests(localfunctions);
 end
 
 function setupOnce(testCase)
-% Locate production, trajectory, and maintained example entry points once.
-repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
-addpath(repositoryRoot);
-addpath(fullfile(repositoryRoot, "trajectory"));
-addpath(fullfile(repositoryRoot, "examples"));
-testCase.TestData.RepositoryRoot = repositoryRoot;
+    % Locate production, trajectory, and maintained example entry points once.
+    repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+    addpath(repositoryRoot);
+    addpath(fullfile(repositoryRoot, "trajectory"));
+    addpath(fullfile(repositoryRoot, "examples"));
+    testCase.TestData.RepositoryRoot = repositoryRoot;
 end
 
 function testPhysicalRequirementHashes(testCase)
-% Protect reviewed inputs and the native U.S. deformation from silent drift.
-relativePaths = [ ...
-    "examples/exampleStaticUShapedObstacle.m", ...
-    "examples/exampleMovingDeformingUSOutlineVisibility.m", ...
-    "examples/private/createContiguousUSObstacle.m"];
-expectedHashes = [ ...
-    "fe0720b0fae52308307953af4315fdf628aaaf70476bfee1691a1bde70c1596e", ...
-    "bafb2703c82c60c4346072d2d336717c5296e282c7a596e5647d7269c0b3b465", ...
-    "b20b23767ef8a6310ec9993e35a5c0b893137511a8f0bc8cf658bb28788c2454"];
-for requirementIndex = 1:numel(relativePaths)
-    requirementPath = fullfile( ...
-        testCase.TestData.RepositoryRoot, relativePaths(requirementIndex));
-    sourceText = string(fileread(requirementPath));
-    sourceText = replace(sourceText, ...
-        [string(char([13 10])) string(char(13))], newline);
-    if requirementIndex < numel(relativePaths)
-        sourceText = extractBefore( ...
-            extractAfter(sourceText, "%% Section 1:"), "%% Section 6:");
+    % Protect reviewed inputs and the native U.S. deformation from silent drift.
+    relativePaths = [ ...
+        "examples/exampleStaticUShapedObstacle.m", ...
+        "examples/exampleMovingDeformingUSOutlineVisibility.m", ...
+        "examples/private/createContiguousUSObstacle.m"];
+    expectedHashes = [ ...
+        "0be77543e72ee4ffc39caca63f5252c65612c312fcb8ef3335339e291c3c300b", ...
+        "475b0edab7baeff5ff342037ac3d9de33b11fb57bc40ab90d62c19595a96fdef", ...
+        "68a16c8932466edb06ac00a05c56588981b22c46d1770c4a4cb13c983ad69e64"];
+    for requirementIndex = 1:numel(relativePaths)
+        requirementPath = fullfile(testCase.TestData.RepositoryRoot, relativePaths(requirementIndex));
+        sourceText      = string(fileread(requirementPath));
+        sourceText      = replace(sourceText, [string(char([13 10])) string(char(13))], newline);
+        if requirementIndex < numel(relativePaths)
+            sourceText = extractBefore(extractAfter(sourceText, "%% Section 1:"), "%% Section 6:");
+        end
+        hashEngine = java.security.MessageDigest.getInstance("SHA-256");
+        hashEngine.update(unicode2native(char(sourceText), "UTF-8"));
+        hashBytes  = mod(double(hashEngine.digest()), 256);
+        actualHash = lower(string(reshape(dec2hex(hashBytes, 2).', 1, [])));
+        verifyEqual(testCase, actualHash, expectedHashes(requirementIndex), "The reviewed example requirement changed in " + relativePaths(requirementIndex) + ".");
     end
-    hashEngine = java.security.MessageDigest.getInstance("SHA-256");
-    hashEngine.update(unicode2native(char(sourceText), "UTF-8"));
-    hashBytes = mod(double(hashEngine.digest()), 256);
-    actualHash = lower(string(reshape(dec2hex(hashBytes, 2).', 1, [])));
-    verifyEqual(testCase, actualHash, expectedHashes(requirementIndex), ...
-        "The reviewed example requirement changed in " + ...
-        relativePaths(requirementIndex) + ".");
-end
 end
 
 function testMaintainedExampleSourceContracts(testCase)
-% Verify shared source contracts from one maintained-example inventory.
-allExampleNames = [ ...
-    "exampleAlternatingSlalom", "exampleObstacleAvoidance", ...
-    "exampleDenseConcaveObstacle", "exampleFourAcceleratingCircles", ...
-    "exampleInterceptMovingTargetAtSetTime", ...
-    "exampleInterceptMovingTargetEarliest", ...
-    "exampleMovingBarrierWait", "exampleMovingCircleNoAzimuthWrap", ...
-    "exampleMovingDeformingUSOutlineVisibility", ...
-    "exampleMovingRotatingObstacleField", ...
-    "exampleNoPath", "exampleObstacleFree", ...
-    "exampleOpeningUShapedObstacle", ...
-    "exampleStraightTargetAlternatingOcclusion", ...
-    "exampleTargetExitsObstacle", ...
-    "exampleTwoOpposingUVisibilityGraph", ...
-    "exampleStaticUShapedObstacle", "exampleUSOutlineExtremeVisibility"];
-fixedArrivalExamples = [ ...
-    "exampleFourAcceleratingCircles", ...
-    "exampleInterceptMovingTargetAtSetTime", ...
-    "exampleInterceptMovingTargetEarliest", ...
-    "exampleStraightTargetAlternatingOcclusion", ...
-    "exampleTargetExitsObstacle"];
-earliestArrivalExamples = setdiff( ...
-    allExampleNames, fixedArrivalExamples, "stable");
+    % Verify shared source contracts from one maintained-example inventory.
+    allExampleNames = [ ...
+        "exampleAlternatingSlalom", "exampleObstacleAvoidance", ...
+        "exampleDenseConcaveObstacle", "exampleFourAcceleratingCircles", ...
+        "exampleInterceptMovingTargetAtSetTime", ...
+        "exampleInterceptMovingTargetEarliest", ...
+        "exampleMovingBarrierWait", "exampleMovingCircleNoAzimuthWrap", ...
+        "exampleMovingDeformingUSOutlineVisibility", ...
+        "exampleMovingRotatingObstacleField", ...
+        "exampleNoPath", "exampleObstacleFree", ...
+        "exampleOpeningUShapedObstacle", ...
+        "exampleStraightTargetAlternatingOcclusion", ...
+        "exampleTargetExitsObstacle", ...
+        "exampleTwoOpposingUVisibilityGraph", ...
+        "exampleStaticUShapedObstacle", "exampleUSOutlineExtremeVisibility"];
+    fixedArrivalExamples = [ ...
+        "exampleFourAcceleratingCircles", ...
+        "exampleInterceptMovingTargetAtSetTime", ...
+        "exampleInterceptMovingTargetEarliest", ...
+        "exampleStraightTargetAlternatingOcclusion", ...
+        "exampleTargetExitsObstacle"];
+    earliestArrivalExamples = setdiff(allExampleNames, fixedArrivalExamples, "stable");
 
-for exampleName = allExampleNames
-    examplePath = fullfile(testCase.TestData.RepositoryRoot, ...
-        "examples", exampleName + ".m");
-    sourceText = string(fileread(examplePath));
-    routedMatch = regexp(sourceText, ...
-        '"maxJerk_deg_s3"\s*,\s*\w+\.MaxJerk_deg_s3', 'once');
-    verifyNotEmpty(testCase, routedMatch, ...
-        exampleName + " must route MaxJerk_deg_s3 into limits.");
-    addedField = regexp(sourceText, ...
-        '(?m)^\s*result\.[A-Za-z]\w*\s*=', 'once');
-    verifyEmpty(testCase, addedField, ...
-        exampleName + " must not append fields to the planner result.");
-end
-for exampleName = earliestArrivalExamples
-    examplePath = fullfile(testCase.TestData.RepositoryRoot, ...
-        "examples", exampleName + ".m");
-    sourceText = fileread(examplePath);
-    policyMatch = regexp(sourceText, ...
-        '"GoalTimeMode"\s*,\s*"earliestArrival"', 'once');
-    verifyNotEmpty(testCase, policyMatch, ...
-        exampleName + " must state GoalTimeMode=earliestArrival.");
-end
-slalomPath = fullfile(testCase.TestData.RepositoryRoot, ...
-    "examples", "exampleAlternatingSlalom.m");
-slalomText = fileread(slalomPath);
-boundMatch = regexp(slalomText, ...
-    '"elevationInterval_deg"\s*,\s*\[-5\s+5\]', 'once');
-verifyNotEmpty(testCase, boundMatch, ...
-    "The slalom elevation interval must be [-5 5] degrees.");
+    for exampleName = allExampleNames
+        examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
+        sourceText  = string(fileread(examplePath));
+        routedMatch = regexp(sourceText, '"maxJerk_deg_s3"\s*,\s*\w+\.MaxJerk_deg_s3', 'once');
+        verifyNotEmpty(testCase, routedMatch, exampleName + " must route MaxJerk_deg_s3 into limits.");
+        addedField = regexp(sourceText, '(?m)^\s*result\.[A-Za-z]\w*\s*=', 'once');
+        verifyEmpty(testCase, addedField, exampleName + " must not append fields to the planner result.");
+    end
+    for exampleName = earliestArrivalExamples
+        examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
+        sourceText  = fileread(examplePath);
+        policyMatch = regexp(sourceText, '"GoalTimeMode"\s*,\s*"earliestArrival"', 'once');
+        verifyNotEmpty(testCase, policyMatch, exampleName + " must state GoalTimeMode=earliestArrival.");
+    end
+    slalomPath = fullfile(testCase.TestData.RepositoryRoot, "examples", "exampleAlternatingSlalom.m");
+    slalomText = fileread(slalomPath);
+    boundMatch = regexp(slalomText, '"elevationInterval_deg"\s*,\s*\[-5\s+5\]', 'once');
+    verifyNotEmpty(testCase, boundMatch, "The slalom elevation interval must be [-5 5] degrees.");
 end
 
 function testExampleResolverMaterializesPlannerDefaults(testCase)
-% Verify examples materialize public defaults and separate display controls.
-[defaultOptions, defaultDisplayOptions] = resolveExampleOptions( ...
-    struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
-verifyFalse(testCase, isfield(defaultOptions, "Verbose"));
-verifyTrue(testCase, defaultDisplayOptions.Verbose);
-verifyEqual(testCase, defaultOptions.MaximumSeedCount, 2);
-verifyFalse(testCase, isfield(defaultOptions, "PlannerMethod"));
-verifyFalse(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
-verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
+    % Verify examples materialize public defaults and separate display controls.
+    [defaultOptions, defaultDisplayOptions] = resolveExampleOptions(struct("PlotOutputs", false), struct("MaximumSeedCount", 2));
+    verifyFalse(testCase, isfield(defaultOptions, "Verbose"));
+    verifyTrue(testCase, defaultDisplayOptions.Verbose);
+    verifyEqual(testCase, defaultOptions.MaximumSeedCount, 2);
+    verifyFalse(testCase, isfield(defaultOptions, "PlannerMethod"));
+    verifyFalse(testCase, isfield(defaultOptions, "CollocationSegmentCount"));
+    verifyFalse(testCase, isfield(defaultOptions, "MotionMethod"));
 
-[hs3Options, displayOptions] = resolveExampleOptions( ...
-    struct("Verbose", false), struct("MaximumSeedCount", 5));
-verifyFalse(testCase, isfield(hs3Options, "Verbose"));
-verifyFalse(testCase, displayOptions.Verbose);
-verifyFalse(testCase, isfield(hs3Options, "PlannerMethod"));
-verifyEqual(testCase, hs3Options.MaximumSeedCount, 5);
-verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
+    [hs3Options, displayOptions] = resolveExampleOptions(struct("Verbose", false), struct("MaximumSeedCount", 5));
+    verifyFalse(testCase, isfield(hs3Options, "Verbose"));
+    verifyFalse(testCase, displayOptions.Verbose);
+    verifyFalse(testCase, isfield(hs3Options, "PlannerMethod"));
+    verifyEqual(testCase, hs3Options.MaximumSeedCount, 5);
+    verifyFalse(testCase, isfield(hs3Options, "MotionMethod"));
 end
 
 function testExampleResolverRejectsRetiredPlannerOptions(testCase)
-% Discard obsolete planner fields at the example boundary as unknown inputs.
-retiredNames = ["PerSeedWorkBudgetMultiplier", ...
-    "SeedClusterDistance_deg", "MaximumNlpIterations", ...
-    "CollocationSegmentCount", "EnablePlaneReuse", ...
-    "PlaneReuseImprovementTolerance_s", "WaypointWarmStartMode", ...
-    "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable"];
-retiredOptions = struct( ...
-    "PerSeedWorkBudgetMultiplier", 3, ...
-    "SeedClusterDistance_deg", 2, ...
-    "MaximumNlpIterations", 5, ...
-    "CollocationSegmentCount", 6, ...
-    "EnablePlaneReuse", false, ...
-    "PlaneReuseImprovementTolerance_s", 1e-7, ...
-    "WaypointWarmStartMode", "passThrough", ...
-    "RequestedWaypointWarmStartMode", "none", ...
-    "IsWaypointWarmStartAvailable", true, ...
-    "PlotOutputs", false);
-verifyWarning(testCase, @() resolveExampleOptions( ...
-    retiredOptions, struct()), "resolveExampleOptions:UnknownOptions");
-warningState = warning("off", "resolveExampleOptions:UnknownOptions");
-warningCleanup = onCleanup(@() warning(warningState));
-[plannerOptions, ~] = resolveExampleOptions(retiredOptions, struct());
-for fieldName = retiredNames
-    verifyFalse(testCase, isfield(plannerOptions, fieldName));
-end
+    % Discard obsolete planner fields at the example boundary as unknown inputs.
+    retiredNames = ["PerSeedWorkBudgetMultiplier", ...
+        "SeedClusterDistance_deg", "MaximumNlpIterations", ...
+        "CollocationSegmentCount", "EnablePlaneReuse", ...
+        "PlaneReuseImprovementTolerance_s", "WaypointWarmStartMode", ...
+        "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable"];
+    retiredOptions = struct();
+    retiredOptions.PerSeedWorkBudgetMultiplier      = 3;
+    retiredOptions.SeedClusterDistance_deg          = 2;
+    retiredOptions.MaximumNlpIterations             = 5;
+    retiredOptions.CollocationSegmentCount          = 6;
+    retiredOptions.EnablePlaneReuse                 = false;
+    retiredOptions.PlaneReuseImprovementTolerance_s = 1e-7;
+    retiredOptions.WaypointWarmStartMode            = "passThrough";
+    retiredOptions.RequestedWaypointWarmStartMode   = "none";
+    retiredOptions.IsWaypointWarmStartAvailable     = true;
+    retiredOptions.PlotOutputs                      = false;
+    verifyWarning(testCase, @() resolveExampleOptions(retiredOptions, struct()), "resolveExampleOptions:UnknownOptions");
+    warningState   = warning("off", "resolveExampleOptions:UnknownOptions");
+    warningCleanup = onCleanup(@() warning(warningState));
+    [plannerOptions, ~] = resolveExampleOptions(retiredOptions, struct());
+    for fieldName = retiredNames
+        verifyFalse(testCase, isfield(plannerOptions, fieldName));
+    end
 end
 
 function testObstacleAvoidanceRunsHeadlessly(testCase)
-% Execute the maintained static example and protect selected diagnostics.
-[result, resultDiagnosis] = exampleObstacleAvoidance(struct( ...
-    "PlotOutputs", false, "FigureVisible", "off"));
-verifyTrue(testCase, result.Success, result.Message);
-verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-% The degree-eight coneprog engine selects this independently validated curve
-% with the original regression tolerance.
-verifyEqual(testCase, result.ArrivalTime_s, 7.56468149867628, "AbsTol", 1e-6);
-summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
-verifyEqual(testCase, summary.MotionLength_deg, 11.4406845061664, ...
-    "AbsTol", 1e-6);
+    % Execute the maintained static example and protect selected diagnostics.
+    [result, resultDiagnosis] = exampleObstacleAvoidance(struct("PlotOutputs", false, "FigureVisible", "off"));
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+    % The degree-eight coneprog engine selects this independently validated curve
+    % with the original regression tolerance.
+    verifyEqual(testCase, result.ArrivalTime_s, 7.56468149867628, "AbsTol", 1e-6);
+    summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
+    verifyEqual(testCase, summary.MotionLength_deg, 11.4406845061664, "AbsTol", 1e-6);
 end
 
 function testMovingRotatingObstacleFieldRunsHeadlessly(testCase)
-% Verify mixed static/dynamic planning and the requested obstacle motion.
-result = exampleMovingRotatingObstacleField(struct( ...
-    "PlotOutputs", false, "FigureVisible", "off"));
-verifyTrue(testCase, result.Success, result.Message);
-verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-verifyTrue(testCase, result.Validation.CollisionFree);
-verifyEqual(testCase, numel(result.Inputs.obstacles), 4);
-movingObstacle = result.Inputs.obstacles(4);
-verifyEqual(testCase, numel(movingObstacle.time_s), 5);
-initialBoundary_deg = [movingObstacle.originalAz_deg{1}, ...
-    movingObstacle.originalEl_deg{1}];
-finalBoundary_deg = [movingObstacle.originalAz_deg{end}, ...
-    movingObstacle.originalEl_deg{end}];
-centerTravel_deg = norm( ...
-    mean(finalBoundary_deg) - mean(initialBoundary_deg));
-initialEdge_deg = initialBoundary_deg(2, :) - initialBoundary_deg(1, :);
-finalEdge_deg = finalBoundary_deg(2, :) - finalBoundary_deg(1, :);
-rotationMeasure_deg2 = abs(det([initialEdge_deg; finalEdge_deg]));
-verifyGreaterThan(testCase, centerTravel_deg, 0);
-verifyGreaterThan(testCase, rotationMeasure_deg2, 0);
-verifyGreaterThan(testCase, ...
-    sum(vecnorm(diff(result.Route_deg, 1, 1), 2, 2)), 20);
+    % Verify mixed static/dynamic planning and the requested obstacle motion.
+    result = exampleMovingRotatingObstacleField(struct("PlotOutputs", false, "FigureVisible", "off"));
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+    verifyTrue(testCase, result.Validation.CollisionFree);
+    verifyEqual(testCase, numel(result.Inputs.obstacles), 4);
+    movingObstacle = result.Inputs.obstacles(4);
+    verifyEqual(testCase, numel(movingObstacle.time_s), 5);
+    initialBoundary_deg = [movingObstacle.originalAz_deg{1}, ...
+        movingObstacle.originalEl_deg{1}];
+    finalBoundary_deg = [movingObstacle.originalAz_deg{end}, ...
+        movingObstacle.originalEl_deg{end}];
+    centerTravel_deg     = norm(mean(finalBoundary_deg) - mean(initialBoundary_deg));
+    initialEdge_deg      = initialBoundary_deg(2, :) - initialBoundary_deg(1, :);
+    finalEdge_deg        = finalBoundary_deg(2, :) - finalBoundary_deg(1, :);
+    rotationMeasure_deg2 = abs(det([initialEdge_deg; finalEdge_deg]));
+    verifyGreaterThan(testCase, centerTravel_deg, 0);
+    verifyGreaterThan(testCase, rotationMeasure_deg2, 0);
+    verifyGreaterThan(testCase, sum(vecnorm(diff(result.Route_deg, 1, 1), 2, 2)), 20);
 end

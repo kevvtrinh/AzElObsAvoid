@@ -1,5 +1,4 @@
-function preparedMotion = prepareFinalMotion( ...
-        request, controlPoint_deg, segmentTime_s)
+function preparedMotion = prepareFinalMotion(request, controlPoint_deg, segmentTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
@@ -27,49 +26,39 @@ function preparedMotion = prepareFinalMotion( ...
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
 
-controlPoint_deg(1, 1:3, :) = reshape(repmat( ...
-    request.InitialState.position_deg, 3, 1), 1, 3, 2);
-controlPoint_deg(end, end - 2:end, :) = reshape(repmat( ...
-    request.GoalState.position_deg, 3, 1), 1, 3, 2);
+controlPoint_deg(1, 1:3, :) = reshape(repmat(request.InitialState.position_deg, 3, 1), 1, 3, 2);
+controlPoint_deg(end, end - 2:end, :) = reshape(repmat(request.GoalState.position_deg, 3, 1), 1, 3, 2);
 controlPoint_deg = subdivideMidpoint(controlPoint_deg);
-segmentTime_s = segmentTime_s / 2;
+segmentTime_s    = segmentTime_s / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
-exportPolynomial = bmtpEngine.createPowerPolynomial( ...
-    controlPoint_deg, 1, 0);
-certifiedControlPoint_deg = powerToBernsteinControls( ...
-    exportPolynomial.positionPower_deg);
-requiredTime_s = max( ...
-    bmtpEngine.findRequiredSegmentTime(controlPoint_deg, request.Limits), ...
-    bmtpEngine.findRequiredSegmentTime( ...
-    certifiedControlPoint_deg, request.Limits));
-dilationScale = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
-segmentTime_s = segmentTime_s * dilationScale;
-minimumDuration_s = size(controlPoint_deg, 1) * segmentTime_s;
-isFixedArrival = request.Options.GoalTimeMode == "fixedArrival";
-success = minimumDuration_s <= request.MotionHorizon_s + ...
-    request.Options.ConstraintTolerance;
-message = "";
-terminationReason = "";
+exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_deg, 1, 0);
+certifiedControlPoint_deg = powerToBernsteinControls(exportPolynomial.positionPower_deg);
+requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_deg, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_deg, request.Limits));
+dilationScale             = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
+segmentTime_s             = segmentTime_s * dilationScale;
+minimumDuration_s         = size(controlPoint_deg, 1) * segmentTime_s;
+isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
+success                   = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
+message                   = "";
+terminationReason         = "";
 if ~success
-    reasons = ["timeWindowInfeasible", "fixedArrivalInfeasible"];
+    reasons  = ["timeWindowInfeasible", "fixedArrivalInfeasible"];
     messages = ["The certified motion exceeds the goal horizon.", ...
         "The certified minimum exceeds the fixed arrival."];
-    message = messages(1 + isFixedArrival);
+    message           = messages(1 + isFixedArrival);
     terminationReason = reasons(1 + isFixedArrival);
 elseif isFixedArrival
-    fixedScale = request.MotionHorizon_s / minimumDuration_s;
+    fixedScale    = request.MotionHorizon_s / minimumDuration_s;
     segmentTime_s = segmentTime_s * fixedScale;
     dilationScale = dilationScale * fixedScale;
 end
 
 %% Section 3: Return The Prepared Representation
 
-motionCertificate = createMotionCertificate( ...
-    segmentTime_s, requiredTime_s);
-preparedMotion = struct( ...
-    "Success", success, ...
+motionCertificate = createMotionCertificate(segmentTime_s, requiredTime_s);
+preparedMotion    = struct("Success", success, ...
     "Message", message, ...
     "TerminationReason", terminationReason, ...
     "ControlPoint_deg", controlPoint_deg, ...
@@ -84,46 +73,43 @@ end
 %% Section 4: Local Functions
 
 function subdivided_deg = subdivideMidpoint(controlPoint_deg)
-% Split each Bezier span in half using de Casteljau subdivision.
-segmentCount = size(controlPoint_deg, 1);
-degree = size(controlPoint_deg, 2) - 1;
-subdivided_deg = zeros(2 * segmentCount, degree + 1, 2);
-for segmentIndex = 1:segmentCount
-    work_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
-    left_deg = zeros(degree + 1, 2);
-    right_deg = zeros(degree + 1, 2);
-    left_deg(1, :) = work_deg(1, :);
-    right_deg(end, :) = work_deg(end, :);
-    for levelIndex = 1:degree
-        work_deg = (work_deg(1:end - 1, :) + work_deg(2:end, :)) / 2;
-        left_deg(levelIndex + 1, :) = work_deg(1, :);
-        right_deg(end - levelIndex, :) = work_deg(end, :);
+    % Split each Bezier span in half using de Casteljau subdivision.
+    segmentCount   = size(controlPoint_deg, 1);
+    degree         = size(controlPoint_deg, 2) - 1;
+    subdivided_deg = zeros(2 * segmentCount, degree + 1, 2);
+    for segmentIndex = 1:segmentCount
+        work_deg  = squeeze(controlPoint_deg(segmentIndex, :, :));
+        left_deg  = zeros(degree + 1, 2);
+        right_deg = zeros(degree + 1, 2);
+        left_deg(1, :) = work_deg(1, :);
+        right_deg(end, :) = work_deg(end, :);
+        for levelIndex = 1:degree
+            work_deg = (work_deg(1:end - 1, :) + work_deg(2:end, :)) / 2;
+            left_deg(levelIndex + 1, :) = work_deg(1, :);
+            right_deg(end - levelIndex, :) = work_deg(end, :);
+        end
+        subdivided_deg(2 * segmentIndex - 1, :, :) = left_deg;
+        subdivided_deg(2 * segmentIndex, :, :) = right_deg;
     end
-    subdivided_deg(2 * segmentIndex - 1, :, :) = left_deg;
-    subdivided_deg(2 * segmentIndex, :, :) = right_deg;
-end
 end
 
 function controlPoint_deg = powerToBernsteinControls(positionPower_deg)
-% Reconstruct Bezier controls from the exported power coefficients.
-degree = size(positionPower_deg, 3) - 1;
-transform = zeros(degree + 1);
-for bernsteinIndex = 0:degree
-    for powerIndex = 0:bernsteinIndex
-        transform(bernsteinIndex + 1, powerIndex + 1) = ...
-            nchoosek(bernsteinIndex, powerIndex) / ...
-            nchoosek(degree, powerIndex);
+    % Reconstruct Bezier controls from the exported power coefficients.
+    degree    = size(positionPower_deg, 3) - 1;
+    transform = zeros(degree + 1);
+    for bernsteinIndex = 0:degree
+        for powerIndex = 0:bernsteinIndex
+            transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
+        end
     end
-end
-powerPages = permute(positionPower_deg, [3 1 2]);
-controlPoint_deg = permute( ...
-    pagemtimes(transform, powerPages), [2 1 3]);
+    powerPages       = permute(positionPower_deg, [3 1 2]);
+    controlPoint_deg = permute(pagemtimes(transform, powerPages), [2 1 3]);
 end
 
 function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
-% Record the derivative bound used to stretch time.
-motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
-    "SegmentTime_s", segmentTime_s, ...
-    "RequiredSegmentTime_s", requiredTime_s, ...
-    "MaximumViolation", max(0, requiredTime_s - segmentTime_s));
+    % Record the derivative bound used to stretch time.
+    motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
+        "SegmentTime_s", segmentTime_s, ...
+        "RequiredSegmentTime_s", requiredTime_s, ...
+        "MaximumViolation", max(0, requiredTime_s - segmentTime_s));
 end

@@ -1,5 +1,4 @@
-function seedSet = createPathGuesses( ...
-        initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg)
+function seedSet = createPathGuesses(initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   seedSet = obstacleAvoidance.search.createPathGuesses( ...
@@ -30,31 +29,27 @@ function seedSet = createPathGuesses( ...
 % is a lower bound, not a deadline for solving the seed.
 
 start_deg = initialState.position_deg;
-goal_deg = obstacleAvoidance.input.goalPositionAtTime( ...
-    goalState, goalState.time_s);
+goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
 if options.AllowAzimuthWrapping
-    goal_deg(1) = goal_deg(1) + 360 * round( ...
-        (start_deg(1) - goal_deg(1)) / 360);
+    goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
-available_s = goalState.time_s - initialState.time_s;
-directRoute_deg = [start_deg; goal_deg];
+available_s      = goalState.time_s - initialState.time_s;
+directRoute_deg  = [start_deg; goal_deg];
 directLength_deg = norm(goal_deg - start_deg);
-directDuration_s = min(available_s, max(1e-3, ...
-    max(abs(goal_deg - start_deg) ./ limits.maxVelocity_deg_s)));
-template = obstacleAvoidance.search.createEmptyPathGuess();
-seedSet = template;
-seedSet.Index = 1;
-seedSet.Source = "directPathGuess";
-seedSet.position_deg = directRoute_deg;
-seedSet.tau = [0; 1];
+directDuration_s = min(available_s, max(1e-3, max(abs(goal_deg - start_deg) ./ limits.maxVelocity_deg_s)));
+template         = obstacleAvoidance.search.createEmptyPathGuess();
+seedSet          = template;
+seedSet.Index               = 1;
+seedSet.Source              = "directPathGuess";
+seedSet.position_deg        = directRoute_deg;
+seedSet.tau                 = [0; 1];
 seedSet.EstimatedDuration_s = directDuration_s;
-seedSet.Length_deg = directLength_deg;
+seedSet.Length_deg          = directLength_deg;
 if isempty(routeSet) || isempty(fieldnames(routeSet))
     return;
 end
 
-routeGuesses = obstacleAvoidance.search.createRoutePathGuesses( ...
-    routeSet, obstacleEnvelope_deg, directDuration_s, directLength_deg);
+routeGuesses = obstacleAvoidance.search.createRoutePathGuesses(routeSet, obstacleEnvelope_deg, directDuration_s, directLength_deg);
 for index = 1:numel(routeGuesses)
     routeGuesses(index).Index = index + 1;
 end

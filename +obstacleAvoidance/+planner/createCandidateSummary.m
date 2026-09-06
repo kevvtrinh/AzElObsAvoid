@@ -1,6 +1,4 @@
-function summary = createCandidateSummary( ...
-        candidate, checkResult, diagnostics, elapsedTime_s, template, ...
-        limits)
+function summary = createCandidateSummary(candidate, checkResult, diagnostics, elapsedTime_s, template, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   summary = obstacleAvoidance.planner.createCandidateSummary( ...
@@ -43,15 +41,14 @@ for fieldName = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
         "TerminationReason"]
     summary.(fieldName) = candidate.(fieldName);
 end
-summary.ValidationPassed = checkResult.Passed;
-summary.CollisionFree = checkResult.CollisionFree;
-summary.CollisionResolved = checkResult.CollisionResolved;
-summary.MinimumClearance_deg = checkResult.MinimumClearance_deg;
-summary.UnresolvedIntervalCount = checkResult.UnresolvedIntervalCount;
+summary.ValidationPassed          = checkResult.Passed;
+summary.CollisionFree             = checkResult.CollisionFree;
+summary.CollisionResolved         = checkResult.CollisionResolved;
+summary.MinimumClearance_deg      = checkResult.MinimumClearance_deg;
+summary.UnresolvedIntervalCount   = checkResult.UnresolvedIntervalCount;
 summary.SeedPlanningElapsedTime_s = elapsedTime_s;
-summary.Message = strtrim( ...
-    string(candidate.Message) + " " + checkResult.Message);
-summary.SolverDiagnostics = diagnostics;
+summary.Message                   = strtrim(string(candidate.Message) + " " + checkResult.Message);
+summary.SolverDiagnostics         = diagnostics;
 
 %% Section 2: Calculate Passing-Candidate Measures
 

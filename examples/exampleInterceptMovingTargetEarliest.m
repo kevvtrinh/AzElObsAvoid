@@ -28,8 +28,7 @@ function [result, diagnosis] = exampleInterceptMovingTargetEarliest(exampleOverr
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[plannerOptions, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct(), [2 2]);
+[plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrides, struct(), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -43,14 +42,16 @@ obstacles = [];
 % Supply target positions at increasing times. Interpolation defines the target
 % position between samples. The horizon is the latest allowed intercept time.
 
-initialState = struct( "time_s", 0, "position_deg", [0 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-targetTime_s = (0:4:20).';
+initialState = struct();
+initialState.time_s              = 0;
+initialState.position_deg        = [0 0];
+initialState.velocity_deg_s      = [0 0];
+initialState.acceleration_deg_s2 = [0 0];
+targetTime_s       = (0:4:20).';
 targetPosition_deg = [ 6 + 0.2 * targetTime_s, 1 + 0.02 * targetTime_s];
-targetMotion = struct( "time_s", targetTime_s, "position_deg", targetPosition_deg, "InterpolationMethod", "linear");
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
-interceptOptions = struct( ...
-    "InterceptMode", "earliest", ...
+targetMotion       = struct("time_s", targetTime_s, "position_deg", targetPosition_deg, "InterpolationMethod", "linear");
+limits             = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+interceptOptions = struct("InterceptMode", "earliest", ...
     "MaximumSearchDuration_s", 20, ...
     "MatchTargetVelocity", false, "MatchTargetAcceleration", false, "PlannerOptions", plannerOptions);
 
@@ -58,7 +59,7 @@ interceptOptions = struct( ...
 
 % Run the moving-target planner. It searches for the earliest valid meeting.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
@@ -67,8 +68,7 @@ interceptOptions = struct( ...
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleInterceptMovingTargetEarliest:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleInterceptMovingTargetEarliest:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -76,8 +76,7 @@ end
 % Plot the target history and the returned intercept motion when enabled.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

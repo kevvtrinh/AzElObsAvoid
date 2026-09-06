@@ -13,11 +13,14 @@ function seed = createEmptyPathGuess()
 
 %% Section 1: Assemble The Stable Seed
 
-seed = struct( ...
-    "Index", 0, "Source", "", ...
-    "position_deg", zeros(0, 2), "tau", zeros(0, 1), ...
-    "ParameterBasis", "normalizedDistance", ...
-    "ObstacleEnvelope_deg", zeros(0, 2), ...
-    "UsesConservativeEnvelope", false, ...
-    "EstimatedDuration_s", NaN, "Length_deg", NaN);
+seed = struct();
+seed.Index                    = 0;
+seed.Source                   = "";
+seed.position_deg             = zeros(0, 2);
+seed.tau                      = zeros(0, 1);
+seed.ParameterBasis           = "normalizedDistance";
+seed.ObstacleEnvelope_deg     = zeros(0, 2);
+seed.UsesConservativeEnvelope = false;
+seed.EstimatedDuration_s      = NaN;
+seed.Length_deg               = NaN;
 end

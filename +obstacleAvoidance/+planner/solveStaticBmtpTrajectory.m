@@ -1,5 +1,4 @@
-function [candidate, diagnostics] = solveStaticBmtpTrajectory( ...
-        seed, geometry, initialState, goalState, limits, options)
+function [candidate, diagnostics] = solveStaticBmtpTrajectory(seed, geometry, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = solveStaticBmtpTrajectory( ...
@@ -16,18 +15,16 @@ function [candidate, diagnostics] = solveStaticBmtpTrajectory( ...
 %   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
 
 %% Section 1: Read The Prepared Exclusion Regions
-goalState = resolveFixedEndpointForSolver(goalState, options);
+goalState        = resolveFixedEndpointForSolver(goalState, options);
 exactRegions_deg = geometry.ExactRegions_deg;
-regions_deg = geometry.Regions_deg;
-grouping = geometry.Grouping;
-coverage = geometry.Coverage;
+regions_deg      = geometry.Regions_deg;
+grouping         = geometry.Grouping;
+coverage         = geometry.Coverage;
 
 %% Section 2: Generate The Motion In The Independent Engine
 
-[candidate, diagnostics] = bmtpEngine.solve( ...
-    seed, regions_deg, coverage, initialState, goalState, limits, options);
-fallback = struct( ...
-    "Attempted", false, ...
+[candidate, diagnostics] = bmtpEngine.solve(seed, regions_deg, coverage, initialState, goalState, limits, options);
+fallback = struct("Attempted", false, ...
     "PrimaryTerminationReason", candidate.TerminationReason, ...
     "Outcome", "notApplicable", ...
     "ExactRegionCount", numel(exactRegions_deg), ...
@@ -37,21 +34,18 @@ if grouping.Applied
 end
 if grouping.Applied && ~candidate.Success
     % Convex hulls may close real gaps. Retry the exact regions if grouping fails.
-    fallback.Attempted = true;
-    fallback.Outcome = "exactRegionAttemptFailed";
+    fallback.Attempted                = true;
+    fallback.Outcome                  = "exactRegionAttemptFailed";
     fallback.PrimarySolverDiagnostics = diagnostics;
     exactCoverage = coverage;
     exactCoverage.SolverRegionCount = numel(exactRegions_deg);
     exactGrouping = grouping;
-    exactGrouping.Applied = false;
-    exactGrouping.SolverRegionCount = numel(exactRegions_deg);
+    exactGrouping.Applied                 = false;
+    exactGrouping.SolverRegionCount       = numel(exactRegions_deg);
     exactGrouping.RelationToExactGeometry = "equal";
-    exactGrouping.GroupMemberIndices = ...
-        num2cell((1:numel(exactRegions_deg)).');
+    exactGrouping.GroupMemberIndices      = num2cell((1:numel(exactRegions_deg)).');
     exactCoverage.ConservativeGrouping = exactGrouping;
-    [candidate, diagnostics] = bmtpEngine.solve( ...
-        seed, exactRegions_deg, exactCoverage, initialState, goalState, ...
-        limits, options);
+    [candidate, diagnostics] = bmtpEngine.solve(seed, exactRegions_deg, exactCoverage, initialState, goalState, limits, options);
     if candidate.Success
         fallback.Outcome = "exactRegionAttemptAccepted";
     end
@@ -61,22 +55,17 @@ candidate.SolverDiagnostics = diagnostics;
 end
 
 function solverGoalState = resolveFixedEndpointForSolver(goalState, options)
-% Remove target history only when the fixed endpoint matches the target.
-solverGoalState = goalState;
-hasTargetHistory = isfield(goalState, "targetTime_s") && ...
-    ~isempty(goalState.targetTime_s);
-if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
-    return;
-end
-targetPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
-    goalState, goalState.time_s);
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    targetPosition_deg, goalState.position_deg);
-if max(abs(targetPosition_deg - goalState.position_deg)) > ...
-        256 * eps(coordinateScale_deg)
-    return;
-end
-metadataFields = intersect(fieldnames(solverGoalState), ...
-    {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
-solverGoalState = rmfield(solverGoalState, metadataFields);
+    % Remove target history only when the fixed endpoint matches the target.
+    solverGoalState  = goalState;
+    hasTargetHistory = isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s);
+    if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
+        return;
+    end
+    targetPosition_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
+    coordinateScale_deg = bmtpEngine.createCoordinateTolerances(targetPosition_deg, goalState.position_deg);
+    if max(abs(targetPosition_deg - goalState.position_deg)) > 256 * eps(coordinateScale_deg)
+        return;
+    end
+    metadataFields  = intersect(fieldnames(solverGoalState), {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
+    solverGoalState = rmfield(solverGoalState, metadataFields);
 end

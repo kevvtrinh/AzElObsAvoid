@@ -1,5 +1,4 @@
-function [coordinateScale_deg, geometryTolerance_deg, ...
-        roundoffReserve_deg] = createCoordinateTolerances(varargin)
+function [coordinateScale_deg, geometryTolerance_deg, roundoffReserve_deg] = createCoordinateTolerances(varargin)
 %% Section 0: Header & Readme
 % SYNTAX
 %   coordinateScale_deg = bmtpEngine.createCoordinateTolerances(values_deg)
@@ -36,8 +35,7 @@ for inputIndex = 1:nargin
     values_deg = varargin{inputIndex};
     if iscell(values_deg)
         for cellIndex = 1:numel(values_deg)
-            coordinateScale_deg = updateScale( ...
-                coordinateScale_deg, values_deg{cellIndex});
+            coordinateScale_deg = updateScale(coordinateScale_deg, values_deg{cellIndex});
         end
     else
         coordinateScale_deg = updateScale(coordinateScale_deg, values_deg);
@@ -47,19 +45,18 @@ end
 %% Section 2: Derive The Shared Tolerances
 
 geometryTolerance_deg = 2 ^ 16 * eps(coordinateScale_deg);
-roundoffReserve_deg = 2 ^ 20 * eps * coordinateScale_deg;
+roundoffReserve_deg   = 2 ^ 20 * eps * coordinateScale_deg;
 end
 
 %% Section 3: Local Functions
 
 function coordinateScale_deg = updateScale(coordinateScale_deg, values_deg)
-% Ignore nonfinite ring separators when measuring coordinate scale.
-if ~isnumeric(values_deg)
-    error("createCoordinateTolerances:InvalidCoordinates", ...
-        "Each coordinate collection must be numeric or a cell of numeric arrays.");
-end
-finiteValues_deg = abs(double(values_deg(isfinite(values_deg))));
-if ~isempty(finiteValues_deg)
-    coordinateScale_deg = max(coordinateScale_deg, max(finiteValues_deg));
-end
+    % Ignore nonfinite ring separators when measuring coordinate scale.
+    if ~isnumeric(values_deg)
+        error("createCoordinateTolerances:InvalidCoordinates", "Each coordinate collection must be numeric or a cell of numeric arrays.");
+    end
+    finiteValues_deg = abs(double(values_deg(isfinite(values_deg))));
+    if ~isempty(finiteValues_deg)
+        coordinateScale_deg = max(coordinateScale_deg, max(finiteValues_deg));
+    end
 end

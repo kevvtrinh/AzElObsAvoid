@@ -1,6 +1,4 @@
-function routeSet = searchRoutes( ...
-        initialState, goalState, limits, options, ...
-        scene, proposal, visibilityGraph, priorRouteSet)
+function routeSet = searchRoutes(initialState, goalState, limits, options, scene, proposal, visibilityGraph, priorRouteSet)
 %% Section 0: Header & Readme
 % SYNTAX
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
@@ -41,46 +39,36 @@ function routeSet = searchRoutes( ...
 % Supplying priorRouteSet resumes timed search without repeating spatial search.
 
 isTimedRecovery = nargin >= 8 && ~isempty(priorRouteSet);
-if isTimedRecovery && (~isstruct(priorRouteSet) || ...
-        ~isscalar(priorRouteSet) || ...
-        ~isfield(priorRouteSet, "TimedSearchDeferred") || ...
-        ~priorRouteSet.TimedSearchDeferred)
-    error("searchRoutes:InvalidRecoveryState", ...
-        "priorRouteSet must be a deferred scalar route-set record.");
+if isTimedRecovery && (~isstruct(priorRouteSet) || ~isscalar(priorRouteSet) || ~isfield(priorRouteSet, "TimedSearchDeferred") || ~priorRouteSet.TimedSearchDeferred)
+    error("searchRoutes:InvalidRecoveryState", "priorRouteSet must be a deferred scalar route-set record.");
 end
 
-obstacles = scene.preparedObstacles;
-nodePosition_deg = visibilityGraph.NodePosition_deg;
-timedRoute_deg = zeros(0, 2);
-timedRouteTime_s = zeros(0, 1);
-timedRecord = struct();
-timedSearchOptions = options;
-timedSearchAttempted = false;
-timedSearchDeferred = false;
+obstacles                    = scene.preparedObstacles;
+nodePosition_deg             = visibilityGraph.NodePosition_deg;
+timedRoute_deg               = zeros(0, 2);
+timedRouteTime_s             = zeros(0, 1);
+timedRecord                  = struct();
+timedSearchOptions           = options;
+timedSearchAttempted         = false;
+timedSearchDeferred          = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
-requiresTimedSearch = ~scene.obstaclesRemainStatic;
+requiresTimedSearch          = ~scene.obstaclesRemainStatic;
 if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
-    timedSearchDeferred = true;
+    timedSearchDeferred          = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
 elseif requiresTimedSearch
-    timedSearchAttempted = true;
+    timedSearchAttempted         = true;
     timedSearchSuppressionReason = "";
-    timedCost_deg = hypot( ...
-        nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', ...
-        nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
-    [timedRoute_deg, timedRouteTime_s, timedRecord] = ...
-        obstacleAvoidance.search.timeExpandedVisibilitySearch( ...
-        nodePosition_deg, timedCost_deg, obstacles, initialState, ...
-        goalState, limits, proposal.sampleTimes_s, ...
-        timedSearchOptions);
+    timedCost_deg                = hypot(nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
+    [timedRoute_deg, timedRouteTime_s, timedRecord] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, timedCost_deg, obstacles, initialState, goalState, limits, proposal.sampleTimes_s, timedSearchOptions);
 end
 if isTimedRecovery
     routeSet = priorRouteSet;
-    routeSet.TimedRoute_deg = timedRoute_deg;
-    routeSet.TimedRouteTime_s = timedRouteTime_s;
-    routeSet.TimedSearchRecord = timedRecord;
-    routeSet.TimedSearchOptions = timedSearchOptions;
-    routeSet.TimedSearchAttempted = true;
+    routeSet.TimedRoute_deg               = timedRoute_deg;
+    routeSet.TimedRouteTime_s             = timedRouteTime_s;
+    routeSet.TimedSearchRecord            = timedRecord;
+    routeSet.TimedSearchOptions           = timedSearchOptions;
+    routeSet.TimedSearchAttempted         = true;
     routeSet.TimedSearchRecoveryAttempted = true;
     routeSet.TimedSearchSuppressionReason = "";
     return;
@@ -90,33 +78,23 @@ end
 
 % Reserve a seed slot for a timed route, then find distinct spatial routes.
 
-hasTimedRoute = ~isempty(timedRoute_deg) && ...
-    timedRouteTime_s(end) > timedRouteTime_s(1);
+hasTimedRoute      = ~isempty(timedRoute_deg) && timedRouteTime_s(end) > timedRouteTime_s(1);
 reservesTimedRoute = hasTimedRoute || timedSearchDeferred;
-maximumClassCount = max( ...
-    0, options.MaximumSeedCount - 1 - double(reservesTimedRoute));
-visibilityFunction = @(first_deg, second_deg) ...
-    obstacleAvoidance.search.checkVisibilitySegments( ...
-    first_deg, second_deg, proposal.shape, ...
-    proposal.edgeStart_deg, proposal.edgeEnd_deg);
-[spatialRoutes_deg, routeClassPattern, spatialSearchRecord] = ...
-    obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
-    visibilityGraph.EdgeCost_deg, nodePosition_deg, ...
-    visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, ...
-    visibilityFunction);
+maximumClassCount  = max(0, options.MaximumSeedCount - 1 - double(reservesTimedRoute));
+visibilityFunction = @(first_deg, second_deg) obstacleAvoidance.search.checkVisibilitySegments(first_deg, second_deg, proposal.shape, proposal.edgeStart_deg, proposal.edgeEnd_deg);
+[spatialRoutes_deg, routeClassPattern, spatialSearchRecord] = obstacleAvoidance.search.searchDistinctSpatialRoutes(visibilityGraph.EdgeCost_deg, nodePosition_deg, visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, visibilityFunction);
 
 % Defer multi-winding motion solves until ordinary routes fail.
 % Keep the routes so recovery does not repeat spatial search.
-isDeferredSpatialRoute = any(abs(routeClassPattern) > 1, 2);
+isDeferredSpatialRoute    = any(abs(routeClassPattern) > 1, 2);
 deferredSpatialRoutes_deg = spatialRoutes_deg(isDeferredSpatialRoute);
-spatialRoutes_deg = spatialRoutes_deg(~isDeferredSpatialRoute);
+spatialRoutes_deg         = spatialRoutes_deg(~isDeferredSpatialRoute);
 
 %% Section 3: Assemble The Route Set
 
 % Keep routes with their search diagnostics.
 
-routeSet = struct( ...
-    "TimedRoute_deg", timedRoute_deg, ...
+routeSet = struct("TimedRoute_deg", timedRoute_deg, ...
     "TimedRouteTime_s", timedRouteTime_s, ...
     "TimedSearchRecord", timedRecord, ...
     "TimedSearchOptions", timedSearchOptions, ...

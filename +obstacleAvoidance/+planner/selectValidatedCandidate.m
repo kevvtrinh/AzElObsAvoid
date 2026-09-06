@@ -28,14 +28,12 @@ function selection = selectValidatedCandidate(summaries, options)
 % Rank only candidates that passed the public trajectory validator.
 
 validatedIndices = find([summaries.ValidationPassed]).';
-emptyRanking = struct( ...
-    "GoalTimeMode", options.GoalTimeMode, ...
+emptyRanking     = struct("GoalTimeMode", options.GoalTimeMode, ...
     "ColumnNames", strings(1, 0), ...
     "Values", zeros(0), ...
     "CandidateIndices", zeros(0, 1), ...
     "OrderedCandidateIndices", zeros(0, 1));
-selection = struct( ...
-    "Success", false, ...
+selection = struct("Success", false, ...
     "Message", "No compact motion passed independent validation.", ...
     "TerminationReason", "noValidatedSeed", ...
     "ValidatedIndices", validatedIndices, ...
@@ -53,13 +51,9 @@ if isempty(validatedIndices)
         bestReason = string(summaries(bestIndex).TerminationReason);
         if bestReason == "unsupportedTimedMultiWaypointRoute"
             selection.TerminationReason = bestReason;
-            selection.Message = ...
-                "A geometric route was found, but the smooth " + ...
-                "timed-motion kernel does not yet support its multi-waypoint " + ...
-                "topology. The stop-at-waypoint fallback was disabled by policy.";
+            selection.Message           = "A geometric route was found, but the smooth " + "timed-motion kernel does not yet support its multi-waypoint " + "topology. The stop-at-waypoint fallback was disabled by policy.";
         elseif strlength(summaries(bestIndex).Message) > 0
-            selection.Message = selection.Message + " Best attempt: " + ...
-                summaries(bestIndex).Message;
+            selection.Message = selection.Message + " Best attempt: " + summaries(bestIndex).Message;
         end
     end
     return;
@@ -67,53 +61,48 @@ end
 
 %% Section 3: Rank Only Passing Motions
 
-selection.Ranking = createCandidateRanking( ...
-    summaries, validatedIndices, options);
-selection.SelectedCandidateIndex = ...
-    selection.Ranking.OrderedCandidateIndices(1);
-selection.BestPartialSeedIndex = selection.SelectedCandidateIndex;
-selection.Success = true;
-selection.Message = "A validated motion was found.";
-selection.TerminationReason = "goalReached";
+selection.Ranking                = createCandidateRanking(summaries, validatedIndices, options);
+selection.SelectedCandidateIndex = selection.Ranking.OrderedCandidateIndices(1);
+selection.BestPartialSeedIndex   = selection.SelectedCandidateIndex;
+selection.Success                = true;
+selection.Message                = "A validated motion was found.";
+selection.TerminationReason      = "goalReached";
 end
 
 %% Section 4: Local Functions
 
 function index = bestPartialSeed(summaries)
-% Prefer resolved collisions, smaller violations, then greater clearance.
-if isempty(summaries)
-    index = 0;
-    return;
-end
-violation = [summaries.MaximumConstraintViolation].';
-violation(~isfinite(violation)) = Inf;
-clearance_deg = [summaries.MinimumClearance_deg].';
-clearance_deg(~isfinite(clearance_deg)) = -Inf;
-collisionRank = 2 * ~[summaries.CollisionResolved].' + ...
-    ~[summaries.CollisionFree].';
-[~, order] = sortrows([collisionRank, violation, -clearance_deg, ...
-    (1:numel(summaries)).']);
-index = order(1);
+    % Prefer resolved collisions, smaller violations, then greater clearance.
+    if isempty(summaries)
+        index = 0;
+        return;
+    end
+    violation = [summaries.MaximumConstraintViolation].';
+    violation(~isfinite(violation)) = Inf;
+    clearance_deg = [summaries.MinimumClearance_deg].';
+    clearance_deg(~isfinite(clearance_deg)) = -Inf;
+    collisionRank = 2 * ~[summaries.CollisionResolved].' + ~[summaries.CollisionFree].';
+    [~, order] = sortrows([collisionRank, violation, -clearance_deg, (1:numel(summaries)).']);
+    index = order(1);
 end
 
 function ranking = createCandidateRanking(summaries, indices, options)
-% Rank valid motions by the requested objective.
-indices = indices(:);
-length_deg = [summaries(indices).MotionLength_deg].';
-if options.GoalTimeMode == "fixedArrival"
-    columnNames = ["MotionLength_deg", "CandidateIndex"];
-    values = [length_deg, indices];
-else
-    columnNames = ["ArrivalTime_s", "MotionLength_deg", ...
-        "CandidateIndex"];
-    values = [[summaries(indices).ArrivalTime_s].', ...
-        length_deg, indices];
-end
-[~, order] = sortrows(values, 1:size(values, 2));
-ranking = struct( ...
-    "GoalTimeMode", options.GoalTimeMode, ...
-    "ColumnNames", columnNames, ...
-    "Values", values, ...
-    "CandidateIndices", indices, ...
-    "OrderedCandidateIndices", indices(order));
+    % Rank valid motions by the requested objective.
+    indices    = indices(:);
+    length_deg = [summaries(indices).MotionLength_deg].';
+    if options.GoalTimeMode == "fixedArrival"
+        columnNames = ["MotionLength_deg", "CandidateIndex"];
+        values      = [length_deg, indices];
+    else
+        columnNames = ["ArrivalTime_s", "MotionLength_deg", ...
+            "CandidateIndex"];
+        values = [[summaries(indices).ArrivalTime_s].', ...
+            length_deg, indices];
+    end
+    [~, order] = sortrows(values, 1:size(values, 2));
+    ranking = struct("GoalTimeMode", options.GoalTimeMode, ...
+        "ColumnNames", columnNames, ...
+        "Values", values, ...
+        "CandidateIndices", indices, ...
+        "OrderedCandidateIndices", indices(order));
 end

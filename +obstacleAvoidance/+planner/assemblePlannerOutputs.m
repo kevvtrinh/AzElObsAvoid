@@ -23,7 +23,7 @@ result = struct();
 for name = names
     result.(name) = record.(name);
 end
-result.Route_deg = record.SelectedSeed_deg;
+result.Route_deg            = record.SelectedSeed_deg;
 result.BestPartialRoute_deg = zeros(0, 2);
 search = record.SearchDiagnostics;
 if search.BestPartialSeedIndex > 0 && ~record.Success
@@ -35,21 +35,20 @@ end
 %% Section 2: Assemble Optional Diagnosis Without Duplicate Records
 diagnosis = struct();
 if ~includeDiagnosis, return; end
-attempts = rmfield(record.SeedSummaries, "SolverDiagnostics");
-solverDetails = flattenAttempts({record.SeedSummaries.SolverDiagnostics});
-searchRecord = search.GraphSearch;
+attempts           = rmfield(record.SeedSummaries, "SolverDiagnostics");
+solverDetails      = flattenAttempts({record.SeedSummaries.SolverDiagnostics});
+searchRecord       = search.GraphSearch;
 visibilityAttempts = flattenAttempts({});
 if isfield(searchRecord, "VisibilityAttempts")
     visibilityAttempts = flattenAttempts(num2cell(searchRecord.VisibilityAttempts));
-    searchRecord = rmfield(searchRecord, "VisibilityAttempts");
+    searchRecord       = rmfield(searchRecord, "VisibilityAttempts");
 end
 coverage = struct();
 if isfield(searchRecord, "Coverage")
-    coverage = searchRecord.Coverage;
+    coverage     = searchRecord.Coverage;
     searchRecord = rmfield(searchRecord, "Coverage");
 end
-diagnosis = struct( ...
-    "SelectedAttemptIndex", record.SelectedSeedIndex, ...
+diagnosis = struct("SelectedAttemptIndex", record.SelectedSeedIndex, ...
     "BestPartialAttemptIndex", search.BestPartialSeedIndex, ...
     "AttemptedCount", search.AttemptedSeedCount, ...
     "ValidatedCount", search.ValidatedCandidateCount, ...
@@ -64,12 +63,12 @@ diagnosis = struct( ...
 end
 
 function combined = flattenAttempts(records)
-% Preserve per-attempt evidence in one shallow table.
-combined = table(zeros(0,1), strings(0,1), cell(0,1), ...
-    'VariableNames', {'Attempt', 'Field', 'Value'});
-for index = 1:numel(records)
-    details = obstacleAvoidance.planner.flattenDiagnosis(records{index});
-    combined = [combined; table(repmat(index,height(details),1), ...
-        details.Field, details.Value, 'VariableNames', {'Attempt','Field','Value'})]; %#ok<AGROW>
-end
+    % Preserve per-attempt evidence in one shallow table.
+    combined = table(zeros(0,1), strings(0,1), cell(0,1), ...
+        'VariableNames', {'Attempt', 'Field', 'Value'});
+    for index = 1:numel(records)
+        details  = obstacleAvoidance.planner.flattenDiagnosis(records{index});
+        combined = [combined; table(repmat(index,height(details),1), ...
+            details.Field, details.Value, 'VariableNames', {'Attempt','Field','Value'})]; %#ok<AGROW>
+    end
 end

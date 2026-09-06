@@ -1,6 +1,4 @@
-function [candidate, diagnostics] = tryFixedTimeDetour( ...
-        directCandidate, obstacles, initialState, goalState, limits, options, ...
-        directValidation)
+function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacles, initialState, goalState, limits, options,  directValidation)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -49,36 +47,30 @@ function [candidate, diagnostics] = tryFixedTimeDetour( ...
 
 if nargin == 0
     % Let callers obtain empty outputs without attempting a motion.
-    candidate = struct();
+    candidate   = struct();
     diagnostics = createDiagnostics();
     return;
 end
 if nargin ~= 7
-    error("tryFixedTimeDetour:InvalidCall", ...
-        "Use zero inputs or all seven documented inputs.");
+    error("tryFixedTimeDetour:InvalidCall",  "Use zero inputs or all seven documented inputs.");
 end
 timer = tic;
 % Keep the original motion unless a detour passes every required check.
 % Returning this original record after failure does not make it collision-free;
 % diagnostics.Success tells the caller whether this function found a detour.
-candidate = directCandidate;
+candidate   = directCandidate;
 diagnostics = createDiagnostics();
-if ~isstruct(directCandidate) || ~isscalar(directCandidate) || ...
-        ~all(isfield(directCandidate, {'Success', 'TrajectoryDuration_s', ...
-        'MinimumAxisDuration_s', 'Polynomial', 'position_deg'}))
-    diagnostics = finishFailure(diagnostics, "invalidDirectCandidate", ...
-        "The direct candidate lacks the required stable motion fields.", timer);
+if ~isstruct(directCandidate) || ~isscalar(directCandidate) ||  ~all(isfield(directCandidate, {'Success', 'TrajectoryDuration_s',  'MinimumAxisDuration_s', 'Polynomial', 'position_deg'}))
+    diagnostics = finishFailure(diagnostics, "invalidDirectCandidate",  "The direct candidate lacks the required stable motion fields.", timer);
     return;
 end
 if ~directCandidate.Success || isempty(directCandidate.position_deg)
-    diagnostics = finishFailure(diagnostics, "directMotionUnavailable", ...
-        "A successful direct motion is required before an excursion is tried.", timer);
+    diagnostics = finishFailure(diagnostics, "directMotionUnavailable",  "A successful direct motion is required before an excursion is tried.", timer);
     return;
 end
 dimensionCount = size(directCandidate.position_deg, 2);
 if dimensionCount ~= 2
-    diagnostics = finishFailure(diagnostics, "unsupportedDimension", ...
-        "The independent validator currently requires two coordinates.", timer);
+    diagnostics = finishFailure(diagnostics, "unsupportedDimension",  "The independent validator currently requires two coordinates.", timer);
     return;
 end
 
@@ -86,65 +78,57 @@ end
 % possible time allowed by the axis limits. Both axes must finish, so the
 % larger of their minimum travel times sets the overall minimum. Allow a
 % small numerical difference when comparing it with the direct duration.
-duration_s = double(directCandidate.TrajectoryDuration_s);
-lowerBound_s = max(double(directCandidate.MinimumAxisDuration_s));
-clockTolerance_s = max(double(options.ConstraintTolerance), ...
-    256 * eps(max(1, duration_s)));
-diagnostics.Attempted = true;
-diagnostics.DirectDuration_s = duration_s;
+duration_s       = double(directCandidate.TrajectoryDuration_s);
+lowerBound_s     = max(double(directCandidate.MinimumAxisDuration_s));
+clockTolerance_s = max(double(options.ConstraintTolerance),  256 * eps(max(1, duration_s)));
+diagnostics.Attempted             = true;
+diagnostics.DirectDuration_s      = duration_s;
 diagnostics.CertifiedLowerBound_s = lowerBound_s;
-diagnostics.ClockTolerance_s = clockTolerance_s;
-diagnostics.ClockMatched = isfinite(duration_s) && isfinite(lowerBound_s) && ...
-    abs(duration_s - lowerBound_s) <= clockTolerance_s;
-
+diagnostics.ClockTolerance_s      = clockTolerance_s;
+diagnostics.ClockMatched          = isfinite(duration_s) && isfinite(lowerBound_s) &&  abs(duration_s - lowerBound_s) <= clockTolerance_s;
 
 if ~diagnostics.ClockMatched
-    diagnostics = finishFailure(diagnostics, "directClockNotCertified", ...
-        "The direct duration does not equal its componentwise physical lower bound.", timer);
+    diagnostics = finishFailure(diagnostics, "directClockNotCertified",  "The direct duration does not equal its componentwise physical lower bound.", timer);
     return;
 end
-if ~isstruct(directValidation) || ~isscalar(directValidation) || ...
-        ~isfield(directValidation, "Passed")
-    error("tryFixedTimeDetour:InvalidDirectValidation", ...
-        "directValidation must be the scalar public validation record.");
+if ~isstruct(directValidation) || ~isscalar(directValidation) ||  ~isfield(directValidation, "Passed")
+    error("tryFixedTimeDetour:InvalidDirectValidation",  "directValidation must be the scalar public validation record.");
 end
 diagnostics.DirectValidation = directValidation;
 % A detour may fix a collision, but this method does not repair an already
 % invalid start/goal state, timing, or violation of the motion limits.
 if ~directMotionIsPhysical(directValidation)
-    diagnostics = finishFailure(diagnostics, "directMotionInvalid", ...
-        "The direct motion failed a non-collision invariant.", timer);
+    diagnostics = finishFailure(diagnostics, "directMotionInvalid",  "The direct motion failed a non-collision invariant.", timer);
     return;
 end
 
 %% Section 2: Try Sideways Detours Without Extending The Motion
 
 workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
-double(limits.elevationInterval_deg(:).')];
-coarseLevelCount = 8;
+                        double(limits.elevationInterval_deg(:).')];
+coarseLevelCount      = 8;
 % Stop shrinking the detour once changes are small relative to the collision
 % tolerance or coordinate precision.
-boundaryResolution_deg = max(8 * double(options.CollisionClearanceTolerance_deg), ...
-    sqrt(eps) * max(1, max(abs(directCandidate.position_deg), [], "all")));
+boundaryResolution_deg = max(8 * double(options.CollisionClearanceTolerance_deg),  sqrt(eps) * max(1, max(abs(directCandidate.position_deg), [], "all")));
 
 % Choose times to try the largest sideways offset, based on when the
 % direct move encounters obstacles. Also try the middle of the move.
-peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options);
+peakTime_s  = createPeakTimeCandidates(directCandidate, obstacles, options);
 axisReports = repmat(createAxisReport(), 2 * dimensionCount * numel(peakTime_s), 1);
 reportIndex = 0;
 
 % Try each axis, both directions, and several times for the largest offset.
 % Only one axis is changed in each trial; the other follows the direct move.
 for axisIndex = 1:dimensionCount
-    axisMinimum_s = directCandidate.MinimumAxisDuration_s(axisIndex);
+    axisMinimum_s    = directCandidate.MinimumAxisDuration_s(axisIndex);
     axisGovernsClock = axisMinimum_s >= duration_s - clockTolerance_s;
     for direction = [-1, 1]
         for peakIndex = 1:numel(peakTime_s)
             reportIndex = reportIndex + 1;
-            report = createAxisReport();
-            report.AxisIndex = axisIndex;
-            report.Direction = direction;
-            report.PeakTime_s = peakTime_s(peakIndex);
+            report      = createAxisReport();
+            report.AxisIndex        = axisIndex;
+            report.Direction        = direction;
+            report.PeakTime_s       = peakTime_s(peakIndex);
             report.AxisGovernsClock = axisGovernsClock;
             if axisGovernsClock
                 % This axis already needs the full travel time. This method
@@ -156,56 +140,46 @@ for axisIndex = 1:dimensionCount
             if direction > 0
                 % Limit the offset using the room between the sampled direct
                 % motion and the workspace edge on the chosen side.
-                workspaceRoom_deg = workspaceInterval_deg(axisIndex, 2) - ...
-                    max(directCandidate.position_deg(:, axisIndex));
+                workspaceRoom_deg = workspaceInterval_deg(axisIndex, 2) -  max(directCandidate.position_deg(:, axisIndex));
             else
-                workspaceRoom_deg = min(directCandidate.position_deg(:, axisIndex)) - ...
-                    workspaceInterval_deg(axisIndex, 1);
+                workspaceRoom_deg = min(directCandidate.position_deg(:, axisIndex)) -  workspaceInterval_deg(axisIndex, 1);
             end
-            phaseDuration_s = [peakTime_s(peakIndex) - initialState.time_s, ...
+            phaseDuration_s  = [peakTime_s(peakIndex) - initialState.time_s, ...
                 directCandidate.ArrivalTime_s - peakTime_s(peakIndex)];
             physicalRoom_deg = Inf;
             % Estimate how far the offset can move out and return in the time
             % on either side of the peak. Use the smaller distance as a search
             % bound, not as proof that the combined motion obeys the limits.
             for phaseIndex = 1:2
-                phaseRoom_deg = bmtpEngine.maximumRestToRestDistance( ...
-                    phaseDuration_s(phaseIndex), ...
-                    limits.maxVelocity_deg_s(axisIndex), ...
-                    limits.maxAcceleration_deg_s2(axisIndex), ...
-                    limits.maxJerk_deg_s3(axisIndex));
+                phaseRoom_deg    = bmtpEngine.maximumRestToRestDistance(phaseDuration_s(phaseIndex),  limits.maxVelocity_deg_s(axisIndex),  limits.maxAcceleration_deg_s2(axisIndex),  limits.maxJerk_deg_s3(axisIndex));
                 physicalRoom_deg = min(physicalRoom_deg, phaseRoom_deg);
             end
             maximumMagnitude_deg = max(0, min(workspaceRoom_deg, physicalRoom_deg));
             report.MaximumMagnitude_deg = maximumMagnitude_deg;
-            report.Eligible = maximumMagnitude_deg > boundaryResolution_deg;
+            report.Eligible             = maximumMagnitude_deg > boundaryResolution_deg;
             if ~report.Eligible
                 report.TerminationReason = "noExcursionRoom";
                 axisReports(reportIndex) = report;
                 continue;
             end
-            lowerMagnitude_deg = 0;
-            upperMagnitude_deg = NaN;
-            upperCandidate = struct();
-            trialCandidates = cell(coarseLevelCount, 1);
+            lowerMagnitude_deg  = 0;
+            upperMagnitude_deg  = NaN;
+            upperCandidate      = struct();
+            trialCandidates     = cell(coarseLevelCount, 1);
             trialMagnitudes_deg = zeros(coarseLevelCount, 1);
             % Start with eight evenly spaced offset sizes, from small to large.
             % Each trial adds a smooth offset that is zero at both endpoints.
             for levelIndex = 1:coarseLevelCount
-                magnitude_deg = maximumMagnitude_deg * levelIndex / coarseLevelCount;
-                trialCandidates{levelIndex} = createExcursion( ...
-                    directCandidate, direction * magnitude_deg, ...
-                    axisIndex, peakTime_s(peakIndex), initialState, options);
+                magnitude_deg                   = maximumMagnitude_deg * levelIndex / coarseLevelCount;
+                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_deg,  axisIndex, peakTime_s(peakIndex), initialState, options);
                 trialMagnitudes_deg(levelIndex) = magnitude_deg;
             end
             % Quickly reject collisions at the stored sample times. A clear
             % sample check can still miss collisions between samples, so only
             % full validation below can make a trial acceptable.
-            sampledClear = sampledCandidatesAreClear( ...
-                trialCandidates, obstacles, options);
-            diagnostics.ScreeningCount = diagnostics.ScreeningCount + ...
-                coarseLevelCount;
-            passingLevel = find(sampledClear, 1, "first");
+            sampledClear = sampledCandidatesAreClear(trialCandidates, obstacles, options);
+            diagnostics.ScreeningCount = diagnostics.ScreeningCount +  coarseLevelCount;
+            passingLevel    = find(sampledClear, 1, "first");
             upperValidation = obstacleAvoidance.validation.validatePreparedTrajectory();
             if ~isempty(passingLevel)
                 if passingLevel > 1
@@ -213,15 +187,12 @@ for axisIndex = 1:dimensionCount
                 end
                 for levelIndex = passingLevel:coarseLevelCount
                     validationTimer = tic;
-                    trialValidation = obstacleAvoidance.validation.validatePreparedTrajectory( ...
-                        trialCandidates{levelIndex}, obstacles, initialState, ...
-                        goalState, limits, options);
-                    diagnostics = addValidationTiming( ...
-                        diagnostics, trialValidation, toc(validationTimer));
+                    trialValidation = obstacleAvoidance.validation.validatePreparedTrajectory(trialCandidates{levelIndex}, obstacles, initialState,  goalState, limits, options);
+                    diagnostics     = addValidationTiming(diagnostics, trialValidation, toc(validationTimer));
                     if trialValidation.Passed
                         upperMagnitude_deg = trialMagnitudes_deg(levelIndex);
-                        upperCandidate = trialCandidates{levelIndex};
-                        upperValidation = trialValidation;
+                        upperCandidate     = trialCandidates{levelIndex};
+                        upperValidation    = trialValidation;
                         break;
                     end
                     lowerMagnitude_deg = trialMagnitudes_deg(levelIndex);
@@ -240,65 +211,52 @@ for axisIndex = 1:dimensionCount
             % a fully validated candidate at the upper end. Other valid sizes
             % may exist outside this interval; this is not a global search.
             refinementCount = 0;
-            while upperMagnitude_deg - lowerMagnitude_deg > ...
-                    boundaryResolution_deg && refinementCount < 6
-                midpointMagnitude_deg = ...
-                    0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
-                midpointCandidate = createExcursion( ...
-                    directCandidate, direction * midpointMagnitude_deg, ...
-                    axisIndex, peakTime_s(peakIndex), initialState, options);
-                validationTimer = tic;
-                midpointValidation = obstacleAvoidance.validation.validatePreparedTrajectory( ...
-                    midpointCandidate, obstacles, initialState, goalState, ...
-                    limits, options);
-                diagnostics = addValidationTiming( ...
-                    diagnostics, midpointValidation, toc(validationTimer));
-                refinementCount = refinementCount + 1;
+            while upperMagnitude_deg - lowerMagnitude_deg > boundaryResolution_deg && refinementCount < 6
+                midpointMagnitude_deg = 0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
+                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options);
+                validationTimer       = tic;
+                midpointValidation    = obstacleAvoidance.validation.validatePreparedTrajectory(midpointCandidate, obstacles, initialState, goalState, limits, options);
+                diagnostics           = addValidationTiming(diagnostics, midpointValidation, toc(validationTimer));
+                refinementCount       = refinementCount + 1;
                 if midpointValidation.Passed
                     upperMagnitude_deg = midpointMagnitude_deg;
-                    upperCandidate = midpointCandidate;
-                    upperValidation = midpointValidation;
+                    upperCandidate     = midpointCandidate;
+                    upperValidation    = midpointValidation;
                 else
                     lowerMagnitude_deg = midpointMagnitude_deg;
                 end
             end
             upperCandidate.Validation = upperValidation;
-            report.InvalidBoundaryMagnitude_deg = lowerMagnitude_deg;
-            report.ValidBoundaryMagnitude_deg = upperMagnitude_deg;
-            report.BoundaryResolutionReserve_deg = ...
-                upperMagnitude_deg - lowerMagnitude_deg;
-            report.BoundaryRefinementCount = refinementCount;
-            report.RetainedAmplitude_deg = direction * upperMagnitude_deg;
-            report.MotionLength_deg = upperCandidate.MotionLength_deg;
-            report.Validation = upperValidation;
-            report.TerminationReason = "validatedFeasibleBoundary";
+            report.InvalidBoundaryMagnitude_deg  = lowerMagnitude_deg;
+            report.ValidBoundaryMagnitude_deg    = upperMagnitude_deg;
+            report.BoundaryResolutionReserve_deg =  upperMagnitude_deg - lowerMagnitude_deg;
+            report.BoundaryRefinementCount       = refinementCount;
+            report.RetainedAmplitude_deg         = direction * upperMagnitude_deg;
+            report.MotionLength_deg              = upperCandidate.MotionLength_deg;
+            report.Validation                    = upperValidation;
+            report.TerminationReason             = "validatedFeasibleBoundary";
             axisReports(reportIndex) = report;
 
             % All candidates have the same arrival time; keep the shortest.
             % Later route search may still find a better motion.
-            if diagnostics.Success && ...
-                    upperCandidate.MotionLength_deg >= candidate.MotionLength_deg
+            if diagnostics.Success &&  upperCandidate.MotionLength_deg >= candidate.MotionLength_deg
                 continue;
             end
             candidate = upperCandidate;
-            diagnostics.AxisReports = axisReports;
-            diagnostics.Success = true;
-            diagnostics.TerminationReason = "goalReached";
-            diagnostics.SelectedMode = "singleAmplitude";
-            diagnostics.Message = ...
-                "A one-sided fixed-clock excursion passed independent validation.";
-            diagnostics.SelectedAxisIndex = report.AxisIndex;
-            diagnostics.SelectedDirection = report.Direction;
-            diagnostics.InvalidBoundaryMagnitude_deg = ...
-                report.InvalidBoundaryMagnitude_deg;
-            diagnostics.ValidBoundaryMagnitude_deg = ...
-                report.ValidBoundaryMagnitude_deg;
-            diagnostics.BoundaryResolutionReserve_deg = ...
-                report.BoundaryResolutionReserve_deg;
-            diagnostics.RetainedAmplitude_deg = report.RetainedAmplitude_deg;
-            diagnostics.MotionLength_deg = candidate.MotionLength_deg;
-            diagnostics.SelectedValidation = candidate.Validation;
-            diagnostics.ElapsedTime_s = toc(timer);
+            diagnostics.AxisReports                   = axisReports;
+            diagnostics.Success                       = true;
+            diagnostics.TerminationReason             = "goalReached";
+            diagnostics.SelectedMode                  = "singleAmplitude";
+            diagnostics.Message                       =  "A one-sided fixed-clock excursion passed independent validation.";
+            diagnostics.SelectedAxisIndex             = report.AxisIndex;
+            diagnostics.SelectedDirection             = report.Direction;
+            diagnostics.InvalidBoundaryMagnitude_deg  =  report.InvalidBoundaryMagnitude_deg;
+            diagnostics.ValidBoundaryMagnitude_deg    =  report.ValidBoundaryMagnitude_deg;
+            diagnostics.BoundaryResolutionReserve_deg =  report.BoundaryResolutionReserve_deg;
+            diagnostics.RetainedAmplitude_deg         = report.RetainedAmplitude_deg;
+            diagnostics.MotionLength_deg              = candidate.MotionLength_deg;
+            diagnostics.SelectedValidation            = candidate.Validation;
+            diagnostics.ElapsedTime_s                 = toc(timer);
         end
     end
 end
@@ -307,224 +265,221 @@ end
 
 diagnostics.AxisReports = axisReports;
 if diagnostics.Success
-    [candidate, diagnostics] = refineOffsetTravel(candidate, directCandidate, ...
-        diagnostics, obstacles, initialState, goalState, limits, options);
+    [candidate, diagnostics] = refineOffsetTravel(candidate, directCandidate,  diagnostics, obstacles, initialState, goalState, limits, options);
     diagnostics.ElapsedTime_s = toc(timer);
     return;
 end
-diagnostics = finishFailure(diagnostics, "noValidatedExcursion", ...
-    "No enumerated fixed-clock excursion passed independent validation.", timer);
+diagnostics = finishFailure(diagnostics, "noValidatedExcursion",  "No enumerated fixed-clock excursion passed independent validation.", timer);
 end
 
 %% Section 4: Local Functions
 
-function [candidate, diagnostics] = refineOffsetTravel(candidate, direct, ...
-        diagnostics, obstacles, initialState, goalState, limits, options)
-% Reshape the selected detour while keeping the other axis and arrival time.
-% Keep the existing safe motion whenever a proposed change fails.
-axisIndex = diagnostics.SelectedAxisIndex;
-reports = diagnostics.AxisReports;
-selectedReport = find([reports.AxisIndex] == axisIndex & ...
-    [reports.Direction] == diagnostics.SelectedDirection & ...
-    [reports.MotionLength_deg] == candidate.MotionLength_deg, 1);
-% Use nine evenly spaced times plus the original peak time as adjustment
-% points (knots). Their offsets describe how far to depart from the direct move.
-knotTime_s = unique([linspace(initialState.time_s, direct.ArrivalTime_s, 9).'; ...
-    reports(selectedReport).PeakTime_s]);
-[~, basePosition_deg] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
-[~, position_deg] = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
-offset_deg = position_deg(:, axisIndex) - basePosition_deg(:, axisIndex);
-% The detour must still start and end at the requested positions.
-offset_deg([1 end]) = 0;
-record = createTravelRefinement();
-record.Attempted = true;
-record.InitialLength_deg = candidate.MotionLength_deg;
-record.KnotTime_s = knotTime_s;
-initialStep_deg = max(abs(offset_deg)) / 2;
-% Nudge one interior offset at a time in both directions. Start with larger
-% changes, then halve the step for finer adjustments. Two passes at each
-% step size let later improvements influence earlier adjustment points.
-for level = 0:7
-    step_deg = initialStep_deg / 2^level;
-    for sweep = 1:2
-        for knotIndex = 2:numel(knotTime_s)-1
-            for direction = [-1 1]
-                trialOffset_deg = offset_deg;
-                trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
-                trial = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s, ...
-                    trialOffset_deg, axisIndex, initialState, options.SampleTime_s, ...
-                    "fixedClockLateralExcursion");
-                record.TrialCount = record.TrialCount + 1;
-                % Avoid a full safety check unless the proposed motion is
-                % shorter by more than 1e-8 degrees (a numerical noise guard).
-                if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
-                    continue;
-                end
-                validationTimer = tic;
-                validation = obstacleAvoidance.validation.validatePreparedTrajectory(trial, obstacles, ...
-                    initialState, goalState, limits, options);
-                diagnostics = addValidationTiming(diagnostics, validation, toc(validationTimer));
-                if validation.Passed
-                    trial.Validation = validation;
-                    candidate = trial;
-                    offset_deg = trialOffset_deg;
-                    record.AcceptedCount = record.AcceptedCount + 1;
+function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagnostics, obstacles, initialState, goalState, limits, options)
+    % Reshape the selected detour while keeping the other axis and arrival time.
+    % Keep the existing safe motion whenever a proposed change fails.
+    axisIndex      = diagnostics.SelectedAxisIndex;
+    reports        = diagnostics.AxisReports;
+    selectedReport = find([reports.AxisIndex] == axisIndex &  [reports.Direction] == diagnostics.SelectedDirection &  [reports.MotionLength_deg] == candidate.MotionLength_deg, 1);
+    % Use nine evenly spaced times plus the original peak time as adjustment
+    % points (knots). Their offsets describe how far to depart from the direct move.
+    knotTime_s            = unique([linspace(initialState.time_s, direct.ArrivalTime_s, 9).';  reports(selectedReport).PeakTime_s]);
+    [~, basePosition_deg] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
+    [~, position_deg]     = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
+    offset_deg            = position_deg(:, axisIndex) - basePosition_deg(:, axisIndex);
+    % The detour must still start and end at the requested positions.
+    offset_deg([1 end]) = 0;
+    record              = createTravelRefinement();
+    record.Attempted         = true;
+    record.InitialLength_deg = candidate.MotionLength_deg;
+    record.KnotTime_s        = knotTime_s;
+    initialStep_deg = max(abs(offset_deg)) / 2;
+    % Nudge one interior offset at a time in both directions. Start with larger
+    % changes, then halve the step for finer adjustments. Two passes at each
+    % step size let later improvements influence earlier adjustment points.
+    for level = 0:7
+        step_deg = initialStep_deg / 2^level;
+        for sweep = 1:2
+            for knotIndex = 2:numel(knotTime_s)-1
+                for direction = [-1 1]
+                    trialOffset_deg            = offset_deg;
+                    trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
+                    trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_deg, axisIndex, initialState, options.SampleTime_s,  "fixedClockLateralExcursion");
+                    record.TrialCount = record.TrialCount + 1;
+                    % Avoid a full safety check unless the proposed motion is
+                    % shorter by more than 1e-8 degrees (a numerical noise guard).
+                    if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
+                        continue;
+                    end
+                    validationTimer = tic;
+                    validation      = obstacleAvoidance.validation.validatePreparedTrajectory(trial, obstacles,  initialState, goalState, limits, options);
+                    diagnostics     = addValidationTiming(diagnostics, validation, toc(validationTimer));
+                    if validation.Passed
+                        trial.Validation = validation;
+                        candidate  = trial;
+                        offset_deg = trialOffset_deg;
+                        record.AcceptedCount = record.AcceptedCount + 1;
+                    end
                 end
             end
         end
     end
-end
-record.FinalLength_deg = candidate.MotionLength_deg;
-record.KnotOffset_deg = offset_deg;
-diagnostics.TravelRefinement = record;
-diagnostics.MotionLength_deg = candidate.MotionLength_deg;
-diagnostics.SelectedValidation = candidate.Validation;
-if record.AcceptedCount > 0
-    diagnostics.SelectedMode = "refinedOffsetSpline";
-    diagnostics.Message = "A refined fixed-clock offset spline passed independent validation.";
-end
+    record.FinalLength_deg = candidate.MotionLength_deg;
+    record.KnotOffset_deg  = offset_deg;
+    diagnostics.TravelRefinement   = record;
+    diagnostics.MotionLength_deg   = candidate.MotionLength_deg;
+    diagnostics.SelectedValidation = candidate.Validation;
+    if record.AcceptedCount > 0
+        diagnostics.SelectedMode = "refinedOffsetSpline";
+        diagnostics.Message      = "A refined fixed-clock offset spline passed independent validation.";
+    end
 end
 
 function record = createTravelRefinement()
-% Record how much the later reshaping improved the initial passing detour.
-record = struct('Attempted', false, 'AcceptedCount', 0, 'TrialCount', 0, ...
-    'InitialLength_deg', NaN, 'FinalLength_deg', NaN, ...
-    'KnotTime_s', zeros(0, 1), 'KnotOffset_deg', zeros(0, 1));
+    % Record how much the later reshaping improved the initial passing detour.
+    record = struct();
+    record.Attempted         = false;
+    record.AcceptedCount     = 0;
+    record.TrialCount        = 0;
+    record.InitialLength_deg = NaN;
+    record.FinalLength_deg   = NaN;
+    record.KnotTime_s        = zeros(0, 1);
+    record.KnotOffset_deg    = zeros(0, 1);
 end
 
-function candidate = createExcursion( ...
-        directCandidate, amplitude_deg, axisIndex, peakTime_s, ...
-        initialState, options)
-% Add an offset of zero at the start, amplitude_deg at the chosen interior
-% time, and zero at arrival. The smooth curve need not stop at that interior
-% point; its velocity and acceleration are not forced to zero there.
-startTime_s = initialState.time_s;
-endTime_s = directCandidate.ArrivalTime_s;
-candidate = bmtpEngine.createOffsetSplineMotion( ...
-    directCandidate, [startTime_s; peakTime_s; endTime_s], ...
-    [0; amplitude_deg; 0], axisIndex, initialState, ...
-    options.SampleTime_s, "fixedClockLateralExcursion");
+function candidate = createExcursion(directCandidate, amplitude_deg, axisIndex, peakTime_s,  initialState, options)
+    % Add an offset of zero at the start, amplitude_deg at the chosen interior
+    % time, and zero at arrival. The smooth curve need not stop at that interior
+    % point; its velocity and acceleration are not forced to zero there.
+    startTime_s = initialState.time_s;
+    endTime_s   = directCandidate.ArrivalTime_s;
+    candidate   = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s],  [0; amplitude_deg; 0], axisIndex, initialState,  options.SampleTime_s, "fixedClockLateralExcursion");
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
-% Choose times to try the largest offset, using where the direct move collides.
-% These sampled observations guide the search; they do not certify safety.
-startTime_s = directCandidate.time_s(1);
-endTime_s = directCandidate.time_s(end);
-midpointTime_s = 0.5 * (startTime_s + endTime_s);
-queryOptions = struct( ...
-    "BoundaryIsOccupied", true, ...
-    "ClearanceTolerance_deg", options.CollisionClearanceTolerance_deg);
-[isOccupied, ~, details] = ...
-    obstacleAvoidance.obstacles.queryPreparedObstacles( ...
-    obstacles, directCandidate.position_deg(:, 1), ...
-    directCandidate.position_deg(:, 2), directCandidate.time_s, queryOptions);
-isOccupied = logical(isOccupied(:));
-% Find the start and end of each consecutive group of colliding samples.
-runChange = diff([false; isOccupied; false]);
-runStart = find(runChange == 1);
-runEnd = find(runChange == -1) - 1;
-collisionPeak_s = zeros(2 * numel(runStart), 1);
-for runIndex = 1:numel(runStart)
-    % Try both the worst-clearance sample and the middle of this collision
-    % interval, so the detour can be strongest near the obstruction.
-    indices = runStart(runIndex):runEnd(runIndex);
-    [~, localIndex] = min(details.MinimumClearance_deg(indices));
-    collisionPeak_s(2 * runIndex - 1) = ...
-        directCandidate.time_s(indices(localIndex));
-    collisionPeak_s(2 * runIndex) = 0.5 * sum( ...
-        directCandidate.time_s([indices(1), indices(end)]));
-end
-% Always include the middle of the whole move as another timing choice.
-peakTime_s = unique([collisionPeak_s; midpointTime_s], "stable");
-% Leave time to move out and return, and avoid nearly duplicate trials.
-endpointReserve_s = 256 * eps(max(1, endTime_s - startTime_s));
-peakTime_s = peakTime_s(peakTime_s > startTime_s + endpointReserve_s & ...
-    peakTime_s < endTime_s - endpointReserve_s);
-minimumPeakSeparation_s = max(endpointReserve_s, 0.5 * options.SampleTime_s);
-retainedPeak = false(size(peakTime_s));
-for peakIndex = 1:numel(peakTime_s)
-    retainedPeak(peakIndex) = ~any(abs(peakTime_s(1:peakIndex - 1) - ...
-        peakTime_s(peakIndex)) < minimumPeakSeparation_s & ...
-        retainedPeak(1:peakIndex - 1));
-end
-peakTime_s = peakTime_s(retainedPeak);
+    % Choose times to try the largest offset, using where the direct move collides.
+    % These sampled observations guide the search; they do not certify safety.
+    startTime_s    = directCandidate.time_s(1);
+    endTime_s      = directCandidate.time_s(end);
+    midpointTime_s = 0.5 * (startTime_s + endTime_s);
+    queryOptions   = struct();
+    queryOptions.BoundaryIsOccupied     = true;
+    queryOptions.ClearanceTolerance_deg = options.CollisionClearanceTolerance_deg;
+    [isOccupied, ~, details] =  obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, directCandidate.position_deg(:, 1),  directCandidate.position_deg(:, 2), directCandidate.time_s, queryOptions);
+    isOccupied               = logical(isOccupied(:));
+    % Find the start and end of each consecutive group of colliding samples.
+    runChange       = diff([false; isOccupied; false]);
+    runStart        = find(runChange == 1);
+    runEnd          = find(runChange == -1) - 1;
+    collisionPeak_s = zeros(2 * numel(runStart), 1);
+    for runIndex = 1:numel(runStart)
+        % Try both the worst-clearance sample and the middle of this collision
+        % interval, so the detour can be strongest near the obstruction.
+        indices                           = runStart(runIndex):runEnd(runIndex);
+        [~, localIndex]                   = min(details.MinimumClearance_deg(indices));
+        collisionPeak_s(2 * runIndex - 1) =  directCandidate.time_s(indices(localIndex));
+        collisionPeak_s(2 * runIndex)     = 0.5 * sum(directCandidate.time_s([indices(1), indices(end)]));
+    end
+    % Always include the middle of the whole move as another timing choice.
+    peakTime_s = unique([collisionPeak_s; midpointTime_s], "stable");
+    % Leave time to move out and return, and avoid nearly duplicate trials.
+    endpointReserve_s       = 256 * eps(max(1, endTime_s - startTime_s));
+    peakTime_s              = peakTime_s(peakTime_s > startTime_s + endpointReserve_s &  peakTime_s < endTime_s - endpointReserve_s);
+    minimumPeakSeparation_s = max(endpointReserve_s, 0.5 * options.SampleTime_s);
+    retainedPeak            = false(size(peakTime_s));
+    for peakIndex = 1:numel(peakTime_s)
+        retainedPeak(peakIndex) = ~any(abs(peakTime_s(1:peakIndex - 1) -  peakTime_s(peakIndex)) < minimumPeakSeparation_s &  retainedPeak(1:peakIndex - 1));
+    end
+    peakTime_s = peakTime_s(retainedPeak);
 end
 
+
+
 function valid = directMotionIsPhysical(validation)
-% Require all checks except collision checks to pass.
-allowedIssues = ["collision freedom", "collision resolution"];
-valid = all(ismember(validation.Issues, allowedIssues));
+    % Require all checks except collision checks to pass.
+    allowedIssues = ["collision freedom", "collision resolution"];
+    valid         = all(ismember(validation.Issues, allowedIssues));
 end
 
 function isClear = sampledCandidatesAreClear(candidates, obstacles, options)
-% Check all trial motions together because they share the same sample times.
-% A true result means only that these samples are clear, not the entire motion.
-candidateCount = numel(candidates);
-sampleCount = numel(candidates{1}.time_s);
-azimuth_deg = zeros(sampleCount, candidateCount);
-elevation_deg = zeros(sampleCount, candidateCount);
-time_s = repmat(candidates{1}.time_s, 1, candidateCount);
-for candidateIndex = 1:candidateCount
-    azimuth_deg(:, candidateIndex) = candidates{candidateIndex}.position_deg(:, 1);
-    elevation_deg(:, candidateIndex) = candidates{candidateIndex}.position_deg(:, 2);
-end
-queryOptions = struct( ...
-    "BoundaryIsOccupied", true, ...
-    "ClearanceTolerance_deg", options.CollisionClearanceTolerance_deg);
-isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
-    obstacles, azimuth_deg, elevation_deg, time_s, queryOptions);
-isClear = ~any(isOccupied, 1);
+    % Check all trial motions together because they share the same sample times.
+    % A true result means only that these samples are clear, not the entire motion.
+    candidateCount = numel(candidates);
+    sampleCount    = numel(candidates{1}.time_s);
+    azimuth_deg    = zeros(sampleCount, candidateCount);
+    elevation_deg  = zeros(sampleCount, candidateCount);
+    time_s         = repmat(candidates{1}.time_s, 1, candidateCount);
+    for candidateIndex = 1:candidateCount
+        azimuth_deg(:, candidateIndex)   = candidates{candidateIndex}.position_deg(:, 1);
+        elevation_deg(:, candidateIndex) = candidates{candidateIndex}.position_deg(:, 2);
+    end
+    queryOptions = struct();
+    queryOptions.BoundaryIsOccupied     = true;
+    queryOptions.ClearanceTolerance_deg = options.CollisionClearanceTolerance_deg;
+    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, time_s, queryOptions);
+    isClear    = ~any(isOccupied, 1);
 end
 
 function report = createAxisReport()
-% Store one trial family's axis, direction, peak time, and rejection or result.
-report = struct( ...
-    "AxisIndex", 0, "Direction", 0, "AxisGovernsClock", false, ...
-    "PeakTime_s", NaN, "Eligible", false, "MaximumMagnitude_deg", 0, ...
-    "InvalidBoundaryMagnitude_deg", NaN, ...
-    "ValidBoundaryMagnitude_deg", NaN, ...
-    "BoundaryResolutionReserve_deg", NaN, "BoundaryRefinementCount", 0, ...
-    "RetainedAmplitude_deg", NaN, "MotionLength_deg", NaN, ...
-    "Validation", obstacleAvoidance.validation.validatePreparedTrajectory(), ...
-    "TerminationReason", "notAttempted");
+    % Store one trial family's axis, direction, peak time, and rejection or result.
+    report = struct();
+    report.AxisIndex                     = 0;
+    report.Direction                     = 0;
+    report.AxisGovernsClock              = false;
+    report.PeakTime_s                    = NaN;
+    report.Eligible                      = false;
+    report.MaximumMagnitude_deg          = 0;
+    report.InvalidBoundaryMagnitude_deg  = NaN;
+    report.ValidBoundaryMagnitude_deg    = NaN;
+    report.BoundaryResolutionReserve_deg = NaN;
+    report.BoundaryRefinementCount       = 0;
+    report.RetainedAmplitude_deg         = NaN;
+    report.MotionLength_deg              = NaN;
+    report.Validation                    = obstacleAvoidance.validation.validatePreparedTrajectory();
+    report.TerminationReason             = "notAttempted";
 end
 
 function diagnostics = createDiagnostics()
-% Keep the same diagnostic fields on success, failure, and zero-input calls.
-% NaN marks numeric results that are not available because no trial supplied them.
-diagnostics = struct( ...
-    "Attempted", false, "Success", false, ...
-    "Message", "The fixed-clock excursion was not attempted.", ...
-    "TerminationReason", "notRun", "SelectedMode", "", ...
-    "ClockMatched", false, "DirectDuration_s", NaN, ...
-    "CertifiedLowerBound_s", NaN, "ClockTolerance_s", NaN, ...
-    "ValidationCount", 0, "ScreeningCount", 0, "SelectedAxisIndex", 0, ...
-    "SelectedDirection", 0, "InvalidBoundaryMagnitude_deg", NaN, ...
-    "ValidBoundaryMagnitude_deg", NaN, "BoundaryResolutionReserve_deg", NaN, ...
-    "RetainedAmplitude_deg", NaN, "MotionLength_deg", NaN, ...
-    "DirectValidation", obstacleAvoidance.validation.validatePreparedTrajectory(), ...
-    "SelectedValidation", obstacleAvoidance.validation.validatePreparedTrajectory(), ...
-    "AxisReports", repmat(createAxisReport(), 0, 1), ...
-    "TravelRefinement", createTravelRefinement(), ...
-    "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
-    "ElapsedTime_s", 0);
+    % Keep the same diagnostic fields on success, failure, and zero-input calls.
+    % NaN marks numeric results that are not available because no trial supplied them.
+    diagnostics = struct();
+    diagnostics.Attempted                      = false;
+    diagnostics.Success                        = false;
+    diagnostics.Message                        = "The fixed-clock excursion was not attempted.";
+    diagnostics.TerminationReason              = "notRun";
+    diagnostics.SelectedMode                   = "";
+    diagnostics.ClockMatched                   = false;
+    diagnostics.DirectDuration_s               = NaN;
+    diagnostics.CertifiedLowerBound_s          = NaN;
+    diagnostics.ClockTolerance_s               = NaN;
+    diagnostics.ValidationCount                = 0;
+    diagnostics.ScreeningCount                 = 0;
+    diagnostics.SelectedAxisIndex              = 0;
+    diagnostics.SelectedDirection              = 0;
+    diagnostics.InvalidBoundaryMagnitude_deg   = NaN;
+    diagnostics.ValidBoundaryMagnitude_deg     = NaN;
+    diagnostics.BoundaryResolutionReserve_deg  = NaN;
+    diagnostics.RetainedAmplitude_deg          = NaN;
+    diagnostics.MotionLength_deg               = NaN;
+    diagnostics.DirectValidation               = obstacleAvoidance.validation.validatePreparedTrajectory();
+    diagnostics.SelectedValidation             = obstacleAvoidance.validation.validatePreparedTrajectory();
+    diagnostics.AxisReports                    = repmat(createAxisReport(), 0, 1);
+    diagnostics.TravelRefinement               = createTravelRefinement();
+    diagnostics.ValidationElapsedTime_s        = 0;
+    diagnostics.CollisionCheckingElapsedTime_s = 0;
+    diagnostics.ElapsedTime_s                  = 0;
 end
 
 function diagnostics = addValidationTiming(diagnostics, validation, elapsedTime_s)
-% Count validation time separately from motion construction.
-diagnostics.ValidationCount = diagnostics.ValidationCount + 1;
-diagnostics.ValidationElapsedTime_s = diagnostics.ValidationElapsedTime_s + ...
-    elapsedTime_s;
-diagnostics.CollisionCheckingElapsedTime_s = ...
-    diagnostics.CollisionCheckingElapsedTime_s + ...
-    validation.CollisionCheckingElapsedTime_s;
+    % Count validation time separately from motion construction.
+    diagnostics.ValidationCount                = diagnostics.ValidationCount + 1;
+    diagnostics.ValidationElapsedTime_s        = diagnostics.ValidationElapsedTime_s +  elapsedTime_s;
+    diagnostics.CollisionCheckingElapsedTime_s =  diagnostics.CollisionCheckingElapsedTime_s +  validation.CollisionCheckingElapsedTime_s;
 end
 
 function diagnostics = finishFailure(diagnostics, reason, message, timer)
-% Record the failure and elapsed time.
-diagnostics.Success = false;
-diagnostics.TerminationReason = reason;
-diagnostics.Message = message;
-diagnostics.ElapsedTime_s = toc(timer);
+    % Record the failure and elapsed time.
+    diagnostics.Success           = false;
+    diagnostics.TerminationReason = reason;
+    diagnostics.Message           = message;
+    diagnostics.ElapsedTime_s     = toc(timer);
 end

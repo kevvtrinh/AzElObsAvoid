@@ -28,19 +28,18 @@ function [result, diagnosis] = exampleMovingBarrierWait(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
 
 %% Section 2: Create Obstacles
 
 % The barrier crosses the useful route and then moves away. A valid planner must
 % represent time, not only position. It can wait in free space and cross later.
 
-obstacleTime_s = [0; 6; 6.5; 12];
+obstacleTime_s             = [0; 6; 6.5; 12];
 barrierCenterElevation_deg = [0; 0; 8; 8];
-sourcePosition_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
-azimuthBySlice_deg = cell(numel(obstacleTime_s), 1);
-elevationBySlice_deg = cell(numel(obstacleTime_s), 1);
+sourcePosition_deg         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+azimuthBySlice_deg         = cell(numel(obstacleTime_s), 1);
+elevationBySlice_deg       = cell(numel(obstacleTime_s), 1);
 
 % Move the same barrier through its sampled elevations. Each cell stores the
 % complete boundary at one time.
@@ -50,18 +49,20 @@ for sampleIndex = 1:numel(obstacleTime_s)
     elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
 end
 safetyMargin_deg = 0.1;
-obstacles = obstacleAvoidance.obstacles.createObstacle( ...
-    "translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+obstacles        = obstacleAvoidance.obstacles.createObstacle("translating barrier", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 % The direct geometric line becomes safe only after the barrier moves. The time
 % window includes enough time to wait and then finish the motion.
 
-initialState = struct("time_s", 0, "position_deg", [-5 0]);
-goalState = struct("time_s", 12, "position_deg", [5 0]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], ...
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [-5 0];
+goalState = struct();
+goalState.time_s       = 12;
+goalState.position_deg = [5 0];
+limits = struct("maxVelocity_deg_s", [2 2], ...
     "maxAcceleration_deg_s2", [1 1], ...
     "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "azimuthInterval_deg", [-6 6], "elevationInterval_deg", [-3 3]);
 
@@ -73,7 +74,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result
@@ -82,17 +83,14 @@ clear warningCleanup;
 % barrier too early even if its geometric path looks correct.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
-waitSeedSelected = result.Success && diagnosis.SelectedAttemptIndex > 0 && ...
-    diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source == "directWait";
+waitSeedSelected  = result.Success && diagnosis.SelectedAttemptIndex > 0 && diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source == "directWait";
 exampleValidation.WaitSeedSelected = waitSeedSelected;
-exampleValidation.Passed = exampleValidation.Passed && waitSeedSelected;
+exampleValidation.Passed           = exampleValidation.Passed && waitSeedSelected;
 if ~waitSeedSelected
-    exampleValidation.Message = exampleValidation.Message + ...
-        " The planner did not select the direct waiting seed.";
+    exampleValidation.Message = exampleValidation.Message + " The planner did not select the direct waiting seed.";
 end
 if ~exampleValidation.Passed
-    warning("exampleMovingBarrierWait:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleMovingBarrierWait:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -101,8 +99,7 @@ end
 % the waiting segment is necessary.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

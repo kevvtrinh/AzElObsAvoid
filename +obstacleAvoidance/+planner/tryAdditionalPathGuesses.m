@@ -1,7 +1,4 @@
-function [candidateSet, routeSet, generatedSeeds] = ...
-        tryAdditionalPathGuesses( ...
-        initialState, goalState, limits, options, ...
-        candidateSet, routeSet, generatedSeeds, recoveryContext)
+function [candidateSet, routeSet, generatedSeeds] = tryAdditionalPathGuesses(initialState, goalState, limits, options, candidateSet, routeSet, generatedSeeds, recoveryContext)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidateSet, routeSet, generatedSeeds] = tryAdditionalPathGuesses( ...
@@ -21,7 +18,7 @@ function [candidateSet, routeSet, generatedSeeds] = ...
 
 %% Section 1: Decide Whether Recovery Is Needed
 
-initialSeedCount = numel(candidateSet.Seeds);
+initialSeedCount       = numel(candidateSet.Seeds);
 initialCandidatePassed = any([candidateSet.Summaries.ValidationPassed]);
 if initialCandidatePassed || recoveryContext.HasValidatedExactMotion
     return;
@@ -32,12 +29,9 @@ end
 
 %% Section 2: Try Already Generated Later Seeds
 
-lastOrdinarySeedIndex = min(numel(generatedSeeds), ...
-    options.MaximumSeedCount);
+lastOrdinarySeedIndex = min(numel(generatedSeeds), options.MaximumSeedCount);
 for seedIndex = initialSeedCount + 1:lastOrdinarySeedIndex
-    [candidateSet, passed, recoveryContext] = solveAndAppend( ...
-        initialState, goalState, limits, options, ...
-        candidateSet, generatedSeeds(seedIndex), recoveryContext);
+    [candidateSet, passed, recoveryContext] = solveAndAppend(initialState, goalState, limits, options, candidateSet, generatedSeeds(seedIndex), recoveryContext);
     if passed
         return;
     end
@@ -45,8 +39,7 @@ end
 
 %% Section 3: Consume Deferred Route Work Within The Same Seed Limit
 
-remainingSeedCount = options.MaximumSeedCount - ...
-    numel(candidateSet.Seeds);
+remainingSeedCount = options.MaximumSeedCount - numel(candidateSet.Seeds);
 if remainingSeedCount <= 0
     return;
 end
@@ -54,38 +47,30 @@ if isempty(fieldnames(routeSet))
     return;
 end
 
-needsDeferredTimedRecovery = routeSet.TimedSearchDeferred;
-needsDeferredSpatialRecovery = ...
-    ~isempty(routeSet.DeferredSpatialRoutes_deg);
+needsDeferredTimedRecovery   = routeSet.TimedSearchDeferred;
+needsDeferredSpatialRecovery = ~isempty(routeSet.DeferredSpatialRoutes_deg);
 if ~needsDeferredTimedRecovery && ~needsDeferredSpatialRecovery
     return;
 end
 
 if needsDeferredTimedRecovery
-    recoverySearchTimer = tic;
-    routeSet = obstacleAvoidance.search.searchRoutes( ...
-        initialState, goalState, limits, options, ...
-        recoveryContext.Scene, recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
+    recoverySearchTimer         = tic;
+    routeSet                    = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, recoveryContext.Scene, recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
-    candidateSet.StageTiming.RouteSearchElapsedTime_s = ...
-        candidateSet.StageTiming.RouteSearchElapsedTime_s + ...
-        recoverySearchElapsedTime_s;
+    candidateSet.StageTiming.RouteSearchElapsedTime_s = candidateSet.StageTiming.RouteSearchElapsedTime_s + recoverySearchElapsedTime_s;
 end
 
 recoveredOnlyRouteSet = routeSet;
 if ~needsDeferredTimedRecovery
-    recoveredOnlyRouteSet.TimedRoute_deg = zeros(0, 2);
+    recoveredOnlyRouteSet.TimedRoute_deg   = zeros(0, 2);
     recoveredOnlyRouteSet.TimedRouteTime_s = zeros(0, 1);
 end
 if needsDeferredSpatialRecovery
-    recoveredOnlyRouteSet.SpatialRoutes_deg = ...
-        routeSet.DeferredSpatialRoutes_deg;
+    recoveredOnlyRouteSet.SpatialRoutes_deg = routeSet.DeferredSpatialRoutes_deg;
 else
     recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
 end
-recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses( ...
-    recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices, ...
-    generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
+recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses(recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices, generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
 
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
     recoveredSeed = recoveredSeeds(recoveryIndex);
@@ -95,9 +80,7 @@ for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
     if string(recoveredSeed.Source) == "visibilityGraph"
         routeSet.DeferredSpatialSolveAttempted = true;
     end
-    [candidateSet, passed, recoveryContext] = solveAndAppend( ...
-        initialState, goalState, limits, options, ...
-        candidateSet, recoveredSeed, recoveryContext);
+    [candidateSet, passed, recoveryContext] = solveAndAppend(initialState, goalState, limits, options, candidateSet, recoveredSeed, recoveryContext);
     if passed
         return;
     end
@@ -106,22 +89,16 @@ end
 
 %% Section 4: Local Functions
 
-function [candidateSet, passed, recoveryContext] = solveAndAppend( ...
-        initialState, goalState, limits, options, ...
-        candidateSet, seed, recoveryContext)
-% Solve an additional seed and append its diagnostics.
-seed.Index = numel(candidateSet.Seeds) + 1;
-[candidate, summary, stageTiming, recoveryContext.SeedSolveContext] = ...
-    obstacleAvoidance.planner.solvePathGuess( ...
-        recoveryContext.Scene.preparedObstacles, initialState, goalState, limits, options, ...
-        seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
-candidateSet.Seeds(end + 1, 1) = seed;
-candidateSet.Candidates{end + 1, 1} = candidate;
-candidateSet.Summaries(end + 1, 1) = summary;
-candidateSet.StageTiming = stageTiming;
-passed = summary.ValidationPassed;
-if passed && isnan(candidateSet.FirstValidatedMotionTime_s)
-    candidateSet.FirstValidatedMotionTime_s = ...
-        toc(recoveryContext.PlanningTimer);
-end
+function [candidateSet, passed, recoveryContext] = solveAndAppend(initialState, goalState, limits, options, candidateSet, seed, recoveryContext)
+    % Solve an additional seed and append its diagnostics.
+    seed.Index = numel(candidateSet.Seeds) + 1;
+    [candidate, summary, stageTiming, recoveryContext.SeedSolveContext] = obstacleAvoidance.planner.solvePathGuess(recoveryContext.Scene.preparedObstacles, initialState, goalState, limits, options, seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
+    candidateSet.Seeds(end + 1, 1) = seed;
+    candidateSet.Candidates{end + 1, 1} = candidate;
+    candidateSet.Summaries(end + 1, 1) = summary;
+    candidateSet.StageTiming = stageTiming;
+    passed = summary.ValidationPassed;
+    if passed && isnan(candidateSet.FirstValidatedMotionTime_s)
+        candidateSet.FirstValidatedMotionTime_s = toc(recoveryContext.PlanningTimer);
+    end
 end

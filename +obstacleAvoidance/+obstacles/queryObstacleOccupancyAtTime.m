@@ -1,6 +1,4 @@
-function [isOccupied, blockingObstacleIndex, queryDetails] = ...
-        queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, ...
-        queryTime, optionOverrides)
+function [isOccupied, blockingObstacleIndex, queryDetails] = queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, queryTime, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime()
@@ -37,14 +35,13 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = ...
 defaults = struct("BoundaryIsOccupied", true, "ClearanceTolerance_deg", 1e-10, "ReferenceTime", ...
     datetime(1970, 1, 1, 0, 0, 0, "TimeZone", "UTC"));
 if nargin == 0
-    isOccupied = defaults;
+    isOccupied            = defaults;
     blockingObstacleIndex = [];
-    queryDetails = struct();
+    queryDetails          = struct();
     return;
 end
 if nargin ~= 4 && nargin ~= 5
-    error("queryObstacleOccupancyAtTime:InvalidCall", ...
-        "Use zero inputs, four query inputs, or four inputs plus options.");
+    error("queryObstacleOccupancyAtTime:InvalidCall", "Use zero inputs, four query inputs, or four inputs plus options.");
 end
 if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
@@ -54,18 +51,12 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
 end
 [options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
-    warning("queryObstacleOccupancyAtTime:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
+    warning("queryObstacleOccupancyAtTime:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
-options.BoundaryIsOccupied = obstacleAvoidance.input.normalizeLogicalScalar( ...
-    options.BoundaryIsOccupied, "BoundaryIsOccupied", ...
-    "queryObstacleOccupancyAtTime:InvalidBoundaryPolicy");
-validateattributes(options.ClearanceTolerance_deg, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'nonnegative'});
-if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || ...
-        isnat(options.ReferenceTime)
-    error("queryObstacleOccupancyAtTime:InvalidReferenceTime", ...
-        "ReferenceTime must be one finite datetime scalar.");
+options.BoundaryIsOccupied = obstacleAvoidance.input.normalizeLogicalScalar(options.BoundaryIsOccupied, "BoundaryIsOccupied", "queryObstacleOccupancyAtTime:InvalidBoundaryPolicy");
+validateattributes(options.ClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+if ~isdatetime(options.ReferenceTime) || ~isscalar(options.ReferenceTime) || isnat(options.ReferenceTime)
+    error("queryObstacleOccupancyAtTime:InvalidReferenceTime", "ReferenceTime must be one finite datetime scalar.");
 end
 options.ReferenceTime.TimeZone = "UTC";
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
@@ -78,19 +69,13 @@ if isdatetime(queryTime)
 elseif isnumeric(queryTime)
     queryTime_s = double(queryTime);
 else
-    error("queryObstacleOccupancyAtTime:InvalidTime", ...
-        "queryTime must be numeric seconds or datetime.");
+    error("queryObstacleOccupancyAtTime:InvalidTime", "queryTime must be numeric seconds or datetime.");
 end
 if nargout < 2
-    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
-        obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
+    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
 elseif nargout == 2
-    [isOccupied, blockingObstacleIndex] = ...
-        obstacleAvoidance.obstacles.queryPreparedObstacles( ...
-        obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
+    [isOccupied, blockingObstacleIndex] = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
 else
-    [isOccupied, blockingObstacleIndex, queryDetails] = ...
-        obstacleAvoidance.obstacles.queryPreparedObstacles( ...
-        obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
+    [isOccupied, blockingObstacleIndex, queryDetails] = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options);
 end
 end

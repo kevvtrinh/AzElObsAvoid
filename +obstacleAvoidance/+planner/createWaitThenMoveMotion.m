@@ -1,6 +1,4 @@
-function [candidate, diagnostics] = createWaitThenMoveMotion( ...
-        seed, initialState, goalState, limits, options, ...
-        waitOverride_s, directMotionDuration_s)
+function [candidate, diagnostics] = createWaitThenMoveMotion(seed, initialState, goalState, limits, options, waitOverride_s, directMotionDuration_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -41,9 +39,8 @@ function [candidate, diagnostics] = createWaitThenMoveMotion( ...
 
 % Support only an initial wait followed by a direct move.
 
-timer = tic;
-candidate = bmtpEngine.createMotionRecord( ...
-    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
+timer     = tic;
+candidate = bmtpEngine.createMotionRecord(struct(), initialState, [], [], options.SampleTime_s, seed.Source);
 candidate.SeedIndex = seed.Index;
 diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "TerminationReason", "unsupportedTimedMultiWaypointRoute", ...
@@ -70,35 +67,28 @@ diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "AllInteriorWaypointsConstrainedToRest", false);
 if string(seed.Source) ~= "directWait"
     diagnostics.FirstUnsupportedTransitionIndex = 1;
-    diagnostics.FirstUnsupportedFeature = "multiWaypointTimedRoute";
-    diagnostics.OriginalTerminationReason = diagnostics.TerminationReason;
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    candidate.Message = ...
-        "The compact dynamic kernel currently requires a direct-wait seed.";
+    diagnostics.FirstUnsupportedFeature         = "multiWaypointTimedRoute";
+    diagnostics.OriginalTerminationReason       = diagnostics.TerminationReason;
+    diagnostics.FallbackOutcome                 = "fallbackDisabledByPolicy";
+    candidate.Message           = "The compact dynamic kernel currently requires a direct-wait seed.";
     candidate.TerminationReason = diagnostics.TerminationReason;
     candidate.SolverDiagnostics = diagnostics;
     diagnostics.ElapsedTime_s = toc(timer);
     return;
 end
 
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances( ...
-    seed.position_deg, initialState.position_deg, goalState.position_deg);
+coordinateScale_deg   = bmtpEngine.createCoordinateTolerances(seed.position_deg, initialState.position_deg, goalState.position_deg);
 positionTolerance_deg = 256 * eps(coordinateScale_deg);
-isInitialPosition = vecnorm( ...
-    seed.position_deg - initialState.position_deg, 2, 2) <= ...
-    positionTolerance_deg;
-firstMotionIndex = find(~isInitialPosition, 1, "first");
-isDirectWait = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && ...
-    all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - ...
-    goalState.position_deg, 2, 2) <= positionTolerance_deg);
+isInitialPosition     = vecnorm(seed.position_deg - initialState.position_deg, 2, 2) <= positionTolerance_deg;
+firstMotionIndex      = find(~isInitialPosition, 1, "first");
+isDirectWait          = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - goalState.position_deg, 2, 2) <= positionTolerance_deg);
 if ~isDirectWait
-    diagnostics.TerminationReason = "invalidDirectWaitSeed";
+    diagnostics.TerminationReason               = "invalidDirectWaitSeed";
     diagnostics.FirstUnsupportedTransitionIndex = firstMotionIndex;
-    diagnostics.FirstUnsupportedFeature = "nonDirectMotionAfterWait";
-    diagnostics.OriginalTerminationReason = diagnostics.TerminationReason;
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    candidate.Message = ...
-        "The timed seed is not a dwell followed by a direct edge.";
+    diagnostics.FirstUnsupportedFeature         = "nonDirectMotionAfterWait";
+    diagnostics.OriginalTerminationReason       = diagnostics.TerminationReason;
+    diagnostics.FallbackOutcome                 = "fallbackDisabledByPolicy";
+    candidate.Message           = "The timed seed is not a dwell followed by a direct edge.";
     candidate.TerminationReason = diagnostics.TerminationReason;
     candidate.SolverDiagnostics = diagnostics;
     diagnostics.ElapsedTime_s = toc(timer);
@@ -121,53 +111,43 @@ delayedGoalState = goalState;
 delayedGoalState.time_s = initialState.time_s + duration_s;
 fixedOptions = options;
 fixedOptions.GoalTimeMode = "fixedArrival";
-direct = bmtpEngine.createDirectMotion( ...
-    delayedInitialState, delayedGoalState, limits, fixedOptions);
-canRetryAtHorizon = isempty(waitOverride_s) && ...
-    options.GoalTimeMode ~= "fixedArrival" && ...
-    duration_s < goalState.time_s - initialState.time_s - ...
-    options.ArrivalTimeTolerance_s;
+direct            = bmtpEngine.createDirectMotion(delayedInitialState, delayedGoalState, limits, fixedOptions);
+canRetryAtHorizon = isempty(waitOverride_s) && options.GoalTimeMode ~= "fixedArrival" && duration_s < goalState.time_s - initialState.time_s - options.ArrivalTimeTolerance_s;
 if ~direct.Success && canRetryAtHorizon
-    diagnostics.HorizonRetryAttempted = true;
+    diagnostics.HorizonRetryAttempted          = true;
     diagnostics.InitialTimingTerminationReason = direct.TerminationReason;
     duration_s = goalState.time_s - initialState.time_s;
     delayedGoalState.time_s = initialState.time_s + duration_s;
-    direct = bmtpEngine.createDirectMotion( ...
-        delayedInitialState, delayedGoalState, limits, fixedOptions);
+    direct = bmtpEngine.createDirectMotion(delayedInitialState, delayedGoalState, limits, fixedOptions);
 end
 if ~direct.Success && isempty(waitOverride_s) && waitTime_s > 0
     % If the estimated move time fails, retry with the exact minimum duration
     % to avoid rejecting a feasible request because of the estimate.
     diagnostics.TimingRepairAttempted = true;
     if strlength(diagnostics.InitialTimingTerminationReason) == 0
-        diagnostics.InitialTimingTerminationReason = ...
-            direct.TerminationReason;
+        diagnostics.InitialTimingTerminationReason = direct.TerminationReason;
     end
     minimumOptions = options;
     minimumOptions.GoalTimeMode = "earliestArrival";
-    minimumDirect = bmtpEngine.createDirectMotion( ...
-        initialState, goalState, limits, minimumOptions);
+    minimumDirect = bmtpEngine.createDirectMotion(initialState, goalState, limits, minimumOptions);
     if minimumDirect.Success
         minimumDirectDuration_s = minimumDirect.TrajectoryDuration_s;
-        diagnostics.ExactMinimumDirectDuration_s = ...
-            minimumDirectDuration_s;
+        diagnostics.ExactMinimumDirectDuration_s = minimumDirectDuration_s;
         repairedWaitTime_s = max(0, duration_s - minimumDirectDuration_s);
-        waitWasReduced = repairedWaitTime_s < waitTime_s - ...
-            options.ArrivalTimeTolerance_s;
+        waitWasReduced     = repairedWaitTime_s < waitTime_s - options.ArrivalTimeTolerance_s;
         if waitWasReduced
             waitTime_s = repairedWaitTime_s;
             delayedInitialState.time_s = initialState.time_s + waitTime_s;
-            direct = bmtpEngine.createDirectMotion( ...
-                delayedInitialState, delayedGoalState, limits, fixedOptions);
+            direct = bmtpEngine.createDirectMotion(delayedInitialState, delayedGoalState, limits, fixedOptions);
         end
     end
 end
 if ~direct.Success
     candidate = direct;
-    candidate.SeedIndex = seed.Index;
+    candidate.SeedIndex  = seed.Index;
     candidate.SeedSource = string(seed.Source);
     diagnostics.TerminationReason = direct.TerminationReason;
-    diagnostics.ElapsedTime_s = toc(timer);
+    diagnostics.ElapsedTime_s     = toc(timer);
     candidate.SolverDiagnostics = diagnostics;
     return;
 end
@@ -178,43 +158,37 @@ end
 
 directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
     direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
-directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, ...
-    direct.Polynomial.SegmentCount, numel(initialState.position_deg));
+directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, direct.Polynomial.SegmentCount, numel(initialState.position_deg));
 if waitTime_s > 0
-    relativeBreak_s = [0; waitTime_s + directBreak_s];
-    segmentJerk_deg_s3 = [zeros( ...
-        1, numel(initialState.position_deg)); directJerk_deg_s3];
+    relativeBreak_s    = [0; waitTime_s + directBreak_s];
+    segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); directJerk_deg_s3];
 else
-    relativeBreak_s = directBreak_s;
+    relativeBreak_s    = directBreak_s;
     segmentJerk_deg_s3 = directJerk_deg_s3;
 end
-candidate = bmtpEngine.createMotionRecord( ...
-    direct, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
-    options.SampleTime_s, seed.Source);
+candidate = bmtpEngine.createMotionRecord(direct, initialState, relativeBreak_s, segmentJerk_deg_s3, options.SampleTime_s, seed.Source);
 candidate.SeedIndex = seed.Index;
-candidate.Message = ...
-    "An exact direct motion was realized after the timed dwell.";
+candidate.Message   = "An exact direct motion was realized after the timed dwell.";
 [candidate.Success, candidate.OptimizerFeasible] = deal(true);
 candidate.TerminationReason = "goalReached";
-diagnostics.Accepted = true;
+diagnostics.Accepted          = true;
 diagnostics.TerminationReason = candidate.TerminationReason;
-diagnostics.WaitTime_s = waitTime_s;
+diagnostics.WaitTime_s        = waitTime_s;
 diagnostics.InitialWaitTime_s = waitTime_s;
-diagnostics.FinalWaitTime_s = waitTime_s;
-diagnostics.ElapsedTime_s = toc(timer);
+diagnostics.FinalWaitTime_s   = waitTime_s;
+diagnostics.ElapsedTime_s     = toc(timer);
 candidate.SolverDiagnostics = diagnostics;
 end
 
 %% Section 4: Local Functions
 
 function hasWait = hasRepeatedWaypoint(position_deg)
-% Repeated consecutive guide points represent a wait.
-if size(position_deg, 1) < 2
-    hasWait = false;
-    return;
-end
-coordinateScale_deg = bmtpEngine.createCoordinateTolerances(position_deg);
-duplicateTolerance_deg = 256 * eps(coordinateScale_deg);
-hasWait = any(vecnorm(diff(position_deg), 2, 2) <= ...
-    duplicateTolerance_deg);
+    % Repeated consecutive guide points represent a wait.
+    if size(position_deg, 1) < 2
+        hasWait = false;
+        return;
+    end
+    coordinateScale_deg    = bmtpEngine.createCoordinateTolerances(position_deg);
+    duplicateTolerance_deg = 256 * eps(coordinateScale_deg);
+    hasWait                = any(vecnorm(diff(position_deg), 2, 2) <= duplicateTolerance_deg);
 end

@@ -29,9 +29,8 @@ function value = normalizeLogicalScalar(value, fieldName, errorIdentifier)
 
 % Accept only scalar logicals or numeric 0/1.
 
-isLogicalScalar = islogical(value) && isscalar(value);
-isBinaryNumericScalar = isnumeric(value) && isscalar(value) && ...
-    isreal(value) && isfinite(value) && any(value == [0 1]);
+isLogicalScalar       = islogical(value) && isscalar(value);
+isBinaryNumericScalar = isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && any(value == [0 1]);
 if ~(isLogicalScalar || isBinaryNumericScalar)
     error(errorIdentifier, "%s must be scalar logical or binary numeric.", fieldName);
 end

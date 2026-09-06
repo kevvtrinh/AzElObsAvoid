@@ -1,5 +1,4 @@
-function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon( ...
-        obstacles, startTime_s, endTime_s)
+function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, startTime_s, endTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   obstaclesRemainStatic = obstacleAvoidance.obstacles.queryStaticHorizon( ...
@@ -36,12 +35,11 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon( ...
 %% Section 1: Evaluate Static Activity Over The Horizon
 
 obstaclesRemainStatic = true;
-occupiedShape = polyshape();
+occupiedShape         = polyshape();
 for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
+    obstacle     = obstacles(obstacleIndex);
     sourceTime_s = double(obstacle.time_s(:));
-    isActive = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && ...
-        startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
+    isActive     = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
     if ~obstacle.InternalPreparation.IsTimeInvariant || ~isActive
         obstaclesRemainStatic = false;
         return;
@@ -54,7 +52,6 @@ if nargout < 2
     return;
 end
 for obstacleIndex = 1:numel(obstacles)
-    occupiedShape = union(occupiedShape, ...
-        obstacles(obstacleIndex).InternalPreparation.StaticShape);
+    occupiedShape = union(occupiedShape, obstacles(obstacleIndex).InternalPreparation.StaticShape);
 end
 end

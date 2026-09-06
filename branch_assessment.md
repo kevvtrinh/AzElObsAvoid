@@ -36,6 +36,19 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 ## Verification and remaining limits
 
+Repository-wide MATLAB formatting now follows the local style documented in
+`AGENTS.md`: main bodies are flush left, local helper bodies use one indent,
+unnecessary continuation lines are removed, related assignments are aligned,
+and scalar literal report structures use explicit field assignments. Archived
+copies under `tmp` were left unchanged. Constructors whose cell values can
+control MATLAB struct-array dimensions remain in constructor form to preserve
+behavior. MATLAB R2024b parsed all 173 maintained `.m` files without syntax
+issues. The full 152-test suite passed 151 tests and reported only the three
+expected reviewed-source hash changes; inspection confirmed formatting-only
+changes to those physical input sections, their hashes were updated, and the
+focused hash test then passed. No planner behavior or runtime improvement is
+claimed.
+
 Focused diagnostic cleanup: removed the retired `BarrierSequence` and
 `ProgressPolynomial` placeholder reports and their three private constructors
 from `tryFixedTimeDetour`. No maintained source consumer reads those fields;

@@ -1,7 +1,4 @@
-function [candidate, checkResult, solverDiagnostics, ...
-        candidateWasPrechecked, precheckElapsedTime_s, stageTiming, context] = ...
-        solveDynamicPathGuess( ...
-        obstacles, initialState, goalState, limits, options, seed, stageTiming, context)
+function [candidate, checkResult, solverDiagnostics, candidateWasPrechecked, precheckElapsedTime_s, stageTiming, context] = solveDynamicPathGuess(obstacles, initialState, goalState, limits, options, seed, stageTiming, context)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, checkResult, solverDiagnostics, candidateWasPrechecked, ...
@@ -27,49 +24,35 @@ function [candidate, checkResult, solverDiagnostics, ...
 % Try static BMTP against geometry covering the complete moving history.
 % Validate the motion against the original histories.
 
-preparedObstacles = obstacles;
+preparedObstacles      = obstacles;
 candidateWasPrechecked = false;
-precheckElapsedTime_s = 0;
-checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
-trySweptProjection = string(seed.Source) ~= "directWait" && ...
-    size(seed.position_deg, 1) > 2;
-sweptAttempt = struct();
-timedBmtpAttempt = struct();
-rejectedCandidates = {};
-rejectedChecks = {};
+precheckElapsedTime_s  = 0;
+checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
+trySweptProjection     = string(seed.Source) ~= "directWait" && size(seed.position_deg, 1) > 2;
+sweptAttempt           = struct();
+timedBmtpAttempt       = struct();
+rejectedCandidates     = {};
+rejectedChecks         = {};
 if trySweptProjection
     if isempty(fieldnames(context.EnclosureGeometry))
-        [planningObstacles, context.Enclosure] = ...
-            obstacleAvoidance.obstacles.createStationaryObstacleEnclosures( ...
-            preparedObstacles, initialState.time_s, goalState.time_s);
-        context.EnclosureGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry( ...
-            planningObstacles, initialState.time_s, goalState.time_s);
+        [planningObstacles, context.Enclosure] = obstacleAvoidance.obstacles.createStationaryObstacleEnclosures(preparedObstacles, initialState.time_s, goalState.time_s);
+        context.EnclosureGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(planningObstacles, initialState.time_s, goalState.time_s);
     end
     projection = context.Enclosure;
-    [sweptCandidate, sweptDiagnostics] = ...
-        obstacleAvoidance.planner.solveStaticBmtpTrajectory( ...
-        seed, context.EnclosureGeometry, initialState, goalState, ...
-        limits, options);
-    [sweptCandidate, sweptCheck, sweptCheckTime_s, stageTiming] = ...
-        obstacleAvoidance.planner.checkCandidateMotion( ...
-        sweptCandidate, preparedObstacles, initialState, goalState, ...
-        limits, options, stageTiming, ...
-        "The swept-projection BMTP kernel returned no trajectory.");
-    precheckElapsedTime_s = ...
-        precheckElapsedTime_s + sweptCheckTime_s;
-    sweptAttempt = createSweptProjectionRecord( ...
-        sweptDiagnostics, sweptCheck, projection);
+    [sweptCandidate, sweptDiagnostics]                          = obstacleAvoidance.planner.solveStaticBmtpTrajectory(seed, context.EnclosureGeometry, initialState, goalState, limits, options);
+    [sweptCandidate, sweptCheck, sweptCheckTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(sweptCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "The swept-projection BMTP kernel returned no trajectory.");
+    precheckElapsedTime_s = precheckElapsedTime_s + sweptCheckTime_s;
+    sweptAttempt          = createSweptProjectionRecord(sweptDiagnostics, sweptCheck, projection);
     if ~sweptCheck.Passed && ~isempty(sweptCandidate.time_s)
         rejectedCandidates{end + 1} = sweptCandidate;
         rejectedChecks{end + 1} = sweptCheck;
     end
     if sweptCheck.Passed
-        candidate = sweptCandidate;
-        checkResult = sweptCheck;
+        candidate         = sweptCandidate;
+        checkResult       = sweptCheck;
         solverDiagnostics = sweptDiagnostics;
-        solverDiagnostics.SweptProjection = sweptAttempt;
-        solverDiagnostics.DynamicObstacleRepresentation = ...
-            "conservativeStaticProtectedHistoryConvexHull";
+        solverDiagnostics.SweptProjection               = sweptAttempt;
+        solverDiagnostics.DynamicObstacleRepresentation = "conservativeStaticProtectedHistoryConvexHull";
         candidate.SolverDiagnostics = solverDiagnostics;
         candidateWasPrechecked = true;
     end
@@ -80,17 +63,12 @@ end
 % If the static projection fails, try BMTP with the route's timed cells.
 % Validate against the original moving obstacles.
 
-tryTimedBmtp = trySweptProjection && ~candidateWasPrechecked && ...
-    string(seed.Source) == "timeExpandedVisibilityGraph";
+tryTimedBmtp = trySweptProjection && ~candidateWasPrechecked && string(seed.Source) == "timeExpandedVisibilityGraph";
 if tryTimedBmtp
     [timedCandidate, timedCheck, timedBmtpDiagnostics, ...
-        timedCheckTime_s, stageTiming] = ...
-        obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
-        seed, preparedObstacles, initialState, goalState, limits, options, ...
-        stageTiming);
+        timedCheckTime_s, stageTiming] = obstacleAvoidance.planner.solveTimedBmtpTrajectory(seed, preparedObstacles, initialState, goalState, limits, options, stageTiming);
     precheckElapsedTime_s = precheckElapsedTime_s + timedCheckTime_s;
-    timedBmtpAttempt = struct( ...
-        "Attempted", true, ...
+    timedBmtpAttempt      = struct("Attempted", true, ...
         "SolverDiagnostics", timedBmtpDiagnostics, ...
         "FullObstacleValidation", timedCheck, ...
         "Outcome", "rejectedByFullValidation");
@@ -100,11 +78,11 @@ if tryTimedBmtp
     end
     if timedCheck.Passed
         timedBmtpAttempt.Outcome = "acceptedAfterFullValidation";
-        candidate = timedCandidate;
-        checkResult = timedCheck;
+        candidate         = timedCandidate;
+        checkResult       = timedCheck;
         solverDiagnostics = timedBmtpDiagnostics;
         solverDiagnostics.SweptProjection = sweptAttempt;
-        solverDiagnostics.TimedBmtp = timedBmtpAttempt;
+        solverDiagnostics.TimedBmtp       = timedBmtpAttempt;
         candidate.SolverDiagnostics = solverDiagnostics;
         candidateWasPrechecked = true;
     end
@@ -116,15 +94,13 @@ end
 
 if ~candidateWasPrechecked
     if string(seed.Source) == "directWait"
-        [candidate, solverDiagnostics] = ...
-            obstacleAvoidance.planner.createWaitThenMoveMotion( ...
-            seed, initialState, goalState, limits, options, [], []);
+        [candidate, solverDiagnostics] = obstacleAvoidance.planner.createWaitThenMoveMotion(seed, initialState, goalState, limits, options, [], []);
     else
         [candidate, solverDiagnostics] = unsupportedPathGuess(seed, initialState, options);
     end
     if trySweptProjection
         solverDiagnostics.SweptProjection = sweptAttempt;
-        solverDiagnostics.TimedBmtp = timedBmtpAttempt;
+        solverDiagnostics.TimedBmtp       = timedBmtpAttempt;
         candidate.SolverDiagnostics = solverDiagnostics;
     end
 end
@@ -133,36 +109,23 @@ end
 
 % Use the fallback only when enabled, and record both attempts.
 
-timedTerminationReason = string(candidate.TerminationReason);
-timedTopologyIsUnsupported = any(timedTerminationReason == ...
-    ["unsupportedTimedMultiWaypointRoute", "invalidDirectWaitSeed", "unsupportedDynamicDirectGuess"]);
+timedTerminationReason     = string(candidate.TerminationReason);
+timedTopologyIsUnsupported = any(timedTerminationReason == ["unsupportedTimedMultiWaypointRoute", "invalidDirectWaitSeed", "unsupportedDynamicDirectGuess"]);
 if timedTopologyIsUnsupported
     timedDiagnostics = solverDiagnostics;
-    if options.UnsupportedTimedTopologyPolicy == ...
-            "ruckigStopAtWaypoints"
-        [candidate, fallbackDiagnostics] = ...
-            obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-            seed, initialState, goalState, limits, options);
-        solverDiagnostics = combineFallbackDiagnostics( ...
-            timedDiagnostics, fallbackDiagnostics, ...
-            timedTerminationReason, true);
+    if options.UnsupportedTimedTopologyPolicy == "ruckigStopAtWaypoints"
+        [candidate, fallbackDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
+        solverDiagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiagnostics, timedTerminationReason, true);
         if fallbackDiagnostics.Accepted
-            candidate.Message = candidate.Message + ...
-                " Every interior waypoint was constrained to rest " + ...
-                "by the explicitly enabled Ruckig fallback.";
+            candidate.Message = candidate.Message + " Every interior waypoint was constrained to rest " + "by the explicitly enabled Ruckig fallback.";
         else
-            candidate.Message = ...
-                "The explicitly enabled Ruckig stop-at-waypoints " + ...
-                "fallback failed. " + candidate.Message;
-            candidate.TerminationReason = ...
-                "ruckigWaypointFallbackFailed";
-            solverDiagnostics.FallbackOutcome = ...
-                candidate.TerminationReason;
+            candidate.Message           = "The explicitly enabled Ruckig stop-at-waypoints " + "fallback failed. " + candidate.Message;
+            candidate.TerminationReason = "ruckigWaypointFallbackFailed";
+            solverDiagnostics.FallbackOutcome = candidate.TerminationReason;
         end
         candidate.SolverDiagnostics = solverDiagnostics;
     else
-        solverDiagnostics = combineFallbackDiagnostics( ...
-            timedDiagnostics, struct(), timedTerminationReason, false);
+        solverDiagnostics = combineFallbackDiagnostics(timedDiagnostics, struct(), timedTerminationReason, false);
         candidate.SolverDiagnostics = solverDiagnostics;
     end
 end
@@ -171,13 +134,11 @@ end
 if ~candidate.Success && ~isempty(rejectedCandidates)
     summaries = repmat(context.SummaryTemplate, numel(rejectedCandidates), 1);
     for index = 1:numel(rejectedCandidates)
-        summaries(index) = obstacleAvoidance.planner.createCandidateSummary( ...
-            rejectedCandidates{index}, rejectedChecks{index}, struct(), 0, ...
-            context.SummaryTemplate, limits);
+        summaries(index) = obstacleAvoidance.planner.createCandidateSummary(rejectedCandidates{index}, rejectedChecks{index}, struct(), 0, context.SummaryTemplate, limits);
     end
-    selection = obstacleAvoidance.planner.selectValidatedCandidate(summaries, options);
-    index = selection.BestPartialSeedIndex;
-    candidate = rejectedCandidates{index};
+    selection   = obstacleAvoidance.planner.selectValidatedCandidate(summaries, options);
+    index       = selection.BestPartialSeedIndex;
+    candidate   = rejectedCandidates{index};
     checkResult = rejectedChecks{index};
     candidate.SolverDiagnostics = solverDiagnostics;
     candidateWasPrechecked = true;
@@ -187,61 +148,56 @@ end
 
 %% Section 5: Local Functions
 
-function diagnostics = combineFallbackDiagnostics( ...
-        timedDiagnostics, fallbackDiagnostics, originalReason, attempted)
-% Keep the original timed-kernel failure when recovery is attempted.
-diagnostics = timedDiagnostics;
-diagnostics.OriginalTerminationReason = originalReason;
-diagnostics.FallbackAttempted = attempted;
-diagnostics.FallbackMethod = "ruckigStopAtWaypoints";
-if ~attempted
-    diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
-    return;
-end
-diagnostics.FallbackOutcome = ...
-    string(fallbackDiagnostics.EngineTerminationReason);
-diagnostics.FallbackDiagnostics = fallbackDiagnostics;
-for fieldName = ["InteriorWaypointTime_s", ...
-        "InteriorWaypointPosition_deg", ...
-        "InteriorWaypointVelocity_deg_s", ...
-        "InteriorWaypointAcceleration_deg_s2", ...
-        "AllInteriorWaypointsConstrainedToRest"]
-    if isfield(fallbackDiagnostics, fieldName)
-        diagnostics.(fieldName) = fallbackDiagnostics.(fieldName);
+function diagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiagnostics, originalReason, attempted)
+    % Keep the original timed-kernel failure when recovery is attempted.
+    diagnostics = timedDiagnostics;
+    diagnostics.OriginalTerminationReason = originalReason;
+    diagnostics.FallbackAttempted         = attempted;
+    diagnostics.FallbackMethod            = "ruckigStopAtWaypoints";
+    if ~attempted
+        diagnostics.FallbackOutcome = "fallbackDisabledByPolicy";
+        return;
+    end
+    diagnostics.FallbackOutcome     = string(fallbackDiagnostics.EngineTerminationReason);
+    diagnostics.FallbackDiagnostics = fallbackDiagnostics;
+    for fieldName = ["InteriorWaypointTime_s", ...
+            "InteriorWaypointPosition_deg", ...
+            "InteriorWaypointVelocity_deg_s", ...
+            "InteriorWaypointAcceleration_deg_s2", ...
+            "AllInteriorWaypointsConstrainedToRest"]
+        if isfield(fallbackDiagnostics, fieldName)
+            diagnostics.(fieldName) = fallbackDiagnostics.(fieldName);
+        end
     end
 end
-end
 
-function record = createSweptProjectionRecord( ...
-        diagnostics, checkResult, projection)
-% Record the static projection and validation against moving obstacles.
-record = struct( ...
-    "Attempted", true, ...
-    "Projection", projection, ...
-    "SolverDiagnostics", diagnostics, ...
-    "FullObstacleValidation", checkResult, ...
-    "Outcome", "rejectedByFullValidation");
-if checkResult.Passed
-    record.Outcome = "acceptedAfterFullValidation";
-end
+function record = createSweptProjectionRecord(diagnostics, checkResult, projection)
+    % Record the static projection and validation against moving obstacles.
+    record = struct("Attempted", true, ...
+        "Projection", projection, ...
+        "SolverDiagnostics", diagnostics, ...
+        "FullObstacleValidation", checkResult, ...
+        "Outcome", "rejectedByFullValidation");
+    if checkResult.Passed
+        record.Outcome = "acceptedAfterFullValidation";
+    end
 end
 
 function [candidate, diagnostics] = unsupportedPathGuess(seed, initialState, options)
-% Record an ineligible guess without invoking the wait-motion constructor.
-candidate = bmtpEngine.createMotionRecord( ...
-    struct(), initialState, [], [], options.SampleTime_s, seed.Source);
-candidate.SeedIndex = seed.Index;
-reason = "unsupportedTimedMultiWaypointRoute";
-feature = "multiWaypointTimedRoute";
-if size(seed.position_deg, 1) <= 2
-    reason = "unsupportedDynamicDirectGuess";
-    feature = "directGuessWithoutWaitSchedule";
-end
-candidate.TerminationReason = reason;
-candidate.Message = "This path guess has no supported timed-motion construction.";
-diagnostics = struct("Accepted", false, "TerminationReason", reason, ...
-    "OriginalTerminationReason", reason, "FirstUnsupportedFeature", feature, ...
-    "FirstUnsupportedTransitionIndex", 1, "FallbackPolicy", options.UnsupportedTimedTopologyPolicy, ...
-    "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau);
-candidate.SolverDiagnostics = diagnostics;
+    % Record an ineligible guess without invoking the wait-motion constructor.
+    candidate = bmtpEngine.createMotionRecord(struct(), initialState, [], [], options.SampleTime_s, seed.Source);
+    candidate.SeedIndex = seed.Index;
+    reason  = "unsupportedTimedMultiWaypointRoute";
+    feature = "multiWaypointTimedRoute";
+    if size(seed.position_deg, 1) <= 2
+        reason  = "unsupportedDynamicDirectGuess";
+        feature = "directGuessWithoutWaitSchedule";
+    end
+    candidate.TerminationReason = reason;
+    candidate.Message           = "This path guess has no supported timed-motion construction.";
+    diagnostics = struct("Accepted", false, "TerminationReason", reason, ...
+        "OriginalTerminationReason", reason, "FirstUnsupportedFeature", feature, ...
+        "FirstUnsupportedTransitionIndex", 1, "FallbackPolicy", options.UnsupportedTimedTopologyPolicy, ...
+        "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau);
+    candidate.SolverDiagnostics = diagnostics;
 end

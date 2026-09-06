@@ -43,33 +43,31 @@ if isempty(obstacleItems)
 end
 normalized = cell(size(obstacleItems));
 for obstacleIndex = 1:numel(obstacleItems)
-    normalized{obstacleIndex} = ...
-        obstacleAvoidance.obstacles.createObstacle(obstacleItems{obstacleIndex});
+    normalized{obstacleIndex} = obstacleAvoidance.obstacles.createObstacle(obstacleItems{obstacleIndex});
 end
 obstacleField = vertcat(normalized{:});
 end
 
 function items = flattenValue(value, owner)
-% Flatten nested cells in input order.
-if isnumeric(value) && isempty(value)
-    items = cell(0, 1);
-elseif isstruct(value)
-    items = num2cell(value(:));
-elseif iscell(value)
-    items = cell(0, 1);
-    for childIndex = 1:numel(value)
-        items = [items; flattenValue(value{childIndex}, owner)]; %#ok<AGROW>
+    % Flatten nested cells in input order.
+    if isnumeric(value) && isempty(value)
+        items = cell(0, 1);
+    elseif isstruct(value)
+        items = num2cell(value(:));
+    elseif iscell(value)
+        items = cell(0, 1);
+        for childIndex = 1:numel(value)
+            items = [items; flattenValue(value{childIndex}, owner)]; %#ok<AGROW>
+        end
+    else
+        error("combineObstacles:InvalidInput", "Input %d must contain only obstacle structs or empty values.", owner);
     end
-else
-    error("combineObstacles:InvalidInput", ...
-        "Input %d must contain only obstacle structs or empty values.", owner);
-end
 end
 
 function obstacleField = createEmptyObstacleArray()
-% Keep the same fields for an empty obstacle array.
-template = struct("targetName", "", "time_s", zeros(0, 1), ...
-    "az_deg", {cell(0, 1)}, "el_deg", {cell(0, 1)}, "originalAz_deg", {cell(0, 1)}, ...
-    "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));
-obstacleField = repmat(template, 0, 1);
+    % Keep the same fields for an empty obstacle array.
+    template = struct("targetName", "", "time_s", zeros(0, 1), ...
+        "az_deg", {cell(0, 1)}, "el_deg", {cell(0, 1)}, "originalAz_deg", {cell(0, 1)}, ...
+        "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));
+    obstacleField = repmat(template, 0, 1);
 end

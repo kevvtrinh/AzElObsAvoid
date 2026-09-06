@@ -26,9 +26,7 @@ function position_deg = goalPositionAtTime(goalState, time_s)
 % Interpolate moving goals; return the stored position for fixed goals.
 
 if isfield(goalState, "targetTime_s") && ~isempty(goalState.targetTime_s)
-    position_deg = interp1(goalState.targetTime_s, ...
-        goalState.targetPosition_deg, time_s, ...
-        goalState.InterpolationMethod);
+    position_deg = interp1(goalState.targetTime_s, goalState.targetPosition_deg, time_s, goalState.InterpolationMethod);
 else
     position_deg = goalState.position_deg;
 end

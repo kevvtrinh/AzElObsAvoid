@@ -1,6 +1,4 @@
-function [candidate, terminalState] = createMotionRecord( ...
-        candidate, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
-        sampleStep_s, seedSource)
+function [candidate, terminalState] = createMotionRecord(candidate, initialState, relativeBreak_s, segmentJerk_deg_s3, sampleStep_s, seedSource)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = bmtpEngine.createMotionRecord( ...
@@ -44,12 +42,12 @@ function [candidate, terminalState] = createMotionRecord( ...
 %% Section 1: Create The Stable Record
 
 dimensionCount = numel(initialState.position_deg);
-terminalState = struct("position_deg", zeros(1, dimensionCount), ...
-    "velocity_deg_s", zeros(1, dimensionCount), ...
-    "acceleration_deg_s2", zeros(1, dimensionCount));
+terminalState  = struct();
+terminalState.position_deg        = zeros(1, dimensionCount);
+terminalState.velocity_deg_s      = zeros(1, dimensionCount);
+terminalState.acceleration_deg_s2 = zeros(1, dimensionCount);
 if isempty(fieldnames(candidate))
-    candidate = struct( ...
-        "Success", false, "OptimizerFeasible", false, ...
+    candidate = struct("Success", false, "OptimizerFeasible", false, ...
         "Message", "Exact motion was not constructed.", ...
         "TerminationReason", "notRun", "SeedIndex", 1, ...
         "SeedSource", string(seedSource), ...
@@ -76,64 +74,53 @@ end
 %% Section 2: Integrate The Exact Event Word
 
 if isstruct(relativeBreak_s)
-    polynomial = relativeBreak_s;
+    polynomial     = relativeBreak_s;
     requiredFields = {'Degree', 'SegmentCount', 'SegmentStartTime_s', ...
         'SegmentDuration_s', 'FinalTime_s', 'jerkPower_deg_s3', 'TerminalState'};
-    polynomialIsComplete = isscalar(polynomial) && ...
-        all(isfield(polynomial, requiredFields));
+    polynomialIsComplete = isscalar(polynomial) && all(isfield(polynomial, requiredFields));
     if polynomialIsComplete
-        degree = polynomial.Degree;
-        degreeIsValid = isnumeric(degree) && isscalar(degree) && ...
-            isfinite(degree) && degree >= 0 && degree == floor(degree);
+        degree        = polynomial.Degree;
+        degreeIsValid = isnumeric(degree) && isscalar(degree) && isfinite(degree) && degree >= 0 && degree == floor(degree);
     else
         degreeIsValid = false;
     end
     if ~polynomialIsComplete || ~degreeIsValid
-        error("createMotionRecord:InvalidPolynomial", ...
-            "An assembled polynomial must be scalar, complete, and have finite degree.");
+        error("createMotionRecord:InvalidPolynomial", "An assembled polynomial must be scalar, complete, and have finite degree.");
     end
-    segmentCount = polynomial.SegmentCount;
+    segmentCount      = polynomial.SegmentCount;
     segmentDuration_s = polynomial.SegmentDuration_s;
-    finalTime_s = polynomial.FinalTime_s;
-    terminalState = polynomial.TerminalState;
+    finalTime_s       = polynomial.FinalTime_s;
+    terminalState     = polynomial.TerminalState;
 else
-    relativeBreak_s = double(relativeBreak_s(:));
-    segmentDuration_s = diff(relativeBreak_s);
+    relativeBreak_s    = double(relativeBreak_s(:));
+    segmentDuration_s  = diff(relativeBreak_s);
     segmentJerk_deg_s3 = double(segmentJerk_deg_s3);
-    segmentCount = numel(segmentDuration_s);
-    partitionValid = relativeBreak_s(1) == 0 && all(segmentDuration_s > 0) && ...
-        isequal(size(segmentJerk_deg_s3), [segmentCount, dimensionCount]);
+    segmentCount       = numel(segmentDuration_s);
+    partitionValid     = relativeBreak_s(1) == 0 && all(segmentDuration_s > 0) && isequal(size(segmentJerk_deg_s3), [segmentCount, dimensionCount]);
     if ~partitionValid
-        error("createMotionRecord:InvalidEventWord", ...
-            "Breaks must increase from zero and jerk must be N-by-D.");
+        error("createMotionRecord:InvalidEventWord", "Breaks must increase from zero and jerk must be N-by-D.");
     end
-    positionPower_deg = zeros(segmentCount, dimensionCount, 4);
-    velocityPower_deg_s = zeros(segmentCount, dimensionCount, 3);
+    positionPower_deg        = zeros(segmentCount, dimensionCount, 4);
+    velocityPower_deg_s      = zeros(segmentCount, dimensionCount, 3);
     accelerationPower_deg_s2 = zeros(segmentCount, dimensionCount, 2);
-    position_deg = initialState.position_deg;
-    velocity_deg_s = initialState.velocity_deg_s;
-    acceleration_deg_s2 = initialState.acceleration_deg_s2;
+    position_deg             = initialState.position_deg;
+    velocity_deg_s           = initialState.velocity_deg_s;
+    acceleration_deg_s2      = initialState.acceleration_deg_s2;
     for segmentIndex = 1:segmentCount
-        step_s = segmentDuration_s(segmentIndex);
+        step_s      = segmentDuration_s(segmentIndex);
         jerk_deg_s3 = segmentJerk_deg_s3(segmentIndex, :);
         [positionPower_deg(segmentIndex, :, :), ...
-            velocityPower_deg_s(segmentIndex, :, :), ...
-            accelerationPower_deg_s2(segmentIndex, :, :)] = ...
-            bmtpEngine.createConstantJerkPowerCoefficients( ...
-            position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3, step_s);
-        position_deg = position_deg + velocity_deg_s * step_s + ...
-            acceleration_deg_s2 * step_s ^ 2 / 2 + jerk_deg_s3 * step_s ^ 3 / 6;
-        velocity_deg_s = velocity_deg_s + acceleration_deg_s2 * step_s + ...
-            jerk_deg_s3 * step_s ^ 2 / 2;
+            velocityPower_deg_s(segmentIndex, :, :), accelerationPower_deg_s2(segmentIndex, :, :)] = bmtpEngine.createConstantJerkPowerCoefficients(position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3, step_s);
+        position_deg        = position_deg + velocity_deg_s * step_s + acceleration_deg_s2 * step_s ^ 2 / 2 + jerk_deg_s3 * step_s ^ 3 / 6;
+        velocity_deg_s      = velocity_deg_s + acceleration_deg_s2 * step_s + jerk_deg_s3 * step_s ^ 2 / 2;
         acceleration_deg_s2 = acceleration_deg_s2 + jerk_deg_s3 * step_s;
     end
     terminalState = struct("position_deg", position_deg, ...
         "velocity_deg_s", velocity_deg_s, ...
         "acceleration_deg_s2", acceleration_deg_s2);
     initialTime_s = initialState.time_s;
-    finalTime_s = initialTime_s + relativeBreak_s(end);
-    polynomial = struct( ...
-        "Degree", 3, "SegmentCount", segmentCount, ...
+    finalTime_s   = initialTime_s + relativeBreak_s(end);
+    polynomial    = struct("Degree", 3, "SegmentCount", segmentCount, ...
         "SegmentStartTime_s", initialTime_s + relativeBreak_s(1:end - 1), ...
         "SegmentDuration_s", segmentDuration_s, ...
         "SegmentBreakTau", relativeBreak_s / relativeBreak_s(end), ...
@@ -147,56 +134,53 @@ end
 %% Section 3: Sample And Update Shared Quality Fields
 
 initialTime_s = initialState.time_s;
-sampleTime_s = (initialTime_s:sampleStep_s:finalTime_s).';
-sampleTime_s = unique([sampleTime_s; polynomial.SegmentStartTime_s; finalTime_s]);
+sampleTime_s  = (initialTime_s:sampleStep_s:finalTime_s).';
+sampleTime_s  = unique([sampleTime_s; polynomial.SegmentStartTime_s; finalTime_s]);
 [sampleTime_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
-    jerk_deg_s3] = bmtpEngine.evaluatePolynomial( ...
-    polynomial, sampleTime_s);
-candidate.ArrivalTime_s = finalTime_s;
+    jerk_deg_s3] = bmtpEngine.evaluatePolynomial(polynomial, sampleTime_s);
+candidate.ArrivalTime_s        = finalTime_s;
 candidate.TrajectoryDuration_s = finalTime_s - initialTime_s;
-candidate.time_s = sampleTime_s;
-candidate.position_deg = position_deg;
-candidate.velocity_deg_s = velocity_deg_s;
-candidate.acceleration_deg_s2 = acceleration_deg_s2;
-candidate.jerk_deg_s3 = jerk_deg_s3;
-candidate.Polynomial = polynomial;
-candidate.MotionLength_deg = sum(vecnorm(diff(position_deg), 2, 2));
+candidate.time_s               = sampleTime_s;
+candidate.position_deg         = position_deg;
+candidate.velocity_deg_s       = velocity_deg_s;
+candidate.acceleration_deg_s2  = acceleration_deg_s2;
+candidate.jerk_deg_s3          = jerk_deg_s3;
+candidate.Polynomial           = polynomial;
+candidate.MotionLength_deg     = sum(vecnorm(diff(position_deg), 2, 2));
 if polynomial.Degree <= 3
     jerk = reshape(polynomial.jerkPower_deg_s3, segmentCount, dimensionCount);
-    candidate.IntegratedSquaredJerk_deg2_s5 = sum(segmentDuration_s .* ...
-        sum(jerk .^ 2, 2));
+    candidate.IntegratedSquaredJerk_deg2_s5 = sum(segmentDuration_s .* sum(jerk .^ 2, 2));
 else
     integratedSquaredJerk_deg2_s5 = 0;
     for segmentIndex = 1:segmentCount
         for axisIndex = 1:dimensionCount
-            jerkPower = reshape( ...
-                polynomial.jerkPower_deg_s3(segmentIndex, axisIndex, :), 1, []);
-            squaredPower = conv(jerkPower, jerkPower);
-            integratedSquaredJerk_deg2_s5 = ...
-                integratedSquaredJerk_deg2_s5 + ...
-                segmentDuration_s(segmentIndex) * ...
-                sum(squaredPower ./ (1:numel(squaredPower)));
+            jerkPower                     = reshape(polynomial.jerkPower_deg_s3(segmentIndex, axisIndex, :), 1, []);
+            squaredPower                  = conv(jerkPower, jerkPower);
+            integratedSquaredJerk_deg2_s5 = integratedSquaredJerk_deg2_s5 + segmentDuration_s(segmentIndex) * sum(squaredPower ./ (1:numel(squaredPower)));
         end
     end
-    candidate.IntegratedSquaredJerk_deg2_s5 = ...
-        integratedSquaredJerk_deg2_s5;
+    candidate.IntegratedSquaredJerk_deg2_s5 = integratedSquaredJerk_deg2_s5;
 end
 end
 
 %% Section 4: Local Functions
 
 function certificate = emptyPlaneCertificate()
-% Initialize an empty separation certificate.
-emptyPlane = struct("Active", false, "Normal", zeros(2, 2), ...
-    "Offset_deg", zeros(1, 2), "SignedGap_deg", NaN, ...
-    "Verified", false, "ExitFlag", NaN);
-certificate = struct("Kind", "", "Passed", false, ...
-    "ExactRegionCount", 0, "SolverRegionCount", 0, ...
-    "Regions_deg", {cell(0, 1)}, ...
-    "Planes", repmat(emptyPlane, 0, 0), ...
-    "RequiredGap_deg", NaN, "RoundoffReserve_deg", NaN, ...
-    "MinimumSignedGap_deg", NaN, "CoveragePassed", false, ...
-    "Coverage", struct(), "AllPairCount", 0, ...
-    "VerifiedPairCount", 0, "ReusedPairCount", 0, ...
-    "AnalyticPairCount", 0, "ConicPairCount", 0);
+    % Initialize an empty separation certificate.
+    emptyPlane = struct();
+    emptyPlane.Active        = false;
+    emptyPlane.Normal        = zeros(2, 2);
+    emptyPlane.Offset_deg    = zeros(1, 2);
+    emptyPlane.SignedGap_deg = NaN;
+    emptyPlane.Verified      = false;
+    emptyPlane.ExitFlag      = NaN;
+    certificate = struct("Kind", "", "Passed", false, ...
+        "ExactRegionCount", 0, "SolverRegionCount", 0, ...
+        "Regions_deg", {cell(0, 1)}, ...
+        "Planes", repmat(emptyPlane, 0, 0), ...
+        "RequiredGap_deg", NaN, "RoundoffReserve_deg", NaN, ...
+        "MinimumSignedGap_deg", NaN, "CoveragePassed", false, ...
+        "Coverage", struct(), "AllPairCount", 0, ...
+        "VerifiedPairCount", 0, "ReusedPairCount", 0, ...
+        "AnalyticPairCount", 0, "ConicPairCount", 0);
 end

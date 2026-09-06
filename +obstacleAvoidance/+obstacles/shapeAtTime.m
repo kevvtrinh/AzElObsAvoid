@@ -29,18 +29,15 @@ function [shape, geometry] = shapeAtTime(obstacle, queryTime_s, geometryOnly)
 
 %% Section 1: Validate And Select The Source Interval
 
-if ~isstruct(obstacle) || ~isscalar(obstacle) || ...
-        ~all(isfield(obstacle, {'time_s', 'az_deg', 'el_deg'}))
+if ~isstruct(obstacle) || ~isscalar(obstacle) || ~all(isfield(obstacle, {'time_s', 'az_deg', 'el_deg'}))
     error("shapeAtTime:InvalidObstacle", "obstacle must be one canonical record.");
 end
 validateattributes(queryTime_s, {'numeric'}, {'real', 'finite', 'scalar'});
 if nargin < 3 || isempty(geometryOnly)
     geometryOnly = false;
 end
-geometryOnly = obstacleAvoidance.input.normalizeLogicalScalar( ...
-    geometryOnly, "geometryOnly", "shapeAtTime:InvalidGeometryOnly");
-queryTime_s = double(queryTime_s);
-obstacle = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
-[shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-    obstacle, queryTime_s, geometryOnly);
+geometryOnly = obstacleAvoidance.input.normalizeLogicalScalar(geometryOnly, "geometryOnly", "shapeAtTime:InvalidGeometryOnly");
+queryTime_s  = double(queryTime_s);
+obstacle     = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
+[shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s, geometryOnly);
 end

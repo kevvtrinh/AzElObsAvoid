@@ -1,5 +1,4 @@
-function [time, position, velocity, acceleration, jerk] = ...
-        evaluatePolynomial(polynomial, time, segmentIndex)
+function [time, position, velocity, acceleration, jerk] = evaluatePolynomial(polynomial, time, segmentIndex)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [time, position, velocity, acceleration, jerk] = ...
@@ -29,13 +28,13 @@ function [time, position, velocity, acceleration, jerk] = ...
 
 %% Section 1: Select Segments
 
-time = double(time(:));
-sampleCount = numel(time);
+time           = double(time(:));
+sampleCount    = numel(time);
 dimensionCount = size(polynomial.positionPower, 2);
-position = NaN(sampleCount, dimensionCount);
-velocity = position;
-acceleration = position;
-jerk = position;
+position       = NaN(sampleCount, dimensionCount);
+velocity       = position;
+acceleration   = position;
+jerk           = position;
 if isempty(time) || any(~isfinite(time))
     return;
 end
@@ -61,24 +60,20 @@ if isscalar(polynomial.SegmentDuration)
 else
     selectedDuration = polynomial.SegmentDuration(segmentIndex);
 end
-localTau = (time - polynomial.SegmentStartTime(segmentIndex)) ./ ...
-    selectedDuration;
+localTau = (time - polynomial.SegmentStartTime(segmentIndex)) ./ selectedDuration;
 localTau = min(1, max(0, localTau));
 if nargout < 2
     return;
 end
-position = evaluateRecords( ...
-    polynomial.positionPower, segmentIndex, localTau);
+position = evaluateRecords(polynomial.positionPower, segmentIndex, localTau);
 if nargout < 3
     return;
 end
-velocity = evaluateRecords( ...
-    polynomial.velocityPower, segmentIndex, localTau);
+velocity = evaluateRecords(polynomial.velocityPower, segmentIndex, localTau);
 if nargout < 4
     return;
 end
-acceleration = evaluateRecords( ...
-    polynomial.accelerationPower, segmentIndex, localTau);
+acceleration = evaluateRecords(polynomial.accelerationPower, segmentIndex, localTau);
 if nargout < 5
     return;
 end
@@ -88,9 +83,8 @@ end
 %% Section 3: Local Functions
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-% Evaluate all requested axes and times together.
-coefficientCount = size(coefficientArray, 3);
-power = reshape(localTau .^ (0:coefficientCount - 1), ...
-    [], 1, coefficientCount);
-value = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
+    % Evaluate all requested axes and times together.
+    coefficientCount = size(coefficientArray, 3);
+    power            = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
+    value            = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
 end

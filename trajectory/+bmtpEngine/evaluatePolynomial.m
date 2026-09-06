@@ -1,6 +1,4 @@
-function [time_s, position_deg, velocity_deg_s, ...
-        acceleration_deg_s2, jerk_deg_s3] = evaluatePolynomial( ...
-        polynomial, time_s, segmentIndex)
+function [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3] = evaluatePolynomial(polynomial, time_s, segmentIndex)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [time_s, position_deg, velocity_deg_s, acceleration_deg_s2, ...
@@ -33,13 +31,13 @@ function [time_s, position_deg, velocity_deg_s, ...
 
 %% Section 1: Select Polynomial Segments
 
-time_s = double(time_s(:));
-sampleCount = numel(time_s);
-dimensionCount = size(polynomial.positionPower_deg, 2);
-position_deg = NaN(sampleCount, dimensionCount);
-velocity_deg_s = position_deg;
+time_s              = double(time_s(:));
+sampleCount         = numel(time_s);
+dimensionCount      = size(polynomial.positionPower_deg, 2);
+position_deg        = NaN(sampleCount, dimensionCount);
+velocity_deg_s      = position_deg;
 acceleration_deg_s2 = position_deg;
-jerk_deg_s3 = position_deg;
+jerk_deg_s3         = position_deg;
 if nargout < 2 || isempty(time_s) || any(~isfinite(time_s))
     return;
 end
@@ -65,31 +63,25 @@ if isscalar(polynomial.SegmentDuration_s)
 else
     selectedDuration_s = polynomial.SegmentDuration_s(segmentIndex);
 end
-localTau = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ ...
-    selectedDuration_s;
-localTau = min(1, max(0, localTau));
-position_deg = evaluateRecords( ...
-    polynomial.positionPower_deg, segmentIndex, localTau);
+localTau     = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ selectedDuration_s;
+localTau     = min(1, max(0, localTau));
+position_deg = evaluateRecords(polynomial.positionPower_deg, segmentIndex, localTau);
 if nargout >= 3
-    velocity_deg_s = evaluateRecords( ...
-        polynomial.velocityPower_deg_s, segmentIndex, localTau);
+    velocity_deg_s = evaluateRecords(polynomial.velocityPower_deg_s, segmentIndex, localTau);
 end
 if nargout >= 4
-    acceleration_deg_s2 = evaluateRecords( ...
-        polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
+    acceleration_deg_s2 = evaluateRecords(polynomial.accelerationPower_deg_s2, segmentIndex, localTau);
 end
 if nargout >= 5
-    jerk_deg_s3 = evaluateRecords( ...
-        polynomial.jerkPower_deg_s3, segmentIndex, localTau);
+    jerk_deg_s3 = evaluateRecords(polynomial.jerkPower_deg_s3, segmentIndex, localTau);
 end
 end
 
 %% Section 3: Local Functions
 
 function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
-% Evaluate the selected polynomial segments in local time.
-coefficientCount = size(coefficientArray, 3);
-power = reshape(localTau .^ (0:coefficientCount - 1), ...
-    [], 1, coefficientCount);
-value = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
+    % Evaluate the selected polynomial segments in local time.
+    coefficientCount = size(coefficientArray, 3);
+    power            = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
+    value            = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
 end

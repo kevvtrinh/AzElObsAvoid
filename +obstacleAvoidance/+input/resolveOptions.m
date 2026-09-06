@@ -31,15 +31,14 @@ function [resolvedOptions, unknownNames] = resolveOptions(defaultOptions, option
 
 % Return unknown names so the caller can issue one warning.
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
-    error("resolveOptions:InvalidStructures", ...
-        "optionOverrides must be a scalar struct.");
+    error("resolveOptions:InvalidStructures", "optionOverrides must be a scalar struct.");
 end
 
-defaultNames = string(fieldnames(defaultOptions));
+defaultNames  = string(fieldnames(defaultOptions));
 overrideNames = string(fieldnames(optionOverrides));
 % Keep unknown names in the user's input order.
 unknownNames = setdiff(overrideNames, defaultNames, "stable");
-knownNames = intersect(overrideNames, defaultNames, "stable");
+knownNames   = intersect(overrideNames, defaultNames, "stable");
 
 %% Section 2: Apply Only Known Nonempty Overrides
 

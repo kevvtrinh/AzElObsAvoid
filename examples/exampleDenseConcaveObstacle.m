@@ -28,8 +28,7 @@ function [result, diagnosis] = exampleDenseConcaveObstacle(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -37,31 +36,33 @@ end
 % polygon concave. This case checks that dense concave geometry does not need
 % manually selected waypoints.
 
-vertexCount = 80;
-angle_rad = (0:vertexCount - 1).' * (2 * pi / vertexCount);
-radius_deg = 1.6 + 0.45 * cos(5 * angle_rad);
-obstacleAzimuth_deg = radius_deg .* cos(angle_rad);
+vertexCount           = 80;
+angle_rad             = (0:vertexCount - 1).' * (2 * pi / vertexCount);
+radius_deg            = 1.6 + 0.45 * cos(5 * angle_rad);
+obstacleAzimuth_deg   = radius_deg .* cos(angle_rad);
 obstacleElevation_deg = radius_deg .* sin(angle_rad);
-obstacleTime_s = [0; 20];
-safetyMargin_deg = 0.1;
-obstacles = obstacleAvoidance.obstacles.createObstacle( ...
-    "dense concave polygon", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
+obstacleTime_s        = [0; 20];
+safetyMargin_deg      = 0.1;
+obstacles             = obstacleAvoidance.obstacles.createObstacle("dense concave polygon", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 % Put the start and goal on opposite sides of the protected polygon. The direct
 % line is blocked, so the planner must select a collision-free outer route.
 
-initialState = struct("time_s", 0, "position_deg", [-6 0]);
-goalState = struct("time_s", 15, "position_deg", [6 0]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [-6 0];
+goalState = struct();
+goalState.time_s       = 15;
+goalState.position_deg = [6 0];
+limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the public planner with the visible inputs defined above.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -70,8 +71,7 @@ limits = struct( ...
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleDenseConcaveObstacle:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleDenseConcaveObstacle:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -79,8 +79,7 @@ end
 % Show protected geometry, the selected route, and motion limits when enabled.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

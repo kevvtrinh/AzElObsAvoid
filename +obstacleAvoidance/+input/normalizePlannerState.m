@@ -23,23 +23,18 @@ function state = normalizePlannerState(state, stateName)
 
 %% Section 1: Validate And Normalize The State
 
-if ~isstruct(state) || ~isscalar(state) || ...
-        ~all(isfield(state, {'time_s', 'position_deg'}))
-    error("planTrajectory:InvalidState", ...
-        "%s must be a scalar struct with time_s and position_deg.", stateName);
+if ~isstruct(state) || ~isscalar(state) || ~all(isfield(state, {'time_s', 'position_deg'}))
+    error("planTrajectory:InvalidState", "%s must be a scalar struct with time_s and position_deg.", stateName);
 end
-validateattributes(state.time_s, {'numeric'}, ...
-    {'real', 'finite', 'scalar'});
-validateattributes(state.position_deg, {'numeric'}, ...
-    {'real', 'finite', 'vector', 'numel', 2});
-state.time_s = double(state.time_s);
+validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
+validateattributes(state.position_deg, {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
+state.time_s       = double(state.time_s);
 state.position_deg = double(state.position_deg(:).');
 for fieldName = ["velocity_deg_s", "acceleration_deg_s2"]
     if ~isfield(state, fieldName) || isempty(state.(fieldName))
         state.(fieldName) = [0 0];
     else
-        validateattributes(state.(fieldName), {'numeric'}, ...
-            {'real', 'finite', 'vector', 'numel', 2});
+        validateattributes(state.(fieldName), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2});
         state.(fieldName) = double(state.(fieldName)(:).');
     end
 end
