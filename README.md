@@ -30,6 +30,19 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
+Add these folders explicitly; `genpath(repositoryRoot)` also includes old code
+under `tmp` and can mix planner and engine versions. After switching revisions,
+refresh the session from the repository root:
+
+```matlab
+addpath(pwd, fullfile(pwd, "trajectory"), fullfile(pwd, "examples"), "-begin");
+clear functions
+rehash
+```
+
+`which('bmtpEngine.createMotionRecord', '-all')` should resolve first to
+`trajectory/+bmtpEngine/createMotionRecord.m` in the current checkout.
+
 BMTP uses degree-eight Bezier curves and MATLAB `coneprog` for trajectory and
 separating-plane conic programs. Optimization Toolbox is required; no external
 MEX solver or Python runtime is needed. Ordinary regions use three spans per

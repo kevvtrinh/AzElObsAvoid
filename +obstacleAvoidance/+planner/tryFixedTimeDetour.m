@@ -11,9 +11,10 @@ function [candidate, diagnostics] = tryFixedTimeDetour( ...
 %       directValidation)
 %
 % PURPOSE
-%   - Preserve a certified direct physical-minimum clock while enumerating
-%     additive coordinate-axis rest-to-rest collision detours.
-%   - Return the shortest independently validated enumerated axis excursion.
+%   - Try detours around obstacles while keeping the
+%     direct move's minimum travel time and starting and ending at rest.
+%   - Return the shortest detour among those tried that passes all safety
+%     and motion checks.
 %
 % INPUTS
 %   - directCandidate (scalar planner candidate struct)
@@ -44,9 +45,10 @@ function [candidate, diagnostics] = tryFixedTimeDetour( ...
 %     degrees per second and its second and third powers.
 %
 
-%% Section 1: Verify The Direct Physical Clock
+%% Section 1: Check That The Direct Move Uses The Minimum Travel Time
 
 if nargin == 0
+    % Let callers obtain empty outputs without attempting a motion.
     candidate = struct();
     diagnostics = createDiagnostics();
     return;
@@ -56,6 +58,9 @@ if nargin ~= 7
         "Use zero inputs or all seven documented inputs.");
 end
 timer = tic;
+% Keep the original motion unless a detour passes every required check.
+% Returning this original record after failure does not make it collision-free;
+% diagnostics.Success tells the caller whether this function found a detour.
 candidate = directCandidate;
 diagnostics = createDiagnostics();
 if ~isstruct(directCandidate) || ~isscalar(directCandidate) || ...
@@ -76,7 +81,11 @@ if dimensionCount ~= 2
         "The independent validator currently requires two coordinates.", timer);
     return;
 end
-% Moving-target history may remain after the capture position and time are fixed.
+
+% Only try these detours when the direct move already takes the shortest
+% possible time allowed by the axis limits. Both axes must finish, so the
+% larger of their minimum travel times sets the overall minimum. Allow a
+% small numerical difference when comparing it with the direct duration.
 duration_s = double(directCandidate.TrajectoryDuration_s);
 lowerBound_s = max(double(directCandidate.MinimumAxisDuration_s));
 clockTolerance_s = max(double(options.ConstraintTolerance), ...
@@ -87,6 +96,8 @@ diagnostics.CertifiedLowerBound_s = lowerBound_s;
 diagnostics.ClockTolerance_s = clockTolerance_s;
 diagnostics.ClockMatched = isfinite(duration_s) && isfinite(lowerBound_s) && ...
     abs(duration_s - lowerBound_s) <= clockTolerance_s;
+
+
 if ~diagnostics.ClockMatched
     diagnostics = finishFailure(diagnostics, "directClockNotCertified", ...
         "The direct duration does not equal its componentwise physical lower bound.", timer);
@@ -98,6 +109,8 @@ if ~isstruct(directValidation) || ~isscalar(directValidation) || ...
         "directValidation must be the scalar public validation record.");
 end
 diagnostics.DirectValidation = directValidation;
+% A detour may fix a collision, but this method does not repair an already
+% invalid start/goal state, timing, or violation of the motion limits.
 if ~directMotionIsPhysical(directValidation)
     diagnostics = finishFailure(diagnostics, "directMotionInvalid", ...
         "The direct motion failed a non-collision invariant.", timer);
@@ -107,14 +120,21 @@ end
 %% Section 2: Try Sideways Detours Without Extending The Motion
 
 workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
-    double(limits.elevationInterval_deg(:).')];
+double(limits.elevationInterval_deg(:).')];
 coarseLevelCount = 8;
+% Stop shrinking the detour once changes are small relative to the collision
+% tolerance or coordinate precision.
 boundaryResolution_deg = max(8 * double(options.CollisionClearanceTolerance_deg), ...
     sqrt(eps) * max(1, max(abs(directCandidate.position_deg), [], "all")));
+
+% Choose times to try the largest sideways offset, based on when the
+% direct move encounters obstacles. Also try the middle of the move.
 peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options);
-axisReports = repmat( ...
-    createAxisReport(), 2 * dimensionCount * numel(peakTime_s), 1);
+axisReports = repmat(createAxisReport(), 2 * dimensionCount * numel(peakTime_s), 1);
 reportIndex = 0;
+
+% Try each axis, both directions, and several times for the largest offset.
+% Only one axis is changed in each trial; the other follows the direct move.
 for axisIndex = 1:dimensionCount
     axisMinimum_s = directCandidate.MinimumAxisDuration_s(axisIndex);
     axisGovernsClock = axisMinimum_s >= duration_s - clockTolerance_s;
@@ -127,11 +147,15 @@ for axisIndex = 1:dimensionCount
             report.PeakTime_s = peakTime_s(peakIndex);
             report.AxisGovernsClock = axisGovernsClock;
             if axisGovernsClock
+                % This axis already needs the full travel time. This method
+                % has no established spare capacity for adding a detour to it.
                 report.TerminationReason = "governingAxisHasNoCertifiedSlack";
                 axisReports(reportIndex) = report;
                 continue;
             end
             if direction > 0
+                % Limit the offset using the room between the sampled direct
+                % motion and the workspace edge on the chosen side.
                 workspaceRoom_deg = workspaceInterval_deg(axisIndex, 2) - ...
                     max(directCandidate.position_deg(:, axisIndex));
             else
@@ -141,6 +165,9 @@ for axisIndex = 1:dimensionCount
             phaseDuration_s = [peakTime_s(peakIndex) - initialState.time_s, ...
                 directCandidate.ArrivalTime_s - peakTime_s(peakIndex)];
             physicalRoom_deg = Inf;
+            % Estimate how far the offset can move out and return in the time
+            % on either side of the peak. Use the smaller distance as a search
+            % bound, not as proof that the combined motion obeys the limits.
             for phaseIndex = 1:2
                 phaseRoom_deg = bmtpEngine.maximumRestToRestDistance( ...
                     phaseDuration_s(phaseIndex), ...
@@ -162,6 +189,8 @@ for axisIndex = 1:dimensionCount
             upperCandidate = struct();
             trialCandidates = cell(coarseLevelCount, 1);
             trialMagnitudes_deg = zeros(coarseLevelCount, 1);
+            % Start with eight evenly spaced offset sizes, from small to large.
+            % Each trial adds a smooth offset that is zero at both endpoints.
             for levelIndex = 1:coarseLevelCount
                 magnitude_deg = maximumMagnitude_deg * levelIndex / coarseLevelCount;
                 trialCandidates{levelIndex} = createExcursion( ...
@@ -169,6 +198,9 @@ for axisIndex = 1:dimensionCount
                     axisIndex, peakTime_s(peakIndex), initialState, options);
                 trialMagnitudes_deg(levelIndex) = magnitude_deg;
             end
+            % Quickly reject collisions at the stored sample times. A clear
+            % sample check can still miss collisions between samples, so only
+            % full validation below can make a trial acceptable.
             sampledClear = sampledCandidatesAreClear( ...
                 trialCandidates, obstacles, options);
             diagnostics.ScreeningCount = diagnostics.ScreeningCount + ...
@@ -196,13 +228,17 @@ for axisIndex = 1:dimensionCount
                 end
             end
             if ~isfinite(upperMagnitude_deg)
+                % None of the tested sizes passed. This is a limited search
+                % failure, not proof that no detour exists.
                 report.TerminationReason = "noPassingAmplitudeBracket";
                 axisReports(reportIndex) = report;
                 continue;
             end
 
-            % Refine the bracket to at most 1/512 of the available amplitude.
-            % Keep the validated upper endpoint.
+            % Try smaller offsets between the last rejected size and the
+            % passing size, halving the interval up to six times. Always keep
+            % a fully validated candidate at the upper end. Other valid sizes
+            % may exist outside this interval; this is not a global search.
             refinementCount = 0;
             while upperMagnitude_deg - lowerMagnitude_deg > ...
                     boundaryResolution_deg && refinementCount < 6
@@ -267,7 +303,7 @@ for axisIndex = 1:dimensionCount
     end
 end
 
-%% Section 3: Refine Validated Travel Or Return Enumeration Failure
+%% Section 3: Shorten A Passing Detour Or Report That None Passed
 
 diagnostics.AxisReports = axisReports;
 if diagnostics.Success
@@ -284,24 +320,30 @@ end
 
 function [candidate, diagnostics] = refineOffsetTravel(candidate, direct, ...
         diagnostics, obstacles, initialState, goalState, limits, options)
-% Adjust spline offsets without changing the governing axis or arrival time.
-% Accept only shorter motions that pass full validation.
+% Reshape the selected detour while keeping the other axis and arrival time.
+% Keep the existing safe motion whenever a proposed change fails.
 axisIndex = diagnostics.SelectedAxisIndex;
 reports = diagnostics.AxisReports;
 selectedReport = find([reports.AxisIndex] == axisIndex & ...
     [reports.Direction] == diagnostics.SelectedDirection & ...
     [reports.MotionLength_deg] == candidate.MotionLength_deg, 1);
+% Use nine evenly spaced times plus the original peak time as adjustment
+% points (knots). Their offsets describe how far to depart from the direct move.
 knotTime_s = unique([linspace(initialState.time_s, direct.ArrivalTime_s, 9).'; ...
     reports(selectedReport).PeakTime_s]);
 [~, basePosition_deg] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
 [~, position_deg] = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
 offset_deg = position_deg(:, axisIndex) - basePosition_deg(:, axisIndex);
+% The detour must still start and end at the requested positions.
 offset_deg([1 end]) = 0;
 record = createTravelRefinement();
 record.Attempted = true;
 record.InitialLength_deg = candidate.MotionLength_deg;
 record.KnotTime_s = knotTime_s;
 initialStep_deg = max(abs(offset_deg)) / 2;
+% Nudge one interior offset at a time in both directions. Start with larger
+% changes, then halve the step for finer adjustments. Two passes at each
+% step size let later improvements influence earlier adjustment points.
 for level = 0:7
     step_deg = initialStep_deg / 2^level;
     for sweep = 1:2
@@ -313,6 +355,8 @@ for level = 0:7
                     trialOffset_deg, axisIndex, initialState, options.SampleTime_s, ...
                     "fixedClockLateralExcursion");
                 record.TrialCount = record.TrialCount + 1;
+                % Avoid a full safety check unless the proposed motion is
+                % shorter by more than 1e-8 degrees (a numerical noise guard).
                 if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
                     continue;
                 end
@@ -342,7 +386,7 @@ end
 end
 
 function record = createTravelRefinement()
-% Store refinement details separately from the starting lobe.
+% Record how much the later reshaping improved the initial passing detour.
 record = struct('Attempted', false, 'AcceptedCount', 0, 'TrialCount', 0, ...
     'InitialLength_deg', NaN, 'FinalLength_deg', NaN, ...
     'KnotTime_s', zeros(0, 1), 'KnotOffset_deg', zeros(0, 1));
@@ -351,7 +395,9 @@ end
 function candidate = createExcursion( ...
         directCandidate, amplitude_deg, axisIndex, peakTime_s, ...
         initialState, options)
-% Leave velocity and acceleration free at the peak to avoid an artificial dwell.
+% Add an offset of zero at the start, amplitude_deg at the chosen interior
+% time, and zero at arrival. The smooth curve need not stop at that interior
+% point; its velocity and acceleration are not forced to zero there.
 startTime_s = initialState.time_s;
 endTime_s = directCandidate.ArrivalTime_s;
 candidate = bmtpEngine.createOffsetSplineMotion( ...
@@ -361,7 +407,8 @@ candidate = bmtpEngine.createOffsetSplineMotion( ...
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
-% Place peaks within direct-path collision intervals.
+% Choose times to try the largest offset, using where the direct move collides.
+% These sampled observations guide the search; they do not certify safety.
 startTime_s = directCandidate.time_s(1);
 endTime_s = directCandidate.time_s(end);
 midpointTime_s = 0.5 * (startTime_s + endTime_s);
@@ -373,11 +420,14 @@ queryOptions = struct( ...
     obstacles, directCandidate.position_deg(:, 1), ...
     directCandidate.position_deg(:, 2), directCandidate.time_s, queryOptions);
 isOccupied = logical(isOccupied(:));
+% Find the start and end of each consecutive group of colliding samples.
 runChange = diff([false; isOccupied; false]);
 runStart = find(runChange == 1);
 runEnd = find(runChange == -1) - 1;
 collisionPeak_s = zeros(2 * numel(runStart), 1);
 for runIndex = 1:numel(runStart)
+    % Try both the worst-clearance sample and the middle of this collision
+    % interval, so the detour can be strongest near the obstruction.
     indices = runStart(runIndex):runEnd(runIndex);
     [~, localIndex] = min(details.MinimumClearance_deg(indices));
     collisionPeak_s(2 * runIndex - 1) = ...
@@ -385,7 +435,9 @@ for runIndex = 1:numel(runStart)
     collisionPeak_s(2 * runIndex) = 0.5 * sum( ...
         directCandidate.time_s([indices(1), indices(end)]));
 end
+% Always include the middle of the whole move as another timing choice.
 peakTime_s = unique([collisionPeak_s; midpointTime_s], "stable");
+% Leave time to move out and return, and avoid nearly duplicate trials.
 endpointReserve_s = 256 * eps(max(1, endTime_s - startTime_s));
 peakTime_s = peakTime_s(peakTime_s > startTime_s + endpointReserve_s & ...
     peakTime_s < endTime_s - endpointReserve_s);
@@ -406,7 +458,8 @@ valid = all(ismember(validation.Issues, allowedIssues));
 end
 
 function isClear = sampledCandidatesAreClear(candidates, obstacles, options)
-% Batch histories with matching times to reuse obstacle queries.
+% Check all trial motions together because they share the same sample times.
+% A true result means only that these samples are clear, not the entire motion.
 candidateCount = numel(candidates);
 sampleCount = numel(candidates{1}.time_s);
 azimuth_deg = zeros(sampleCount, candidateCount);
@@ -424,53 +477,8 @@ isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
 isClear = ~any(isOccupied, 1);
 end
 
-function report = createBarrierReport()
-% Preserve the retired barrier method's diagnostic shape for compatibility.
-report = struct( ...
-    "CandidateCreated", false, ...
-    "Message", "The retired fixed-clock barrier method is unavailable.", ...
-    "TerminationReason", "retiredMethod", ...
-    "ProgressAxisIndex", 0, "LateralAxisIndex", 0, ...
-    "BarrierCount", 0, "Guard_deg", NaN, ...
-    "Projection_deg", zeros(0, 2), ...
-    "TargetLateral_deg", zeros(0, 1), ...
-    "KnotTime_s", zeros(0, 1), "KnotOffset_deg", zeros(0, 1), ...
-    "Validation", obstacleAvoidance.validation.validatePreparedTrajectory());
-end
-
-function report = createProgressReport()
-% Preserve the retired progress method's diagnostic shape for compatibility.
-report = struct( ...
-    "Attempted", false, "Eligible", false, "Success", false, ...
-    "Message", "The retired progress-polynomial method is unavailable.", ...
-    "TerminationReason", "retiredMethod", ...
-    "ProgressAxisIndex", 0, "LateralAxisIndex", 0, ...
-    "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
-    "SelectedBasis", "", ...
-    "BasisReports", repmat(createProgressBasisReport(), 0, 1), ...
-    "CandidateAmplitude_deg", zeros(0, 1), ...
-    "CandidateBasisIndex", zeros(0, 1), ...
-    "MotionLength_deg", zeros(0, 1), ...
-    "SampledClear", false(0, 1), ...
-    "ValidationPassed", false(0, 1), ...
-    "ValidationMessage", strings(0, 1), ...
-    "ScreeningCount", 0, "ValidationCount", 0, ...
-    "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
-    "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
-    "Validation", obstacleAvoidance.validation.validatePreparedTrajectory());
-end
-
-function report = createProgressBasisReport()
-% Store bounds and the best validated candidate for this basis.
-report = struct( ...
-    "Name", "", "Power", zeros(1, 0), "PeakProgress", NaN, ...
-    "LowerAmplitude_deg", NaN, "UpperAmplitude_deg", NaN, ...
-    "SelectedAmplitude_deg", NaN, "SelectedMotionLength_deg", NaN, ...
-    "BoundaryRefinementCount", 0, "TerminationReason", "notAttempted");
-end
-
 function report = createAxisReport()
-% Initialize diagnostics for each axis and direction.
+% Store one trial family's axis, direction, peak time, and rejection or result.
 report = struct( ...
     "AxisIndex", 0, "Direction", 0, "AxisGovernsClock", false, ...
     "PeakTime_s", NaN, "Eligible", false, "MaximumMagnitude_deg", 0, ...
@@ -483,7 +491,8 @@ report = struct( ...
 end
 
 function diagnostics = createDiagnostics()
-% Initialize excursion diagnostics.
+% Keep the same diagnostic fields on success, failure, and zero-input calls.
+% NaN marks numeric results that are not available because no trial supplied them.
 diagnostics = struct( ...
     "Attempted", false, "Success", false, ...
     "Message", "The fixed-clock excursion was not attempted.", ...
@@ -496,8 +505,6 @@ diagnostics = struct( ...
     "RetainedAmplitude_deg", NaN, "MotionLength_deg", NaN, ...
     "DirectValidation", obstacleAvoidance.validation.validatePreparedTrajectory(), ...
     "SelectedValidation", obstacleAvoidance.validation.validatePreparedTrajectory(), ...
-    "BarrierSequence", createBarrierReport(), ...
-    "ProgressPolynomial", createProgressReport(), ...
     "AxisReports", repmat(createAxisReport(), 0, 1), ...
     "TravelRefinement", createTravelRefinement(), ...
     "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...

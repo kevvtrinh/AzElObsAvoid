@@ -7,8 +7,8 @@ function exactMotionSet = tryDirectAndFixedTimeMotions( ...
 %       initialState, goalState, limits, options, scene, stageTiming)
 %
 % PURPOSE
-%   - Try exact direct and fixed-clock lateral motions before route search,
-%     and expose whether either passed the full trajectory check.
+%   - Before searching for a route, try a direct move and detours with the
+%     same travel time. Report whether either passes all safety and motion checks.
 %
 % INPUTS
 %   - initialState, goalState, limits, options: motion constraints.
@@ -29,8 +29,7 @@ function exactMotionSet = tryDirectAndFixedTimeMotions( ...
 
 %% Section 1: Create Stable Attempt Records
 
-[~, excursionDiagnostics] = ...
-    obstacleAvoidance.planner.tryFixedTimeDetour();
+[~, excursionDiagnostics] = obstacleAvoidance.planner.tryFixedTimeDetour();
 exactMotionSet = struct( ...
     "DirectAttempt", directAttemptTemplate(), ...
     "ExcursionCandidate", struct(), ...

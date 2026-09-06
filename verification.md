@@ -6,6 +6,7 @@ editing.
 
 | Check | Outcome |
 | --- | --- |
+| Slalom missing-field diagnosis | An old snapshot engine with the current planner reproduced the exact exception. Explicit current production paths passed slalom and obstacle-free examples, including independent collision/kinematic/certificate checks. User's active MATLAB path was not inspected. |
 | Focused regression gate | 53 tests passed before the complete example matrix. |
 | Broader MATLAB suite | 149 passed, zero failed or incomplete, including the additional runtime-comparison regression. There are 149 distinct tests across both runs. |
 | Node sandbox suite | All 24 tests passed. |

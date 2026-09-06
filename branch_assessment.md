@@ -36,6 +36,22 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 ## Verification and remaining limits
 
+Focused diagnostic cleanup: removed the retired `BarrierSequence` and
+`ProgressPolynomial` placeholder reports and their three private constructors
+from `tryFixedTimeDetour`. No maintained source consumer reads those fields;
+the optional `PathRefinement` table previously exposed them through generic
+flattening. New tables omit those obsolete rows. Active search, validation,
+and failure reports remain intact; historical saved MAT files are unchanged.
+No motion algorithm or runtime improvement is claimed. MATLAB R2024b passed
+all five `testPlannerStageTiming` tests and direct zero-input/flattened-table
+checks after removal. Source-reference and diff-whitespace checks passed.
+The broader example matrix was not rerun for this diagnostic-only change.
+
+The slalom `TrajectoryDuration_s` exception was reproduced by mixing the current
+planner with an older engine under `tmp`. Explicit current production paths
+passed slalom and obstacle-free examples with independent validation. No planner
+change was needed; the user's active MATLAB path remains uninspected.
+
 The current review cleanup passed 149 distinct MATLAB tests and 24 Node tests.
 All 18 maintained default finite-jerk examples ran before and after the changes:
 17 independently valid motions and the expected `noValidatedSeed` failure.
@@ -69,3 +85,22 @@ and the unsupported-input attempt appended. User-owned saved MAT files are
 unchanged. The obsolete autosave is recoverable under ignored
 `tmp/review-cleanup-20260906/recovery/`; profiles, frozen source, and unsuccessful
 runner logs also remain outside source control.
+
+## Measured early-detour shortcut (2026-09-06)
+
+Compared frozen current source (`6321743` plus the recorded working changes)
+with an isolated copy that skips only the early fixed-time lateral detour.
+22 new cases and two maintained-request replays ran once for warm-up and three
+more times per mode (192 complete calls, no timeouts). Every claimed success
+passed fresh independent validation, with identical physical outcomes across
+repeats. The shortcut helped 10/22 new outcomes: nine shorter movements and one
+additional safe solution. It materially reduced planning time in 2/22 and
+increased it in 8/22, including the additional-solution case. The other cases
+had no material timing change under the declared 20% and 0.05 s threshold.
+Both modes failed the sealed-wall control. These small generated cases establish
+usefulness for some new requests, not a real-world success rate or general
+planning speedup. Production behavior is unchanged.
+
+[Full comparison and limits](benchmarks/results/shortcut_benefit_20260906.md).
+All raw repeats are retained there; the 16 maintained-request replay records
+were also appended to `benchmark.csv` without changing previous history.

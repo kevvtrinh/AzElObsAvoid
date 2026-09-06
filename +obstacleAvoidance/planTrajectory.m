@@ -142,9 +142,7 @@ if needsRouteSearch
         scene);
 
     % Build the visibility graph and record its attempts.
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-        limits, ...
-        proposal);
+    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, proposal);
 
     % Search timed routes and distinct spatial routes.
     routeSet = obstacleAvoidance.search.searchRoutes( ...
