@@ -67,7 +67,7 @@ function testNormalizeDiagnosticsAreEquivalent(testCase)
         "createObstacle:InvalidTime"};
     cases(end + 1, :) = {@() setField(base, "az_deg", {[0 1 1 0]}), ...
         "createObstacle:InvalidBoundary"};
-    cases(end + 1, :) = {@() removeField(base, "originalEl_deg"), ...
+    cases(end + 1, :) = {@() rmfield(base, "originalEl_deg"), ...
         "createObstacle:IncompleteOriginalBoundary"};
     cases(end + 1, :) = {@() setField(base, "status", ["a" "b" "c"]), ...
         "createObstacle:StatusSizeMismatch"};
@@ -334,11 +334,6 @@ end
 function value = setField(value, fieldName, fieldValue)
     % Return a fixture with one field replaced.
     value.(fieldName) = fieldValue;
-end
-
-function value = removeField(value, fieldName)
-    % Return a fixture with one field removed.
-    value = rmfield(value, fieldName);
 end
 
 function value = setBoundaryPair(value, azimuth_deg, elevation_deg)

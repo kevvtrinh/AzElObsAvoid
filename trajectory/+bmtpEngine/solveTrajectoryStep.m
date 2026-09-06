@@ -210,7 +210,9 @@ end
 
 function [rows, offset_deg] = fixedPlaneRows(plane, degree, variableCount, segmentIndex)
     % Multiply a fixed separating line by variable trajectory controls.
-    [alpha, beta] = productWeights(degree);
+    % Exact degree-N by degree-one Bernstein product weights.
+    beta  = (0:degree + 1).' / (degree + 1);
+    alpha = 1 - beta;
     rows = spalloc(degree + 2, variableCount, 4 * (degree + 2));
     for productIndex = 1:degree + 2
         if alpha(productIndex) > 0
@@ -226,12 +228,6 @@ function [rows, offset_deg] = fixedPlaneRows(plane, degree, variableCount, segme
         end
     end
     offset_deg = alpha * plane.Offset_deg(1) + beta * plane.Offset_deg(2);
-end
-
-function [alpha, beta] = productWeights(degree)
-    % Return exact degree-N by degree-one Bernstein product weights.
-    beta  = (0:degree + 1).' / (degree + 1);
-    alpha = 1 - beta;
 end
 
 function index = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree)

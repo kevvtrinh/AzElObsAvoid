@@ -27,8 +27,10 @@ function plane = verifySeparatingLine(plane, controlPoint_deg, vertices_deg, res
 %% Section 1: Verify Direct Separation Inequalities
 
 minimumObstacleSide_deg = min(vertices_deg * plane.Normal.' + plane.Offset_deg, [], "all");
-degree                  = size(controlPoint_deg, 1) - 1;
-[alpha, beta] = productWeights(degree);
+degree = size(controlPoint_deg, 1) - 1;
+% Exact degree-N by degree-one Bernstein product weights.
+beta   = (0:degree + 1).' / (degree + 1);
+alpha  = 1 - beta;
 product_deg = alpha .* [sum(controlPoint_deg .* plane.Normal(1, :), 2); 0] + beta .* [0; sum(controlPoint_deg .* plane.Normal(2, :), 2)] + alpha * plane.Offset_deg(1) + beta * plane.Offset_deg(2);
 [maximumTrajectorySide_deg, maximumNormalNorm] = deal(max(product_deg), max(vecnorm(plane.Normal, 2, 2)));
 [minimumCorrection_deg, maximumCorrection_deg] = deal(target_deg - minimumObstacleSide_deg, -reserve_deg - maximumTrajectorySide_deg);
@@ -50,12 +52,4 @@ normalNormLimit        = 1 + 2 ^ 20 * eps;
 clearanceTarget_deg    = (target_deg - reserve_deg) / normalNormLimit;
 certifiedClearance_deg = (signedGap_deg - 2 * reserve_deg) / max(maximumNormalNorm, realmin);
 plane.Verified = minimumObstacleSide_deg >= target_deg && maximumTrajectorySide_deg <= -reserve_deg && signedGap_deg >= target_deg + reserve_deg && certifiedClearance_deg >= clearanceTarget_deg && maximumNormalNorm <= normalNormLimit;
-end
-
-%% Section 2: Local Functions
-
-function [alpha, beta] = productWeights(degree)
-    % Return exact degree-N by degree-one Bernstein product weights.
-    beta  = (0:degree + 1).' / (degree + 1);
-    alpha = 1 - beta;
 end

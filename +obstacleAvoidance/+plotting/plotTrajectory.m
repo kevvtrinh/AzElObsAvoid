@@ -389,7 +389,7 @@ function finishAxes(axesHandle, result, prefix)
     % Label the plot with search counts.
     xlabel(axesHandle, "Azimuth (deg)");
     ylabel(axesHandle, "Elevation (deg)");
-    title(axesHandle, diagnosticTitle(result, prefix));
+    title(axesHandle, sprintf("%s | %s", prefix, result.TerminationReason));
     legend(axesHandle, "Location", "best");
 end
 
@@ -397,12 +397,6 @@ function value = hasData(record, fieldName)
     % Check whether an optional result field is present and nonempty.
     value = isfield(record, fieldName) && ~isempty(record.(fieldName));
 end
-
-function textValue = diagnosticTitle(result, prefix)
-    % Keep the standard plot title focused on the planning outcome.
-    textValue = sprintf("%s | %s", prefix, result.TerminationReason);
-end
-
 
 function handles = createEmptyHandles(options)
     % Initialize graphics handles before choosing a display mode.

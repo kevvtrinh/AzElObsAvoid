@@ -85,17 +85,13 @@ end
 function rows = variablePlaneRows(controlPoint_deg, variableCount)
     % Multiply a variable separating line by fixed trajectory controls.
     degree = size(controlPoint_deg, 1) - 1;
-    [alpha, beta] = productWeights(degree);
+    % Exact degree-N by degree-one Bernstein product weights.
+    beta  = (0:degree + 1).' / (degree + 1);
+    alpha = 1 - beta;
     rows = zeros(degree + 2, variableCount);
     rows(1:end - 1, 1:2) = alpha(1:end - 1) .* controlPoint_deg;
     rows(2:end, 3:4) = beta(2:end) .* controlPoint_deg;
     rows(:, 5:6) = [alpha beta];
-end
-
-function [alpha, beta] = productWeights(degree)
-    % Return exact degree-N by degree-one Bernstein product weights.
-    beta  = (0:degree + 1).' / (degree + 1);
-    alpha = 1 - beta;
 end
 
 function plane = emptyPlane()
