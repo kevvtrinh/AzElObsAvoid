@@ -44,16 +44,31 @@ end
 preparedObstacles = scene.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
-motionTimer         = tic;
-directCandidate     = bmtpEngine.createDirectMotion(initialState, goalState, limits, options);
+endpointDerivative      = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+useStateToStateMotion   = any(abs(endpointDerivative) > options.ConstraintTolerance);
+directSuccessMessage    = "An exact direct rest-to-rest motion passed independent validation.";
+motionTimer             = tic;
+if useStateToStateMotion
+    directSeed        = createDirectSeed(initialState, goalState, goalState.time_s - initialState.time_s);
+    directSeed.Source = "directStateToState";
+    [directCandidate, directSolverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(directSeed, initialState, goalState, limits, options);
+    directCandidate.SolverDiagnostics = directSolverDiagnostics;
+    directSuccessMessage = "An exact direct state-to-state motion passed independent validation.";
+else
+    directCandidate = bmtpEngine.createDirectMotion(initialState, goalState, limits, options);
+end
 directElapsedTime_s = toc(motionTimer);
 stageTiming.MotionSolvingElapsedTime_s = stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
 [directCandidate, directValidation, directValidationTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(directCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "");
 directAttempt = recordDirectAttempt(directCandidate, directValidation, directElapsedTime_s, directValidationTime_s);
 exactMotionSet.DirectAttempt = directAttempt;
 if directValidation.Passed
-    directSeed = createDirectSeed(initialState, goalState, directCandidate.TrajectoryDuration_s);
-    exactMotionSet.FastPath    = createFastPath(directCandidate, directValidation, directAttempt, directElapsedTime_s, directSeed, "An exact direct rest-to-rest motion passed independent validation.");
+    if useStateToStateMotion
+        directSeed = createMotionSeed(directCandidate, directCandidate.SeedSource);
+    else
+        directSeed = createDirectSeed(initialState, goalState, directCandidate.TrajectoryDuration_s);
+    end
+    exactMotionSet.FastPath    = createFastPath(directCandidate, directValidation, directAttempt, directElapsedTime_s, directSeed, directSuccessMessage);
     exactMotionSet.StageTiming = stageTiming;
     return;
 end

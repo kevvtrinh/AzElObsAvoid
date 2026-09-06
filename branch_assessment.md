@@ -117,3 +117,23 @@ planning speedup. Production behavior is unchanged.
 [Full comparison and limits](benchmarks/results/shortcut_benefit_20260906.md).
 All raw repeats are retained there; the 16 maintained-request replay records
 were also appended to `benchmark.csv` without changing previous history.
+
+## Endpoint-derivative dispatch correction (2026-09-06)
+
+The repository health trace found that the public moving-target interface
+accepted requests to match target velocity or acceleration, but the general
+planner later sent those non-rest endpoint states to the rest-to-rest BMTP
+kernel. The kernel then threw `bmtpEngine:UnsupportedRequest` instead of
+returning a planner result. Nonzero endpoint velocity or acceleration now
+selects the existing state-to-state Ruckig constructor for the exact direct
+attempt and every later route seed. Rest-to-rest requests keep their existing
+BMTP path and two-point direct route record.
+
+A deterministic probe passed position-only, velocity-only, acceleration-only,
+and combined matching requests without an exception; every request returned a
+validated motion. A separate fixed-arrival case exercised nonzero terminal
+velocity and acceleration without the moving-target wrapper. MATLAB R2024b
+passed all 154 repository tests, including the new contract cases, and Code
+Analyzer reported no messages in the four changed files. This establishes the
+supported one- and two-segment state-to-state cases exercised here; longer
+Ruckig waypoint routes still return their existing stable unsupported result.

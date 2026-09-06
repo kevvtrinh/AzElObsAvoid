@@ -23,7 +23,9 @@ candidateWasPrechecked = false;
 precheckElapsedTime_s  = 0;
 checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
 preparedObstacles      = obstacles;
-if context.UseStaticSolver
+if context.UseStateToStateSolver
+    [candidate, solverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
+elseif context.UseStaticSolver
     if isempty(fieldnames(context.StaticGeometry))
         context.StaticGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(preparedObstacles, initialState.time_s, goalState.time_s);
     end

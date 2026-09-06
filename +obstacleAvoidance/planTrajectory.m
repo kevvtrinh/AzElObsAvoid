@@ -136,7 +136,10 @@ end
 seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg);
 
 stageTiming.RouteSearchElapsedTime_s = toc(routeSearchTimer);
+endpointDerivative = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+useStateToStateSolver = any(abs(endpointDerivative) > options.ConstraintTolerance);
 seedSolveContext = struct("UseStaticSolver", useStaticSolver, ...
+    "UseStateToStateSolver", useStateToStateSolver, ...
     "SummaryTemplate", summaryTemplate, ...
     "StaticGeometry", struct(), "EnclosureGeometry", struct(), "Enclosure", struct());
 % Try the first two ordinary seeds before failure recovery.

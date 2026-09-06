@@ -688,13 +688,15 @@ function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)
     verifyTrue(testCase, isfield(resultDiagnosis, "Timing"));
 end
 
-function testUnsupportedEndpointDerivativesThrowNamedError(testCase)
-    % The compact BMTP scope rejects non-rest endpoints explicitly.
-    initialState = restState(0, [0 0]);
+function testNonRestEndpointUsesStateToStateSolver(testCase)
+    % A non-rest endpoint bypasses BMTP and returns a validated motion.
+    initialState                = restState(0, [0 0]);
     initialState.velocity_deg_s = [0.1 0];
-    goalState = restState(10, [2 0]);
-    request   = @() obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
-    verifyError(testCase, request, "bmtpEngine:UnsupportedRequest");
+    goalState                   = restState(10, [2 0]);
+    result                      = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
+    validation                  = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, validation.Passed, validation.Message);
 end
 
 function testNoPathReturnsRecognizedDiagnostics(testCase)
@@ -751,7 +753,6 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
-    verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
     verifyEqual(testCase, testSupport.diagnosisValue(resultDiagnosis.InterceptSearch, "OptimalityStatus"), "notAnOptimization");
 
     % Exercise the bounded time-grid search with BMTP and a PCHIP target.
@@ -789,6 +790,45 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
     [certifiedResult, certifiedResultDiagnosis] = obstacleAvoidance.planMovingTargetIntercept(restState(0, [0 0]), certifiedTarget, physicalLimits(), certifiedOptions);
     verifyTrue(testCase, certifiedResult.Success, certifiedResult.Message);
     verifyEqual(testCase, testSupport.diagnosisValue(certifiedResultDiagnosis.InterceptSearch, "OptimalityStatus"), "certifiedEarliest");
+end
+
+function testSpecifiedInterceptMatchesTargetDerivatives(testCase)
+    % Match target derivatives without sending a non-rest request to BMTP.
+    initialState = restState(0, [0 0]);
+    targetTime_s = [0; 5; 10; 15];
+    targetMotion = struct("time_s", targetTime_s, ...
+        "position_deg", [2 + 0.2 * targetTime_s, 1 + 0.03 * targetTime_s.^2], ...
+        "InterpolationMethod", "pchip");
+    cases    = [true false; false true; true true];
+    policies = ["zero", "target"];
+    for caseIndex = 1:size(cases, 1)
+        interceptOptions = struct("InterceptMode", "specifiedTime", ...
+            "SpecifiedInterceptTime_s", 10, ...
+            "MatchTargetVelocity", cases(caseIndex, 1), ...
+            "MatchTargetAcceleration", cases(caseIndex, 2), ...
+            "PlannerOptions", struct("MaximumSeedCount", 1));
+        result = obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, physicalLimits(), interceptOptions);
+        verifyTrue(testCase, result.Success, result.Message);
+        verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
+        verifyEqual(testCase, result.Intercept.TerminalVelocityPolicy, policies(cases(caseIndex, 1) + 1));
+        verifyEqual(testCase, result.Intercept.TerminalAccelerationPolicy, policies(cases(caseIndex, 2) + 1));
+    end
+end
+
+function testFixedArrivalSupportsNonRestTerminalState(testCase)
+    % Exercise the same invariant without the moving-target wrapper.
+    initialState = restState(0, [-1 0]);
+    goalState    = struct("time_s", 8, "position_deg", [3 1], ...
+        "velocity_deg_s", [0.2 -0.1], "acceleration_deg_s2", [0.05 0]);
+    options                  = plannerOptions("fixedArrival");
+    options.MaximumSeedCount = 1;
+    result                   = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), options);
+    validation               = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, validation.Passed, validation.Message);
+    verifyEqual(testCase, result.position_deg(end, :), goalState.position_deg, "AbsTol", 1e-8);
+    verifyEqual(testCase, result.velocity_deg_s(end, :), goalState.velocity_deg_s, "AbsTol", 1e-8);
+    verifyEqual(testCase, result.acceleration_deg_s2(end, :), goalState.acceleration_deg_s2, "AbsTol", 1e-8);
 end
 
 function state = restState(time_s, position_deg)
