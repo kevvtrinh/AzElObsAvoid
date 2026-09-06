@@ -5,10 +5,10 @@ function [initialState, terminalState, limits, pathConstraints] = ...
 %   [initialState, terminalState, limits, pathConstraints] = ...
 %       ruckigEngine.internal.normalizeRequest( ...
 %       initialState, terminalState, limits, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Normalize state, limit, and path inputs for the Ruckig engine.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Fields time, position, and velocity are required. Acceleration may
@@ -22,7 +22,7 @@ function [initialState, terminalState, limits, pathConstraints] = ...
 %       is required only for the third-order jerk-controlled interface.
 %   - pathConstraints (scalar struct or empty)
 %       Tau/TauEnd, Normal, and LowerBound describe affine path rows.
-%**************************************************************************
+%
 % OUTPUTS
 %   - initialState, terminalState (scalar structs)
 %       Motion vectors are normalized to 1-by-D double rows.
@@ -30,10 +30,10 @@ function [initialState, terminalState, limits, pathConstraints] = ...
 %       Scalar maxima are expanded and every lower/upper pair is resolved.
 %   - pathConstraints (scalar struct)
 %       Empty input becomes a stable zero-row path-constraint record.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and must be consistent across derivatives.
-%**************************************************************************
+%
 
 %% Section 1: Normalize States
 
@@ -118,7 +118,7 @@ end
 %% Section 4: Local Functions
 
 function value = hasFiniteVector(record, fieldName)
-% Treat omitted, empty, or entirely NaN optional derivative data as absent.
+% Treat omitted, empty, or all-NaN derivatives as unspecified.
 value = isstruct(record) && isfield(record, fieldName) && ...
     ~isempty(record.(fieldName));
 if ~value
@@ -194,7 +194,7 @@ end
 
 function pathConstraints = normalizePathConstraints( ...
         pathConstraints, dimensionCount)
-% Publish one stable affine path structure for Ruckig validation.
+% Initialize affine path constraints for validation.
 if ~isstruct(pathConstraints) || ~isscalar(pathConstraints)
     error("ruckigEngine:InvalidPathConstraints", ...
         "pathConstraints must be a scalar struct or empty.");

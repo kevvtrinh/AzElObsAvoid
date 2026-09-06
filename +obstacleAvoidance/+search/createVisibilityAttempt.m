@@ -6,11 +6,11 @@ function attempt = createVisibilityAttempt( ...
 %   attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
 %       shape, start_deg, goal_deg, limits, candidateOffset_deg, ...
 %       offsetRetryCount, workBudget)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create, check, and recover one offset visibility-graph attempt.
 %   - Return every representation needed to inspect its decisions.
-%**************************************************************************
+%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Spatial obstacle representation used only for route proposals.
@@ -24,21 +24,19 @@ function attempt = createVisibilityAttempt( ...
 %       Zero-based index of this attempt in the offset schedule.
 %   - workBudget (positive finite scalar)
 %       Pair-edge work cap governing node count and exhaustive recovery.
-%**************************************************************************
+%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Raw and retained nodes, candidate pairs, accepted and rejected
 %       edges, components, recovery steps, costs, and connectivity state.
-%**************************************************************************
+%
 % UNITS
 %   - Positions, offsets, bounds, and graph costs are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Bound The Candidate Nodes
 
-% Segment checks scale with both candidate pairs and obstacle edges. Convert
-% the fixed work budget into a node limit before constructing the offset
-% nodes so later pair creation cannot silently exceed the intended bound.
+% Convert the pair/edge work budget into a node limit.
 
 [edgeStart_deg, edgeEnd_deg] = ...
     obstacleAvoidance.geometry.boundaryToEdges(shape, 1e-12);
@@ -50,9 +48,7 @@ nodes = createVisibilityNodes( ...
 
 %% Section 2: Create And Check Candidate Pairs
 
-% Sparse pairs are route suggestions, not safety certificates. Check each
-% offered segment against the proposal geometry and retain both outcomes so
-% recovery and plotting consume the same decisions.
+% Check proposed edges and record both accepted and rejected connections.
 
 nodeCount = size(nodes.Positions_deg, 1);
 pairMask = triu(true(nodeCount), 1);
@@ -81,9 +77,7 @@ edgeCheck = evaluateVisibilityPairs( ...
 
 %% Section 3: Recover Missing Connectivity
 
-% A sparse graph may be disconnected even when useful visible edges exist.
-% Add only the established boundary and affordable exhaustive candidates,
-% then return the final components instead of hiding the recovery path.
+% Try boundary edges and affordable all-pairs edges to connect the graph.
 
 recovery = recoverVisibilityConnectivity( ...
     nodes, pairSet, edgeCheck, shape, edgeStart_deg, edgeEnd_deg);
@@ -118,7 +112,7 @@ end
 function nodes = createVisibilityNodes( ...
         shape, start_deg, goal_deg, limits, candidateOffset_deg, ...
         candidateLimit)
-% Offset proposal boundaries and retain affordable workspace nodes.
+% Create offset-boundary and workspace nodes within the node budget.
 candidateShape = shape;
 if ~isempty(shape.Vertices)
     candidateShape = polybuffer( ...
@@ -176,7 +170,7 @@ end
 
 function recovery = recoverVisibilityConnectivity( ...
         nodes, pairSet, edgeCheck, shape, edgeStart_deg, edgeEnd_deg)
-% Add necessary boundary or affordable exhaustive pairs for connectivity.
+% Add boundary edges or all-pairs edges when the budget allows.
 positions_deg = nodes.Positions_deg;
 nodeCount = size(positions_deg, 1);
 pairMask = pairSet.PairMask;
@@ -210,7 +204,7 @@ if component(1) ~= component(2) && nodeCount >= 4
     end
 end
 
-% Exhaustive visibility is allowed only inside the established work bound.
+% Use all-pairs visibility only within the work budget.
 usedFallback = component(1) ~= component(2) && ...
     ~usedExhaustive && ...
     pairSet.EstimatedExhaustiveWork <= pairSet.WorkBudget;
@@ -234,7 +228,7 @@ end
 
 function edgeCheck = evaluateVisibilityPairs( ...
         positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg)
-% Check proposed graph segments and retain accepted and rejected evidence.
+% Check graph edges and record the results.
 [firstNodeIndex, secondNodeIndex] = find(pairMask);
 first_deg = positions_deg(firstNodeIndex, :);
 second_deg = positions_deg(secondNodeIndex, :);

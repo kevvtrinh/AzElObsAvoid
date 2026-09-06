@@ -5,26 +5,26 @@ function [plannerOptions, displayOptions] = resolveExampleOptions( ...
 %   [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrides, scenarioDefaults)
 %   [plannerOptions, displayOptions] = resolveExampleOptions( ...
 %       exampleOverrides, scenarioDefaults, defaultMaxJerk_deg_s3)
-%**************************************************************************
+%
 % PURPOSE
 %   - Resolve uniform example display/runtime controls and planner overrides.
 %   - Accept the maintained main-branch display names through one mapping.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct or []; empty uses defaults)
 %       Display controls and public planTrajectory options are accepted.
 %   - scenarioDefaults (scalar partial planTrajectory options struct)
 %   - defaultMaxJerk_deg_s3 (positive scalar or two-element vector)
 %       Optional default is [2.5 2.5]. MaxJerk_deg_s3 can override it.
-%**************************************************************************
+%
 % OUTPUTS
 %   - plannerOptions (resolved planner options for the scenario)
 %   - displayOptions (resolved example display/runtime controls)
 %       PlotOptions contains only controls accepted by plotTrajectory.
-%**************************************************************************
+%
 % UNITS
 %   - Pause_s is seconds. Planner values retain their documented units.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Uniform Display Controls
 

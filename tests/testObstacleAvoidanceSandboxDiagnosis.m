@@ -87,7 +87,7 @@ verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "Export"));
 verifyTrue(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "SetMotion"));
-verifyTrue(testCase, isfield( ...
+verifyFalse(testCase, isfield( ...
     currentState.GoalMode.GraphicsHandles.Actions, "Stop"));
 verifyFalse(testCase, isfield(currentState, "FreeMode"));
 constructorNames = [ ...
@@ -116,67 +116,31 @@ verifyEqual(testCase, ...
 verifyEqual(testCase, get( ...
     currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), ...
     'off');
-verifyEqual(testCase, get( ...
-    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), ...
-    'off');
 verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
 end
 
-function testStopRestoresExportableRequest(testCase)
-% Stop a synchronous run cooperatively and retain a pre-run diagnosis bundle.
-sandboxState = obstacleAvoidanceSandbox(struct( ...
-    "FigureVisible", "off", "MissionTime_s", 6));
+function testRunExportsOptionsWithoutCancellation(testCase)
+% Keep normal planning and export available after removing the Stop control.
+sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off", "MissionTime_s", 6));
 testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
 applicationState = guidata(sandboxState.FigureHandle);
 applicationState.GoalMode.StartPosition_deg = [0 0];
 applicationState.GoalMode.GoalPosition_deg = [4 0];
 guidata(sandboxState.FigureHandle, applicationState);
 runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
-stopHandle = applicationState.GoalMode.GraphicsHandles.Actions.Stop;
 runCallback = get(runHandle, "Callback");
-stopCallback = get(stopHandle, "Callback");
-
-% Exercise the button callback while the UI is in its planning state.
-applicationState.InteractionState = "planning";
-applicationState.GoalMode.InteractionState = "planning";
-guidata(sandboxState.FigureHandle, applicationState);
-stopCallback(stopHandle, []);
-verifyTrue(testCase, getappdata( ...
-    sandboxState.FigureHandle, "SandboxStopRequested"));
-stoppingState = sandboxState.ReadState();
-verifyTrue(testCase, contains(stoppingState.GoalMode.Status, ...
-    "Stopping planning"));
-
-% A programmatic policy uses the same planner checkpoint and makes the
-% synchronous recovery path deterministic in a headless test process.
-applicationState = guidata(sandboxState.FigureHandle);
-applicationState.InteractionState = "idle";
-applicationState.GoalMode.InteractionState = "idle";
-applicationState.Options.PlannerOptions.CancellationCheckFcn = @() true;
-guidata(sandboxState.FigureHandle, applicationState);
-
 runCallback(runHandle, []);
-
 currentState = sandboxState.ReadState();
 verifyEqual(testCase, currentState.InteractionState, "idle");
-verifyEmpty(testCase, fieldnames(currentState.GoalMode.LastPlannerResult));
-verifyTrue(testCase, contains(currentState.GoalMode.Status, ...
-    "Export Bundle is available"));
-verifyEqual(testCase, get( ...
-    currentState.GoalMode.GraphicsHandles.Actions.Stop, "Enable"), 'off');
-verifyEqual(testCase, get( ...
-    currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), 'on');
+verifyTrue(testCase, currentState.GoalMode.LastPlannerResult.Success);
+verifyTrue(testCase, currentState.GoalMode.LastValidation.Passed);
+verifyFalse(testCase, isfield(currentState.GoalMode.LastPlannerResult.Options, "CancellationCheckFcn"));
+verifyFalse(testCase, isfield(currentState.GoalMode.GraphicsHandles.Actions, "Stop"));
 filePath = string(tempname) + ".mat";
 testCase.addTeardown(@() deleteIfPresent(filePath));
 currentState.ExportBundle(filePath, "goal");
 loaded = load(char(filePath), "diagnosisBundle");
-verifyEqual(testCase, loaded.diagnosisBundle.PlanningState, "notRun");
-verifyEmpty(testCase, ...
-    loaded.diagnosisBundle.PlannerOptions.CancellationCheckFcn);
-verifyEqual(testCase, ...
-    loaded.diagnosisBundle.PlannerInputs.initialState.position_deg, [0 0]);
-verifyEqual(testCase, ...
-    loaded.diagnosisBundle.PlannerInputs.goalState.position_deg, [4 0]);
+verifyFalse(testCase, isfield(loaded.diagnosisBundle.PlannerOptions, "CancellationCheckFcn"));
 end
 
 function testSandboxDefaultsBoundInteractivePlannerWork(testCase)
@@ -197,8 +161,7 @@ verifyFalse(testCase, ...
 verifyFalse(testCase, ...
     isfield(plannerOptions, "IsWaypointWarmStartAvailable"));
 verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
-verifyEqual(testCase, plannerOptions.GoalTimeMode, "balancedArrival");
-verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 1);
+verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
 verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
 productionOptions = obstacleAvoidance.planTrajectory();
 verifyEqual(testCase, productionOptions.MaximumSeedCount, 2);
@@ -211,8 +174,7 @@ testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
 currentState = sandboxState.ReadState();
 controls = currentState.GoalMode.GraphicsHandles.Controls;
 set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
-set(controls.GoalTimeModeHandle, "Value", 3);
-set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 filePath = string(tempname) + ".mat";
 testCase.addTeardown(@() deleteIfPresent(filePath));
@@ -224,7 +186,6 @@ plannerOptions = loaded.diagnosisBundle.PlannerOptions;
 verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, plannerOptions.MinimumTravelSavingsRate_deg_s, 12.5);
 verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
 end
 
@@ -239,8 +200,7 @@ applicationState.GoalMode.GoalPosition_deg = [-179 0];
 guidata(sandboxState.FigureHandle, applicationState);
 controls = applicationState.GoalMode.GraphicsHandles.Controls;
 set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
-set(controls.GoalTimeModeHandle, "Value", 3);
-set(controls.MinimumTravelSavingsRateHandle, "String", "12.5");
+set(controls.GoalTimeModeHandle, "Value", 2);
 set(controls.AllowAzimuthWrappingHandle, "Value", 1);
 runHandle = applicationState.GoalMode.GraphicsHandles.Actions.Run;
 runCallback = get(runHandle, "Callback");
@@ -253,7 +213,6 @@ verifyTrue(testCase, result.Success, result.Message);
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
-verifyEqual(testCase, result.Options.MinimumTravelSavingsRate_deg_s, 12.5);
 verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
 verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
 verifyEqual(testCase, result.position_deg(end, 1), 181, "AbsTol", 1e-9);
@@ -395,7 +354,7 @@ verifyEqual(testCase, bundle.Result.TerminationReason, ...
     "endpointBlocked");
 verifyNotEmpty(testCase, bundle.Result.Message);
 verifyEqual(testCase, numel(bundle.PlannerInputs.obstacles), 1);
-verifyTrue(testCase, isfield(bundle.Result, "SearchDiagnostics"));
+verifyTrue(testCase, isfield(bundle, "Diagnosis"));
 end
 
 function [initialState, goalState, limits, options] = simpleRequest()

@@ -4,32 +4,30 @@ function attempt = createSynchronizedMotion( ...
 % SYNTAX
 %   attempt = ruckigEngine.createSynchronizedMotion( ...
 %       initialState, terminalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the exact fastest profile and synchronize every motion axis.
 %   - Retain direct-progress use, profile failure, and solve timing explicitly.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (normalized scalar structs)
 %       Dimension-neutral boundary states and derivative limits.
 %   - options (resolved scalar struct)
 %       Fixed or earliest-arrival time policy and tolerances.
-%**************************************************************************
+%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Profile, requested final time, elapsed time, success, message, and
 %       termination reason.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and consistent across derivatives; time is in
 %     the caller's time unit.
-%**************************************************************************
+%
 
 %% Section 1: Resolve The Requested Final Time
 
-% Axis profiles are first created from the boundary states. A fixed request
-% supplies one shared final time; earliest arrival leaves synchronization free
-% to use the slowest exact axis profile.
+% Synchronize axes at the requested fixed time or the earliest feasible time.
 
 requestedFinalTime = [];
 if options.TimeMode == "fixed"
@@ -40,9 +38,8 @@ if options.TimeMode == "fixed"
 end
 %% Section 2: Create And Synchronize Exact Profiles
 
-% Rest-to-rest collinear motion has one scalar progress law, which avoids
-% independent-axis numerical disagreement. Other eligible states use the
-% general synchronized jerk-profile constructor.
+% Use scalar progress for eligible rest-to-rest straight-line motion.
+% Otherwise construct synchronized axis profiles.
 
 solveTimer = tic;
 profile = struct();
@@ -95,7 +92,7 @@ end
 function [isEligible, progressInitialState, progressTerminalState, ...
         progressLimits, displacement] = createDirectProgressProblem( ...
         initialState, terminalState, limits, options)
-% Reduce eligible rest-to-rest motion to one scalar straight-line progress.
+% Reduce eligible straight-line motion to scalar progress.
 dimensionCount = numel(initialState.position);
 displacement = terminalState.position - initialState.position;
 progressInitialState = struct();
@@ -141,7 +138,7 @@ end
 
 function profile = liftDirectProfile( ...
         progressProfile, displacement, initialState)
-% Lift one scalar switching polynomial into every requested coordinate.
+% Map scalar progress to each coordinate.
 scalarPolynomial = progressProfile.Polynomial;
 dimensionCount = numel(displacement);
 displacementScale = reshape(displacement, 1, dimensionCount, 1);
@@ -171,7 +168,7 @@ end
 
 function [reason, message] = classifyProfileFailure( ...
         profile, initialState, options, requestedFinalTime)
-% Distinguish a too-short fixed request from an unsupported switching family.
+% Distinguish a too-short duration from an unsupported switching family.
 reason = "unsupportedSwitchingFamily";
 message = string(profile.Message);
 if options.TimeMode ~= "fixed" || isempty(requestedFinalTime)

@@ -6,30 +6,31 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 %   [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
 %       request, warmStart, diagnostics, obstacleTarget_deg, ...
 %       roundoffReserve_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Alternate trajectory and separating-line solves until a sampled-clear
 %     motion is retained or the bounded iteration fails.
-%**************************************************************************
+%
 % INPUTS
 %   - request, warmStart, diagnostics (scalar structs)
 %       Checked engine request, feasible starting curve, and diagnostics.
 %   - obstacleTarget_deg, roundoffReserve_deg (finite scalars)
 %       Required obstacle-side target and numerical reserve in degrees.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Best sampled-clear controls, timing, planes, tags, and failure reason.
 %   - diagnostics (scalar struct)
 %       Updated iteration, solver, overlap, and separating-line evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position and clearance are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Initialize The Alternating State
 
 segmentCount = warmStart.SegmentCount;
+diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 degree = request.Degree;
 regions_deg = request.Regions_deg;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
@@ -56,19 +57,28 @@ for iterationIndex = 1:35
         segmentCount, degree, request.InitialState.position_deg, ...
         request.GoalState.position_deg, request.Limits, planes, ...
         roundoffReserve_deg, optimizationHorizon_s, ...
-        "earliestArrival", 0, feasibleSegmentTime_s, ...
+        "earliestArrival", ...
         request.TrajectoryOptions);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
+    diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     diagnostics.FinalTrajectoryExitFlag = exitFlag;
     if exitFlag <= 0 || isempty(trialControl_deg)
-        % The requested horizon constrains the returned motion, but the first
-        % useful iterate may need the longer warm-start duration to establish
-        % separating lines before the horizon is imposed again.
+        % Allow the longer starting duration while finding separating planes.
+        % The final motion must still meet the requested horizon.
         canExpandHorizon = exitFlag == -2 && isempty(bestControl_deg) && ...
             optimizationHorizon_s < diagnostics.WarmStartDuration_s;
         if canExpandHorizon
             optimizationHorizon_s = min(2 * optimizationHorizon_s, ...
                 diagnostics.WarmStartDuration_s);
+            continue;
+        end
+        % If fixed planes make the deadline infeasible, continue improving the
+        % collision-free curve at its current duration within the iteration budget.
+        if exitFlag == -2 && ~isempty(bestControl_deg) && ...
+                optimizationHorizon_s < bestDuration_s
+            diagnostics.RetainedHorizonRetryCount = ...
+                diagnostics.RetainedHorizonRetryCount + 1;
+            optimizationHorizon_s = bestDuration_s;
             continue;
         end
         solverMessage = "Trajectory SOCP failed: " + string(output.message);
@@ -133,19 +143,18 @@ for iterationIndex = 1:35
         break;
     end
 
-    % A sampled overlap only identifies where a separator is needed. Solve
-    % and retain a line for each newly active curve-region pair; final direct
-    % certification remains a later, independent stage.
+    % Add separating lines where samples overlap. Final certification follows later.
     updateFailed = false;
     activePairIndices = reshape(find(activePairs), 1, []);
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex] = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag] = bmtpEngine.solveSeparatingLine( ...
+        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine( ...
             squeeze(feasibleControl_deg(segmentIndex, :, :)), ...
             regions_deg{regionIndex}, obstacleTarget_deg, ...
             roundoffReserve_deg, request.PlaneOptions);
         diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
+        diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
         if planeExitFlag <= 0 || ~plane.Active
             [diagnostics.FailedPlaneSegmentIndex, ...
                 diagnostics.FailedPlaneRegionIndex, diagnostics.FailedPlane] = ...
@@ -181,7 +190,7 @@ end
 %% Section 4: Local Functions
 
 function plane = createEmptyPlane()
-% Define the stable inactive or verified degree-one plane record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

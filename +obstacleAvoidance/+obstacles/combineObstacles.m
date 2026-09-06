@@ -6,26 +6,26 @@ function obstacleField = combineObstacles(varargin)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacle1, ...)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleArray)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(nestedCells)
-%**************************************************************************
+%
 % PURPOSE
 %   - Flatten and validate canonical obstacle inputs in caller order.
 %   - Return a field-preserving empty array for obstacle-free planning.
-%**************************************************************************
+%
 % INPUTS
 %   - varargin (struct arrays, nested cell arrays, or empty numeric input)
 %       Every nonempty leaf must be a canonical obstacle record.
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacleField (column struct array)
 %       Independently normalized obstacle records in caller order.
-%**************************************************************************
+%
 % UNITS
 %   - Canonical az_deg and el_deg fields are degrees; time_s is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Flatten Nested Inputs
 
-% Flatten each top-level input independently so errors retain its public index.
+% Flatten inputs while keeping their original index for error messages.
 if nargin == 0
     obstacleField = createEmptyObstacleArray();
     return;
@@ -50,7 +50,7 @@ obstacleField = vertcat(normalized{:});
 end
 
 function items = flattenValue(value, owner)
-% Flatten one nested container in caller order and retain its top-level owner.
+% Flatten nested cells in input order.
 if isnumeric(value) && isempty(value)
     items = cell(0, 1);
 elseif isstruct(value)
@@ -67,7 +67,7 @@ end
 end
 
 function obstacleField = createEmptyObstacleArray()
-% Preserve canonical field order even when the collection has no records.
+% Keep the same fields for an empty obstacle array.
 template = struct("targetName", "", "time_s", zeros(0, 1), ...
     "az_deg", {cell(0, 1)}, "el_deg", {cell(0, 1)}, "originalAz_deg", {cell(0, 1)}, ...
     "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));

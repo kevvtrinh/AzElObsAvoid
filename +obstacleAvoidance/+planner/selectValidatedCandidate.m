@@ -3,31 +3,29 @@ function selection = selectValidatedCandidate(summaries, options)
 % SYNTAX
 %   selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
 %       summaries, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Restrict selection to motions that passed the full trajectory check.
 %   - Return either the declared best passing index or useful failure evidence.
-%**************************************************************************
+%
 % INPUTS
 %   - summaries (candidate-summary struct array)
 %       Stable solve and authoritative-check evidence for attempted seeds.
 %   - options (resolved scalar struct)
 %       Goal-time mode and declared candidate-ranking policy.
-%**************************************************************************
+%
 % OUTPUTS
 %   - selection (scalar struct)
 %       Passing indices, ranking, selected index, best partial index, status,
 %       message, and termination reason.
-%**************************************************************************
+%
 % UNITS
 %   - Units are carried by the candidate ranking and summary fields.
-%**************************************************************************
+%
 
 %% Section 1: Identify Fully Checked Candidates
 
-% ValidationPassed originates only from obstacleAvoidance.validateTrajectory.
-% No kernel feasibility, proposal visibility, or backup status is sufficient
-% to enter the ranking set.
+% Rank only candidates that passed the public trajectory validator.
 
 validatedIndices = find([summaries.ValidationPassed]).';
 emptyRanking = struct( ...
@@ -82,7 +80,7 @@ end
 %% Section 4: Local Functions
 
 function index = bestPartialSeed(summaries)
-% Prefer resolved collision evidence, small residual, and large clearance.
+% Prefer resolved collisions, smaller violations, then greater clearance.
 if isempty(summaries)
     index = 0;
     return;
@@ -99,23 +97,16 @@ index = order(1);
 end
 
 function ranking = createCandidateRanking(summaries, indices, options)
-% Rank passing candidates only by the objective declared in options.
+% Rank valid motions by the requested objective.
 indices = indices(:);
 length_deg = [summaries(indices).MotionLength_deg].';
 if options.GoalTimeMode == "fixedArrival"
     columnNames = ["MotionLength_deg", "CandidateIndex"];
     values = [length_deg, indices];
-elseif options.GoalTimeMode == "earliestArrival"
+else
     columnNames = ["ArrivalTime_s", "MotionLength_deg", ...
         "CandidateIndex"];
     values = [[summaries(indices).ArrivalTime_s].', ...
-        length_deg, indices];
-else
-    columnNames = ["TravelTimeTradeoffCost_deg", "ArrivalTime_s", ...
-        "MotionLength_deg", "CandidateIndex"];
-    values = [ ...
-        [summaries(indices).TravelTimeTradeoffCost_deg].', ...
-        [summaries(indices).ArrivalTime_s].', ...
         length_deg, indices];
 end
 [~, order] = sortrows(values, 1:size(values, 2));

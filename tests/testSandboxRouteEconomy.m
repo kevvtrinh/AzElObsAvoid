@@ -28,6 +28,43 @@ addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 testCase.TestData.Request = createRequest();
 end
 
+function testSavedLongPath(testCase)
+% Use current options with the saved scene and preserve its shorter path.
+verifySavedRoute(testCase, "pathtoolong", 233.058989023, 117.744031226);
+end
+
+function testSavedLongPathTwo(testCase)
+% A differently placed obstacle and oblique endpoint chord exercise the gate.
+verifySavedRoute(testCase, "pathtoolong2", 242.064492067, 117.250241772);
+end
+
+function verifySavedRoute(testCase, name, baselineLength_deg, baselineDuration_s)
+root = fileparts(fileparts(mfilename("fullpath")));
+addpath(fullfile(root, "offlinesandbox"));
+outputDirectory = tempname;
+mkdir(outputDirectory);
+cleanup = onCleanup(@() rmdir(outputDirectory, 's')); %#ok<NASGU>
+loaded = load(fullfile(root, "Rogue Examples", name + ".mat"), "diagnosisBundle");
+diagnosisBundle = loaded.diagnosisBundle;
+diagnosisBundle.PlannerOptions.GoalTimeMode = "earliestArrival";
+fixturePath = fullfile(outputDirectory, "scene.mat");
+save(fixturePath, "diagnosisBundle");
+[~, bundle] = offlineSandbox.replayDiagnosisBundle( ...
+    fixturePath, ...
+    fullfile(outputDirectory, "response.json"));
+result = bundle.Result;
+resultDiagnosis = bundle.Diagnosis;
+validation = obstacleAvoidance.validateTrajectory(result);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, validation.Passed, validation.Message);
+verifyLessThan(testCase, motionLength(result), baselineLength_deg - 1);
+refinement = resultDiagnosis.PathRefinement;
+verifyGreaterThan(testCase, testSupport.diagnosisValue(refinement, "TravelRefinement.AcceptedCount"), 0);
+verifyLessThan(testCase, testSupport.diagnosisValue(refinement, "TravelRefinement.FinalLength_deg"), testSupport.diagnosisValue(refinement, "TravelRefinement.InitialLength_deg"));
+verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, ...
+    baselineDuration_s + 1e-7);
+end
+
 function testStaticCircleHasOneEconomicalDetour(testCase)
 % Compare joint travel with the exact tangent-and-arc geometric lower bound.
 request = testCase.TestData.Request;
@@ -40,7 +77,7 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
     "static circle", [0; request.goalState.time_s], ...
     circle_deg(:, 1), circle_deg(:, 2), safetyMargin_deg);
 
-result = runAndValidate(testCase, obstacles, request);
+[result, resultDiagnosis] = runAndValidate(testCase, obstacles, request);
 protectedRadius_deg = circleRadius_deg + safetyMargin_deg;
 halfChord_deg = 0.5 * norm( ...
     request.goalState.position_deg - request.initialState.position_deg);
@@ -54,8 +91,10 @@ verifyLessThanOrEqual(testCase, motionLength(result), ...
     "The circle detour exceeds the tangent-and-arc lower bound by over 1%%.");
 verifyLessThanOrEqual(testCase, lateralReversalCount(result), 1, ...
     "The circle detour repeatedly reverses its lateral joint motion.");
-axisReports = result.SearchDiagnostics.FixedClockExcursion.AxisReports;
-verifyGreaterThan(testCase, sum([axisReports.BoundaryRefinementCount]), 0, ...
+details = resultDiagnosis.PathRefinement;
+indices = endsWith(details.Field, ".BoundaryRefinementCount");
+counts = cell2mat(details.Value(indices));
+verifyGreaterThan(testCase, sum(counts), 0, ...
     "The fixed-clock clearance boundary was not refined.");
 end
 
@@ -123,9 +162,9 @@ star_deg = [radius_deg .* cos(angle_rad), ...
     0.7 * radius_deg .* sin(angle_rad)];
 end
 
-function result = runAndValidate(testCase, obstacles, request)
+function [result, resultDiagnosis] = runAndValidate(testCase, obstacles, request)
 % Require the public planner and independent validator to agree on success.
-result = obstacleAvoidance.planTrajectory( ...
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, request.initialState, request.goalState, ...
     request.limits, request.options);
 validation = obstacleAvoidance.validateTrajectory(result);

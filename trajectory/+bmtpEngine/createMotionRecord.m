@@ -9,11 +9,11 @@ function [candidate, terminalState] = createMotionRecord( ...
 %       bmtpEngine.createMotionRecord( ...
 %       candidate, initialState, relativeBreak_s, segmentJerk_deg_s3, ...
 %       sampleStep_s, seedSource)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the shared candidate record and exactly integrate a
-%     piecewise-constant-jerk event word without changing its time partition.
-%**************************************************************************
+%     sequence of constant-jerk intervals without changing its time partition.
+%
 % INPUTS
 %   - candidate (scalar struct)
 %       Empty creates the common record; nonempty preserves caller metadata.
@@ -29,17 +29,17 @@ function [candidate, terminalState] = createMotionRecord( ...
 %       Output-history spacing; exact event times are always retained.
 %   - seedSource (scalar text)
 %       Input-derived construction label copied to the candidate.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable exact-motion record with polynomial and sampled histories.
 %   - terminalState (scalar struct)
 %       Analytically integrated terminal position, velocity, and acceleration.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Histories are N-by-D.
-%**************************************************************************
+%
 
 %% Section 1: Create The Stable Record
 
@@ -187,7 +187,7 @@ end
 %% Section 4: Local Functions
 
 function certificate = emptyPlaneCertificate()
-% Define the stable empty separation-certificate record.
+% Initialize an empty separation certificate.
 emptyPlane = struct("Active", false, "Normal", zeros(2, 2), ...
     "Offset_deg", zeros(1, 2), "SignedGap_deg", NaN, ...
     "Verified", false, "ExitFlag", NaN);

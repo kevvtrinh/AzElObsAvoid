@@ -298,10 +298,10 @@ actions = createAddButtons(addPanelHandle, modeName, addNames, addLabels);
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", ...
     "Units", "normalized", "Position", [0.265 0.275 0.42 0.052]);
 actionNames = [ ...
-    "SetMotion", "Run", "Stop", "Reset", ...
+    "SetMotion", "Run", "Reset", ...
     "Diagnostics", "Export"];
 actionLabels = [ ...
-    "Set Motion", "Run", "Stop", "Reset", ...
+    "Set Motion", "Run", "Reset", ...
     "Diagnostics", "Export Bundle"];
 actionButtons = createActionButtons( ...
     actionPanelHandle, modeName, actionNames, actionLabels);
@@ -340,14 +340,11 @@ controls.UnsupportedTimedTopologyHandle = addPopupControl( ...
     "Choose whether an unsupported smooth timed route may stop at every waypoint.");
 controls.GoalTimeModeHandle = addPopupControl( ...
     plannerOptionsPanelHandle, "Goal timing", 0.49, ...
-    ["Balanced travel/time", "Earliest arrival", ...
+    ["Earliest arrival", ...
     "Minimum travel at horizon"], ...
     find(options.PlannerOptions.GoalTimeMode == ...
-    ["balancedArrival", "earliestArrival", "fixedArrival"], 1), ...
-    "Choose an explicit travel/time tradeoff or either endpoint policy.");
-controls.MinimumTravelSavingsRateHandle = addScalarControl( ...
-    plannerOptionsPanelHandle, "Travel threshold (deg/s)", 0.28, ...
-    options.PlannerOptions.MinimumTravelSavingsRate_deg_s);
+    ["earliestArrival", "fixedArrival"], 1), ...
+    "Choose earliest arrival or minimum travel at the mission horizon.");
 controls.AllowAzimuthWrappingHandle = uicontrol( ...
     plannerOptionsPanelHandle, ...
     "Style", "checkbox", ...
@@ -507,6 +504,7 @@ modeState = struct( ...
     "SelectedPolygonIndex", 0, ...
     "CanonicalObstacles", obstacleAvoidance.obstacles.combineObstacles(), ...
     "LastPlannerResult", struct(), ...
+    "LastDiagnosis", struct(), ...
     "LastValidation", obstacleAvoidance.validateTrajectory(), ...
     "GraphicsHandles", graphicsHandles, ...
     "InteractionState", "idle", ...
@@ -557,8 +555,6 @@ try
             activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
         case "Run"
             executeGoalPlan(figureHandle);
-        case "Stop"
-            requestPlanningStop(figureHandle, modeName);
         case "Reset"
             resetMode(figureHandle, modeName);
         case "Diagnostics"
@@ -571,16 +567,9 @@ catch exception
     applicationState = guidata(figureHandle);
     modeState = getModeState(applicationState, modeName);
     exceptionText = formatSandboxException(exception);
-    if string(exception.identifier) == "planTrajectory:UserCancelled"
-        modeState.Status = ...
-            "Planning stopped. Export Bundle is available for this request.";
-        modeState = appendLogLines(modeState, ...
-            "[Planner stopped] " + string(exception.message));
-    else
-        modeState.Status = "Input or planning error: " + string(exceptionText);
-        modeState = appendLogLines( ...
-            modeState, "[Sandbox error] " + string(exceptionText));
-    end
+    modeState.Status = "Input or planning error: " + string(exceptionText);
+    modeState = appendLogLines( ...
+        modeState, "[Sandbox error] " + string(exceptionText));
     applicationState = setModeState( applicationState, modeName, modeState);
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
@@ -590,23 +579,6 @@ catch exception
             'Sandbox export failed', 'modal');
     end
 end
-end
-
-function requestPlanningStop(figureHandle, modeName)
-% Record a cooperative stop request while retaining the scene for export.
-applicationState = guidata(figureHandle);
-if applicationState.InteractionState ~= "planning"
-    return;
-end
-setappdata(figureHandle, "SandboxStopRequested", true);
-modeState = getModeState(applicationState, modeName);
-modeState.Status = "Stopping planning at the next safe checkpoint...";
-modeState = appendLogLines(modeState, "[Stop requested]");
-applicationState = setModeState(applicationState, modeName, modeState);
-guidata(figureHandle, applicationState);
-set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
-updateModeStatusDisplay(modeState);
-drawnow limitrate;
 end
 
 function exceptionText = formatSandboxException(exception)
@@ -1200,34 +1172,28 @@ canonicalObstacles = buildCanonicalObstacles( modeState, obstacleTime_s, control
     0, controls.MissionTime_s, controls);
 plannerOptions = applicationState.Options.PlannerOptions;
 plannerOptions.GoalTimeMode = controls.GoalTimeMode;
-plannerOptions.MinimumTravelSavingsRate_deg_s = ...
-    controls.MinimumTravelSavingsRate_deg_s;
 plannerOptions.UnsupportedTimedTopologyPolicy = ...
     controls.UnsupportedTimedTopologyPolicy;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
-callerCancellationCheckFcn = plannerOptions.CancellationCheckFcn;
-setappdata(figureHandle, "SandboxStopRequested", false);
-plannerOptions.CancellationCheckFcn = ...
-    @() sandboxStopRequested(figureHandle, callerCancellationCheckFcn);
-stopCleanup = onCleanup(@() clearPlanningStopRequest(figureHandle));
 modeState = clearModeSolution(modeState);
 modeState.CanonicalObstacles = canonicalObstacles;
 modeState.ResolvedControls = controls;
 modeState.PlannerLog = "[Goal Mode]";
-modeState.Status = "Planning...";
+modeState.Status = "Planning... Press Ctrl+C in MATLAB to interrupt.";
 modeState.InteractionState = "planning";
 applicationState.GoalMode = modeState;
 applicationState.InteractionState = "planning";
 guidata(figureHandle, applicationState);
+planningCleanup = onCleanup(@() restorePlanningControls(figureHandle));
 refreshApplication(figureHandle);
 drawnow;
-[result, validation, logLines] = callPlanner( ...
+[result, validation, logLines, diagnosis] = callPlanner( ...
     canonicalObstacles, initialState, goalState, limits, ...
     plannerOptions, controls.Verbose, "Goal Mode");
-result.Options.CancellationCheckFcn = [];
 applicationState = guidata(figureHandle);
 modeState = applicationState.GoalMode;
 modeState.LastPlannerResult = result;
+modeState.LastDiagnosis = diagnosis;
 modeState.LastValidation = validation;
 modeState.PlannerLog = [modeState.PlannerLog; logLines];
 modeState.Status = formatGoalStatus(result, validation);
@@ -1268,7 +1234,7 @@ plotOptions = struct( ...
     "Pause_s", options.AnimationPause_s);
 try
     animationHandles = obstacleAvoidance.plotting.plotTrajectory( ...
-        result, plotOptions);
+        result, plotOptions, modeState.LastDiagnosis);
     applicationState = guidata(figureHandle);
     modeState = applicationState.GoalMode;
     modeState.GraphicsHandles.AnimationPlotHandles = animationHandles;
@@ -1286,17 +1252,17 @@ guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
 end
 
-function [result, validation, logLines] = callPlanner( ...
+function [result, validation, logLines, diagnosis] = callPlanner( ...
         obstacles, initialState, goalState, limits, options, ...
         captureVerbose, labelText)
 % Capture optional verbose text for the sandbox log. Keep structured planner
-% diagnostics in the returned result.
+% diagnostics separately from the motion result.
 result = struct();
 plannerText = "";
 if captureVerbose
-    plannerText = string(evalc( 'result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
+    plannerText = string(evalc( '[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
 else
-    result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+    [result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 end
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
@@ -1363,10 +1329,7 @@ horizon_s = readScalarControl( handles.HorizonHandle, "Planning horizon (s)", tr
 pathObstacleRadius_deg = readScalarControl( handles.PathRadiusHandle, "Line/capsule radius (deg)", true);
 pathSafetyMargin_deg = readScalarControl( handles.PathMarginHandle, "Line safety margin (deg)", false);
 obstacleSafetyMargin_deg = readScalarControl( handles.ObstacleMarginHandle, "Polygon safety margin (deg)", false);
-goalTimeModes = ["balancedArrival", "earliestArrival", "fixedArrival"];
-minimumTravelSavingsRate_deg_s = readScalarControl( ...
-    handles.MinimumTravelSavingsRateHandle, ...
-    "Minimum travel savings rate (deg/s)", true);
+goalTimeModes = ["earliestArrival", "fixedArrival"];
 unsupportedTimedTopologyPolicies = ["fail", "ruckigStopAtWaypoints"];
 controls = struct( ...
     "WorkspaceAzimuthInterval_deg", workspaceAzimuthInterval_deg, ...
@@ -1380,8 +1343,6 @@ controls = struct( ...
     "ObstacleSafetyMargin_deg", obstacleSafetyMargin_deg, ...
     "GoalTimeMode", goalTimeModes( ...
         get(handles.GoalTimeModeHandle, "Value")), ...
-    "MinimumTravelSavingsRate_deg_s", ...
-    minimumTravelSavingsRate_deg_s, ...
     "UnsupportedTimedTopologyPolicy", ...
     unsupportedTimedTopologyPolicies( ...
         get(handles.UnsupportedTimedTopologyHandle, "Value")), ...
@@ -1390,26 +1351,16 @@ controls = struct( ...
     "Verbose", logical(get(handles.VerboseHandle, "Value")));
 end
 
-function stopRequested = sandboxStopRequested( ...
-        figureHandle, callerCancellationCheckFcn)
-% Combine the Stop button with any programmatic caller cancellation policy.
-if isempty(figureHandle) || ~isgraphics(figureHandle)
-    stopRequested = true;
-    return;
-end
-stopRequested = isappdata(figureHandle, "SandboxStopRequested") && ...
-    logical(getappdata(figureHandle, "SandboxStopRequested"));
-if ~stopRequested && ~isempty(callerCancellationCheckFcn)
-    stopRequested = callerCancellationCheckFcn();
-end
-end
-
-function clearPlanningStopRequest(figureHandle)
-% Remove the transient callback flag from a surviving sandbox figure.
-if ~isempty(figureHandle) && isgraphics(figureHandle) && ...
-        isappdata(figureHandle, "SandboxStopRequested")
-    rmappdata(figureHandle, "SandboxStopRequested");
-end
+function restorePlanningControls(figureHandle)
+% Unlock the sandbox if Ctrl+C interrupts a synchronous run.
+if ~isgraphics(figureHandle), return; end
+applicationState = guidata(figureHandle);
+if applicationState.InteractionState ~= "planning", return; end
+applicationState.InteractionState = "idle";
+applicationState.GoalMode.InteractionState = "idle";
+applicationState.GoalMode.Status = "Planning interrupted. Run again or export the request.";
+guidata(figureHandle, applicationState);
+refreshApplication(figureHandle);
 end
 
 function values = readAxisPairControl(handles, labelText, mustBePositive)
@@ -1453,9 +1404,7 @@ set(handles.UnsupportedTimedTopologyHandle, "Value", 1 + double( ...
     "ruckigStopAtWaypoints"));
 set(handles.GoalTimeModeHandle, "Value", find( ...
     options.PlannerOptions.GoalTimeMode == ...
-    ["balancedArrival", "earliestArrival", "fixedArrival"], 1));
-set(handles.MinimumTravelSavingsRateHandle, "String", sprintf("%.8g", ...
-    options.PlannerOptions.MinimumTravelSavingsRate_deg_s));
+    ["earliestArrival", "fixedArrival"], 1));
 set(handles.AllowAzimuthWrappingHandle, "Value", ...
     options.PlannerOptions.AllowAzimuthWrapping);
 end
@@ -1765,9 +1714,8 @@ if result.Success
     plot(axesHandle, displayPosition_deg(:, 1), ...
         displayPosition_deg(:, 2), ...
         "k-", "LineWidth", 2.4, "DisplayName", "Solved motion");
-elseif result.SearchDiagnostics.BestPartialSeedIndex > 0
-    partialIndex = result.SearchDiagnostics.BestPartialSeedIndex;
-    partialRoute_deg = result.Seeds(partialIndex).position_deg;
+elseif ~isempty(result.BestPartialRoute_deg)
+    partialRoute_deg = result.BestPartialRoute_deg;
     partialRoute_deg = ...
         obstacleAvoidance.plotting.createWrappedSpatialPath( ...
         partialRoute_deg, result.Inputs.limits.azimuthInterval_deg, ...
@@ -1826,7 +1774,6 @@ modeState = applicationState.GoalMode;
     set(modeState.GraphicsHandles.Controls.MotionProfileHandle, ...
         "Enable", onOff(~isPlanning));
     if isPlanning
-        set(modeState.GraphicsHandles.Actions.Stop, "Enable", "on");
         return;
     end
     canRun = ~isempty(modeState.StartPosition_deg) && ...
@@ -1835,7 +1782,6 @@ modeState = applicationState.GoalMode;
     set(modeState.GraphicsHandles.Actions.SetMotion, "Enable", ...
         onOff(~isempty(modeState.PolygonObstaclePositions_deg)));
     set(modeState.GraphicsHandles.Actions.Run, "Enable", onOff(canRun));
-    set(modeState.GraphicsHandles.Actions.Stop, "Enable", "off");
     hasResult = ~isempty(fieldnames(modeState.LastPlannerResult));
     hasSceneData = ~isempty(modeState.StartPosition_deg) || ...
         ~isempty(modeState.GoalPosition_deg) || ...
@@ -1886,6 +1832,7 @@ function modeState = clearModeSolution(modeState)
 % for a changed request.
 modeState.CanonicalObstacles = obstacleAvoidance.obstacles.combineObstacles();
 modeState.LastPlannerResult = struct();
+modeState.LastDiagnosis = struct();
 modeState.LastValidation = obstacleAvoidance.validateTrajectory();
 modeState.ResolvedControls = struct();
 end
@@ -1917,7 +1864,7 @@ plotOptions = struct( ...
     "Title", upperFirst(modeName) + " Mode diagnostics", ...
     "ShowSeedPaths", true, ...
     "ShowAnimation", false);
-modeState.GraphicsHandles.DiagnosticPlotHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions);
+modeState.GraphicsHandles.DiagnosticPlotHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, modeState.LastDiagnosis);
 applicationState = setModeState(applicationState, modeName, modeState);
 guidata(figureHandle, applicationState);
 end
@@ -1978,14 +1925,11 @@ plannerOptions = applicationState.Options.PlannerOptions;
 plannerOptions.UnsupportedTimedTopologyPolicy = ...
     controls.UnsupportedTimedTopologyPolicy;
 plannerOptions.AllowAzimuthWrapping = controls.AllowAzimuthWrapping;
-plannerOptions.CancellationCheckFcn = [];
 plannerInputs = struct();
 obstacleEndTime_s = controls.MissionTime_s;
 hasCompleteScene = ~isempty(modeState.StartPosition_deg) && ...
     ~isempty(modeState.GoalPosition_deg);
 plannerOptions.GoalTimeMode = controls.GoalTimeMode;
-plannerOptions.MinimumTravelSavingsRate_deg_s = ...
-    controls.MinimumTravelSavingsRate_deg_s;
 if hasCompleteScene
     [initialState, goalState, limits] = buildPlannerInputs( ...
         modeState.StartPosition_deg, modeState.GoalPosition_deg, ...

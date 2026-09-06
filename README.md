@@ -15,6 +15,9 @@ one engine-owned representation.
 
 ## Quick start
 
+The public planner takes `obstacles, initialState, goalState, limits, options`
+in that order. Internal functions take only the inputs they use.
+
 Add both production parents. The zero-input call then returns obstacle-planner
 defaults:
 
@@ -27,6 +30,12 @@ result = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
+BMTP uses degree-eight Bezier curves and MATLAB `coneprog` for trajectory and
+separating-plane conic programs. Optimization Toolbox is required; no external
+MEX solver or Python runtime is needed. Ordinary regions use three spans per
+segment, while timed and conservatively grouped regions use one. Solver counts
+and timings remain in the returned diagnostics.
+
 A partial options structure can override only the controls it needs:
 
 ```matlab
@@ -35,9 +44,9 @@ options = struct( ...
     "UnsupportedTimedTopologyPolicy", "fail");
 ```
 
-Planner options select work and display policy; they do not expose internal
-engine constants. Per-seed engine and independent-validation evidence is
-retained in `result.SearchDiagnostics.SeedSummaries`.
+Planner options control planning, while plot options control display.
+`diagnosis.Attempts` summarizes the tried paths; `diagnosis.SolverDetails`
+contains their detailed solver evidence.
 
 `MaximumSeedCount` defaults to `2`. The planner compares at most those first
 two seeds on the normal path. Values from `3` through `5` enable failure-only
@@ -46,21 +55,22 @@ exact motion passed full validation, and recovery stops at its first validated
 motion. Set the value to `2` to disable all later-seed recovery or `5` to allow
 all three additional attempts.
 
-`GoalTimeMode` defaults to `"balancedArrival"`. A validated later motion is
-preferred only when its travel saving exceeds
-`MinimumTravelSavingsRate_deg_s` times its delay; the default rate is 1 deg/s.
-Thus a 0.1 s delay must save more than 0.1 degree. The returned seed summaries
-report the degree-valued tradeoff cost and measured kinematic utilization.
-Jerk is a hard limit, not a selection cost. Set `GoalTimeMode` to
-`"earliestArrival"` for strict time-first behavior or `"fixedArrival"` for
-minimum travel at the mission horizon.
+BMTP is the obstacle-planning method; there is no method-selection option.
+Standalone Ruckig utilities and the explicit `ruckigStopAtWaypoints` fallback
+remain available; that fallback is disabled by default.
 
-For an eligible static rest-to-rest request with one coordinate owning the
-physical clock, the exact-clock detour portfolio includes asymmetric one-sided
-progress polynomials whose peaks come from the direct collision location. The
-planner compares their actual travel against alternating and spline families;
-sampled screening may reject a proposal, but only continuous public validation
-can accept one.
+`GoalTimeMode` defaults to `"earliestArrival"`: prioritize arrival time and
+break ties by shorter travel. Set `"fixedArrival"` to minimize travel at the
+mission horizon. Jerk remains a hard limit.
+
+For an eligible rest-to-rest request with one coordinate owning the physical
+clock, the planner compares fixed-clock offset splines whose peaks come from
+direct collision intervals. It then adjusts interior spline offsets to shorten
+travel while preserving that clock and the governing coordinate. Each retained
+adjustment must pass continuous public validation, including moving obstacles
+and all kinematic limits. This bounded local refinement spends additional
+planning time; it does not certify a globally shortest path. Diagnostics retain
+the starting lobe reports and the final `TravelRefinement` offsets separately.
 
 `MaximumTimeLayerCount` defaults to `17` and bounds timed BMTP motion segments
 plus one. Timed visibility search retains every input-derived endpoint, source,
@@ -193,30 +203,74 @@ Earliest interception performs a bounded chronological sequence of
 fixed-arrival trials and refines the first observed feasible bracket.
 Specified-time interception performs one fixed-arrival trial.
 
+## Planning workflow
+
+1. Standardize the request and prepare each obstacle history once.
+2. Try a direct motion and a detour that preserves its duration.
+3. If needed, build route-search geometry and find alternative paths.
+4. Use those paths as initial guesses for the motion solver.
+5. Check the complete motion, select a validated result, and return optional diagnosis.
+
+Internal solvers use prepared obstacles directly. Public geometry queries and
+`validateTrajectory` check and prepare caller-supplied data before using the
+same geometry and validation implementation. Safety margins are applied only
+by obstacle construction, never again during preparation.
+
+Some engineering terms used in the code:
+
+| Term | Meaning |
+| --- | --- |
+| Path / route | Positions to pass through, without a motion schedule. |
+| Trajectory / motion | Position, velocity, acceleration, and jerk over time. |
+| Seed / warm start | An initial guess supplied to the solver. |
+| Corridor | An allowed region around a proposed path. |
+| Visibility graph | Points connected where straight segments clear obstacles. |
+| Route class | A different way around the obstacles. |
+| Certificate | Mathematical evidence for a specific safety or constraint check. |
+| Horizon | The time interval available for planning the motion. |
+
 ## Results and diagnostics
 
-Success and expected failure return the same stable result structure. Important
-fields include:
+The first output contains the motion and everything needed to plot and independently
+validate it. Request the second output when investigating a planning run:
 
-- `Success`, `Message`, and `TerminationReason`;
-- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, and
-  `jerk_deg_s3` on success;
-- `Seeds`, `SeedSummaries`, and `SelectedSeedIndex`;
-- `Validation` and complete input records;
-- `SearchDiagnostics`, including graph and rejection evidence.
+```matlab
+[result, diagnosis] = obstacleAvoidance.planTrajectory( ...
+    obstacles, initialState, goalState, limits, options);
+obstacleAvoidance.plotting.plotTrajectory(result);
+obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
+```
 
-Wall-time accounting is reported under
-`result.SearchDiagnostics.StageTiming`. The topology, seed-corridor
-construction, motion solving, collision checking, final validation, and
-unattributed contributions are exclusive and sum to the independently
-measured total.
+`result` has the same fields on success and expected failure:
 
-Expected no-path, work-limit, and dynamic-infeasibility outcomes return
-`Success=false` with a recognized termination reason and retained diagnostics.
-Invalid input requirements throw errors. Use
-`obstacleAvoidance.validateTrajectory` for independent full-trajectory
-validation and `obstacleAvoidance.plotting.plotTrajectory` to visualize a
-returned motion or preserved failure diagnostics.
+- `Success`, `Message`, `TerminationReason`: planning outcome.
+- `Route_deg`, `BestPartialRoute_deg`: selected path or available failure path.
+- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, `jerk_deg_s3`: motion samples.
+- `Inputs`, `Options`: normalized request, including original and protected obstacles.
+- `Polynomial`, `PlaneCertificate`, `SeedCorridor`, `SeedCorridorBoundary_deg`: exact motion and evidence used by independent validation.
+- `Validation`, `ArrivalTime_s`, `TrajectoryDuration_s`, `ElapsedPlanningTime_s`.
+
+`diagnosis` keeps the investigation data separate:
+
+- `Routes`, `Attempts`, `SelectedAttemptIndex`: tried paths and their outcomes.
+- `Search`, `SearchCoverage`: graph traces, complete counts, and search limitations.
+- `Timing`: exclusive stage times that add up to total planning time.
+- `SolverDetails`: a table with `Attempt`, `Field`, and `Value` columns.
+- `DirectMotion`, `PathRefinement`: field/value tables for the initial motion attempts.
+- `Selection`, attempt counts, and time to the first validated motion.
+
+Detail tables use readable field paths instead of nested structures. For example,
+filter `diagnosis.SolverDetails.Attempt == diagnosis.SelectedAttemptIndex` to inspect
+the chosen attempt. The planner still collects search evidence during planning;
+it assembles the optional detail tables only when the second output is requested.
+
+`planMovingTargetIntercept` supports the same two outputs. Its result adds the
+achieved intercept and terminal policies; its diagnosis adds `InterceptSearch`
+and `InterceptOptions`.
+
+Expected planning failures return `Success=false` and a reason. Invalid inputs
+throw errors. `obstacleAvoidance.validateTrajectory(result)` checks the complete
+motion independently, including between-sample collisions.
 
 ## Engine routing and limitations
 
@@ -343,12 +397,14 @@ No network service, learned model, or external planner process is required.
 
 ## Verification and historical evidence
 
-Exact measurements, source revisions, and known limitations remain in
-`benchmark.csv`, `verification.md`, and `branch_assessment.md`. Some historical
-records predate the separated-engine architecture and therefore name implementations that
-are no longer active. Treat those rows only as evidence for the recorded
-revision; they do not describe the current public interface or prove current
-correctness or performance.
+The maintained documentation is this guide, [repository rules](AGENTS.md),
+and the [obstacle history contract](obstacle_history_contract.md). The browser
+sandbox has its own [usage guide](offlinesandbox/README.md).
+
+Full recorded measurements remain in [benchmark.csv](benchmark.csv) and the CSVs
+under [benchmarks](benchmarks/). See [planner decisions](branch_assessment.md)
+for retained choices and [verification](verification.md) for the latest checked
+scope. Historical rows describe their recorded revision, not current performance.
 
 Run the tracked MATLAB test tree with:
 
@@ -373,3 +429,26 @@ assertSuccess(results);
 
 Keep unfavorable failures and runtime results visible. A successful example
 demonstrates only the exercised case family, not universal feasibility.
+
+## Mathematical references
+
+- Bhattacharya, S., Likhachev, M., and Kumar, V. (2012).
+  [Search-Based Path Planning with Homotopy Class Constraints in 3D](https://doi.org/10.1609/aaai.v26i1.8435).
+  The spatial search uses a bounded 2-D angle signature adapted from this
+  approach. It is not the paper's 3-D construction or a continuous
+  azimuth/elevation/time homotopy certificate.
+- Farouki, R. T. (2012).
+  [The Bernstein Polynomial Basis: A Centennial Retrospective](https://doi.org/10.1016/j.cagd.2012.03.001).
+  Bernstein convex-hull bounds certify complete polynomial intervals in the
+  solver and independent validator.
+- Perlin, K. (2002).
+  [Improving Noise](https://doi.org/10.1145/566570.566636).
+  Moving-obstacle scenarios use the quintic smoothstep
+  `10*u^3 - 15*u^4 + 6*u^5` for zero endpoint velocity and acceleration.
+- Historical HS3 implementation: Moreno-Martin, S., Ros, L., and Celaya, E.
+  (2024), [Collocation Methods for Second and Higher Order Systems](https://doi.org/10.1007/s10514-023-10155-z).
+  This reference explains the retired separated third-order collocation chain.
+- Historical waypoint-state refinement: Koskela, P.,
+  [rsruckig](https://github.com/petrikosk/rsruckig), MIT-licensed.
+  The retired pass-through warm-start search adapted its local waypoint-state
+  method in MATLAB; it did not embed or call the Rust implementation.

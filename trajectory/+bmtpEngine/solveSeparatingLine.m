@@ -1,14 +1,14 @@
-function [plane, exitFlag] = solveSeparatingLine( ...
+function [plane, exitFlag, output] = solveSeparatingLine( ...
         controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [plane, exitFlag] = bmtpEngine.solveSeparatingLine( ...
+%   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
 %       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Solve and directly verify one degree-one maximum-margin separating line
 %     between a Bezier control hull and a convex region.
-%**************************************************************************
+%
 % INPUTS
 %   - controlPoint_deg (N-by-2 numeric array)
 %       One Bezier span's control points.
@@ -18,16 +18,18 @@ function [plane, exitFlag] = solveSeparatingLine( ...
 %       Obstacle-side target and trajectory-side numerical reserve.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - plane (scalar struct)
 %       Line normals, offsets, verified gap, and active state.
 %   - exitFlag (numeric scalar)
-%       Unmodified coneprog exit flag.
-%**************************************************************************
+%       Original coneprog exit flag.
+%   - output (scalar struct, optional output)
+%       Original coneprog diagnostics and measured solver time.
+%
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Solve The Maximum-Margin Line
 
@@ -46,8 +48,10 @@ for planeIndex = 0:1
     cones(planeIndex + 1) = secondordercone( ...
         coneA, zeros(2, 1), zeros(variableCount, 1), -1);
 end
-[x, ~, exitFlag] = coneprog( ...
+solverTimer = tic;
+[x, ~, exitFlag, output] = coneprog( ...
     f, cones, A, b, [], [], [], [], options);
+output.TotalTime_s = toc(solverTimer);
 plane = emptyPlane();
 plane.ExitFlag = exitFlag;
 if isempty(x) || any(~isfinite(x))
@@ -63,7 +67,7 @@ end
 
 function [A, b] = maximumMarginRows( ...
         controlPoint_deg, vertices_deg, target_deg)
-% Create linear inequalities for one maximum-margin line solve.
+% Build inequalities for the maximum-margin separating line.
 degree = size(controlPoint_deg, 1) - 1;
 variableCount = 7;
 offsetIndex = 5:6;
@@ -86,7 +90,7 @@ A(targets, marginIndex) = -1;
 end
 
 function rows = variablePlaneRows(controlPoint_deg, variableCount)
-% Expand a decision-valued line times one fixed trajectory control net.
+% Multiply a variable separating line by fixed trajectory controls.
 degree = size(controlPoint_deg, 1) - 1;
 [alpha, beta] = productWeights(degree);
 rows = zeros(degree + 2, variableCount);
@@ -102,7 +106,7 @@ alpha = 1 - beta;
 end
 
 function plane = emptyPlane()
-% Define the stable inactive degree-one separating-line record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

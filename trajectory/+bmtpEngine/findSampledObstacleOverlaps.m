@@ -6,12 +6,12 @@ function collisionPairs = findSampledObstacleOverlaps( ...
 %   collisionPairs = bmtpEngine.findSampledObstacleOverlaps( ...
 %       controlPoint_deg, regions_deg, regionMinimum_deg, ...
 %       regionMaximum_deg, regionActiveBySegment, sampleCount)
-%**************************************************************************
+%
 % PURPOSE
 %   - Identify sampled Bezier span and convex-region overlaps that require
 %     separating-line updates during optimization.
 %   - Never treat the sampled result as a final acceptance certificate.
-%**************************************************************************
+%
 % INPUTS
 %   - controlPoint_deg (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
@@ -23,14 +23,14 @@ function collisionPairs = findSampledObstacleOverlaps( ...
 %       Applicable curve-region pairs.
 %   - sampleCount (positive integer scalar)
 %       Samples per curve span.
-%**************************************************************************
+%
 % OUTPUTS
 %   - collisionPairs (S-by-R logical array)
 %       Sampled-overlap tags used only to guide later optimization.
-%**************************************************************************
+%
 % UNITS
 %   - Position and region bounds are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Check Sampled Span And Region Overlaps
 

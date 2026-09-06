@@ -6,10 +6,10 @@ function [obstacles, initialState, goalState, limits] = ...
 %   [obstacles, initialState, goalState, limits] = ...
 %       obstacleAvoidance.input.normalizePlannerRequest( ...
 %       obstacles, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Normalize one public planning request before search or motion work.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (supported obstacle input or [])
 %       Combined into the canonical protected-obstacle array.
@@ -22,17 +22,17 @@ function [obstacles, initialState, goalState, limits] = ...
 %   - options (scalar struct)
 %       Requires AllowAzimuthWrapping. Wrapping is limited to an
 %       obstacle-free fixed-position request.
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacles (canonical protected-obstacle array)
 %   - initialState, goalState, limits (normalized scalar structs)
 %       Numeric vectors are double rows. Invalid requirements throw the
 %       established planTrajectory errors.
-%**************************************************************************
+%
 % UNITS
 %   - Position and intervals are degrees; time is seconds; derivatives use
 %     deg/s, deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Normalize Obstacles And Endpoint States
 

@@ -43,9 +43,9 @@ initialState = state(0, [0 0]);
 goalState = state(4, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
-success = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+[success, successDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 blockingObstacle = rectangleObstacle([0 4], [-1 1 -1 1], 0);
-failure = obstacleAvoidance.planTrajectory( ...
+[failure, failureDiagnosis] = obstacleAvoidance.planTrajectory( ...
     blockingObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, success.Success, success.Message);
@@ -54,12 +54,12 @@ verifyFalse(testCase, isfield(success, "SelectedMotionSource"));
 verifyFalse(testCase, failure.Success);
 verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
 verifyEqual(testCase, ...
-    fieldnames(success.SearchDiagnostics.StageTiming), ...
-    fieldnames(failure.SearchDiagnostics.StageTiming));
-verifyStageTiming(testCase, success);
-verifyStageTiming(testCase, failure);
+    fieldnames(successDiagnosis.Timing), ...
+    fieldnames(failureDiagnosis.Timing));
+verifyStageTiming(testCase, success, successDiagnosis);
+verifyStageTiming(testCase, failure, failureDiagnosis);
 verifyEqual(testCase, ...
-    failure.SearchDiagnostics.StageTiming.TopologyElapsedTime_s, 0);
+    failureDiagnosis.Timing.TopologyElapsedTime_s, 0);
 end
 
 function testMotionSolverWorkReconcilesTiming(testCase)
@@ -69,19 +69,19 @@ goalState = state(3, [1 0]);
 limits = physicalLimits();
 options = fixedHs3Options();
 farObstacle = rectangleObstacle([0 3], [-100 -90 70 80], 0);
-result = obstacleAvoidance.planTrajectory( ...
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     farObstacle, initialState, goalState, limits, options);
 
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
 verifyFalse(testCase, isfield(result, "SelectedMotionSource"));
-summary = result.SeedSummaries(result.SelectedSeedIndex);
-verifyTrue(testCase, isstruct(summary.SolverDiagnostics));
-verifyTrue(testCase, isfield(summary.SolverDiagnostics, "ElapsedTime_s"));
+summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
+details = testSupport.solverDetails(resultDiagnosis, resultDiagnosis.SelectedAttemptIndex);
+verifyTrue(testCase, any(details.Field == "ElapsedTime_s"));
 verifyGreaterThan(testCase, summary.SeedPlanningElapsedTime_s, 0);
 verifyGreaterThan(testCase, ...
-    result.SearchDiagnostics.StageTiming.MotionSolvingElapsedTime_s, 0);
-verifyStageTiming(testCase, result);
+    resultDiagnosis.Timing.MotionSolvingElapsedTime_s, 0);
+verifyStageTiming(testCase, result, resultDiagnosis);
 end
 
 function testFinalizerRejectsOverAttribution(testCase)
@@ -94,7 +94,7 @@ verifyError(testCase, @() ...
     "stageTiming:OverAttributed");
 end
 
-function verifyStageTiming(testCase, result)
+function verifyStageTiming(testCase, result, resultDiagnosis)
 % Verify exact shared field ownership and top-level reconciliation.
 requiredNames = [ ...
     "TopologyElapsedTime_s"; "CorridorConstructionElapsedTime_s"; ...
@@ -102,7 +102,7 @@ requiredNames = [ ...
     "CollisionCheckingElapsedTime_s"; ...
     "FinalValidationElapsedTime_s"; ...
     "UnattributedElapsedTime_s"; "TotalElapsedTime_s"];
-timing = result.SearchDiagnostics.StageTiming;
+timing = resultDiagnosis.Timing;
 verifyEqual(testCase, string(fieldnames(timing)), requiredNames);
 verifyAdditiveTiming(testCase, timing);
 verifyEqual(testCase, timing.TotalElapsedTime_s, ...

@@ -2,31 +2,28 @@ function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   warmStart = bmtpEngine.createWarmStart(request)
-%**************************************************************************
+%
 % PURPOSE
-%   - Convert a topology seed into the established feasible Bezier warm curve.
+%   - Convert the proposed path into an initial smooth curve for optimization.
 %   - Return route resampling, active obstacle pairs, controls, and duration.
-%**************************************************************************
+%
 % INPUTS
 %   - request (scalar BMTP solve-request struct)
 %       Validated seed, regions, coverage, representation, limits, and horizon.
-%**************************************************************************
+%
 % OUTPUTS
 %   - warmStart (scalar struct)
 %       Route, controls, uniform segment time, active pairs, counts, and
 %       resampling evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and segment time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create The Timed Or Spatial Warm Route
 
-% A usable starting curve gives the alternating solver a topology-consistent
-% homotopy before separating lines are introduced. Timed coverage preserves
-% its cells. Spatial routes preserve every genuine turn while redistributing
-% their existing optimizer spans by distance, so input vertex spacing cannot
-% give a long edge the same representation as a nearly zero-length edge.
+% Start from the seed's route. Preserve timed cells and spatial corners;
+% allocate spatial spans by length rather than input vertex density.
 
 seed = request.Seed;
 if request.UsesTimedCells
@@ -48,9 +45,8 @@ regionActiveBySegment = createRegionActiveMask( ...
 
 %% Section 2: Create Feasible Initial Controls And Timing
 
-% Repeated endpoint controls impose the required rest boundary state. The
-% derivative-based segment time supplies a kinematically feasible initial
-% scale before any trajectory or maximum-margin optimization.
+% Repeat endpoint controls to enforce rest. Choose initial segment time
+% from derivative bounds.
 
 controlPoint_deg = createWarmControl(route_deg, request.Degree);
 segmentTime_s = bmtpEngine.findRequiredSegmentTime( ...
@@ -70,7 +66,7 @@ end
 
 function activePairs = createRegionActiveMask( ...
         segmentCount, regionCount, coverage)
-% Map equal-duration spans to caller-owned cells with positive-time overlap.
+% Find caller-supplied cells overlapping each equal-duration span.
 activePairs = true(segmentCount, regionCount);
 if ~isfield(coverage, "RegionActiveTauInterval")
     return;
@@ -98,9 +94,7 @@ function [route_deg, wasCanonicalized] = createSpatialWarmRoute( ...
     removeRedundantRoutePoints(seedRoute_deg);
 edgeCount = size(canonicalRoute_deg, 1) - 1;
 
-% The existing split count remains the representation budget per genuine
-% edge. More than the nominal cap is allowed only when required to retain
-% genuine corners; silently deleting a corner could change the route class.
+% Allow the span count to exceed the cap when needed to preserve corners.
 subdivisionEdgeCount = min(edgeCount, maximumSegmentCount);
 targetSegmentCount = max(edgeCount, subdivisionEdgeCount * splitCount);
 segmentCountByEdge = allocateSegmentsByLength( ...
@@ -212,7 +206,7 @@ end
 
 
 function controlPoint_deg = createWarmControl(route_deg, degree)
-% Create the route-shaped C3 rest-through-jerk warm control net.
+% Build initial controls with continuous position through jerk and resting endpoints.
 segmentCount = size(route_deg, 1) - 1;
 fraction = reshape(min(1, max(0, ((0:degree) - 2) / (degree - 4))), 1, [], 1);
 start_deg = reshape(route_deg(1:end - 1, :), segmentCount, 1, 2);

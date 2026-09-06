@@ -4,23 +4,23 @@ function value = stageTiming(value, totalOrTimer, timing)
 %   timing = obstacleAvoidance.planner.stageTiming()
 %   timing = obstacleAvoidance.planner.stageTiming(timing, totalElapsedTime_s)
 %   result = obstacleAvoidance.planner.stageTiming(result, planningTimer, timing)
-%**************************************************************************
+%
 % PURPOSE
 %   - Define the shared seven-field planner-stage format.
 %   - Reconcile exclusive stages to an independently measured total.
 %   - Apply finalized timing consistently at a public planner boundary.
-%**************************************************************************
+%
 % INPUTS
 %   - value (scalar struct, optional), timing record or planner result.
 %   - totalOrTimer (numeric scalar, optional), elapsed seconds or tic handle.
 %   - timing (scalar struct, optional), accumulated exclusive stages.
-%**************************************************************************
+%
 % OUTPUTS
 %   - value (scalar struct), empty/final timing or finalized planner result.
-%**************************************************************************
+%
 % UNITS
 %   - All timing values are seconds.
-%**************************************************************************
+%
 
 if nargin == 0
     % Start every exclusive stage at zero. Unattributed time later captures

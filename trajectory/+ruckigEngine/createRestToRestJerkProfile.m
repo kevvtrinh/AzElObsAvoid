@@ -4,11 +4,11 @@ function profile = createRestToRestJerkProfile( ...
 % SYNTAX
 %   profile = ruckigEngine.createRestToRestJerkProfile( ...
 %       initialState, terminalState, limits, requestedFinalTime)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the exact minimum-time monotone unit-displacement profile with
 %     bounded velocity, acceleration, and piecewise-constant jerk.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar normalized one-dimensional state struct)
 %       Position, velocity, and acceleration must be zero.
@@ -19,15 +19,15 @@ function profile = createRestToRestJerkProfile( ...
 %   - requestedFinalTime (empty or finite scalar)
 %       Empty selects minimum arrival. A supplied time stretches the minimum
 %       profile when it is not earlier than the physical minimum.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, message, variable-duration polynomial, phase jerk controls,
 %       final time, minimum final time, and integrated squared jerk.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 %% Section 1: Create The Minimum-Time Phase Law
 
@@ -37,8 +37,7 @@ jerkLimit = limits.maximumJerk;
 [jerkRampTime, constantAccelerationTime, cruiseTime] = ...
     profileDurations(velocityLimit, accelerationLimit, jerkLimit);
 
-% The tiny scale guard keeps every analytic peak on the feasible side after
-% floating-point evaluation without changing reported time at practical scale.
+% Add roundoff slack so analytic peaks remain within their limits.
 guardScale = 1 + 64 * eps;
 phaseDuration = guardScale * [ ...
     jerkRampTime; constantAccelerationTime; jerkRampTime; ...
@@ -166,7 +165,7 @@ cruiseTime = max(0, (1 - minimumDistance) / velocityLimit);
 end
 
 function profile = createEmptyProfile(minimumFinalTime)
-% Define stable fields for an accepted profile or a too-short fixed request.
+% Initialize profile fields for success or a too-short requested duration.
 profile = struct( ...
     "Success", false, ...
     "Message", "No jerk-switching profile was created.", ...

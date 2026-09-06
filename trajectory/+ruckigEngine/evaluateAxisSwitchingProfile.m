@@ -4,10 +4,10 @@ function candidate = evaluateAxisSwitchingProfile( ...
 % SYNTAX
 %   candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
 %       initialState, terminalState, limits, phaseDuration, phaseJerk, family)
-%**************************************************************************
+%
 % PURPOSE
 %   - Integrate and certify one scalar piecewise-constant-jerk profile.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar position, velocity, and acceleration fields.
@@ -21,15 +21,15 @@ function candidate = evaluateAxisSwitchingProfile( ...
 %       Constant jerk applied during each corresponding phase.
 %   - family (scalar text)
 %       Diagnostic name for the switching family.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Success and exact phase-boundary position, velocity, acceleration,
 %       duration, jerk, and family values.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 %% Section 1: Integrate The Phase Law
 
@@ -153,7 +153,7 @@ zeroTimes = sort(unique(zeroTimes( ...
 end
 
 function candidate = createEmptyCandidate(phaseCount, family)
-% Define stable fields for either a valid profile or a rejected candidate.
+% Initialize profile fields for accepted and rejected candidates.
 candidate = struct( ...
     "Success", false, ...
     "PhaseDuration", zeros(1, phaseCount), ...

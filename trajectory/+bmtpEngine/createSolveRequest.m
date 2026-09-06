@@ -4,11 +4,11 @@ function request = createSolveRequest( ...
 % SYNTAX
 %   request = bmtpEngine.createSolveRequest( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check BMTP inputs and select the established polynomial representation.
 %   - Collect horizon, region, objective, and numerical solver controls once.
-%**************************************************************************
+%
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       Ordered positions and normalized route progress.
@@ -18,22 +18,20 @@ function request = createSolveRequest( ...
 %       Conservative grouping or timed-region applicability evidence.
 %   - initialState, goalState, limits, options (scalar structs)
 %       Dimension-neutral boundary request, limits, and resolved controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - request (scalar struct)
 %       Validated inputs, representation choice, horizon, region bounds,
 %       objective rate, and numerical solver options.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Check The Engine Inputs
 
-% The motion engine accepts convex regions and applicability records, not
-% obstacle histories. Validate that complete dimension-neutral contract before
-% selecting a polynomial representation or constructing solver variables.
+% Validate convex regions and their active intervals before solving.
 
 validateKernelInputs(seed, regions_deg, coverage, ...
     initialState, goalState, limits, options);
@@ -45,14 +43,13 @@ usesTimedCells = isfield(coverage, "RegionActiveTauInterval");
 
 %% Section 2: Select The Polynomial Representation
 
-% Conservative grouped outlines and timed cells use the established compact
-% degree-seven curve. Ordinary exact regions retain the higher-degree split
-% representation; this is a representation choice, not a new planning method.
+% Use degree eight. Allocate one span per grouped/timed segment
+% and three spans per ordinary spatial segment.
 
 if usesConservativeGrouping || usesTimedCells
-    [degree, splitCount] = deal(7, 1);
+    [degree, splitCount] = deal(8, 1);
 else
-    [degree, splitCount] = deal(16, 3);
+    [degree, splitCount] = deal(8, 3);
 end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
@@ -61,9 +58,7 @@ if motionHorizon_s <= 0
 end
 %% Section 3: Prepare Shared Solver Controls
 
-% Alternating motion solves and separating-line updates must use identical
-% tolerances and iteration policies. Resolve those controls here so later
-% stages cannot silently construct different optimization problems.
+% Set shared tolerances and iteration limits for both conic solvers.
 
 regionMinimum_deg = zeros(numel(regions_deg), 2);
 regionMaximum_deg = zeros(numel(regions_deg), 2);
@@ -71,8 +66,6 @@ for regionIndex = 1:numel(regions_deg)
     regionMinimum_deg(regionIndex, :) = min(regions_deg{regionIndex}, [], 1);
     regionMaximum_deg(regionIndex, :) = max(regions_deg{regionIndex}, [], 1);
 end
-travelSavingsRate_deg_s = double(optionalField( ...
-    options, "MinimumTravelSavingsRate_deg_s", 10));
 maximumTrajectoryIterations = 300;
 trajectoryOptions = optimoptions("coneprog", "Display", "none", ...
     "MaxIterations", maximumTrajectoryIterations);
@@ -94,7 +87,6 @@ request = struct( ...
     "SplitCount", splitCount, ...
     "MaximumWarmSegmentCount", 20, ...
     "MotionHorizon_s", motionHorizon_s, ...
-    "TravelSavingsRate_deg_s", travelSavingsRate_deg_s, ...
     "RegionMinimum_deg", regionMinimum_deg, ...
     "RegionMaximum_deg", regionMaximum_deg, ...
     "TrajectoryOptions", trajectoryOptions, ...
@@ -106,7 +98,7 @@ end
 
 function validateKernelInputs( ...
         seed, regions_deg, coverage, initialState, goalState, limits, options)
-% Recheck only kernel-specific restrictions after public normalization.
+% Check engine-specific input restrictions.
 if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_deg', 'tau'}))
     error("bmtpEngine:InvalidSeed", ...
         "seed must be scalar and contain position_deg and tau.");
@@ -166,7 +158,7 @@ endpointDerivative = [initialState.velocity_deg_s, ...
 limitsMatrix = [limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
 requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && ...
     any(string(options.GoalTimeMode) == ...
-    ["balancedArrival", "earliestArrival", "fixedArrival"]) && ...
+    ["earliestArrival", "fixedArrival"]) && ...
     ~options.AllowAzimuthWrapping && options.SampleTime_s > 0 && ...
     isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && ...
     all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || ...
@@ -178,7 +170,7 @@ end
 end
 
 function value = optionalField(record, name, defaultValue)
-% Read a scalar option while retaining one source for historical defaults.
+% Read an option or use its default.
 value = defaultValue;
 if isfield(record, name) && ~isempty(record.(name))
     value = record.(name);

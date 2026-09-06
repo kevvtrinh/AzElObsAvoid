@@ -1,19 +1,23 @@
 function [candidateSet, routeSet, generatedSeeds] = ...
         recoverAdditionalSeeds( ...
+        initialState, goalState, limits, options, ...
         candidateSet, routeSet, generatedSeeds, recoveryContext)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidateSet, routeSet, generatedSeeds] = ...
 %       obstacleAvoidance.planner.recoverAdditionalSeeds( ...
+%       initialState, goalState, limits, options, ...
 %       candidateSet, routeSet, generatedSeeds, recoveryContext)
-%**************************************************************************
+%
 % PURPOSE
 %   - Attempt seeds beyond the first two only after both initial seeds and
 %     any separately validated exact motion have failed.
 %   - Keep deferred timed and multi-winding recovery in the same removable
 %     implementation unit as all other later-seed work.
-%**************************************************************************
+%
 % INPUTS
+%   - initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order.
 %   - candidateSet (scalar candidate-set struct)
 %       Results from solving at most the first two generated seeds.
 %   - routeSet (scalar route-set struct)
@@ -21,9 +25,9 @@ function [candidateSet, routeSet, generatedSeeds] = ...
 %   - generatedSeeds (route-seed struct array)
 %       All ordinary seeds generated within MaximumSeedCount.
 %   - recoveryContext (scalar struct)
-%       Scene, Request, Proposal, VisibilityGraph, SeedSolveContext,
+%       Scene, Proposal, VisibilityGraph, SeedSolveContext,
 %       HasValidatedExactMotion, and PlanningTimer used by recovery.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidateSet (scalar candidate-set struct)
 %       Initial attempts plus failure-only recovery attempts, stopping after
@@ -32,14 +36,13 @@ function [candidateSet, routeSet, generatedSeeds] = ...
 %       Route diagnostics updated if deferred search was consumed.
 %   - generatedSeeds (route-seed struct array)
 %       Ordinary and subsequently generated deferred seeds.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; physical and measured times are seconds.
-%**************************************************************************
+%
 
 %% Section 1: Decide Whether Recovery Is Needed
 
-options = recoveryContext.Request.options;
 initialSeedCount = numel(candidateSet.Seeds);
 initialCandidatePassed = any([candidateSet.CheckResults.Passed]);
 if initialCandidatePassed || recoveryContext.HasValidatedExactMotion
@@ -55,6 +58,7 @@ lastOrdinarySeedIndex = min(numel(generatedSeeds), ...
     options.MaximumSeedCount);
 for seedIndex = initialSeedCount + 1:lastOrdinarySeedIndex
     [candidateSet, passed] = solveAndAppend( ...
+        initialState, goalState, limits, options, ...
         candidateSet, generatedSeeds(seedIndex), recoveryContext);
     if passed
         return;
@@ -82,8 +86,8 @@ end
 if needsDeferredTimedRecovery
     recoverySearchTimer = tic;
     routeSet = obstacleAvoidance.search.searchRoutes( ...
-        recoveryContext.Scene, recoveryContext.Request, ...
-        recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
+        initialState, goalState, limits, options, ...
+        recoveryContext.Scene, recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
     candidateSet.StageTiming.TopologyElapsedTime_s = ...
         candidateSet.StageTiming.TopologyElapsedTime_s + ...
@@ -102,20 +106,20 @@ else
     recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
 end
 recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
-    recoveredOnlyRouteSet, recoveryContext.Proposal, ...
-    recoveryContext.Request);
+    initialState, goalState, limits, options, ...
+    recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices);
 recoveredSeeds = recoveredSeeds(2:end);
 
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
     recoveredSeed = recoveredSeeds(recoveryIndex);
     recoveredSeed.Index = numel(generatedSeeds) + 1;
-    % Recovery adds at most three records, so bounded growth is clearer than
-    % manufacturing a second seed template solely for preallocation.
+    % At most three recovery seeds are appended.
     generatedSeeds(end + 1, 1) = recoveredSeed; %#ok<AGROW>
     if string(recoveredSeed.Source) == "visibilityGraph"
         routeSet.DeferredSpatialSolveAttempted = true;
     end
     [candidateSet, passed] = solveAndAppend( ...
+        initialState, goalState, limits, options, ...
         candidateSet, recoveredSeed, recoveryContext);
     if passed
         return;
@@ -126,12 +130,14 @@ end
 %% Section 4: Local Functions
 
 function [candidateSet, passed] = solveAndAppend( ...
+        initialState, goalState, limits, options, ...
         candidateSet, seed, recoveryContext)
-% Solve one later seed and append all motion and validation evidence.
+% Solve an additional seed and append its diagnostics.
 seed.Index = numel(candidateSet.Seeds) + 1;
 [candidate, summary, checkResult, stageTiming] = ...
     obstacleAvoidance.planner.solveOneSeed( ...
-    seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
+        recoveryContext.Scene.preparedObstacles, initialState, goalState, limits, options, ...
+        seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
 candidateSet.Seeds(end + 1, 1) = seed;
 candidateSet.Candidates{end + 1, 1} = candidate;
 candidateSet.Summaries(end + 1, 1) = summary;

@@ -6,11 +6,11 @@ function [route_deg, routeTime_s, record] = ...
 %   [route_deg, routeTime_s, record] = ...
 %       obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, ...
 %       edgeCost_deg, obstacles, initialState, goalState, limits, sampleTimes_s, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Search forward reachability using waits and moving edges at every
 %     supplied planning time.
-%**************************************************************************
+%
 % INPUTS
 %   - nodePosition_deg (N-by-2 numeric matrix)
 %       Nodes with start first and goal second.
@@ -20,16 +20,16 @@ function [route_deg, routeTime_s, record] = ...
 %   - initialState, goalState, limits, options (scalar structs)
 %   - sampleTimes_s (numeric vector)
 %       Candidate times retained exactly as temporal search layers.
-%**************************************************************************
+%
 % OUTPUTS
 %   - route_deg (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector)
 %       Selected timed route, or documented empty arrays on exhaustion.
 %   - record (scalar struct)
 %       Search counts, frontier, and best partial ancestry.
-%**************************************************************************
+%
 % UNITS
 %   - Position and edge cost are degrees; time is seconds.
-%**************************************************************************
+%
 %% Section 1: Propagate The Reachability Frontier
 layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); ...
     goalState.time_s]);
@@ -39,9 +39,8 @@ layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles. ...
-        queryObstacleOccupancyAtTime( ...
+        queryPreparedObstacles( ...
         obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
         repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
@@ -57,8 +56,7 @@ for layerIndex = 1:layerCount - 1
     end
 end
 
-% Arrival layers connected by clear waits form dominance intervals. Within
-% one interval, its first clear arrival reproduces every later arrival.
+% Within a clear-wait interval, an earlier arrival can wait to match a later one.
 isWaitComponentStart = nodeIsFree;
 isWaitComponentStart(2:end, :) = ...
     nodeIsFree(2:end, :) & ~waitIsClear;
@@ -81,7 +79,6 @@ spatialCost_deg(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
 exploredNodes_deg = zeros(0, 2);
 for layerIndex = 1:layerCount - 1
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
     if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
         break;
     end
@@ -96,7 +93,6 @@ for layerIndex = 1:layerCount - 1
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         if mod(expandedCount - 1, 8) == 0
-            obstacleAvoidance.input.throwIfCancellationRequested(options);
         end
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
         if waitIsClear(layerIndex, currentNodeIndex)
@@ -113,10 +109,8 @@ for layerIndex = 1:layerCount - 1
         for targetNodeIndex = reshape(targets, 1, [])
             displacement_deg = nodePosition_deg(targetNodeIndex, :) - ...
                 nodePosition_deg(currentNodeIndex, :);
-            % Intermediate graph nodes do not impose a stop. Acceleration
-            % timing for a rest-to-rest edge can therefore overestimate a
-            % through-moving transition and erase a feasible time layer.
-            % The velocity bound is the conservative state-independent floor.
+            % Intermediate nodes need not stop. Use a velocity-only time lower bound;
+            % a rest-to-rest estimate could incorrectly exclude a feasible transition.
             minimumDuration_s = max( ...
                 abs(displacement_deg) ./ limits.maxVelocity_deg_s);
             earliestTime_s = layerTimes_s(layerIndex) + minimumDuration_s - 1e-12;
@@ -153,15 +147,29 @@ for layerIndex = 1:layerCount - 1
     motionCandidates = motionCandidates(1:motionCandidateCount, :);
     pendingMotion = true(motionCandidateCount, 1);
 
-    % Within each safe-wait interval, stop at its first clear entry edge;
-    % every later entry is dominated by that edge followed by clear waits.
+    % Keep the first clear entry per wait interval; later entries can be reached by waiting.
     while any(pendingMotion)
-        obstacleAvoidance.input.throwIfCancellationRequested(options);
         queriedTargetLayers = unique( ...
             motionCandidates(pendingMotion, 3));
         for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
             queryIndices = find(pendingMotion & ...
                 motionCandidates(:, 3) == targetLayerIndex);
+            if options.GoalTimeMode ~= "earliestArrival"
+                trialCost_deg = reshape(spatialCost_deg(layerIndex, ...
+                    motionCandidates(queryIndices, 1)), [], 1) + ...
+                    motionCandidates(queryIndices, 5);
+                storedCost_deg = reshape(spatialCost_deg(targetLayerIndex, ...
+                    motionCandidates(queryIndices, 2)), [], 1);
+                % Preserve cheaper arrivals and cost ties that can propagate through safe waits,
+                % including frontier states that an early exit would otherwise omit.
+                isDominated = trialCost_deg > storedCost_deg + 1e-12;
+                pendingMotion(queryIndices(isDominated)) = false;
+                rejectedCount = rejectedCount + nnz(isDominated);
+                queryIndices = queryIndices(~isDominated);
+            end
+            if isempty(queryIndices)
+                continue;
+            end
             queryIsClear = edgeIsClear(obstacles, ...
                 nodePosition_deg(motionCandidates(queryIndices, 1), :), ...
                 nodePosition_deg(motionCandidates(queryIndices, 2), :), ...
@@ -202,17 +210,6 @@ if ~isempty(deepestLayerIndex)
 end
 if options.GoalTimeMode == "earliestArrival"
     goalLayerIndex = find(reachable(:, 2), 1, "first");
-elseif options.GoalTimeMode == "balancedArrival"
-    candidateGoalLayers = find(reachable(:, 2));
-    if isempty(candidateGoalLayers)
-        goalLayerIndex = [];
-    else
-        travelCost_deg = spatialCost_deg(candidateGoalLayers, 2);
-        delayCost_deg = options.MinimumTravelSavingsRate_deg_s * ...
-            (layerTimes_s(candidateGoalLayers) - initialState.time_s);
-        [~, selectedGoalIndex] = min(travelCost_deg + delayCost_deg);
-        goalLayerIndex = candidateGoalLayers(selectedGoalIndex);
-    end
 else
     goalLayerIndex = find(reachable(:, 2) & (1:layerCount).' == layerCount, 1, "first");
 end
@@ -230,7 +227,7 @@ record = struct("LayerTimes_s", layerTimes_s, ...
 end
 %% Section 3: Local Functions
 function clear = edgeIsClear(obstacles, first_deg, second_deg, first_s, second_s)
-% Batch edges sharing layer times without changing their 13 sample points.
+% Batch edges with the same layer times; keep all 13 sample points.
 fraction = linspace(0, 1, 13).';
 edgeCount = size(first_deg, 1);
 position_deg = zeros(13 * edgeCount, 2);
@@ -240,7 +237,7 @@ for edgeIndex = 1:edgeCount
     position_deg(sampleIndices, :) = first_deg(edgeIndex, :) + ...
         fraction .* (second_deg(edgeIndex, :) - first_deg(edgeIndex, :));
 end
-occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+occupied = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
     obstacles, position_deg(:, 1), position_deg(:, 2), ...
     repmat(time_s, edgeCount, 1));
 clear = ~any(reshape(occupied, 13, edgeCount), 1).';
@@ -249,7 +246,7 @@ function [reachable, spatialCost_deg, parentLayerIndex, parentNodeIndex] = ...
         updateTemporalState(reachable, spatialCost_deg, parentLayerIndex, ...
         parentNodeIndex, sourceLayerIndex, sourceNodeIndex, ...
         targetLayerIndex, targetNodeIndex, edgeLength_deg)
-% Retain shortest spatial cost with deterministic final-layer tie breaking.
+% Keep the shortest spatial cost and break final-layer ties consistently.
 trialCost_deg = spatialCost_deg(sourceLayerIndex, sourceNodeIndex) + edgeLength_deg;
 storedCost_deg = spatialCost_deg(targetLayerIndex, targetNodeIndex);
 costIsEqual = abs(trialCost_deg - storedCost_deg) <= 1e-12;
@@ -266,7 +263,7 @@ parentNodeIndex(targetLayerIndex, targetNodeIndex) = uint16(sourceNodeIndex);
 end
 function [route_deg, routeTime_s] = reconstructTimedRoute(nodePosition_deg, ...
         layerTimes_s, parentLayerIndex, parentNodeIndex, goalLayerIndex, goalNodeIndex)
-% Walk temporal parent pointers backward without dropping wait states.
+% Follow temporal parents backward, including waits.
 route_deg = zeros(0, 2);
 routeTime_s = zeros(0, 1);
 if isempty(goalLayerIndex)

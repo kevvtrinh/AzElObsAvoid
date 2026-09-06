@@ -9,11 +9,11 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %   [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       obstacleAvoidance.search.denseSweptEnvelope( ...
 %       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
-%**************************************************************************
+%
 % PURPOSE
 %   - Replace an unaffordable sampled union with one conservative convex
 %     history envelope per obstacle for topology proposals only.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
 %       Complete stored histories whose vertices define each envelope.
@@ -23,7 +23,7 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       Start and goal in [azimuth elevation] order.
 %   - vertexWorkBudget (positive numeric scalar)
 %       Maximum estimated sampled-union vertex work.
-%**************************************************************************
+%
 % OUTPUTS
 %   - envelopeShape (scalar polyshape)
 %       Separate conservative history hulls, or empty when unused.
@@ -31,10 +31,10 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       True only when dense fallback was needed and protects both endpoints.
 %   - estimatedVertexWork (nonnegative integer scalar)
 %       Sample-time count times the maximum stored vertices per obstacle.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; work is a vertex count.
-%**************************************************************************
+%
 
 %% Section 1: Detect Dense History Work
 
@@ -59,9 +59,8 @@ end
 
 %% Section 2: Enclose Every Complete Stored History
 
-% Linear corresponding-vertex motion lies in the convex hull of its endpoint
-% vertices. A topology-change query uses endpoint geometry, which is contained
-% by the same hull. Separate hulls do not bridge unrelated obstacles.
+% Endpoint convex hulls cover linear vertex motion and topology changes.
+% Use a separate hull for each obstacle to avoid joining unrelated shapes.
 envelopes = cell(numel(obstacles), 1);
 envelopeCount = 0;
 for obstacleIndex = 1:numel(obstacles)

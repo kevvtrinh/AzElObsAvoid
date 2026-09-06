@@ -4,24 +4,24 @@ function diagnostics = createSearchDiagnostics( ...
 % SYNTAX
 %   diagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
 %       proposal, visibilityGraph, routeSet, seeds)
-%**************************************************************************
+%
 % PURPOSE
 %   - Assemble stable search diagnostics from completed production stages
 %     without recomputing proposal, graph, route, or seed decisions.
-%**************************************************************************
+%
 % INPUTS
 %   - proposal, visibilityGraph, routeSet (scalar structs)
 %       Completed stage records, or empty structs when graph work was skipped.
 %   - seeds (nonempty route-seed struct array)
 %       Final deterministic seed order.
-%**************************************************************************
+%
 % OUTPUTS
 %   - diagnostics (scalar struct)
 %       Stable graph, route, rejection, coverage, and bounded-search evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position and path length are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create Stable Direct-Only Diagnostics
 
@@ -124,7 +124,7 @@ end
 %% Section 4: Local Functions
 
 function diagnostics = appendSearchDiagnostics(diagnostics, record)
-% Append returned search traces and full counts without recreating decisions.
+% Append search traces and counts.
 diagnostics.ExpandedCount = diagnostics.ExpandedCount + record.ExpandedCount;
 diagnostics.RejectedTransitionCount = ...
     diagnostics.RejectedTransitionCount + record.RejectedTransitionCount;
@@ -138,7 +138,7 @@ end
 end
 
 function diagnostics = emptyDiagnostics(start_deg, goal_deg)
-% Initialize every stable field before direct-only and no-path exits.
+% Initialize diagnostics, including direct-only and no-path cases.
 coverage = struct("ExactSpatialProposalUsed", false, ...
     "ReducedSpatialProposalUsed", false, "TimedSearchAttempted", false, ...
     "TimedSearchInitialDeferred", false, ...

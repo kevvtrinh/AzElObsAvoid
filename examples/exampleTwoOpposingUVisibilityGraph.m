@@ -1,24 +1,25 @@
-function result = exampleTwoOpposingUVisibilityGraph(options)
+function [result, diagnosis] = exampleTwoOpposingUVisibilityGraph(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleTwoOpposingUVisibilityGraph()
 %   result = exampleTwoOpposingUVisibilityGraph(options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Construct two protected opposing U obstacles and run the maintained
 %     automatic visibility planner.
-%**************************************************************************
+%
 % INPUTS
 %   - options (scalar struct, optional; default struct())
 %       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Angles are degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -64,13 +65,13 @@ limits = struct( ...
 
 % Run the automatic visibility planner. Do not supply route directions.
 
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check that smoothing preserves the collision-free geometric route.
 
-exampleValidation = validateExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true));
+exampleValidation = validateExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true), diagnosis);
 if ~exampleValidation.Passed
     warning("exampleTwoOpposingUVisibilityGraph:ValidationFailed", ...
         "%s", exampleValidation.Message);
@@ -82,7 +83,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

@@ -11,11 +11,11 @@ function [obstacleData, history] = createMovingObstacle( ...
 %       obstacleAvoidance.obstacles.createMovingObstacle( ...
 %       obstacleName, time_s, sourceAzimuth_deg, sourceElevation_deg, ...
 %       sliceTransform, safetyMargin_deg, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create and protect an arbitrary moving or deforming obstacle history.
 %   - Evaluate independent time slices deterministically in caller order.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacleName (scalar text)
 %   - time_s (nonempty increasing numeric vector)
@@ -28,16 +28,16 @@ function [obstacleData, history] = createMovingObstacle( ...
 %   - safetyMargin_deg (nonnegative scalar)
 %   - options (scalar struct, optional; default struct())
 %       Verbose prints bounded progress updates (default false).
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacleData (canonical protected moving obstacle)
 %   - history (scalar struct)
 %       Source slice boundaries, geometry metrics, and resolved options.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees, time is seconds, and area is square degrees.
 %   - See obstacle_history_contract.md for ring and fallback semantics.
-%**************************************************************************
+%
 
 %% Section 1: Validate Inputs & Apply Defaults
 

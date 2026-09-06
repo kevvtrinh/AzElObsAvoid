@@ -4,11 +4,11 @@ function polynomial = createPowerPolynomial( ...
 % SYNTAX
 %   polynomial = bmtpEngine.createPowerPolynomial( ...
 %       controlPoint_deg, segmentTime_s, initialTime_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Convert composite Bernstein control points to the stable ascending-power
 %     polynomial representation and stabilize exact endpoint derivatives.
-%**************************************************************************
+%
 % INPUTS
 %   - controlPoint_deg (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
@@ -16,15 +16,15 @@ function polynomial = createPowerPolynomial( ...
 %       Common physical segment duration.
 %   - initialTime_s (finite numeric scalar)
 %       Absolute motion start time.
-%**************************************************************************
+%
 % OUTPUTS
 %   - polynomial (scalar struct)
 %       Position, derivative powers, segment times, and terminal state.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Convert Bernstein Controls To Powers
 
@@ -72,7 +72,7 @@ end
 
 function power_deg = stabilizePolynomialEndpoints( ...
         power_deg, controlPoint_deg)
-% Project power roundoff onto exact Bernstein C0-C3 endpoints.
+% Correct roundoff so position through jerk match at Bernstein endpoints.
 degree = size(controlPoint_deg, 2) - 1;
 segmentCount = size(controlPoint_deg, 1);
 endPower = degree - 3:degree;

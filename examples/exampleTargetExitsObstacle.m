@@ -1,29 +1,29 @@
-function result = exampleTargetExitsObstacle(exampleOverrides)
+function [result, diagnosis] = exampleTargetExitsObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleTargetExitsObstacle()
 %   result = exampleTargetExitsObstacle(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Intercept a sampled target that begins inside an obstacle and later
 %     moves into free space.
 %   - Route around a separate circular obstacle between the initial state
 %     and the target's containing obstacle.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
 %       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar planner-result struct)
 %       Validated specified-time intercept, target-occupancy history,
 %       scenario inputs, and optional plot handles.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -108,7 +108,7 @@ interceptOptions = struct( ...
 
 % Run the specified-time moving-target planner.
 
-result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
@@ -116,7 +116,7 @@ result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, t
 % avoids both circles and reaches the target at the set time.
 
 exampleValidation = validateExampleResult( ...
-    result, "target exits a containing obstacle", struct("RequireDirectBlocked", true));
+    result, "target exits a containing obstacle", struct("RequireDirectBlocked", true), diagnosis);
 obstacleQueryOptions = struct();
 
 targetOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
@@ -166,7 +166,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

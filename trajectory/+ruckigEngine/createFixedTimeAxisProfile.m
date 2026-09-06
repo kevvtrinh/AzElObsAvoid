@@ -6,10 +6,10 @@ function [profile, candidates] = createFixedTimeAxisProfile( ...
 %       initialState, terminalState, limits, duration)
 %   [profile, candidates] = ruckigEngine.createFixedTimeAxisProfile( ...
 %       initialState, terminalState, limits, duration)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create a path-short scalar jerk-switching profile at a prescribed time.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar position, velocity, and acceleration fields.
@@ -19,17 +19,17 @@ function [profile, candidates] = createFixedTimeAxisProfile( ...
 %       Positive maximumVelocity, maximumAcceleration, and maximumJerk.
 %   - duration (positive finite scalar)
 %       Required motion duration.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, phase law, exact boundary histories, path length, and family.
 %       Unsupported numerical edge cases return Success = false.
 %   - candidates (structure array)
 %       Every certified fixed-time family for multidimensional path ranking.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.
@@ -38,8 +38,7 @@ function [profile, candidates] = createFixedTimeAxisProfile( ...
 
 context = createContext(initialState, terminalState, limits, duration);
 candidates = repmat(createEmptyProfile(), 0, 1);
-% A zero-jerk phase is the exact least-effort solution when the supplied
-% endpoint states already lie on one constant-acceleration trajectory.
+% Use zero jerk when constant acceleration already connects the endpoint states.
 candidates = appendEvaluated(candidates, initialState, terminalState, ...
     limits, duration, 0, "constantAcceleration");
 minimumProfile = ruckigEngine.createMinimumTimeAxisProfile( ...
@@ -125,7 +124,7 @@ context.afFourth = context.af^4;
 end
 
 function directed = createDirectedLimits(context, direction)
-% Reverse every signed bound together so one equation set covers both ways.
+% Reverse all signed bounds to reuse the equations in the opposite direction.
 directed = struct( ...
     "vMaximum", direction * context.Limits.maximumVelocity, ...
     "vMinimum", -direction * context.Limits.maximumVelocity, ...
@@ -235,7 +234,7 @@ end
 
 function candidates = appendInitialAccelerationVelocityProfiles( ...
         candidates, context, limits)
-% Add upstream ACC0_VEL families omitted from the original MATLAB extraction.
+% Add the upstream initial-acceleration/velocity-bound families (ACC0_VEL).
 aMaximum = limits.aMaximum;
 aMinimum = limits.aMinimum;
 jMaximum = limits.jMaximum;
@@ -257,8 +256,8 @@ commonTerm = 12 * jMaximum * ( ...
     2 * aMaximum * jMaximum * ...
     (-positionDifference + duration * context.vf));
 
-% The UDDU family reaches the initial-side acceleration bound and a
-% velocity plateau before approaching the requested terminal acceleration.
+% UDDU reaches the initial acceleration limit, then holds velocity
+% before approaching the terminal acceleration.
 monicCubic = 2 * aMaximum / jMaximum;
 monicQuadratic = (context.a0Squared - context.afSquared + ...
     2 * accelerationDifference * aMaximum + aMaximum^2 + ...
@@ -325,8 +324,7 @@ for rootIndex = 1:numel(rootsFound)
         "synchronizedInitialAccelerationVelocity");
 end
 
-% The alternating UDUD family reaches the same active limits with the
-% opposite terminal-side jerk pattern.
+% UDUD uses the opposite terminal jerk pattern at the same active limits.
 monicCubic = -2 * aMaximum / jMaximum;
 monicQuadratic = -(context.a0Squared + context.afSquared - ...
     2 * (context.a0 + context.af) * aMaximum + aMaximum^2 + ...
@@ -513,7 +511,7 @@ end
 
 function rootsFound = findProfileRoots( ...
         phaseFunction, lower, upper, context, limits, controlSigns)
-% Bracket all endpoint-position roots of one one-parameter switching family.
+% Bracket endpoint-position roots within a switching family.
 if ~isfinite(lower) || ~isfinite(upper) || upper < lower
     rootsFound = zeros(1, 0);
     return;
@@ -569,7 +567,7 @@ end
 
 function residual = positionResidual( ...
         time, phaseFunction, context, limits, controlSigns)
-% Integrate one provisional phase law and return its terminal position error.
+% Integrate trial phases and measure the terminal position error.
 phase = phaseFunction(time, context, limits);
 if any(~isfinite(phase)) || any(phase < -1e-9)
     residual = NaN;
@@ -597,7 +595,7 @@ end
 
 function candidates = appendEvaluated(candidates, initialState, ...
         terminalState, limits, phaseDuration, phaseJerk, family)
-% Append one candidate only after exact integration and continuous checks pass.
+% Accept a profile only after integration and continuous checks pass.
 candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
     initialState, terminalState, limits, ...
     phaseDuration, phaseJerk, family);
@@ -609,14 +607,14 @@ end
 end
 
 function value = isRest(state)
-% A dwell is admissible only when it leaves position and motion state unchanged.
+% Allow a dwell only when it leaves the motion state unchanged.
 tolerance = 64 * eps(max([1, abs(state.velocity), abs(state.acceleration)]));
 value = abs(state.velocity) <= tolerance && ...
     abs(state.acceleration) <= tolerance;
 end
 
 function profile = createEmptyProfile()
-% Define stable fields for a valid candidate or fixed-time fallback request.
+% Initialize the candidate and fallback fields.
 profile = struct( ...
     "Success", false, ...
     "Message", "No fixed-time axis profile was created.", ...

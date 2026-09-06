@@ -2,21 +2,21 @@ function validation = validateResult(result)
 %% Section 0: Header & Readme
 % SYNTAX
 %   validation = ruckigEngine.internal.validateResult(result)
-%**************************************************************************
+%
 % PURPOSE
 %   - Independently validate a Ruckig result against its resolved request.
-%**************************************************************************
+%
 % INPUTS
 %   - result (scalar Ruckig trajectory result)
 %       Must contain histories, polynomial, normalized inputs, and options.
-%**************************************************************************
+%
 % OUTPUTS
 %   - validation (scalar struct)
 %       Endpoint, history, continuous-constraint, and tolerance evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Values retain the caller's consistent coordinate and time units.
-%**************************************************************************
+%
 
 %% Section 1: Validate Histories And Endpoints
 
@@ -53,8 +53,7 @@ else
     endpointErrors = Inf(1, 6);
 end
 if limits.ControlOrder == 2
-    % Acceleration is the discontinuous control for the second-order
-    % interface, not a requested endpoint state.
+    % In second-order mode, acceleration is a control input, not an endpoint constraint.
     endpointErrors([3, 6]) = 0;
 end
 

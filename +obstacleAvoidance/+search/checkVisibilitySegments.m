@@ -4,11 +4,11 @@ function isVisible = checkVisibilitySegments( ...
 % SYNTAX
 %   isVisible = obstacleAvoidance.search.checkVisibilitySegments( ...
 %       first_deg, second_deg, shape, edgeStart_deg, edgeEnd_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check straight spatial segments against one proposal obstacle shape.
 %   - Provide one shared visibility rule for graph and route cleanup stages.
-%**************************************************************************
+%
 % INPUTS
 %   - first_deg, second_deg (N-by-2 finite numeric matrices)
 %       Paired segment endpoints in [azimuth elevation] order.
@@ -16,20 +16,18 @@ function isVisible = checkVisibilitySegments( ...
 %       Spatial proposal obstacle used for route guidance.
 %   - edgeStart_deg, edgeEnd_deg (M-by-2 numeric matrices)
 %       Ordered proposal-boundary edge endpoints.
-%**************************************************************************
+%
 % OUTPUTS
 %   - isVisible (N-by-1 logical vector)
 %       True where the segment avoids the proposal shape and its boundary.
-%**************************************************************************
+%
 % UNITS
 %   - All geometry is degrees.
-%**************************************************************************
+%
 
 %% Section 1: Reject Interior And Boundary Intersections
 
-% Midpoint containment catches segments through occupied interiors. The
-% vectorized boundary test also rejects crossings and collinear overlap so
-% graph construction and route shortening cannot disagree about visibility.
+% Reject interior crossings, boundary crossings, and collinear overlaps.
 
 isVisible = true(size(first_deg, 1), 1);
 if isempty(shape.Vertices)

@@ -5,11 +5,11 @@ function [inequality, equality] = evaluatePolynomialConstraints( ...
 %   [inequality, equality] = ...
 %       ruckigEngine.internal.evaluatePolynomialConstraints( ...
 %       polynomial, terminalState, limits, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Certify continuous derivative, position, affine path, and endpoint
 %     constraints from the common polynomial format.
-%**************************************************************************
+%
 % INPUTS
 %   - polynomial (scalar struct)
 %       Segment durations and ascending-power derivative coefficients.
@@ -19,14 +19,14 @@ function [inequality, equality] = evaluatePolynomialConstraints( ...
 %       Position-through-jerk lower and upper coordinate bounds.
 %   - pathConstraints (resolved scalar struct)
 %       Affine point or single-segment interval inequalities.
-%**************************************************************************
+%
 % OUTPUTS
 %   - inequality (numeric column), feasible when every value is <= 0.
 %   - equality (3D-by-1 numeric column), terminal state residuals.
-%**************************************************************************
+%
 % UNITS
 %   - Values retain the caller's consistent coordinate and time units.
-%**************************************************************************
+%
 
 %% Section 1: Evaluate Complete Polynomial Bounds
 
@@ -48,7 +48,7 @@ end
 %% Section 2: Local Functions
 
 function inequality = continuousBoundConstraints(polynomial, limits)
-% Check every scalar segment without treating hull controls as curve samples.
+% Check segment extrema; control points are not curve samples.
 coefficientFields = [ ...
     "positionPower", "velocityPower", ...
     "accelerationPower", "jerkPower"];

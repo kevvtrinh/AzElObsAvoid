@@ -8,11 +8,11 @@ function result = solve( ...
 %       initialState, terminalState, limits, options)
 %   result = ruckigEngine.solve( ...
 %       initialState, terminalState, limits, options, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create certified second- or third-order state-to-state trajectories
 %     with the extracted Ruckig-derived exact switching equations.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (scalar structs)
 %       Dimension-neutral boundary state and limit inputs. Supplying endpoint
@@ -23,20 +23,20 @@ function result = solve( ...
 %   - pathConstraints (scalar struct, optional; default empty)
 %       Affine rows continuously certify the constructed exact profile. They
 %       reject a violating profile but do not steer profile construction.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Certified success or identified unsupported/failure record.
 %       Invalid requirements throw identified errors.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and must be consistent across derivatives.
-%**************************************************************************
+%
 % REFERENCE
 %   - L. Berscheid and T. Kroeger, "Jerk-limited Real-time Trajectory
 %     Generation with Arbitrary Target States," Robotics: Science and
 %     Systems XVII, 2021. https://doi.org/10.15607/RSS.2021.XVII.015
-%**************************************************************************
+%
 
 if nargin == 0
     result = ruckigEngine.defaultOptions();
@@ -77,9 +77,7 @@ end
 
 %% Section 2: Create And Synchronize Exact Axis Profiles
 
-% Independent axis profiles generally finish at different times. Create the
-% fastest eligible profiles and synchronize them before evaluation so the
-% returned vector motion has one physical clock and unchanged boundary states.
+% Synchronize the fastest eligible axis profiles on one timeline.
 if limits.ControlOrder == 2
     profileAttempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
         initialState, terminalState, limits, options);
@@ -97,8 +95,7 @@ end
 
 %% Section 3: Evaluate The Synchronized Motion
 
-% Synchronization is itself a transformation, so evaluate the final polynomial
-% at uniform and switching times before checking the returned vector motion.
+% Evaluate the synchronized polynomial at uniform samples and switch times.
 profile = profileAttempt.Profile;
 result.FinalTime = profile.FinalTime;
 result.Duration = profile.FinalTime - initialState.time;
@@ -119,10 +116,8 @@ result.jerk = jerk;
 
 %% Section 4: Check And Classify The Returned Motion
 
-% Axis constructors and synchronization cannot approve the assembled result.
-% Re-evaluate continuous limits and optional affine rows, then classify the
-% engine outcome. This dimension-neutral check cannot approve obstacle safety;
-% the calling planner's full trajectory validator retains that responsibility.
+% Check continuous limits and affine constraints on the assembled motion.
+% Obstacle safety is checked separately by the planner's validator.
 result.Validation = ruckigEngine.internal.validateResult(result);
 result.MaximumConstraintViolation = max( ...
     result.Validation.MaximumInequalityViolation, ...
@@ -216,10 +211,8 @@ terminalAccelerationViolation = max( ...
     limits.accelerationLower - terminalState.acceleration, ...
     terminalState.acceleration - limits.accelerationUpper);
 
-% Canceling a nonzero acceleration with maximum opposing jerk changes
-% velocity by a^2/(2*j). This is the least outward velocity excursion any
-% admissible continuation can achieve, so crossing a bound proves that the
-% boundary state is dynamically infeasible rather than merely unsupported.
+% Canceling acceleration requires a velocity change of magnitude a^2/(2*j).
+% Reject the state if even maximum opposing jerk cannot avoid a velocity-limit violation.
 initialStoppingVelocity = initialState.velocity + ...
     sign(initialState.acceleration) .* ...
     initialState.acceleration .^ 2 ./ (2 * limits.maximumJerk);

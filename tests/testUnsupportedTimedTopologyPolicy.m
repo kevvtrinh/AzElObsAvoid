@@ -35,9 +35,9 @@ failOptions.UnsupportedTimedTopologyPolicy = "fail";
 fallbackOptions = baseOptions;
 fallbackOptions.UnsupportedTimedTopologyPolicy = ...
     "ruckigStopAtWaypoints";
-testCase.TestData.FailResult = obstacleAvoidance.planTrajectory( ...
+[testCase.TestData.FailResult, testCase.TestData.FailResultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, failOptions);
-testCase.TestData.FallbackResult = obstacleAvoidance.planTrajectory( ...
+[testCase.TestData.FallbackResult, testCase.TestData.FallbackResultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, fallbackOptions);
 testCase.TestData.FallbackValidation = obstacleAvoidance.validateTrajectory( ...
     testCase.TestData.FallbackResult);
@@ -46,17 +46,18 @@ end
 function testDefaultPolicyPreservesEarliestTimedFailure(testCase)
 % Return the unsupported smooth topology without invoking Ruckig.
 result = testCase.TestData.FailResult;
+resultDiagnosis = testCase.TestData.FailResultDiagnosis;
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, ...
     "unsupportedTimedMultiWaypointRoute");
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, "fail");
-verifyNotEmpty(testCase, result.SeedSummaries);
-for seedIndex = 1:numel(result.SeedSummaries)
-    diagnostics = result.SeedSummaries(seedIndex).SolverDiagnostics;
-    verifyFalse(testCase, diagnostics.FallbackAttempted);
-    verifyEqual(testCase, diagnostics.FallbackOutcome, ...
+verifyNotEmpty(testCase, resultDiagnosis.Attempts);
+for seedIndex = 1:numel(resultDiagnosis.Attempts)
+    diagnostics = testSupport.solverDetails(resultDiagnosis, seedIndex);
+    verifyFalse(testCase, testSupport.diagnosisValue(diagnostics, "FallbackAttempted"));
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "FallbackOutcome"), ...
         "fallbackDisabledByPolicy");
-    verifyEqual(testCase, diagnostics.OriginalTerminationReason, ...
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), ...
         "unsupportedTimedMultiWaypointRoute");
 end
 end
@@ -64,26 +65,27 @@ end
 function testExplicitPolicyAttemptsFallbackOnlyWhenEnabled(testCase)
 % Require an explicit fallback attempt without manufacturing solver failure.
 result = testCase.TestData.FallbackResult;
+resultDiagnosis = testCase.TestData.FallbackResultDiagnosis;
 verifyFalse(testCase, result.Success);
 verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
 verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, ...
     "ruckigStopAtWaypoints");
 fallbackAttemptCount = 0;
-for seedIndex = 1:numel(result.SeedSummaries)
-    diagnostics = result.SeedSummaries(seedIndex).SolverDiagnostics;
-    if ~isfield(diagnostics, "FallbackAttempted") || ...
-            ~diagnostics.FallbackAttempted
+for seedIndex = 1:numel(resultDiagnosis.Attempts)
+    diagnostics = testSupport.solverDetails(resultDiagnosis, seedIndex);
+    if ~any(diagnostics.Field == "FallbackAttempted") || ...
+            ~testSupport.diagnosisValue(diagnostics, "FallbackAttempted")
         continue;
     end
     fallbackAttemptCount = fallbackAttemptCount + 1;
-    verifyEqual(testCase, diagnostics.FallbackMethod, ...
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "FallbackMethod"), ...
         "ruckigStopAtWaypoints");
-    verifyEqual(testCase, diagnostics.OriginalTerminationReason, ...
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "OriginalTerminationReason"), ...
         "unsupportedTimedMultiWaypointRoute");
-    fallback = diagnostics.FallbackDiagnostics;
-    verifyLessThanOrEqual(testCase, fallback.CompletedPartCount, ...
-        fallback.MaximumSupportedPartCount);
-    verifyNotEmpty(testCase, diagnostics.FallbackOutcome);
+    fallback = diagnostics;
+    verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(fallback, "FallbackDiagnostics.CompletedPartCount"), ...
+        testSupport.diagnosisValue(fallback, "FallbackDiagnostics.MaximumSupportedPartCount"));
+    verifyNotEmpty(testCase, testSupport.diagnosisValue(diagnostics, "FallbackOutcome"));
 end
 verifyGreaterThan(testCase, fallbackAttemptCount, 0);
 end

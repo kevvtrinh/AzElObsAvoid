@@ -5,39 +5,39 @@ function [feasible, message, reason] = validatePlannerEndpoints( ...
 %   [feasible, message, reason] = ...
 %       obstacleAvoidance.input.validatePlannerEndpoints( ...
 %       obstacles, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Reject endpoint geometry, dynamics, timing, or workspace failures
 %     before route search or trajectory optimization begins.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (canonical protected-obstacle array)
 %   - initialState, goalState, limits (normalized scalar structs)
 %   - options (scalar struct)
 %       Requires GoalTimeMode, ArrivalTimeTolerance_s, and
 %       AllowAzimuthWrapping.
-%**************************************************************************
+%
 % OUTPUTS
 %   - feasible (logical scalar)
 %   - message, reason (string scalars)
 %       Empty on success; otherwise actionable and machine-readable failure.
-%**************************************************************************
+%
 % UNITS
 %   - Position and workspace intervals are degrees; time is seconds;
 %     derivatives use deg/s and deg/s^2.
-%**************************************************************************
+%
 
 %% Section 1: Check Protected Endpoint Geometry
 
 goalPosition_deg = obstacleAvoidance.input.goalPositionAtTime( ...
     goalState, goalState.time_s);
-startIsBlocked = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+startIsBlocked = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
     obstacles, initialState.position_deg(1), initialState.position_deg(2), ...
     initialState.time_s);
 terminalIsBlocked = false;
 if options.GoalTimeMode == "fixedArrival"
     terminalIsBlocked = ...
-        obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        obstacleAvoidance.obstacles.queryPreparedObstacles( ...
         obstacles, goalPosition_deg(1), goalPosition_deg(2), ...
         goalState.time_s);
 end
@@ -105,6 +105,6 @@ end
 %% Section 4: Local Functions
 
 function [feasible, message, reason] = failure(message, reason)
-% Return the stable expected-failure triple without throwing.
+% Return an expected failure without throwing an error.
 feasible = false;
 end

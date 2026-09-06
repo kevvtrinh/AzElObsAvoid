@@ -5,16 +5,12 @@ function [candidate, diagnostics] = solve( ...
 %   [candidate, diagnostics] = ...
 %       bmtpEngine.solve( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
-%   - Optimize one topology seed with a composite Bezier trajectory,
-%     third-order time-power cones, and alternating degree-one maximum-margin
-%     separating planes.
-%   - Use the compact degree-7 representation only when planner-supplied
-%     coverage records conservative grouping of a complex exact outline.
-%   - Accept motion only after direct Bernstein checks, every applicable
-%     span/region plane certificate, and independent public validation.
-%**************************************************************************
+%   Turn one proposed path into a smooth motion that respects motion limits.
+%   Adjust the curve and obstacle-separating boundaries in alternating steps.
+%   Use degree-eight Bezier segments; the planner independently validates the result.
+%
 % INPUTS
 %   - seed (scalar struct)
 %       position_deg is N-by-2; tau strictly increases from zero to one.
@@ -29,30 +25,26 @@ function [candidate, diagnostics] = solve( ...
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Polynomial powers use local normalized time.
-%**************************************************************************
+%
 
 %% Section 1: Validate And Create The Exclusion Representation
 
 totalTimer = tic;
-% The conic stages require one checked, dimension-neutral request with a
-% declared polynomial representation and shared solver tolerances. Resolve it
-% before allocating candidates so invalid requirements never enter a solver.
+% Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest( ...
     seed, regions_deg, coverage, initialState, goalState, limits, options);
 
-% Alternating motion and separating-line solves need a topology-consistent,
-% kinematically feasible starting curve. Create that warm representation once;
-% later stages retain its route reduction and active-pair evidence.
+% Create a kinematically feasible starting curve from the seed.
 warmStart = bmtpEngine.createWarmStart(request);
 degree = request.Degree;
 splitCount = request.SplitCount;
@@ -74,10 +66,8 @@ obstacleTarget_deg = normalNormLimit * ...
 
 %% Section 2: Alternate Time-Power And Maximum-Margin SOCPs
 
-% The trajectory controls and separating lines depend on one another, so
-% neither can be solved once in isolation. Alternate those two decisions,
-% retain every attempt in diagnostics, and return the best sampled-clear
-% iterate for the later direct certificate.
+% Alternate trajectory and separating-line solves.
+% Keep the best sampled-clear candidate for final certification.
 [alternatingResult, diagnostics] = ...
     bmtpEngine.solveAlternatingTrajectory( ...
     request, warmStart, diagnostics, obstacleTarget_deg, ...
@@ -90,9 +80,8 @@ if ~alternatingResult.Success
     return;
 end
 
-% Establish a feasible homotopy with the proven time-minimizing kernel before
-% asking for less travel. A path-length solve from an unconstrained chord can
-% initialize a separating plane on the wrong side of a concave obstacle.
+% Find a feasible route before minimizing travel; starting from the direct
+% chord can place separating planes on the wrong side of concave obstacles.
 [selectedMotion, diagnostics] = bmtpEngine.refineTravel( ...
     request, warmStart, alternatingResult, diagnostics, ...
     obstacleTarget_deg, roundoffReserve_deg);
@@ -101,9 +90,8 @@ bestSegmentTime_s = selectedMotion.SegmentTime_s;
 
 %% Section 3: Prepare And Check The Final Motion
 
-% Endpoint derivatives are imposed after optimization, which can increase the
-% derivative-control bounds. Project those endpoints, split the curve, and
-% increase segment time before any final safety claim is attempted.
+% Endpoint corrections can increase derivative peaks.
+% Correct endpoints and adjust segment times before final checks.
 preparedMotion = bmtpEngine.prepareFinalMotion( ...
     request, bestControl_deg, bestSegmentTime_s);
 diagnostics.EndpointProjectionApplied = true;
@@ -114,9 +102,7 @@ if ~preparedMotion.Success
     return;
 end
 
-% Sampled overlap tests guided the alternating solver but cannot approve its
-% output. Check every applicable final curve-region pair directly and retain
-% the complete certificate for independent planner validation.
+% Certify every final curve-region pair; sampled clearance alone is insufficient.
 certificate = bmtpEngine.checkFinalMotion( ...
     request, warmStart, preparedMotion, roundoffReserve_deg, ...
     obstacleTarget_deg);
@@ -124,9 +110,7 @@ diagnostics.MotionCertificate = preparedMotion.MotionCertificate;
 diagnostics.PlaneCertificate = certificate;
 candidate.PlaneCertificate = certificate;
 
-% The checked control net is still an engine representation. Convert and
-% sample it once into the stable motion record consumed by the planner,
-% validator, diagnostics, and plotting without rerunning any solve.
+% Convert the checked curve to the public motion format and sample it.
 candidate = bmtpEngine.createMotionOutput( ...
     candidate, request, preparedMotion);
 [candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal( ...
@@ -152,13 +136,13 @@ end
 %% Section 5: Local Functions
 
 function plane = emptyPlane()
-% Define the stable inactive or verified degree-one plane record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), "SignedGap_deg", NaN);
 end
 
 function candidate = createEmptyCandidate(seed, initialState, options)
-% Define identical candidate fields for success and every failure path.
+% Use the same candidate fields on success and failure.
 seedIndex = optionalField(seed, "Index", 0);
 seedSource = string(optionalField(seed, "Source", ""));
 corridorBoundary_deg = optionalField(seed, "CorridorBoundary_deg", zeros(0, 2));
@@ -177,7 +161,7 @@ candidate.Message = "The BMTP kernel was not run.";
 end
 
 function value = optionalField(record, name, defaultValue)
-% Read an optional scalar field while preserving documented empty defaults.
+% Read an optional field or use its default.
 value = defaultValue;
 if isfield(record, name) && ~isempty(record.(name))
     value = record.(name);
@@ -185,7 +169,7 @@ end
 end
 
 function diagnostics = createEmptyDiagnostics( degree, splitCount, segmentCount, regionCount)
-% Define bounded solver, timing, and certificate evidence before solving.
+% Initialize solver, timing, and certificate diagnostics.
 diagnostics = struct( "Identifier", "bmtpStaticDegree" + string(degree), ...
     "ConstraintRepresentation", "thirdOrderTimePowerSocp", ...
     "Representation", "C3CompositeBezier", "Attempted", true, ...
@@ -195,6 +179,7 @@ diagnostics = struct( "Identifier", "bmtpStaticDegree" + string(degree), ...
     "SegmentCount", 2 * segmentCount, "ExactRegionCount", regionCount, ...
     "IterationCount", 0, "Converged", false, ...
     "PlaneReuseApplied", false, "PlaneReuseCount", 0, ...
+    "RetainedHorizonRetryCount", 0, ...
     "TaggedPairCount", 0, "ApplicablePairCount", segmentCount * regionCount, ...
     "TrajectorySocpCount", 0, "FinalCollisionPairCount", 0, ...
     "PlaneSocpCount", 0, "UnverifiedPlaneInitializationCount", 0, ...
@@ -211,7 +196,7 @@ end
 
 function [candidate, diagnostics] = finishFailure( ...
         candidate, diagnostics, timer, message, reason, optimizerFeasible)
-% Finalize one expected failure without manufacturing trajectory data.
+% Return a failure without fabricating motion data.
 [candidate.Message, candidate.TerminationReason, candidate.OptimizerFeasible] = ...
     deal(message, reason, optimizerFeasible);
 [diagnostics.Accepted, diagnostics.ElapsedTime_s] = deal(false, toc(timer));

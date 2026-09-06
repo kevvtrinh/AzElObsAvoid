@@ -6,11 +6,11 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
 %   [profile, candidates] = ruckigEngine.createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the shortest one-dimensional position trajectory admitted by
 %     symmetric velocity, acceleration, and jerk limits.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar time, position, velocity, and acceleration fields.
@@ -19,7 +19,7 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %   - limits (scalar struct)
 %       Positive scalar maximumVelocity, maximumAcceleration, and
 %       maximumJerk fields.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, seven phase durations and jerks, minimum duration, and the
@@ -28,10 +28,10 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %   - candidates (structure array)
 %       Every certified extremal profile used to derive synchronization
 %       block intervals, including duration and signed initial direction.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.
@@ -47,10 +47,7 @@ isStationary = abs(context.displacement) <= stationaryTolerance && ...
     max(abs([context.v0, context.vf, context.a0, context.af])) <= ...
         stationaryTolerance;
 if isStationary
-    % A stationary degree of freedom has a certified zero-time minimum and
-    % can later remain idle while other axes synchronize. Treating the lack
-    % of switching events as an unsupported family incorrectly rejects
-    % ordinary multidimensional motions with one unchanged coordinate.
+    % An unchanged axis needs zero motion time and can wait for the other axes.
     candidate = createEmptyCandidate();
     candidate.Position(:) = context.p0;
     candidate.Velocity(:) = 0;
@@ -137,7 +134,7 @@ context.afFourth = context.af^4;
 end
 
 function directed = createDirectedLimits(context, direction)
-% Reverse every signed bound together so one equation set covers both ways.
+% Reverse all signed bounds to reuse the equations in the opposite direction.
 directed = struct( ...
     "vMaximum", direction * context.vMaximum, ...
     "vMinimum", -direction * context.vMaximum, ...
@@ -301,7 +298,7 @@ candidates = appendCandidate(candidates, context, limits, ...
 end
 
 function candidates = appendUnconstrainedProfiles(candidates, context, limits)
-% Add quartic families with no velocity plateau and at most one accel hold.
+% Try quartic families with no velocity plateau and at most one acceleration hold.
 aMaximum = limits.aMaximum;
 aMinimum = limits.aMinimum;
 jMaximum = limits.jMaximum;
@@ -471,7 +468,7 @@ candidates(end + 1, 1) = candidate;
 end
 
 function values = realQuarticRoots(coefficients)
-% Keep numerically real roots and let the exact profile check reject the rest.
+% Keep nearly real roots; validate their resulting profiles.
 allRoots = roots(coefficients);
 imaginaryTolerance = 1e-8 * max(1, max(abs(allRoots)));
 isReal = abs(imag(allRoots)) <= imaginaryTolerance;
@@ -479,7 +476,7 @@ values = sort(real(allRoots(isReal))).';
 end
 
 function candidate = createEmptyCandidate()
-% Define one exact switching candidate with stable diagnostic fields.
+% Initialize a switching-profile candidate.
 candidate = struct( ...
     "PhaseDuration", zeros(1, 7), ...
     "PhaseJerk", zeros(1, 7), ...
@@ -493,7 +490,7 @@ candidate = struct( ...
 end
 
 function profile = createEmptyProfile()
-% Return an explicit unsupported-family record for the identified engine failure.
+% Report the unsupported switching family.
 profile = struct( ...
     "Success", false, ...
     "Message", "No exact axis profile was created.", ...

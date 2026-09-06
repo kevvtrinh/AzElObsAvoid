@@ -4,12 +4,12 @@ function within = certifyPolynomialRange( ...
 % SYNTAX
 %   within = obstacleAvoidance.validation.certifyPolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
-%**************************************************************************
+%
 % PURPOSE
 %   - Certify a scalar polynomial range on normalized time [0, 1].
 %   - Resolve easy intervals with Bernstein hulls before using stationary
 %     points for cases that remain ambiguous after subdivision.
-%**************************************************************************
+%
 % INPUTS
 %   - powerCoefficient (finite real numeric vector)
 %       Ascending-power coefficients supplied by the validated polynomial
@@ -18,15 +18,15 @@ function within = certifyPolynomialRange( ...
 %       Inclusive range limits with lowerBound no greater than upperBound.
 %   - tolerance (nonnegative finite real numeric scalar)
 %       Absolute allowance applied once to both limits.
-%**************************************************************************
+%
 % OUTPUTS
 %   - within (scalar logical)
 %       True only when the complete polynomial is within the tolerated range.
-%**************************************************************************
+%
 % UNITS
 %   - Coefficients, bounds, and tolerance share the caller's physical unit.
 %     Polynomial time is dimensionless normalized time on [0, 1].
-%**************************************************************************
+%
 
 %% Section 1: Try Certified Bernstein Range Tests
 
@@ -51,8 +51,7 @@ if numel(powerCoefficient) <= 2
 end
 
 bernsteinControl = convertPowerToBernstein(powerCoefficient);
-% Two bisections expose four tighter hulls while keeping an unsuccessful
-% proof cheaper than allowing recursive work to compete with the fallback.
+% Try two subdivisions before falling back to polynomial extrema.
 maximumSubdivisionDepth = 2;
 decision = classifyBernsteinRange(bernsteinControl, ...
     certifiedLowerBound, certifiedUpperBound, maximumSubdivisionDepth);
@@ -78,8 +77,7 @@ needsTransform = isempty(transformByCoefficientCount) || ...
     numel(transformByCoefficientCount) < coefficientCount || ...
     isempty(transformByCoefficientCount{coefficientCount});
 if needsTransform
-    % The basis map depends only on degree; rebuilding it for every trajectory
-    % segment would make the proof path more expensive than root evaluation.
+    % Cache the degree-dependent basis conversion.
     transform = zeros(coefficientCount);
     for bernsteinIndex = 0:degree
         for powerIndex = 0:bernsteinIndex
@@ -146,7 +144,7 @@ end
 
 function within = stationaryPointsWithinBounds( ...
         powerCoefficient, lowerBound, upperBound)
-% Retain the established endpoint and finite stationary-point fallback.
+% Fall back to endpoints and real stationary points.
 derivativeCoefficient = (1:numel(powerCoefficient) - 1).' .* ...
     powerCoefficient(2:end);
 lastDerivativeIndex = find(derivativeCoefficient ~= 0, 1, "last");

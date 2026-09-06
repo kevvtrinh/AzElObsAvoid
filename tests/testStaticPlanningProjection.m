@@ -32,10 +32,10 @@ function testMovingHistoryProjectionIsStaticAndContainsSamples(testCase)
 obstacle = createMovingRectangle();
 [projectionObstacles, projection] = ...
     obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
-    obstacle, 0, 20);
+    obstacleAvoidance.obstacles.prepareObstacles(obstacle), 0, 20);
 
 verifyTrue(testCase, obstacleAvoidance.obstacles.queryStaticHorizon( ...
-    obstacleAvoidance.obstacles.prepareDynamic(projectionObstacles), 0, 20));
+    obstacleAvoidance.obstacles.prepareObstacles(projectionObstacles), 0, 20));
 verifyEqual(testCase, projection.Records.Method, ...
     "conservativeProtectedHistoryConvexHull");
 boundary_deg = projection.Records.Boundary_deg;
@@ -54,7 +54,7 @@ function testProjectedBmtpDetourPassesMovingValidation(testCase)
 obstacle = createMovingRectangle();
 [planningObstacles, ~] = ...
     obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
-    obstacle, 0, 20);
+    obstacleAvoidance.obstacles.prepareObstacles(obstacle), 0, 20);
 initialState = struct("time_s", 0, "position_deg", [-5 0]);
 goalState = struct("time_s", 20, "position_deg", [5 0]);
 limits = struct( ...
@@ -80,7 +80,7 @@ seed.Length_deg = sum(edgeLength_deg);
 seed.CorridorBoundary_deg = projectionBoundary(planningObstacles);
 
 [candidate, ~] = obstacleAvoidance.planner.solveBmtpTrajectory( ...
-    seed, planningObstacles, initialState, goalState, limits, options);
+    seed, obstacleAvoidance.obstacles.prepareObstacles(planningObstacles), initialState, goalState, limits, options);
 validation = obstacleAvoidance.validateTrajectory( ...
     candidate, obstacle, initialState, goalState, limits, options);
 
@@ -115,7 +115,7 @@ end
 
 function boundary_deg = projectionBoundary(obstacles)
 % Return the complete static projection union boundary for seed provenance.
-obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 [isStatic, shape] = obstacleAvoidance.obstacles.queryStaticHorizon( ...
     obstacles, 0, 20);
 assert(isStatic, "Projection must be static over the test horizon.");

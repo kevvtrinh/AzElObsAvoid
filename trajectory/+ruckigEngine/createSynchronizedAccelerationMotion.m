@@ -4,25 +4,25 @@ function attempt = createSynchronizedAccelerationMotion( ...
 % SYNTAX
 %   attempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
 %       initialState, terminalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create an exact second-order Ruckig position trajectory when
 %     acceleration is the discontinuous control and jerk is unconstrained.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (normalized scalar structs)
 %       Position and velocity boundary states with symmetric velocity and
 %       acceleration bounds. Acceleration endpoint values are not imposed.
 %   - options (resolved scalar struct)
 %       Earliest-arrival or fixed-time policy and numerical tolerances.
-%**************************************************************************
+%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Exact synchronized profile, solve status, reason, and elapsed time.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and consistent across position derivatives.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.
@@ -268,7 +268,7 @@ function candidates = appendAxisCandidate( ...
         candidates, p0, v0, pf, vf, maximumVelocity, ...
         maximumAcceleration, phaseDuration, phaseAcceleration, ...
         direction, family)
-% Integrate and retain one complete finite profile within derivative bounds.
+% Integrate the profile and check derivative limits.
 phaseDuration = double(phaseDuration(:).');
 phaseAcceleration = double(phaseAcceleration(:).');
 if numel(phaseDuration) ~= numel(phaseAcceleration) || ...
@@ -355,7 +355,7 @@ end
 
 function [polynomial, controlAcceleration] = createPolynomial( ...
         initialState, terminalState, axisProfiles, commonDuration)
-% Assemble every axis acceleration switch on one exact physical clock.
+% Combine all axis acceleration switches on a shared timeline.
 dimensionCount = numel(axisProfiles);
 switchTime = [0, commonDuration];
 for dimensionIndex = 1:dimensionCount
@@ -418,7 +418,7 @@ polynomial = struct( ...
 end
 
 function attempt = createAttempt(profile, solveTimer, reason)
-% Assemble the same stage contract used by the third-order engine path.
+% Use the same output fields as the jerk-limited engine.
 success = profile.Success;
 message = string(profile.Message);
 if success
@@ -435,7 +435,7 @@ attempt = struct( ...
 end
 
 function profile = createEmptyAxisProfile()
-% Define one stable scalar acceleration-profile record.
+% Initialize a scalar acceleration profile.
 profile = struct( ...
     "Success", false, ...
     "PhaseDuration", zeros(1, 0), ...
@@ -450,7 +450,7 @@ profile = struct( ...
 end
 
 function profile = createEmptyProfile(dimensionCount, minimumDuration)
-% Define the synchronized second-order profile contract on every exit.
+% Use the same synchronized-profile fields on every exit.
 profile = struct( ...
     "Success", false, ...
     "Message", "No synchronized acceleration profile was created.", ...

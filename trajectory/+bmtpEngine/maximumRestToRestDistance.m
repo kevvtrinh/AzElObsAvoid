@@ -6,10 +6,10 @@ function distance_deg = maximumRestToRestDistance( ...
 %   distance_deg = bmtpEngine.maximumRestToRestDistance( ...
 %       duration_s, velocityLimit_deg_s, ...
 %       accelerationLimit_deg_s2, jerkLimit_deg_s3)
-%**************************************************************************
+%
 % PURPOSE
 %   - Return the exact maximum rest-to-rest scalar displacement in one clock.
-%**************************************************************************
+%
 % INPUTS
 %   - duration_s (nonnegative finite scalar)
 %       Available motion duration.
@@ -19,15 +19,15 @@ function distance_deg = maximumRestToRestDistance( ...
 %       Symmetric acceleration magnitude limit.
 %   - jerkLimit_deg_s3 (positive finite scalar)
 %       Symmetric jerk magnitude limit.
-%**************************************************************************
+%
 % OUTPUTS
 %   - distance_deg (nonnegative scalar)
 %       Maximum displacement attained by the exact symmetric switching law.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivative limits use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Validate The Scalar Limits
 

@@ -1,27 +1,28 @@
-function validation = validateExampleResult( result, scenarioLabel, requirements)
+function validation = validateExampleResult( result, scenarioLabel, requirements, diagnosis)
 %% Section 0: Header & Readme
 % SYNTAX
 %   validation = validateExampleResult(result, scenarioLabel)
 %   validation = validateExampleResult( ...
-%       result, scenarioLabel, requirements)
-%**************************************************************************
+%       result, scenarioLabel, requirements, diagnosis)
+%
 % PURPOSE
 %   - Independently validate one maintained example result.
 %   - Validate stable diagnostics for expected planning failures.
-%**************************************************************************
+%
 % INPUTS
 %   - result (scalar planTrajectory result)
 %   - scenarioLabel (scalar text)
 %   - requirements (scalar struct, optional; default struct())
 %       ExpectedSuccess defaults true. RequireDirectBlocked defaults false.
-%**************************************************************************
+%   - diagnosis (optional scalar struct): search attempts from the planner.
+%
 % OUTPUTS
 %   - validation (scalar struct)
 %       Pass state, message, trajectory validation, and diagnostic checks.
-%**************************************************************************
+%
 % UNITS
 %   - Direct-route collision probes use degrees and seconds.
-%**************************************************************************
+%
 
 %% Section 1: Resolve The Example Requirements
 
@@ -29,6 +30,7 @@ function validation = validateExampleResult( result, scenarioLabel, requirements
 % valid no-path result from an unexpected planner failure. RequireDirectBlocked
 % checks that an obstacle example does not accidentally have a clear direct line.
 
+if nargin < 4, diagnosis = struct(); end
 if nargin < 3 || isempty(requirements)
     requirements = struct();
 end
@@ -46,7 +48,7 @@ expectedSuccess = obstacleAvoidance.input.normalizeLogicalScalar( ...
 requireDirectBlocked = obstacleAvoidance.input.normalizeLogicalScalar( ...
     requireDirectBlocked, "RequireDirectBlocked", "validateExampleResult:InvalidRequireDirectBlocked");
 requiredFields = {'Success', 'Message', 'TerminationReason', 'Inputs', ...
-    'Options', 'Seeds', 'SeedSummaries', 'SearchDiagnostics'};
+    'Options', 'Route_deg', 'BestPartialRoute_deg'};
 formatIsStable = all(isfield(result, requiredFields));
 
 %% Section 2: Validate Motion Or Expected Failure
@@ -60,7 +62,9 @@ if formatIsStable && result.Success
     trajectoryValidation = obstacleAvoidance.validateTrajectory(result);
 end
 diagnosticsAreConsistent = formatIsStable && ...
-    numel(result.SeedSummaries) == numel(result.Seeds) && diagnosticCountsAreValid(result.SearchDiagnostics);
+    (isempty(fieldnames(diagnosis)) || ...
+    (numel(diagnosis.Attempts) == numel(diagnosis.Routes) && ...
+    diagnosticCountsAreValid(diagnosis.Search)));
 recognizedFailure = false;
 if formatIsStable && ~result.Success
     recognizedReasons = ["endpointBlocked", "dynamicEndpointInfeasible", ...
@@ -124,12 +128,11 @@ end
 function valid = diagnosticCountsAreValid(searchDiagnostics)
 % Check stored trace arrays and complete search counts. A trace can be shortened
 % for display, but its total count must still describe the complete search.
-valid = isstruct(searchDiagnostics) && isscalar(searchDiagnostics) && ...
-    isfield(searchDiagnostics, "Grid") && isfield(searchDiagnostics, "TerminationReason");
+valid = isstruct(searchDiagnostics) && isscalar(searchDiagnostics);
 if ~valid
     return;
 end
-gridRecord = searchDiagnostics.Grid;
+gridRecord = searchDiagnostics;
 countNames = ["NodeCount", "VisibilityEdgeCount", "ExpandedCount", "RejectedTransitionCount", "GeneratedSeedCount"];
 
 % Require a finite nonnegative scalar for each available search count.

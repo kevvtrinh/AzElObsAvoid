@@ -1,0 +1,66 @@
+{
+  "Baseline": [
+    {
+      "Root": "+obstacleAvoidance",
+      "Files": 59,
+      "Physical": 10417,
+      "Noncomment": 7499
+    },
+    {
+      "Root": "trajectory",
+      "Files": 39,
+      "Physical": 6913,
+      "Noncomment": 5126
+    },
+    {
+      "Root": "tests",
+      "Files": 21,
+      "Physical": 5337,
+      "Noncomment": 4351
+    },
+    {
+      "Root": "benchmarks",
+      "Files": 7,
+      "Physical": 1046,
+      "Noncomment": 726
+    },
+    {
+      "Root": "examples",
+      "Files": 22,
+      "Physical": 3020,
+      "Noncomment": 1691
+    }
+  ],
+  "Integration": [
+    {
+      "Root": "+obstacleAvoidance",
+      "Files": 59,
+      "Physical": 10417,
+      "Noncomment": 7499
+    },
+    {
+      "Root": "trajectory",
+      "Files": 48,
+      "Physical": 7570,
+      "Noncomment": 5689
+    },
+    {
+      "Root": "tests",
+      "Files": 26,
+      "Physical": 5677,
+      "Noncomment": 4657
+    },
+    {
+      "Root": "benchmarks",
+      "Files": 9,
+      "Physical": 1190,
+      "Noncomment": 848
+    },
+    {
+      "Root": "examples",
+      "Files": 22,
+      "Physical": 3020,
+      "Noncomment": 1691
+    }
+  ]
+}

@@ -329,7 +329,7 @@ boundary data with names such as \nolinkurl{createObstacle:InvalidTime},
 \nolinkurl{createObstacle:DegeneratePolygon}. A request that reaches this station
 has already passed those checks.
 
-\stationSource{+obstacleAvoidance/+obstacles/createObstacle.m:18--22, 66--95, 256--307; +obstacleAvoidance/+obstacles/prepareDynamic.m:1--96; +obstacleAvoidance/+planner/planCorridorQuintic.m:58--63}
+\stationSource{+obstacleAvoidance/+obstacles/createObstacle.m:18--22, 66--95, 256--307; +obstacleAvoidance/+obstacles/prepareObstacles.m:1--96; +obstacleAvoidance/+planner/planCorridorQuintic.m:58--63}
 
 \section{Station 6: check endpoints}
 
@@ -846,25 +846,16 @@ constraint violation, greater minimum clearance, and then original index. This
 is evidence of the attempts made, not a conclusion that no safe motion exists.
 
 \arrival{4. What the caller finally receives.}
-On success the caller receives \texttt{Success}, \texttt{Message}, and
-\texttt{TerminationReason}; resolved \texttt{Options} and \texttt{Inputs};
-all \texttt{Seeds} and \texttt{SeedSummaries};
-\texttt{SelectedSeedIndex} and \texttt{SelectedSeed\_deg}; complete
-\texttt{time\_s}, \texttt{position\_deg}, \texttt{velocity\_deg\_s},
-\texttt{acceleration\_deg\_s2}, and \texttt{jerk\_deg\_s3} histories;
-\texttt{Polynomial}, \texttt{SeedCorridorBoundary\_deg},
-\texttt{SeedCorridor}, \texttt{PlaneCertificate}, and the independent
-\texttt{Validation} record. It also returns \texttt{ArrivalTime\_s},
-\texttt{TrajectoryDuration\_s}, \texttt{GoalHorizon\_s},
-\texttt{FirstValidatedMotionTime\_s}, and
-\texttt{ElapsedPlanningTime\_s}.
+The first output, \texttt{result}, contains the planning outcome, normalized
+inputs and options, selected \texttt{Route\_deg}, optional
+\texttt{BestPartialRoute\_deg}, motion histories, exact polynomial, validation
+evidence, arrival time, duration, and elapsed planning time.
 
-\texttt{SearchDiagnostics} accompanies those fields: grid and route-search
-evidence, every seed summary, attempted and validated candidate counts, the
-first validated-motion time, selected best-partial index, its termination
-reason, early-construction records, and stage timing. The same named fields
-exist on the no-validated-motion return, with documented empty values where no
-motion exists.
+The optional second output, \texttt{diagnosis}, contains tried routes and
+attempt summaries, search traces and limitations, stage timing, and solver
+details. Solver details are a table of attempt index, field path, and value
+rather than nested structures. These result fields have the same layout on
+success and failure; unavailable motion data is empty.
 
 \stationSource{+obstacleAvoidance/+planner/planCorridorQuintic.m:344--389, 496--563, 836--861; +obstacleAvoidance/+planner/createEmptyResult.m:39--120}
 

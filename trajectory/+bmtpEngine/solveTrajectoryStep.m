@@ -1,20 +1,18 @@
 function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
         solveTrajectoryStep( ...
         segmentCount, degree, start_deg, goal_deg, limits, planes, reserve_deg, ...
-        maximumMotionDuration_s, goalTimeMode, travelSavingsRate_deg_s, ...
-        referenceSegmentTime_s, options)
+        maximumMotionDuration_s, goalTimeMode, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.solveTrajectoryStep( ...
 %       segmentCount, degree, start_deg, goal_deg, limits, planes, ...
-%       reserve_deg, maximumMotionDuration_s, goalTimeMode, ...
-%       travelSavingsRate_deg_s, referenceSegmentTime_s, options)
-%**************************************************************************
+%       reserve_deg, maximumMotionDuration_s, goalTimeMode, options)
+%
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
 %     policy, and derivative limits.
-%**************************************************************************
+%
 % INPUTS
 %   - segmentCount, degree (positive integer scalars)
 %       Composite Bezier representation size.
@@ -29,23 +27,21 @@ function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %   - maximumMotionDuration_s (positive scalar)
 %       Upper bound or fixed motion duration.
 %   - goalTimeMode (scalar text)
-%       earliestArrival, balancedArrival, or fixedArrival.
-%   - travelSavingsRate_deg_s, referenceSegmentTime_s (numeric scalars)
-%       Travel/time objective rate and linearization time.
+%       earliestArrival or fixedArrival.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - controlPoint_deg (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
 %   - segmentTime_s (scalar numeric)
 %       Common segment time, or NaN on expected solve failure.
 %   - exitFlag (numeric scalar), output (solver record)
-%       Unmodified coneprog outcome.
-%**************************************************************************
+%       Original coneprog status and measured solver time.
+%
 % UNITS
 %   - Position is degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create Decision Bounds And Continuity Rows
 
@@ -176,13 +172,10 @@ if goalTimeMode == "fixedArrival"
 else
     ub(powerIndex) = timePowers_s;
 end
-if goalTimeMode == "balancedArrival"
-    referenceSegmentTime_s = max(referenceSegmentTime_s, eps);
-    f(powerIndex(4)) = travelSavingsRate_deg_s * segmentCount / ...
-        (3 * referenceSegmentTime_s ^ 2);
-end
+solverTimer = tic;
 [x, ~, exitFlag, output] = coneprog( ...
     f, cones, A, b, Aeq, beq, lb, ub, options);
+output.TotalTime_s = toc(solverTimer);
 if exitFlag <= 0 || isempty(x) || any(~isfinite(x))
     controlPoint_deg = zeros(0, degree + 1, 2);
     segmentTime_s = NaN;
@@ -214,7 +207,7 @@ end
 
 function soc = createTravelBoundCones( ...
         variableCount, travelBoundIndex, segmentCount, degree)
-% Bound each Bezier control edge with a convex travel surrogate.
+% Bound travel by the sum of Bezier control-edge lengths.
 if isempty(travelBoundIndex)
     soc = repmat(secondordercone( ...
         zeros(2, variableCount), zeros(2, 1), ...
@@ -246,7 +239,7 @@ end
 
 function [rows, offset_deg] = fixedPlaneRows( ...
         plane, degree, variableCount, segmentIndex)
-% Expand a fixed line times decision-valued trajectory controls.
+% Multiply a fixed separating line by variable trajectory controls.
 [alpha, beta] = productWeights(degree);
 rows = spalloc(degree + 2, variableCount, 4 * (degree + 2));
 for productIndex = 1:degree + 2

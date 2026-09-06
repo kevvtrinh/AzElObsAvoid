@@ -5,27 +5,27 @@ function [planningObstacles, projection] = ...
 %   [planningObstacles, projection] = ...
 %       obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
 %       obstacles, startTime_s, endTime_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create a conservative static planning projection for complete obstacle
 %     histories without changing the authoritative validation geometry.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (canonical or prepared obstacle struct array)
 %       Protected histories are used exactly once; moving histories are
 %       enclosed by a convex hull of every protected sample vertex.
 %   - startTime_s, endTime_s (finite numeric scalars)
 %       Inclusive request horizon with endTime_s not before startTime_s.
-%**************************************************************************
+%
 % OUTPUTS
 %   - planningObstacles (canonical obstacle struct array)
 %       Static exact obstacles and conservative moving-history surrogates.
 %   - projection (scalar struct)
 %       Source mapping, construction method, and planning boundaries.
-%**************************************************************************
+%
 % UNITS
 %   - Position and boundary coordinates are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Validate And Normalize The Projection Request
 
@@ -36,7 +36,6 @@ validateattributes(endTime_s, {'numeric'}, ...
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end
-obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 recordTemplate = struct( ...
     "SourceObstacleIndex", 0, "SourceName", "", ...
     "IsExactStaticGeometry", false, "Method", "", ...
@@ -95,6 +94,7 @@ for obstacleIndex = 1:numel(obstacles)
 end
 planningObstacles = ...
     obstacleAvoidance.obstacles.combineObstacles(projected{:});
+planningObstacles = obstacleAvoidance.obstacles.prepareObstacles(planningObstacles);
 
 %% Section 3: Assemble Projection Provenance
 

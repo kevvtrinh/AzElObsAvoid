@@ -1,81 +1,70 @@
 function [candidate, summary, checkResult, stageTiming] = ...
-        solveOneSeed(seed, context, stageTiming)
+        solveOneSeed( ...
+        obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, summary, checkResult, stageTiming] = ...
 %       obstacleAvoidance.planner.solveOneSeed( ...
-%       seed, context, stageTiming)
-%**************************************************************************
+%       obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
+%
 % PURPOSE
 %   - Select and run the primary motion method for one deterministic seed.
 %   - Apply explicit backups and retain only full-check acceptance evidence.
-%**************************************************************************
+%
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order.
 %   - seed (scalar route-seed struct)
 %       Indexed route suggestion and timing estimate.
 %   - context (scalar struct)
-%       Engine choice, prepared request, options, and summary template.
+%       UseStaticSolver and SummaryTemplate for this solve.
 %   - stageTiming (scalar struct)
 %       Accumulated planner timing before this seed.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar motion struct)
 %       Final attempted motion, including explicit fallback diagnostics.
 %   - summary (scalar candidate-summary struct)
 %       Stable solve, check, objective, and timing evidence.
 %   - checkResult (scalar validation struct)
-%       Authoritative result from obstacleAvoidance.validateTrajectory.
+%       Same complete check used by the public validator.
 %   - stageTiming (scalar struct)
 %       Motion-solving and checking time accumulated through this seed.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Choose And Solve The Primary Motion Method
 
-% Engine choice follows only resolved options and whether obstacle histories
-% are static. Dynamic obstacle meaning stays outside the dimension-neutral
-% BMTP and Ruckig engines in the dedicated dynamic-seed coordinator.
-
-obstacleAvoidance.input.throwIfCancellationRequested(context.Options);
+% Use the stationary-obstacle solver only when the whole scene stays stationary.
 motionTimer = tic;
 candidateWasPrechecked = false;
 precheckElapsedTime_s = 0;
-checkResult = obstacleAvoidance.validateTrajectory();
-initialState = context.InitialState;
-goalState = context.GoalState;
-limits = context.Limits;
-options = context.Options;
-preparedObstacles = context.PreparedObstacles;
-if context.UseRuckigWaypoint
-    [candidate, solverDiagnostics] = ...
-        obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-        seed, initialState, goalState, limits, options);
-elseif context.UseStaticKernel
-    kernelGoalState = ...
-        obstacleAvoidance.planner.createFixedKernelGoalState( ...
+checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
+preparedObstacles = obstacles;
+if context.UseStaticSolver
+    solverGoalState = ...
+        obstacleAvoidance.planner.createSolverGoalState( ...
         goalState, options);
     [candidate, solverDiagnostics] = ...
         obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, preparedObstacles, initialState, kernelGoalState, ...
+        seed, preparedObstacles, initialState, solverGoalState, ...
         limits, options);
 else
     [candidate, checkResult, solverDiagnostics, ...
         candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
         obstacleAvoidance.planner.solveDynamicSeed( ...
-        seed, context, stageTiming);
+            preparedObstacles, initialState, goalState, limits, options, ...
+            seed, stageTiming);
 end
 
 %% Section 2: Run The Full Motion Check
 
-% Primary methods return candidate motions, not obstacle-avoidance approval.
-% Skip this call only when the dynamic stage already ran the identical full
-% check against the original prepared obstacle histories.
+% Skip validation only if the dynamic solver already ran the same full check.
 
 elapsedTime_s = toc(motionTimer) - precheckElapsedTime_s;
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 stageTiming.MotionSolvingElapsedTime_s = ...
     stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
 if ~candidateWasPrechecked
@@ -84,17 +73,13 @@ if ~candidateWasPrechecked
         candidate, preparedObstacles, initialState, goalState, limits, ...
         options, stageTiming, "The motion kernel returned no trajectory.");
 
-    % --- Refine A Passing Direct Wait When Useful -----------------
+    % Refine the initial wait when it affects the objective.
 
-    % Only policies whose objective changes with arrival time benefit from
-    % reducing a wait. Every refinement trial is checked in full and the best
-    % passing bracket endpoint remains explicit in solver diagnostics.
+    % Refine the wait for earliest arrival.
 
     waitRefinementAffectsObjective = ...
-        options.GoalTimeMode == "earliestArrival" || ...
-        (options.GoalTimeMode == "balancedArrival" && ...
-        options.MinimumTravelSavingsRate_deg_s > 0);
-    if checkResult.Passed && string(seed.Source) == "directWait" && ...
+        options.GoalTimeMode == "earliestArrival";
+    if candidate.Success && string(seed.Source) == "directWait" && ...
             waitRefinementAffectsObjective
         [candidate, checkResult, solverDiagnostics, ...
             refinementElapsedTime_s, stageTiming] = ...
@@ -111,13 +96,11 @@ end
 
 %% Section 3: Create The Candidate Summary
 
-% Candidate selection consumes only stable summaries. Preserve all primary,
-% backup, and validation evidence here so ranking never needs to reconstruct
-% how this motion was produced.
+% Record the solve, fallback, and validation results for candidate selection.
 
 summary = obstacleAvoidance.planner.createCandidateSummary( ...
     candidate, checkResult, solverDiagnostics, elapsedTime_s, ...
-    context.SummaryTemplate, limits, options, initialState.time_s);
+    context.SummaryTemplate, limits);
 end
 
 %% Section 4: Local Functions
@@ -126,7 +109,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, ...
         stageTiming] = refineDirectWait( ...
         seed, candidate, checkResult, diagnostics, obstacles, initialState, ...
         goalState, limits, options, stageTiming)
-% Reduce a passing direct wait through a fully checked time bracket.
+% Keep only validated improvements to the move and initial wait.
 initialWaitTime_s = diagnostics.WaitTime_s;
 diagnostics.InitialWaitTime_s = initialWaitTime_s;
 diagnostics.FinalWaitTime_s = initialWaitTime_s;
@@ -136,15 +119,35 @@ if options.MaximumWaitRefinementIterations == 0 || initialWaitTime_s <= 0
     return;
 end
 directMotionDuration_s = candidate.MotionDuration_s - initialWaitTime_s;
+diagnostics.InitialDirectMotionDuration_s = directMotionDuration_s;
+diagnostics.FinalDirectMotionDuration_s = directMotionDuration_s;
+% Time compression preserves the path but changes obstacle encounters.
+% Use derivative bounds to propose it, then validate the full motion.
+durationScale = max([checkResult.PeakVelocity_deg_s ./ ...
+    limits.maxVelocity_deg_s, sqrt(checkResult.PeakAcceleration_deg_s2 ./ ...
+    limits.maxAcceleration_deg_s2), nthroot(checkResult.PeakJerk_deg_s3 ./ ...
+    limits.maxJerk_deg_s3, 3)]);
+% Leave roundoff slack when converting derivative ratios back to a duration.
+shorterDuration_s = directMotionDuration_s * durationScale * (1 + 64 * eps);
 lowerWaitTime_s = 0;
 upperWaitTime_s = initialWaitTime_s;
 bestCandidate = candidate;
 bestCheckResult = checkResult;
 
-% Every trial must pass the authoritative trajectory check. Bisection never
-% promotes a solver result or sampled obstacle query to final acceptance.
-for refinementIndex = 1:options.MaximumWaitRefinementIterations
-    if refinementIndex == 1
+% Validate every trial; bisection alone does not prove feasibility.
+for refinementIndex = 0:options.MaximumWaitRefinementIterations
+    trialDuration_s = directMotionDuration_s;
+    if refinementIndex == 0
+        if ~isfinite(shorterDuration_s) || shorterDuration_s >= ...
+                directMotionDuration_s - options.ArrivalTimeTolerance_s
+            continue;
+        end
+        diagnostics.DirectRetimingAttempted = true;
+        trialDuration_s = shorterDuration_s;
+        trialWaitTime_s = initialWaitTime_s;
+    elseif ~bestCheckResult.Passed
+        break;
+    elseif refinementIndex == 1
         trialWaitTime_s = lowerWaitTime_s;
     else
         trialWaitTime_s = 0.5 * (lowerWaitTime_s + upperWaitTime_s);
@@ -153,7 +156,7 @@ for refinementIndex = 1:options.MaximumWaitRefinementIterations
     [trialCandidate, ~] = ...
         obstacleAvoidance.planner.createDirectWaitMotion( ...
         seed, initialState, goalState, limits, options, ...
-        trialWaitTime_s, directMotionDuration_s);
+        trialWaitTime_s, trialDuration_s);
     motionElapsedTime_s = motionElapsedTime_s + toc(motionTimer);
     [trialCandidate, trialCheckResult, ~, stageTiming] = ...
         obstacleAvoidance.planner.checkCandidateMotion( ...
@@ -165,10 +168,15 @@ for refinementIndex = 1:options.MaximumWaitRefinementIterations
         bestCandidate = trialCandidate;
         bestCheckResult = trialCheckResult;
         upperWaitTime_s = trialWaitTime_s;
+        if refinementIndex == 0
+            directMotionDuration_s = trialDuration_s;
+            diagnostics.DirectRetimingAccepted = true;
+            diagnostics.FinalDirectMotionDuration_s = trialDuration_s;
+        end
         if trialWaitTime_s == 0
             break;
         end
-    else
+    elseif refinementIndex > 0
         lowerWaitTime_s = trialWaitTime_s;
         diagnostics.InfeasibleLowerWaitTime_s = lowerWaitTime_s;
     end

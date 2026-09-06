@@ -3,45 +3,48 @@ function options = resolvePlannerOptions(optionOverrides)
 % SYNTAX
 %   options = obstacleAvoidance.input.resolvePlannerOptions()
 %   options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Resolve and validate obstacle-planner search and motion options.
-%**************************************************************************
+%
 % INPUTS
-%   - optionOverrides (scalar struct, optional; default struct())
-%       Partial overrides; empty fields use defaults and unknown fields are
-%       warned about once and ignored.
-%       GoalTimeMode is "balancedArrival" (default), "earliestArrival", or
-%       "fixedArrival". Balanced arrival minimizes travel plus the explicit
-%       arrival-time exchange rate MinimumTravelSavingsRate_deg_s. A later
-%       motion wins only when its travel saving exceeds that rate times its
-%       delay. Jerk remains a hard constraint and is never a ranking cost.
-%       MaximumSeedCount is an integer from 1 through 5. Default is 2. Seeds
-%       beyond the first two are failure-only recovery: set the value to 5
-%       to enable all three later attempts, or 2 to turn them off.
-%       MaximumTimeLayerCount is an integer from 2 through 65535 and bounds
-%       BMTP timed-motion segments plus one. Default is 17.
-%       MaximumWaitRefinementIterations is an integer from 0 through 64 and
-%       bounds validated direct-wait bisection trials. Default is 16.
-%       UnsupportedTimedTopologyPolicy is "fail" (default) or
-%       "ruckigStopAtWaypoints". The latter explicitly permits rest-to-rest
-%       composition after the smooth timed kernel rejects a route topology,
-%       but only when the normalized route contains at most two segments.
-%**************************************************************************
+%   optionOverrides (scalar struct, optional)
+%     Omitted/empty fields use defaults. Unknown fields warn once and are ignored.
+%
+%   Option                            Default              Allowed values
+%   GoalTimeMode                      "earliestArrival"    See modes below
+%   MaximumSeedCount                  2                    Integers 1-5
+%   MaximumTimeLayerCount             17                    Integers 2-65535
+%   MaximumWaitRefinementIterations   16                    Integers 0-64
+%   UnsupportedTimedTopologyPolicy   "fail"                See fallback below
+%
+%   Arrival modes:
+%     earliestArrival  Minimize arrival time; break ties by shorter travel.
+%     fixedArrival     Minimize travel at the specified arrival time.
+%     Jerk is a hard limit in every mode.
+%
+%   Search limits:
+%     Seeds beyond the first two are tried only after failure.
+%     Time layers bound timed-motion segments + 1.
+%     Wait iterations limit direct-wait bisection trials.
+%
+%   Fallback:
+%     fail                   Report unsupported timed routes.
+%     ruckigStopAtWaypoints   Allow stop-at-waypoint fallback for at most 2 segments.
+%
 % OUTPUTS
 %   - options (scalar struct)
 %       Fully populated, normalized, and validated planner options.
-%**************************************************************************
+%
 % UNITS
 %   - Time fields use seconds and angular clearance fields use degrees.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Defaults
 
 defaults = struct( ...
-    "GoalTimeMode", "balancedArrival", ...
-    "MinimumTravelSavingsRate_deg_s", 1, "SampleTime_s", 0.05, ...
-    "TrajectoryMethod", "bmtp", ...
+    "GoalTimeMode", "earliestArrival", ...
+    "SampleTime_s", 0.05, ...
     "UnsupportedTimedTopologyPolicy", "fail", ...
     "AllowAzimuthWrapping", false, ...
     "MaximumSeedCount", 2, ...
@@ -49,10 +52,10 @@ defaults = struct( ...
     "MaximumWaitRefinementIterations", 16, ...
     "ArrivalTimeTolerance_s", 1e-3, "ConstraintTolerance", 1e-7, ...
     "CollisionClearanceTolerance_deg", 1e-7, ...
-    "CollisionMinimumTimeStep_s", 0.00025, ...
-    "CancellationCheckFcn", []);
+    "CollisionMinimumTimeStep_s", 0.00025);
 if nargin == 0 || isempty(optionOverrides)
-    optionOverrides = struct();
+    options = defaults;
+    return;
 end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("planTrajectory:InvalidOptions", ...
@@ -67,8 +70,16 @@ for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
             fieldName, replacementName);
     end
 end
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
-    defaults, optionOverrides);
+% Apply known, nonempty overrides.
+options = defaults;
+defaultNames = string(fieldnames(defaults));
+overrideNames = string(fieldnames(optionOverrides));
+unknownNames = setdiff(overrideNames, defaultNames, "stable");
+for fieldName = reshape(intersect(overrideNames, defaultNames, "stable"), 1, [])
+    if ~isempty(optionOverrides.(fieldName))
+        options.(fieldName) = optionOverrides.(fieldName);
+    end
+end
 if ~isempty(unknownNames)
     warning("planTrajectory:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
@@ -78,13 +89,10 @@ end
 %% Section 2: Normalize Public Values
 
 textRules = {"GoalTimeMode", ...
-    ["balancedArrival", "earliestArrival", "fixedArrival"], ...
+    ["earliestArrival", "fixedArrival"], ...
     "planTrajectory:InvalidGoalTimeMode", ...
-    "GoalTimeMode must be 'balancedArrival', 'earliestArrival', or " + ...
+    "GoalTimeMode must be 'earliestArrival' or " + ...
     "'fixedArrival'."; ...
-    "TrajectoryMethod", ["bmtp", "ruckigWaypoint"], ...
-    "planTrajectory:InvalidTrajectoryMethod", ...
-    "TrajectoryMethod must be 'bmtp' or 'ruckigWaypoint'."; ...
     "UnsupportedTimedTopologyPolicy", ...
     ["fail", "ruckigStopAtWaypoints"], ...
     "planTrajectory:InvalidUnsupportedTimedTopologyPolicy", ...
@@ -98,17 +106,9 @@ for ruleIndex = 1:size(textRules, 1)
         error(textRules{ruleIndex, 3}, textRules{ruleIndex, 4});
     end
 end
-for fieldName = "AllowAzimuthWrapping"
-    options.(fieldName) = obstacleAvoidance.input.normalizeLogicalScalar( ...
-        options.(fieldName), fieldName, ...
-        "planTrajectory:InvalidLogicalOption");
-end
-if ~isempty(options.CancellationCheckFcn) && ...
-        ~(isa(options.CancellationCheckFcn, "function_handle") && ...
-        isscalar(options.CancellationCheckFcn))
-    error("planTrajectory:InvalidCancellationCheckFcn", ...
-        "CancellationCheckFcn must be empty or a scalar function handle.");
-end
+options.AllowAzimuthWrapping = obstacleAvoidance.input.normalizeLogicalScalar( ...
+    options.AllowAzimuthWrapping, "AllowAzimuthWrapping", ...
+    "planTrajectory:InvalidLogicalOption");
 
 validateattributes(options.SampleTime_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'positive'});
@@ -120,8 +120,7 @@ for ruleIndex = 1:size(integerRules, 1)
         {'real', 'finite', 'scalar', 'integer', ...
         '>=', integerRules{ruleIndex, 2}, '<=', integerRules{ruleIndex, 3}});
 end
-for fieldName = ["MinimumTravelSavingsRate_deg_s", ...
-        "ArrivalTimeTolerance_s", "ConstraintTolerance", ...
+for fieldName = ["ArrivalTimeTolerance_s", "ConstraintTolerance", ...
         "CollisionMinimumTimeStep_s"]
     validateattributes(options.(fieldName), {'numeric'}, ...
         {'real', 'finite', 'scalar', 'positive'});

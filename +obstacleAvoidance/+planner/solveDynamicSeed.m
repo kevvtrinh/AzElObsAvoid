@@ -1,25 +1,26 @@
 function [candidate, checkResult, solverDiagnostics, ...
         candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
-        solveDynamicSeed(seed, context, stageTiming)
+        solveDynamicSeed( ...
+        obstacles, initialState, goalState, limits, options, seed, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, checkResult, solverDiagnostics, ...
 %       candidateWasPrechecked, precheckElapsedTime_s, stageTiming] = ...
 %       obstacleAvoidance.planner.solveDynamicSeed( ...
-%       seed, context, stageTiming)
-%**************************************************************************
+%       obstacles, initialState, goalState, limits, options, seed, stageTiming)
+%
 % PURPOSE
 %   - Coordinate dynamic-obstacle motion methods and explicit backups.
 %   - Retain every attempted representation, check, and fallback outcome.
-%**************************************************************************
+%
 % INPUTS
+%   - obstacles, initialState, goalState, limits, options
+%       Normalized planning inputs in public planner order.
 %   - seed (scalar route-seed struct)
 %       Indexed timed or spatial proposal.
-%   - context (scalar struct)
-%       PreparedObstacles, InitialState, GoalState, Limits, and Options.
 %   - stageTiming (scalar struct)
 %       Accumulated planner timing before this seed.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar motion struct)
 %       Selected dynamic-seed attempt or stable failure record.
@@ -33,39 +34,34 @@ function [candidate, checkResult, solverDiagnostics, ...
 %       Full-validation time nested inside this motion stage.
 %   - stageTiming (scalar struct)
 %       Timing updated by nested authoritative checks.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Try A Conservative Static Projection
 
-% A multi-waypoint seed can first use the static BMTP engine if the complete
-% moving history is projected into conservative static geometry. The resulting
-% motion is still checked against the original histories before it can pass.
+% Try static BMTP against geometry covering the complete moving history.
+% Validate the motion against the original histories.
 
-initialState = context.InitialState;
-goalState = context.GoalState;
-limits = context.Limits;
-options = context.Options;
-preparedObstacles = context.PreparedObstacles;
+preparedObstacles = obstacles;
 candidateWasPrechecked = false;
 precheckElapsedTime_s = 0;
-checkResult = obstacleAvoidance.validateTrajectory();
+checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
 trySweptProjection = string(seed.Source) ~= "directWait" && ...
     size(seed.position_deg, 1) > 2;
 sweptAttempt = struct();
 timedBmtpAttempt = struct();
 if trySweptProjection
-    kernelGoalState = ...
-        obstacleAvoidance.planner.createFixedKernelGoalState( ...
+    solverGoalState = ...
+        obstacleAvoidance.planner.createSolverGoalState( ...
         goalState, options);
     [planningObstacles, projection] = ...
         obstacleAvoidance.obstacles.createStaticPlanningProjection( ...
         preparedObstacles, initialState.time_s, goalState.time_s);
     [sweptCandidate, sweptDiagnostics] = ...
         obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, planningObstacles, initialState, kernelGoalState, ...
+        seed, planningObstacles, initialState, solverGoalState, ...
         limits, options);
     [sweptCandidate, sweptCheck, sweptCheckTime_s, stageTiming] = ...
         obstacleAvoidance.planner.checkCandidateMotion( ...
@@ -90,9 +86,8 @@ end
 
 %% Section 2: Try Timed-Cell BMTP
 
-% If the conservative projection rejects a timed visibility route, preserve
-% its actual time cells in the timed BMTP method. Again, only a full check
-% against the prepared obstacle histories can retain the attempt.
+% If the static projection fails, try BMTP with the route's timed cells.
+% Validate against the original moving obstacles.
 
 tryTimedBmtp = trySweptProjection && ~candidateWasPrechecked && ...
     string(seed.Source) == "timeExpandedVisibilityGraph";
@@ -122,9 +117,7 @@ end
 
 %% Section 3: Create A Direct-Wait Motion When Applicable
 
-% Remaining dynamic seeds go through the compact direct-wait construction.
-% Unsupported multi-waypoint topology stays explicit so only the requested
-% stop-at-waypoint policy can trigger its backup method.
+% Try an initial wait and direct move; handle unsupported routes explicitly.
 
 if ~candidateWasPrechecked
     [candidate, solverDiagnostics] = ...
@@ -139,8 +132,7 @@ end
 
 %% Section 4: Apply The Explicit Waypoint Backup Policy
 
-% The backup method is never implicit. Retain the failed primary diagnostics,
-% whether policy enabled the attempt, and the complete backup result.
+% Use the fallback only when enabled, and record both attempts.
 
 timedTerminationReason = string(candidate.TerminationReason);
 timedTopologyIsUnsupported = any(timedTerminationReason == ...
@@ -181,7 +173,7 @@ end
 
 function diagnostics = combineFallbackDiagnostics( ...
         timedDiagnostics, fallbackDiagnostics, originalReason, attempted)
-% Preserve the earliest timed-kernel failure across an explicit recovery.
+% Keep the original timed-kernel failure when recovery is attempted.
 diagnostics = timedDiagnostics;
 diagnostics.OriginalTerminationReason = originalReason;
 diagnostics.FallbackAttempted = attempted;
@@ -206,7 +198,7 @@ end
 
 function record = createSweptProjectionRecord( ...
         diagnostics, checkResult, projection)
-% Record conservative static mover geometry and authoritative validation.
+% Record the static projection and validation against moving obstacles.
 record = struct( ...
     "Attempted", true, ...
     "Projection", projection, ...

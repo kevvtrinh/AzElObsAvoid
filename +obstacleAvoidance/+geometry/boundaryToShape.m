@@ -2,42 +2,36 @@ function shape = boundaryToShape(azimuth_deg, elevation_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Translate the repository's NaN-separated boundary format into MATLAB's
 %     polygon representation without silently dropping meaningful collinear
 %     vertices. All planner modules use this adapter instead of interpreting
 %     boundary separators independently.
-%**************************************************************************
+%
 % INPUTS
 %   - azimuth_deg, elevation_deg (matched numeric vectors)
 %       Paired finite vertices with paired nonfinite ring separators.
-%**************************************************************************
+%
 % OUTPUTS
 %   - shape (scalar polyshape)
 %       Unsimplified geometry preserving collinear boundary vertices.
-%**************************************************************************
+%
 % UNITS
 %   - Boundary coordinates are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Construct The Shape Without Reinterpreting Geometry
 
-% Build a MATLAB polyshape from the given boundary order. Do not reorder rings
-% or repair geometry here. If the result differs from input, inspect boundary
-% separators and upstream obstacle normalization.
+% Preserve ring order without repairing the geometry.
 
-% Fewer than three finite vertices cannot enclose occupied area. Returning an
-% empty polyshape gives callers one consistent inactive-geometry value.
+% Fewer than three finite vertices enclose no area.
 finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
 if nnz(finiteVertex) < 3
     shape = polyshape();
     return;
 end
-% Simplification stays disabled because vertex correspondence across dynamic
-% slices is needed to interpolate matching obstacle topology safely.
-% Keeping collinear vertices is equally important: those vertices may identify
-% corresponding material points in adjacent time samples even though MATLAB
-% could remove them without changing the static polygon outline.
+% Keep collinear vertices and disable simplification to preserve
+% vertex correspondence between moving-obstacle samples.
 shape = polyshape(azimuth_deg, elevation_deg, "Simplify", false, "KeepCollinearPoints", true);
 end

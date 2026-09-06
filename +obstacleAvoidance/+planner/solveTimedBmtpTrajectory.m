@@ -10,12 +10,12 @@ function [candidate, checkResult, diagnostics, ...
 %       obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
 %       seed, obstacles, initialState, goalState, limits, options, ...
 %       stageTiming)
-%**************************************************************************
+%
 % PURPOSE
 %   - Adapt one timed multi-waypoint seed to the smooth BMTP engine.
 %   - Conservatively bind each moving-obstacle time cell to the polynomial
 %     spans that overlap it, without constraining interior waypoints to rest.
-%**************************************************************************
+%
 % INPUTS
 %   - seed (scalar struct)
 %       position_deg is N-by-2, tau increases zero to one, and
@@ -26,7 +26,7 @@ function [candidate, checkResult, diagnostics, ...
 %       Normalized planner request and fully resolved planner options.
 %   - stageTiming (scalar struct)
 %       Accumulated planner timing before this timed solve.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Smooth motion or stable expected-failure record for public validation.
@@ -38,18 +38,14 @@ function [candidate, checkResult, diagnostics, ...
 %       Total authoritative-validation time nested inside this stage.
 %   - stageTiming (scalar struct)
 %       Timing updated by every authoritative trial check.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Histories and polygon vertices are N-by-2.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Bounded Fixed-Arrival Trials
 
-if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
-    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
-end
-obstacles = obstacleAvoidance.obstacles.prepareDynamic(obstacles);
 startTime_s = initialState.time_s;
 horizonTime_s = goalState.time_s;
 estimatedTime_s = startTime_s + double(seed.EstimatedDuration_s);
@@ -75,7 +71,7 @@ trialTemplate = struct( ...
     "ElapsedTime_s", 0, "ValidationElapsedTime_s", 0);
 maximumTrialCount = numel(trialTime_s);
 trials = repmat(trialTemplate, maximumTrialCount, 1);
-checkResult = obstacleAvoidance.validateTrajectory();
+checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
 validationElapsedTime_s = 0;
 totalTimer = tic;
 
@@ -197,7 +193,7 @@ for obstacleIndex = 1:numel(obstacles)
             0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
         vertices_deg = zeros(0, 2);
         for queryIndex = 1:numel(queryTime_s)
-            shape = obstacleAvoidance.obstacles.shapeAtTime( ...
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
                 obstacle, queryTime_s(queryIndex));
             vertices_deg = [vertices_deg; ...
                 finiteVertices(shape.Vertices)]; %#ok<AGROW>
@@ -233,7 +229,7 @@ end
 
 function cellEdges_s = snapCellEdgesToObstacleTimes( ...
         candidateEdges_s, obstacleTimes_s)
-% Coalesce roundoff-equivalent solver-grid and obstacle-event times.
+% Merge event times that differ only by roundoff.
 timeScale_s = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
 timeTolerance_s = 4096 * eps(timeScale_s);
 for eventIndex = 1:numel(obstacleTimes_s)

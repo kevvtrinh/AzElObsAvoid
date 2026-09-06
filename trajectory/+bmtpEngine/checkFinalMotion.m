@@ -6,29 +6,29 @@ function certificate = checkFinalMotion( ...
 %   certificate = bmtpEngine.checkFinalMotion( ...
 %       request, warmStart, preparedMotion, roundoffReserve_deg, ...
 %       obstacleTarget_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check every applicable final curve span against each supplied convex
 %     obstacle region using direct separating-plane certificates.
-%**************************************************************************
+%
 % INPUTS
 %   - request, warmStart, preparedMotion (scalar structs)
 %       Checked request, region applicability, and final prepared curve.
 %   - roundoffReserve_deg, obstacleTarget_deg (finite scalars)
 %       Numerical reserve and required obstacle-side target in degrees.
-%**************************************************************************
+%
 % OUTPUTS
 %   - certificate (scalar struct)
 %       Pair coverage, separating planes, counts, and passing state.
-%**************************************************************************
+%
 % UNITS
 %   - Position, gaps, and reserves are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Check All Curve And Obstacle Pairs
 
-% Splitting each optimized segment creates two output spans, so repeat the
-% original applicability mask exactly once to preserve timed-region coverage.
+% Each optimized segment becomes two output spans.
+% Repeat its timed-region mask for both spans.
 regionActiveBySegment = repelem( ...
     warmStart.RegionActiveBySegment, 2, 1);
 certificate = checkAllCurveObstaclePairs( ...
@@ -49,6 +49,7 @@ planes = repmat(createEmptyPlane(), segmentCount, regionCount);
 verifiedCount = 0;
 conicCount = 0;
 analyticCount = 0;
+conicSolver = bmtpEngine.accumulateConicDiagnostics();
 minimumGap_deg = Inf;
 for segmentIndex = 1:segmentCount
     trajectory_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
@@ -61,10 +62,11 @@ for segmentIndex = 1:segmentCount
         if plane.Verified
             analyticCount = analyticCount + 1;
         else
-            [plane, ~] = bmtpEngine.solveSeparatingLine( ...
+            [plane, ~, output] = bmtpEngine.solveSeparatingLine( ...
                 trajectory_deg, regions_deg{regionIndex}, target_deg, ...
                 reserve_deg, solverOptions);
             conicCount = conicCount + 1;
+            conicSolver = bmtpEngine.accumulateConicDiagnostics(conicSolver, output);
         end
         planes(segmentIndex, regionIndex) = plane;
         if plane.Verified
@@ -94,7 +96,7 @@ certificate = struct("Kind", certificateKind, ...
     "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
     "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
     "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
-    "ConicPairCount", conicCount);
+    "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 
 function plane = checkHullSeparationLine( ...
@@ -128,7 +130,7 @@ plane = bmtpEngine.verifySeparatingLine( ...
 end
 
 function plane = createEmptyPlane()
-% Define the stable inactive or verified degree-one plane record.
+% Initialize an inactive separating-plane record.
 plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
     "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
     "SignedGap_deg", NaN);

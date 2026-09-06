@@ -1,27 +1,28 @@
-function result = exampleMovingDeformingUSOutlineVisibility(options)
+function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingDeformingUSOutlineVisibility()
 %   result = exampleMovingDeformingUSOutlineVisibility(options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Plan around a dense U.S. outline that starts at 8 percent scale,
 %     grows, deforms, completes a 180-degree rotation, and disappears.
 %   - Include a starburst sun that moves across the bottom of the scene.
-%**************************************************************************
+%
 % INPUTS
 %   - options (scalar struct, optional; default struct())
 %       Planner/display overrides plus the finite MaxJerk_deg_s3 limit.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees, time is seconds, velocity is degrees per second,
 %     acceleration is degrees per second squared, and jerk is degrees per
 %     second cubed.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -91,7 +92,7 @@ limits = struct( ...
 
 % Run the public planner with both obstacle histories.
 
-result = obstacleAvoidance.planTrajectory( ...
+[result, diagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
@@ -101,7 +102,7 @@ result = obstacleAvoidance.planTrajectory( ...
 
 exampleValidation = validateExampleResult( ...
     result, "extreme moving/deforming U.S. with moving sun", ...
-    struct("RequireDirectBlocked", true));
+    struct("RequireDirectBlocked", true), diagnosis);
 
 initialUS_deg = [ ...
     uSHistory.azimuthBySlice_deg{1}, ...
@@ -156,7 +157,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end
