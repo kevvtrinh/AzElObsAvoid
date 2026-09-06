@@ -20,9 +20,11 @@ details = table(fields, values, 'VariableNames', {'Field','Value'});
     function visit(item, prefix)
         if isstruct(item)
             names = string(fieldnames(item));
+            % Process each item needed to complete t.
             for itemIndex = 1:numel(item)
                 parent = prefix;
                 if numel(item) > 1, parent = parent + "(" + itemIndex + ")"; end
+                % Apply the required validation or transfer to each name.
                 for name = reshape(names,1,[])
                     child = name;
                     if strlength(parent) > 0, child = parent + "." + name; end
@@ -30,6 +32,7 @@ details = table(fields, values, 'VariableNames', {'Field','Value'});
                 end
             end
         elseif iscell(item)
+            % Process each item needed to complete t.
             for itemIndex = 1:numel(item)
                 visit(item{itemIndex}, prefix + "{" + itemIndex + "}");
             end

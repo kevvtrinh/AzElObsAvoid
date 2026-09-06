@@ -21,6 +21,8 @@ function obstacles = prepareObstacles(obstacles)
 
 %% Section 1: Reuse Only Current Complete Preparation
 
+preparationIsCurrent = false(numel(obstacles), 1);
+
 % Reuse cached geometry only when its layout and source data match.
 
 if isempty(obstacles)
@@ -29,17 +31,13 @@ end
 preparationVersion = 1;
 if isfield(obstacles, "InternalPreparation")
     preparationIsCurrent = true(numel(obstacles), 1);
+    % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
-        preparation = obstacles(obstacleIndex).InternalPreparation;
-        hasCurrentLayout = isstruct(preparation) && ...
-            isscalar(preparation) && ...
-            isfield(preparation, "PreparationVersion") && ...
-            isequal(preparation.PreparationVersion, preparationVersion) && ...
-            isfield(preparation, "SourceSnapshot");
+        preparation      = obstacles(obstacleIndex).InternalPreparation;
+        hasCurrentLayout = isstruct(preparation) && isscalar(preparation) && isfield(preparation, "PreparationVersion") && isequal(preparation.PreparationVersion, preparationVersion) && isfield(preparation, "SourceSnapshot");
         if hasCurrentLayout
             sourceSnapshot = createSourceSnapshot(obstacles(obstacleIndex));
-            preparationIsCurrent(obstacleIndex) = isequaln( ...
-                preparation.SourceSnapshot, sourceSnapshot);
+            preparationIsCurrent(obstacleIndex) = isequaln(preparation.SourceSnapshot, sourceSnapshot);
         else
             preparationIsCurrent(obstacleIndex) = false;
         end
@@ -47,7 +45,6 @@ if isfield(obstacles, "InternalPreparation")
     if all(preparationIsCurrent)
         return;
     end
-    obstacles = rmfield(obstacles, "InternalPreparation");
 end
 
 %% Section 2: Prepare Each Complete History
@@ -55,25 +52,22 @@ end
 % Prepare each obstacle separately.
 
 for obstacleIndex = 1:numel(obstacles)
-    preparedObstacle = ...
-        obstacleAvoidance.obstacles.prepareOneObstacle( ...
-        obstacles(obstacleIndex), preparationVersion);
-    obstacles(obstacleIndex).InternalPreparation = ...
-        preparedObstacle.InternalPreparation;
+    if preparationIsCurrent(obstacleIndex), continue; end
+    preparedObstacle = obstacleAvoidance.obstacles.prepareOneObstacle(obstacles(obstacleIndex), preparationVersion, createSourceSnapshot(obstacles(obstacleIndex)));
+    obstacles(obstacleIndex).InternalPreparation = preparedObstacle.InternalPreparation;
 end
 end
 
 %% Section 3: Local Functions
 
 function snapshot = createSourceSnapshot(obstacle)
-% Store the source fields for cache checks.
-snapshot = struct( ...
-    "targetName", obstacle.targetName, ...
-    "time_s", obstacle.time_s, ...
-    "az_deg", {obstacle.az_deg}, ...
-    "el_deg", {obstacle.el_deg}, ...
-    "originalAz_deg", {obstacle.originalAz_deg}, ...
-    "originalEl_deg", {obstacle.originalEl_deg}, ...
-    "safetyMargin_deg", obstacle.safetyMargin_deg, ...
-    "status", obstacle.status);
+    % Store the source fields for cache checks.
+    snapshot = struct("targetName", obstacle.targetName, ...
+        "time_s", obstacle.time_s, ...
+        "az_deg", {obstacle.az_deg}, ...
+        "el_deg", {obstacle.el_deg}, ...
+        "originalAz_deg", {obstacle.originalAz_deg}, ...
+        "originalEl_deg", {obstacle.originalEl_deg}, ...
+        "safetyMargin_deg", obstacle.safetyMargin_deg, ...
+        "status", obstacle.status);
 end

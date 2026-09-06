@@ -1,5 +1,4 @@
-function eligibility = checkEligibility( ...
-        initialState, terminalState, limits, options, pathConstraints)
+function eligibility = checkEligibility(initialState, terminalState, limits, options, pathConstraints)
 %% Section 0: Header & Readme
 % SYNTAX
 %   eligibility = ruckigEngine.checkEligibility( ...
@@ -27,19 +26,17 @@ function eligibility = checkEligibility( ...
 
 %% Section 1: Check Unsupported Request Features
 
-eligibility = struct( ...
-    "Supported", true, ...
-    "TerminationReason", "eligible", ...
-    "Message", "The request is eligible for exact switching profiles.");
+eligibility = struct();
+eligibility.Supported         = true;
+eligibility.TerminationReason = "eligible";
+eligibility.Message           = "The request is eligible for exact switching profiles.";
 if ~isempty(pathConstraints.Tau)
-    eligibility.Message = "The request is eligible; affine path rows will " + ...
-        "be certified against the exact constructed profile.";
+    eligibility.Message = "The request is eligible; affine path rows will " + "be certified against the exact constructed profile.";
 end
 if ~hasSymmetricDerivativeBounds(limits)
-    eligibility.Supported = false;
+    eligibility.Supported         = false;
     eligibility.TerminationReason = "unsupportedAsymmetricBounds";
-    eligibility.Message = ...
-        "The Ruckig-derived engine requires symmetric derivative bounds.";
+    eligibility.Message           = "The Ruckig-derived engine requires symmetric derivative bounds.";
     return;
 end
 if options.TimeMode == "fixed"
@@ -47,10 +44,8 @@ if options.TimeMode == "fixed"
     if isempty(finalTime)
         finalTime = terminalState.maximumTime;
     end
-    if ~isscalar(finalTime) || ~isfinite(finalTime) || ...
-            finalTime <= initialState.time
-        error("ruckigEngine:InvalidFinalTime", ...
-            "A fixed FinalTime must be finite and later than initialState.time.");
+    if ~isscalar(finalTime) || ~isfinite(finalTime) || finalTime <= initialState.time
+        error("ruckigEngine:InvalidFinalTime", "A fixed FinalTime must be finite and later than initialState.time.");
     end
 end
 end
@@ -58,24 +53,13 @@ end
 %% Section 2: Local Functions
 
 function value = hasSymmetricDerivativeBounds(limits)
-% Compare every resolved derivative bound with its positive maximum.
-scale = max([1, limits.maximumVelocity, ...
-    limits.maximumAcceleration], [], 2);
-tolerance = 128 * eps(scale);
-value = all(abs(limits.velocityLower + ...
-    limits.maximumVelocity) <= tolerance) && ...
-    all(abs(limits.velocityUpper - ...
-    limits.maximumVelocity) <= tolerance) && ...
-    all(abs(limits.accelerationLower + ...
-    limits.maximumAcceleration) <= tolerance) && ...
-    all(abs(limits.accelerationUpper - ...
-    limits.maximumAcceleration) <= tolerance);
-if limits.ControlOrder == 3
-    jerkScale = max([1, limits.maximumJerk], [], 2);
-    jerkTolerance = 128 * eps(jerkScale);
-    value = value && all(abs(limits.jerkLower + ...
-        limits.maximumJerk) <= jerkTolerance) && ...
-        all(abs(limits.jerkUpper - ...
-        limits.maximumJerk) <= jerkTolerance);
-end
+    % Compare every resolved derivative bound with its positive maximum.
+    scale     = max([1, limits.maximumVelocity, limits.maximumAcceleration], [], 2);
+    tolerance = 128 * eps(scale);
+    value     = all(abs(limits.velocityLower + limits.maximumVelocity) <= tolerance) && all(abs(limits.velocityUpper - limits.maximumVelocity) <= tolerance) && all(abs(limits.accelerationLower + limits.maximumAcceleration) <= tolerance) && all(abs(limits.accelerationUpper - limits.maximumAcceleration) <= tolerance);
+    if limits.ControlOrder == 3
+        jerkScale     = max([1, limits.maximumJerk], [], 2);
+        jerkTolerance = 128 * eps(jerkScale);
+        value         = value && all(abs(limits.jerkLower + limits.maximumJerk) <= jerkTolerance) && all(abs(limits.jerkUpper - limits.maximumJerk) <= jerkTolerance);
+    end
 end

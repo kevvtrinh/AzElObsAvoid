@@ -1,6 +1,4 @@
-function [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
-        denseSweptEnvelope( ...
-        obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
+function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope(obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [envelopeShape, usedEnvelope] = ...
@@ -42,16 +40,17 @@ validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
 validateattributes(endpointPosition_deg, {'numeric'}, {'real', 'finite', 'size', [2 2]});
 validateattributes(vertexWorkBudget, {'numeric'}, {'real', 'finite', 'positive', 'scalar'});
 verticesPerLayer = 0;
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     maximumVertexCount = 0;
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-        maximumVertexCount = max(maximumVertexCount, ...
-            numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
+        maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
     end
     verticesPerLayer = verticesPerLayer + maximumVertexCount;
 end
-envelopeShape = polyshape();
-usedEnvelope = false;
+envelopeShape       = polyshape();
+usedEnvelope        = false;
 estimatedVertexWork = numel(sampleTimes_s) * verticesPerLayer;
 if estimatedVertexWork <= vertexWorkBudget
     return;
@@ -61,22 +60,23 @@ end
 
 % Endpoint convex hulls cover linear vertex motion and topology changes.
 % Use a separate hull for each obstacle to avoid joining unrelated shapes.
-envelopes = cell(numel(obstacles), 1);
+envelopes     = cell(numel(obstacles), 1);
 envelopeCount = 0;
+% Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
+    obstacle     = obstacles(obstacleIndex);
     vertices_deg = zeros(0, 2);
+    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacle.az_deg)
-        sample_deg = [obstacle.az_deg{sampleIndex}(:), obstacle.el_deg{sampleIndex}(:)];
+        sample_deg   = [obstacle.az_deg{sampleIndex}(:), obstacle.el_deg{sampleIndex}(:)];
         vertices_deg = [vertices_deg; sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>
     end
     vertices_deg = unique(vertices_deg, "rows", "stable");
     if size(vertices_deg, 1) < 3
         continue;
     end
-    hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-    trialShape = polyshape(vertices_deg(hullIndex(1:end - 1), :), ...
-        "Simplify", false, "KeepCollinearPoints", true);
+    hullIndex    = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
+    trialShape   = polyshape(vertices_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
     guardedShape = polybuffer(trialShape, 1e-9);
     if any(isinterior(guardedShape, endpointPosition_deg(:, 1), endpointPosition_deg(:, 2)))
         envelopeShape = polyshape();
@@ -87,6 +87,6 @@ for obstacleIndex = 1:numel(obstacles)
 end
 if envelopeCount > 0
     envelopeShape = union([envelopes{1:envelopeCount}]);
-    usedEnvelope = true;
+    usedEnvelope  = true;
 end
 end

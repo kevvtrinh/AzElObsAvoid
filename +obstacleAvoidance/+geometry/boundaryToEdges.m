@@ -28,29 +28,28 @@ function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_
 % Split NaN-separated polygon rings.
 
 if ~isa(shape, "polyshape") || ~isscalar(shape)
-    error("boundaryToEdges:InvalidShape", ...
-        "shape must be a scalar polyshape.");
+    error("boundaryToEdges:InvalidShape", "shape must be a scalar polyshape.");
 end
 validateattributes(closureTolerance_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
 [azimuth_deg, elevation_deg] = boundary(shape);
 boundaryPosition_deg = [double(azimuth_deg(:)), double(elevation_deg(:))];
-finiteRow = all(isfinite(boundaryPosition_deg), 2);
+finiteRow            = all(isfinite(boundaryPosition_deg), 2);
 % Find the start and end of each finite run.
 runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
-runEnd = find(finiteRow & [~finiteRow(2:end); true]);
+runEnd   = find(finiteRow & [~finiteRow(2:end); true]);
 
 %% Section 2: Close Every Valid Ring Into Matched Edge Rows
 
 % Connect adjacent vertices and close each ring.
 
 % Remove a repeated closing vertex before creating edges.
-emptyEdges_deg = zeros(0, 2);
+emptyEdges_deg      = zeros(0, 2);
 edgeStartByRing_deg = repmat({emptyEdges_deg}, numel(runStart), 1);
-edgeEndByRing_deg = repmat({emptyEdges_deg}, numel(runStart), 1);
+edgeEndByRing_deg   = repmat({emptyEdges_deg}, numel(runStart), 1);
 
 for runIndex = 1:numel(runStart)
     % Rings with fewer than two distinct vertices cannot produce a segment.
-    ring_deg = boundaryPosition_deg( runStart(runIndex):runEnd(runIndex), :);
+    ring_deg = boundaryPosition_deg(runStart(runIndex):runEnd(runIndex), :);
     if size(ring_deg, 1) < 2
         continue;
     end
@@ -65,5 +64,5 @@ for runIndex = 1:numel(runStart)
     edgeEndByRing_deg{runIndex} = ring_deg([2:end 1], :);
 end
 edgeStart_deg = vertcat(edgeStartByRing_deg{:});
-edgeEnd_deg = vertcat(edgeEndByRing_deg{:});
+edgeEnd_deg   = vertcat(edgeEndByRing_deg{:});
 end

@@ -45,35 +45,33 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 if nargin == 0
     error("createObstacle:MissingInput", "Obstacle construction or canonical input is required.");
 end
-isContainer = isstruct(obstacleInput) || iscell(obstacleInput) || ...
-    (isnumeric(obstacleInput) && isempty(obstacleInput));
+isContainer = isstruct(obstacleInput) || iscell(obstacleInput) || (isnumeric(obstacleInput) && isempty(obstacleInput));
 if isContainer && nargin == 1
     obstacleData = normalizeOne(obstacleInput);
     return;
 elseif isContainer && nargin >= 2 && nargin <= 3
     safetyMargin_deg = varargin{1};
-    options = struct();
+    options          = struct();
     if nargin == 3 && ~isempty(varargin{2})
         options = varargin{2};
     end
     validateattributes(safetyMargin_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
-    verbose = resolveVerbose(options);
+    verbose      = resolveVerbose(options);
     obstacleData = obstacleAvoidance.obstacles.combineObstacles(obstacleInput);
     obstacleData = protectObstacles(obstacleData, safetyMargin_deg, verbose);
     return;
 end
 if nargin < 4 || nargin > 6
-    error("createObstacle:InvalidCall", ...
-        "Construction requires name, time, azimuth, and elevation.");
+    error("createObstacle:InvalidCall", "Construction requires name, time, azimuth, and elevation.");
 end
 
 %% Section 2: Create And Protect One Raw Record
 
-time_s = double(varargin{1}(:));
-azimuthBySlice_deg = varargin{2};
+time_s               = double(varargin{1}(:));
+azimuthBySlice_deg   = varargin{2};
 elevationBySlice_deg = varargin{3};
-safetyMargin_deg = 0;
-options = struct();
+safetyMargin_deg     = 0;
+options              = struct();
 if nargin >= 5 && ~isempty(varargin{4})
     safetyMargin_deg = varargin{4};
 end
@@ -99,239 +97,202 @@ obstacleData = protectObstacles(obstacleData, safetyMargin_deg, resolveVerbose(o
 end
 
 function obstacle = normalizeOne(inputData)
-% Validate the obstacle, use column vectors, and discard stale caches.
-requiredFields = {'targetName', 'time_s', 'az_deg', 'el_deg', 'status'};
-requireCondition(isstruct(inputData) && isscalar(inputData) && ...
-    all(isfield(inputData, requiredFields)), "createObstacle:InvalidInput", ...
-    "obstacleData must be one canonical obstacle record.");
-targetName = string(inputData.targetName);
-requireCondition(isscalar(targetName) && strlength(strtrim(targetName)) > 0, ...
-    "createObstacle:InvalidTargetName", "targetName must be nonempty scalar text.");
-validateattributes(inputData.time_s, {'numeric'}, {'vector', 'real', 'finite'});
-time_s = double(inputData.time_s(:));
-sampleCount = numel(time_s);
-requireCondition(sampleCount > 0 && all(diff(time_s) > 0), ...
-    "createObstacle:InvalidTime", "time_s must be nonempty and strictly increasing.");
-boundariesAreValid = iscell(inputData.az_deg) && iscell(inputData.el_deg) && ...
-    numel(inputData.az_deg) == sampleCount && numel(inputData.el_deg) == sampleCount;
-requireCondition(boundariesAreValid, "createObstacle:InvalidBoundary", ...
-    "az_deg and el_deg must be cell arrays matching time_s.");
-[azimuthBySlice_deg, elevationBySlice_deg, ...
-    protectedRemoved, protectedRemovalBySample] = normalizeHistory( ...
-    inputData.az_deg, inputData.el_deg, sampleCount, "protected");
-hasOriginalAzimuth = isfield(inputData, "originalAz_deg");
-hasOriginalElevation = isfield(inputData, "originalEl_deg");
-requireCondition(~xor(hasOriginalAzimuth, hasOriginalElevation), ...
-    "createObstacle:IncompleteOriginalBoundary", ...
-    "originalAz_deg and originalEl_deg must both be present or absent.");
-if hasOriginalAzimuth
-    originalIsValid = iscell(inputData.originalAz_deg) && iscell(inputData.originalEl_deg) && ...
-        numel(inputData.originalAz_deg) == sampleCount && ...
-        numel(inputData.originalEl_deg) == sampleCount;
-    requireCondition(originalIsValid, "createObstacle:InvalidOriginalBoundary", ...
-        "Original boundary cells must match time_s.");
-    [originalAzimuthBySlice_deg, originalElevationBySlice_deg, ...
-        originalRemoved, originalRemovalBySample] = normalizeHistory( ...
-        inputData.originalAz_deg, inputData.originalEl_deg, sampleCount, "original");
-else
-    originalAzimuthBySlice_deg = azimuthBySlice_deg;
-    originalElevationBySlice_deg = elevationBySlice_deg;
-    originalRemoved = 0;
-    originalRemovalBySample = false(sampleCount, 1);
-end
-if protectedRemoved + originalRemoved > 0
-    removalBySample = protectedRemovalBySample | originalRemovalBySample;
-    warning("createObstacle:RemovedTwoVertexRegions", ...
-        "Obstacle '%s' removed %d protected and %d original two-vertex " + ...
-        "regions across %d time slices; remaining regions were unchanged.", ...
-        targetName, protectedRemoved, originalRemoved, nnz(removalBySample));
-end
-safetyMargin_deg = 0;
-if isfield(inputData, "safetyMargin_deg")
-    safetyMargin_deg = inputData.safetyMargin_deg;
-end
-validateattributes(safetyMargin_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
-safetyMargin_deg = double(safetyMargin_deg);
-requireCondition(safetyMargin_deg == 0 || hasOriginalAzimuth, ...
-    "createObstacle:MissingOriginalBoundary", ...
-    "Positive safetyMargin_deg requires retained original boundaries.");
-status = string(inputData.status);
-if isscalar(status)
-    status = repmat(status, sampleCount, 1);
-elseif numel(status) == sampleCount
-    status = status(:);
-else
-    error("createObstacle:StatusSizeMismatch", "status must contain one value per time sample.");
-end
-obstacle = struct("targetName", targetName, "time_s", time_s, ...
-    "az_deg", {azimuthBySlice_deg}, "el_deg", {elevationBySlice_deg}, ...
-    "originalAz_deg", {originalAzimuthBySlice_deg}, ...
-    "originalEl_deg", {originalElevationBySlice_deg}, ...
-    "safetyMargin_deg", safetyMargin_deg, "status", status);
-end
-
-function [azimuthHistory_deg, elevationHistory_deg, removedCount, ...
-        removalBySample] = normalizeHistory( ...
-        azimuthInput_deg, elevationInput_deg, sampleCount, role)
-% Normalize original and protected slices with distinct error identifiers.
-azimuthHistory_deg = reshape(azimuthInput_deg, [], 1);
-elevationHistory_deg = reshape(elevationInput_deg, [], 1);
-removedCount = 0;
-removalBySample = false(sampleCount, 1);
-identifiers = ["createObstacle:BoundarySizeMismatch", ...
-    "createObstacle:OriginalBoundarySizeMismatch"];
-fieldNames = ["az_deg", "el_deg"; "originalAz_deg", "originalEl_deg"];
-roleIndex = 1 + (role == "original");
-for sampleIndex = 1:sampleCount
-    validateattributes(azimuthHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
-    validateattributes(elevationHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
-    if numel(azimuthHistory_deg{sampleIndex}) ~= numel(elevationHistory_deg{sampleIndex})
-        error(identifiers(roleIndex), "%s and %s slice %d must have equal lengths.", ...
-            fieldNames(roleIndex, 1), fieldNames(roleIndex, 2), sampleIndex);
+    % Validate the obstacle, use column vectors, and discard stale caches.
+    requiredFields = {'targetName', 'time_s', 'az_deg', 'el_deg', 'status'};
+    requireCondition(isstruct(inputData) && isscalar(inputData) && all(isfield(inputData, requiredFields)), "createObstacle:InvalidInput", "obstacleData must be one canonical obstacle record.");
+    targetName = string(inputData.targetName);
+    requireCondition(isscalar(targetName) && strlength(strtrim(targetName)) > 0, "createObstacle:InvalidTargetName", "targetName must be nonempty scalar text.");
+    validateattributes(inputData.time_s, {'numeric'}, {'vector', 'real', 'finite'});
+    time_s      = double(inputData.time_s(:));
+    sampleCount = numel(time_s);
+    requireCondition(sampleCount > 0 && all(diff(time_s) > 0), "createObstacle:InvalidTime", "time_s must be nonempty and strictly increasing.");
+    boundariesAreValid = iscell(inputData.az_deg) && iscell(inputData.el_deg) && numel(inputData.az_deg) == sampleCount && numel(inputData.el_deg) == sampleCount;
+    requireCondition(boundariesAreValid, "createObstacle:InvalidBoundary", "az_deg and el_deg must be cell arrays matching time_s.");
+    [azimuthBySlice_deg, elevationBySlice_deg, ...
+        protectedRemoved, protectedRemovalBySample] = normalizeHistory(inputData.az_deg, inputData.el_deg, sampleCount, "protected");
+    hasOriginalAzimuth   = isfield(inputData, "originalAz_deg");
+    hasOriginalElevation = isfield(inputData, "originalEl_deg");
+    requireCondition(~xor(hasOriginalAzimuth, hasOriginalElevation), "createObstacle:IncompleteOriginalBoundary", "originalAz_deg and originalEl_deg must both be present or absent.");
+    if hasOriginalAzimuth
+        originalIsValid = iscell(inputData.originalAz_deg) && iscell(inputData.originalEl_deg) && numel(inputData.originalAz_deg) == sampleCount && numel(inputData.originalEl_deg) == sampleCount;
+        requireCondition(originalIsValid, "createObstacle:InvalidOriginalBoundary", "Original boundary cells must match time_s.");
+        [originalAzimuthBySlice_deg, originalElevationBySlice_deg, ...
+            originalRemoved, originalRemovalBySample] = normalizeHistory(inputData.originalAz_deg, inputData.originalEl_deg, sampleCount, "original");
+    else
+        originalAzimuthBySlice_deg   = azimuthBySlice_deg;
+        originalElevationBySlice_deg = elevationBySlice_deg;
+        originalRemoved              = 0;
+        originalRemovalBySample      = false(sampleCount, 1);
     end
-    azimuth_deg = double(azimuthHistory_deg{sampleIndex}(:));
-    elevation_deg = double(elevationHistory_deg{sampleIndex}(:));
-    [azimuth_deg, elevation_deg, removed] = ...
-        normalizeSlice(azimuth_deg, elevation_deg, sampleIndex, role);
-    azimuthHistory_deg{sampleIndex} = azimuth_deg;
-    elevationHistory_deg{sampleIndex} = elevation_deg;
-    removedCount = removedCount + removed;
-    removalBySample(sampleIndex) = removed > 0;
-end
+    if protectedRemoved + originalRemoved > 0
+        removalBySample = protectedRemovalBySample | originalRemovalBySample;
+        warning("createObstacle:RemovedTwoVertexRegions", "Obstacle '%s' removed %d protected and %d original two-vertex " + "regions across %d time slices; remaining regions were unchanged.", targetName, protectedRemoved, originalRemoved, nnz(removalBySample));
+    end
+    safetyMargin_deg = 0;
+    if isfield(inputData, "safetyMargin_deg")
+        safetyMargin_deg = inputData.safetyMargin_deg;
+    end
+    validateattributes(safetyMargin_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
+    safetyMargin_deg = double(safetyMargin_deg);
+    requireCondition(safetyMargin_deg == 0 || hasOriginalAzimuth, "createObstacle:MissingOriginalBoundary", "Positive safetyMargin_deg requires retained original boundaries.");
+    status = string(inputData.status);
+    if isscalar(status)
+        status = repmat(status, sampleCount, 1);
+    elseif numel(status) == sampleCount
+        status = status(:);
+    else
+        error("createObstacle:StatusSizeMismatch", "status must contain one value per time sample.");
+    end
+    obstacle = struct("targetName", targetName, "time_s", time_s, ...
+        "az_deg", {azimuthBySlice_deg}, "el_deg", {elevationBySlice_deg}, ...
+        "originalAz_deg", {originalAzimuthBySlice_deg}, ...
+        "originalEl_deg", {originalElevationBySlice_deg}, ...
+        "safetyMargin_deg", safetyMargin_deg, "status", status);
 end
 
-function [azimuth_deg, elevation_deg, removedCount] = ...
-        normalizeSlice(azimuth_deg, elevation_deg, sampleIndex, role)
-% Reject malformed rings; remove two-vertex regions with no area.
-azimuthFinite = isfinite(azimuth_deg);
-elevationFinite = isfinite(elevation_deg);
-requireCondition(~any(xor(azimuthFinite, elevationFinite)), ...
-    "createObstacle:UnpairedNonfiniteBoundary", ...
-    "The %s boundary at slice %d must use paired separators.", role, sampleIndex);
-changes = diff([false; azimuthFinite; false]);
-regionStarts = find(changes == 1);
-regionStops = find(changes == -1) - 1;
-regionVertexCount = regionStops - regionStarts + 1;
-oneVertexRegion = find(regionVertexCount == 1, 1, "first");
-requireCondition(isempty(oneVertexRegion), "createObstacle:BoundaryRingTooShort", ...
-    "The %s boundary region %d at slice %d has one finite vertex.", ...
-    role, oneVertexRegion, sampleIndex);
-removeRegion = regionVertexCount == 2;
-removedCount = nnz(removeRegion);
-if removedCount == 0
-    return;
+function [azimuthHistory_deg, elevationHistory_deg, removedCount, removalBySample] = normalizeHistory(azimuthInput_deg, elevationInput_deg, sampleCount, role)
+    % Normalize original and protected slices with distinct error identifiers.
+    azimuthHistory_deg   = reshape(azimuthInput_deg, [], 1);
+    elevationHistory_deg = reshape(elevationInput_deg, [], 1);
+    removedCount         = 0;
+    removalBySample      = false(sampleCount, 1);
+    identifiers          = ["createObstacle:BoundarySizeMismatch", ...
+        "createObstacle:OriginalBoundarySizeMismatch"];
+    fieldNames = ["az_deg", "el_deg"; "originalAz_deg", "originalEl_deg"];
+    roleIndex  = 1 + (role == "original");
+    % Process each sample in temporal order and accumulate its result.
+    for sampleIndex = 1:sampleCount
+        validateattributes(azimuthHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
+        validateattributes(elevationHistory_deg{sampleIndex}, {'numeric'}, {'vector', 'real'});
+        if numel(azimuthHistory_deg{sampleIndex}) ~= numel(elevationHistory_deg{sampleIndex})
+            error(identifiers(roleIndex), "%s and %s slice %d must have equal lengths.", fieldNames(roleIndex, 1), fieldNames(roleIndex, 2), sampleIndex);
+        end
+        azimuth_deg   = double(azimuthHistory_deg{sampleIndex}(:));
+        elevation_deg = double(elevationHistory_deg{sampleIndex}(:));
+        [azimuth_deg, elevation_deg, removed] = normalizeSlice(azimuth_deg, elevation_deg, sampleIndex, role);
+        azimuthHistory_deg{sampleIndex} = azimuth_deg;
+        elevationHistory_deg{sampleIndex} = elevation_deg;
+        removedCount = removedCount + removed;
+        removalBySample(sampleIndex) = removed > 0;
+    end
 end
-retainedRegions = find(~removeRegion);
-if isempty(retainedRegions)
-    azimuth_deg = zeros(0, 1);
-    elevation_deg = zeros(0, 1);
-    return;
-end
-outputCount = sum(regionVertexCount(retainedRegions)) + numel(retainedRegions) - 1;
-newAzimuth_deg = NaN(outputCount, 1);
-newElevation_deg = NaN(outputCount, 1);
-writeIndex = 1;
-for retainedIndex = 1:numel(retainedRegions)
-    regionIndex = retainedRegions(retainedIndex);
-    inputRows = regionStarts(regionIndex):regionStops(regionIndex);
-    outputRows = writeIndex + (0:numel(inputRows) - 1);
-    newAzimuth_deg(outputRows) = azimuth_deg(inputRows);
-    newElevation_deg(outputRows) = elevation_deg(inputRows);
-    writeIndex = outputRows(end) + 2;
-end
-azimuth_deg = newAzimuth_deg;
-elevation_deg = newElevation_deg;
+
+function [azimuth_deg, elevation_deg, removedCount] = normalizeSlice(azimuth_deg, elevation_deg, sampleIndex, role)
+    % Reject malformed rings; remove two-vertex regions with no area.
+    azimuthFinite   = isfinite(azimuth_deg);
+    elevationFinite = isfinite(elevation_deg);
+    requireCondition(~any(xor(azimuthFinite, elevationFinite)), "createObstacle:UnpairedNonfiniteBoundary", "The %s boundary at slice %d must use paired separators.", role, sampleIndex);
+    changes           = diff([false; azimuthFinite; false]);
+    regionStarts      = find(changes == 1);
+    regionStops       = find(changes == -1) - 1;
+    regionVertexCount = regionStops - regionStarts + 1;
+    oneVertexRegion   = find(regionVertexCount == 1, 1, "first");
+    requireCondition(isempty(oneVertexRegion), "createObstacle:BoundaryRingTooShort", "The %s boundary region %d at slice %d has one finite vertex.", role, oneVertexRegion, sampleIndex);
+    removeRegion = regionVertexCount == 2;
+    removedCount = nnz(removeRegion);
+    if removedCount == 0
+        return;
+    end
+    retainedRegions = find(~removeRegion);
+    if isempty(retainedRegions)
+        azimuth_deg   = zeros(0, 1);
+        elevation_deg = zeros(0, 1);
+        return;
+    end
+    outputCount      = sum(regionVertexCount(retainedRegions)) + numel(retainedRegions) - 1;
+    newAzimuth_deg   = NaN(outputCount, 1);
+    newElevation_deg = NaN(outputCount, 1);
+    writeIndex       = 1;
+    % Process each retained needed to prepare slice.
+    for retainedIndex = 1:numel(retainedRegions)
+        regionIndex = retainedRegions(retainedIndex);
+        inputRows   = regionStarts(regionIndex):regionStops(regionIndex);
+        outputRows  = writeIndex + (0:numel(inputRows) - 1);
+        newAzimuth_deg(outputRows) = azimuth_deg(inputRows);
+        newElevation_deg(outputRows) = elevation_deg(inputRows);
+        writeIndex = outputRows(end) + 2;
+    end
+    azimuth_deg   = newAzimuth_deg;
+    elevation_deg = newElevation_deg;
 end
 
 function verbose = resolveVerbose(options)
-% Resolve construction options and warn about unknown fields.
-requireCondition(isstruct(options) && isscalar(options), ...
-    "createObstacle:InvalidProtectionOptions", "options must be a scalar struct.");
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
-    struct("Verbose", false), options);
-if ~isempty(unknownNames)
-    warning("createObstacle:UnknownProtectionOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
-end
-verbose = obstacleAvoidance.input.normalizeLogicalScalar( ...
-    options.Verbose, "Verbose", "createObstacle:InvalidVerbose");
+    % Resolve construction options and warn about unknown fields.
+    requireCondition(isstruct(options) && isscalar(options), "createObstacle:InvalidProtectionOptions", "options must be a scalar struct.");
+    [options, unknownNames] = obstacleAvoidance.input.resolveOptions(struct("Verbose", false), options);
+    if ~isempty(unknownNames)
+        warning("createObstacle:UnknownProtectionOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
+    end
+    verbose = obstacleAvoidance.input.normalizeLogicalScalar(options.Verbose, "Verbose", "createObstacle:InvalidVerbose");
 end
 
 function obstacles = protectObstacles(obstacles, safetyMargin_deg, verbose)
-% Buffer large histories in parallel when background workers are available.
-for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacles(obstacleIndex);
-    sampleCount = numel(obstacle.time_s);
-    protectedAzimuth_deg = cell(sampleCount, 1);
-    protectedElevation_deg = cell(sampleCount, 1);
-    vertexCount = numel(vertcat(obstacle.originalAz_deg{:}));
-    useBackgroundWorkers = false;
-    if safetyMargin_deg > 0 && vertexCount >= 500000 && exist("backgroundPool", "builtin") == 5
-        workerPool = backgroundPool;
-        useBackgroundWorkers = workerPool.NumWorkers > 1 && ~workerPool.Busy;
-    end
-    if useBackgroundWorkers
-        futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
-        for sampleIndex = 1:sampleCount
-            futures(sampleIndex) = parfeval( ...
-                workerPool, @inflateSlice, 2, ...
-                obstacle.originalAz_deg{sampleIndex}, ...
-                obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+    % Buffer large histories in parallel when background workers are available.
+    for obstacleIndex = 1:numel(obstacles)
+        obstacle               = obstacles(obstacleIndex);
+        sampleCount            = numel(obstacle.time_s);
+        protectedAzimuth_deg   = cell(sampleCount, 1);
+        protectedElevation_deg = cell(sampleCount, 1);
+        vertexCount            = numel(vertcat(obstacle.originalAz_deg{:}));
+        useBackgroundWorkers   = false;
+        if safetyMargin_deg > 0 && vertexCount >= 500000 && exist("backgroundPool", "builtin") == 5
+            workerPool           = backgroundPool;
+            useBackgroundWorkers = workerPool.NumWorkers > 1 && ~workerPool.Busy;
         end
-        [protectedAzimuth_deg, protectedElevation_deg] = ...
-            fetchOutputs(futures, "UniformOutput", false);
-    else
-        for sampleIndex = 1:sampleCount
-            [protectedAzimuth_deg{sampleIndex}, ...
-                protectedElevation_deg{sampleIndex}] = inflateSlice( ...
-                obstacle.originalAz_deg{sampleIndex}, ...
-                obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+        if useBackgroundWorkers
+            futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
+            % Process each sample in temporal order and accumulate its result.
+            for sampleIndex = 1:sampleCount
+                futures(sampleIndex) = parfeval(workerPool, @inflateSlice, 2, obstacle.originalAz_deg{sampleIndex}, obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+            end
+            [protectedAzimuth_deg, protectedElevation_deg] = fetchOutputs(futures, "UniformOutput", false);
+        else
+            % Process each sample in temporal order and accumulate its result.
+            for sampleIndex = 1:sampleCount
+                [protectedAzimuth_deg{sampleIndex}, ...
+                    protectedElevation_deg{sampleIndex}] = inflateSlice(obstacle.originalAz_deg{sampleIndex}, obstacle.originalEl_deg{sampleIndex}, safetyMargin_deg);
+            end
         end
+        if verbose
+            fprintf("[az/el protect] obstacle %d/%d: %d slices complete.\n", obstacleIndex, numel(obstacles), sampleCount);
+        end
+        obstacle.az_deg           = protectedAzimuth_deg;
+        obstacle.el_deg           = protectedElevation_deg;
+        obstacle.safetyMargin_deg = double(safetyMargin_deg);
+        obstacles(obstacleIndex) = normalizeOne(obstacle);
     end
-    if verbose
-        fprintf("[az/el protect] obstacle %d/%d: %d slices complete.\n", ...
-            obstacleIndex, numel(obstacles), sampleCount);
-    end
-    obstacle.az_deg = protectedAzimuth_deg;
-    obstacle.el_deg = protectedElevation_deg;
-    obstacle.safetyMargin_deg = double(safetyMargin_deg);
-    obstacles(obstacleIndex) = normalizeOne(obstacle);
-end
 end
 
-function [protectedAzimuth_deg, protectedElevation_deg] = ...
-        inflateSlice(azimuth_deg, elevation_deg, safetyMargin_deg)
-% Apply the margin with square joins; preserve order when the margin is zero.
-azimuth_deg = double(azimuth_deg(:));
-elevation_deg = double(elevation_deg(:));
-if safetyMargin_deg == 0
-    protectedAzimuth_deg = azimuth_deg;
-    protectedElevation_deg = elevation_deg;
-    return;
-end
-azimuth_deg(~isfinite(azimuth_deg)) = NaN;
-elevation_deg(~isfinite(elevation_deg)) = NaN;
-if nnz(isfinite(azimuth_deg) & isfinite(elevation_deg)) < 3
-    protectedAzimuth_deg = zeros(0, 1);
-    protectedElevation_deg = zeros(0, 1);
-    return;
-end
-sourceShape = polyshape(azimuth_deg, elevation_deg, "Simplify", true, "KeepCollinearPoints", true);
-requireCondition(~isempty(sourceShape.Vertices) && area(sourceShape) > 0, ...
-    "createObstacle:DegeneratePolygon", ...
-    "The boundary slice does not define a nonzero-area polygon.");
-protectedShape = polybuffer(sourceShape, safetyMargin_deg, "JointType", "square");
-[protectedAzimuth_deg, protectedElevation_deg] = boundary(protectedShape);
-protectedAzimuth_deg = double(protectedAzimuth_deg(:));
-protectedElevation_deg = double(protectedElevation_deg(:));
-lastFinite = find(isfinite(protectedAzimuth_deg) & isfinite(protectedElevation_deg), 1, "last");
-protectedAzimuth_deg = protectedAzimuth_deg(1:lastFinite);
-protectedElevation_deg = protectedElevation_deg(1:lastFinite);
+function [protectedAzimuth_deg, protectedElevation_deg] = inflateSlice(azimuth_deg, elevation_deg, safetyMargin_deg)
+    % Apply the margin with square joins; preserve order when the margin is zero.
+    azimuth_deg   = double(azimuth_deg(:));
+    elevation_deg = double(elevation_deg(:));
+    if safetyMargin_deg == 0
+        protectedAzimuth_deg   = azimuth_deg;
+        protectedElevation_deg = elevation_deg;
+        return;
+    end
+    azimuth_deg(~isfinite(azimuth_deg)) = NaN;
+    elevation_deg(~isfinite(elevation_deg)) = NaN;
+    if nnz(isfinite(azimuth_deg) & isfinite(elevation_deg)) < 3
+        protectedAzimuth_deg   = zeros(0, 1);
+        protectedElevation_deg = zeros(0, 1);
+        return;
+    end
+    sourceShape = polyshape(azimuth_deg, elevation_deg, "Simplify", true, "KeepCollinearPoints", true);
+    requireCondition(~isempty(sourceShape.Vertices) && area(sourceShape) > 0, "createObstacle:DegeneratePolygon", "The boundary slice does not define a nonzero-area polygon.");
+    protectedShape = polybuffer(sourceShape, safetyMargin_deg, "JointType", "square");
+    [protectedAzimuth_deg, protectedElevation_deg] = boundary(protectedShape);
+    protectedAzimuth_deg   = double(protectedAzimuth_deg(:));
+    protectedElevation_deg = double(protectedElevation_deg(:));
+    lastFinite             = find(isfinite(protectedAzimuth_deg) & isfinite(protectedElevation_deg), 1, "last");
+    protectedAzimuth_deg   = protectedAzimuth_deg(1:lastFinite);
+    protectedElevation_deg = protectedElevation_deg(1:lastFinite);
 end
 
 function requireCondition(condition, identifier, message, varargin)
-% Report invalid input with the supplied error identifier.
-if ~condition
-    error(identifier, message, varargin{:});
-end
+    % Report invalid input with the supplied error identifier.
+    if ~condition
+        error(identifier, message, varargin{:});
+    end
 end

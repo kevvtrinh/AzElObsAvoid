@@ -1,5 +1,4 @@
-function scene = preparePlanningScene( ...
-        obstacles, initialState, goalState)
+function scene = preparePlanningScene(obstacles, initialState, goalState)
 %% Section 0: Header & Readme
 % SYNTAX
 %   scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
@@ -24,7 +23,7 @@ function scene = preparePlanningScene( ...
 %% Section 1: Read The Planning Horizon
 
 startTime_s = initialState.time_s;
-endTime_s = goalState.time_s;
+endTime_s   = goalState.time_s;
 
 %% Section 2: Prepare Complete Obstacle Histories
 

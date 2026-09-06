@@ -29,48 +29,44 @@ function [result, diagnosis] = exampleStaticUShapedObstacle(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2.5 2.5]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
 
 % The start is inside the open cavity of a U shape. The planner must leave
 % through the opening before it can travel toward the exterior goal.
 
-missionEndTime_s = 120;
-obstacleTime_s = [0; missionEndTime_s];
+missionEndTime_s     = 120;
+obstacleTime_s       = [0; missionEndTime_s];
 obstaclePosition_deg = [ -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
-safetyMargin_deg = 0.20;
-obstacles = obstacleAvoidance.obstacles.createObstacle( ...
-    "Static U-shaped obstacle", obstacleTime_s, ...
-    obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), safetyMargin_deg);
+safetyMargin_deg     = 0.20;
+obstacles            = obstacleAvoidance.obstacles.createObstacle("Static U-shaped obstacle", obstacleTime_s, obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 % No waypoint identifies the opening. The search must find it from the supplied
 % protected boundary and endpoint positions.
 
-initialState = struct("time_s", 0, "position_deg", [0 0]);
-goalState = struct( "time_s", missionEndTime_s, "position_deg", [0 -10]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [0.75 0.75], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [0 0];
+goalState = struct("time_s", missionEndTime_s, "position_deg", [0 -10]);
+limits    = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [0.75 0.75], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the public planner once with the complete scenario input.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check the full path through the cavity opening. A direct segment through a U
 % wall must fail collision validation.
 
-exampleValidation = validateExampleResult( ...
-    result, "single U", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation = validateExampleResult(result, "single U", struct("RequireDirectBlocked", true), diagnosis);
 if ~exampleValidation.Passed
-    warning("exampleStaticUShapedObstacle:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleStaticUShapedObstacle:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -78,8 +74,7 @@ end
 % The workspace plot shows how the route leaves the concave cavity.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

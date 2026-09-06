@@ -48,7 +48,7 @@ movement, and checks the answer independently before calling it successful.
 It is written for a curious reader, not an engineer.
 \end{minipage}
 \vfill
-\large Current-source edition, rebuilt from the planner in this worktree
+\large Recorded-example guide; see the appendix for maintained interfaces
 \end{titlepage}
 \pagenumbering{arabic}
 \tableofcontents
@@ -349,8 +349,8 @@ pass the independent check.
 The code that builds a motion is not allowed to be the only judge of that
 motion. A separate checker receives the proposed answer and checks the start,
 the finish, the order of time, the workspace, the turning limits, the complete
-smooth motion, the safety buffer, and collision freedom. The planner copies a
-candidate into its final answer only after that checker says it passed.
+smooth motion, the safety buffer, and collision freedom. The planner reports success only after that checker says the candidate passed.
+Rejected motion may remain available in a failure result for inspection.
 
 That separation matters for ordinary human reasons. A person can make a plan
 and overlook a detail in the same plan. A separate review looks for the detail

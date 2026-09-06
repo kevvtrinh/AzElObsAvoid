@@ -28,36 +28,37 @@ function [result, diagnosis] = exampleObstacleAvoidance(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
 
 %% Section 2: Create Obstacles
 
 % One protected rectangle blocks the direct line. Symmetric route choices test
 % deterministic side selection from identical inputs.
 
-obstacleTime_s = [0; 20];
-obstacleAzimuth_deg = [-1; 1; 1; -1];
+obstacleTime_s        = [0; 20];
+obstacleAzimuth_deg   = [-1; 1; 1; -1];
 obstacleElevation_deg = [-2; -2; 2; 2];
-safetyMargin_deg = 0.2;
-obstacles = obstacleAvoidance.obstacles.createObstacle( ...
-    "rectangle", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
+safetyMargin_deg      = 0.2;
+obstacles             = obstacleAvoidance.obstacles.createObstacle("rectangle", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
 
 %% Section 3: Create Planner Inputs
 
 % The start and goal lie on opposite sides of the rectangle. The safety margin
 % belongs to obstacle construction and is not added again by the planner.
 
-initialState = struct("time_s", 0, "position_deg", [-5 0]);
-goalState = struct("time_s", 12, "position_deg", [5 0]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [-5 0];
+goalState = struct();
+goalState.time_s       = 12;
+goalState.position_deg = [5 0];
+limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the maintained planner without waypoints or a preferred detour side.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -65,8 +66,7 @@ limits = struct( ...
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleObstacleAvoidance:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleObstacleAvoidance:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -74,8 +74,7 @@ end
 % Show the original obstacle, protected obstacle, route, and timed motion.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

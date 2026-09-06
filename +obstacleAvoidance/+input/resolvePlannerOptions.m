@@ -42,48 +42,35 @@ function options = resolvePlannerOptions(optionOverrides)
 
 %% Section 1: Resolve Defaults
 
-defaults = struct( ...
-    "GoalTimeMode", "earliestArrival", ...
-    "SampleTime_s", 0.05, ...
-    "UnsupportedTimedTopologyPolicy", "fail", ...
-    "AllowAzimuthWrapping", false, ...
-    "MaximumSeedCount", 2, ...
-    "MaximumTimeLayerCount", 17, ...
-    "MaximumWaitRefinementIterations", 16, ...
-    "ArrivalTimeTolerance_s", 1e-3, "ConstraintTolerance", 1e-7, ...
-    "CollisionClearanceTolerance_deg", 1e-7, ...
-    "CollisionMinimumTimeStep_s", 0.00025);
+defaults = struct();
+defaults.GoalTimeMode                    = "earliestArrival";
+defaults.SampleTime_s                    = 0.05;
+defaults.UnsupportedTimedTopologyPolicy  = "fail";
+defaults.AllowAzimuthWrapping            = false;
+defaults.MaximumSeedCount                = 2;
+defaults.MaximumTimeLayerCount           = 17;
+defaults.MaximumWaitRefinementIterations = 16;
+defaults.ArrivalTimeTolerance_s          = 1e-3;
+defaults.ConstraintTolerance             = 1e-7;
+defaults.CollisionClearanceTolerance_deg = 1e-7;
+defaults.CollisionMinimumTimeStep_s      = 0.00025;
 if nargin == 0 || isempty(optionOverrides)
     options = defaults;
     return;
 end
 if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
-    error("planTrajectory:InvalidOptions", ...
-        "optionOverrides must be a scalar struct.");
+    error("planTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
     if isfield(optionOverrides, fieldName)
-        replacementName = lower(extractBefore(fieldName, "Interval")) + ...
-            "Interval_deg";
-        error("planTrajectory:WorkspaceLimitMoved", ...
-            "%s has moved from options to limits.%s.", ...
-            fieldName, replacementName);
+        replacementName = lower(extractBefore(fieldName, "Interval")) + "Interval_deg";
+        error("planTrajectory:WorkspaceLimitMoved", "%s has moved from options to limits.%s.", fieldName, replacementName);
     end
 end
-% Apply known, nonempty overrides.
-options = defaults;
-defaultNames = string(fieldnames(defaults));
-overrideNames = string(fieldnames(optionOverrides));
-unknownNames = setdiff(overrideNames, defaultNames, "stable");
-for fieldName = reshape(intersect(overrideNames, defaultNames, "stable"), 1, [])
-    if ~isempty(optionOverrides.(fieldName))
-        options.(fieldName) = optionOverrides.(fieldName);
-    end
-end
+[options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
 if ~isempty(unknownNames)
-    warning("planTrajectory:UnknownOptions", ...
-        "Ignoring unknown option fields: %s. No behavior changed.", ...
-        strjoin(unknownNames, ", "));
+    warning("planTrajectory:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
 end
 
 %% Section 2: Normalize Public Values
@@ -98,33 +85,28 @@ textRules = {"GoalTimeMode", ...
     "planTrajectory:InvalidUnsupportedTimedTopologyPolicy", ...
     "UnsupportedTimedTopologyPolicy must be 'fail' or " + ...
     "'ruckigStopAtWaypoints'."};
+% Apply the required validation or transfer to each rule.
 for ruleIndex = 1:size(textRules, 1)
     fieldName = textRules{ruleIndex, 1};
     options.(fieldName) = string(options.(fieldName));
-    if ~isscalar(options.(fieldName)) || ...
-            ~any(options.(fieldName) == textRules{ruleIndex, 2})
+    if ~isscalar(options.(fieldName)) || ~any(options.(fieldName) == textRules{ruleIndex, 2})
         error(textRules{ruleIndex, 3}, textRules{ruleIndex, 4});
     end
 end
-options.AllowAzimuthWrapping = obstacleAvoidance.input.normalizeLogicalScalar( ...
-    options.AllowAzimuthWrapping, "AllowAzimuthWrapping", ...
-    "planTrajectory:InvalidLogicalOption");
+options.AllowAzimuthWrapping = obstacleAvoidance.input.normalizeLogicalScalar(options.AllowAzimuthWrapping, "AllowAzimuthWrapping", "planTrajectory:InvalidLogicalOption");
 
-validateattributes(options.SampleTime_s, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'positive'});
+validateattributes(options.SampleTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 integerRules = {"MaximumSeedCount", 1, 5; ...
     "MaximumTimeLayerCount", 2, 65535; ...
     "MaximumWaitRefinementIterations", 0, 64};
+% Apply the required validation or transfer to each rule.
 for ruleIndex = 1:size(integerRules, 1)
-    validateattributes(options.(integerRules{ruleIndex, 1}), {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'integer', ...
-        '>=', integerRules{ruleIndex, 2}, '<=', integerRules{ruleIndex, 3}});
+    validateattributes(options.(integerRules{ruleIndex, 1}), {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>=', integerRules{ruleIndex, 2}, '<=', integerRules{ruleIndex, 3}});
 end
+% Apply the required validation or transfer to each field name.
 for fieldName = ["ArrivalTimeTolerance_s", "ConstraintTolerance", ...
         "CollisionMinimumTimeStep_s"]
-    validateattributes(options.(fieldName), {'numeric'}, ...
-        {'real', 'finite', 'scalar', 'positive'});
+    validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 end
-validateattributes(options.CollisionClearanceTolerance_deg, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'nonnegative'});
+validateattributes(options.CollisionClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end

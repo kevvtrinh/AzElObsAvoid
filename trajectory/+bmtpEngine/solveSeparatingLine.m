@@ -1,5 +1,4 @@
-function [plane, exitFlag, output] = solveSeparatingLine( ...
-        controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
+function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
@@ -33,81 +32,77 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 
 %% Section 1: Solve The Maximum-Margin Line
 
-offsetIndex = 5:6;
-marginIndex = 7;
+offsetIndex   = 5:6;
+marginIndex   = 7;
 variableCount = 7;
 [A, b] = maximumMarginRows(controlPoint_deg, vertices_deg, target_deg);
 f = zeros(variableCount, 1);
 f(marginIndex) = 1;
-emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), ...
-    zeros(variableCount, 1), -1);
-cones = repmat(emptyCone, 2, 1);
+emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), -1);
+cones     = repmat(emptyCone, 2, 1);
+% Process each plane needed to find separating line.
 for planeIndex = 0:1
     coneA = zeros(2, variableCount);
     coneA(:, planeIndex * 2 + (1:2)) = eye(2);
-    cones(planeIndex + 1) = secondordercone( ...
-        coneA, zeros(2, 1), zeros(variableCount, 1), -1);
+    cones(planeIndex + 1) = secondordercone(coneA, zeros(2, 1), zeros(variableCount, 1), -1);
 end
 solverTimer = tic;
-[x, ~, exitFlag, output] = coneprog( ...
-    f, cones, A, b, [], [], [], [], options);
+[x, ~, exitFlag, output] = coneprog(f, cones, A, b, [], [], [], [], options);
 output.TotalTime_s = toc(solverTimer);
 plane = emptyPlane();
 plane.ExitFlag = exitFlag;
 if isempty(x) || any(~isfinite(x))
     return;
 end
-[plane.Active, plane.Normal, plane.Offset_deg] = ...
-    deal(true, reshape(x(1:4), 2, []).', x(offsetIndex).');
-plane = bmtpEngine.verifySeparatingLine( ...
-    plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg);
+[plane.Active, plane.Normal, plane.Offset_deg] = deal(true, reshape(x(1:4), 2, []).', x(offsetIndex).');
+plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg);
 end
 
 %% Section 2: Local Functions
 
-function [A, b] = maximumMarginRows( ...
-        controlPoint_deg, vertices_deg, target_deg)
-% Build inequalities for the maximum-margin separating line.
-degree = size(controlPoint_deg, 1) - 1;
-variableCount = 7;
-offsetIndex = 5:6;
-marginIndex = 7;
-A = zeros(2 * size(vertices_deg, 1) + degree + 2, variableCount);
-b = zeros(size(A, 1), 1);
-rowIndex = 0;
-for planeIndex = 0:1
-    targets = rowIndex + (1:size(vertices_deg, 1));
-    normal = planeIndex * 2 + (1:2);
-    A(targets, normal) = -vertices_deg;
-    A(targets, offsetIndex(planeIndex + 1)) = -1;
-    b(targets) = -target_deg;
-    rowIndex = targets(end);
-end
-objectiveRows = variablePlaneRows(controlPoint_deg, variableCount);
-targets = rowIndex + (1:size(objectiveRows, 1));
-A(targets, :) = objectiveRows;
-A(targets, marginIndex) = -1;
+function [A, b] = maximumMarginRows(controlPoint_deg, vertices_deg, target_deg)
+    % Build inequalities for the maximum-margin separating line.
+    degree        = size(controlPoint_deg, 1) - 1;
+    variableCount = 7;
+    offsetIndex   = 5:6;
+    marginIndex   = 7;
+    A             = zeros(2 * size(vertices_deg, 1) + degree + 2, variableCount);
+    b             = zeros(size(A, 1), 1);
+    rowIndex      = 0;
+    % Process each plane needed to complete maximum margin rows.
+    for planeIndex = 0:1
+        targets = rowIndex + (1:size(vertices_deg, 1));
+        normal  = planeIndex * 2 + (1:2);
+        A(targets, normal) = -vertices_deg;
+        A(targets, offsetIndex(planeIndex + 1)) = -1;
+        b(targets) = -target_deg;
+        rowIndex = targets(end);
+    end
+    objectiveRows = variablePlaneRows(controlPoint_deg, variableCount);
+    targets       = rowIndex + (1:size(objectiveRows, 1));
+    A(targets, :) = objectiveRows;
+    A(targets, marginIndex) = -1;
 end
 
 function rows = variablePlaneRows(controlPoint_deg, variableCount)
-% Multiply a variable separating line by fixed trajectory controls.
-degree = size(controlPoint_deg, 1) - 1;
-[alpha, beta] = productWeights(degree);
-rows = zeros(degree + 2, variableCount);
-rows(1:end - 1, 1:2) = alpha(1:end - 1) .* controlPoint_deg;
-rows(2:end, 3:4) = beta(2:end) .* controlPoint_deg;
-rows(:, 5:6) = [alpha beta];
-end
-
-function [alpha, beta] = productWeights(degree)
-% Return exact degree-N by degree-one Bernstein product weights.
-beta = (0:degree + 1).' / (degree + 1);
-alpha = 1 - beta;
+    % Multiply a variable separating line by fixed trajectory controls.
+    degree = size(controlPoint_deg, 1) - 1;
+    % Exact degree-N by degree-one Bernstein product weights.
+    beta  = (0:degree + 1).' / (degree + 1);
+    alpha = 1 - beta;
+    rows = zeros(degree + 2, variableCount);
+    rows(1:end - 1, 1:2) = alpha(1:end - 1) .* controlPoint_deg;
+    rows(2:end, 3:4) = beta(2:end) .* controlPoint_deg;
+    rows(:, 5:6) = [alpha beta];
 end
 
 function plane = emptyPlane()
-% Initialize an inactive separating-plane record.
-plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
-    "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
-    "SignedGap_deg", NaN);
+    % Initialize an inactive separating-plane record.
+    plane = struct();
+    plane.Active        = false;
+    plane.Verified      = false;
+    plane.ExitFlag      = NaN;
+    plane.Normal        = zeros(2, 2);
+    plane.Offset_deg    = zeros(1, 2);
+    plane.SignedGap_deg = NaN;
 end

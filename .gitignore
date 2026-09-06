@@ -5,6 +5,7 @@ scratch/
 tmp/
 output/
 .claude/
+*.asv
 benchmarks/*.mat
 benchmarks/*.png
 benchmarks/*_runs.csv

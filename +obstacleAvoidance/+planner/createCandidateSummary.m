@@ -1,6 +1,4 @@
-function summary = createCandidateSummary( ...
-        candidate, checkResult, diagnostics, elapsedTime_s, template, ...
-        limits)
+function summary = createCandidateSummary(candidate, checkResult, diagnostics, elapsedTime_s, template, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   summary = obstacleAvoidance.planner.createCandidateSummary( ...
@@ -21,7 +19,7 @@ function summary = createCandidateSummary( ...
 %   - elapsedTime_s (nonnegative finite scalar)
 %       Wall-clock motion-solving duration excluding validation.
 %   - template (scalar candidate-summary struct)
-%       Stable empty summary returned by createEmptyResult.
+%       Stable empty summary returned by createPlanningRecord.
 %   - limits (scalar struct)
 %       Physical limits used to normalize peak motion measures.
 %
@@ -37,27 +35,21 @@ function summary = createCandidateSummary( ...
 %% Section 1: Copy Candidate And Check Evidence
 
 summary = template;
-sourceNames = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
-    "FinalTime_s", "MotionDuration_s", "MotionLength_deg", ...
-    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
-    "TerminationReason"];
-targetNames = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
-    "ArrivalTime_s", "MotionDuration_s", "MotionLength_deg", ...
-    "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
-    "TerminationReason"];
-for fieldIndex = 1:numel(sourceNames)
-    summary.(targetNames(fieldIndex)) = ...
-        candidate.(sourceNames(fieldIndex));
+% Apply the required validation or transfer to each field name.
+for fieldName = ["SeedIndex", "SeedSource", "OptimizerFeasible", ...
+        "ArrivalTime_s", "TrajectoryDuration_s", "MotionLength_deg", ...
+        "IntegratedSquaredJerk_deg2_s5", "MaximumConstraintViolation", ...
+        "TerminationReason"]
+    summary.(fieldName) = candidate.(fieldName);
 end
-summary.ValidationPassed = checkResult.Passed;
-summary.CollisionFree = checkResult.CollisionFree;
-summary.CollisionResolved = checkResult.CollisionResolved;
-summary.MinimumClearance_deg = checkResult.MinimumClearance_deg;
-summary.UnresolvedIntervalCount = checkResult.UnresolvedIntervalCount;
+summary.ValidationPassed          = checkResult.Passed;
+summary.CollisionFree             = checkResult.CollisionFree;
+summary.CollisionResolved         = checkResult.CollisionResolved;
+summary.MinimumClearance_deg      = checkResult.MinimumClearance_deg;
+summary.UnresolvedIntervalCount   = checkResult.UnresolvedIntervalCount;
 summary.SeedPlanningElapsedTime_s = elapsedTime_s;
-summary.Message = strtrim( ...
-    string(candidate.Message) + " " + checkResult.Message);
-summary.SolverDiagnostics = diagnostics;
+summary.Message                   = strtrim(string(candidate.Message) + " " + checkResult.Message);
+summary.SolverDiagnostics         = diagnostics;
 
 %% Section 2: Calculate Passing-Candidate Measures
 

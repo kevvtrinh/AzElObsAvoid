@@ -28,53 +28,46 @@ function [result, diagnosis] = exampleTwoOpposingUVisibilityGraph(options)
 if nargin < 1 || isempty(options)
     options = struct();
 end
-[options, jerkConfiguration] = resolveExampleOptions( ...
-    options, struct( ...
-    "FigureVisible", "on", ...
-    "GoalTimeMode", "earliestArrival", "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
+[options, jerkConfiguration] = resolveExampleOptions(options, struct("FigureVisible", "on", "GoalTimeMode", "earliestArrival", "Title", "Two opposing U-shaped az/el obstacles"), [2.5 2.5]);
 
 %% Section 2: Create Obstacles
 
 % Two U shapes face in opposite directions. Their concave cavities create
 % several visibility choices. No solver initialization changes the physical
 % request.
-missionEndTime_s = 180;
-safetyMargin_deg = 0.10;
-firstUBoundary_deg = [ -10, 8; 0, 8; 0, 5; -7, 5; -7,-5; 0,-5; 0,-8; -10,-8];
+missionEndTime_s    = 180;
+safetyMargin_deg    = 0.10;
+firstUBoundary_deg  = [ -10, 8; 0, 8; 0, 5; -7, 5; -7,-5; 0,-5; 0,-8; -10,-8];
 secondUBoundary_deg = [ 5,28; 15,28; 15,12; 5,12; 5,15; 12,15; 12,25; 5,25];
-time_s = [0; missionEndTime_s];
-obstacles = [ ...
-    obstacleAvoidance.obstacles.createObstacle("Right-opening U", time_s, ...
-        firstUBoundary_deg(:, 1), firstUBoundary_deg(:, 2), ...
-        safetyMargin_deg); ...
-    obstacleAvoidance.obstacles.createObstacle("Left-opening U", time_s, ...
-        secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2), safetyMargin_deg)];
+time_s              = [0; missionEndTime_s];
+obstacles           = [ ...
+    obstacleAvoidance.obstacles.createObstacle("Right-opening U", time_s, firstUBoundary_deg(:, 1), firstUBoundary_deg(:, 2), safetyMargin_deg); obstacleAvoidance.obstacles.createObstacle("Left-opening U", time_s, secondUBoundary_deg(:, 1), secondUBoundary_deg(:, 2), safetyMargin_deg)];
 
 %% Section 3: Create Planner Inputs
 
 % Put the endpoints beyond the two obstacles. The direct line is blocked by the
 % protected shapes, so the visibility search must connect safe boundary views.
 
-initialState = struct("time_s", 0, "position_deg", [-4 0]);
-goalState = struct( "time_s", missionEndTime_s, "position_deg", [9 20]);
-limits = struct( ...
-    "maxVelocity_deg_s", [1 1], ...
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_deg = [-4 0];
+goalState = struct("time_s", missionEndTime_s, "position_deg", [9 20]);
+limits    = struct("maxVelocity_deg_s", [1 1], ...
     "maxAcceleration_deg_s2", [0.75 0.75], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the automatic visibility planner. Do not supply route directions.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check that smoothing preserves the collision-free geometric route.
 
-exampleValidation = validateExampleResult( result, "two opposing Us", struct("RequireDirectBlocked", true), diagnosis);
+exampleValidation = validateExampleResult(result, "two opposing Us", struct("RequireDirectBlocked", true), diagnosis);
 if ~exampleValidation.Passed
-    warning("exampleTwoOpposingUVisibilityGraph:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleTwoOpposingUVisibilityGraph:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -82,8 +75,7 @@ end
 % Plot visibility search data and the selected trajectory when enabled.
 
 if jerkConfiguration.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

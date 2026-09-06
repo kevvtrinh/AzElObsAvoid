@@ -28,9 +28,7 @@ function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions( ...
-    exampleOverrides, struct( ...
-    "GoalTimeMode", "earliestArrival"), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -44,16 +42,23 @@ obstacles = [];
 % Define rest-to-rest endpoint states and axis motion limits. The shortest path
 % is the direct line because no obstacle blocks it.
 
-initialState = struct( "time_s", 0, "position_deg", [0 0], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-goalState = struct( "time_s", 8, "position_deg", [4 2], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-limits = struct( ...
-    "maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState = struct();
+initialState.time_s              = 0;
+initialState.position_deg        = [0 0];
+initialState.velocity_deg_s      = [0 0];
+initialState.acceleration_deg_s2 = [0 0];
+goalState = struct();
+goalState.time_s              = 8;
+goalState.position_deg        = [4 2];
+goalState.velocity_deg_s      = [0 0];
+goalState.acceleration_deg_s2 = [0 0];
+limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
 
 %% Section 4: Run Planner
 
 % Run the public planner and let it find the minimum feasible arrival time.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -62,8 +67,7 @@ limits = struct( ...
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleObstacleFree:ValidationFailed", ...
-        "%s", exampleValidation.Message);
+    warning("exampleObstacleFree:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion
@@ -71,8 +75,7 @@ end
 % Use this plot as the simplest reference for more complex example plots.
 
 if displayOptions.PlotOutputs
-    obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions, diagnosis);
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

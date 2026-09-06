@@ -1,5 +1,4 @@
-function validation = validateTrajectory( ...
-        trajectory, obstacles, initialState, goalState, limits, options)
+function validation = validateTrajectory(trajectory, obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   validation = obstacleAvoidance.validateTrajectory()
@@ -37,26 +36,21 @@ validationTimer = tic;
 
 if nargin == 1
     requiredFields = {'Inputs', 'Options', 'Polynomial'};
-    if ~isstruct(trajectory) || ~isscalar(trajectory) || ...
-            ~all(isfield(trajectory, requiredFields))
-        error("validateTrajectory:InvalidResult", ...
-            "A one-input call requires a planner result with Inputs, " + ...
-            "Options, and Polynomial fields.");
+    if ~isstruct(trajectory) || ~isscalar(trajectory) || ~all(isfield(trajectory, requiredFields))
+        error("validateTrajectory:InvalidResult", "A one-input call requires a planner result with Inputs, " + "Options, and Polynomial fields.");
     end
-    obstacles = trajectory.Inputs.obstacles;
+    obstacles    = trajectory.Inputs.obstacles;
     initialState = trajectory.Inputs.initialState;
-    goalState = trajectory.Inputs.goalState;
-    limits = trajectory.Inputs.limits;
-    options = trajectory.Options;
+    goalState    = trajectory.Inputs.goalState;
+    limits       = trajectory.Inputs.limits;
+    options      = trajectory.Options;
 elseif nargin ~= 6
-    error("validateTrajectory:InvalidCall", ...
-        "Use one planner result or all six explicit validation inputs.");
+    error("validateTrajectory:InvalidCall", "Use one planner result or all six explicit validation inputs.");
 end
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end
-obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
-validation = obstacleAvoidance.validation.validatePreparedTrajectory( ...
-    trajectory, obstacles, initialState, goalState, limits, options);
+obstacles  = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
+validation = obstacleAvoidance.validation.validatePreparedTrajectory(trajectory, obstacles, initialState, goalState, limits, options);
 validation.ElapsedTime_s = toc(validationTimer);
 end

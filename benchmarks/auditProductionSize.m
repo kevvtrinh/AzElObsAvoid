@@ -9,8 +9,10 @@ function report = auditProductionSize(maximumLineCount)
 %**************************************************************************
 % INPUTS
 %   - maximumLineCount (positive integer scalar, optional; default 11482)
-%       Inclusive ceiling for the complete production count. The default
-%       is the current measured size, adopted as a no-regression ceiling.
+%       Inclusive ceiling for the complete production count. The default is
+%       a historical target, not a claim about current size; it can fail.
+%       For a refactor comparison, pass the frozen baseline's measured count.
+%       Do not raise a ceiling solely to make a failing size check pass.
 %**************************************************************************
 % OUTPUTS
 %   - report (scalar struct)
@@ -25,51 +27,47 @@ function report = auditProductionSize(maximumLineCount)
 if nargin == 0
     maximumLineCount = 11482;
 end
-validateattributes(maximumLineCount, {'numeric'}, ...
-    {'real', 'finite', 'scalar', 'integer', 'positive'});
-repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
+validateattributes(maximumLineCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
+repositoryRoot  = fileparts(fileparts(mfilename("fullpath")));
 productionRoots = ["+obstacleAvoidance", "trajectory"];
-filePaths = strings(0, 1);
+filePaths       = strings(0, 1);
+% Process each root name included in this benchmark measurement.
 for rootName = productionRoots
     rootPath = fullfile(repositoryRoot, rootName);
     if isfolder(rootPath)
         found = dir(fullfile(rootPath, "**", "*.m"));
+        % Process each found included in this benchmark measurement.
         for foundIndex = 1:numel(found)
-            filePaths(end + 1, 1) = fullfile( ...
-                found(foundIndex).folder, found(foundIndex).name); %#ok<AGROW>
+            filePaths(end + 1, 1) = fullfile(found(foundIndex).folder, found(foundIndex).name); %#ok<AGROW>
         end
     end
 end
 
 %% Section 2: Count Executable Source Lines
 
-relativePath = strings(numel(filePaths), 1);
+relativePath        = strings(numel(filePaths), 1);
 noncommentLineCount = zeros(numel(filePaths), 1);
+% Process each file included in this benchmark measurement.
 for fileIndex = 1:numel(filePaths)
-    filePath = filePaths(fileIndex);
-    sourceLines = readlines(filePath);
-    isExecutableLine = strlength(strtrim(sourceLines)) > 0 & ...
-        ~startsWith(strtrim(sourceLines), "%");
+    filePath         = filePaths(fileIndex);
+    sourceLines      = readlines(filePath);
+    isExecutableLine = strlength(strtrim(sourceLines)) > 0 & ~startsWith(strtrim(sourceLines), "%");
     noncommentLineCount(fileIndex) = nnz(isExecutableLine);
-    relativePath(fileIndex) = erase( ...
-        string(filePath), string(repositoryRoot) + string(filesep));
+    relativePath(fileIndex) = erase(string(filePath), string(repositoryRoot) + string(filesep));
 end
 [noncommentLineCount, order] = sort(noncommentLineCount, "descend");
 relativePath = relativePath(order);
-fileTable = table(relativePath, noncommentLineCount, ...
+fileTable    = table(relativePath, noncommentLineCount, ...
     'VariableNames', {'Path', 'NoncommentLineCount'});
 
 %% Section 3: Assemble Reproducible Evidence
 
 totalLineCount = sum(noncommentLineCount);
-report = struct( ...
-    "Rule", "Nonblank lines whose first nonspace character is not %.", ...
+report         = struct("Rule", "Nonblank lines whose first nonspace character is not %.", ...
     "ProductionRoots", productionRoots, ...
     "Files", fileTable, "FileCount", height(fileTable), ...
     "TotalLineCount", totalLineCount, ...
     "MaximumLineCount", double(maximumLineCount), ...
     "Passed", totalLineCount <= maximumLineCount);
-fprintf("PRODUCTION_SIZE files=%d lines=%d ceiling=%d passed=%d\n", ...
-    report.FileCount, report.TotalLineCount, ...
-    report.MaximumLineCount, report.Passed);
+fprintf("PRODUCTION_SIZE files=%d lines=%d ceiling=%d passed=%d\n", report.FileCount, report.TotalLineCount, report.MaximumLineCount, report.Passed);
 end

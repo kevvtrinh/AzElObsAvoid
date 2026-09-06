@@ -1,6 +1,4 @@
-function [result, diagnostics] = solveAlternatingTrajectory( ...
-        request, warmStart, diagnostics, obstacleTarget_deg, ...
-        roundoffReserve_deg)
+function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_deg, roundoffReserve_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
@@ -31,144 +29,121 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 
 segmentCount = warmStart.SegmentCount;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
-degree = request.Degree;
-regions_deg = request.Regions_deg;
+degree                = request.Degree;
+regions_deg           = request.Regions_deg;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
-feasibleControl_deg = warmStart.ControlPoint_deg;
+feasibleControl_deg   = warmStart.ControlPoint_deg;
 feasibleSegmentTime_s = warmStart.SegmentTime_s;
 diagnostics.WarmStartDuration_s = segmentCount * feasibleSegmentTime_s;
 bestControl_deg = zeros(0, degree + 1, 2);
 [bestSegmentTime_s, bestDuration_s] = deal(NaN, Inf);
 diagnostics.RetainedBestTrialDuration_s = bestDuration_s;
-taggedPairs = false(segmentCount, numel(regions_deg));
-planes = repmat(createEmptyPlane(), ...
-    segmentCount, numel(regions_deg));
+taggedPairs           = false(segmentCount, numel(regions_deg));
+planes                = repmat(createEmptyPlane(), segmentCount, numel(regions_deg));
 optimizationHorizon_s = request.MotionHorizon_s;
-solverMessage = "The biconvex iteration limit was reached.";
+solverMessage         = "The biconvex iteration limit was reached.";
 
 %% Section 2: Alternate Trajectory And Separating-Line Solves
 
 for iterationIndex = 1:35
     diagnostics.IterationCount = iterationIndex;
-    usedRequestHorizon = ...
-        optimizationHorizon_s == request.MotionHorizon_s;
-    [trialControl_deg, trialTime_s, exitFlag, output] = ...
-        bmtpEngine.solveTrajectoryStep( ...
-        segmentCount, degree, request.InitialState.position_deg, ...
-        request.GoalState.position_deg, request.Limits, planes, ...
-        roundoffReserve_deg, optimizationHorizon_s, ...
-        "earliestArrival", ...
-        request.TrajectoryOptions);
-    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
-    diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
+    usedRequestHorizon = optimizationHorizon_s == request.MotionHorizon_s;
+    [trialControl_deg, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, degree, request.InitialState.position_deg, request.GoalState.position_deg, request.Limits, planes, roundoffReserve_deg, optimizationHorizon_s, "earliestArrival", request.TrajectoryOptions);
+    diagnostics.TrajectorySocpCount     = diagnostics.TrajectorySocpCount + 1;
+    diagnostics.ConicSolver             = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     diagnostics.FinalTrajectoryExitFlag = exitFlag;
     if exitFlag <= 0 || isempty(trialControl_deg)
         % Allow the longer starting duration while finding separating planes.
         % The final motion must still meet the requested horizon.
-        canExpandHorizon = exitFlag == -2 && isempty(bestControl_deg) && ...
-            optimizationHorizon_s < diagnostics.WarmStartDuration_s;
+        canExpandHorizon = exitFlag == -2 && isempty(bestControl_deg) && optimizationHorizon_s < diagnostics.WarmStartDuration_s;
         if canExpandHorizon
-            optimizationHorizon_s = min(2 * optimizationHorizon_s, ...
-                diagnostics.WarmStartDuration_s);
+            optimizationHorizon_s = min(2 * optimizationHorizon_s, diagnostics.WarmStartDuration_s);
             continue;
         end
         % If fixed planes make the deadline infeasible, continue improving the
         % collision-free curve at its current duration within the iteration budget.
-        if exitFlag == -2 && ~isempty(bestControl_deg) && ...
-                optimizationHorizon_s < bestDuration_s
-            diagnostics.RetainedHorizonRetryCount = ...
-                diagnostics.RetainedHorizonRetryCount + 1;
+        if exitFlag == -2 && ~isempty(bestControl_deg) && optimizationHorizon_s < bestDuration_s
+            diagnostics.RetainedHorizonRetryCount = diagnostics.RetainedHorizonRetryCount + 1;
             optimizationHorizon_s = bestDuration_s;
             continue;
         end
         solverMessage = "Trajectory SOCP failed: " + string(output.message);
         break;
     end
-    collisionPairs = bmtpEngine.findSampledObstacleOverlaps( ...
-        trialControl_deg, regions_deg, request.RegionMinimum_deg, ...
-        request.RegionMaximum_deg, regionActiveBySegment, 1201);
-    diagnostics.TrialDuration_s(iterationIndex) = ...
-        segmentCount * trialTime_s;
-    diagnostics.CollisionPairCountHistory(iterationIndex) = ...
-        nnz(collisionPairs);
-    diagnostics.TrialWasCollisionFree(iterationIndex) = ...
-        ~any(collisionPairs, "all");
+    collisionPairs = bmtpEngine.findSampledObstacleOverlaps(trialControl_deg, regions_deg, request.RegionMinimum_deg, request.RegionMaximum_deg, regionActiveBySegment, 1201);
+    diagnostics.TrialDuration_s(iterationIndex) = segmentCount * trialTime_s;
+    diagnostics.CollisionPairCountHistory(iterationIndex) = nnz(collisionPairs);
+    diagnostics.TrialWasCollisionFree(iterationIndex) = ~any(collisionPairs, "all");
     diagnostics.FinalCollisionPairCount = nnz(collisionPairs);
     previousTaggedPairs = taggedPairs;
-    newPairs = collisionPairs & ~taggedPairs;
-    taggedPairs = taggedPairs | newPairs;
+    newPairs            = collisionPairs & ~taggedPairs;
+    taggedPairs         = taggedPairs | newPairs;
     if ~any(collisionPairs, "all")
-        optimizationHorizon_s = request.MotionHorizon_s;
-        previousDuration_s = segmentCount * feasibleSegmentTime_s;
-        feasibleControl_deg = trialControl_deg;
-        feasibleSegmentTime_s = trialTime_s;
-        duration_s = segmentCount * trialTime_s;
+        optimizationHorizon_s     = request.MotionHorizon_s;
+        previousDuration_s        = segmentCount * feasibleSegmentTime_s;
+        feasibleControl_deg       = trialControl_deg;
+        feasibleSegmentTime_s     = trialTime_s;
+        duration_s                = segmentCount * trialTime_s;
         retainedBestImprovement_s = bestDuration_s - duration_s;
+        % Promote this feasible trajectory only when its duration improves the incumbent.
         if duration_s < bestDuration_s
-            bestControl_deg = trialControl_deg;
+            bestControl_deg   = trialControl_deg;
             bestSegmentTime_s = trialTime_s;
-            bestDuration_s = duration_s;
-            diagnostics.BestDuration_s = duration_s;
+            bestDuration_s    = duration_s;
+            diagnostics.BestDuration_s              = duration_s;
             diagnostics.RetainedBestTrialDuration_s = duration_s;
         end
         improvement_s = previousDuration_s - duration_s;
-        if improvement_s >= 0 && ...
-                improvement_s <= request.Options.ArrivalTimeTolerance_s
+        if improvement_s >= 0 && improvement_s <= request.Options.ArrivalTimeTolerance_s
             diagnostics.Converged = true;
-            solverMessage = ...
-                "The feasible arrival improvement reached tolerance.";
+            solverMessage = "The feasible arrival improvement reached tolerance.";
             break;
         end
         taggedPairSetUnchanged = isequal(taggedPairs, previousTaggedPairs);
-        reusePlanes = retainedBestImprovement_s <= ...
-            request.Options.ArrivalTimeTolerance_s && taggedPairSetUnchanged;
+        reusePlanes            = retainedBestImprovement_s <= request.Options.ArrivalTimeTolerance_s && taggedPairSetUnchanged;
         if reusePlanes
             diagnostics.PlaneReuseApplied = true;
-            diagnostics.PlaneReuseCount = diagnostics.PlaneReuseCount + 1;
+            diagnostics.PlaneReuseCount   = diagnostics.PlaneReuseCount + 1;
             if usedRequestHorizon
                 diagnostics.Converged = true;
-                solverMessage = ...
-                    "The next trajectory SOCP would be unchanged.";
+                solverMessage = "The next trajectory SOCP would be unchanged.";
                 break;
             end
             continue;
         end
         planes(:) = createEmptyPlane();
         activePairs = taggedPairs;
+    % Restart alternating optimization when new obstacle-time pairs are discovered; otherwise the active set has stabilized.
     elseif any(newPairs, "all")
         activePairs = newPairs;
     else
-        solverMessage = ...
-            "A tagged pair crossed its retained separating plane.";
+        solverMessage = "A tagged pair crossed its retained separating plane.";
         break;
     end
 
     % Add separating lines where samples overlap. Final certification follows later.
-    updateFailed = false;
+    updateFailed      = false;
     activePairIndices = reshape(find(activePairs), 1, []);
+    % Process each active needed to find alternating trajectory.
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
-        [segmentIndex, regionIndex] = ind2sub(size(activePairs), pairIndex);
-        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine( ...
-            squeeze(feasibleControl_deg(segmentIndex, :, :)), ...
-            regions_deg{regionIndex}, obstacleTarget_deg, ...
-            roundoffReserve_deg, request.PlaneOptions);
+        [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);
+        [plane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine(squeeze(feasibleControl_deg(segmentIndex, :, :)), regions_deg{regionIndex}, obstacleTarget_deg, roundoffReserve_deg, request.PlaneOptions);
         diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
-        diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
+        diagnostics.ConicSolver    = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
         if planeExitFlag <= 0 || ~plane.Active
             [diagnostics.FailedPlaneSegmentIndex, ...
-                diagnostics.FailedPlaneRegionIndex, diagnostics.FailedPlane] = ...
-                deal(segmentIndex, regionIndex, plane);
+                diagnostics.FailedPlaneRegionIndex, diagnostics.FailedPlane] = deal(segmentIndex, regionIndex, plane);
             solverMessage = "A maximum-margin plane solve failed.";
-            updateFailed = true;
+            updateFailed  = true;
             break;
         end
         if ~plane.Verified
-            diagnostics.UnverifiedPlaneInitializationCount = ...
-                diagnostics.UnverifiedPlaneInitializationCount + 1;
+            diagnostics.UnverifiedPlaneInitializationCount = diagnostics.UnverifiedPlaneInitializationCount + 1;
         end
         planes(segmentIndex, regionIndex) = plane;
     end
+    % Terminate with the recorded failure if an alternating update cannot produce a valid control or separating plane.
     if updateFailed
         break;
     end
@@ -176,10 +151,8 @@ end
 
 %% Section 3: Return The Best Sampled-Clear Attempt
 
-[diagnostics.TaggedPairCount, diagnostics.SolverMessage] = ...
-    deal(nnz(taggedPairs), solverMessage);
-result = struct( ...
-    "Success", ~isempty(bestControl_deg), ...
+[diagnostics.TaggedPairCount, diagnostics.SolverMessage] = deal(nnz(taggedPairs), solverMessage);
+result = struct("Success", ~isempty(bestControl_deg), ...
     "SolverMessage", solverMessage, ...
     "ControlPoint_deg", bestControl_deg, ...
     "SegmentTime_s", bestSegmentTime_s, ...
@@ -190,8 +163,12 @@ end
 %% Section 4: Local Functions
 
 function plane = createEmptyPlane()
-% Initialize an inactive separating-plane record.
-plane = struct("Active", false, "Verified", false, "ExitFlag", NaN, ...
-    "Normal", zeros(2, 2), "Offset_deg", zeros(1, 2), ...
-    "SignedGap_deg", NaN);
+    % Initialize an inactive separating-plane record.
+    plane = struct();
+    plane.Active        = false;
+    plane.Verified      = false;
+    plane.ExitFlag      = NaN;
+    plane.Normal        = zeros(2, 2);
+    plane.Offset_deg    = zeros(1, 2);
+    plane.SignedGap_deg = NaN;
 end

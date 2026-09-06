@@ -9,9 +9,12 @@ function stats = accumulateConicDiagnostics(stats, output)
 
 %% Section 1: Initialize Or Accumulate One Coneprog Call
 if nargin == 0
-    stats = struct('Solver','coneprog','CallCount',0,'TotalTime_s',0);
+    stats = struct();
+    stats.Solver      = 'coneprog';
+    stats.CallCount   = 0;
+    stats.TotalTime_s = 0;
     return;
 end
-stats.CallCount = stats.CallCount + 1;
+stats.CallCount   = stats.CallCount + 1;
 stats.TotalTime_s = stats.TotalTime_s + output.TotalTime_s;
 end

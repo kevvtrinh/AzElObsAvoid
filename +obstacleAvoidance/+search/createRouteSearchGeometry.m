@@ -1,5 +1,4 @@
-function proposal = createRouteSearchGeometry( ...
-        initialState, goalState, options, scene)
+function proposal = createRouteSearchGeometry(initialState, goalState, options, scene)
 %% Section 0: Header & Readme
 % SYNTAX
 %   proposal = obstacleAvoidance.search.createRouteSearchGeometry( ...
@@ -30,14 +29,11 @@ function proposal = createRouteSearchGeometry( ...
 
 obstacles = scene.preparedObstacles;
 start_deg = initialState.position_deg;
-goal_deg = obstacleAvoidance.input.goalPositionAtTime( ...
-    goalState, scene.endTime_s);
+goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, scene.endTime_s);
 if options.AllowAzimuthWrapping
-    goal_deg(1) = goal_deg(1) + 360 * round( ...
-        (start_deg(1) - goal_deg(1)) / 360);
+    goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
-sampleTimes_s = createObstacleSampleTimes( ...
-    obstacles, scene.startTime_s, scene.endTime_s);
+sampleTimes_s = createObstacleSampleTimes(obstacles, scene.startTime_s, scene.endTime_s);
 
 %% Section 2: Select The Proposal Representation
 
@@ -45,19 +41,18 @@ sampleTimes_s = createObstacleSampleTimes( ...
 % Use the sampled union if the envelope covers an endpoint.
 
 vertexWorkBudget = 10e3;
-[proposalShape, usedDenseEnvelope, estimatedVertexWork] = ...
-    obstacleAvoidance.search.denseSweptEnvelope( ...
-    obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
+[proposalShape, usedDenseEnvelope, estimatedVertexWork] = obstacleAvoidance.search.denseSweptEnvelope(obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
 if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
-    representation = "denseHistoryEnvelope";
+    representation    = "denseHistoryEnvelope";
 else
-    parts = cell(numel(sampleTimes_s) * numel(obstacles), 1);
+    parts             = cell(numel(sampleTimes_s) * numel(obstacles), 1);
     sampledShapeCount = 0;
+    % Process each time in temporal order and accumulate its result.
     for timeIndex = 1:numel(sampleTimes_s)
+        % Evaluate each obstacle against the current geometry or motion.
         for obstacleIndex = 1:numel(obstacles)
-            part = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
-                obstacles(obstacleIndex), sampleTimes_s(timeIndex));
+            part = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(obstacleIndex), sampleTimes_s(timeIndex));
             if ~isempty(part.Vertices)
                 sampledShapeCount = sampledShapeCount + 1;
                 parts{sampledShapeCount} = part;
@@ -75,15 +70,13 @@ end
 
 % Cache proposal edges for visibility checks and route shortening.
 
-[edgeStart_deg, edgeEnd_deg] = ...
-    obstacleAvoidance.geometry.boundaryToEdges(proposalShape, 1e-12);
+[edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(proposalShape, 1e-12);
 
 %% Section 4: Assemble The Proposal
 
 % Save geometry choices for diagnostics and plots.
 
-proposal = struct( ...
-    "start_deg", start_deg, ...
+proposal = struct("start_deg", start_deg, ...
     "goal_deg", goal_deg, ...
     "sampleTimes_s", sampleTimes_s, ...
     "vertexWorkBudget", vertexWorkBudget, ...
@@ -98,18 +91,16 @@ end
 
 %% Section 5: Local Functions
 
-function sampleTimes_s = createObstacleSampleTimes( ...
-        obstacles, startTime_s, endTime_s)
-% Retain all source, midpoint, endpoint, and uniform request times.
-sampleTimes_s = [startTime_s; ...
-    linspace(startTime_s, endTime_s, 9).'; endTime_s];
-for obstacleIndex = 1:numel(obstacles)
-    sourceTime_s = obstacles(obstacleIndex).time_s(:);
-    intervalMidTime_s = ...
-        (sourceTime_s(1:end - 1) + sourceTime_s(2:end)) / 2;
-    sampleTimes_s = [sampleTimes_s; sourceTime_s; ...
-        intervalMidTime_s]; %#ok<AGROW>
-end
-sampleTimes_s = unique(sampleTimes_s( ...
-    sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
+function sampleTimes_s = createObstacleSampleTimes(obstacles, startTime_s, endTime_s)
+    % Retain all source, midpoint, endpoint, and uniform request times.
+    sampleTimes_s = [startTime_s; ...
+        linspace(startTime_s, endTime_s, 9).'; endTime_s];
+    % Evaluate each obstacle against the current geometry or motion.
+    for obstacleIndex = 1:numel(obstacles)
+        sourceTime_s      = obstacles(obstacleIndex).time_s(:);
+        intervalMidTime_s = (sourceTime_s(1:end - 1) + sourceTime_s(2:end)) / 2;
+        sampleTimes_s     = [sampleTimes_s; sourceTime_s; ...
+            intervalMidTime_s]; %#ok<AGROW>
+    end
+    sampleTimes_s = unique(sampleTimes_s(sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
 end

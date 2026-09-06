@@ -1,6 +1,4 @@
-function [candidate, checkResult, elapsedTime_s, stageTiming] = ...
-        checkCandidateMotion(candidate, obstacles, initialState, goalState, ...
-        limits, options, stageTiming, emptyMessage)
+function [candidate, checkResult, elapsedTime_s, stageTiming] = checkCandidateMotion(candidate, obstacles, initialState, goalState, limits, options, stageTiming, emptyMessage)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, checkResult, elapsedTime_s, stageTiming] = ...
@@ -47,7 +45,7 @@ function [candidate, checkResult, elapsedTime_s, stageTiming] = ...
 
 % Validate nonempty motions; return an empty validation record otherwise.
 
-checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
+checkResult   = obstacleAvoidance.validation.validatePreparedTrajectory();
 elapsedTime_s = 0;
 if isempty(candidate.time_s)
     if strlength(emptyMessage) > 0
@@ -55,15 +53,10 @@ if isempty(candidate.time_s)
     end
 else
     validationTimer = tic;
-    checkResult = obstacleAvoidance.validation.validatePreparedTrajectory( ...
-        candidate, obstacles, initialState, goalState, limits, options);
-    elapsedTime_s = toc(validationTimer);
-    stageTiming.CollisionCheckingElapsedTime_s = ...
-        stageTiming.CollisionCheckingElapsedTime_s + ...
-        checkResult.CollisionCheckingElapsedTime_s;
-    stageTiming.FinalValidationElapsedTime_s = ...
-        stageTiming.FinalValidationElapsedTime_s + max( ...
-        0, elapsedTime_s - checkResult.CollisionCheckingElapsedTime_s);
+    checkResult     = obstacleAvoidance.validation.validatePreparedTrajectory(candidate, obstacles, initialState, goalState, limits, options);
+    elapsedTime_s   = toc(validationTimer);
+    stageTiming.CollisionCheckingElapsedTime_s = stageTiming.CollisionCheckingElapsedTime_s + checkResult.CollisionCheckingElapsedTime_s;
+    stageTiming.FinalValidationElapsedTime_s   = stageTiming.FinalValidationElapsedTime_s + max(0, elapsedTime_s - checkResult.CollisionCheckingElapsedTime_s);
 end
 candidate.Validation = checkResult;
 end
