@@ -618,10 +618,22 @@ end
 headerLines = [headerLines; ""; ""];
 headerText = strjoin(headerLines, sprintf('\r\n'));
 headerBytes = unicode2native(char(headerText), "UTF-8");
-outputStream = clientSocket.getOutputStream();
-writeJavaBytes(outputStream, headerBytes);
-writeJavaBytes(outputStream, bodyBytes);
-outputStream.flush();
+try
+    outputStream = clientSocket.getOutputStream();
+    writeJavaBytes(outputStream, headerBytes);
+    writeJavaBytes(outputStream, bodyBytes);
+    outputStream.flush();
+catch exception
+    % A timed-out health probe can disconnect while this response is served
+    % inside CancellationCheckFcn. Its transport failure must not fail the
+    % active plan or undo an already accepted cancellation request.
+    if contains(string(exception.message), "java.net.SocketException")
+        fprintf(2, "Sandbox HTTP %d response could not be delivered: client socket disconnected.\n", ...
+            statusCode);
+        return;
+    end
+    rethrow(exception);
+end
 end
 
 function writeJavaBytes(outputStream, bytes)

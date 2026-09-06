@@ -767,14 +767,15 @@ verifyTrue(testCase, result.Validation.CollisionFree);
 verifyTrue(testCase, result.Validation.CollisionResolved);
 diagnostics = result.SearchDiagnostics.FixedClockExcursion;
 verifyTrue(testCase, diagnostics.Success, diagnostics.Message);
-verifyEqual(testCase, diagnostics.SelectedMode, "singleAmplitude");
+verifyTrue(testCase, diagnostics.TravelRefinement.Attempted);
+verifyLessThanOrEqual(testCase, diagnostics.TravelRefinement.FinalLength_deg, ...
+    diagnostics.TravelRefinement.InitialLength_deg);
 verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, ...
     "AbsTol", 1e-9);
 verifyEqual(testCase, result.SelectedSeed_deg, result.position_deg);
 verifyEqual(testCase, result.Seeds(1).Length_deg, ...
     sum(vecnorm(diff(result.position_deg), 2, 2)), "AbsTol", 1e-12);
-% The first validated family may be slightly longer than a later family, but
-% the detour must remain within 1.25 percent of the direct endpoint distance.
+% The refined detour must remain within 1.25 percent of the direct distance.
 directLength_deg = norm(goalState.position_deg - initialState.position_deg);
 verifyLessThan(testCase, result.Seeds(1).Length_deg, ...
     1.0125 * directLength_deg, ...

@@ -13,7 +13,7 @@ function [candidate, diagnostics] = createFixedClockLateralExcursion( ...
 % PURPOSE
 %   - Preserve a certified direct physical-minimum clock while enumerating
 %     additive coordinate-axis rest-to-rest collision detours.
-%   - Return the first independently validated axis excursion on that clock.
+%   - Return the shortest independently validated enumerated axis excursion.
 %**************************************************************************
 % INPUTS
 %   - directCandidate (scalar planner candidate struct)
@@ -240,6 +240,14 @@ for axisIndex = 1:dimensionCount
             report.TerminationReason = "validatedFeasibleBoundary";
             axisReports(reportIndex) = report;
 
+            % Every candidate shares the certified arrival clock. Compare
+            % travel across signed peaks rather than accepting enumeration
+            % order as a path-quality decision. This does not assert global
+            % optimality or exclude the later route-search candidates.
+            if diagnostics.Success && ...
+                    upperCandidate.MotionLength_deg >= candidate.MotionLength_deg
+                continue;
+            end
             candidate = upperCandidate;
             diagnostics.AxisReports = axisReports;
             diagnostics.Success = true;
@@ -259,19 +267,92 @@ for axisIndex = 1:dimensionCount
             diagnostics.MotionLength_deg = candidate.MotionLength_deg;
             diagnostics.SelectedValidation = candidate.Validation;
             diagnostics.ElapsedTime_s = toc(timer);
-            return;
         end
     end
 end
 
-%% Section 3: Return Failure After Exhaustive Enumeration
+%% Section 3: Refine Validated Travel Or Return Enumeration Failure
 
 diagnostics.AxisReports = axisReports;
+if diagnostics.Success
+    [candidate, diagnostics] = refineOffsetTravel(candidate, directCandidate, ...
+        diagnostics, obstacles, initialState, goalState, limits, options);
+    diagnostics.ElapsedTime_s = toc(timer);
+    return;
+end
 diagnostics = finishFailure(diagnostics, "noValidatedExcursion", ...
     "No enumerated fixed-clock excursion passed independent validation.", timer);
 end
 
 %% Section 4: Local Functions
+
+function [candidate, diagnostics] = refineOffsetTravel(candidate, direct, ...
+        diagnostics, obstacles, initialState, goalState, limits, options)
+% Optimize free spline offsets while preserving the governing coordinate and
+% clock. These are numerical degrees of freedom, not prescribed route points.
+% Every retained trial passes the full continuous and physical validation.
+axisIndex = diagnostics.SelectedAxisIndex;
+reports = diagnostics.AxisReports;
+selectedReport = find([reports.AxisIndex] == axisIndex & ...
+    [reports.Direction] == diagnostics.SelectedDirection & ...
+    [reports.MotionLength_deg] == candidate.MotionLength_deg, 1);
+knotTime_s = unique([linspace(initialState.time_s, direct.FinalTime_s, 9).'; ...
+    reports(selectedReport).PeakTime_s]);
+[~, basePosition_deg] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
+[~, position_deg] = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
+offset_deg = position_deg(:, axisIndex) - basePosition_deg(:, axisIndex);
+offset_deg([1 end]) = 0;
+record = createTravelRefinement();
+record.Attempted = true;
+record.InitialLength_deg = candidate.MotionLength_deg;
+record.KnotTime_s = knotTime_s;
+initialStep_deg = max(abs(offset_deg)) / 2;
+for level = 0:7
+    step_deg = initialStep_deg / 2^level;
+    for sweep = 1:2
+        for knotIndex = 2:numel(knotTime_s)-1
+            for direction = [-1 1]
+                obstacleAvoidance.input.throwIfCancellationRequested(options);
+                trialOffset_deg = offset_deg;
+                trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
+                trial = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s, ...
+                    trialOffset_deg, axisIndex, initialState, options.SampleTime_s, ...
+                    "fixedClockLateralExcursion");
+                record.TrialCount = record.TrialCount + 1;
+                if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
+                    continue;
+                end
+                validationTimer = tic;
+                validation = obstacleAvoidance.validateTrajectory(trial, obstacles, ...
+                    initialState, goalState, limits, options);
+                diagnostics = addValidationTiming(diagnostics, validation, toc(validationTimer));
+                if validation.Passed
+                    trial.Validation = validation;
+                    candidate = trial;
+                    offset_deg = trialOffset_deg;
+                    record.AcceptedCount = record.AcceptedCount + 1;
+                end
+            end
+        end
+    end
+end
+record.FinalLength_deg = candidate.MotionLength_deg;
+record.KnotOffset_deg = offset_deg;
+diagnostics.TravelRefinement = record;
+diagnostics.MotionLength_deg = candidate.MotionLength_deg;
+diagnostics.SelectedValidation = candidate.Validation;
+if record.AcceptedCount > 0
+    diagnostics.SelectedMode = "refinedOffsetSpline";
+    diagnostics.Message = "A refined fixed-clock offset spline passed independent validation.";
+end
+end
+
+function record = createTravelRefinement()
+% Retain the starting lobe's reports separately from the final free offsets.
+record = struct('Attempted', false, 'AcceptedCount', 0, 'TrialCount', 0, ...
+    'InitialLength_deg', NaN, 'FinalLength_deg', NaN, ...
+    'KnotTime_s', zeros(0, 1), 'KnotOffset_deg', zeros(0, 1));
+end
 
 function candidate = createExcursion( ...
         directCandidate, amplitude_deg, axisIndex, peakTime_s, ...
@@ -427,6 +508,7 @@ diagnostics = struct( ...
     "BarrierSequence", createBarrierReport(), ...
     "ProgressPolynomial", createProgressReport(), ...
     "AxisReports", repmat(createAxisReport(), 0, 1), ...
+    "TravelRefinement", createTravelRefinement(), ...
     "ValidationElapsedTime_s", 0, "CollisionCheckingElapsedTime_s", 0, ...
     "ElapsedTime_s", 0);
 end

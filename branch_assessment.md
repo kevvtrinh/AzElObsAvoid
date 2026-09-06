@@ -1,5 +1,29 @@
 # BMTP branch assessment
 
+## Disconnected HTTP clients and original transform handles - 2026-09-05
+
+Source inspection located an escape path from HTTP response writes inside the
+planner cancellation callback. An abandoned health connection could therefore
+raise a Java SocketException into an otherwise unrelated active plan. The
+response writer now contains SocketException failures and reports an
+undeliverable response; other exceptions propagate. A previously accepted
+cancel request retains its true return value even if its acknowledgement fails.
+This matches the reported write-error class; the user's complete scenario was
+not reproduced. No planner algorithm or validation rules changed.
+
+MATLAB R2024b passed all four tests in testOfflineSandboxTransport, including a
+real reset peer, a closed socket, polling after abandonment with subsequent
+health/cancel requests, and propagation of non-socket errors. MATLAB initially
+failed to initialize in the restricted environment; the authorized unrestricted
+run completed successfully. No maintained planner examples were executed.
+
+Original obstacles now expose resize and rotation handles immediately after
+creation, alongside direct body dragging. Out-of-workspace transforms are
+refused. All 22 Node sandbox tests pass, including original-shape resizing and
+rotation. Browser visual verification remains unavailable under the previously
+reported local-file policy restriction.
+
+
 ## HTML sandbox final-pose editing - 2026-09-05
 
 Added Delete to the selected polygon's floating menu. Set motion now exposes a
@@ -3872,3 +3896,44 @@ baseline. No commit until the whole objective is verified.
 Primary source: https://github.com/oxfordcontrol/Clarabel.cpp (Apache-2.0),
 C/C++ wrapper over Clarabel.rs. The preceding standalone numerical failure
 remains recorded and is not relabeled a passing result.
+
+## 2026-09-05: Shorter paths with unchanged arrival times
+
+User-supplied `Rogue Examples/pathtoolong.mat` and `pathtoolong2.mat` replayed
+unchanged using `offlineSandbox.replayDiagnosisBundle` against 40323d8. Both
+were successful and independently valid; this was a travel-quality issue.
+The first-passing fixed-clock lobe caused a broad unnecessary tail. Balanced
+candidate ranking itself matched its declared objective.
+
+The planner now compares all existing signed peak proposals, then uses a
+bounded coordinate refinement of free interior offset-spline coefficients.
+The governing coordinate and arrival clock remain fixed. Only a shorter
+motion passing unchanged full public validation can replace the incumbent.
+The numerical grid has eight intervals plus the starting peak; eight step
+levels and two sweeps bound local work. Rejected trials do not prune route
+search or establish infeasibility. Diagnostics retain initial axis reports,
+final spline offsets, trial/accepted counts, and before/after travel.
+This is local improvement, not a globally shortest-path certificate.
+
+Measured MATLAB R2024b unchanged artifact replay:
+
+| Bundle | Original length deg | Final length deg | Original/final duration s | Original/final replay wall s |
+|---|---:|---:|---:|---:|
+| pathtoolong | 233.058989023 | 230.563196579 | 117.744031226 | 7.499 / 12.129 |
+| pathtoolong2 | 242.064492067 | 236.331761713 | 117.250241772 | 2.426 / 7.786 |
+
+Both independent validators pass. First rows are cold within their MATLAB
+sessions; wall measurements are observations, not a formal speed comparison.
+The customer explicitly accepted more computation but required unchanged
+arrival time. Retention gate of >=1 degree shortening in both artifacts,
+unchanged arrival and full validity passed. Preliminary enumeration-only
+shortening was just 0.338/0.315 degrees; free-offset refinement supplies the
+larger benefit. No input, margin, kinematic tolerance, or ranking-policy change.
+
+Verification: 44/44 route-economy, planner-contract, and architecture tests
+pass, including unmodified artifact replays, circle, concave static/moving
+outlines, reflected progress and near-start barriers. Headless maintained
+ObstacleAvoidance and MovingBarrierWait pass independent validation; NoPath
+returns expected noValidatedSeed. Actual example metrics appended to
+benchmark.csv. No full example sweep or graphical UI verification claimed.
+Existing unrelated UI/socket work and user artifacts remain intact.

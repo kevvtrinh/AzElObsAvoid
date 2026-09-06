@@ -47,7 +47,9 @@ function harness() {
     'stopPlayback', 'startPlayback', 'advancePlayback', 'timelineBounds',
     'configureTimeline', 'syncTimelineControl', 'updateObstacleSpeed',
     'updateMotionInputs', 'updateMotionSpeedReadout', 'updateSpeedOverlay',
-    'rectangleVertices', 'finishActiveDrag', 'polygonArea', 'clampToWorkspace'];
+    'rectangleVertices', 'finishActiveDrag', 'polygonArea', 'clampToWorkspace',
+    'originalTransformGeometry', 'originalTransformTargetAt', 'beginSceneDrag',
+    'pointInsideWorkspace', 'markDragChanged'];
   const functions = [...script.matchAll(/^      function (\w+)\(/gm)];
   for (const name of names) {
     const index = functions.findIndex((entry) => entry[1] === name);
@@ -397,4 +399,29 @@ test('speed slider is a selected-obstacle canvas overlay with editing locks', ()
   assert.ok(html.indexOf('id="obstacleSpeedSlider"') > html.indexOf('id="canvasWrap"'));
   assert.ok(html.indexOf('id="obstacleSpeedSlider"') < html.indexOf('id="coordinateReadout"'));
   assert.match(html, /data-mode="rectangle"/);
+});
+
+test('new obstacles expose original resize and rotation handles immediately', () => {
+  const c = harness(); c.addObstacle([[-20, -10], [20, -10], [20, 10], [-20, 10]]);
+  assert.equal(c.state.selectedObstacleIndex, 0);
+  const o = c.state.obstacles[0], handles = c.originalTransformGeometry(o);
+  for (const corner of handles.corners) {
+    assert.equal(c.originalTransformTargetAt(o, corner.point).type, 'originalStretch');
+  }
+  assert.equal(c.originalTransformTargetAt(o, handles.rotation).type, 'originalRotate');
+  c.beginSceneDrag({ type: 'originalStretch', obstacleIndex: 0, local: [20, 10] }, [20, 10], 1);
+  c.updateActiveDrag([40, 5]);
+  near(o.vertices_deg, [[-40, -5], [40, -5], [40, 5], [-40, 5]]);
+  const saved = JSON.stringify(o.vertices_deg);
+  c.updateActiveDrag([1000, 1000]); assert.equal(JSON.stringify(o.vertices_deg), saved);
+});
+
+test('original rotation preserves size and updates geometry about its center', () => {
+  const c = harness(); c.addObstacle(triangle);
+  const o = c.state.obstacles[0], center = c.centroid(triangle);
+  c.beginSceneDrag({ type: 'originalRotate', obstacleIndex: 0 }, [center[0] + 20, center[1]], 1);
+  c.updateActiveDrag([center[0], center[1] + 20]);
+  near(o.vertices_deg, triangle.map((p) => [center[0] - (p[1] - center[1]),
+    center[1] + p[0] - center[0]]));
+  near(c.polygonArea(o.vertices_deg), c.polygonArea(triangle));
 });

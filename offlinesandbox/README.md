@@ -28,6 +28,11 @@ four-vertex polygon. Drawing works in any direction and stops at workspace
 bounds. Escape or a canceled pointer gesture discards the draft. Rectangles
 use the same editing, motion, safety-margin, and export behavior as polygons.
 
+New obstacles are selected immediately and show **transform handles**. Drag
+the body to move it, a corner of the outline to resize it, or the round handle
+to rotate it. These actions require no tool-button selection. Initial-shape
+edits must remain within the workspace; exact vertex editing remains available.
+
 ## Live mode: MATLAB serves the page and planner
 
 In MATLAB, add this folder's parent to the path and start the blocking server:
@@ -43,6 +48,12 @@ path of its stop file. Open that printed URL, create the scene, and select
 **Plan in MATLAB**. The page sends its existing `offlineSandboxRequest/v1`
 JSON to `POST /plan` and passes the returned `offlineSandboxResult/v1` object
 to the same result loader used by offline mode.
+
+Disconnected HTTP clients are reported as undeliverable responses. In
+particular, a browser health probe that times out during planning must not
+abort the planner through its cancellation callback. Socket write failures
+are contained at the response boundary; other errors still propagate and a
+valid cancellation remains accepted even if its acknowledgement cannot be sent.
 
 After a live plan completes, select **Save diagnosis bundle** to download a
 MAT file for the exact displayed result. The file contains the same versioned

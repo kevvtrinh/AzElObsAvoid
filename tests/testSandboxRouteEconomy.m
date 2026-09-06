@@ -28,6 +28,37 @@ addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 testCase.TestData.Request = createRequest();
 end
 
+function testSavedLongPath(testCase)
+% Replay the user's exact request without modifying its balanced objective.
+verifySavedRoute(testCase, "pathtoolong", 233.058989023, 117.744031226);
+end
+
+function testSavedLongPathTwo(testCase)
+% A differently placed obstacle and oblique endpoint chord exercise the gate.
+verifySavedRoute(testCase, "pathtoolong2", 242.064492067, 117.250241772);
+end
+
+function verifySavedRoute(testCase, name, baselineLength_deg, baselineDuration_s)
+root = fileparts(fileparts(mfilename("fullpath")));
+addpath(fullfile(root, "offlinesandbox"));
+outputDirectory = tempname;
+mkdir(outputDirectory);
+cleanup = onCleanup(@() rmdir(outputDirectory, 's')); %#ok<NASGU>
+[~, bundle] = offlineSandbox.replayDiagnosisBundle( ...
+    fullfile(root, "Rogue Examples", name + ".mat"), ...
+    fullfile(outputDirectory, "response.json"));
+result = bundle.Result;
+validation = obstacleAvoidance.validateTrajectory(result);
+verifyTrue(testCase, result.Success, result.Message);
+verifyTrue(testCase, validation.Passed, validation.Message);
+verifyLessThan(testCase, motionLength(result), baselineLength_deg - 1);
+refinement = result.SearchDiagnostics.FixedClockExcursion.TravelRefinement;
+verifyGreaterThan(testCase, refinement.AcceptedCount, 0);
+verifyLessThan(testCase, refinement.FinalLength_deg, refinement.InitialLength_deg);
+verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, ...
+    baselineDuration_s + 1e-7);
+end
+
 function testStaticCircleHasOneEconomicalDetour(testCase)
 % Compare joint travel with the exact tangent-and-arc geometric lower bound.
 request = testCase.TestData.Request;

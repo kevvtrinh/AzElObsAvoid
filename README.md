@@ -61,12 +61,14 @@ Jerk is a hard limit, not a selection cost. Set `GoalTimeMode` to
 `"earliestArrival"` for strict time-first behavior or `"fixedArrival"` for
 minimum travel at the mission horizon.
 
-For an eligible static rest-to-rest request with one coordinate owning the
-physical clock, the exact-clock detour portfolio includes asymmetric one-sided
-progress polynomials whose peaks come from the direct collision location. The
-planner compares their actual travel against alternating and spline families;
-sampled screening may reject a proposal, but only continuous public validation
-can accept one.
+For an eligible rest-to-rest request with one coordinate owning the physical
+clock, the planner compares fixed-clock offset splines whose peaks come from
+direct collision intervals. It then adjusts interior spline offsets to shorten
+travel while preserving that clock and the governing coordinate. Each retained
+adjustment must pass continuous public validation, including moving obstacles
+and all kinematic limits. This bounded local refinement spends additional
+planning time; it does not certify a globally shortest path. Diagnostics retain
+the starting lobe reports and the final `TravelRefinement` offsets separately.
 
 `MaximumTimeLayerCount` defaults to `17` and bounds timed BMTP motion segments
 plus one. Timed visibility search retains every input-derived endpoint, source,

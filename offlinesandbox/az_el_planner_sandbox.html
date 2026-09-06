@@ -4015,6 +4015,7 @@
           if (!state.obstaclePreview && index === state.selectedObstacleIndex &&
               state.mode === "select" && state.currentTime_s === 0) {
             drawVertexHandles(obstacle.vertices_deg);
+            drawOriginalTransformHandles(obstacle);
           }
         });
       }
@@ -4588,7 +4589,48 @@
         return centroid(obstacleVerticesAtCurrentTime(selected));
       }
 
+      function originalTransformGeometry(obstacle) {
+        // Reuse the handle geometry with the initial shape as the target pose.
+        const initial = { ...obstacle, finalRotation_deg: 0, finalScale: [1, 1],
+          motionProfile: "stationary", motionVelocity_deg_s: [0, 0] };
+        const center = centroid(obstacle.vertices_deg);
+        let rotation = finalPoseRotationHandle(initial);
+        if (state.activeDrag && state.activeDrag.type === "originalRotate" &&
+            state.obstacles[state.activeDrag.obstacleIndex] === obstacle) {
+          const radius = Math.hypot(rotation[0] - center[0], rotation[1] - center[1]);
+          rotation = [center[0] + radius * Math.cos(state.activeDrag.lastAngle),
+            center[1] + radius * Math.sin(state.activeDrag.lastAngle)];
+        }
+        return { corners: finalPoseCorners(initial), rotation, center };
+      }
+
+      function drawOriginalTransformHandles(obstacle) {
+        const handles = originalTransformGeometry(obstacle);
+        strokePath(handles.corners.map((corner) => corner.point), {
+          stroke: "#087f8c", width: 1, dash: [3, 4], close: true });
+        handles.corners.forEach((corner) => drawPoint(corner.point, "#087f8c", "", "diamond"));
+        strokePath([handles.center, handles.rotation], { stroke: "#087f8c", width: 1, dash: [3, 4] });
+        drawPoint(handles.rotation, "#087f8c", "Rotate");
+      }
+
+      function originalTransformTargetAt(obstacle, screenPoint) {
+        const handles = originalTransformGeometry(obstacle);
+        const candidates = handles.corners.map((corner) => ({
+          type: "originalStretch", local: corner.local, point: corner.point }));
+        candidates.push({ type: "originalRotate", point: handles.rotation });
+        candidates.forEach((candidate) => {
+          candidate.distance = screenDistance(candidate.point, screenPoint);
+        });
+        candidates.sort((first, second) => first.distance - second.distance);
+        return candidates[0].distance <= HANDLE_RADIUS_PX ? candidates[0] : null;
+      }
+
       function selectDragTarget(point, screenPoint) {
+        const selected = state.obstacles[state.selectedObstacleIndex];
+        if (selected) {
+          const transform = originalTransformTargetAt(selected, screenPoint);
+          if (transform) return { ...transform, obstacleIndex: state.selectedObstacleIndex };
+        }
         const motionHandle = selectedMotionHandle();
         if (motionHandle && screenDistance(motionHandle, screenPoint) <= HANDLE_RADIUS_PX) {
           return { type: "motion", obstacleIndex: state.selectedObstacleIndex };
@@ -4619,7 +4661,13 @@
 
       function beginSceneDrag(target, point, pointerId) {
         const drag = { ...target, pointerId, startPoint: point.slice(), wasClamped: false };
-        if (target.type === "vertex" || target.type === "obstacle") {
+        if (target.type === "originalStretch" || target.type === "originalRotate") {
+          const obstacle = state.obstacles[target.obstacleIndex];
+          drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
+          drag.center = centroid(obstacle.vertices_deg);
+          drag.lastAngle = Math.atan2(point[1] - drag.center[1], point[0] - drag.center[0]);
+          drag.turn = 0;
+        } else if (target.type === "vertex" || target.type === "obstacle") {
           const obstacle = state.obstacles[target.obstacleIndex];
           drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
           if (target.type === "obstacle") {
@@ -4785,6 +4833,35 @@
       function updateActiveDrag(point) {
         const drag = state.activeDrag;
         if (!drag) {
+          return;
+        }
+        if (drag.type === "originalStretch" || drag.type === "originalRotate") {
+          const x = point[0] - drag.center[0];
+          const y = point[1] - drag.center[1];
+          let scale = [1, 1];
+          if (drag.type === "originalStretch") {
+            scale = [x / drag.local[0], y / drag.local[1]];
+            if (!scale.every((value) => Number.isFinite(value) && value >= 0.01)) return;
+          } else {
+            if (Math.hypot(x, y) <= 1e-9) return;
+            const angle = Math.atan2(y, x);
+            drag.turn += Math.atan2(Math.sin(angle - drag.lastAngle), Math.cos(angle - drag.lastAngle));
+            drag.lastAngle = angle;
+          }
+          const cosine = Math.cos(drag.turn), sine = Math.sin(drag.turn);
+          const vertices = drag.originalVertices.map((vertex) => {
+            const localX = (vertex[0] - drag.center[0]) * scale[0];
+            const localY = (vertex[1] - drag.center[1]) * scale[1];
+            return [drag.center[0] + cosine * localX - sine * localY,
+              drag.center[1] + sine * localX + cosine * localY];
+          });
+          if (!vertices.every(pointInsideWorkspace)) {
+            setStatus("Keep the resized or rotated obstacle inside the workspace.", "warning");
+            return;
+          }
+          state.obstacles[drag.obstacleIndex].vertices_deg = vertices;
+          markDragChanged(drag, point);
+          draw();
           return;
         }
         if (drag.type === "rectangle") {
@@ -5311,6 +5388,10 @@
             const target = finalPoseTargetAt(state.obstacles[state.selectedObstacleIndex], state.cursor, screenPoint);
             canvas.style.cursor = !target ? "default" :
               target.type === "finalStretch" ? "nwse-resize" : "grab";
+          } else if (state.mode === "select" && state.cursor && state.currentTime_s === 0) {
+            const target = selectDragTarget(state.cursor, screenPoint);
+            canvas.style.cursor = !target ? "default" :
+              target.type === "originalStretch" || target.type === "vertex" ? "nwse-resize" : "grab";
           } else {
             canvas.style.cursor = state.mode === "select" ? "default" : "crosshair";
           }
