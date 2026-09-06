@@ -40,12 +40,7 @@ if isempty(time) || any(~isfinite(time))
 end
 if nargin < 3 || isempty(segmentIndex)
     segmentStarts = double(polynomial.SegmentStartTime(:));
-    if isscalar(segmentStarts)
-        segmentIndex = ones(sampleCount, 1);
-    else
-        segmentIndex = sum(time >= segmentStarts(2:end).', 2) + 1;
-    end
-    segmentIndex = min(polynomial.SegmentCount, max(1, segmentIndex));
+    segmentIndex  = discretize(time, [-Inf; segmentStarts(2:end); Inf]);
 else
     segmentIndex = double(segmentIndex(:));
     if isscalar(segmentIndex)

@@ -36,6 +36,19 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 ## Verification and remaining limits
 
+The MATLAB built-in replacement audit inspected all 145 maintained MATLAB files
+(545 function declarations and one script). Retained substitutions use `conncomp`
+for ordinary graph reachability, `discretize` for polynomial segment selection,
+and direct logical-to-string conversion for four formatting-only helpers. The
+segment lookup matched boundary and out-of-range behavior and reduced the
+10,000-query microbenchmark from 45.5--6,950 microseconds to 25.6--85.5
+microseconds across 2--1,000 segments. Median graph-connectivity timings improved
+from 46.6, 261.9, and 1,124 microseconds to 38.8, 138.5, and 1,003 microseconds
+at 20, 100, and 400 nodes. Rejected built-ins either regressed representative
+runtime (`minjerkpolytraj`, `bounds`, and `OnOffSwitchState`) or changed protected
+geometry/branch-cut behavior (`polybuffer` and `wrapToPi`). The final 154-test
+suite and 70 focused tests passed; Code Analyzer reported no new issue.
+
 Repository-wide MATLAB formatting now follows the local style documented in
 `AGENTS.md`: main bodies are flush left, local helper bodies use one indent,
 unnecessary continuation lines are removed, related assignments are aligned,

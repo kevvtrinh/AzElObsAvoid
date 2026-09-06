@@ -46,7 +46,9 @@ for connectedRegionIndex = 1:numel(connectedRegions)
     areaTolerance_deg2 = 256 * eps(max(1, area(hull)));
     if abs(area(hull) - area(connectedRegion)) <= areaTolerance_deg2
         convexRegions(end + 1, 1) = connectedRegion; %#ok<AGROW>
-        sortKeys(end + 1, :) = regionSortKey(connectedRegion); %#ok<AGROW>
+        sortVertex_deg = connectedRegion.Vertices;
+        sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
+        sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(connectedRegion)]; %#ok<AGROW>
         continue;
     end
     regionTriangulation = regionTriangulations{connectedRegionIndex};
@@ -61,7 +63,9 @@ for connectedRegionIndex = 1:numel(connectedRegions)
             triangle     = polyshape(triangle_deg(:, 1), triangle_deg(:, 2), "Simplify", false);
             if area(triangle) > 0
                 convexRegions(end + 1, 1) = triangle; %#ok<AGROW>
-                sortKeys(end + 1, :) = regionSortKey(triangle); %#ok<AGROW>
+                sortVertex_deg = triangle.Vertices;
+                sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
+                sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(triangle)]; %#ok<AGROW>
             end
         end
         continue;
@@ -76,7 +80,9 @@ for connectedRegionIndex = 1:numel(connectedRegions)
             error("convexPolygonRegions:InvalidMergedCell", "A coarsened cell has nonpositive area.");
         end
         convexRegions(end + 1, 1) = region; %#ok<AGROW>
-        sortKeys(end + 1, :) = regionSortKey(region); %#ok<AGROW>
+        sortVertex_deg = region.Vertices;
+        sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
+        sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(region)]; %#ok<AGROW>
     end
 end
 if usedCoarsening && ~isempty(convexRegions)
@@ -86,13 +92,6 @@ end
 end
 
 %% Section 2: Local Functions
-
-function key = regionSortKey(region)
-    % Sort mixed-size regions consistently by position.
-    vertices_deg = region.Vertices;
-    vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
-    key          = [min(vertices_deg, [], 1), max(vertices_deg, [], 1), area(region)];
-end
 
 function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, triangleVertexIndex)
     % Normalize triangles and create one deterministic list of internal edges.
@@ -180,8 +179,14 @@ function [cellCycles, isActive] = coarsenCells(point_deg, cellCycles, edgeTriang
     while any(isPending)
         edgeIndex = find(isPending, 1, "first");
         isPending(edgeIndex) = false;
-        firstRootIndex  = findRoot(parentIndex, edgeTriangleIndex(edgeIndex, 1));
-        secondRootIndex = findRoot(parentIndex, edgeTriangleIndex(edgeIndex, 2));
+        firstRootIndex = edgeTriangleIndex(edgeIndex, 1);
+        while parentIndex(firstRootIndex) ~= firstRootIndex
+            firstRootIndex = parentIndex(firstRootIndex);
+        end
+        secondRootIndex = edgeTriangleIndex(edgeIndex, 2);
+        while parentIndex(secondRootIndex) ~= secondRootIndex
+            secondRootIndex = parentIndex(secondRootIndex);
+        end
         if firstRootIndex == secondRootIndex
             continue;
         end
@@ -192,20 +197,15 @@ function [cellCycles, isActive] = coarsenCells(point_deg, cellCycles, edgeTriang
         retainedRootIndex = min(firstRootIndex, secondRootIndex);
         removedRootIndex  = max(firstRootIndex, secondRootIndex);
         parentIndex(removedRootIndex) = retainedRootIndex;
-        cellCycles{retainedRootIndex} = canonicalizeCycle(point_deg, mergedCycle);
+        coordinates_deg = point_deg(mergedCycle, :);
+        [~, order]       = sortrows([coordinates_deg, mergedCycle(:)], [1 2 3]);
+        startIndex       = order(1);
+        cellCycles{retainedRootIndex} = circshift(mergedCycle(:).', 1 - startIndex);
         isActive(removedRootIndex) = false;
         affectedEdges = unique([incidentEdgeIndex{firstRootIndex}; incidentEdgeIndex{secondRootIndex}]);
         incidentEdgeIndex{retainedRootIndex} = affectedEdges;
         incidentEdgeIndex{removedRootIndex} = zeros(0, 1);
         isPending(affectedEdges) = true;
-    end
-end
-
-function rootIndex = findRoot(parentIndex, cellIndex)
-    % Find the current root of the merged region.
-    rootIndex = cellIndex;
-    while parentIndex(rootIndex) ~= rootIndex
-        rootIndex = parentIndex(rootIndex);
     end
 end
 
@@ -292,14 +292,6 @@ function isConvex = cycleIsConvex(point_deg, cycle)
         hasPositiveTurn = hasPositiveTurn || orientation > 0;
     end
     isConvex = hasPositiveTurn;
-end
-
-function cycle = canonicalizeCycle(point_deg, cycle)
-    % Start the counterclockwise boundary at its lowest coordinate/index pair.
-    coordinates = point_deg(cycle, :);
-    [~, order] = sortrows([coordinates, cycle(:)], [1 2 3]);
-    startIndex = order(1);
-    cycle      = circshift(cycle(:).', 1 - startIndex);
 end
 
 function orientation = orientationSign(firstPoint, secondPoint, thirdPoint)

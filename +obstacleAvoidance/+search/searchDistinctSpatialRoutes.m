@@ -70,22 +70,8 @@ expandedCount = 0;
 
 % Check ordinary reachability first: a disconnected cyclic component
 % can otherwise generate infinitely many winding states.
-reachableNode = false(1, nodeCount);
-reachableNode(1) = true;
-reachableQueue = zeros(1, nodeCount);
-reachableQueue(1) = 1;
-queueHead = 1;
-queueTail = 1;
-while queueHead <= queueTail
-    currentNode      = reachableQueue(queueHead);
-    queueHead        = queueHead + 1;
-    newReachableNode = find(isfinite(edgeCost_deg(currentNode, :)) & ~reachableNode);
-    reachableNode(newReachableNode) = true;
-    newReachableCount = numel(newReachableNode);
-    reachableQueue(queueTail + (1:newReachableCount)) = newReachableNode;
-    queueTail = queueTail + newReachableCount;
-end
-goalIsReachable = nodeCount >= 2 && reachableNode(2);
+component       = conncomp(graph(isfinite(edgeCost_deg), "upper"));
+goalIsReachable = nodeCount >= 2 && component(1) == component(2);
 
 while goalIsReachable && numel(routes_deg) < maximumClassCount
     expandedCount     = expandedCount + 1;

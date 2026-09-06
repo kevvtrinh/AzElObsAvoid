@@ -230,14 +230,5 @@ end
 
 function printRecord(record)
     % Print concise evidence while retaining complete records in the report.
-    fprintf("random=%d success=%s validation=%s wall_s=%.6f " + "arrival_s=%.6g witness_clearance_deg=%.6g reason=%s\n", record.RandomSeed, logicalText(record.Success), logicalText(record.IndependentValidationPassed), record.PlannerWallTime_s, record.ArrivalTime_s, record.WitnessClearanceLowerBound_deg, record.TerminationReason);
-end
-
-function text = logicalText(value)
-    % Render scalar logical benchmark status as true or false.
-    if logical(value)
-        text = "true";
-    else
-        text = "false";
-    end
+    fprintf("random=%d success=%s validation=%s wall_s=%.6f " + "arrival_s=%.6g witness_clearance_deg=%.6g reason=%s\n", record.RandomSeed, string(logical(record.Success)), string(logical(record.IndependentValidationPassed)), record.PlannerWallTime_s, record.ArrivalTime_s, record.WitnessClearanceLowerBound_deg, record.TerminationReason);
 end

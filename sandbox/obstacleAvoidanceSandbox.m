@@ -982,7 +982,7 @@ function [result, validation, logLines, diagnosis] = callPlanner(obstacles, init
     if ~isempty(capturedLines)
         logLines = [logLines; capturedLines];
     end
-    logLines(end + 1, 1) = sprintf("Result: success=%s, validation=%s, reason=%s, arrival=%.6g s", logicalText(result.Success), logicalText(validation.Passed), result.TerminationReason, result.ArrivalTime_s);
+    logLines(end + 1, 1) = sprintf("Result: success=%s, validation=%s, reason=%s, arrival=%.6g s", string(logical(result.Success)), string(logical(validation.Passed)), result.TerminationReason, result.ArrivalTime_s);
 end
 
 function [initialState, goalState, limits] = buildPlannerInputs(startPosition_deg, stopPosition_deg, startTime_s, goalTime_s, controls)
@@ -1413,11 +1413,11 @@ end
 function status = formatGoalStatus(result, validation)
     % Report Goal Mode success or failure. Show unavailable values as unavailable.
     status = [ ...
-        "Success: " + logicalText(result.Success); ...
+        "Success: " + string(logical(result.Success)); ...
         "TerminationReason: " + result.TerminationReason; ...
         "ArrivalTime_s: " + sprintf("%.6g", result.ArrivalTime_s); ...
         "TrajectoryDuration_s: " + ...
-            sprintf("%.6g", result.TrajectoryDuration_s); "Independent validation: " + logicalText(validation.Passed)];
+            sprintf("%.6g", result.TrajectoryDuration_s); "Independent validation: " + string(logical(validation.Passed))];
 end
 
 function modeState = appendLogLines(modeState, lines)
@@ -1554,14 +1554,5 @@ function setObstacleConstructorAvailability(modeState, isEnabled)
         "AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
     for constructorName = constructorNames
         set(modeState.GraphicsHandles.Actions.(constructorName), "Enable", onOff(isEnabled));
-    end
-end
-
-function text = logicalText(value)
-    % Render scalar logical status as true or false for user-facing output.
-    if logical(value)
-        text = "true";
-    else
-        text = "false";
     end
 end

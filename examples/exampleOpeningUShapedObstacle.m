@@ -130,16 +130,7 @@ function validation = validateOpeningUse(result, diagnosis, openingTime_s, gapHa
     if passed
         message = "The selected seed waited for and crossed the timed gap.";
     else
-        message = sprintf("Opening use failed: success=%s, wait=%s, stayed=%s, crossed=%s.", logicalText(result.Success), logicalText(waitSeedSelected), logicalText(stayedBeforeClosedBarrier), logicalText(crossedOpenGap));
-end
-
-function text = logicalText(value)
-    % Render scalar logical validation status as true or false.
-    if logical(value)
-        text = "true";
-    else
-        text = "false";
-    end
+        message = sprintf("Opening use failed: success=%s, wait=%s, stayed=%s, crossed=%s.", string(logical(result.Success)), string(logical(waitSeedSelected)), string(logical(stayedBeforeClosedBarrier)), string(logical(crossedOpenGap)));
     end
     validation = struct("Passed", passed, ...
         "Message", string(message), ...
