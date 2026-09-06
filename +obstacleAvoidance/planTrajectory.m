@@ -108,6 +108,10 @@ exactMotionSet = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions( ...
     initialState, goalState, limits, options, ...
     scene, stageTiming);
 stageTiming = exactMotionSet.StageTiming;
+firstValidatedMotionTime_s = NaN;
+if exactMotionSet.ExcursionIsValidated
+    firstValidatedMotionTime_s = toc(planningTimer);
+end
 result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
 result.SearchDiagnostics.FixedClockExcursion = ...
     exactMotionSet.ExcursionDiagnostics;
@@ -163,7 +167,6 @@ primarySeedCount = min(2, numel(seeds));
 primarySeeds = seeds(1:primarySeedCount);
 primarySummaries = repmat(summaryTemplate, primarySeedCount, 1);
 primaryCandidates = cell(primarySeedCount, 1);
-firstValidatedMotionTime_s = NaN;
 for seedIndex = 1:primarySeedCount
     [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
         stageTiming, seedSolveContext] = ...

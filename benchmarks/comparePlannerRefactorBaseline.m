@@ -42,6 +42,8 @@ end
 
 exampleNames = baselineCapture.ExampleNames;
 exampleCount = numel(exampleNames);
+baselineChecksPassed = checkCaptureValidity(baselineCapture);
+candidateChecksPassed = checkCaptureValidity(candidateCapture);
 examplePassed = false(exampleCount, 1);
 runtimeRatio = NaN(exampleCount, 1);
 for exampleIndex = 1:exampleCount
@@ -66,11 +68,14 @@ fprintf("REFACTOR_COMPARE focused_equal=%d\n", focusedPassed);
 
 %% Section 3: Return One Comparison Record
 
-% A phase passes only when every physical record is unchanged. The caller can
-% inspect the saved complete results when one record differs.
+% Require unchanged physics, declared outcomes, and fresh independent checks.
+% Keep physical equality visible even when the separate validity check fails.
 
 comparison = struct( ...
-    "Passed", all(examplePassed) && focusedPassed, ...
+    "Passed", all(examplePassed) && focusedPassed && ...
+        all(baselineChecksPassed) && all(candidateChecksPassed), ...
+    "BaselineChecksPassed", baselineChecksPassed, ...
+    "CandidateChecksPassed", candidateChecksPassed, ...
     "ExampleNames", exampleNames, ...
     "ExamplePassed", examplePassed, ...
     "FocusedPassed", focusedPassed, ...
@@ -99,9 +104,35 @@ if ~isfield(loaded, "baseline") || ~isstruct(loaded.baseline) || ...
 end
 capture = loaded.baseline;
 requiredFields = ["StartingCommit", "ExampleNames", ...
-    "PhysicalRecords", "FocusedRecords", "ElapsedTime_s"];
+    "PhysicalRecords", "FocusedRecords", "ElapsedTime_s", "IndependentChecks"];
 if ~all(isfield(capture, cellstr(requiredFields)))
     error("comparePlannerRefactorBaseline:InvalidCapture", ...
         "Capture is missing required comparison fields.");
+end
+end
+
+function passed = checkCaptureValidity(capture)
+% Accept old captures only with their retained checks and known scenario outcomes.
+count = numel(capture.ExampleNames);
+expectedSuccess = string(capture.ExampleNames) ~= "exampleNoPath";
+if isfield(capture, "ExpectedSuccess")
+    expectedSuccess = capture.ExpectedSuccess;
+end
+validateattributes(expectedSuccess, {'logical'}, {'vector', 'numel', count});
+if numel(capture.PhysicalRecords) ~= count || numel(capture.IndependentChecks) ~= count
+    error("comparePlannerRefactorBaseline:InvalidCapture", ...
+        "Every example must retain one physical record and independent check.");
+end
+passed = false(count, 1);
+for index = 1:count
+    record = capture.PhysicalRecords{index};
+    check = capture.IndependentChecks{index};
+    if ~isstruct(record) || ~isscalar(record) || ~isfield(record, "Success") || ...
+            ~isstruct(check) || ~isscalar(check) || ~isfield(check, "Passed")
+        error("comparePlannerRefactorBaseline:InvalidCapture", ...
+            "Each physical record and independent check must retain its status.");
+    end
+    passed(index) = isequal(record.Success, expectedSuccess(index)) && ...
+        isequal(check.Passed, true);
 end
 end

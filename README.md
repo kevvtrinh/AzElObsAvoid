@@ -449,8 +449,8 @@ assertSuccess(results);
   establish physical infeasibility.
 - Azimuth wrapping with obstacles or moving goals remains unsupported.
 - Local nonlinear solves can fail or encounter poor conditioning.
-- Cooperative timeouts can overrun while an active callback or evaluation
-  returns.
+- Use Ctrl+C to interrupt MATLAB planning. The blocking HTTP server must be
+  restarted after interruption.
 
 Keep unfavorable failures and runtime results visible. A successful example
 demonstrates only the exercised case family, not universal feasibility.
@@ -477,3 +477,5 @@ demonstrates only the exercised case family, not universal feasibility.
   [rsruckig](https://github.com/petrikosk/rsruckig), MIT-licensed.
   The retired pass-through warm-start search adapted its local waypoint-state
   method in MATLAB; it did not embed or call the Rust implementation.
+
+Retired HS3 implementation documents are kept in [the historical archive](docs/archive/hs3/README.md).

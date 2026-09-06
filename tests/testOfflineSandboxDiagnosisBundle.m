@@ -256,3 +256,30 @@ for fileIndex = 1:numel(varargin)
     end
 end
 end
+
+function testOptionalBundlePreservesFileAndMotionOutputs(testCase)
+% The documented file-only call and both output counts retain the same motion.
+request = struct('schemaVersion',"offlineSandboxRequest/v1", 'requestId',"optional-bundle", ...
+    'obstacles',[], 'initialState',struct('time_s',0,'position_deg',[0 0]), ...
+    'goalState',struct('time_s',5,'position_deg',[1 0]), ...
+    'limits',struct('maxVelocity_deg_s',[2 2], 'maxAcceleration_deg_s2',[1 1], ...
+        'maxJerk_deg_s3',[2 2]), 'options',struct());
+requestPath = string(tempname) + ".json";
+resultPath = string(tempname) + ".json";
+testCase.addTeardown(@() deleteTestFiles(requestPath, resultPath));
+fileIdentifier = fopen(requestPath, 'w');
+fprintf(fileIdentifier, '%s', jsonencode(request));
+fclose(fileIdentifier);
+single = offlineSandbox.runPlanningRequest(requestPath, resultPath);
+[paired, bundle] = offlineSandbox.runPlanningRequest(requestPath, resultPath);
+offlineSandbox.runPlanningRequest(requestPath, resultPath);
+fileOnly = jsondecode(fileread(resultPath));
+verifyTrue(testCase, single.validation.Passed);
+verifyTrue(testCase, paired.validation.Passed);
+verifyTrue(testCase, fileOnly.validation.Passed);
+verifyEqual(testCase, rmfield(single.result,'ElapsedPlanningTime_s'), ...
+    rmfield(paired.result,'ElapsedPlanningTime_s'));
+verifyEqual(testCase, single.result.position_deg, fileOnly.result.position_deg);
+verifyEqual(testCase, paired.result.position_deg, bundle.Result.position_deg);
+verifyEqual(testCase, bundle.PlannerInputs.initialState.position_deg, [0 0]);
+end

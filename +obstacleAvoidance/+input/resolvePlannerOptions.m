@@ -70,16 +70,8 @@ for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
             fieldName, replacementName);
     end
 end
-% Apply known, nonempty overrides.
-options = defaults;
-defaultNames = string(fieldnames(defaults));
-overrideNames = string(fieldnames(optionOverrides));
-unknownNames = setdiff(overrideNames, defaultNames, "stable");
-for fieldName = reshape(intersect(overrideNames, defaultNames, "stable"), 1, [])
-    if ~isempty(optionOverrides.(fieldName))
-        options.(fieldName) = optionOverrides.(fieldName);
-    end
-end
+[options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
+    defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("planTrajectory:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...

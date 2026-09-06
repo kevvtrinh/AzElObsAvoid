@@ -1,7 +1,7 @@
 # Planner decisions
 
-Current implementation: execution/data-flow cleanup based on `3877017`. This summary replaces the chronological
-research log. Full recorded CSV history is retained in [benchmark.csv](benchmark.csv)
+Current implementation: review cleanup based on `1843944`. This summary replaces
+the chronological research log. Full recorded CSV history is retained in [benchmark.csv](benchmark.csv)
 and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 | Decision | Reason / boundary |
@@ -16,6 +16,8 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 | Keep input-derived search times and verified safe-wait pruning. | Thinning time layers missed short openings; checking only the earliest traversal missed later safe crossings. Search remains limited by its graph and edge predicate. |
 | Keep Ruckig as a utility and explicit bounded fallback. | It is not a selectable planner method. Unsupported timed topology fails by default; the opt-in waypoint fallback remains limited to two segments. |
 | Use Ctrl+C to interrupt MATLAB planning. | Removed production cancellation callbacks and sandbox Stop controls. Interrupting the blocking HTTP server requires restarting it. |
+| Keep cleanup evidence trustworthy. | Declare expected example outcomes independently, require fresh validation in comparisons, and remove only identified wall-clock fields from physical comparisons. |
+| Share defaults and preserve one goal-mode sandbox interface. | Reuse the existing option merger, remove unused private mode routing and optional bundle work, and preserve public state/export fields. |
 
 ## Closed experiments
 
@@ -34,24 +36,36 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 ## Verification and remaining limits
 
-The cleanup passed 143 distinct MATLAB tests across the broad run and focused
-corrections, 24 Node tests, and all 18 maintained default finite-jerk examples:
-17 independently valid motions and the expected no-path failure. Successful
-motions and arrival times matched the frozen baseline exactly. Shared geometry
-removed repeated preparation; matched warm timings do not establish a speedup.
-See [verification](verification.md) for scope and corrections.
+The current review cleanup passed 149 distinct MATLAB tests and 24 Node tests.
+All 18 maintained default finite-jerk examples ran before and after the changes:
+17 independently valid motions and the expected `noValidatedSeed` failure.
+Complete returned physical records, inputs, and independent validation matched
+exactly after excluding measured runtime. The focused timing regression covers
+fixed and earliest arrival with two different obstacle shapes.
 
-The follow-up consolidation moved two single-owner helpers into their callers
-and shortened repeated help text: 139 fewer production lines in this pass,
-31 fewer overall versus `3877017`. All 49 focused MATLAB tests passed; fixed-target
-and saved static-request checks preserved motion exactly and passed validation.
+Corrected the overwritten first-validation timestamp and validation-inclusive
+detour timing; replaced positional validation records with named fields. Removed
+duplicate option merging, unused private helpers/assignments, unnecessary optional
+bundle construction, and tests coupled to internal filenames/call counts. Current
+walkthrough/appendix sources now describe BMTP; retired HS3 documents are archived
+unchanged. See [verification](verification.md) for all review dispositions.
 
-The planner is a bounded search with local trajectory optimization; completeness
-and global optimality are not established. Dense moving scenes can remain costly.
-Manual browser interaction and interactive Ctrl+C were not verified in the latest
-refactor; PDF sources were updated but PDFs were not regenerated.
+Across the 112 planner, engine, and sandbox MATLAB files, this pass removes 44
+physical source lines (27 nonblank, noncomment lines). The core-only size check
+still fails its unchanged historical target: 12,708 versus 11,482. Its core count
+increased by 30 noncomment lines, primarily for explicit validation field mapping;
+the sandbox reductions outweigh that increase. No runtime speedup is claimed.
 
-The 2026-09-06 execution audit and cleanup append actual runs to the full CSV
-history. Three example-invoking tests were replaced by the separate example
-matrix; their exact assertions were not rerun. The repository-health skill now
-requires execution coverage and data-flow checks before classifying code as dead.
+The planner remains a bounded search with local trajectory optimization;
+completeness and global optimality are not established. Three tests that invoke
+examples directly were omitted; their default scenarios ran in the separate
+matrix, but their exact assertions and alternate-clearance case were not rerun.
+Manual browser interaction, interactive Ctrl+C, and PDF regeneration were not
+verified. An extra infinite-jerk example probe was rejected by the existing finite
+input requirement before planning; this pass verifies finite jerk limits.
+
+The original benchmark CSV bytes are preserved, with 36 completed example runs
+and the unsupported-input attempt appended. User-owned saved MAT files are
+unchanged. The obsolete autosave is recoverable under ignored
+`tmp/review-cleanup-20260906/recovery/`; profiles, frozen source, and unsuccessful
+runner logs also remain outside source control.

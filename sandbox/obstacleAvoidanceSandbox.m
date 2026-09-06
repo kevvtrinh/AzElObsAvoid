@@ -62,10 +62,9 @@ figureHandle = figure( ...
     "Color", [0.94 0.94 0.94]);
 tabGroupHandle = uitabgroup(figureHandle, ...
     "Units", "normalized", ...
-    "Position", [0 0 1 1], ...
-    "SelectionChangedFcn", @handleTabSelection);
+    "Position", [0 0 1 1]);
 goalTabHandle = uitab(tabGroupHandle, "Title", "Goal Mode", "Tag", "goal");
-goalHandles = createModeTab(goalTabHandle, "goal", options);
+goalHandles = createGoalControls(goalTabHandle, options);
 
 %% Section 3: Initialize Goal Mode
 
@@ -78,7 +77,7 @@ guidata(figureHandle, applicationState);
 
 applyDefaultControls(goalHandles.Controls, options);
 refreshApplication(figureHandle);
-beginGuidedScene(figureHandle, "goal");
+beginGuidedScene(figureHandle);
 
 %% Section 4: Return Initial Sandbox State
 
@@ -128,23 +127,14 @@ function options = resolveSandboxOptions(overrides)
 if ~isstruct(overrides) || ~isscalar(overrides)
     error("obstacleAvoidanceSandbox:InvalidOverrides", "sandboxOverrides must be a scalar struct or empty.");
 end
-defaults = sandboxDefaults();
-options = defaults;
-knownNames = string(fieldnames(defaults));
-overrideNames = string(fieldnames(overrides));
-unknownNames = setdiff(overrideNames, knownNames, "stable");
+[options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
+    sandboxDefaults(), overrides);
 if ~isempty(unknownNames)
     warning("obstacleAvoidanceSandbox:UnknownOptions", ...
         "Ignoring unknown sandbox fields: %s. No behavior changed.", ...
         strjoin(unknownNames, ", "));
 end
 
-% Apply only known, nonempty values. An empty field keeps its default value.
-for name = reshape(intersect(overrideNames, knownNames, "stable"), 1, [])
-    if ~isempty(overrides.(name))
-        options.(name) = overrides.(name);
-    end
-end
 options.FigureVisible = lower(string(options.FigureVisible));
 if ~isscalar(options.FigureVisible) || ~any(options.FigureVisible == ["on", "off"])
     error("obstacleAvoidanceSandbox:InvalidFigureVisible", "FigureVisible must be 'on' or 'off'.");
@@ -207,9 +197,8 @@ validateattributes(options.AnimationPause_s, {'numeric'}, ...
     "obstacleAvoidanceSandbox", "AnimationPause_s");
 end
 
-function handles = createModeTab(tabHandle, modeName, options)
-% Create one complete tab. Each tab has a canvas, controls, action buttons,
-% status text, and a planner log.
+function handles = createGoalControls(tabHandle, options)
+% Create the goal canvas, controls, actions, status, and planner log.
 
 % Reserve the complete outer rectangle for axes ticks and labels. A smaller
 % Position can move the azimuth label under the action-button row.
@@ -294,7 +283,7 @@ addPanelHandle = uipanel(tabHandle, ...
     "Position", [0.01 0.268 0.24 0.095]);
 addNames = ["AddPolygon", "AddCircle", "AddHandDrawn", "AddSquare"];
 addLabels = ["Polygon", "Circle", "Hand Drawn", "Square"];
-actions = createAddButtons(addPanelHandle, modeName, addNames, addLabels);
+actions = createAddButtons(addPanelHandle, addNames, addLabels);
 actionPanelHandle = uipanel(tabHandle, "BorderType", "none", ...
     "Units", "normalized", "Position", [0.265 0.275 0.42 0.052]);
 actionNames = [ ...
@@ -304,7 +293,7 @@ actionLabels = [ ...
     "Set Motion", "Run", "Reset", ...
     "Diagnostics", "Export Bundle"];
 actionButtons = createActionButtons( ...
-    actionPanelHandle, modeName, actionNames, actionLabels);
+    actionPanelHandle, actionNames, actionLabels);
 actionFields = fieldnames(actionButtons);
 for actionIndex = 1:numel(actionFields)
     actionName = actionFields{actionIndex};
@@ -434,7 +423,7 @@ editHandle = uicontrol(panelHandle, ...
     "Position", [0.76 rowPosition 0.20 0.045]);
 end
 
-function actions = createActionButtons( panelHandle, modeName, actionNames, actionLabels)
+function actions = createActionButtons( panelHandle, actionNames, actionLabels)
 % Create one evenly spaced action row with one shared callback.
 actions = struct();
 buttonCount = numel(actionNames);
@@ -450,12 +439,12 @@ for actionIndex = 1:buttonCount
         "String", actionLabels(actionIndex), ...
         "Units", "normalized", ...
         "Position", [leftPosition 0 buttonWidth 1], ...
-        "UserData", struct("Mode", modeName, "Action", actionName), ...
+        "UserData", struct("Mode", "goal", "Action", actionName), ...
         "Callback", @handleAction);
 end
 end
 
-function actions = createAddButtons(panelHandle, modeName, actionNames, actionLabels)
+function actions = createAddButtons(panelHandle, actionNames, actionLabels)
 % Place four obstacle constructors in a compact two-by-two panel at the left.
 actions = struct();
 for actionIndex = 1:numel(actionNames)
@@ -468,7 +457,7 @@ for actionIndex = 1:numel(actionNames)
         "Position", [0.02 + 0.50 * columnIndex, ...
             0.52 - 0.48 * rowIndex, 0.46, 0.42], ...
         "UserData", struct( ...
-            "Mode", modeName, "Action", actionNames(actionIndex)), ...
+            "Mode", "goal", "Action", actionNames(actionIndex)), ...
         "Callback", @handleAction);
 end
 end
@@ -539,38 +528,37 @@ function handleAction(sourceHandle, ~)
 % in the retained log.
 figureHandle = ancestor(sourceHandle, "figure");
 request = get(sourceHandle, "UserData");
-modeName = string(request.Mode);
 actionName = string(request.Action);
 try
     switch actionName
         case "AddPolygon"
-            activateInteraction(figureHandle, modeName, "addingPolygon");
+            activateInteraction(figureHandle, "addingPolygon");
         case "AddCircle"
-            activateInteraction(figureHandle, modeName, "addingCircle");
+            activateInteraction(figureHandle, "addingCircle");
         case "AddHandDrawn"
-            activateInteraction(figureHandle, modeName, "addingHandDrawn");
+            activateInteraction(figureHandle, "addingHandDrawn");
         case "AddSquare"
-            activateInteraction(figureHandle, modeName, "addingSquare");
+            activateInteraction(figureHandle, "addingSquare");
         case "SetMotion"
-            activateInteraction(figureHandle, modeName, "selectingObstacleMotion");
+            activateInteraction(figureHandle, "selectingObstacleMotion");
         case "Run"
             executeGoalPlan(figureHandle);
         case "Reset"
-            resetMode(figureHandle, modeName);
+            resetScene(figureHandle);
         case "Diagnostics"
-            openDiagnostics(figureHandle, modeName);
+            openDiagnostics(figureHandle);
         case "Export"
-            exportModeDiagnosis(figureHandle, modeName);
+            exportDiagnosis(figureHandle);
     end
 catch exception
     cancelInteraction(figureHandle);
     applicationState = guidata(figureHandle);
-    modeState = getModeState(applicationState, modeName);
+    modeState = applicationState.GoalMode;
     exceptionText = formatSandboxException(exception);
     modeState.Status = "Input or planning error: " + string(exceptionText);
     modeState = appendLogLines( ...
         modeState, "[Sandbox error] " + string(exceptionText));
-    applicationState = setModeState( applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
     if actionName == "Export" && get(figureHandle, "Visible") == "on"
@@ -596,40 +584,38 @@ if ~isempty(exception.stack)
 end
 end
 
-function activateInteraction(figureHandle, modeName, requestedState)
+function activateInteraction(figureHandle, requestedState)
 % Allow only one mouse interaction at a time. Store old callbacks before a draw
 % starts. Restore them when the draw finishes or is canceled.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
-applicationState.ActiveMode = modeName;
+modeState = applicationState.GoalMode;
 switch requestedState
     case "placingStart"
-        interactionState = "placing" + upperFirst(modeName) + "Start";
+        interactionState = "placingGoalStart";
         modeState.Status = "Place the start point with one left click.";
     case "placingGoal"
         interactionState = "placingGoalStop";
         modeState.Status = "Place or replace the goal with one left click.";
     case "addingPolygon"
-        interactionState = "adding" + upperFirst(modeName) + "Polygon";
+        interactionState = "addingGoalPolygon";
         modeState.Status = ...
             "Left-click each polygon vertex. " + ...
             "Right-click to close and add the polygon.";
     case "addingCircle"
-        interactionState = "placing" + upperFirst(modeName) + "CircleCenter";
+        interactionState = "placingGoalCircleCenter";
         modeState.Status = ...
             "Click the circle center, then click a point on its edge.";
     case "addingHandDrawn"
-        interactionState = "drawing" + upperFirst(modeName) + "Obstacle";
+        interactionState = "drawingGoalObstacle";
         modeState.Status = ...
             "Press and drag to draw an obstacle, then release to add it.";
     case "addingSquare"
-        interactionState = "placing" + upperFirst(modeName) + "SquareCorner";
+        interactionState = "placingGoalSquareCorner";
         modeState.Status = ...
             "Click one square corner, then click toward the opposite corner.";
     case "selectingObstacleMotion"
-        interactionState = "selecting" + upperFirst(modeName) + ...
-            "ObstacleMotion";
+        interactionState = "selectingGoalObstacleMotion";
         modeState.SelectedPolygonIndex = 0;
         modeState.Status = ...
             "Click inside a polygon. Then click the arrow endpoint " + ...
@@ -637,17 +623,17 @@ switch requestedState
 end
 applicationState.InteractionState = interactionState;
 modeState.InteractionState = interactionState;
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 set(figureHandle, "WindowButtonDownFcn", @handleFigureMouseDown, "WindowButtonMotionFcn", "", "WindowButtonUpFcn", "");
 refreshApplication(figureHandle);
 end
 
-function beginGuidedScene(figureHandle, modeName)
+function beginGuidedScene(figureHandle)
 % Continue the guided setup at its next unfinished step. The order is start
 % point, first obstacle, and goal or waypoint input.
 applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 
 if isempty(modeState.StartPosition_deg)
     requestedState = "placingStart";
@@ -660,7 +646,7 @@ end
 % Automatic guidance owns only the first obstacle. Once one is retained, the
 % explicit Add Obstacle button prevents an accidental stroke on tab changes.
 if strlength(requestedState) > 0
-    activateInteraction(figureHandle, modeName, requestedState);
+    activateInteraction(figureHandle, requestedState);
 else
     cancelInteraction(figureHandle);
     refreshApplication(figureHandle);
@@ -674,8 +660,7 @@ applicationState = guidata(figureHandle);
 if applicationState.InteractionState == "idle" || applicationState.InteractionState == "planning"
     return;
 end
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 clickedHandle = hittest(figureHandle);
 clickedAxes = ancestor(clickedHandle, "axes");
 if isempty(clickedAxes) || ~isequal(clickedAxes, modeState.GraphicsHandles.Axes)
@@ -695,10 +680,10 @@ if selectionType ~= "normal"
     return;
 end
 point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
-controls = readModeControls(applicationState, modeName);
+controls = readControls(applicationState);
 if ~pointInWorkspace(point_deg, controls)
     modeState.Status = "The selected point is outside the workspace limits.";
-    applicationState = setModeState(applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     refreshApplication(figureHandle);
     return;
@@ -708,16 +693,16 @@ if endsWith(interactionState, "CircleCenter") || ...
         endsWith(interactionState, "SquareCorner")
     applicationState.ActiveStroke_deg = point_deg;
     if endsWith(interactionState, "CircleCenter")
-        nextState = "placing" + upperFirst(modeName) + "CircleEdge";
+        nextState = "placingGoalCircleEdge";
         modeState.Status = "Circle center set. Click a point on its edge.";
     else
-        nextState = "placing" + upperFirst(modeName) + "SquareOpposite";
+        nextState = "placingGoalSquareOpposite";
         modeState.Status = ...
             "Square corner set. Click toward the opposite corner.";
     end
     applicationState.InteractionState = nextState;
     modeState.InteractionState = nextState;
-    applicationState = setModeState(applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -727,7 +712,7 @@ if endsWith(interactionState, "CircleEdge")
     radius_deg = norm(point_deg - center_deg);
     if radius_deg <= 1e-6
         modeState.Status = "The circle radius must have nonzero length.";
-        applicationState = setModeState(applicationState, modeName, modeState);
+        applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
@@ -742,7 +727,7 @@ if endsWith(interactionState, "CircleEdge")
     end
     if ~isInsideWorkspace
         modeState.Status = "The circle extends outside the workspace limits.";
-        applicationState = setModeState(applicationState, modeName, modeState);
+        applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
@@ -756,7 +741,7 @@ if endsWith(interactionState, "SquareOpposite")
     sideLength_deg = max(abs(cornerOffset_deg));
     if sideLength_deg <= 1e-6
         modeState.Status = "The square side must have nonzero length.";
-        applicationState = setModeState(applicationState, modeName, modeState);
+        applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
@@ -776,7 +761,7 @@ if endsWith(interactionState, "SquareOpposite")
     end
     if ~isInsideWorkspace
         modeState.Status = "The square extends outside the workspace limits.";
-        applicationState = setModeState(applicationState, modeName, modeState);
+        applicationState.GoalMode = modeState;
         guidata(figureHandle, applicationState);
         updateModeStatusDisplay(modeState);
         return;
@@ -797,7 +782,7 @@ if contains(applicationState.InteractionState, ...
             centroid(polyshape(polygon_deg));
         modeState.SelectedPolygonIndex = polygonIndex;
         modeState.InteractionState = ...
-            "placing" + upperFirst(modeName) + "ObstacleMotionEnd";
+            "placingGoalObstacleMotionEnd";
         modeState.Status = ...
             "Polygon " + polygonIndex + " selected. " + ...
             "Click the arrow endpoint.";
@@ -812,8 +797,7 @@ if contains(applicationState.InteractionState, ...
         set(figureHandle, "WindowButtonMotionFcn", ...
             @handleObstacleMotionPreview);
     end
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -846,11 +830,11 @@ switch applicationState.InteractionState
         modeState.Status = ...
             "Goal point set. Choose a shape from the Add panel, or Run.";
 end
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 if strlength(nextInteraction) > 0
-    activateInteraction(figureHandle, modeName, nextInteraction);
+    activateInteraction(figureHandle, nextInteraction);
 else
     refreshApplication(figureHandle);
 end
@@ -864,7 +848,7 @@ if ~endsWith(applicationState.InteractionState, "ObstacleMotionEnd") || ...
         ~isgraphics(applicationState.ActiveTraceHandle)
     return;
 end
-modeState = getModeState(applicationState, applicationState.ActiveMode);
+modeState = applicationState.GoalMode;
 endpoint_deg = cursorPoint(modeState.GraphicsHandles.Axes);
 origin_deg = applicationState.ActiveStroke_deg(1, :);
 motionVector_deg = endpoint_deg - origin_deg;
@@ -876,14 +860,12 @@ end
 function addPolygonVertex(figureHandle)
 % Add one distinct vertex to the active polygon preview.
 applicationState = guidata(figureHandle);
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
-controls = readModeControls(applicationState, modeName);
+controls = readControls(applicationState);
 if ~pointInWorkspace(point_deg, controls)
     modeState.Status = "The polygon vertex is outside the workspace limits.";
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -893,8 +875,7 @@ if ~isempty(applicationState.ActiveStroke_deg) && ...
         norm(point_deg - applicationState.ActiveStroke_deg(end, :)) <= ...
         minimumVertexSpacing_deg
     modeState.Status = "That polygon vertex duplicates the previous vertex.";
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -916,7 +897,7 @@ end
 modeState.Status = ...
     "Polygon has " + size(applicationState.ActiveStroke_deg, 1) + ...
     " vertices. Right-click to finish.";
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 updateModeStatusDisplay(modeState);
 drawnow("limitrate");
@@ -925,14 +906,12 @@ end
 function finishPolygonInteraction(figureHandle)
 % Validate and store the active polygon after a right-click.
 applicationState = guidata(figureHandle);
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 polygon_deg = applicationState.ActiveStroke_deg;
 if size(polygon_deg, 1) < 3
     modeState.Status = ...
         "A polygon needs at least three vertices. Continue with left-clicks.";
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -941,8 +920,7 @@ polygonShape = polyshape(polygon_deg);
 if area(polygonShape) <= eps
     modeState.Status = ...
         "The polygon has no enclosed area. Add non-collinear vertices.";
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -954,7 +932,7 @@ modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
 modeState = clearModeSolution(modeState);
 modeState.Status = ...
     "Polygon added. Use Set Motion to move it, or add another polygon.";
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 refreshApplication(figureHandle);
@@ -963,8 +941,7 @@ end
 function completeCreatedPolygon(figureHandle, polygon_deg, shapeName)
 % Store a circle or square through the same canonical polygon representation.
 applicationState = guidata(figureHandle);
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 modeState.RawObstacleStrokes_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonObstaclePositions_deg{end + 1, 1} = polygon_deg;
 modeState.PolygonMotionVectors_deg(end + 1, :) = [0 0];
@@ -972,7 +949,7 @@ modeState.PolygonMotionProfiles(end + 1, 1) = "stationary";
 modeState = clearModeSolution(modeState);
 modeState.Status = shapeName + ...
     " added. Use Set Motion to move it, or add another obstacle.";
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 refreshApplication(figureHandle);
@@ -993,8 +970,7 @@ end
 function finishObstacleMotionInteraction(figureHandle, endpoint_deg)
 % Store one polygon motion vector and the selected motion profile.
 applicationState = guidata(figureHandle);
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 polygonIndex = modeState.SelectedPolygonIndex;
 if polygonIndex < 1 || ...
         polygonIndex > numel(modeState.PolygonObstaclePositions_deg)
@@ -1005,8 +981,7 @@ origin_deg = applicationState.ActiveStroke_deg(1, :);
 motionVector_deg = endpoint_deg - origin_deg;
 if norm(motionVector_deg) <= 1e-9
     modeState.Status = "The motion vector must have nonzero length.";
-    applicationState = setModeState( ...
-        applicationState, modeName, modeState);
+    applicationState.GoalMode = modeState;
     guidata(figureHandle, applicationState);
     updateModeStatusDisplay(modeState);
     return;
@@ -1019,7 +994,7 @@ modeState.SelectedPolygonIndex = 0;
 modeState = clearModeSolution(modeState);
 modeState.Status = ...
     "Motion set for polygon " + polygonIndex + ": " + profile + ".";
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 refreshApplication(figureHandle);
@@ -1041,7 +1016,7 @@ if ~contains(applicationState.InteractionState, "drawing") || ...
         ~isgraphics(applicationState.ActiveTraceHandle)
     return;
 end
-modeState = getModeState(applicationState, applicationState.ActiveMode);
+modeState = applicationState.GoalMode;
 point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
 minimumTraceSpacing_deg = 0.25;
 if norm(point_deg - applicationState.ActiveStroke_deg(end, :)) < minimumTraceSpacing_deg
@@ -1063,8 +1038,7 @@ applicationState = guidata(figureHandle);
 if ~contains(applicationState.InteractionState, "drawing")
     return;
 end
-modeName = applicationState.ActiveMode;
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 point_deg = cursorPoint(modeState.GraphicsHandles.Axes);
 if isempty(applicationState.ActiveStroke_deg) || norm(point_deg - applicationState.ActiveStroke_deg(end, :)) >= 0.25
     applicationState.ActiveStroke_deg(end + 1, :) = point_deg;
@@ -1087,14 +1061,14 @@ if size(simplifiedStroke_deg, 1) >= 2
 else
     modeState.Status = "The stroke was too short and was ignored.";
 end
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 cancelInteraction(figureHandle);
 if size(simplifiedStroke_deg, 1) >= 2
     refreshApplication(figureHandle);
 else
     % A rejected trace leaves no obstacle, so keep the initial draw step active.
-    beginGuidedScene(figureHandle, modeName);
+    beginGuidedScene(figureHandle);
 end
 end
 
@@ -1111,25 +1085,14 @@ end
 if ~isempty(applicationState.ActiveTraceHandle) && isgraphics(applicationState.ActiveTraceHandle)
     delete(applicationState.ActiveTraceHandle);
 end
-activeMode = applicationState.ActiveMode;
-modeState = getModeState(applicationState, activeMode);
+modeState = applicationState.GoalMode;
 modeState.InteractionState = "idle";
-applicationState = setModeState(applicationState, activeMode, modeState);
+applicationState.GoalMode = modeState;
 applicationState.InteractionState = "idle";
 applicationState.ActiveStroke_deg = zeros(0, 2);
 applicationState.ActiveTraceHandle = gobjects(0);
 guidata(figureHandle, applicationState);
 set(figureHandle, "WindowButtonDownFcn", "", "WindowButtonMotionFcn", "", "WindowButtonUpFcn", "");
-end
-
-function handleTabSelection(tabGroupHandle, eventData)
-% Cancel active drawing on tab changes without clearing either scene.
-figureHandle = ancestor(tabGroupHandle, "figure");
-cancelInteraction(figureHandle);
-applicationState = guidata(figureHandle);
-applicationState.ActiveMode = string(get(eventData.NewValue, "Tag"));
-guidata(figureHandle, applicationState);
-beginGuidedScene(figureHandle, applicationState.ActiveMode);
 end
 
 function point_deg = cursorPoint(axesHandle)
@@ -1146,14 +1109,6 @@ isInside = point_deg(1) >= controls.WorkspaceAzimuthInterval_deg(1) && ...
     point_deg(2) <= controls.WorkspaceElevationInterval_deg(2);
 end
 
-function text = upperFirst(value)
-% Capitalize one internal mode name for readable state identifiers.
-value = char(value);
-text = string([upper(value(1)) value(2:end)]);
-end
-
-% --- Planner Calls And Segment Composition ------------------------------
-
 function executeGoalPlan(figureHandle)
 % Read Goal Mode controls and create protected obstacles. Build planner inputs.
 % Call the public planner once. Then run independent validation on its result.
@@ -1164,7 +1119,7 @@ modeState = applicationState.GoalMode;
 if isempty(modeState.StartPosition_deg) || isempty(modeState.GoalPosition_deg)
     error("obstacleAvoidanceSandbox:IncompleteGoalScene", "Goal Mode requires both a start point and a goal point.");
 end
-controls = readModeControls(applicationState, "goal");
+controls = readControls(applicationState);
 obstacleTime_s = [0; controls.MissionTime_s];
 canonicalObstacles = buildCanonicalObstacles( modeState, obstacleTime_s, controls);
 [initialState, goalState, limits] = buildPlannerInputs( ...
@@ -1304,10 +1259,10 @@ limits = struct( ...
     "elevationInterval_deg", controls.WorkspaceElevationInterval_deg);
 end
 
-function controls = readModeControls(applicationState, modeName)
-% Read physical and geometry controls from one tab. Validate them before any
+function controls = readControls(applicationState)
+% Read physical and geometry controls. Validate them before any
 % obstacle construction or planner call.
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 handles = modeState.GraphicsHandles.Controls;
 workspaceAzimuthInterval_deg = readAxisPairControl( ...
     handles.WorkspaceAzimuthHandles, ...
@@ -1386,7 +1341,7 @@ value = double(value);
 end
 
 function applyDefaultControls(handles, options)
-% Restore one tab's editable values without touching the other tab.
+% Restore the scene's editable controls.
 writeAxisPair(handles.WorkspaceAzimuthHandles, options.WorkspaceAzimuthInterval_deg);
 writeAxisPair(handles.WorkspaceElevationHandles, options.WorkspaceElevationInterval_deg);
 writeAxisPair(handles.VelocityHandles, options.MaxVelocity_deg_s);
@@ -1563,14 +1518,14 @@ if isempty(figureHandle) || ~isgraphics(figureHandle)
     return;
 end
 applicationState = guidata(figureHandle);
-redrawMode(applicationState, "goal");
+redrawScene(applicationState);
 updateModeStatusDisplay(applicationState.GoalMode);
 updateControlEnablement(applicationState);
 end
 
-function redrawMode(applicationState, modeName)
-% Redraw one tab from retained data only. Do not call the planner during redraw.
-modeState = getModeState(applicationState, modeName);
+function redrawScene(applicationState)
+% Redraw retained scene data without calling the planner.
+modeState = applicationState.GoalMode;
 axesHandle = modeState.GraphicsHandles.Axes;
 if ~isgraphics(axesHandle)
     return;
@@ -1584,7 +1539,7 @@ hold(axesHandle, "on");
 grid(axesHandle, "on");
 box(axesHandle, "on");
 try
-    controls = readModeControls(applicationState, modeName);
+    controls = readControls(applicationState);
     azimuthInterval_deg = controls.WorkspaceAzimuthInterval_deg;
     elevationInterval_deg = controls.WorkspaceElevationInterval_deg;
 catch
@@ -1811,15 +1766,6 @@ status = [ ...
     "Independent validation: " + logicalText(validation.Passed)];
 end
 
-function text = formatNumericVector(values)
-% Format one diagnostic vector without hiding NaN or unavailable values.
-if isempty(values)
-    text = "";
-else
-    text = strtrim(string(sprintf("%.6g ", values)));
-end
-end
-
 function modeState = appendLogLines(modeState, lines)
 % Append nonempty mode-specific log lines while preserving segment order.
 lines = splitlines(string(lines));
@@ -1837,42 +1783,42 @@ modeState.LastValidation = obstacleAvoidance.validateTrajectory();
 modeState.ResolvedControls = struct();
 end
 
-function resetMode(figureHandle, modeName)
-% Reset one tab. Do not change the other tab.
+function resetScene(figureHandle)
+% Reset the scene and restore its controls.
 cancelInteraction(figureHandle);
 applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 graphicsHandles = modeState.GraphicsHandles;
 applyDefaultControls(graphicsHandles.Controls, applicationState.Options);
 modeState = emptyModeState(graphicsHandles);
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
-beginGuidedScene(figureHandle, modeName);
+beginGuidedScene(figureHandle);
 end
 
-function openDiagnostics(figureHandle, modeName)
+function openDiagnostics(figureHandle)
 % Plot retained planner diagnostics. Do not run the planner again. If no result
 % exists, explain that status instead of creating replacement data.
 applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 result = modeState.LastPlannerResult;
 if isempty(fieldnames(result))
-    error("obstacleAvoidanceSandbox:NoDiagnosticResult", "No planner result is available for %s mode.", modeName);
+    error("obstacleAvoidanceSandbox:NoDiagnosticResult", "No planner result is available for Goal Mode.");
 end
 plotOptions = struct( ...
     "FigureVisible", applicationState.Options.FigureVisible, ...
-    "Title", upperFirst(modeName) + " Mode diagnostics", ...
+    "Title", "Goal Mode diagnostics", ...
     "ShowSeedPaths", true, ...
     "ShowAnimation", false);
 modeState.GraphicsHandles.DiagnosticPlotHandles = obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, modeState.LastDiagnosis);
-applicationState = setModeState(applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 end
 
-function exportModeDiagnosis(figureHandle, modeName)
+function exportDiagnosis(figureHandle)
 % Save retained scene, input, result, and validation data for diagnosis.
 timestamp = string(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
-defaultName = "az_el_sandbox_" + modeName + "_" + timestamp + ".mat";
+defaultName = "az_el_sandbox_goal_" + timestamp + ".mat";
 [fileName, folderName] = uiputfile( ...
     {'*.mat', 'MATLAB diagnosis bundle (*.mat)'}, ...
     'Export sandbox input and result', char(defaultName));
@@ -1880,15 +1826,14 @@ if isequal(fileName, 0) || isequal(folderName, 0)
     return;
 end
 exportInfo = exportCurrentSandboxDiagnosis( ...
-    figureHandle, fullfile(folderName, fileName), modeName);
+    figureHandle, fullfile(folderName, fileName), "goal");
 applicationState = guidata(figureHandle);
-modeState = getModeState(applicationState, modeName);
+modeState = applicationState.GoalMode;
 modeState.Status = "Diagnosis bundle exported: " + exportInfo.FilePath;
 modeState = appendLogLines(modeState, ...
     "[Sandbox export] " + exportInfo.FilePath + ...
     " (" + exportInfo.Bytes + " bytes)");
-applicationState = setModeState( ...
-    applicationState, modeName, modeState);
+applicationState.GoalMode = modeState;
 guidata(figureHandle, applicationState);
 refreshApplication(figureHandle);
 if get(figureHandle, "Visible") == "on"
@@ -1909,18 +1854,20 @@ if isempty(figureHandle) || ~isgraphics(figureHandle)
         "The sandbox figure must remain open while exporting a bundle.");
 end
 applicationState = guidata(figureHandle);
-applicationState = prepareSandboxStateForExport( ...
-    applicationState, modeName);
+if string(modeName) ~= "goal"
+    error("obstacleAvoidanceSandbox:UnsupportedMode", "Only Goal Mode is supported.");
+end
+applicationState = prepareSandboxStateForExport(applicationState);
 exportInfo = exportSandboxDiagnosis( ...
     filePath, applicationState, modeName);
 end
 
 function applicationState = prepareSandboxStateForExport( ...
-        applicationState, modeName)
+        applicationState)
 % Capture current controls and geometry. Do not call the planner. This permits
 % export before a run when input preparation itself is under investigation.
-modeState = getModeState(applicationState, modeName);
-controls = readModeControls(applicationState, modeName);
+modeState = applicationState.GoalMode;
+controls = readControls(applicationState);
 plannerOptions = applicationState.Options.PlannerOptions;
 plannerOptions.UnsupportedTimedTopologyPolicy = ...
     controls.UnsupportedTimedTopologyPolicy;
@@ -1953,25 +1900,6 @@ modeState.ExportRequest = struct( ...
     "PlannerOptions", plannerOptions, ...
     "RequestedStart_deg", modeState.StartPosition_deg, ...
     "RequestedGoal_deg", modeState.GoalPosition_deg);
-applicationState = setModeState(applicationState, modeName, modeState);
-end
-
-function modeState = getModeState(applicationState, modeName)
-% Read Goal Mode and reject removed mode identifiers.
-if modeName ~= "goal"
-    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
-        "Only Goal Mode is supported.");
-end
-modeState = applicationState.GoalMode;
-end
-
-function applicationState = setModeState( ...
-        applicationState, modeName, modeState)
-% Write Goal Mode and reject removed mode identifiers.
-if modeName ~= "goal"
-    error("obstacleAvoidanceSandbox:UnsupportedMode", ...
-        "Only Goal Mode is supported.");
-end
 applicationState.GoalMode = modeState;
 end
 

@@ -9,8 +9,10 @@ function report = auditProductionSize(maximumLineCount)
 %**************************************************************************
 % INPUTS
 %   - maximumLineCount (positive integer scalar, optional; default 11482)
-%       Inclusive ceiling for the complete production count. The default
-%       is the current measured size, adopted as a no-regression ceiling.
+%       Inclusive ceiling for the complete production count. The default is
+%       a historical target, not a claim about current size; it can fail.
+%       For a refactor comparison, pass the frozen baseline's measured count.
+%       Do not raise a ceiling solely to make a failing size check pass.
 %**************************************************************************
 % OUTPUTS
 %   - report (scalar struct)

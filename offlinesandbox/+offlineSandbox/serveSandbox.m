@@ -265,7 +265,6 @@ resultFilePath = string(tempname) + ".json";
 temporaryCleanup = onCleanup(@() deleteTemporaryFiles( ...
     uploadedBundlePath, resultFilePath));
 planningTimer = tic;
-activeRequestId = "bundle-replay";
 try
     writeFileBytes(uploadedBundlePath, bundleBytes);
     [response, reproducedBundle] = ...

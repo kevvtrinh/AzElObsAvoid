@@ -27,7 +27,7 @@ limits.maxVelocity_deg_s = [3 3];
 trajectory = linearTrajectory(initialState, goalState);
 obstacle = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
     validation = obstacleAvoidance.validateTrajectory( ...
-    trajectory, obstacle, initialState, goalState, limits, fixedHs3Options());
+    trajectory, obstacle, initialState, goalState, limits, fixedTimeOptions());
 
 verifyFalse(testCase, validation.Passed);
 verifyGreaterThanOrEqual(testCase, ...
@@ -42,7 +42,7 @@ function testSuccessAndEndpointFailureShareTiming(testCase)
 initialState = state(0, [0 0]);
 goalState = state(4, [1 0]);
 limits = physicalLimits();
-options = fixedHs3Options();
+options = fixedTimeOptions();
 [success, successDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 blockingObstacle = rectangleObstacle([0 4], [-1 1 -1 1], 0);
 [failure, failureDiagnosis] = obstacleAvoidance.planTrajectory( ...
@@ -67,7 +67,7 @@ function testMotionSolverWorkReconcilesTiming(testCase)
 initialState = state(0, [0 0]);
 goalState = state(3, [1 0]);
 limits = physicalLimits();
-options = fixedHs3Options();
+options = fixedTimeOptions();
 farObstacle = rectangleObstacle([0 3], [-100 -90 70 80], 0);
 [result, resultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     farObstacle, initialState, goalState, limits, options);
@@ -139,8 +139,8 @@ function tolerance_s = timingTolerance(totalElapsedTime_s)
 tolerance_s = max(1e-6, 64 * eps(max(1, totalElapsedTime_s)));
 end
 
-function options = fixedHs3Options()
-% Return deterministic HS3 controls for timing tests.
+function options = fixedTimeOptions()
+% Return deterministic fixed-time controls for timing tests.
 options = obstacleAvoidance.planTrajectory();
 options.GoalTimeMode = "fixedArrival";
 options.MaximumSeedCount = 1;
@@ -198,4 +198,47 @@ trajectory = struct( ...
     [initialState.velocity_deg_s; goalState.velocity_deg_s], ...
     "acceleration_deg_s2", zeros(2, 2), ...
     "jerk_deg_s3", zeros(2, 2), "Polynomial", polynomial);
+end
+
+function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
+% A detour at the physical time floor can be the sole validated construction.
+for vertices = {[-1 -1;1 -1;1 1;-1 1], ...
+        [-1.5 -0.5;0 -1.3;1.5 0;0.3 1.7;-1 0.6]}
+    initial = state(0, [-8 0]);
+    goal = state(20, [8 0]);
+    limits = struct('maxVelocity_deg_s',[3 3], 'maxAcceleration_deg_s2',[2 2], ...
+        'maxJerk_deg_s3',[4 4], 'azimuthInterval_deg',[-10 10], 'elevationInterval_deg',[-6 6]);
+    options = obstacleAvoidance.planTrajectory();
+    options.MaximumSeedCount = 1;
+    options.GoalTimeMode = "fixedArrival";
+    [~, initial, goal, limits] = obstacleAvoidance.input.normalizePlannerRequest( ...
+        [], initial, goal, limits, options);
+    direct = bmtpEngine.createDirectMotion(initial, goal, limits, options);
+    goal.time_s = max(direct.MinimumAxisDuration_s);
+    polygon = vertices{1};
+    obstacle = obstacleAvoidance.obstacles.createObstacle( ...
+        'timing detour', 0, polygon(:,1), polygon(:,2), 0.1);
+    for mode = ["fixedArrival", "earliestArrival"]
+        options.GoalTimeMode = mode;
+        [result, diagnosis] = obstacleAvoidance.planTrajectory( ...
+            obstacle, initial, goal, limits, options);
+        verifyTrue(testCase, result.Success, result.Message);
+        validation = obstacleAvoidance.validateTrajectory(result);
+        verifyTrue(testCase, validation.Passed, validation.Message);
+        isDetour = [diagnosis.Attempts.SeedSource] == "fixedClockLateralExcursion";
+        verifyTrue(testCase, any(isDetour & [diagnosis.Attempts.ValidationPassed]));
+        verifyTrue(testCase, isfinite(diagnosis.FirstValidatedMotionTime_s));
+        verifyGreaterThan(testCase, diagnosis.FirstValidatedMotionTime_s, 0);
+        verifyLessThanOrEqual(testCase, diagnosis.FirstValidatedMotionTime_s, ...
+            result.ElapsedPlanningTime_s);
+        if mode == "fixedArrival"
+            verifyFalse(testCase, any([diagnosis.Attempts(~isDetour).ValidationPassed]));
+        end
+        directTime_s = testSupport.diagnosisValue(diagnosis.DirectMotion, "ElapsedTime_s");
+        recordedTime_s = directTime_s + sum([diagnosis.Attempts.SeedPlanningElapsedTime_s]);
+        verifyEqual(testCase, recordedTime_s, diagnosis.Timing.MotionSolvingElapsedTime_s, ...
+            "AbsTol", timingTolerance(result.ElapsedPlanningTime_s));
+        verifyStageTiming(testCase, result, diagnosis);
+    end
+end
 end

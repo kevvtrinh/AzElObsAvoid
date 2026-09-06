@@ -1,7 +1,8 @@
 # Planner execution and data-flow cleanup — 2026-09-06
 
-Baseline: `3877017`, branch `bmtp-cleanup-codex`; implementation is the current
-uncommitted cleanup. MATLAB R2024b. The audit froze source, resolved requests,
+Historical baseline: `3877017`, branch `bmtp-cleanup-codex`; this cleanup was
+committed as `1843944`. See [current verification](../../verification.md) for the
+subsequent review fixes. MATLAB R2024b. The audit froze source, resolved requests,
 and results before editing. User-owned MAT/ASV files were preserved.
 
 ## Decisions and fixes
