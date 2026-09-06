@@ -1,24 +1,25 @@
-function result = exampleOpeningUShapedObstacle(exampleOverrides)
+function [result, diagnosis] = exampleOpeningUShapedObstacle(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleOpeningUShapedObstacle()
 %   result = exampleOpeningUShapedObstacle(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate waiting for a timed opening in one U-shaped obstacle.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Public planner and uniform display controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar planTrajectory result)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -77,7 +78,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result
@@ -85,8 +86,8 @@ clear warningCleanup;
 % Run common trajectory checks. Then confirm that the selected seed waits and
 % crosses the gap only after it opens.
 
-exampleValidation = validateExampleResult( result, "opening U-shaped obstacle");
-openingValidation = validateOpeningUse( result, openingTime_s, gapHalfWidth_deg, safetyMargin_deg);
+exampleValidation = validateExampleResult( result, "opening U-shaped obstacle", struct(), diagnosis);
+openingValidation = validateOpeningUse( result, diagnosis, openingTime_s, gapHalfWidth_deg, safetyMargin_deg);
 exampleValidation.Passed = exampleValidation.Passed && openingValidation.Passed;
 if ~openingValidation.Passed
     exampleValidation.Message = exampleValidation.Message + " " + openingValidation.Message;
@@ -102,12 +103,12 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end
 
-function validation = validateOpeningUse( result, openingTime_s, gapHalfWidth_deg, safetyMargin_deg)
+function validation = validateOpeningUse( result, diagnosis, openingTime_s, gapHalfWidth_deg, safetyMargin_deg)
 % Verify that the selected seed waits and then crosses the protected gap.
 waitSeedSelected = false;
 stayedBeforeClosedBarrier = false;
@@ -115,7 +116,7 @@ crossedOpenGap = false;
 selectedArrivalTime_s = NaN;
 comparisonArrivalTime_s = NaN;
 if result.Success
-    selectedSeed = result.Seeds(result.SelectedSeedIndex);
+    selectedSeed = diagnosis.Routes(diagnosis.SelectedAttemptIndex);
     repeatedPosition = vecnorm( diff(selectedSeed.position_deg, 1, 1), 2, 2) <= 1e-10;
     waitSeedSelected = any(repeatedPosition) || selectedSeed.Source == "directWait";
     beforeOpening = result.time_s <= openingTime_s;
@@ -127,10 +128,10 @@ if result.Success
     crossedOpenGap = any(crossesBottomBar & ...
         abs(result.position_deg(:, 1)) < protectedGapHalfWidth_deg & result.time_s > openingTime_s);
     selectedArrivalTime_s = result.time_s(end);
-    otherValidated = find([result.SeedSummaries.ValidationPassed]);
-    otherValidated(otherValidated == result.SelectedSeedIndex) = [];
+    otherValidated = find([diagnosis.Attempts.ValidationPassed]);
+    otherValidated(otherValidated == diagnosis.SelectedAttemptIndex) = [];
     if ~isempty(otherValidated)
-        comparisonArrivalTime_s = min( [result.SeedSummaries(otherValidated).ArrivalTime_s]);
+        comparisonArrivalTime_s = min( [diagnosis.Attempts(otherValidated).ArrivalTime_s]);
     end
 end
 passed = result.Success && waitSeedSelected && stayedBeforeClosedBarrier && crossedOpenGap;

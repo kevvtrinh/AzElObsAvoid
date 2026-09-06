@@ -1,24 +1,25 @@
-function result = exampleMovingBarrierWait(exampleOverrides)
+function [result, diagnosis] = exampleMovingBarrierWait(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingBarrierWait()
 %   result = exampleMovingBarrierWait(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate useful continuous waiting for a translating barrier.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -72,7 +73,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result
@@ -81,8 +82,8 @@ clear warningCleanup;
 % barrier too early even if its geometric path looks correct.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
-waitSeedSelected = result.Success && result.SelectedSeedIndex > 0 && ...
-    result.Seeds(result.SelectedSeedIndex).Source == "directWait";
+waitSeedSelected = result.Success && diagnosis.SelectedAttemptIndex > 0 && ...
+    diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source == "directWait";
 exampleValidation.WaitSeedSelected = waitSeedSelected;
 exampleValidation.Passed = exampleValidation.Passed && waitSeedSelected;
 if ~waitSeedSelected
@@ -101,7 +102,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

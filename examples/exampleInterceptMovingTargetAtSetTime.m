@@ -1,4 +1,4 @@
-function result = exampleInterceptMovingTargetAtSetTime( interceptTime_s, options)
+function [result, diagnosis] = exampleInterceptMovingTargetAtSetTime( interceptTime_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleInterceptMovingTargetAtSetTime()
@@ -6,24 +6,24 @@ function result = exampleInterceptMovingTargetAtSetTime( interceptTime_s, option
 %   result = exampleInterceptMovingTargetAtSetTime(options)
 %   result = exampleInterceptMovingTargetAtSetTime( ...
 %       interceptTime_s, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Intercept a curved target track supplied as time-indexed Az/El points
 %     at a specified time in an obstacle-free environment.
 %   - Demonstrate a position-only intercept for a general target tangent.
-%**************************************************************************
+%
 % INPUTS
 %   - interceptTime_s (positive scalar, optional; default 12)
 %   - options (scalar struct, optional; default struct())
 %       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public moving-target planner result.
-%**************************************************************************
+%
 % UNITS
 %   - Angles are degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -72,7 +72,7 @@ interceptOptions = struct( ...
 
 % Evaluate the target at the set time and plan one position-only intercept.
 
-result = obstacleAvoidance.planMovingTargetIntercept( ...
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( ...
     obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
@@ -80,7 +80,7 @@ result = obstacleAvoidance.planMovingTargetIntercept( ...
 % Confirm that the final gimbal position equals the target position. Also check
 % velocity, acceleration, and jerk limits.
 
-exampleValidation = validateExampleResult( result, "specified-time moving-target intercept");
+exampleValidation = validateExampleResult( result, "specified-time moving-target intercept", struct(), diagnosis);
 specifiedTimeSatisfied = isempty(result.Inputs.obstacles) && ...
     result.Validation.Passed && abs(result.Intercept.Time_s - interceptTime_s) <= 1e-8;
 exampleValidation.SpecifiedTimeSatisfied = specifiedTimeSatisfied;
@@ -96,7 +96,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

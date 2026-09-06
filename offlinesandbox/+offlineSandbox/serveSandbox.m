@@ -93,8 +93,8 @@ while ~isfile(stopFilePath)
     requestCount = requestCount + 1;
     try
         [wasPlanRequest, wasBundleRequest] = serveClient( ...
-            clientSocket, serverSocket, pageBytes, sandboxFolder, ...
-            port, stopFilePath, bundleFilePath, bundleRequestIdPath);
+            clientSocket, pageBytes, sandboxFolder, ...
+            port, bundleFilePath, bundleRequestIdPath);
         planRequestCount = planRequestCount + double(wasPlanRequest);
         bundleRequestCount = ...
             bundleRequestCount + double(wasBundleRequest);
@@ -127,8 +127,8 @@ end
 %% Section 5: Local Functions
 
 function [wasPlanRequest, wasBundleRequest] = serveClient( ...
-        clientSocket, serverSocket, pageBytes, sandboxFolder, port, ...
-        stopFilePath, bundleFilePath, bundleRequestIdPath)
+        clientSocket, pageBytes, sandboxFolder, port, ...
+        bundleFilePath, bundleRequestIdPath)
 % Read, route, and close one HTTP/1.1 connection.
 clientCleanup = onCleanup(@() closeSocket(clientSocket));
 wasPlanRequest = false;
@@ -154,7 +154,7 @@ if request.HasOrigin && strlength(corsOrigin) == 0
         "from the local file page.", "");
     return;
 end
-knownPath = any(path == ["/", "/health", "/plan", "/cancel", ...
+knownPath = any(path == ["/", "/health", "/plan", ...
     "/bundle", "/run-bundle"]);
 if method == "OPTIONS" && knownPath
     writeHttpResponse(clientSocket, 204, "No Content", ...
@@ -170,21 +170,17 @@ elseif method == "GET" && path == "/health"
 elseif method == "POST" && path == "/plan"
     wasPlanRequest = true;
     servePlanningRequest( ...
-        clientSocket, serverSocket, request.BodyBytes, stopFilePath, ...
-        port, corsOrigin, bundleFilePath, bundleRequestIdPath);
+        clientSocket, request.BodyBytes, corsOrigin, ...
+        bundleFilePath, bundleRequestIdPath);
 elseif method == "POST" && path == "/run-bundle"
     wasPlanRequest = true;
     serveBundleReplayRequest( ...
-        clientSocket, serverSocket, request.BodyBytes, stopFilePath, ...
-        port, corsOrigin, bundleFilePath, bundleRequestIdPath);
+        clientSocket, request.BodyBytes, corsOrigin, ...
+        bundleFilePath, bundleRequestIdPath);
 elseif method == "POST" && path == "/bundle"
     wasBundleRequest = true;
     serveBundleRequest(clientSocket, request.BodyBytes, corsOrigin, ...
         bundleFilePath, bundleRequestIdPath);
-elseif method == "POST" && path == "/cancel"
-    writeErrorResponse(clientSocket, 409, ...
-        "serveSandbox:NoActivePlan", ...
-        "No planning request is active.", corsOrigin);
 elseif knownPath
     writeErrorResponse(clientSocket, 405, ...
         "serveSandbox:MethodNotAllowed", ...
@@ -198,9 +194,8 @@ end
 clear clientCleanup;
 end
 
-function servePlanningRequest(clientSocket, serverSocket, ...
-        requestBytes, stopFilePath, port, corsOrigin, bundleFilePath, ...
-        bundleRequestIdPath)
+function servePlanningRequest(clientSocket, requestBytes, ...
+        corsOrigin, bundleFilePath, bundleRequestIdPath)
 % Run the unchanged file adapter and return its exact result JSON bytes.
 if isempty(requestBytes)
     writeErrorResponse(clientSocket, 400, ...
@@ -218,9 +213,7 @@ try
     writeFileBytes(requestFilePath, requestBytes);
     activeRequestId = previewRequestId(requestBytes);
     [response, diagnosisBundle] = offlineSandbox.runPlanningRequest( ...
-        requestFilePath, resultFilePath, ...
-        @() cancellationRequested( ...
-            serverSocket, stopFilePath, activeRequestId, port));
+        requestFilePath, resultFilePath);
     resultBytes = readFileBytes(resultFilePath);
     cacheDiagnosisBundle(bundleFilePath, bundleRequestIdPath, ...
         activeRequestId, diagnosisBundle);
@@ -228,11 +221,7 @@ catch exception
     if isUserInterruption(exception)
         rethrow(exception);
     end
-    if exception.identifier == "planTrajectory:UserCancelled"
-        writeErrorResponse(clientSocket, 409, exception.identifier, ...
-            "Planning was canceled at a safe planner checkpoint.", ...
-            corsOrigin);
-    elseif isRequestFailure(exception)
+    if isRequestFailure(exception)
         writeErrorResponse(clientSocket, 400, exception.identifier, ...
             exception.message, corsOrigin);
     else
@@ -260,9 +249,8 @@ fprintf("Plan %s: planner %.6f s; server before transport %.6f s.\n", ...
 clear temporaryCleanup;
 end
 
-function serveBundleReplayRequest(clientSocket, serverSocket, ...
-        bundleBytes, stopFilePath, port, corsOrigin, bundleFilePath, ...
-        bundleRequestIdPath)
+function serveBundleReplayRequest(clientSocket, bundleBytes, ...
+        corsOrigin, bundleFilePath, bundleRequestIdPath)
 % Run one uploaded diagnosis bundle and return the fresh browser result.
 if isempty(bundleBytes)
     writeErrorResponse(clientSocket, 400, ...
@@ -282,9 +270,7 @@ try
     writeFileBytes(uploadedBundlePath, bundleBytes);
     [response, reproducedBundle] = ...
         offlineSandbox.replayDiagnosisBundle( ...
-        uploadedBundlePath, resultFilePath, ...
-        @() cancellationRequested( ...
-            serverSocket, stopFilePath, activeRequestId, port));
+        uploadedBundlePath, resultFilePath);
     resultBytes = readFileBytes(resultFilePath);
     cacheDiagnosisBundle(bundleFilePath, bundleRequestIdPath, ...
         string(response.requestId), reproducedBundle);
@@ -292,11 +278,7 @@ catch exception
     if isUserInterruption(exception)
         rethrow(exception);
     end
-    if exception.identifier == "planTrajectory:UserCancelled"
-        writeErrorResponse(clientSocket, 409, exception.identifier, ...
-            "Bundle replay was canceled at a safe planner checkpoint.", ...
-            corsOrigin);
-    elseif isRequestFailure(exception) || ...
+    if isRequestFailure(exception) || ...
             startsWith(string(exception.identifier), ...
             "replayDiagnosisBundle:")
         writeErrorResponse(clientSocket, 400, exception.identifier, ...
@@ -386,76 +368,6 @@ if ~requestIdMoved || ~isfile(bundleRequestIdPath)
         requestIdMessage);
 end
 clear cacheCleanup;
-end
-
-function stopRequested = cancellationRequested( ...
-        serverSocket, stopFilePath, activeRequestId, port)
-% Poll the stop file and queued HTTP cancellation without blocking planning.
-stopRequested = isfile(stopFilePath);
-if stopRequested
-    return;
-end
-
-previousTimeout_ms = serverSocket.getSoTimeout();
-serverSocket.setSoTimeout(int32(1));
-timeoutCleanup = onCleanup( ...
-    @() serverSocket.setSoTimeout(previousTimeout_ms));
-try
-    queuedSocket = serverSocket.accept();
-catch exception
-    if isSocketTimeout(exception)
-        return;
-    end
-    rethrow(exception);
-end
-queuedCleanup = onCleanup(@() closeSocket(queuedSocket));
-
-try
-    request = readHttpRequest(queuedSocket, 100);
-catch exception
-    if isUserInterruption(exception)
-        rethrow(exception);
-    end
-    writeErrorResponse(queuedSocket, requestErrorStatus(exception), ...
-        exception.identifier, exception.message, "");
-    return;
-end
-corsOrigin = allowedCorsOrigin(request.Origin, request.HasOrigin, port);
-if request.HasOrigin && strlength(corsOrigin) == 0
-    writeErrorResponse(queuedSocket, 403, ...
-        "serveSandbox:OriginNotAllowed", ...
-        "The browser origin is not allowed.", "");
-elseif request.Method == "OPTIONS" && ...
-        any(request.Path == ["/health", "/cancel"])
-    writeHttpResponse(queuedSocket, 204, "No Content", ...
-        "text/plain; charset=utf-8", zeros(1, 0, 'uint8'), ...
-        strings(0, 1), corsOrigin);
-elseif request.Method == "GET" && request.Path == "/health"
-    body = struct( ...
-        "schemaVersion", "offlineSandboxTransport/v1", ...
-        "status", "planning");
-    writeJsonResponse(queuedSocket, 200, "OK", body, ...
-        strings(0, 1), corsOrigin);
-elseif request.Method == "POST" && request.Path == "/cancel"
-    cancelRequestId = previewRequestId(request.BodyBytes);
-    stopRequested = strlength(activeRequestId) > 0 && ...
-        cancelRequestId == activeRequestId;
-    if stopRequested
-        body = struct("accepted", true, "requestId", activeRequestId);
-        writeJsonResponse(queuedSocket, 202, "Accepted", body, ...
-            strings(0, 1), corsOrigin);
-    else
-        writeErrorResponse(queuedSocket, 409, ...
-            "serveSandbox:CancellationRequestMismatch", ...
-            "The cancellation requestId does not match the active plan.", ...
-            corsOrigin);
-    end
-else
-    writeErrorResponse(queuedSocket, 503, ...
-        "serveSandbox:PlanningInProgress", ...
-        "MATLAB is already processing a planning request.", corsOrigin);
-end
-clear queuedCleanup timeoutCleanup;
 end
 
 function request = readHttpRequest(clientSocket, readTimeout_ms)
@@ -624,9 +536,7 @@ try
     writeJavaBytes(outputStream, bodyBytes);
     outputStream.flush();
 catch exception
-    % A timed-out health probe can disconnect while this response is served
-    % inside CancellationCheckFcn. Its transport failure must not fail the
-    % active plan or undo an already accepted cancellation request.
+    % A disconnected client must not abort the server.
     if contains(string(exception.message), "java.net.SocketException")
         fprintf(2, "Sandbox HTTP %d response could not be delivered: client socket disconnected.\n", ...
             statusCode);
@@ -668,7 +578,7 @@ end
 end
 
 function requestId = previewRequestId(requestBytes)
-% Read only the request identifier needed to match out-of-band cancellation.
+% Read the request identifier used for logging and bundle lookup.
 requestId = "";
 try
     value = jsondecode(native2unicode(requestBytes, "UTF-8"));

@@ -5,10 +5,10 @@ function [displayPosition_deg, sourceIndex] = createWrappedSpatialPath( ...
 %   [displayPosition_deg, sourceIndex] = ...
 %       obstacleAvoidance.plotting.createWrappedSpatialPath( ...
 %       position_deg, azimuthInterval_deg, allowAzimuthWrapping)
-%**************************************************************************
+%
 % PURPOSE
 %   - Wrap continuous azimuth paths without drawing across a periodic seam.
-%**************************************************************************
+%
 % INPUTS
 %   - position_deg (N-by-2 finite numeric array)
 %       Continuous [azimuth elevation] path; empty is accepted.
@@ -16,16 +16,16 @@ function [displayPosition_deg, sourceIndex] = createWrappedSpatialPath( ...
 %       Boundaries of the displayed azimuth period in degrees.
 %   - allowAzimuthWrapping (scalar logical or binary numeric)
 %       False preserves the input path.
-%**************************************************************************
+%
 % OUTPUTS
 %   - displayPosition_deg (M-by-2 numeric array)
 %       Wrapped path with seam endpoints separated by NaN rows.
 %   - sourceIndex (M-by-1 integer vector)
 %       Source row associated with each output row.
-%**************************************************************************
+%
 % UNITS
 %   - Positions and the azimuth interval are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Validate Inputs
 

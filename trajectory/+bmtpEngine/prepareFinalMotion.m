@@ -4,11 +4,11 @@ function preparedMotion = prepareFinalMotion( ...
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
 %       request, controlPoint_deg, segmentTime_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Impose exact rest-to-rest endpoints, split the selected curve, and
 %     increase segment times enough to satisfy derivative-control bounds.
-%**************************************************************************
+%
 % INPUTS
 %   - request (scalar struct)
 %       Checked BMTP request, limits, horizon, and goal-time policy.
@@ -16,14 +16,14 @@ function preparedMotion = prepareFinalMotion( ...
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite scalar)
 %       Selected common segment time.
-%**************************************************************************
+%
 % OUTPUTS
 %   - preparedMotion (scalar struct)
 %       Prepared controls, time, timing certificate, and expected failure.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
 

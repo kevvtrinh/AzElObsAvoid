@@ -6,24 +6,24 @@ function certificate = checkFinalMotion( ...
 %   certificate = bmtpEngine.checkFinalMotion( ...
 %       request, warmStart, preparedMotion, roundoffReserve_deg, ...
 %       obstacleTarget_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check every applicable final curve span against each supplied convex
 %     obstacle region using direct separating-plane certificates.
-%**************************************************************************
+%
 % INPUTS
 %   - request, warmStart, preparedMotion (scalar structs)
 %       Checked request, region applicability, and final prepared curve.
 %   - roundoffReserve_deg, obstacleTarget_deg (finite scalars)
 %       Numerical reserve and required obstacle-side target in degrees.
-%**************************************************************************
+%
 % OUTPUTS
 %   - certificate (scalar struct)
 %       Pair coverage, separating planes, counts, and passing state.
-%**************************************************************************
+%
 % UNITS
 %   - Position, gaps, and reserves are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Check All Curve And Obstacle Pairs
 

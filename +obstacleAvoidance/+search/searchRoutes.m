@@ -1,20 +1,19 @@
 function routeSet = searchRoutes( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         scene, proposal, visibilityGraph, priorRouteSet)
 %% Section 0: Header & Readme
 % SYNTAX
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
-%       obstacles, initialState, goalState, limits, options, ...
+%       initialState, goalState, limits, options, ...
 %       scene, proposal, visibilityGraph, priorRouteSet)
-%**************************************************************************
+%
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
 %   - Retain multi-winding routes for failure-only motion recovery.
 %   - Return route suggestions and complete search records before seeding.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
+%   - initialState, goalState, limits, options: route-search constraints.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacle histories and request horizon.
 %   - proposal (scalar proposal-geometry struct)
@@ -24,24 +23,24 @@ function routeSet = searchRoutes( ...
 %   - priorRouteSet (scalar route-set struct, optional)
 %       Initial deferred result to resume with exact timed search. Its
 %       spatial routes and search record are reused without recomputation.
-%**************************************************************************
+%
 % OUTPUTS
 %   - routeSet (scalar struct)
 %       Timed, ordinary spatial, and deferred multi-winding routes plus
 %       route-class patterns, search records, selected search modes, and
 %       coverage details. Routes are suggestions and cannot approve a
 %       completed obstacle-avoidance motion.
-%**************************************************************************
+%
 % UNITS
 %   - Positions and route lengths are degrees; physical times are seconds.
-%**************************************************************************
+%
 
 %% Section 1: Search Complete Input-Derived Time Layers
 
 % Defer costly timed search for dense histories until cheap attempts fail.
 % Supplying priorRouteSet resumes timed search without repeating spatial search.
 
-isTimedRecovery = nargin >= 9 && ~isempty(priorRouteSet);
+isTimedRecovery = nargin >= 8 && ~isempty(priorRouteSet);
 if isTimedRecovery && (~isstruct(priorRouteSet) || ...
         ~isscalar(priorRouteSet) || ...
         ~isfield(priorRouteSet, "TimedSearchDeferred") || ...
@@ -59,7 +58,7 @@ timedSearchOptions = options;
 timedSearchAttempted = false;
 timedSearchDeferred = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
-requiresTimedSearch = ~scene.isStaticHorizon;
+requiresTimedSearch = ~scene.obstaclesRemainStatic;
 if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred = true;
     timedSearchSuppressionReason = "deferredDenseTimedSearch";
@@ -104,7 +103,7 @@ visibilityFunction = @(first_deg, second_deg) ...
     obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
     visibilityGraph.EdgeCost_deg, nodePosition_deg, ...
     visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, ...
-    visibilityFunction, options);
+    visibilityFunction);
 
 % Defer multi-winding motion solves until ordinary routes fail.
 % Keep the routes so recovery does not repeat spatial search.

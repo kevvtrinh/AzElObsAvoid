@@ -62,6 +62,37 @@ function harness() {
 }
 
 const triangle = [[0, 0], [6, 0], [0, 3]];
+
+test('result display reads separate diagnosis and the compact route', () => {
+  const context = harness();
+  const functions = [...script.matchAll(/      function (\w+)\(/g)];
+  for (const name of ['renderDiagnostics', 'drawSelectedSeed']) {
+    const index = functions.findIndex((entry) => entry[1] === name);
+    assert.ok(index >= 0);
+    vm.runInContext(script.slice(functions[index].index,
+      functions[index + 1].index), context);
+  }
+  const attempts = [{ SeedIndex: 1, ValidationPassed: true }];
+  const timing = { TotalElapsedTime_s: 2 };
+  const search = { ExpandedCount: 7, RejectedTransitionCount: 3 };
+  context.state.result = { Route_deg: [[0, 0], [3, 2]] };
+  context.state.diagnosis = { AttemptedCount: 2, ValidatedCount: 1,
+    Attempts: attempts, Timing: timing, Search: search };
+  context.renderStageTiming = (value) => assert.equal(value, timing);
+  context.renderSeedSummaries = (value) => assert.equal(value, attempts);
+  context.updateOverlayControls = (value) => assert.equal(value, search);
+  context.renderDiagnostics();
+  assert.equal(context.element('attemptedSeedCount').textContent, '2');
+  assert.equal(context.element('expandedStateCount').textContent, '7');
+  context.state.showSelectedSeed = true;
+  context.matrix = (value) => value;
+  context.wrappedSegments = (value) => [value];
+  let drawn;
+  context.strokePath = (value) => { drawn = value; };
+  context.drawSelectedSeed();
+  assert.deepEqual(drawn, context.state.result.Route_deg);
+});
+
 const concave = [[-3, -2], [4, -2], [4, 0], [0, 0], [0, 5], [-3, 5]];
 function obstacle(vertices = triangle, angle = 0, profile = 'stationary') {
   return { name: 'Test polygon', vertices_deg: vertices.map((p) => p.slice()),

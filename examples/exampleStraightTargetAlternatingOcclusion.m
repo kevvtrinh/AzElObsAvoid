@@ -1,29 +1,29 @@
-function result = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
+function [result, diagnosis] = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleStraightTargetAlternatingOcclusion()
 %   result = exampleStraightTargetAlternatingOcclusion(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Move one target on a straight line through a square, circle,
 %     12-point star, and U-shaped obstacle.
 %   - Validate repeated blocked and unblocked target intervals while the
 %     faster boresight catches the target in a gap between shapes.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
 %       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar planner-result struct)
 %       Validated moving-target intercept, occupancy transitions, shape
 %       probes, scenario inputs, and optional plot handles.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -121,7 +121,7 @@ interceptOptions = struct( ...
 
 % Run the moving-target planner without a stored intercept choice.
 
-result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
@@ -129,7 +129,7 @@ result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, t
 % show whether each shape blocks the intended part of the track.
 
 exampleValidation = validateExampleResult( ...
-    result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true));
+    result, "straight target with alternating occlusion", struct("RequireDirectBlocked", true), diagnosis);
 obstacleQueryOptions = struct();
 
 occupancySampleCount = 1201;
@@ -217,7 +217,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

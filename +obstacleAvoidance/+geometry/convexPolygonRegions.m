@@ -2,23 +2,23 @@ function convexRegions = convexPolygonRegions(shape)
 %% Section 0: Header & Readme
 % SYNTAX
 %   convexRegions = obstacleAvoidance.geometry.convexPolygonRegions(shape)
-%**************************************************************************
+%
 % PURPOSE
 %   - Decompose occupied polygon geometry into exact convex regions.
 %   - Greedily remove triangulation diagonals for complex outlines without
 %     filling gaps or holes; retain the established triangles for small cases.
-%**************************************************************************
+%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Possibly disconnected or nonconvex occupied geometry.
-%**************************************************************************
+%
 % OUTPUTS
 %   - convexRegions (column polyshape array)
 %       Interior-disjoint convex polygons whose union equals shape.
-%**************************************************************************
+%
 % UNITS
 %   - Geometry coordinates retain the input shape's angular degree units.
-%**************************************************************************
+%
 
 %% Section 1: Triangulate And Coarsen Every Connected Region
 

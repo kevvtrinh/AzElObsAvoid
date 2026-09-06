@@ -4,11 +4,11 @@ function eligibility = checkEligibility( ...
 % SYNTAX
 %   eligibility = ruckigEngine.checkEligibility( ...
 %       initialState, terminalState, limits, options, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Report whether a normalized request belongs to the exact switching
 %     engine's supported request family.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (normalized scalar structs)
 %       Dimension-neutral boundary states and resolved coordinate bounds.
@@ -16,14 +16,14 @@ function eligibility = checkEligibility( ...
 %       Direct time and numerical options for this engine.
 %   - pathConstraints (normalized scalar struct)
 %       Affine rows certify the exact constructed profile after solving.
-%**************************************************************************
+%
 % OUTPUTS
 %   - eligibility (scalar struct)
 %       Supported flag, identified reason, and actionable message.
-%**************************************************************************
+%
 % UNITS
 %   - Eligibility fields are dimensionless; inputs retain caller units.
-%**************************************************************************
+%
 
 %% Section 1: Check Unsupported Request Features
 

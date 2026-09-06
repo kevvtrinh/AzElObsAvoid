@@ -5,10 +5,10 @@ function [candidate, diagnostics] = createRuckigWaypointMotion( ...
 %   [candidate, diagnostics] = ...
 %       obstacleAvoidance.planner.createRuckigWaypointMotion( ...
 %       seed, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Compose at most two exact state-to-state Ruckig route segments.
-%**************************************************************************
+%
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       position_deg is an N-by-2 obstacle-derived route. After consecutive
@@ -20,17 +20,17 @@ function [candidate, diagnostics] = createRuckigWaypointMotion( ...
 %       Workspace, velocity, acceleration, and jerk limits use named units.
 %   - options (normalized scalar planner-option struct)
 %       GoalTimeMode controls earliest or exact fixed arrival behavior.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar motion-candidate struct)
 %       Exact composite motion, or a stable identified segment failure.
 %   - diagnostics (scalar struct)
 %       Ruckig provenance, segment counts, failures, and elapsed time.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Route and histories are N-by-2.
-%**************************************************************************
+%
 
 %% Section 1: Normalize The Route And Engine Request
 

@@ -5,11 +5,11 @@ function [certified, minimumClearance_deg] = certifySeedCorridor( ...
 %   [certified, minimumClearance_deg] = ...
 %       obstacleAvoidance.validation.certifySeedCorridor( ...
 %       trajectory, obstacles, tolerance_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Independently verify complete obstacle-envelope containment, support
 %     integrity, and continuous Bernstein separation for a seed corridor.
-%**************************************************************************
+%
 % INPUTS
 %   - trajectory (scalar struct)
 %       Polynomial, SeedCorridorBoundary_deg, and SeedCorridor are required.
@@ -17,16 +17,16 @@ function [certified, minimumClearance_deg] = certifySeedCorridor( ...
 %       Complete histories that the supplied envelope must contain.
 %   - tolerance_deg (nonnegative numeric scalar)
 %       Certificate comparison tolerance.
-%**************************************************************************
+%
 % OUTPUTS
 %   - certified (logical scalar)
 %       True only when every segment/region record passes.
 %   - minimumClearance_deg (numeric scalar)
 %       Smallest continuous certified clearance, or NaN on failure.
-%**************************************************************************
+%
 % UNITS
 %   - Geometry, clearance, and tolerance are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Validate Complete Certificate Evidence
 
@@ -146,8 +146,7 @@ for regionIndex = 1:numel(envelopeRegions)
         envelopeRegions(regionIndex), max(1e-9, tolerance_deg));
 end
 for obstacleIndex = 1:numel(obstacles)
-    obstacle = obstacleAvoidance.obstacles.prepareDynamic( ...
-        obstacles(obstacleIndex));
+    obstacle = obstacles(obstacleIndex);
     preparation = obstacle.InternalPreparation;
     if preparation.IsTimeInvariant
         sweptShape = preparation.StaticShape;

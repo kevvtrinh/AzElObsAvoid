@@ -6,10 +6,10 @@ function [profile, candidates] = createFixedTimeAxisProfile( ...
 %       initialState, terminalState, limits, duration)
 %   [profile, candidates] = ruckigEngine.createFixedTimeAxisProfile( ...
 %       initialState, terminalState, limits, duration)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create a path-short scalar jerk-switching profile at a prescribed time.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar position, velocity, and acceleration fields.
@@ -19,17 +19,17 @@ function [profile, candidates] = createFixedTimeAxisProfile( ...
 %       Positive maximumVelocity, maximumAcceleration, and maximumJerk.
 %   - duration (positive finite scalar)
 %       Required motion duration.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, phase law, exact boundary histories, path length, and family.
 %       Unsupported numerical edge cases return Success = false.
 %   - candidates (structure array)
 %       Every certified fixed-time family for multidimensional path ranking.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.

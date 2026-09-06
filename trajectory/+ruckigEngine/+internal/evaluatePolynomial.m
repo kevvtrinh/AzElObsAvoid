@@ -7,10 +7,10 @@ function [time, position, velocity, acceleration, jerk] = ...
 %   [time, position, velocity, acceleration, jerk] = ...
 %       ruckigEngine.internal.evaluatePolynomial( ...
 %       polynomial, time, segmentIndex)
-%**************************************************************************
+%
 % PURPOSE
 %   - Evaluate the engine-neutral ascending-power trajectory format.
-%**************************************************************************
+%
 % INPUTS
 %   - polynomial (scalar struct)
 %       Coefficients use segment-by-coordinate-by-ascending-power ordering.
@@ -18,14 +18,14 @@ function [time, position, velocity, acceleration, jerk] = ...
 %       Absolute evaluation times.
 %   - segmentIndex (numeric scalar or vector, optional; default [])
 %       Empty input selects segments from their absolute start times.
-%**************************************************************************
+%
 % OUTPUTS
 %   - time (N-by-1 numeric column)
 %   - position, velocity, acceleration, jerk (N-by-D numeric arrays)
-%**************************************************************************
+%
 % UNITS
 %   - Values retain the caller's consistent coordinate and time units.
-%**************************************************************************
+%
 
 %% Section 1: Select Segments
 

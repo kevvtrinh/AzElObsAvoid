@@ -3,24 +3,24 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion)
 % SYNTAX
 %   obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
 %       obstacle, preparationVersion)
-%**************************************************************************
+%
 % PURPOSE
 %   - Prepare one complete obstacle history for repeated geometry queries.
 %   - Retain the interval method, bounds, edges, motion, and static status.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacle (scalar canonical obstacle struct)
 %       Protected and original source histories remain unchanged.
 %   - preparationVersion (positive integer scalar)
 %       Version written into the internal preparation record.
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacle (scalar canonical obstacle struct)
 %       InternalPreparation contains reusable source-derived geometry data.
-%**************************************************************************
+%
 % UNITS
 %   - Geometry is degrees, time is seconds, and speed is degrees per second.
-%**************************************************************************
+%
 
 %% Section 1: Prepare Sample Geometry
 

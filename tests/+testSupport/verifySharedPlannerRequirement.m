@@ -206,10 +206,10 @@ initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
 goalState = testCase.TestData.Fixtures.State(6, [3 1], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = adapter.FixedOptions();
-first = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
-second = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+[first, firstDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+[second, secondDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
 verifyEqual(testCase, first.Success, second.Success);
-verifyEqual(testCase, [first.Seeds.Source], [second.Seeds.Source]);
+verifyEqual(testCase, [firstDiagnosis.Routes.Source], [secondDiagnosis.Routes.Source]);
 verifyEqual(testCase, first.time_s, second.time_s, "AbsTol", 1e-12);
 verifyEqual(testCase, first.position_deg, second.position_deg, "AbsTol", 1e-9);
 end
@@ -376,52 +376,52 @@ goalState = testCase.TestData.Fixtures.State(12, [5 0], [0 0], [0 0]);
 limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
 options = adapter.FixedOptions();
 options.MaximumSeedCount = 3;
-result = obstacleAvoidance.planTrajectory( obstacle, initialState, goalState, limits, options);
-verifyGreaterThanOrEqual(testCase, numel(result.Seeds), 3);
-verifyTrue(testCase, any([result.Seeds.Source] == "visibilityGraph"));
-verifyEqual(testCase, result.SearchDiagnostics.Grid.GraphType, "timeExpandedVisibilityGraph");
-verifyGreaterThan(testCase, result.SearchDiagnostics.Grid.VisibilityEdgeCount, 0);
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory( obstacle, initialState, goalState, limits, options);
+verifyGreaterThanOrEqual(testCase, numel(resultDiagnosis.Routes), 3);
+verifyTrue(testCase, any([resultDiagnosis.Routes.Source] == "visibilityGraph"));
+verifyEqual(testCase, resultDiagnosis.Search.GraphType, "timeExpandedVisibilityGraph");
+verifyGreaterThan(testCase, resultDiagnosis.Search.VisibilityEdgeCount, 0);
 verifyLessThan(testCase, ...
-    result.SearchDiagnostics.Grid.VisibilityCandidatePairCount, ...
-    result.SearchDiagnostics.Grid.NodeCount * (result.SearchDiagnostics.Grid.NodeCount - 1) / 2);
-verifyEqual(testCase, size(result.SearchDiagnostics.Grid.AcceptedEdges_deg, 2), 4);
-verifyEqual(testCase, size(result.SearchDiagnostics.Grid.RejectedEdges_deg, 2), 4);
-verifyTrue(testCase, all(isfinite( result.SearchDiagnostics.Grid.AcceptedEdges_deg), "all"));
-verifyEqual(testCase, size(result.SearchDiagnostics.Grid.FrontierNodes_deg, 2), 2);
-verifyTrue(testCase, result.SearchDiagnostics.Grid.Coverage.ExactSpatialProposalUsed);
-verifyFalse(testCase, result.SearchDiagnostics.Grid.Coverage.ReducedSpatialProposalUsed);
-verifyTrue(testCase, result.SearchDiagnostics.Grid.Coverage.CompletenessLost);
+    resultDiagnosis.Search.VisibilityCandidatePairCount, ...
+    resultDiagnosis.Search.NodeCount * (resultDiagnosis.Search.NodeCount - 1) / 2);
+verifyEqual(testCase, size(resultDiagnosis.Search.AcceptedEdges_deg, 2), 4);
+verifyEqual(testCase, size(resultDiagnosis.Search.RejectedEdges_deg, 2), 4);
+verifyTrue(testCase, all(isfinite( resultDiagnosis.Search.AcceptedEdges_deg), "all"));
+verifyEqual(testCase, size(resultDiagnosis.Search.FrontierNodes_deg, 2), 2);
+verifyTrue(testCase, resultDiagnosis.SearchCoverage.ExactSpatialProposalUsed);
+verifyFalse(testCase, resultDiagnosis.SearchCoverage.ReducedSpatialProposalUsed);
+verifyTrue(testCase, resultDiagnosis.SearchCoverage.CompletenessLost);
 verifyEqual(testCase, ...
-    result.SearchDiagnostics.Grid.Coverage.CompletenessLossReason, ...
+    resultDiagnosis.SearchCoverage.CompletenessLossReason, ...
     "boundedSeedNodeAndTimeSearch");
-verifySize(testCase, result.SearchDiagnostics.Grid.HomologyRepresentative_deg, [1 2]);
-verifyGreaterThanOrEqual(testCase, result.SearchDiagnostics.Grid.HomologyClassCount, 2);
+verifySize(testCase, resultDiagnosis.Search.HomologyRepresentative_deg, [1 2]);
+verifyGreaterThanOrEqual(testCase, resultDiagnosis.Search.HomologyClassCount, 2);
 signatureCount = size(unique( ...
-    result.SearchDiagnostics.Grid.HomologyClassSignatures, "rows"), 1);
+    resultDiagnosis.Search.HomologyClassSignatures, "rows"), 1);
 verifyGreaterThanOrEqual(testCase, signatureCount, 2);
-verifyFalse(testCase, result.SearchDiagnostics.Grid.HomologySearchTruncated);
-minimumElevations_deg = zeros(numel(result.Seeds), 1);
-maximumElevations_deg = zeros(numel(result.Seeds), 1);
+verifyFalse(testCase, resultDiagnosis.Search.HomologySearchTruncated);
+minimumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
+maximumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
 
 % Measure every generated seed's elevation range to confirm both detour classes exist.
-for seedIndex = 1:numel(result.Seeds)
-    minimumElevations_deg(seedIndex) = min( result.Seeds(seedIndex).position_deg(:, 2));
-    maximumElevations_deg(seedIndex) = max( result.Seeds(seedIndex).position_deg(:, 2));
+for seedIndex = 1:numel(resultDiagnosis.Routes)
+    minimumElevations_deg(seedIndex) = min( resultDiagnosis.Routes(seedIndex).position_deg(:, 2));
+    maximumElevations_deg(seedIndex) = max( resultDiagnosis.Routes(seedIndex).position_deg(:, 2));
 end
 verifyLessThan(testCase, min(minimumElevations_deg), -2);
 verifyGreaterThan(testCase, max(maximumElevations_deg), 2);
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, result.Validation.CollisionFree);
-validated = find([result.SeedSummaries.ValidationPassed]);
+validated = find([resultDiagnosis.Attempts.ValidationPassed]);
 if result.Success
-    selectedSummary = result.SeedSummaries(result.SelectedSeedIndex);
+    selectedSummary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
     if options.GoalTimeMode == "fixedArrival"
         motionLength_deg = ...
-            [result.SeedSummaries(validated).MotionLength_deg];
+            [resultDiagnosis.Attempts(validated).MotionLength_deg];
         verifyLessThanOrEqual(testCase, ...
             selectedSummary.MotionLength_deg, min(motionLength_deg) + 1e-9);
     else
-        arrival_s = [result.SeedSummaries(validated).ArrivalTime_s];
+        arrival_s = [resultDiagnosis.Attempts(validated).ArrivalTime_s];
         verifyLessThanOrEqual(testCase, ...
             selectedSummary.ArrivalTime_s, ...
             min(arrival_s) + options.ArrivalTimeTolerance_s);
@@ -481,12 +481,12 @@ goalState = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
 limits = rmfield( ...
     testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]), ...
     ["azimuthInterval_deg", "elevationInterval_deg"]);
-result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
 verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-180 180]);
 verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-90 90]);
 limits.azimuthInterval_deg = [-12 14];
 limits.elevationInterval_deg = [-5 6];
-result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
 verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-12 14]);
 verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-5 6]);
 end

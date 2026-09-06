@@ -16,6 +16,7 @@ end
 function testDefaultsMatchPublicPlannerRequirement(testCase)
 % Keep one source of truth between the package and public defaults calls.
 options = obstacleAvoidance.input.resolvePlannerOptions();
+verifyFalse(testCase, isfield(options, "CancellationCheckFcn"));
 expected = obstacleAvoidance.planTrajectory();
 
 verifyEqual(testCase, options, expected);
@@ -144,12 +145,8 @@ warningCleanup = onCleanup(@() warning(warningState));
 options = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end
 
-function testLegacyArrivalModeMigrates(testCase)
-overrides = struct("GoalTimeMode", "balancedArrival");
-verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), ...
-    "planTrajectory:RetiredGoalTimeMode");
-state = warning("off", "planTrajectory:RetiredGoalTimeMode");
-cleanup = onCleanup(@() warning(state));
-verifyEqual(testCase, obstacleAvoidance.input.resolvePlannerOptions(overrides), ...
-    obstacleAvoidance.input.resolvePlannerOptions());
+function testUnsupportedArrivalModeIsRejected(testCase)
+verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions( ...
+    struct("GoalTimeMode", "balancedArrival")), ...
+    "planTrajectory:InvalidGoalTimeMode");
 end

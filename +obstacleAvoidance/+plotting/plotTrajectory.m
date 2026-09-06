@@ -1,27 +1,30 @@
-function handles = plotTrajectory(result, optionOverrides)
+function handles = plotTrajectory(result, optionOverrides, diagnosis)
 %% Section 0: Header & Readme
 % SYNTAX
 %   options = obstacleAvoidance.plotting.plotTrajectory()
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides)
-%**************************************************************************
+%   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides, diagnosis)
+%
 % PURPOSE
 %   - Plot retained motion, search diagnostics, and physical limits.
 %   - Animate returned samples against time-varying obstacles and targets.
-%**************************************************************************
+%
 % INPUTS
 %   - result (scalar planTrajectory result)
 %       Success or failure record; plotting never reruns the planner.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Display, animation, and GIF controls. Hidden figures never pause.
-%**************************************************************************
+%   - diagnosis (optional second planner output)
+%       Adds candidate routes, search edges, and frontier diagnostics.
+%
 % OUTPUTS
 %   - handles (scalar struct)
 %       Stable workspace, visibility, kinematic, and animation handles.
-%**************************************************************************
+%
 % UNITS
 %   - Axes use degrees, seconds, deg/s, deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Display Controls
 
@@ -42,7 +45,8 @@ end
 if nargin < 2 || isempty(optionOverrides)
     optionOverrides = struct();
 end
-requiredNames = {'Inputs', 'Options', 'Success', 'SearchDiagnostics'};
+if nargin < 3, diagnosis = struct(); end
+requiredNames = {'Inputs', 'Options', 'Success', 'Route_deg', 'BestPartialRoute_deg'};
 if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredNames))
     error("plotTrajectory:InvalidResult", "result must be a scalar planner result.");
 end
@@ -75,8 +79,11 @@ end
 validateattributes(options.FrameStride, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'integer', 'positive'});
 handles = createEmptyHandles(options);
-obstacles = obstacleAvoidance.obstacles.prepareDynamic(result.Inputs.obstacles);
-gridRecord = result.SearchDiagnostics.Grid;
+obstacles = obstacleAvoidance.obstacles.prepareObstacles(result.Inputs.obstacles);
+gridRecord = struct();
+routes = struct([]);
+if isfield(diagnosis, "Search"), gridRecord = diagnosis.Search; end
+if isfield(diagnosis, "Routes"), routes = diagnosis.Routes; end
 
 %% Section 2: Plot Workspace And Failure Diagnostics
 
@@ -87,9 +94,9 @@ if options.ShowWorkspace
     drawObstacles(workspaceAxes, obstacles, result.Inputs.initialState.time_s);
     drawSearchDiagnostics(workspaceAxes, gridRecord, options.ShowSearchEdges);
     if options.ShowSeedPaths
-        for seedIndex = 1:numel(result.Seeds)
-            route_deg = displayPath(result, result.Seeds(seedIndex).position_deg);
-            label = "Seed " + seedIndex + ": " + result.Seeds(seedIndex).Source;
+        for seedIndex = 1:numel(routes)
+            route_deg = displayPath(result, routes(seedIndex).position_deg);
+            label = "Route " + seedIndex + ": " + routes(seedIndex).Source;
             drawLine(workspaceAxes, route_deg, "-o", label, 1);
         end
     end
@@ -112,7 +119,7 @@ end
 
 %% Section 3: Plot Time-Expanded Diagnostics
 
-if options.ShowVisibilityGraphs
+if options.ShowVisibilityGraphs && ~isempty(fieldnames(gridRecord))
     if options.ShowWorkspace
         handles.VisibilityFigure = handles.WorkspaceFigure;
         handles.VisibilityAxes = handles.WorkspaceAxes;
@@ -276,13 +283,12 @@ end
 function drawPlannerRoute(axesHandle, result)
 % Draw the successful selected/timed path or the retained best partial route.
 if result.Success
-    selected_deg = displayPath(result, result.SelectedSeed_deg);
+    selected_deg = displayPath(result, result.Route_deg);
     motion_deg = displayPath(result, result.position_deg);
     drawLine(axesHandle, selected_deg, "--", "Selected geometric route", 1);
     drawLine(axesHandle, motion_deg, "k-", "Timed motion", 2);
-elseif result.SearchDiagnostics.BestPartialSeedIndex > 0
-    partialIndex = result.SearchDiagnostics.BestPartialSeedIndex;
-    partial_deg = displayPath(result, result.Seeds(partialIndex).position_deg);
+elseif ~isempty(result.BestPartialRoute_deg)
+    partial_deg = displayPath(result, result.BestPartialRoute_deg);
     drawLine(axesHandle, partial_deg, "--", "Best partial route", 1);
 end
 end
@@ -413,21 +419,10 @@ value = isfield(record, fieldName) && ~isempty(record.(fieldName));
 end
 
 function textValue = diagnosticTitle(result, prefix)
-% Show the termination reason and search counts.
-gridRecord = result.SearchDiagnostics.Grid;
-expandedCount = optionalValue(gridRecord, "ExpandedCount");
-rejectedCount = optionalValue(gridRecord, "RejectedTransitionCount");
-textValue = sprintf("%s | %s | seeds %d | expanded %d | rejected %d", ...
-    prefix, result.TerminationReason, numel(result.Seeds), expandedCount, rejectedCount);
+% Keep the standard plot title focused on the planning outcome.
+textValue = sprintf("%s | %s", prefix, result.TerminationReason);
 end
 
-function value = optionalValue(record, fieldName)
-% Read an optional scalar count, using zero when absent.
-value = 0;
-if isfield(record, fieldName)
-    value = record.(fieldName);
-end
-end
 
 function handles = createEmptyHandles(options)
 % Initialize graphics handles before choosing a display mode.

@@ -1,24 +1,25 @@
-function result = exampleObstacleAvoidance(exampleOverrides)
+function [result, diagnosis] = exampleObstacleAvoidance(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleObstacleAvoidance()
 %   result = exampleObstacleAvoidance(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate deterministic side choice around one protected rectangle.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -56,7 +57,7 @@ limits = struct( ...
 
 % Run the maintained planner without waypoints or a preferred detour side.
 
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -74,7 +75,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

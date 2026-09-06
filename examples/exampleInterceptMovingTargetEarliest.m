@@ -1,24 +1,24 @@
-function result = exampleInterceptMovingTargetEarliest(exampleOverrides)
+function [result, diagnosis] = exampleInterceptMovingTargetEarliest(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleInterceptMovingTargetEarliest()
 %   result = exampleInterceptMovingTargetEarliest(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate earliest interception through the maintained planner path.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public moving-target planner result.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -58,7 +58,7 @@ interceptOptions = struct( ...
 
 % Run the moving-target planner. It searches for the earliest valid meeting.
 
-result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
@@ -77,7 +77,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

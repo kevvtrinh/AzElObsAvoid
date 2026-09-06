@@ -5,11 +5,11 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept( ...
 %   [interceptTime_s, diagnostics] = ...
 %       obstacleAvoidance.planner.findEarliestLinearIntercept( ...
 %       initialState, targetTime_s, targetPosition_deg, limits, horizonTime_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Find the globally earliest obstacle-free position-only interception
 %     of a piecewise-linear target by a rest-to-rest triple integrator.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Requires scalar time_s and one-by-D position_deg. Velocity and
@@ -23,17 +23,17 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept( ...
 %       maxJerk_deg_s3 limits.
 %   - horizonTime_s (finite scalar)
 %       Latest allowed absolute intercept time.
-%**************************************************************************
+%
 % OUTPUTS
 %   - interceptTime_s (scalar)
 %       Earliest complete polynomial-inequality solution, or NaN.
 %   - diagnostics (scalar struct)
 %       Search coverage, algebraic residuals, and termination reason.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3. Histories are N-by-D.
-%**************************************************************************
+%
 
 %% Section 1: Normalize The Algebraic Request
 

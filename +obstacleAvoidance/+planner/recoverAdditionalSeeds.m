@@ -1,22 +1,22 @@
 function [candidateSet, routeSet, generatedSeeds] = ...
         recoverAdditionalSeeds( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         candidateSet, routeSet, generatedSeeds, recoveryContext)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidateSet, routeSet, generatedSeeds] = ...
 %       obstacleAvoidance.planner.recoverAdditionalSeeds( ...
-%       obstacles, initialState, goalState, limits, options, ...
+%       initialState, goalState, limits, options, ...
 %       candidateSet, routeSet, generatedSeeds, recoveryContext)
-%**************************************************************************
+%
 % PURPOSE
 %   - Attempt seeds beyond the first two only after both initial seeds and
 %     any separately validated exact motion have failed.
 %   - Keep deferred timed and multi-winding recovery in the same removable
 %     implementation unit as all other later-seed work.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
+%   - initialState, goalState, limits, options
 %       Normalized planning inputs in public planner order.
 %   - candidateSet (scalar candidate-set struct)
 %       Results from solving at most the first two generated seeds.
@@ -27,7 +27,7 @@ function [candidateSet, routeSet, generatedSeeds] = ...
 %   - recoveryContext (scalar struct)
 %       Scene, Proposal, VisibilityGraph, SeedSolveContext,
 %       HasValidatedExactMotion, and PlanningTimer used by recovery.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidateSet (scalar candidate-set struct)
 %       Initial attempts plus failure-only recovery attempts, stopping after
@@ -36,10 +36,10 @@ function [candidateSet, routeSet, generatedSeeds] = ...
 %       Route diagnostics updated if deferred search was consumed.
 %   - generatedSeeds (route-seed struct array)
 %       Ordinary and subsequently generated deferred seeds.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; physical and measured times are seconds.
-%**************************************************************************
+%
 
 %% Section 1: Decide Whether Recovery Is Needed
 
@@ -58,7 +58,7 @@ lastOrdinarySeedIndex = min(numel(generatedSeeds), ...
     options.MaximumSeedCount);
 for seedIndex = initialSeedCount + 1:lastOrdinarySeedIndex
     [candidateSet, passed] = solveAndAppend( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         candidateSet, generatedSeeds(seedIndex), recoveryContext);
     if passed
         return;
@@ -86,7 +86,7 @@ end
 if needsDeferredTimedRecovery
     recoverySearchTimer = tic;
     routeSet = obstacleAvoidance.search.searchRoutes( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         recoveryContext.Scene, recoveryContext.Proposal, recoveryContext.VisibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
     candidateSet.StageTiming.TopologyElapsedTime_s = ...
@@ -106,8 +106,8 @@ else
     recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
 end
 recoveredSeeds = obstacleAvoidance.search.createSeeds( ...
-    obstacles, initialState, goalState, limits, options, ...
-    recoveredOnlyRouteSet, recoveryContext.Proposal);
+    initialState, goalState, limits, options, ...
+    recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices);
 recoveredSeeds = recoveredSeeds(2:end);
 
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
@@ -119,7 +119,7 @@ for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
         routeSet.DeferredSpatialSolveAttempted = true;
     end
     [candidateSet, passed] = solveAndAppend( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         candidateSet, recoveredSeed, recoveryContext);
     if passed
         return;
@@ -130,7 +130,7 @@ end
 %% Section 4: Local Functions
 
 function [candidateSet, passed] = solveAndAppend( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         candidateSet, seed, recoveryContext)
 % Solve an additional seed and append its diagnostics.
 seed.Index = numel(candidateSet.Seeds) + 1;

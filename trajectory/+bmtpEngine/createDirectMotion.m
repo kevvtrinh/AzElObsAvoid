@@ -4,11 +4,11 @@ function candidate = createDirectMotion( ...
 % SYNTAX
 %   candidate = bmtpEngine.createDirectMotion( ...
 %       initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create an exact minimum-time synchronized rest-to-rest trajectory.
 %   - Use analytic scalar jerk-switching laws and lossless time scaling.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, goalState (scalar structs)
 %       Require scalar time_s and one-by-D position_deg. Omitted velocity
@@ -19,16 +19,16 @@ function candidate = createDirectMotion( ...
 %   - options (scalar struct)
 %       Require GoalTimeMode and positive SampleTime_s. An optional positive
 %       ConstraintTolerance controls endpoint-rest acceptance.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable success-or-failure record containing an exact piecewise
 %       constant-jerk Polynomial compatible with the public validator.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Histories are N-by-D.
-%**************************************************************************
+%
 
 %% Section 1: Normalize The Rest-To-Rest Request
 

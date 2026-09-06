@@ -4,11 +4,11 @@ function profile = createSynchronizedJerkProfile( ...
 % SYNTAX
 %   profile = ruckigEngine.createSynchronizedJerkProfile( ...
 %       initialState, terminalState, limits, requestedFinalTime)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create a dimension-neutral trajectory at the maximum independent
 %     minimum axis time and synchronize faster axes without delaying arrival.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar time and row-vector position, velocity, and acceleration.
@@ -18,15 +18,15 @@ function profile = createSynchronizedJerkProfile( ...
 %       Row-vector maximumVelocity, maximumAcceleration, and maximumJerk.
 %   - requestedFinalTime (empty or finite scalar)
 %       Empty selects minimum arrival. A supplied time requests fixed arrival.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, message, variable-duration polynomial, phase jerk controls,
 %       arrival time, independent axis minima, and path-length evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 %% Section 1: Create Independent Minimum-Time Axis Profiles
 

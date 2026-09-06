@@ -6,11 +6,11 @@ function summary = createCandidateSummary( ...
 %   summary = obstacleAvoidance.planner.createCandidateSummary( ...
 %       candidate, checkResult, diagnostics, elapsedTime_s, template, ...
 %       limits)
-%**************************************************************************
+%
 % PURPOSE
 %   - Copy solve and authoritative-check evidence into a stable candidate row.
 %   - Calculate utilization fields only for passing motions.
-%**************************************************************************
+%
 % INPUTS
 %   - candidate (scalar motion struct)
 %       Motion returned by a production engine or explicit backup method.
@@ -24,15 +24,15 @@ function summary = createCandidateSummary( ...
 %       Stable empty summary returned by createEmptyResult.
 %   - limits (scalar struct)
 %       Physical limits used to normalize peak motion measures.
-%**************************************************************************
+%
 % OUTPUTS
 %   - summary (scalar candidate-summary struct)
 %       Stable selection and diagnostic evidence for one attempted seed.
-%**************************************************************************
+%
 % UNITS
 %   - Time is seconds; position and length are degrees; derivative units are
 %     deg/s, deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Copy Candidate And Check Evidence
 

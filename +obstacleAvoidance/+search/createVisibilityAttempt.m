@@ -6,11 +6,11 @@ function attempt = createVisibilityAttempt( ...
 %   attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
 %       shape, start_deg, goal_deg, limits, candidateOffset_deg, ...
 %       offsetRetryCount, workBudget)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create, check, and recover one offset visibility-graph attempt.
 %   - Return every representation needed to inspect its decisions.
-%**************************************************************************
+%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Spatial obstacle representation used only for route proposals.
@@ -24,15 +24,15 @@ function attempt = createVisibilityAttempt( ...
 %       Zero-based index of this attempt in the offset schedule.
 %   - workBudget (positive finite scalar)
 %       Pair-edge work cap governing node count and exhaustive recovery.
-%**************************************************************************
+%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Raw and retained nodes, candidate pairs, accepted and rejected
 %       edges, components, recovery steps, costs, and connectivity state.
-%**************************************************************************
+%
 % UNITS
 %   - Positions, offsets, bounds, and graph costs are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Bound The Candidate Nodes
 

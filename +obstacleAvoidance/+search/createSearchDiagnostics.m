@@ -4,24 +4,24 @@ function diagnostics = createSearchDiagnostics( ...
 % SYNTAX
 %   diagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
 %       proposal, visibilityGraph, routeSet, seeds)
-%**************************************************************************
+%
 % PURPOSE
 %   - Assemble stable search diagnostics from completed production stages
 %     without recomputing proposal, graph, route, or seed decisions.
-%**************************************************************************
+%
 % INPUTS
 %   - proposal, visibilityGraph, routeSet (scalar structs)
 %       Completed stage records, or empty structs when graph work was skipped.
 %   - seeds (nonempty route-seed struct array)
 %       Final deterministic seed order.
-%**************************************************************************
+%
 % OUTPUTS
 %   - diagnostics (scalar struct)
 %       Stable graph, route, rejection, coverage, and bounded-search evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position and path length are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create Stable Direct-Only Diagnostics
 

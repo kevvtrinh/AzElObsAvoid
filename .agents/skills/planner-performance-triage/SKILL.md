@@ -11,18 +11,11 @@ to a concrete planner path. For unexplained failures, start with
 
 ## Bound And Attribute The Run
 
-Do not wait indefinitely. `planTrajectory` calls `CancellationCheckFcn` at
-stage boundaries. Bound a run with a deadline closure:
-
-```matlab
-runTimer = tic;
-options.CancellationCheckFcn = @() toc(runTimer) >= deadline_s;
-```
-
-Catch `planTrajectory:UserCancelled`. A callback cannot interrupt one active
-solver or vectorized geometry call, so record `dbstack` and callback times when
-an atomic cost must be localized. Attribute work from returned `StageTiming`,
-`SearchDiagnostics`, and per-seed `SolverDiagnostics`; do not infer the hot
+Do not wait indefinitely. Bound automated experiments with an external process
+deadline; record terminated runs as interrupted with unavailable result metrics.
+Use Ctrl+C for interactive interruption. The production planner has no
+cancellation callback. Attribute work from returned `StageTiming`,
+the optional `diagnosis.Search`, `diagnosis.Timing`, and `diagnosis.SolverDetails`; do not infer the hot
 stage from total wall time or create a persistent diagnostic wrapper.
 
 ## Check Known Cost Centres In This Order

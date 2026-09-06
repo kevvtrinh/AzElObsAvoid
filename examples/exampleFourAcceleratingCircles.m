@@ -1,30 +1,30 @@
-function result = exampleFourAcceleratingCircles(exampleOverrides)
+function [result, diagnosis] = exampleFourAcceleratingCircles(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleFourAcceleratingCircles()
 %   result = exampleFourAcceleratingCircles(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Plan through four vertically moving circles: two rise and two fall.
 %   - Intercept a sampled target trajectory while those obstacles move.
 %   - Demonstrate the shortest center-line route before the circles close it.
 %   - Use a smooth rest-to-rest center profile instead of constant speed.
 %   - Keep neighboring original circles tangent at their shared midpoint.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Planner overrides plus the shared FigureVisible, PlotOutputs,
 %       ShowAnimation, ShowKinematicPlot, and MaxJerk_deg_s3 controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar planner-result struct)
 %       Validated moving-target intercept, obstacle history, circle-center
 %       kinematics, tangency checks, and optional plot handles.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -125,7 +125,7 @@ interceptOptions = struct( ...
 
 % Run the moving-target planner with the full obstacle history.
 
-result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, targetMotion, limits, interceptOptions);
 
 %% Section 5: Validate Result
 
@@ -133,7 +133,7 @@ result = obstacleAvoidance.planMovingTargetIntercept( obstacles, initialState, t
 % gimbal limits. These checks separate setup errors from planner errors.
 
 exampleValidation = validateExampleResult( ...
-    result, "four accelerating circles");
+    result, "four accelerating circles", struct(), diagnosis);
 
 midpointIndex = find( obstacleTime_s == 0.5 * obstacleMotionDuration_s, 1, "first");
 pairCenterDistance_deg = [ ...
@@ -185,7 +185,7 @@ movingTargetValidation = struct( ...
     "TargetTravel_deg", targetTravel_deg, ...
     "TargetEndpointError_deg", targetEndpointError_deg, ...
     "TargetSpeedAtIntercept_deg_s", targetSpeedAtIntercept_deg_s, ...
-    "PositionOnlyCapture", ~result.Intercept.Options.MatchTargetVelocity);
+    "PositionOnlyCapture", result.Intercept.TerminalVelocityPolicy == "zero");
 
 shortestRouteLength_deg = norm( ...
     targetPosition_deg(end, :) - initialState.position_deg);
@@ -228,7 +228,7 @@ end
 
 if jerkConfiguration.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, jerkConfiguration.PlotOptions);
+        result, jerkConfiguration.PlotOptions, diagnosis);
 end
 
 end

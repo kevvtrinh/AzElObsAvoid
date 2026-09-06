@@ -3,25 +3,25 @@ function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_
 % SYNTAX
 %   [edgeStart_deg, edgeEnd_deg] = ...
 %       obstacleAvoidance.geometry.boundaryToEdges(shape, closureTolerance_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Convert every connected boundary ring into explicit start/end edge rows.
 %     Visibility and clearance code can then share one deterministic edge order
 %     instead of each implementing NaN-separator and ring-closure rules.
-%**************************************************************************
+%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Polygon geometry whose boundary traversal order is retained.
 %   - closureTolerance_deg (nonnegative finite scalar)
 %       Distance for recognizing a repeated final ring vertex.
-%**************************************************************************
+%
 % OUTPUTS
 %   - edgeStart_deg, edgeEnd_deg (N-by-2 arrays)
 %       Matched edge endpoints in deterministic boundary order.
-%**************************************************************************
+%
 % UNITS
 %   - Shape vertices, edge endpoints, and tolerance are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Validate And Split NaN-Separated Boundary Rings
 

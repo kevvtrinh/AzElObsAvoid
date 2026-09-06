@@ -1,7 +1,7 @@
 function tests = testOfflineSandboxTransport
 %% Section 0: Header & Readme
 % SYNTAX tests = testOfflineSandboxTransport
-% PURPOSE Verify disconnected HTTP clients cannot abort the planner callback.
+% PURPOSE Verify disconnected HTTP clients do not abort the sandbox server.
 % INPUTS None.
 % OUTPUTS MATLAB function-based unit tests.
 % UNITS Ports and counts are dimensionless; timeouts are milliseconds.
@@ -17,7 +17,7 @@ folder = tempname;
 mkdir(folder);
 header = sprintf(['function varargout = sandboxTransportHook(action, varargin)\n' ...
     'switch action\ncase "write"\nwriteHttpResponse(varargin{:});\n' ...
-    'case "poll"\nvarargout{1} = cancellationRequested(varargin{:});\nend\nend\n']);
+    'case "serve"\n[varargout{1},varargout{2}] = serveClient(varargin{:});\nend\nend\n']);
 fid = fopen(fullfile(folder, 'sandboxTransportHook.m'), 'w');
 cleanup = onCleanup(@() fclose(fid));
 fprintf(fid, '%s', [header, source(start(1):end)]);
@@ -58,25 +58,24 @@ text = evalc('writeResponse(peer);');
 verifySubstring(testCase, text, 'could not be delivered');
 end
 
-function testAbandonedPollDoesNotCancelAndServerStillHandlesRequests(testCase)
-server = java.net.ServerSocket(int32(0), int32(8), ...
-    java.net.InetAddress.getByName('127.0.0.1'));
+function testCancelEndpointIsRemoved(testCase)
+server = java.net.ServerSocket(int32(0), int32(8), java.net.InetAddress.getByName('127.0.0.1'));
 cleanup = onCleanup(@() server.close());
 port = double(server.getLocalPort());
-stopFile = string(tempname);
-client = java.net.Socket('127.0.0.1', int32(port));
-client.setSoLinger(true, int32(0));
-client.close();
-verifyFalse(testCase, sandboxTransportHook("poll", server, stopFile, "active", port));
-client = queueRequest(port, sprintf('GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n'));
+client = queueRequest(port, sprintf('POST /cancel HTTP/1.1\r\nContent-Length: 0\r\n\r\n'));
 clientCleanup = onCleanup(@() client.close());
-verifyFalse(testCase, sandboxTransportHook("poll", server, stopFile, "active", port));
-clear clientCleanup;
-body = '{"requestId":"active"}';
-request = sprintf('POST /cancel HTTP/1.1\r\nContent-Length: %d\r\n\r\n%s', numel(body), body);
-client = queueRequest(port, request);
-clientCleanup = onCleanup(@() client.close());
-verifyTrue(testCase, sandboxTransportHook("poll", server, stopFile, "active", port));
+peer = server.accept();
+[wasPlan, wasBundle] = sandboxTransportHook("serve", peer, uint8('page'), ...
+    "sandbox", port, string(tempname), string(tempname));
+verifyFalse(testCase, wasPlan);
+verifyFalse(testCase, wasBundle);
+client.setSoTimeout(int32(1000));
+stream = client.getInputStream(); bytes = uint8([]);
+while true
+    value = stream.read(); if value < 0, break; end
+    bytes(end+1) = uint8(value);
+end
+verifySubstring(testCase, char(bytes), '404 Not Found');
 end
 
 function testNonSocketFailuresAreNotSuppressed(testCase)

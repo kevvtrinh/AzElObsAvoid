@@ -6,11 +6,11 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
 %   [profile, candidates] = ruckigEngine.createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the shortest one-dimensional position trajectory admitted by
 %     symmetric velocity, acceleration, and jerk limits.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar time, position, velocity, and acceleration fields.
@@ -19,7 +19,7 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %   - limits (scalar struct)
 %       Positive scalar maximumVelocity, maximumAcceleration, and
 %       maximumJerk fields.
-%**************************************************************************
+%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, seven phase durations and jerks, minimum duration, and the
@@ -28,10 +28,10 @@ function [profile, candidates] = createMinimumTimeAxisProfile( ...
 %   - candidates (structure array)
 %       Every certified extremal profile used to derive synchronization
 %       block intervals, including duration and signed initial direction.
-%**************************************************************************
+%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.

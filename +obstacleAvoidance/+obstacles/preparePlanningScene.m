@@ -1,28 +1,25 @@
 function scene = preparePlanningScene( ...
-        obstacles, initialState, goalState, limits, options)
+        obstacles, initialState, goalState)
 %% Section 0: Header & Readme
 % SYNTAX
 %   scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
-%       obstacles, initialState, goalState, limits, options)
-%**************************************************************************
+%       obstacles, initialState, goalState)
+%
 % PURPOSE
 %   - Prepare obstacle histories once for repeated planning queries.
-%   - Describe the request horizon and reusable obstacle preparation details.
-%**************************************************************************
+%   - Record the planning interval and whether all obstacles remain stationary.
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order. Unused inputs
-%       are accepted to keep stage signatures consistent.
-%**************************************************************************
+%   - obstacles: canonical obstacle histories.
+%   - initialState, goalState: start and end of the planning interval.
+%
 % OUTPUTS
 %   - scene (scalar struct)
-%       Prepared obstacles, request horizon, static-horizon decision, and
-%       per-obstacle preparation details. This data supports planning but
-%       cannot approve a completed trajectory.
-%**************************************************************************
+%       Prepared obstacles, start/end times, and the stationary-scene flag.
+%
 % UNITS
 %   - Geometry is degrees, time is seconds, and speed is degrees per second.
-%**************************************************************************
+%
 
 %% Section 1: Read The Planning Horizon
 
@@ -33,54 +30,16 @@ endTime_s = goalState.time_s;
 
 % Prepare shared obstacle geometry once for search and validation.
 
-preparedObstacles = obstacleAvoidance.obstacles.prepareDynamic( ...
-    obstacles);
+preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 
 %% Section 3: Check The Request Horizon
 
 % Use static BMTP only if every obstacle is unchanged over the full horizon.
 
-isStaticHorizon = obstacleAvoidance.obstacles.queryStaticHorizon( ...
-    preparedObstacles, startTime_s, endTime_s);
+obstaclesRemainStatic = obstacleAvoidance.obstacles.queryStaticHorizon(preparedObstacles, startTime_s, endTime_s);
 
-%% Section 4: Create Inspectable Preparation Details
-
-% Record the histories and interval models used by planning.
-
-obstacleCount = numel(preparedObstacles);
-detailTemplate = struct( ...
-    "ObstacleIndex", 0, ...
-    "Name", "", ...
-    "SampleCount", 0, ...
-    "IntervalCount", 0, ...
-    "HistoryBounds_deg", [NaN NaN NaN NaN], ...
-    "IntervalGeometryMethod", strings(0, 1), ...
-    "IntervalSpeedBound_deg_s", zeros(0, 1), ...
-    "IsTimeInvariant", false);
-obstacleDetails = repmat(detailTemplate, obstacleCount, 1);
-for obstacleIndex = 1:obstacleCount
-    obstacle = preparedObstacles(obstacleIndex);
-    preparation = obstacle.InternalPreparation;
-    obstacleDetails(obstacleIndex) = struct( ...
-        "ObstacleIndex", obstacleIndex, ...
-        "Name", string(obstacle.targetName), ...
-        "SampleCount", numel(obstacle.time_s), ...
-        "IntervalCount", max(0, numel(obstacle.time_s) - 1), ...
-        "HistoryBounds_deg", preparation.HistoryBounds_deg, ...
-        "IntervalGeometryMethod", preparation.IntervalGeometryModel, ...
-        "IntervalSpeedBound_deg_s", ...
-        preparation.IntervalSpeedBound_deg_s, ...
-        "IsTimeInvariant", preparation.IsTimeInvariant);
-end
-
-%% Section 5: Assemble The Scene
-
-% Keep cached geometry separate from the caller's inputs.
-
-scene = struct( ...
-    "preparedObstacles", preparedObstacles, ...
-    "startTime_s", startTime_s, ...
-    "endTime_s", endTime_s, ...
-    "isStaticHorizon", isStaticHorizon, ...
-    "obstacleDetails", obstacleDetails);
+%% Section 4: Return The Shared Planning Scene
+scene = struct("preparedObstacles", preparedObstacles, ...
+    "startTime_s", startTime_s, "endTime_s", endTime_s, ...
+    "obstaclesRemainStatic", obstaclesRemainStatic);
 end

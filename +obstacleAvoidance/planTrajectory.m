@@ -1,4 +1,4 @@
-function result = planTrajectory( ...
+function [result, diagnosis] = planTrajectory( ...
         obstacles, initialState, goalState, limits, optionOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
@@ -7,12 +7,14 @@ function result = planTrajectory( ...
 %       obstacles, initialState, goalState, limits)
 %   result = obstacleAvoidance.planTrajectory( ...
 %       obstacles, initialState, goalState, limits, optionOverrides)
-%**************************************************************************
+%   [result, diagnosis] = obstacleAvoidance.planTrajectory( ...
+%       obstacles, initialState, goalState, limits, optionOverrides)
+%
 % PURPOSE
 %   - Plan collision-free Az/El motion through one public entry point.
 %   - Minimize arrival time, breaking ties by path length, or minimize travel
 %     at a specified arrival time.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (canonical protected obstacle array, nested cells, or [])
 %       Use obstacleAvoidance.obstacles.createObstacle to add each safety
@@ -25,31 +27,28 @@ function result = planTrajectory( ...
 %       Physical and workspace limits with units in field names.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Partial planner options. Empty fields use their documented defaults.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
-%       The result contains success or failure data, motion, and diagnostics.
+%       Status, selected route, motion, plotting inputs, and validation data.
+%   - diagnosis (optional scalar struct)
+%       Timing, candidate attempts, search evidence, and flat solver details.
 %   - options (scalar struct, zero-input call)
 %       Fully resolved planner defaults.
-%**************************************************************************
+%
 % UNITS
 %   - Position is in degrees. Time is in seconds.
 %   - Derivatives use deg/s, deg/s^2, and deg/s^3.
 %   - Histories are N-by-2 [azimuth elevation] arrays.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Defaults Requests
 
 % Return planner defaults when called without inputs.
 if nargin == 0
     result = obstacleAvoidance.input.resolvePlannerOptions();
+    diagnosis = struct();
     return;
-end
-
-% Missing inputs.
-if nargin == 1
-    error("planTrajectory:MissingInputs", ...
-        "Planning requires obstacles, initialState, goalState, and limits.");
 end
 
 %% Section 2: Resolve The Planner Request
@@ -70,18 +69,19 @@ planningTimer = tic;
 
 % Normalize the planning inputs.
 options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
-obstacleAvoidance.input.throwIfCancellationRequested(options);
+
 [obstacles, initialState, goalState, limits] = obstacleAvoidance.input.normalizePlannerRequest( ...
     obstacles, initialState, goalState, limits, options);
-[result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult( ...
-    obstacles, initialState, goalState, limits, options, ...
+
+[result, summaryTemplate] = obstacleAvoidance.planner.createEmptyResult(obstacles, initialState, goalState, limits, options, ...
     obstacleAvoidance.validateTrajectory());
 
 % Prepare shared obstacle geometry once for search and validation.
 scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
-    obstacles, initialState, goalState, limits, options);
+    obstacles, initialState, goalState);
+
 preparedObstacles = scene.preparedObstacles;
-useStaticKernel = scene.isStaticHorizon;
+useStaticSolver = scene.obstaclesRemainStatic;
 stageTiming = result.SearchDiagnostics.StageTiming;
 exactMotionSet = obstacleAvoidance.planner.solveExactCandidates();
 result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
@@ -98,8 +98,9 @@ result.SearchDiagnostics.SelectionPolicy = struct( ...
     obstacleAvoidance.input.validatePlannerEndpoints( ...
     preparedObstacles, initialState, goalState, limits, options);
 if ~endpointFeasible
-    result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+
     result = obstacleAvoidance.planner.stageTiming(result, planningTimer, stageTiming);
+    [result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
     return;
 end
 
@@ -107,7 +108,7 @@ end
 
 % Try validated direct and fixed-clock motions before building the graph.
 exactMotionSet = obstacleAvoidance.planner.solveExactCandidates( ...
-    obstacles, initialState, goalState, limits, options, ...
+    initialState, goalState, limits, options, ...
     scene, stageTiming);
 stageTiming = exactMotionSet.StageTiming;
 result.SearchDiagnostics.DirectAttempt = exactMotionSet.DirectAttempt;
@@ -119,6 +120,7 @@ if exactMotionSet.FastPath.Available
         fastPath.Validation, fastPath.AttemptDetails, ...
         fastPath.ElapsedTime_s, fastPath.Seed, summaryTemplate, ...
         fastPath.Message, planningTimer, stageTiming);
+    [result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
     return;
 end
 
@@ -129,39 +131,34 @@ topologyTimer = tic;
 proposal = struct();
 visibilityGraph = struct();
 routeSet = struct();
+corridorBoundary_deg = zeros(0, 2);
 needsRouteSearch = options.MaximumSeedCount > 1 && ...
     ~isempty(preparedObstacles);
 if needsRouteSearch
     % Build proposal geometry for route search; final validation uses the original obstacles.
-    proposal = obstacleAvoidance.search.createProposalGeometry( ...
-        obstacles, initialState, goalState, limits, options, ...
+    proposal = obstacleAvoidance.search.createRouteSearchGeometry( ...
+        initialState, goalState, options, ...
         scene);
 
     % Build the visibility graph and record its attempts.
     visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-        obstacles, initialState, goalState, limits, options, ...
+        limits, ...
         proposal);
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
 
     % Search timed routes and distinct spatial routes.
     routeSet = obstacleAvoidance.search.searchRoutes( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         scene, proposal, visibilityGraph);
 
-    % Convert routes into ordered motion seeds.
-    seeds = obstacleAvoidance.search.createSeeds( ...
-        obstacles, initialState, goalState, limits, options, ...
-        routeSet, proposal);
-else
-    % Create the direct seed using the same format as other routes.
-    seeds = obstacleAvoidance.search.createSeeds( ...
-        obstacles, initialState, goalState, limits, options, ...
-        [], []);
+    corridorBoundary_deg = proposal.shape.Vertices;
 end
+% Seed the general solver with a direct guess, then any searched detours.
+seeds = obstacleAvoidance.search.createSeeds( ...
+    initialState, goalState, limits, options, routeSet, corridorBoundary_deg);
 
 stageTiming.TopologyElapsedTime_s = toc(topologyTimer);
 seedSolveContext = struct( ...
-    "UseStaticKernel", useStaticKernel, ...
+    "UseStaticSolver", useStaticSolver, ...
     "SummaryTemplate", summaryTemplate);
 % Try the first two ordinary seeds before failure recovery.
 primarySeedCount = min(2, numel(seeds));
@@ -200,7 +197,7 @@ recoveryContext = struct( ...
     "PlanningTimer", planningTimer);
 [candidateSet, routeSet, generatedSeeds] = ...
     obstacleAvoidance.planner.recoverAdditionalSeeds( ...
-        obstacles, initialState, goalState, limits, options, ...
+        initialState, goalState, limits, options, ...
         candidateSet, routeSet, seeds, recoveryContext);
 
 % Assemble diagnostics after recovery has added its routes and seeds.
@@ -209,8 +206,7 @@ gridDiagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
 gridDiagnostics.ElapsedTime_s = ...
     candidateSet.StageTiming.TopologyElapsedTime_s;
 result.SearchDiagnostics.Grid = gridDiagnostics;
-result.SearchDiagnostics.SeedGenerationElapsedTime_s = ...
-    gridDiagnostics.ElapsedTime_s;
+
 seeds = candidateSet.Seeds;
 candidates = candidateSet.Candidates;
 seedSummaries = candidateSet.Summaries;
@@ -244,10 +240,9 @@ selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
 % Attach diagnostics and the selected validated motion, if any.
 result.Seeds = seeds;
 result.SeedSummaries = seedSummaries;
-result.SearchDiagnostics.SeedSummaries = seedSummaries;
+
 result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
-result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
-    firstValidatedMotionTime_s;
+
 result.FirstValidatedMotionTime_s = firstValidatedMotionTime_s;
 result.SearchDiagnostics.ValidatedCandidateCount = ...
     selection.ValidatedCandidateCount;
@@ -262,9 +257,10 @@ if selection.Success
     result.SelectedSeed_deg = seeds(selectedIndex).position_deg;
     result = copyMotion(result, candidates{selectedIndex});
 end
-result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+
 result = obstacleAvoidance.planner.stageTiming( ...
     result, planningTimer, stageTiming);
+[result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
 end
 
 %% Section 8: Local Functions
@@ -284,13 +280,12 @@ result.SelectedSeedIndex = seed.Index;
 result.SelectedSeed_deg = seed.position_deg;
 result = copyMotion(result, candidate);
 result.FirstValidatedMotionTime_s = toc(timer);
-result.SearchDiagnostics.SeedSummaries = summary;
+
 result.SearchDiagnostics.AttemptedSeedCount = 1;
 result.SearchDiagnostics.ValidatedCandidateCount = 1;
-result.SearchDiagnostics.FirstValidatedMotionTime_s = ...
-    result.FirstValidatedMotionTime_s;
+
 result.SearchDiagnostics.BestPartialSeedIndex = seed.Index;
-result.SearchDiagnostics.TerminationReason = result.TerminationReason;
+
 result = obstacleAvoidance.planner.stageTiming(result, timer, stageTiming);
 end
 

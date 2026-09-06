@@ -1,18 +1,18 @@
-function [isStaticHorizon, occupiedShape] = queryStaticHorizon( ...
+function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon( ...
         obstacles, startTime_s, endTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
-%   isStaticHorizon = obstacleAvoidance.obstacles.queryStaticHorizon( ...
+%   obstaclesRemainStatic = obstacleAvoidance.obstacles.queryStaticHorizon( ...
 %       obstacles, startTime_s, endTime_s)
-%   [isStaticHorizon, occupiedShape] = ...
+%   [obstaclesRemainStatic, occupiedShape] = ...
 %       obstacleAvoidance.obstacles.queryStaticHorizon( ...
 %       obstacles, startTime_s, endTime_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Determine whether every prepared obstacle is time invariant and active
 %     over a complete request horizon.
 %   - Create the protected static union only when a caller requests it.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles (prepared obstacle struct array)
 %       Each record supplies time_s and InternalPreparation.
@@ -20,22 +20,22 @@ function [isStaticHorizon, occupiedShape] = queryStaticHorizon( ...
 %       Inclusive beginning of the query horizon.
 %   - endTime_s (finite numeric scalar)
 %       Inclusive end of the query horizon, not earlier than startTime_s.
-%**************************************************************************
+%
 % OUTPUTS
-%   - isStaticHorizon (scalar logical)
+%   - obstaclesRemainStatic (scalar logical)
 %       True only when every obstacle is invariant and active throughout the
 %       horizon. Empty time histories return false rather than indexing error.
 %   - occupiedShape (scalar polyshape)
 %       Union of StaticShape records when supported and requested; otherwise
 %       an empty polyshape.
-%**************************************************************************
+%
 % UNITS
 %   - Time is seconds and protected boundary coordinates are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Evaluate Static Activity Over The Horizon
 
-isStaticHorizon = true;
+obstaclesRemainStatic = true;
 occupiedShape = polyshape();
 for obstacleIndex = 1:numel(obstacles)
     obstacle = obstacles(obstacleIndex);
@@ -43,7 +43,7 @@ for obstacleIndex = 1:numel(obstacles)
     isActive = isscalar(sourceTime_s) || (~isempty(sourceTime_s) && ...
         startTime_s >= sourceTime_s(1) && endTime_s <= sourceTime_s(end));
     if ~obstacle.InternalPreparation.IsTimeInvariant || ~isActive
-        isStaticHorizon = false;
+        obstaclesRemainStatic = false;
         return;
     end
 end

@@ -1,27 +1,28 @@
-function result = exampleMovingRotatingObstacleField(exampleOverrides)
+function [result, diagnosis] = exampleMovingRotatingObstacleField(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleMovingRotatingObstacleField()
 %   result = exampleMovingRotatingObstacleField(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Plan past three static obstacles while a fourth obstacle translates
 %     and rotates across the available routes.
 %   - Exercise mixed static and time-varying obstacle histories through the
 %     maintained public planner without waypoints or preferred corridors.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3. Rotation angles are radians.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -88,14 +89,14 @@ limits = struct( ...
 
 %% Section 4: Run Planner
 
-result = obstacleAvoidance.planTrajectory( ...
+[result, diagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 exampleValidation = validateExampleResult( ...
     result, "mixed moving and static obstacle field", ...
-    struct("RequireDirectBlocked", true));
+    struct("RequireDirectBlocked", true), diagnosis);
 centerTravel_deg = sum(vecnorm(diff(movingCenter_deg, 1, 1), 2, 2));
 rotationTravel_rad = sum(abs(diff(movingAngle_rad)));
 motionDefinitionPassed = centerTravel_deg > 0 && rotationTravel_rad > 0;
@@ -113,7 +114,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

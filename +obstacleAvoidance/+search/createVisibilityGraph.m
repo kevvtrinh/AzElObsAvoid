@@ -1,29 +1,27 @@
 function visibilityGraph = createVisibilityGraph( ...
-        obstacles, initialState, goalState, limits, options, proposal)
+        limits, proposal)
 %% Section 0: Header & Readme
 % SYNTAX
 %   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-%       obstacles, initialState, goalState, limits, options, proposal)
-%**************************************************************************
+%       limits, proposal)
+%
 % PURPOSE
-%   - Retry offset visibility attempts until endpoints connect or bounds end.
+%   - Connect points with clear straight segments; retry farther from obstacles if needed.
 %   - Return all attempts and the final graph used by route search.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order. Unused inputs
-%       are accepted to keep stage signatures consistent.
+%   - limits: workspace bounds.
 %   - proposal (scalar proposal-geometry struct)
 %       Spatial shape, endpoints, and reusable boundary edges.
-%**************************************************************************
+%
 % OUTPUTS
 %   - visibilityGraph (scalar struct)
-%       Final nodes and costs, all offset attempts, and the legacy graph
-%       record consumed by existing search diagnostics.
-%**************************************************************************
+%       Final nodes and costs, all offset attempts, and the graph
+%       record used by search diagnostics.
+%
 % UNITS
 %   - Positions, graph costs, bounds, and offsets are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Create The Offset Schedule Inputs
 
@@ -51,7 +49,6 @@ offsetRetryCount = 0;
 anyExhaustiveUsed = false;
 anyExhaustiveFallbackUsed = false;
 while true
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
     attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
         shape, start_deg, goal_deg, limits, candidateOffset_deg, ...
         offsetRetryCount, workBudget);

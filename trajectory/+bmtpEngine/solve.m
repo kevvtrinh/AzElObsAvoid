@@ -5,16 +5,12 @@ function [candidate, diagnostics] = solve( ...
 %   [candidate, diagnostics] = ...
 %       bmtpEngine.solve( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
-%   - Optimize one topology seed with a composite Bezier trajectory,
-%     third-order time-power cones, and alternating degree-one maximum-margin
-%     separating planes.
-%   - Use degree-eight curves with span allocation selected from the
-%     planner-supplied spatial or timed coverage.
-%   - Accept motion only after direct Bernstein checks, every applicable
-%     span/region plane certificate, and independent public validation.
-%**************************************************************************
+%   Turn one proposed path into a smooth motion that respects motion limits.
+%   Adjust the curve and obstacle-separating boundaries in alternating steps.
+%   Use degree-eight Bezier segments; the planner independently validates the result.
+%
 % INPUTS
 %   - seed (scalar struct)
 %       position_deg is N-by-2; tau strictly increases from zero to one.
@@ -29,17 +25,17 @@ function [candidate, diagnostics] = solve( ...
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds. Derivatives use deg/s,
 %     deg/s^2, and deg/s^3. Polynomial powers use local normalized time.
-%**************************************************************************
+%
 
 %% Section 1: Validate And Create The Exclusion Representation
 

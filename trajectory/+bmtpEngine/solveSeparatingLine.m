@@ -4,11 +4,11 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
 %       controlPoint_deg, vertices_deg, target_deg, reserve_deg, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Solve and directly verify one degree-one maximum-margin separating line
 %     between a Bezier control hull and a convex region.
-%**************************************************************************
+%
 % INPUTS
 %   - controlPoint_deg (N-by-2 numeric array)
 %       One Bezier span's control points.
@@ -18,7 +18,7 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 %       Obstacle-side target and trajectory-side numerical reserve.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - plane (scalar struct)
 %       Line normals, offsets, verified gap, and active state.
@@ -26,10 +26,10 @@ function [plane, exitFlag, output] = solveSeparatingLine( ...
 %       Original coneprog exit flag.
 %   - output (scalar struct, optional output)
 %       Original coneprog diagnostics and measured solver time.
-%**************************************************************************
+%
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Solve The Maximum-Margin Line
 

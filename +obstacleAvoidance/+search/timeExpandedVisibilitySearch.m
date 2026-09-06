@@ -6,11 +6,11 @@ function [route_deg, routeTime_s, record] = ...
 %   [route_deg, routeTime_s, record] = ...
 %       obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, ...
 %       edgeCost_deg, obstacles, initialState, goalState, limits, sampleTimes_s, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Search forward reachability using waits and moving edges at every
 %     supplied planning time.
-%**************************************************************************
+%
 % INPUTS
 %   - nodePosition_deg (N-by-2 numeric matrix)
 %       Nodes with start first and goal second.
@@ -20,16 +20,16 @@ function [route_deg, routeTime_s, record] = ...
 %   - initialState, goalState, limits, options (scalar structs)
 %   - sampleTimes_s (numeric vector)
 %       Candidate times retained exactly as temporal search layers.
-%**************************************************************************
+%
 % OUTPUTS
 %   - route_deg (M-by-2 numeric matrix), routeTime_s (M-by-1 numeric vector)
 %       Selected timed route, or documented empty arrays on exhaustion.
 %   - record (scalar struct)
 %       Search counts, frontier, and best partial ancestry.
-%**************************************************************************
+%
 % UNITS
 %   - Position and edge cost are degrees; time is seconds.
-%**************************************************************************
+%
 %% Section 1: Propagate The Reachability Frontier
 layerTimes_s = unique([initialState.time_s; sampleTimes_s(:); ...
     goalState.time_s]);
@@ -39,9 +39,8 @@ layerCount = numel(layerTimes_s);
 nodeCount = size(nodePosition_deg, 1);
 nodeIsFree = false(layerCount, nodeCount);
 for layerIndex = 1:layerCount
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
     nodeIsFree(layerIndex, :) = ~obstacleAvoidance.obstacles. ...
-        queryObstacleOccupancyAtTime( ...
+        queryPreparedObstacles( ...
         obstacles, nodePosition_deg(:, 1), nodePosition_deg(:, 2), ...
         repmat(layerTimes_s(layerIndex), nodeCount, 1)).';
 end
@@ -80,7 +79,6 @@ spatialCost_deg(1, 1) = 0;
 [waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
 exploredNodes_deg = zeros(0, 2);
 for layerIndex = 1:layerCount - 1
-    obstacleAvoidance.input.throwIfCancellationRequested(options);
     if options.GoalTimeMode == "earliestArrival" && reachable(layerIndex, 2)
         break;
     end
@@ -95,7 +93,6 @@ for layerIndex = 1:layerCount - 1
     for currentNodeIndex = reshape(currentNodeIndices, 1, [])
         expandedCount = expandedCount + 1;
         if mod(expandedCount - 1, 8) == 0
-            obstacleAvoidance.input.throwIfCancellationRequested(options);
         end
         exploredNodes_deg(end + 1, :) = nodePosition_deg(currentNodeIndex, :); %#ok<AGROW>
         if waitIsClear(layerIndex, currentNodeIndex)
@@ -152,7 +149,6 @@ for layerIndex = 1:layerCount - 1
 
     % Keep the first clear entry per wait interval; later entries can be reached by waiting.
     while any(pendingMotion)
-        obstacleAvoidance.input.throwIfCancellationRequested(options);
         queriedTargetLayers = unique( ...
             motionCandidates(pendingMotion, 3));
         for targetLayerIndex = reshape(queriedTargetLayers, 1, [])
@@ -241,7 +237,7 @@ for edgeIndex = 1:edgeCount
     position_deg(sampleIndices, :) = first_deg(edgeIndex, :) + ...
         fraction .* (second_deg(edgeIndex, :) - first_deg(edgeIndex, :));
 end
-occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+occupied = obstacleAvoidance.obstacles.queryPreparedObstacles( ...
     obstacles, position_deg(:, 1), position_deg(:, 2), ...
     repmat(time_s, edgeCount, 1));
 clear = ~any(reshape(occupied, 13, edgeCount), 1).';

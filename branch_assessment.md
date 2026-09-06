@@ -75,6 +75,31 @@ remain unverified because browser policy blocked the local file URL. No MATLAB
 examples were executed and no benchmark rows were added for this UI change.
 
 
+## Local artifact cleanup - 2026-09-05
+
+After pushing 5559751, the user requested folder cleanup and explicitly
+authorized permanent deletion of the reviewed obsolete artifacts. Removed
+1,176 ignored files (1,606,224,037 bytes): old experiment runners, duplicate
+engine snapshots, profiles and superseded run results. Removed the empty docs
+directory. No production code, maintained tests, examples, tracked manuals or
+benchmark history was removed or changed by the filesystem cleanup.
+
+The 38 retained degree-eight verification files now live under
+output/verification/degree8: final cold results, the full-suite comparison and
+summary, focused checks, and both the initial failing and final passing test
+records. Their hashes were verified after moving. All 209 tracked file hashes
+also matched before and after cleanup, including the user-owned modified
+Rogue Examples/failed.mat. That bundle retains SHA256
+E754CF5D4C1ECA3B5B50865DDCFBC9673A64CC252615D6521A062A75B18C9625.
+Output now contains 60 files totaling 22.16 MiB, including 22 tracked manual
+files under output/pdf. Historical output paths below may refer to artifacts
+removed by this authorized cleanup; recorded favorable and unfavorable
+measurements remain in this assessment and benchmark.csv.
+
+No planner rerun was needed for artifact organization and this documentation
+update. The previously recorded 126/126 test result remains the code's latest
+full verification; cleanup does not constitute a new runtime measurement.
+
 ## Adopted degree-eight MATLAB configuration - 2026-09-05
 
 The user ended the solver research and selected uniform degree eight with
@@ -4043,3 +4068,138 @@ Both actual invocations are appended to benchmark.csv. An initial measurement
 runner failed before invoking the example because its path was incorrect; the
 corrected runner produced the recorded result. Unrelated user bundle changes
 remain untouched. Changes are local and have not been pushed.
+
+## 2026-09-05: Remove pre-release timing-mode migration
+
+Removed the balancedArrival migration and warning from resolvePlannerOptions
+at the user's request. Unsupported timing values now raise InvalidGoalTimeMode;
+only earliestArrival and fixedArrival are accepted. Removed compatibility prose
+from the current README. This supersedes the migration policy recorded above.
+
+Saved-scene regressions explicitly set earliestArrival in temporary bundle
+copies, preserving original scene files, geometry, limits, and arrival clocks.
+MATLAB R2024b: 16/16 option, route-economy, and offline-bundle tests pass,
+including rejection of the unsupported mode and both shorter-path cases.
+No maintained examples were executed; benchmark.csv is unchanged.
+
+## 2026-09-05: Inline planner option merging
+
+resolvePlannerOptions now applies overrides directly, so planner defaults,
+merging, unknown-field reporting, and value checks are in one file. The shared
+resolveOptions helper remains for its eight other callers; they do not acquire
+planner-specific defaults or validation. MATLAB R2024b: all seven option tests
+pass, covering default and partial options, empty values, unknown fields, and
+invalid values. No planner algorithms changed or maintained examples ran.
+
+## 2026-09-05: Static examples forced through the dynamic scene flag
+
+Compared all 12 maintained examples with static obstacle scenes, including
+obstacle-free moving-target intercepts and all three geographic regions:
+14 planner scenes. Baseline was 4344795 plus the working edits frozen in
+tmp/static-dynamic-comparison-20260905/source-manifest.json. An isolated copy
+forced scene.isStaticHorizon=false; production source was not modified.
+All 121 source-file hashes matched the snapshot at completion.
+
+MATLAB R2024b, default finite jerk limits, original arrival policies and
+geometry, RNG seed 0, plots off. One warm-up per mode and three interleaved
+timed repetitions produced 112 comparison calls. All completed paired inputs
+matched after excluding the cancellation callback. Timings isolate public
+planner calls; scene construction and the extra independent validator are
+outside those times. Every example invocation had a shared 180-second budget.
+
+All 78 successful timed runs passed independent validation, collision,
+kinematic and applicable continuous polynomial certificate checks. The six
+timed NoPath runs returned expected noValidatedSeed. The forced Philippines
+warm-up exhausted the shared example budget after 129.395 s in its planner;
+its three timed repetitions subsequently succeeded in 98.229-121.865 s.
+This was a budget-limited run, not evidence of physical infeasibility.
+
+Normal -> forced-dynamic planner medians: Philippines 13.437 -> 115.169 s
+(8.57x); Croatia 3.009 -> 13.715 s (4.56x); alternating occlusion 2.862 ->
+11.087 s (3.87x); target exits obstacle 7.746 -> 13.293 s (1.72x).
+The target-exit path increased from 20.685 to 21.940 deg at the same 24 s
+arrival. The static U path increased from 39.384 to 40.103 deg, arriving at
+20.955 instead of 20.850 s. Philippines increased from 23.354 to 23.953 deg,
+arriving at 6.216 instead of 5.796 s. Small timing differences with overlapping
+ranges are not treated as speedups or regressions.
+
+The flag does not force every motion through the timed-cell kernel. Five
+scenes kept shared exact-motion early exits. Successful dynamic seed solves
+used the existing static-projection BMTP path; no timed-cell or waypoint
+fallback attempt was recorded. Additional time-expanded search accounts for
+most of the large geographic overhead. Retain automatic static detection;
+no production adoption or tuning follows this measurement.
+
+Full per-run metrics, ranges, branch provenance and limitations are in
+benchmarks/results/static_dynamic_flag_20260905.md. Appended all 112 comparison
+calls plus one initial successful warm-up to benchmark.csv. That extra warm-up
+preceded a measurement-list initialization error and is excluded from the
+comparison. Applicable certificate flags were corrected from retained
+independent validation records after the logger initially checked optional
+plane/corridor fields. No trajectory checks or tolerances were weakened.
+
+## Static solver naming - 2026-09-05
+
+Renamed the scene flag to obstaclesRemainStatic and the solver choice to
+useStaticSolver / UseStaticSolver. Updated all MATLAB callers and tests;
+classification and solver behavior are unchanged. Three focused MATLAB
+planner-contract tests passed: scene preparation, static detour, and dense
+moving-barrier recovery. No maintained examples were run for this rename.
+
+## Remove planner cancellation callbacks - 2026-09-05
+
+Removed CancellationCheckFcn from planner defaults and deleted all production
+cancellation checkpoints and their helper. Removed the now-unused options
+argument from spatial route-class search and updated its callers. The MATLAB
+and browser sandboxes no longer offer planning Stop/Cancel controls, and the
+HTTP cancellation endpoint and adapter callback arguments are removed. User
+selected Ctrl+C interruption instead of a separate worker. Sandbox-owned
+onCleanup restores MATLAB UI controls after an interrupted planning call.
+Ctrl+C also exits the blocking HTTP server, which must then be restarted.
+
+Verification: 31 distinct MATLAB checks passed across planner options, static
+and moving contract cases, sandbox Run/export, bundle replay, and HTTP tests.
+The initial run passed 30/31; one obsolete assertion still expected Stop and
+passed on focused rerun after correction. All 23 browser tests passed. A
+temporary test-runner initialization error was corrected before test execution.
+Interactive Ctrl+C was not manually exercised. No maintained examples were
+run, so no benchmark rows were added. Historical callback-based measurements
+remain historical; current triage instructions use external process deadlines.
+
+## Lean result and prepared-obstacle workflow — 2026-09-05
+
+The public planner and intercept adapter now support `[result, diagnosis]`.
+The first output retains status, selected/partial route, motion samples, exact
+polynomial, validation evidence, inputs, options, and timing. Search attempts,
+counts, and solver evidence are separate; solver detail tables replace nested
+diagnostic structures. Plotters, examples, both sandboxes, saved bundles,
+benchmark capture, and documentation consumers use the new interface.
+
+Internal stages take only used inputs. Route guesses are created once after
+optional route search. Original obstacle histories are prepared at the public
+boundary, then reused by internal geometry and validation functions. Public
+queries and validation still detect changed caller data before using caches.
+Derived static projections are prepared when constructed. No geometry,
+collision tolerance, search budget, or motion law was weakened.
+
+Renamed misleading preparation/proposal/solver-goal functions, simplified
+descriptions, and removed duplicate scene summaries, unused internal result
+copies, and retired zero-only solver counters. The README explains the planning
+sequence and common terms. Existing user changes were retained; nothing was
+committed or pushed.
+
+Four deterministic before/after cases had exactly equal retained motion and
+independent-validation fields apart from elapsed timings. Preparation calls
+dropped from 3/5575/961/39 to one per plan for direct/static-detour/moving-wait/
+no-path cases. Two-repeat timings are preliminary; no general speedup is claimed.
+See benchmarks/results/lean_workflow_20260905.md for measurements and limits.
+
+Verification: 142 distinct MATLAB tests passed across the inventory and focused
+reruns; all 24 Node browser tests passed. All 18 maintained examples completed:
+17 independently valid motions and the intended no-path failure. Actual runs
+and metrics were appended to benchmark.csv, including an opening-example helper
+error before its diagnosis argument was fixed. Stale architecture assertions,
+two missing test-fixture diagnosis outputs, and reviewed example hashes were
+updated without changing the protected physical inputs or hash-guard scope.
+Hidden graphics and sandbox tests passed. Browser interaction was checked by
+executing page functions in Node; PDFs were not regenerated.

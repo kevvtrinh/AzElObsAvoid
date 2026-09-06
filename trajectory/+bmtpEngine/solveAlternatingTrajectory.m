@@ -6,26 +6,26 @@ function [result, diagnostics] = solveAlternatingTrajectory( ...
 %   [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
 %       request, warmStart, diagnostics, obstacleTarget_deg, ...
 %       roundoffReserve_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Alternate trajectory and separating-line solves until a sampled-clear
 %     motion is retained or the bounded iteration fails.
-%**************************************************************************
+%
 % INPUTS
 %   - request, warmStart, diagnostics (scalar structs)
 %       Checked engine request, feasible starting curve, and diagnostics.
 %   - obstacleTarget_deg, roundoffReserve_deg (finite scalars)
 %       Required obstacle-side target and numerical reserve in degrees.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Best sampled-clear controls, timing, planes, tags, and failure reason.
 %   - diagnostics (scalar struct)
 %       Updated iteration, solver, overlap, and separating-line evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position and clearance are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Initialize The Alternating State
 

@@ -5,16 +5,16 @@ function [coordinateScale_deg, geometryTolerance_deg, ...
 %   coordinateScale_deg = bmtpEngine.createCoordinateTolerances(values_deg)
 %   [coordinateScale_deg, geometryTolerance_deg, roundoffReserve_deg] = ...
 %       bmtpEngine.createCoordinateTolerances(values_deg, ...)
-%**************************************************************************
+%
 % PURPOSE
 %   - Derive one coordinate scale and the shared geometric tolerances used by
 %     motion construction and authoritative trajectory verification.
-%**************************************************************************
+%
 % INPUTS
 %   - values_deg (numeric arrays or cells of numeric arrays)
 %       Any number of coordinate collections. Nonfinite entries are ignored,
 %       and empty collections contribute no scale.
-%**************************************************************************
+%
 % OUTPUTS
 %   - coordinateScale_deg (finite numeric scalar)
 %       Maximum absolute finite coordinate, with a lower bound of one degree.
@@ -24,10 +24,10 @@ function [coordinateScale_deg, geometryTolerance_deg, ...
 %       Conservative reserve, 2^20 times eps times coordinateScale_deg. This
 %       matches the authoritative verifier and is never smaller than the
 %       alternative 2^20 times eps(coordinateScale_deg) for scale at least one.
-%**************************************************************************
+%
 % UNITS
 %   - Inputs, scale, tolerances, and reserve are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Accumulate The Finite Coordinate Scale
 

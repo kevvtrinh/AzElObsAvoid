@@ -3,10 +3,10 @@ function options = resolvePlannerOptions(optionOverrides)
 % SYNTAX
 %   options = obstacleAvoidance.input.resolvePlannerOptions()
 %   options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Resolve and validate obstacle-planner search and motion options.
-%**************************************************************************
+%
 % INPUTS
 %   optionOverrides (scalar struct, optional)
 %     Omitted/empty fields use defaults. Unknown fields warn once and are ignored.
@@ -31,14 +31,14 @@ function options = resolvePlannerOptions(optionOverrides)
 %   Fallback:
 %     fail                   Report unsupported timed routes.
 %     ruckigStopAtWaypoints   Allow stop-at-waypoint fallback for at most 2 segments.
-%**************************************************************************
+%
 % OUTPUTS
 %   - options (scalar struct)
 %       Fully populated, normalized, and validated planner options.
-%**************************************************************************
+%
 % UNITS
 %   - Time fields use seconds and angular clearance fields use degrees.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Defaults
 
@@ -52,8 +52,7 @@ defaults = struct( ...
     "MaximumWaitRefinementIterations", 16, ...
     "ArrivalTimeTolerance_s", 1e-3, "ConstraintTolerance", 1e-7, ...
     "CollisionClearanceTolerance_deg", 1e-7, ...
-    "CollisionMinimumTimeStep_s", 0.00025, ...
-    "CancellationCheckFcn", []);
+    "CollisionMinimumTimeStep_s", 0.00025);
 if nargin == 0 || isempty(optionOverrides)
     options = defaults;
     return;
@@ -71,16 +70,16 @@ for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
             fieldName, replacementName);
     end
 end
-% Migrate old saved timing modes without offering them as a choice.
-if isfield(optionOverrides, "GoalTimeMode") && ...
-        (isequal(optionOverrides.GoalTimeMode, "balancedArrival") || ...
-        isequal(optionOverrides.GoalTimeMode, 'balancedArrival'))
-    warning("planTrajectory:RetiredGoalTimeMode", ...
-        "balancedArrival was removed; using earliestArrival with path-length tie-breaking.");
-    optionOverrides.GoalTimeMode = "earliestArrival";
+% Apply known, nonempty overrides.
+options = defaults;
+defaultNames = string(fieldnames(defaults));
+overrideNames = string(fieldnames(optionOverrides));
+unknownNames = setdiff(overrideNames, defaultNames, "stable");
+for fieldName = reshape(intersect(overrideNames, defaultNames, "stable"), 1, [])
+    if ~isempty(optionOverrides.(fieldName))
+        options.(fieldName) = optionOverrides.(fieldName);
+    end
 end
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
-    defaults, optionOverrides);
 if ~isempty(unknownNames)
     warning("planTrajectory:UnknownOptions", ...
         "Ignoring unknown option fields: %s. No behavior changed.", ...
@@ -110,12 +109,6 @@ end
 options.AllowAzimuthWrapping = obstacleAvoidance.input.normalizeLogicalScalar( ...
     options.AllowAzimuthWrapping, "AllowAzimuthWrapping", ...
     "planTrajectory:InvalidLogicalOption");
-if ~isempty(options.CancellationCheckFcn) && ...
-        ~(isa(options.CancellationCheckFcn, "function_handle") && ...
-        isscalar(options.CancellationCheckFcn))
-    error("planTrajectory:InvalidCancellationCheckFcn", ...
-        "CancellationCheckFcn must be empty or a scalar function handle.");
-end
 
 validateattributes(options.SampleTime_s, {'numeric'}, ...
     {'real', 'finite', 'scalar', 'positive'});

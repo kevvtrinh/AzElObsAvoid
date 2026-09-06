@@ -2,21 +2,21 @@ function validation = validateResult(result)
 %% Section 0: Header & Readme
 % SYNTAX
 %   validation = ruckigEngine.internal.validateResult(result)
-%**************************************************************************
+%
 % PURPOSE
 %   - Independently validate a Ruckig result against its resolved request.
-%**************************************************************************
+%
 % INPUTS
 %   - result (scalar Ruckig trajectory result)
 %       Must contain histories, polynomial, normalized inputs, and options.
-%**************************************************************************
+%
 % OUTPUTS
 %   - validation (scalar struct)
 %       Endpoint, history, continuous-constraint, and tolerance evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Values retain the caller's consistent coordinate and time units.
-%**************************************************************************
+%
 
 %% Section 1: Validate Histories And Endpoints
 

@@ -1,14 +1,12 @@
 function [response, reproducedBundle] = replayDiagnosisBundle( ...
-        bundleFilePath, resultFilePath, cancellationCheckFcn)
+        bundleFilePath, resultFilePath)
 %% Section 0: Header & Readme
 % SYNTAX
 %   response = offlineSandbox.replayDiagnosisBundle( ...
 %       bundleFilePath, resultFilePath)
-%   response = offlineSandbox.replayDiagnosisBundle( ...
-%       bundleFilePath, resultFilePath, cancellationCheckFcn)
 %   [response, reproducedBundle] = ...
 %       offlineSandbox.replayDiagnosisBundle( ...
-%       bundleFilePath, resultFilePath, cancellationCheckFcn)
+%       bundleFilePath, resultFilePath)
 %**************************************************************************
 % PURPOSE
 %   - Recreate and run the canonical planner request stored in one diagnosis
@@ -20,9 +18,6 @@ function [response, reproducedBundle] = replayDiagnosisBundle( ...
 %       obstacleAvoidanceSandboxDiagnosis-v2 format.
 %   - resultFilePath (nonempty scalar text)
 %       Destination for the browser-oriented offlineSandboxResult/v1 JSON.
-%   - cancellationCheckFcn (scalar function handle, optional; default [])
-%       Trusted MATLAB-only cooperative stop check. Bundle data cannot
-%       provide or replace this callback.
 %**************************************************************************
 % OUTPUTS
 %   - response (scalar struct)
@@ -37,9 +32,6 @@ function [response, reproducedBundle] = replayDiagnosisBundle( ...
 
 %% Section 1: Load & Validate The Diagnosis Bundle
 
-if nargin < 3
-    cancellationCheckFcn = [];
-end
 bundleFilePath = normalizeInputPath(bundleFilePath);
 if ~isfile(bundleFilePath)
     error("replayDiagnosisBundle:BundleFileNotFound", ...
@@ -84,9 +76,6 @@ end
 %% Section 2: Recreate The Canonical Browser Request
 
 plannerOptions = removeFunctionHandles(diagnosisBundle.PlannerOptions);
-if isfield(plannerOptions, "CancellationCheckFcn")
-    plannerOptions = rmfield(plannerOptions, "CancellationCheckFcn");
-end
 request = struct( ...
     "schemaVersion", "offlineSandboxRequest/v1", ...
     "requestId", "bundle-replay-" + string(java.util.UUID.randomUUID()), ...
@@ -103,7 +92,7 @@ writeJsonFile(requestFilePath, request);
 %% Section 3: Run Through The Maintained Adapter
 
 [response, reproducedBundle] = offlineSandbox.runPlanningRequest( ...
-    requestFilePath, resultFilePath, cancellationCheckFcn);
+    requestFilePath, resultFilePath);
 clear requestCleanup;
 
 end

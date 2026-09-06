@@ -14,12 +14,12 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       canonicalObstacles, safetyMargin_deg)
 %   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
 %       canonicalObstacles, safetyMargin_deg, constructionOptions)
-%**************************************************************************
+%
 % PURPOSE
 %   - Own canonical obstacle construction and normalization.
 %   - Rebuild protected histories from retained original geometry so an
 %     absolute safety margin is applied exactly once.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacleInput (scalar text or canonical obstacle container)
 %   - varargin
@@ -30,15 +30,15 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       Paired nonfinite rows separate rings. Ring orientation and first
 %       vertex are representation details. The status field is metadata and
 %       does not deactivate physical geometry.
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacleData (canonical scalar or column struct array)
 %       Original and protected histories, margin, status, and stable fields.
-%**************************************************************************
+%
 % UNITS
 %   - Boundary coordinates and safety margins are degrees; time is seconds.
 %   - See obstacle_history_contract.md for between-sample semantics.
-%**************************************************************************
+%
 
 %% Section 1: Select Construction Or Canonical Rebuild
 

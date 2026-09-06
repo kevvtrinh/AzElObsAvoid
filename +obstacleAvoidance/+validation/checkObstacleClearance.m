@@ -10,12 +10,12 @@ function [collisionFree, collisionResolved, seedCorridorCertified, ...
 %       collisionCheckCount, unresolvedIntervalCount] = ...
 %       obstacleAvoidance.validation.checkObstacleClearance( ...
 %       trajectory, obstacles, limits, options, canCheckCollision)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check a complete polynomial motion against protected obstacle histories.
 %   - Prefer independently replayed certificates, then resolve ambiguity with
 %     conservative adaptive curve-obstacle checks that fail closed.
-%**************************************************************************
+%
 % INPUTS
 %   - trajectory (scalar motion struct)
 %       Complete sampled and polynomial motion plus optional certificates.
@@ -27,7 +27,7 @@ function [collisionFree, collisionResolved, seedCorridorCertified, ...
 %       Collision clearance and minimum-time-step controls.
 %   - canCheckCollision (scalar logical)
 %       True only when histories and polynomial bounds are structurally valid.
-%**************************************************************************
+%
 % OUTPUTS
 %   - collisionFree, collisionResolved (scalar logicals)
 %       Complete collision result and whether every interval was resolved.
@@ -37,10 +37,10 @@ function [collisionFree, collisionResolved, seedCorridorCertified, ...
 %       Certified conservative clearance, exact checked clearance, or NaN.
 %   - collisionCheckCount, unresolvedIntervalCount (nonnegative integers)
 %       Exact polygon queries and intervals that reached the resolution floor.
-%**************************************************************************
+%
 % UNITS
 %   - Geometry and clearance are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Check Complete Separation Evidence
 
@@ -238,7 +238,7 @@ for obstacleIndex = 1:numel(obstacles)
             0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
         expectedVertices_deg = zeros(0, 2);
         for queryIndex = 1:numel(queryTime_s)
-            shape = obstacleAvoidance.obstacles.shapeAtTime( ...
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
                 obstacle, queryTime_s(queryIndex));
             vertices_deg = double(shape.Vertices);
             expectedVertices_deg = [expectedVertices_deg; ...
@@ -544,7 +544,7 @@ for segmentIndex = 1:polynomial.SegmentCount
                     broadClearance_deg);
                 continue;
             end
-            shape = obstacleAvoidance.obstacles.shapeAtTime( ...
+            shape = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
                 obstacles(obstacleIndex), splitTimes_s(splitIndex));
             clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( ...
                 shape, splitPoints_deg(splitIndex, :));
@@ -576,7 +576,7 @@ for segmentIndex = 1:polynomial.SegmentCount
                     broadClearance_deg);
                 continue;
             end
-            [shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime( ...
+            [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
                 obstacles(obstacleIndex), intervalMid_s);
             clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance( ...
                 shape, point_deg);

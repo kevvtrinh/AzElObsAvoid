@@ -6,16 +6,16 @@ function [positionPower_deg, velocityPower_deg_s, ...
 %   [positionPower_deg, velocityPower_deg_s, accelerationPower_deg_s2] = ...
 %       bmtpEngine.createConstantJerkPowerCoefficients( ...
 %       position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3, step_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create normalized-segment power coefficients for one constant-jerk span.
-%**************************************************************************
+%
 % INPUTS
 %   - position_deg, velocity_deg_s, acceleration_deg_s2, jerk_deg_s3
 %       Matching 1-by-D state rows at the start of the span.
 %   - step_s (positive finite scalar)
 %       Span duration used to normalize local time to [0, 1].
-%**************************************************************************
+%
 % OUTPUTS
 %   - positionPower_deg (1-by-D-by-4 numeric array)
 %       Ascending local-time position coefficients.
@@ -23,11 +23,11 @@ function [positionPower_deg, velocityPower_deg_s, ...
 %       Ascending local-time velocity coefficients.
 %   - accelerationPower_deg_s2 (1-by-D-by-2 numeric array)
 %       Ascending local-time acceleration coefficients.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees, time is seconds, and derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Create The Normalized Constant-Jerk Coefficients
 

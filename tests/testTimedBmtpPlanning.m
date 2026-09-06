@@ -26,19 +26,20 @@ function setupOnce(testCase)
 repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 [obstacles, initialState, goalState, limits, options] = createScenario();
-result = obstacleAvoidance.planTrajectory( ...
+[result, resultDiagnosis] = obstacleAvoidance.planTrajectory( ...
     obstacles, initialState, goalState, limits, options);
 testCase.TestData.Result = result;
+testCase.TestData.ResultDiagnosis = resultDiagnosis;
 testCase.TestData.Validation = obstacleAvoidance.validateTrajectory(result);
 % The public portfolio can accept a static projection before timed BMTP.
 % Exercise the timed owner explicitly so its coverage contract remains tested.
-timedSeedIndex = find(string({result.Seeds.Source}) == ...
+timedSeedIndex = find(string({resultDiagnosis.Routes.Source}) == ...
     "timeExpandedVisibilityGraph", 1, "first");
 assertNotEmpty(testCase, timedSeedIndex);
 inputs = result.Inputs;
 [timedCandidate, timedValidation, timedDiagnostics] = ...
     obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
-    result.Seeds(timedSeedIndex), inputs.obstacles, ...
+    resultDiagnosis.Routes(timedSeedIndex), obstacleAvoidance.obstacles.prepareObstacles(inputs.obstacles), ...
     inputs.initialState, inputs.goalState, inputs.limits, result.Options, ...
     obstacleAvoidance.planner.stageTiming());
 testCase.TestData.TimedCandidate = timedCandidate;
@@ -49,6 +50,7 @@ end
 function testMovingCircleAndStaticUSucceeds(testCase)
 % Require full dynamic collision and kinematic validation.
 result = testCase.TestData.Result;
+resultDiagnosis = testCase.TestData.ResultDiagnosis;
 validation = testCase.TestData.Validation;
 verifyTrue(testCase, result.Success, result.Message);
 verifyTrue(testCase, validation.Passed, validation.Message);
@@ -56,14 +58,15 @@ verifyTrue(testCase, validation.CollisionFree);
 verifyTrue(testCase, validation.VelocityWithinLimits);
 verifyTrue(testCase, validation.AccelerationWithinLimits);
 verifyTrue(testCase, validation.JerkWithinLimits);
-verifyEqual(testCase, result.Seeds(result.SelectedSeedIndex).Source, ...
+verifyEqual(testCase, resultDiagnosis.Routes(resultDiagnosis.SelectedAttemptIndex).Source, ...
     "timeExpandedVisibilityGraph");
 end
 
 function testInteriorWaypointsAreNotForcedToRest(testCase)
 % Check the smooth polynomial state at every interior timed-seed knot.
 result = testCase.TestData.Result;
-seed = result.Seeds(result.SelectedSeedIndex);
+resultDiagnosis = testCase.TestData.ResultDiagnosis;
+seed = resultDiagnosis.Routes(resultDiagnosis.SelectedAttemptIndex);
 interiorTime_s = result.time_s(1) + seed.tau(2:end - 1) * ...
     (result.time_s(end) - result.time_s(1));
 [~, ~, velocity_deg_s] = bmtpEngine.evaluatePolynomial( ...
@@ -87,6 +90,7 @@ end
 function testTimedCellsUseFullSearchLayerBudget(testCase)
 % Use one full-resolution clock instead of a coarse/fine solve portfolio.
 result = testCase.TestData.Result;
+resultDiagnosis = testCase.TestData.ResultDiagnosis;
 diagnostics = testCase.TestData.TimedDiagnostics;
 maximumTimedSegmentCount = result.Options.MaximumTimeLayerCount - 1;
 verifyFalse(testCase, diagnostics.SegmentCountFallbackAttempted);

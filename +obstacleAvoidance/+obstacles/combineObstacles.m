@@ -6,22 +6,22 @@ function obstacleField = combineObstacles(varargin)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacle1, ...)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleArray)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(nestedCells)
-%**************************************************************************
+%
 % PURPOSE
 %   - Flatten and validate canonical obstacle inputs in caller order.
 %   - Return a field-preserving empty array for obstacle-free planning.
-%**************************************************************************
+%
 % INPUTS
 %   - varargin (struct arrays, nested cell arrays, or empty numeric input)
 %       Every nonempty leaf must be a canonical obstacle record.
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacleField (column struct array)
 %       Independently normalized obstacle records in caller order.
-%**************************************************************************
+%
 % UNITS
 %   - Canonical az_deg and el_deg fields are degrees; time_s is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Flatten Nested Inputs
 

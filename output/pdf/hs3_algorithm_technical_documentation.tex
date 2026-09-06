@@ -757,7 +757,7 @@ to \src{+obstacleAvoidance/+obstacles/createObstacle.m}{393-565}.
 
 \subsection{Time interpolation and topology changes}
 
-After construction, \file{prepareDynamic.m} caches shapes, bounds, interval
+After construction, \file{prepareObstacles.m} caches shapes, bounds, interval
 data, and vertex speed bounds. When adjacent slices have equal vertex count and
 matching finite/NaN masks, each vertex is interpolated linearly:
 
@@ -1378,7 +1378,7 @@ whether obstacle geometry or activation span changes over the requested plan.
 Search uses this result to decide whether a time-expanded topology proposal is
 needed.}
 
-\scriptentry{+obstacleAvoidance/+obstacles/prepareDynamic.m}{Precomputes sample
+\scriptentry{+obstacleAvoidance/+obstacles/prepareObstacles.m}{Precomputes sample
 shapes, history bounds, interval unions, interpolation deltas, topology flags,
 and vertex speed bounds. Matching topology is interpolated vertexwise;
 topology-changing intervals use a conservative stationary union.}
@@ -1819,7 +1819,7 @@ What enters the public planner? & \file{planTrajectory.m},
 \file{normalizePlannerRequest.m}, \file{resolveHs3Options.m} \\
 Where is protection applied? & \file{createObstacle.m}; original and protected
 histories are retained separately. \\
-How is dynamic geometry evaluated? & \file{prepareDynamic.m},
+How is dynamic geometry evaluated? & \file{prepareObstacles.m},
 \file{shapeAtTime.m}, \file{queryObstacleOccupancyAtTime.m} \\
 How is route topology proposed? & \file{createRouteCandidates.m},
 \file{timeExpandedVisibilitySearch.m}, \file{denseSweptEnvelope.m} \\

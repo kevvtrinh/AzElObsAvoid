@@ -8,11 +8,11 @@ function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.solveTrajectoryStep( ...
 %       segmentCount, degree, start_deg, goal_deg, limits, planes, ...
 %       reserve_deg, maximumMotionDuration_s, goalTimeMode, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
 %     policy, and derivative limits.
-%**************************************************************************
+%
 % INPUTS
 %   - segmentCount, degree (positive integer scalars)
 %       Composite Bezier representation size.
@@ -30,7 +30,7 @@ function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %       earliestArrival or fixedArrival.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - controlPoint_deg (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
@@ -38,10 +38,10 @@ function [controlPoint_deg, segmentTime_s, exitFlag, output] = ...
 %       Common segment time, or NaN on expected solve failure.
 %   - exitFlag (numeric scalar), output (solver record)
 %       Original coneprog status and measured solver time.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create Decision Bounds And Continuity Rows
 

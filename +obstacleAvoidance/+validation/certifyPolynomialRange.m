@@ -4,12 +4,12 @@ function within = certifyPolynomialRange( ...
 % SYNTAX
 %   within = obstacleAvoidance.validation.certifyPolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
-%**************************************************************************
+%
 % PURPOSE
 %   - Certify a scalar polynomial range on normalized time [0, 1].
 %   - Resolve easy intervals with Bernstein hulls before using stationary
 %     points for cases that remain ambiguous after subdivision.
-%**************************************************************************
+%
 % INPUTS
 %   - powerCoefficient (finite real numeric vector)
 %       Ascending-power coefficients supplied by the validated polynomial
@@ -18,15 +18,15 @@ function within = certifyPolynomialRange( ...
 %       Inclusive range limits with lowerBound no greater than upperBound.
 %   - tolerance (nonnegative finite real numeric scalar)
 %       Absolute allowance applied once to both limits.
-%**************************************************************************
+%
 % OUTPUTS
 %   - within (scalar logical)
 %       True only when the complete polynomial is within the tolerated range.
-%**************************************************************************
+%
 % UNITS
 %   - Coefficients, bounds, and tolerance share the caller's physical unit.
 %     Polynomial time is dimensionless normalized time on [0, 1].
-%**************************************************************************
+%
 
 %% Section 1: Try Certified Bernstein Range Tests
 

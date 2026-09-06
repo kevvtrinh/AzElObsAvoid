@@ -517,17 +517,12 @@
 
     .live-actions {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr);
       gap: 0.55rem;
     }
 
     .live-actions .workflow-button {
       min-width: 0;
-    }
-
-    .live-actions .cancel-button {
-      width: auto;
-      color: #b8374c;
     }
 
     .live-actions #downloadBundleButton {
@@ -1283,9 +1278,6 @@
             <div class="live-actions">
               <button id="planButton" class="workflow-button primary"
                 type="button">Plan in MATLAB</button>
-              <button id="cancelPlanButton"
-                class="workflow-button cancel-button" type="button"
-                disabled>Cancel</button>
               <button id="downloadBundleButton" class="workflow-button"
                 type="button" disabled>Save diagnosis bundle</button>
               <label id="bundleFileLabel"
@@ -1590,7 +1582,7 @@
     <section id="diagnosticsPanel" class="panel diagnostics-panel" hidden>
       <div class="diagnostics-header">
         <div>
-          <div class="eyebrow">SearchDiagnostics</div>
+          <div class="eyebrow">Diagnosis</div>
           <h2>Search evidence &amp; stage timing</h2>
         </div>
         <div class="overlay-controls">
@@ -1728,8 +1720,6 @@
         serverOrigin: "",
         sandboxFolder: "",
         isPlanning: false,
-        activeRequestId: "",
-        cancellationRequested: false,
         probeInProgress: false
       };
 
@@ -1790,8 +1780,6 @@
           state.importedSceneIsReadOnly;
         setRequestEditingDisabled(editingDisabled);
         element("planButton").disabled = !isLive || editingDisabled;
-        element("cancelPlanButton").disabled = !isLive ||
-          !state.isPlanning || state.cancellationRequested;
         element("downloadBundleButton").disabled = !isLive ||
           state.isPlanning || !state.bundleRequestId;
         const bundleInputDisabled = !isLive || state.isPlanning;
@@ -1984,6 +1972,7 @@
         }
         stopPlayback();
         state.result = null;
+        state.diagnosis = null;
         state.validation = null;
         state.responseObstacles = [];
         renderResult();
@@ -2753,14 +2742,11 @@
 
         clearObstaclePreview();
         state.isPlanning = true;
-        state.activeRequestId = request.requestId;
-        state.cancellationRequested = false;
         updatePlanningControls();
         setStatus(
-          "Planning in MATLAB. Cancel stops at the next safe planner checkpoint.",
+          "Planning in MATLAB. Press Ctrl+C in MATLAB to interrupt.",
           "info"
         );
-        let probeAfterCompletion = false;
         try {
           const payload = await requestJson(`${state.serverOrigin}/plan`, {
             method: "POST",
@@ -2773,10 +2759,7 @@
           state.bundleRequestId = payload.requestId;
           updatePlanningControls();
         } catch (error) {
-          if (error.identifier === "planTrajectory:UserCancelled") {
-            probeAfterCompletion = true;
-            setStatus("Planning canceled at a safe checkpoint.", "warning");
-          } else if (error.isTransportError) {
+          if (error.isTransportError) {
             setConnectionMode(
               "offline",
               "The MATLAB server connection was lost during planning.",
@@ -2788,12 +2771,7 @@
           }
         } finally {
           state.isPlanning = false;
-          state.activeRequestId = "";
-          state.cancellationRequested = false;
           updatePlanningControls();
-        }
-        if (probeAfterCompletion) {
-          await probeServer(false);
         }
       }
 
@@ -2816,14 +2794,11 @@
         }
 
         state.isPlanning = true;
-        state.activeRequestId = "bundle-replay";
-        state.cancellationRequested = false;
         state.lastRequestId = "";
         state.bundleRequestId = "";
         updatePlanningControls();
         setStatus(`Running ${file.name} through the current MATLAB planner.`,
           "info");
-        let probeAfterCompletion = false;
         try {
           const payload = await requestJson(
             `${state.serverOrigin}/run-bundle`, {
@@ -2844,10 +2819,7 @@
             "success"
           );
         } catch (error) {
-          if (error.identifier === "planTrajectory:UserCancelled") {
-            probeAfterCompletion = true;
-            setStatus("Bundle replay canceled at a safe checkpoint.", "warning");
-          } else if (error.isTransportError) {
+          if (error.isTransportError) {
             setConnectionMode(
               "offline",
               "The MATLAB server connection was lost during bundle replay.",
@@ -2859,58 +2831,8 @@
           }
         } finally {
           state.isPlanning = false;
-          state.activeRequestId = "";
-          state.cancellationRequested = false;
           element("bundleFileInput").value = "";
           updatePlanningControls();
-        }
-        if (probeAfterCompletion) {
-          await probeServer(false);
-        }
-      }
-
-      async function cancelLivePlan() {
-        if (!state.isPlanning || state.cancellationRequested ||
-            state.connectionMode !== "live") {
-          return;
-        }
-        const requestId = state.activeRequestId;
-        state.cancellationRequested = true;
-        updatePlanningControls();
-        setStatus(
-          "Cancellation requested. Waiting for a safe planner checkpoint.",
-          "warning"
-        );
-        try {
-          await requestJson(`${state.serverOrigin}/cancel`, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=UTF-8" },
-            body: JSON.stringify({ requestId }),
-            cache: "no-store",
-            credentials: "omit"
-          });
-          if (state.isPlanning && state.activeRequestId === requestId) {
-            setStatus(
-              "MATLAB accepted cancellation and will stop at a safe checkpoint.",
-              "warning"
-            );
-          }
-        } catch (error) {
-          if (!state.isPlanning || state.activeRequestId !== requestId) {
-            return;
-          }
-          if (error.isTransportError) {
-            setConnectionMode(
-              "offline",
-              "The MATLAB server connection was lost during cancellation.",
-              true
-            );
-          } else {
-            state.cancellationRequested = false;
-            updatePlanningControls();
-            setStatus(error.message || "Cancellation was not accepted.",
-              "error");
-          }
         }
       }
 
@@ -3073,6 +2995,7 @@
         clearObstaclePreview();
         stopPlayback();
         state.result = response.result;
+        state.diagnosis = response.diagnosis || {};
         state.validation = response.validation;
         state.showSearchOverlay = false;
         state.showSelectedSeed = false;
@@ -3196,21 +3119,21 @@
       }
 
       function renderDiagnostics() {
-        const diagnostics = state.result.SearchDiagnostics || {};
-        const grid = diagnostics.Grid || {};
+        const diagnostics = state.diagnosis || {};
+        const grid = diagnostics.Search || {};
         element("attemptedSeedCount").textContent =
-          finiteNumber(diagnostics.AttemptedSeedCount) ?
-            String(diagnostics.AttemptedSeedCount) : "—";
+          finiteNumber(diagnostics.AttemptedCount) ?
+            String(diagnostics.AttemptedCount) : "—";
         element("validatedCandidateCount").textContent =
-          finiteNumber(diagnostics.ValidatedCandidateCount) ?
-            String(diagnostics.ValidatedCandidateCount) : "—";
+          finiteNumber(diagnostics.ValidatedCount) ?
+            String(diagnostics.ValidatedCount) : "—";
         element("expandedStateCount").textContent =
           finiteNumber(grid.ExpandedCount) ? String(grid.ExpandedCount) : "—";
         element("rejectedTransitionCount").textContent =
           finiteNumber(grid.RejectedTransitionCount) ?
             String(grid.RejectedTransitionCount) : "—";
-        renderStageTiming(diagnostics.StageTiming || {});
-        renderSeedSummaries(diagnostics.SeedSummaries);
+        renderStageTiming(diagnostics.Timing || {});
+        renderSeedSummaries(diagnostics.Attempts);
         updateOverlayControls(grid);
       }
 
@@ -3326,8 +3249,8 @@
           matrix(grid.RejectedEdges_deg, 4).length +
           matrix(grid.ExploredNodes_deg, 2).length +
           matrix(grid.FrontierNodes_deg, 2).length +
-          matrix(grid.BestPartialRoute_deg, 2).length;
-        const seedCount = matrix(state.result.SelectedSeed_deg, 2).length;
+          matrix(state.result.BestPartialRoute_deg, 2).length;
+        const seedCount = matrix(state.result.Route_deg, 2).length;
         const searchToggle = element("searchOverlayToggle");
         const seedToggle = element("selectedSeedToggle");
         const noSearchMessage = "No route search was needed for this request.";
@@ -4055,8 +3978,8 @@
         if (!state.result || !state.showSearchOverlay) {
           return;
         }
-        const diagnostics = state.result.SearchDiagnostics || {};
-        const grid = diagnostics.Grid || {};
+        const diagnostics = state.diagnosis || {};
+        const grid = diagnostics.Search || {};
         matrix(grid.AcceptedEdges_deg, 4).forEach((edge) => {
           if (edge.every(finiteNumber)) {
             strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
@@ -4075,7 +3998,7 @@
           "rgba(106,169,255,0.55)", 2);
         drawDiagnosticNodes(matrix(grid.FrontierNodes_deg, 2),
           "rgba(255,189,105,0.85)", 3);
-        const partial = matrix(grid.BestPartialRoute_deg, 2)
+        const partial = matrix(state.result.BestPartialRoute_deg, 2)
           .filter((point) => point.every(finiteNumber));
         if (partial.length > 1) {
           strokePath(partial, {
@@ -4088,7 +4011,7 @@
         if (!state.result || !state.showSelectedSeed) {
           return;
         }
-        const seed = matrix(state.result.SelectedSeed_deg, 2)
+        const seed = matrix(state.result.Route_deg, 2)
           .filter((point) => point.every(finiteNumber));
         if (seed.length >= 2) {
           wrappedSegments(seed).forEach((segment) => strokePath(segment, {
@@ -5178,6 +5101,7 @@
         state.nextObstacleNumber = 1;
         state.cursor = null;
         state.result = null;
+        state.diagnosis = null;
         state.validation = null;
         state.responseObstacles = [];
         state.lastRequestId = "";
@@ -5320,7 +5244,6 @@
         }
       });
       element("planButton").addEventListener("click", planLive);
-      element("cancelPlanButton").addEventListener("click", cancelLivePlan);
       element("downloadBundleButton").addEventListener(
         "click", downloadLiveBundle);
       element("bundleFileInput").addEventListener("change", (event) => {

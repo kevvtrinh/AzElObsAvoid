@@ -15,10 +15,8 @@ one engine-owned representation.
 
 ## Quick start
 
-Planner stages take `obstacles, initialState, goalState, limits, options`
-explicitly in that order. Stage-specific data follows those inputs; scene,
-graph, and diagnostic structures hold generated data rather than a duplicate
-planning request.
+The public planner takes `obstacles, initialState, goalState, limits, options`
+in that order. Internal functions take only the inputs they use.
 
 Add both production parents. The zero-input call then returns obstacle-planner
 defaults:
@@ -46,9 +44,9 @@ options = struct( ...
     "UnsupportedTimedTopologyPolicy", "fail");
 ```
 
-Planner options select work and display policy; they do not expose internal
-engine constants. Per-seed engine and independent-validation evidence is
-retained in `result.SearchDiagnostics.SeedSummaries`.
+Planner options control planning, while plot options control display.
+`diagnosis.Attempts` summarizes the tried paths; `diagnosis.SolverDetails`
+contains their detailed solver evidence.
 
 `MaximumSeedCount` defaults to `2`. The planner compares at most those first
 two seeds on the normal path. Values from `3` through `5` enable failure-only
@@ -58,15 +56,12 @@ motion. Set the value to `2` to disable all later-seed recovery or `5` to allow
 all three additional attempts.
 
 BMTP is the obstacle-planning method; there is no method-selection option.
-Old saved requests containing `TrajectoryMethod` receive the standard
-unknown-option warning, and that field is ignored.
 Standalone Ruckig utilities and the explicit `ruckigStopAtWaypoints` fallback
 remain available; that fallback is disabled by default.
 
 `GoalTimeMode` defaults to `"earliestArrival"`: prioritize arrival time and
 break ties by shorter travel. Set `"fixedArrival"` to minimize travel at the
-mission horizon. Jerk remains a hard limit. Old saved `balancedArrival`
-requests warn and use earliest arrival; the retired savings-rate field is ignored.
+mission horizon. Jerk remains a hard limit.
 
 For an eligible rest-to-rest request with one coordinate owning the physical
 clock, the planner compares fixed-clock offset splines whose peaks come from
@@ -208,30 +203,74 @@ Earliest interception performs a bounded chronological sequence of
 fixed-arrival trials and refines the first observed feasible bracket.
 Specified-time interception performs one fixed-arrival trial.
 
+## Planning workflow
+
+1. Standardize the request and prepare each obstacle history once.
+2. Try a direct motion and a detour that preserves its duration.
+3. If needed, build route-search geometry and find alternative paths.
+4. Use those paths as initial guesses for the motion solver.
+5. Check the complete motion, select a validated result, and return optional diagnosis.
+
+Internal solvers use prepared obstacles directly. Public geometry queries and
+`validateTrajectory` check and prepare caller-supplied data before using the
+same geometry and validation implementation. Safety margins are applied only
+by obstacle construction, never again during preparation.
+
+Some engineering terms used in the code:
+
+| Term | Meaning |
+| --- | --- |
+| Path / route | Positions to pass through, without a motion schedule. |
+| Trajectory / motion | Position, velocity, acceleration, and jerk over time. |
+| Seed / warm start | An initial guess supplied to the solver. |
+| Corridor | An allowed region around a proposed path. |
+| Visibility graph | Points connected where straight segments clear obstacles. |
+| Route class | A different way around the obstacles. |
+| Certificate | Mathematical evidence for a specific safety or constraint check. |
+| Horizon | The time interval available for planning the motion. |
+
 ## Results and diagnostics
 
-Success and expected failure return the same stable result structure. Important
-fields include:
+The first output contains the motion and everything needed to plot and independently
+validate it. Request the second output when investigating a planning run:
 
-- `Success`, `Message`, and `TerminationReason`;
-- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, and
-  `jerk_deg_s3` on success;
-- `Seeds`, `SeedSummaries`, and `SelectedSeedIndex`;
-- `Validation` and complete input records;
-- `SearchDiagnostics`, including graph and rejection evidence.
+```matlab
+[result, diagnosis] = obstacleAvoidance.planTrajectory( ...
+    obstacles, initialState, goalState, limits, options);
+obstacleAvoidance.plotting.plotTrajectory(result);
+obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
+```
 
-Wall-time accounting is reported under
-`result.SearchDiagnostics.StageTiming`. The topology, seed-corridor
-construction, motion solving, collision checking, final validation, and
-unattributed contributions are exclusive and sum to the independently
-measured total.
+`result` has the same fields on success and expected failure:
 
-Expected no-path, work-limit, and dynamic-infeasibility outcomes return
-`Success=false` with a recognized termination reason and retained diagnostics.
-Invalid input requirements throw errors. Use
-`obstacleAvoidance.validateTrajectory` for independent full-trajectory
-validation and `obstacleAvoidance.plotting.plotTrajectory` to visualize a
-returned motion or preserved failure diagnostics.
+- `Success`, `Message`, `TerminationReason`: planning outcome.
+- `Route_deg`, `BestPartialRoute_deg`: selected path or available failure path.
+- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, `jerk_deg_s3`: motion samples.
+- `Inputs`, `Options`: normalized request, including original and protected obstacles.
+- `Polynomial`, `PlaneCertificate`, `SeedCorridor`, `SeedCorridorBoundary_deg`: exact motion and evidence used by independent validation.
+- `Validation`, `ArrivalTime_s`, `TrajectoryDuration_s`, `ElapsedPlanningTime_s`.
+
+`diagnosis` keeps the investigation data separate:
+
+- `Routes`, `Attempts`, `SelectedAttemptIndex`: tried paths and their outcomes.
+- `Search`, `SearchCoverage`: graph traces, complete counts, and search limitations.
+- `Timing`: exclusive stage times that add up to total planning time.
+- `SolverDetails`: a table with `Attempt`, `Field`, and `Value` columns.
+- `DirectMotion`, `PathRefinement`: field/value tables for the initial motion attempts.
+- `Selection`, attempt counts, and time to the first validated motion.
+
+Detail tables use readable field paths instead of nested structures. For example,
+filter `diagnosis.SolverDetails.Attempt == diagnosis.SelectedAttemptIndex` to inspect
+the chosen attempt. The planner still collects search evidence during planning;
+it assembles the optional detail tables only when the second output is requested.
+
+`planMovingTargetIntercept` supports the same two outputs. Its result adds the
+achieved intercept and terminal policies; its diagnosis adds `InterceptSearch`
+and `InterceptOptions`.
+
+Expected planning failures return `Success=false` and a reason. Invalid inputs
+throw errors. `obstacleAvoidance.validateTrajectory(result)` checks the complete
+motion independently, including between-sample collisions.
 
 ## Engine routing and limitations
 

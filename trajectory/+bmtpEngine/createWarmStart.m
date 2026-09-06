@@ -2,23 +2,23 @@ function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   warmStart = bmtpEngine.createWarmStart(request)
-%**************************************************************************
+%
 % PURPOSE
-%   - Convert a topology seed into the established feasible Bezier warm curve.
+%   - Convert the proposed path into an initial smooth curve for optimization.
 %   - Return route resampling, active obstacle pairs, controls, and duration.
-%**************************************************************************
+%
 % INPUTS
 %   - request (scalar BMTP solve-request struct)
 %       Validated seed, regions, coverage, representation, limits, and horizon.
-%**************************************************************************
+%
 % OUTPUTS
 %   - warmStart (scalar struct)
 %       Route, controls, uniform segment time, active pairs, counts, and
 %       resampling evidence.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and segment time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create The Timed Or Spatial Warm Route
 

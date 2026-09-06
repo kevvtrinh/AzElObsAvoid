@@ -1,27 +1,27 @@
-function result = exampleUSOutlineExtremeVisibility(options)
+function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleUSOutlineExtremeVisibility()
 %   result = exampleUSOutlineExtremeVisibility(options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Plan sequential routes around the dense static outlines of Hawaii,
 %     Croatia, and the Philippines using bounded extreme visibility
 %     candidates and full protected collision geometry.
-%**************************************************************************
+%
 % INPUTS
 %   - options (scalar struct, optional; default struct())
 %       Planner/display overrides plus the finite MaxJerk_deg_s3 limit.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result for the final region.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees, time is seconds, velocity is degrees per second,
 %     acceleration is degrees per second squared, and jerk is degrees per
 %     second cubed.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -69,6 +69,7 @@ limits = struct( ...
 %% Section 4: Run Planner
 
 regionResults = cell(regionCount, 1);
+regionDiagnoses = cell(regionCount, 1);
 
 % Plan each geographic region independently. Use the same physical limits.
 for regionIndex = 1:regionCount
@@ -76,7 +77,7 @@ for regionIndex = 1:regionCount
     initialState = struct( "time_s", 0, "position_deg", scenario.initialPosition_deg);
     goalState = struct( "time_s", missionEndTime_s, "position_deg", scenario.goalPosition_deg);
     regionOptions = options;
-    regionResults{regionIndex} = obstacleAvoidance.planTrajectory( ...
+    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = obstacleAvoidance.planTrajectory( ...
         obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
@@ -89,7 +90,7 @@ for regionIndex = 1:regionCount
     resultForRegion = regionResults{regionIndex};
     exampleValidation = validateExampleResult( ...
         resultForRegion, ...
-        "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true));
+        "static " + lower(regionNames(regionIndex)) + " outline", struct("RequireDirectBlocked", true), regionDiagnoses{regionIndex});
     regionPassed(regionIndex) = exampleValidation.Passed;
     if ~exampleValidation.Passed
         warning("exampleUSOutlineExtremeVisibility:ValidationFailed", ...
@@ -106,11 +107,12 @@ if jerkConfiguration.PlotOutputs
         plotOptions = jerkConfiguration.PlotOptions;
         plotOptions.Title = "Extreme visibility: " + regionNames(regionIndex);
         obstacleAvoidance.plotting.plotTrajectory( ...
-            regionResults{regionIndex}, plotOptions);
+            regionResults{regionIndex}, plotOptions, regionDiagnoses{regionIndex});
     end
 end
 
 result = regionResults{end};
+diagnosis = regionDiagnoses{end};
 if ~all(regionPassed)
     warning("exampleUSOutlineExtremeVisibility:SequenceValidationFailed", ...
         "One or more regional planning results failed independent validation.");

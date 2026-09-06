@@ -4,11 +4,11 @@ function request = createSolveRequest( ...
 % SYNTAX
 %   request = bmtpEngine.createSolveRequest( ...
 %       seed, regions_deg, coverage, initialState, goalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check BMTP inputs and select the established polynomial representation.
 %   - Collect horizon, region, objective, and numerical solver controls once.
-%**************************************************************************
+%
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       Ordered positions and normalized route progress.
@@ -18,16 +18,16 @@ function request = createSolveRequest( ...
 %       Conservative grouping or timed-region applicability evidence.
 %   - initialState, goalState, limits, options (scalar structs)
 %       Dimension-neutral boundary request, limits, and resolved controls.
-%**************************************************************************
+%
 % OUTPUTS
 %   - request (scalar struct)
 %       Validated inputs, representation choice, horizon, region bounds,
 %       objective rate, and numerical solver options.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Check The Engine Inputs
 

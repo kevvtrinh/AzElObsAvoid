@@ -9,12 +9,12 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %       polynomial, time_s, position_deg, velocity_deg_s, ...
 %       acceleration_deg_s2, jerk_deg_s3, initialState, goalState, limits, ...
 %       options, tolerance, rangeCheck)
-%**************************************************************************
+%
 % PURPOSE
 %   - Validate a degree-neutral piecewise polynomial independently.
 %   - Check its time base, derivative chain, knots, endpoints, sampled
 %     histories, and continuous physical bounds.
-%**************************************************************************
+%
 % INPUTS
 %   - polynomial (scalar planner polynomial struct)
 %       Ascending-power position coefficients have degree at least three;
@@ -27,15 +27,15 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory( ...
 %       Absolute state and polynomial consistency tolerance.
 %   - rangeCheck (function handle)
 %       Complete polynomial range certificate for normalized time [0, 1].
-%**************************************************************************
+%
 % OUTPUTS
 %   - bounds, dynamics, checks (scalar structs)
 %       Stable continuous-bound, derivative, format, and history checks.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees. Derivatives use deg/s, deg/s^2, and deg/s^3.
 %     Time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Validate The Polynomial Representation
 

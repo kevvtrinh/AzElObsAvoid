@@ -1,32 +1,31 @@
 function exactMotionSet = solveExactCandidates( ...
-        obstacles, initialState, goalState, limits, options, scene, stageTiming)
+        initialState, goalState, limits, options, scene, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   defaults = obstacleAvoidance.planner.solveExactCandidates()
 %   exactMotionSet = obstacleAvoidance.planner.solveExactCandidates( ...
-%       obstacles, initialState, goalState, limits, options, scene, stageTiming)
-%**************************************************************************
+%       initialState, goalState, limits, options, scene, stageTiming)
+%
 % PURPOSE
 %   - Try exact direct and fixed-clock lateral motions before route search,
 %     and expose whether either passed the full trajectory check.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
+%   - initialState, goalState, limits, options: motion constraints.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacles shared with later graph and validation stages.
 %   - stageTiming (scalar timing struct)
 %       Accumulated planner stage timings before exact motion work.
-%**************************************************************************
+%
 % OUTPUTS
 %   - exactMotionSet (scalar struct)
 %       Direct and excursion candidates, checks, diagnostics, timing, and an
 %       explicit fully validated fast-path record. A zero-input call returns
 %       stable not-attempted diagnostics.
-%**************************************************************************
+%
 % UNITS
 %   - Position and path length are degrees; time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create Stable Attempt Records
 
@@ -48,8 +47,6 @@ end
 preparedObstacles = scene.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
-
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 motionTimer = tic;
 directCandidate = bmtpEngine.createDirectMotion( ...
     initialState, goalState, limits, options);
@@ -60,7 +57,6 @@ stageTiming.MotionSolvingElapsedTime_s = ...
     obstacleAvoidance.planner.checkCandidateMotion( ...
     directCandidate, preparedObstacles, initialState, ...
     goalState, limits, options, stageTiming, "");
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 directAttempt = recordDirectAttempt(directCandidate, directValidation, ...
     directElapsedTime_s, directValidationTime_s);
 exactMotionSet.DirectCandidate = directCandidate;
@@ -80,14 +76,12 @@ exactMotionSet.DirectAttempt.FallbackContinued = true;
 
 % The excursion constructor already validates its motion.
 % Account for that validation separately from construction time.
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 motionTimer = tic;
 [excursionCandidate, excursionDiagnostics] = ...
     obstacleAvoidance.planner.createFixedClockLateralExcursion( ...
     directCandidate, preparedObstacles, initialState, goalState, ...
     limits, options, directValidation);
 excursionElapsedTime_s = toc(motionTimer);
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 stageTiming = accountConstructorValidation( ...
     stageTiming, excursionElapsedTime_s, excursionDiagnostics);
 exactMotionSet.ExcursionCandidate = excursionCandidate;

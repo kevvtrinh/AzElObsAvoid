@@ -1,28 +1,28 @@
-function proposal = createProposalGeometry( ...
-        obstacles, initialState, goalState, limits, options, scene)
+function proposal = createRouteSearchGeometry( ...
+        initialState, goalState, options, scene)
 %% Section 0: Header & Readme
 % SYNTAX
-%   proposal = obstacleAvoidance.search.createProposalGeometry( ...
-%       obstacles, initialState, goalState, limits, options, scene)
-%**************************************************************************
+%   proposal = obstacleAvoidance.search.createRouteSearchGeometry( ...
+%       initialState, goalState, options, scene)
+%
 % PURPOSE
-%   - Create one spatial obstacle representation for route proposals.
+%   - Build a 2-D obstacle outline for finding possible paths.
 %   - Expose sample times, work estimate, geometry choice, shape, and edges.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order.
+%   - initialState, goalState: route endpoints.
+%   - options: coordinate wrapping policy.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacles and physical request horizon.
-%**************************************************************************
+%
 % OUTPUTS
 %   - proposal (scalar struct)
 %       Start, goal, times, work data, selected polyshape, and boundary edges.
 %       This route-search input cannot approve a completed trajectory.
-%**************************************************************************
+%
 % UNITS
 %   - Geometry is degrees, time is seconds, and work is a vertex count.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Endpoints And Sample Times
 
@@ -45,7 +45,6 @@ sampleTimes_s = createObstacleSampleTimes( ...
 % Use the sampled union if the envelope covers an endpoint.
 
 vertexWorkBudget = 10e3;
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 [proposalShape, usedDenseEnvelope, estimatedVertexWork] = ...
     obstacleAvoidance.search.denseSweptEnvelope( ...
     obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
@@ -57,7 +56,7 @@ else
     sampledShapeCount = 0;
     for timeIndex = 1:numel(sampleTimes_s)
         for obstacleIndex = 1:numel(obstacles)
-            part = obstacleAvoidance.obstacles.shapeAtTime( ...
+            part = obstacleAvoidance.obstacles.preparedShapeAtTime( ...
                 obstacles(obstacleIndex), sampleTimes_s(timeIndex));
             if ~isempty(part.Vertices)
                 sampledShapeCount = sampledShapeCount + 1;

@@ -3,16 +3,16 @@ function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(sh
 % SYNTAX
 %   [clearance_deg, nearestPoint_deg, edgeIndex] = ...
 %       obstacleAvoidance.geometry.pointPolygonClearance(shape, point_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Compute signed Euclidean clearance from points to one polyshape.
-%**************************************************************************
+%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Occupied polygon geometry.
 %   - point_deg (N-by-2 finite numeric array)
 %       Query points in [azimuth elevation] order.
-%**************************************************************************
+%
 % OUTPUTS
 %   - clearance_deg (N-by-1 vector)
 %       Positive outside, zero on the boundary, and negative inside.
@@ -20,10 +20,10 @@ function [clearance_deg, nearestPoint_deg, edgeIndex] = pointPolygonClearance(sh
 %       Closest boundary point, or [NaN NaN] for empty geometry.
 %   - edgeIndex (N-by-1 positive integer or zero)
 %       One-based edge index in deterministic boundary traversal order.
-%**************************************************************************
+%
 % UNITS
 %   - Point, clearance, and nearest boundary position are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Validate Inputs
 

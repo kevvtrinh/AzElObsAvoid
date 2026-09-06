@@ -7,11 +7,11 @@ function [candidate, diagnostics] = createDirectWaitMotion( ...
 %       obstacleAvoidance.planner.createDirectWaitMotion( ...
 %       seed, initialState, goalState, limits, options, ...
 %       waitOverride_s, directMotionDuration_s)
-%**************************************************************************
+%
 % PURPOSE
 %   - Realize a timed dwell followed by one exact direct motion.
 %   - Reject unsupported timed multi-waypoint topology with explicit details.
-%**************************************************************************
+%
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       Timed route with positions, normalized times, source, and index.
@@ -25,17 +25,17 @@ function [candidate, diagnostics] = createDirectWaitMotion( ...
 %       Optional refined dwell duration; [] uses the seed timing.
 %   - directMotionDuration_s (empty or nonnegative scalar)
 %       Direct-motion duration paired with a supplied wait override.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar motion struct)
 %       Delayed exact motion or stable failure record.
 %   - diagnostics (scalar struct)
 %       Wait, unsupported-feature, fallback-policy, and timing details.
 %       Direct retiming durations stay NaN when refinement is not entered.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Check The Timed Seed Form
 

@@ -1,24 +1,24 @@
-function result = exampleNoPath(exampleOverrides)
+function [result, diagnosis] = exampleNoPath(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleNoPath()
 %   result = exampleNoPath(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate stable failure and plotted search diagnostics for no path.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner failure result.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -59,7 +59,7 @@ limits = struct( ...
 % The planner must return a failure result. It must not stop the example with an
 % error for this expected planning outcome.
 
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -67,8 +67,8 @@ result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, l
 % help a junior engineer find where and why the search ended.
 
 recognizedReason = result.TerminationReason == "noValidatedSeed";
-diagnosticsPresent = isfield(result.SearchDiagnostics, "Grid") && ...
-    isfield(result.SearchDiagnostics.Grid, "ExpandedCount");
+diagnosticsPresent = isfield(diagnosis, "Search") && ...
+    isfield(diagnosis.Search, "ExpandedCount");
 exampleValidation = struct( ...
     "Passed", ~result.Success && isempty(result.time_s) && ...
     recognizedReason && diagnosticsPresent, ...
@@ -88,7 +88,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

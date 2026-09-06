@@ -4,11 +4,11 @@ function plane = verifySeparatingLine( ...
 % SYNTAX
 %   plane = bmtpEngine.verifySeparatingLine( ...
 %       plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg)
-%**************************************************************************
+%
 % PURPOSE
 %   - Verify obstacle, trajectory, gap, and normal inequalities for one
 %     degree-one separating line using direct Bernstein product bounds.
-%**************************************************************************
+%
 % INPUTS
 %   - plane (scalar separating-line struct)
 %       Candidate normals and offsets.
@@ -16,14 +16,14 @@ function plane = verifySeparatingLine( ...
 %       Bezier control hull and convex obstacle region.
 %   - reserve_deg, target_deg (nonnegative numeric scalars)
 %       Trajectory-side reserve and obstacle-side target.
-%**************************************************************************
+%
 % OUTPUTS
 %   - plane (scalar struct)
 %       Corrected offsets, certified gap, and Verified state.
-%**************************************************************************
+%
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are degrees.
-%**************************************************************************
+%
 
 %% Section 1: Verify Direct Separation Inequalities
 

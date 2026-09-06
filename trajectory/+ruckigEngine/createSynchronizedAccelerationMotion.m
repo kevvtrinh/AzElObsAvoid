@@ -4,25 +4,25 @@ function attempt = createSynchronizedAccelerationMotion( ...
 % SYNTAX
 %   attempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
 %       initialState, terminalState, limits, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create an exact second-order Ruckig position trajectory when
 %     acceleration is the discontinuous control and jerk is unconstrained.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (normalized scalar structs)
 %       Position and velocity boundary states with symmetric velocity and
 %       acceleration bounds. Acceleration endpoint values are not imposed.
 %   - options (resolved scalar struct)
 %       Earliest-arrival or fixed-time policy and numerical tolerances.
-%**************************************************************************
+%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Exact synchronized profile, solve status, reason, and elapsed time.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and consistent across position derivatives.
-%**************************************************************************
+%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.

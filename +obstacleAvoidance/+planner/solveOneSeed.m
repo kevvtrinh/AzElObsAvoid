@@ -6,53 +6,51 @@ function [candidate, summary, checkResult, stageTiming] = ...
 %   [candidate, summary, checkResult, stageTiming] = ...
 %       obstacleAvoidance.planner.solveOneSeed( ...
 %       obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
-%**************************************************************************
+%
 % PURPOSE
 %   - Select and run the primary motion method for one deterministic seed.
 %   - Apply explicit backups and retain only full-check acceptance evidence.
-%**************************************************************************
+%
 % INPUTS
 %   - obstacles, initialState, goalState, limits, options
 %       Normalized planning inputs in public planner order.
 %   - seed (scalar route-seed struct)
 %       Indexed route suggestion and timing estimate.
 %   - context (scalar struct)
-%       UseStaticKernel and SummaryTemplate for this solve.
+%       UseStaticSolver and SummaryTemplate for this solve.
 %   - stageTiming (scalar struct)
 %       Accumulated planner timing before this seed.
-%**************************************************************************
+%
 % OUTPUTS
 %   - candidate (scalar motion struct)
 %       Final attempted motion, including explicit fallback diagnostics.
 %   - summary (scalar candidate-summary struct)
 %       Stable solve, check, objective, and timing evidence.
 %   - checkResult (scalar validation struct)
-%       Authoritative result from obstacleAvoidance.validateTrajectory.
+%       Same complete check used by the public validator.
 %   - stageTiming (scalar struct)
 %       Motion-solving and checking time accumulated through this seed.
-%**************************************************************************
+%
 % UNITS
 %   - Position is degrees and time is seconds; derivatives use deg/s,
 %     deg/s^2, and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Choose And Solve The Primary Motion Method
 
-% Choose the engine from the options and whether obstacles move.
-
-obstacleAvoidance.input.throwIfCancellationRequested(options);
+% Use the stationary-obstacle solver only when the whole scene stays stationary.
 motionTimer = tic;
 candidateWasPrechecked = false;
 precheckElapsedTime_s = 0;
-checkResult = obstacleAvoidance.validateTrajectory();
+checkResult = obstacleAvoidance.validation.validatePreparedTrajectory();
 preparedObstacles = obstacles;
-if context.UseStaticKernel
-    kernelGoalState = ...
-        obstacleAvoidance.planner.createFixedKernelGoalState( ...
+if context.UseStaticSolver
+    solverGoalState = ...
+        obstacleAvoidance.planner.createSolverGoalState( ...
         goalState, options);
     [candidate, solverDiagnostics] = ...
         obstacleAvoidance.planner.solveBmtpTrajectory( ...
-        seed, preparedObstacles, initialState, kernelGoalState, ...
+        seed, preparedObstacles, initialState, solverGoalState, ...
         limits, options);
 else
     [candidate, checkResult, solverDiagnostics, ...
@@ -67,7 +65,6 @@ end
 % Skip validation only if the dynamic solver already ran the same full check.
 
 elapsedTime_s = toc(motionTimer) - precheckElapsedTime_s;
-obstacleAvoidance.input.throwIfCancellationRequested(options);
 stageTiming.MotionSolvingElapsedTime_s = ...
     stageTiming.MotionSolvingElapsedTime_s + elapsedTime_s;
 if ~candidateWasPrechecked

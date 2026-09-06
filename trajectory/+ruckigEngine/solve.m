@@ -8,11 +8,11 @@ function result = solve( ...
 %       initialState, terminalState, limits, options)
 %   result = ruckigEngine.solve( ...
 %       initialState, terminalState, limits, options, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create certified second- or third-order state-to-state trajectories
 %     with the extracted Ruckig-derived exact switching equations.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits (scalar structs)
 %       Dimension-neutral boundary state and limit inputs. Supplying endpoint
@@ -23,20 +23,20 @@ function result = solve( ...
 %   - pathConstraints (scalar struct, optional; default empty)
 %       Affine rows continuously certify the constructed exact profile. They
 %       reject a violating profile but do not steer profile construction.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Certified success or identified unsupported/failure record.
 %       Invalid requirements throw identified errors.
-%**************************************************************************
+%
 % UNITS
 %   - Units are caller-defined and must be consistent across derivatives.
-%**************************************************************************
+%
 % REFERENCE
 %   - L. Berscheid and T. Kroeger, "Jerk-limited Real-time Trajectory
 %     Generation with Arbitrary Target States," Robotics: Science and
 %     Systems XVII, 2021. https://doi.org/10.15607/RSS.2021.XVII.015
-%**************************************************************************
+%
 
 if nargin == 0
     result = ruckigEngine.defaultOptions();

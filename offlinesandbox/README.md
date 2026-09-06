@@ -49,18 +49,16 @@ path of its stop file. Open that printed URL, create the scene, and select
 JSON to `POST /plan` and passes the returned `offlineSandboxResult/v1` object
 to the same result loader used by offline mode.
 
-Disconnected HTTP clients are reported as undeliverable responses. In
-particular, a browser health probe that times out during planning must not
-abort the planner through its cancellation callback. Socket write failures
-are contained at the response boundary; other errors still propagate and a
-valid cancellation remains accepted even if its acknowledgement cannot be sent.
+Disconnected HTTP clients are reported as undeliverable responses. Socket
+write failures are contained at the response boundary; other errors still
+propagate.
 
 After a live plan completes, select **Save diagnosis bundle** to download a
 MAT file for the exact displayed result. The file contains the same versioned
 `diagnosisBundle` workflow used by the MATLAB sandbox: canonical planner
 inputs, resolved options, the unprojected success or failure result,
 independent validation, original browser geometry, environment metadata, and
-reproduction commands. MATLAB-only cancellation callbacks are removed. The
+reproduction commands. Function handles are removed from exported data. The
 button is enabled only while the matching live result remains current; editing
 the request or loading an unrelated result disables it.
 
@@ -69,7 +67,7 @@ the loopback server. MATLAB reconstructs its canonical initial state, goal,
 limits, original obstacle histories, safety margins, and resolved planner
 options, then runs the current planner. The displayed result is therefore a
 fresh reproduction, not the result stored in the bundle. Replayed bundles may
-be saved again, and cooperative cancellation remains available while they run.
+be saved again. Press Ctrl+C in MATLAB to interrupt a replay.
 
 Select a polygon to open its floating **Copy**, **Rotate**, **Set motion**, and
 **Delete** actions. **Set motion** rewinds to mission start and displays a purple
@@ -125,10 +123,9 @@ history intervals; the response retains its protected geometry. Safety margins
 are still applied only by MATLAB, and rotation/scale do not inherit the 10 deg/s
 translation limit as a bound on every boundary vertex's speed.
 
-Select **Cancel** to request cooperative cancellation. The server accepts that
-request out of band and supplies a trusted MATLAB-only `CancellationCheckFcn`
-to the existing adapter. The public planner stops at its next safe checkpoint;
-the callback is never accepted from JSON and is not returned on the wire.
+Press **Ctrl+C in MATLAB** to interrupt planning. This also stops the blocking
+HTTP server; restart `offlineSandbox.serveSandbox` to reconnect the page.
+The page has no planning Cancel button.
 
 To use another port, pass one integer from 1024 through 65535 and open the URL
 MATLAB prints:
@@ -206,8 +203,6 @@ The MATLAB server implements a small HTTP/1.1 subset directly over
   it to an adapter-owned temporary file, calls
   `offlineSandbox.runPlanningRequest`, and returns that adapter's exact result
   JSON bytes. No request or result schema is duplicated in the server.
-- `POST /cancel` is serviced by the planner's cooperative cancellation callback
-  while the main MATLAB thread is planning.
 - `POST /bundle` returns the server-cached MAT diagnosis bundle only when the
   supplied request identifier matches the latest completed live plan. The
   cache is deleted when the server stops.
@@ -292,9 +287,8 @@ The browser writes this shape:
 - The page repeats a static polygon at mission start and end. Translation and
   stretch use at least 21 keyframes. Rotation uses additional samples as needed
   to limit angular steps to 5 degrees; see the final-pose controls above.
-- `options` is a partial public planner-options structure. JSON callbacks are
-  prohibited; in particular, `CancellationCheckFcn` is not accepted. Live
-  cancellation is injected only as a trusted MATLAB argument after this check.
+- `options` contains only public planner options. The planner has no cancellation
+  callback; unknown option fields warn once and are ignored.
 - The MATLAB constructor owns safety inflation. The page never preinflates
   request geometry.
 
@@ -311,27 +305,27 @@ result
   Options
   Inputs
     initialState, goalState, limits
-  SelectedSeedIndex, SelectedSeed_deg
+  Route_deg, BestPartialRoute_deg
   time_s, position_deg, velocity_deg_s
   acceleration_deg_s2, jerk_deg_s3
-  ArrivalTime_s, TrajectoryDuration_s, GoalHorizon_s
+  ArrivalTime_s, TrajectoryDuration_s
   ElapsedPlanningTime_s
-  SearchDiagnostics
-    TerminationReason, AttemptedSeedCount, ValidatedCandidateCount
-    BestPartialSeedIndex, FirstValidatedMotionTime_s
-    SeedGenerationElapsedTime_s, SeedSummaries, StageTiming
-    Grid
-      Bounds_deg, AcceptedEdges_deg, RejectedEdges_deg
-      ExploredNodes_deg, FrontierNodes_deg, BestPartialRoute_deg
-      Start_deg, Goal_deg, NodeCount, ExpandedCount
-      RejectedTransitionCount, GeneratedSeedCount, TraceDownsampleRule
+diagnosis
+  SelectedAttemptIndex, BestPartialAttemptIndex
+  AttemptedCount, ValidatedCount, FirstValidatedMotionTime_s
+  Attempts, Timing
+  Search
+    Bounds_deg, AcceptedEdges_deg, RejectedEdges_deg
+    ExploredNodes_deg, FrontierNodes_deg, BestPartialRoute_deg
+    Start_deg, Goal_deg, NodeCount, ExpandedCount
+    RejectedTransitionCount, GeneratedSeedCount, TraceDownsampleRule
 validation            public independent-validation record
 obstacles[]
   Name, time_s, status, SafetyMargin_deg
   OriginalVerticesByTime_deg, ProtectedVerticesByTime_deg
 ```
 
-`SeedSummaries` retains the public summary fields through `Message`, while
+`diagnosis.Attempts` retains the public summary fields through `Message`, while
 nested solver internals are intentionally not placed on the browser wire.
 `validation` is the complete stable record returned by
 `obstacleAvoidance.validateTrajectory` on success, or the planner's stable
@@ -372,11 +366,13 @@ in the file handoff and become a bounded HTTP 400 error in live mode.
   obstacle playback continues.
 - This focused mirror implements required polygon drawing. The MATLAB GUI's
   circle, square, freehand-capsule, and direct in-process plotting are not
-  duplicated. Live **Cancel** is cooperative; offline file handoff has no
-  in-flight browser cancellation.
+  duplicated. Interrupt a running plan with Ctrl+C in MATLAB.
 - Some browsers restrict clipboard access for `file://`. If **Copy MATLAB
   command** is denied, select the visible command manually.
 
 No external network access, package manager, build step, web font, external
 script, or external stylesheet is used. Live mode's only runtime connection is
 the explicit `127.0.0.1` HTTP transport; offline mode makes no connection.
+
+The saved MATLAB bundle stores the compact `Result` and optional full `Diagnosis`
+as separate records. Browser JSON contains only the diagnosis needed for display.

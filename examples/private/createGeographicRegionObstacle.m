@@ -5,13 +5,13 @@ function [obstacle, history, scenario] = createGeographicRegionObstacle( regionN
 %       regionName, time_s, safetyMargin_deg)
 %   [obstacle, history, scenario] = createGeographicRegionObstacle( ...
 %       regionName, time_s, safetyMargin_deg, options)
-%**************************************************************************
+%
 % PURPOSE
 %   - Build a static, full-resolution geographic obstacle for the maintained
 %     Hawaii, Croatia, and Philippines extreme-polygon sequence.
 %   - Derive route endpoints from polygon occupancy so every region blocks
 %     its direct request without embedding a preferred detour.
-%**************************************************************************
+%
 % INPUTS
 %   - regionName (scalar text)
 %       Hawaii, Croatia, or Philippines.
@@ -21,18 +21,18 @@ function [obstacle, history, scenario] = createGeographicRegionObstacle( regionN
 %       Euclidean protection margin owned by obstacle construction.
 %   - options (scalar struct, optional; default struct())
 %       .Verbose prints source and geometry diagnostics (default false).
-%**************************************************************************
+%
 % OUTPUTS
 %   - obstacle (canonical protected static obstacle)
 %   - history (scalar struct)
 %       Source files, window, unprotected boundary, and vertex diagnostics.
 %   - scenario (scalar struct)
 %       Region name plus automatically derived initial and goal positions.
-%**************************************************************************
+%
 % UNITS
 %   - Longitude/latitude are treated as azimuth/elevation degrees; time is
 %     seconds and the safety margin is degrees.
-%**************************************************************************
+%
 
 %% Section 1: Validate Inputs & Apply Defaults
 

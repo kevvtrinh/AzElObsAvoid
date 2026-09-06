@@ -5,12 +5,12 @@ function [within, minimumValue, maximumValue] = checkPolynomialRange( ...
 %   [within, minimumValue, maximumValue] = ...
 %       ruckigEngine.internal.checkPolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
-%**************************************************************************
+%
 % PURPOSE
 %   - Check one scalar power polynomial over normalized time [0, 1].
 %   - Use Bernstein hulls only as certificates and retain exact stationary
 %     points when a coefficient hull remains ambiguous.
-%**************************************************************************
+%
 % INPUTS
 %   - powerCoefficient (finite real numeric vector)
 %       Ascending-power coefficients on normalized time [0, 1].
@@ -18,17 +18,17 @@ function [within, minimumValue, maximumValue] = checkPolynomialRange( ...
 %       Inclusive limits; either limit may be infinite.
 %   - tolerance (nonnegative finite numeric scalar)
 %       Absolute allowance applied once to both limits.
-%**************************************************************************
+%
 % OUTPUTS
 %   - within (scalar logical)
 %       True only when the complete polynomial stays within the limits.
 %   - minimumValue, maximumValue (numeric scalars)
 %       Certified enclosing values on a Bernstein fast path or exact extrema
 %       from endpoints and stationary points on an ambiguous path.
-%**************************************************************************
+%
 % UNITS
 %   - Coefficients, bounds, tolerance, and returned values share units.
-%**************************************************************************
+%
 
 %% Section 1: Try Certified Bernstein Range Tests
 

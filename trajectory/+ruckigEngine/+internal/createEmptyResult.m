@@ -4,21 +4,21 @@ function result = createEmptyResult( ...
 % SYNTAX
 %   result = ruckigEngine.internal.createEmptyResult( ...
 %       initialState, terminalState, limits, options, pathConstraints)
-%**************************************************************************
+%
 % PURPOSE
 %   - Create the stable direct Ruckig-engine result format.
-%**************************************************************************
+%
 % INPUTS
 %   - initialState, terminalState, limits, options, pathConstraints
 %       Fully normalized Ruckig request records.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Stable empty motion, validation, and diagnostics fields.
-%**************************************************************************
+%
 % UNITS
 %   - Empty histories retain the request's coordinate and time conventions.
-%**************************************************************************
+%
 
 %% Section 1: Create Stable Failure Record
 

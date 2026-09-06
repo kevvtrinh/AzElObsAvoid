@@ -1,24 +1,25 @@
-function result = exampleObstacleFree(exampleOverrides)
+function [result, diagnosis] = exampleObstacleFree(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleObstacleFree()
 %   result = exampleObstacleFree(exampleOverrides)
-%**************************************************************************
+%
 % PURPOSE
 %   - Demonstrate earliest-arrival motion without obstacle constraints.
-%**************************************************************************
+%
 % INPUTS
 %   - exampleOverrides (scalar struct, optional; default struct())
 %       Uniform display controls and public planner option overrides.
-%**************************************************************************
+%
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result.
-%**************************************************************************
+%   - diagnosis (optional second output): search attempts and solver details.
+%
 % UNITS
 %   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
 %     and deg/s^3.
-%**************************************************************************
+%
 
 %% Section 1: Resolve Example Controls
 
@@ -52,7 +53,7 @@ limits = struct( ...
 
 % Run the public planner and let it find the minimum feasible arrival time.
 
-result = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = obstacleAvoidance.planTrajectory( obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
@@ -71,7 +72,7 @@ end
 
 if displayOptions.PlotOutputs
     obstacleAvoidance.plotting.plotTrajectory( ...
-        result, displayOptions.PlotOptions);
+        result, displayOptions.PlotOptions, diagnosis);
 end
 
 end

@@ -1,31 +1,28 @@
 function seedSet = createSeeds( ...
-        obstacles, initialState, goalState, limits, options, routeSet, proposal)
+        initialState, goalState, limits, options, routeSet, corridorBoundary_deg)
 %% Section 0: Header & Readme
 % SYNTAX
 %   seedSet = obstacleAvoidance.search.createSeeds( ...
-%       obstacles, initialState, goalState, limits, options, routeSet, proposal)
-%**************************************************************************
+%       initialState, goalState, limits, options, routeSet, corridorBoundary_deg)
+%
 % PURPOSE
-%   - Convert direct, timed, and spatial routes into deterministic seeds.
+%   - Create initial path guesses for the motion solver.
 %   - Preserve spatial routes while keeping duration estimates advisory.
-%**************************************************************************
+%
 % INPUTS
-%   - obstacles, initialState, goalState, limits, options
-%       Normalized planning inputs in public planner order. Unused inputs
-%       are accepted to keep stage signatures consistent.
+%   - initialState, goalState, limits, options: normalized planning inputs.
 %   - routeSet (scalar struct or empty)
 %       Timed and spatial route suggestions returned by searchRoutes.
-%   - proposal (scalar struct or empty)
-%       Proposal geometry that supplies spatial seed corridor provenance.
-%**************************************************************************
+%   - corridorBoundary_deg: spatial proposal boundary, or empty without routes.
+%
 % OUTPUTS
 %   - seedSet (struct array)
 %       Direct seed first, followed by a timed seed and distinct spatial
 %       seeds in search order. Estimates never reject a route.
-%**************************************************************************
+%
 % UNITS
 %   - Positions, boundaries, and lengths are degrees; duration is seconds.
-%**************************************************************************
+%
 
 %% Section 1: Create The Required Direct Seed
 
@@ -52,7 +49,7 @@ seedSet.position_deg = directRoute_deg;
 seedSet.tau = [0; 1];
 seedSet.EstimatedDuration_s = directDuration_s;
 seedSet.Length_deg = directLength_deg;
-if isempty(routeSet)
+if isempty(routeSet) || isempty(fieldnames(routeSet))
     return;
 end
 
@@ -88,7 +85,7 @@ end
 % endpoint velocity lower bound; do not reject seeds by estimated duration.
 
 spatialTemplate = template;
-spatialTemplate.CorridorBoundary_deg = proposal.shape.Vertices;
+spatialTemplate.CorridorBoundary_deg = corridorBoundary_deg;
 spatialTemplate.UsesReducedGeometry = routeSet.UsesReducedGeometry;
 distinctLengthTolerance_deg = 1e-9 * max(1, directLength_deg);
 for routeIndex = 1:numel(routeSet.SpatialRoutes_deg)
