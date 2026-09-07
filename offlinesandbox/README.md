@@ -281,6 +281,10 @@ The browser writes this shape:
 
 - All positions and polygon rows are `[azimuth, elevation]` in degrees.
 - Time is seconds. Derivatives use `deg/s`, `deg/s^2`, and `deg/s^3`.
+- Velocity, acceleration, and jerk limits must all be scalars or all be
+  two-element axis pairs. Scalars are combined magnitudes, allocated as
+  `[L/sqrt(2), L/sqrt(2)]` by MATLAB. Mixing forms is rejected. Workspace
+  intervals always remain two-element bounds. Browser controls show axis pairs.
 - `obstacles` may be `[]`. Each nonempty obstacle has a nonnegative margin and
   one or more strictly increasing keyframes. Every `vertices_deg` value is a
   finite N-by-2 array with at least three rows.

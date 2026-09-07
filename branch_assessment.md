@@ -266,3 +266,35 @@ relative to the starting working source, with no new planner option or dependenc
 [Complete measurements and all 18 example comparisons](benchmarks/results/circle_route_economy_20260906.md).
 Actual accepted comparison and example runs are appended to `benchmark.csv`;
 raw MAT results, starting-source copies, and plots remain in ignored `tmp`.
+
+## Combined derivative limits (2026-09-07)
+
+The public planner now accepts velocity, acceleration, and jerk limits either
+as three positive finite scalar magnitudes or as three two-element axis vectors.
+Mixing those forms raises `planTrajectory:MixedLimitModes`. Each scalar `L` is
+the hypotenuse and becomes `[L/sqrt(2), L/sqrt(2)]` internally; this allocation
+is fixed, with no transfer of unused capacity between axes. Position intervals
+retain their existing bounds and defaults. Resolved limits remain per-axis
+vectors and can be reused without another division.
+
+One normalizer owns this contract for planning, moving-target interception,
+public validation, MATLAB sandbox overrides, and offline JSON requests. Native
+sandbox controls preserve the full converted values on readback. Maintained
+examples already use per-axis velocity and acceleration, so their jerk-only
+override must also be a two-element vector; scalar jerk is no longer silently
+duplicated.
+
+MATLAB R2024b passed 66 selected core checks and 26 sandbox checks (83 distinct
+tests, including 11 new limit-contract tests). Evidence covers scalar/explicit
+axis motion equivalence in both arrival modes, exact and specified-time
+interception, all six mixed forms, endpoint failure, every derivative bound,
+an interior velocity violation between samples, defaults, unequal axis limits,
+workspace handling, existing static/moving planning, Ruckig fallback, graphics
+control readback, JSON, and bundle replay. Code Analyzer reported no issues in
+the nine changed MATLAB files. Results remain in ignored
+`tmp/combinedLimitChecks.mat` and `tmp/combinedLimitSandboxChecks.mat`.
+
+The full test suite and all 18 maintained examples were not rerun for this
+input-contract change; no example runs or benchmark rows were added. The
+pre-existing missing `failed.mat` replay fixture remains untouched. No runtime
+improvement or additional trajectory optimality is claimed.

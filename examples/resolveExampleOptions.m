@@ -13,8 +13,10 @@ function [plannerOptions, displayOptions] = resolveExampleOptions(exampleOverrid
 %   - exampleOverrides (scalar struct or []; empty uses defaults)
 %       Display controls and public planTrajectory options are accepted.
 %   - scenarioDefaults (scalar partial planTrajectory options struct)
-%   - defaultMaxJerk_deg_s3 (positive scalar or two-element vector)
+%   - defaultMaxJerk_deg_s3 (positive two-element vector)
 %       Optional default is [2.5 2.5]. MaxJerk_deg_s3 can override it.
+%       Examples use per-axis velocity and acceleration, so jerk must also
+%       be a two-element [azimuth elevation] limit.
 %
 % OUTPUTS
 %   - plannerOptions (resolved planner options for the scenario)
@@ -82,13 +84,10 @@ if isfield(normalizedOverrides, "MaxJerk_deg_s3") && ~isempty(normalizedOverride
     maxJerk_deg_s3 = normalizedOverrides.MaxJerk_deg_s3;
 end
 validateattributes(maxJerk_deg_s3, {'numeric'}, {'real', 'finite', 'positive', 'nonempty'});
-if ~isscalar(maxJerk_deg_s3) && numel(maxJerk_deg_s3) ~= 2
-    error("resolveExampleOptions:InvalidMaxJerk", "MaxJerk_deg_s3 must be scalar or two-element.");
+if ~isvector(maxJerk_deg_s3) || numel(maxJerk_deg_s3) ~= 2
+    error("resolveExampleOptions:InvalidMaxJerk", "MaxJerk_deg_s3 must be a two-element [azimuth elevation] limit because examples use per-axis velocity and acceleration limits.");
 end
 maxJerk_deg_s3 = reshape(double(maxJerk_deg_s3), 1, []);
-if isscalar(maxJerk_deg_s3)
-    maxJerk_deg_s3 = repmat(maxJerk_deg_s3, 1, 2);
-end
 logicalNames = ["PlotOutputs", "ShowWorkspace", "ShowKinematics", ...
     "ShowAnimation", "ShowSearchEdges", "ShowVisibilityGraphs", ...
     "ShowSweptSurfaces", "SaveAnimationGif", "Verbose"];

@@ -23,6 +23,8 @@ function [result, diagnosis] = planMovingTargetIntercept(varargin)
 %       Increasing time_s and N-by-2 position_deg are required. Optional
 %       InterpolationMethod is "linear" or "pchip".
 %   - limits (scalar limits struct)
+%       Same combined-scalar or per-axis contract as planTrajectory. All
+%       three derivative limits must use the same form.
 %   - options (scalar struct, optional; default struct())
 %       InterceptMode is "earliest" or "specifiedTime". SpecifiedInterceptTime_s
 %       is required for specifiedTime. MaximumSearchDuration_s defaults to 60.
@@ -89,6 +91,7 @@ if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
     error("planMovingTargetIntercept:InvalidPlannerOptions", "PlannerOptions must be a scalar struct.");
 end
 initialState = obstacleAvoidance.input.normalizePlannerState(initialState, "initialState");
+limits       = obstacleAvoidance.input.normalizePlannerLimits(limits);
 
 %% Section 2: Normalize The Sampled Target
 

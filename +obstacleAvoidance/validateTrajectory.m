@@ -15,7 +15,9 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %       Must contain sampled histories and Polynomial segment coefficients.
 %   - obstacles (canonical protected obstacle array, optional with result)
 %   - initialState, goalState (normalized state structs, optional with result)
-%   - limits (normalized physical limits struct, optional with result)
+%   - limits (physical limits struct, optional with result)
+%       Same combined-scalar or per-axis contract as planTrajectory; each
+%       combined magnitude is divided by sqrt(2) for each axis.
 %   - options (resolved planner options, optional with result)
 %
 % OUTPUTS
@@ -47,6 +49,7 @@ if nargin == 1
 elseif nargin ~= 6
     error("validateTrajectory:InvalidCall", "Use one planner result or all six explicit validation inputs.");
 end
+limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end

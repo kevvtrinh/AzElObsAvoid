@@ -24,6 +24,10 @@ function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState
 %       Fixed or moving-goal state accepted by the obstacle planner.
 %   - limits (scalar struct)
 %       Physical and workspace limits with units in field names.
+%       maxVelocity_deg_s, maxAcceleration_deg_s2, and maxJerk_deg_s3 must
+%       all be positive finite scalars (combined magnitudes) or all be
+%       two-element [azimuth elevation] vectors. Each combined limit is
+%       divided by sqrt(2) for each axis. Mixing the two forms is invalid.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Partial planner options. Empty fields use their documented defaults.
 %

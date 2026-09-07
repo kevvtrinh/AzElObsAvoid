@@ -15,8 +15,9 @@ function [obstacles, initialState, goalState, limits] = normalizePlannerRequest(
 %       Require time_s and 1-by-2 position_deg. Missing endpoint
 %       derivatives default to zero. goalState may contain a sampled target.
 %   - limits (scalar struct)
-%       Requires two-axis velocity, acceleration, and jerk limits. Omitted
-%       workspace intervals receive the public defaults.
+%       Velocity, acceleration, and jerk must all be combined scalars or all
+%       be two-axis vectors. Combined magnitudes are divided by sqrt(2) per
+%       axis. Omitted workspace intervals receive the public defaults.
 %   - options (scalar struct)
 %       Requires AllowAzimuthWrapping. Wrapping is limited to an
 %       obstacle-free fixed-position request.
@@ -67,27 +68,7 @@ end
 
 %% Section 3: Normalize Physical And Workspace Limits
 
-physicalNames = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", ...
-    "maxJerk_deg_s3"];
-if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, cellstr(physicalNames)))
-    error("planTrajectory:InvalidLimits", "limits must contain velocity, acceleration, and jerk limits.");
-end
-% Apply the required validation or transfer to each field name.
-for fieldName = physicalNames
-    validateattributes(limits.(fieldName), {'numeric'}, {'real', 'finite', 'positive', 'vector', 'numel', 2});
-    limits.(fieldName) = double(limits.(fieldName)(:).');
-end
-intervalDefaults = {"azimuthInterval_deg", [-180 180]; ...
-    "elevationInterval_deg", [-90 90]};
-% Process each interval while assembling the complete motion or interval result.
-for intervalIndex = 1:size(intervalDefaults, 1)
-    fieldName = intervalDefaults{intervalIndex, 1};
-    if ~isfield(limits, fieldName) || isempty(limits.(fieldName))
-        limits.(fieldName) = intervalDefaults{intervalIndex, 2};
-    end
-    validateattributes(limits.(fieldName), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'increasing'}, "planTrajectory", fieldName);
-    limits.(fieldName) = double(limits.(fieldName)(:).');
-end
+limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
 
 %% Section 4: Validate Time And Wrapping Compatibility
 

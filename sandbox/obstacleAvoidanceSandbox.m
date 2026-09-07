@@ -18,6 +18,8 @@ function sandboxState = obstacleAvoidanceSandbox(sandboxOverrides)
 %       ObstacleSafetyMargin_deg, WorkspaceAzimuthInterval_deg,
 %       WorkspaceElevationInterval_deg, Verbose, AnimateOnRun,
 %       AnimationFrameStride, AnimationPause_s, and PlannerOptions.
+%       Derivative maxima must all be combined scalars or all be per-axis
+%       pairs. Scalars are divided by sqrt(2) per axis before display.
 %       PlannerOptions is a partial planTrajectory options struct. Its
 %       sandbox defaults bound interactive HS3 work and favor responsiveness
 %       over the production planner's finer earliest-arrival search.
@@ -140,19 +142,16 @@ function options = resolveSandboxOptions(overrides)
     for name = nonnegativeScalarNames
         validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'}, "obstacleAvoidanceSandbox", name);
     end
-    pairNames = ["MaxVelocity_deg_s", "MaxAcceleration_deg_s2", "MaxJerk_deg_s3"];
-
-    % Normalize each azimuth/elevation derivative limit into one row pair.
-    for name = pairNames
-        validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'positive'}, "obstacleAvoidanceSandbox", name);
-        options.(name) = reshape(double(options.(name)), 1, 2);
+    optionNames = ["MaxVelocity_deg_s", "MaxAcceleration_deg_s2", "MaxJerk_deg_s3", "WorkspaceAzimuthInterval_deg", "WorkspaceElevationInterval_deg"];
+    limitNames  = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3", "azimuthInterval_deg", "elevationInterval_deg"];
+    limits      = struct();
+    % Resolve the public limit contract before displaying per-axis controls.
+    for fieldIndex = 1:numel(limitNames)
+        limits.(limitNames(fieldIndex)) = options.(optionNames(fieldIndex));
     end
-    intervalNames = ["WorkspaceAzimuthInterval_deg", "WorkspaceElevationInterval_deg"];
-
-    % Require an increasing lower/upper interval for each workspace axis.
-    for name = intervalNames
-        validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'vector', 'numel', 2, 'increasing'}, "obstacleAvoidanceSandbox", name);
-        options.(name) = reshape(double(options.(name)), 1, 2);
+    limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
+    for fieldIndex = 1:numel(limitNames)
+        options.(optionNames(fieldIndex)) = limits.(limitNames(fieldIndex));
     end
     countNames = "AnimationFrameStride";
 
@@ -270,12 +269,12 @@ function handles = addCompactPairControl(panelHandle, labelText, rowPosition, va
     uicontrol(panelHandle, "Style", "text", "String", labelText, "Units", "normalized", "Position", [0.05 rowPosition 0.44 0.045], "HorizontalAlignment", "left");
     handles = struct("FirstHandle", uicontrol(panelHandle, ...
             "Style", "edit", ...
-            "String", sprintf("%.8g", values(1)), ...
+            "String", sprintf("%.17g", values(1)), ...
             "Units", "normalized", ...
             "Position", [0.52 rowPosition 0.20 0.045]), ...
         "SecondHandle", uicontrol(panelHandle, ...
             "Style", "edit", ...
-            "String", sprintf("%.8g", values(2)), ...
+            "String", sprintf("%.17g", values(2)), ...
             "Units", "normalized", ...
             "Position", [0.76 rowPosition 0.20 0.045]));
 end
@@ -1096,9 +1095,9 @@ function applyDefaultControls(handles, options)
 end
 
 function writeAxisPair(handles, values)
-    % Write one two-value default into explicit edit handles.
-    set(handles.FirstHandle, "String", sprintf("%.8g", values(1)));
-    set(handles.SecondHandle, "String", sprintf("%.8g", values(2)));
+    % Retain enough digits to read back the exact normalized physical bounds.
+    set(handles.FirstHandle, "String", sprintf("%.17g", values(1)));
+    set(handles.SecondHandle, "String", sprintf("%.17g", values(2)));
 end
 
 function obstacles = buildCanonicalObstacles(modeState, obstacleTime_s, controls)

@@ -176,9 +176,33 @@ The required physical limits are:
 - `maxAcceleration_deg_s2`;
 - `maxJerk_deg_s3`.
 
-Each is a positive one-by-two `[azimuth elevation]` limit. Optional
-`azimuthInterval_deg` and `elevationInterval_deg` fields define the workspace;
-their defaults are `[-180 180]` and `[-90 90]` degrees.
+All three must use the same form: positive finite scalars for combined
+magnitudes, or two-element `[azimuth elevation]` vectors for separate axis
+limits. Mixing scalar and vector derivative limits raises
+`planTrajectory:MixedLimitModes`.
+
+A combined limit `L` is the hypotenuse and is allocated equally as
+`[L/sqrt(2), L/sqrt(2)]` internally. For example:
+
+```matlab
+limits = struct();
+limits.maxVelocity_deg_s      = 2;
+limits.maxAcceleration_deg_s2 = 1;
+limits.maxJerk_deg_s3         = 2.5;
+```
+
+This fixes each axis's share; unused capacity on one axis is not transferred
+to the other. `result.Inputs.limits` contains the resolved per-axis limits.
+Moving-target interception and explicit `validateTrajectory` calls use the
+same conversion, and reusing resolved limits does not divide them again.
+MATLAB sandbox overrides and offline-sandbox JSON requests follow the same
+rule; the sandbox controls display the resolved per-axis values.
+
+Optional `azimuthInterval_deg` and `elevationInterval_deg` fields remain
+two-element workspace intervals; their defaults are `[-180 180]` and
+`[-90 90]` degrees. Position intervals are never split or scaled.
+The maintained examples use separate velocity and acceleration limits, so
+their `MaxJerk_deg_s3` override must also be a two-element vector.
 
 ### Options
 

@@ -14,6 +14,8 @@ function [response, diagnosisBundle] = runPlanningRequest(requestFilePath, resul
 % INPUTS
 %   - requestFilePath (scalar text)
 %       Existing offlineSandboxRequest/v1 JSON file.
+%       Derivative limits must all be combined scalar magnitudes or all be
+%       [azimuth elevation] pairs, following the public planner contract.
 %   - resultFilePath (scalar text)
 %       Destination JSON file, not a folder. Its parent folder must already
 %       exist. An existing file at this explicit path is replaced.
@@ -76,7 +78,6 @@ end
 
 initialState = normalizeState(request.initialState, "request.initialState");
 goalState    = normalizeState(request.goalState, "request.goalState");
-limits       = normalizeLimits(request.limits);
 options      = request.options;
 requireScalarStruct(options, "request.options");
 
@@ -85,6 +86,7 @@ requireScalarStruct(options, "request.options");
 packageParent  = fileparts(fileparts(mfilename("fullpath")));
 repositoryRoot = fileparts(packageParent);
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
+limits = obstacleAvoidance.input.normalizePlannerLimits(request.limits);
 
 % The wire format contains original polygon keyframes. Only the public
 % constructor applies the requested safety margin, exactly once.
@@ -222,47 +224,20 @@ function state = normalizeState(value, fieldName)
     validateattributes(value.time_s, {'numeric'}, {'real', 'finite', 'scalar'}, "runPlanningRequest", fieldName + ".time_s");
     state = value;
     state.time_s       = double(value.time_s);
-    state.position_deg = normalizePair(value.position_deg, fieldName + ".position_deg", false);
+    state.position_deg = normalizePair(value.position_deg, fieldName + ".position_deg");
     optionalPairNames = ["velocity_deg_s", "acceleration_deg_s2"];
     % Process each name needed by the sandbox workflow.
     for name = optionalPairNames
         if isfield(value, name) && ~isempty(value.(name))
-            state.(name) = normalizePair(value.(name), fieldName + "." + name, false);
+            state.(name) = normalizePair(value.(name), fieldName + "." + name);
         end
     end
 end
 
-function limits = normalizeLimits(value)
-    % Normalize the three required physical pairs and optional workspace bounds.
-    requireScalarStruct(value, "request.limits");
-    requiredNames = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", ...
-        "maxJerk_deg_s3"];
-    requireFields(value, requiredNames, "request.limits");
-    limits = value;
-    % Process each name needed by the sandbox workflow.
-    for name = requiredNames
-        limits.(name) = normalizePair(value.(name), "request.limits." + name, true);
-    end
-    intervalNames = ["azimuthInterval_deg", "elevationInterval_deg"];
-    % Process each name needed by the sandbox workflow.
-    for name = intervalNames
-        if isfield(value, name) && ~isempty(value.(name))
-            interval = normalizePair(value.(name), "request.limits." + name, false);
-            if interval(2) <= interval(1)
-                error("runPlanningRequest:InvalidWorkspaceInterval", "request.limits.%s must be an increasing [lower upper] pair.", name);
-            end
-            limits.(name) = interval;
-        end
-    end
-end
-
-function pair = normalizePair(value, fieldName, mustBePositive)
-    % Normalize one finite [azimuth elevation] pair with an optional positivity rule.
+function pair = normalizePair(value, fieldName)
+    % Normalize one finite [azimuth elevation] state pair.
     validateattributes(value, {'numeric'}, {'real', 'finite', 'vector', 'numel', 2}, "runPlanningRequest", fieldName);
     pair = reshape(double(value), 1, 2);
-    if mustBePositive && any(pair <= 0)
-        error("runPlanningRequest:NonpositiveLimit", "%s values must both be positive.", fieldName);
-    end
 end
 
 function obstacles = createObstacles(obstacleInput)
