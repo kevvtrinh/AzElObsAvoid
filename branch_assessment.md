@@ -199,6 +199,32 @@ but regressed dense-concave by 24.04% and accelerating circles by 9.89%. A
 timing because a retained plane invalidated a later trajectory iteration. No
 rejected experiment was retained or added to `benchmark.csv`.
 
+## Earliest-arrival exact-clock travel refinement (2026-09-06)
+
+Repository history confirms that `balancedArrival` existed before commit
+`4344795`. It ranked validated motions by travel plus a declared 1 deg/s
+arrival-time exchange rate and also ran travel-weighted BMTP refinements. A
+bounded attempt to restore that full trade inside `earliestArrival` was rejected
+and reverted: on `inefficientroute.mat`, the best policy-compliant motion reduced
+sampled travel from 187.745001194 deg to 184.750085715 deg, only 1.60%, below the
+declared 3% benefit gate. Trials that shortened the path further required more
+delay than their saving justified at the historical exchange rate.
+
+The retained narrower change implements the already documented path-length
+tie-break at the exact earliest-arrival clock. After BMTP establishes the fastest
+feasible homotopy, one fixed-clock travel solve may replace it only with a
+shorter solution at the identical duration. On `inefficientroute.mat`, arrival
+remained 91.5513221229 s while sampled travel fell by 2.995061021 deg, from
+187.745001194 deg to 184.749940173 deg. Independent collision, velocity,
+acceleration, jerk, and plane-certificate checks all passed. The structurally
+different static-box planner contract passed, as did all affected option and BMTP
+engine tests (16/16). The maintained fixed-arrival
+`exampleTargetExitsObstacle` remained independently valid at 24 s, with
+21.7425467317 deg polyline and 21.9321570168 deg smoothed length. This change
+does not claim or implement a justified arrival-time trade; it records the
+initial/final travel and duration so a future bounded Pareto policy can be
+evaluated without hiding its cost.
+
 ## Circle detour and explicit objective priority (2026-09-06)
 
 The exact `inefficientroutecircle.mat` replay reached the physical arrival floor

@@ -585,7 +585,13 @@ function testConvergenceSummaryAndRetainedBestTrial(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
     diagnostics = testSupport.solverDetails(resultDiagnosis, resultDiagnosis.SelectedAttemptIndex);
-    verifyFalse(testCase, any(startsWith(diagnostics.Field, "TravelRefinement")));
+    verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinementAttempted"));
+    verifyLessThanOrEqual(testCase, ...
+        testSupport.diagnosisValue(diagnostics, "TravelRefinementFinalLength_deg"), ...
+        testSupport.diagnosisValue(diagnostics, "TravelRefinementInitialLength_deg"));
+    verifyEqual(testCase, ...
+        testSupport.diagnosisValue(diagnostics, "TravelRefinementFinalDuration_s"), ...
+        result.TrajectoryDuration_s, "AbsTol", 1e-9);
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "PlaneReuseApplied"));
     verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "PlaneReuseCount"), 1);
     verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "ConicSolver.Solver"), 'coneprog');

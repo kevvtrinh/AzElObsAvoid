@@ -29,12 +29,8 @@ function [result, diagnostics] = refineTravel(request, warmStart, alternatingRes
 
 result = struct("ControlPoint_deg", alternatingResult.ControlPoint_deg, ...
     "SegmentTime_s", alternatingResult.SegmentTime_s);
-% Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
-if request.Options.GoalTimeMode == "earliestArrival"
-    return;
-end
 
-%% Section 2: Refine Fixed-Arrival Travel
+%% Section 2: Refine Travel At The Selected Arrival Clock
 
 segmentCount             = warmStart.SegmentCount;
 baseControl_deg          = result.ControlPoint_deg;
@@ -47,9 +43,22 @@ selectedLength_deg       = baseLength_deg;
 travelRefinementAccepted = false;
 travelPlanes             = alternatingResult.Planes;
 taggedPairs              = alternatingResult.TaggedPairs;
+refinementHorizon_s      = request.MotionHorizon_s;
+if request.Options.GoalTimeMode == "earliestArrival"
+    % Preserve the proven earliest clock exactly, then minimize travel at that
+    % clock. This realizes the documented path-length tie-break without paying
+    % extra arrival time when the former balanced policy cannot justify it.
+    refinementHorizon_s = segmentCount * baseSegmentTime_s;
+end
+diagnostics.TravelRefinementAttempted         = true;
+diagnostics.TravelRefinementInitialLength_deg = baseLength_deg;
+diagnostics.TravelRefinementFinalLength_deg   = baseLength_deg;
+diagnostics.TravelRefinementInitialDuration_s = segmentCount * baseSegmentTime_s;
+diagnostics.TravelRefinementFinalDuration_s   = segmentCount * baseSegmentTime_s;
+diagnostics.TravelRefinementAccepted          = false;
 % Repeat the refinement alternatives needed to refine the current solution.
 for refinementIndex = 1:8
-    [refinedControl_deg, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_deg, request.GoalState.position_deg, request.Limits, travelPlanes, roundoffReserve_deg, request.MotionHorizon_s, request.Options.GoalTimeMode, request.TrajectoryOptions);
+    [refinedControl_deg, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_deg, request.GoalState.position_deg, request.Limits, travelPlanes, roundoffReserve_deg, refinementHorizon_s, "fixedArrival", request.TrajectoryOptions);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
     if travelExitFlag <= 0 || isempty(refinedControl_deg)
         break;
@@ -87,6 +96,7 @@ for refinementIndex = 1:8
         selectedControl_deg      = refinedControl_deg;
         selectedSegmentTime_s    = refinedSegmentTime_s;
         selectedPlanes           = travelPlanes;
+        selectedLength_deg       = refinedLength_deg;
         travelRefinementAccepted = true;
     end
     break;
@@ -100,6 +110,9 @@ if travelRefinementAccepted
     taggedPairs = taggedPairs | reshape([selectedPlanes.Active], size(selectedPlanes));
 end
 diagnostics.TaggedPairCount = nnz(taggedPairs);
+diagnostics.TravelRefinementFinalLength_deg = selectedLength_deg;
+diagnostics.TravelRefinementFinalDuration_s = segmentCount * selectedSegmentTime_s;
+diagnostics.TravelRefinementAccepted        = travelRefinementAccepted;
 end
 
 %% Section 4: Local Functions

@@ -97,6 +97,9 @@ function testStaticRegionSolverReturnsPlaneWitness(testCase)
     verifyGreaterThan(testCase, motion.PlaneCertificate.AnalyticPairCount, 0);
     verifyEqual(testCase, motion.PlaneCertificate.ReusedPairCount + motion.PlaneCertificate.AnalyticPairCount + motion.PlaneCertificate.ConicPairCount, motion.PlaneCertificate.AllPairCount);
     verifyEqual(testCase, motion.position_deg([1 end], :), [initialState.position_deg; goalState.position_deg], "AbsTol", 1e-8);
+    verifyTrue(testCase, diagnostics.TravelRefinementAttempted);
+    verifyLessThanOrEqual(testCase, diagnostics.TravelRefinementFinalLength_deg, diagnostics.TravelRefinementInitialLength_deg);
+    verifyEqual(testCase, diagnostics.TravelRefinementFinalDuration_s, diagnostics.TravelRefinementInitialDuration_s, "AbsTol", 1e-9);
 end
 
 function testTimedRegionAppliesOnlyToOverlappingSpans(testCase)
