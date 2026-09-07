@@ -36,6 +36,31 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 ## Verification and remaining limits
 
+The timed route handoff now preserves proposed physical crossing times when
+trying different arrivals and reuses the route search's complete input-derived
+time grid. It no longer jumps from one velocity-only arrival estimate directly
+to the deadline while stretching all interior crossing times. On the unmodified
+`inefficientroute.mat` request, arrival improves from 123.870 to 112.500 s
+(-9.18%), motion length from 291.311 to 228.213 deg (-21.66%), and minimum
+elevation from -89.152 to -24.550 deg. Full independent validation passes with
+unchanged limits, tolerances, and safety margin. Reported clearance decreases
+from 0.894364 to 0.040321 deg; the change is not a clearance improvement.
+
+The repository still contains 18 maintained examples. This comparison ran a
+subset of eight, plus the two supplied MAT replays, once for warm-up and three
+times for measurement in each version (80 actual calls). The other nine compared
+cases retained the same recorded motion metrics and validation outcomes. The
+supplied case's median end-to-end wall time changed from 15.072 to 13.809 s, but
+timing variation on unchanged paths precludes a general speedup claim. The
+existing mixed moving-circle/static-U timed-owner tests also pass. Across the
+full suite and corrected focused rerun, 155 distinct tests have passing evidence;
+three remain blocked by the pre-existing deletions of `failed.mat`,
+`pathtoolong.mat`, and `pathtoolong2.mat`. No deleted fixture was restored or
+replaced. The remaining ten maintained examples were not rerun for this change.
+The correction remains a discrete arrival search and local optimizer, not a
+global continuous-time optimum; unsuccessful dense timed searches can do more
+work. [Detailed scope, measurements, and limits](benchmarks/results/timed_route_handoff_20260906.md).
+
 The MATLAB built-in replacement audit inspected all 145 maintained MATLAB files
 (545 function declarations and one script). Retained substitutions use `conncomp`
 for ordinary graph reachability, `discretize` for polynomial segment selection,

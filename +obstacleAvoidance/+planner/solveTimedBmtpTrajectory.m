@@ -8,7 +8,8 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %       stageTiming)
 %
 % PURPOSE
-%   - Adapt one timed multi-waypoint seed to the smooth BMTP engine.
+%   - Adapt one timed multi-waypoint seed to the smooth BMTP engine without
+%     stretching its proposed crossing times when trying a different arrival.
 %   - Conservatively bind each moving-obstacle time cell to the polynomial
 %     spans that overlap it, without constraining interior waypoints to rest.
 %
@@ -29,7 +30,10 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %   - checkResult (scalar validation struct)
 %       Authoritative validation for the accepted trial or stable failure.
 %   - diagnostics (scalar struct)
-%       Engine evidence plus every bounded fixed-arrival time-cell trial.
+%       Engine evidence plus every attempted fixed-arrival time-cell trial,
+%       including the physical waypoint times used to initialize each solve.
+%       Earliest-arrival trials use the shared discrete search time grid;
+%       they do not certify a continuous-time global optimum.
 %   - validationElapsedTime_s (nonnegative scalar)
 %       Total authoritative-validation time nested inside this stage.
 %   - stageTiming (scalar struct)
@@ -40,7 +44,7 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %     deg/s^2, and deg/s^3. Histories and polygon vertices are N-by-2.
 %
 
-%% Section 1: Resolve Bounded Fixed-Arrival Trials
+%% Section 1: Retain The Route Search's Physical Arrival Times
 
 startTime_s     = initialState.time_s;
 horizonTime_s   = goalState.time_s;
@@ -48,12 +52,25 @@ estimatedTime_s = startTime_s + double(seed.EstimatedDuration_s);
 if options.GoalTimeMode == "fixedArrival"
     trialTime_s = horizonTime_s;
 else
-    estimatedTime_s = min(horizonTime_s, estimatedTime_s);
-    trialTime_s     = estimatedTime_s;
-    if ~isfinite(estimatedTime_s) || estimatedTime_s <= startTime_s
+    % The route estimate ignores acceleration and jerk. It can suggest a
+    % trial, but its failure cannot discard the times before the deadline.
+    % Reuse every route-search layer and add the exact rest-to-rest lower
+    % bound. Only that physical bound can exclude earlier arrivals.
+    direct           = bmtpEngine.createDirectMotion(initialState, goalState, limits, options);
+    lowerBoundTime_s = startTime_s;
+    % A bound to one endpoint cannot exclude earlier intercepts of a moving
+    % target. Keep all positive-time layers when no fixed-endpoint bound exists.
+    goalIsFixed = ~isfield(goalState, 'targetTime_s') || isempty(goalState.targetTime_s);
+    if goalIsFixed && all(isfinite(direct.MinimumAxisDuration_s))
+        lowerBoundTime_s = startTime_s + max(direct.MinimumAxisDuration_s);
+    end
+    trialTime_s      = obstacleAvoidance.search.createTimeLayers(obstacles, startTime_s, horizonTime_s);
+    trialTime_s      = unique([trialTime_s; estimatedTime_s; lowerBoundTime_s]);
+    trialTime_s      = trialTime_s(isfinite(trialTime_s) & trialTime_s > startTime_s & trialTime_s >= lowerBoundTime_s & trialTime_s <= horizonTime_s);
+    if isempty(trialTime_s)
+        % Keep the original deadline attempt so an impossible request still
+        % returns the usual construction failure and complete diagnostics.
         trialTime_s = horizonTime_s;
-    elseif estimatedTime_s < horizonTime_s - options.ArrivalTimeTolerance_s
-        trialTime_s = [estimatedTime_s; horizonTime_s];
     end
 end
 trialTime_s              = unique(double(trialTime_s(:)), "stable");
@@ -69,6 +86,7 @@ trialTemplate.ValidationPassed        = false;
 trialTemplate.ValidationMessage       = "";
 trialTemplate.ElapsedTime_s           = 0;
 trialTemplate.ValidationElapsedTime_s = 0;
+trialTemplate.WarmStartWaypointTime_s  = zeros(0, 1);
 maximumTrialCount       = numel(trialTime_s);
 trials                  = repmat(trialTemplate, maximumTrialCount, 1);
 checkResult             = obstacleAvoidance.validation.validatePreparedTrajectory();
@@ -80,16 +98,30 @@ totalTimer              = tic;
 fixedOptions = options;
 fixedOptions.GoalTimeMode = "fixedArrival";
 completedTrialCount = 0;
-% Process each time in temporal order and accumulate its result.
+seedWaypointTime_s = startTime_s + double(seed.tau(:)) * double(seed.EstimatedDuration_s);
+% Try arrivals in time order. A failed time does not exclude any later time:
+% a moving obstacle can make one arrival unsafe and the next one safe.
 for timeIndex = 1:numel(trialTime_s)
     fixedGoalState      = createFixedGoalState(goalState, trialTime_s(timeIndex));
     completedTrialCount = completedTrialCount + 1;
     [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s, trialTime_s(timeIndex), maximumTimedSegmentCount);
+    % Preserve each interior waypoint's physical time when trying a later
+    % arrival. Only the goal time changes; the optimizer can then move
+    % the warm-start curve without silently delaying every obstacle crossing.
+    % For an earlier arrival, omit later knots from this starting guess only.
+    % Every solved motion must still reach the goal and pass full validation.
+    timedSeed      = seed;
+    interior       = find(seedWaypointTime_s > startTime_s & seedWaypointTime_s < trialTime_s(timeIndex));
+    interior       = interior(interior < numel(seedWaypointTime_s));
+    waypointTime_s = [startTime_s; seedWaypointTime_s(interior); trialTime_s(timeIndex)];
+    timedSeed.position_deg = seed.position_deg([1; interior; size(seed.position_deg, 1)], :);
+    timedSeed.tau          = (waypointTime_s - startTime_s) / (trialTime_s(timeIndex) - startTime_s);
     trialTimer = tic;
-    [trialCandidate, trialDiagnostics] = bmtpEngine.solve(seed, regions_deg, coverage, initialState, fixedGoalState, limits, fixedOptions);
+    [trialCandidate, trialDiagnostics] = bmtpEngine.solve(timedSeed, regions_deg, coverage, initialState, fixedGoalState, limits, fixedOptions);
     trials(completedTrialCount).FinalTime_s = trialTime_s(timeIndex);
     trials(completedTrialCount).TimedSegmentCount = maximumTimedSegmentCount;
     trials(completedTrialCount).Coverage = coverage;
+    trials(completedTrialCount).WarmStartWaypointTime_s = waypointTime_s;
     trials(completedTrialCount).Success = trialCandidate.Success;
     trials(completedTrialCount).TerminationReason = trialCandidate.TerminationReason;
     trials(completedTrialCount).ElapsedTime_s = toc(trialTimer);

@@ -33,7 +33,7 @@ goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, scene.endTime_
 if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
-sampleTimes_s = createObstacleSampleTimes(obstacles, scene.startTime_s, scene.endTime_s);
+sampleTimes_s = obstacleAvoidance.search.createTimeLayers(obstacles, scene.startTime_s, scene.endTime_s);
 
 %% Section 2: Select The Proposal Representation
 
@@ -87,20 +87,4 @@ proposal = struct("start_deg", start_deg, ...
     "shape", proposalShape, ...
     "edgeStart_deg", edgeStart_deg, ...
     "edgeEnd_deg", edgeEnd_deg);
-end
-
-%% Section 5: Local Functions
-
-function sampleTimes_s = createObstacleSampleTimes(obstacles, startTime_s, endTime_s)
-    % Retain all source, midpoint, endpoint, and uniform request times.
-    sampleTimes_s = [startTime_s; ...
-        linspace(startTime_s, endTime_s, 9).'; endTime_s];
-    % Evaluate each obstacle against the current geometry or motion.
-    for obstacleIndex = 1:numel(obstacles)
-        sourceTime_s      = obstacles(obstacleIndex).time_s(:);
-        intervalMidTime_s = (sourceTime_s(1:end - 1) + sourceTime_s(2:end)) / 2;
-        sampleTimes_s     = [sampleTimes_s; sourceTime_s; ...
-            intervalMidTime_s]; %#ok<AGROW>
-    end
-    sampleTimes_s = unique(sampleTimes_s(sampleTimes_s >= startTime_s & sampleTimes_s <= endTime_s));
 end
