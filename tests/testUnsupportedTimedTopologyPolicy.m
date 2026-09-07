@@ -15,7 +15,7 @@ function tests = testUnsupportedTimedTopologyPolicy
 %       Focused policy and diagnostic regression cases.
 %**************************************************************************
 % UNITS
-%   - Position is degrees and time is seconds.
+%   - Position is coordinate units and time is seconds.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -95,19 +95,19 @@ function [obstacles, initialState, goalState, limits] = createScenario()
     % Use a tight physical deadline so timed recovery fails without solver tuning.
     missionEndTime_s = 8;
     obstacleTime_s   = [0; missionEndTime_s];
-    uPosition_deg    = [ ...
+    uPosition_units    = [ ...
         -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
-    staticObstacle  = obstacleAvoidance.obstacles.createObstacle("static U-shaped obstacle", obstacleTime_s, uPosition_deg(:, 1), uPosition_deg(:, 2), 0.20);
-    movingStart_deg = [30 30; 32 30; 32 32; 30 32];
-    movingEnd_deg   = movingStart_deg + [4 0];
-    movingObstacle  = obstacleAvoidance.obstacles.createObstacle("distant moving obstacle", obstacleTime_s, {movingStart_deg(:, 1); movingEnd_deg(:, 1)}, {movingStart_deg(:, 2); movingEnd_deg(:, 2)}, 0.10);
+    staticObstacle  = obstacleAvoidance.obstacles.createObstacle("static U-shaped obstacle", obstacleTime_s, uPosition_units(:, 1), uPosition_units(:, 2), 0.20);
+    movingStart_units = [30 30; 32 30; 32 32; 30 32];
+    movingEnd_units   = movingStart_units + [4 0];
+    movingObstacle  = obstacleAvoidance.obstacles.createObstacle("distant moving obstacle", obstacleTime_s, {movingStart_units(:, 1); movingEnd_units(:, 1)}, {movingStart_units(:, 2); movingEnd_units(:, 2)}, 0.10);
     obstacles       = obstacleAvoidance.obstacles.combineObstacles(staticObstacle, movingObstacle);
     initialState    = struct();
     initialState.time_s       = 0;
-    initialState.position_deg = [0 0];
-    goalState = struct("time_s", missionEndTime_s, "position_deg", [0 -10]);
+    initialState.position_units = [0 0];
+    goalState = struct("time_s", missionEndTime_s, "position_units", [0 -10]);
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [0.75 0.75];
-    limits.maxJerk_deg_s3         = [2.5 2.5];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [0.75 0.75];
+    limits.maxJerk_units_s3         = [2.5 2.5];
 end

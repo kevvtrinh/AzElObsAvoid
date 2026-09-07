@@ -11,7 +11,7 @@ function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options
 %
 % INPUTS
 %   - options (scalar struct, optional; default struct())
-%       Planner/display overrides plus the finite MaxJerk_deg_s3 limit.
+%       Planner/display overrides plus the finite MaxJerk_units_s3 limit.
 %
 % OUTPUTS
 %   - result (scalar struct)
@@ -19,8 +19,8 @@ function [result, diagnosis] = exampleMovingDeformingUSOutlineVisibility(options
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees, time is seconds, velocity is degrees per second,
-%     acceleration is degrees per second squared, and jerk is degrees per
+%   - Position is coordinate units, time is seconds, velocity is coordinate units per second,
+%     acceleration is coordinate units per second squared, and jerk is coordinate units per
 %     second cubed.
 %
 
@@ -50,12 +50,12 @@ uSTime_s           = (0:obstacleTimeStep_s:uSDisappearTime_s).';
 sunTime_s          = (0:obstacleTimeStep_s:missionEndTime_s).';
 sunRayCount        = 16;
 sunAngle_rad       = (0:2 * sunRayCount - 1).' * (pi / sunRayCount);
-sunRadius_deg      = repmat([2.6; 1.8], sunRayCount, 1);
-sunSource_deg      = sunRadius_deg .* [cos(sunAngle_rad), sin(sunAngle_rad)];
-sunStartCenter_deg = [uSHistory.centroid_deg(1, 1) - 16, 12];
-sunEndCenter_deg   = [uSHistory.centroid_deg(1, 1) + 16, 12];
-sunTransform       = @(sourcePosition_deg, sampleTime_s, sampleIndex) moveSunSlice(sourcePosition_deg, sampleTime_s, sampleIndex, missionEndTime_s, sunStartCenter_deg, sunEndCenter_deg);
-[sunObstacle, sunHistory] = obstacleAvoidance.obstacles.createMovingObstacle("Moving sun", sunTime_s, sunSource_deg(:, 1), sunSource_deg(:, 2), sunTransform, 0.10, struct("Verbose", jerkConfiguration.Verbose));
+sunRadius_units      = repmat([2.6; 1.8], sunRayCount, 1);
+sunSource_units      = sunRadius_units .* [cos(sunAngle_rad), sin(sunAngle_rad)];
+sunStartCenter_units = [uSHistory.centroid_units(1, 1) - 16, 12];
+sunEndCenter_units   = [uSHistory.centroid_units(1, 1) + 16, 12];
+sunTransform       = @(sourcePosition_units, sampleTime_s, sampleIndex) moveSunSlice(sourcePosition_units, sampleTime_s, sampleIndex, missionEndTime_s, sunStartCenter_units, sunEndCenter_units);
+[sunObstacle, sunHistory] = obstacleAvoidance.obstacles.createMovingObstacle("Moving sun", sunTime_s, sunSource_units(:, 1), sunSource_units(:, 2), sunTransform, 0.10, struct("Verbose", jerkConfiguration.Verbose));
 obstacles = obstacleAvoidance.obstacles.combineObstacles(uSObstacle, sunObstacle);
 
 %% Section 3: Create Planner Inputs
@@ -63,11 +63,11 @@ obstacles = obstacleAvoidance.obstacles.combineObstacles(uSObstacle, sunObstacle
 % Put the start and goal across the moving shapes. This request tests visibility
 % candidates while dense geometry deforms and disappears.
 
-routeAzimuth_deg = uSHistory.centroid_deg(1, 1);
-initialState     = struct("time_s", 0, "position_deg", [routeAzimuth_deg 18]);
+routeX_units = uSHistory.centroid_units(1, 1);
+initialState     = struct("time_s", 0, "position_units", [routeX_units 18]);
 goalState = struct("time_s", missionEndTime_s, ...
-    "position_deg", [routeAzimuth_deg 58]);
-limits = struct("maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+    "position_units", [routeX_units 58]);
+limits = struct("maxVelocity_units_s", [8 8], "maxAcceleration_units_s2", [3 3], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
@@ -82,27 +82,27 @@ limits = struct("maxVelocity_deg_s", [8 8], "maxAcceleration_deg_s2", [3 3], "ma
 
 exampleValidation = validateExampleResult(result, "extreme moving/deforming U.S. with moving sun", struct("RequireDirectBlocked", true), diagnosis);
 
-initialUS_deg = [ ...
-    uSHistory.azimuthBySlice_deg{1}, ...
-    uSHistory.elevationBySlice_deg{1}];
-finalUS_deg = [ ...
-    uSHistory.azimuthBySlice_deg{end}, ...
-    uSHistory.elevationBySlice_deg{end}];
-initialCenteredUS_deg = initialUS_deg - mean(initialUS_deg, 1);
-finalCenteredUS_deg   = finalUS_deg - mean(finalUS_deg, 1);
-rotationCosine        = sum(initialCenteredUS_deg .* finalCenteredUS_deg, "all") / (norm(initialCenteredUS_deg, "fro") * norm(finalCenteredUS_deg, "fro"));
-initialAreaFraction   = uSHistory.area_deg2(1) / max(uSHistory.area_deg2);
+initialUS_units = [ ...
+    uSHistory.xBySlice_units{1}, ...
+    uSHistory.yBySlice_units{1}];
+finalUS_units = [ ...
+    uSHistory.xBySlice_units{end}, ...
+    uSHistory.yBySlice_units{end}];
+initialCenteredUS_units = initialUS_units - mean(initialUS_units, 1);
+finalCenteredUS_units   = finalUS_units - mean(finalUS_units, 1);
+rotationCosine        = sum(initialCenteredUS_units .* finalCenteredUS_units, "all") / (norm(initialCenteredUS_units, "fro") * norm(finalCenteredUS_units, "fro"));
+initialAreaFraction   = uSHistory.area_units2(1) / max(uSHistory.area_units2);
 [~, inactiveUSGeometry] = obstacleAvoidance.obstacles.shapeAtTime(uSObstacle, missionEndTime_s, true);
 uSHistoryValidation = struct("Passed", initialAreaFraction <= 0.01 && ...
         max(uSHistory.scaleFactor) >= 1.35 - 1e-12 && rotationCosine <= -0.999 && ~inactiveUSGeometry.Active, "InitialAreaFraction", initialAreaFraction, "MaximumScaleFactor", max(uSHistory.scaleFactor), "CompletedRotation_deg", uSHistory.rotation_deg(end), "EndpointRotationCosine", rotationCosine, "DisappearTime_s", uSDisappearTime_s, "InactiveAtMissionEnd", ~inactiveUSGeometry.Active);
 
-sunCentroidTravel_deg = sum(vecnorm(diff(sunHistory.centroid_deg, 1, 1), 2, 2));
-sunStayedAtBottom     = max(sunHistory.bounds_deg(:, 4)) < initialState.position_deg(2);
-sunMotionValidation   = struct("Passed", sunCentroidTravel_deg >= 32 && sunStayedAtBottom, ...
-    "CentroidTravel_deg", sunCentroidTravel_deg, ...
-    "StayedBelowInitialElevation", sunStayedAtBottom, ...
-    "MaximumBoundaryElevation_deg", ...
-        max(sunHistory.bounds_deg(:, 4)));
+sunCentroidTravel_units = sum(vecnorm(diff(sunHistory.centroid_units, 1, 1), 2, 2));
+sunStayedAtBottom     = max(sunHistory.bounds_units(:, 4)) < initialState.position_units(2);
+sunMotionValidation   = struct("Passed", sunCentroidTravel_units >= 32 && sunStayedAtBottom, ...
+    "CentroidTravel_units", sunCentroidTravel_units, ...
+    "StayedBelowInitialY", sunStayedAtBottom, ...
+    "MaximumBoundaryY_units", ...
+        max(sunHistory.bounds_units(:, 4)));
 if ~uSHistoryValidation.Passed || ~sunMotionValidation.Passed
     exampleValidation.Passed  = false;
     exampleValidation.Message = exampleValidation.Message + " Extreme obstacle-history validation failed.";
@@ -123,11 +123,11 @@ end
 
 %% Section 8: Local Functions
 
-function transformed_deg = moveSunSlice(sourcePosition_deg, sampleTime_s, ~, missionEndTime_s, startCenter_deg, endCenter_deg)
+function transformed_units = moveSunSlice(sourcePosition_units, sampleTime_s, ~, missionEndTime_s, startCenter_units, endCenter_units)
     % Move one sun outline smoothly across the lower part of the scene.
     missionProgress = min(max(sampleTime_s / missionEndTime_s, 0), 1);
     travelFraction  = 10 * missionProgress^3 - 15 * missionProgress^4 + 6 * missionProgress^5;
-    center_deg      = startCenter_deg + travelFraction * (endCenter_deg - startCenter_deg);
-    center_deg(2) = center_deg(2) + 2 * sin(2 * pi * missionProgress);
-    transformed_deg = sourcePosition_deg + center_deg;
+    center_units      = startCenter_units + travelFraction * (endCenter_units - startCenter_units);
+    center_units(2) = center_units(2) + 2 * sin(2 * pi * missionProgress);
+    transformed_units = sourcePosition_units + center_units;
 end

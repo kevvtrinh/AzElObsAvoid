@@ -19,11 +19,11 @@ end
 function testValidatorSeparatesCollisionActivity(testCase)
     % Keep nested collision work a subset rather than a second additive stage.
     initialState = state(0, [-1 0]);
-    initialState.velocity_deg_s = [2 0];
+    initialState.velocity_units_s = [2 0];
     goalState = state(1, [1 0]);
-    goalState.velocity_deg_s = [2 0];
+    goalState.velocity_units_s = [2 0];
     limits = physicalLimits();
-    limits.maxVelocity_deg_s = [3 3];
+    limits.maxVelocity_units_s = [3 3];
     trajectory = linearTrajectory(initialState, goalState);
     obstacle   = rectangleObstacle([0 1], [-0.1 0.1 -1 1], 0);
         validation = obstacleAvoidance.validateTrajectory(trajectory, obstacle, initialState, goalState, limits, fixedTimeOptions());
@@ -128,52 +128,52 @@ function options = fixedTimeOptions()
     options.SampleTime_s     = 0.05;
 end
 
-function value = state(time_s, position_deg)
+function value = state(time_s, position_units)
     % Construct one stationary-derivative endpoint.
-    value = struct("time_s", time_s, "position_deg", position_deg, ...
-        "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+    value = struct("time_s", time_s, "position_units", position_units, ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
 end
 
 function limits = physicalLimits()
     % Construct shared two-axis workspace and derivative limits.
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
-    limits.azimuthInterval_deg    = [-180 180];
-    limits.elevationInterval_deg  = [-90 90];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
+    limits.xInterval_units    = [-180 180];
+    limits.yInterval_units  = [-90 90];
 end
 
-function obstacle = rectangleObstacle(time_s, bounds_deg, margin_deg)
-    % Construct a static rectangle from [minAz maxAz minEl maxEl].
-    azimuth_deg   = bounds_deg([1 2 2 1]).';
-    elevation_deg = bounds_deg([3 3 4 4]).';
-    obstacle      = obstacleAvoidance.obstacles.createObstacle("rectangle", time_s(:), azimuth_deg, elevation_deg, margin_deg);
+function obstacle = rectangleObstacle(time_s, bounds_units, margin_units)
+    % Construct a static rectangle from [minX maxX minY maxY].
+    x_units   = bounds_units([1 2 2 1]).';
+    y_units = bounds_units([3 3 4 4]).';
+    obstacle      = obstacleAvoidance.obstacles.createObstacle("rectangle", time_s(:), x_units, y_units, margin_units);
 end
 
 function trajectory = linearTrajectory(initialState, goalState)
     % Build one exact constant-velocity polynomial sampled at its endpoints.
     duration_s        = goalState.time_s - initialState.time_s;
-    positionPower_deg = zeros(1, 2, 6);
-    positionPower_deg(1, :, 1) = initialState.position_deg;
-    positionPower_deg(1, :, 2) = goalState.position_deg - initialState.position_deg;
-    velocityPower_deg_s = zeros(1, 2, 5);
-    velocityPower_deg_s(1, :, 1) = initialState.velocity_deg_s;
+    positionPower_units = zeros(1, 2, 6);
+    positionPower_units(1, :, 1) = initialState.position_units;
+    positionPower_units(1, :, 2) = goalState.position_units - initialState.position_units;
+    velocityPower_units_s = zeros(1, 2, 5);
+    velocityPower_units_s(1, :, 1) = initialState.velocity_units_s;
     polynomial = struct("SegmentCount", 1, ...
         "SegmentStartTime_s", initialState.time_s, ...
         "SegmentDuration_s", duration_s, ...
         "FinalTime_s", goalState.time_s, ...
-        "positionPower_deg", positionPower_deg, ...
-        "velocityPower_deg_s", velocityPower_deg_s, ...
-        "accelerationPower_deg_s2", zeros(1, 2, 4), ...
-        "jerkPower_deg_s3", zeros(1, 2, 3), ...
+        "positionPower_units", positionPower_units, ...
+        "velocityPower_units_s", velocityPower_units_s, ...
+        "accelerationPower_units_s2", zeros(1, 2, 4), ...
+        "jerkPower_units_s3", zeros(1, 2, 3), ...
         "TerminalState", struct());
     trajectory = struct("time_s", [initialState.time_s; goalState.time_s], ...
-        "position_deg", [initialState.position_deg; goalState.position_deg], ...
-        "velocity_deg_s", ...
-        [initialState.velocity_deg_s; goalState.velocity_deg_s], ...
-        "acceleration_deg_s2", zeros(2, 2), ...
-        "jerk_deg_s3", zeros(2, 2), "Polynomial", polynomial);
+        "position_units", [initialState.position_units; goalState.position_units], ...
+        "velocity_units_s", ...
+        [initialState.velocity_units_s; goalState.velocity_units_s], ...
+        "acceleration_units_s2", zeros(2, 2), ...
+        "jerk_units_s3", zeros(2, 2), "Polynomial", polynomial);
 end
 
 function testFixedClockRefinementMinimizesLengthWithinJerkLimits(testCase)
@@ -182,15 +182,15 @@ function testFixedClockRefinementMinimizesLengthWithinJerkLimits(testCase)
     initial = state(0, [-72.5138204844708 49.9844205447784]);
     goal    = state(180, [53.987335410594 11.1945924213489]);
     limits  = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [0.75 0.75];
-    limits.maxJerk_deg_s3         = [2.5 2.5];
-    limits.azimuthInterval_deg    = [-180 180];
-    limits.elevationInterval_deg  = [-90 90];
-    vertices_deg = [-28.5134184340135 29.142124836667; ...
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [0.75 0.75];
+    limits.maxJerk_units_s3         = [2.5 2.5];
+    limits.xInterval_units    = [-180 180];
+    limits.yInterval_units  = [-90 90];
+    vertices_units = [-28.5134184340135 29.142124836667; ...
         -7.96059905518143 43.9054176299126; ...
         -3.03950145743289 12.3524977384662];
-    obstacle     = obstacleAvoidance.obstacles.createObstacle("triangular detour regression", 0, vertices_deg(:, 1), vertices_deg(:, 2), 0.2);
+    obstacle     = obstacleAvoidance.obstacles.createObstacle("triangular detour regression", 0, vertices_units(:, 1), vertices_units(:, 2), 0.2);
     options      = obstacleAvoidance.planTrajectory();
 
     [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);
@@ -198,9 +198,9 @@ function testFixedClockRefinementMinimizesLengthWithinJerkLimits(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyTrue(testCase, validation.JerkWithinLimits);
-    initialLength_deg = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_deg");
-    finalLength_deg   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_deg");
-    verifyLessThan(testCase, finalLength_deg, initialLength_deg);
+    initialLength_units = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_units");
+    finalLength_units   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_units");
+    verifyLessThan(testCase, finalLength_units, initialLength_units);
 end
 
 function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
@@ -210,11 +210,11 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
         initial = state(0, [-8 0]);
         goal    = state(20, [8 0]);
         limits  = struct();
-        limits.maxVelocity_deg_s      = [3 3];
-        limits.maxAcceleration_deg_s2 = [2 2];
-        limits.maxJerk_deg_s3         = [4 4];
-        limits.azimuthInterval_deg    = [-10 10];
-        limits.elevationInterval_deg  = [-6 6];
+        limits.maxVelocity_units_s      = [3 3];
+        limits.maxAcceleration_units_s2 = [2 2];
+        limits.maxJerk_units_s3         = [4 4];
+        limits.xInterval_units    = [-10 10];
+        limits.yInterval_units  = [-6 6];
         options = obstacleAvoidance.planTrajectory();
         options.MaximumSeedCount = 1;
         options.GoalTimeMode     = "fixedArrival";
@@ -236,9 +236,9 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
             verifyGreaterThan(testCase, diagnosis.FirstValidatedMotionTime_s, 0);
             verifyLessThanOrEqual(testCase, diagnosis.FirstValidatedMotionTime_s, result.ElapsedPlanningTime_s);
             verifyTrue(testCase, validation.JerkWithinLimits);
-            initialLength_deg = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_deg");
-            finalLength_deg   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_deg");
-            verifyLessThanOrEqual(testCase, finalLength_deg, initialLength_deg);
+            initialLength_units = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_units");
+            finalLength_units   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_units");
+            verifyLessThanOrEqual(testCase, finalLength_units, initialLength_units);
             if mode == "fixedArrival"
                 verifyFalse(testCase, any([diagnosis.Attempts(~isDetour).ValidationPassed]));
             end

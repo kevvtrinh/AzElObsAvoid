@@ -6,7 +6,7 @@ Retain the shared timing-handoff correction. The unmodified
 `Rogue Examples/inefficientroute.mat` request now uses the early timed route
 already found by search instead of the whole-history spatial detour.
 Arrival falls from 123.870022798 to 112.500000000 s (9.179%); sampled motion
-length falls from 291.311403232 to 228.212822569 deg (21.660%).
+length falls from 291.311403232 to 228.212822569 units (21.660%).
 The required gate was at least 5% earlier arrival, shorter motion, and unchanged
 independent safety/kinematic/endpoint checks.
 
@@ -17,13 +17,13 @@ old local time-grid function; both search and timed construction use it.
 
 ## Root cause and mechanism
 
-The saved search already found a bend near (-43.0572, -15.5395) deg at 27 s.
+The saved search already found a bend near (-43.0572, -15.5395) units at 27 s.
 The adapter treated its 108 s velocity-only estimate as a fixed arrival, although
 the exact rest-to-rest axis lower bound is 108.490297925 s. After that failure it
 tried only the 180 s deadline, reinterpreting the interior knot's normalized time
 as 45 s. The obstacle had moved and grown; that solve also failed. The remaining
 validated candidate used a static convex enclosure of the complete obstacle
-history, producing the unnecessary dive to -89.151995302 deg elevation.
+history, producing the unnecessary dive to -89.151995302 units y.
 
 The repaired adapter retains the same input-derived time layers as route search,
 adds the physical lower bound and advisory estimate, and excludes only times
@@ -37,16 +37,16 @@ assumption or bisection pruning is used. Fixed-arrival requests retain their
 prescribed deadline.
 
 On the supplied request the 108.4903 s basis-constrained construction still
-fails, then 112.5 s passes. The new path reaches a minimum elevation of
--24.549682328 deg. Public validation passes continuous collision resolution,
+fails, then 112.5 s passes. The new path reaches a minimum y of
+-24.549682328 units. Public validation passes continuous collision resolution,
 workspace, velocity, acceleration, jerk, endpoint, and continuity checks.
-Reported protected-geometry clearance is 0.040321429 deg, versus 0.894364201 deg
-for the saved detour; the original 0.2 deg obstacle margin is unchanged.
+Reported protected-geometry clearance is 0.040321429 units, versus 0.894364201 units
+for the saved detour; the original 0.2 units obstacle margin is unchanged.
 Both paths use the adaptive independent collision check, not an accepted
 separating-plane certificate.
 
-A separate diagnostic witness lets elevation finish at 28.707424739 s while
-azimuth finishes at 108.490297925 s. It passes full validation and demonstrates
+A separate diagnostic witness lets y finish at 28.707424739 s while
+x finishes at 108.490297925 s. It passes full validation and demonstrates
 that an earlier turn is physically possible. That witness is not a production
 candidate or an asserted output of this repair.
 
@@ -78,12 +78,12 @@ independent validation performed by the measurement runner. All raw calls,
 including warm-ups and expected failures, are appended to [benchmark.csv](../../benchmark.csv).
 No process startup failures are represented as planner measurements.
 
-| Case | Baseline median [min, max] s | Candidate median [min, max] s | Median change | Arrival before / after s | Motion length before / after deg |
+| Case | Baseline median [min, max] s | Candidate median [min, max] s | Median change | Arrival before / after s | Motion length before / after units |
 | --- | --- | --- | --- | --- | --- |
 | inefficientroute | 15.072 [14.213, 16.109] | 13.809 [13.608, 15.098] | -8.4% | 123.870 / 112.500 | 291.311 / 228.213 |
 | bumpyroad | 2.179 [2.039, 2.323] | 1.906 [1.789, 1.992] | -12.5% | 66.217 / 66.217 | 135.483 / 135.483 |
 | exampleStaticUShapedObstacle | 6.093 [5.861, 8.332] | 6.944 [6.615, 7.063] | 14.0% | 20.850 / 20.850 | 39.384 / 39.384 |
-| exampleMovingCircleNoAzimuthWrap | 0.791 [0.758, 0.849] | 0.831 [0.769, 0.881] | 5.1% | 8.500 / 8.500 | 12.482 / 12.482 |
+| exampleMovingCircleNoWrap | 0.791 [0.758, 0.849] | 0.831 [0.769, 0.881] | 5.1% | 8.500 / 8.500 | 12.482 / 12.482 |
 | exampleOpeningUShapedObstacle | 1.295 [1.204, 1.314] | 1.509 [1.385, 1.551] | 16.5% | 13.618 / 13.618 | 10.000 / 10.000 |
 | exampleFourAcceleratingCircles | 3.269 [3.102, 3.498] | 3.762 [3.726, 4.404] | 15.1% | 22.000 / 22.000 | 20.000 / 20.000 |
 | exampleNoPath | 0.331 [0.330, 0.506] | 0.332 [0.315, 0.578] | 0.2% | NaN / NaN | NaN / NaN |
@@ -107,12 +107,12 @@ The combined certificate column requires continuous collision resolution,
 kinematics, endpoint/continuity, and timing; the plane column separately reports
 whether an optional separating-plane certificate was accepted.
 
-| Case | Goal mode | Planner / independent validation | Polyline deg | Smoothed deg | Duration s | Collision / kinematics / combined checks | Plane certificate | Termination |
+| Case | Goal mode | Planner / independent validation | Polyline units | Smoothed units | Duration s | Collision / kinematics / combined checks | Plane certificate | Termination |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | inefficientroute | earliestArrival | 1 / 1 | 228.352 | 228.213 | 112.500 | 1 / 1 / 1 | 0 | goalReached |
 | bumpyroad | earliestArrival | 1 / 1 | 135.483 | 135.483 | 66.217 | 1 / 1 / 1 | 0 | goalReached |
 | exampleStaticUShapedObstacle | earliestArrival | 1 / 1 | 34.943 | 39.384 | 20.850 | 1 / 1 / 1 | 1 | goalReached |
-| exampleMovingCircleNoAzimuthWrap | earliestArrival | 1 / 1 | 12.482 | 12.482 | 8.500 | 1 / 1 / 1 | 0 | goalReached |
+| exampleMovingCircleNoWrap | earliestArrival | 1 / 1 | 12.482 | 12.482 | 8.500 | 1 / 1 / 1 | 0 | goalReached |
 | exampleOpeningUShapedObstacle | earliestArrival | 1 / 1 | 10.000 | 10.000 | 13.618 | 1 / 1 / 1 | 0 | goalReached |
 | exampleFourAcceleratingCircles | fixedArrival | 1 / 1 | 20.000 | 20.000 | 22.000 | 1 / 1 / 1 | 0 | goalReached |
 | exampleNoPath | earliestArrival | 0 / 0 | NaN | NaN | NaN | 0 / 0 / 0 | 0 | noValidatedSeed |

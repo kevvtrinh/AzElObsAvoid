@@ -17,7 +17,7 @@ function convexRegions = convexPolygonRegions(shape)
 %       Interior-disjoint convex polygons whose union equals shape.
 %
 % UNITS
-%   - Geometry coordinates retain the input shape's angular degree units.
+%   - Geometry coordinates retain the input shape's coordinate units.
 %
 
 %% Section 1: Triangulate And Coarsen Every Connected Region
@@ -41,20 +41,20 @@ usedCoarsening        = false;
 % Process each geometric connected region while constructing or checking the region topology.
 for connectedRegionIndex = 1:numel(connectedRegions)
     connectedRegion    = connectedRegions(connectedRegionIndex);
-    finiteVertex_deg   = connectedRegion.Vertices;
-    finiteVertex_deg   = finiteVertex_deg(all(isfinite(finiteVertex_deg), 2), :);
-    hullIndex          = convhull(finiteVertex_deg(:, 1), finiteVertex_deg(:, 2));
-    hull               = polyshape(finiteVertex_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
-    areaTolerance_deg2 = 256 * eps(max(1, area(hull)));
-    if abs(area(hull) - area(connectedRegion)) <= areaTolerance_deg2
+    finiteVertex_units   = connectedRegion.Vertices;
+    finiteVertex_units   = finiteVertex_units(all(isfinite(finiteVertex_units), 2), :);
+    hullIndex          = convhull(finiteVertex_units(:, 1), finiteVertex_units(:, 2));
+    hull               = polyshape(finiteVertex_units(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
+    areaTolerance_units2 = 256 * eps(max(1, area(hull)));
+    if abs(area(hull) - area(connectedRegion)) <= areaTolerance_units2
         convexRegions(end + 1, 1) = connectedRegion; %#ok<AGROW>
-        sortVertex_deg = connectedRegion.Vertices;
-        sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
-        sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(connectedRegion)]; %#ok<AGROW>
+        sortVertex_units = connectedRegion.Vertices;
+        sortVertex_units = sortVertex_units(all(isfinite(sortVertex_units), 2), :);
+        sortKeys(end + 1, :) = [min(sortVertex_units, [], 1), max(sortVertex_units, [], 1), area(connectedRegion)]; %#ok<AGROW>
         continue;
     end
     regionTriangulation = regionTriangulations{connectedRegionIndex};
-    point_deg           = double(regionTriangulation.Points);
+    point_units           = double(regionTriangulation.Points);
     triangleVertexIndex = double(regionTriangulation.ConnectivityList);
     if isempty(triangleVertexIndex)
         continue;
@@ -62,31 +62,31 @@ for connectedRegionIndex = 1:numel(connectedRegions)
     if ~coarsenComplexOutline
         % Process each geometric triangle while constructing or checking the region topology.
         for triangleIndex = 1:size(triangleVertexIndex, 1)
-            triangle_deg = point_deg(triangleVertexIndex(triangleIndex, :), :);
-            triangle     = polyshape(triangle_deg(:, 1), triangle_deg(:, 2), "Simplify", false);
+            triangle_units = point_units(triangleVertexIndex(triangleIndex, :), :);
+            triangle     = polyshape(triangle_units(:, 1), triangle_units(:, 2), "Simplify", false);
             if area(triangle) > 0
                 convexRegions(end + 1, 1) = triangle; %#ok<AGROW>
-                sortVertex_deg = triangle.Vertices;
-                sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
-                sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(triangle)]; %#ok<AGROW>
+                sortVertex_units = triangle.Vertices;
+                sortVertex_units = sortVertex_units(all(isfinite(sortVertex_units), 2), :);
+                sortKeys(end + 1, :) = [min(sortVertex_units, [], 1), max(sortVertex_units, [], 1), area(triangle)]; %#ok<AGROW>
             end
         end
         continue;
     end
     usedCoarsening = true;
-    [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, triangleVertexIndex);
-    [cellCycles, isActive]          = coarsenCells(point_deg, cellCycles, edgeTriangleIndex);
+    [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_units, triangleVertexIndex);
+    [cellCycles, isActive]          = coarsenCells(point_units, cellCycles, edgeTriangleIndex);
     % Process each geometric cell while constructing or checking the region topology.
     for cellIndex = reshape(find(isActive), 1, [])
         cycle  = cellCycles{cellIndex};
-        region = polyshape(point_deg(cycle, :), "Simplify", false, "KeepCollinearPoints", true);
+        region = polyshape(point_units(cycle, :), "Simplify", false, "KeepCollinearPoints", true);
         if area(region) <= 0
             error("convexPolygonRegions:InvalidMergedCell", "A coarsened cell has nonpositive area.");
         end
         convexRegions(end + 1, 1) = region; %#ok<AGROW>
-        sortVertex_deg = region.Vertices;
-        sortVertex_deg = sortVertex_deg(all(isfinite(sortVertex_deg), 2), :);
-        sortKeys(end + 1, :) = [min(sortVertex_deg, [], 1), max(sortVertex_deg, [], 1), area(region)]; %#ok<AGROW>
+        sortVertex_units = region.Vertices;
+        sortVertex_units = sortVertex_units(all(isfinite(sortVertex_units), 2), :);
+        sortKeys(end + 1, :) = [min(sortVertex_units, [], 1), max(sortVertex_units, [], 1), area(region)]; %#ok<AGROW>
     end
 end
 if usedCoarsening && ~isempty(convexRegions)
@@ -97,14 +97,14 @@ end
 
 %% Section 2: Local Functions
 
-function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, triangleVertexIndex)
+function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_units, triangleVertexIndex)
     % Normalize triangles and create one deterministic list of internal edges.
     triangleCount = size(triangleVertexIndex, 1);
     cellCycles    = cell(triangleCount, 1);
     % Process each geometric triangle while constructing or checking the region topology.
     for triangleIndex = 1:triangleCount
         cycle       = triangleVertexIndex(triangleIndex, :);
-        orientation = orientationSign(point_deg(cycle(1), :), point_deg(cycle(2), :), point_deg(cycle(3), :));
+        orientation = orientationSign(point_units(cycle(1), :), point_units(cycle(2), :), point_units(cycle(3), :));
         if orientation == 0
             error("convexPolygonRegions:DegenerateTriangulation", "MATLAB triangulation returned a zero-area triangle.");
         elseif orientation < 0
@@ -157,22 +157,22 @@ function [cellCycles, edgeTriangleIndex] = createTriangulationCells(point_deg, t
     edgeVertexIndex   = edgeVertexIndex(1:internalEdgeCount, :);
 
     if internalEdgeCount > 0
-        firstPoint_deg  = point_deg(edgeVertexIndex(:, 1), :);
-        secondPoint_deg = point_deg(edgeVertexIndex(:, 2), :);
-        swapEndpoints   = firstPoint_deg(:, 1) > secondPoint_deg(:, 1) | (firstPoint_deg(:, 1) == secondPoint_deg(:, 1) & firstPoint_deg(:, 2) > secondPoint_deg(:, 2));
-        lowerPoint_deg  = firstPoint_deg;
-        upperPoint_deg  = secondPoint_deg;
-        lowerPoint_deg(swapEndpoints, :) = secondPoint_deg(swapEndpoints, :);
-        upperPoint_deg(swapEndpoints, :) = firstPoint_deg(swapEndpoints, :);
-        edgeLengthSquared_deg2 = sum((secondPoint_deg - firstPoint_deg) .^ 2, 2);
-        priority               = [-edgeLengthSquared_deg2, lowerPoint_deg, upperPoint_deg, ...
+        firstPoint_units  = point_units(edgeVertexIndex(:, 1), :);
+        secondPoint_units = point_units(edgeVertexIndex(:, 2), :);
+        swapEndpoints   = firstPoint_units(:, 1) > secondPoint_units(:, 1) | (firstPoint_units(:, 1) == secondPoint_units(:, 1) & firstPoint_units(:, 2) > secondPoint_units(:, 2));
+        lowerPoint_units  = firstPoint_units;
+        upperPoint_units  = secondPoint_units;
+        lowerPoint_units(swapEndpoints, :) = secondPoint_units(swapEndpoints, :);
+        upperPoint_units(swapEndpoints, :) = firstPoint_units(swapEndpoints, :);
+        edgeLengthSquared_units2 = sum((secondPoint_units - firstPoint_units) .^ 2, 2);
+        priority               = [-edgeLengthSquared_units2, lowerPoint_units, upperPoint_units, ...
             edgeVertexIndex];
         [~, order] = sortrows(priority, 1:size(priority, 2));
         edgeTriangleIndex = edgeTriangleIndex(order, :);
     end
 end
 
-function [cellCycles, isActive] = coarsenCells(point_deg, cellCycles, edgeTriangleIndex)
+function [cellCycles, isActive] = coarsenCells(point_units, cellCycles, edgeTriangleIndex)
     % Reconsider only incident diagonals when a neighboring convex cell grows.
     cellCount         = numel(cellCycles);
     edgeCount         = size(edgeTriangleIndex, 1);
@@ -201,15 +201,15 @@ function [cellCycles, isActive] = coarsenCells(point_deg, cellCycles, edgeTriang
         if firstRootIndex == secondRootIndex
             continue;
         end
-        [mergedCycle, boundaryIsValid] = mergeBoundaryCycles(cellCycles{firstRootIndex}, cellCycles{secondRootIndex}, size(point_deg, 1));
-        if ~boundaryIsValid || ~cycleIsConvex(point_deg, mergedCycle)
+        [mergedCycle, boundaryIsValid] = mergeBoundaryCycles(cellCycles{firstRootIndex}, cellCycles{secondRootIndex}, size(point_units, 1));
+        if ~boundaryIsValid || ~cycleIsConvex(point_units, mergedCycle)
             continue;
         end
         retainedRootIndex = min(firstRootIndex, secondRootIndex);
         removedRootIndex  = max(firstRootIndex, secondRootIndex);
         parentIndex(removedRootIndex) = retainedRootIndex;
-        coordinates_deg = point_deg(mergedCycle, :);
-        [~, order]       = sortrows([coordinates_deg, mergedCycle(:)], [1 2 3]);
+        coordinates_units = point_units(mergedCycle, :);
+        [~, order]       = sortrows([coordinates_units, mergedCycle(:)], [1 2 3]);
         startIndex       = order(1);
         cellCycles{retainedRootIndex} = circshift(mergedCycle(:).', 1 - startIndex);
         isActive(removedRootIndex) = false;
@@ -288,7 +288,7 @@ function [mergedCycle, isValid] = mergeBoundaryCycles(firstCycle, secondCycle, p
     end
 end
 
-function isConvex = cycleIsConvex(point_deg, cycle)
+function isConvex = cycleIsConvex(point_units, cycle)
     % Accept counterclockwise boundaries with no inward turns.
     if numel(cycle) < 3
         isConvex = false;
@@ -299,7 +299,7 @@ function isConvex = cycleIsConvex(point_deg, cycle)
     for vertexIndex = 1:numel(cycle)
         previousIndex = mod(vertexIndex - 2, numel(cycle)) + 1;
         nextIndex     = mod(vertexIndex, numel(cycle)) + 1;
-        orientation   = orientationSign(point_deg(cycle(previousIndex), :), point_deg(cycle(vertexIndex), :), point_deg(cycle(nextIndex), :));
+        orientation   = orientationSign(point_units(cycle(previousIndex), :), point_units(cycle(vertexIndex), :), point_units(cycle(nextIndex), :));
         if orientation < 0
             isConvex = false;
             return;

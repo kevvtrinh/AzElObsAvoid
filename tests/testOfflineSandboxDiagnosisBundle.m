@@ -15,7 +15,7 @@ function tests = testOfflineSandboxDiagnosisBundle
 %       Focused tests for bundle construction and HTML/server integration.
 %**************************************************************************
 % UNITS
-%   - Positions and polygon vertices use degrees. Time uses seconds.
+%   - Positions and polygon vertices use coordinate units. Time uses seconds.
 %**************************************************************************
 
 tests = functiontests(localfunctions);
@@ -61,7 +61,7 @@ end
 
 function testPageAndServerExposeMatchedBundleDownload(testCase)
     % Keep bundle download and fresh replay routes wired to the browser controls.
-    htmlPath   = fullfile(testCase.TestData.RepositoryRoot, "offlinesandbox", "az_el_planner_sandbox.html");
+    htmlPath   = fullfile(testCase.TestData.RepositoryRoot, "offlinesandbox", "xy_planner_sandbox.html");
     serverPath = fullfile(testCase.TestData.RepositoryRoot, "offlinesandbox", "+offlineSandbox", "serveSandbox.m");
     htmlText   = string(fileread(htmlPath));
     serverText = string(fileread(serverPath));
@@ -76,9 +76,9 @@ function testPageAndServerExposeMatchedBundleDownload(testCase)
     verifyTrue(testCase, contains(htmlText, 'function copySelectedObstacle()'));
     verifyTrue(testCase, contains(htmlText, 'function rotateSelectedObstacle()'));
     verifyTrue(testCase, contains(htmlText, 'function positionObstacleActionMenu()'));
-    verifyTrue(testCase, contains(htmlText, 'motionVelocity_deg_s'));
-    verifyTrue(testCase, contains(htmlText, 'element("motionSpeedReadout").textContent = `${speed_deg_s.toFixed(3)} deg/s`'));
-    verifyTrue(testCase, contains(htmlText, 'const MAXIMUM_OBSTACLE_SPEED_DEG_S = 10;'));
+    verifyTrue(testCase, contains(htmlText, 'motionVelocity_units_s'));
+    verifyTrue(testCase, contains(htmlText, 'element("motionSpeedReadout").textContent = `${speed_units_s.toFixed(3)} units/s`'));
+    verifyTrue(testCase, contains(htmlText, 'const MAXIMUM_OBSTACLE_SPEED_UNITS_S = 10;'));
     verifyTrue(testCase, contains(htmlText, 'motionVelocityFromDrag'));
     verifyTrue(testCase, contains(htmlText, 'motionVectorDisplayEnd'));
     verifyTrue(testCase, contains(htmlText, 'id="walkthroughDepthButton"'));
@@ -118,24 +118,24 @@ function testReplayDiagnosisBundleRunsStoredCanonicalRequest(testCase)
     % Replay a moving-obstacle canonical request and write a fresh browser result.
     initialState = struct();
     initialState.time_s              = 0;
-    initialState.position_deg        = [0 0];
-    initialState.velocity_deg_s      = [0 0];
-    initialState.acceleration_deg_s2 = [0 0];
+    initialState.position_units        = [0 0];
+    initialState.velocity_units_s      = [0 0];
+    initialState.acceleration_units_s2 = [0 0];
     goalState = struct();
     goalState.time_s              = 10;
-    goalState.position_deg        = [1 0];
-    goalState.velocity_deg_s      = [0 0];
-    goalState.acceleration_deg_s2 = [0 0];
+    goalState.position_units        = [1 0];
+    goalState.velocity_units_s      = [0 0];
+    goalState.acceleration_units_s2 = [0 0];
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [2 2];
-    limits.maxJerk_deg_s3         = [5 5];
-    limits.azimuthInterval_deg    = [-10 10];
-    limits.elevationInterval_deg  = [-10 10];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [2 2];
+    limits.maxJerk_units_s3         = [5 5];
+    limits.xInterval_units    = [-10 10];
+    limits.yInterval_units  = [-10 10];
     time_s               = [0; 10];
-    azimuthBySlice_deg   = {[-6; -5; -5; -6]; [-5.5; -4.5; -4.5; -5.5]};
-    elevationBySlice_deg = {[5; 5; 6; 6]; [5; 5; 6; 6]};
-    movingObstacle       = obstacleAvoidance.obstacles.createObstacle("moving replay sentinel", time_s, azimuthBySlice_deg, elevationBySlice_deg, 0.1);
+    xBySlice_units   = {[-6; -5; -5; -6]; [-5.5; -4.5; -4.5; -5.5]};
+    yBySlice_units = {[5; 5; 6; 6]; [5; 5; 6; 6]};
+    movingObstacle       = obstacleAvoidance.obstacles.createObstacle("moving replay sentinel", time_s, xBySlice_units, yBySlice_units, 0.1);
     plannerInputs        = struct("obstacles", obstacleAvoidance.obstacles.combineObstacles({movingObstacle}), ...
         "initialState", initialState, ...
         "goalState", goalState, ...
@@ -160,10 +160,10 @@ function testReplayDiagnosisBundleRunsStoredCanonicalRequest(testCase)
     verifyTrue(testCase, isfile(resultFilePath));
     verifyEqual(testCase, numel(response.obstacles), 1);
     verifyEqual(testCase, reproducedBundle.Format, "obstacleAvoidanceSandboxDiagnosis-v2");
-    verifyEqual(testCase, reproducedBundle.PlannerInputs.initialState.position_deg, [0 0]);
-    verifyEqual(testCase, reproducedBundle.PlannerInputs.goalState.position_deg, [1 0]);
+    verifyEqual(testCase, reproducedBundle.PlannerInputs.initialState.position_units, [0 0]);
+    verifyEqual(testCase, reproducedBundle.PlannerInputs.goalState.position_units, [1 0]);
     verifyEqual(testCase, reproducedBundle.PlannerInputs.obstacles(1).time_s, time_s);
-    verifyEqual(testCase, reproducedBundle.PlannerInputs.obstacles(1).originalAz_deg{2}, azimuthBySlice_deg{2});
+    verifyEqual(testCase, reproducedBundle.PlannerInputs.obstacles(1).originalX_units{2}, xBySlice_units{2});
     clear cleanup;
 end
 
@@ -187,7 +187,7 @@ function testSuppliedFailureBundleReplaysUnderEightySeconds(testCase)
     verifyTrue(testCase, reproducedBundle.IndependentValidation.Passed, reproducedBundle.IndependentValidation.Message);
     verifyLessThan(testCase, response.result.ArrivalTime_s, 80, "The known feasible motion must arrive in less than 80 seconds.");
     selectedSummary = reproducedBundle.Diagnosis.Attempts(reproducedBundle.Diagnosis.SelectedAttemptIndex);
-    verifyLessThan(testCase, selectedSummary.MotionLength_deg + selectedSummary.TrajectoryDuration_s, 217, "Preserve the historical travel-plus-duration regression bound.");
+    verifyLessThan(testCase, selectedSummary.MotionLength_units + selectedSummary.TrajectoryDuration_s, 217, "Preserve the historical travel-plus-duration regression bound.");
     if ~isempty(fieldnames(reproducedBundle.Diagnosis.Search))
         verifyLessThan(testCase, reproducedBundle.Diagnosis.Search. RouteShorteningCandidateCount, 1000, "Same-class route cleanup must not restore the discarded candidate sweep.");
         verifyTrue(testCase, reproducedBundle.Diagnosis.Search. RouteClassSearchTruncated, "The bounded route-class search must report its completeness limit.");
@@ -204,18 +204,18 @@ function request = createSyntheticRequest()
         "requestId", "bundle-test-request", ...
         "obstacles", struct.empty(0, 1), ...
         "initialState", struct("time_s", 0, ...
-            "position_deg", [0 0], ...
-            "velocity_deg_s", [0 0], ...
-            "acceleration_deg_s2", [0 0]), ...
+            "position_units", [0 0], ...
+            "velocity_units_s", [0 0], ...
+            "acceleration_units_s2", [0 0]), ...
         "goalState", struct("time_s", 5, ...
-            "position_deg", [1 0], ...
-            "velocity_deg_s", [0 0], ...
-            "acceleration_deg_s2", [0 0]), ...
-        "limits", struct("maxVelocity_deg_s", [2 2], ...
-            "maxAcceleration_deg_s2", [2 2], ...
-            "maxJerk_deg_s3", [5 5], ...
-            "azimuthInterval_deg", [-10 10], ...
-            "elevationInterval_deg", [-10 10]), ...
+            "position_units", [1 0], ...
+            "velocity_units_s", [0 0], ...
+            "acceleration_units_s2", [0 0]), ...
+        "limits", struct("maxVelocity_units_s", [2 2], ...
+            "maxAcceleration_units_s2", [2 2], ...
+            "maxJerk_units_s3", [5 5], ...
+            "xInterval_units", [-10 10], ...
+            "yInterval_units", [-10 10]), ...
         "options", struct("GoalTimeMode", "earliestArrival"));
 end
 
@@ -231,10 +231,10 @@ end
 function testOptionalBundlePreservesFileAndMotionOutputs(testCase)
     % The documented file-only call and both output counts retain the same motion.
     request = struct('schemaVersion',"offlineSandboxRequest/v1", 'requestId',"optional-bundle", ...
-        'obstacles',[], 'initialState',struct('time_s',0,'position_deg',[0 0]), ...
-        'goalState',struct('time_s',5,'position_deg',[1 0]), ...
-        'limits',struct('maxVelocity_deg_s',[2 2], 'maxAcceleration_deg_s2',[1 1], ...
-            'maxJerk_deg_s3',[2 2]), 'options',struct());
+        'obstacles',[], 'initialState',struct('time_s',0,'position_units',[0 0]), ...
+        'goalState',struct('time_s',5,'position_units',[1 0]), ...
+        'limits',struct('maxVelocity_units_s',[2 2], 'maxAcceleration_units_s2',[1 1], ...
+            'maxJerk_units_s3',[2 2]), 'options',struct());
     requestPath = string(tempname) + ".json";
     resultPath  = string(tempname) + ".json";
     testCase.addTeardown(@() deleteTestFiles(requestPath, resultPath));
@@ -249,7 +249,7 @@ function testOptionalBundlePreservesFileAndMotionOutputs(testCase)
     verifyTrue(testCase, paired.validation.Passed);
     verifyTrue(testCase, fileOnly.validation.Passed);
     verifyEqual(testCase, rmfield(single.result,'ElapsedPlanningTime_s'), rmfield(paired.result,'ElapsedPlanningTime_s'));
-    verifyEqual(testCase, single.result.position_deg, fileOnly.result.position_deg);
-    verifyEqual(testCase, paired.result.position_deg, bundle.Result.position_deg);
-    verifyEqual(testCase, bundle.PlannerInputs.initialState.position_deg, [0 0]);
+    verifyEqual(testCase, single.result.position_units, fileOnly.result.position_units);
+    verifyEqual(testCase, paired.result.position_units, bundle.Result.position_units);
+    verifyEqual(testCase, bundle.PlannerInputs.initialState.position_units, [0 0]);
 end

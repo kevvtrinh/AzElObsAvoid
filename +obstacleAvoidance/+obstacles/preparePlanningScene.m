@@ -17,7 +17,7 @@ function scene = preparePlanningScene(obstacles, initialState, goalState)
 %       Prepared obstacles, start/end times, and the stationary-scene flag.
 %
 % UNITS
-%   - Geometry is degrees, time is seconds, and speed is degrees per second.
+%   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
 %
 
 %% Section 1: Read The Planning Horizon

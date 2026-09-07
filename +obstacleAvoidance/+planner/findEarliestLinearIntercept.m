@@ -1,9 +1,9 @@
-function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialState, targetTime_s, targetPosition_deg, limits, horizonTime_s)
+function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialState, targetTime_s, targetPosition_units, limits, horizonTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [interceptTime_s, diagnostics] = ...
 %       obstacleAvoidance.planner.findEarliestLinearIntercept( ...
-%       initialState, targetTime_s, targetPosition_deg, limits, horizonTime_s)
+%       initialState, targetTime_s, targetPosition_units, limits, horizonTime_s)
 %
 % PURPOSE
 %   - Find the globally earliest obstacle-free position-only interception
@@ -11,15 +11,15 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialSta
 %
 % INPUTS
 %   - initialState (scalar struct)
-%       Requires scalar time_s and one-by-D position_deg. Velocity and
+%       Requires scalar time_s and one-by-D position_units. Velocity and
 %       acceleration must be omitted, empty, or zero.
 %   - targetTime_s (N-by-1 numeric vector)
 %       Strictly increasing absolute target sample times.
-%   - targetPosition_deg (N-by-D numeric array)
+%   - targetPosition_units (N-by-D numeric array)
 %       Target positions joined by linear interpolation.
 %   - limits (scalar struct)
-%       Positive one-by-D maxVelocity_deg_s, maxAcceleration_deg_s2, and
-%       maxJerk_deg_s3 limits.
+%       Positive one-by-D maxVelocity_units_s, maxAcceleration_units_s2, and
+%       maxJerk_units_s3 limits.
 %   - horizonTime_s (finite scalar)
 %       Latest allowed absolute intercept time.
 %
@@ -30,21 +30,21 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialSta
 %       Search coverage, algebraic residuals, and termination reason.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3. Histories are N-by-D.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3. Histories are N-by-D.
 %
 
 %% Section 1: Normalize The Algebraic Request
 
-if ~isstruct(initialState) || ~isscalar(initialState) || ~all(isfield(initialState, {'time_s', 'position_deg'}))
-    error("findEarliestLinearIntercept:InvalidInitialState", "initialState requires scalar time_s and one-by-D position_deg.");
+if ~isstruct(initialState) || ~isscalar(initialState) || ~all(isfield(initialState, {'time_s', 'position_units'}))
+    error("findEarliestLinearIntercept:InvalidInitialState", "initialState requires scalar time_s and one-by-D position_units.");
 end
 initialTime_s       = double(initialState.time_s);
-initialPosition_deg = double(initialState.position_deg(:).');
+initialPosition_units = double(initialState.position_units(:).');
 validateattributes(initialTime_s, {'numeric'}, {'real', 'finite', 'scalar'});
-validateattributes(initialPosition_deg, {'numeric'}, {'real', 'finite', 'vector', 'nonempty'});
-dimensionCount = numel(initialPosition_deg);
-if any([stateDerivative(initialState, "velocity_deg_s", dimensionCount), stateDerivative(initialState, "acceleration_deg_s2", dimensionCount)] ~= 0)
+validateattributes(initialPosition_units, {'numeric'}, {'real', 'finite', 'vector', 'nonempty'});
+dimensionCount = numel(initialPosition_units);
+if any([stateDerivative(initialState, "velocity_units_s", dimensionCount), stateDerivative(initialState, "acceleration_units_s2", dimensionCount)] ~= 0)
     error("findEarliestLinearIntercept:NonrestInitialState", "The exact linear-target kernel requires zero initial velocity and acceleration.");
 end
 targetTime_s = double(targetTime_s(:));
@@ -52,17 +52,17 @@ validateattributes(targetTime_s, {'numeric'}, {'real', 'finite', 'vector', 'incr
 if numel(targetTime_s) < 2
     error("findEarliestLinearIntercept:ShortTargetHistory", "targetTime_s requires at least two samples.");
 end
-validateattributes(targetPosition_deg, {'numeric'}, {'real', 'finite', '2d', 'nrows', numel(targetTime_s), 'ncols', dimensionCount});
-targetPosition_deg = double(targetPosition_deg);
+validateattributes(targetPosition_units, {'numeric'}, {'real', 'finite', '2d', 'nrows', numel(targetTime_s), 'ncols', dimensionCount});
+targetPosition_units = double(targetPosition_units);
 validateattributes(horizonTime_s, {'numeric'}, {'real', 'finite', 'scalar', '>', initialTime_s});
 horizonTime_s              = min(double(horizonTime_s), targetTime_s(end));
-maximumVelocity_deg_s      = limitRow(limits, "maxVelocity_deg_s", dimensionCount);
-maximumAcceleration_deg_s2 = limitRow(limits, "maxAcceleration_deg_s2", dimensionCount);
-maximumJerk_deg_s3         = limitRow(limits, "maxJerk_deg_s3", dimensionCount);
+maximumVelocity_units_s      = limitRow(limits, "maxVelocity_units_s", dimensionCount);
+maximumAcceleration_units_s2 = limitRow(limits, "maxAcceleration_units_s2", dimensionCount);
+maximumJerk_units_s3         = limitRow(limits, "maxJerk_units_s3", dimensionCount);
 switchTime_s               = zeros(2, dimensionCount);
 % Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:dimensionCount
-    switchTime_s(:, axisIndex) = reachableSwitches(maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
+    switchTime_s(:, axisIndex) = reachableSwitches(maximumVelocity_units_s(axisIndex), maximumAcceleration_units_s2(axisIndex), maximumJerk_units_s3(axisIndex));
 end
 
 %% Section 2: Enumerate Every Target And Switching Regime
@@ -70,8 +70,8 @@ end
 interceptTime_s         = NaN;
 testedCount             = 0;
 rootCount               = 0;
-maximumRootResidual_deg = 0;
-selectedSlack_deg       = NaN(1, dimensionCount);
+maximumRootResidual_units = 0;
+selectedSlack_units       = NaN(1, dimensionCount);
 selectedSegmentIndex    = 0;
 selectedElapsedTime_s   = NaN;
 % Process each segment while assembling the complete motion or interval result.
@@ -82,12 +82,12 @@ for segmentIndex = 1:numel(targetTime_s) - 1
         continue;
     end
     segmentDuration_s = targetTime_s(segmentIndex + 1) - targetTime_s(segmentIndex);
-    targetSlope_deg_s = (targetPosition_deg(segmentIndex + 1, :) - targetPosition_deg(segmentIndex, :)) / segmentDuration_s;
-    targetOffset_deg  = targetPosition_deg(segmentIndex, :) + targetSlope_deg_s * (initialTime_s - targetTime_s(segmentIndex)) - initialPosition_deg;
+    targetSlope_units_s = (targetPosition_units(segmentIndex + 1, :) - targetPosition_units(segmentIndex, :)) / segmentDuration_s;
+    targetOffset_units  = targetPosition_units(segmentIndex, :) + targetSlope_units_s * (initialTime_s - targetTime_s(segmentIndex)) - initialPosition_units;
     elapsedStart_s    = segmentStart_s - initialTime_s;
     elapsedEnd_s      = segmentEnd_s - initialTime_s;
-    movingAxis        = targetSlope_deg_s ~= 0;
-    signChange_s      = -targetOffset_deg(movingAxis) ./ targetSlope_deg_s(movingAxis);
+    movingAxis        = targetSlope_units_s ~= 0;
+    signChange_s      = -targetOffset_units(movingAxis) ./ targetSlope_units_s(movingAxis);
     eventTime_s       = [elapsedStart_s; elapsedEnd_s; ...
         switchTime_s(isfinite(switchTime_s)); signChange_s(:)];
     eventTime_s      = unique(eventTime_s(eventTime_s >= elapsedStart_s & eventTime_s <= elapsedEnd_s));
@@ -100,15 +100,15 @@ for segmentIndex = 1:numel(targetTime_s) - 1
         slabMidpoint_s = 0.5 * (slabStart_s + slabEnd_s);
         % Evaluate each coordinate axis and combine its limiting result.
         for axisIndex = 1:dimensionCount
-            differencePower = reachablePower(slabMidpoint_s, maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
-            targetSign      = sign(targetOffset_deg(axisIndex) + targetSlope_deg_s(axisIndex) * slabMidpoint_s);
+            differencePower = reachablePower(slabMidpoint_s, maximumVelocity_units_s(axisIndex), maximumAcceleration_units_s2(axisIndex), maximumJerk_units_s3(axisIndex));
+            targetSign      = sign(targetOffset_units(axisIndex) + targetSlope_units_s(axisIndex) * slabMidpoint_s);
             if targetSign == 0
                 targetSign = 1;
             end
-            differencePower(1:2) = differencePower(1:2) - targetSign * [targetOffset_deg(axisIndex), targetSlope_deg_s(axisIndex)];
+            differencePower(1:2) = differencePower(1:2) - targetSign * [targetOffset_units(axisIndex), targetSlope_units_s(axisIndex)];
             slabRoot_s = realRoots(differencePower, slabStart_s, slabEnd_s);
             if ~isempty(slabRoot_s)
-                maximumRootResidual_deg = max(maximumRootResidual_deg, max(abs(polyval(flip(differencePower), slabRoot_s))));
+                maximumRootResidual_units = max(maximumRootResidual_units, max(abs(polyval(flip(differencePower), slabRoot_s))));
                 rootCount               = rootCount + numel(slabRoot_s);
                 transitionTime_s        = [transitionTime_s; slabRoot_s]; %#ok<AGROW>
             end
@@ -127,20 +127,20 @@ for segmentIndex = 1:numel(targetTime_s) - 1
         end
         testedCount = testedCount + 1;
         % Discard infeasible intercept times and continue searching later event intervals.
-        if ~isFeasible(elapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3)
+        if ~isFeasible(elapsedTime_s, targetOffset_units, targetSlope_units_s, maximumVelocity_units_s, maximumAcceleration_units_s2, maximumJerk_units_s3)
             continue;
         end
-        [boundaryFeasible, boundarySlack_deg] = isFeasible(candidateElapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3);
+        [boundaryFeasible, boundarySlack_units] = isFeasible(candidateElapsedTime_s, targetOffset_units, targetSlope_units_s, maximumVelocity_units_s, maximumAcceleration_units_s2, maximumJerk_units_s3);
         % Skip infeasible boundary times; feasible boundaries remain candidates for the earliest intercept.
         if ~boundaryFeasible
             candidateElapsedTime_s = candidateElapsedTime_s + 64 * eps(max(1, candidateElapsedTime_s));
-            [boundaryFeasible, boundarySlack_deg] = isFeasible(candidateElapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3);
+            [boundaryFeasible, boundarySlack_units] = isFeasible(candidateElapsedTime_s, targetOffset_units, targetSlope_units_s, maximumVelocity_units_s, maximumAcceleration_units_s2, maximumJerk_units_s3);
         end
         % Accept the first feasible boundary because times are examined in increasing order.
         if boundaryFeasible
             interceptTime_s       = initialTime_s + candidateElapsedTime_s;
             selectedElapsedTime_s = candidateElapsedTime_s;
-            selectedSlack_deg     = boundarySlack_deg;
+            selectedSlack_units     = boundarySlack_units;
             selectedSegmentIndex  = segmentIndex;
             break;
         end
@@ -166,9 +166,9 @@ diagnostics = struct("Success", isfinite(interceptTime_s), ...
     "SelectedTargetSegmentIndex", selectedSegmentIndex, ...
     "TestedCellOrBoundaryCount", testedCount, ...
     "AlgebraicRootCount", rootCount, ...
-    "MaximumRootResidual_deg", maximumRootResidual_deg, ...
+    "MaximumRootResidual_units", maximumRootResidual_units, ...
     "SelectedElapsedTime_s", selectedElapsedTime_s, ...
-    "SelectedAxisSlack_deg", selectedSlack_deg, ...
+    "SelectedAxisSlack_units", selectedSlack_units, ...
     "SearchStartTime_s", max(initialTime_s, targetTime_s(1)), ...
     "SearchEndTime_s", horizonTime_s, "InterceptTime_s", interceptTime_s);
 end
@@ -238,15 +238,15 @@ function root_s = realRoots(power, lower_s, upper_s)
     root_s      = unique(min(upper_s, max(lower_s, candidate)));
 end
 
-function [feasible, slack_deg] = isFeasible(elapsedTime_s, targetOffset_deg, targetSlope_deg_s, maximumVelocity_deg_s, maximumAcceleration_deg_s2, maximumJerk_deg_s3)
+function [feasible, slack_units] = isFeasible(elapsedTime_s, targetOffset_units, targetSlope_units_s, maximumVelocity_units_s, maximumAcceleration_units_s2, maximumJerk_units_s3)
     % Evaluate every componentwise reachable-distance inequality conservatively.
-    slack_deg = zeros(size(targetOffset_deg));
+    slack_units = zeros(size(targetOffset_units));
     % Evaluate each coordinate axis and combine its limiting result.
-    for axisIndex = 1:numel(targetOffset_deg)
-        power                = reachablePower(elapsedTime_s, maximumVelocity_deg_s(axisIndex), maximumAcceleration_deg_s2(axisIndex), maximumJerk_deg_s3(axisIndex));
-        requiredDistance_deg = abs(targetOffset_deg(axisIndex) + targetSlope_deg_s(axisIndex) * elapsedTime_s);
-        slack_deg(axisIndex) = polyval(flip(power), elapsedTime_s) - requiredDistance_deg;
+    for axisIndex = 1:numel(targetOffset_units)
+        power                = reachablePower(elapsedTime_s, maximumVelocity_units_s(axisIndex), maximumAcceleration_units_s2(axisIndex), maximumJerk_units_s3(axisIndex));
+        requiredDistance_units = abs(targetOffset_units(axisIndex) + targetSlope_units_s(axisIndex) * elapsedTime_s);
+        slack_units(axisIndex) = polyval(flip(power), elapsedTime_s) - requiredDistance_units;
     end
-    reserve_deg = 256 * eps(max(1, max(abs([targetOffset_deg, targetSlope_deg_s * elapsedTime_s]))));
-    feasible    = all(slack_deg >= -reserve_deg);
+    reserve_units = 256 * eps(max(1, max(abs([targetOffset_units, targetSlope_units_s * elapsedTime_s]))));
+    feasible    = all(slack_units >= -reserve_units);
 end

@@ -32,7 +32,7 @@ function [candidate, diagnostics] = createWaitThenMoveMotion(seed, initialState,
 %       Direct retiming durations stay NaN when refinement is not entered.
 %
 % UNITS
-%   - Position is degrees and time is seconds.
+%   - Position is coordinate units and time is seconds.
 %
 
 %% Section 1: Check The Timed Seed Form
@@ -56,8 +56,8 @@ diagnostics = struct("Accepted", false, "ElapsedTime_s", 0, ...
     "ExactMinimumDirectDuration_s", NaN, ...
     "InitialTimingTerminationReason", "", ...
     "SeedIndex", seed.Index, "SeedSource", string(seed.Source), ...
-    "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau, ...
-    "ContainsWait", hasRepeatedWaypoint(seed.position_deg), ...
+    "WaypointPosition_units", seed.position_units, "Tau", seed.tau, ...
+    "ContainsWait", hasRepeatedWaypoint(seed.position_units), ...
     "FirstUnsupportedTransitionIndex", 0, ...
     "FirstUnsupportedFeature", "", ...
     "OriginalTerminationReason", "", ...
@@ -78,11 +78,11 @@ if string(seed.Source) ~= "directWait"
     return;
 end
 
-coordinateScale_deg   = bmtpEngine.createCoordinateTolerances(seed.position_deg, initialState.position_deg, goalState.position_deg);
-positionTolerance_deg = 256 * eps(coordinateScale_deg);
-isInitialPosition     = vecnorm(seed.position_deg - initialState.position_deg, 2, 2) <= positionTolerance_deg;
+coordinateScale_units   = bmtpEngine.createCoordinateTolerances(seed.position_units, initialState.position_units, goalState.position_units);
+positionTolerance_units = 256 * eps(coordinateScale_units);
+isInitialPosition     = vecnorm(seed.position_units - initialState.position_units, 2, 2) <= positionTolerance_units;
 firstMotionIndex      = find(~isInitialPosition, 1, "first");
-isDirectWait          = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && all(vecnorm(seed.position_deg(firstMotionIndex:end, :) - goalState.position_deg, 2, 2) <= positionTolerance_deg);
+isDirectWait          = ~isempty(firstMotionIndex) && firstMotionIndex > 1 && all(vecnorm(seed.position_units(firstMotionIndex:end, :) - goalState.position_units, 2, 2) <= positionTolerance_units);
 % Reject non-wait seeds here so they can be handled by their corresponding motion constructor.
 if ~isDirectWait
     diagnostics.TerminationReason               = "invalidDirectWaitSeed";
@@ -162,15 +162,15 @@ end
 
 directBreak_s = [direct.Polynomial.SegmentStartTime_s; ...
     direct.Polynomial.FinalTime_s] - delayedInitialState.time_s;
-directJerk_deg_s3 = reshape(direct.Polynomial.jerkPower_deg_s3, direct.Polynomial.SegmentCount, numel(initialState.position_deg));
+directJerk_units_s3 = reshape(direct.Polynomial.jerkPower_units_s3, direct.Polynomial.SegmentCount, numel(initialState.position_units));
 if waitTime_s > 0
     relativeBreak_s    = [0; waitTime_s + directBreak_s];
-    segmentJerk_deg_s3 = [zeros(1, numel(initialState.position_deg)); directJerk_deg_s3];
+    segmentJerk_units_s3 = [zeros(1, numel(initialState.position_units)); directJerk_units_s3];
 else
     relativeBreak_s    = directBreak_s;
-    segmentJerk_deg_s3 = directJerk_deg_s3;
+    segmentJerk_units_s3 = directJerk_units_s3;
 end
-candidate = bmtpEngine.createMotionRecord(direct, initialState, relativeBreak_s, segmentJerk_deg_s3, options.SampleTime_s, seed.Source);
+candidate = bmtpEngine.createMotionRecord(direct, initialState, relativeBreak_s, segmentJerk_units_s3, options.SampleTime_s, seed.Source);
 candidate.SeedIndex = seed.Index;
 candidate.Message   = "An exact direct motion was realized after the timed dwell.";
 [candidate.Success, candidate.OptimizerFeasible] = deal(true);
@@ -186,13 +186,13 @@ end
 
 %% Section 4: Local Functions
 
-function hasWait = hasRepeatedWaypoint(position_deg)
+function hasWait = hasRepeatedWaypoint(position_units)
     % Repeated consecutive guide points represent a wait.
-    if size(position_deg, 1) < 2
+    if size(position_units, 1) < 2
         hasWait = false;
         return;
     end
-    coordinateScale_deg    = bmtpEngine.createCoordinateTolerances(position_deg);
-    duplicateTolerance_deg = 256 * eps(coordinateScale_deg);
-    hasWait                = any(vecnorm(diff(position_deg), 2, 2) <= duplicateTolerance_deg);
+    coordinateScale_units    = bmtpEngine.createCoordinateTolerances(position_units);
+    duplicateTolerance_units = 256 * eps(coordinateScale_units);
+    hasWait                = any(vecnorm(diff(position_units), 2, 2) <= duplicateTolerance_units);
 end

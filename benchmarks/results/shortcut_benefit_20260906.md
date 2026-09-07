@@ -60,7 +60,7 @@ All times are seconds. “On/off valid” means planner success AND fresh indepe
 
 ## Movement and validation details
 
-| Case | Mode | Polyline (deg) | Smoothed (deg) | Duration (s) | Planner | Independent | Collision | Kinematic | Certificate | Termination |
+| Case | Mode | Polyline (units) | Smoothed (units) | Duration (s) | Planner | Independent | Collision | Kinematic | Certificate | Termination |
 |---|---|---:|---:|---:|---|---|---|---|---|---|
 | static_6101 | on | 16.213 | 16.213 | 7.708 | True | True | True | True | True | goalReached |
 | static_6101 | off | 16.207 | 16.862 | 7.757 | True | True | True | True | True | goalReached |

@@ -23,7 +23,7 @@ function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacle
 %   - initialState, goalState (normalized scalar structs)
 %       Fixed two-coordinate rest-to-rest request used by the direct motion.
 %   - limits (normalized scalar struct)
-%       Per-axis physical limits and azimuth/elevation workspace intervals.
+%       Per-axis physical limits and x/y workspace intervals.
 %   - options (resolved scalar planner-options struct)
 %       Supplies sampling, collision, constraint, and goal-time policies.
 %   - directValidation (scalar validation record)
@@ -39,8 +39,8 @@ function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacle
 %       explicit unsupported-or-failure evidence.
 %
 % UNITS
-%   - Position and path length are degrees. Time is seconds. Derivatives use
-%     degrees per second and its second and third powers.
+%   - Position and path length are coordinate units. Time is seconds. Derivatives use
+%     coordinate units per second and its second and third powers.
 %
 
 %% Section 1: Check That The Direct Move Uses The Minimum Travel Time
@@ -60,16 +60,16 @@ timer = tic;
 % diagnostics.Success tells the caller whether this function found a detour.
 candidate   = directCandidate;
 diagnostics = createDiagnostics();
-if ~isstruct(directCandidate) || ~isscalar(directCandidate) ||  ~all(isfield(directCandidate, {'Success', 'TrajectoryDuration_s',  'MinimumAxisDuration_s', 'Polynomial', 'position_deg'}))
+if ~isstruct(directCandidate) || ~isscalar(directCandidate) ||  ~all(isfield(directCandidate, {'Success', 'TrajectoryDuration_s',  'MinimumAxisDuration_s', 'Polynomial', 'position_units'}))
     diagnostics = finishFailure(diagnostics, "invalidDirectCandidate",  "The direct candidate lacks the required stable motion fields.", timer);
     return;
 end
 % Promote the successful candidate; otherwise continue the configured fallback or search path.
-if ~directCandidate.Success || isempty(directCandidate.position_deg)
+if ~directCandidate.Success || isempty(directCandidate.position_units)
     diagnostics = finishFailure(diagnostics, "directMotionUnavailable",  "A successful direct motion is required before an excursion is tried.", timer);
     return;
 end
-dimensionCount = size(directCandidate.position_deg, 2);
+dimensionCount = size(directCandidate.position_units, 2);
 if dimensionCount ~= 2
     diagnostics = finishFailure(diagnostics, "unsupportedDimension",  "The independent validator currently requires two coordinates.", timer);
     return;
@@ -105,12 +105,12 @@ end
 
 %% Section 2: Try Sideways Detours Without Extending The Motion
 
-workspaceInterval_deg = [double(limits.azimuthInterval_deg(:).'); ...
-                        double(limits.elevationInterval_deg(:).')];
+workspaceInterval_units = [double(limits.xInterval_units(:).'); ...
+                        double(limits.yInterval_units(:).')];
 coarseLevelCount      = 8;
 % Stop shrinking the detour once changes are small relative to the collision
 % tolerance or coordinate precision.
-boundaryResolution_deg = max(8 * double(options.CollisionClearanceTolerance_deg),  sqrt(eps) * max(1, max(abs(directCandidate.position_deg), [], "all")));
+boundaryResolution_units = max(8 * double(options.CollisionClearanceTolerance_units),  sqrt(eps) * max(1, max(abs(directCandidate.position_units), [], "all")));
 
 % Choose times to try the largest sideways offset, based on when the
 % direct move encounters obstacles. Also try the middle of the move.
@@ -148,39 +148,39 @@ for axisIndex = 1:dimensionCount
             if direction > 0
                 % Limit the offset using the room between the sampled direct
                 % motion and the workspace edge on the chosen side.
-                workspaceRoom_deg = workspaceInterval_deg(axisIndex, 2) -  max(directCandidate.position_deg(:, axisIndex));
+                workspaceRoom_units = workspaceInterval_units(axisIndex, 2) -  max(directCandidate.position_units(:, axisIndex));
             else
-                workspaceRoom_deg = min(directCandidate.position_deg(:, axisIndex)) -  workspaceInterval_deg(axisIndex, 1);
+                workspaceRoom_units = min(directCandidate.position_units(:, axisIndex)) -  workspaceInterval_units(axisIndex, 1);
             end
             phaseDuration_s  = [peakTime_s(peakIndex) - initialState.time_s, ...
                 directCandidate.ArrivalTime_s - peakTime_s(peakIndex)];
-            physicalRoom_deg = Inf;
+            physicalRoom_units = Inf;
             % Estimate how far the offset can move out and return in the time
             % on either side of the peak. Use the smaller distance as a search
             % bound, not as proof that the combined motion obeys the limits.
             for phaseIndex = 1:2
-                phaseRoom_deg    = bmtpEngine.maximumRestToRestDistance(phaseDuration_s(phaseIndex),  limits.maxVelocity_deg_s(axisIndex),  limits.maxAcceleration_deg_s2(axisIndex),  limits.maxJerk_deg_s3(axisIndex));
-                physicalRoom_deg = min(physicalRoom_deg, phaseRoom_deg);
+                phaseRoom_units    = bmtpEngine.maximumRestToRestDistance(phaseDuration_s(phaseIndex),  limits.maxVelocity_units_s(axisIndex),  limits.maxAcceleration_units_s2(axisIndex),  limits.maxJerk_units_s3(axisIndex));
+                physicalRoom_units = min(physicalRoom_units, phaseRoom_units);
             end
-            maximumMagnitude_deg = max(0, min(workspaceRoom_deg, physicalRoom_deg));
-            report.MaximumMagnitude_deg = maximumMagnitude_deg;
-            report.Eligible             = maximumMagnitude_deg > boundaryResolution_deg;
+            maximumMagnitude_units = max(0, min(workspaceRoom_units, physicalRoom_units));
+            report.MaximumMagnitude_units = maximumMagnitude_units;
+            report.Eligible             = maximumMagnitude_units > boundaryResolution_units;
             if ~report.Eligible
                 report.TerminationReason = "noExcursionRoom";
                 axisReports(reportIndex) = report;
                 continue;
             end
-            lowerMagnitude_deg  = 0;
-            upperMagnitude_deg  = NaN;
+            lowerMagnitude_units  = 0;
+            upperMagnitude_units  = NaN;
             upperCandidate      = struct();
             trialCandidates     = cell(coarseLevelCount, 1);
-            trialMagnitudes_deg = zeros(coarseLevelCount, 1);
+            trialMagnitudes_units = zeros(coarseLevelCount, 1);
             % Start with eight evenly spaced offset sizes, from small to large.
             % Each trial adds a smooth offset that is zero at both endpoints.
             for levelIndex = 1:coarseLevelCount
-                magnitude_deg                   = maximumMagnitude_deg * levelIndex / coarseLevelCount;
-                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
-                trialMagnitudes_deg(levelIndex) = magnitude_deg;
+                magnitude_units                   = maximumMagnitude_units * levelIndex / coarseLevelCount;
+                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_units, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
+                trialMagnitudes_units(levelIndex) = magnitude_units;
             end
             % Quickly reject collisions at the stored sample times. A clear
             % sample check can still miss collisions between samples, so only
@@ -191,7 +191,7 @@ for axisIndex = 1:dimensionCount
             upperValidation = obstacleAvoidance.validation.validatePreparedTrajectory();
             if ~isempty(passingLevel)
                 if passingLevel > 1
-                    lowerMagnitude_deg = trialMagnitudes_deg(passingLevel - 1);
+                    lowerMagnitude_units = trialMagnitudes_units(passingLevel - 1);
                 end
                 % Repeat the level alternatives needed to refine the current solution.
                 for levelIndex = passingLevel:coarseLevelCount
@@ -200,15 +200,15 @@ for axisIndex = 1:dimensionCount
                     diagnostics     = addValidationTiming(diagnostics, trialValidation, toc(validationTimer));
                     % Use the first coarse detour magnitude that validates as the upper passing bound for refinement.
                     if trialValidation.Passed
-                        upperMagnitude_deg = trialMagnitudes_deg(levelIndex);
+                        upperMagnitude_units = trialMagnitudes_units(levelIndex);
                         upperCandidate     = trialCandidates{levelIndex};
                         upperValidation    = trialValidation;
                         break;
                     end
-                    lowerMagnitude_deg = trialMagnitudes_deg(levelIndex);
+                    lowerMagnitude_units = trialMagnitudes_units(levelIndex);
                 end
             end
-            if ~isfinite(upperMagnitude_deg)
+            if ~isfinite(upperMagnitude_units)
                 % None of the tested sizes passed. This is a limited search
                 % failure, not proof that no detour exists.
                 report.TerminationReason = "noPassingAmplitudeBracket";
@@ -222,36 +222,36 @@ for axisIndex = 1:dimensionCount
             % may exist outside this interval; this is not a global search.
             refinementCount = 0;
             % Refine the passing detour magnitude until resolution or iteration limits stop the search.
-            while upperMagnitude_deg - lowerMagnitude_deg > boundaryResolution_deg && refinementCount < 6
-                midpointMagnitude_deg = 0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
-                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
+            while upperMagnitude_units - lowerMagnitude_units > boundaryResolution_units && refinementCount < 6
+                midpointMagnitude_units = 0.5 * (lowerMagnitude_units + upperMagnitude_units);
+                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_units, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
                 validationTimer       = tic;
                 midpointValidation    = obstacleAvoidance.validation.validatePreparedTrajectory(midpointCandidate, obstacles, initialState, goalState, limits, options);
                 diagnostics           = addValidationTiming(diagnostics, midpointValidation, toc(validationTimer));
                 refinementCount       = refinementCount + 1;
                 % Move the passing bound inward when the midpoint validates; otherwise raise the failing lower bound.
                 if midpointValidation.Passed
-                    upperMagnitude_deg = midpointMagnitude_deg;
+                    upperMagnitude_units = midpointMagnitude_units;
                     upperCandidate     = midpointCandidate;
                     upperValidation    = midpointValidation;
                 else
-                    lowerMagnitude_deg = midpointMagnitude_deg;
+                    lowerMagnitude_units = midpointMagnitude_units;
                 end
             end
             upperCandidate.Validation = upperValidation;
-            report.InvalidBoundaryMagnitude_deg  = lowerMagnitude_deg;
-            report.ValidBoundaryMagnitude_deg    = upperMagnitude_deg;
-            report.BoundaryResolutionReserve_deg =  upperMagnitude_deg - lowerMagnitude_deg;
+            report.InvalidBoundaryMagnitude_units  = lowerMagnitude_units;
+            report.ValidBoundaryMagnitude_units    = upperMagnitude_units;
+            report.BoundaryResolutionReserve_units =  upperMagnitude_units - lowerMagnitude_units;
             report.BoundaryRefinementCount       = refinementCount;
-            report.RetainedAmplitude_deg         = direction * upperMagnitude_deg;
-            report.MotionLength_deg              = upperCandidate.MotionLength_deg;
+            report.RetainedAmplitude_units         = direction * upperMagnitude_units;
+            report.MotionLength_units              = upperCandidate.MotionLength_units;
             report.Validation                    = upperValidation;
             report.TerminationReason             = "validatedFeasibleBoundary";
             axisReports(reportIndex) = report;
 
             % All candidates have the same arrival time; keep the shortest.
             % Later route search may still find a better motion.
-            if diagnostics.Success &&  upperCandidate.MotionLength_deg >= candidate.MotionLength_deg
+            if diagnostics.Success &&  upperCandidate.MotionLength_units >= candidate.MotionLength_units
                 continue;
             end
             candidate = upperCandidate;
@@ -263,11 +263,11 @@ for axisIndex = 1:dimensionCount
             diagnostics.SelectedAxisIndex             = report.AxisIndex;
             diagnostics.SelectedDirection             = report.Direction;
             diagnostics.SelectedPeakVelocityConstrained = report.ConstrainedPeakVelocity;
-            diagnostics.InvalidBoundaryMagnitude_deg  =  report.InvalidBoundaryMagnitude_deg;
-            diagnostics.ValidBoundaryMagnitude_deg    =  report.ValidBoundaryMagnitude_deg;
-            diagnostics.BoundaryResolutionReserve_deg =  report.BoundaryResolutionReserve_deg;
-            diagnostics.RetainedAmplitude_deg         = report.RetainedAmplitude_deg;
-            diagnostics.MotionLength_deg              = candidate.MotionLength_deg;
+            diagnostics.InvalidBoundaryMagnitude_units  =  report.InvalidBoundaryMagnitude_units;
+            diagnostics.ValidBoundaryMagnitude_units    =  report.ValidBoundaryMagnitude_units;
+            diagnostics.BoundaryResolutionReserve_units =  report.BoundaryResolutionReserve_units;
+            diagnostics.RetainedAmplitude_units         = report.RetainedAmplitude_units;
+            diagnostics.MotionLength_units              = candidate.MotionLength_units;
             diagnostics.SelectedValidation            = candidate.Validation;
             diagnostics.ElapsedTime_s                 = toc(timer);
         end
@@ -293,40 +293,40 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
     % Keep the existing safe motion whenever a proposed change fails.
     axisIndex      = diagnostics.SelectedAxisIndex;
     reports        = diagnostics.AxisReports;
-    selectedReport = find([reports.AxisIndex] == axisIndex &  [reports.Direction] == diagnostics.SelectedDirection &  [reports.MotionLength_deg] == candidate.MotionLength_deg, 1);
+    selectedReport = find([reports.AxisIndex] == axisIndex &  [reports.Direction] == diagnostics.SelectedDirection &  [reports.MotionLength_units] == candidate.MotionLength_units, 1);
     % Use nine evenly spaced times plus the original peak time as adjustment
     % points (knots). Their offsets describe how far to depart from the direct move.
     knotTime_s            = unique([linspace(initialState.time_s, direct.ArrivalTime_s, 9).';  reports(selectedReport).PeakTime_s]);
-    [~, basePosition_deg] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
-    [~, position_deg]     = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
-    offset_deg            = position_deg(:, axisIndex) - basePosition_deg(:, axisIndex);
+    [~, basePosition_units] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
+    [~, position_units]     = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
+    offset_units            = position_units(:, axisIndex) - basePosition_units(:, axisIndex);
     % The detour must still start and end at the requested positions.
-    offset_deg([1 end]) = 0;
+    offset_units([1 end]) = 0;
     record              = createTravelRefinement();
     record.Attempted         = true;
-    record.InitialLength_deg = candidate.MotionLength_deg;
-    record.InitialIntegratedSquaredJerk_deg2_s5 = candidate.IntegratedSquaredJerk_deg2_s5;
+    record.InitialLength_units = candidate.MotionLength_units;
+    record.InitialIntegratedSquaredJerk_units2_s5 = candidate.IntegratedSquaredJerk_units2_s5;
     record.KnotTime_s        = knotTime_s;
-    initialStep_deg = max(abs(offset_deg)) / 2;
+    initialStep_units = max(abs(offset_units)) / 2;
     % Nudge one interior offset at a time in both directions. Start with larger
     % changes, then halve the step for finer adjustments. Two passes at each
     % step size let later improvements influence earlier adjustment points.
     for level = 0:7
-        step_deg = initialStep_deg / 2^level;
+        step_units = initialStep_units / 2^level;
         % Repeat the sweep alternatives needed to refine the current solution.
         for sweep = 1:2
             % Process each knot needed to find offset travel.
             for knotIndex = 2:numel(knotTime_s)-1
                 % Repeat the direction alternatives needed to refine the current solution.
                 for direction = [-1 1]
-                    trialOffset_deg            = offset_deg;
-                    trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
-                    trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_deg, axisIndex, initialState, options.SampleTime_s,  "fixedClockLateralExcursion");
+                    trialOffset_units            = offset_units;
+                    trialOffset_units(knotIndex) = trialOffset_units(knotIndex) + direction * step_units;
+                    trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_units, axisIndex, initialState, options.SampleTime_s,  "fixedClockLateralExcursion");
                     record.TrialCount = record.TrialCount + 1;
                     % Arrival is unchanged, so shorter travel is the objective.
                     % The full validator below enforces all derivative limits;
                     % integrated squared jerk is diagnostic, not a ranking gate.
-                    if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
+                    if trial.MotionLength_units >= candidate.MotionLength_units - 1e-8
                         continue;
                     end
                     validationTimer = tic;
@@ -336,18 +336,18 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
                     if validation.Passed
                         trial.Validation = validation;
                         candidate  = trial;
-                        offset_deg = trialOffset_deg;
+                        offset_units = trialOffset_units;
                         record.AcceptedCount = record.AcceptedCount + 1;
                     end
                 end
             end
         end
     end
-    record.FinalLength_deg = candidate.MotionLength_deg;
-    record.FinalIntegratedSquaredJerk_deg2_s5 = candidate.IntegratedSquaredJerk_deg2_s5;
-    record.KnotOffset_deg  = offset_deg;
+    record.FinalLength_units = candidate.MotionLength_units;
+    record.FinalIntegratedSquaredJerk_units2_s5 = candidate.IntegratedSquaredJerk_units2_s5;
+    record.KnotOffset_units  = offset_units;
     diagnostics.TravelRefinement   = record;
-    diagnostics.MotionLength_deg   = candidate.MotionLength_deg;
+    diagnostics.MotionLength_units   = candidate.MotionLength_units;
     diagnostics.SelectedValidation = candidate.Validation;
     % Replace the original detour only when at least one perturbation was accepted.
     if record.AcceptedCount > 0
@@ -362,27 +362,27 @@ function record = createTravelRefinement()
     record.Attempted         = false;
     record.AcceptedCount     = 0;
     record.TrialCount        = 0;
-    record.InitialLength_deg = NaN;
-    record.FinalLength_deg   = NaN;
-    record.InitialIntegratedSquaredJerk_deg2_s5 = NaN;
-    record.FinalIntegratedSquaredJerk_deg2_s5   = NaN;
+    record.InitialLength_units = NaN;
+    record.FinalLength_units   = NaN;
+    record.InitialIntegratedSquaredJerk_units2_s5 = NaN;
+    record.FinalIntegratedSquaredJerk_units2_s5   = NaN;
     record.KnotTime_s        = zeros(0, 1);
-    record.KnotOffset_deg    = zeros(0, 1);
+    record.KnotOffset_units    = zeros(0, 1);
 end
 
-function candidate = createExcursion(directCandidate, amplitude_deg, axisIndex, peakTime_s, initialState, options, constrainPeakVelocity)
-    % Add an offset of zero at the start, amplitude_deg at the chosen interior
+function candidate = createExcursion(directCandidate, amplitude_units, axisIndex, peakTime_s, initialState, options, constrainPeakVelocity)
+    % Add an offset of zero at the start, amplitude_units at the chosen interior
     % time, and zero at arrival. Try either a free through-point velocity or
     % zero complete-axis velocity there; acceleration is free in both families.
     startTime_s = initialState.time_s;
     endTime_s   = directCandidate.ArrivalTime_s;
-    knotVelocity_deg_s = NaN(3, 1);
+    knotVelocity_units_s = NaN(3, 1);
     if constrainPeakVelocity
         % Cancel the base velocity so the complete axis turns at the waypoint.
-        [~, ~, baseVelocity_deg_s] = bmtpEngine.evaluatePolynomial(directCandidate.Polynomial, peakTime_s);
-        knotVelocity_deg_s(2) = -baseVelocity_deg_s(axisIndex);
+        [~, ~, baseVelocity_units_s] = bmtpEngine.evaluatePolynomial(directCandidate.Polynomial, peakTime_s);
+        knotVelocity_units_s(2) = -baseVelocity_units_s(axisIndex);
     end
-    candidate = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s], [0; amplitude_deg; 0], axisIndex, initialState, options.SampleTime_s, "fixedClockLateralExcursion", knotVelocity_deg_s);
+    candidate = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s], [0; amplitude_units; 0], axisIndex, initialState, options.SampleTime_s, "fixedClockLateralExcursion", knotVelocity_units_s);
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
@@ -393,8 +393,8 @@ function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, optio
     midpointTime_s = 0.5 * (startTime_s + endTime_s);
     queryOptions   = struct();
     queryOptions.BoundaryIsOccupied     = true;
-    queryOptions.ClearanceTolerance_deg = options.CollisionClearanceTolerance_deg;
-    [isOccupied, ~, details] =  obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, directCandidate.position_deg(:, 1),  directCandidate.position_deg(:, 2), directCandidate.time_s, queryOptions);
+    queryOptions.ClearanceTolerance_units = options.CollisionClearanceTolerance_units;
+    [isOccupied, ~, details] =  obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, directCandidate.position_units(:, 1),  directCandidate.position_units(:, 2), directCandidate.time_s, queryOptions);
     isOccupied               = logical(isOccupied(:));
     % Find the start and end of each consecutive group of colliding samples.
     runChange       = diff([false; isOccupied; false]);
@@ -405,7 +405,7 @@ function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, optio
         % Try both the worst-clearance sample and the middle of this collision
         % interval, so the detour can be strongest near the obstruction.
         indices                           = runStart(runIndex):runEnd(runIndex);
-        [~, localIndex]                   = min(details.MinimumClearance_deg(indices));
+        [~, localIndex]                   = min(details.MinimumClearance_units(indices));
         collisionPeak_s(2 * runIndex - 1) =  directCandidate.time_s(indices(localIndex));
         collisionPeak_s(2 * runIndex)     = 0.5 * sum(directCandidate.time_s([indices(1), indices(end)]));
     end
@@ -436,18 +436,18 @@ function isClear = sampledCandidatesAreClear(candidates, obstacles, options)
     % A true result means only that these samples are clear, not the entire motion.
     candidateCount = numel(candidates);
     sampleCount    = numel(candidates{1}.time_s);
-    azimuth_deg    = zeros(sampleCount, candidateCount);
-    elevation_deg  = zeros(sampleCount, candidateCount);
+    x_units    = zeros(sampleCount, candidateCount);
+    y_units  = zeros(sampleCount, candidateCount);
     time_s         = repmat(candidates{1}.time_s, 1, candidateCount);
     % Evaluate each candidate before retaining the best admissible candidate.
     for candidateIndex = 1:candidateCount
-        azimuth_deg(:, candidateIndex)   = candidates{candidateIndex}.position_deg(:, 1);
-        elevation_deg(:, candidateIndex) = candidates{candidateIndex}.position_deg(:, 2);
+        x_units(:, candidateIndex)   = candidates{candidateIndex}.position_units(:, 1);
+        y_units(:, candidateIndex) = candidates{candidateIndex}.position_units(:, 2);
     end
     queryOptions = struct();
     queryOptions.BoundaryIsOccupied     = true;
-    queryOptions.ClearanceTolerance_deg = options.CollisionClearanceTolerance_deg;
-    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, time_s, queryOptions);
+    queryOptions.ClearanceTolerance_units = options.CollisionClearanceTolerance_units;
+    isOccupied = obstacleAvoidance.obstacles.queryPreparedObstacles(obstacles, x_units, y_units, time_s, queryOptions);
     isClear    = ~any(isOccupied, 1);
 end
 
@@ -460,13 +460,13 @@ function report = createAxisReport()
     report.PeakTime_s                    = NaN;
     report.ConstrainedPeakVelocity       = false;
     report.Eligible                      = false;
-    report.MaximumMagnitude_deg          = 0;
-    report.InvalidBoundaryMagnitude_deg  = NaN;
-    report.ValidBoundaryMagnitude_deg    = NaN;
-    report.BoundaryResolutionReserve_deg = NaN;
+    report.MaximumMagnitude_units          = 0;
+    report.InvalidBoundaryMagnitude_units  = NaN;
+    report.ValidBoundaryMagnitude_units    = NaN;
+    report.BoundaryResolutionReserve_units = NaN;
     report.BoundaryRefinementCount       = 0;
-    report.RetainedAmplitude_deg         = NaN;
-    report.MotionLength_deg              = NaN;
+    report.RetainedAmplitude_units         = NaN;
+    report.MotionLength_units              = NaN;
     report.Validation                    = obstacleAvoidance.validation.validatePreparedTrajectory();
     report.TerminationReason             = "notAttempted";
 end
@@ -489,11 +489,11 @@ function diagnostics = createDiagnostics()
     diagnostics.SelectedAxisIndex              = 0;
     diagnostics.SelectedDirection              = 0;
     diagnostics.SelectedPeakVelocityConstrained = false;
-    diagnostics.InvalidBoundaryMagnitude_deg   = NaN;
-    diagnostics.ValidBoundaryMagnitude_deg     = NaN;
-    diagnostics.BoundaryResolutionReserve_deg  = NaN;
-    diagnostics.RetainedAmplitude_deg          = NaN;
-    diagnostics.MotionLength_deg               = NaN;
+    diagnostics.InvalidBoundaryMagnitude_units   = NaN;
+    diagnostics.ValidBoundaryMagnitude_units     = NaN;
+    diagnostics.BoundaryResolutionReserve_units  = NaN;
+    diagnostics.RetainedAmplitude_units          = NaN;
+    diagnostics.MotionLength_units               = NaN;
     diagnostics.DirectValidation               = obstacleAvoidance.validation.validatePreparedTrajectory();
     diagnostics.SelectedValidation             = obstacleAvoidance.validation.validatePreparedTrajectory();
     diagnostics.AxisReports                    = repmat(createAxisReport(), 0, 1);

@@ -11,28 +11,28 @@ function [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
 %   result contains motion, plotting inputs, and independent-validation data.
 %   diagnosis contains shallow search records and flat solver-detail tables.
 % UNITS
-%   Positions are degrees, times are seconds, and derivatives retain their units.
+%   Positions are coordinate units, times are seconds, and derivatives retain their units.
 
 %% Section 1: Keep The Motion And Its Validation Inputs
 names = ["Success", "Message", "TerminationReason", "Inputs", "Options", ...
-    "time_s", "position_deg", "velocity_deg_s", "acceleration_deg_s2", ...
-    "jerk_deg_s3", "Polynomial", "PlaneCertificate", "SeedCorridor", ...
-    "SeedCorridorBoundary_deg", "Validation", "ArrivalTime_s", ...
+    "time_s", "position_units", "velocity_units_s", "acceleration_units_s2", ...
+    "jerk_units_s3", "Polynomial", "PlaneCertificate", "SeedCorridor", ...
+    "SeedCorridorBoundary_units", "Validation", "ArrivalTime_s", ...
     "TrajectoryDuration_s", "ElapsedPlanningTime_s"];
 result = struct();
 % Apply the required validation or transfer to each name.
 for name = names
     result.(name) = record.(name);
 end
-result.Route_deg            = record.SelectedSeed_deg;
-result.BestPartialRoute_deg = zeros(0, 2);
+result.Route_units            = record.SelectedSeed_units;
+result.BestPartialRoute_units = zeros(0, 2);
 search = record.SearchDiagnostics;
 % Expose the best partial seed only when no complete candidate succeeded.
 if search.BestPartialSeedIndex > 0 && ~record.Success
-    result.BestPartialRoute_deg = record.Seeds(search.BestPartialSeedIndex).position_deg;
+    result.BestPartialRoute_units = record.Seeds(search.BestPartialSeedIndex).position_units;
 % Use the graph search's partial route only when no seed produced a more concrete failed motion.
-elseif isfield(search.GraphSearch, "BestPartialRoute_deg") && ~record.Success
-    result.BestPartialRoute_deg = search.GraphSearch.BestPartialRoute_deg;
+elseif isfield(search.GraphSearch, "BestPartialRoute_units") && ~record.Success
+    result.BestPartialRoute_units = search.GraphSearch.BestPartialRoute_units;
 end
 
 %% Section 2: Assemble Optional Diagnosis Without Duplicate Records

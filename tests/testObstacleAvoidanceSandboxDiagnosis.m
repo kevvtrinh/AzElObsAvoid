@@ -16,7 +16,7 @@ function tests = testObstacleAvoidanceSandboxDiagnosis
 %   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Test positions are degrees and time is seconds.
+%   - Test positions are coordinate units and time is seconds.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -87,7 +87,7 @@ function testPersistentSandboxCreatesExportActions(testCase)
     end
     verifyTrue(testCase, isgraphics(currentState.GoalMode.GraphicsHandles.Controls.MotionProfileHandle));
     verifyTrue(testCase, isgraphics(currentState.GoalMode.GraphicsHandles.PlannerOptionsPanel));
-    verifyEqual(testCase, currentState.GoalMode.PolygonMotionVectors_deg, zeros(0, 2));
+    verifyEqual(testCase, currentState.GoalMode.PolygonMotionVectors_units, zeros(0, 2));
     verifyEqual(testCase, currentState.GoalMode.PolygonMotionProfiles, strings(0, 1));
     verifyEqual(testCase, get(currentState.GoalMode.GraphicsHandles.Actions.Export, "Enable"), 'off');
     verifyTrue(testCase, isa(currentState.ExportBundle, "function_handle"));
@@ -98,8 +98,8 @@ function testRunExportsOptionsWithoutCancellation(testCase)
     sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off", "MissionTime_s", 6));
     testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
     applicationState = guidata(sandboxState.FigureHandle);
-    applicationState.GoalMode.StartPosition_deg = [0 0];
-    applicationState.GoalMode.GoalPosition_deg  = [4 0];
+    applicationState.GoalMode.StartPosition_units = [0 0];
+    applicationState.GoalMode.GoalPosition_units  = [4 0];
     guidata(sandboxState.FigureHandle, applicationState);
     runHandle   = applicationState.GoalMode.GraphicsHandles.Actions.Run;
     runCallback = get(runHandle, "Callback");
@@ -134,20 +134,22 @@ function testSandboxDefaultsBoundInteractivePlannerWork(testCase)
     verifyFalse(testCase, isfield(plannerOptions, "IsWaypointWarmStartAvailable"));
     verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "fail");
     verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
-    verifyFalse(testCase, plannerOptions.AllowAzimuthWrapping);
+    verifyFalse(testCase, plannerOptions.WrapX);
+    verifyFalse(testCase, plannerOptions.WrapY);
     productionOptions = obstacleAvoidance.planTrajectory();
     verifyEqual(testCase, productionOptions.MaximumSeedCount, 2);
 end
 
 function testPlannerOptionControlsDriveExport(testCase)
-    % Preserve the three user-facing planner choices in a pre-run replay bundle.
+    % Preserve the user-facing planner choices in a pre-run replay bundle.
     sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
     testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
     currentState = sandboxState.ReadState();
     controls     = currentState.GoalMode.GraphicsHandles.Controls;
     set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
     set(controls.GoalTimeModeHandle, "Value", 2);
-    set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+    set(controls.WrapXHandle, "Value", 1);
+    set(controls.WrapYHandle, "Value", 1);
     filePath = string(tempname) + ".mat";
     testCase.addTeardown(@() deleteIfPresent(filePath));
 
@@ -157,7 +159,8 @@ function testPlannerOptionControlsDriveExport(testCase)
     plannerOptions = loaded.diagnosisBundle.PlannerOptions;
     verifyEqual(testCase, plannerOptions.UnsupportedTimedTopologyPolicy, "ruckigStopAtWaypoints");
     verifyEqual(testCase, plannerOptions.GoalTimeMode, "fixedArrival");
-    verifyTrue(testCase, plannerOptions.AllowAzimuthWrapping);
+    verifyTrue(testCase, plannerOptions.WrapX);
+    verifyTrue(testCase, plannerOptions.WrapY);
 end
 
 function testPlannerOptionControlsDriveRun(testCase)
@@ -165,13 +168,14 @@ function testPlannerOptionControlsDriveRun(testCase)
     sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off", "MissionTime_s", 6));
     testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
     applicationState = guidata(sandboxState.FigureHandle);
-    applicationState.GoalMode.StartPosition_deg = [179 0];
-    applicationState.GoalMode.GoalPosition_deg  = [-179 0];
+    applicationState.GoalMode.StartPosition_units = [179 89];
+    applicationState.GoalMode.GoalPosition_units  = [-179 -89];
     guidata(sandboxState.FigureHandle, applicationState);
     controls = applicationState.GoalMode.GraphicsHandles.Controls;
     set(controls.UnsupportedTimedTopologyHandle, "Value", 2);
     set(controls.GoalTimeModeHandle, "Value", 2);
-    set(controls.AllowAzimuthWrappingHandle, "Value", 1);
+    set(controls.WrapXHandle, "Value", 1);
+    set(controls.WrapYHandle, "Value", 1);
     runHandle   = applicationState.GoalMode.GraphicsHandles.Actions.Run;
     runCallback = get(runHandle, "Callback");
 
@@ -182,9 +186,10 @@ function testPlannerOptionControlsDriveRun(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyEqual(testCase, result.Options.UnsupportedTimedTopologyPolicy, "ruckigStopAtWaypoints");
     verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
-    verifyTrue(testCase, result.Options.AllowAzimuthWrapping);
+    verifyTrue(testCase, result.Options.WrapX);
+    verifyTrue(testCase, result.Options.WrapY);
     verifyEqual(testCase, result.ArrivalTime_s, 6, "AbsTol", 1e-9);
-    verifyEqual(testCase, result.position_deg(end, 1), 181, "AbsTol", 1e-9);
+    verifyEqual(testCase, result.position_units(end, :), [181 91], "AbsTol", 1e-9);
     solvedMotionHandle = findobj(currentState.GoalMode.GraphicsHandles.Axes, "DisplayName", "Solved motion");
     verifyNotEmpty(testCase, solvedMotionHandle);
     verifyTrue(testCase, any(isnan(solvedMotionHandle.XData)));
@@ -197,8 +202,8 @@ function testPreRunGoalBundlePreservesRequest(testCase)
     sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
     testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
     applicationState = guidata(sandboxState.FigureHandle);
-    applicationState.GoalMode.StartPosition_deg = [-3 1];
-    applicationState.GoalMode.GoalPosition_deg  = [5 -2];
+    applicationState.GoalMode.StartPosition_units = [-3 1];
+    applicationState.GoalMode.GoalPosition_units  = [5 -2];
     guidata(sandboxState.FigureHandle, applicationState);
     currentState = sandboxState.ReadState();
     filePath     = string(tempname) + ".mat";
@@ -213,35 +218,35 @@ function testPreRunGoalBundlePreservesRequest(testCase)
     verifyEqual(testCase, bundle.PlanningState, "notRun");
     verifyFalse(testCase, bundle.HasPlannerResult);
     verifyEmpty(testCase, fieldnames(bundle.Result));
-    verifyEqual(testCase, bundle.PlannerInputs.initialState.position_deg, [-3 1]);
-    verifyEqual(testCase, bundle.PlannerInputs.goalState.position_deg, [5 -2]);
+    verifyEqual(testCase, bundle.PlannerInputs.initialState.position_units, [-3 1]);
+    verifyEqual(testCase, bundle.PlannerInputs.goalState.position_units, [5 -2]);
     verifyFalse(testCase, isfield(bundle.PlannerOptions, "PlannerMethod"));
     verifyTrue(testCase, bundle.ExportRequest.HasCompleteScene);
 end
 
 function testPolygonMotionProfilesFollowSelectedTiming(testCase)
     % Verify the four sandbox motion choices use distinct, expected profiles.
-    polygon_deg      = [0 0; 1 0; 1 1; 0 1];
+    polygon_units      = [0 0; 1 0; 1 1; 0 1];
     time_s           = [0; 10];
-    motionVector_deg = [4 2];
+    motionVector_units = [4 2];
     profiles         = [ ...
         "nonzeroVelocity", "zeroStart", "trapezoidal", "oscillating"];
-    expectedMiddle_deg = [2 1; 1 0.5; 2 1; 4 2];
-    expectedFinal_deg  = [4 2; 4 2; 4 2; 0 0];
+    expectedMiddle_units = [2 1; 1 0.5; 2 1; 4 2];
+    expectedFinal_units  = [4 2; 4 2; 4 2; 0 0];
     % Exercise each profile covered by this regression.
     for profileIndex = 1:numel(profiles)
-        [profileTime_s, azimuthBySlice_deg, elevationBySlice_deg] = createSandboxPolygonMotionHistory(polygon_deg, time_s, motionVector_deg, profiles(profileIndex));
+        [profileTime_s, xBySlice_units, yBySlice_units] = createSandboxPolygonMotionHistory(polygon_units, time_s, motionVector_units, profiles(profileIndex));
         middleIndex     = ceil(numel(profileTime_s) / 2);
-        firstVertex_deg = [ ...
-            azimuthBySlice_deg{1}(1), elevationBySlice_deg{1}(1)];
-        middleVertex_deg = [ ...
-            azimuthBySlice_deg{middleIndex}(1), ...
-            elevationBySlice_deg{middleIndex}(1)];
-        finalVertex_deg = [ ...
-            azimuthBySlice_deg{end}(1), elevationBySlice_deg{end}(1)];
-        verifyEqual(testCase, firstVertex_deg, [0 0], "AbsTol", 1e-12);
-        verifyEqual(testCase, middleVertex_deg, expectedMiddle_deg(profileIndex, :), "AbsTol", 1e-12);
-        verifyEqual(testCase, finalVertex_deg, expectedFinal_deg(profileIndex, :), "AbsTol", 1e-12);
+        firstVertex_units = [ ...
+            xBySlice_units{1}(1), yBySlice_units{1}(1)];
+        middleVertex_units = [ ...
+            xBySlice_units{middleIndex}(1), ...
+            yBySlice_units{middleIndex}(1)];
+        finalVertex_units = [ ...
+            xBySlice_units{end}(1), yBySlice_units{end}(1)];
+        verifyEqual(testCase, firstVertex_units, [0 0], "AbsTol", 1e-12);
+        verifyEqual(testCase, middleVertex_units, expectedMiddle_units(profileIndex, :), "AbsTol", 1e-12);
+        verifyEqual(testCase, finalVertex_units, expectedFinal_units(profileIndex, :), "AbsTol", 1e-12);
     end
 end
 
@@ -272,12 +277,12 @@ end
 
 function testPolygonMotionHistoryCreatesQueryableObstacle(testCase)
     % Verify a sandbox profile becomes the expected obstacle translation.
-    polygon_deg = [0 0; 1 0; 1 1; 0 1];
-    [time_s, azimuthBySlice_deg, elevationBySlice_deg] = createSandboxPolygonMotionHistory(polygon_deg, [0; 10], [4 2], "nonzeroVelocity");
-    obstacle = obstacleAvoidance.obstacles.createObstacle("sandbox moving polygon", time_s, azimuthBySlice_deg, elevationBySlice_deg, 0);
+    polygon_units = [0 0; 1 0; 1 1; 0 1];
+    [time_s, xBySlice_units, yBySlice_units] = createSandboxPolygonMotionHistory(polygon_units, [0; 10], [4 2], "nonzeroVelocity");
+    obstacle = obstacleAvoidance.obstacles.createObstacle("sandbox moving polygon", time_s, xBySlice_units, yBySlice_units, 0);
     [shape, ~]                                   = obstacleAvoidance.obstacles.shapeAtTime(obstacle, 5, false);
-    [centroidAzimuth_deg, centroidElevation_deg] = centroid(shape);
-    verifyEqual(testCase, [centroidAzimuth_deg, centroidElevation_deg], [2.5 1.5], "AbsTol", 1e-10);
+    [centroidX_units, centroidY_units] = centroid(shape);
+    verifyEqual(testCase, [centroidX_units, centroidY_units], [2.5 1.5], "AbsTol", 1e-10);
 end
 
 function testFailedBundleRetainsDiagnosisEvidence(testCase)
@@ -307,30 +312,30 @@ function [initialState, goalState, limits, options] = simpleRequest()
     % Build one deterministic rest-to-rest fixed-arrival request.
     initialState = struct();
     initialState.time_s              = 0;
-    initialState.position_deg        = [0 0];
-    initialState.velocity_deg_s      = [0 0];
-    initialState.acceleration_deg_s2 = [0 0];
+    initialState.position_units        = [0 0];
+    initialState.velocity_units_s      = [0 0];
+    initialState.acceleration_units_s2 = [0 0];
     goalState = struct();
     goalState.time_s              = 6;
-    goalState.position_deg        = [4 0];
-    goalState.velocity_deg_s      = [0 0];
-    goalState.acceleration_deg_s2 = [0 0];
+    goalState.position_units        = [4 0];
+    goalState.velocity_units_s      = [0 0];
+    goalState.acceleration_units_s2 = [0 0];
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
     options = obstacleAvoidance.planTrajectory();
     options.GoalTimeMode = "fixedArrival";
 end
 
 function sandboxState = syntheticSandboxState(result, validation, initialState, goalState, obstacles)
     % Build the stable saved sandbox data without graphics handles.
-    modeState = struct("StartPosition_deg", initialState.position_deg, ...
-        "GoalPosition_deg", goalState.position_deg, ...
-        "RawObstacleStrokes_deg", {cell(0, 1)}, ...
-        "LineObstaclePositions_deg", {cell(0, 1)}, ...
-        "PolygonObstaclePositions_deg", {cell(0, 1)}, ...
-        "PolygonMotionVectors_deg", zeros(0, 2), ...
+    modeState = struct("StartPosition_units", initialState.position_units, ...
+        "GoalPosition_units", goalState.position_units, ...
+        "RawObstacleStrokes_units", {cell(0, 1)}, ...
+        "LineObstaclePositions_units", {cell(0, 1)}, ...
+        "PolygonObstaclePositions_units", {cell(0, 1)}, ...
+        "PolygonMotionVectors_units", zeros(0, 2), ...
         "PolygonMotionProfiles", strings(0, 1), ...
         "SelectedPolygonIndex", 0, ...
         "CanonicalObstacles", obstacles, ...

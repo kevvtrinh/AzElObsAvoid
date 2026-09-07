@@ -13,7 +13,7 @@ function [candidate, summary, stageTiming, context] = solvePathGuess(obstacles, 
 %   candidate and summary retain the attempted motion, validation, and diagnostics.
 %   Updated stageTiming and context are reused by later guesses in this request.
 % UNITS
-%   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
+%   Coordinate units, seconds, and derivatives in units/s, units/s^2, and units/s^3.
 
 %% Section 1: Choose And Solve The Primary Motion Method
 
@@ -84,7 +84,7 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
     diagnostics.FinalDirectMotionDuration_s   = directMotionDuration_s;
     % Time compression preserves the path but changes obstacle encounters.
     % Use derivative bounds to propose it, then validate the full motion.
-    durationScale = max([checkResult.PeakVelocity_deg_s ./ limits.maxVelocity_deg_s, sqrt(checkResult.PeakAcceleration_deg_s2 ./ limits.maxAcceleration_deg_s2), nthroot(checkResult.PeakJerk_deg_s3 ./ limits.maxJerk_deg_s3, 3)]);
+    durationScale = max([checkResult.PeakVelocity_units_s ./ limits.maxVelocity_units_s, sqrt(checkResult.PeakAcceleration_units_s2 ./ limits.maxAcceleration_units_s2), nthroot(checkResult.PeakJerk_units_s3 ./ limits.maxJerk_units_s3, 3)]);
     % Leave roundoff slack when converting derivative ratios back to a duration.
     shorterDuration_s = directMotionDuration_s * durationScale * (1 + 64 * eps);
     lowerWaitTime_s   = 0;

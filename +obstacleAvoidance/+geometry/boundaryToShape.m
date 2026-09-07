@@ -1,7 +1,7 @@
-function shape = boundaryToShape(azimuth_deg, elevation_deg)
+function shape = boundaryToShape(x_units, y_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg)
+%   shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units)
 %
 % PURPOSE
 %   - Translate the repository's NaN-separated boundary format into MATLAB's
@@ -10,7 +10,7 @@ function shape = boundaryToShape(azimuth_deg, elevation_deg)
 %     boundary separators independently.
 %
 % INPUTS
-%   - azimuth_deg, elevation_deg (matched numeric vectors)
+%   - x_units, y_units (matched numeric vectors)
 %       Paired finite vertices with paired nonfinite ring separators.
 %
 % OUTPUTS
@@ -18,7 +18,7 @@ function shape = boundaryToShape(azimuth_deg, elevation_deg)
 %       Unsimplified geometry preserving collinear boundary vertices.
 %
 % UNITS
-%   - Boundary coordinates are degrees.
+%   - Boundary coordinates are coordinate units.
 %
 
 %% Section 1: Construct The Shape Without Reinterpreting Geometry
@@ -26,12 +26,12 @@ function shape = boundaryToShape(azimuth_deg, elevation_deg)
 % Preserve ring order without repairing the geometry.
 
 % Fewer than three finite vertices enclose no area.
-finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
+finiteVertex = isfinite(x_units) & isfinite(y_units);
 if nnz(finiteVertex) < 3
     shape = polyshape();
     return;
 end
 % Keep collinear vertices and disable simplification to preserve
 % vertex correspondence between moving-obstacle samples.
-shape = polyshape(azimuth_deg, elevation_deg, "Simplify", false, "KeepCollinearPoints", true);
+shape = polyshape(x_units, y_units, "Simplify", false, "KeepCollinearPoints", true);
 end

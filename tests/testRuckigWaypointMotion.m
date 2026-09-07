@@ -14,7 +14,7 @@ function tests = testRuckigWaypointMotion
 %   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s powers.
+%   - Position is coordinate units; time is seconds; derivatives use units/s powers.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -32,25 +32,25 @@ function testTwoSegmentDetourSupportsEarliestAndFixedArrival(testCase)
     obstacles    = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     initialState = struct();
     initialState.time_s              = 0;
-    initialState.position_deg        = [-4 0];
-    initialState.velocity_deg_s      = [0 0];
-    initialState.acceleration_deg_s2 = [0 0];
+    initialState.position_units        = [-4 0];
+    initialState.velocity_units_s      = [0 0];
+    initialState.acceleration_units_s2 = [0 0];
     goalState = struct();
     goalState.time_s              = 30;
-    goalState.position_deg        = [4 0];
-    goalState.velocity_deg_s      = [0 0];
-    goalState.acceleration_deg_s2 = [0 0];
+    goalState.position_units        = [4 0];
+    goalState.velocity_units_s      = [0 0];
+    goalState.acceleration_units_s2 = [0 0];
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
-    limits.azimuthInterval_deg    = [-10 10];
-    limits.elevationInterval_deg  = [-10 10];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
+    limits.xInterval_units    = [-10 10];
+    limits.yInterval_units  = [-10 10];
     options = obstacleAvoidance.planTrajectory();
     seed    = struct();
     seed.Index        = 1;
     seed.Source       = "visibilityGraph";
-    seed.position_deg = [-4 0; 0 -2.5; 4 0];
+    seed.position_units = [-4 0; 0 -2.5; 4 0];
 
     [candidate, diagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
     validation = obstacleAvoidance.validateTrajectory(candidate, obstacles, initialState, goalState, limits, options);
@@ -61,9 +61,9 @@ function testTwoSegmentDetourSupportsEarliestAndFixedArrival(testCase)
     verifyEqual(testCase, diagnostics.MaximumSupportedPartCount, 2);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyTrue(testCase, validation.CollisionFree);
-    verifyGreaterThan(testCase, validation.MinimumClearance_deg, options.CollisionClearanceTolerance_deg);
-    verifyEqual(testCase, candidate.position_deg(1, :), initialState.position_deg, "AbsTol", 1e-10);
-    verifyEqual(testCase, candidate.position_deg(end, :), goalState.position_deg, "AbsTol", 1e-10);
+    verifyGreaterThan(testCase, validation.MinimumClearance_units, options.CollisionClearanceTolerance_units);
+    verifyEqual(testCase, candidate.position_units(1, :), initialState.position_units, "AbsTol", 1e-10);
+    verifyEqual(testCase, candidate.position_units(end, :), goalState.position_units, "AbsTol", 1e-10);
 
     options.GoalTimeMode = "fixedArrival";
     [fixedCandidate, fixedDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
@@ -79,25 +79,25 @@ function testThreeSegmentRouteReturnsExplicitUnsupportedResult(testCase)
     % Reject a longer route without constructing any partial Ruckig motion.
     initialState = struct();
     initialState.time_s              = 0;
-    initialState.position_deg        = [-4 0];
-    initialState.velocity_deg_s      = [0 0];
-    initialState.acceleration_deg_s2 = [0 0];
+    initialState.position_units        = [-4 0];
+    initialState.velocity_units_s      = [0 0];
+    initialState.acceleration_units_s2 = [0 0];
     goalState = struct();
     goalState.time_s              = 30;
-    goalState.position_deg        = [4 0];
-    goalState.velocity_deg_s      = [0 0];
-    goalState.acceleration_deg_s2 = [0 0];
+    goalState.position_units        = [4 0];
+    goalState.velocity_units_s      = [0 0];
+    goalState.acceleration_units_s2 = [0 0];
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
-    limits.azimuthInterval_deg    = [-10 10];
-    limits.elevationInterval_deg  = [-10 10];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
+    limits.xInterval_units    = [-10 10];
+    limits.yInterval_units  = [-10 10];
     options = obstacleAvoidance.planTrajectory();
     seed    = struct();
     seed.Index        = 1;
     seed.Source       = "visibilityGraph";
-    seed.position_deg = [-4 0; -2 -1.5; 2 -1.5; 4 0];
+    seed.position_units = [-4 0; -2 -1.5; 2 -1.5; 4 0];
 
     [candidate, diagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
 

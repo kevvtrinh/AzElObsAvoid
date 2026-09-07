@@ -1,6 +1,6 @@
 ---
 name: engineering-design-report
-description: Create or substantially update an evidence-backed Word engineering design report for the Az/El planner when explicitly requested; do not use for ordinary README or inline documentation work.
+description: Create or substantially update an evidence-backed Word engineering design report for the X/Y planner when explicitly requested; do not use for ordinary README or inline documentation work.
 ---
 
 # Engineering Design Report

@@ -9,7 +9,7 @@ motion.
 ## Canonical Samples
 
 Each obstacle contains strictly increasing `time_s` samples. Matching
-`az_deg` and `el_deg` cells contain protected polygon boundaries in degrees.
+`x_units` and `y_units` cells contain protected polygon boundaries in coordinate units.
 Paired nonfinite rows separate rings. A ring is represented by its finite
 vertices without a repeated closing vertex.
 

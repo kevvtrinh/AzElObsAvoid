@@ -15,7 +15,7 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %
 % INPUTS
 %   - seed (scalar struct)
-%       position_deg is N-by-2, tau increases zero to one, and
+%       position_units is N-by-2, tau increases zero to one, and
 %       EstimatedDuration_s is the search-derived arrival estimate.
 %   - obstacles (canonical or prepared obstacle struct array)
 %       Static and time-varying protected geometry over the request horizon.
@@ -40,8 +40,8 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %       Timing updated by every authoritative trial check.
 %
 % UNITS
-%   - Position is degrees and time is seconds. Derivatives use deg/s,
-%     deg/s^2, and deg/s^3. Histories and polygon vertices are N-by-2.
+%   - Position is coordinate units and time is seconds. Derivatives use units/s,
+%     units/s^2, and units/s^3. Histories and polygon vertices are N-by-2.
 %
 
 %% Section 1: Retain The Route Search's Physical Arrival Times
@@ -104,7 +104,7 @@ seedWaypointTime_s = startTime_s + double(seed.tau(:)) * double(seed.EstimatedDu
 for timeIndex = 1:numel(trialTime_s)
     fixedGoalState      = createFixedGoalState(goalState, trialTime_s(timeIndex));
     completedTrialCount = completedTrialCount + 1;
-    [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s, trialTime_s(timeIndex), maximumTimedSegmentCount);
+    [regions_units, coverage] = createTimeCellRegions(obstacles, startTime_s, trialTime_s(timeIndex), maximumTimedSegmentCount);
     % Preserve each interior waypoint's physical time when trying a later
     % arrival. Only the goal time changes; the optimizer can then move
     % the warm-start curve without silently delaying every obstacle crossing.
@@ -114,10 +114,10 @@ for timeIndex = 1:numel(trialTime_s)
     interior       = find(seedWaypointTime_s > startTime_s & seedWaypointTime_s < trialTime_s(timeIndex));
     interior       = interior(interior < numel(seedWaypointTime_s));
     waypointTime_s = [startTime_s; seedWaypointTime_s(interior); trialTime_s(timeIndex)];
-    timedSeed.position_deg = seed.position_deg([1; interior; size(seed.position_deg, 1)], :);
+    timedSeed.position_units = seed.position_units([1; interior; size(seed.position_units, 1)], :);
     timedSeed.tau          = (waypointTime_s - startTime_s) / (trialTime_s(timeIndex) - startTime_s);
     trialTimer = tic;
-    [trialCandidate, trialDiagnostics] = bmtpEngine.solve(timedSeed, regions_deg, coverage, initialState, fixedGoalState, limits, fixedOptions);
+    [trialCandidate, trialDiagnostics] = bmtpEngine.solve(timedSeed, regions_units, coverage, initialState, fixedGoalState, limits, fixedOptions);
     trials(completedTrialCount).FinalTime_s = trialTime_s(timeIndex);
     trials(completedTrialCount).TimedSegmentCount = maximumTimedSegmentCount;
     trials(completedTrialCount).Coverage = coverage;
@@ -162,16 +162,16 @@ function fixedGoalState = createFixedGoalState(goalState, finalTime_s)
     % Freeze the requested endpoint at one physical trial time.
     fixedGoalState = goalState;
     fixedGoalState.time_s       = finalTime_s;
-    fixedGoalState.position_deg = obstacleAvoidance.input.goalPositionAtTime(goalState, finalTime_s);
-    metadataFields = intersect(fieldnames(fixedGoalState), {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
+    fixedGoalState.position_units = obstacleAvoidance.input.goalPositionAtTime(goalState, finalTime_s);
+    metadataFields = intersect(fieldnames(fixedGoalState), {'targetTime_s', 'targetPosition_units', 'InterpolationMethod'});
     if ~isempty(metadataFields)
         fixedGoalState = rmfield(fixedGoalState, metadataFields);
     end
 end
 
-function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s, finishTime_s, timedSegmentCount)
+function [regions_units, coverage] = createTimeCellRegions(obstacles, startTime_s, finishTime_s, timedSegmentCount)
     % Cover static shapes exactly and movers by interval-wide convex supersets.
-    regions_deg         = cell(0, 1);
+    regions_units         = cell(0, 1);
     activeTauInterval   = zeros(0, 2);
     sourceObstacleIndex = zeros(0, 1);
     sourceCellIndex     = zeros(0, 1);
@@ -185,9 +185,9 @@ function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s,
             exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(staticShape);
             % Process each geometric region while constructing or checking the region topology.
             for regionIndex = 1:numel(exactRegions)
-                vertices_deg = finiteVertices(exactRegions(regionIndex).Vertices);
-                if size(vertices_deg, 1) >= 3
-                    regions_deg{end + 1, 1} = vertices_deg; %#ok<AGROW>
+                vertices_units = finiteVertices(exactRegions(regionIndex).Vertices);
+                if size(vertices_units, 1) >= 3
+                    regions_units{end + 1, 1} = vertices_units; %#ok<AGROW>
                     activeTauInterval(end + 1, :) = [0 1]; %#ok<AGROW>
                     sourceObstacleIndex(end + 1, 1) = obstacleIndex; %#ok<AGROW>
                     sourceCellIndex(end + 1, 1) = 0; %#ok<AGROW>
@@ -204,20 +204,20 @@ function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s,
             cellFinish_s = cellEdges_s(cellIndex + 1);
             queryTime_s  = [cellStart_s; ...
                 0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
-            vertices_deg = zeros(0, 2);
+            vertices_units = zeros(0, 2);
             % Process each query in temporal order and accumulate its result.
             for queryIndex = 1:numel(queryTime_s)
                 shape        = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s(queryIndex));
-                vertices_deg = [vertices_deg; ...
+                vertices_units = [vertices_units; ...
                     finiteVertices(shape.Vertices)]; %#ok<AGROW>
             end
-            vertices_deg = unique(vertices_deg, "rows", "stable");
-            if size(vertices_deg, 1) < 3
+            vertices_units = unique(vertices_units, "rows", "stable");
+            if size(vertices_units, 1) < 3
                 continue;
             end
-            hullIndex = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-            regions_deg{end + 1, 1} = ...
-                vertices_deg(hullIndex(1:end - 1), :); %#ok<AGROW>
+            hullIndex = convhull(vertices_units(:, 1), vertices_units(:, 2));
+            regions_units{end + 1, 1} = ...
+                vertices_units(hullIndex(1:end - 1), :); %#ok<AGROW>
             activeTauInterval(end + 1, :) = ...
                 ([cellStart_s cellFinish_s] - startTime_s) / ...
                 (finishTime_s - startTime_s); %#ok<AGROW>
@@ -226,9 +226,9 @@ function [regions_deg, coverage] = createTimeCellRegions(obstacles, startTime_s,
         end
     end
     coverage = struct("Passed", true, "ObstacleCount", numel(obstacles), ...
-        "RegionCount", numel(regions_deg), ...
-        "ExactRegionCount", numel(regions_deg), ...
-        "SolverRegionCount", numel(regions_deg), ...
+        "RegionCount", numel(regions_units), ...
+        "ExactRegionCount", numel(regions_units), ...
+        "SolverRegionCount", numel(regions_units), ...
         "RegionActiveTauInterval", activeTauInterval, ...
         "RegionSourceObstacleIndex", sourceObstacleIndex, ...
         "RegionSourceCellIndex", sourceCellIndex, ...
@@ -251,8 +251,8 @@ function cellEdges_s = snapCellEdgesToObstacleTimes(candidateEdges_s, obstacleTi
     cellEdges_s = unique(candidateEdges_s, "sorted");
 end
 
-function vertices_deg = finiteVertices(vertices_deg)
+function vertices_units = finiteVertices(vertices_units)
     % Remove polyshape ring separators before exact decomposition or hulling.
-    vertices_deg = double(vertices_deg);
-    vertices_deg = vertices_deg(all(isfinite(vertices_deg), 2), :);
+    vertices_units = double(vertices_units);
+    vertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
 end

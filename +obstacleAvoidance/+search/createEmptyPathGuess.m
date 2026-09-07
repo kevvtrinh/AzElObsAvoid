@@ -9,18 +9,18 @@ function seed = createEmptyPathGuess()
 % OUTPUTS
 %   seed contains empty geometry, source, parameter basis, and estimates.
 % UNITS
-%   Degrees and seconds; tau is dimensionless.
+%   Coordinate units and seconds; tau is dimensionless.
 
 %% Section 1: Assemble The Stable Seed
 
 seed = struct();
 seed.Index                    = 0;
 seed.Source                   = "";
-seed.position_deg             = zeros(0, 2);
+seed.position_units             = zeros(0, 2);
 seed.tau                      = zeros(0, 1);
 seed.ParameterBasis           = "normalizedDistance";
-seed.ObstacleEnvelope_deg     = zeros(0, 2);
+seed.ObstacleEnvelope_units     = zeros(0, 2);
 seed.UsesConservativeEnvelope = false;
 seed.EstimatedDuration_s      = NaN;
-seed.Length_deg               = NaN;
+seed.Length_units               = NaN;
 end

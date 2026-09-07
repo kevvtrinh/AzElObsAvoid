@@ -20,7 +20,7 @@ function obstacleField = combineObstacles(varargin)
 %       Independently normalized obstacle records in caller order.
 %
 % UNITS
-%   - Canonical az_deg and el_deg fields are degrees; time_s is seconds.
+%   - Canonical x_units and y_units fields are coordinate units; time_s is seconds.
 %
 
 %% Section 1: Flatten Nested Inputs
@@ -70,7 +70,7 @@ end
 function obstacleField = createEmptyObstacleArray()
     % Keep the same fields for an empty obstacle array.
     template = struct("targetName", "", "time_s", zeros(0, 1), ...
-        "az_deg", {cell(0, 1)}, "el_deg", {cell(0, 1)}, "originalAz_deg", {cell(0, 1)}, ...
-        "originalEl_deg", {cell(0, 1)}, "safetyMargin_deg", 0, "status", strings(0, 1));
+        "x_units", {cell(0, 1)}, "y_units", {cell(0, 1)}, "originalX_units", {cell(0, 1)}, ...
+        "originalY_units", {cell(0, 1)}, "safetyMargin_units", 0, "status", strings(0, 1));
     obstacleField = repmat(template, 0, 1);
 end

@@ -9,59 +9,59 @@ function geometry = prepareStaticSolverGeometry(obstacles, startTime_s, endTime_
 % OUTPUTS
 %   Exact regions, solver regions, grouping, and coverage provenance.
 % UNITS
-%   Geometry is degrees; times are seconds.
+%   Geometry is coordinate units; times are seconds.
 
 %% Section 1: Prepare The Exclusion Regions
 [obstaclesRemainStatic, occupiedShape] = obstacleAvoidance.obstacles.queryStaticHorizon(obstacles, startTime_s, endTime_s);
 if ~obstaclesRemainStatic
     error("solveStaticBmtpTrajectory:UnsupportedDynamicObstacle", "Every obstacle must be static and active over the horizon.");
 end
-[exactRegions_deg, coverage] = createExactRegions(occupiedShape, numel(obstacles));
-[regions_deg, grouping]      = createSolverRegions(exactRegions_deg);
-coverage.SolverRegionCount    = numel(regions_deg);
+[exactRegions_units, coverage] = createExactRegions(occupiedShape, numel(obstacles));
+[regions_units, grouping]      = createSolverRegions(exactRegions_units);
+coverage.SolverRegionCount    = numel(regions_units);
 coverage.ConservativeGrouping = grouping;
 
-geometry = struct("ExactRegions_deg", {exactRegions_deg}, ...
-    "Regions_deg", {regions_deg}, "Grouping", grouping, "Coverage", coverage);
+geometry = struct("ExactRegions_units", {exactRegions_units}, ...
+    "Regions_units", {regions_units}, "Grouping", grouping, "Coverage", coverage);
 end
 
 %% Section 2: Local Functions
-function [regions_deg, coverage] = createExactRegions(occupiedShape, obstacleCount)
+function [regions_units, coverage] = createExactRegions(occupiedShape, obstacleCount)
     % Split protected geometry into convex regions.
     exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
-    regions_deg  = cell(numel(exactRegions), 1);
+    regions_units  = cell(numel(exactRegions), 1);
     % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(exactRegions)
-        vertices_deg = exactRegions(regionIndex).Vertices;
-        regions_deg{regionIndex} = vertices_deg(all(isfinite(vertices_deg), 2), :);
+        vertices_units = exactRegions(regionIndex).Vertices;
+        regions_units{regionIndex} = vertices_units(all(isfinite(vertices_units), 2), :);
     end
-    coverage = struct("Passed", obstacleCount == 0 || ~isempty(regions_deg), ...
+    coverage = struct("Passed", obstacleCount == 0 || ~isempty(regions_units), ...
         "ObstacleCount", obstacleCount, ...
-        "RegionCount", numel(regions_deg), ...
-        "ExactRegionCount", numel(regions_deg), ...
+        "RegionCount", numel(regions_units), ...
+        "ExactRegionCount", numel(regions_units), ...
         "AuthoritativeCoverageCheck", "publicValidation");
 end
 
-function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
+function [groupedRegions_units, record] = createSolverRegions(regions_units)
     % Group complex outlines to limit separating-plane solves.
     maximumExactRegionCount = 64;
     targetGroupCount        = 8;
-    regionCount             = numel(regions_deg);
+    regionCount             = numel(regions_units);
     record                  = struct("Applied", false, "ExactRegionCount", regionCount, ...
         "SolverRegionCount", regionCount, ...
         "MaximumExactRegionCount", maximumExactRegionCount, ...
         "TargetGroupCount", targetGroupCount, ...
         "RelationToExactGeometry", "equal", ...
         "GroupMemberIndices", {num2cell((1:regionCount).')});
-    groupedRegions_deg = regions_deg;
+    groupedRegions_units = regions_units;
     if regionCount <= maximumExactRegionCount
         return;
     end
 
-    centroid_deg = zeros(regionCount, 2);
+    centroid_units = zeros(regionCount, 2);
     % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:regionCount
-        centroid_deg(regionIndex, :) = mean(regions_deg{regionIndex}, 1);
+        centroid_units(regionIndex, :) = mean(regions_units{regionIndex}, 1);
     end
     groups = cell(targetGroupCount, 1);
     groups{1} = (1:regionCount).';
@@ -79,9 +79,9 @@ function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
             break;
         end
         memberIndex = groups{splitGroupIndex};
-        spread_deg  = max(centroid_deg(memberIndex, :), [], 1) - min(centroid_deg(memberIndex, :), [], 1);
-        [~, splitAxisIndex] = max(spread_deg);
-        ordering    = sortrows([centroid_deg(memberIndex, splitAxisIndex), memberIndex], [1 2]);
+        spread_units  = max(centroid_units(memberIndex, :), [], 1) - min(centroid_units(memberIndex, :), [], 1);
+        [~, splitAxisIndex] = max(spread_units);
+        ordering    = sortrows([centroid_units(memberIndex, splitAxisIndex), memberIndex], [1 2]);
         middleIndex = floor(numel(memberIndex) / 2);
         groups{splitGroupIndex} = ordering(1:middleIndex, 2);
         activeGroupCount = activeGroupCount + 1;
@@ -95,12 +95,12 @@ function [groupedRegions_deg, record] = createSolverRegions(regions_deg)
     end
     [~, groupOrder] = sort(firstRegionIndex);
     groups             = groups(groupOrder);
-    groupedRegions_deg = cell(activeGroupCount, 1);
+    groupedRegions_units = cell(activeGroupCount, 1);
     % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:activeGroupCount
-        vertices_deg = vertcat(regions_deg{groups{groupIndex}});
-        hullIndex    = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-        groupedRegions_deg{groupIndex} = vertices_deg(hullIndex(1:end - 1), :);
+        vertices_units = vertcat(regions_units{groups{groupIndex}});
+        hullIndex    = convhull(vertices_units(:, 1), vertices_units(:, 2));
+        groupedRegions_units{groupIndex} = vertices_units(hullIndex(1:end - 1), :);
     end
     record.Applied                 = true;
     record.SolverRegionCount       = activeGroupCount;

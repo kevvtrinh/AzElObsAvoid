@@ -7,7 +7,7 @@ end
 function setupOnce(~)
     % Add source folders before option tests. These checks isolate default values,
     % overrides, warnings, and invalid input from trajectory generation.
-    % Add the repository and Az/El product paths for direct test execution.
+    % Add the repository and X/Y product paths for direct test execution.
     repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
     addpath(repositoryRoot);
     addpath(fullfile(repositoryRoot, "trajectory"));
@@ -22,7 +22,7 @@ function testDefaultsMatchPublicPlannerRequirement(testCase)
     verifyEqual(testCase, options, expected);
     requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
         'MaximumWaitRefinementIterations', ...
-        'CollisionClearanceTolerance_deg', 'AllowAzimuthWrapping'};
+        'CollisionClearanceTolerance_units', 'WrapX', 'WrapY'};
     verifyTrue(testCase, isstruct(options) && isscalar(options));
     verifyTrue(testCase, all(isfield(options, requiredFields)));
     verifyFalse(testCase, isfield(options, "MotionMethod"));
@@ -32,7 +32,7 @@ function testDefaultsMatchPublicPlannerRequirement(testCase)
     verifyFalse(testCase, isfield(options, "RequestedWaypointWarmStartMode"));
     verifyFalse(testCase, isfield(options, "IsWaypointWarmStartAvailable"));
     verifyFalse(testCase, isfield(options, "PerSeedWorkBudgetMultiplier"));
-    verifyFalse(testCase, isfield(options, "SeedClusterDistance_deg"));
+    verifyFalse(testCase, isfield(options, "SeedClusterDistance_units"));
     verifyFalse(testCase, isfield(options, "Verbose"));
     verifyFalse(testCase, isfield(options, "EnablePlaneReuse"));
     verifyFalse(testCase, isfield(options, "PlaneReuseImprovementTolerance_s"));
@@ -40,7 +40,7 @@ function testDefaultsMatchPublicPlannerRequirement(testCase)
     verifyFalse(testCase, isfield(options, "CollocationSegmentCount"));
     verifyEqual(testCase, options.UnsupportedTimedTopologyPolicy, "fail");
     verifyEqual(testCase, options.GoalTimeMode, "earliestArrival");
-    verifyFalse(testCase, isfield(options, "MinimumTravelSavingsRate_deg_s"));
+    verifyFalse(testCase, isfield(options, "MinimumTravelSavingsRate_units_s"));
     verifyEqual(testCase, options.MaximumSeedCount, 2);
     verifyEqual(testCase, options.MaximumWaitRefinementIterations, 16);
 end
@@ -49,7 +49,7 @@ function testRetiredFieldsUseAggregateUnknownWarningAndAreIgnored(testCase)
     % Keep one unknown-field policy after removing dead compatibility shims.
     retiredOptions = struct();
     retiredOptions.PerSeedWorkBudgetMultiplier      = "invalid";
-    retiredOptions.SeedClusterDistance_deg          = "invalid";
+    retiredOptions.SeedClusterDistance_units          = "invalid";
     retiredOptions.Verbose                          = "invalid";
     retiredOptions.MaximumNlpIterations             = "invalid";
     retiredOptions.CollocationSegmentCount          = "invalid";
@@ -110,7 +110,7 @@ end
 function testInvalidRequirementsRetainEstablishedErrors(testCase)
     % Preserve explicit errors for malformed, moved, and invalid values.
     verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(1), "planTrajectory:InvalidOptions");
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("AzimuthInterval_deg", [-1 1])), "planTrajectory:WorkspaceLimitMoved");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("XInterval_units", [-1 1])), "planTrajectory:WorkspaceLimitMoved");
     verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "invalid")), "planTrajectory:InvalidGoalTimeMode");
     verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("UnsupportedTimedTopologyPolicy", "invalid")), "planTrajectory:InvalidUnsupportedTimedTopologyPolicy");
     verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("MaximumSeedCount", 6)), "MATLAB:notLessEqual");

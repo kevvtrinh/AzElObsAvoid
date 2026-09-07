@@ -8,14 +8,14 @@ function setupOnce(testCase)
     addpath(root, fullfile(root, 'trajectory'));
     initial = struct();
     initial.time_s       = 0;
-    initial.position_deg = [0 0];
+    initial.position_units = [0 0];
     goal = struct();
     goal.time_s       = 10;
-    goal.position_deg = [1 0];
+    goal.position_units = [1 0];
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
     [result, diagnosis] = obstacleAvoidance.planTrajectory([], initial, goal, limits);
     single   = obstacleAvoidance.planTrajectory([], initial, goal, limits);
     obstacle = obstacleAvoidance.obstacles.createObstacle('blocked start', [0;10], [-1;1;1;-1], [-1;-1;1;1], 0);
@@ -29,7 +29,7 @@ function testOptionalOutputPreservesMotion(testCase)
     single = testCase.TestData.Single;
     verifyTrue(testCase, r.Success, r.Message);
     verifyEqual(testCase, r.time_s, single.time_s);
-    verifyEqual(testCase, r.position_deg, single.position_deg);
+    verifyEqual(testCase, r.position_units, single.position_units);
     verifyEqual(testCase, r.Polynomial, single.Polynomial);
     validation = obstacleAvoidance.validateTrajectory(r);
     verifyTrue(testCase, validation.Passed, validation.Message);

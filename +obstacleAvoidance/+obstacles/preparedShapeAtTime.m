@@ -9,7 +9,7 @@ function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometry
 % OUTPUTS
 %   shape and geometry: the interpolated protected boundary and its cached interval model.
 % UNITS
-%   Positions are degrees; time is seconds; derivatives retain physical units.
+%   Positions are coordinate units; time is seconds; derivatives retain physical units.
 
 %% Section 1: Evaluate Prepared Inputs
 if nargin < 3, geometryOnly = false; end
@@ -18,8 +18,8 @@ time_s      = double(obstacle.time_s(:));
 shape       = [];
 if isempty(time_s) || (numel(time_s) > 1 && (queryTime_s < time_s(1) || queryTime_s > time_s(end)))
     geometry = boundaryGeometry(zeros(0, 1), zeros(0, 1), 0, false, 0, 0, "inactive");
-    geometry.EdgeStart_deg = zeros(0, 2);
-    geometry.EdgeEnd_deg   = zeros(0, 2);
+    geometry.EdgeStart_units = zeros(0, 2);
+    geometry.EdgeEnd_units   = zeros(0, 2);
     if ~geometryOnly
         shape = polyshape();
     end
@@ -37,71 +37,71 @@ if lowerIndex ~= upperIndex
 end
 %% Section 2: Evaluate The Protected Boundary
 
-azimuth_deg            = double(obstacle.az_deg{lowerIndex}(:));
-elevation_deg          = double(obstacle.el_deg{lowerIndex}(:));
+x_units            = double(obstacle.x_units{lowerIndex}(:));
+y_units          = double(obstacle.y_units{lowerIndex}(:));
 topologyIsInterpolated = true;
 if lowerIndex == upperIndex
-    speed_deg_s   = preparation.SampleSpeedBound_deg_s(lowerIndex);
+    speed_units_s   = preparation.SampleSpeedBound_units_s(lowerIndex);
     geometryModel = "authoritativeSample";
     if ~geometryOnly
         shape = preparation.SampleShapes{lowerIndex};
     end
-    edgeStart_deg = preparation.SampleEdgeStart_deg{lowerIndex};
-    edgeEnd_deg   = preparation.SampleEdgeEnd_deg{lowerIndex};
+    edgeStart_units = preparation.SampleEdgeStart_units{lowerIndex};
+    edgeEnd_units   = preparation.SampleEdgeEnd_units{lowerIndex};
 elseif preparation.MatchingTopology(lowerIndex)
-    azimuth_deg   = azimuth_deg + fraction * preparation.DeltaAzimuth_deg{lowerIndex};
-    elevation_deg = elevation_deg + fraction * preparation.DeltaElevation_deg{lowerIndex};
-    speed_deg_s   = preparation.IntervalSpeedBound_deg_s(lowerIndex);
+    x_units   = x_units + fraction * preparation.DeltaX_units{lowerIndex};
+    y_units = y_units + fraction * preparation.DeltaY_units{lowerIndex};
+    speed_units_s   = preparation.IntervalSpeedBound_units_s(lowerIndex);
     geometryModel = preparation.IntervalGeometryModel(lowerIndex);
-    if ~geometryOnly && speed_deg_s == 0
+    if ~geometryOnly && speed_units_s == 0
         shape = preparation.SampleShapes{lowerIndex};
     end
-    edgeStart_deg = [azimuth_deg, elevation_deg];
-    edgeEnd_deg   = circshift(edgeStart_deg, -1, 1);
+    edgeStart_units = [x_units, y_units];
+    edgeEnd_units   = circshift(edgeStart_units, -1, 1);
 else
     shape = preparation.IntervalUnionShapes{lowerIndex};
-    [azimuth_deg, elevation_deg] = boundary(shape);
-    speed_deg_s            = 0;
+    [x_units, y_units] = boundary(shape);
+    speed_units_s            = 0;
     topologyIsInterpolated = false;
     geometryModel          = preparation.IntervalGeometryModel(lowerIndex);
-    edgeStart_deg          = preparation.IntervalUnionEdgeStart_deg{lowerIndex};
-    edgeEnd_deg            = preparation.IntervalUnionEdgeEnd_deg{lowerIndex};
+    edgeStart_units          = preparation.IntervalUnionEdgeStart_units{lowerIndex};
+    edgeEnd_units            = preparation.IntervalUnionEdgeEnd_units{lowerIndex};
 end
-azimuth_deg(~isfinite(azimuth_deg)) = NaN;
-elevation_deg(~isfinite(elevation_deg)) = NaN;
+x_units(~isfinite(x_units)) = NaN;
+y_units(~isfinite(y_units)) = NaN;
 if ~geometryOnly && (isempty(shape) || isempty(shape.Vertices))
-    shape = obstacleAvoidance.geometry.boundaryToShape(azimuth_deg, elevation_deg);
+    shape = obstacleAvoidance.geometry.boundaryToShape(x_units, y_units);
 end
-geometry = boundaryGeometry(azimuth_deg, elevation_deg, speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel);
-geometry.EdgeStart_deg = edgeStart_deg;
-geometry.EdgeEnd_deg   = edgeEnd_deg;
+geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel);
+geometry.EdgeStart_units = edgeStart_units;
+geometry.EdgeEnd_units   = edgeEnd_units;
 end
 
-function geometry = boundaryGeometry(azimuth_deg, elevation_deg, speed_deg_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel)
+function geometry = boundaryGeometry(x_units, y_units, speed_units_s, topologyIsInterpolated, lowerIndex, upperIndex, geometryModel)
     % Classify one ordered boundary without changing its vertices or ring order.
-    finiteVertex = isfinite(azimuth_deg) & isfinite(elevation_deg);
+    finiteVertex = isfinite(x_units) & isfinite(y_units);
     active       = nnz(finiteVertex) >= 3;
     hasOneRing   = active && all(finiteVertex);
     isConvex     = false;
     outwardSign  = NaN;
     if hasOneRing
-        vertices_deg          = [azimuth_deg(:), elevation_deg(:)];
-        nextVertices_deg      = circshift(vertices_deg, -1, 1);
-        areaTerms_deg2        = vertices_deg(:, 1) .* nextVertices_deg(:, 2) - vertices_deg(:, 2) .* nextVertices_deg(:, 1);
-        signedDoubleArea_deg2 = sum(areaTerms_deg2);
-        areaTolerance_deg2    = 64 * eps * max(1, sum(abs(areaTerms_deg2)));
-        hasOneRing            = abs(signedDoubleArea_deg2) > areaTolerance_deg2;
+        vertices_units          = [x_units(:), y_units(:)];
+        nextVertices_units      = circshift(vertices_units, -1, 1);
+        areaTerms_units2        = vertices_units(:, 1) .* nextVertices_units(:, 2) - vertices_units(:, 2) .* nextVertices_units(:, 1);
+        signedDoubleArea_units2 = sum(areaTerms_units2);
+        areaTolerance_units2    = 64 * eps * max(1, sum(abs(areaTerms_units2)));
+        hasOneRing            = abs(signedDoubleArea_units2) > areaTolerance_units2;
         if hasOneRing
-            edges_deg          = nextVertices_deg - vertices_deg;
-            nextEdges_deg      = circshift(edges_deg, -1, 1);
-            turns_deg2         = edges_deg(:, 1) .* nextEdges_deg(:, 2) - edges_deg(:, 2) .* nextEdges_deg(:, 1);
-            turnTolerance_deg2 = 64 * eps * max(1, max(abs(turns_deg2)));
-            isConvex           = all(turns_deg2 >= -turnTolerance_deg2) || all(turns_deg2 <= turnTolerance_deg2);
-            outwardSign        = -sign(signedDoubleArea_deg2);
+            edges_units          = nextVertices_units - vertices_units;
+            nextEdges_units      = circshift(edges_units, -1, 1);
+            turns_units2         = edges_units(:, 1) .* nextEdges_units(:, 2) - edges_units(:, 2) .* nextEdges_units(:, 1);
+            turnTolerance_units2 = 64 * eps * max(1, max(abs(turns_units2)));
+            isConvex           = all(turns_units2 >= -turnTolerance_units2) || all(turns_units2 <= turnTolerance_units2);
+            outwardSign        = -sign(signedDoubleArea_units2);
         end
     end
-    geometry = struct("Active", active, "azimuth_deg", double(azimuth_deg(:)), ...
-        "elevation_deg", double(elevation_deg(:)), "VertexSpeedBound_deg_s", speed_deg_s, ...
+    geometry = struct("Active", active, "x_units", double(x_units(:)), ...
+        "y_units", double(y_units(:)), "VertexSpeedBound_units_s", speed_units_s, ...
         "HasOrderedSingleRegion", hasOneRing, "IsConvex", isConvex, "OutwardSign", outwardSign, ...
         "TopologyIsInterpolated", topologyIsInterpolated, ...
         "GeometryModel", string(geometryModel), ...

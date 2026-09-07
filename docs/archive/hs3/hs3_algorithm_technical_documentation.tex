@@ -86,12 +86,9 @@
 \begin{titlepage}
 \begin{tikzpicture}[remember picture,overlay]
   \fill[navy] (current page.north west) rectangle
-    ([yshift=-2.35in]current page.north east);
-  \fill[teal] ([yshift=-2.35in]current page.north west) rectangle
-    ([yshift=-2.48in]current page.north east);
-  \draw[line width=1.2pt]
-    ([xshift=0.72in,yshift=0.72in]current page.south west) rectangle
-    ([xshift=-0.72in,yshift=-2.82in]current page.north east);
+    ([yshift=-3.25in]current page.north east);
+  \fill[teal] ([yshift=-3.25in]current page.north west) rectangle
+    ([yshift=-3.38in]current page.north east);
 \end{tikzpicture}
 
 \vspace*{0.42in}
@@ -100,7 +97,7 @@ HS3 Algorithm\par Technical Documentation}
 
 \vspace{0.24in}
 {\color{white}\sffamily\large
-Azimuth/elevation obstacle transformation, third-order Hermite-Simpson
+X/Y obstacle transformation, third-order Hermite-Simpson
 transcription, solver flow, validation, and complete MATLAB file reference}
 
 \vspace{1.35in}
@@ -109,7 +106,7 @@ transcription, solver flow, validation, and complete MATLAB file reference}
 \textbf{Documented commit} & \file{8dbdeca} \\
 \textbf{Snapshot date} & 2026-08-27 \\
 \textbf{Scope} & 93 tracked MATLAB files and 17 tracked support artifacts \\
-\textbf{Coordinate convention} & Euclidean $[\mathrm{azimuth},\mathrm{elevation}]$ in degrees
+\textbf{Coordinate convention} & Euclidean $[\mathrm{x},\mathrm{y}]$ in coordinate units
 \end{tabular}
 
 \vfill
@@ -118,6 +115,11 @@ transcription, solver flow, validation, and complete MATLAB file reference}
 commit above. The untracked \file{Rogue Examples/} directory is intentionally
 excluded because it is not part of that commit. No planner behavior was changed
 while producing this documentation.}
+
+{\small Terminology edition: 2026-09-07. Coordinate names and units follow
+the generic x/y API. The algorithm discussion remains historical; consult
+the repository README for the current planner and independent wrapping options.
+Both archived PDF filenames are regenerated from this common source.}
 
 {\small This is implementation documentation, not a claim of global
 completeness or global optimality. The bounded topology portfolio and local
@@ -130,11 +132,11 @@ nonlinear solve limitations are stated explicitly in Section~\ref{sec:limits}.}
 \section{Purpose, scope, and reading map}
 
 This report explains how the repository turns time-indexed protected polygons
-in an azimuth/elevation plane into a dynamically feasible, independently
+in an x/y plane into a dynamically feasible, independently
 validated trajectory. It covers two related products:
 
 \begin{itemize}
-  \item \term{Obstacle-aware Az/El planner}: the public
+  \item \term{Obstacle-aware X/Y planner}: the public
   \file{obstacleAvoidance.planTrajectory} API, its geometry/search layer, its
   planner-specific corridor constraints, and its independent collision
   validator.
@@ -147,7 +149,7 @@ The obstacle-aware planner deliberately does not call the public
 \file{solveTrajHS3} wrapper. It calls the neutral \file{hs3Internal}
 primitives through its own adapter because moving/deforming obstacle
 associations, route topology, relinearization, and adaptive polygon collision
-validation belong to the Az/El layer. This is an architectural boundary, not a
+validation belong to the X/Y layer. This is an architectural boundary, not a
 duplicate implementation.
 
 The recommended reading order is: architecture (Section~\ref{sec:architecture}),
@@ -181,12 +183,12 @@ they do not establish what this particular implementation does.
   neutral/.style={box,draw=teal,fill=teal!8},
   arrow/.style={-{Latex[length=2.3mm]},line width=.8pt,draw=muted}
 ]
-\node[prod] (api) {Public Az/El API\\\file{planTrajectory}};
+\node[prod] (api) {Public X/Y API\\\file{planTrajectory}};
 \node[prod,below=of api] (input) {Input and obstacle\\normalization};
 \node[prod,below left=of input] (search) {Topology and timed\\seed search};
 \node[prod,below right=of input] (planner) {Corridor association\\and orchestration};
 \node[neutral,below=14mm of input] (kernel) {Neutral \file{hs3Internal} kernel\\polynomials, constraints, solver};
-\node[prod,below left=of kernel] (valid) {Independent Az/El\\trajectory validation};
+\node[prod,below left=of kernel] (valid) {Independent X/Y\\trajectory validation};
 \node[prod,below right=of kernel] (result) {Stable public result\\and diagnostics};
 \node[neutral,right=22mm of kernel] (standalone) {Public neutral API\\\file{solveTrajHS3}};
 \draw[arrow] (api)--(input);
@@ -200,13 +202,13 @@ they do not establish what this particular implementation does.
 \draw[arrow] (kernel)--(standalone);
 \begin{scope}[on background layer]
   \node[draw=navy,dashed,rounded corners=3pt,fit=(api)(input)(search)(planner)(valid)(result),
-    inner sep=5mm,label={[navy]above left:Az/El product}] {};
+    inner sep=5mm,label={[navy]above left:X/Y product}] {};
   \node[draw=teal,dashed,rounded corners=3pt,fit=(kernel)(standalone),
     inner sep=4mm,label={[teal]below right:dimension-neutral product}] {};
 \end{scope}
 \end{tikzpicture}
 \caption{Ownership and dependency direction. Polygon semantics never enter the
-neutral HS3 source. The public neutral wrapper and the Az/El planner share the
+neutral HS3 source. The public neutral wrapper and the X/Y planner share the
 same kernel but have different orchestration and validation responsibilities.}
 \label{fig:architecture}
 \end{figure}
@@ -226,7 +228,7 @@ The input roles are fixed and ordered:
   \item \file{obstacles}: canonical static or time-indexed protected polygon
   records, a nested cell/array accepted by the combiner, or empty.
   \item \file{initialState}: absolute \file{time_s} and a 1-by-2
-  \file{position_deg}; optional endpoint velocity and acceleration default to
+  \file{position_units}; optional endpoint velocity and acceleration default to
   zero.
   \item \file{goalState}: fixed or sampled moving target with the same
   coordinate ordering and supported terminal derivatives.
@@ -556,7 +558,7 @@ n^T q(\tau)\ge \ell,
 \end{equation}
 
 while $\mathrm{TauEnd}>\mathrm{Tau}$ applies the same half-space throughout the
-interval using its Bernstein hull. The Az/El planner constructs the equivalent
+interval using its Bernstein hull. The X/Y planner constructs the equivalent
 rows internally from obstacle geometry.
 
 \section{Create 1D, 2D, and 3D HS3 inputs}\label{sec:dimensionexamples}
@@ -666,8 +668,8 @@ ylabel("Coordinate 2");
 axis equal;
 \end{lstlisting}
 
-For azimuth/elevation work, coordinate 1 can be azimuth and coordinate 2 can be
-elevation. The neutral HS3 function does not assign those meanings. The caller
+For x/y work, coordinate 1 can be x and coordinate 2 can be
+y. The neutral HS3 function does not assign those meanings. The caller
 must use consistent units and coordinate order.
 
 \subsection{3D example: move three coordinates}
@@ -731,19 +733,19 @@ same value of $D$. If the sizes are correct but no motion is found, inspect
 \file{trajectory.MaximumConstraintViolation}. Then increase the final time or
 correct limits only when the physical request permits that change.
 
-\section{From an Az/El obstacle to HS3 input}\label{sec:obstacles}
+\section{From an X/Y obstacle to HS3 input}\label{sec:obstacles}
 
 \subsection{Canonical obstacle representation}
 
-Obstacle coordinates are treated as Euclidean $[\mathrm{azimuth},
-\mathrm{elevation}]$ coordinates in degrees. Distances and path lengths are
+Obstacle coordinates are treated as Euclidean $[\mathrm{x},
+\mathrm{y}]$ coordinates in coordinate units. Distances and path lengths are
 therefore planar degree distances, not spherical or geodesic distances.
 
 The constructor retains two histories:
 
 \begin{itemize}
-  \item \file{originalAz_deg}/\file{originalEl_deg}: source geometry;
-  \item \file{az_deg}/\file{el_deg}: protected geometry used by planning and
+  \item \file{originalX_units}/\file{originalY_units}: source geometry;
+  \item \file{x_units}/\file{y_units}: protected geometry used by planning and
   collision checking.
 \end{itemize}
 
@@ -779,8 +781,8 @@ is inactive outside its stored time span.
 % panel 1
 \begin{scope}[shift={(0,0)}]
   \draw[->] (-0.5,0)--(7.2,0);
-  \node[below,font=\scriptsize] at (6.1,0) {azimuth};
-  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{elevation (deg)};
+  \node[below,font=\scriptsize] at (6.1,0) {x};
+  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{y (units)};
   \fill[blue!18] (2,-1) rectangle (4,1);
   \draw[blue,line width=1pt] (2,-1) rectangle (4,1);
   \fill[red!14] (1.5,-1.5) rectangle (4.5,1.5);
@@ -797,8 +799,8 @@ is inactive outside its stored time span.
 % panel 2
 \begin{scope}[shift={(9.6,0)}]
   \draw[->] (-0.4,0)--(7.0,0);
-  \node[below,font=\scriptsize] at (5.9,0) {azimuth};
-  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{elevation};
+  \node[below,font=\scriptsize] at (5.9,0) {x};
+  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{y};
   \fill[red!8] (1.2,-1.3) rectangle (4.2,1.3);
   \draw[red,dashed] (1.2,-1.3) rectangle (4.2,1.3);
   \fill[orange!13] (2.2,-1.3) rectangle (5.2,1.3);
@@ -818,8 +820,8 @@ is inactive outside its stored time span.
 % panel 3
 \begin{scope}[shift={(19.1,0)}]
   \draw[->] (-0.4,0)--(7.0,0);
-  \node[below,font=\scriptsize] at (5.9,0) {azimuth};
-  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{elevation};
+  \node[below,font=\scriptsize] at (5.9,0) {x};
+  \draw[->] (0,-2.6)--(0,3.2) node[above,font=\scriptsize]{y};
   \fill[red!13] (2,-1.3) rectangle (5,1.3);
   \draw[red,line width=1pt] (2,-1.3) rectangle (5,1.3);
   \draw[orange,line width=1.3pt] (2,1.3)--(5,1.3);
@@ -955,7 +957,7 @@ c_r=b+\delta-\beta_r(n^Tq)\le0\quad\text{for every coefficient }r.
 \end{scope}
 \begin{scope}[shift={(8.0,.15)}]
   \draw[->] (0,0)--(6.8,0) node[right,font=\scriptsize]{coefficient index};
-  \draw[->] (0,0)--(0,4.0) node[above,font=\scriptsize]{$\beta_r$ (deg)};
+  \draw[->] (0,0)--(0,4.0) node[above,font=\scriptsize]{$\beta_r$ (units)};
   \draw[red,dashed] (0,1.5)--(6.4,1.5)
     node[right,font=\scriptsize]{$b+\delta=1.5001$};
   \foreach \x/\y in {0.6/3.0,1.6/2.6,2.6/2.15,3.6/2.3,4.6/2.75,5.6/3.0}
@@ -1021,13 +1023,15 @@ causes bisection; an unresolved minimum-size interval is a validation failure.}
 \label{fig:adaptivevalidation}
 \end{figure}
 
-\subsection{Azimuth wrapping limitation}
+\subsection{Coordinate wrapping limitation}
 
-This commit does not wrap or seam-replicate obstacles. When any obstacle is
-present, \file{AllowAzimuthWrapping=true} is rejected. Obstacle-free fixed-goal
-requests may shift the goal azimuth by an integer multiple of 360 degrees to
-select the nearest equivalent representation. Graphics must therefore not be
-read as a periodic obstacle transformation.
+The current coordinate interface has independent \file{WrapX} and
+\file{WrapY} flags. Obstacle-free fixed-position requests select the nearest
+equivalent goal on each enabled axis using that axis's workspace interval
+width as its period. Half-period ties select positive displacement. Returned
+motion remains continuous; spatial plots split at either periodic seam.
+Obstacles and moving goals remain unsupported when either flag is enabled.
+Graphics must therefore not be read as a periodic obstacle transformation.
 
 \section{Solver, candidate, and result logic}
 
@@ -1104,8 +1108,8 @@ q_f&=(10,0)\ \mathrm{deg},& t_f&=12\ \mathrm{s},
 \end{align*}
 
 and use zero endpoint velocity/acceleration, velocity limit
-$(2,2)$ deg/s, acceleration limit $(1,1)$ deg/s$^2$, and jerk limit
-$(2,2)$ deg/s$^3$.
+$(2,2)$ units/s, acceleration limit $(1,1)$ units/s$^2$, and jerk limit
+$(2,2)$ units/s$^3$.
 
 \subsection{Step 2: apply the margin once}
 
@@ -1160,7 +1164,7 @@ With $\delta=10^{-4}$ degree, Equation~\eqref{eq:obstaclehalfspace} becomes
 
 \begin{equation}
 [0\ \ 1]q(\tau)\ge1.5001,
-\quad\text{or}\quad 1.5001-\mathrm{elevation}(\tau)\le0.
+\quad\text{or}\quad 1.5001-\mathrm{y}(\tau)\le0.
 \end{equation}
 
 Suppose the projected quintic position on the associated segment has
@@ -1193,16 +1197,16 @@ the best partial candidate and search diagnostics.
 
 \subsection{Moving extension}
 
-If the same original rectangle translates 2 degrees in azimuth between
+If the same original rectangle translates 2 coordinate units in x between
 $t=0$ and $t=10$ seconds, the protected vertices translate identically. At
 $t=5$ seconds, $\lambda=0.5$ and
 
 \begin{equation}
-P_m(5)=[4.5,7.5]\times[-1.5,1.5],\qquad v_{obs,max}=0.2\ \mathrm{deg/s}.
+P_m(5)=[4.5,7.5]\times[-1.5,1.5],\qquad v_{obs,max}=0.2\ \mathrm{units/s}.
 \end{equation}
 
 For a validation interval $\Delta t=0.1$ second and path speed bound
-$\lVert v_{path,max}\rVert_2=2$ deg/s, Equation~\eqref{eq:collisioncertificate}
+$\lVert v_{path,max}\rVert_2=2$ units/s, Equation~\eqref{eq:collisioncertificate}
 gives $r=(2+0.2)(0.05)=0.11$ degree. Midpoint clearance must exceed
 $0.11+\epsilon_{collision}$ or the interval is bisected.
 
@@ -1217,10 +1221,10 @@ Option & Default & Meaning \\
 \endhead
 \file{GoalTimeMode} & \file{earliestArrival} & Minimize arrival within the supplied horizon. \\
 \file{SampleTime_s} & 0.05 & Returned uniform sampling interval; knots are also retained. \\
-\file{AllowAzimuthWrapping} & false & Periodic goal representation is disabled by default. \\
+\file{WrapX}, \file{WrapY} & false & Independent periodic axes; periods are workspace interval widths. \\
 \file{MaximumSeedCount} & 5 & Bounded topology proposal count. \\
 \file{DirectOnly} & false & Permit visibility, route class, and timed seeds. \\
-\file{ObstacleClusterDistance_deg} & 0 & Disable nearby-region seed clustering. \\
+\file{ObstacleClusterDistance_units} & 0 & Disable nearby-region seed clustering. \\
 \file{CollocationSegmentCount} & 10 & Initial equal-duration HS3 segment count. \\
 \file{MaximumCollocationSegmentCount} & 64 & Mesh-refinement cap. \\
 \file{MaximumMeshRefinementPasses} & 2 & Bounded refinement attempts. \\
@@ -1232,7 +1236,7 @@ Option & Default & Meaning \\
 \file{ConstraintTolerance} & $10^{-7}$ & Numerical constraint tolerance. \\
 \file{OptimalityTolerance} & $10^{-7}$ & Local solver optimality tolerance. \\
 \file{StepTolerance} & $10^{-10}$ & Local solver step tolerance. \\
-\file{CollisionClearanceTolerance_deg} & $10^{-7}$ & Clearance tolerance for validation. \\
+\file{CollisionClearanceTolerance_units} & $10^{-7}$ & Clearance tolerance for validation. \\
 \file{CollisionMinimumTimeStep_s} & 0.00025 & Fail-closed adaptive collision resolution floor. \\
 \file{RandomSeed} & 0 & Echoed deterministic seed; search is deterministic. \\
 \bottomrule
@@ -1280,10 +1284,10 @@ state use identified errors.
   \item Moving/deforming obstacle rows are local frozen-time associations.
   Independent adaptive polygon validation is authoritative between those
   association times.
-  \item Azimuth wrapping with obstacles or moving goals is unsupported.
+  \item Wrapping either axis with obstacles or moving goals is unsupported.
   \item One solver evaluation or callback may finish after the cooperative
   time limit, so measured elapsed time can overrun the nominal budget.
-  \item Geographic and Az/El geometry is planar in degrees, not spherical.
+  \item Geographic and X/Y geometry is planar in coordinate units, not spherical.
 \end{itemize}
 
 \section{Complete tracked MATLAB file catalog}\label{sec:inventory}
@@ -1300,7 +1304,7 @@ closes each valid ring. Clearance and visibility code use it to enumerate
 actual polygon segments.}
 
 \scriptentry{+obstacleAvoidance/+geometry/boundaryToShape.m}{Converts paired,
-NaN-separated azimuth/elevation vectors to an unsimplified \file{polyshape}.
+NaN-separated x/y vectors to an unsimplified \file{polyshape}.
 It preserves ring correspondence and collinear vertices; fewer than three
 finite vertices yields empty geometry. Dynamic preparation, time queries, and
 corridor construction depend on this canonical conversion.}
@@ -1338,7 +1342,7 @@ example, intercept, and sandbox controls reuse it.}
 the public obstacle/state/limit request. It combines obstacles, converts numeric
 orientations to 1-by-2 doubles, defaults endpoint derivatives, supplies
 workspace intervals, checks cross-field dimensions, and implements the limited
-obstacle-free azimuth-wrap policy.}
+obstacle-free x-wrap policy.}
 
 \scriptentry{+obstacleAvoidance/+input/resolveHs3Options.m}{Owns and validates
 all obstacle-aware HS3 defaults. Partial or empty overrides are merged through
@@ -1643,12 +1647,12 @@ within its bounded chronological search.}
 that waits continuously for a translating barrier, exercising timed seeds and
 nonzero event timing rather than a spatial detour alone.}
 
-\scriptentry{examples/exampleMovingCircleNoAzimuthWrap.m}{Demonstrates an
-immediate detour around a rising circle with periodic azimuth explicitly
+\scriptentry{examples/exampleMovingCircleNoWrap.m}{Demonstrates an
+immediate detour around a rising circle with periodic x explicitly
 disabled, protecting the non-wrapped obstacle contract.}
 
 \scriptentry{examples/exampleMovingDeformingUSOutlineVisibility.m}{Creates a
-dense U.S. outline that grows, deforms, rotates 180 degrees, and disappears,
+dense U.S. outline that grows, deforms, rotates 180 coordinate units, and disappears,
 with a second moving sun obstacle. It exercises changing topology/visibility and
 the geographic helper.}
 
@@ -1832,7 +1836,7 @@ Where are continuous bounds certified? & \file{convertPowerToBernstein.m},
 \file{createSubintervalBernsteinMap.m}, planner/neutral constraint evaluators \\
 Which numerical solver is used? & \file{hs3Internal/+solver/optimize.m}:
 \file{quadprog} fixed time, \file{fmincon} free time/recovery. \\
-What finally authorizes success? & \file{validateTrajectory.m} for the Az/El
+What finally authorizes success? & \file{validateTrajectory.m} for the X/Y
 planner; \file{hs3Internal/validate.m} for the public neutral engine. \\
 \bottomrule
 \end{longtable}

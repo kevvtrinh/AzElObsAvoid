@@ -1,7 +1,7 @@
-# Az/El Planner Sandbox
+# X/Y Planner Sandbox
 
 This folder provides a dependency-free browser front end for the maintained
-Az/El planner. MATLAB can serve the page and planning API itself through its
+X/Y planner. MATLAB can serve the page and planning API itself through its
 shipped JVM, or the original request/result file handoff can run with no server
 and no network. Neither mode needs Node, Python, a package manager, a CDN, or a
 new toolbox.
@@ -19,7 +19,7 @@ The light workspace follows three steps: build your scene, plan in MATLAB,
 and inspect the returned motion. Choose a drawing tool above the canvas;
 the active tool is highlighted in blue and the canvas hint explains its action.
 Exact endpoints and physical limits are visible in the controls. Expand
-**Workspace bounds (deg)** or **Planner options** for additional settings.
+**Workspace bounds (units)** or **Planner options** for additional settings.
 The connection badge stays visible on small screens, and offline handoff
 labels each of its three steps, including the MATLAB command.
 
@@ -77,7 +77,7 @@ only **Preview** and the green **Finish final pose** checkmark:
 
 - **Move:** grab the ghost body or center, or expand **Exact final pose values** in the obstacle
   sidebar to enter its final center. This sets constant translation to reach that center at mission end.
-  Destinations requiring more than the existing 10 deg/s center-speed limit are
+  Destinations requiring more than the existing 10 units/s center-speed limit are
   refused; increase mission time or choose a nearer destination.
 - **Stretch:** drag an always-visible purple corner to change width and height about the
   ghost's center, along its rotated local axes. Numeric width/height factors
@@ -93,9 +93,9 @@ translation, turn, and stretch. Rotation and scale edits preserve the selected
 translation profile; changing destination explicitly selects constant velocity.
 The **Obstacle speed** slider overlays the lower-right corner of the canvas
 when an editable obstacle is selected. It controls commanded translation speed from
-0 to 10 deg/s, with a live numeric readout. It preserves direction through zero
+0 to 10 units/s, with a live numeric readout. It preserves direction through zero
 and retains the selected motion profile; starting a new stationary obstacle
-defaults to constant motion toward +Az. Drag the ghost to choose another
+defaults to constant motion toward +X. Drag the ghost to choose another
 direction. Exact velocity fields are under **Direction components**.
 The velocity fields and arrow handle remain available for zero-start,
 trapezoidal, and out-and-back translation. Changing mission duration retains
@@ -116,7 +116,7 @@ the sidebar rather than displayed in a bar above the canvas.
 
 Preview and export use the same sampled motion. Translation or stretch uses at
 least 20 intervals; rotation adds intervals to keep each angular step at most
-5 degrees. Between samples, corresponding vertices follow straight segments,
+5 coordinate units. Between samples, corresponding vertices follow straight segments,
 not exact rigid rotation arcs. This is the existing polygon-history model in
 `obstacle_history_contract.md`. MATLAB may conservatively enclose unsupported
 history intervals; the response retains its protected geometry. Safety margins
@@ -152,13 +152,13 @@ the sandbox and stop it when finished.
 
 ## Offline mode: unchanged file handoff
 
-1. Double-click `az_el_planner_sandbox.html`. No server or installation is
+1. Double-click `xy_planner_sandbox.html`. No server or installation is
    needed. The initial loopback probe times out promptly and the page plainly
    displays **Offline · file handoff**.
 2. Place the start and goal by clicking the plot or entering their exact
    coordinates, draw any polygon obstacles, edit the limits, and select
    **Download request JSON**. The browser saves
-   `az-el-request.json` in its configured download folder.
+   `x-y-request.json` in its configured download folder.
 3. In MATLAB, run this command block after replacing `repositoryRoot` with this
    checkout's root if necessary:
 
@@ -166,9 +166,9 @@ the sandbox and stop it when finished.
    repositoryRoot = "C:\path\to\the\repository";
    addpath(fullfile(repositoryRoot, "offlinesandbox"));
    requestFile = fullfile( ...
-       getenv("USERPROFILE"), "Downloads", "az-el-request.json");
+       getenv("USERPROFILE"), "Downloads", "x-y-request.json");
    resultFile = fullfile( ...
-       getenv("USERPROFILE"), "Downloads", "az-el-result.json");
+       getenv("USERPROFILE"), "Downloads", "x-y-result.json");
    offlineSandbox.runPlanningRequest(requestFile, resultFile);
    ```
 
@@ -179,14 +179,14 @@ the sandbox and stop it when finished.
    validates a successful result with
    `obstacleAvoidance.validateTrajectory`.
 4. Return to the page and select **Load result JSON**. Choose
-   `az-el-result.json`.
+   `x-y-result.json`.
 
 The two-argument `offlineSandbox.runPlanningRequest(requestFile, resultFile)`
 path is unchanged. It still owns JSON validation, canonical obstacle creation,
 the one public planner call, independent validation, projection, and atomic
 result-file replacement.
 
-The page uses Canvas 2D. It provides direct control of equal Az/El scale,
+The page uses Canvas 2D. It provides direct control of equal X/Y scale,
 degree ticks, the grid, dense search traces, and animation while keeping all
 rendering code inside the single HTML file.
 
@@ -195,7 +195,7 @@ rendering code inside the single HTML file.
 The MATLAB server implements a small HTTP/1.1 subset directly over
 `java.net.ServerSocket`:
 
-- `GET /` returns `az_el_planner_sandbox.html` as UTF-8.
+- `GET /` returns `xy_planner_sandbox.html` as UTF-8.
 - `GET /health` identifies the local transport and lets the page select live
   mode. The page probes only while no plan is active and checks again every
   three seconds, so a stopped server changes the UI to offline mode visibly.
@@ -236,57 +236,58 @@ The browser writes this shape:
 ```json
 {
   "schemaVersion": "offlineSandboxRequest/v1",
-  "requestId": "az-el-20260830...",
+  "requestId": "x-y-20260830...",
   "obstacles": [
     {
       "name": "Obstacle 1",
-      "safetyMargin_deg": 0.2,
+      "safetyMargin_units": 0.2,
       "keyframes": [
         {
           "time_s": 0,
-          "vertices_deg": [[-8, -3], [-2, -3], [-2, 3], [-8, 3]]
+          "vertices_units": [[-8, -3], [-2, -3], [-2, 3], [-8, 3]]
         },
         {
           "time_s": 20,
-          "vertices_deg": [[-8, -3], [-2, -3], [-2, 3], [-8, 3]]
+          "vertices_units": [[-8, -3], [-2, -3], [-2, 3], [-8, 3]]
         }
       ]
     }
   ],
   "initialState": {
     "time_s": 0,
-    "position_deg": [-15, 0],
-    "velocity_deg_s": [0, 0],
-    "acceleration_deg_s2": [0, 0]
+    "position_units": [-15, 0],
+    "velocity_units_s": [0, 0],
+    "acceleration_units_s2": [0, 0]
   },
   "goalState": {
     "time_s": 20,
-    "position_deg": [15, 0],
-    "velocity_deg_s": [0, 0],
-    "acceleration_deg_s2": [0, 0]
+    "position_units": [15, 0],
+    "velocity_units_s": [0, 0],
+    "acceleration_units_s2": [0, 0]
   },
   "limits": {
-    "maxVelocity_deg_s": [2, 2],
-    "maxAcceleration_deg_s2": [0.75, 0.75],
-    "maxJerk_deg_s3": [2.5, 2.5],
-    "azimuthInterval_deg": [-180, 180],
-    "elevationInterval_deg": [-90, 90]
+    "maxVelocity_units_s": [2, 2],
+    "maxAcceleration_units_s2": [0.75, 0.75],
+    "maxJerk_units_s3": [2.5, 2.5],
+    "xInterval_units": [-180, 180],
+    "yInterval_units": [-90, 90]
   },
   "options": {
     "GoalTimeMode": "earliestArrival",
-    "AllowAzimuthWrapping": false
+    "WrapX": false,
+    "WrapY": false
   }
 }
 ```
 
-- All positions and polygon rows are `[azimuth, elevation]` in degrees.
-- Time is seconds. Derivatives use `deg/s`, `deg/s^2`, and `deg/s^3`.
+- All positions and polygon rows are `[x, y]` in coordinate units.
+- Time is seconds. Derivatives use `units/s`, `units/s^2`, and `units/s^3`.
 - Velocity, acceleration, and jerk limits must all be scalars or all be
   two-element axis pairs. Scalars are combined magnitudes, allocated as
   `[L/sqrt(2), L/sqrt(2)]` by MATLAB. Mixing forms is rejected. Workspace
   intervals always remain two-element bounds. Browser controls show axis pairs.
 - `obstacles` may be `[]`. Each nonempty obstacle has a nonnegative margin and
-  one or more strictly increasing keyframes. Every `vertices_deg` value is a
+  one or more strictly increasing keyframes. Every `vertices_units` value is a
   finite N-by-2 array with at least three rows.
 - The page repeats a static polygon at mission start and end. Translation and
   stretch use at least 21 keyframes. Rotation uses additional samples as needed
@@ -309,9 +310,9 @@ result
   Options
   Inputs
     initialState, goalState, limits
-  Route_deg, BestPartialRoute_deg
-  time_s, position_deg, velocity_deg_s
-  acceleration_deg_s2, jerk_deg_s3
+  Route_units, BestPartialRoute_units
+  time_s, position_units, velocity_units_s
+  acceleration_units_s2, jerk_units_s3
   ArrivalTime_s, TrajectoryDuration_s
   ElapsedPlanningTime_s
 diagnosis
@@ -319,14 +320,14 @@ diagnosis
   AttemptedCount, ValidatedCount, FirstValidatedMotionTime_s
   Attempts, Timing
   Search
-    Bounds_deg, AcceptedEdges_deg, RejectedEdges_deg
-    ExploredNodes_deg, FrontierNodes_deg, BestPartialRoute_deg
-    Start_deg, Goal_deg, NodeCount, ExpandedCount
+    Bounds_units, AcceptedEdges_units, RejectedEdges_units
+    ExploredNodes_units, FrontierNodes_units, BestPartialRoute_units
+    Start_units, Goal_units, NodeCount, ExpandedCount
     RejectedTransitionCount, GeneratedSeedCount, TraceDownsampleRule
 validation            public independent-validation record
 obstacles[]
-  Name, time_s, status, SafetyMargin_deg
-  OriginalVerticesByTime_deg, ProtectedVerticesByTime_deg
+  Name, time_s, status, SafetyMargin_units
+  OriginalVerticesByTime_units, ProtectedVerticesByTime_units
 ```
 
 `diagnosis.Attempts` retains the public summary fields through `Message`, while

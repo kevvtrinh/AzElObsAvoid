@@ -1,7 +1,12 @@
 # Planner decisions
 
-Current implementation: review cleanup based on `1843944`. This summary replaces
-the chronological research log. Full recorded CSV history is retained in [benchmark.csv](benchmark.csv)
+## Generic coordinates — 2026-09-07
+
+The repository now uses x/y coordinates and caller-consistent units. Independent WrapX and WrapY flags use each workspace interval width, with stable positive-displacement half-period ties. Unwrapped physics and validation matched exactly across all 18 maintained finite-jerk examples. The shifted-period wrapping regression now reaches the equivalent endpoint in 3.372281 s instead of 6.5 s. All eight wrapping regressions and 27 browser-function checks pass; 172 distinct MATLAB tests pass. One saved-route diagnostic regression reproduces in the untouched baseline, and three pre-existing deleted fixtures block their tests. No validation tolerance or assertion was weakened. Periodic obstacles and moving goals remain unsupported. [Detailed evidence](benchmarks/results/xy_coordinate_migration_20260907.md).
+
+Current implementation: generic coordinate API based on `3fcd62c` plus the existing working changes.
+Commit verification: the four fixture regressions pass against schema-only conversions of the committed fixtures, bringing the distinct passing MATLAB checks to 176. The fixture failure and deletions above belong to pre-existing working changes and are excluded from the migration commit.
+The earlier review cleanup started at `1843944`. Full recorded CSV history is retained in [benchmark.csv](benchmark.csv)
 and [benchmarks](benchmarks/); earlier prose remains in Git history.
 
 | Decision | Reason / boundary |
@@ -41,10 +46,10 @@ trying different arrivals and reuses the route search's complete input-derived
 time grid. It no longer jumps from one velocity-only arrival estimate directly
 to the deadline while stretching all interior crossing times. On the unmodified
 `inefficientroute.mat` request, arrival improves from 123.870 to 112.500 s
-(-9.18%), motion length from 291.311 to 228.213 deg (-21.66%), and minimum
-elevation from -89.152 to -24.550 deg. Full independent validation passes with
+(-9.18%), motion length from 291.311 to 228.213 units (-21.66%), and minimum
+y from -89.152 to -24.550 units. Full independent validation passes with
 unchanged limits, tolerances, and safety margin. Reported clearance decreases
-from 0.894364 to 0.040321 deg; the change is not a clearance improvement.
+from 0.894364 to 0.040321 units; the change is not a clearance improvement.
 
 The repository still contains 18 maintained examples. This comparison ran a
 subset of eight, plus the two supplied MAT replays, once for warm-up and three
@@ -202,11 +207,11 @@ rejected experiment was retained or added to `benchmark.csv`.
 ## Earliest-arrival exact-clock travel refinement (2026-09-06)
 
 Repository history confirms that `balancedArrival` existed before commit
-`4344795`. It ranked validated motions by travel plus a declared 1 deg/s
+`4344795`. It ranked validated motions by travel plus a declared 1 units/s
 arrival-time exchange rate and also ran travel-weighted BMTP refinements. A
 bounded attempt to restore that full trade inside `earliestArrival` was rejected
 and reverted: on `inefficientroute.mat`, the best policy-compliant motion reduced
-sampled travel from 187.745001194 deg to 184.750085715 deg, only 1.60%, below the
+sampled travel from 187.745001194 units to 184.750085715 units, only 1.60%, below the
 declared 3% benefit gate. Trials that shortened the path further required more
 delay than their saving justified at the historical exchange rate.
 
@@ -214,13 +219,13 @@ The retained narrower change implements the already documented path-length
 tie-break at the exact earliest-arrival clock. After BMTP establishes the fastest
 feasible homotopy, one fixed-clock travel solve may replace it only with a
 shorter solution at the identical duration. On `inefficientroute.mat`, arrival
-remained 91.5513221229 s while sampled travel fell by 2.995061021 deg, from
-187.745001194 deg to 184.749940173 deg. Independent collision, velocity,
+remained 91.5513221229 s while sampled travel fell by 2.995061021 units, from
+187.745001194 units to 184.749940173 units. Independent collision, velocity,
 acceleration, jerk, and plane-certificate checks all passed. The structurally
 different static-box planner contract passed, as did all affected option and BMTP
 engine tests (16/16). The maintained fixed-arrival
 `exampleTargetExitsObstacle` remained independently valid at 24 s, with
-21.7425467317 deg polyline and 21.9321570168 deg smoothed length. This change
+21.7425467317 units polyline and 21.9321570168 units smoothed length. This change
 does not claim or implement a justified arrival-time trade; it records the
 initial/final travel and duration so a future bounded Pareto policy can be
 evaluated without hiding its cost.
@@ -228,9 +233,9 @@ evaluated without hiding its cost.
 ## Circle detour and explicit objective priority (2026-09-06)
 
 The exact `inefficientroutecircle.mat` replay reached the physical arrival floor
-but traveled 249.201569069 deg. The fixed-clock excursion treated its nominal
-peak as an unconstrained spline through-point; elevation continued rising to
-54.920807222 deg after the obstacle's approximately 26 deg top. An additional
+but traveled 249.201569069 units. The fixed-clock excursion treated its nominal
+peak as an unconstrained spline through-point; y continued rising to
+54.920807222 units after the obstacle's approximately 26 units top. An additional
 proposal now imposes zero complete-axis velocity at the proposed turn while
 leaving acceleration free. Original through-point proposals remain available,
 and every retained motion still passes independent continuous validation.
@@ -241,11 +246,11 @@ rejection within fixed-clock travel refinement has been removed. Integrated
 squared jerk remains diagnostic and may increase; no physical derivative limit,
 collision tolerance, protected geometry, or endpoint condition was relaxed.
 
-On the unchanged saved circle request, travel falls to 227.456480998 deg
-(-8.73%) at the identical 113.691362616 s arrival. Peak elevation falls to
-26.602152360 deg, and independently checked clearance is 0.000413923 deg.
+On the unchanged saved circle request, travel falls to 227.456480998 units
+(-8.73%) at the identical 113.691362616 s arrival. Peak y falls to
+26.602152360 units, and independently checked clearance is 0.000413923 units.
 A structurally different asymmetric rectangle with the other governing axis
-and a nonzero start time improves from 112.397597877 to 103.355070722 deg
+and a nonzero start time improves from 112.397597877 to 103.355070722 units
 (-8.05%) at the identical 52.966666667 s duration. One warm-up and three measured
 calls per implementation and case all passed. Warmed median planning time
 increased from 2.067310 to 3.910954 s for the circle and from 0.938971 to

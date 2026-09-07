@@ -10,7 +10,7 @@ references in appendices. Describe current behavior, not the development history
 
 ## 1. What the planner does
 
-- Problem statement: move an Az/El point from an initial state to a goal while
+- Problem statement: move an X/Y point from an initial state to a goal while
   avoiding protected obstacles and respecting workspace and derivative limits.
 - Distinguish a geometric path, a timed trajectory, and a sampled plot of motion.
 - Static, moving, rotating, and deforming obstacle examples.
@@ -26,7 +26,7 @@ references in appendices. Describe current behavior, not the development history
   endpoint derivatives. Explain fixed-goal versus moving-goal representations.
 - Workspace, velocity, acceleration, and jerk limits; finite/unbounded cases.
 - Omitted, empty, partial, and unknown options; where normalization belongs.
-- Azimuth wrapping: coordinate selection, validation, and display behavior.
+- Independent x/y wrapping: coordinate selection, validation, and display behavior.
 - Input errors versus expected planning failures.
 - Tables of every public field with type, dimensions, default, and example.
 - Owners: `+input`, `planTrajectory`, and `planMovingTargetIntercept`.
@@ -90,7 +90,8 @@ references in appendices. Describe current behavior, not the development history
 
 ## 7. Building geometry for route search
 
-- `createRouteSearchGeometry`: endpoints and wrapped goal coordinate.
+- `resolveWrappedGoal`: nearest equivalent goal on each enabled periodic axis.
+- `createRouteSearchGeometry`: normalized endpoints and search geometry.
 - Sample-time construction: source times, interval midpoints, endpoints, and
   nine uniform request times; clipping and deduplication.
 - Sampled obstacle union versus `denseSweptEnvelope`.
@@ -104,7 +105,7 @@ references in appendices. Describe current behavior, not the development history
 ## 8. Connecting possible path points
 
 - `createVisibilityGraph` and `createVisibilityAttempt` in execution order.
-- Boundary offsets: initial scale, current 1e-3 deg minimum, floating-point
+- Boundary offsets: initial scale, current 1e-3 units minimum, floating-point
   reserve, fourfold retries, and workspace-sized stopping bound.
 - Current 1e6 visibility-work budget: how it limits nodes and pair checks.
 - Node selection: endpoint access, global supports, boundary coverage,
@@ -382,7 +383,7 @@ coverage; it does not substitute for reading each implementation.
 - `examples/exampleInterceptMovingTargetAtSetTime.m`
 - `examples/exampleInterceptMovingTargetEarliest.m`
 - `examples/exampleMovingBarrierWait.m`
-- `examples/exampleMovingCircleNoAzimuthWrap.m`
+- `examples/exampleMovingCircleNoWrap.m`
 - `examples/exampleMovingDeformingUSOutlineVisibility.m`
 - `examples/exampleMovingRotatingObstacleField.m`
 - `examples/exampleNoPath.m`

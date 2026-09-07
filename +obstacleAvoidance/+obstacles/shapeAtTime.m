@@ -23,13 +23,13 @@ function [shape, geometry] = shapeAtTime(obstacle, queryTime_s, geometryOnly)
 %       status is metadata and never deactivates supplied geometry.
 %
 % UNITS
-%   - Geometry is degrees; time is seconds; speed is degrees per second.
+%   - Geometry is coordinate units; time is seconds; speed is coordinate units per second.
 %   - See obstacle_history_contract.md for the complete history model.
 %
 
 %% Section 1: Validate And Select The Source Interval
 
-if ~isstruct(obstacle) || ~isscalar(obstacle) || ~all(isfield(obstacle, {'time_s', 'az_deg', 'el_deg'}))
+if ~isstruct(obstacle) || ~isscalar(obstacle) || ~all(isfield(obstacle, {'time_s', 'x_units', 'y_units'}))
     error("shapeAtTime:InvalidObstacle", "obstacle must be one canonical record.");
 end
 validateattributes(queryTime_s, {'numeric'}, {'real', 'finite', 'scalar'});

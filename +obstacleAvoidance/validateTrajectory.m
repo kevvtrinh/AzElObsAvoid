@@ -25,8 +25,8 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %       Stable checks, clearance, message, collision counts, and timings.
 %
 % UNITS
-%   - Position and clearance are degrees. Derivatives use deg/s, deg/s^2,
-%     and deg/s^3. Time is seconds.
+%   - Position and clearance are coordinate units. Derivatives use units/s, units/s^2,
+%     and units/s^3. Time is seconds.
 %
 if nargin == 0
     validation = obstacleAvoidance.validation.validatePreparedTrajectory();
@@ -50,6 +50,7 @@ elseif nargin ~= 6
     error("validateTrajectory:InvalidCall", "Use one planner result or all six explicit validation inputs.");
 end
 limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
+goalState.position_units = obstacleAvoidance.input.resolveWrappedGoal(initialState.position_units, goalState.position_units, limits, options);
 if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 end

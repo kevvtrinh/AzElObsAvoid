@@ -15,8 +15,8 @@ function tests = testTimedBmtpPlanning
 %       Deterministic public-planner dynamic-topology regression cases.
 %**************************************************************************
 % UNITS
-%   - Position is degrees and time is seconds. Derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
+%   - Position is coordinate units and time is seconds. Derivatives use units/s,
+%     units/s^2, and units/s^3.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -61,8 +61,8 @@ function testInteriorWaypointsAreNotForcedToRest(testCase)
     resultDiagnosis = testCase.TestData.ResultDiagnosis;
     seed            = resultDiagnosis.Routes(resultDiagnosis.SelectedAttemptIndex);
     interiorTime_s  = result.time_s(1) + seed.tau(2:end - 1) * (result.time_s(end) - result.time_s(1));
-    [~, ~, velocity_deg_s] = bmtpEngine.evaluatePolynomial(result.Polynomial, interiorTime_s);
-    verifyGreaterThan(testCase, min(vecnorm(velocity_deg_s, 2, 2)), 1e-3);
+    [~, ~, velocity_units_s] = bmtpEngine.evaluatePolynomial(result.Polynomial, interiorTime_s);
+    verifyGreaterThan(testCase, min(vecnorm(velocity_units_s, 2, 2)), 1e-3);
     verifyTrue(testCase, testCase.TestData.TimedCandidate.Success, testCase.TestData.TimedCandidate.Message);
     verifyTrue(testCase, testCase.TestData.TimedValidation.Passed, testCase.TestData.TimedValidation.Message);
     diagnostics = testCase.TestData.TimedDiagnostics;
@@ -102,25 +102,25 @@ function [obstacles, initialState, goalState, limits, options] = createScenario(
     % Create input-driven static-concave and translating-convex geometry.
     missionEndTime_s = 40;
     obstacleTime_s   = [0; missionEndTime_s];
-    uPosition_deg    = [ ...
+    uPosition_units    = [ ...
         -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
-    staticObstacle = obstacleAvoidance.obstacles.createObstacle("static concave polygon", obstacleTime_s, uPosition_deg(:, 1), uPosition_deg(:, 2), 0.20);
+    staticObstacle = obstacleAvoidance.obstacles.createObstacle("static concave polygon", obstacleTime_s, uPosition_units(:, 1), uPosition_units(:, 2), 0.20);
     angle_rad      = linspace(0, 2 * pi, 33).';
     angle_rad(end) = [];
-    startCircle_deg  = [-10 + 2 * cos(angle_rad), -7 + 2 * sin(angle_rad)];
-    finishCircle_deg = [10 + 2 * cos(angle_rad), -7 + 2 * sin(angle_rad)];
-    movingObstacle   = obstacleAvoidance.obstacles.createObstacle("translating convex polygon", [0; 10; missionEndTime_s], {startCircle_deg(:, 1); startCircle_deg(:, 1); finishCircle_deg(:, 1)}, {startCircle_deg(:, 2); startCircle_deg(:, 2); finishCircle_deg(:, 2)}, 0.10);
+    startCircle_units  = [-10 + 2 * cos(angle_rad), -7 + 2 * sin(angle_rad)];
+    finishCircle_units = [10 + 2 * cos(angle_rad), -7 + 2 * sin(angle_rad)];
+    movingObstacle   = obstacleAvoidance.obstacles.createObstacle("translating convex polygon", [0; 10; missionEndTime_s], {startCircle_units(:, 1); startCircle_units(:, 1); finishCircle_units(:, 1)}, {startCircle_units(:, 2); startCircle_units(:, 2); finishCircle_units(:, 2)}, 0.10);
     obstacles        = obstacleAvoidance.obstacles.combineObstacles(staticObstacle, movingObstacle);
     initialState     = struct();
     initialState.time_s       = 0;
-    initialState.position_deg = [0 0];
-    goalState = struct("time_s", missionEndTime_s, "position_deg", [0 -10]);
+    initialState.position_units = [0 0];
+    goalState = struct("time_s", missionEndTime_s, "position_units", [0 -10]);
     limits    = struct();
-    limits.azimuthInterval_deg    = [-14 14];
-    limits.elevationInterval_deg  = [-12 10];
-    limits.maxVelocity_deg_s      = [3 3];
-    limits.maxAcceleration_deg_s2 = [1.5 1.5];
-    limits.maxJerk_deg_s3         = [3 3];
+    limits.xInterval_units    = [-14 14];
+    limits.yInterval_units  = [-12 10];
+    limits.maxVelocity_units_s      = [3 3];
+    limits.maxAcceleration_units_s2 = [1.5 1.5];
+    limits.maxJerk_units_s3         = [3 3];
     options = struct();
     options.GoalTimeMode                   = "earliestArrival";
     options.MaximumSeedCount               = 2;

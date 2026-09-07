@@ -30,7 +30,7 @@ function routeSet = searchRoutes(initialState, goalState, limits, options, scene
 %       completed obstacle-avoidance motion.
 %
 % UNITS
-%   - Positions and route lengths are degrees; physical times are seconds.
+%   - Positions and route lengths are coordinate units; physical times are seconds.
 %
 
 %% Section 1: Search Complete Input-Derived Time Layers
@@ -45,8 +45,8 @@ if isTimedRecovery && (~isstruct(priorRouteSet) || ~isscalar(priorRouteSet) || ~
 end
 
 obstacles                    = scene.preparedObstacles;
-nodePosition_deg             = visibilityGraph.NodePosition_deg;
-timedRoute_deg               = zeros(0, 2);
+nodePosition_units             = visibilityGraph.NodePosition_units;
+timedRoute_units               = zeros(0, 2);
 timedRouteTime_s             = zeros(0, 1);
 timedRecord                  = struct();
 timedSearchOptions           = options;
@@ -62,13 +62,13 @@ if requiresTimedSearch && proposal.usedDenseEnvelope && ~isTimedRecovery
 elseif requiresTimedSearch
     timedSearchAttempted         = true;
     timedSearchSuppressionReason = "";
-    timedCost_deg                = hypot(nodePosition_deg(:, 1) - nodePosition_deg(:, 1).', nodePosition_deg(:, 2) - nodePosition_deg(:, 2).');
-    [timedRoute_deg, timedRouteTime_s, timedRecord] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, timedCost_deg, obstacles, initialState, goalState, limits, proposal.sampleTimes_s, timedSearchOptions);
+    timedCost_units                = hypot(nodePosition_units(:, 1) - nodePosition_units(:, 1).', nodePosition_units(:, 2) - nodePosition_units(:, 2).');
+    [timedRoute_units, timedRouteTime_s, timedRecord] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, timedCost_units, obstacles, initialState, goalState, limits, proposal.sampleTimes_s, timedSearchOptions);
 end
 % Reuse the prior spatial search evidence during timed recovery instead of rebuilding it.
 if isTimedRecovery
     routeSet = priorRouteSet;
-    routeSet.TimedRoute_deg               = timedRoute_deg;
+    routeSet.TimedRoute_units               = timedRoute_units;
     routeSet.TimedRouteTime_s             = timedRouteTime_s;
     routeSet.TimedSearchRecord            = timedRecord;
     routeSet.TimedSearchOptions           = timedSearchOptions;
@@ -82,23 +82,23 @@ end
 
 % Reserve a seed slot for a timed route, then find distinct spatial routes.
 
-hasTimedRoute      = ~isempty(timedRoute_deg) && timedRouteTime_s(end) > timedRouteTime_s(1);
+hasTimedRoute      = ~isempty(timedRoute_units) && timedRouteTime_s(end) > timedRouteTime_s(1);
 reservesTimedRoute = hasTimedRoute || timedSearchDeferred;
 maximumClassCount  = max(0, options.MaximumSeedCount - 1 - double(reservesTimedRoute));
-visibilityFunction = @(first_deg, second_deg) obstacleAvoidance.search.checkVisibilitySegments(first_deg, second_deg, proposal.shape, proposal.edgeStart_deg, proposal.edgeEnd_deg);
-[spatialRoutes_deg, routeClassPattern, spatialSearchRecord] = obstacleAvoidance.search.searchDistinctSpatialRoutes(visibilityGraph.EdgeCost_deg, nodePosition_deg, visibilityGraph.ObstacleReferencePoints_deg, maximumClassCount, visibilityFunction);
+visibilityFunction = @(first_units, second_units) obstacleAvoidance.search.checkVisibilitySegments(first_units, second_units, proposal.shape, proposal.edgeStart_units, proposal.edgeEnd_units);
+[spatialRoutes_units, routeClassPattern, spatialSearchRecord] = obstacleAvoidance.search.searchDistinctSpatialRoutes(visibilityGraph.EdgeCost_units, nodePosition_units, visibilityGraph.ObstacleReferencePoints_units, maximumClassCount, visibilityFunction);
 
 % Defer multi-winding motion solves until ordinary routes fail.
 % Keep the routes so recovery does not repeat spatial search.
 isDeferredSpatialRoute    = any(abs(routeClassPattern) > 1, 2);
-deferredSpatialRoutes_deg = spatialRoutes_deg(isDeferredSpatialRoute);
-spatialRoutes_deg         = spatialRoutes_deg(~isDeferredSpatialRoute);
+deferredSpatialRoutes_units = spatialRoutes_units(isDeferredSpatialRoute);
+spatialRoutes_units         = spatialRoutes_units(~isDeferredSpatialRoute);
 
 %% Section 3: Assemble The Route Set
 
 % Keep routes with their search diagnostics.
 
-routeSet = struct("TimedRoute_deg", timedRoute_deg, ...
+routeSet = struct("TimedRoute_units", timedRoute_units, ...
     "TimedRouteTime_s", timedRouteTime_s, ...
     "TimedSearchRecord", timedRecord, ...
     "TimedSearchOptions", timedSearchOptions, ...
@@ -106,13 +106,13 @@ routeSet = struct("TimedRoute_deg", timedRoute_deg, ...
     "TimedSearchDeferred", timedSearchDeferred, ...
     "TimedSearchRecoveryAttempted", false, ...
     "TimedSearchSuppressionReason", timedSearchSuppressionReason, ...
-    "SpatialRoutes_deg", {spatialRoutes_deg}, ...
-    "DeferredSpatialRoutes_deg", {deferredSpatialRoutes_deg}, ...
+    "SpatialRoutes_units", {spatialRoutes_units}, ...
+    "DeferredSpatialRoutes_units", {deferredSpatialRoutes_units}, ...
     "DeferredSpatialSolveAttempted", false, ...
     "RouteClassPattern", routeClassPattern, ...
     "SpatialSearchRecord", spatialSearchRecord, ...
     "MaximumSpatialClassCount", maximumClassCount, ...
-    "ObstacleReferencePoints_deg", ...
-    visibilityGraph.ObstacleReferencePoints_deg, ...
+    "ObstacleReferencePoints_units", ...
+    visibilityGraph.ObstacleReferencePoints_units, ...
     "UsesConservativeEnvelope", proposal.usedDenseEnvelope);
 end

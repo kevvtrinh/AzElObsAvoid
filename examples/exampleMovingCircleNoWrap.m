@@ -1,8 +1,8 @@
-function [result, diagnosis] = exampleMovingCircleNoAzimuthWrap(exampleOverrides)
+function [result, diagnosis] = exampleMovingCircleNoWrap(exampleOverrides)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = exampleMovingCircleNoAzimuthWrap()
-%   result = exampleMovingCircleNoAzimuthWrap(exampleOverrides)
+%   result = exampleMovingCircleNoWrap()
+%   result = exampleMovingCircleNoWrap(exampleOverrides)
 %
 % PURPOSE
 %   - Demonstrate an immediate non-wrapping detour around a rising circle.
@@ -17,38 +17,38 @@ function [result, diagnosis] = exampleMovingCircleNoAzimuthWrap(exampleOverrides
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
 
-% Disable azimuth wrapping. The route must remain inside the stated interval.
+% Disable x wrapping. The route must remain inside the stated interval.
 
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival", "AllowAzimuthWrapping", false), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival", "WrapX", false), [2 2]);
 
 %% Section 2: Create Obstacles
 
 % A circle rises across the direct path. The planner must start an immediate
-% detour because waiting or wrapping around the azimuth boundary is not allowed.
+% detour because waiting or wrapping around the x boundary is not allowed.
 
 obstacleTime_s            = [0; 15];
-circleCenterElevation_deg = [0; 3];
+circleCenterY_units = [0; 3];
 circleAngle_rad           = (0:23).' * (2 * pi / 24);
-circleRadius_deg          = 1.5;
-azimuthBySlice_deg        = cell(2, 1);
-elevationBySlice_deg      = cell(2, 1);
+circleRadius_units          = 1.5;
+xBySlice_units        = cell(2, 1);
+yBySlice_units      = cell(2, 1);
 
-% Create the circle at both sampled elevations. Keep its azimuth outline fixed.
+% Create the circle at both sampled ys. Keep its x outline fixed.
 for sampleIndex = 1:2
-    azimuthBySlice_deg{sampleIndex} = circleRadius_deg * cos(circleAngle_rad);
-    elevationBySlice_deg{sampleIndex} = circleCenterElevation_deg(sampleIndex) + circleRadius_deg * sin(circleAngle_rad);
+    xBySlice_units{sampleIndex} = circleRadius_units * cos(circleAngle_rad);
+    yBySlice_units{sampleIndex} = circleCenterY_units(sampleIndex) + circleRadius_units * sin(circleAngle_rad);
 end
-safetyMargin_deg = 0.1;
-obstacles        = obstacleAvoidance.obstacles.createObstacle("rising circle", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, safetyMargin_deg);
+safetyMargin_units = 0.1;
+obstacles        = obstacleAvoidance.obstacles.createObstacle("rising circle", obstacleTime_s, xBySlice_units, yBySlice_units, safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -57,11 +57,11 @@ obstacles        = obstacleAvoidance.obstacles.createObstacle("rising circle", o
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-6 0];
+initialState.position_units = [-6 0];
 goalState = struct();
 goalState.time_s       = 15;
-goalState.position_deg = [6 0];
-limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+goalState.position_units = [6 0];
+limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
@@ -71,11 +71,11 @@ limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "ma
 
 %% Section 5: Validate Result
 
-% Confirm collision freedom and confirm that all azimuth samples stay in bounds.
+% Confirm collision freedom and confirm that all x samples stay in bounds.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
 if ~exampleValidation.Passed
-    warning("exampleMovingCircleNoAzimuthWrap:ValidationFailed", "%s", exampleValidation.Message);
+    warning("exampleMovingCircleNoWrap:ValidationFailed", "%s", exampleValidation.Message);
 end
 
 %% Section 6: Plot Diagnostics And Motion

@@ -58,7 +58,7 @@ Use judgment on implementation and workflow; keep changes focused on the task.
 - Use functions and structures, with one public function per matching file.
   Keep execution order readable; use helpers for shared invariants or clarity.
 - Follow surrounding style: descriptive lower-camel-case names, physical unit
-  suffixes (`_deg`, `_s`, `_deg_s`, `_deg_s2`, `_deg_s3`), and explicit shapes.
+  suffixes (`_units`, `_s`, `_units_s`, `_units_s2`, `_units_s3`), and explicit shapes.
   Preserve established public field names and compatibility unless a breaking
   change is authorized. Update affected callers, tests, and docs together.
 - Public function help starts with `%% Section 0: Header & Readme` and covers
@@ -112,7 +112,7 @@ Use judgment on implementation and workflow; keep changes focused on the task.
 - Keep tests deterministic; do not regenerate failed random cases or weaken
   assertions to pass. Report what ran, failed, or remains untested.
 - For every executed maintained example and jerk mode, report in chat: planner
-  and independent-validation status, polyline and smoothed lengths (deg), motion
+  and independent-validation status, polyline and smoothed lengths (units), motion
   duration (s), collision/kinematic/certificate status, and termination reason.
   Use `NaN` for unavailable numeric metrics.
 

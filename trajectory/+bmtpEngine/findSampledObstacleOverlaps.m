@@ -1,9 +1,9 @@
-function collisionPairs = findSampledObstacleOverlaps(controlPoint_deg, regions_deg, regionMinimum_deg, regionMaximum_deg, regionActiveBySegment, sampleCount)
+function collisionPairs = findSampledObstacleOverlaps(controlPoint_units, regions_units, regionMinimum_units, regionMaximum_units, regionActiveBySegment, sampleCount)
 %% Section 0: Header & Readme
 % SYNTAX
 %   collisionPairs = bmtpEngine.findSampledObstacleOverlaps( ...
-%       controlPoint_deg, regions_deg, regionMinimum_deg, ...
-%       regionMaximum_deg, regionActiveBySegment, sampleCount)
+%       controlPoint_units, regions_units, regionMinimum_units, ...
+%       regionMaximum_units, regionActiveBySegment, sampleCount)
 %
 % PURPOSE
 %   - Identify sampled Bezier span and convex-region overlaps that require
@@ -11,11 +11,11 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_deg, regions_
 %   - Never treat the sampled result as a final acceptance certificate.
 %
 % INPUTS
-%   - controlPoint_deg (S-by-(D+1)-by-2 numeric array)
+%   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
-%   - regions_deg (R-by-1 cell array)
+%   - regions_units (R-by-1 cell array)
 %       Convex exclusion polygons.
-%   - regionMinimum_deg, regionMaximum_deg (R-by-2 numeric arrays)
+%   - regionMinimum_units, regionMaximum_units (R-by-2 numeric arrays)
 %       Cached region bounds.
 %   - regionActiveBySegment (S-by-R logical array)
 %       Applicable curve-region pairs.
@@ -27,24 +27,24 @@ function collisionPairs = findSampledObstacleOverlaps(controlPoint_deg, regions_
 %       Sampled-overlap tags used only to guide later optimization.
 %
 % UNITS
-%   - Position and region bounds are degrees.
+%   - Position and region bounds are coordinate units.
 %
 
 %% Section 1: Check Sampled Span And Region Overlaps
 
-segmentCount   = size(controlPoint_deg, 1);
-collisionPairs = false(segmentCount, numel(regions_deg));
+segmentCount   = size(controlPoint_units, 1);
+collisionPairs = false(segmentCount, numel(regions_units));
 tau            = linspace(0, 1, sampleCount).';
 % Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
-    position_deg      = evaluateBezier(squeeze(controlPoint_deg(segmentIndex, :, :)), tau);
-    sampleMinimum_deg = min(position_deg, [], 1);
-    sampleMaximum_deg = max(position_deg, [], 1);
-    overlaps          = regionActiveBySegment(segmentIndex, :).' & regionMinimum_deg(:, 1) <= sampleMaximum_deg(1) & regionMaximum_deg(:, 1) >= sampleMinimum_deg(1) & regionMinimum_deg(:, 2) <= sampleMaximum_deg(2) & regionMaximum_deg(:, 2) >= sampleMinimum_deg(2);
+    position_units      = evaluateBezier(squeeze(controlPoint_units(segmentIndex, :, :)), tau);
+    sampleMinimum_units = min(position_units, [], 1);
+    sampleMaximum_units = max(position_units, [], 1);
+    overlaps          = regionActiveBySegment(segmentIndex, :).' & regionMinimum_units(:, 1) <= sampleMaximum_units(1) & regionMaximum_units(:, 1) >= sampleMinimum_units(1) & regionMinimum_units(:, 2) <= sampleMaximum_units(2) & regionMaximum_units(:, 2) >= sampleMinimum_units(2);
     % Process each geometric region while constructing or checking the region topology.
     for regionIndex = reshape(find(overlaps), 1, [])
-        vertices_deg = regions_deg{regionIndex};
-        [inside, on] = inpolygon(position_deg(:, 1), position_deg(:, 2), vertices_deg(:, 1), vertices_deg(:, 2));
+        vertices_units = regions_units{regionIndex};
+        [inside, on] = inpolygon(position_units(:, 1), position_units(:, 2), vertices_units(:, 1), vertices_units(:, 2));
         collisionPairs(segmentIndex, regionIndex) = any(inside | on);
     end
 end
@@ -52,14 +52,14 @@ end
 
 %% Section 2: Local Functions
 
-function position_deg = evaluateBezier(controlPoint_deg, tau)
+function position_units = evaluateBezier(controlPoint_units, tau)
     % Evaluate samples through one vectorized de Casteljau recurrence.
-    degree   = size(controlPoint_deg, 1) - 1;
+    degree   = size(controlPoint_units, 1) - 1;
     tau      = reshape(double(tau), [], 1, 1);
-    work_deg = repmat(reshape(controlPoint_deg, 1, degree + 1, []), numel(tau), 1, 1);
+    work_units = repmat(reshape(controlPoint_units, 1, degree + 1, []), numel(tau), 1, 1);
     % Repeat the level alternatives needed to refine the current solution.
     for levelIndex = 1:degree
-        work_deg = (1 - tau) .* work_deg(:, 1:end - 1, :) + tau .* work_deg(:, 2:end, :);
+        work_units = (1 - tau) .* work_units(:, 1:end - 1, :) + tau .* work_units(:, 2:end, :);
     end
-    position_deg = reshape(work_deg(:, 1, :), numel(tau), size(controlPoint_deg, 2));
+    position_units = reshape(work_units(:, 1, :), numel(tau), size(controlPoint_units, 2));
 end

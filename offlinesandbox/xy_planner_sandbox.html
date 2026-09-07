@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Az/El Planner Sandbox</title>
+  <title>X/Y Planner Sandbox</title>
   <style>
     :root {
       color-scheme: light;
@@ -1374,7 +1374,7 @@
 <body>
   <header class="app-header">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true">AZ/EL</div>
+      <div class="brand-mark" aria-hidden="true">X/Y</div>
       <div>
         <h1>Planner Sandbox</h1>
         <p>Your workspace for motion planning.</p>
@@ -1386,7 +1386,7 @@
 
   <div class="app-shell">
     <section class="workspace-intro" aria-label="Getting started">
-      <div><div class="eyebrow">Azimuth / Elevation</div>
+      <div><div class="eyebrow">X / Y</div>
         <h2>A clear path starts here.</h2>
         <p>Set your endpoints, sketch obstacles, and explore the motion.</p>
       </div>
@@ -1397,7 +1397,7 @@
       </ol>
     </section>
     <main class="workbench">
-      <section class="panel canvas-panel" aria-label="Azimuth elevation workspace">
+      <section class="panel canvas-panel" aria-label="X y workspace">
         <div class="workspace-heading"><h2>Scene editor</h2><span>Choose a tool, then draw on the canvas</span></div>
         <div class="tool-row">
           <div class="tool-group" role="toolbar" aria-label="Canvas tools">
@@ -1428,7 +1428,7 @@
 
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="workspaceCanvas" tabindex="0"
-            aria-label="Azimuth elevation plotting workspace. Use the toolbar to place points and draw polygons."></canvas>
+            aria-label="X y plotting workspace. Use the toolbar to place points and draw polygons."></canvas>
           <div id="walkthroughReplayMenu" class="walkthrough-replay-menu"
             role="toolbar" aria-label="Planner replay" hidden>
             <span class="walkthrough-replay-label">Planner replay</span>
@@ -1510,10 +1510,10 @@
             <input id="obstacleSpeedSlider" type="range" min="0" max="10"
               step="0.01" value="0" aria-describedby="motionSpeedReadout">
             <div class="speed-overlay-values"><span>0</span>
-              <output id="motionSpeedReadout" for="obstacleSpeedSlider">0.000 deg/s</output><span>10</span></div>
+              <output id="motionSpeedReadout" for="obstacleSpeedSlider">0.000 units/s</output><span>10</span></div>
           </div>
           <div id="coordinateReadout" class="coordinate-readout"
-            aria-live="polite">Az —° · El —°</div>
+            aria-live="polite">X — · Y — (units)</div>
           <div class="canvas-legend" aria-hidden="true">
             <span class="legend-item"><span class="legend-dot"
               style="--legend-color:#178453"></span>Start</span>
@@ -1525,7 +1525,7 @@
               style="--legend-color:#087f8c"></span>Solved motion</span>
           </div>
           <div id="canvasHint" class="canvas-hint">
-            Click once to place the start point. Grid coordinates are degrees.
+            Click once to place the start point. Grid coordinates are coordinate units.
           </div>
         </div>
         <p class="page-note">
@@ -1557,22 +1557,22 @@
         <section id="motionKinematicsPanel" class="kinematics-panel" aria-label="Motion kinematics">
           <div class="kinematics-heading">
             <h2>Motion kinematics</h2>
-            <span>Azimuth — teal · Elevation — violet · cursor follows time</span>
+            <span>X — teal · Y — violet · cursor follows time</span>
           </div>
           <p id="kinematicsEmpty" class="kinematics-empty">
             Load a successful result to inspect returned motion histories.
           </p>
           <div id="kinematicsCharts" class="kinematics-charts" hidden>
             <figure class="kinematic-chart">
-              <figcaption>Turning speed (deg/s)</figcaption>
+              <figcaption>Turning speed (units/s)</figcaption>
               <canvas id="velocityChart" aria-label="Turning speed against time"></canvas>
             </figure>
             <figure class="kinematic-chart">
-              <figcaption>Acceleration (deg/s²)</figcaption>
+              <figcaption>Acceleration (units/s²)</figcaption>
               <canvas id="accelerationChart" aria-label="Acceleration against time"></canvas>
             </figure>
             <figure class="kinematic-chart">
-              <figcaption>Jerk (deg/s³)</figcaption>
+              <figcaption>Jerk (units/s³)</figcaption>
               <canvas id="jerkChart" aria-label="Jerk against time"></canvas>
             </figure>
           </div>
@@ -1645,7 +1645,7 @@
             </div>
             <p class="decision-tree-note">
               Click any decision to jump there. The active branch controls the
-              geometry and diagnostics shown in the Az/El view.
+              geometry and diagnostics shown in the X/Y view.
             </p>
             <nav id="decisionTree" class="decision-tree"
               aria-label="Planner decision tree"></nav>
@@ -1665,23 +1665,23 @@
             <summary>Exact endpoint coordinates</summary>
             <div class="form-grid">
               <div class="field">
-                <label for="startAzimuth">Start azimuth (deg)</label>
-                <input id="startAzimuth" type="number" step="0.1"
+                <label for="startX">Start x (units)</label>
+                <input id="startX" type="number" step="0.1"
                   placeholder="Not set">
               </div>
               <div class="field">
-                <label for="startElevation">Start elevation (deg)</label>
-                <input id="startElevation" type="number" step="0.1"
+                <label for="startY">Start y (units)</label>
+                <input id="startY" type="number" step="0.1"
                   placeholder="Not set">
               </div>
               <div class="field">
-                <label for="goalAzimuth">Goal azimuth (deg)</label>
-                <input id="goalAzimuth" type="number" step="0.1"
+                <label for="goalX">Goal x (units)</label>
+                <input id="goalX" type="number" step="0.1"
                   placeholder="Not set">
               </div>
               <div class="field">
-                <label for="goalElevation">Goal elevation (deg)</label>
-                <input id="goalElevation" type="number" step="0.1"
+                <label for="goalY">Goal y (units)</label>
+                <input id="goalY" type="number" step="0.1"
                   placeholder="Not set">
               </div>
               <button id="applyEndpointsButton"
@@ -1692,23 +1692,23 @@
           </details>
 
           <details>
-            <summary>Workspace bounds (deg)</summary>
+            <summary>Workspace bounds (units)</summary>
             <div class="form-grid">
               <div class="field">
-                <label for="azimuthMin">Azimuth lower</label>
-                <input id="azimuthMin" type="number" value="-180" step="1">
+                <label for="xMin">X lower</label>
+                <input id="xMin" type="number" value="-180" step="1">
               </div>
               <div class="field">
-                <label for="azimuthMax">Azimuth upper</label>
-                <input id="azimuthMax" type="number" value="180" step="1">
+                <label for="xMax">X upper</label>
+                <input id="xMax" type="number" value="180" step="1">
               </div>
               <div class="field">
-                <label for="elevationMin">Elevation lower</label>
-                <input id="elevationMin" type="number" value="-90" step="1">
+                <label for="yMin">Y lower</label>
+                <input id="yMin" type="number" value="-90" step="1">
               </div>
               <div class="field">
-                <label for="elevationMax">Elevation upper</label>
-                <input id="elevationMax" type="number" value="90" step="1">
+                <label for="yMax">Y upper</label>
+                <input id="yMax" type="number" value="90" step="1">
               </div>
             </div>
           </details>
@@ -1717,13 +1717,13 @@
             <summary>Physical limits</summary>
             <div class="form-grid three">
               <div class="field">
-                <label for="velocityAz">Velocity Az<br>(deg/s)</label>
-                <input id="velocityAz" type="number" value="2" min="0"
+                <label for="velocityX">Velocity X<br>(units/s)</label>
+                <input id="velocityX" type="number" value="2" min="0"
                   step="0.1">
               </div>
               <div class="field">
-                <label for="velocityEl">Velocity El<br>(deg/s)</label>
-                <input id="velocityEl" type="number" value="2" min="0"
+                <label for="velocityY">Velocity Y<br>(units/s)</label>
+                <input id="velocityY" type="number" value="2" min="0"
                   step="0.1">
               </div>
               <div class="field">
@@ -1732,28 +1732,28 @@
                   step="1">
               </div>
               <div class="field">
-                <label for="accelerationAz">Acceleration Az<br>(deg/s²)</label>
-                <input id="accelerationAz" type="number" value="0.75"
+                <label for="accelerationX">Acceleration X<br>(units/s²)</label>
+                <input id="accelerationX" type="number" value="0.75"
                   min="0" step="0.05">
               </div>
               <div class="field">
-                <label for="accelerationEl">Acceleration El<br>(deg/s²)</label>
-                <input id="accelerationEl" type="number" value="0.75"
+                <label for="accelerationY">Acceleration Y<br>(units/s²)</label>
+                <input id="accelerationY" type="number" value="0.75"
                   min="0" step="0.05">
               </div>
               <div class="field">
-                <label for="defaultMargin">New obstacle<br>margin (deg)</label>
+                <label for="defaultMargin">New obstacle<br>margin (units)</label>
                 <input id="defaultMargin" type="number" value="0.2"
                   min="0" step="0.05">
               </div>
               <div class="field">
-                <label for="jerkAz">Jerk Az<br>(deg/s³)</label>
-                <input id="jerkAz" type="number" value="2.5" min="0"
+                <label for="jerkX">Jerk X<br>(units/s³)</label>
+                <input id="jerkX" type="number" value="2.5" min="0"
                   step="0.1">
               </div>
               <div class="field">
-                <label for="jerkEl">Jerk El<br>(deg/s³)</label>
-                <input id="jerkEl" type="number" value="2.5" min="0"
+                <label for="jerkY">Jerk Y<br>(units/s³)</label>
+                <input id="jerkY" type="number" value="2.5" min="0"
                   step="0.1">
               </div>
             </div>
@@ -1781,8 +1781,12 @@
                 </select>
               </div>
               <label class="checkbox-field field full">
-                <input id="allowWrapping" type="checkbox">
-                Allow azimuth wrapping (obstacle-free requests only)
+                <input id="wrapX" type="checkbox">
+                Wrap x (use x interval; obstacle-free fixed goals only)
+              </label>
+              <label class="check">
+                <input id="wrapY" type="checkbox">
+                Wrap y (use y interval; obstacle-free fixed goals only)
               </label>
             </div>
           </details>
@@ -1801,7 +1805,7 @@
           <div id="obstacleEditor" hidden>
             <div class="form-grid">
               <div class="field">
-                <label for="selectedMargin">Safety margin (deg)</label>
+                <label for="selectedMargin">Safety margin (units)</label>
                 <input id="selectedMargin" type="number" min="0" step="0.05">
               </div>
               <div class="field">
@@ -1818,13 +1822,13 @@
                 <summary>Direction components</summary>
                 <div class="form-grid">
               <div class="field">
-                <label for="motionAzimuth">Azimuth speed (deg/s)</label>
-                <input id="motionAzimuth" type="number" min="-10" max="10"
+                <label for="motionX">X speed (units/s)</label>
+                <input id="motionX" type="number" min="-10" max="10"
                   step="0.5">
               </div>
               <div class="field">
-                <label for="motionElevation">Elevation speed (deg/s)</label>
-                <input id="motionElevation" type="number" min="-10" max="10"
+                <label for="motionY">Y speed (units/s)</label>
+                <input id="motionY" type="number" min="-10" max="10"
                   step="0.5">
               </div>
                 </div>
@@ -1836,15 +1840,15 @@
             </div>
             <p id="motionProfileNote" class="page-note">
               Dragging from the center to the frame edge scales speed from
-              zero to 10 deg/s. Profiles integrate that command over time.
+              zero to 10 units/s. Profiles integrate that command over time.
             </p>
             <details id="motionPoseControls" hidden>
               <summary>Exact final pose values</summary>
               <div class="form-grid">
-                <div class="field"><label for="finalPoseAzimuth">Final center Az (deg)</label>
-                  <input id="finalPoseAzimuth" type="number" step="0.1"></div>
-                <div class="field"><label for="finalPoseElevation">Final center El (deg)</label>
-                  <input id="finalPoseElevation" type="number" step="0.1"></div>
+                <div class="field"><label for="finalPoseX">Final center X (units)</label>
+                  <input id="finalPoseX" type="number" step="0.1"></div>
+                <div class="field"><label for="finalPoseY">Final center Y (units)</label>
+                  <input id="finalPoseY" type="number" step="0.1"></div>
                 <div class="field"><label for="finalPoseRotation">Turn from start (deg)</label>
                   <input id="finalPoseRotation" type="number" min="-360" max="360" step="5" value="0"></div>
                 <div class="field"><label for="finalPoseScaleX">Final width (×)</label>
@@ -1867,7 +1871,7 @@
             The page exports original polygons. MATLAB applies each safety
             margin once and returns the protected geometry for display. Circle and
             freehand tools create ordinary polygons (24 and at most 40 vertices).
-            A circle is round in planning degrees, not merely in screen pixels.
+            A circle is round in planning coordinate units, not merely in screen pixels.
             Moving polygons may leave the frame; while fully outside, they do
             not obstruct the visible planning workspace.
           </p>
@@ -2047,23 +2051,24 @@
       ]);
       const FREEHAND_MAXIMUM_VERTICES = 40;
       const HANDLE_RADIUS_PX = 10;
-      const MAXIMUM_OBSTACLE_SPEED_DEG_S = 10;
+      const MAXIMUM_OBSTACLE_SPEED_UNITS_S = 10;
       const defaultControls = Object.freeze({
-        azimuthMin: -180,
-        azimuthMax: 180,
-        elevationMin: -90,
-        elevationMax: 90,
-        velocityAz: 2,
-        velocityEl: 2,
-        accelerationAz: 0.75,
-        accelerationEl: 0.75,
-        jerkAz: 2.5,
-        jerkEl: 2.5,
+        xMin: -180,
+        xMax: 180,
+        yMin: -90,
+        yMax: 90,
+        velocityX: 2,
+        velocityY: 2,
+        accelerationX: 0.75,
+        accelerationY: 0.75,
+        jerkX: 2.5,
+        jerkY: 2.5,
         missionTime: 180,
         defaultMargin: 0.2,
         goalTimeMode: "earliestArrival",
         unsupportedTimedTopologyPolicy: "fail",
-        allowWrapping: false
+        wrapX: false,
+        wrapY: false
       });
 
       const state = {
@@ -2083,8 +2088,8 @@
         cursor: null,
         plotRect: null,
         lastValidWorkspace: {
-          azimuth: [-180, 180],
-          elevation: [-90, 90]
+          x: [-180, 180],
+          y: [-90, 90]
         },
         currentTime_s: 0,
         playing: false,
@@ -2128,11 +2133,11 @@
       const obstacleActionMenu = document.getElementById("obstacleActionMenu");
 
       const controlIds = [
-        "azimuthMin", "azimuthMax", "elevationMin", "elevationMax",
-        "velocityAz", "velocityEl", "accelerationAz", "accelerationEl",
-        "jerkAz", "jerkEl", "missionTime", "defaultMargin",
+        "xMin", "xMax", "yMin", "yMax",
+        "velocityX", "velocityY", "accelerationX", "accelerationY",
+        "jerkX", "jerkY", "missionTime", "defaultMargin",
         "goalTimeMode",
-        "unsupportedTimedTopologyPolicy", "allowWrapping"
+        "unsupportedTimedTopologyPolicy", "wrapX", "wrapY"
       ];
 
       function element(id) {
@@ -2287,33 +2292,34 @@
 
       function readControls(throwOnInvalid = true) {
         const controls = {
-          azimuthMin: numberFromInput("azimuthMin"),
-          azimuthMax: numberFromInput("azimuthMax"),
-          elevationMin: numberFromInput("elevationMin"),
-          elevationMax: numberFromInput("elevationMax"),
-          velocityAz: numberFromInput("velocityAz"),
-          velocityEl: numberFromInput("velocityEl"),
-          accelerationAz: numberFromInput("accelerationAz"),
-          accelerationEl: numberFromInput("accelerationEl"),
-          jerkAz: numberFromInput("jerkAz"),
-          jerkEl: numberFromInput("jerkEl"),
+          xMin: numberFromInput("xMin"),
+          xMax: numberFromInput("xMax"),
+          yMin: numberFromInput("yMin"),
+          yMax: numberFromInput("yMax"),
+          velocityX: numberFromInput("velocityX"),
+          velocityY: numberFromInput("velocityY"),
+          accelerationX: numberFromInput("accelerationX"),
+          accelerationY: numberFromInput("accelerationY"),
+          jerkX: numberFromInput("jerkX"),
+          jerkY: numberFromInput("jerkY"),
           missionTime: numberFromInput("missionTime"),
           defaultMargin: numberFromInput("defaultMargin"),
           goalTimeMode: element("goalTimeMode").value,
           unsupportedTimedTopologyPolicy: element(
             "unsupportedTimedTopologyPolicy"
           ).value,
-          allowWrapping: element("allowWrapping").checked
+          wrapX: element("wrapX").checked,
+          wrapY: element("wrapY").checked
         };
         const allFinite = Object.entries(controls)
           .filter(([, value]) => typeof value === "number")
           .every(([, value]) => Number.isFinite(value));
-        const intervalsValid = controls.azimuthMax > controls.azimuthMin &&
-          controls.elevationMax > controls.elevationMin;
+        const intervalsValid = controls.xMax > controls.xMin &&
+          controls.yMax > controls.yMin;
         const positive = [
-          controls.velocityAz, controls.velocityEl,
-          controls.accelerationAz, controls.accelerationEl,
-          controls.jerkAz, controls.jerkEl, controls.missionTime
+          controls.velocityX, controls.velocityY,
+          controls.accelerationX, controls.accelerationY,
+          controls.jerkX, controls.jerkY, controls.missionTime
         ].every((value) => value > 0);
         const marginValid = controls.defaultMargin >= 0;
         if (!allFinite || !intervalsValid || !positive || !marginValid) {
@@ -2336,8 +2342,8 @@
         const controls = readControls(false);
         if (controls) {
           state.lastValidWorkspace = {
-            azimuth: [controls.azimuthMin, controls.azimuthMax],
-            elevation: [controls.elevationMin, controls.elevationMax]
+            x: [controls.xMin, controls.xMax],
+            y: [controls.yMin, controls.yMax]
           };
           configureTimeline();
           if (state.mode === "motion") syncFinalPoseControls();
@@ -2406,7 +2412,7 @@
           goal: "Click once in the workspace to place or replace the goal.",
           polygon: "Left-click polygon vertices. Right-click or press Enter to finish. Nothing is draggable.",
           rectangle: "Drag between opposite corners to draw a rectangle. Press Escape to cancel.",
-          circle: "Drag from the center to set a radius in degrees. Nothing is draggable.",
+          circle: "Drag from the center to set a radius in coordinate units. Nothing is draggable.",
           freehand: "Drag a closed outline. It is simplified to an ordinary polygon. Nothing is draggable.",
           motion: "Drag the ghost to move it, a corner to stretch it, or the round handle to rotate it."
         };
@@ -2435,10 +2441,10 @@
       }
 
       function writeEndpointInputs() {
-        element("startAzimuth").value = state.start ? state.start[0] : "";
-        element("startElevation").value = state.start ? state.start[1] : "";
-        element("goalAzimuth").value = state.goal ? state.goal[0] : "";
-        element("goalElevation").value = state.goal ? state.goal[1] : "";
+        element("startX").value = state.start ? state.start[0] : "";
+        element("startY").value = state.start ? state.start[1] : "";
+        element("goalX").value = state.goal ? state.goal[0] : "";
+        element("goalY").value = state.goal ? state.goal[1] : "";
       }
 
       function applyEndpointInputs() {
@@ -2449,20 +2455,20 @@
           );
           return;
         }
-        const endpointIds = ["startAzimuth", "startElevation",
-          "goalAzimuth", "goalElevation"];
+        const endpointIds = ["startX", "startY",
+          "goalX", "goalY"];
         if (endpointIds.some((id) => element(id).value.trim() === "")) {
-          setStatus("Enter Az/El values for both start and goal.", "error");
+          setStatus("Enter X/Y values for both start and goal.", "error");
           return;
         }
         const values = [
-          numberFromInput("startAzimuth"),
-          numberFromInput("startElevation"),
-          numberFromInput("goalAzimuth"),
-          numberFromInput("goalElevation")
+          numberFromInput("startX"),
+          numberFromInput("startY"),
+          numberFromInput("goalX"),
+          numberFromInput("goalY")
         ];
         if (!values.every(Number.isFinite)) {
-          setStatus("Enter finite Az/El values for both start and goal.", "error");
+          setStatus("Enter finite X/Y values for both start and goal.", "error");
           return;
         }
         const requestedStart = values.slice(0, 2);
@@ -2486,12 +2492,12 @@
         controlIds.forEach((id) => {
           element(id).disabled = disabled;
         });
-        ["startAzimuth", "startElevation", "goalAzimuth", "goalElevation",
+        ["startX", "startY", "goalX", "goalY",
           "applyEndpointsButton", "downloadRequestButton", "selectedMargin",
-          "motionProfile", "motionAzimuth", "motionElevation", "obstacleSpeedSlider",
+          "motionProfile", "motionX", "motionY", "obstacleSpeedSlider",
           "rotationAngle", "copyObstacleButton", "rotateObstacleButton",
           "deleteEditorButton", "deletePolygonButton", "setMotionButton", "zeroMotionButton",
-          "finalPoseAzimuth", "finalPoseElevation", "finalPoseRotation",
+          "finalPoseX", "finalPoseY", "finalPoseRotation",
           "finalPoseScaleX", "finalPoseScaleY", "finishMotionButton"
         ].forEach((id) => {
           element(id).disabled = disabled;
@@ -2506,10 +2512,10 @@
 
       function pointInsideWorkspace(point) {
         const bounds = workspace();
-        return point[0] >= bounds.azimuth[0] &&
-          point[0] <= bounds.azimuth[1] &&
-          point[1] >= bounds.elevation[0] &&
-          point[1] <= bounds.elevation[1];
+        return point[0] >= bounds.x[0] &&
+          point[0] <= bounds.x[1] &&
+          point[1] >= bounds.y[0] &&
+          point[1] <= bounds.y[1];
       }
 
       function polygonArea(vertices) {
@@ -2606,7 +2612,7 @@
           return;
         }
         const sourceName = selected.name;
-        addObstacle(selected.vertices_deg, selected);
+        addObstacle(selected.vertices_units, selected);
         const copyName = state.obstacles[state.selectedObstacleIndex].name;
         invalidateResult("Obstacle geometry changed.");
         renderObstacleEditor();
@@ -2627,18 +2633,18 @@
           setStatus("Enter a rotation angle other than a full turn.", "warning");
           return;
         }
-        const center_deg = centroid(selected.vertices_deg);
+        const center_units = centroid(selected.vertices_units);
         const angle_rad = normalizedAngle_deg * Math.PI / 180;
         const cosine = Math.cos(angle_rad);
         const sine = Math.sin(angle_rad);
-        selected.vertices_deg = selected.vertices_deg.map((point_deg) => {
-          const relativeAzimuth_deg = point_deg[0] - center_deg[0];
-          const relativeElevation_deg = point_deg[1] - center_deg[1];
+        selected.vertices_units = selected.vertices_units.map((point_units) => {
+          const relativeX_units = point_units[0] - center_units[0];
+          const relativeY_units = point_units[1] - center_units[1];
           return [
-            center_deg[0] + cosine * relativeAzimuth_deg -
-              sine * relativeElevation_deg,
-            center_deg[1] + sine * relativeAzimuth_deg +
-              cosine * relativeElevation_deg
+            center_units[0] + cosine * relativeX_units -
+              sine * relativeY_units,
+            center_units[1] + sine * relativeX_units +
+              cosine * relativeY_units
           ];
         });
         invalidateResult("Obstacle geometry changed.");
@@ -2671,10 +2677,10 @@
             const kind = document.createElement("span");
             kind.className = "obstacle-kind";
             const isMoving = obstacle.motionProfile !== "stationary" &&
-              Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
-            const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+              Math.hypot(...obstacle.motionVelocity_units_s) > 1e-12;
+            const speed_units_s = Math.hypot(...obstacle.motionVelocity_units_s);
             const changes = [];
-            if (isMoving) changes.push(`${speed_deg_s.toFixed(3)} deg/s`);
+            if (isMoving) changes.push(`${speed_units_s.toFixed(3)} units/s`);
             if (Math.abs(obstacle.finalRotation_deg || 0) > 1e-12) changes.push("turn");
             if ((obstacle.finalScale || [1, 1]).some((value) => value !== 1)) changes.push("stretch");
             kind.textContent = changes.length ? changes.join(" · ") : "static";
@@ -2694,11 +2700,11 @@
         if (!selected) {
           return;
         }
-        element("selectedMargin").value = selected.safetyMargin_deg;
+        element("selectedMargin").value = selected.safetyMargin_units;
         element("motionProfile").value = selected.motionProfile;
-        element("motionAzimuth").value = selected.motionVelocity_deg_s[0];
-        element("motionElevation").value = selected.motionVelocity_deg_s[1];
-        updateMotionSpeedReadout(selected.motionProfile === "stationary" ? [0, 0] : selected.motionVelocity_deg_s);
+        element("motionX").value = selected.motionVelocity_units_s[0];
+        element("motionY").value = selected.motionVelocity_units_s[1];
+        updateMotionSpeedReadout(selected.motionProfile === "stationary" ? [0, 0] : selected.motionVelocity_units_s);
         if (state.mode === "motion") syncFinalPoseControls();
         const profileDescriptions = {
           stationary: "No translation: position does not change. A configured turn still applies.",
@@ -2709,7 +2715,7 @@
         };
         element("motionProfileNote").textContent =
           profileDescriptions[selected.motionProfile] +
-          " Drag to the frame edge for the 10 deg/s maximum.";
+          " Drag to the frame edge for the 10 units/s maximum.";
       }
 
       function updateSelectedObstacle() {
@@ -2718,31 +2724,31 @@
           return;
         }
         const margin = numberFromInput("selectedMargin");
-        const motionAzimuth = numberFromInput("motionAzimuth");
-        const motionElevation = numberFromInput("motionElevation");
+        const motionX = numberFromInput("motionX");
+        const motionY = numberFromInput("motionY");
         if (!Number.isFinite(margin) || margin < 0 ||
-            !Number.isFinite(motionAzimuth) ||
-            !Number.isFinite(motionElevation)) {
+            !Number.isFinite(motionX) ||
+            !Number.isFinite(motionY)) {
           setStatus("Obstacle margin must be nonnegative and motion values finite.",
             "error");
           return;
         }
-        const requestedVelocity_deg_s = [motionAzimuth, motionElevation];
-        const limitedVelocity_deg_s = limitMotionVelocity(
-          requestedVelocity_deg_s
+        const requestedVelocity_units_s = [motionX, motionY];
+        const limitedVelocity_units_s = limitMotionVelocity(
+          requestedVelocity_units_s
         );
         const speedWasLimited = !pointsClose(
-          requestedVelocity_deg_s, limitedVelocity_deg_s
+          requestedVelocity_units_s, limitedVelocity_units_s
         );
-        selected.safetyMargin_deg = margin;
+        selected.safetyMargin_units = margin;
         selected.motionProfile = element("motionProfile").value;
-        selected.motionVelocity_deg_s = limitedVelocity_deg_s;
+        selected.motionVelocity_units_s = limitedVelocity_units_s;
         invalidateResult("Obstacle settings changed.");
         renderObstacleEditor();
         configureTimeline();
         draw();
         if (speedWasLimited) {
-          setStatus("Obstacle speed was limited to 10 deg/s.", "warning");
+          setStatus("Obstacle speed was limited to 10 units/s.", "warning");
         }
       }
 
@@ -2756,8 +2762,8 @@
         if (!selected) return;
         const center = centroid(obstaclePoseAtTime(selected,
           motionMissionTime(), motionMissionTime()));
-        element("finalPoseAzimuth").value = center[0].toFixed(3);
-        element("finalPoseElevation").value = center[1].toFixed(3);
+        element("finalPoseX").value = center[0].toFixed(3);
+        element("finalPoseY").value = center[1].toFixed(3);
         element("finalPoseRotation").value = (selected.finalRotation_deg || 0).toFixed(3);
         element("finalPoseScaleX").value = (selected.finalScale || [1, 1])[0].toFixed(3);
         element("finalPoseScaleY").value = (selected.finalScale || [1, 1])[1].toFixed(3);
@@ -2772,9 +2778,9 @@
         if (!selected || state.isPlanning || state.importedSceneIsReadOnly) return;
         const angle = numberFromInput("finalPoseRotation");
         const scale = [numberFromInput("finalPoseScaleX"), numberFromInput("finalPoseScaleY")];
-        const destination = [numberFromInput("finalPoseAzimuth"),
-          numberFromInput("finalPoseElevation")];
-        const blank = ["finalPoseAzimuth", "finalPoseElevation", "finalPoseRotation",
+        const destination = [numberFromInput("finalPoseX"),
+          numberFromInput("finalPoseY")];
+        const blank = ["finalPoseX", "finalPoseY", "finalPoseRotation",
           "finalPoseScaleX", "finalPoseScaleY"]
           .some((id) => element(id).value.trim() === "");
         if (blank || !destination.every(Number.isFinite) || !Number.isFinite(angle) ||
@@ -2784,7 +2790,7 @@
           return;
         }
         // Shape and angle edits preserve the selected translation profile.
-        if (["finalPoseAzimuth", "finalPoseElevation"].includes(event.target.id) &&
+        if (["finalPoseX", "finalPoseY"].includes(event.target.id) &&
             !setFinalPoseCenter(selected, destination)) {
           syncFinalPoseControls();
           return;
@@ -2799,14 +2805,14 @@
 
       function setFinalPoseCenter(obstacle, destination) {
         if (!destination.every(Number.isFinite)) return false;
-        const center = centroid(obstacle.vertices_deg);
+        const center = centroid(obstacle.vertices_units);
         const velocity = destination.map((value, axis) =>
           (value - center[axis]) / motionMissionTime());
-        if (Math.hypot(...velocity) > MAXIMUM_OBSTACLE_SPEED_DEG_S + 1e-12) {
-          setStatus("That destination requires more than 10 deg/s. Increase mission time or choose a nearer destination.", "warning");
+        if (Math.hypot(...velocity) > MAXIMUM_OBSTACLE_SPEED_UNITS_S + 1e-12) {
+          setStatus("That destination requires more than 10 units/s. Increase mission time or choose a nearer destination.", "warning");
           return false;
         }
-        obstacle.motionVelocity_deg_s = velocity;
+        obstacle.motionVelocity_units_s = velocity;
         obstacle.motionProfile = "nonzeroVelocity";
         return true;
       }
@@ -2830,7 +2836,7 @@
         strokePath(vertices, { stroke: "#8654c8", width: 2,
           fill: "rgba(134,84,200,0.12)", dash: [7, 5], close: true });
         const center = centroid(vertices);
-        strokePath([centroid(selected.vertices_deg), center], {
+        strokePath([centroid(selected.vertices_units), center], {
           stroke: "#8654c8", width: 1, dash: [3, 5] });
         drawPoint(center, "#8654c8", "Final pose", "diamond");
         const corners = finalPoseCorners(selected);
@@ -2844,10 +2850,10 @@
 
       // Handles use original local axes, then scale and rotate into the final pose.
       function finalPoseCorners(obstacle) {
-        const origin = centroid(obstacle.vertices_deg);
+        const origin = centroid(obstacle.vertices_units);
         const center = centroid(obstaclePoseAtTime(obstacle, motionMissionTime(), motionMissionTime()));
-        const xs = obstacle.vertices_deg.map((p) => p[0] - origin[0]);
-        const ys = obstacle.vertices_deg.map((p) => p[1] - origin[1]);
+        const xs = obstacle.vertices_units.map((p) => p[0] - origin[0]);
+        const ys = obstacle.vertices_units.map((p) => p[1] - origin[1]);
         const scale = obstacle.finalScale || [1, 1];
         const angle = (obstacle.finalRotation_deg || 0) * Math.PI / 180;
         return [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.min(...ys)],
@@ -2863,7 +2869,7 @@
         const center = centroid(vertices);
         const radius = Math.max(...vertices.map((p) => Math.hypot(p[0] - center[0], p[1] - center[1])));
         const bounds = workspace();
-        const padding = 24 * (bounds.azimuth[1] - bounds.azimuth[0]) / state.plotRect.width;
+        const padding = 24 * (bounds.x[1] - bounds.x[0]) / state.plotRect.width;
         const angle = (obstacle.finalRotation_deg || 0) * Math.PI / 180;
         return [center[0] + (radius + padding) * Math.cos(angle),
           center[1] + (radius + padding) * Math.sin(angle)];
@@ -2900,7 +2906,7 @@
           Math.min(rect.top + rect.height - 6, top - 14)) + "px";
       }
 
-      function motionOffset_deg(obstacle, time_s, missionTime_s) {
+      function motionOffset_units(obstacle, time_s, missionTime_s) {
         const boundedTime_s = Math.max(0, Math.min(missionTime_s, time_s));
         const boundedPhase = boundedTime_s / missionTime_s;
         let integratedTime_s = 0;
@@ -2925,8 +2931,8 @@
           integratedTime_s = missionTime_s / (2 * Math.PI) *
             (1 - Math.cos(2 * Math.PI * boundedPhase));
         }
-        return obstacle.motionVelocity_deg_s.map((velocity_deg_s) =>
-          velocity_deg_s * integratedTime_s
+        return obstacle.motionVelocity_units_s.map((velocity_units_s) =>
+          velocity_units_s * integratedTime_s
         );
       }
 
@@ -2935,15 +2941,15 @@
       function obstaclePoseAtTime(obstacle, time_s, missionTime_s) {
         const phase = Math.max(0, Math.min(1, time_s / missionTime_s));
         const angle_rad = (obstacle.finalRotation_deg || 0) * phase * Math.PI / 180;
-        const center = centroid(obstacle.vertices_deg);
-        const offset = motionOffset_deg(obstacle, time_s, missionTime_s);
+        const center = centroid(obstacle.vertices_units);
+        const offset = motionOffset_units(obstacle, time_s, missionTime_s);
         const cosine = Math.cos(angle_rad);
         const sine = Math.sin(angle_rad);
         const finalScale = obstacle.finalScale || [1, 1];
         const scale = finalScale.map((value) => 1 + phase * (value - 1));
-        return obstacle.vertices_deg.map(([azimuth, elevation]) => {
-          const x = (azimuth - center[0]) * scale[0];
-          const y = (elevation - center[1]) * scale[1];
+        return obstacle.vertices_units.map(([pointX, pointY]) => {
+          const x = (pointX - center[0]) * scale[0];
+          const y = (pointY - center[1]) * scale[1];
           return [center[0] + offset[0] + cosine * x - sine * y,
             center[1] + offset[1] + sine * x + cosine * y];
         });
@@ -2951,7 +2957,7 @@
 
       function obstacleMotionIntervals(obstacle) {
         const translates = obstacle.motionProfile !== "stationary" &&
-          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+          Math.hypot(...obstacle.motionVelocity_units_s) > 1e-12;
         const stretches = (obstacle.finalScale || [1, 1]).some((value) => value !== 1);
         return Math.max(translates || stretches ? 20 : 1,
           Math.ceil(Math.abs(obstacle.finalRotation_deg || 0) / 5));
@@ -2963,7 +2969,7 @@
         for (let index = 0; index <= intervals; index += 1) {
           const time_s = missionTime_s * index / intervals;
           keyframes.push({ time_s,
-            vertices_deg: obstaclePoseAtTime(obstacle, time_s, missionTime_s) });
+            vertices_units: obstaclePoseAtTime(obstacle, time_s, missionTime_s) });
         }
         return keyframes;
       }
@@ -2980,19 +2986,19 @@
         if (!pointInsideWorkspace(state.start) || !pointInsideWorkspace(state.goal)) {
           throw new Error("Start and goal must lie inside the workspace bounds.");
         }
-        if (controls.allowWrapping && state.obstacles.length > 0) {
+        if ((controls.wrapX || controls.wrapY) && state.obstacles.length > 0) {
           throw new Error(
-            "The maintained planner supports azimuth wrapping only for " +
+            "The maintained planner supports wrapping only for " +
             "obstacle-free fixed-position goals."
           );
         }
         state.obstacles.forEach((obstacle) => {
-          if (obstacle.vertices_deg.length < 3 ||
-              polygonArea(obstacle.vertices_deg) <= 1e-10) {
+          if (obstacle.vertices_units.length < 3 ||
+              polygonArea(obstacle.vertices_units) <= 1e-10) {
             throw new Error(`${obstacle.name} is not a valid area polygon.`);
           }
-          if (!finiteNumber(obstacle.safetyMargin_deg) ||
-              obstacle.safetyMargin_deg < 0) {
+          if (!finiteNumber(obstacle.safetyMargin_units) ||
+              obstacle.safetyMargin_units < 0) {
             throw new Error(`${obstacle.name} has an invalid safety margin.`);
           }
         });
@@ -3007,41 +3013,41 @@
         }
         const controls = readControls(true);
         state.lastValidWorkspace = {
-          azimuth: [controls.azimuthMin, controls.azimuthMax],
-          elevation: [controls.elevationMin, controls.elevationMax]
+          x: [controls.xMin, controls.xMax],
+          y: [controls.yMin, controls.yMax]
         };
         validateScene(controls);
-        const requestId = "az-el-" + new Date().toISOString()
+        const requestId = "x-y-" + new Date().toISOString()
           .replace(/[-:.TZ]/g, "");
         const request = {
           schemaVersion: REQUEST_SCHEMA,
           requestId,
           obstacles: state.obstacles.map((obstacle) => ({
             name: obstacle.name,
-            safetyMargin_deg: obstacle.safetyMargin_deg,
+            safetyMargin_units: obstacle.safetyMargin_units,
             keyframes: buildObstacleKeyframes(obstacle, controls.missionTime)
           })),
           initialState: {
             time_s: 0,
-            position_deg: state.start.slice(),
-            velocity_deg_s: [0, 0],
-            acceleration_deg_s2: [0, 0]
+            position_units: state.start.slice(),
+            velocity_units_s: [0, 0],
+            acceleration_units_s2: [0, 0]
           },
           goalState: {
             time_s: controls.missionTime,
-            position_deg: state.goal.slice(),
-            velocity_deg_s: [0, 0],
-            acceleration_deg_s2: [0, 0]
+            position_units: state.goal.slice(),
+            velocity_units_s: [0, 0],
+            acceleration_units_s2: [0, 0]
           },
           limits: {
-            maxVelocity_deg_s: [controls.velocityAz, controls.velocityEl],
-            maxAcceleration_deg_s2: [
-              controls.accelerationAz, controls.accelerationEl
+            maxVelocity_units_s: [controls.velocityX, controls.velocityY],
+            maxAcceleration_units_s2: [
+              controls.accelerationX, controls.accelerationY
             ],
-            maxJerk_deg_s3: [controls.jerkAz, controls.jerkEl],
-            azimuthInterval_deg: [controls.azimuthMin, controls.azimuthMax],
-            elevationInterval_deg: [
-              controls.elevationMin, controls.elevationMax
+            maxJerk_units_s3: [controls.jerkX, controls.jerkY],
+            xInterval_units: [controls.xMin, controls.xMax],
+            yInterval_units: [
+              controls.yMin, controls.yMax
             ]
           },
           options: {
@@ -3050,7 +3056,8 @@
             GoalTimeMode: controls.goalTimeMode,
             UnsupportedTimedTopologyPolicy:
               controls.unsupportedTimedTopologyPolicy,
-            AllowAzimuthWrapping: controls.allowWrapping
+            WrapX: controls.wrapX,
+            WrapY: controls.wrapY
           }
         };
         state.lastRequestId = requestId;
@@ -3065,14 +3072,14 @@
           const objectUrl = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.href = objectUrl;
-          link.download = "az-el-request.json";
+          link.download = "x-y-request.json";
           document.body.append(link);
           link.click();
           link.remove();
           window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
           setStatus(
             "Request downloaded. Run the shown MATLAB command, then load " +
-            "az-el-result.json.", "success"
+            "x-y-result.json.", "success"
           );
         } catch (error) {
           setStatus(error.message, "error");
@@ -3396,11 +3403,11 @@
           return {
             ...obstacle,
             time_s: times,
-            OriginalVerticesByTime_deg: normalizeHistory(
-              obstacle.OriginalVerticesByTime_deg, times.length
+            OriginalVerticesByTime_units: normalizeHistory(
+              obstacle.OriginalVerticesByTime_units, times.length
             ),
-            ProtectedVerticesByTime_deg: normalizeHistory(
-              obstacle.ProtectedVerticesByTime_deg, times.length
+            ProtectedVerticesByTime_units: normalizeHistory(
+              obstacle.ProtectedVerticesByTime_units, times.length
             )
           };
         });
@@ -3420,36 +3427,36 @@
         state.applyingResult = true;
         try {
           if (inputs.initialState) {
-            state.start = pairFrom(inputs.initialState.position_deg, [0, 0]);
+            state.start = pairFrom(inputs.initialState.position_units, [0, 0]);
           }
           if (inputs.goalState) {
-            state.goal = pairFrom(inputs.goalState.position_deg, [0, 0]);
+            state.goal = pairFrom(inputs.goalState.position_units, [0, 0]);
             if (finiteNumber(inputs.goalState.time_s)) {
               element("missionTime").value = inputs.goalState.time_s;
             }
           }
           const limits = inputs.limits || {};
-          const azimuth = pairFrom(limits.azimuthInterval_deg,
-            state.lastValidWorkspace.azimuth);
-          const elevation = pairFrom(limits.elevationInterval_deg,
-            state.lastValidWorkspace.elevation);
-          element("azimuthMin").value = azimuth[0];
-          element("azimuthMax").value = azimuth[1];
-          element("elevationMin").value = elevation[0];
-          element("elevationMax").value = elevation[1];
-          state.lastValidWorkspace = { azimuth, elevation };
-          const velocity = pairFrom(limits.maxVelocity_deg_s,
-            [defaultControls.velocityAz, defaultControls.velocityEl]);
-          const acceleration = pairFrom(limits.maxAcceleration_deg_s2,
-            [defaultControls.accelerationAz, defaultControls.accelerationEl]);
-          const jerk = pairFrom(limits.maxJerk_deg_s3,
-            [defaultControls.jerkAz, defaultControls.jerkEl]);
-          element("velocityAz").value = velocity[0];
-          element("velocityEl").value = velocity[1];
-          element("accelerationAz").value = acceleration[0];
-          element("accelerationEl").value = acceleration[1];
-          element("jerkAz").value = jerk[0];
-          element("jerkEl").value = jerk[1];
+          const x = pairFrom(limits.xInterval_units,
+            state.lastValidWorkspace.x);
+          const y = pairFrom(limits.yInterval_units,
+            state.lastValidWorkspace.y);
+          element("xMin").value = x[0];
+          element("xMax").value = x[1];
+          element("yMin").value = y[0];
+          element("yMax").value = y[1];
+          state.lastValidWorkspace = { x, y };
+          const velocity = pairFrom(limits.maxVelocity_units_s,
+            [defaultControls.velocityX, defaultControls.velocityY]);
+          const acceleration = pairFrom(limits.maxAcceleration_units_s2,
+            [defaultControls.accelerationX, defaultControls.accelerationY]);
+          const jerk = pairFrom(limits.maxJerk_units_s3,
+            [defaultControls.jerkX, defaultControls.jerkY]);
+          element("velocityX").value = velocity[0];
+          element("velocityY").value = velocity[1];
+          element("accelerationX").value = acceleration[0];
+          element("accelerationY").value = acceleration[1];
+          element("jerkX").value = jerk[0];
+          element("jerkY").value = jerk[1];
           const options = state.result.Options || {};
           if (typeof options.GoalTimeMode === "string") {
             element("goalTimeMode").value = options.GoalTimeMode === "fixedArrival"
@@ -3459,9 +3466,8 @@
             element("unsupportedTimedTopologyPolicy").value =
               options.UnsupportedTimedTopologyPolicy;
           }
-          element("allowWrapping").checked = Boolean(
-            options.AllowAzimuthWrapping
-          );
+          element("wrapX").checked = Boolean(options.WrapX);
+          element("wrapY").checked = Boolean(options.WrapY);
           writeEndpointInputs();
         } finally {
           state.applyingResult = false;
@@ -3561,12 +3567,12 @@
         const diagnosis = state.diagnosis || {};
         const search = diagnosis.Search || {};
         const validation = state.validation || {};
-        const rejectedEdges = matrix(search.RejectedEdges_deg, 4)
+        const rejectedEdges = matrix(search.RejectedEdges_units, 4)
           .filter((edge) => edge.every(finiteNumber));
-        const acceptedEdges = matrix(search.AcceptedEdges_deg, 4)
+        const acceptedEdges = matrix(search.AcceptedEdges_units, 4)
           .filter((edge) => edge.every(finiteNumber));
-        const exploredNodes = matrix(search.ExploredNodes_deg, 2);
-        const frontierNodes = matrix(search.FrontierNodes_deg, 2);
+        const exploredNodes = matrix(search.ExploredNodes_units, 2);
+        const frontierNodes = matrix(search.FrontierNodes_units, 2);
         const attempts = asArray(diagnosis.Attempts);
         const obstacleCount = state.responseObstacles.length;
         const generatedSeedCount = finiteNumber(search.GeneratedSeedCount) ?
@@ -3585,16 +3591,16 @@
           deepDiveStage("Pin the start state", "normalizePlannerRequest",
             "Initial time, position, velocity, and acceleration",
             "Validated initial boundary condition",
-            `The search begins at ${formattedPoint(inputs.initialState && inputs.initialState.position_deg)}. An invalid or out-of-workspace start would stop the tree before search.`,
+            `The search begins at ${formattedPoint(inputs.initialState && inputs.initialState.position_units)}. An invalid or out-of-workspace start would stop the tree before search.`,
             "request", "Request › Start", "Kept"),
           deepDiveStage("Pin the goal state", "normalizePlannerRequest",
             "Goal time, position, velocity, and acceleration",
             "Validated terminal boundary condition",
-            `The requested terminal position is ${formattedPoint(inputs.goalState && inputs.goalState.position_deg)}. Every surviving branch must ultimately meet this state.`,
+            `The requested terminal position is ${formattedPoint(inputs.goalState && inputs.goalState.position_units)}. Every surviving branch must ultimately meet this state.`,
             "request", "Request › Goal", "Kept"),
           deepDiveStage("Apply workspace bounds", "normalizeLimits",
-            "Azimuth and elevation intervals", "Legal search domain",
-            `Azimuth is limited to ${formattedPoint(limits.azimuthInterval_deg)} and elevation to ${formattedPoint(limits.elevationInterval_deg)}. Nodes outside these intervals are not eligible for the tree.`,
+            "X and y intervals", "Legal search domain",
+            `X is limited to ${formattedPoint(limits.xInterval_units)} and y to ${formattedPoint(limits.yInterval_units)}. Nodes outside these intervals are not eligible for the tree.`,
             "request", "Request › Bounds", "Kept"),
           deepDiveStage("Keep original obstacle geometry",
             "createObstaclePlanningData", "Public obstacle keyframes",
@@ -3656,7 +3662,7 @@
           deepDiveStage("Retain the best partial branch",
             "searchDistinctSpatialRoutes", "Explored routes that did not reach the goal",
             "Best partial route for diagnosis",
-            matrix(result.BestPartialRoute_deg, 2).length > 1 ?
+            matrix(result.BestPartialRoute_units, 2).length > 1 ?
               "The orange path is the best retained partial branch. It explains how far the search progressed without pretending it reached the goal." :
               "No best partial route was returned; there is no partial branch to display.",
             "search", "Search › Best partial", "Inspect"),
@@ -3671,11 +3677,11 @@
             "route", "Seeds › Candidate decisions", "Inspect"),
           deepDiveStage("Select the geometric route", "selectValidatedCandidate",
             "Validated candidates and ranking metrics", "Selected route",
-            matrix(result.Route_deg, 2).length > 1 ?
+            matrix(result.Route_units, 2).length > 1 ?
               "The purple route is the branch retained for timed motion. Other candidates were either invalid or ranked behind it." :
               "No complete geometric route survived selection, so the decision tree has no branch to send to timed motion.",
             "route", "Candidates › Selection",
-            matrix(result.Route_deg, 2).length > 1 ? "Kept" : "Pruned"),
+            matrix(result.Route_units, 2).length > 1 ? "Kept" : "Pruned"),
           deepDiveStage("Solve time along the route",
             "solvePathGuess / checkCandidateMotion", "Selected route and endpoint states",
             "Time-parameterized position history",
@@ -3707,7 +3713,7 @@
           deepDiveStage("Certify collision freedom", "checkObstacleClearance",
             "Complete motion and protected obstacle histories",
             "Continuous collision decision",
-            `${checkDescription("CollisionFree", "The collision check")} Minimum clearance: ${displayNumber(validation.MinimumClearance_deg, 3, " deg")}. Unresolved intervals: ${finiteNumber(validation.UnresolvedIntervalCount) ? validation.UnresolvedIntervalCount : "—"}.`,
+            `${checkDescription("CollisionFree", "The collision check")} Minimum clearance: ${displayNumber(validation.MinimumClearance_units, 3, " deg")}. Unresolved intervals: ${finiteNumber(validation.UnresolvedIntervalCount) ? validation.UnresolvedIntervalCount : "—"}.`,
             "validation", "Validation › Collision", checkDecision("CollisionFree")),
           deepDiveStage("Return the final decision", "validateTrajectory",
             "All endpoint, kinematic, collision, and certificate checks",
@@ -3827,10 +3833,10 @@
         let description = stage.description;
         if (!state.walkthroughDeepDive && stage.view === "search") {
           const search = (state.diagnosis && state.diagnosis.Search) || {};
-          const searchCount = matrix(search.AcceptedEdges_deg, 4).length +
-            matrix(search.RejectedEdges_deg, 4).length +
-            matrix(search.ExploredNodes_deg, 2).length +
-            matrix(search.FrontierNodes_deg, 2).length;
+          const searchCount = matrix(search.AcceptedEdges_units, 4).length +
+            matrix(search.RejectedEdges_units, 4).length +
+            matrix(search.ExploredNodes_units, 2).length +
+            matrix(search.FrontierNodes_units, 2).length;
           if (searchCount === 0) {
             description = "No route-search trace was returned. A direct motion may have succeeded before route search was needed.";
           } else if (finiteNumber(search.ExpandedCount)) {
@@ -3841,7 +3847,7 @@
             state.diagnosis.AttemptedCount) ? state.diagnosis.AttemptedCount : 0;
           const validated = finiteNumber(state.diagnosis &&
             state.diagnosis.ValidatedCount) ? state.diagnosis.ValidatedCount : 0;
-          if (matrix(state.result.Route_deg, 2).length < 2) {
+          if (matrix(state.result.Route_units, 2).length < 2) {
             description = "No selected geometric route was returned, so no purple route is plotted.";
           }
           description += ` ${attempted} candidates were attempted and ${validated} passed validation.`;
@@ -3951,11 +3957,11 @@
         const margin = controls ? controls.defaultMargin : 0.2;
         state.obstacles.push({
           name: `Obstacle ${state.nextObstacleNumber}`,
-          vertices_deg: vertices.map((point) => point.slice()),
-          safetyMargin_deg: sourceObstacle ?
-            sourceObstacle.safetyMargin_deg : margin,
-          motionVelocity_deg_s: sourceObstacle ?
-            sourceObstacle.motionVelocity_deg_s.slice() : [0, 0],
+          vertices_units: vertices.map((point) => point.slice()),
+          safetyMargin_units: sourceObstacle ?
+            sourceObstacle.safetyMargin_units : margin,
+          motionVelocity_units_s: sourceObstacle ?
+            sourceObstacle.motionVelocity_units_s.slice() : [0, 0],
           motionProfile: sourceObstacle ?
             sourceObstacle.motionProfile : "stationary",
           finalRotation_deg: sourceObstacle ? (sourceObstacle.finalRotation_deg || 0) : 0,
@@ -4003,17 +4009,17 @@
       }
 
       function perpendicularDistance(point, first, second) {
-        const deltaAzimuth = second[0] - first[0];
-        const deltaElevation = second[1] - first[1];
-        const length = Math.hypot(deltaAzimuth, deltaElevation);
+        const deltaX = second[0] - first[0];
+        const deltaY = second[1] - first[1];
+        const length = Math.hypot(deltaX, deltaY);
         if (length <= Number.EPSILON) {
           return Math.hypot(point[0] - first[0], point[1] - first[1]);
         }
-        return Math.abs(deltaElevation * point[0] - deltaAzimuth * point[1] +
+        return Math.abs(deltaY * point[0] - deltaX * point[1] +
           second[0] * first[1] - second[1] * first[0]) / length;
       }
 
-      function simplifyPolyline(points, tolerance_deg) {
+      function simplifyPolyline(points, tolerance_units) {
         if (points.length < 3) {
           return points.slice();
         }
@@ -4027,39 +4033,39 @@
             splitIndex = index;
           }
         }
-        if (splitIndex < 0 || maximumDistance <= tolerance_deg) {
+        if (splitIndex < 0 || maximumDistance <= tolerance_units) {
           return [points[0], points[points.length - 1]];
         }
-        return simplifyPolyline(points.slice(0, splitIndex + 1), tolerance_deg)
+        return simplifyPolyline(points.slice(0, splitIndex + 1), tolerance_units)
           .slice(0, -1)
-          .concat(simplifyPolyline(points.slice(splitIndex), tolerance_deg));
+          .concat(simplifyPolyline(points.slice(splitIndex), tolerance_units));
       }
 
       function simplifyFreehand(points) {
-        let tolerance_deg = 1e-5;
+        let tolerance_units = 1e-5;
         let simplified = points;
-        while (simplified.length > FREEHAND_MAXIMUM_VERTICES && tolerance_deg < 360) {
-          simplified = simplifyPolyline(points, tolerance_deg);
-          tolerance_deg *= 1.8;
+        while (simplified.length > FREEHAND_MAXIMUM_VERTICES && tolerance_units < 360) {
+          simplified = simplifyPolyline(points, tolerance_units);
+          tolerance_units *= 1.8;
         }
         return simplified;
       }
 
-      function circleVertices(center, radius_deg) {
+      function circleVertices(center, radius_units) {
         return Array.from({ length: CIRCLE_VERTEX_COUNT }, (_, index) => {
           const angle = 2 * Math.PI * index / CIRCLE_VERTEX_COUNT;
-          return [center[0] + radius_deg * Math.cos(angle),
-            center[1] + radius_deg * Math.sin(angle)];
+          return [center[0] + radius_units * Math.cos(angle),
+            center[1] + radius_units * Math.sin(angle)];
         });
       }
 
       function updateOverlayControls(grid) {
-        const searchCount = matrix(grid.AcceptedEdges_deg, 4).length +
-          matrix(grid.RejectedEdges_deg, 4).length +
-          matrix(grid.ExploredNodes_deg, 2).length +
-          matrix(grid.FrontierNodes_deg, 2).length +
-          matrix(state.result.BestPartialRoute_deg, 2).length;
-        const seedCount = matrix(state.result.Route_deg, 2).length;
+        const searchCount = matrix(grid.AcceptedEdges_units, 4).length +
+          matrix(grid.RejectedEdges_units, 4).length +
+          matrix(grid.ExploredNodes_units, 2).length +
+          matrix(grid.FrontierNodes_units, 2).length +
+          matrix(state.result.BestPartialRoute_units, 2).length;
+        const seedCount = matrix(state.result.Route_units, 2).length;
         const searchToggle = element("searchOverlayToggle");
         const seedToggle = element("selectedSeedToggle");
         const noSearchMessage = "No route search was needed for this request.";
@@ -4332,8 +4338,8 @@
         const availableHeight = Math.max(100,
           height - margin.top - margin.bottom);
         const bounds = workspace();
-        const worldWidth = bounds.azimuth[1] - bounds.azimuth[0];
-        const worldHeight = bounds.elevation[1] - bounds.elevation[0];
+        const worldWidth = bounds.x[1] - bounds.x[0];
+        const worldHeight = bounds.y[1] - bounds.y[0];
         const worldAspect = worldWidth / worldHeight;
         let plotWidth = availableWidth;
         let plotHeight = availableHeight;
@@ -4354,10 +4360,10 @@
         const bounds = workspace();
         const rect = state.plotRect;
         return [
-          rect.left + (point[0] - bounds.azimuth[0]) /
-            (bounds.azimuth[1] - bounds.azimuth[0]) * rect.width,
-          rect.top + (bounds.elevation[1] - point[1]) /
-            (bounds.elevation[1] - bounds.elevation[0]) * rect.height
+          rect.left + (point[0] - bounds.x[0]) /
+            (bounds.x[1] - bounds.x[0]) * rect.width,
+          rect.top + (bounds.y[1] - point[1]) /
+            (bounds.y[1] - bounds.y[0]) * rect.height
         ];
       }
 
@@ -4365,10 +4371,10 @@
         const bounds = workspace();
         const rect = state.plotRect;
         return [
-          bounds.azimuth[0] + (screenPoint[0] - rect.left) / rect.width *
-            (bounds.azimuth[1] - bounds.azimuth[0]),
-          bounds.elevation[1] - (screenPoint[1] - rect.top) / rect.height *
-            (bounds.elevation[1] - bounds.elevation[0])
+          bounds.x[0] + (screenPoint[0] - rect.left) / rect.width *
+            (bounds.x[1] - bounds.x[0]),
+          bounds.y[1] - (screenPoint[1] - rect.top) / rect.height *
+            (bounds.y[1] - bounds.y[0])
         ];
       }
 
@@ -4393,14 +4399,14 @@
         context.fillRect(rect.left, rect.top, rect.width, rect.height);
         context.font = "11px ui-monospace, SFMono-Regular, Consolas, monospace";
         context.textBaseline = "middle";
-        const xStep = niceStep(bounds.azimuth[1] - bounds.azimuth[0], 9);
-        const yStep = niceStep(bounds.elevation[1] - bounds.elevation[0], 7);
-        const xStart = Math.ceil(bounds.azimuth[0] / xStep) * xStep;
-        const yStart = Math.ceil(bounds.elevation[0] / yStep) * yStep;
+        const xStep = niceStep(bounds.x[1] - bounds.x[0], 9);
+        const yStep = niceStep(bounds.y[1] - bounds.y[0], 7);
+        const xStart = Math.ceil(bounds.x[0] / xStep) * xStep;
+        const yStart = Math.ceil(bounds.y[0] / yStep) * yStep;
         context.lineWidth = 1;
         for (let value = xStart;
-          value <= bounds.azimuth[1] + xStep * 1e-8; value += xStep) {
-          const screen = worldToScreen([value, bounds.elevation[0]]);
+          value <= bounds.x[1] + xStep * 1e-8; value += xStep) {
+          const screen = worldToScreen([value, bounds.y[0]]);
           context.strokeStyle = Math.abs(value) < xStep * 1e-8 ?
             "rgba(95,120,150,0.48)" : "rgba(110,139,175,0.18)";
           context.beginPath();
@@ -4409,12 +4415,12 @@
           context.stroke();
           context.fillStyle = "#61728a";
           context.textAlign = "center";
-          context.fillText(`${formatTick(value)}°`, screen[0],
+          context.fillText(formatTick(value), screen[0],
             rect.top + rect.height + 18);
         }
         for (let value = yStart;
-          value <= bounds.elevation[1] + yStep * 1e-8; value += yStep) {
-          const screen = worldToScreen([bounds.azimuth[0], value]);
+          value <= bounds.y[1] + yStep * 1e-8; value += yStep) {
+          const screen = worldToScreen([bounds.x[0], value]);
           context.strokeStyle = Math.abs(value) < yStep * 1e-8 ?
             "rgba(95,120,150,0.48)" : "rgba(110,139,175,0.18)";
           context.beginPath();
@@ -4423,7 +4429,7 @@
           context.stroke();
           context.fillStyle = "#61728a";
           context.textAlign = "right";
-          context.fillText(`${formatTick(value)}°`, rect.left - 9, screen[1]);
+          context.fillText(formatTick(value), rect.left - 9, screen[1]);
         }
         context.strokeStyle = "#9aadc3";
         context.lineWidth = 1.2;
@@ -4431,12 +4437,12 @@
         context.fillStyle = "#455d79";
         context.font = "600 12px ui-sans-serif, system-ui, sans-serif";
         context.textAlign = "center";
-        context.fillText("Azimuth (deg)", rect.left + rect.width / 2,
+        context.fillText("X (units)", rect.left + rect.width / 2,
           height - 16);
         context.save();
         context.translate(17, rect.top + rect.height / 2);
         context.rotate(-Math.PI / 2);
-        context.fillText("Elevation (deg)", 0, 0);
+        context.fillText("Y (units)", 0, 0);
         context.restore();
         context.restore();
       }
@@ -4581,9 +4587,9 @@
           !walkthroughViewIs("request");
         state.responseObstacles.forEach((obstacle) => {
           const original = historyAtTime(obstacle,
-            "OriginalVerticesByTime_deg", state.currentTime_s);
+            "OriginalVerticesByTime_units", state.currentTime_s);
           const protectedVertices = historyAtTime(obstacle,
-            "ProtectedVerticesByTime_deg", state.currentTime_s);
+            "ProtectedVerticesByTime_units", state.currentTime_s);
           if (showOriginal) {
             splitRegions(original).forEach((region) => strokePath(region, {
               stroke: "#526780",
@@ -4651,24 +4657,24 @@
 
       function drawMotionVector(obstacle, displayedVertices, isSelected) {
         const hasMotion = obstacle.motionProfile !== "stationary" &&
-          Math.hypot(...obstacle.motionVelocity_deg_s) > 1e-12;
+          Math.hypot(...obstacle.motionVelocity_units_s) > 1e-12;
         if (!hasMotion) {
           return;
         }
         const center = centroid(displayedVertices);
         const end = motionVectorDisplayEnd(
-          center, obstacle.motionVelocity_deg_s
+          center, obstacle.motionVelocity_units_s
         );
         drawArrow(center, end, isSelected &&
           (state.mode === "select" || state.mode === "motion"));
-        const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
+        const speed_units_s = Math.hypot(...obstacle.motionVelocity_units_s);
         const endScreen = worldToScreen(end);
         context.save();
         context.fillStyle = "#178453";
         context.font = "650 11px ui-monospace, SFMono-Regular, Consolas, monospace";
         context.textAlign = "left";
         context.textBaseline = "bottom";
-        context.fillText(`${speed_deg_s.toFixed(3)} deg/s`,
+        context.fillText(`${speed_units_s.toFixed(3)} units/s`,
           endScreen[0] + 9, endScreen[1] - 7);
         context.restore();
       }
@@ -4692,13 +4698,13 @@
         // Show only the untraveled centroid path; retain the mission-end outline.
         const histories = state.obstacles.length ? state.obstacles.map((obstacle) =>
           buildObstacleKeyframes(obstacle, motionMissionTime())) :
-          state.responseObstacles.map((obstacle) => (obstacle.OriginalVerticesByTime_deg || [])
-            .map((vertices_deg, index) => ({ vertices_deg, time_s: (obstacle.time_s || [])[index] })));
+          state.responseObstacles.map((obstacle) => (obstacle.OriginalVerticesByTime_units || [])
+            .map((vertices_units, index) => ({ vertices_units, time_s: (obstacle.time_s || [])[index] })));
         histories.forEach((frames) => {
-          const history = frames.map((frame) => frame.vertices_deg);
+          const history = frames.map((frame) => frame.vertices_units);
           if (!history.length) return;
           const centers = frames.map((frame) => ({ time_s: frame.time_s,
-            vertices: splitRegions(frame.vertices_deg).flat() }))
+            vertices: splitRegions(frame.vertices_units).flat() }))
             .filter((frame) => frame.vertices.length && Number.isFinite(frame.time_s))
             .map((frame) => ({ time_s: frame.time_s, point: centroid(frame.vertices) }));
           const path = [];
@@ -4737,7 +4743,7 @@
             index === state.selectedObstacleIndex);
           if (!state.obstaclePreview && index === state.selectedObstacleIndex &&
               state.mode === "select" && state.currentTime_s === 0) {
-            drawVertexHandles(obstacle.vertices_deg);
+            drawVertexHandles(obstacle.vertices_units);
             drawOriginalTransformHandles(obstacle);
           }
         });
@@ -4756,38 +4762,64 @@
 
       function wrapPoint(point) {
         const controls = readControls(false);
-        if (!controls || !controls.allowWrapping) {
-          return point.slice();
-        }
-        const lower = controls.azimuthMin;
-        const period = controls.azimuthMax - controls.azimuthMin;
-        const wrappedAzimuth = lower +
-          ((point[0] - lower) % period + period) % period;
-        return [wrappedAzimuth, point[1]];
+        if (!controls) return point.slice();
+        const lower = [controls.xMin, controls.yMin];
+        const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
+        const flags = [controls.wrapX, controls.wrapY];
+        return point.map((value, axis) => flags[axis]
+          ? lower[axis] + ((value - lower[axis]) % periods[axis] + periods[axis]) % periods[axis]
+          : value);
+      }
+
+      function nearestWrappedGoal(start, goal) {
+        const controls = readControls(false);
+        if (!controls) return goal.slice();
+        const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
+        const flags = [controls.wrapX, controls.wrapY];
+        return goal.map((value, axis) => {
+          if (!flags[axis]) return value;
+          const turns = (start[axis] - value) / periods[axis];
+            return value + periods[axis] * Math.floor(turns + 0.5);
+        });
       }
 
       function wrappedSegments(points) {
-        if (!points.length) {
-          return [];
-        }
+        if (!points.length) return [];
         const controls = readControls(false);
-        if (!controls || !controls.allowWrapping) {
-          return [points];
-        }
-        const period = controls.azimuthMax - controls.azimuthMin;
-        const segments = [];
-        let current = [wrapPoint(points[0])];
+        if (!controls || (!controls.wrapX && !controls.wrapY)) return [points];
+        const lower = [controls.xMin, controls.yMin];
+        const periods = [controls.xMax - controls.xMin, controls.yMax - controls.yMin];
+        const flags = [controls.wrapX, controls.wrapY];
+        const segments = [[wrapPoint(points[0])]];
         for (let index = 1; index < points.length; index += 1) {
-          const wrapped = wrapPoint(points[index]);
-          if (Math.abs(wrapped[0] - current[current.length - 1][0]) >
-              period / 2) {
-            segments.push(current);
-            current = [wrapped];
-          } else {
-            current.push(wrapped);
+          const start = points[index - 1];
+          const step = points[index].map((value, axis) => value - start[axis]);
+          const fractions = [0, 1];
+          for (let axis = 0; axis < 2; axis += 1) {
+            if (!flags[axis] || step[axis] === 0) continue;
+            const a = (start[axis] - lower[axis]) / periods[axis];
+            const b = (points[index][axis] - lower[axis]) / periods[axis];
+            for (let seam = Math.ceil(Math.min(a, b)); seam <= Math.floor(Math.max(a, b)); seam += 1) {
+              const fraction = (lower[axis] + periods[axis] * seam - start[axis]) / step[axis];
+              if (fraction > 0 && fraction < 1) fractions.push(fraction);
+            }
+          }
+          const cuts = [...new Set(fractions)].sort((a, b) => a - b);
+          for (let piece = 0; piece + 1 < cuts.length; piece += 1) {
+            const middle = (cuts[piece] + cuts[piece + 1]) / 2;
+            const shift = start.map((value, axis) => flags[axis]
+              ? Math.floor((value + middle * step[axis] - lower[axis]) / periods[axis]) * periods[axis]
+              : 0);
+            const endpoints = [cuts[piece], cuts[piece + 1]].map(fraction =>
+              start.map((value, axis) => value + fraction * step[axis] - shift[axis]));
+            let current = segments[segments.length - 1];
+            if (current[current.length - 1].some((value, axis) => value !== endpoints[0][axis])) {
+              current = [endpoints[0]];
+              segments.push(current);
+            }
+            current.push(endpoints[1]);
           }
         }
-        segments.push(current);
         return segments;
       }
 
@@ -4798,7 +4830,7 @@
         }
         const diagnostics = state.diagnosis || {};
         const grid = diagnostics.Search || {};
-        matrix(grid.AcceptedEdges_deg, 4).forEach((edge) => {
+        matrix(grid.AcceptedEdges_units, 4).forEach((edge) => {
           if (edge.every(finiteNumber)) {
             strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
               stroke: "#4b7891", width: 0.8, alpha: 0.48
@@ -4806,7 +4838,7 @@
           }
         });
         const activeStage = state.walkthroughActive ? walkthroughStage() : null;
-        matrix(grid.RejectedEdges_deg, 4)
+        matrix(grid.RejectedEdges_units, 4)
           .filter((edge) => edge.every(finiteNumber))
           .forEach((edge, index) => {
           const isFocused = activeStage &&
@@ -4821,11 +4853,11 @@
             drawPoint([edge[2], edge[3]], "#d44359", "TO");
           }
         });
-        drawDiagnosticNodes(matrix(grid.ExploredNodes_deg, 2),
+        drawDiagnosticNodes(matrix(grid.ExploredNodes_units, 2),
           "rgba(106,169,255,0.55)", 2);
-        drawDiagnosticNodes(matrix(grid.FrontierNodes_deg, 2),
+        drawDiagnosticNodes(matrix(grid.FrontierNodes_units, 2),
           "rgba(255,189,105,0.85)", 3);
-        const partial = matrix(state.result.BestPartialRoute_deg, 2)
+        const partial = matrix(state.result.BestPartialRoute_units, 2)
           .filter((point) => point.every(finiteNumber));
         if (partial.length > 1) {
           strokePath(partial, {
@@ -4839,7 +4871,7 @@
         if (!state.result || (!state.showSelectedSeed && !showForWalkthrough)) {
           return;
         }
-        const seed = matrix(state.result.Route_deg, 2)
+        const seed = matrix(state.result.Route_units, 2)
           .filter((point) => point.every(finiteNumber));
         if (seed.length >= 2) {
           wrappedSegments(seed).forEach((segment) => strokePath(segment, {
@@ -4869,7 +4901,7 @@
         }
         return {
           times: numericArray(state.result.time_s),
-          positions: matrix(state.result.position_deg, 2)
+          positions: matrix(state.result.position_units, 2)
             .filter((point) => point.every(finiteNumber))
         };
       }
@@ -4894,9 +4926,9 @@
         const limits = state.result && state.result.Inputs &&
           state.result.Inputs.limits || {};
         const limitFields = {
-          velocity_deg_s: "maxVelocity_deg_s",
-          acceleration_deg_s2: "maxAcceleration_deg_s2",
-          jerk_deg_s3: "maxJerk_deg_s3"
+          velocity_units_s: "maxVelocity_units_s",
+          acceleration_units_s2: "maxAcceleration_units_s2",
+          jerk_units_s3: "maxJerk_units_s3"
         };
         return numericArray(limits[limitFields[fieldName]]).slice(0, 2);
       }
@@ -5018,9 +5050,9 @@
 
       function drawKinematicCharts() {
         const chartDefinitions = [
-          [kinematicCharts.velocity, "velocity_deg_s", "deg/s"],
-          [kinematicCharts.acceleration, "acceleration_deg_s2", "deg/s²"],
-          [kinematicCharts.jerk, "jerk_deg_s3", "deg/s³"]
+          [kinematicCharts.velocity, "velocity_units_s", "units/s"],
+          [kinematicCharts.acceleration, "acceleration_units_s2", "units/s²"],
+          [kinematicCharts.jerk, "jerk_units_s3", "units/s³"]
         ];
         const hasKinematics = chartDefinitions.some((definition) =>
           kinematicHistory(definition[1]).length >= 2
@@ -5164,7 +5196,7 @@
         }
         if (state.circlePreview) {
           const vertices = circleVertices(state.circlePreview.center,
-            state.circlePreview.radius_deg);
+            state.circlePreview.radius_units);
           strokePath(vertices, {
             stroke: "#087f8c", width: 1.7, dash: [6, 4],
             fill: "rgba(118,229,235,0.08)", close: true
@@ -5232,7 +5264,7 @@
           walkthroughViewIs("request", "protected");
         if (!state.obstaclePreview && showRequestedLine &&
             state.start && state.goal) {
-          wrappedSegments([state.start, state.goal]).forEach((segment) =>
+          wrappedSegments([state.start, nearestWrappedGoal(state.start, state.goal)]).forEach((segment) =>
             strokePath(segment, {
               stroke: "#4279cc", width: 1.1, dash: [7, 6], alpha: 0.62
             })
@@ -5266,20 +5298,20 @@
           obstacleActionMenu.hidden = true;
           return;
         }
-        const vertices_deg = obstacleVerticesAtCurrentTime(selected);
+        const vertices_units = obstacleVerticesAtCurrentTime(selected);
         const bounds = workspace();
-        const azimuth_deg = vertices_deg.map((point_deg) => point_deg[0]);
-        const elevation_deg = vertices_deg.map((point_deg) => point_deg[1]);
-        const overlapsWorkspace = Math.max(...azimuth_deg) >= bounds.azimuth[0] &&
-          Math.min(...azimuth_deg) <= bounds.azimuth[1] &&
-          Math.max(...elevation_deg) >= bounds.elevation[0] &&
-          Math.min(...elevation_deg) <= bounds.elevation[1];
+        const x_units = vertices_units.map((point_units) => point_units[0]);
+        const y_units = vertices_units.map((point_units) => point_units[1]);
+        const overlapsWorkspace = Math.max(...x_units) >= bounds.x[0] &&
+          Math.min(...x_units) <= bounds.x[1] &&
+          Math.max(...y_units) >= bounds.y[0] &&
+          Math.min(...y_units) <= bounds.y[1];
         if (!overlapsWorkspace) {
           obstacleActionMenu.hidden = true;
           return;
         }
         obstacleActionMenu.hidden = false;
-        const center = worldToScreen(centroid(vertices_deg));
+        const center = worldToScreen(centroid(vertices_units));
         const halfWidth = obstacleActionMenu.offsetWidth / 2;
         const menuHeight = obstacleActionMenu.offsetHeight;
         const inset = 8;
@@ -5295,17 +5327,17 @@
 
       function updateCoordinateReadout(point) {
         if (!point || !pointInsideWorkspace(point)) {
-          coordinateReadout.textContent = "Az —° · El —°";
+          coordinateReadout.textContent = "X — · Y — (units)";
           return;
         }
         coordinateReadout.textContent =
-          `Az ${point[0].toFixed(3)}° · El ${point[1].toFixed(3)}°`;
+          `X ${point[0].toFixed(3)} · Y ${point[1].toFixed(3)} (units)`;
       }
 
       function clampToWorkspace(point) {
         const bounds = workspace();
-        return [Math.max(bounds.azimuth[0], Math.min(bounds.azimuth[1], point[0])),
-          Math.max(bounds.elevation[0], Math.min(bounds.elevation[1], point[1]))];
+        return [Math.max(bounds.x[0], Math.min(bounds.x[1], point[0])),
+          Math.max(bounds.y[0], Math.min(bounds.y[1], point[1]))];
       }
 
       function screenDistance(point, screenPoint) {
@@ -5316,12 +5348,12 @@
       function selectedMotionHandle() {
         const selected = state.obstacles[state.selectedObstacleIndex];
         if (!selected || selected.motionProfile === "stationary" ||
-            Math.hypot(...selected.motionVelocity_deg_s) <= 1e-12) {
+            Math.hypot(...selected.motionVelocity_units_s) <= 1e-12) {
           return null;
         }
         const center = selectedMotionCenter();
         return motionVectorDisplayEnd(
-          center, selected.motionVelocity_deg_s
+          center, selected.motionVelocity_units_s
         );
       }
 
@@ -5336,8 +5368,8 @@
       function originalTransformGeometry(obstacle) {
         // Reuse the handle geometry with the initial shape as the target pose.
         const initial = { ...obstacle, finalRotation_deg: 0, finalScale: [1, 1],
-          motionProfile: "stationary", motionVelocity_deg_s: [0, 0] };
-        const center = centroid(obstacle.vertices_deg);
+          motionProfile: "stationary", motionVelocity_units_s: [0, 0] };
+        const center = centroid(obstacle.vertices_units);
         let rotation = finalPoseRotationHandle(initial);
         if (state.activeDrag && state.activeDrag.type === "originalRotate" &&
             state.obstacles[state.activeDrag.obstacleIndex] === obstacle) {
@@ -5381,7 +5413,7 @@
         }
         for (let obstacleIndex = state.obstacles.length - 1;
           obstacleIndex >= 0; obstacleIndex -= 1) {
-          const vertices = state.obstacles[obstacleIndex].vertices_deg;
+          const vertices = state.obstacles[obstacleIndex].vertices_units;
           for (let vertexIndex = 0; vertexIndex < vertices.length; vertexIndex += 1) {
             if (screenDistance(vertices[vertexIndex], screenPoint) <= HANDLE_RADIUS_PX) {
               return { type: "vertex", obstacleIndex, vertexIndex };
@@ -5396,7 +5428,7 @@
         }
         for (let obstacleIndex = state.obstacles.length - 1;
           obstacleIndex >= 0; obstacleIndex -= 1) {
-          if (pointInPolygon(point, state.obstacles[obstacleIndex].vertices_deg)) {
+          if (pointInPolygon(point, state.obstacles[obstacleIndex].vertices_units)) {
             return { type: "obstacle", obstacleIndex };
           }
         }
@@ -5407,29 +5439,29 @@
         const drag = { ...target, pointerId, startPoint: point.slice(), wasClamped: false };
         if (target.type === "originalStretch" || target.type === "originalRotate") {
           const obstacle = state.obstacles[target.obstacleIndex];
-          drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
-          drag.center = centroid(obstacle.vertices_deg);
+          drag.originalVertices = obstacle.vertices_units.map((vertex) => vertex.slice());
+          drag.center = centroid(obstacle.vertices_units);
           drag.lastAngle = Math.atan2(point[1] - drag.center[1], point[0] - drag.center[0]);
           drag.turn = 0;
         } else if (target.type === "vertex" || target.type === "obstacle") {
           const obstacle = state.obstacles[target.obstacleIndex];
-          drag.originalVertices = obstacle.vertices_deg.map((vertex) => vertex.slice());
+          drag.originalVertices = obstacle.vertices_units.map((vertex) => vertex.slice());
           if (target.type === "obstacle") {
-            const azimuthValues = obstacle.vertices_deg.map((vertex) => vertex[0]);
-            const elevationValues = obstacle.vertices_deg.map((vertex) => vertex[1]);
+            const xValues = obstacle.vertices_units.map((vertex) => vertex[0]);
+            const yValues = obstacle.vertices_units.map((vertex) => vertex[1]);
             const bounds = workspace();
             drag.offsetBounds = {
-              azimuth: [bounds.azimuth[0] - Math.min(...azimuthValues),
-                bounds.azimuth[1] - Math.max(...azimuthValues)],
-              elevation: [bounds.elevation[0] - Math.min(...elevationValues),
-                bounds.elevation[1] - Math.max(...elevationValues)]
+              x: [bounds.x[0] - Math.min(...xValues),
+                bounds.x[1] - Math.max(...xValues)],
+              y: [bounds.y[0] - Math.min(...yValues),
+                bounds.y[1] - Math.max(...yValues)]
             };
           }
         } else if (target.type === "motion") {
           const obstacle = state.obstacles[target.obstacleIndex];
-          drag.originalVelocity_deg_s = obstacle.motionVelocity_deg_s.slice();
+          drag.originalVelocity_units_s = obstacle.motionVelocity_units_s.slice();
           drag.originalProfile = obstacle.motionProfile;
-          drag.origin_deg = selectedMotionCenter();
+          drag.origin_units = selectedMotionCenter();
         }
         state.activeDrag = drag;
         if (target.obstacleIndex !== undefined) {
@@ -5448,8 +5480,8 @@
       }
 
       function updateMotionInputs(vector) {
-        element("motionAzimuth").value = vector[0].toFixed(3);
-        element("motionElevation").value = vector[1].toFixed(3);
+        element("motionX").value = vector[0].toFixed(3);
+        element("motionY").value = vector[1].toFixed(3);
         updateMotionSpeedReadout(vector);
       }
 
@@ -5466,111 +5498,111 @@
         const selected = state.obstacles[state.selectedObstacleIndex];
         if (!selected || state.isPlanning || state.importedSceneIsReadOnly) return;
         const speed = numberFromInput("obstacleSpeedSlider");
-        if (!Number.isFinite(speed) || speed < 0 || speed > MAXIMUM_OBSTACLE_SPEED_DEG_S) return;
-        const previousSpeed = Math.hypot(...selected.motionVelocity_deg_s);
-        // Retain the direction through zero speed. New motion defaults to +Az.
+        if (!Number.isFinite(speed) || speed < 0 || speed > MAXIMUM_OBSTACLE_SPEED_UNITS_S) return;
+        const previousSpeed = Math.hypot(...selected.motionVelocity_units_s);
+        // Retain the direction through zero speed. New motion defaults to +X.
         const direction = previousSpeed > 1e-12 ?
-          selected.motionVelocity_deg_s.map((value) => value / previousSpeed) :
+          selected.motionVelocity_units_s.map((value) => value / previousSpeed) :
           (selected.motionDirection || [1, 0]);
         selected.motionDirection = direction.slice();
-        selected.motionVelocity_deg_s = direction.map((value) => value * speed);
+        selected.motionVelocity_units_s = direction.map((value) => value * speed);
         if (speed > 0 && selected.motionProfile === "stationary") {
           selected.motionProfile = "nonzeroVelocity";
         }
         stopPlayback();
         invalidateResult("Obstacle speed changed.");
         renderObstacleEditor();
-        updateMotionInputs(selected.motionVelocity_deg_s);
+        updateMotionInputs(selected.motionVelocity_units_s);
         if (state.mode === "motion") syncFinalPoseControls();
         draw();
       }
 
       function updateMotionSpeedReadout(vector) {
-        const speed_deg_s = Math.hypot(...vector);
-        element("motionSpeedReadout").textContent = `${speed_deg_s.toFixed(3)} deg/s`;
-        element("obstacleSpeedSlider").value = String(speed_deg_s);
+        const speed_units_s = Math.hypot(...vector);
+        element("motionSpeedReadout").textContent = `${speed_units_s.toFixed(3)} units/s`;
+        element("obstacleSpeedSlider").value = String(speed_units_s);
       }
 
-      function limitMotionVelocity(vector_deg_s) {
-        const speed_deg_s = Math.hypot(...vector_deg_s);
-        if (speed_deg_s <= MAXIMUM_OBSTACLE_SPEED_DEG_S ||
-            speed_deg_s <= Number.EPSILON) {
-          return vector_deg_s.slice();
+      function limitMotionVelocity(vector_units_s) {
+        const speed_units_s = Math.hypot(...vector_units_s);
+        if (speed_units_s <= MAXIMUM_OBSTACLE_SPEED_UNITS_S ||
+            speed_units_s <= Number.EPSILON) {
+          return vector_units_s.slice();
         }
-        const scale = MAXIMUM_OBSTACLE_SPEED_DEG_S / speed_deg_s;
-        return vector_deg_s.map((component_deg_s) =>
-          component_deg_s * scale
+        const scale = MAXIMUM_OBSTACLE_SPEED_UNITS_S / speed_units_s;
+        return vector_units_s.map((component_units_s) =>
+          component_units_s * scale
         );
       }
 
-      function distanceToWorkspaceBoundary(origin_deg, direction) {
+      function distanceToWorkspaceBoundary(origin_units, direction) {
         const bounds = workspace();
-        const distances_deg = [];
+        const distances_units = [];
         if (direction[0] > 1e-12) {
-          distances_deg.push(
-            (bounds.azimuth[1] - origin_deg[0]) / direction[0]
+          distances_units.push(
+            (bounds.x[1] - origin_units[0]) / direction[0]
           );
         } else if (direction[0] < -1e-12) {
-          distances_deg.push(
-            (bounds.azimuth[0] - origin_deg[0]) / direction[0]
+          distances_units.push(
+            (bounds.x[0] - origin_units[0]) / direction[0]
           );
         }
         if (direction[1] > 1e-12) {
-          distances_deg.push(
-            (bounds.elevation[1] - origin_deg[1]) / direction[1]
+          distances_units.push(
+            (bounds.y[1] - origin_units[1]) / direction[1]
           );
         } else if (direction[1] < -1e-12) {
-          distances_deg.push(
-            (bounds.elevation[0] - origin_deg[1]) / direction[1]
+          distances_units.push(
+            (bounds.y[0] - origin_units[1]) / direction[1]
           );
         }
-        const positiveDistances_deg = distances_deg.filter(
-          (distance_deg) => Number.isFinite(distance_deg) &&
-            distance_deg >= 0
+        const positiveDistances_units = distances_units.filter(
+          (distance_units) => Number.isFinite(distance_units) &&
+            distance_units >= 0
         );
-        return positiveDistances_deg.length > 0 ?
-          Math.min(...positiveDistances_deg) : 0;
+        return positiveDistances_units.length > 0 ?
+          Math.min(...positiveDistances_units) : 0;
       }
 
-      function motionVelocityFromDrag(origin_deg, point_deg) {
-        const delta_deg = [point_deg[0] - origin_deg[0],
-          point_deg[1] - origin_deg[1]];
-        const distance_deg = Math.hypot(...delta_deg);
-        if (distance_deg <= Number.EPSILON) {
+      function motionVelocityFromDrag(origin_units, point_units) {
+        const delta_units = [point_units[0] - origin_units[0],
+          point_units[1] - origin_units[1]];
+        const distance_units = Math.hypot(...delta_units);
+        if (distance_units <= Number.EPSILON) {
           return [0, 0];
         }
-        const direction = delta_deg.map((value_deg) =>
-          value_deg / distance_deg
+        const direction = delta_units.map((value_units) =>
+          value_units / distance_units
         );
-        const boundaryDistance_deg = distanceToWorkspaceBoundary(
-          origin_deg, direction
+        const boundaryDistance_units = distanceToWorkspaceBoundary(
+          origin_units, direction
         );
-        if (boundaryDistance_deg <= Number.EPSILON) {
+        if (boundaryDistance_units <= Number.EPSILON) {
           return [0, 0];
         }
-        const speed_deg_s = MAXIMUM_OBSTACLE_SPEED_DEG_S *
-          Math.min(1, distance_deg / boundaryDistance_deg);
-        return direction.map((component) => component * speed_deg_s);
+        const speed_units_s = MAXIMUM_OBSTACLE_SPEED_UNITS_S *
+          Math.min(1, distance_units / boundaryDistance_units);
+        return direction.map((component) => component * speed_units_s);
       }
 
-      function motionVectorDisplayEnd(center_deg, velocity_deg_s) {
-        const speed_deg_s = Math.hypot(...velocity_deg_s);
-        if (speed_deg_s <= Number.EPSILON) {
-          return center_deg.slice();
+      function motionVectorDisplayEnd(center_units, velocity_units_s) {
+        const speed_units_s = Math.hypot(...velocity_units_s);
+        if (speed_units_s <= Number.EPSILON) {
+          return center_units.slice();
         }
-        const direction = velocity_deg_s.map((component_deg_s) =>
-          component_deg_s / speed_deg_s
+        const direction = velocity_units_s.map((component_units_s) =>
+          component_units_s / speed_units_s
         );
-        const boundaryDistance_deg = distanceToWorkspaceBoundary(
-          center_deg, direction
+        const boundaryDistance_units = distanceToWorkspaceBoundary(
+          center_units, direction
         );
-        if (boundaryDistance_deg <= Number.EPSILON) {
-          return center_deg.slice();
+        if (boundaryDistance_units <= Number.EPSILON) {
+          return center_units.slice();
         }
-        const displayDistance_deg = boundaryDistance_deg *
-          Math.min(1, speed_deg_s / MAXIMUM_OBSTACLE_SPEED_DEG_S);
+        const displayDistance_units = boundaryDistance_units *
+          Math.min(1, speed_units_s / MAXIMUM_OBSTACLE_SPEED_UNITS_S);
         return direction.map((component, axisIndex) =>
-          center_deg[axisIndex] + component * displayDistance_deg
+          center_units[axisIndex] + component * displayDistance_units
         );
       }
 
@@ -5603,7 +5635,7 @@
             setStatus("Keep the resized or rotated obstacle inside the workspace.", "warning");
             return;
           }
-          state.obstacles[drag.obstacleIndex].vertices_deg = vertices;
+          state.obstacles[drag.obstacleIndex].vertices_units = vertices;
           markDragChanged(drag, point);
           draw();
           return;
@@ -5614,14 +5646,14 @@
           return;
         }
         if (drag.type === "circle") {
-          const maximumRadius = Math.min(drag.center[0] - workspace().azimuth[0],
-            workspace().azimuth[1] - drag.center[0],
-            drag.center[1] - workspace().elevation[0],
-            workspace().elevation[1] - drag.center[1]);
-          const radius_deg = Math.min(maximumRadius,
+          const maximumRadius = Math.min(drag.center[0] - workspace().x[0],
+            workspace().x[1] - drag.center[0],
+            drag.center[1] - workspace().y[0],
+            workspace().y[1] - drag.center[1]);
+          const radius_units = Math.min(maximumRadius,
             Math.hypot(point[0] - drag.center[0], point[1] - drag.center[1]));
-          state.circlePreview = { center: drag.center, radius_deg };
-          coordinateReadout.textContent = `Radius ${radius_deg.toFixed(3)} deg`;
+          state.circlePreview = { center: drag.center, radius_units };
+          coordinateReadout.textContent = `Radius ${radius_units.toFixed(3)} deg`;
           draw();
           return;
         }
@@ -5674,21 +5706,21 @@
             drag.didChange = true;
             invalidateResult("Obstacle final pose changed.");
             syncFinalPoseControls();
-            updateMotionInputs(obstacle.motionVelocity_deg_s);
+            updateMotionInputs(obstacle.motionVelocity_units_s);
           }
           draw();
           return;
         }
         if (drag.type === "motion") {
           const obstacle = state.obstacles[drag.obstacleIndex];
-          const center = drag.origin_deg;
+          const center = drag.origin_units;
           markDragChanged(drag, point);
-          obstacle.motionVelocity_deg_s = motionVelocityFromDrag(
+          obstacle.motionVelocity_units_s = motionVelocityFromDrag(
             center, point
           );
-          updateMotionInputs(obstacle.motionVelocity_deg_s);
-          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
-          coordinateReadout.textContent = `Speed ${speed_deg_s.toFixed(3)} deg/s`;
+          updateMotionInputs(obstacle.motionVelocity_units_s);
+          const speed_units_s = Math.hypot(...obstacle.motionVelocity_units_s);
+          coordinateReadout.textContent = `Speed ${speed_units_s.toFixed(3)} units/s`;
           draw();
           return;
         }
@@ -5699,16 +5731,16 @@
           state[drag.type] = clamped;
           writeEndpointInputs();
         } else if (drag.type === "vertex") {
-          state.obstacles[drag.obstacleIndex].vertices_deg[drag.vertexIndex] = clamped;
+          state.obstacles[drag.obstacleIndex].vertices_units[drag.vertexIndex] = clamped;
         } else if (drag.type === "obstacle") {
           const requestedOffset = [clamped[0] - drag.startPoint[0],
             clamped[1] - drag.startPoint[1]];
-          const offset = [Math.max(drag.offsetBounds.azimuth[0],
-            Math.min(drag.offsetBounds.azimuth[1], requestedOffset[0])),
-          Math.max(drag.offsetBounds.elevation[0],
-            Math.min(drag.offsetBounds.elevation[1], requestedOffset[1]))];
+          const offset = [Math.max(drag.offsetBounds.x[0],
+            Math.min(drag.offsetBounds.x[1], requestedOffset[0])),
+          Math.max(drag.offsetBounds.y[0],
+            Math.min(drag.offsetBounds.y[1], requestedOffset[1]))];
           drag.wasClamped ||= !pointsClose(requestedOffset, offset);
-          state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices
+          state.obstacles[drag.obstacleIndex].vertices_units = drag.originalVertices
             .map((vertex) => [vertex[0] + offset[0], vertex[1] + offset[1]]);
           clamped = [drag.startPoint[0] + offset[0], drag.startPoint[1] + offset[1]];
         }
@@ -5736,14 +5768,14 @@
         } else if (drag.type === "circle") {
           const preview = state.circlePreview;
           state.circlePreview = null;
-          if (!preview || preview.radius_deg <= 1e-6) {
+          if (!preview || preview.radius_units <= 1e-6) {
             setStatus("Circle radius must be greater than zero.", "warning");
           } else {
-            addObstacle(circleVertices(preview.center, preview.radius_deg));
+            addObstacle(circleVertices(preview.center, preview.radius_units));
             invalidateResult("Obstacle geometry changed.");
             renderObstacleEditor();
             activateMode("select");
-            setStatus(`24-vertex circle added (radius ${preview.radius_deg.toFixed(3)} deg).`,
+            setStatus(`24-vertex circle added (radius ${preview.radius_units.toFixed(3)} units).`,
               "success");
           }
         } else if (drag.type === "freehand") {
@@ -5762,9 +5794,9 @@
             setStatus(`Freehand polygon added with ${vertices.length} vertices.`, "success");
           }
         } else if (drag.type === "vertex") {
-          const vertices = state.obstacles[drag.obstacleIndex].vertices_deg;
+          const vertices = state.obstacles[drag.obstacleIndex].vertices_units;
           if (polygonArea(vertices) <= 1e-10) {
-            state.obstacles[drag.obstacleIndex].vertices_deg = drag.originalVertices;
+            state.obstacles[drag.obstacleIndex].vertices_units = drag.originalVertices;
             setStatus("The polygon has no enclosed area. Vertex move was refused.", "error");
           } else if (drag.wasClamped) {
             setStatus("Move stopped at the workspace boundary.", "warning");
@@ -5775,9 +5807,9 @@
           setStatus("Polygon move stopped at the workspace boundary.", "warning");
         } else if (drag.type === "motion") {
           const obstacle = state.obstacles[drag.obstacleIndex];
-          const speed_deg_s = Math.hypot(...obstacle.motionVelocity_deg_s);
-          if (speed_deg_s <= 1e-9) {
-            obstacle.motionVelocity_deg_s = drag.originalVelocity_deg_s.slice();
+          const speed_units_s = Math.hypot(...obstacle.motionVelocity_units_s);
+          if (speed_units_s <= 1e-9) {
+            obstacle.motionVelocity_units_s = drag.originalVelocity_units_s.slice();
             obstacle.motionProfile = drag.originalProfile;
             setStatus("The motion vector must have nonzero speed.", "warning");
           } else {
@@ -5785,7 +5817,7 @@
               obstacle.motionProfile = "nonzeroVelocity";
             }
             setStatus(
-              `${obstacle.name} speed set to ${speed_deg_s.toFixed(3)} deg/s.`,
+              `${obstacle.name} speed set to ${speed_units_s.toFixed(3)} units/s.`,
               "success"
             );
           }
@@ -5880,7 +5912,7 @@
         } else if (state.mode === "circle") {
           state.activeDrag = { type: "circle", pointerId: event.pointerId,
             center: point.slice() };
-          state.circlePreview = { center: point.slice(), radius_deg: 0 };
+          state.circlePreview = { center: point.slice(), radius_units: 0 };
           canvas.setPointerCapture(event.pointerId);
         } else if (state.mode === "freehand") {
           state.activeDrag = { type: "freehand", pointerId: event.pointerId };
@@ -5913,9 +5945,9 @@
             pointerId: event.pointerId,
             startPoint: point.slice(),
             grabOffset: center.map((value, axis) => value - point[axis]),
-            originalVelocity_deg_s: obstacle.motionVelocity_deg_s.slice(),
+            originalVelocity_units_s: obstacle.motionVelocity_units_s.slice(),
             originalProfile: obstacle.motionProfile,
-            origin_deg: center,
+            origin_units: center,
             startedBySetMotion: true,
             wasClamped: false
           };
@@ -5964,8 +5996,8 @@
           }
         });
         state.lastValidWorkspace = {
-          azimuth: [defaultControls.azimuthMin, defaultControls.azimuthMax],
-          elevation: [defaultControls.elevationMin, defaultControls.elevationMax]
+          x: [defaultControls.xMin, defaultControls.xMax],
+          y: [defaultControls.yMin, defaultControls.yMax]
         };
         updatePlanningControls();
         writeEndpointInputs();
@@ -6001,9 +6033,9 @@
         const sandboxFolder = discoveredFolder.replace(/"/g, '""');
         return `addpath("${sandboxFolder}");\n` +
           "requestFile = fullfile(getenv(\"USERPROFILE\"), " +
-          "\"Downloads\", \"az-el-request.json\");\n" +
+          "\"Downloads\", \"x-y-request.json\");\n" +
           "resultFile = fullfile(getenv(\"USERPROFILE\"), " +
-          "\"Downloads\", \"az-el-result.json\");\n" +
+          "\"Downloads\", \"x-y-result.json\");\n" +
           "offlineSandbox.runPlanningRequest(requestFile, resultFile);";
       }
 
@@ -6053,7 +6085,7 @@
         rotateSelectedObstacle);
       element("setMotionButton").addEventListener("click",
         activateMotionDrawing);
-      ["finalPoseAzimuth", "finalPoseElevation", "finalPoseRotation", "finalPoseScaleX", "finalPoseScaleY"].forEach((id) =>
+      ["finalPoseX", "finalPoseY", "finalPoseRotation", "finalPoseScaleX", "finalPoseScaleY"].forEach((id) =>
         element(id).addEventListener("change", applyFinalPoseControls));
       element("finishMotionButton").addEventListener("click", finishMotionEditing);
       element("previewPoseButton").addEventListener("click", previewObstacleMotion);
@@ -6064,13 +6096,13 @@
           selected.finalRotation_deg = 0;
           selected.finalScale = [1, 1];
         }
-        element("motionAzimuth").value = 0;
-        element("motionElevation").value = 0;
+        element("motionX").value = 0;
+        element("motionY").value = 0;
         element("motionProfile").value = "stationary";
         updateSelectedObstacle();
       });
       element("obstacleSpeedSlider").addEventListener("input", updateObstacleSpeed);
-      ["selectedMargin", "motionProfile", "motionAzimuth", "motionElevation"]
+      ["selectedMargin", "motionProfile", "motionX", "motionY"]
         .forEach((id) => element(id).addEventListener("change",
           updateSelectedObstacle));
       controlIds.forEach((id) => {

@@ -15,7 +15,7 @@ function tests = testPlannerContract
 %       Deterministic public success, failure, validation, and diagnostic tests.
 %**************************************************************************
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s powers.
+%   - Position is coordinate units; time is seconds; derivatives use units/s powers.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -30,9 +30,9 @@ function testPlanningSceneOwnsPreparedHistoriesAndHorizon(testCase)
     % Expose prepared obstacle details and one shared horizon classification.
     obstacleTime_s  = [0; 10];
     staticObstacle  = obstacleAvoidance.obstacles.createObstacle("static", obstacleTime_s, [-1 1 1 -1], [-1 -1 1 1], 0.1);
-    movingStart_deg = [4 -1; 6 -1; 6 1; 4 1];
-    movingEnd_deg   = movingStart_deg + [1 0];
-    movingObstacle  = obstacleAvoidance.obstacles.createObstacle("moving", obstacleTime_s, {movingStart_deg(:, 1); movingEnd_deg(:, 1)}, {movingStart_deg(:, 2); movingEnd_deg(:, 2)}, 0.1);
+    movingStart_units = [4 -1; 6 -1; 6 1; 4 1];
+    movingEnd_units   = movingStart_units + [1 0];
+    movingObstacle  = obstacleAvoidance.obstacles.createObstacle("moving", obstacleTime_s, {movingStart_units(:, 1); movingEnd_units(:, 1)}, {movingStart_units(:, 2); movingEnd_units(:, 2)}, 0.1);
     request         = struct("obstacles", obstacleAvoidance.obstacles.combineObstacles(staticObstacle, movingObstacle), ...
         "initialState", restState(0, [-4 0]), ...
         "goalState", restState(10, [8 0]), ...
@@ -50,34 +50,34 @@ function testPlanningSceneOwnsPreparedHistoriesAndHorizon(testCase)
     verifyFalse(testCase, scene.preparedObstacles(2).InternalPreparation.IsTimeInvariant);
     verifyEqual(testCase, scene.preparedObstacles(2).InternalPreparation.IntervalGeometryModel, "linearCorrespondingVertices");
 
-    proposal = obstacleAvoidance.search.createRouteSearchGeometry(request.initialState, request.goalState, request.options, scene);
-    verifyEqual(testCase, proposal.start_deg, [-4 0]);
-    verifyEqual(testCase, proposal.goal_deg, [8 0]);
+    proposal = obstacleAvoidance.search.createRouteSearchGeometry(request.initialState, request.goalState, scene);
+    verifyEqual(testCase, proposal.start_units, [-4 0]);
+    verifyEqual(testCase, proposal.goal_units, [8 0]);
     verifyEqual(testCase, proposal.sampleTimes_s, linspace(0, 10, 9).');
     maximumVerticesPerObstacle = zeros(1, numel(scene.preparedObstacles));
     % Exercise each obstacle covered by this regression.
     for obstacleIndex = 1:numel(scene.preparedObstacles)
-        maximumVerticesPerObstacle(obstacleIndex) = max(cellfun(@numel, scene.preparedObstacles(obstacleIndex).az_deg));
+        maximumVerticesPerObstacle(obstacleIndex) = max(cellfun(@numel, scene.preparedObstacles(obstacleIndex).x_units));
     end
     expectedVertexWork = numel(proposal.sampleTimes_s) * sum(maximumVerticesPerObstacle);
     verifyEqual(testCase, proposal.estimatedVertexWork, expectedVertexWork);
     verifyEqual(testCase, proposal.representation, "sampledObstacleUnion");
     verifyFalse(testCase, proposal.usedDenseEnvelope);
     verifyEqual(testCase, proposal.sampledShapeCount, 18);
-    verifyEqual(testCase, size(proposal.edgeStart_deg), size(proposal.edgeEnd_deg));
+    verifyEqual(testCase, size(proposal.edgeStart_units), size(proposal.edgeEnd_units));
 
     visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(request.limits, proposal);
     verifyGreaterThanOrEqual(testCase, visibilityGraph.FinalAttemptIndex, 1);
     verifyEqual(testCase, numel(visibilityGraph.Attempts), visibilityGraph.FinalAttemptIndex);
-    verifyEqual(testCase, visibilityGraph.NodePosition_deg, visibilityGraph.Attempts(end).Nodes.Positions_deg);
-    verifyEqual(testCase, visibilityGraph.EdgeCost_deg, visibilityGraph.Attempts(end).Cost_deg);
+    verifyEqual(testCase, visibilityGraph.NodePosition_units, visibilityGraph.Attempts(end).Nodes.Positions_units);
+    verifyEqual(testCase, visibilityGraph.EdgeCost_units, visibilityGraph.Attempts(end).Cost_units);
     verifyEqual(testCase, visibilityGraph.Attempts(end).OffsetRetryCount, visibilityGraph.Record.CandidateOffsetRetryCount);
     verifyTrue(testCase, isfield(visibilityGraph.Attempts, "FinalCandidatePairs"));
     verifyTrue(testCase, isfield(visibilityGraph.Attempts, "EdgeRejectionReasons"));
     verifyTrue(testCase, isfield(visibilityGraph.Attempts, "RecoverySteps"));
 
     routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, scene, proposal, visibilityGraph);
-    seedSet  = obstacleAvoidance.search.createPathGuesses(request.initialState, request.goalState, request.limits, request.options, routeSet, proposal.shape.Vertices);
+    seedSet  = obstacleAvoidance.search.createPathGuesses(request.initialState, request.goalState, request.limits, routeSet, proposal.shape.Vertices);
     verifyEqual(testCase, seedSet(1).Source, "directPathGuess");
     verifyEqual(testCase, [seedSet.Index], 1:numel(seedSet));
     verifyTrue(testCase, isfield(routeSet, "TimedSearchRecord"));
@@ -88,77 +88,77 @@ end
 function testSpatialSeedEstimateNeverRejectsLongGuideRoute(testCase)
     % Keep route-shaped timing guesses from pruning a solver proposal.
     limits = physicalLimits();
-    limits.maxVelocity_deg_s = [2 2];
+    limits.maxVelocity_units_s = [2 2];
     request = struct("obstacles", obstacleAvoidance.obstacles.combineObstacles([]), ...
         "initialState", restState(0, [0 0]), ...
         "goalState", restState(1, [1 0]), ...
         "limits", limits, ...
         "options", obstacleAvoidance.input.resolvePlannerOptions(plannerOptions("earliestArrival")));
-    spatialRoute_deg = [0 0; 0 8; 1 8; 1 0];
-    routeSet         = struct("TimedRoute_deg", zeros(0, 2), ...
+    spatialRoute_units = [0 0; 0 8; 1 8; 1 0];
+    routeSet         = struct("TimedRoute_units", zeros(0, 2), ...
         "TimedRouteTime_s", zeros(0, 1), ...
-        "SpatialRoutes_deg", {{spatialRoute_deg}}, ...
+        "SpatialRoutes_units", {{spatialRoute_units}}, ...
         "UsesConservativeEnvelope", false);
     proposal = struct("shape", polyshape());
 
-    seedSet = obstacleAvoidance.search.createPathGuesses(request.initialState, request.goalState, request.limits, request.options, routeSet, proposal.shape.Vertices);
+    seedSet = obstacleAvoidance.search.createPathGuesses(request.initialState, request.goalState, request.limits, routeSet, proposal.shape.Vertices);
 
     verifyEqual(testCase, numel(seedSet), 2);
-    verifyEqual(testCase, seedSet(2).position_deg, spatialRoute_deg);
+    verifyEqual(testCase, seedSet(2).position_units, spatialRoute_units);
     verifyEqual(testCase, seedSet(2).EstimatedDuration_s, 0.5, "AbsTol", 1e-12);
-    verifyGreaterThan(testCase, seedSet(2).Length_deg, request.goalState.time_s - request.initialState.time_s);
+    verifyGreaterThan(testCase, seedSet(2).Length_units, request.goalState.time_s - request.initialState.time_s);
 end
 
 function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
     % Remove arbitrary winding rejection without losing finite disconnected exit.
     angle_rad      = linspace(0, 4 * pi, 25).';
-    radius_deg     = 1 + 0.1 * angle_rad;
-    spiralPath_deg = [radius_deg .* cos(angle_rad), ...
-        radius_deg .* sin(angle_rad)];
-    nodePosition_deg = [spiralPath_deg(1, :); spiralPath_deg(end, :); ...
-        spiralPath_deg(2:end - 1, :)];
-    pathNodeIndex = [1, 3:size(nodePosition_deg, 1), 2];
-    edgeCost_deg  = Inf(size(nodePosition_deg, 1));
+    radius_units     = 1 + 0.1 * angle_rad;
+    spiralPath_units = [radius_units .* cos(angle_rad), ...
+        radius_units .* sin(angle_rad)];
+    nodePosition_units = [spiralPath_units(1, :); spiralPath_units(end, :); ...
+        spiralPath_units(2:end - 1, :)];
+    pathNodeIndex = [1, 3:size(nodePosition_units, 1), 2];
+    edgeCost_units  = Inf(size(nodePosition_units, 1));
     % Exercise each edge covered by this regression.
     for edgeIndex = 1:numel(pathNodeIndex) - 1
         firstNode      = pathNodeIndex(edgeIndex);
         secondNode     = pathNodeIndex(edgeIndex + 1);
-        edgeLength_deg = norm(nodePosition_deg(firstNode, :) - nodePosition_deg(secondNode, :));
-        edgeCost_deg(firstNode, secondNode) = edgeLength_deg;
-        edgeCost_deg(secondNode, firstNode) = edgeLength_deg;
+        edgeLength_units = norm(nodePosition_units(firstNode, :) - nodePosition_units(secondNode, :));
+        edgeCost_units(firstNode, secondNode) = edgeLength_units;
+        edgeCost_units(secondNode, firstNode) = edgeLength_units;
     end
-    [routes_deg, classPattern, ~] = obstacleAvoidance.search.searchDistinctSpatialRoutes(edgeCost_deg, nodePosition_deg, [0 0], 1, @(first_deg, second_deg) true);
-    verifyNumElements(testCase, routes_deg, 1);
+    [routes_units, classPattern, ~] = obstacleAvoidance.search.searchDistinctSpatialRoutes(edgeCost_units, nodePosition_units, [0 0], 1, @(first_units, second_units) true);
+    verifyNumElements(testCase, routes_units, 1);
     verifyEqual(testCase, abs(classPattern), 2);
 
     request = struct("obstacles", obstacleAvoidance.obstacles.combineObstacles([]), ...
-        "initialState", restState(0, nodePosition_deg(1, :)), ...
-        "goalState", restState(20, nodePosition_deg(2, :)), ...
+        "initialState", restState(0, nodePosition_units(1, :)), ...
+        "goalState", restState(20, nodePosition_units(2, :)), ...
         "limits", physicalLimits(), ...
         "options", obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2)));
     scene    = obstacleAvoidance.obstacles.preparePlanningScene(request.obstacles, request.initialState, request.goalState);
     proposal = struct("usedDenseEnvelope", false, "sampleTimes_s", [0; 20], ...
-        "goal_deg", nodePosition_deg(2, :), "shape", polyshape(), ...
-        "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
-    visibilityGraph = struct("NodePosition_deg", nodePosition_deg, "EdgeCost_deg", edgeCost_deg, ...
-        "ObstacleReferencePoints_deg", [0 0]);
+        "goal_units", nodePosition_units(2, :), "shape", polyshape(), ...
+        "edgeStart_units", zeros(0, 2), "edgeEnd_units", zeros(0, 2));
+    visibilityGraph = struct("NodePosition_units", nodePosition_units, "EdgeCost_units", edgeCost_units, ...
+        "ObstacleReferencePoints_units", [0 0]);
     routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, scene, proposal, visibilityGraph);
-    verifyEmpty(testCase, routeSet.SpatialRoutes_deg);
-    verifyNumElements(testCase, routeSet.DeferredSpatialRoutes_deg, 1);
+    verifyEmpty(testCase, routeSet.SpatialRoutes_units);
+    verifyNumElements(testCase, routeSet.DeferredSpatialRoutes_units, 1);
     verifyFalse(testCase, routeSet.DeferredSpatialSolveAttempted);
 
-    nodePosition_deg = [1 0; 4 0; 0 1; -1 0; 0 -1];
-    edgeCost_deg     = Inf(5);
+    nodePosition_units = [1 0; 4 0; 0 1; -1 0; 0 -1];
+    edgeCost_units     = Inf(5);
     cycleNodeIndex   = [1 3 4 5 1];
     % Exercise each edge covered by this regression.
     for edgeIndex = 1:numel(cycleNodeIndex) - 1
         firstNode  = cycleNodeIndex(edgeIndex);
         secondNode = cycleNodeIndex(edgeIndex + 1);
-        edgeCost_deg(firstNode, secondNode) = 1;
-        edgeCost_deg(secondNode, firstNode) = 1;
+        edgeCost_units(firstNode, secondNode) = 1;
+        edgeCost_units(secondNode, firstNode) = 1;
     end
-    [routes_deg, ~, record] = obstacleAvoidance.search.searchDistinctSpatialRoutes(edgeCost_deg, nodePosition_deg, [0 0], 2, @(first_deg, second_deg) true);
-    verifyEmpty(testCase, routes_deg);
+    [routes_units, ~, record] = obstacleAvoidance.search.searchDistinctSpatialRoutes(edgeCost_units, nodePosition_units, [0 0], 2, @(first_units, second_units) true);
+    verifyEmpty(testCase, routes_units);
     verifyEqual(testCase, record.StateCount, 1);
     verifyFalse(testCase, record.Truncated);
 end
@@ -166,9 +166,9 @@ end
 function testDenseProposalDefersThenRunsExactTimedSearch(testCase)
     % Dense spatial work may reorder exact timed search but cannot discard it.
     obstacleTime_s     = [0; 10];
-    firstVertices_deg  = [20 -2; 22 -2; 22 2; 20 2];
-    secondVertices_deg = firstVertices_deg + [0 1];
-    movingObstacle     = obstacleAvoidance.obstacles.createObstacle("moving", obstacleTime_s, {firstVertices_deg(:, 1); secondVertices_deg(:, 1)}, {firstVertices_deg(:, 2); secondVertices_deg(:, 2)}, 0.1);
+    firstVertices_units  = [20 -2; 22 -2; 22 2; 20 2];
+    secondVertices_units = firstVertices_units + [0 1];
+    movingObstacle     = obstacleAvoidance.obstacles.createObstacle("moving", obstacleTime_s, {firstVertices_units(:, 1); secondVertices_units(:, 1)}, {firstVertices_units(:, 2); secondVertices_units(:, 2)}, 0.1);
     request            = struct("obstacles", movingObstacle, ...
         "initialState", restState(0, [0 0]), ...
         "goalState", restState(10, [2 0]), ...
@@ -177,12 +177,12 @@ function testDenseProposalDefersThenRunsExactTimedSearch(testCase)
             "MaximumTimeLayerCount", 3)));
     scene    = obstacleAvoidance.obstacles.preparePlanningScene(request.obstacles, request.initialState, request.goalState);
     proposal = struct("usedDenseEnvelope", true, "sampleTimes_s", [0; 5; 10], ...
-        "goal_deg", [2 0], "shape", polyshape(), ...
-        "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
+        "goal_units", [2 0], "shape", polyshape(), ...
+        "edgeStart_units", zeros(0, 2), "edgeEnd_units", zeros(0, 2));
     visibilityGraph = struct();
-    visibilityGraph.NodePosition_deg            = [0 0; 2 0];
-    visibilityGraph.EdgeCost_deg                = [0 2; 2 0];
-    visibilityGraph.ObstacleReferencePoints_deg = zeros(0, 2);
+    visibilityGraph.NodePosition_units            = [0 0; 2 0];
+    visibilityGraph.EdgeCost_units                = [0 2; 2 0];
+    visibilityGraph.ObstacleReferencePoints_units = zeros(0, 2);
 
     routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, scene, proposal, visibilityGraph);
 
@@ -197,146 +197,146 @@ function testDenseProposalDefersThenRunsExactTimedSearch(testCase)
     verifyTrue(testCase, recoveredRouteSet.TimedSearchDeferred);
     verifyTrue(testCase, recoveredRouteSet.TimedSearchRecoveryAttempted);
     verifyEqual(testCase, recoveredRouteSet.TimedSearchSuppressionReason, "");
-    verifyFalse(testCase, isempty(recoveredRouteSet.TimedRoute_deg));
-    verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(1, :), [0 0]);
-    verifyEqual(testCase, recoveredRouteSet.TimedRoute_deg(end, :), [2 0]);
+    verifyFalse(testCase, isempty(recoveredRouteSet.TimedRoute_units));
+    verifyEqual(testCase, recoveredRouteSet.TimedRoute_units(1, :), [0 0]);
+    verifyEqual(testCase, recoveredRouteSet.TimedRoute_units(end, :), [2 0]);
     verifyEqual(testCase, recoveredRouteSet.SpatialSearchRecord.RecoverySentinel, 314);
 end
 
 function testTimedSearchDoesNotImposeRestAtIntermediateNodes(testCase)
     % Preserve a feasible constant-velocity route through an intermediate node.
-    nodePosition_deg = [0 0; 4 0; 2 0];
-    edgeCost_deg     = Inf(3);
-    edgeCost_deg(1:4:end) = 0;
-    edgeCost_deg(1, 3) = 2;
-    edgeCost_deg(3, 1) = 2;
-    edgeCost_deg(2, 3) = 2;
-    edgeCost_deg(3, 2) = 2;
-    initialState = restState(0, nodePosition_deg(1, :));
-    initialState.velocity_deg_s = [2 0];
-    goalState = restState(2, nodePosition_deg(2, :));
-    goalState.velocity_deg_s = [2 0];
+    nodePosition_units = [0 0; 4 0; 2 0];
+    edgeCost_units     = Inf(3);
+    edgeCost_units(1:4:end) = 0;
+    edgeCost_units(1, 3) = 2;
+    edgeCost_units(3, 1) = 2;
+    edgeCost_units(2, 3) = 2;
+    edgeCost_units(3, 2) = 2;
+    initialState = restState(0, nodePosition_units(1, :));
+    initialState.velocity_units_s = [2 0];
+    goalState = restState(2, nodePosition_units(2, :));
+    goalState.velocity_units_s = [2 0];
     limits = physicalLimits();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [0.01 0.01];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [0.01 0.01];
     options = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival", "MaximumTimeLayerCount", 3));
 
-    [route_deg, routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, edgeCost_deg, obstacleAvoidance.obstacles.prepareObstacles(struct.empty(0, 1)), initialState, goalState, limits, [0; 1; 2], options);
+    [route_units, routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacleAvoidance.obstacles.prepareObstacles(struct.empty(0, 1)), initialState, goalState, limits, [0; 1; 2], options);
 
-    verifyEqual(testCase, route_deg, nodePosition_deg([1 3 2], :));
+    verifyEqual(testCase, route_units, nodePosition_units([1 3 2], :));
     verifyEqual(testCase, routeTime_s, [0; 1; 2]);
 end
 
 function testTimedSearchPreservesCostTiesAndCompleteFrontier(testCase)
     % Keep optimal through-node ancestry when more expensive cycles are pruned.
-    nodePosition_deg = [0 0; 4 0; 2 0; 2 2];
-    edgeCost_deg     = zeros(4);
-    initialState     = restState(0, nodePosition_deg(1, :));
-    goalState        = restState(5, nodePosition_deg(2, :));
+    nodePosition_units = [0 0; 4 0; 2 0; 2 2];
+    edgeCost_units     = zeros(4);
+    initialState     = restState(0, nodePosition_units(1, :));
+    goalState        = restState(5, nodePosition_units(2, :));
     options          = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "fixedArrival"));
     sampleTimes_s    = (0:5).';
 
-    [route_deg, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, edgeCost_deg, obstacleAvoidance.obstacles.prepareObstacles(struct.empty(0, 1)), initialState, goalState, physicalLimits(), sampleTimes_s, options);
+    [route_units, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacleAvoidance.obstacles.prepareObstacles(struct.empty(0, 1)), initialState, goalState, physicalLimits(), sampleTimes_s, options);
 
-    verifyEqual(testCase, route_deg, nodePosition_deg([1 3 3 3 3 2], :));
+    verifyEqual(testCase, route_units, nodePosition_units([1 3 3 3 3 2], :));
     verifyEqual(testCase, routeTime_s, sampleTimes_s);
-    verifyEqual(testCase, sum(vecnorm(diff(route_deg), 2, 2)), 4);
-    verifyEqual(testCase, record.FrontierNodes_deg, nodePosition_deg);
+    verifyEqual(testCase, sum(vecnorm(diff(route_units), 2, 2)), 4);
+    verifyEqual(testCase, record.FrontierNodes_units, nodePosition_units);
     verifyEqual(testCase, record.ReachableGoalLayerCount, 4);
 end
 
 function testTimedSearchPreservesFutureFrontierAtEarlyExit(testCase)
     % An early goal exit still exposes later states discovered by colliding edges.
-    nodePosition_deg = [0 0; 2 0; 0 1; 1 1];
-    blocked_deg      = [0.4 0.9; 0.6 0.9; 0.6 1.1; 0.4 1.1];
-    clear_deg        = blocked_deg + [0 3];
-    obstacles        = obstacleAvoidance.obstacles.createObstacle("moving barrier", [0; 1; 1.5; 3], {blocked_deg(:, 1); blocked_deg(:, 1); clear_deg(:, 1); clear_deg(:, 1)}, {blocked_deg(:, 2); blocked_deg(:, 2); clear_deg(:, 2); clear_deg(:, 2)}, 0);
+    nodePosition_units = [0 0; 2 0; 0 1; 1 1];
+    blocked_units      = [0.4 0.9; 0.6 0.9; 0.6 1.1; 0.4 1.1];
+    clear_units        = blocked_units + [0 3];
+    obstacles        = obstacleAvoidance.obstacles.createObstacle("moving barrier", [0; 1; 1.5; 3], {blocked_units(:, 1); blocked_units(:, 1); clear_units(:, 1); clear_units(:, 1)}, {blocked_units(:, 2); blocked_units(:, 2); clear_units(:, 2); clear_units(:, 2)}, 0);
     options          = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival"));
 
-    [route_deg, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, zeros(4), obstacleAvoidance.obstacles.prepareObstacles(obstacles), restState(0, nodePosition_deg(1, :)), restState(3, nodePosition_deg(2, :)), physicalLimits(), (0:0.5:3).', options);
+    [route_units, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, zeros(4), obstacleAvoidance.obstacles.prepareObstacles(obstacles), restState(0, nodePosition_units(1, :)), restState(3, nodePosition_units(2, :)), physicalLimits(), (0:0.5:3).', options);
 
-    verifyEqual(testCase, route_deg, nodePosition_deg(1:2, :));
+    verifyEqual(testCase, route_units, nodePosition_units(1:2, :));
     verifyEqual(testCase, routeTime_s, [0; 1]);
-    verifyEqual(testCase, record.FrontierNodes_deg, nodePosition_deg(3:4, :));
+    verifyEqual(testCase, record.FrontierNodes_units, nodePosition_units(3:4, :));
 end
 
 function testTimedSearchRetainsEverySuppliedTime(testCase)
     % Keep a brief input-defined opening that layer thinning would erase.
-    blockedVertices_deg = [-0.15 -2; 0.15 -2; 0.15 2; -0.15 2];
-    clearVertices_deg   = blockedVertices_deg + [0 30];
+    blockedVertices_units = [-0.15 -2; 0.15 -2; 0.15 2; -0.15 2];
+    clearVertices_units   = blockedVertices_units + [0 30];
     obstacleTime_s      = [0; 3.8; 3.9; 4.2; 4.3; 5];
-    barrier             = obstacleAvoidance.obstacles.createObstacle("briefOpening", obstacleTime_s, {blockedVertices_deg(:, 1); blockedVertices_deg(:, 1); clearVertices_deg(:, 1); clearVertices_deg(:, 1); blockedVertices_deg(:, 1); blockedVertices_deg(:, 1)}, {blockedVertices_deg(:, 2); blockedVertices_deg(:, 2); clearVertices_deg(:, 2); clearVertices_deg(:, 2); blockedVertices_deg(:, 2); blockedVertices_deg(:, 2)}, 0);
-    nodePosition_deg    = [-2 0; 2 0; 0 0];
-    edgeCost_deg        = Inf(3);
-    edgeCost_deg(1, 3) = 2;
-    edgeCost_deg(3, 1) = 2;
-    edgeCost_deg(2, 3) = 2;
-    edgeCost_deg(3, 2) = 2;
-    initialState = restState(0, nodePosition_deg(1, :));
-    goalState    = restState(5, nodePosition_deg(2, :));
+    barrier             = obstacleAvoidance.obstacles.createObstacle("briefOpening", obstacleTime_s, {blockedVertices_units(:, 1); blockedVertices_units(:, 1); clearVertices_units(:, 1); clearVertices_units(:, 1); blockedVertices_units(:, 1); blockedVertices_units(:, 1)}, {blockedVertices_units(:, 2); blockedVertices_units(:, 2); clearVertices_units(:, 2); clearVertices_units(:, 2); blockedVertices_units(:, 2); blockedVertices_units(:, 2)}, 0);
+    nodePosition_units    = [-2 0; 2 0; 0 0];
+    edgeCost_units        = Inf(3);
+    edgeCost_units(1, 3) = 2;
+    edgeCost_units(3, 1) = 2;
+    edgeCost_units(2, 3) = 2;
+    edgeCost_units(3, 2) = 2;
+    initialState = restState(0, nodePosition_units(1, :));
+    goalState    = restState(5, nodePosition_units(2, :));
     limits       = physicalLimits();
-    limits.maxVelocity_deg_s = [20 20];
+    limits.maxVelocity_units_s = [20 20];
     options       = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival", "MaximumTimeLayerCount", 17));
     sampleTimes_s = (0:0.1:5).';
 
-    [route_deg, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, edgeCost_deg, obstacleAvoidance.obstacles.prepareObstacles(barrier), initialState, goalState, limits, sampleTimes_s, options);
+    [route_units, routeTime_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacleAvoidance.obstacles.prepareObstacles(barrier), initialState, goalState, limits, sampleTimes_s, options);
 
     verifyEqual(testCase, record.LayerTimes_s, sampleTimes_s, "AbsTol", eps(5));
     verifyEqual(testCase, record.CandidateLayerCount, numel(sampleTimes_s));
     verifyGreaterThan(testCase, record.CandidateLayerCount, options.MaximumTimeLayerCount);
     verifyFalse(testCase, isfield(record, "LayerLimitApplied"));
-    verifyFalse(testCase, isempty(route_deg));
-    verifyEqual(testCase, route_deg(1, :), initialState.position_deg);
-    verifyEqual(testCase, route_deg(end, :), goalState.position_deg);
+    verifyFalse(testCase, isempty(route_units));
+    verifyEqual(testCase, route_units(1, :), initialState.position_units);
+    verifyEqual(testCase, route_units(end, :), goalState.position_units);
     verifyEqual(testCase, routeTime_s(end), 4, "AbsTol", 1e-12);
 end
 
 function testTimedSearchCanArriveLaterWithoutWaitingAtBlockedSource(testCase)
     % Advance within one safe-wait interval after an earlier edge collision.
-    square_deg          = [-0.1 -0.1; 0.1 -0.1; 0.1 0.1; -0.1 0.1];
+    square_units          = [-0.1 -0.1; 0.1 -0.1; 0.1 0.1; -0.1 0.1];
     obstacleTime_s      = [0; 0.25; 0.5; 1; 2];
-    azimuthAtSource_deg = repmat({square_deg(:, 1) - 2}, 5, 1);
-    azimuthOnEdge_deg   = repmat({square_deg(:, 1)}, 5, 1);
-    sourceElevation_deg = { ...
-        square_deg(:, 2) + 3; square_deg(:, 2); square_deg(:, 2); square_deg(:, 2) + 3; square_deg(:, 2) + 3};
-    edgeElevation_deg = { ...
-        square_deg(:, 2) + 3; square_deg(:, 2); square_deg(:, 2) + 3; square_deg(:, 2) + 3; square_deg(:, 2) + 3};
-    sourceBlocker    = obstacleAvoidance.obstacles.createObstacle("sourceBlocker", obstacleTime_s, azimuthAtSource_deg, sourceElevation_deg, 0);
-    edgeBlocker      = obstacleAvoidance.obstacles.createObstacle("edgeBlocker", obstacleTime_s, azimuthOnEdge_deg, edgeElevation_deg, 0);
+    xAtSource_units = repmat({square_units(:, 1) - 2}, 5, 1);
+    xOnEdge_units   = repmat({square_units(:, 1)}, 5, 1);
+    sourceY_units = { ...
+        square_units(:, 2) + 3; square_units(:, 2); square_units(:, 2); square_units(:, 2) + 3; square_units(:, 2) + 3};
+    edgeY_units = { ...
+        square_units(:, 2) + 3; square_units(:, 2); square_units(:, 2) + 3; square_units(:, 2) + 3; square_units(:, 2) + 3};
+    sourceBlocker    = obstacleAvoidance.obstacles.createObstacle("sourceBlocker", obstacleTime_s, xAtSource_units, sourceY_units, 0);
+    edgeBlocker      = obstacleAvoidance.obstacles.createObstacle("edgeBlocker", obstacleTime_s, xOnEdge_units, edgeY_units, 0);
     obstacles        = obstacleAvoidance.obstacles.combineObstacles(sourceBlocker, edgeBlocker);
-    nodePosition_deg = [-2 0; 2 0];
-    edgeCost_deg     = [0 4; 4 0];
-    initialState     = restState(0, nodePosition_deg(1, :));
-    initialState.velocity_deg_s = [4 0];
-    goalState = restState(2, nodePosition_deg(2, :));
-    goalState.velocity_deg_s = [4 0];
+    nodePosition_units = [-2 0; 2 0];
+    edgeCost_units     = [0 4; 4 0];
+    initialState     = restState(0, nodePosition_units(1, :));
+    initialState.velocity_units_s = [4 0];
+    goalState = restState(2, nodePosition_units(2, :));
+    goalState.velocity_units_s = [4 0];
     limits = physicalLimits();
-    limits.maxVelocity_deg_s = [10 10];
+    limits.maxVelocity_units_s = [10 10];
     options = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival"));
 
-    [route_deg, routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_deg, edgeCost_deg, obstacleAvoidance.obstacles.prepareObstacles(obstacles), initialState, goalState, limits, obstacleTime_s, options);
+    [route_units, routeTime_s] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodePosition_units, edgeCost_units, obstacleAvoidance.obstacles.prepareObstacles(obstacles), initialState, goalState, limits, obstacleTime_s, options);
 
     fineTime_s       = linspace(0, 1, 101).';
-    finePosition_deg = initialState.position_deg + fineTime_s .* (goalState.position_deg - initialState.position_deg);
-    occupied         = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, finePosition_deg(:, 1), finePosition_deg(:, 2), fineTime_s);
+    finePosition_units = initialState.position_units + fineTime_s .* (goalState.position_units - initialState.position_units);
+    occupied         = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, finePosition_units(:, 1), finePosition_units(:, 2), fineTime_s);
     verifyFalse(testCase, any(occupied));
-    verifyEqual(testCase, route_deg, nodePosition_deg);
+    verifyEqual(testCase, route_units, nodePosition_units);
     verifyEqual(testCase, routeTime_s, [0; 1]);
 end
 
 function testDenseMovingBarrierRecoversDeferredTimedSeed(testCase)
     % Recover a wait route after dense spatial proposals yield no valid motion.
     angle_rad           = (0:1199).' * (2 * pi / 1200);
-    blockedVertices_deg = [0.15 * cos(angle_rad), 10 * sin(angle_rad)];
-    clearVertices_deg   = blockedVertices_deg + [0 30];
+    blockedVertices_units = [0.15 * cos(angle_rad), 10 * sin(angle_rad)];
+    clearVertices_units   = blockedVertices_units + [0 30];
     obstacleTime_s      = [0; 6; 7; 10];
-    barrier             = obstacleAvoidance.obstacles.createObstacle("movingDenseBarrier", obstacleTime_s, {blockedVertices_deg(:, 1); blockedVertices_deg(:, 1); clearVertices_deg(:, 1); clearVertices_deg(:, 1)}, {blockedVertices_deg(:, 2); blockedVertices_deg(:, 2); clearVertices_deg(:, 2); clearVertices_deg(:, 2)}, 0.05);
+    barrier             = obstacleAvoidance.obstacles.createObstacle("movingDenseBarrier", obstacleTime_s, {blockedVertices_units(:, 1); blockedVertices_units(:, 1); clearVertices_units(:, 1); clearVertices_units(:, 1)}, {blockedVertices_units(:, 2); blockedVertices_units(:, 2); clearVertices_units(:, 2); clearVertices_units(:, 2)}, 0.05);
     limits              = physicalLimits();
-    limits.maxVelocity_deg_s      = [2 0.5];
-    limits.maxAcceleration_deg_s2 = [4 1];
-    limits.maxJerk_deg_s3         = [20 4];
-    limits.azimuthInterval_deg    = [-3 3];
-    limits.elevationInterval_deg  = [-12 12];
+    limits.maxVelocity_units_s      = [2 0.5];
+    limits.maxAcceleration_units_s2 = [4 1];
+    limits.maxJerk_units_s3         = [20 4];
+    limits.xInterval_units    = [-3 3];
+    limits.yInterval_units  = [-12 12];
     options = struct();
     options.GoalTimeMode          = "fixedArrival";
     options.MaximumSeedCount      = 2;
@@ -358,16 +358,16 @@ function testDirectWaitRetriesFullHorizonAfterShortTimingEstimate(testCase)
     initialState = restState(0, [0 0]);
     goalState    = restState(20, [2 0]);
     limits       = physicalLimits();
-    limits.maxAcceleration_deg_s2 = [0.1 0.1];
-    limits.maxJerk_deg_s3         = [0.1 0.1];
+    limits.maxAcceleration_units_s2 = [0.1 0.1];
+    limits.maxJerk_units_s3         = [0.1 0.1];
     options = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival"));
     seed    = obstacleAvoidance.search.createEmptyPathGuess();
     seed.Index               = 1;
     seed.Source              = "directWait";
-    seed.position_deg        = [0 0; 0 0; 2 0];
+    seed.position_units        = [0 0; 0 0; 2 0];
     seed.tau                 = [0; 0.5; 1];
     seed.EstimatedDuration_s = 2;
-    seed.Length_deg          = 2;
+    seed.Length_units          = 2;
 
     [candidate, diagnostics] = obstacleAvoidance.planner.createWaitThenMoveMotion(seed, initialState, goalState, limits, options, [], []);
 
@@ -444,22 +444,22 @@ function testStaticDetourReturnsCertifiedCollisionFreeMotion(testCase)
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
     verifyTrue(testCase, result.Validation.CollisionFree);
     verifyTrue(testCase, result.Validation.CollisionResolved);
-    verifyGreaterThan(testCase, result.Validation.MinimumClearance_deg, 0);
-    verifyGreaterThan(testCase, sum(vecnorm(diff(result.position_deg, 1, 1), 2, 2)), 8);
+    verifyGreaterThan(testCase, result.Validation.MinimumClearance_units, 0);
+    verifyGreaterThan(testCase, sum(vecnorm(diff(result.position_units, 1, 1), 2, 2)), 8);
 end
 
 function testTightHorizonContinuesBeforeLaterSeedRecovery(testCase)
     % Meet the unchanged tight deadline and stop before later-seed recovery.
     missionEndTime_s     = 21;
-    obstaclePosition_deg = [ ...
+    obstaclePosition_units = [ ...
         -8 7; -5 7; -5 -4; 5 -4; 5 7; 8 7; 8 -7; -8 -7];
-    obstacle     = obstacleAvoidance.obstacles.createObstacle("tight static U", [0; missionEndTime_s], obstaclePosition_deg(:, 1), obstaclePosition_deg(:, 2), 0.2);
+    obstacle     = obstacleAvoidance.obstacles.createObstacle("tight static U", [0; missionEndTime_s], obstaclePosition_units(:, 1), obstaclePosition_units(:, 2), 0.2);
     initialState = restState(0, [0 0]);
     goalState    = restState(missionEndTime_s, [0 -10]);
     limits       = physicalLimits();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [0.75 0.75];
-    limits.maxJerk_deg_s3         = [2.5 2.5];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [0.75 0.75];
+    limits.maxJerk_units_s3         = [2.5 2.5];
 
     twoSeedOptions = struct();
     twoSeedOptions.GoalTimeMode     = "earliestArrival";
@@ -489,14 +489,14 @@ end
 
 function testDirectWaitDoesNotFreezeHorizonStretchedMotion(testCase)
     % A larger deadline must not hide a known earlier feasible direct motion.
-    vertices_deg   = [4 -1; 6 -1; 6 1; 4 1];
-    firstObstacle  = obstacleAvoidance.obstacles.createObstacle("first", [3; 4.5], vertices_deg(:, 1), vertices_deg(:, 2), 0);
-    secondObstacle = obstacleAvoidance.obstacles.createObstacle("second", [8; 9.5], vertices_deg(:, 1), vertices_deg(:, 2), 0);
+    vertices_units   = [4 -1; 6 -1; 6 1; 4 1];
+    firstObstacle  = obstacleAvoidance.obstacles.createObstacle("first", [3; 4.5], vertices_units(:, 1), vertices_units(:, 2), 0);
+    secondObstacle = obstacleAvoidance.obstacles.createObstacle("second", [8; 9.5], vertices_units(:, 1), vertices_units(:, 2), 0);
     obstacles      = obstacleAvoidance.obstacles.combineObstacles(firstObstacle, secondObstacle);
     initialState   = restState(0, [0 0]);
     limits         = physicalLimits();
-    limits.azimuthInterval_deg   = [-1 11];
-    limits.elevationInterval_deg = [-0.5 0.5];
+    limits.xInterval_units   = [-1 11];
+    limits.yInterval_units = [-0.5 0.5];
     options = plannerOptions("earliestArrival");
     % Exercise each horizon s covered by this regression.
     for horizon_s = [12 16 24 32]
@@ -507,52 +507,52 @@ function testDirectWaitDoesNotFreezeHorizonStretchedMotion(testCase)
         verifyTrue(testCase, validation.Passed, validation.Message);
         verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 9.5);
         if result.Success
-            verifyEqual(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), 10, "AbsTol", 1e-9);
+            verifyEqual(testCase, sum(vecnorm(diff(result.position_units), 2, 2)), 10, "AbsTol", 1e-9);
         end
     end
 end
 
 function testDirectWaitRetimingHandlesTranslationAndOffsetClock(testCase)
     % Preserve a diagonal path while shortening a horizon-stretched moving body.
-    vertices_deg = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
-    obstacles    = obstacleAvoidance.obstacles.createObstacle("obstacle", [3; 9; 9.5; 23], repmat({vertices_deg(:, 1)}, 4, 1), {vertices_deg(:, 2); vertices_deg(:, 2); vertices_deg(:, 2) + 8; vertices_deg(:, 2) + 8}, 0.1);
+    vertices_units = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+    obstacles    = obstacleAvoidance.obstacles.createObstacle("obstacle", [3; 9; 9.5; 23], repmat({vertices_units(:, 1)}, 4, 1), {vertices_units(:, 2); vertices_units(:, 2); vertices_units(:, 2) + 8; vertices_units(:, 2) + 8}, 0.1);
     initialState = restState(3, [-5 0]);
     goalState    = restState(23, [5 2]);
     limits       = struct();
-    limits.maxVelocity_deg_s      = [2 1];
-    limits.maxAcceleration_deg_s2 = [1 0.5];
-    limits.maxJerk_deg_s3         = [2 1];
-    limits.azimuthInterval_deg    = [-6 6];
-    limits.elevationInterval_deg  = [-0.5 2.5];
+    limits.maxVelocity_units_s      = [2 1];
+    limits.maxAcceleration_units_s2 = [1 0.5];
+    limits.maxJerk_units_s3         = [2 1];
+    limits.xInterval_units    = [-6 6];
+    limits.yInterval_units  = [-0.5 2.5];
     result     = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, struct("GoalTimeMode", "earliestArrival"));
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
     if result.Success
         verifyLessThanOrEqual(testCase, result.ArrivalTime_s, 14.5);
-        verifyEqual(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), norm(goalState.position_deg - initialState.position_deg), "AbsTol", 1e-9);
+        verifyEqual(testCase, sum(vecnorm(diff(result.position_units), 2, 2)), norm(goalState.position_units - initialState.position_units), "AbsTol", 1e-9);
     end
 end
 
 function testEarliestArrivalRefinesObjectiveRelevantDirectWait(testCase)
     % Shorten a validated direct wait without changing its spatial path.
     obstacleTime_s             = [0; 6; 6.5; 12];
-    barrierCenterElevation_deg = [0; 0; 8; 8];
-    sourcePosition_deg         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
-    azimuthBySlice_deg         = cell(numel(obstacleTime_s), 1);
-    elevationBySlice_deg       = cell(numel(obstacleTime_s), 1);
+    barrierCenterY_units = [0; 0; 8; 8];
+    sourcePosition_units         = [-0.2 -3; 0.2 -3; 0.2 3; -0.2 3];
+    xBySlice_units         = cell(numel(obstacleTime_s), 1);
+    yBySlice_units       = cell(numel(obstacleTime_s), 1);
     % Exercise each sample covered by this regression.
     for sampleIndex = 1:numel(obstacleTime_s)
-        translatedPosition_deg = sourcePosition_deg + [0 barrierCenterElevation_deg(sampleIndex)];
-        azimuthBySlice_deg{sampleIndex} = translatedPosition_deg(:, 1);
-        elevationBySlice_deg{sampleIndex} = translatedPosition_deg(:, 2);
+        translatedPosition_units = sourcePosition_units + [0 barrierCenterY_units(sampleIndex)];
+        xBySlice_units{sampleIndex} = translatedPosition_units(:, 1);
+        yBySlice_units{sampleIndex} = translatedPosition_units(:, 2);
     end
-    obstacle     = obstacleAvoidance.obstacles.createObstacle("earliest direct wait", obstacleTime_s, azimuthBySlice_deg, elevationBySlice_deg, 0.1);
+    obstacle     = obstacleAvoidance.obstacles.createObstacle("earliest direct wait", obstacleTime_s, xBySlice_units, yBySlice_units, 0.1);
     initialState = restState(0, [-5 0]);
     goalState    = restState(12, [5 0]);
     limits       = physicalLimits();
-    limits.azimuthInterval_deg   = [-6 6];
-    limits.elevationInterval_deg = [-3 3];
+    limits.xInterval_units   = [-6 6];
+    limits.yInterval_units = [-3 3];
     options = struct();
     options.GoalTimeMode     = "earliestArrival";
     options.MaximumSeedCount = 5;
@@ -574,7 +574,7 @@ function testConvergenceSummaryAndRetainedBestTrial(testCase)
     repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
     addpath(fullfile(repositoryRoot, "examples"));
     overrides = struct();
-    overrides.CollisionClearanceTolerance_deg = 1e-4;
+    overrides.CollisionClearanceTolerance_units = 1e-4;
     overrides.MaximumSeedCount                = 2;
     overrides.FigureVisible                   = "off";
     overrides.PlotOutputs                     = false;
@@ -587,8 +587,8 @@ function testConvergenceSummaryAndRetainedBestTrial(testCase)
     diagnostics = testSupport.solverDetails(resultDiagnosis, resultDiagnosis.SelectedAttemptIndex);
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinementAttempted"));
     verifyLessThanOrEqual(testCase, ...
-        testSupport.diagnosisValue(diagnostics, "TravelRefinementFinalLength_deg"), ...
-        testSupport.diagnosisValue(diagnostics, "TravelRefinementInitialLength_deg"));
+        testSupport.diagnosisValue(diagnostics, "TravelRefinementFinalLength_units"), ...
+        testSupport.diagnosisValue(diagnostics, "TravelRefinementInitialLength_units"));
     verifyEqual(testCase, ...
         testSupport.diagnosisValue(diagnostics, "TravelRefinementFinalDuration_s"), ...
         result.TrajectoryDuration_s, "AbsTol", 1e-9);
@@ -614,8 +614,8 @@ function testReflectedProgressAxisKeepsShortExactClockDetour(testCase)
     initialState   = restState(0, [10 0]);
     goalState      = restState(30, [-10 0]);
     limits         = physicalLimits();
-    limits.azimuthInterval_deg   = [-12 12];
-    limits.elevationInterval_deg = [-4 4];
+    limits.xInterval_units   = [-12 12];
+    limits.yInterval_units = [-4 4];
     [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
@@ -625,13 +625,13 @@ function testReflectedProgressAxisKeepsShortExactClockDetour(testCase)
     diagnostics = resultDiagnosis.PathRefinement;
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "Success"), testSupport.diagnosisValue(diagnostics, "Message"));
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.Attempted"));
-    verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.FinalLength_deg"), testSupport.diagnosisValue(diagnostics, "TravelRefinement.InitialLength_deg"));
+    verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.FinalLength_units"), testSupport.diagnosisValue(diagnostics, "TravelRefinement.InitialLength_units"));
     verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, "AbsTol", 1e-9);
-    verifyEqual(testCase, result.Route_deg, result.position_deg);
-    verifyEqual(testCase, resultDiagnosis.Routes(1).Length_deg, sum(vecnorm(diff(result.position_deg), 2, 2)), "AbsTol", 1e-12);
+    verifyEqual(testCase, result.Route_units, result.position_units);
+    verifyEqual(testCase, resultDiagnosis.Routes(1).Length_units, sum(vecnorm(diff(result.position_units), 2, 2)), "AbsTol", 1e-12);
     % The refined detour must remain within 1.25 percent of the direct distance.
-    directLength_deg = norm(goalState.position_deg - initialState.position_deg);
-    verifyLessThan(testCase, resultDiagnosis.Routes(1).Length_deg, 1.0125 * directLength_deg, "The exact-clock detour contains unnecessary joint travel.");
+    directLength_units = norm(goalState.position_units - initialState.position_units);
+    verifyLessThan(testCase, resultDiagnosis.Routes(1).Length_units, 1.0125 * directLength_units, "The exact-clock detour contains unnecessary joint travel.");
 end
 
 function testNearStartBarrierKeepsShortOneSidedExactClockDetour(testCase)
@@ -640,8 +640,8 @@ function testNearStartBarrierKeepsShortOneSidedExactClockDetour(testCase)
     initialState = restState(0, [-10 3.2]);
     goalState    = restState(30, [10 -1]);
     limits       = physicalLimits();
-    limits.azimuthInterval_deg   = [-20 20];
-    limits.elevationInterval_deg = [-10 10];
+    limits.xInterval_units   = [-20 20];
+    limits.yInterval_units = [-10 10];
     result = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
@@ -649,10 +649,10 @@ function testNearStartBarrierKeepsShortOneSidedExactClockDetour(testCase)
     verifyTrue(testCase, result.Validation.CollisionFree);
     verifyTrue(testCase, result.Validation.CollisionResolved);
     verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, "AbsTol", 1e-9);
-    verifyLessThan(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), 20.55, "The exact-clock detour contains unnecessary joint travel.");
-    progress            = (result.position_deg(:, 1) - initialState.position_deg(1)) / (goalState.position_deg(1) - initialState.position_deg(1));
-    directElevation_deg = initialState.position_deg(2) + (goalState.position_deg(2) - initialState.position_deg(2)) * progress;
-    verifyGreaterThanOrEqual(testCase, min(result.position_deg(:, 2) - directElevation_deg), -1e-9);
+    verifyLessThan(testCase, sum(vecnorm(diff(result.position_units), 2, 2)), 20.55, "The exact-clock detour contains unnecessary joint travel.");
+    progress            = (result.position_units(:, 1) - initialState.position_units(1)) / (goalState.position_units(1) - initialState.position_units(1));
+    directY_units = initialState.position_units(2) + (goalState.position_units(2) - initialState.position_units(2)) * progress;
+    verifyGreaterThanOrEqual(testCase, min(result.position_units(:, 2) - directY_units), -1e-9);
 end
 
 function testEarliestDefaultReportsUtilization(testCase)
@@ -671,8 +671,8 @@ end
 
 function testRankingUsesOnlyDeclaredObjectiveQuantities(testCase)
     % Prefer shorter equal-arrival motions without a hidden utilization policy.
-    summary = repmat(struct("MotionLength_deg", 10, "KinematicUtilization", 1, "ArrivalTime_s", 5, "ValidationPassed", true), 2, 1);
-    summary(2).MotionLength_deg = 9;
+    summary = repmat(struct("MotionLength_units", 10, "KinematicUtilization", 1, "ArrivalTime_s", 5, "ValidationPassed", true), 2, 1);
+    summary(2).MotionLength_units = 9;
     summary(2).KinematicUtilization = 0.1;
     % Exercise each mode covered by this regression.
     for mode = ["fixedArrival", "earliestArrival"]
@@ -703,7 +703,7 @@ end
 function testNonRestEndpointUsesStateToStateSolver(testCase)
     % A non-rest endpoint bypasses BMTP and returns a validated motion.
     initialState                = restState(0, [0 0]);
-    initialState.velocity_deg_s = [0.1 0];
+    initialState.velocity_units_s = [0.1 0];
     goalState                   = restState(10, [2 0]);
     result                      = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
     validation                  = obstacleAvoidance.validateTrajectory(result);
@@ -717,7 +717,7 @@ function testNoPathReturnsRecognizedDiagnostics(testCase)
     initialState = restState(0, [-5 0]);
     goalState    = restState(12, [5 0]);
     limits       = physicalLimits();
-    limits.elevationInterval_deg = [-10 10];
+    limits.yInterval_units = [-10 10];
     options = plannerOptions("earliestArrival");
     options.MaximumSeedCount = 3;
     [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(wall, initialState, goalState, limits, options);
@@ -739,17 +739,17 @@ function testRepeatedDirectRequestIsDeterministic(testCase)
 
     verifyEqual(testCase, second.TerminationReason, first.TerminationReason);
     verifyEqual(testCase, second.time_s, first.time_s);
-    verifyEqual(testCase, second.position_deg, first.position_deg);
-    verifyEqual(testCase, second.velocity_deg_s, first.velocity_deg_s);
-    verifyEqual(testCase, second.acceleration_deg_s2, first.acceleration_deg_s2);
-    verifyEqual(testCase, second.jerk_deg_s3, first.jerk_deg_s3);
+    verifyEqual(testCase, second.position_units, first.position_units);
+    verifyEqual(testCase, second.velocity_units_s, first.velocity_units_s);
+    verifyEqual(testCase, second.acceleration_units_s2, first.acceleration_units_s2);
+    verifyEqual(testCase, second.jerk_units_s3, first.jerk_units_s3);
 end
 
 function testInterceptValidatesInitialStateBeforeFieldAccess(testCase)
     % Use the shared identified state error for malformed public input.
     targetMotion = struct();
     targetMotion.time_s       = [0; 1];
-    targetMotion.position_deg = [0 0; 1 0];
+    targetMotion.position_units = [0 0; 1 0];
     verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(struct(), targetMotion, physicalLimits(), struct()), "planTrajectory:InvalidState");
 end
 
@@ -757,7 +757,7 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
     % Intercept trials select one terminal time, regardless of the caller mode.
     targetMotion = struct();
     targetMotion.time_s       = [0; 5];
-    targetMotion.position_deg = [0 0; 4 0];
+    targetMotion.position_units = [0 0; 4 0];
     interceptOptions = struct("InterceptMode", "specifiedTime", ...
         "SpecifiedInterceptTime_s", 5, ...
         "PlannerOptions", plannerOptions("earliestArrival"));
@@ -770,7 +770,7 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
     % Exercise the bounded time-grid search with BMTP and a PCHIP target.
     movingInitialState = restState(0, [0 0]);
     movingTarget       = struct("time_s", (0:0.5:12).', ...
-        "position_deg", repmat([6 1], 25, 1), ...
+        "position_units", repmat([6 1], 25, 1), ...
         "InterpolationMethod", "pchip");
     asapOptions = struct();
     asapOptions.InterceptMode           = "earliest";
@@ -809,7 +809,7 @@ function testSpecifiedInterceptMatchesTargetDerivatives(testCase)
     initialState = restState(0, [0 0]);
     targetTime_s = [0; 5; 10; 15];
     targetMotion = struct("time_s", targetTime_s, ...
-        "position_deg", [2 + 0.2 * targetTime_s, 1 + 0.03 * targetTime_s.^2], ...
+        "position_units", [2 + 0.2 * targetTime_s, 1 + 0.03 * targetTime_s.^2], ...
         "InterpolationMethod", "pchip");
     cases    = [true false; false true; true true];
     policies = ["zero", "target"];
@@ -831,33 +831,33 @@ end
 function testFixedArrivalSupportsNonRestTerminalState(testCase)
     % Exercise the same invariant without the moving-target wrapper.
     initialState = restState(0, [-1 0]);
-    goalState    = struct("time_s", 8, "position_deg", [3 1], ...
-        "velocity_deg_s", [0.2 -0.1], "acceleration_deg_s2", [0.05 0]);
+    goalState    = struct("time_s", 8, "position_units", [3 1], ...
+        "velocity_units_s", [0.2 -0.1], "acceleration_units_s2", [0.05 0]);
     options                  = plannerOptions("fixedArrival");
     options.MaximumSeedCount = 1;
     result                   = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), options);
     validation               = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
-    verifyEqual(testCase, result.position_deg(end, :), goalState.position_deg, "AbsTol", 1e-8);
-    verifyEqual(testCase, result.velocity_deg_s(end, :), goalState.velocity_deg_s, "AbsTol", 1e-8);
-    verifyEqual(testCase, result.acceleration_deg_s2(end, :), goalState.acceleration_deg_s2, "AbsTol", 1e-8);
+    verifyEqual(testCase, result.position_units(end, :), goalState.position_units, "AbsTol", 1e-8);
+    verifyEqual(testCase, result.velocity_units_s(end, :), goalState.velocity_units_s, "AbsTol", 1e-8);
+    verifyEqual(testCase, result.acceleration_units_s2(end, :), goalState.acceleration_units_s2, "AbsTol", 1e-8);
 end
 
-function state = restState(time_s, position_deg)
+function state = restState(time_s, position_units)
     % Create one two-axis rest endpoint.
-    state = struct("time_s", time_s, "position_deg", position_deg, ...
-        "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
+    state = struct("time_s", time_s, "position_units", position_units, ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
 end
 
 function limits = physicalLimits()
     % Create neutral two-axis bounds used by the public-contract cases.
     limits = struct();
-    limits.maxVelocity_deg_s      = [2 2];
-    limits.maxAcceleration_deg_s2 = [1 1];
-    limits.maxJerk_deg_s3         = [2 2];
-    limits.azimuthInterval_deg    = [-180 180];
-    limits.elevationInterval_deg  = [-90 90];
+    limits.maxVelocity_units_s      = [2 2];
+    limits.maxAcceleration_units_s2 = [1 1];
+    limits.maxJerk_units_s3         = [2 2];
+    limits.xInterval_units    = [-180 180];
+    limits.yInterval_units  = [-90 90];
 end
 
 function options = plannerOptions(goalTimeMode)

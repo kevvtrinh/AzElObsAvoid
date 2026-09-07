@@ -1,10 +1,10 @@
-function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_deg, options)
+function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_units, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [obstacle, history] = createContiguousUSObstacle( ...
-%       time_s, safetyMargin_deg)
+%       time_s, safetyMargin_units)
 %   [obstacle, history] = createContiguousUSObstacle( ...
-%       time_s, safetyMargin_deg, options)
+%       time_s, safetyMargin_units, options)
 %**************************************************************************
 % PURPOSE
 %   - Load and union the Mapping Toolbox contiguous-U.S. outline.
@@ -15,7 +15,7 @@ function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_d
 %**************************************************************************
 % INPUTS
 %   - time_s (nonempty increasing numeric vector)
-%   - safetyMargin_deg (nonnegative scalar)
+%   - safetyMargin_units (nonnegative scalar)
 %   - options (scalar struct, optional)
 %       .MotionMode is static or movingDeforming (default static).
 %       .Verbose is logical (default false).
@@ -25,8 +25,8 @@ function [obstacle, history] = createContiguousUSObstacle(time_s, safetyMargin_d
 %   - history (generic slice history plus source outline metadata)
 %**************************************************************************
 % UNITS
-%   - Longitude/latitude are treated as azimuth/elevation degrees; time_s
-%     is seconds and safetyMargin_deg is degrees.
+%   - Longitude/latitude are treated as x/y coordinate units; time_s
+%     is seconds and safetyMargin_units is coordinate units.
 %**************************************************************************
 
 %% Section 1: Validate Inputs & Apply Defaults
@@ -84,8 +84,8 @@ for stateIndex = 2:numel(stateBoundary)
         fprintf("[U.S. obstacle] state union %d/%d complete.\n", stateIndex, numel(stateBoundary));
     end
 end
-[allLongitude_deg, allLatitude_deg]   = boundary(mainlandUS);
-[baseLongitude_deg, baseLatitude_deg] = largestFiniteRing(allLongitude_deg, allLatitude_deg);
+[allLongitude_units, allLatitude_units]   = boundary(mainlandUS);
+[baseLongitude_units, baseLatitude_units] = largestFiniteRing(allLongitude_units, allLatitude_units);
 
 %% Section 3: Delegate All Slice Work To The Generic Constructor
 
@@ -95,40 +95,40 @@ end
 time_s             = double(time_s(:));
 missionStartTime_s = time_s(1);
 missionDuration_s  = time_s(end) - missionStartTime_s;
-baseCenter_deg     = [mean(baseLongitude_deg), mean(baseLatitude_deg)];
-basePosition_deg   = [baseLongitude_deg, baseLatitude_deg];
-localRange_deg     = max(basePosition_deg - baseCenter_deg, [], 1) - min(basePosition_deg - baseCenter_deg, [], 1);
-sliceTransform     = @(sourcePosition_deg, sampleTime_s, sampleIndex) transformUSSlice(sourcePosition_deg, sampleTime_s, sampleIndex, motionMode, missionStartTime_s, missionDuration_s, baseCenter_deg, localRange_deg);
-[obstacle, history] = obstacleAvoidance.obstacles.createMovingObstacle("Growing and rotating contiguous United States", time_s, baseLongitude_deg, baseLatitude_deg, sliceTransform, safetyMargin_deg, struct("Verbose", verbose));
+baseCenter_units     = [mean(baseLongitude_units), mean(baseLatitude_units)];
+basePosition_units   = [baseLongitude_units, baseLatitude_units];
+localRange_units     = max(basePosition_units - baseCenter_units, [], 1) - min(basePosition_units - baseCenter_units, [], 1);
+sliceTransform     = @(sourcePosition_units, sampleTime_s, sampleIndex) transformUSSlice(sourcePosition_units, sampleTime_s, sampleIndex, motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, localRange_units);
+[obstacle, history] = obstacleAvoidance.obstacles.createMovingObstacle("Growing and rotating contiguous United States", time_s, baseLongitude_units, baseLatitude_units, sliceTransform, safetyMargin_units, struct("Verbose", verbose));
 profile = extremeUSProfile(time_s, missionStartTime_s, missionDuration_s);
 history.motionMode               = motionMode;
 history.sourceFile               = string(boundaryFile);
-history.sourceOutlineLatLon_deg  = [baseLatitude_deg, baseLongitude_deg];
-history.sourceOutlineVertexCount = numel(baseLongitude_deg);
+history.sourceOutlineLatLon_units  = [baseLatitude_units, baseLongitude_units];
+history.sourceOutlineVertexCount = numel(baseLongitude_units);
 history.scaleFactor              = profile.ScaleFactor(:);
 history.rotation_deg             = profile.Rotation_deg(:);
-history.translation_deg          = profile.Translation_deg;
+history.translation_units          = profile.Translation_units;
 history.deformationWeight        = profile.DeformationWeight(:);
 history.ExampleOptions           = resolvedOptions;
 end
 
 
-function transformed_deg = transformUSSlice(sourcePosition_deg, sampleTime_s, ~, motionMode, missionStartTime_s, missionDuration_s, baseCenter_deg, localRange_deg)
+function transformed_units = transformUSSlice(sourcePosition_units, sampleTime_s, ~, motionMode, missionStartTime_s, missionDuration_s, baseCenter_units, localRange_units)
     % Return one U.S. slice. The generic constructor owns the time loop.
     if motionMode == "static" || missionDuration_s <= 0
-        transformed_deg = sourcePosition_deg;
+        transformed_units = sourcePosition_units;
         return;
     end
     missionProgress   = (sampleTime_s - missionStartTime_s) / missionDuration_s;
     profile           = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDuration_s);
     phase_rad         = 2 * pi * missionProgress;
-    baseLocal_deg     = sourcePosition_deg - baseCenter_deg;
-    deformedLocal_deg = baseLocal_deg;
-    deformedLocal_deg(:, 1) = deformedLocal_deg(:, 1) + profile.DeformationWeight * 0.80 * sin(2 * pi * baseLocal_deg(:, 2) / localRange_deg(2) + phase_rad);
-    deformedLocal_deg(:, 2) = deformedLocal_deg(:, 2) + profile.DeformationWeight * 0.55 * sin(2 * pi * baseLocal_deg(:, 1) / localRange_deg(1) - 0.7 * phase_rad);
+    baseLocal_units     = sourcePosition_units - baseCenter_units;
+    deformedLocal_units = baseLocal_units;
+    deformedLocal_units(:, 1) = deformedLocal_units(:, 1) + profile.DeformationWeight * 0.80 * sin(2 * pi * baseLocal_units(:, 2) / localRange_units(2) + phase_rad);
+    deformedLocal_units(:, 2) = deformedLocal_units(:, 2) + profile.DeformationWeight * 0.55 * sin(2 * pi * baseLocal_units(:, 1) / localRange_units(1) - 0.7 * phase_rad);
     rotation_rad    = deg2rad(profile.Rotation_deg);
     rotationMatrix  = [cos(rotation_rad) -sin(rotation_rad); sin(rotation_rad) cos(rotation_rad)];
-    transformed_deg = profile.ScaleFactor * deformedLocal_deg * rotationMatrix.' + baseCenter_deg + profile.Translation_deg;
+    transformed_units = profile.ScaleFactor * deformedLocal_units * rotationMatrix.' + baseCenter_units + profile.Translation_units;
 end
 
 function profile = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDuration_s)
@@ -142,7 +142,7 @@ function profile = extremeUSProfile(sampleTime_s, missionStartTime_s, missionDur
     smoothProgress  = 10 * missionProgress.^3 - 15 * missionProgress.^4 + 6 * missionProgress.^5;
     profile         = struct("ScaleFactor", 0.08 + 1.27 * smoothProgress, ...
         "Rotation_deg", 180 * smoothProgress, ...
-        "Translation_deg", [ ...
+        "Translation_units", [ ...
             2.5 * sin(2 * pi * missionProgress(:)), ...
             1.5 * sin(pi * missionProgress(:))], ...
         "DeformationWeight", sin(pi * missionProgress));

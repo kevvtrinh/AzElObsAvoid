@@ -12,22 +12,22 @@ function [candidate, diagnostics] = solveStaticBmtpTrajectory(seed, geometry, in
 % OUTPUTS
 %   Candidate motion or failure, with engine and geometry-retry diagnostics.
 % UNITS
-%   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
+%   Coordinate units, seconds, and derivatives in units/s, units/s^2, and units/s^3.
 
 %% Section 1: Read The Prepared Exclusion Regions
 goalState        = resolveFixedEndpointForSolver(goalState, options);
-exactRegions_deg = geometry.ExactRegions_deg;
-regions_deg      = geometry.Regions_deg;
+exactRegions_units = geometry.ExactRegions_units;
+regions_units      = geometry.Regions_units;
 grouping         = geometry.Grouping;
 coverage         = geometry.Coverage;
 
 %% Section 2: Generate The Motion In The Independent Engine
 
-[candidate, diagnostics] = bmtpEngine.solve(seed, regions_deg, coverage, initialState, goalState, limits, options);
+[candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
 fallback = struct("Attempted", false, ...
     "PrimaryTerminationReason", candidate.TerminationReason, ...
     "Outcome", "notApplicable", ...
-    "ExactRegionCount", numel(exactRegions_deg), ...
+    "ExactRegionCount", numel(exactRegions_units), ...
     "PrimarySolverDiagnostics", struct());
 % Try grouped static regions first to reduce solver size; the ungrouped retry remains available if grouping fails.
 if grouping.Applied
@@ -39,14 +39,14 @@ if grouping.Applied && ~candidate.Success
     fallback.Outcome                  = "exactRegionAttemptFailed";
     fallback.PrimarySolverDiagnostics = diagnostics;
     exactCoverage = coverage;
-    exactCoverage.SolverRegionCount = numel(exactRegions_deg);
+    exactCoverage.SolverRegionCount = numel(exactRegions_units);
     exactGrouping = grouping;
     exactGrouping.Applied                 = false;
-    exactGrouping.SolverRegionCount       = numel(exactRegions_deg);
+    exactGrouping.SolverRegionCount       = numel(exactRegions_units);
     exactGrouping.RelationToExactGeometry = "equal";
-    exactGrouping.GroupMemberIndices      = num2cell((1:numel(exactRegions_deg)).');
+    exactGrouping.GroupMemberIndices      = num2cell((1:numel(exactRegions_units)).');
     exactCoverage.ConservativeGrouping = exactGrouping;
-    [candidate, diagnostics] = bmtpEngine.solve(seed, exactRegions_deg, exactCoverage, initialState, goalState, limits, options);
+    [candidate, diagnostics] = bmtpEngine.solve(seed, exactRegions_units, exactCoverage, initialState, goalState, limits, options);
     % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success
         fallback.Outcome = "exactRegionAttemptAccepted";
@@ -63,11 +63,11 @@ function solverGoalState = resolveFixedEndpointForSolver(goalState, options)
     if ~hasTargetHistory || string(options.GoalTimeMode) ~= "fixedArrival"
         return;
     end
-    targetPosition_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
-    coordinateScale_deg = bmtpEngine.createCoordinateTolerances(targetPosition_deg, goalState.position_deg);
-    if max(abs(targetPosition_deg - goalState.position_deg)) > 256 * eps(coordinateScale_deg)
+    targetPosition_units  = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
+    coordinateScale_units = bmtpEngine.createCoordinateTolerances(targetPosition_units, goalState.position_units);
+    if max(abs(targetPosition_units - goalState.position_units)) > 256 * eps(coordinateScale_units)
         return;
     end
-    metadataFields  = intersect(fieldnames(solverGoalState), {'targetTime_s', 'targetPosition_deg', 'InterpolationMethod'});
+    metadataFields  = intersect(fieldnames(solverGoalState), {'targetTime_s', 'targetPosition_units', 'InterpolationMethod'});
     solverGoalState = rmfield(solverGoalState, metadataFields);
 end

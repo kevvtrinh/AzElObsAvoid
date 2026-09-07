@@ -1,12 +1,12 @@
-function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope(obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
+function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope(obstacles, sampleTimes_s, endpointPosition_units, vertexWorkBudget)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [envelopeShape, usedEnvelope] = ...
 %       obstacleAvoidance.search.denseSweptEnvelope( ...
-%       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
+%       obstacles, sampleTimes_s, endpointPosition_units, vertexWorkBudget)
 %   [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       obstacleAvoidance.search.denseSweptEnvelope( ...
-%       obstacles, sampleTimes_s, endpointPosition_deg, vertexWorkBudget)
+%       obstacles, sampleTimes_s, endpointPosition_units, vertexWorkBudget)
 %
 % PURPOSE
 %   - Replace an unaffordable sampled union with one conservative convex
@@ -17,8 +17,8 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope
 %       Complete stored histories whose vertices define each envelope.
 %   - sampleTimes_s (numeric vector)
 %       Times used to estimate the ordinary sampled-union work.
-%   - endpointPosition_deg (2-by-2 numeric array)
-%       Start and goal in [azimuth elevation] order.
+%   - endpointPosition_units (2-by-2 numeric array)
+%       Start and goal in [x y] order.
 %   - vertexWorkBudget (positive numeric scalar)
 %       Maximum estimated sampled-union vertex work.
 %
@@ -31,21 +31,21 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope
 %       Sample-time count times the maximum stored vertices per obstacle.
 %
 % UNITS
-%   - Position is degrees; time is seconds; work is a vertex count.
+%   - Position is coordinate units; time is seconds; work is a vertex count.
 %
 
 %% Section 1: Detect Dense History Work
 
 validateattributes(sampleTimes_s, {'numeric'}, {'real', 'finite', 'vector'});
-validateattributes(endpointPosition_deg, {'numeric'}, {'real', 'finite', 'size', [2 2]});
+validateattributes(endpointPosition_units, {'numeric'}, {'real', 'finite', 'size', [2 2]});
 validateattributes(vertexWorkBudget, {'numeric'}, {'real', 'finite', 'positive', 'scalar'});
 verticesPerLayer = 0;
 % Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     maximumVertexCount = 0;
     % Process each sample in temporal order and accumulate its result.
-    for sampleIndex = 1:numel(obstacles(obstacleIndex).az_deg)
-        maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).az_deg{sampleIndex}));
+    for sampleIndex = 1:numel(obstacles(obstacleIndex).x_units)
+        maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).x_units{sampleIndex}));
     end
     verticesPerLayer = verticesPerLayer + maximumVertexCount;
 end
@@ -65,20 +65,20 @@ envelopeCount = 0;
 % Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacle     = obstacles(obstacleIndex);
-    vertices_deg = zeros(0, 2);
+    vertices_units = zeros(0, 2);
     % Process each sample in temporal order and accumulate its result.
-    for sampleIndex = 1:numel(obstacle.az_deg)
-        sample_deg   = [obstacle.az_deg{sampleIndex}(:), obstacle.el_deg{sampleIndex}(:)];
-        vertices_deg = [vertices_deg; sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>
+    for sampleIndex = 1:numel(obstacle.x_units)
+        sample_units   = [obstacle.x_units{sampleIndex}(:), obstacle.y_units{sampleIndex}(:)];
+        vertices_units = [vertices_units; sample_units(all(isfinite(sample_units), 2), :)]; %#ok<AGROW>
     end
-    vertices_deg = unique(vertices_deg, "rows", "stable");
-    if size(vertices_deg, 1) < 3
+    vertices_units = unique(vertices_units, "rows", "stable");
+    if size(vertices_units, 1) < 3
         continue;
     end
-    hullIndex    = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-    trialShape   = polyshape(vertices_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
+    hullIndex    = convhull(vertices_units(:, 1), vertices_units(:, 2));
+    trialShape   = polyshape(vertices_units(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
     guardedShape = polybuffer(trialShape, 1e-9);
-    if any(isinterior(guardedShape, endpointPosition_deg(:, 1), endpointPosition_deg(:, 2)))
+    if any(isinterior(guardedShape, endpointPosition_units(:, 1), endpointPosition_units(:, 2)))
         envelopeShape = polyshape();
         return;
     end

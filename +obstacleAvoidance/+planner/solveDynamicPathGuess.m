@@ -17,7 +17,7 @@ function [candidate, checkResult, solverDiagnostics, candidateWasPrechecked, pre
 %   precheckElapsedTime_s accounts for that nested validation time.
 %   Updated stageTiming and context are reused by later guesses.
 % UNITS
-%   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
+%   Coordinate units, seconds, and derivatives in units/s, units/s^2, and units/s^3.
 
 %% Section 1: Try A Conservative Static Projection
 
@@ -28,7 +28,7 @@ preparedObstacles      = obstacles;
 candidateWasPrechecked = false;
 precheckElapsedTime_s  = 0;
 checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
-trySweptProjection     = string(seed.Source) ~= "directWait" && size(seed.position_deg, 1) > 2;
+trySweptProjection     = string(seed.Source) ~= "directWait" && size(seed.position_units, 1) > 2;
 sweptAttempt           = struct();
 timedBmtpAttempt       = struct();
 rejectedCandidates     = {};
@@ -167,9 +167,9 @@ function diagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiag
     diagnostics.FallbackDiagnostics = fallbackDiagnostics;
     % Apply the required validation or transfer to each field name.
     for fieldName = ["InteriorWaypointTime_s", ...
-            "InteriorWaypointPosition_deg", ...
-            "InteriorWaypointVelocity_deg_s", ...
-            "InteriorWaypointAcceleration_deg_s2", ...
+            "InteriorWaypointPosition_units", ...
+            "InteriorWaypointVelocity_units_s", ...
+            "InteriorWaypointAcceleration_units_s2", ...
             "AllInteriorWaypointsConstrainedToRest"]
         if isfield(fallbackDiagnostics, fieldName)
             diagnostics.(fieldName) = fallbackDiagnostics.(fieldName);
@@ -196,7 +196,7 @@ function [candidate, diagnostics] = unsupportedPathGuess(seed, initialState, opt
     reason  = "unsupportedTimedMultiWaypointRoute";
     feature = "multiWaypointTimedRoute";
     % Classify two-point seeds as unsupported direct guesses; longer seeds remain unsupported timed multi-waypoint routes.
-    if size(seed.position_deg, 1) <= 2
+    if size(seed.position_units, 1) <= 2
         reason  = "unsupportedDynamicDirectGuess";
         feature = "directGuessWithoutWaitSchedule";
     end
@@ -205,6 +205,6 @@ function [candidate, diagnostics] = unsupportedPathGuess(seed, initialState, opt
     diagnostics = struct("Accepted", false, "TerminationReason", reason, ...
         "OriginalTerminationReason", reason, "FirstUnsupportedFeature", feature, ...
         "FirstUnsupportedTransitionIndex", 1, "FallbackPolicy", options.UnsupportedTimedTopologyPolicy, ...
-        "WaypointPosition_deg", seed.position_deg, "Tau", seed.tau);
+        "WaypointPosition_units", seed.position_units, "Tau", seed.tau);
     candidate.SolverDiagnostics = diagnostics;
 end

@@ -16,8 +16,8 @@ function [result, diagnosis] = exampleNoPath(exampleOverrides)
 %       Unmodified public planner failure result.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -27,7 +27,7 @@ function [result, diagnosis] = exampleNoPath(exampleOverrides)
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
 end
-[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival", "AllowAzimuthWrapping", false), [2 2]);
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival", "WrapX", false), [2 2]);
 
 %% Section 2: Create Obstacles
 
@@ -35,9 +35,9 @@ end
 % This is an expected no-path case, not invalid input.
 
 obstacleTime_s        = [0; 20];
-obstacleAzimuth_deg   = [-0.5; 0.5; 0.5; -0.5];
-obstacleElevation_deg = [-90; -90; 90; 90];
-obstacles             = obstacleAvoidance.obstacles.createObstacle("full-height wall", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, 0);
+obstacleX_units   = [-0.5; 0.5; 0.5; -0.5];
+obstacleY_units = [-90; -90; 90; 90];
+obstacles             = obstacleAvoidance.obstacles.createObstacle("full-height wall", obstacleTime_s, obstacleX_units, obstacleY_units, 0);
 
 %% Section 3: Create Planner Inputs
 
@@ -46,13 +46,13 @@ obstacles             = obstacleAvoidance.obstacles.createObstacle("full-height 
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-5 0];
+initialState.position_units = [-5 0];
 goalState = struct();
 goalState.time_s       = 12;
-goalState.position_deg = [5 0];
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "elevationInterval_deg", [-10 10]);
+goalState.position_units = [5 0];
+limits = struct("maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [1 1], ...
+    "maxJerk_units_s3", displayOptions.MaxJerk_units_s3, "yInterval_units", [-10 10]);
 
 %% Section 4: Run Planner
 

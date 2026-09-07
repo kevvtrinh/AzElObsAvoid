@@ -20,7 +20,7 @@ function [result, diagnosis] = planMovingTargetIntercept(varargin)
 %   - obstacles (canonical protected obstacle array, optional; default [])
 %   - initialState (scalar state struct)
 %   - targetMotion (scalar struct)
-%       Increasing time_s and N-by-2 position_deg are required. Optional
+%       Increasing time_s and N-by-2 position_units are required. Optional
 %       InterpolationMethod is "linear" or "pchip".
 %   - limits (scalar limits struct)
 %       Same combined-scalar or per-axis contract as planTrajectory. All
@@ -37,7 +37,7 @@ function [result, diagnosis] = planMovingTargetIntercept(varargin)
 %   - diagnosis (optional second output): planner and intercept search evidence.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s and deg/s^2.
+%   - Position is coordinate units; time is seconds; derivatives use units/s and units/s^2.
 %
 
 %% Section 1: Resolve The Call And Options
@@ -95,16 +95,16 @@ limits       = obstacleAvoidance.input.normalizePlannerLimits(limits);
 
 %% Section 2: Normalize The Sampled Target
 
-if ~isstruct(targetMotion) || ~isscalar(targetMotion) || ~all(isfield(targetMotion, {'time_s', 'position_deg'}))
-    error("planMovingTargetIntercept:InvalidTargetMotion", "targetMotion must contain time_s and position_deg.");
+if ~isstruct(targetMotion) || ~isscalar(targetMotion) || ~all(isfield(targetMotion, {'time_s', 'position_units'}))
+    error("planMovingTargetIntercept:InvalidTargetMotion", "targetMotion must contain time_s and position_units.");
 end
 validateattributes(targetMotion.time_s, {'numeric'}, {'real', 'finite', 'vector', 'increasing'});
 targetMotion.time_s = double(targetMotion.time_s(:));
 if numel(targetMotion.time_s) < 2
     error("planMovingTargetIntercept:TargetHistoryTooShort", "targetMotion.time_s must contain at least two samples.");
 end
-validateattributes(targetMotion.position_deg, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2, 'nrows', numel(targetMotion.time_s)});
-targetMotion.position_deg = double(targetMotion.position_deg);
+validateattributes(targetMotion.position_units, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2, 'nrows', numel(targetMotion.time_s)});
+targetMotion.position_units = double(targetMotion.position_units);
 if ~isfield(targetMotion, "InterpolationMethod") || isempty(targetMotion.InterpolationMethod)
     targetMotion.InterpolationMethod = "linear";
 end
@@ -132,16 +132,16 @@ else
 end
 if result.Success
     achievedTime_s     = result.time_s(end);
-    achievedTarget_deg = targetAtTime(targetMotion, achievedTime_s);
+    achievedTarget_units = targetAtTime(targetMotion, achievedTime_s);
 else
     achievedTime_s     = NaN;
-    achievedTarget_deg = [NaN NaN];
+    achievedTarget_units = [NaN NaN];
 end
 % Every trial overwrites this mode before invoking the public planner.
 options.PlannerOptions.GoalTimeMode = "fixedArrival";
 policies = ["zero", "target"];
 result.Intercept = struct("Mode", options.InterceptMode, ...
-    "Time_s", achievedTime_s, "TargetPosition_deg", achievedTarget_deg, ...
+    "Time_s", achievedTime_s, "TargetPosition_units", achievedTarget_units, ...
     "TerminalVelocityPolicy", policies(options.MatchTargetVelocity + 1), ...
     "TerminalAccelerationPolicy", ...
         policies(options.MatchTargetAcceleration + 1));
@@ -166,9 +166,9 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
         error("planMovingTargetIntercept:EmptySearchWindow", "The target history and MaximumSearchDuration_s do not overlap " + "after initialState.time_s.");
     end
     exactDiagnostics = struct();
-    isDirectExact    = isempty(obstacles) && targetMotion.InterpolationMethod == "linear" && derivativeIsZero(initialState, "velocity_deg_s") && derivativeIsZero(initialState, "acceleration_deg_s2");
+    isDirectExact    = isempty(obstacles) && targetMotion.InterpolationMethod == "linear" && derivativeIsZero(initialState, "velocity_units_s") && derivativeIsZero(initialState, "acceleration_units_s2");
     if isDirectExact
-        [exactTime_s, exactDiagnostics] = obstacleAvoidance.planner.findEarliestLinearIntercept(initialState, targetMotion.time_s, targetMotion.position_deg, limits, searchEnd_s);
+        [exactTime_s, exactDiagnostics] = obstacleAvoidance.planner.findEarliestLinearIntercept(initialState, targetMotion.time_s, targetMotion.position_units, limits, searchEnd_s);
         if isfinite(exactTime_s) && exactTime_s >= searchStart_s
             [trial, trialDiagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, exactTime_s, includeDiagnosis);
             if trial.Success
@@ -225,24 +225,24 @@ end
 
 function [result, diagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, interceptTime_s, includeDiagnosis)
     % Call the public planner for one fixed-time intercept.
-    terminalPosition_deg        = targetAtTime(targetMotion, interceptTime_s);
-    terminalVelocity_deg_s      = [0 0];
-    terminalAcceleration_deg_s2 = [0 0];
+    terminalPosition_units        = targetAtTime(targetMotion, interceptTime_s);
+    terminalVelocity_units_s      = [0 0];
+    terminalAcceleration_units_s2 = [0 0];
     if options.MatchTargetVelocity || options.MatchTargetAcceleration
-        [targetVelocity_deg_s, targetAcceleration_deg_s2] = targetDerivatives(targetMotion.time_s, targetMotion.position_deg, interceptTime_s, targetMotion.InterpolationMethod);
+        [targetVelocity_units_s, targetAcceleration_units_s2] = targetDerivatives(targetMotion.time_s, targetMotion.position_units, interceptTime_s, targetMotion.InterpolationMethod);
         if options.MatchTargetVelocity
-            terminalVelocity_deg_s = targetVelocity_deg_s;
+            terminalVelocity_units_s = targetVelocity_units_s;
         end
         if options.MatchTargetAcceleration
-            terminalAcceleration_deg_s2 = targetAcceleration_deg_s2;
+            terminalAcceleration_units_s2 = targetAcceleration_units_s2;
         end
     end
     goalState = struct("time_s", interceptTime_s, ...
-        "position_deg", terminalPosition_deg, ...
-        "velocity_deg_s", terminalVelocity_deg_s, ...
-        "acceleration_deg_s2", terminalAcceleration_deg_s2, ...
+        "position_units", terminalPosition_units, ...
+        "velocity_units_s", terminalVelocity_units_s, ...
+        "acceleration_units_s2", terminalAcceleration_units_s2, ...
         "targetTime_s", targetMotion.time_s, ...
-        "targetPosition_deg", targetMotion.position_deg, ...
+        "targetPosition_units", targetMotion.position_units, ...
         "InterpolationMethod", targetMotion.InterpolationMethod);
     plannerOptions = options.PlannerOptions;
     plannerOptions.GoalTimeMode = "fixedArrival";
@@ -254,23 +254,23 @@ function [result, diagnosis] = planAtTime(obstacles, initialState, targetMotion,
     end
 end
 
-function position_deg = targetAtTime(targetMotion, queryTime_s)
+function position_units = targetAtTime(targetMotion, queryTime_s)
     % Evaluate the target without extrapolating its history.
-    position_deg = interp1(targetMotion.time_s, targetMotion.position_deg, queryTime_s, targetMotion.InterpolationMethod);
+    position_units = interp1(targetMotion.time_s, targetMotion.position_units, queryTime_s, targetMotion.InterpolationMethod);
 end
 
-function [velocity_deg_s, acceleration_deg_s2] = targetDerivatives(time_s, position_deg, queryTime_s, method)
+function [velocity_units_s, acceleration_units_s2] = targetDerivatives(time_s, position_units, queryTime_s, method)
     % Estimate derivatives using the documented bounded centered/one-sided step.
     step_s              = max(1e-5, min(1e-2, min(diff(time_s)) / 100));
     lowerTime_s         = max(time_s(1), queryTime_s - step_s);
     upperTime_s         = min(time_s(end), queryTime_s + step_s);
-    sample_deg          = interp1(time_s, position_deg, [lowerTime_s; queryTime_s; upperTime_s], method);
+    sample_units          = interp1(time_s, position_units, [lowerTime_s; queryTime_s; upperTime_s], method);
     leftDuration_s      = max(queryTime_s - lowerTime_s, eps);
     rightDuration_s     = max(upperTime_s - queryTime_s, eps);
-    velocity_deg_s      = (sample_deg(3, :) - sample_deg(1, :)) / (upperTime_s - lowerTime_s);
-    leftVelocity_deg_s  = (sample_deg(2, :) - sample_deg(1, :)) / leftDuration_s;
-    rightVelocity_deg_s = (sample_deg(3, :) - sample_deg(2, :)) / rightDuration_s;
-    acceleration_deg_s2 = 2 * (rightVelocity_deg_s - leftVelocity_deg_s) / (leftDuration_s + rightDuration_s);
+    velocity_units_s      = (sample_units(3, :) - sample_units(1, :)) / (upperTime_s - lowerTime_s);
+    leftVelocity_units_s  = (sample_units(2, :) - sample_units(1, :)) / leftDuration_s;
+    rightVelocity_units_s = (sample_units(3, :) - sample_units(2, :)) / rightDuration_s;
+    acceleration_units_s2 = 2 * (rightVelocity_units_s - leftVelocity_units_s) / (leftDuration_s + rightDuration_s);
 end
 
 function search = searchRecord(policy, trialCount, coarseCount, refinementCount, startTime_s, endTime_s, upperTime_s, lowerTime_s, tolerance_s, exactDiagnostics)

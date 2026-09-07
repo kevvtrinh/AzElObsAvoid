@@ -17,8 +17,8 @@ function [result, diagnosis] = exampleOpeningUShapedObstacle(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s,
+%     units/s^2, and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -40,18 +40,18 @@ end
 missionEndTime_s      = 120;
 openingTime_s         = 7;
 transitionHalfWidth_s = 1e-3;
-safetyMargin_deg      = 0.20;
-gapHalfWidth_deg      = 1.5;
-closedBoundary_deg    = [ -8, 7; -5, 7; -5, -4; 5, -4; 5, 7; 8, 7; 8, -7; -8, -7];
-leftOpenBoundary_deg  = [ -8, 7; -5, 7; -5, -4; -gapHalfWidth_deg, -4; -gapHalfWidth_deg, -7; -8, -7];
-rightOpenBoundary_deg = [ 5, 7; 8, 7; 8, -7; gapHalfWidth_deg, -7; gapHalfWidth_deg, -4; 5, -4];
-openBoundary_deg      = [ leftOpenBoundary_deg; NaN NaN; rightOpenBoundary_deg];
+safetyMargin_units      = 0.20;
+gapHalfWidth_units      = 1.5;
+closedBoundary_units    = [ -8, 7; -5, 7; -5, -4; 5, -4; 5, 7; 8, 7; 8, -7; -8, -7];
+leftOpenBoundary_units  = [ -8, 7; -5, 7; -5, -4; -gapHalfWidth_units, -4; -gapHalfWidth_units, -7; -8, -7];
+rightOpenBoundary_units = [ 5, 7; 8, 7; 8, -7; gapHalfWidth_units, -7; gapHalfWidth_units, -4; 5, -4];
+openBoundary_units      = [ leftOpenBoundary_units; NaN NaN; rightOpenBoundary_units];
 obstacleTime_s        = [ 0; openingTime_s - transitionHalfWidth_s; openingTime_s + transitionHalfWidth_s; missionEndTime_s];
-azimuthByTime_deg     = { ...
-    closedBoundary_deg(:, 1); closedBoundary_deg(:, 1); openBoundary_deg(:, 1); openBoundary_deg(:, 1)};
-elevationByTime_deg = { ...
-    closedBoundary_deg(:, 2); closedBoundary_deg(:, 2); openBoundary_deg(:, 2); openBoundary_deg(:, 2)};
-obstacles = obstacleAvoidance.obstacles.createObstacle("U-shaped obstacle with timed gap", obstacleTime_s, azimuthByTime_deg, elevationByTime_deg, safetyMargin_deg);
+xByTime_units     = { ...
+    closedBoundary_units(:, 1); closedBoundary_units(:, 1); openBoundary_units(:, 1); openBoundary_units(:, 1)};
+yByTime_units = { ...
+    closedBoundary_units(:, 2); closedBoundary_units(:, 2); openBoundary_units(:, 2); openBoundary_units(:, 2)};
+obstacles = obstacleAvoidance.obstacles.createObstacle("U-shaped obstacle with timed gap", obstacleTime_s, xByTime_units, yByTime_units, safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -61,11 +61,11 @@ obstacles = obstacleAvoidance.obstacles.createObstacle("U-shaped obstacle with t
 
 initialState = struct();
 initialState.time_s              = 0;
-initialState.position_deg        = [0 0];
-initialState.velocity_deg_s      = [0 0];
-initialState.acceleration_deg_s2 = [0 0];
-goalState = struct("time_s", missionEndTime_s, "position_deg", [0 -10], "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [0.75 0.75], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+initialState.position_units        = [0 0];
+initialState.velocity_units_s      = [0 0];
+initialState.acceleration_units_s2 = [0 0];
+goalState = struct("time_s", missionEndTime_s, "position_units", [0 -10], "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [0.75 0.75], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 
@@ -84,7 +84,7 @@ clear warningCleanup;
 % crosses the gap only after it opens.
 
 exampleValidation = validateExampleResult(result, "opening U-shaped obstacle", struct(), diagnosis);
-openingValidation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_deg, safetyMargin_deg);
+openingValidation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_units, safetyMargin_units);
 exampleValidation.Passed = exampleValidation.Passed && openingValidation.Passed;
 if ~openingValidation.Passed
     exampleValidation.Message = exampleValidation.Message + " " + openingValidation.Message;
@@ -103,7 +103,7 @@ end
 
 end
 
-function validation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_deg, safetyMargin_deg)
+function validation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_units, safetyMargin_units)
     % Verify that the selected seed waits and then crosses the protected gap.
     waitSeedSelected          = false;
     stayedBeforeClosedBarrier = false;
@@ -112,13 +112,13 @@ function validation = validateOpeningUse(result, diagnosis, openingTime_s, gapHa
     comparisonArrivalTime_s   = NaN;
     if result.Success
         selectedSeed              = diagnosis.Routes(diagnosis.SelectedAttemptIndex);
-        repeatedPosition          = vecnorm(diff(selectedSeed.position_deg, 1, 1), 2, 2) <= 1e-10;
+        repeatedPosition          = vecnorm(diff(selectedSeed.position_units, 1, 1), 2, 2) <= 1e-10;
         waitSeedSelected          = any(repeatedPosition) || selectedSeed.Source == "directWait";
         beforeOpening             = result.time_s <= openingTime_s;
-        stayedBeforeClosedBarrier = any(beforeOpening) && all(result.position_deg(beforeOpening, 2) >= -4 + safetyMargin_deg - 1e-6);
-        crossesBottomBar          = result.position_deg(:, 2) <= -4 + safetyMargin_deg & result.position_deg(:, 2) >= -7 - safetyMargin_deg;
-        protectedGapHalfWidth_deg = gapHalfWidth_deg - safetyMargin_deg;
-        crossedOpenGap            = any(crossesBottomBar & abs(result.position_deg(:, 1)) < protectedGapHalfWidth_deg & result.time_s > openingTime_s);
+        stayedBeforeClosedBarrier = any(beforeOpening) && all(result.position_units(beforeOpening, 2) >= -4 + safetyMargin_units - 1e-6);
+        crossesBottomBar          = result.position_units(:, 2) <= -4 + safetyMargin_units & result.position_units(:, 2) >= -7 - safetyMargin_units;
+        protectedGapHalfWidth_units = gapHalfWidth_units - safetyMargin_units;
+        crossedOpenGap            = any(crossesBottomBar & abs(result.position_units(:, 1)) < protectedGapHalfWidth_units & result.time_s > openingTime_s);
         selectedArrivalTime_s     = result.time_s(end);
         otherValidated            = find([diagnosis.Attempts.ValidationPassed]);
         otherValidated(otherValidated == diagnosis.SelectedAttemptIndex) = [];

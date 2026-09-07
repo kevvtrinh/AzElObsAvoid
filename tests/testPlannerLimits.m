@@ -9,7 +9,7 @@ function tests = testPlannerLimits
 % OUTPUTS
 %   Deterministic MATLAB function tests.
 % UNITS
-%   Degrees, seconds, and their motion derivatives.
+%   Coordinate units, seconds, and their motion derivatives.
 
 %% Section 1: Register Tests
 tests = functiontests(localfunctions);
@@ -41,9 +41,9 @@ function testCombinedPlanningMatchesExplicitAxisLimits(testCase)
         explicitValidation = obstacleAvoidance.validateTrajectory(result, [], initial, goal, combined, result.Options);
         verifyTrue(testCase, validation.Passed, validation.Message);
         verifyTrue(testCase, explicitValidation.Passed, explicitValidation.Message);
-        verifyLessThanOrEqual(testCase, max(vecnorm(result.velocity_deg_s, 2, 2)), combined.maxVelocity_deg_s + 1e-6);
-        verifyLessThanOrEqual(testCase, max(vecnorm(result.acceleration_deg_s2, 2, 2)), combined.maxAcceleration_deg_s2 + 1e-6);
-        verifyLessThanOrEqual(testCase, max(vecnorm(result.jerk_deg_s3, 2, 2)), combined.maxJerk_deg_s3 + 1e-6);
+        verifyLessThanOrEqual(testCase, max(vecnorm(result.velocity_units_s, 2, 2)), combined.maxVelocity_units_s + 1e-6);
+        verifyLessThanOrEqual(testCase, max(vecnorm(result.acceleration_units_s2, 2, 2)), combined.maxAcceleration_units_s2 + 1e-6);
+        verifyLessThanOrEqual(testCase, max(vecnorm(result.jerk_units_s3, 2, 2)), combined.maxJerk_units_s3 + 1e-6);
     end
 end
 
@@ -51,23 +51,23 @@ function testSeparateColumnsAndWorkspaceRemainUnscaled(testCase)
     % Preserve unequal axis limits, numeric normalization, and workspace defaults.
     fixtures = testCase.TestData.Fixtures;
     limits   = fixtures.PhysicalLimits(single([2; 3]), uint16([1; 4]), [5; 6]);
-    limits.azimuthInterval_deg   = [-20; 40];
-    limits.elevationInterval_deg = [];
+    limits.xInterval_units   = [-20; 40];
+    limits.yInterval_units = [];
     resolved = obstacleAvoidance.input.normalizePlannerLimits(limits);
-    verifyEqual(testCase, resolved.maxVelocity_deg_s, [2 3]);
-    verifyEqual(testCase, resolved.maxAcceleration_deg_s2, [1 4]);
-    verifyEqual(testCase, resolved.maxJerk_deg_s3, [5 6]);
-    verifyEqual(testCase, resolved.azimuthInterval_deg, [-20 40]);
-    verifyEqual(testCase, resolved.elevationInterval_deg, [-90 90]);
+    verifyEqual(testCase, resolved.maxVelocity_units_s, [2 3]);
+    verifyEqual(testCase, resolved.maxAcceleration_units_s2, [1 4]);
+    verifyEqual(testCase, resolved.maxJerk_units_s3, [5 6]);
+    verifyEqual(testCase, resolved.xInterval_units, [-20 40]);
+    verifyEqual(testCase, resolved.yInterval_units, [-90 90]);
     verifyEqual(testCase, obstacleAvoidance.input.normalizePlannerLimits(resolved), resolved);
     combined = fixtures.PhysicalLimits(single(2), uint16(1), 2.5);
-    combined = rmfield(combined, {'azimuthInterval_deg', 'elevationInterval_deg'});
+    combined = rmfield(combined, {'xInterval_units', 'yInterval_units'});
     resolved = obstacleAvoidance.input.normalizePlannerLimits(combined);
-    verifyEqual(testCase, resolved.maxVelocity_deg_s, [2 2] / sqrt(2));
-    verifyEqual(testCase, resolved.maxAcceleration_deg_s2, [1 1] / sqrt(2));
-    verifyEqual(testCase, resolved.maxJerk_deg_s3, [2.5 2.5] / sqrt(2));
-    verifyEqual(testCase, resolved.azimuthInterval_deg, [-180 180]);
-    verifyEqual(testCase, resolved.elevationInterval_deg, [-90 90]);
+    verifyEqual(testCase, resolved.maxVelocity_units_s, [2 2] / sqrt(2));
+    verifyEqual(testCase, resolved.maxAcceleration_units_s2, [1 1] / sqrt(2));
+    verifyEqual(testCase, resolved.maxJerk_units_s3, [2.5 2.5] / sqrt(2));
+    verifyEqual(testCase, resolved.xInterval_units, [-180 180]);
+    verifyEqual(testCase, resolved.yInterval_units, [-90 90]);
     verifyEqual(testCase, obstacleAvoidance.input.normalizePlannerLimits(resolved), resolved);
 end
 
@@ -76,8 +76,8 @@ function testAllMixedFormsRejectedAtPublicBoundaries(testCase)
     fixtures = testCase.TestData.Fixtures;
     initial  = fixtures.State(0, [0 0], [0 0], [0 0]);
     goal     = fixtures.State(30, [8 3], [0 0], [0 0]);
-    target   = struct("time_s", [0; 30], "position_deg", [6 2; 9 5]);
-    names    = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3"];
+    target   = struct("time_s", [0; 30], "position_units", [6 2; 9 5]);
+    names    = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"];
     options  = obstacleAvoidance.planTrajectory();
     for mask = 1:6
         limits = fixtures.PhysicalLimits(2, 1, 2.5);
@@ -96,7 +96,7 @@ function testCombinedInterceptMatchesExplicitAxisLimits(testCase)
     % Earliest interception must normalize before computing its exact search clock.
     fixtures = testCase.TestData.Fixtures;
     initial  = fixtures.State(0, [0 0], [0 0], [0 0]);
-    target   = struct("time_s", [0; 30], "position_deg", [6 2; 9 5]);
+    target   = struct("time_s", [0; 30], "position_units", [6 2; 9 5]);
     combined = fixtures.PhysicalLimits(2, 1, 2.5);
     separate = fixtures.PhysicalLimits([2 2] / sqrt(2), [1 1] / sqrt(2), [2.5 2.5] / sqrt(2));
     for mode = ["earliest", "specifiedTime"]
@@ -126,7 +126,7 @@ function testEndpointAboveAllocatedShareReturnsExpectedFailure(testCase)
     result   = obstacleAvoidance.planTrajectory([], initial, goal, limits);
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "dynamicEndpointInfeasible");
-    verifyEqual(testCase, result.Inputs.limits.maxVelocity_deg_s, [2 2] / sqrt(2));
+    verifyEqual(testCase, result.Inputs.limits.maxVelocity_units_s, [2 2] / sqrt(2));
 end
 
 function testCombinedValidationChecksEveryDerivative(testCase)
@@ -137,7 +137,7 @@ function testCombinedValidationChecksEveryDerivative(testCase)
     initial  = fixtures.State(0, [0 0], [0 0], [0 0]);
     goal     = fixtures.State(2, [4/3 0], [2 0], [2 0]);
     options  = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "fixedArrival"));
-    names    = ["maxVelocity_deg_s", "maxAcceleration_deg_s2", "maxJerk_deg_s3"];
+    names    = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"];
     checks   = ["VelocityWithinLimits", "AccelerationWithinLimits", "JerkWithinLimits"];
     caps     = [2.5 2.5 1.2];
     for fieldIndex = 1:3
@@ -162,7 +162,7 @@ function testCombinedVelocityViolationBetweenSamplesIsRejected(testCase)
     limits   = fixtures.PhysicalLimits(1.1, 10, 20);
     options  = obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "fixedArrival"));
     validation = obstacleAvoidance.validateTrajectory(motion, [], initial, goal, limits, options);
-    verifyEqual(testCase, motion.velocity_deg_s, zeros(2, 2));
+    verifyEqual(testCase, motion.velocity_units_s, zeros(2, 2));
     verifyFalse(testCase, validation.Passed);
     verifyFalse(testCase, validation.VelocityWithinLimits);
     verifyTrue(testCase, validation.AccelerationWithinLimits);
@@ -172,46 +172,46 @@ end
 function testMalformedLimitsAndScalarPositionIntervalsAreRejected(testCase)
     fixtures = testCase.TestData.Fixtures;
     limits   = fixtures.PhysicalLimits(2, 1, 2.5);
-    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(rmfield(limits, 'maxJerk_deg_s3')), "planTrajectory:InvalidLimits");
-    limits.maxVelocity_deg_s = [1 2 3];
+    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(rmfield(limits, 'maxJerk_units_s3')), "planTrajectory:InvalidLimits");
+    limits.maxVelocity_units_s = [1 2 3];
     verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "planTrajectory:InvalidLimits");
     limits = fixtures.PhysicalLimits(2, 1, 2.5);
-    limits.azimuthInterval_deg = 180;
+    limits.xInterval_units = 180;
     verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "MATLAB:planTrajectory:incorrectNumel");
 end
 
 function testExampleJerkOverrideCannotHideMixedLimitForms(testCase)
-    verifyError(testCase, @() resolveExampleOptions(struct("MaxJerk_deg_s3", 2)), "resolveExampleOptions:InvalidMaxJerk");
-    [~, displayOptions] = resolveExampleOptions(struct("MaxJerk_deg_s3", [2; 3]));
-    verifyEqual(testCase, displayOptions.MaxJerk_deg_s3, [2 3]);
+    verifyError(testCase, @() resolveExampleOptions(struct("MaxJerk_units_s3", 2)), "resolveExampleOptions:InvalidMaxJerk");
+    [~, displayOptions] = resolveExampleOptions(struct("MaxJerk_units_s3", [2; 3]));
+    verifyEqual(testCase, displayOptions.MaxJerk_units_s3, [2 3]);
 end
 
 function testNativeSandboxResolvesCombinedOverridesBeforeGraphics(testCase)
     % The controls receive normalized components, and partial mixed overrides fail.
     overrides = struct();
     overrides.FigureVisible          = "off";
-    overrides.MaxVelocity_deg_s      = 2;
-    overrides.MaxAcceleration_deg_s2 = 1;
-    overrides.MaxJerk_deg_s3         = 2.5;
+    overrides.MaxVelocity_units_s      = 2;
+    overrides.MaxAcceleration_units_s2 = 1;
+    overrides.MaxJerk_units_s3         = 2.5;
     sandbox = obstacleAvoidanceSandbox(overrides);
     testCase.addTeardown(@() close(sandbox.FigureHandle));
-    verifyEqual(testCase, sandbox.Options.MaxVelocity_deg_s, [2 2] / sqrt(2));
-    verifyEqual(testCase, sandbox.Options.MaxAcceleration_deg_s2, [1 1] / sqrt(2));
-    verifyEqual(testCase, sandbox.Options.MaxJerk_deg_s3, [2.5 2.5] / sqrt(2));
-    verifyEqual(testCase, sandbox.Options.WorkspaceAzimuthInterval_deg, [-180 180]);
+    verifyEqual(testCase, sandbox.Options.MaxVelocity_units_s, [2 2] / sqrt(2));
+    verifyEqual(testCase, sandbox.Options.MaxAcceleration_units_s2, [1 1] / sqrt(2));
+    verifyEqual(testCase, sandbox.Options.MaxJerk_units_s3, [2.5 2.5] / sqrt(2));
+    verifyEqual(testCase, sandbox.Options.WorkspaceXInterval_units, [-180 180]);
     controls = sandbox.GoalMode.GraphicsHandles.Controls;
     for name = ["VelocityHandles", "AccelerationHandles", "JerkHandles"]
         displayed = [str2double(get(controls.(name).FirstHandle, 'String')), str2double(get(controls.(name).SecondHandle, 'String'))];
         verifyEqual(testCase, displayed(1), displayed(2));
         if name == "VelocityHandles"
-            verifyEqual(testCase, displayed, sandbox.Options.MaxVelocity_deg_s);
+            verifyEqual(testCase, displayed, sandbox.Options.MaxVelocity_units_s);
         elseif name == "AccelerationHandles"
-            verifyEqual(testCase, displayed, sandbox.Options.MaxAcceleration_deg_s2);
+            verifyEqual(testCase, displayed, sandbox.Options.MaxAcceleration_units_s2);
         else
-            verifyEqual(testCase, displayed, sandbox.Options.MaxJerk_deg_s3);
+            verifyEqual(testCase, displayed, sandbox.Options.MaxJerk_units_s3);
         end
     end
-    overrides.MaxJerk_deg_s3 = [2.5 2.5];
+    overrides.MaxJerk_units_s3 = [2.5 2.5];
     verifyError(testCase, @() obstacleAvoidanceSandbox(overrides), "planTrajectory:MixedLimitModes");
 end
 
@@ -233,10 +233,10 @@ function testOfflineJsonAcceptsCombinedLimitsAndRejectsMixing(testCase)
     [response, bundle] = offlineSandbox.runPlanningRequest(requestPath, resultPath);
     verifyTrue(testCase, response.result.Success, response.result.Message);
     verifyTrue(testCase, response.validation.Passed, response.validation.Message);
-    verifyEqual(testCase, bundle.PlannerInputs.limits.maxVelocity_deg_s, [2 2] / sqrt(2));
-    verifyEqual(testCase, bundle.PlannerInputs.limits.maxAcceleration_deg_s2, [1 1] / sqrt(2));
-    verifyEqual(testCase, bundle.PlannerInputs.limits.maxJerk_deg_s3, [2.5 2.5] / sqrt(2));
-    request.limits.maxAcceleration_deg_s2 = [1 1];
+    verifyEqual(testCase, bundle.PlannerInputs.limits.maxVelocity_units_s, [2 2] / sqrt(2));
+    verifyEqual(testCase, bundle.PlannerInputs.limits.maxAcceleration_units_s2, [1 1] / sqrt(2));
+    verifyEqual(testCase, bundle.PlannerInputs.limits.maxJerk_units_s3, [2.5 2.5] / sqrt(2));
+    request.limits.maxAcceleration_units_s2 = [1 1];
     writeJson(requestPath, request);
     verifyError(testCase, @() offlineSandbox.runPlanningRequest(requestPath, resultPath), "planTrajectory:MixedLimitModes");
 end

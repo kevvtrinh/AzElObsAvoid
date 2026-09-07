@@ -13,7 +13,7 @@
 %   Left: protected obstacle snapshots, colored by sample time.
 %   Right: proposal.shape and its cached boundary edges, start, and goal.
 % UNITS
-%   Azimuth/elevation are degrees; obstacle history times are seconds.
+%   X/y are coordinate units; obstacle history times are seconds.
 %
 % This is route-search geometry, not a path or a safety certificate. The
 % sampled union does not prove continuous collision freedom. Dense histories
@@ -63,22 +63,22 @@ if ~isempty(proposal.shape.Vertices)
     plot(proposalAxes, proposal.shape, 'FaceColor', [0.9 0.4 0.2], 'FaceAlpha', 0.3, 'EdgeColor', 'none');
 end
 % NaN separates cached edges so disjoint boundaries are not joined.
-edgeX_deg = [proposal.edgeStart_deg(:, 1), proposal.edgeEnd_deg(:, 1), ...
-    nan(size(proposal.edgeStart_deg, 1), 1)].';
-edgeY_deg = [proposal.edgeStart_deg(:, 2), proposal.edgeEnd_deg(:, 2), ...
-    nan(size(proposal.edgeStart_deg, 1), 1)].';
-plot(proposalAxes, edgeX_deg(:), edgeY_deg(:), 'k.-', 'LineWidth', 1);
+edgeX_units = [proposal.edgeStart_units(:, 1), proposal.edgeEnd_units(:, 1), ...
+    nan(size(proposal.edgeStart_units, 1), 1)].';
+edgeY_units = [proposal.edgeStart_units(:, 2), proposal.edgeEnd_units(:, 2), ...
+    nan(size(proposal.edgeStart_units, 1), 1)].';
+plot(proposalAxes, edgeX_units(:), edgeY_units(:), 'k.-', 'LineWidth', 1);
 title(proposalAxes, proposal.representation, 'Interpreter', 'none');
 % Process each plot axes needed to draw route search geometry.
 for plotAxes = [snapshotAxes proposalAxes]
-    plot(plotAxes, proposal.start_deg(1), proposal.start_deg(2), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 8);
-    text(plotAxes, proposal.start_deg(1), proposal.start_deg(2), '  Start');
-    plot(plotAxes, proposal.goal_deg(1), proposal.goal_deg(2), 'mp', 'MarkerFaceColor', 'm', 'MarkerSize', 10);
-    text(plotAxes, proposal.goal_deg(1), proposal.goal_deg(2), '  Goal');
+    plot(plotAxes, proposal.start_units(1), proposal.start_units(2), 'go', 'MarkerFaceColor', 'g', 'MarkerSize', 8);
+    text(plotAxes, proposal.start_units(1), proposal.start_units(2), '  Start');
+    plot(plotAxes, proposal.goal_units(1), proposal.goal_units(2), 'mp', 'MarkerFaceColor', 'm', 'MarkerSize', 10);
+    text(plotAxes, proposal.goal_units(1), proposal.goal_units(2), '  Goal');
     axis(plotAxes, 'equal');
     grid(plotAxes, 'on');
-    xlabel(plotAxes, 'Azimuth (deg)');
-    ylabel(plotAxes, 'Elevation (deg)');
+    xlabel(plotAxes, 'X (units)');
+    ylabel(plotAxes, 'Y (units)');
 end
 linkaxes([snapshotAxes proposalAxes], 'xy');
 title(geometryLayout, 'Route-search proposal (not a validated trajectory)');
@@ -87,6 +87,6 @@ drawnow; % Render immediately while the planner remains paused.
 
 %% Section 4: Report The Representation And Work Estimate
 fprintf('Representation: %s\n', proposal.representation);
-fprintf('Sample times: %d; displayed: %d; boundary edges: %d\n', numel(proposal.sampleTimes_s), numel(snapshotIndices), size(proposal.edgeStart_deg, 1));
+fprintf('Sample times: %d; displayed: %d; boundary edges: %d\n', numel(proposal.sampleTimes_s), numel(snapshotIndices), size(proposal.edgeStart_units, 1));
 fprintf('Estimated vertex work: %g; envelope threshold: %g\n', proposal.estimatedVertexWork, proposal.vertexWorkBudget);
 disp(proposal);

@@ -82,26 +82,26 @@ function index = bestPartialSeed(summaries)
     end
     violation = [summaries.MaximumConstraintViolation].';
     violation(~isfinite(violation)) = Inf;
-    clearance_deg = [summaries.MinimumClearance_deg].';
-    clearance_deg(~isfinite(clearance_deg)) = -Inf;
+    clearance_units = [summaries.MinimumClearance_units].';
+    clearance_units(~isfinite(clearance_units)) = -Inf;
     collisionRank = 2 * ~[summaries.CollisionResolved].' + ~[summaries.CollisionFree].';
-    [~, order] = sortrows([collisionRank, violation, -clearance_deg, (1:numel(summaries)).']);
+    [~, order] = sortrows([collisionRank, violation, -clearance_units, (1:numel(summaries)).']);
     index = order(1);
 end
 
 function ranking = createCandidateRanking(summaries, indices, options)
     % Rank valid motions by the requested objective.
     indices    = indices(:);
-    length_deg = [summaries(indices).MotionLength_deg].';
+    length_units = [summaries(indices).MotionLength_units].';
     % Use fixed-arrival construction and ranking when the arrival time is prescribed; otherwise optimize earliest arrival.
     if options.GoalTimeMode == "fixedArrival"
-        columnNames = ["MotionLength_deg", "CandidateIndex"];
-        values      = [length_deg, indices];
+        columnNames = ["MotionLength_units", "CandidateIndex"];
+        values      = [length_units, indices];
     else
-        columnNames = ["ArrivalTime_s", "MotionLength_deg", ...
+        columnNames = ["ArrivalTime_s", "MotionLength_units", ...
             "CandidateIndex"];
         values = [[summaries(indices).ArrivalTime_s].', ...
-            length_deg, indices];
+            length_units, indices];
     end
     [~, order] = sortrows(values, 1:size(values, 2));
     ranking = struct("GoalTimeMode", options.GoalTimeMode, ...

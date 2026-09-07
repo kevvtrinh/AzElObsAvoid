@@ -31,10 +31,10 @@ adapter = struct("FixedOptions", @() obstacleAvoidance.planTrajectory());
 % Select one check by its registered name. An unknown name is a test setup
 % error. A failed selected check names the physical behavior to investigate.
 
-requirements = struct("testAzimuthWrappingChangesThePhysicalRequest", ...
-    @testAzimuthWrappingChangesThePhysicalRequest, ...
-    "testAzimuthWrappingRejectsUnmodeledPeriodicGeometry", ...
-    @testAzimuthWrappingRejectsUnmodeledPeriodicGeometry, ...
+requirements = struct("testXWrappingChangesThePhysicalRequest", ...
+    @testXWrappingChangesThePhysicalRequest, ...
+    "testXWrappingRejectsUnmodeledPeriodicGeometry", ...
+    @testXWrappingRejectsUnmodeledPeriodicGeometry, ...
     "testBetweenNodeCollisionFailsValidation", @testBetweenNodeCollisionFailsValidation, ...
     "testBetweenNodeVelocityViolationFailsValidation", ...
     @testBetweenNodeVelocityViolationFailsValidation, ...
@@ -80,29 +80,29 @@ end
 
 %% Section 3: Local Behavior Check Functions
 
-function testAzimuthWrappingChangesThePhysicalRequest(testCase, adapter)
+function testXWrappingChangesThePhysicalRequest(testCase, adapter)
     % Verify wrapping selects the short move and disabled wrapping keeps the long move.
     initialState = testCase.TestData.Fixtures.State(0, [179 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(8, [-179 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([1 1], [1 1], [2 2]);
     options      = adapter.FixedOptions();
-    options.AllowAzimuthWrapping = false;
+    options.WrapX = false;
     longResult = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
-    options.AllowAzimuthWrapping = true;
+    options.WrapX = true;
     shortResult = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
     verifyFalse(testCase, longResult.Success);
     verifyTrue(testCase, shortResult.Success, shortResult.Message);
-    verifyEqual(testCase, shortResult.position_deg(end, 1), 181, "AbsTol", 1e-6);
-    verifyTrue(testCase, shortResult.Validation.AzimuthWrapPolicySatisfied);
+    verifyEqual(testCase, shortResult.position_units(end, 1), 181, "AbsTol", 1e-6);
+    verifyTrue(testCase, shortResult.Validation.WrapPolicySatisfied);
 end
 
-function testAzimuthWrappingRejectsUnmodeledPeriodicGeometry(testCase, adapter)
+function testXWrappingRejectsUnmodeledPeriodicGeometry(testCase, adapter)
     % Verify wrapped obstacle requests cannot return a false physical success.
     initialState = testCase.TestData.Fixtures.State(0, [179 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(8, [-179 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([1 1], [1 1], [2 2]);
     options      = adapter.FixedOptions();
-    options.AllowAzimuthWrapping = true;
+    options.WrapX = true;
     obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 8], [-180.5 -179.5 -1 1], 0);
     verifyError(testCase, @() obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options), "planTrajectory:UnsupportedWrappedGeometry");
 end
@@ -117,7 +117,7 @@ function testBetweenNodeCollisionFailsValidation(testCase, adapter)
     validation   = obstacleAvoidance.validateTrajectory(trajectory, obstacle, initialState, goalState, limits, adapter.FixedOptions());
     verifyFalse(testCase, validation.Passed);
     verifyFalse(testCase, validation.CollisionFree);
-    verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
+    verifyLessThanOrEqual(testCase, validation.MinimumClearance_units, 0);
 end
 
 function testBetweenNodeVelocityViolationFailsValidation(testCase, adapter)
@@ -129,7 +129,7 @@ function testBetweenNodeVelocityViolationFailsValidation(testCase, adapter)
     validation   = obstacleAvoidance.validateTrajectory(trajectory, [], initialState, goalState, limits, adapter.FixedOptions());
     verifyFalse(testCase, validation.Passed);
     verifyFalse(testCase, validation.VelocityWithinLimits);
-    verifyEqual(testCase, max(abs(trajectory.velocity_deg_s), [], "all"), 0);
+    verifyEqual(testCase, max(abs(trajectory.velocity_units_s), [], "all"), 0);
 end
 
 function testConstantJerkPolynomialPassesIndependentDynamics(testCase, adapter)
@@ -148,9 +148,9 @@ end
 function testDeformingObstacleUsesThePlannerPath(testCase, adapter)
     % Verify a deforming protected polygon uses the maintained planner.
     time_s       = [0; 8];
-    first_deg    = [-1 4; 1 4; 1 6; -1 6];
-    second_deg   = [-2 4.5; 2 4.5; 2 5.5; -2 5.5];
-    obstacle     = obstacleAvoidance.obstacles.createObstacle("deforming", time_s, {first_deg(:, 1); second_deg(:, 1)}, {first_deg(:, 2); second_deg(:, 2)}, 0.1);
+    first_units    = [-1 4; 1 4; 1 6; -1 6];
+    second_units   = [-2 4.5; 2 4.5; 2 5.5; -2 5.5];
+    obstacle     = obstacleAvoidance.obstacles.createObstacle("deforming", time_s, {first_units(:, 1); second_units(:, 1)}, {first_units(:, 2); second_units(:, 2)}, 0.1);
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -164,8 +164,8 @@ function testDenseSweptEnvelopeIsConservativeAndProtectsEndpoints(testCase, ~)
     % Verify the dense seed fallback bounds history and rejects endpoint capture.
     obstacle             = testCase.TestData.Fixtures.RectangleObstacle([0 20], [-1 1 -2 2], 0);
     sampleTimes_s        = (0:5:20).';
-    endpointPosition_deg = [-5 0; 5 0];
-    [envelopeShape, usedEnvelope] = obstacleAvoidance.search.denseSweptEnvelope(obstacle, sampleTimes_s, endpointPosition_deg, 10);
+    endpointPosition_units = [-5 0; 5 0];
+    [envelopeShape, usedEnvelope] = obstacleAvoidance.search.denseSweptEnvelope(obstacle, sampleTimes_s, endpointPosition_units, 10);
     verifyTrue(testCase, usedEnvelope);
     verifyEqual(testCase, min(envelopeShape.Vertices, [], 1), [-1 -2], "AbsTol", 1e-5);
     verifyEqual(testCase, max(envelopeShape.Vertices, [], 1), [1 2], "AbsTol", 1e-5);
@@ -196,15 +196,15 @@ function testDeterministicRepeatedRun(testCase, adapter)
     verifyEqual(testCase, first.Success, second.Success);
     verifyEqual(testCase, [firstDiagnosis.Routes.Source], [secondDiagnosis.Routes.Source]);
     verifyEqual(testCase, first.time_s, second.time_s, "AbsTol", 1e-12);
-    verifyEqual(testCase, first.position_deg, second.position_deg, "AbsTol", 1e-9);
+    verifyEqual(testCase, first.position_units, second.position_units, "AbsTol", 1e-9);
 end
 
 function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase, adapter)
     % Verify a later blocked goal does not reject a valid earlier arrival.
-    source_deg          = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
-    initialObstacle_deg = source_deg + [20 20];
-    finalObstacle_deg   = source_deg + [5 0];
-    obstacle            = obstacleAvoidance.obstacles.createObstacle("late goal blocker", [0; 10], {initialObstacle_deg(:, 1); finalObstacle_deg(:, 1)}, {initialObstacle_deg(:, 2); finalObstacle_deg(:, 2)}, 0);
+    source_units          = [-0.5 -0.5; 0.5 -0.5; 0.5 0.5; -0.5 0.5];
+    initialObstacle_units = source_units + [20 20];
+    finalObstacle_units   = source_units + [5 0];
+    obstacle            = obstacleAvoidance.obstacles.createObstacle("late goal blocker", [0; 10], {initialObstacle_units(:, 1); finalObstacle_units(:, 1)}, {initialObstacle_units(:, 2); finalObstacle_units(:, 2)}, 0);
     initialState        = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState           = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
     limits              = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -234,7 +234,7 @@ function testInterceptWrapperRequiresTwoTargetSamples(testCase, ~)
     % Verify the wrapper rejects a one-sample target at its public boundary.
     targetMotion = struct();
     targetMotion.time_s       = 10;
-    targetMotion.position_deg = [1 0];
+    targetMotion.position_units = [1 0];
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, limits, struct()), "planMovingTargetIntercept:TargetHistoryTooShort");
@@ -244,7 +244,7 @@ function testInterceptWrapperTextOptionsMustBeScalar(testCase, ~)
     % Verify the moving-target wrapper rejects ambiguous text arrays.
     targetMotion = struct();
     targetMotion.time_s              = [0; 10];
-    targetMotion.position_deg        = [1 0; 2 0];
+    targetMotion.position_units        = [1 0; 2 0];
     targetMotion.InterpolationMethod = "linear";
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
@@ -259,7 +259,7 @@ function testMovingGoalHistoryRequiresTwoSamples(testCase, adapter)
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(10, [1 0], [0 0], [0 0]);
     goalState.targetTime_s       = 10;
-    goalState.targetPosition_deg = [1 0];
+    goalState.targetPosition_units = [1 0];
     limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions()), "planTrajectory:MovingGoalHistoryTooShort");
 end
@@ -269,7 +269,7 @@ function testMovingGoalInterpolationMethodMustBeScalar(testCase, adapter)
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(10, [5 0], [0 0], [0 0]);
     goalState.targetTime_s        = [0; 10];
-    goalState.targetPosition_deg  = [4 0; 5 0];
+    goalState.targetPosition_units  = [4 0; 5 0];
     goalState.InterpolationMethod = ["linear" "pchip"];
     limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions()), "planTrajectory:InvalidGoalInterpolation");
@@ -285,7 +285,7 @@ function testObstacleActivationAtTerminalTimeFailsValidation(testCase, adapter)
     validation   = obstacleAvoidance.validateTrajectory(trajectory, obstacle, initialState, goalState, limits, adapter.FixedOptions());
     verifyFalse(testCase, validation.Passed);
     verifyFalse(testCase, validation.CollisionFree);
-    verifyLessThanOrEqual(testCase, validation.MinimumClearance_deg, 0);
+    verifyLessThanOrEqual(testCase, validation.MinimumClearance_units, 0);
 end
 
 function testOldWorkspaceOptionGivesMigrationError(testCase, adapter)
@@ -294,7 +294,7 @@ function testOldWorkspaceOptionGivesMigrationError(testCase, adapter)
     goalState    = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options      = adapter.FixedOptions();
-    options.ElevationInterval_deg = [-5 5];
+    options.YInterval_units = [-5 5];
     verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options), "planTrajectory:WorkspaceLimitMoved");
 end
 
@@ -310,12 +310,12 @@ end
 
 function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
     % Verify absolute reconstruction from original geometry is idempotent.
-    source_deg = [-1 -1; 1 -1; 1 1; -1 1];
-    obstacle   = obstacleAvoidance.obstacles.createObstacle("margin", [0; 1], source_deg(:, 1), source_deg(:, 2), 0.2);
+    source_units = [-1 -1; 1 -1; 1 1; -1 1];
+    obstacle   = obstacleAvoidance.obstacles.createObstacle("margin", [0; 1], source_units(:, 1), source_units(:, 2), 0.2);
     reinflated = obstacleAvoidance.obstacles.createObstacle(obstacle, 0.2);
-    verifyEqual(testCase, reinflated.az_deg, obstacle.az_deg, "AbsTol", 1e-12);
-    verifyEqual(testCase, reinflated.el_deg, obstacle.el_deg, "AbsTol", 1e-12);
-    verifyEqual(testCase, reinflated.safetyMargin_deg, 0.2);
+    verifyEqual(testCase, reinflated.x_units, obstacle.x_units, "AbsTol", 1e-12);
+    verifyEqual(testCase, reinflated.y_units, obstacle.y_units, "AbsTol", 1e-12);
+    verifyEqual(testCase, reinflated.safetyMargin_units, 0.2);
 end
 
 function testShiftedPolynomialTimeCannotHideInitialTime(testCase, adapter)
@@ -350,37 +350,37 @@ function testStaticObstacleProducesOppositeSideSeeds(testCase, adapter)
     verifyEqual(testCase, resultDiagnosis.Search.GraphType, "visibilityGraph");
     verifyGreaterThan(testCase, resultDiagnosis.Search.VisibilityEdgeCount, 0);
     verifyLessThan(testCase, resultDiagnosis.Search.VisibilityCandidatePairCount, resultDiagnosis.Search.NodeCount * (resultDiagnosis.Search.NodeCount - 1) / 2);
-    verifyEqual(testCase, size(resultDiagnosis.Search.AcceptedEdges_deg, 2), 4);
-    verifyEqual(testCase, size(resultDiagnosis.Search.RejectedEdges_deg, 2), 4);
-    verifyTrue(testCase, all(isfinite(resultDiagnosis.Search.AcceptedEdges_deg), "all"));
-    verifyEqual(testCase, size(resultDiagnosis.Search.FrontierNodes_deg, 2), 2);
+    verifyEqual(testCase, size(resultDiagnosis.Search.AcceptedEdges_units, 2), 4);
+    verifyEqual(testCase, size(resultDiagnosis.Search.RejectedEdges_units, 2), 4);
+    verifyTrue(testCase, all(isfinite(resultDiagnosis.Search.AcceptedEdges_units), "all"));
+    verifyEqual(testCase, size(resultDiagnosis.Search.FrontierNodes_units, 2), 2);
     verifyTrue(testCase, resultDiagnosis.SearchCoverage.ExactSpatialProposalUsed);
     verifyFalse(testCase, resultDiagnosis.SearchCoverage.ReducedSpatialProposalUsed);
     verifyTrue(testCase, resultDiagnosis.SearchCoverage.CompletenessLost);
     verifyEqual(testCase, resultDiagnosis.SearchCoverage.CompletenessLossReason, "boundedSeedNodeAndTimeSearch");
-    verifySize(testCase, resultDiagnosis.Search.RouteClassRepresentative_deg, [1 2]);
+    verifySize(testCase, resultDiagnosis.Search.RouteClassRepresentative_units, [1 2]);
     verifyGreaterThanOrEqual(testCase, resultDiagnosis.Search.RouteClassCount, 2);
     signatureCount = size(unique(resultDiagnosis.Search.RouteClassSignatures, "rows"), 1);
     verifyGreaterThanOrEqual(testCase, signatureCount, 2);
     verifyFalse(testCase, resultDiagnosis.Search.RouteClassSearchTruncated);
-    minimumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
-    maximumElevations_deg = zeros(numel(resultDiagnosis.Routes), 1);
+    minimumYs_units = zeros(numel(resultDiagnosis.Routes), 1);
+    maximumYs_units = zeros(numel(resultDiagnosis.Routes), 1);
 
-    % Measure every generated seed's elevation range to confirm both detour classes exist.
+    % Measure every generated seed's y range to confirm both detour classes exist.
     for seedIndex = 1:numel(resultDiagnosis.Routes)
-        minimumElevations_deg(seedIndex) = min(resultDiagnosis.Routes(seedIndex).position_deg(:, 2));
-        maximumElevations_deg(seedIndex) = max(resultDiagnosis.Routes(seedIndex).position_deg(:, 2));
+        minimumYs_units(seedIndex) = min(resultDiagnosis.Routes(seedIndex).position_units(:, 2));
+        maximumYs_units(seedIndex) = max(resultDiagnosis.Routes(seedIndex).position_units(:, 2));
     end
-    verifyLessThan(testCase, min(minimumElevations_deg), -2);
-    verifyGreaterThan(testCase, max(maximumElevations_deg), 2);
+    verifyLessThan(testCase, min(minimumYs_units), -2);
+    verifyGreaterThan(testCase, max(maximumYs_units), 2);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.CollisionFree);
     validated = find([resultDiagnosis.Attempts.ValidationPassed]);
     if result.Success
         selectedSummary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
         if options.GoalTimeMode == "fixedArrival"
-            motionLength_deg = [resultDiagnosis.Attempts(validated).MotionLength_deg];
-            verifyLessThanOrEqual(testCase, selectedSummary.MotionLength_deg, min(motionLength_deg) + 1e-9);
+            motionLength_units = [resultDiagnosis.Attempts(validated).MotionLength_units];
+            verifyLessThanOrEqual(testCase, selectedSummary.MotionLength_units, min(motionLength_units) + 1e-9);
         else
             arrival_s = [resultDiagnosis.Attempts(validated).ArrivalTime_s];
             verifyLessThanOrEqual(testCase, selectedSummary.ArrivalTime_s, min(arrival_s) + options.ArrivalTimeTolerance_s);
@@ -390,26 +390,26 @@ end
 
 function testTopologyChangeUsesAStationaryConservativeUnion(testCase, ~)
     % Verify a topology-change interval has constant conservative geometry.
-    closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
-    left_deg   = [-2 -1; -0.5 -1; -0.5 1; -2 1];
-    right_deg  = [0.5 -1; 2 -1; 2 1; 0.5 1];
-    open_deg   = [left_deg; NaN NaN; right_deg];
-    obstacle   = obstacleAvoidance.obstacles.createObstacle("opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
+    closed_units = [-2 -1; 2 -1; 2 1; -2 1];
+    left_units   = [-2 -1; -0.5 -1; -0.5 1; -2 1];
+    right_units  = [0.5 -1; 2 -1; 2 1; 0.5 1];
+    open_units   = [left_units; NaN NaN; right_units];
+    obstacle   = obstacleAvoidance.obstacles.createObstacle("opening", [0; 2], {closed_units(:, 1); open_units(:, 1)}, {closed_units(:, 2); open_units(:, 2)}, 0);
     [shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime(obstacle, 1);
     verifyFalse(testCase, geometry.TopologyIsInterpolated);
-    verifyEqual(testCase, geometry.VertexSpeedBound_deg_s, 0);
+    verifyEqual(testCase, geometry.VertexSpeedBound_units_s, 0);
     verifyTrue(testCase, isinterior(shape, 0, 0));
 end
 
 function testTranslatedHistoryReusesExactProtectedShape(testCase, ~)
     % Verify rigid obstacle motion preserves one translated protected boundary.
-    source_deg      = [-1 -1; 1 -1; 1 1; -1 1];
-    translation_deg = [3 2];
-    azimuth_deg     = {source_deg(:, 1); source_deg(:, 1) + translation_deg(1)};
-    elevation_deg   = {source_deg(:, 2); source_deg(:, 2) + translation_deg(2)};
-    obstacle        = obstacleAvoidance.obstacles.createObstacle("translated", [0; 1], azimuth_deg, elevation_deg, 0.2);
-    verifyEqual(testCase, obstacle.az_deg{2}, obstacle.az_deg{1} + translation_deg(1), "AbsTol", 1e-12);
-    verifyEqual(testCase, obstacle.el_deg{2}, obstacle.el_deg{1} + translation_deg(2), "AbsTol", 1e-12);
+    source_units      = [-1 -1; 1 -1; 1 1; -1 1];
+    translation_units = [3 2];
+    x_units     = {source_units(:, 1); source_units(:, 1) + translation_units(1)};
+    y_units   = {source_units(:, 2); source_units(:, 2) + translation_units(2)};
+    obstacle        = obstacleAvoidance.obstacles.createObstacle("translated", [0; 1], x_units, y_units, 0.2);
+    verifyEqual(testCase, obstacle.x_units{2}, obstacle.x_units{1} + translation_units(1), "AbsTol", 1e-12);
+    verifyEqual(testCase, obstacle.y_units{2}, obstacle.y_units{1} + translation_units(2), "AbsTol", 1e-12);
 end
 
 function testUnrelatedPolynomialCannotValidateSampledHistory(testCase, adapter)
@@ -419,10 +419,10 @@ function testUnrelatedPolynomialCannotValidateSampledHistory(testCase, adapter)
     goalState    = testCase.TestData.Fixtures.State(duration_s, [4 / 3 0], [2 0], [2 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([3 3], [3 3], [2 2]);
     trajectory   = testCase.TestData.Fixtures.ConstantJerkTrajectory(duration_s);
-    trajectory.Polynomial.positionPower_deg(:) = 0;
-    trajectory.Polynomial.velocityPower_deg_s(:) = 0;
-    trajectory.Polynomial.accelerationPower_deg_s2(:) = 0;
-    trajectory.Polynomial.jerkPower_deg_s3(:) = 0;
+    trajectory.Polynomial.positionPower_units(:) = 0;
+    trajectory.Polynomial.velocityPower_units_s(:) = 0;
+    trajectory.Polynomial.accelerationPower_units_s2(:) = 0;
+    trajectory.Polynomial.jerkPower_units_s3(:) = 0;
     validation = obstacleAvoidance.validateTrajectory(trajectory, [], initialState, goalState, limits, adapter.FixedOptions());
     verifyFalse(testCase, validation.Passed);
     verifyTrue(testCase, validation.PolynomialFormatValid);
@@ -434,13 +434,13 @@ function testWorkspaceIntervalsBelongToLimits(testCase, adapter)
     % Check that omitted and explicit workspace intervals use the limits input.
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
-    limits       = rmfield(testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]), ["azimuthInterval_deg", "elevationInterval_deg"]);
+    limits       = rmfield(testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]), ["xInterval_units", "yInterval_units"]);
     [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
-    verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-180 180]);
-    verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-90 90]);
-    limits.azimuthInterval_deg   = [-12 14];
-    limits.elevationInterval_deg = [-5 6];
+    verifyEqual(testCase, result.Inputs.limits.xInterval_units, [-180 180]);
+    verifyEqual(testCase, result.Inputs.limits.yInterval_units, [-90 90]);
+    limits.xInterval_units   = [-12 14];
+    limits.yInterval_units = [-5 6];
     [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
-    verifyEqual(testCase, result.Inputs.limits.azimuthInterval_deg, [-12 14]);
-    verifyEqual(testCase, result.Inputs.limits.elevationInterval_deg, [-5 6]);
+    verifyEqual(testCase, result.Inputs.limits.xInterval_units, [-12 14]);
+    verifyEqual(testCase, result.Inputs.limits.yInterval_units, [-5 6]);
 end

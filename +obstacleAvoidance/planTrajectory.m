@@ -10,7 +10,7 @@ function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState
 %       obstacles, initialState, goalState, limits, optionOverrides)
 %
 % PURPOSE
-%   - Plan collision-free Az/El motion through one public entry point.
+%   - Plan collision-free X/Y motion through one public entry point.
 %   - Minimize arrival time, breaking ties by path length, or minimize travel
 %     at a specified arrival time.
 %
@@ -24,12 +24,15 @@ function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState
 %       Fixed or moving-goal state accepted by the obstacle planner.
 %   - limits (scalar struct)
 %       Physical and workspace limits with units in field names.
-%       maxVelocity_deg_s, maxAcceleration_deg_s2, and maxJerk_deg_s3 must
+%       maxVelocity_units_s, maxAcceleration_units_s2, and maxJerk_units_s3 must
 %       all be positive finite scalars (combined magnitudes) or all be
-%       two-element [azimuth elevation] vectors. Each combined limit is
+%       two-element [x y] vectors. Each combined limit is
 %       divided by sqrt(2) for each axis. Mixing the two forms is invalid.
 %   - optionOverrides (scalar struct, optional; default struct())
 %       Partial planner options. Empty fields use their documented defaults.
+%       WrapX and WrapY independently enable periodic coordinates using each
+%       axis's workspace interval width. Both default to false. Periodic
+%       requests currently require no obstacles and a fixed-position goal.
 %
 % OUTPUTS
 %   - result (scalar struct)
@@ -41,9 +44,9 @@ function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState
 %       Fully resolved planner defaults.
 %
 % UNITS
-%   - Position is in degrees. Time is in seconds.
-%   - Derivatives use deg/s, deg/s^2, and deg/s^3.
-%   - Histories are N-by-2 [azimuth elevation] arrays.
+%   - Position is in coordinate units. Time is in seconds.
+%   - Derivatives use units/s, units/s^2, and units/s^3.
+%   - Histories are N-by-2 [x y] arrays.
 %
 
 %% Section 1: Resolve Defaults Requests
@@ -123,11 +126,11 @@ routeSearchTimer = tic;
 proposal             = struct();
 visibilityGraph      = struct();
 routeSet             = struct();
-obstacleEnvelope_deg = zeros(0, 2);
+obstacleEnvelope_units = zeros(0, 2);
 needsRouteSearch     = options.MaximumSeedCount > 1 && ~isempty(preparedObstacles);
 if needsRouteSearch
     % Build proposal geometry for route search; final validation uses the original obstacles.
-    proposal = obstacleAvoidance.search.createRouteSearchGeometry(initialState, goalState, options, scene);
+    proposal = obstacleAvoidance.search.createRouteSearchGeometry(initialState, goalState, scene);
 
     % Build the visibility graph and record its attempts.
     visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, proposal);
@@ -135,13 +138,13 @@ if needsRouteSearch
     % Search timed routes and distinct spatial routes.
     routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, scene, proposal, visibilityGraph);
 
-    obstacleEnvelope_deg = proposal.shape.Vertices;
+    obstacleEnvelope_units = proposal.shape.Vertices;
 end
 % Seed the general solver with a direct guess, then any searched detours.
-seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg);
+seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, routeSet, obstacleEnvelope_units);
 
 stageTiming.RouteSearchElapsedTime_s = toc(routeSearchTimer);
-endpointDerivative = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+endpointDerivative = [initialState.velocity_units_s, initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
 useStateToStateSolver = any(abs(endpointDerivative) > options.ConstraintTolerance);
 seedSolveContext = struct("UseStaticSolver", useStaticSolver, ...
     "UseStateToStateSolver", useStateToStateSolver, ...
@@ -223,7 +226,7 @@ if selection.Success
     selectedIndex = selection.SelectedCandidateIndex;
     result.Success           = true;
     result.SelectedSeedIndex = selectedIndex;
-    result.SelectedSeed_deg  = seeds(selectedIndex).position_deg;
+    result.SelectedSeed_units  = seeds(selectedIndex).position_units;
     result = copyMotion(result, candidates{selectedIndex});
 % Expose the best partial seed only when no complete candidate succeeded.
 elseif selection.BestPartialSeedIndex > 0
@@ -252,7 +255,7 @@ function result = finishFastPath(result, candidate, validation, diagnostics, ela
     result.Seeds                                      = seed;
     result.SeedSummaries                              = summary;
     result.SelectedSeedIndex                          = seed.Index;
-    result.SelectedSeed_deg                           = seed.position_deg;
+    result.SelectedSeed_units                           = seed.position_units;
     result = copyMotion(result, candidate);
     result.FirstValidatedMotionTime_s = toc(timer);
 
@@ -266,9 +269,9 @@ end
 
 function result = copyMotion(result, candidate)
     % Copy the selected motion and arrival fields.
-    for name = ["time_s", "position_deg", "velocity_deg_s", ...
-            "acceleration_deg_s2", "jerk_deg_s3", "Polynomial", ...
-            "SeedCorridorBoundary_deg", "SeedCorridor", ...
+    for name = ["time_s", "position_units", "velocity_units_s", ...
+            "acceleration_units_s2", "jerk_units_s3", "Polynomial", ...
+            "SeedCorridorBoundary_units", "SeedCorridor", ...
             "PlaneCertificate", "Validation"]
         result.(name) = candidate.(name);
     end

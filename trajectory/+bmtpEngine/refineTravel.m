@@ -1,9 +1,9 @@
-function [result, diagnostics] = refineTravel(request, warmStart, alternatingResult, diagnostics, obstacleTarget_deg, roundoffReserve_deg)
+function [result, diagnostics] = refineTravel(request, warmStart, alternatingResult, diagnostics, obstacleTarget_units, roundoffReserve_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [result, diagnostics] = bmtpEngine.refineTravel( ...
 %       request, warmStart, alternatingResult, diagnostics, ...
-%       obstacleTarget_deg, roundoffReserve_deg)
+%       obstacleTarget_units, roundoffReserve_units)
 %
 % PURPOSE
 %   - Reduce the convex travel surrogate after the alternating solve has
@@ -12,8 +12,8 @@ function [result, diagnostics] = refineTravel(request, warmStart, alternatingRes
 % INPUTS
 %   - request, warmStart, alternatingResult, diagnostics (scalar structs)
 %       Checked request, prepared curve, retained attempt, and diagnostics.
-%   - obstacleTarget_deg, roundoffReserve_deg (finite scalars)
-%       Required obstacle-side target and numerical reserve in degrees.
+%   - obstacleTarget_units, roundoffReserve_units (finite scalars)
+%       Required obstacle-side target and numerical reserve in coordinate units.
 %
 % OUTPUTS
 %   - result (scalar struct)
@@ -22,24 +22,24 @@ function [result, diagnostics] = refineTravel(request, warmStart, alternatingRes
 %       Updated active-pair count after optional refinement.
 %
 % UNITS
-%   - Position and travel are degrees; time is seconds.
+%   - Position and travel are coordinate units; time is seconds.
 %
 
 %% Section 1: Preserve The Feasible Alternating Result
 
-result = struct("ControlPoint_deg", alternatingResult.ControlPoint_deg, ...
+result = struct("ControlPoint_units", alternatingResult.ControlPoint_units, ...
     "SegmentTime_s", alternatingResult.SegmentTime_s);
 
 %% Section 2: Refine Travel At The Selected Arrival Clock
 
 segmentCount             = warmStart.SegmentCount;
-baseControl_deg          = result.ControlPoint_deg;
+baseControl_units          = result.ControlPoint_units;
 baseSegmentTime_s        = result.SegmentTime_s;
-baseLength_deg           = controlPolygonLength(baseControl_deg);
-selectedControl_deg      = baseControl_deg;
+baseLength_units           = controlPolygonLength(baseControl_units);
+selectedControl_units      = baseControl_units;
 selectedSegmentTime_s    = baseSegmentTime_s;
 selectedPlanes           = alternatingResult.Planes;
-selectedLength_deg       = baseLength_deg;
+selectedLength_units       = baseLength_units;
 travelRefinementAccepted = false;
 travelPlanes             = alternatingResult.Planes;
 taggedPairs              = alternatingResult.TaggedPairs;
@@ -51,19 +51,19 @@ if request.Options.GoalTimeMode == "earliestArrival"
     refinementHorizon_s = segmentCount * baseSegmentTime_s;
 end
 diagnostics.TravelRefinementAttempted         = true;
-diagnostics.TravelRefinementInitialLength_deg = baseLength_deg;
-diagnostics.TravelRefinementFinalLength_deg   = baseLength_deg;
+diagnostics.TravelRefinementInitialLength_units = baseLength_units;
+diagnostics.TravelRefinementFinalLength_units   = baseLength_units;
 diagnostics.TravelRefinementInitialDuration_s = segmentCount * baseSegmentTime_s;
 diagnostics.TravelRefinementFinalDuration_s   = segmentCount * baseSegmentTime_s;
 diagnostics.TravelRefinementAccepted          = false;
 % Repeat the refinement alternatives needed to refine the current solution.
 for refinementIndex = 1:8
-    [refinedControl_deg, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_deg, request.GoalState.position_deg, request.Limits, travelPlanes, roundoffReserve_deg, refinementHorizon_s, "fixedArrival", request.TrajectoryOptions);
+    [refinedControl_units, refinedSegmentTime_s, travelExitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, travelPlanes, roundoffReserve_units, refinementHorizon_s, "fixedArrival", request.TrajectoryOptions);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
-    if travelExitFlag <= 0 || isempty(refinedControl_deg)
+    if travelExitFlag <= 0 || isempty(refinedControl_units)
         break;
     end
-    refinedCollisionPairs = bmtpEngine.findSampledObstacleOverlaps(refinedControl_deg, request.Regions_deg, request.RegionMinimum_deg, request.RegionMaximum_deg, warmStart.RegionActiveBySegment, 1201);
+    refinedCollisionPairs = bmtpEngine.findSampledObstacleOverlaps(refinedControl_units, request.Regions_units, request.RegionMinimum_units, request.RegionMaximum_units, warmStart.RegionActiveBySegment, 1201);
     if any(refinedCollisionPairs, "all")
         activeTravelPairs = reshape([travelPlanes.Active], size(travelPlanes));
         newPairs          = refinedCollisionPairs & ~activeTravelPairs;
@@ -75,7 +75,7 @@ for refinementIndex = 1:8
         % Process each new pair needed to find travel.
         for newPairIndex = newPairIndices
             [segmentIndex, regionIndex]               = ind2sub(size(newPairs), newPairIndex);
-            [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine(squeeze(baseControl_deg(segmentIndex, :, :)), request.Regions_deg{regionIndex}, obstacleTarget_deg, roundoffReserve_deg, request.PlaneOptions);
+            [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine(squeeze(baseControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, obstacleTarget_units, roundoffReserve_units, request.PlaneOptions);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, planeOutput);
             if planeExitFlag <= 0 || ~travelPlane.Active
                 planeUpdateFailed = true;
@@ -89,14 +89,14 @@ for refinementIndex = 1:8
         end
         continue;
     end
-    refinedLength_deg  = controlPolygonLength(refinedControl_deg);
-    refinementIsBetter = refinedLength_deg < selectedLength_deg;
+    refinedLength_units  = controlPolygonLength(refinedControl_units);
+    refinementIsBetter = refinedLength_units < selectedLength_units;
     % Replace the current travel profile only when refinement improves the declared objective and remains feasible.
     if refinementIsBetter
-        selectedControl_deg      = refinedControl_deg;
+        selectedControl_units      = refinedControl_units;
         selectedSegmentTime_s    = refinedSegmentTime_s;
         selectedPlanes           = travelPlanes;
-        selectedLength_deg       = refinedLength_deg;
+        selectedLength_units       = refinedLength_units;
         travelRefinementAccepted = true;
     end
     break;
@@ -105,20 +105,20 @@ end
 %% Section 3: Return The Best Travel Attempt
 
 if travelRefinementAccepted
-    result.ControlPoint_deg = selectedControl_deg;
+    result.ControlPoint_units = selectedControl_units;
     result.SegmentTime_s    = selectedSegmentTime_s;
     taggedPairs = taggedPairs | reshape([selectedPlanes.Active], size(selectedPlanes));
 end
 diagnostics.TaggedPairCount = nnz(taggedPairs);
-diagnostics.TravelRefinementFinalLength_deg = selectedLength_deg;
+diagnostics.TravelRefinementFinalLength_units = selectedLength_units;
 diagnostics.TravelRefinementFinalDuration_s = segmentCount * selectedSegmentTime_s;
 diagnostics.TravelRefinementAccepted        = travelRefinementAccepted;
 end
 
 %% Section 4: Local Functions
 
-function length_deg = controlPolygonLength(controlPoint_deg)
+function length_units = controlPolygonLength(controlPoint_units)
     % Sum Bezier control-edge lengths as a convex travel estimate.
-    edge_deg   = diff(controlPoint_deg, 1, 2);
-    length_deg = sum(vecnorm(edge_deg, 2, 3), "all");
+    edge_units   = diff(controlPoint_units, 1, 2);
+    length_units = sum(vecnorm(edge_units, 2, 3), "all");
 end

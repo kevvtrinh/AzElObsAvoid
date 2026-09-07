@@ -32,7 +32,7 @@ validateattributes(port, {'numeric'}, {'real', 'finite', 'scalar', 'integer', '>
 port = double(port);
 
 sandboxFolder = fileparts(fileparts(mfilename("fullpath")));
-pagePath      = fullfile(sandboxFolder, "az_el_planner_sandbox.html");
+pagePath      = fullfile(sandboxFolder, "xy_planner_sandbox.html");
 if ~isfile(pagePath)
     error("serveSandbox:PageNotFound", "The sandbox page does not exist: %s", pagePath);
 end
@@ -59,7 +59,7 @@ serverSocket.setSoTimeout(int32(acceptTimeout_ms));
 serverCleanup = onCleanup(@() closeServer(serverSocket, stopFilePath, bundleFilePath, bundleRequestIdPath));
 
 url = "http://127.0.0.1:" + string(port) + "/";
-fprintf("Az/El planner sandbox: %s\n", url);
+fprintf("X/Y planner sandbox: %s\n", url);
 fprintf("Stop file: %s\n", stopFilePath);
 fprintf("Press Ctrl-C or create the stop file to stop the server.\n");
 
@@ -251,7 +251,7 @@ function serveBundleRequest(clientSocket, requestBytes, corsOrigin, bundleFilePa
         return;
     end
     bundleBytes     = readFileBytes(bundleFilePath);
-    downloadHeaders = "Content-Disposition: attachment; filename=az-el-sandbox-bundle.mat";
+    downloadHeaders = "Content-Disposition: attachment; filename=x-y-sandbox-bundle.mat";
     writeHttpResponse(clientSocket, 200, "OK", "application/vnd.matlab.mat-file", bundleBytes, downloadHeaders, corsOrigin);
 end
 

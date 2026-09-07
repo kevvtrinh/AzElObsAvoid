@@ -27,7 +27,7 @@ goal state, limits, and optional overrides, in that order. A zero-input call
 returns independent defaults. Partial and empty overrides retain default values;
 unknown fields are ignored with one aggregate warning.
 
-Positions are two-coordinate azimuth/elevation rows in degrees. Times are
+Positions are two-coordinate x/y rows in coordinate units. Times are
 seconds. Velocity, acceleration, and jerk limits carry their units in their
 field names. Obstacle constructors apply safety margins once and preserve both
 original and protected geometry.

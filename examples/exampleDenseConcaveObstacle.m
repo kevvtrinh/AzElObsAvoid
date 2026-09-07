@@ -17,8 +17,8 @@ function [result, diagnosis] = exampleDenseConcaveObstacle(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -38,12 +38,12 @@ end
 
 vertexCount           = 80;
 angle_rad             = (0:vertexCount - 1).' * (2 * pi / vertexCount);
-radius_deg            = 1.6 + 0.45 * cos(5 * angle_rad);
-obstacleAzimuth_deg   = radius_deg .* cos(angle_rad);
-obstacleElevation_deg = radius_deg .* sin(angle_rad);
+radius_units            = 1.6 + 0.45 * cos(5 * angle_rad);
+obstacleX_units   = radius_units .* cos(angle_rad);
+obstacleY_units = radius_units .* sin(angle_rad);
 obstacleTime_s        = [0; 20];
-safetyMargin_deg      = 0.1;
-obstacles             = obstacleAvoidance.obstacles.createObstacle("dense concave polygon", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
+safetyMargin_units      = 0.1;
+obstacles             = obstacleAvoidance.obstacles.createObstacle("dense concave polygon", obstacleTime_s, obstacleX_units, obstacleY_units, safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -52,11 +52,11 @@ obstacles             = obstacleAvoidance.obstacles.createObstacle("dense concav
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-6 0];
+initialState.position_units = [-6 0];
 goalState = struct();
 goalState.time_s       = 15;
-goalState.position_deg = [6 0];
-limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+goalState.position_units = [6 0];
+limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 

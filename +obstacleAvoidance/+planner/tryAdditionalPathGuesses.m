@@ -14,7 +14,7 @@ function [candidateSet, routeSet, generatedSeeds] = tryAdditionalPathGuesses(ini
 % OUTPUTS
 %   Updated candidates, route evidence, and guesses, including deferred searches.
 % UNITS
-%   Position is degrees; physical and measured times are seconds.
+%   Position is coordinate units; physical and measured times are seconds.
 
 %% Section 1: Decide Whether Recovery Is Needed
 
@@ -53,7 +53,7 @@ if isempty(fieldnames(routeSet))
 end
 
 needsDeferredTimedRecovery   = routeSet.TimedSearchDeferred;
-needsDeferredSpatialRecovery = ~isempty(routeSet.DeferredSpatialRoutes_deg);
+needsDeferredSpatialRecovery = ~isempty(routeSet.DeferredSpatialRoutes_units);
 % Run spatial recovery only when timed recovery is not the required next stage.
 if ~needsDeferredTimedRecovery && ~needsDeferredSpatialRecovery
     return;
@@ -70,16 +70,16 @@ end
 recoveredOnlyRouteSet = routeSet;
 % Run spatial recovery only when timed recovery is not the required next stage.
 if ~needsDeferredTimedRecovery
-    recoveredOnlyRouteSet.TimedRoute_deg   = zeros(0, 2);
+    recoveredOnlyRouteSet.TimedRoute_units   = zeros(0, 2);
     recoveredOnlyRouteSet.TimedRouteTime_s = zeros(0, 1);
 end
 % Generate spatial recovery seeds only after the primary search explicitly deferred that work.
 if needsDeferredSpatialRecovery
-    recoveredOnlyRouteSet.SpatialRoutes_deg = routeSet.DeferredSpatialRoutes_deg;
+    recoveredOnlyRouteSet.SpatialRoutes_units = routeSet.DeferredSpatialRoutes_units;
 else
-    recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
+    recoveredOnlyRouteSet.SpatialRoutes_units = cell(0, 1);
 end
-recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses(recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices, generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
+recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses(recoveredOnlyRouteSet, recoveryContext.Proposal.shape.Vertices, generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_units);
 
 % Evaluate each recovery before retaining the best admissible candidate.
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))

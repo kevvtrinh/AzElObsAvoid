@@ -23,14 +23,14 @@ function handles = plotTrajectory(result, optionOverrides, diagnosis)
 %       Stable workspace, visibility, kinematic, and animation handles.
 %
 % UNITS
-%   - Axes use degrees, seconds, deg/s, deg/s^2, and deg/s^3.
+%   - Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
 %
 
 %% Section 1: Resolve Display Controls
 
 defaults = struct();
 defaults.FigureVisible                       = "on";
-defaults.Title                               = "Az/El motion plan";
+defaults.Title                               = "X/Y motion plan";
 defaults.ShowWorkspace                       = true;
 defaults.ShowKinematics                      = true;
 defaults.ShowAnimation                       = true;
@@ -53,7 +53,7 @@ if nargin < 2 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 if nargin < 3, diagnosis = struct(); end
-requiredNames = {'Inputs', 'Options', 'Success', 'Route_deg', 'BestPartialRoute_deg'};
+requiredNames = {'Inputs', 'Options', 'Success', 'Route_units', 'BestPartialRoute_units'};
 if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredNames))
     error("plotTrajectory:InvalidResult", "result must be a scalar planner result.");
 end
@@ -100,9 +100,9 @@ if options.ShowWorkspace
     if options.ShowSeedPaths
         % Evaluate each seed before retaining the best admissible candidate.
         for seedIndex = 1:numel(routes)
-            route_deg = displayPath(result, routes(seedIndex).position_deg);
+            route_units = displayPath(result, routes(seedIndex).position_units);
             label     = "Route " + seedIndex + ": " + routes(seedIndex).Source;
-            drawLine(workspaceAxes, route_deg, "-o", label, 1);
+            drawLine(workspaceAxes, route_units, "-o", label, 1);
         end
     end
     drawPlannerRoute(workspaceAxes, result);
@@ -113,9 +113,9 @@ if options.ShowWorkspace
     handles.WorkspaceAxes   = workspaceAxes;
 end
 doesCross = false;
-if result.Success && result.Options.AllowAzimuthWrapping
-    seamPath_deg = displayPath(result, result.position_deg);
-    doesCross    = any(isnan(seamPath_deg(:, 1)));
+if result.Success && (result.Options.WrapX || result.Options.WrapY)
+    seamPath_units = displayPath(result, result.position_units);
+    doesCross    = any(isnan(seamPath_units(:, 1)));
 end
 if (options.ShowWorkspace || options.ShowAnimation || options.SaveAnimationGif) && doesCross
     [handles.ContinuousWorkspaceFigure, handles.ContinuousWorkspaceAxes] = createContinuousWorkspace(result, options);
@@ -167,7 +167,7 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     kinematicAxes   = createKinematicPanels(animationLayout, result, true);
     animationLegend = legend(kinematicAxes(1), "Location", "best");
     frameIndices    = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
-    [complete_deg, sourceIndex] = displayPath(result, result.position_deg);
+    [complete_units, sourceIndex] = displayPath(result, result.position_units);
     gifFrameCount = 0;
     % Process each frame in temporal order and accumulate its result.
     for frameIndex = frameIndices
@@ -175,14 +175,14 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
         configureSpatialAxes(animationAxes, result);
         drawObstacles(animationAxes, obstacles, result.time_s(frameIndex));
         drawTarget(animationAxes, result, result.time_s(frameIndex));
-        drawLine(animationAxes, complete_deg, "-", "Complete timed path", 1);
+        drawLine(animationAxes, complete_units, "-", "Complete timed path", 1);
         elapsedEnd  = find(sourceIndex <= frameIndex, 1, "last");
-        elapsed_deg = complete_deg(1:elapsedEnd, :);
-        current_deg = displayPath(result, result.position_deg(frameIndex, :));
-        drawLine(animationAxes, elapsed_deg, "c-", "Elapsed path", 3);
-        scatter(animationAxes, current_deg(1), current_deg(2), 60, [0.95 0.25 0.15], "filled", "DisplayName", "Current state");
-        xlabel(animationAxes, "Azimuth (deg)");
-        ylabel(animationAxes, "Elevation (deg)");
+        elapsed_units = complete_units(1:elapsedEnd, :);
+        current_units = displayPath(result, result.position_units(frameIndex, :));
+        drawLine(animationAxes, elapsed_units, "c-", "Elapsed path", 3);
+        scatter(animationAxes, current_units(1), current_units(2), 60, [0.95 0.25 0.15], "filled", "DisplayName", "Current state");
+        xlabel(animationAxes, "X (units)");
+        ylabel(animationAxes, "Y (units)");
         title(animationAxes, sprintf("%s | t = %.3f s", options.Title, result.time_s(frameIndex)));
         drawnow;
         if options.SaveAnimationGif
@@ -243,87 +243,98 @@ function configureSpatialAxes(axesHandle, result)
     grid(axesHandle, "on");
     box(axesHandle, "on");
     axis(axesHandle, "equal");
-    if result.Options.AllowAzimuthWrapping
-        xlim(axesHandle, result.Inputs.limits.azimuthInterval_deg);
+    if result.Options.WrapX
+        xlim(axesHandle, result.Inputs.limits.xInterval_units);
+    end
+    if result.Options.WrapY
+        ylim(axesHandle, result.Inputs.limits.yInterval_units);
     end
 end
 
-function [position_deg, sourceIndex] = displayPath(result, position_deg)
+function [position_units, sourceIndex] = displayPath(result, position_units)
     % Apply the result's wrap settings to the displayed path.
-    [position_deg, sourceIndex] = obstacleAvoidance.plotting.createWrappedSpatialPath(position_deg, result.Inputs.limits.azimuthInterval_deg, result.Options.AllowAzimuthWrapping);
+    intervals_units = [result.Inputs.limits.xInterval_units; result.Inputs.limits.yInterval_units];
+    [position_units, sourceIndex] = obstacleAvoidance.plotting.createWrappedSpatialPath(position_units, intervals_units, [result.Options.WrapX result.Options.WrapY]);
 end
 
 function [figureHandle, axesHandle] = createContinuousWorkspace(result, options)
     % Show the unwrapped path and crossed wrap boundaries.
-    figureHandle = figure("Name", options.Title + " continuous azimuth", "Visible", options.FigureVisible);
+    figureHandle = figure("Name", options.Title + " continuous coordinates", "Visible", options.FigureVisible);
     axesHandle   = axes(figureHandle);
     hold(axesHandle, "on");
     grid(axesHandle, "on");
     box(axesHandle, "on");
     axis(axesHandle, "equal");
-    drawLine(axesHandle, result.position_deg, "k-", "Timed motion", 2);
-    interval_deg    = result.Inputs.limits.azimuthInterval_deg;
-    period_deg      = diff(interval_deg);
-    seamMultipliers = ceil((min(result.position_deg(:, 1)) - interval_deg(1)) / period_deg): floor((max(result.position_deg(:, 1)) - interval_deg(1)) / period_deg);
-    % Process each seam deg needed to build continuous workspace.
-    for seam_deg = interval_deg(1) + period_deg * seamMultipliers
-        xline(axesHandle, seam_deg, ":", "HandleVisibility", "off");
+    drawLine(axesHandle, result.position_units, "k-", "Timed motion", 2);
+    intervals_units = [result.Inputs.limits.xInterval_units; result.Inputs.limits.yInterval_units];
+    wrapAxes = [result.Options.WrapX result.Options.WrapY];
+    for axisIndex = find(wrapAxes)
+        interval_units = intervals_units(axisIndex, :);
+        period_units = diff(interval_units);
+        seamMultipliers = ceil((min(result.position_units(:, axisIndex)) - interval_units(1)) / period_units):floor((max(result.position_units(:, axisIndex)) - interval_units(1)) / period_units);
+        for seam_units = interval_units(1) + period_units * seamMultipliers
+            if axisIndex == 1
+                xline(axesHandle, seam_units, ":", "HandleVisibility", "off");
+            else
+                yline(axesHandle, seam_units, ":", "HandleVisibility", "off");
+            end
+        end
     end
-    xlabel(axesHandle, "Continuous azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    xlabel(axesHandle, "Continuous x (units)");
+    ylabel(axesHandle, "Continuous y (units)");
 end
 
 function drawPlannerRoute(axesHandle, result)
     % Draw the successful selected/timed path or the retained best partial route.
     if result.Success
-        selected_deg = displayPath(result, result.Route_deg);
-        motion_deg   = displayPath(result, result.position_deg);
-        drawLine(axesHandle, selected_deg, "--", "Selected geometric route", 1);
-        drawLine(axesHandle, motion_deg, "k-", "Timed motion", 2);
-    elseif ~isempty(result.BestPartialRoute_deg)
-        partial_deg = displayPath(result, result.BestPartialRoute_deg);
-        drawLine(axesHandle, partial_deg, "--", "Best partial route", 1);
+        selected_units = displayPath(result, result.Route_units);
+        motion_units   = displayPath(result, result.position_units);
+        drawLine(axesHandle, selected_units, "--", "Selected geometric route", 1);
+        drawLine(axesHandle, motion_units, "k-", "Timed motion", 2);
+    elseif ~isempty(result.BestPartialRoute_units)
+        partial_units = displayPath(result, result.BestPartialRoute_units);
+        drawLine(axesHandle, partial_units, "--", "Best partial route", 1);
     end
 end
 
 function drawEndpoints(axesHandle, result)
     % Draw the requested start and terminal positions under the wrap policy.
-    start_deg = displayPath(result, result.Inputs.initialState.position_deg);
-    goal_deg  = obstacleAvoidance.input.goalPositionAtTime(result.Inputs.goalState, result.Inputs.goalState.time_s);
-    goal_deg  = displayPath(result, goal_deg);
-    plot(axesHandle, start_deg(1), start_deg(2), "go", "DisplayName", "Start");
-    plot(axesHandle, goal_deg(1), goal_deg(2), "ro", "DisplayName", "Goal");
+    start_units = displayPath(result, result.Inputs.initialState.position_units);
+    goal_units  = obstacleAvoidance.input.goalPositionAtTime(result.Inputs.goalState, result.Inputs.goalState.time_s);
+    goal_units  = displayPath(result, goal_units);
+    plot(axesHandle, start_units(1), start_units(2), "go", "DisplayName", "Start");
+    plot(axesHandle, goal_units(1), goal_units(2), "ro", "DisplayName", "Goal");
 end
 
-function lineHandle = drawLine(axesHandle, position_deg, style, name, width)
+function lineHandle = drawLine(axesHandle, position_units, style, name, width)
     % Draw one labelled two-dimensional path on explicit axes.
-    lineHandle = plot(axesHandle, position_deg(:, 1), position_deg(:, 2), style, "LineWidth", width, "DisplayName", name);
+    lineHandle = plot(axesHandle, position_units(:, 1), position_units(:, 2), style, "LineWidth", width, "DisplayName", name);
 end
 
 function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
     % Draw explored nodes, accepted/rejected edges, and the search frontier.
-    edgeNames  = ["AcceptedEdges_deg", "RejectedEdges_deg"];
+    edgeNames  = ["AcceptedEdges_units", "RejectedEdges_units"];
     edgeStyles = ["-", ":"];
     edgeLabels = ["Accepted visibility edge", "Collision-rejected edge"];
     if showEdges
         % Process each category needed to complete s.
         for categoryIndex = 1:2
             if hasData(gridRecord, edgeNames(categoryIndex))
-                edges_deg     = gridRecord.(edgeNames(categoryIndex));
-                edgeCount     = size(edges_deg, 1);
-                azimuth_deg   = reshape([edges_deg(:, [1 3]), nan(edgeCount, 1)].', [], 1);
-                elevation_deg = reshape([edges_deg(:, [2 4]), nan(edgeCount, 1)].', [], 1);
-                plot(axesHandle, azimuth_deg, elevation_deg, edgeStyles(categoryIndex), "DisplayName", edgeLabels(categoryIndex));
+                edges_units     = gridRecord.(edgeNames(categoryIndex));
+                edgeCount     = size(edges_units, 1);
+                x_units   = reshape([edges_units(:, [1 3]), nan(edgeCount, 1)].', [], 1);
+                y_units = reshape([edges_units(:, [2 4]), nan(edgeCount, 1)].', [], 1);
+                plot(axesHandle, x_units, y_units, edgeStyles(categoryIndex), "DisplayName", edgeLabels(categoryIndex));
             end
         end
     end
-    pointNames  = ["ExploredNodes_deg", "FrontierNodes_deg"];
+    pointNames  = ["ExploredNodes_units", "FrontierNodes_units"];
     pointLabels = ["Expanded search node", "Final search frontier"];
     % Process each category needed to complete s.
     for categoryIndex = 1:2
         if hasData(gridRecord, pointNames(categoryIndex))
-            points_deg = gridRecord.(pointNames(categoryIndex));
-            scatter(axesHandle, points_deg(:, 1), points_deg(:, 2), 8 + 9 * categoryIndex, "filled", "DisplayName", pointLabels(categoryIndex));
+            points_units = gridRecord.(pointNames(categoryIndex));
+            scatter(axesHandle, points_units(:, 1), points_units(:, 2), 8 + 9 * categoryIndex, "filled", "DisplayName", pointLabels(categoryIndex));
         end
     end
 end
@@ -335,8 +346,8 @@ function drawObstacles(axesHandle, obstacles, time_s)
     for obstacleIndex = 1:numel(obstacles)
         obstacle = obstacles(obstacleIndex);
         original = obstacle;
-        original.az_deg = obstacle.originalAz_deg;
-        original.el_deg = obstacle.originalEl_deg;
+        original.x_units = obstacle.originalX_units;
+        original.y_units = obstacle.originalY_units;
         if isfield(original, "InternalPreparation")
             original = rmfield(original, "InternalPreparation");
         end
@@ -357,22 +368,22 @@ end
 function drawTarget(axesHandle, result, displayTime_s)
     % Draw the moving target's track and current position.
     goalState = result.Inputs.goalState;
-    if ~hasData(goalState, "targetPosition_deg")
+    if ~hasData(goalState, "targetPosition_units")
         return;
     end
-    track_deg = displayPath(result, goalState.targetPosition_deg);
-    drawLine(axesHandle, track_deg, "-.", "Moving target track", 1);
-    target_deg = obstacleAvoidance.input.goalPositionAtTime(goalState, displayTime_s);
-    target_deg = displayPath(result, target_deg);
-    plot(axesHandle, target_deg(1), target_deg(2), "md", "MarkerFaceColor", "m", "DisplayName", "Moving target");
+    track_units = displayPath(result, goalState.targetPosition_units);
+    drawLine(axesHandle, track_units, "-.", "Moving target track", 1);
+    target_units = obstacleAvoidance.input.goalPositionAtTime(goalState, displayTime_s);
+    target_units = displayPath(result, target_units);
+    plot(axesHandle, target_units(1), target_units(2), "md", "MarkerFaceColor", "m", "DisplayName", "Moving target");
 end
 
 function axesHandles = createKinematicPanels(layout, result, animated)
     % Plot position, velocity, acceleration, and jerk with their limits.
-    quantityNames = ["position_deg", "velocity_deg_s", "acceleration_deg_s2", "jerk_deg_s3"];
-    yLabels       = ["Position (deg)", "Velocity (deg/s)", "Acceleration (deg/s^2)", "Jerk (deg/s^3)"];
-    limits        = [nan(1, 2); result.Inputs.limits.maxVelocity_deg_s; ...
-        result.Inputs.limits.maxAcceleration_deg_s2; result.Inputs.limits.maxJerk_deg_s3];
+    quantityNames = ["position_units", "velocity_units_s", "acceleration_units_s2", "jerk_units_s3"];
+    yLabels       = ["Position (units)", "Velocity (units/s)", "Acceleration (units/s^2)", "Jerk (units/s^3)"];
+    limits        = [nan(1, 2); result.Inputs.limits.maxVelocity_units_s; ...
+        result.Inputs.limits.maxAcceleration_units_s2; result.Inputs.limits.maxJerk_units_s3];
     axesHandles = gobjects(4, 1);
     % Process each quantity needed to build kinematic panels.
     for quantityIndex = 1:4
@@ -384,7 +395,7 @@ function axesHandles = createKinematicPanels(layout, result, animated)
         box(axesHandle, "on");
         values      = result.(quantityNames(quantityIndex));
         lineHandles = plot(axesHandle, result.time_s, values);
-        set(lineHandles, {'DisplayName'}, {'Azimuth'; 'Elevation'});
+        set(lineHandles, {'DisplayName'}, {'X'; 'Y'});
         if quantityIndex > 1
             yline(axesHandle, [-limits(quantityIndex, :), limits(quantityIndex, :)], "r--", "HandleVisibility", "off");
         end
@@ -397,8 +408,8 @@ end
 
 function finishAxes(axesHandle, result, prefix)
     % Label the plot with search counts.
-    xlabel(axesHandle, "Azimuth (deg)");
-    ylabel(axesHandle, "Elevation (deg)");
+    xlabel(axesHandle, "X (units)");
+    ylabel(axesHandle, "Y (units)");
     title(axesHandle, sprintf("%s | %s", prefix, result.TerminationReason));
     legend(axesHandle, "Location", "best");
 end

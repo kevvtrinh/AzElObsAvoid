@@ -1,6 +1,6 @@
 ---
 name: planner-performance-triage
-description: Triage Az/El planner runs that stall, consume excessive time, or return suspicious noValidatedSeed failures using measured repo-specific cost centres, invariants, and regression sentinels. Use planner-failure-diagnosis instead for general stage-by-stage root-cause isolation.
+description: Triage X/Y planner runs that stall, consume excessive time, or return suspicious noValidatedSeed failures using measured repo-specific cost centres, invariants, and regression sentinels. Use planner-failure-diagnosis instead for general stage-by-stage root-cause isolation.
 ---
 
 # Planner Performance Triage
@@ -60,12 +60,12 @@ Do not judge or bless a change that moves any sentinel. Stop and report it.
 
 | Sentinel | Required value |
 | --- | --- |
-| `Rogue Examples/failed.mat` | success and independent validation; polyline 143.92829584254 deg, smooth length 145.143797542061 deg, arrival 71.2828117654205 s |
+| `Rogue Examples/failed.mat` | success and independent validation; polyline 143.92829584254 units, smooth length 145.143797542061 units, arrival 71.2828117654205 s |
 | `exampleTwoOpposingUVisibilityGraph` | arrival 21.6333333333333 s |
-| `exampleStaticUShapedObstacle` | polyline 34.9425880404659 deg, smooth length 39.1412774270613 deg, arrival 20.7865397074203 s |
-| README quick-start (`exampleObstacleAvoidance`) | polyline 11.1521195190242 deg, smooth length 11.4116854105306 deg, arrival 7.52917416639509 s |
+| `exampleStaticUShapedObstacle` | polyline 34.9425880404659 units, smooth length 39.1412774270613 units, arrival 20.7865397074203 s |
+| README quick-start (`exampleObstacleAvoidance`) | polyline 11.1521195190242 units, smooth length 11.4116854105306 units, arrival 7.52917416639509 s |
 | `exampleMovingBarrierWait` | arrival 10.0903015136719 s |
-| `exampleMovingCircleNoAzimuthWrap` | arrival 8.5 s |
+| `exampleMovingCircleNoWrap` | arrival 8.5 s |
 | `exampleMovingDeformingUSOutlineVisibility` | arrival 7.91666666666667 s |
 | Full suite | Zero failed or incomplete tests, including the exact saved bundle |
 | `exampleNoPath` | Independently validated expected failure; do not manufacture success |

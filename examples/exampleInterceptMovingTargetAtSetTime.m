@@ -8,21 +8,21 @@ function [result, diagnosis] = exampleInterceptMovingTargetAtSetTime(interceptTi
 %       interceptTime_s, options)
 %
 % PURPOSE
-%   - Intercept a curved target track supplied as time-indexed Az/El points
+%   - Intercept a curved target track supplied as time-indexed X/Y points
 %     at a specified time in an obstacle-free environment.
 %   - Demonstrate a position-only intercept for a general target tangent.
 %
 % INPUTS
 %   - interceptTime_s (positive scalar, optional; default 12)
 %   - options (scalar struct, optional; default struct())
-%       Planner option overrides plus the finite MaxJerk_deg_s3 limit.
+%       Planner option overrides plus the finite MaxJerk_units_s3 limit.
 %
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public moving-target planner result.
 %
 % UNITS
-%   - Angles are degrees and time is seconds.
+%   - Positions use coordinate units and time uses seconds.
 %
 
 %% Section 1: Resolve Example Controls
@@ -55,16 +55,16 @@ obstacles = [];
 
 targetTime_s = linspace(0, max(30, interceptTime_s + 5), 7).';
 targetMotion = struct("time_s", targetTime_s, ...
-    "position_deg", [ ...
+    "position_units", [ ...
         8 + 0.18 * targetTime_s - 0.006 * targetTime_s.^2, ...
         -3 + 0.02 * targetTime_s + 0.004 * targetTime_s.^2], "InterpolationMethod", "pchip");
 initialState = struct();
 initialState.time_s              = 0;
-initialState.position_deg        = [0 0];
-initialState.velocity_deg_s      = [0 0];
-initialState.acceleration_deg_s2 = [0 0];
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [0.8 0.8], "maxJerk_deg_s3", jerkConfiguration.MaxJerk_deg_s3);
+initialState.position_units        = [0 0];
+initialState.velocity_units_s      = [0 0];
+initialState.acceleration_units_s2 = [0 0];
+limits = struct("maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [0.8 0.8], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
 interceptOptions = struct("InterceptMode", "specifiedTime", "SpecifiedInterceptTime_s", interceptTime_s, "PlannerOptions", options);
 
 %% Section 4: Run Planner

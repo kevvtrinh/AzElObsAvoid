@@ -9,8 +9,8 @@ function report = benchmarkRandomMovingPolygonStress(randomSeeds, benchmarkOverr
 % PURPOSE
 %   - Stress the public HS3 planner with deterministic large random polygons
 %     that
-%     translate across most of the Az/El frame while rotating at least 180
-%     degrees.
+%     translate across most of the X/Y frame while rotating at least 180
+%     coordinate units.
 %   - Preserve exact inputs and returned diagnostics for every failure.
 %   - Keep an analytically clear boundary witness outside planner inputs so
 %     search failures are distinguishable from obvious geometric no-paths.
@@ -31,8 +31,8 @@ function report = benchmarkRandomMovingPolygonStress(randomSeeds, benchmarkOverr
 %       time, and the analytic witness-clearance lower bound.
 %**************************************************************************
 % UNITS
-%   - Positions, radii, and clearance are degrees. Time is seconds and
-%     derivatives use deg/s, deg/s^2, and deg/s^3.
+%   - Positions, radii, and clearance are coordinate units. Time is seconds and
+%     derivatives use units/s, units/s^2, and units/s^3.
 %**************************************************************************
 
 %% Section 1: Resolve Reproducible Controls
@@ -105,12 +105,12 @@ function [obstacles, initialState, goalState, limits, scenario] = createStressSc
     missionTime_s           = controls.MissionTime_s;
     obstacleTime_s          = linspace(0, missionTime_s, 13).';
     obstacleCount           = controls.ObstacleCount;
-    safetyMargin_deg        = 0.25;
-    centerAzimuthLimit_deg  = 17.5;
-    centerElevation_deg     = linspace(-4, 4, obstacleCount).';
+    safetyMargin_units        = 0.25;
+    centerXLimit_units  = 17.5;
+    centerY_units     = linspace(-4, 4, obstacleCount).';
     obstacleCells           = cell(obstacleCount, 1);
     histories               = cell(obstacleCount, 1);
-    maximumSourceRadius_deg = zeros(obstacleCount, 1);
+    maximumSourceRadius_units = zeros(obstacleCount, 1);
     rotationTravel_deg      = zeros(obstacleCount, 1);
 
     % Each source polygon is star-shaped, simple, and has five to twelve vertices.
@@ -119,70 +119,70 @@ function [obstacles, initialState, goalState, limits, scenario] = createStressSc
         nominalAngles_rad  = (0:vertexCount - 1).' * (2 * pi / vertexCount);
         angularJitter_rad  = (rand(vertexCount, 1) - 0.5) * (0.55 * 2 * pi / vertexCount);
         sourceAngles_rad   = sort(nominalAngles_rad + angularJitter_rad);
-        nominalRadius_deg  = 6.5 + 1.5 * rand;
-        sourceRadius_deg   = nominalRadius_deg * (0.68 + 0.32 * rand(vertexCount, 1));
-        sourcePosition_deg = sourceRadius_deg .* [cos(sourceAngles_rad), sin(sourceAngles_rad)];
-        maximumSourceRadius_deg(obstacleIndex) = max(sourceRadius_deg);
+        nominalRadius_units  = 6.5 + 1.5 * rand;
+        sourceRadius_units   = nominalRadius_units * (0.68 + 0.32 * rand(vertexCount, 1));
+        sourcePosition_units = sourceRadius_units .* [cos(sourceAngles_rad), sin(sourceAngles_rad)];
+        maximumSourceRadius_units(obstacleIndex) = max(sourceRadius_units);
         initialRotation_deg = 360 * rand;
         rotationTravel_deg(obstacleIndex) = 180 + 180 * rand;
         if mod(obstacleIndex, 2) == 1
-            startAzimuth_deg = -centerAzimuthLimit_deg;
-            endAzimuth_deg   = centerAzimuthLimit_deg;
+            startX_units = -centerXLimit_units;
+            endX_units   = centerXLimit_units;
         else
-            startAzimuth_deg = centerAzimuthLimit_deg;
-            endAzimuth_deg   = -centerAzimuthLimit_deg;
+            startX_units = centerXLimit_units;
+            endX_units   = -centerXLimit_units;
         end
         verticalPhase_rad = 2 * pi * rand;
-        sliceTransform    = @(source_deg, sampleTime_s, sampleIndex) transformStressPolygon(source_deg, sampleTime_s, sampleIndex, missionTime_s, startAzimuth_deg, endAzimuth_deg, centerElevation_deg(obstacleIndex), verticalPhase_rad, initialRotation_deg, rotationTravel_deg(obstacleIndex));
-        [obstacleCells{obstacleIndex}, histories{obstacleIndex}] = obstacleAvoidance.obstacles.createMovingObstacle("Random crossing polygon " + obstacleIndex, obstacleTime_s, sourcePosition_deg(:, 1), sourcePosition_deg(:, 2), sliceTransform, safetyMargin_deg, struct("Verbose", false));
+        sliceTransform    = @(source_units, sampleTime_s, sampleIndex) transformStressPolygon(source_units, sampleTime_s, sampleIndex, missionTime_s, startX_units, endX_units, centerY_units(obstacleIndex), verticalPhase_rad, initialRotation_deg, rotationTravel_deg(obstacleIndex));
+        [obstacleCells{obstacleIndex}, histories{obstacleIndex}] = obstacleAvoidance.obstacles.createMovingObstacle("Random crossing polygon " + obstacleIndex, obstacleTime_s, sourcePosition_units(:, 1), sourcePosition_units(:, 2), sliceTransform, safetyMargin_units, struct("Verbose", false));
     end
     obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleCells);
 
-    workspaceAzimuth_deg           = [-30 30];
-    workspaceElevation_deg         = [-20 20];
-    startPosition_deg              = [-28 0];
-    goalPosition_deg               = [28 0];
-    witnessElevation_deg           = -18;
-    maximumRadiusWithMargin_deg    = max(maximumSourceRadius_deg) + safetyMargin_deg;
-    sideClearanceLowerBound_deg    = abs(startPosition_deg(1) - (-centerAzimuthLimit_deg)) - maximumRadiusWithMargin_deg;
-    maximumCenterExcursion_deg     = max(abs(centerElevation_deg)) + 0.75;
-    bottomClearanceLowerBound_deg  = abs(witnessElevation_deg) - maximumCenterExcursion_deg - maximumRadiusWithMargin_deg;
-    witnessClearanceLowerBound_deg = min(sideClearanceLowerBound_deg, bottomClearanceLowerBound_deg);
-    if witnessClearanceLowerBound_deg <= 0
+    workspaceX_units           = [-30 30];
+    workspaceY_units         = [-20 20];
+    startPosition_units              = [-28 0];
+    goalPosition_units               = [28 0];
+    witnessY_units           = -18;
+    maximumRadiusWithMargin_units    = max(maximumSourceRadius_units) + safetyMargin_units;
+    sideClearanceLowerBound_units    = abs(startPosition_units(1) - (-centerXLimit_units)) - maximumRadiusWithMargin_units;
+    maximumCenterExcursion_units     = max(abs(centerY_units)) + 0.75;
+    bottomClearanceLowerBound_units  = abs(witnessY_units) - maximumCenterExcursion_units - maximumRadiusWithMargin_units;
+    witnessClearanceLowerBound_units = min(sideClearanceLowerBound_units, bottomClearanceLowerBound_units);
+    if witnessClearanceLowerBound_units <= 0
         error("benchmarkRandomMovingPolygonStress:InvalidWitness", "Generated radial bounds do not leave the declared witness route clear.");
     end
 
-    initialState = struct("time_s", 0, "position_deg", startPosition_deg, ...
-        "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-    goalState = struct("time_s", missionTime_s, "position_deg", goalPosition_deg, ...
-        "velocity_deg_s", [0 0], "acceleration_deg_s2", [0 0]);
-    limits = struct("maxVelocity_deg_s", [4 4], ...
-        "maxAcceleration_deg_s2", [1.5 1.5], ...
-        "maxJerk_deg_s3", [3 3], ...
-        "azimuthInterval_deg", workspaceAzimuth_deg, ...
-        "elevationInterval_deg", workspaceElevation_deg);
+    initialState = struct("time_s", 0, "position_units", startPosition_units, ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+    goalState = struct("time_s", missionTime_s, "position_units", goalPosition_units, ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+    limits = struct("maxVelocity_units_s", [4 4], ...
+        "maxAcceleration_units_s2", [1.5 1.5], ...
+        "maxJerk_units_s3", [3 3], ...
+        "xInterval_units", workspaceX_units, ...
+        "yInterval_units", workspaceY_units);
     scenario = struct("ObstacleTime_s", obstacleTime_s, ...
         "ObstacleHistories", {histories}, ...
-        "MaximumSourceRadius_deg", maximumSourceRadius_deg, ...
+        "MaximumSourceRadius_units", maximumSourceRadius_units, ...
         "RotationTravel_deg", rotationTravel_deg, ...
-        "WitnessRoute_deg", [ ...
-            startPosition_deg; ...
-            startPosition_deg(1) witnessElevation_deg; goalPosition_deg(1) witnessElevation_deg; goalPosition_deg], "WitnessClearanceLowerBound_deg", witnessClearanceLowerBound_deg);
+        "WitnessRoute_units", [ ...
+            startPosition_units; ...
+            startPosition_units(1) witnessY_units; goalPosition_units(1) witnessY_units; goalPosition_units], "WitnessClearanceLowerBound_units", witnessClearanceLowerBound_units);
 end
 
-function transformed_deg = transformStressPolygon(sourcePosition_deg, sampleTime_s, ~, missionTime_s, startAzimuth_deg, endAzimuth_deg, centerElevation_deg, verticalPhase_rad, initialRotation_deg, rotationTravel_deg)
+function transformed_units = transformStressPolygon(sourcePosition_units, sampleTime_s, ~, missionTime_s, startX_units, endX_units, centerY_units, verticalPhase_rad, initialRotation_deg, rotationTravel_deg)
     % Translate across the frame and rotate through at least one half-turn.
     progress       = min(max(sampleTime_s / missionTime_s, 0), 1);
     smoothProgress = 10 * progress^3 - 15 * progress^4 + 6 * progress^5;
-    center_deg     = [ ...
-        startAzimuth_deg + ...
-            smoothProgress * (endAzimuth_deg - startAzimuth_deg), ...
-        centerElevation_deg + ...
+    center_units     = [ ...
+        startX_units + ...
+            smoothProgress * (endX_units - startX_units), ...
+        centerY_units + ...
             0.75 * sin(2 * pi * progress + verticalPhase_rad)];
     rotation_rad   = deg2rad(initialRotation_deg + rotationTravel_deg * smoothProgress);
     rotationMatrix = [ ...
         cos(rotation_rad) -sin(rotation_rad); sin(rotation_rad) cos(rotation_rad)];
-    transformed_deg = sourcePosition_deg * rotationMatrix.' + center_deg;
+    transformed_units = sourcePosition_units * rotationMatrix.' + center_units;
 end
 
 function record = runStressCase(randomSeed, obstacles, initialState, goalState, limits, scenario, controls)
@@ -203,7 +203,7 @@ function record = runStressCase(randomSeed, obstacles, initialState, goalState, 
     record.TerminationReason              = result.TerminationReason;
     record.PlannerWallTime_s              = plannerWallTime_s;
     record.ArrivalTime_s                  = result.ArrivalTime_s;
-    record.WitnessClearanceLowerBound_deg = scenario.WitnessClearanceLowerBound_deg;
+    record.WitnessClearanceLowerBound_units = scenario.WitnessClearanceLowerBound_units;
     record.Inputs                         = struct("obstacles", obstacles, ...
         "initialState", initialState, ...
         "goalState", goalState, ...
@@ -222,7 +222,7 @@ function record = emptyRecord()
         "TerminationReason", "", ...
         "PlannerWallTime_s", NaN, ...
         "ArrivalTime_s", NaN, ...
-        "WitnessClearanceLowerBound_deg", NaN, ...
+        "WitnessClearanceLowerBound_units", NaN, ...
         "Inputs", struct(), ...
         "Scenario", struct(), ...
         "PlannerResult", struct(), ...
@@ -231,5 +231,5 @@ end
 
 function printRecord(record)
     % Print concise evidence while retaining complete records in the report.
-    fprintf("random=%d success=%s validation=%s wall_s=%.6f " + "arrival_s=%.6g witness_clearance_deg=%.6g reason=%s\n", record.RandomSeed, string(logical(record.Success)), string(logical(record.IndependentValidationPassed)), record.PlannerWallTime_s, record.ArrivalTime_s, record.WitnessClearanceLowerBound_deg, record.TerminationReason);
+    fprintf("random=%d success=%s validation=%s wall_s=%.6f " + "arrival_s=%.6g witness_clearance_units=%.6g reason=%s\n", record.RandomSeed, string(logical(record.Success)), string(logical(record.IndependentValidationPassed)), record.PlannerWallTime_s, record.ArrivalTime_s, record.WitnessClearanceLowerBound_units, record.TerminationReason);
 end

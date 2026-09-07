@@ -1,7 +1,8 @@
 # Obstacle-Avoidance Trajectory Planner
 
 This branch provides one public obstacle-avoidance planner for trajectories in
-the azimuth/elevation frame. The `obstacleAvoidance` namespace owns inputs,
+any two-dimensional x/y coordinate system. Use one consistent coordinate unit
+for both axes; the planner does not convert units. The `obstacleAvoidance` namespace owns inputs,
 obstacles, geometry, topology search, candidate selection, validation, and
 plotting. Dimension-neutral motion generation lives independently under
 `trajectory/+bmtpEngine`.
@@ -116,16 +117,16 @@ obstacles = obstacleAvoidance.obstacles.createObstacle( ...
 
 initialState = struct( ...
     "time_s", 0, ...
-    "position_deg", [-5 0]);
+    "position_units", [-5 0]);
 
 goalState = struct( ...
     "time_s", 12, ...
-    "position_deg", [5 0]);
+    "position_units", [5 0]);
 
 limits = struct( ...
-    "maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], ...
-    "maxJerk_deg_s3", [2 2]);
+    "maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [1 1], ...
+    "maxJerk_units_s3", [2 2]);
 
 options = obstacleAvoidance.planTrajectory();
 result = obstacleAvoidance.planTrajectory( ...
@@ -155,29 +156,29 @@ interpreted as rigid arc motion, and unverified correspondence is enclosed
 rather than interpolated.
 
 `obstacles` may be an obstacle array, nested cells of obstacles, or `[]`.
-Obstacle coordinates use degrees and history times use seconds.
+Obstacle coordinates use coordinate units and history times use seconds.
 
 ### Initial and goal states
 
 Each state requires:
 
 - `time_s`: scalar time in seconds;
-- `position_deg`: one-by-two `[azimuth elevation]` position in degrees.
+- `position_units`: one-by-two `[x y]` position in coordinate units.
 
-Optional `velocity_deg_s` and `acceleration_deg_s2` fields default to zero.
+Optional `velocity_units_s` and `acceleration_units_s2` fields default to zero.
 A moving goal additionally supplies increasing `targetTime_s`, matching
-`targetPosition_deg`, and its interpolation method.
+`targetPosition_units`, and its interpolation method.
 
 ### Limits
 
 The required physical limits are:
 
-- `maxVelocity_deg_s`;
-- `maxAcceleration_deg_s2`;
-- `maxJerk_deg_s3`.
+- `maxVelocity_units_s`;
+- `maxAcceleration_units_s2`;
+- `maxJerk_units_s3`.
 
 All three must use the same form: positive finite scalars for combined
-magnitudes, or two-element `[azimuth elevation]` vectors for separate axis
+magnitudes, or two-element `[x y]` vectors for separate axis
 limits. Mixing scalar and vector derivative limits raises
 `planTrajectory:MixedLimitModes`.
 
@@ -186,9 +187,9 @@ A combined limit `L` is the hypotenuse and is allocated equally as
 
 ```matlab
 limits = struct();
-limits.maxVelocity_deg_s      = 2;
-limits.maxAcceleration_deg_s2 = 1;
-limits.maxJerk_deg_s3         = 2.5;
+limits.maxVelocity_units_s      = 2;
+limits.maxAcceleration_units_s2 = 1;
+limits.maxJerk_units_s3         = 2.5;
 ```
 
 This fixes each axis's share; unused capacity on one axis is not transferred
@@ -198,17 +199,42 @@ same conversion, and reusing resolved limits does not divide them again.
 MATLAB sandbox overrides and offline-sandbox JSON requests follow the same
 rule; the sandbox controls display the resolved per-axis values.
 
-Optional `azimuthInterval_deg` and `elevationInterval_deg` fields remain
+Optional `xInterval_units` and `yInterval_units` fields remain
 two-element workspace intervals; their defaults are `[-180 180]` and
-`[-90 90]` degrees. Position intervals are never split or scaled.
+`[-90 90]` coordinate units. Position intervals are never split or scaled.
 The maintained examples use separate velocity and acceleration limits, so
-their `MaxJerk_deg_s3` override must also be a two-element vector.
+their `MaxJerk_units_s3` override must also be a two-element vector.
 
 ### Options
 
 Call `obstacleAvoidance.planTrajectory()` to inspect the exact planner options.
 Partial override structures are accepted, and empty fields retain their
 defaults.
+
+`WrapX` and `WrapY` are independent logical options, both false by default.
+An enabled axis is periodic with period `diff(limits.xInterval_units)` or
+`diff(limits.yInterval_units)`. Any finite increasing interval is supported;
+there is no fixed full-turn period. For example:
+
+```matlab
+limits.xInterval_units = [-5 5];     % x period: 10
+limits.yInterval_units = [100 120];  % y period: 20
+options.WrapX = true;
+options.WrapY = true;
+```
+
+From `[4 119]`, a goal at `[-4 101]` becomes the nearest equivalent `[6 121]`.
+An exact half-period tie selects the positive displacement.
+Returned motion stays continuous in those unwrapped coordinates. Spatial plots
+fold enabled axes into their intervals and split lines at either seam; a
+separate continuous view preserves the actual motion. Disabled axes retain
+their workspace bounds. Wrapping currently accepts only obstacle-free,
+fixed-position goals; periodic obstacles and moving goals raise
+`planTrajectory:UnsupportedWrappedGeometry`.
+
+This API uses `position_units`, `velocity_units_s`, `acceleration_units_s2`,
+and `jerk_units_s3`, with `[x y]` columns throughout. Rotation controls for
+obstacle shapes still use degrees because those values are angles.
 
 Fixed-arrival and earliest-arrival requests use `GoalTimeMode`. The obstacle
 planner uses bounded deterministic topology proposals when geometry is present,
@@ -294,10 +320,10 @@ obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
 `result` has the same fields on success and expected failure:
 
 - `Success`, `Message`, `TerminationReason`: planning outcome.
-- `Route_deg`, `BestPartialRoute_deg`: selected path or available failure path.
-- `time_s`, `position_deg`, `velocity_deg_s`, `acceleration_deg_s2`, `jerk_deg_s3`: motion samples.
+- `Route_units`, `BestPartialRoute_units`: selected path or available failure path.
+- `time_s`, `position_units`, `velocity_units_s`, `acceleration_units_s2`, `jerk_units_s3`: motion samples.
 - `Inputs`, `Options`: normalized request, including original and protected obstacles.
-- `Polynomial`, `PlaneCertificate`, `SeedCorridor`, `SeedCorridorBoundary_deg`: exact motion and evidence used by independent validation.
+- `Polynomial`, `PlaneCertificate`, `SeedCorridor`, `SeedCorridorBoundary_units`: exact motion and evidence used by independent validation.
 - `Validation`, `ArrivalTime_s`, `TrajectoryDuration_s`, `ElapsedPlanningTime_s`.
 
 `diagnosis` keeps the investigation data separate:
@@ -312,7 +338,7 @@ obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
 
 Candidate summaries use `ArrivalTime_s` and `TrajectoryDuration_s`, matching the
 result. `Routes.ParameterBasis` identifies whether `tau` is normalized distance
-or normalized time. `Routes.ObstacleEnvelope_deg` stores the search obstacle
+or normalized time. `Routes.ObstacleEnvelope_units` stores the search obstacle
 outline. `Validation.CertificateRejectionReason` explains a rejected timed
 coverage certificate when validation proceeds to adaptive collision checks.
 
@@ -412,14 +438,14 @@ map as follows; removed engine implementations have no forwarding shims:
 
 | Previous call | Current call |
 | --- | --- |
-| `planAzElMotion(...)` | `obstacleAvoidance.planTrajectory(...)` |
-| `planAzElMovingTargetIntercept(...)` | `obstacleAvoidance.planMovingTargetIntercept(...)` |
-| `validateAzElTrajectory(...)` | `obstacleAvoidance.validateTrajectory(...)` |
-| `azElObstacles.makeAzElObstacleData(...)` | `obstacleAvoidance.obstacles.createObstacle(...)` |
-| `azElObstacles.makeMovingAzElObstacleData(...)` | `obstacleAvoidance.obstacles.createMovingObstacle(...)` |
-| `azElObstacles.combineAzElObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
-| `azElObstacles.queryAzElTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
-| `plotAzElMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
+| `planXYMotion(...)` | `obstacleAvoidance.planTrajectory(...)` |
+| `planXYMovingTargetIntercept(...)` | `obstacleAvoidance.planMovingTargetIntercept(...)` |
+| `validateXYTrajectory(...)` | `obstacleAvoidance.validateTrajectory(...)` |
+| `xyObstacles.makeXYObstacleData(...)` | `obstacleAvoidance.obstacles.createObstacle(...)` |
+| `xyObstacles.makeMovingXYObstacleData(...)` | `obstacleAvoidance.obstacles.createMovingObstacle(...)` |
+| `xyObstacles.combineXYObstacles(...)` | `obstacleAvoidance.obstacles.combineObstacles(...)` |
+| `xyObstacles.queryXYTimeObstacle(...)` | `obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(...)` |
+| `plotXYMotion(...)` | `obstacleAvoidance.plotting.plotTrajectory(...)` |
 
 ## Maintained examples
 
@@ -441,8 +467,8 @@ result = exampleObstacleAvoidance(struct( ...
 
 The maintained examples cover static, moving, and deforming obstacles;
 concave and geographic geometry; waiting; dense fields; moving targets;
-azimuth wrapping; fixed and earliest arrival; and expected no-path
-diagnostics. The persistent scene builder under `sandbox/` is a manual tool
+fixed and earliest arrival; and expected no-path diagnostics. Dedicated tests
+cover independent x/y wrapping. The persistent scene builder under `sandbox/` is a manual tool
 outside the headless example matrix.
 
 ## Requirements
@@ -484,7 +510,7 @@ assertSuccess(results);
   useful openings, and bounded timed-cell BMTP can fail on a feasible route.
   Unsupported guesses remain explicit in attempt diagnostics; failure does not
   establish physical infeasibility.
-- Azimuth wrapping with obstacles or moving goals remains unsupported.
+- Wrapping either axis with obstacles or moving goals remains unsupported.
 - Local nonlinear solves can fail or encounter poor conditioning.
 - Use Ctrl+C to interrupt MATLAB planning. The blocking HTTP server must be
   restarted after interruption.
@@ -498,7 +524,7 @@ demonstrates only the exercised case family, not universal feasibility.
   [Search-Based Path Planning with Homotopy Class Constraints in 3D](https://doi.org/10.1609/aaai.v26i1.8435).
   The spatial search uses a bounded 2-D angle signature adapted from this
   approach. It is not the paper's 3-D construction or a continuous
-  azimuth/elevation/time homotopy certificate.
+  x/y/time homotopy certificate.
 - Farouki, R. T. (2012).
   [The Bernstein Polynomial Basis: A Centennial Retrospective](https://doi.org/10.1016/j.cagd.2012.03.001).
   Bernstein convex-hull bounds certify complete polynomial intervals in the

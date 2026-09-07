@@ -17,6 +17,9 @@ function options = resolvePlannerOptions(optionOverrides)
 %   MaximumTimeLayerCount             17                    Integers 2-65535
 %   MaximumWaitRefinementIterations   16                    Integers 0-64
 %   UnsupportedTimedTopologyPolicy   "fail"                See fallback below
+%   WrapX, WrapY                     false                 Logical scalars
+%     Each enabled axis uses its workspace interval width as the period.
+%     Only obstacle-free fixed-position goals support wrapping.
 %
 %   Arrival modes:
 %     earliestArrival  Minimize arrival time; break ties by shorter travel.
@@ -37,7 +40,7 @@ function options = resolvePlannerOptions(optionOverrides)
 %       Fully populated, normalized, and validated planner options.
 %
 % UNITS
-%   - Time fields use seconds and angular clearance fields use degrees.
+%   - Time fields use seconds and clearance fields use coordinate units.
 %
 
 %% Section 1: Resolve Defaults
@@ -46,13 +49,14 @@ defaults = struct();
 defaults.GoalTimeMode                    = "earliestArrival";
 defaults.SampleTime_s                    = 0.05;
 defaults.UnsupportedTimedTopologyPolicy  = "fail";
-defaults.AllowAzimuthWrapping            = false;
+defaults.WrapX                          = false;
+defaults.WrapY                          = false;
 defaults.MaximumSeedCount                = 2;
 defaults.MaximumTimeLayerCount           = 17;
 defaults.MaximumWaitRefinementIterations = 16;
 defaults.ArrivalTimeTolerance_s          = 1e-3;
 defaults.ConstraintTolerance             = 1e-7;
-defaults.CollisionClearanceTolerance_deg = 1e-7;
+defaults.CollisionClearanceTolerance_units = 1e-7;
 defaults.CollisionMinimumTimeStep_s      = 0.00025;
 if nargin == 0 || isempty(optionOverrides)
     options = defaults;
@@ -62,9 +66,9 @@ if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
     error("planTrajectory:InvalidOptions", "optionOverrides must be a scalar struct.");
 end
 % Apply the required validation or transfer to each field name.
-for fieldName = ["AzimuthInterval_deg", "ElevationInterval_deg"]
+for fieldName = ["XInterval_units", "YInterval_units"]
     if isfield(optionOverrides, fieldName)
-        replacementName = lower(extractBefore(fieldName, "Interval")) + "Interval_deg";
+        replacementName = lower(extractBefore(fieldName, "Interval")) + "Interval_units";
         error("planTrajectory:WorkspaceLimitMoved", "%s has moved from options to limits.%s.", fieldName, replacementName);
     end
 end
@@ -93,7 +97,8 @@ for ruleIndex = 1:size(textRules, 1)
         error(textRules{ruleIndex, 3}, textRules{ruleIndex, 4});
     end
 end
-options.AllowAzimuthWrapping = obstacleAvoidance.input.normalizeLogicalScalar(options.AllowAzimuthWrapping, "AllowAzimuthWrapping", "planTrajectory:InvalidLogicalOption");
+options.WrapX = obstacleAvoidance.input.normalizeLogicalScalar(options.WrapX, "WrapX", "planTrajectory:InvalidLogicalOption");
+options.WrapY = obstacleAvoidance.input.normalizeLogicalScalar(options.WrapY, "WrapY", "planTrajectory:InvalidLogicalOption");
 
 validateattributes(options.SampleTime_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 integerRules = {"MaximumSeedCount", 1, 5; ...
@@ -108,5 +113,5 @@ for fieldName = ["ArrivalTimeTolerance_s", "ConstraintTolerance", ...
         "CollisionMinimumTimeStep_s"]
     validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
 end
-validateattributes(options.CollisionClearanceTolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+validateattributes(options.CollisionClearanceTolerance_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end

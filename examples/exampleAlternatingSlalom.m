@@ -17,8 +17,8 @@ function [result, diagnosis] = exampleAlternatingSlalom(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -38,16 +38,16 @@ end
 % waypoints or a preferred turn direction.
 
 obstacleTime_s      = [0; 30];
-centerAzimuth_deg   = [-4; 0; 4];
-centerElevation_deg = [2.5; -2.5; 2.5];
+centerX_units   = [-4; 0; 4];
+centerY_units = [2.5; -2.5; 2.5];
 obstacles           = obstacleAvoidance.obstacles.combineObstacles();
 
 % Center each vertical barrier at its given offset. Keep the loop order stable
 % so obstacle indices and diagnostics are reproducible.
-for obstacleIndex = 1:numel(centerAzimuth_deg)
-    center_deg    = [centerAzimuth_deg(obstacleIndex), centerElevation_deg(obstacleIndex)];
-    rectangle_deg = center_deg + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
-    obstacle      = obstacleAvoidance.obstacles.createObstacle("barrier " + obstacleIndex, obstacleTime_s, rectangle_deg(:, 1), rectangle_deg(:, 2), 0.1);
+for obstacleIndex = 1:numel(centerX_units)
+    center_units    = [centerX_units(obstacleIndex), centerY_units(obstacleIndex)];
+    rectangle_units = center_units + [ -0.7 -2.5; 0.7 -2.5; 0.7 2.5; -0.7 2.5];
+    obstacle      = obstacleAvoidance.obstacles.createObstacle("barrier " + obstacleIndex, obstacleTime_s, rectangle_units(:, 1), rectangle_units(:, 2), 0.1);
     obstacles     = obstacleAvoidance.obstacles.combineObstacles(obstacles, obstacle);
 end
 
@@ -58,12 +58,12 @@ end
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-8 0];
+initialState.position_units = [-8 0];
 goalState = struct();
 goalState.time_s       = 22;
-goalState.position_deg = [8 0];
-limits = struct("maxVelocity_deg_s", [2 2], ...
-    "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3, "elevationInterval_deg", [-5 5]);
+goalState.position_units = [8 0];
+limits = struct("maxVelocity_units_s", [2 2], ...
+    "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3, "yInterval_units", [-5 5]);
 
 %% Section 4: Run Planner
 

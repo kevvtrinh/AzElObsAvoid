@@ -6,7 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { test } = require('node:test');
 const html = fs.readFileSync(path.join(__dirname,
-  '../offlinesandbox/az_el_planner_sandbox.html'), 'utf8');
+  '../offlinesandbox/xy_planner_sandbox.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
 function harness() {
@@ -16,8 +16,8 @@ function harness() {
       nextObstacleNumber: 1, mode: 'motion', isPlanning: false,
       importedSceneIsReadOnly: false, responseObstacles: [], obstaclePreview: false,
       plotRect: { width: 360 } },
-    defaultControls: { missionTime: 100 }, MAXIMUM_OBSTACLE_SPEED_DEG_S: 10,
-    HANDLE_RADIUS_PX: 10, workspace: () => ({ azimuth: [-180, 180], elevation: [-90, 90] }),
+    defaultControls: { missionTime: 100 }, MAXIMUM_OBSTACLE_SPEED_UNITS_S: 10,
+    HANDLE_RADIUS_PX: 10, workspace: () => ({ x: [-180, 180], y: [-90, 90] }),
     worldToScreen: (point) => point,
     element: (id) => {
       if (!inputs.has(id)) inputs.set(id, { value: '', textContent: '', setAttribute() {} });
@@ -36,7 +36,7 @@ function harness() {
     strokePath: () => {}, drawPoint: () => {}
   });
   const names = ['centroid', 'numberFromInput', 'motionMissionTime',
-    'motionOffset_deg', 'obstaclePoseAtTime', 'obstacleMotionIntervals',
+    'motionOffset_units', 'obstaclePoseAtTime', 'obstacleMotionIntervals',
     'buildObstacleKeyframes', 'interpolateRows', 'obstacleVerticesAtCurrentTime',
     'setFinalPoseCenter', 'applyFinalPoseControls', 'syncFinalPoseControls',
     'addObstacle', 'deleteSelectedObstacle', 'drawFinalPoseGhost',
@@ -49,7 +49,7 @@ function harness() {
     'updateMotionInputs', 'updateMotionSpeedReadout', 'updateSpeedOverlay',
     'rectangleVertices', 'finishActiveDrag', 'polygonArea', 'clampToWorkspace',
     'originalTransformGeometry', 'originalTransformTargetAt', 'beginSceneDrag',
-    'pointInsideWorkspace', 'markDragChanged'];
+    'pointInsideWorkspace', 'markDragChanged', 'wrapPoint', 'nearestWrappedGoal', 'wrappedSegments'];
   const functions = [...script.matchAll(/^      function (\w+)\(/gm)];
   for (const name of names) {
     const index = functions.findIndex((entry) => entry[1] === name);
@@ -63,6 +63,32 @@ function harness() {
 
 const triangle = [[0, 0], [6, 0], [0, 3]];
 
+test('independent wrapping uses each shifted workspace period', () => {
+  const c = harness();
+  for (let mask = 0; mask < 4; mask += 1) {
+    c.readControls = () => ({ xMin: -5, xMax: 5, yMin: 100, yMax: 120,
+      wrapX: Boolean(mask & 1), wrapY: Boolean(mask & 2) });
+    near(c.nearestWrappedGoal([4, 119], [-4, 101]),
+      [-4 + 10 * Boolean(mask & 1), 101 + 20 * Boolean(mask & 2)]);
+    near(c.wrapPoint([6, 121]),
+      [6 - 10 * Boolean(mask & 1), 121 - 20 * Boolean(mask & 2)]);
+  }
+});
+
+test('periodic paths split simultaneous seams and preserve the disabled axis', () => {
+  const c = harness();
+  c.readControls = () => ({ xMin: -5, xMax: 5, yMin: 100, yMax: 120,
+    wrapX: true, wrapY: true });
+  near(c.wrappedSegments([[4, 118], [6, 122]]),
+    [[[4, 118], [5, 120]], [[-5, 100], [-4, 102]]]);
+  near(c.nearestWrappedGoal([0, 110], [-5, 100]), [5, 120]);
+  near(c.nearestWrappedGoal([0, 110], [5, 120]), [5, 120]);
+  c.readControls = () => ({ xMin: -5, xMax: 5, yMin: 100, yMax: 120,
+    wrapX: false, wrapY: true });
+  near(c.wrappedSegments([[4, 118], [6, 122]]),
+    [[[4, 118], [5, 120]], [[5, 100], [6, 102]]]);
+});
+
 test('result display reads separate diagnosis and the compact route', () => {
   const context = harness();
   const functions = [...script.matchAll(/      function (\w+)\(/g)];
@@ -75,7 +101,7 @@ test('result display reads separate diagnosis and the compact route', () => {
   const attempts = [{ SeedIndex: 1, ValidationPassed: true }];
   const timing = { TotalElapsedTime_s: 2 };
   const search = { ExpandedCount: 7, RejectedTransitionCount: 3 };
-  context.state.result = { Route_deg: [[0, 0], [3, 2]] };
+  context.state.result = { Route_units: [[0, 0], [3, 2]] };
   context.state.diagnosis = { AttemptedCount: 2, ValidatedCount: 1,
     Attempts: attempts, Timing: timing, Search: search };
   context.renderStageTiming = (value) => assert.equal(value, timing);
@@ -91,14 +117,14 @@ test('result display reads separate diagnosis and the compact route', () => {
   let drawn;
   context.strokePath = (value) => { drawn = value; };
   context.drawSelectedSeed();
-  assert.deepEqual(drawn, context.state.result.Route_deg);
+  assert.deepEqual(drawn, context.state.result.Route_units);
 });
 
 const concave = [[-3, -2], [4, -2], [4, 0], [0, 0], [0, 5], [-3, 5]];
 function obstacle(vertices = triangle, angle = 0, profile = 'stationary') {
-  return { name: 'Test polygon', vertices_deg: vertices.map((p) => p.slice()),
+  return { name: 'Test polygon', vertices_units: vertices.map((p) => p.slice()),
     finalRotation_deg: angle, motionProfile: profile,
-    motionVelocity_deg_s: [0, 0], safetyMargin_deg: 0.2 };
+    motionVelocity_units_s: [0, 0], safetyMargin_units: 0.2 };
 }
 function near(actual, expected, tolerance = 1e-10) {
   if (Array.isArray(expected)) {
@@ -123,9 +149,9 @@ test('rotation-only motion preserves initial and final geometry for different sh
       const o = obstacle(shape, angle);
       const frames = c.buildObstacleKeyframes(o, 100);
       assert.ok(frames.length > 2);
-      near(frames[0].vertices_deg, shape);
+      near(frames[0].vertices_units, shape);
       const center = c.centroid(shape);
-      const final = frames.at(-1).vertices_deg;
+      const final = frames.at(-1).vertices_units;
       near(c.centroid(final), center);
       shape.forEach((p, i) => {
         const x = p[0] - center[0], y = p[1] - center[1];
@@ -141,8 +167,8 @@ test('combined translation and rotation reaches the requested pose; excessive sp
   const c = harness();
   const o = obstacle(triangle, 90);
   assert.equal(c.setFinalPoseCenter(o, [42, -19]), true);
-  near(c.centroid(c.buildObstacleKeyframes(o, 100).at(-1).vertices_deg), [42, -19]);
-  near(o.motionVelocity_deg_s, [0.4, -0.2]);
+  near(c.centroid(c.buildObstacleKeyframes(o, 100).at(-1).vertices_units), [42, -19]);
+  near(o.motionVelocity_units_s, [0.4, -0.2]);
   const saved = JSON.stringify(o);
   assert.equal(c.setFinalPoseCenter(o, [9999, 9999]), false);
   assert.equal(c.setFinalPoseCenter(o, [NaN, 0]), false);
@@ -153,7 +179,7 @@ test('preview matches exported vertex interpolation for every translation profil
   const c = harness();
   for (const profile of ['stationary', 'nonzeroVelocity', 'zeroStart', 'trapezoidal', 'oscillating']) {
     const o = obstacle(concave, -135, profile);
-    o.motionVelocity_deg_s = [0.35, -0.1];
+    o.motionVelocity_units_s = [0.35, -0.1];
     const frames = c.buildObstacleKeyframes(o, 100);
     for (const time of [0, 0.17, 12.3, 25, 51.2, 99.9, 100]) {
       c.state.currentTime_s = time;
@@ -161,8 +187,8 @@ test('preview matches exported vertex interpolation for every translation profil
         frames.findIndex((f, i) => i < frames.length - 1 && time <= frames[i + 1].time_s));
       const first = frames[index], next = frames[index + 1];
       const fraction = (time - first.time_s) / (next.time_s - first.time_s);
-      const expected = first.vertices_deg.map((p, i) => p.map((v, axis) =>
-        v + fraction * (next.vertices_deg[i][axis] - v)));
+      const expected = first.vertices_units.map((p, i) => p.map((v, axis) =>
+        v + fraction * (next.vertices_units[i][axis] - v)));
       near(c.obstacleVerticesAtCurrentTime(o), expected);
     }
   }
@@ -170,7 +196,7 @@ test('preview matches exported vertex interpolation for every translation profil
 
 test('angle editing preserves translation profile, rejects invalid input, and honors edit locks', () => {
   const c = harness(); const o = obstacle(triangle, 0, 'oscillating');
-  o.motionVelocity_deg_s = [0.4, 0.2]; c.state.obstacles = [o];
+  o.motionVelocity_units_s = [0.4, 0.2]; c.state.obstacles = [o];
   c.syncFinalPoseControls();
   c.element('finalPoseRotation').value = '90';
   c.applyFinalPoseControls({ target: { id: 'finalPoseRotation' } });
@@ -195,13 +221,13 @@ test('ghost drag keeps grab offset and original geometry; copying preserves the 
   const c = harness(); const o = obstacle(triangle, 45); c.state.obstacles = [o];
   c.state.activeDrag = { type: 'finalPose', obstacleIndex: 0, grabOffset: [-1, 2] };
   c.updateActiveDrag([31, 18]);
-  near(c.centroid(c.buildObstacleKeyframes(o, 100).at(-1).vertices_deg), [30, 20]);
-  near(o.vertices_deg, triangle);
-  c.addObstacle(o.vertices_deg, o);
+  near(c.centroid(c.buildObstacleKeyframes(o, 100).at(-1).vertices_units), [30, 20]);
+  near(o.vertices_units, triangle);
+  c.addObstacle(o.vertices_units, o);
   const copy = c.state.obstacles[1];
   assert.equal(copy.finalRotation_deg, 45);
-  near(copy.motionVelocity_deg_s, o.motionVelocity_deg_s);
-  copy.vertices_deg[0][0] = -10; near(o.vertices_deg, triangle);
+  near(copy.motionVelocity_units_s, o.motionVelocity_units_s);
+  copy.vertices_units[0][0] = -10; near(o.vertices_units, triangle);
   c.deleteSelectedObstacle();
   assert.equal(c.state.obstacles.length, 1);
   assert.equal(c.state.selectedObstacleIndex, -1);
@@ -210,12 +236,12 @@ test('ghost drag keeps grab offset and original geometry; copying preserves the 
 
 test('ghost shows mission-end pose and Set motion rewinds playback', () => {
   const c = harness(); const o = obstacle(concave, 90, 'nonzeroVelocity');
-  o.motionVelocity_deg_s = [0.1, 0.2]; c.state.obstacles = [o];
+  o.motionVelocity_units_s = [0.1, 0.2]; c.state.obstacles = [o];
   c.state.currentTime_s = 33;
   let outline;
   c.strokePath = (vertices, style) => { if (style.close && style.width === 2) outline = vertices; };
   c.drawFinalPoseGhost();
-  near(outline, c.buildObstacleKeyframes(o, 100).at(-1).vertices_deg);
+  near(outline, c.buildObstacleKeyframes(o, 100).at(-1).vertices_units);
   c.activateMotionDrawing();
   assert.equal(c.state.currentTime_s, 0);
   assert.equal(c.state.mode, 'motion');
@@ -223,20 +249,20 @@ test('ghost shows mission-end pose and Set motion rewinds playback', () => {
 
 test('stretching a rotated final pose preserves its center and leaves the initial polygon intact', () => {
   const c = harness(); const o = obstacle(concave, 90); c.state.obstacles = [o];
-  const center = c.centroid(o.vertices_deg);
+  const center = c.centroid(o.vertices_units);
   const corner = c.finalPoseCorners(o)[2];
   c.state.activeDrag = { type: 'finalStretch', obstacleIndex: 0, center, local: corner.local };
-  // At +90 degrees, scaled local coordinates (x,y) map to world (-y,x).
+  // At +90 coordinate units, scaled local coordinates (x,y) map to world (-y,x).
   c.updateActiveDrag([center[0] - corner.local[1] * 0.5,
     center[1] + corner.local[0] * 2]);
   near(o.finalScale, [2, 0.5]);
-  near(o.vertices_deg, concave);
-  const final = c.buildObstacleKeyframes(o, 100).at(-1).vertices_deg;
+  near(o.vertices_units, concave);
+  const final = c.buildObstacleKeyframes(o, 100).at(-1).vertices_units;
   near(c.centroid(final), center);
   final.forEach((point, index) => near(point, [
     center[0] - (concave[index][1] - center[1]) * 0.5,
     center[1] + (concave[index][0] - center[0]) * 2]));
-  c.addObstacle(o.vertices_deg, o);
+  c.addObstacle(o.vertices_units, o);
   near(c.state.obstacles[1].finalScale, [2, 0.5]);
   c.state.obstacles[1].finalScale[0] = 3;
   near(o.finalScale, [2, 0.5]);
@@ -244,11 +270,11 @@ test('stretching a rotated final pose preserves its center and leaves the initia
 
 test('rotation drag crosses the angle wrap smoothly and enforces the full-turn bound', () => {
   const c = harness(); const o = obstacle(triangle, 170); c.state.obstacles = [o];
-  const center = c.centroid(o.vertices_deg);
+  const center = c.centroid(o.vertices_units);
   c.state.activeDrag = { type: 'finalRotate', obstacleIndex: 0, center,
     lastAngle: 170 * Math.PI / 180, turn_deg: 170 };
-  for (const degrees of [-170, -90, 0]) {
-    const angle = degrees * Math.PI / 180;
+  for (const angle_deg of [-170, -90, 0]) {
+    const angle = angle_deg * Math.PI / 180;
     c.updateActiveDrag([center[0] + 10 * Math.cos(angle), center[1] + 10 * Math.sin(angle)]);
   }
   near(o.finalRotation_deg, 360);
@@ -258,13 +284,13 @@ test('rotation drag crosses the angle wrap smoothly and enforces the full-turn b
 
 test('stretch plus rotation playback uses the exported keyframes and rejects degenerate scale', () => {
   const c = harness(); const o = obstacle(triangle, -90, 'nonzeroVelocity');
-  o.finalScale = [1.8, 0.4]; o.motionVelocity_deg_s = [0.2, 0.1];
+  o.finalScale = [1.8, 0.4]; o.motionVelocity_units_s = [0.2, 0.1];
   c.state.obstacles = [o];
   const frames = c.buildObstacleKeyframes(o, 100);
   c.state.currentTime_s = 12.5;
   near(c.obstacleVerticesAtCurrentTime(o),
-    frames[2].vertices_deg.map((p, i) => p.map((v, axis) =>
-      (v + frames[3].vertices_deg[i][axis]) / 2)));
+    frames[2].vertices_units.map((p, i) => p.map((v, axis) =>
+      (v + frames[3].vertices_units[i][axis]) / 2)));
   c.syncFinalPoseControls();
   for (const value of ['0', '-1', 'NaN', '']) {
     c.element('finalPoseScaleX').value = value;
@@ -276,7 +302,7 @@ test('stretch plus rotation playback uses the exported keyframes and rejects deg
 
 test('click selection follows the translated and rotated polygon after playback', () => {
   const c = harness(); const o = obstacle(triangle, 90, 'nonzeroVelocity');
-  o.motionVelocity_deg_s = [0.5, 0.2]; c.state.obstacles = [o];
+  o.motionVelocity_units_s = [0.5, 0.2]; c.state.obstacles = [o];
   c.state.currentTime_s = 100;
   c.selectObstacleAt([52, 21]);
   assert.equal(c.state.selectedObstacleIndex, 0);
@@ -301,7 +327,7 @@ test('ghost retains only preview/confirm icons, with no transform buttons or top
 
 test('browser preview runs without endpoints, a result, or MATLAB and returns to ghost editing', () => {
   const c = harness(); const o = obstacle(triangle, 90, 'nonzeroVelocity');
-  o.motionVelocity_deg_s = [0.2, 0.1]; o.finalScale = [2, 1];
+  o.motionVelocity_units_s = [0.2, 0.1]; o.finalScale = [2, 1];
   c.state.obstacles = [o];
   c.state.start = null; c.state.goal = null; c.state.result = null;
   c.state.connectionMode = 'offline';
@@ -312,7 +338,7 @@ test('browser preview runs without endpoints, a result, or MATLAB and returns to
   assert.equal(c.element('motionKinematicsPanel').hidden, true);
   c.advancePlayback(50000);
   near(c.state.currentTime_s, 50);
-  near(c.obstacleVerticesAtCurrentTime(o), c.buildObstacleKeyframes(o, 100)[10].vertices_deg);
+  near(c.obstacleVerticesAtCurrentTime(o), c.buildObstacleKeyframes(o, 100)[10].vertices_units);
   c.advancePlayback(150000);
   near(c.state.currentTime_s, 100); assert.equal(c.state.playing, false);
   c.previewObstacleMotion();
@@ -347,7 +373,7 @@ test('corners, rotation handle, and ghost body are directly draggable without a 
 
 test('preview removes traveled path segments and retains the final ghost', () => {
   const c = harness(); const o = obstacle(concave, 90, 'oscillating');
-  o.finalScale = [1.5, 0.5]; o.motionVelocity_deg_s = [0.4, 0.2];
+  o.finalScale = [1.5, 0.5]; o.motionVelocity_units_s = [0.4, 0.2];
   c.state.obstacles = [o];
   const frames = c.buildObstacleKeyframes(o, 100);
   for (const time of [0, 12.5, 25, 100, 10]) {
@@ -358,44 +384,44 @@ test('preview removes traveled path segments and retains the final ghost', () =>
     if (time === 100) assert.equal(line, undefined);
     else {
       near(line.points[0], c.centroid(c.obstacleVerticesAtCurrentTime(o)));
-      near(line.points.slice(1), frames.filter((f) => f.time_s > time).map((f) => c.centroid(f.vertices_deg)));
+      near(line.points.slice(1), frames.filter((f) => f.time_s > time).map((f) => c.centroid(f.vertices_units)));
     }
-    near(paths.find((p) => p.style.close).points, frames.at(-1).vertices_deg);
+    near(paths.find((p) => p.style.close).points, frames.at(-1).vertices_units);
   }
   c.state.obstacles = [];
   c.state.responseObstacles = [{ time_s: frames.map((f) => f.time_s),
-    OriginalVerticesByTime_deg: frames.map((f) => f.vertices_deg) }];
+    OriginalVerticesByTime_units: frames.map((f) => f.vertices_units) }];
   const paths = []; c.strokePath = (points, style) => paths.push({ points, style });
   c.drawObstacleMotionGuides();
-  near(paths.find((p) => p.style.close).points, frames.at(-1).vertices_deg);
-  near(paths.find((p) => !p.style.close).points[0], c.centroid(frames[2].vertices_deg));
+  near(paths.find((p) => p.style.close).points, frames.at(-1).vertices_units);
+  near(paths.find((p) => !p.style.close).points[0], c.centroid(frames[2].vertices_units));
 });
 
 test('speed slider preserves direction and motion profile, including across zero', () => {
   const c = harness(); const o = obstacle(triangle, 90, 'trapezoidal');
-  o.motionVelocity_deg_s = [-0.6, 0.8]; c.state.obstacles = [o];
+  o.motionVelocity_units_s = [-0.6, 0.8]; c.state.obstacles = [o];
   for (const speed of [10, 0, 0.5]) {
     c.element('obstacleSpeedSlider').value = String(speed);
     c.updateObstacleSpeed();
-    near(o.motionVelocity_deg_s, [-0.6 * speed, 0.8 * speed]);
+    near(o.motionVelocity_units_s, [-0.6 * speed, 0.8 * speed]);
     assert.equal(o.motionProfile, 'trapezoidal');
     assert.equal(o.finalRotation_deg, 90);
   }
-  c.addObstacle(o.vertices_deg, o);
+  c.addObstacle(o.vertices_units, o);
   near(c.state.obstacles[1].motionDirection, [-0.6, 0.8]);
 });
 
 test('slider starts new motion predictably and honors bounds and editing locks', () => {
   const c = harness(); const o = obstacle(); c.state.obstacles = [o];
   c.element('obstacleSpeedSlider').value = '1'; c.updateObstacleSpeed();
-  near(o.motionVelocity_deg_s, [1, 0]); assert.equal(o.motionProfile, 'nonzeroVelocity');
+  near(o.motionVelocity_units_s, [1, 0]); assert.equal(o.motionProfile, 'nonzeroVelocity');
   for (const speed of ['10.01', '-1', 'NaN']) {
     c.element('obstacleSpeedSlider').value = speed; c.updateObstacleSpeed();
-    near(o.motionVelocity_deg_s, [1, 0]);
+    near(o.motionVelocity_units_s, [1, 0]);
   }
   for (const lock of ['isPlanning', 'importedSceneIsReadOnly']) {
     c.state[lock] = true; c.element('obstacleSpeedSlider').value = '2'; c.updateObstacleSpeed();
-    near(o.motionVelocity_deg_s, [1, 0]); c.state[lock] = false;
+    near(o.motionVelocity_units_s, [1, 0]); c.state[lock] = false;
   }
   assert.match(html, /id="obstacleSpeedSlider" type="range" min="0" max="10"/);
 });
@@ -443,9 +469,9 @@ test('new obstacles expose original resize and rotation handles immediately', ()
   assert.equal(c.originalTransformTargetAt(o, handles.rotation).type, 'originalRotate');
   c.beginSceneDrag({ type: 'originalStretch', obstacleIndex: 0, local: [20, 10] }, [20, 10], 1);
   c.updateActiveDrag([40, 5]);
-  near(o.vertices_deg, [[-40, -5], [40, -5], [40, 5], [-40, 5]]);
-  const saved = JSON.stringify(o.vertices_deg);
-  c.updateActiveDrag([1000, 1000]); assert.equal(JSON.stringify(o.vertices_deg), saved);
+  near(o.vertices_units, [[-40, -5], [40, -5], [40, 5], [-40, 5]]);
+  const saved = JSON.stringify(o.vertices_units);
+  c.updateActiveDrag([1000, 1000]); assert.equal(JSON.stringify(o.vertices_units), saved);
 });
 
 test('original rotation preserves size and updates geometry about its center', () => {
@@ -453,9 +479,9 @@ test('original rotation preserves size and updates geometry about its center', (
   const o = c.state.obstacles[0], center = c.centroid(triangle);
   c.beginSceneDrag({ type: 'originalRotate', obstacleIndex: 0 }, [center[0] + 20, center[1]], 1);
   c.updateActiveDrag([center[0], center[1] + 20]);
-  near(o.vertices_deg, triangle.map((p) => [center[0] - (p[1] - center[1]),
+  near(o.vertices_units, triangle.map((p) => [center[0] - (p[1] - center[1]),
     center[1] + p[0] - center[0]]));
-  near(c.polygonArea(o.vertices_deg), c.polygonArea(triangle));
+  near(c.polygonArea(o.vertices_units), c.polygonArea(triangle));
 });
 
 test('arrival controls offer only earliest and fixed timing', () => {

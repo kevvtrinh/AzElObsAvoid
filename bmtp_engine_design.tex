@@ -40,7 +40,7 @@
 \section{Context}
 
 The repository provides one public obstacle-avoidance planner in the
-azimuth/elevation frame. The planner owns obstacle interpretation, topology
+x/y frame. The planner owns obstacle interpretation, topology
 search, candidate selection, and authoritative validation. It delegates all
 motion generation to a separate engine, \texttt{trajectory/+bmtpEngine}.
 
@@ -50,8 +50,8 @@ exclusion polygons, normalized endpoint states, and normalized limits. This
 boundary lets the planner change its geometry pipeline without an engine
 change, and lets tests exercise the engine in isolation.
 
-Position uses degrees. Time uses seconds. Derivatives use deg/s,
-deg/s$^2$, and deg/s$^3$.
+Position uses units. Time uses seconds. Derivatives use units/s,
+units/s$^2$, and units/s$^3$.
 
 \section{Goals}
 
@@ -164,10 +164,10 @@ certifyWarmStartCollisionFree & Certify every warm-start span against every regi
 \subsection{What the planner provides and what the engine returns}
 
 \begin{itemize}
-    \item \textbf{Seed.} \texttt{position\_deg} is N-by-2. \texttt{tau} strictly increases from zero to
+    \item \textbf{Seed.} \texttt{position\_units} is N-by-2. \texttt{tau} strictly increases from zero to
     one.
     \item \textbf{Regions.} An R-by-1 cell array. Each cell holds one finite convex N-by-2
-    exclusion polygon in degrees. Plane witnesses certify only these supplied
+    exclusion polygon in units. Plane witnesses certify only these supplied
     regions.
     \item \textbf{Coverage.} A planner-owned proof record. The engine requires
     \texttt{Passed}. When the \texttt{Applied} field in
@@ -175,7 +175,7 @@ certifyWarmStartCollisionFree & Certify every warm-start span against every regi
     degree-7 representation with one split; otherwise it uses the default
     representation.
     \item \textbf{Warm start.} A previously certified
-    \texttt{ControlPoint\_deg} array and \texttt{SegmentTime\_s}.
+    \texttt{ControlPoint\_units} array and \texttt{SegmentTime\_s}.
     \texttt{certifyWarmStart\allowbreak CollisionFree} must pass before entering
     the SOCP loop.
     \item \textbf{Candidate.} One stable motion record shared by all construction paths.
@@ -221,7 +221,7 @@ Figure~\ref{fig:geometry} shows the geometric test. Clearance is the certified
 distance between the span and the region.
 \begin{figure}[ht]\centering
 \begin{tikzpicture}[scale=.8,->,>=Stealth]
-\draw[->](0,0)--(7,0)node[right]{azimuth};\draw[->](0,0)--(0,5)node[above]{elevation};
+\draw[->](0,0)--(7,0)node[right]{x};\draw[->](0,0)--(0,5)node[above]{y};
 \filldraw[fill=orange!25](3,1)--(5,1)--(5.5,3)--(4,4)--(2.8,2.5)--cycle;
 \draw[blue,thick]plot[smooth]coordinates{(1,1)(2,4)(3.5,4.2)(5.8,4)(6.4,3)};
 \foreach \p in {(1,1),(2,4),(3.5,4.2),(5.8,4),(6.4,3)}\fill[blue]\p circle(2pt);
@@ -249,14 +249,14 @@ Figure~\ref{fig:builders} relates the exact motion builders.
 \iface{Optimizes one static topology seed. The planner calls it after it has
 created convex exclusion regions and normalized the request.}
 {[candidate, diagnostics, restart] =\allowbreak{} bmtpEngine.solve(seed,\allowbreak{}
-regions\_deg,\allowbreak{} coverage,\allowbreak{} initialState,\allowbreak{}
+regions\_units,\allowbreak{} coverage,\allowbreak{} initialState,\allowbreak{}
 goalState,\allowbreak{} limits,\allowbreak{} options,\allowbreak{} warmStart)}
-{\texttt{seed} & scalar struct & N-by-2 route and increasing \texttt{tau} & degrees \\
-\texttt{regions\_deg} & R-by-1 cell array & convex exclusion polygons & degrees \\
+{\texttt{seed} & scalar struct & N-by-2 route and increasing \texttt{tau} & units \\
+\texttt{regions\_units} & R-by-1 cell array & convex exclusion polygons & units \\
 \texttt{coverage} & scalar struct & planner coverage proof with \texttt{Passed} & -- \\
-\texttt{initialState}, \texttt{goalState} & scalar structs & rest endpoints and times & degrees, seconds \\
+\texttt{initialState}, \texttt{goalState} & scalar structs & rest endpoints and times & units, seconds \\
 \texttt{limits}, \texttt{options} & scalar structs & bounds, time policy, work limits & mixed \\
-\texttt{warmStart} & scalar struct or empty & certified control net and span time & degrees, seconds}
+\texttt{warmStart} & scalar struct or empty & certified control net and span time & units, seconds}
 {\texttt{candidate} & stable motion record \\
 \texttt{diagnostics} & solver, timing, coverage, and certificate evidence \\
 \texttt{restart} & parent control net and segment time}
@@ -269,9 +269,9 @@ time window, or an unavailable plane certificate.}
 a direct request and as a base for later composition.}
 {candidate =\allowbreak{} bmtpEngine.createDirectMotion(initialState,\allowbreak{}
 goalState,\allowbreak{} limits,\allowbreak{} options)}
-{\texttt{initialState}, \texttt{goalState} & scalar structs & time, position, optional rest derivatives & degrees, seconds \\
+{\texttt{initialState}, \texttt{goalState} & scalar structs & time, position, optional rest derivatives & units, seconds \\
 \texttt{limits} & scalar struct & positive velocity, acceleration, jerk bounds & derivative units \\
-\texttt{options} & scalar struct & goal-time mode, sample time, tolerance & seconds, degrees}
+\texttt{options} & scalar struct & goal-time mode, sample time, tolerance & seconds, units}
 {\texttt{candidate} & stable exact polynomial and sampled-motion record}
 {Invalid states, limits, options, and time horizons raise errors. Unsupported
 endpoint derivatives, zero displacement, too-short arrival, and reconstruction
@@ -284,7 +284,7 @@ calls it when a wait must keep the exact base motion.}
 initialState,\allowbreak{} breakTime\_s,\allowbreak{} sampleStep\_s,\allowbreak{}
 seedSource)}
 {\texttt{baseMotion} & scalar result struct & complete cubic polynomial & -- \\
-\texttt{initialState} & scalar struct & start state & degrees, seconds \\
+\texttt{initialState} & scalar struct & start state & units, seconds \\
 \texttt{breakTime\_s} & numeric vector & increasing absolute break times & seconds \\
 \texttt{sampleStep\_s}, \texttt{seedSource} & scalar, scalar text & history spacing and source label & seconds, --}
 {\texttt{candidate} & exact delayed polynomial and histories}
@@ -296,10 +296,10 @@ request has no separate normal failure record.}
 offset knots define a lateral change. It uses a minimum-integrated-jerk quintic
 spline, which minimizes the integral of jerk squared.}
 {candidate =\allowbreak{} bmtpEngine.createOffsetSplineMotion(baseMotion,\allowbreak{}
-knotTime\_s,\allowbreak{} knotOffset\_deg,\allowbreak{} axisIndex,\allowbreak{}
+knotTime\_s,\allowbreak{} knotOffset\_units,\allowbreak{} axisIndex,\allowbreak{}
 initialState,\allowbreak{} sampleStep\_s,\allowbreak{} seedSource)}
 {\texttt{baseMotion} & scalar result struct & complete base polynomial & -- \\
-\texttt{knotTime\_s}, \texttt{knotOffset\_deg} & matching vectors & increasing offset knots & seconds, degrees \\
+\texttt{knotTime\_s}, \texttt{knotOffset\_units} & matching vectors & increasing offset knots & seconds, units \\
 \texttt{axisIndex} & positive integer & offset coordinate & -- \\
 \texttt{initialState}, \texttt{sampleStep\_s}, \texttt{seedSource} & struct, scalar, text & state, spacing, label & mixed}
 {\texttt{candidate} & composite polynomial and sampled histories}
@@ -311,10 +311,10 @@ valid construction returns a motion record.}
 Endpoint-flat means the added path and its endpoint derivatives vanish.}
 {candidate =\allowbreak{} bmtpEngine.createProgressPolynomialMotion(baseMotion,\allowbreak{}
 initialState,\allowbreak{} goalState,\allowbreak{} progressAxisIndex,\allowbreak{}
-amplitude\_deg,\allowbreak{} sampleStep\_s,\allowbreak{} seedSource)}
+amplitude\_units,\allowbreak{} sampleStep\_s,\allowbreak{} seedSource)}
 {\texttt{baseMotion} & scalar result struct & successful two-coordinate straight progress & -- \\
-\texttt{initialState}, \texttt{goalState} & scalar structs & two-coordinate rest endpoints & degrees, seconds \\
-\texttt{progressAxisIndex}, \texttt{amplitude\_deg} & integer, scalar & progress coordinate and lateral coefficient & --, degrees \\
+\texttt{initialState}, \texttt{goalState} & scalar structs & two-coordinate rest endpoints & units, seconds \\
+\texttt{progressAxisIndex}, \texttt{amplitude\_units} & integer, scalar & progress coordinate and lateral coefficient & --, units \\
 \texttt{sampleStep\_s}, \texttt{seedSource} & scalar, text & spacing and label & seconds, --}
 {\texttt{candidate} & exact degree-15 composed motion}
 {Invalid base motion, endpoints, axes, zero progress, or labels raise errors.
@@ -326,12 +326,12 @@ event word exactly. An event word is time breaks with constant jerk per
 interval. It can also package an assembled polynomial.}
 {[candidate, terminalState] =\allowbreak{}
 bmtpEngine.createMotionRecord(candidate,\allowbreak{} initialState,\allowbreak{}
-relativeBreak\_s,\allowbreak{} segmentJerk\_deg\_s3,\allowbreak{}
+relativeBreak\_s,\allowbreak{} segmentJerk\_units\_s3,\allowbreak{}
 sampleStep\_s,\allowbreak{} seedSource)}
 {\texttt{candidate} & scalar struct & empty creates the common record & -- \\
 \texttt{initialState} & scalar struct & position, velocity, acceleration & derivative units \\
 \texttt{relativeBreak\_s} & vector, polynomial, or empty & event breaks or polynomial & seconds \\
-\texttt{segmentJerk\_deg\_s3} & N-by-D numeric & constant interval jerk & degrees per second cubed \\
+\texttt{segmentJerk\allowbreak\_units\_s3} & N-by-D numeric & constant interval jerk & units per second cubed \\
 \texttt{sampleStep\_s}, \texttt{seedSource} & scalar, text & spacing and label & seconds, --}
 {\texttt{candidate} & stable polynomial and history record \\
 \texttt{terminalState} & exact terminal state}
@@ -342,12 +342,12 @@ words raise errors.}
 \iface{Derives one coordinate scale and shared geometric tolerances. The engine
 uses it where construction and collision checks need the same roundoff
 allowance. A roundoff reserve is an allowance for finite precision.}
-{[coordinateScale\_deg, geometryTolerance\_deg, roundoffReserve\_deg]
-=\allowbreak{} bmtpEngine.createCoordinateTolerances(values\_deg,\allowbreak{} ...)}
-{\texttt{values\_deg} & numeric arrays or cells & coordinate collections; nonfinite values ignored & degrees}
-{\texttt{coordinateScale\_deg} & maximum finite absolute coordinate, at least one degree \\
-\texttt{geometryTolerance\_deg} & shared geometric tolerance \\
-\texttt{roundoffReserve\_deg} & conservative finite-precision reserve}
+{[coordinateScale\_units, geometryTolerance\_units, roundoffReserve\_units]
+=\allowbreak{} bmtpEngine.createCoordinateTolerances(values\_units,\allowbreak{} ...)}
+{\texttt{values\_units} & numeric arrays or cells & coordinate collections; nonfinite values ignored & units}
+{\texttt{coordinateScale\_units} & maximum finite absolute coordinate, at least one coordinate unit \\
+\texttt{geometryTolerance\_units} & shared geometric tolerance \\
+\texttt{roundoffReserve\_units} & conservative finite-precision reserve}
 {Nonnumeric coordinate collections raise errors. Valid calls always return
 tolerances and have no failure record.}
 
@@ -355,14 +355,14 @@ tolerances and have no failure record.}
 \iface{Evaluates common ascending-power polynomial records at absolute times.
 Ascending power means coefficients start with the constant term. The engine
 uses it for histories and warm-start comparisons.}
-{[time\_s, position\_deg, velocity\_deg\_s, acceleration\_deg\_s2,
-jerk\_deg\_s3] =\allowbreak{} bmtpEngine.evaluatePolynomial(polynomial,\allowbreak{}
+{[time\_s, position\_units, velocity\_units\_s, acceleration\_units\_s2,
+jerk\_units\_s3] =\allowbreak{} bmtpEngine.evaluatePolynomial(polynomial,\allowbreak{}
 time\_s,\allowbreak{} segmentIndex)}
 {\texttt{polynomial} & scalar struct & N-by-D-by-P ascending-power records & derivative units \\
 \texttt{time\_s} & numeric vector & absolute request times & seconds \\
 \texttt{segmentIndex} & scalar or vector, optional & exact segment selection & --}
 {\texttt{time\_s} & normalized N-by-1 time column \\
-\texttt{position\_deg} through \texttt{jerk\_deg\_s3} & N-by-D histories}
+\texttt{position\_units} through \texttt{jerk\_units\_s3} & N-by-D histories}
 {Empty or nonfinite times return NaN histories. Malformed polynomial data and
 incompatible indices raise ordinary MATLAB errors.}
 
@@ -370,15 +370,15 @@ incompatible indices raise ordinary MATLAB errors.}
 \iface{Returns the exact maximum scalar rest-to-rest displacement for one clock.
 It uses the same jerk-limited, acceleration-limited, and velocity-limited
 switching regimes as the direct builder.}
-{distance\_deg =\allowbreak{}
+{distance\_units =\allowbreak{}
 bmtpEngine.maximumRestToRestDistance(duration\_s,\allowbreak{}
-velocityLimit\_deg\_s,\allowbreak{} accelerationLimit\_deg\_s2,\allowbreak{}
-jerkLimit\_deg\_s3)}
+velocityLimit\_units\_s,\allowbreak{} accelerationLimit\_units\_s2,\allowbreak{}
+jerkLimit\_units\_s3)}
 {\texttt{duration\_s} & nonnegative scalar & available motion duration & seconds \\
-\texttt{velocityLimit\_deg\_s} & positive scalar & symmetric velocity limit & degrees per second \\
-\texttt{accelerationLimit\allowbreak\_deg\_s2} & positive scalar & symmetric acceleration limit & degrees per second squared \\
-\texttt{jerkLimit\_deg\_s3} & positive scalar & symmetric jerk limit & degrees per second cubed}
-{\texttt{distance\_deg} & exact maximum displacement}
+\texttt{velocityLimit\allowbreak\_units\_s} & positive scalar & symmetric velocity limit & units per second \\
+\texttt{accelerationLimit\allowbreak\_units\_s2} & positive scalar & symmetric acceleration limit & units per second squared \\
+\texttt{jerkLimit\_units\_s3} & positive scalar & symmetric jerk limit & units per second cubed}
+{\texttt{distance\_units} & exact maximum displacement}
 {Invalid duration or limits raise errors. Valid calls return a nonnegative
 distance.}
 
@@ -389,12 +389,12 @@ does not approve the approximation.}
 {[warmStart, diagnostics] =\allowbreak{}
 bmtpEngine.convertPolynomialToWarmStart(polynomial,\allowbreak{}
 segmentCount,\allowbreak{} degree)}
-{\texttt{polynomial} & scalar struct & source segments with local powers & degrees, seconds \\
+{\texttt{polynomial} & scalar struct & source segments with local powers & units, seconds \\
 \texttt{segmentCount} & positive integer & output span count & -- \\
 \texttt{degree} & positive integer & fitted Bernstein degree & --}
 {\texttt{warmStart} & control points and common span time \\
 \texttt{diagnostics} & fit and check counts and sampled deviations}
-{Invalid polynomial records, span counts, and degrees raise errors. A valid
+{Invalid polynomial records, span counts, and units raise errors. A valid
 conversion returns an approximation even if its measured error is large.}
 
 \subsection{\texttt{certifyWarmStartCollisionFree}}
@@ -403,10 +403,10 @@ It tries a constant separator, then the degree-one separating-plane form. The
 planner calls it before it passes a warm start to \texttt{solve}.}
 {certificate =\allowbreak{}
 bmtpEngine.certifyWarmStartCollisionFree(warmStart,\allowbreak{}
-regions\_deg,\allowbreak{} collisionClearanceTolerance\_deg)}
-{\texttt{warmStart} & scalar struct & control points and positive span time & degrees, seconds \\
-\texttt{regions\_deg} & cell vector & finite convex protected polygons & degrees \\
-\texttt{collisionClearance\allowbreak Tolerance\_deg} & nonnegative scalar & required separation after reserve & degrees}
+regions\_units,\allowbreak{} collisionClearanceTolerance\_units)}
+{\texttt{warmStart} & scalar struct & control points and positive span time & units, seconds \\
+\texttt{regions\_units} & cell vector & finite convex protected polygons & units \\
+\texttt{collisionClearance\allowbreak Tolerance\_units} & nonnegative scalar & required separation after reserve & units}
 {\texttt{certificate} & all-pair result, planes, reasons, counts, minimum clearance}
 {Invalid inputs raise errors. An uncertified warm start returns a failure
 record with \texttt{Passed=false} and reason

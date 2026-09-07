@@ -57,8 +57,8 @@ It is written for a curious reader, not an engineer.
 \section{The machine and the map}
 
 Think of the antenna as a camera on a two-way hinge. One angle turns it left or
-right; the other tips it up or down. The software calls them \key{azimuth} and
-\key{elevation}. For planning, it lays those two angles flat on a map. A dot on
+right; the other tips it up or down. The software calls them \key{x} and
+\key{y}. For planning, it lays those two angles flat on a map. A dot on
 the map is one direction the antenna can face.
 
 The task is simple to say: start at the blue dot, finish at the green dot, and
@@ -76,10 +76,10 @@ not a floor plan the antenna travels across.
 \node[align=center,text=red!75!black] at (0,0){blocked\\directions};
 \draw[->,thick] (-6,-3)--(6,-3) node[right]{left \hspace{9em} right};
 \draw[->,thick] (-6,-3)--(-6,3) node[above]{up};
-\node[rotate=90] at (-6.55,-.1){elevation};
-\node at (0,-3.55){azimuth};
+\node[rotate=90] at (-6.55,-.1){y};
+\node at (0,-3.55){x};
 \end{tikzpicture}
-\caption{One direction is one place on the flat azimuth--elevation map.}
+\caption{One direction is one place on the flat x--y map.}
 \label{fig:map}
 \end{figure}
 
@@ -134,7 +134,7 @@ up speed. It later travels faster, then slows to arrive without a jolt.
 \centering
 \begin{tikzpicture}
 \begin{axis}[width=.92\textwidth,height=.54\textwidth,axis equal image,
-xlabel={azimuth (degrees)},ylabel={elevation (degrees)},
+xlabel={x (coordinate units)},ylabel={y (coordinate units)},
 xmin=-5.8,xmax=5.8,ymin=-2.8,ymax=3.25,grid=major,
 legend style={at={(.5,-.19)},anchor=north,legend columns=3,font=\scriptsize}]
 \addplot[fill=red!20,draw=red,very thick] table[x index=0,y index=1,
@@ -171,7 +171,7 @@ impossible for a real machine to follow.
 \centering
 \begin{tikzpicture}
 \begin{axis}[width=.91\textwidth,height=.43\textwidth,
-xlabel={time (seconds)},ylabel={fastest coordinate speed (degrees per second)},
+xlabel={time (seconds)},ylabel={fastest coordinate speed (coordinate units per second)},
 xmin=0,xmax=7.7,ymin=0,ymax=2.25,grid=major,
 legend style={at={(.5,-.2)},anchor=north,legend columns=2,font=\scriptsize}]
 \addplot[blue,very thick,mark=none] table[x index=0,y index=1,
@@ -186,7 +186,7 @@ col sep=tab]{data/turning_speed.dat};
 \end{axis}
 \end{tikzpicture}
 \caption{A real limit, shown with real numbers. In this run the motion comes
-within 0.0131 degrees per second of the limit; it does not claim to touch it.}
+within 0.0131 coordinate units per second of the limit; it does not claim to touch it.}
 \label{fig:speed}
 \end{figure}
 
@@ -213,7 +213,7 @@ outside it and is allowed to remain a suggestion.
 \centering
 \begin{tikzpicture}
 \begin{axis}[width=.92\textwidth,height=.56\textwidth,axis equal image,
-xlabel={azimuth (degrees)},ylabel={elevation (degrees)},
+xlabel={x (coordinate units)},ylabel={y (coordinate units)},
 xmin=-5.8,xmax=5.8,ymin=-2.9,ymax=3.1,grid=major]
 \addplot[gray!50,thin,mark=none] table[x index=0,y index=1,
 col sep=tab]{data/visibility_accepted_segments.dat};

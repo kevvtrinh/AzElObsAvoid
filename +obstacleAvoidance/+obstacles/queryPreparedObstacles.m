@@ -1,8 +1,8 @@
-function [isOccupied, blockingObstacleIndex, queryDetails] = queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options)
+function [isOccupied, blockingObstacleIndex, queryDetails] = queryPreparedObstacles(obstacles, x_units, y_units, queryTime_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [isOccupied, blockingObstacleIndex, queryDetails] = ...
-%       queryPreparedObstacles(obstacles, azimuth_deg, elevation_deg, queryTime_s, options)
+%       queryPreparedObstacles(obstacles, x_units, y_units, queryTime_s, options)
 % PURPOSE
 %   Check positions against prepared obstacles without rebuilding their geometry.
 % INPUTS
@@ -10,13 +10,13 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryPreparedObstac
 % OUTPUTS
 %   occupied flags, first blocking obstacle indices, and optional clearance details.
 % UNITS
-%   Positions are degrees; time is seconds; derivatives retain physical units.
+%   Positions are coordinate units; time is seconds; derivatives retain physical units.
 
 %% Section 1: Evaluate Prepared Inputs
 if nargin < 5, options = struct(); end
 if ~isfield(options, "BoundaryIsOccupied"), options.BoundaryIsOccupied = true; end
-if ~isfield(options, "ClearanceTolerance_deg"), options.ClearanceTolerance_deg = 1e-10; end
-[azimuth_deg, elevation_deg, queryTime_s, outputSize] = broadcastQueries(azimuth_deg, elevation_deg, queryTime_s);
+if ~isfield(options, "ClearanceTolerance_units"), options.ClearanceTolerance_units = 1e-10; end
+[x_units, y_units, queryTime_s, outputSize] = broadcastQueries(x_units, y_units, queryTime_s);
 
 %% Section 2: Evaluate Each Distinct Geometry Once
 
@@ -25,18 +25,18 @@ if nargout >= 2
     blockingObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
 end
 if nargout >= 3
-    minimumClearance_deg = Inf(numel(queryTime_s), 1);
+    minimumClearance_units = Inf(numel(queryTime_s), 1);
     nearestObstacleIndex = zeros(numel(queryTime_s), 1, "uint32");
 end
-finiteQuery = isfinite(azimuth_deg) & isfinite(elevation_deg) & isfinite(queryTime_s);
-if nargout >= 3, minimumClearance_deg(~finiteQuery) = NaN; end
+finiteQuery = isfinite(x_units) & isfinite(y_units) & isfinite(queryTime_s);
+if nargout >= 3, minimumClearance_units(~finiteQuery) = NaN; end
 uniqueTime_s  = unique(queryTime_s(finiteQuery));
-tolerance_deg = double(options.ClearanceTolerance_deg);
+tolerance_units = double(options.ClearanceTolerance_units);
 if isempty(obstacles)
-    obstacleBounds_deg = zeros(0, 4);
+    obstacleBounds_units = zeros(0, 4);
 else
     preparation        = [obstacles.InternalPreparation];
-    obstacleBounds_deg = vertcat(preparation.HistoryBounds_deg);
+    obstacleBounds_units = vertcat(preparation.HistoryBounds_units);
 end
 % Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
@@ -56,24 +56,24 @@ for obstacleIndex = 1:numel(obstacles)
         candidate    = queryIndices;
         if nargout < 3
             candidate = candidate(~isOccupied(candidate));
-            bound_deg = obstacleBounds_deg(obstacleIndex, :);
-            inBounds  = azimuth_deg(candidate) >= bound_deg(1) - tolerance_deg & azimuth_deg(candidate) <= bound_deg(2) + tolerance_deg & elevation_deg(candidate) >= bound_deg(3) - tolerance_deg & elevation_deg(candidate) <= bound_deg(4) + tolerance_deg;
+            bound_units = obstacleBounds_units(obstacleIndex, :);
+            inBounds  = x_units(candidate) >= bound_units(1) - tolerance_units & x_units(candidate) <= bound_units(2) + tolerance_units & y_units(candidate) >= bound_units(3) - tolerance_units & y_units(candidate) <= bound_units(4) + tolerance_units;
             candidate = candidate(inBounds);
         end
         if isempty(candidate)
             continue;
         end
         [shape, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, obstacleQueryTime_s(timeIndex));
-        points_deg    = [azimuth_deg(candidate), elevation_deg(candidate)];
-        clearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg, geometry);
+        points_units    = [x_units(candidate), y_units(candidate)];
+        clearance_units = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_units, geometry);
         if nargout >= 3
-            priorClearance_deg = minimumClearance_deg(candidate);
-            closer             = clearance_deg < priorClearance_deg;
-            priorClearance_deg(closer) = clearance_deg(closer);
-            minimumClearance_deg(candidate) = priorClearance_deg;
+            priorClearance_units = minimumClearance_units(candidate);
+            closer             = clearance_units < priorClearance_units;
+            priorClearance_units(closer) = clearance_units(closer);
+            minimumClearance_units(candidate) = priorClearance_units;
             nearestObstacleIndex(candidate(closer)) = uint32(obstacleIndex);
         end
-        blocked = clearance_deg < -tolerance_deg | (options.BoundaryIsOccupied & clearance_deg <= tolerance_deg);
+        blocked = clearance_units < -tolerance_units | (options.BoundaryIsOccupied & clearance_units <= tolerance_units);
         if nargout >= 2
             firstBlocker = blocked & blockingObstacleIndex(candidate) == 0;
             blockingObstacleIndex(candidate(firstBlocker)) = uint32(obstacleIndex);
@@ -90,26 +90,26 @@ if nargout < 2
 end
 blockingObstacleIndex = reshape(blockingObstacleIndex, outputSize);
 if nargout < 3, return; end
-minimumClearance_deg = reshape(minimumClearance_deg, outputSize);
+minimumClearance_units = reshape(minimumClearance_units, outputSize);
 nearestObstacleIndex = reshape(nearestObstacleIndex, outputSize);
 obstacleNames        = strings(outputSize);
 % Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     obstacleNames(nearestObstacleIndex == obstacleIndex) = obstacles(obstacleIndex).targetName;
 end
-queryDetails = struct("MinimumClearance_deg", minimumClearance_deg, ...
+queryDetails = struct("MinimumClearance_units", minimumClearance_units, ...
     "NearestObstacleIndex", nearestObstacleIndex, "NearestObstacleName", obstacleNames, ...
-    "QueryTime_s", reshape(queryTime_s, outputSize), "ObstacleSafetyMargins_deg", ...
-    reshape([obstacles.safetyMargin_deg], [], 1), "Options", options);
+    "QueryTime_s", reshape(queryTime_s, outputSize), "ObstacleSafetyMargins_units", ...
+    reshape([obstacles.safetyMargin_units], [], 1), "Options", options);
 end
 
-function [azimuth_deg, elevation_deg, time_s, outputSize] = broadcastQueries(azimuth_deg, elevation_deg, time_s)
+function [x_units, y_units, time_s, outputSize] = broadcastQueries(x_units, y_units, time_s)
     % Apply scalar expansion and retain the first nonscalar input shape.
-    values     = {double(azimuth_deg), double(elevation_deg), double(time_s)};
+    values     = {double(x_units), double(y_units), double(time_s)};
     counts     = [numel(values{1}), numel(values{2}), numel(values{3})];
     queryCount = max(counts);
     if any(counts ~= 1 & counts ~= queryCount)
-        error("queryObstacleOccupancyAtTime:SizeMismatch", "Non-scalar azimuth, elevation, and time must have equal counts.");
+        error("queryObstacleOccupancyAtTime:SizeMismatch", "Non-scalar x, y, and time must have equal counts.");
     end
     outputSize = size(values{find(counts == queryCount, 1)});
     % Process each value needed to complete broadcast queries.
@@ -119,5 +119,5 @@ function [azimuth_deg, elevation_deg, time_s, outputSize] = broadcastQueries(azi
         end
         values{valueIndex} = values{valueIndex}(:);
     end
-    [azimuth_deg, elevation_deg, time_s] = deal(values{:});
+    [x_units, y_units, time_s] = deal(values{:});
 end

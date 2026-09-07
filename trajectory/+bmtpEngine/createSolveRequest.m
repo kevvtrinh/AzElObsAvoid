@@ -1,8 +1,8 @@
-function request = createSolveRequest(seed, regions_deg, coverage, initialState, goalState, limits, options)
+function request = createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   request = bmtpEngine.createSolveRequest( ...
-%       seed, regions_deg, coverage, initialState, goalState, limits, options)
+%       seed, regions_units, coverage, initialState, goalState, limits, options)
 %
 % PURPOSE
 %   - Check BMTP inputs and select the established polynomial representation.
@@ -11,7 +11,7 @@ function request = createSolveRequest(seed, regions_deg, coverage, initialState,
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       Ordered positions and normalized route progress.
-%   - regions_deg (R-by-1 cell array)
+%   - regions_units (R-by-1 cell array)
 %       Convex exclusion polygons.
 %   - coverage (scalar struct)
 %       Conservative grouping or timed-region applicability evidence.
@@ -24,15 +24,15 @@ function request = createSolveRequest(seed, regions_deg, coverage, initialState,
 %       objective rate, and numerical solver options.
 %
 % UNITS
-%   - Position is degrees and time is seconds; derivatives use deg/s,
-%     deg/s^2, and deg/s^3.
+%   - Position is coordinate units and time is seconds; derivatives use units/s,
+%     units/s^2, and units/s^3.
 %
 
 %% Section 1: Check The Engine Inputs
 
 % Validate convex regions and their active intervals before solving.
 
-validateKernelInputs(seed, regions_deg, coverage, initialState, goalState, limits, options);
+validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 usesConservativeGrouping = isfield(coverage, "ConservativeGrouping") && isstruct(coverage.ConservativeGrouping) && isfield(coverage.ConservativeGrouping, "Applied") && isequal(coverage.ConservativeGrouping.Applied, true);
 usesTimedCells           = isfield(coverage, "RegionActiveTauInterval");
 
@@ -54,19 +54,19 @@ end
 
 % Set shared tolerances and iteration limits for both conic solvers.
 
-regionMinimum_deg = zeros(numel(regions_deg), 2);
-regionMaximum_deg = zeros(numel(regions_deg), 2);
+regionMinimum_units = zeros(numel(regions_units), 2);
+regionMaximum_units = zeros(numel(regions_units), 2);
 % Process each geometric region while constructing or checking the region topology.
-for regionIndex = 1:numel(regions_deg)
-    regionMinimum_deg(regionIndex, :) = min(regions_deg{regionIndex}, [], 1);
-    regionMaximum_deg(regionIndex, :) = max(regions_deg{regionIndex}, [], 1);
+for regionIndex = 1:numel(regions_units)
+    regionMinimum_units(regionIndex, :) = min(regions_units{regionIndex}, [], 1);
+    regionMaximum_units(regionIndex, :) = max(regions_units{regionIndex}, [], 1);
 end
 maximumTrajectoryIterations = 300;
 trajectoryOptions           = optimoptions("coneprog", "Display", "none", "MaxIterations", maximumTrajectoryIterations);
 planeOptions                = optimoptions("coneprog", "Display", "none");
 tightPlaneOptions           = optimoptions("coneprog", "Display", "none", "ConstraintTolerance", 1e-11, "OptimalityTolerance", 1e-11, "MaxIterations", 400);
 request                     = struct("Seed", seed, ...
-    "Regions_deg", {regions_deg}, ...
+    "Regions_units", {regions_units}, ...
     "Coverage", coverage, ...
     "InitialState", initialState, ...
     "GoalState", goalState, ...
@@ -78,8 +78,8 @@ request                     = struct("Seed", seed, ...
     "SplitCount", splitCount, ...
     "MaximumWarmSegmentCount", 20, ...
     "MotionHorizon_s", motionHorizon_s, ...
-    "RegionMinimum_deg", regionMinimum_deg, ...
-    "RegionMaximum_deg", regionMaximum_deg, ...
+    "RegionMinimum_units", regionMinimum_units, ...
+    "RegionMaximum_units", regionMaximum_units, ...
     "TrajectoryOptions", trajectoryOptions, ...
     "PlaneOptions", planeOptions, ...
     "TightPlaneOptions", tightPlaneOptions);
@@ -87,30 +87,30 @@ end
 
 %% Section 4: Local Functions
 
-function validateKernelInputs(seed, regions_deg, coverage, initialState, goalState, limits, options)
+function validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options)
     % Check engine-specific input restrictions.
-    if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_deg', 'tau'}))
-        error("bmtpEngine:InvalidSeed", "seed must be scalar and contain position_deg and tau.");
+    if ~isstruct(seed) || ~isscalar(seed) || ~all(isfield(seed, {'position_units', 'tau'}))
+        error("bmtpEngine:InvalidSeed", "seed must be scalar and contain position_units and tau.");
     end
     tau         = double(seed.tau(:));
-    route_deg   = double(seed.position_deg);
-    seedIsValid = size(route_deg, 2) == 2 && size(route_deg, 1) == numel(tau) && all(isfinite(route_deg), "all") && numel(tau) >= 2 && all(isfinite(tau)) && all(diff(tau) > 0) && abs(tau(1)) <= 32 * eps && abs(tau(end) - 1) <= 32 * eps;
+    route_units   = double(seed.position_units);
+    seedIsValid = size(route_units, 2) == 2 && size(route_units, 1) == numel(tau) && all(isfinite(route_units), "all") && numel(tau) >= 2 && all(isfinite(tau)) && all(diff(tau) > 0) && abs(tau(1)) <= 32 * eps && abs(tau(end) - 1) <= 32 * eps;
     if ~seedIsValid
-        error("bmtpEngine:InvalidSeedTau", "seed.position_deg must be finite N-by-2 and tau must increase 0 to 1.");
+        error("bmtpEngine:InvalidSeedTau", "seed.position_units must be finite N-by-2 and tau must increase 0 to 1.");
     end
-    regionsAreValid = iscell(regions_deg) && iscolumn(regions_deg);
+    regionsAreValid = iscell(regions_units) && iscolumn(regions_units);
     % Process each geometric region while constructing or checking the region topology.
-    for regionIndex = 1:numel(regions_deg)
-        region_deg      = regions_deg{regionIndex};
-        regionsAreValid = regionsAreValid && isnumeric(region_deg) && size(region_deg, 2) == 2 && size(region_deg, 1) >= 3 && all(isfinite(region_deg), "all");
+    for regionIndex = 1:numel(regions_units)
+        region_units      = regions_units{regionIndex};
+        regionsAreValid = regionsAreValid && isnumeric(region_units) && size(region_units, 2) == 2 && size(region_units, 1) >= 3 && all(isfinite(region_units), "all");
     end
     coverageIsValid = isstruct(coverage) && isscalar(coverage) && isfield(coverage, "Passed") && islogical(coverage.Passed) && isscalar(coverage.Passed);
     if ~(regionsAreValid && coverageIsValid)
-        error("bmtpEngine:InvalidExclusionRegions", "regions_deg must be a column cell array of finite N-by-2 polygons " + "and coverage must contain scalar logical Passed.");
+        error("bmtpEngine:InvalidExclusionRegions", "regions_units must be a column cell array of finite N-by-2 polygons " + "and coverage must contain scalar logical Passed.");
     end
     if isfield(coverage, "RegionActiveTauInterval")
         activeInterval    = double(coverage.RegionActiveTauInterval);
-        intervalsAreValid = isnumeric(coverage.RegionActiveTauInterval) && isreal(coverage.RegionActiveTauInterval) && isequal(size(activeInterval), [numel(regions_deg), 2]) && all(isfinite(activeInterval), "all") && all(activeInterval(:, 1) >= 0) && all(activeInterval(:, 2) <= 1) && all(activeInterval(:, 2) > activeInterval(:, 1));
+        intervalsAreValid = isnumeric(coverage.RegionActiveTauInterval) && isreal(coverage.RegionActiveTauInterval) && isequal(size(activeInterval), [numel(regions_units), 2]) && all(isfinite(activeInterval), "all") && all(activeInterval(:, 1) >= 0) && all(activeInterval(:, 2) <= 1) && all(activeInterval(:, 2) > activeInterval(:, 1));
         if ~intervalsAreValid
             error("bmtpEngine:InvalidRegionActiveTauInterval", "coverage.RegionActiveTauInterval must be finite R-by-2 " + "intervals satisfying 0 <= start < finish <= 1.");
         end
@@ -119,10 +119,10 @@ function validateKernelInputs(seed, regions_deg, coverage, initialState, goalSta
             error("bmtpEngine:InvalidTimedSegmentCount", "Timed coverage requires a positive integer TimedSegmentCount.");
         end
     end
-    endpointDerivative = [initialState.velocity_deg_s, ...
-        initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
-    limitsMatrix       = [limits.maxVelocity_deg_s; limits.maxAcceleration_deg_s2; limits.maxJerk_deg_s3];
-    requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && any(string(options.GoalTimeMode) == ["earliestArrival", "fixedArrival"]) && ~options.AllowAzimuthWrapping && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
+    endpointDerivative = [initialState.velocity_units_s, ...
+        initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
+    limitsMatrix       = [limits.maxVelocity_units_s; limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
+    requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && any(string(options.GoalTimeMode) == ["earliestArrival", "fixedArrival"]) && ~options.WrapX && ~options.WrapY && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
     if ~requestIsSupported
         error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped rest-to-rest request.");
     end

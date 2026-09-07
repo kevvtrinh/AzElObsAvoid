@@ -16,7 +16,7 @@ validateattributes(totalElapsedTime_s, {'numeric'}, {'real', 'finite', 'scalar',
 template      = obstacleAvoidance.planner.createStageTiming();
 requiredNames = string(fieldnames(template));
 if ~isstruct(timing) || ~isscalar(timing) || ~isequal(string(fieldnames(timing)), requiredNames)
-    error("stageTiming:InvalidFormat", "timing must use the shared Az/El stage-timing format.");
+    error("stageTiming:InvalidFormat", "timing must use the shared X/Y stage-timing format.");
 end
 exclusiveNames         = requiredNames(1:end - 2);
 exclusiveElapsedTime_s = 0;

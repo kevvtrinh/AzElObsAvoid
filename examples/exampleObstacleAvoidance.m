@@ -17,8 +17,8 @@ function [result, diagnosis] = exampleObstacleAvoidance(exampleOverrides)
 %   - diagnosis (optional second output): search attempts and solver details.
 %
 % UNITS
-%   - Position is degrees; time is seconds; derivatives use deg/s, deg/s^2,
-%     and deg/s^3.
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
 %
 
 %% Section 1: Resolve Example Controls
@@ -36,10 +36,10 @@ end
 % deterministic side selection from identical inputs.
 
 obstacleTime_s        = [0; 20];
-obstacleAzimuth_deg   = [-1; 1; 1; -1];
-obstacleElevation_deg = [-2; -2; 2; 2];
-safetyMargin_deg      = 0.2;
-obstacles             = obstacleAvoidance.obstacles.createObstacle("rectangle", obstacleTime_s, obstacleAzimuth_deg, obstacleElevation_deg, safetyMargin_deg);
+obstacleX_units   = [-1; 1; 1; -1];
+obstacleY_units = [-2; -2; 2; 2];
+safetyMargin_units      = 0.2;
+obstacles             = obstacleAvoidance.obstacles.createObstacle("rectangle", obstacleTime_s, obstacleX_units, obstacleY_units, safetyMargin_units);
 
 %% Section 3: Create Planner Inputs
 
@@ -48,11 +48,11 @@ obstacles             = obstacleAvoidance.obstacles.createObstacle("rectangle", 
 
 initialState = struct();
 initialState.time_s       = 0;
-initialState.position_deg = [-5 0];
+initialState.position_units = [-5 0];
 goalState = struct();
 goalState.time_s       = 12;
-goalState.position_deg = [5 0];
-limits = struct("maxVelocity_deg_s", [2 2], "maxAcceleration_deg_s2", [1 1], "maxJerk_deg_s3", displayOptions.MaxJerk_deg_s3);
+goalState.position_units = [5 0];
+limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
 
 %% Section 4: Run Planner
 

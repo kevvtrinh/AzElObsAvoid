@@ -2,11 +2,11 @@
 
 Accepted against commit 22babeed7342eeab5839253a4c3e5dab2d2a12be plus the starting working edits. MATLAB R2024b; exact saved circle request and options; no geometry, tolerance, or limit changes.
 
-The early detour waypoint was only a spline through-point. Its actual elevation peak occurred much later and reached 55 deg despite the obstacle top being approximately 26 deg. The added proposal fixes complete-axis velocity to zero at that waypoint while leaving acceleration free. The existing through-point family remains available. Every retained proposal passes the independent continuous validator.
+The early detour waypoint was only a spline through-point. Its actual y peak occurred much later and reached 55 units despite the obstacle top being approximately 26 units. The added proposal fixes complete-axis velocity to zero at that waypoint while leaving acceleration free. The existing through-point family remains available. Every retained proposal passes the independent continuous validator.
 
 The user explicitly prioritized arrival, then path length, subject to hard physical limits. The former integrated-squared-jerk rejection inside travel refinement was removed; its diagnostic values remain. Integrated jerk may increase. No arrival-versus-length trade or global shortest-path claim is made.
 
-| Case | Travel before / after (deg) | Duration before / after (s) | Warmed median before / after (s) |
+| Case | Travel before / after (units) | Duration before / after (s) | Warmed median before / after (s) |
 | --- | ---: | ---: | ---: |
 | circle | 249.201569069 / 227.456480998 | 113.691362616 / 113.691362616 | 2.067310 / 3.910954 |
 | rectangle | 112.397597877 / 103.355070722 | 52.966666667 / 52.966666667 | 0.938971 / 1.629758 |
@@ -17,16 +17,16 @@ MATLAB passed 60 affected tests: circle, timing, options, planner contract, BMTP
 
 18 maintained examples ran headlessly in both implementations with their default finite jerk limits. Per-example outcomes and motion metrics are below. Fixed-arrival behavior was also covered by contract and timing tests. The full repository test suite was not rerun. Two route-economy tests dependent on previously deleted MAT files were excluded; the files were not restored or replaced.
 
-| Example | Version | Planner / validator | Polyline / motion (deg) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Termination |
+| Example | Version | Planner / validator | Polyline / motion (units) | Duration (s) | Collision / kinematic / certificate | Wall (s) | Termination |
 | --- | --- | --- | ---: | ---: | --- | ---: | --- |
 | exampleObstacleFree | baseline | 1 / 1 | 4.472135955 / 4.472135955 | 4.531128874 | 1 / 1 / 1 | 0.666153 | goalReached |
 | exampleStaticUShapedObstacle | baseline | 1 / 1 | 34.942588040 / 38.678082287 | 20.872548349 | 1 / 1 / 1 | 8.165431 | goalReached |
-| exampleMovingCircleNoAzimuthWrap | baseline | 1 / 1 | 12.482421495 / 12.482421495 | 8.500000000 | 1 / 1 / 1 | 1.051650 | goalReached |
+| exampleMovingCircleNoWrap | baseline | 1 / 1 | 12.482421495 / 12.482421495 | 8.500000000 | 1 / 1 / 1 | 1.051650 | goalReached |
 | exampleOpeningUShapedObstacle | baseline | 1 / 1 | 10.000000000 / 10.000000000 | 13.617522354 | 1 / 1 / 1 | 1.517265 | goalReached |
 | exampleNoPath | baseline | 0 / 0 | NaN / NaN | NaN | 0 / 0 / 0 | 0.517593 | noValidatedSeed |
 | exampleObstacleFree | candidate | 1 / 1 | 4.472135955 / 4.472135955 | 4.531128874 | 1 / 1 / 1 | 0.700460 | goalReached |
 | exampleStaticUShapedObstacle | candidate | 1 / 1 | 34.942588040 / 38.678082287 | 20.872548349 | 1 / 1 / 1 | 7.960906 | goalReached |
-| exampleMovingCircleNoAzimuthWrap | candidate | 1 / 1 | 12.453788460 / 12.453788460 | 8.500000000 | 1 / 1 / 1 | 1.848734 | goalReached |
+| exampleMovingCircleNoWrap | candidate | 1 / 1 | 12.453788460 / 12.453788460 | 8.500000000 | 1 / 1 / 1 | 1.848734 | goalReached |
 | exampleOpeningUShapedObstacle | candidate | 1 / 1 | 10.000000000 / 10.000000000 | 13.617522354 | 1 / 1 / 1 | 2.552035 | goalReached |
 | exampleNoPath | candidate | 0 / 0 | NaN / NaN | NaN | 0 / 0 / 0 | 0.498200 | noValidatedSeed |
 | exampleAlternatingSlalom | baseline | 1 / 1 | 16.019319798 / 16.034753581 | 10.550093893 | 1 / 1 / 1 | 6.498397 | goalReached |
@@ -58,7 +58,7 @@ MATLAB passed 60 affected tests: circle, timing, options, planner contract, BMTP
 
 For the expected no-path result, zero check flags mean no motion was available; numeric motion metrics are NaN.
 
-| Case | Version | Run (1 = warm-up) | Wall time (s) | Travel (deg) | Duration (s) | Integrated squared jerk (deg2/s5) | Valid |
+| Case | Version | Run (1 = warm-up) | Wall time (s) | Travel (units) | Duration (s) | Integrated squared jerk (units2/s5) | Valid |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | circle | baseline | 1 | 4.6608164 | 249.201569068894 | 113.691362616008 | 7.525034823642 | 1 |
 | circle | baseline | 2 | 3.3358514 | 249.201569068894 | 113.691362616008 | 7.525034823642 | 1 |

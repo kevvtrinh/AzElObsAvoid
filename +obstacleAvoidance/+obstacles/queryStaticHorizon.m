@@ -29,7 +29,7 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, 
 %       an empty polyshape.
 %
 % UNITS
-%   - Time is seconds and protected boundary coordinates are degrees.
+%   - Time is seconds and protected boundary coordinates are coordinate units.
 %
 
 %% Section 1: Evaluate Static Activity Over The Horizon

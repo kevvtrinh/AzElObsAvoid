@@ -11,18 +11,18 @@ for familyIndex=1:4
         family       =families(familyIndex);
         initialState = struct();
         initialState.time_s       = 0;
-        initialState.position_deg = [-8 0];
+        initialState.position_units = [-8 0];
         goalState = struct();
         goalState.time_s       = 24;
-        goalState.position_deg = [8 0];
+        goalState.position_units = [8 0];
         limits = struct();
-        limits.maxVelocity_deg_s      = [3 3];
-        limits.maxAcceleration_deg_s2 = [1.5 1.5];
-        limits.maxJerk_deg_s3         = [4 4];
-        limits.azimuthInterval_deg    = [-10 10];
-        limits.elevationInterval_deg  = [-7 7];
+        limits.maxVelocity_units_s      = [3 3];
+        limits.maxAcceleration_units_s2 = [1.5 1.5];
+        limits.maxJerk_units_s3         = [4 4];
+        limits.xInterval_units    = [-10 10];
+        limits.yInterval_units  = [-7 7];
         if family=="diagonal"
-            initialState.position_deg=[-6 -6]; goalState.position_deg=[6 6];
+            initialState.position_units=[-6 -6]; goalState.position_units=[6 6];
         end
         count=1;
         if family=="static" || family=="moving", count=1+mod(member,3); end
@@ -40,7 +40,7 @@ for familyIndex=1:4
             base  =[-1 -1;1 -1;1 1;-1 1].*[halfWidth halfHeight];
             times =[0;24];
             if family=="moving", times=(0:6:24).'; end
-            az     =cell(numel(times),1); el=az;
+            x     =cell(numel(times),1); y=x;
             travel =2+2*rand; rotation=pi*(rand-0.5); phase=2*pi*rand;
             % Process each k included in this benchmark measurement.
             for k=1:numel(times)
@@ -50,9 +50,9 @@ for familyIndex=1:4
                     angle    =rotation*times(k)/24;
                 end
                 vertices=base*[cos(angle) sin(angle);-sin(angle) cos(angle)]+position;
-                az{k}=vertices(:,1); el{k}=vertices(:,2);
+                x{k}=vertices(:,1); y{k}=vertices(:,2);
             end
-            items{obstacleIndex}=obstacleAvoidance.obstacles.createObstacle("generated "+obstacleIndex,times,az,el,0.12);
+            items{obstacleIndex}=obstacleAvoidance.obstacles.createObstacle("generated "+obstacleIndex,times,x,y,0.12);
         end
         request=struct('obstacles',obstacleAvoidance.obstacles.combineObstacles(items), ...
             'initialState',initialState,'goalState',goalState,'limits',limits, ...

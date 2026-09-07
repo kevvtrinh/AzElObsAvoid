@@ -15,7 +15,7 @@ function tests = testExampleInvariants
 %   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Test positions are degrees and test times are seconds.
+%   - Test positions are coordinate units and test times are seconds.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -36,9 +36,9 @@ function testPhysicalRequirementHashes(testCase)
         "examples/exampleMovingDeformingUSOutlineVisibility.m", ...
         "examples/private/createContiguousUSObstacle.m"];
     expectedHashes = [ ...
-        "0be77543e72ee4ffc39caca63f5252c65612c312fcb8ef3335339e291c3c300b", ...
-        "475b0edab7baeff5ff342037ac3d9de33b11fb57bc40ab90d62c19595a96fdef", ...
-        "68a16c8932466edb06ac00a05c56588981b22c46d1770c4a4cb13c983ad69e64"];
+        "f23739dd1d3276e941967fc29d05616b51b04f8379efe81604ac025bbb437c31", ...
+        "dae1d7e27639e30865e7d54c5f1b227687f714bf683fa65fa9a767b40fd0654e", ...
+        "3b617f0435872e2c7b2cb79b9ab20aadde5bdf7b8819fa547ab08eeff33fb7b8"];
     % Exercise each requirement covered by this regression.
     for requirementIndex = 1:numel(relativePaths)
         requirementPath = fullfile(testCase.TestData.RepositoryRoot, relativePaths(requirementIndex));
@@ -62,7 +62,7 @@ function testMaintainedExampleSourceContracts(testCase)
         "exampleDenseConcaveObstacle", "exampleFourAcceleratingCircles", ...
         "exampleInterceptMovingTargetAtSetTime", ...
         "exampleInterceptMovingTargetEarliest", ...
-        "exampleMovingBarrierWait", "exampleMovingCircleNoAzimuthWrap", ...
+        "exampleMovingBarrierWait", "exampleMovingCircleNoWrap", ...
         "exampleMovingDeformingUSOutlineVisibility", ...
         "exampleMovingRotatingObstacleField", ...
         "exampleNoPath", "exampleObstacleFree", ...
@@ -83,8 +83,8 @@ function testMaintainedExampleSourceContracts(testCase)
     for exampleName = allExampleNames
         examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
         sourceText  = string(fileread(examplePath));
-        routedMatch = regexp(sourceText, '"maxJerk_deg_s3"\s*,\s*\w+\.MaxJerk_deg_s3', 'once');
-        verifyNotEmpty(testCase, routedMatch, exampleName + " must route MaxJerk_deg_s3 into limits.");
+        routedMatch = regexp(sourceText, '"maxJerk_units_s3"\s*,\s*\w+\.MaxJerk_units_s3', 'once');
+        verifyNotEmpty(testCase, routedMatch, exampleName + " must route MaxJerk_units_s3 into limits.");
         addedField = regexp(sourceText, '(?m)^\s*result\.[A-Za-z]\w*\s*=', 'once');
         verifyEmpty(testCase, addedField, exampleName + " must not append fields to the planner result.");
     end
@@ -97,8 +97,8 @@ function testMaintainedExampleSourceContracts(testCase)
     end
     slalomPath = fullfile(testCase.TestData.RepositoryRoot, "examples", "exampleAlternatingSlalom.m");
     slalomText = fileread(slalomPath);
-    boundMatch = regexp(slalomText, '"elevationInterval_deg"\s*,\s*\[-5\s+5\]', 'once');
-    verifyNotEmpty(testCase, boundMatch, "The slalom elevation interval must be [-5 5] degrees.");
+    boundMatch = regexp(slalomText, '"yInterval_units"\s*,\s*\[-5\s+5\]', 'once');
+    verifyNotEmpty(testCase, boundMatch, "The slalom y interval must be [-5 5] coordinate units.");
 end
 
 function testExampleResolverMaterializesPlannerDefaults(testCase)
@@ -122,13 +122,13 @@ end
 function testExampleResolverRejectsRetiredPlannerOptions(testCase)
     % Discard obsolete planner fields at the example boundary as unknown inputs.
     retiredNames = ["PerSeedWorkBudgetMultiplier", ...
-        "SeedClusterDistance_deg", "MaximumNlpIterations", ...
+        "SeedClusterDistance_units", "MaximumNlpIterations", ...
         "CollocationSegmentCount", "EnablePlaneReuse", ...
         "PlaneReuseImprovementTolerance_s", "WaypointWarmStartMode", ...
         "RequestedWaypointWarmStartMode", "IsWaypointWarmStartAvailable"];
     retiredOptions = struct();
     retiredOptions.PerSeedWorkBudgetMultiplier      = 3;
-    retiredOptions.SeedClusterDistance_deg          = 2;
+    retiredOptions.SeedClusterDistance_units          = 2;
     retiredOptions.MaximumNlpIterations             = 5;
     retiredOptions.CollocationSegmentCount          = 6;
     retiredOptions.EnablePlaneReuse                 = false;
@@ -156,7 +156,7 @@ function testObstacleAvoidanceRunsHeadlessly(testCase)
     % with the original regression tolerance.
     verifyEqual(testCase, result.ArrivalTime_s, 7.56468149867628, "AbsTol", 1e-6);
     summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
-    verifyEqual(testCase, summary.MotionLength_deg, 11.4406845061664, "AbsTol", 1e-6);
+    verifyEqual(testCase, summary.MotionLength_units, 11.4406845061664, "AbsTol", 1e-6);
 end
 
 function testMovingRotatingObstacleFieldRunsHeadlessly(testCase)
@@ -168,15 +168,15 @@ function testMovingRotatingObstacleFieldRunsHeadlessly(testCase)
     verifyEqual(testCase, numel(result.Inputs.obstacles), 4);
     movingObstacle = result.Inputs.obstacles(4);
     verifyEqual(testCase, numel(movingObstacle.time_s), 5);
-    initialBoundary_deg = [movingObstacle.originalAz_deg{1}, ...
-        movingObstacle.originalEl_deg{1}];
-    finalBoundary_deg = [movingObstacle.originalAz_deg{end}, ...
-        movingObstacle.originalEl_deg{end}];
-    centerTravel_deg     = norm(mean(finalBoundary_deg) - mean(initialBoundary_deg));
-    initialEdge_deg      = initialBoundary_deg(2, :) - initialBoundary_deg(1, :);
-    finalEdge_deg        = finalBoundary_deg(2, :) - finalBoundary_deg(1, :);
-    rotationMeasure_deg2 = abs(det([initialEdge_deg; finalEdge_deg]));
-    verifyGreaterThan(testCase, centerTravel_deg, 0);
-    verifyGreaterThan(testCase, rotationMeasure_deg2, 0);
-    verifyGreaterThan(testCase, sum(vecnorm(diff(result.Route_deg, 1, 1), 2, 2)), 20);
+    initialBoundary_units = [movingObstacle.originalX_units{1}, ...
+        movingObstacle.originalY_units{1}];
+    finalBoundary_units = [movingObstacle.originalX_units{end}, ...
+        movingObstacle.originalY_units{end}];
+    centerTravel_units     = norm(mean(finalBoundary_units) - mean(initialBoundary_units));
+    initialEdge_units      = initialBoundary_units(2, :) - initialBoundary_units(1, :);
+    finalEdge_units        = finalBoundary_units(2, :) - finalBoundary_units(1, :);
+    rotationMeasure_units2 = abs(det([initialEdge_units; finalEdge_units]));
+    verifyGreaterThan(testCase, centerTravel_units, 0);
+    verifyGreaterThan(testCase, rotationMeasure_units2, 0);
+    verifyGreaterThan(testCase, sum(vecnorm(diff(result.Route_units, 1, 1), 2, 2)), 20);
 end

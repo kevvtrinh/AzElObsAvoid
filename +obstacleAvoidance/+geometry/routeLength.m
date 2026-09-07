@@ -1,24 +1,24 @@
-function length_deg = routeLength(route_deg)
+function length_units = routeLength(route_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   length_deg = obstacleAvoidance.geometry.routeLength(route_deg)
+%   length_units = obstacleAvoidance.geometry.routeLength(route_units)
 %
 % PURPOSE
 %   - Measure the Euclidean length of an ordered planar polyline.
 %
 % INPUTS
-%   - route_deg (N-by-2 numeric matrix)
-%       Ordered [azimuth elevation] points; adjacent rows form segments.
+%   - route_units (N-by-2 numeric matrix)
+%       Ordered [x y] points; adjacent rows form segments.
 %
 % OUTPUTS
-%   - length_deg (nonnegative numeric scalar)
+%   - length_units (nonnegative numeric scalar)
 %       Sum of all adjacent Euclidean segment lengths.
 %
 % UNITS
-%   - Input coordinates and returned length are degrees.
+%   - Input coordinates and returned length are coordinate units.
 %
 
 %% Section 1: Sum Adjacent Segment Lengths
 
-length_deg = sum(vecnorm(diff(route_deg, 1, 1), 2, 2));
+length_units = sum(vecnorm(diff(route_units, 1, 1), 2, 2));
 end

@@ -14,7 +14,7 @@ function tests = testObstacleInfrastructure
 %   - tests (matlab.unittest function test array)
 %**************************************************************************
 % UNITS
-%   - Boundary coordinates are degrees and time is seconds.
+%   - Boundary coordinates are coordinate units and time is seconds.
 %**************************************************************************
 tests = functiontests(localfunctions);
 end
@@ -51,8 +51,8 @@ function testUnifiedOwnerNormalizesCanonicalValues(testCase)
     rootResult = obstacleAvoidance.obstacles.createObstacle(inputData);
     verifyEqual(testCase, rootResult.time_s, [0; 2]);
     verifyEqual(testCase, rootResult.status, ["visible"; "visible"]);
-    verifyEqual(testCase, size(rootResult.az_deg), [2 1]);
-    verifyEqual(testCase, rootResult.safetyMargin_deg, 0.25);
+    verifyEqual(testCase, size(rootResult.x_units), [2 1]);
+    verifyEqual(testCase, rootResult.safetyMargin_units, 0.25);
 end
 
 function testNormalizeDiagnosticsAreEquivalent(testCase)
@@ -65,9 +65,9 @@ function testNormalizeDiagnosticsAreEquivalent(testCase)
         "createObstacle:InvalidTargetName"};
     cases(end + 1, :) = {@() setField(base, "time_s", [0 0]), ...
         "createObstacle:InvalidTime"};
-    cases(end + 1, :) = {@() setField(base, "az_deg", {[0 1 1 0]}), ...
+    cases(end + 1, :) = {@() setField(base, "x_units", {[0 1 1 0]}), ...
         "createObstacle:InvalidBoundary"};
-    cases(end + 1, :) = {@() rmfield(base, "originalEl_deg"), ...
+    cases(end + 1, :) = {@() rmfield(base, "originalY_units"), ...
         "createObstacle:IncompleteOriginalBoundary"};
     cases(end + 1, :) = {@() setField(base, "status", ["a" "b" "c"]), ...
         "createObstacle:StatusSizeMismatch"};
@@ -89,15 +89,15 @@ end
 function testTwoVertexWarningIsEquivalent(testCase)
     % Verify degenerate-region removal emits one stable warning.
     inputData = normalizationFixture();
-    inputData.az_deg{1} = [0; 1; NaN; -2; 2; 2; -2];
-    inputData.el_deg{1} = [0; 1; NaN; -1; -1; 1; 1];
-    inputData.originalAz_deg = inputData.az_deg;
-    inputData.originalEl_deg = inputData.el_deg;
+    inputData.x_units{1} = [0; 1; NaN; -2; 2; 2; -2];
+    inputData.y_units{1} = [0; 1; NaN; -1; -1; 1; 1];
+    inputData.originalX_units = inputData.x_units;
+    inputData.originalY_units = inputData.y_units;
     lastwarn("");
     output = obstacleAvoidance.obstacles.createObstacle(inputData);
     [~, warningIdentifier] = lastwarn();
     verifyEqual(testCase, string(warningIdentifier), "createObstacle:RemovedTwoVertexRegions");
-    verifyEqual(testCase, numel(output.az_deg{1}), 4);
+    verifyEqual(testCase, numel(output.x_units{1}), 4);
 end
 
 function testSharedQueryPreservesGeometryAndCompatibility(testCase)
@@ -105,57 +105,57 @@ function testSharedQueryPreservesGeometryAndCompatibility(testCase)
     movingObstacle = movingMultiRingObstacle();
     staticObstacle = rectangleObstacle("static", [0; 4], [-0.5 0.5 -0.5 0.5]);
     obstacles      = obstacleAvoidance.obstacles.combineObstacles(movingObstacle, staticObstacle);
-    azimuth_deg    = [-3 0 3; -2 NaN 2];
-    elevation_deg  = [0 0 0; 1 0 -1];
+    x_units    = [-3 0 3; -2 NaN 2];
+    y_units  = [0 0 0; 1 0 -1];
     time_s         = [0 0 0; 2 2 4];
     options        = struct();
     options.BoundaryIsOccupied     = false;
-    options.ClearanceTolerance_deg = 1e-10;
+    options.ClearanceTolerance_units = 1e-10;
 
-    [sharedOccupied, sharedBlocker, sharedDetails] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, time_s, options);
+    [sharedOccupied, sharedBlocker, sharedDetails] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, x_units, y_units, time_s, options);
     verifyClass(testCase, sharedBlocker, "uint32");
-    verifyEqual(testCase, size(sharedOccupied), size(azimuth_deg));
-    verifyEqual(testCase, size(sharedDetails.MinimumClearance_deg), size(azimuth_deg));
+    verifyEqual(testCase, size(sharedOccupied), size(x_units));
+    verifyEqual(testCase, size(sharedDetails.MinimumClearance_units), size(x_units));
 
-    fastOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, time_s, options);
+    fastOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, x_units, y_units, time_s, options);
     verifyEqual(testCase, fastOccupied, sharedOccupied);
 
     hs3Options = options;
-    [hs3Occupied, hs3Blocker, hs3Details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, time_s, hs3Options);
+    [hs3Occupied, hs3Blocker, hs3Details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, x_units, y_units, time_s, hs3Options);
     verifyEqual(testCase, hs3Occupied, sharedOccupied);
     verifyEqual(testCase, hs3Blocker, sharedBlocker);
-    verifyEqual(testCase, hs3Details.MinimumClearance_deg, sharedDetails.MinimumClearance_deg, "AbsTol", 1e-12);
+    verifyEqual(testCase, hs3Details.MinimumClearance_units, sharedDetails.MinimumClearance_units, "AbsTol", 1e-12);
     verifyFalse(testCase, isfield(hs3Details.Options, "PlannerMethod"));
 
     referenceTime   = datetime(2026, 1, 1, "TimeZone", "UTC");
     datetimeOptions = options;
     datetimeOptions.ReferenceTime = referenceTime;
-    datetimeOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, azimuth_deg, elevation_deg, referenceTime + seconds(time_s), datetimeOptions);
+    datetimeOccupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacles, x_units, y_units, referenceTime + seconds(time_s), datetimeOptions);
     verifyEqual(testCase, datetimeOccupied, sharedOccupied);
 end
 
 function testBatchedMultiRingOccupancyMatchesPointwiseQueries(testCase)
     % Verify batched multi-ring clearance preserves pointwise boundary decisions.
     obstacle      = movingMultiRingObstacle();
-    azimuth_deg   = [-3.5 -2.5 -1.5 -0.5 0.5 1.5 2.5 3.5 4.5];
-    elevation_deg = zeros(size(azimuth_deg));
+    x_units   = [-3.5 -2.5 -1.5 -0.5 0.5 1.5 2.5 3.5 4.5];
+    y_units = zeros(size(x_units));
     queryTime_s   = 1;
 
     % Exercise each boundary is occupied covered by this regression.
     for boundaryIsOccupied = [false true]
         options = struct("BoundaryIsOccupied", boundaryIsOccupied, ...
-            "ClearanceTolerance_deg", 1e-10);
-        batchedOccupied   = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, azimuth_deg, elevation_deg, queryTime_s, options);
-        pointwiseOccupied = false(size(azimuth_deg));
+            "ClearanceTolerance_units", 1e-10);
+        batchedOccupied   = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, x_units, y_units, queryTime_s, options);
+        pointwiseOccupied = false(size(x_units));
         % Exercise each point covered by this regression.
-        for pointIndex = 1:numel(azimuth_deg)
-            pointwiseOccupied(pointIndex) = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, azimuth_deg(pointIndex), elevation_deg(pointIndex), queryTime_s, options);
+        for pointIndex = 1:numel(x_units)
+            pointwiseOccupied(pointIndex) = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, x_units(pointIndex), y_units(pointIndex), queryTime_s, options);
         end
         verifyEqual(testCase, batchedOccupied, pointwiseOccupied);
 
-        [detailedOccupied, ~, details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, azimuth_deg, elevation_deg, queryTime_s, options);
+        [detailedOccupied, ~, details] = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle, x_units, y_units, queryTime_s, options);
         verifyEqual(testCase, batchedOccupied, detailedOccupied);
-        verifyTrue(testCase, all(isfinite(details.MinimumClearance_deg)));
+        verifyTrue(testCase, all(isfinite(details.MinimumClearance_units)));
     end
 end
 
@@ -167,18 +167,18 @@ function testShapeQueryReportsOrderedBoundaryProperties(testCase)
     [convexShape, convexGeometry] = obstacleAvoidance.obstacles.shapeAtTime(preparedConvexObstacle, 2);
     verifyTrue(testCase, convexGeometry.HasOrderedSingleRegion);
     verifyTrue(testCase, convexGeometry.IsConvex);
-    vertices_deg         = [convexGeometry.azimuth_deg, convexGeometry.elevation_deg];
-    edgeDelta_deg        = vertices_deg(2, :) - vertices_deg(1, :);
-    leftNormal           = [-edgeDelta_deg(2), edgeDelta_deg(1)] / norm(edgeDelta_deg);
-    probe_deg            = 0.5 * sum(vertices_deg(1:2, :), 1) + 1e-6 * leftNormal;
-    referenceOutwardSign = 1 - 2 * isinterior(convexShape, probe_deg(1), probe_deg(2));
+    vertices_units         = [convexGeometry.x_units, convexGeometry.y_units];
+    edgeDelta_units        = vertices_units(2, :) - vertices_units(1, :);
+    leftNormal           = [-edgeDelta_units(2), edgeDelta_units(1)] / norm(edgeDelta_units);
+    probe_units            = 0.5 * sum(vertices_units(1:2, :), 1) + 1e-6 * leftNormal;
+    referenceOutwardSign = 1 - 2 * isinterior(convexShape, probe_units(1), probe_units(2));
     verifyEqual(testCase, convexGeometry.OutwardSign, referenceOutwardSign);
     [~, repeatedGeometry] = obstacleAvoidance.obstacles.shapeAtTime(preparedConvexObstacle, 3, true);
     verifyEqual(testCase, repeatedGeometry, convexGeometry);
 
-    concaveAzimuth_deg   = [0; 2; 2; 1; 1; 0];
-    concaveElevation_deg = [0; 0; 1; 1; 2; 2];
-    concaveObstacle      = obstacleAvoidance.obstacles.createObstacle("concave", [0; 4], concaveAzimuth_deg, concaveElevation_deg, 0);
+    concaveX_units   = [0; 2; 2; 1; 1; 0];
+    concaveY_units = [0; 0; 1; 1; 2; 2];
+    concaveObstacle      = obstacleAvoidance.obstacles.createObstacle("concave", [0; 4], concaveX_units, concaveY_units, 0);
     [~, concaveGeometry] = obstacleAvoidance.obstacles.shapeAtTime(concaveObstacle, 2, true);
     verifyTrue(testCase, concaveGeometry.HasOrderedSingleRegion);
     verifyFalse(testCase, concaveGeometry.IsConvex);
@@ -236,45 +236,45 @@ function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
     prepared    = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     preparation = prepared.InternalPreparation;
     verifyEqual(testCase, preparation.PreparationVersion, 1);
-    verifySize(testCase, preparation.SampleBounds_deg, [2 4]);
-    verifySize(testCase, preparation.IntervalBounds_deg, [1 4]);
-    verifyEqual(testCase, size(preparation.SampleEdgeStart_deg{1}, 1), 4);
-    verifyEqual(testCase, preparation.SampleEdgeStart_deg{1}, preparation.SampleEdgeEnd_deg{1}([4 1 2 3], :), "AbsTol", 0);
+    verifySize(testCase, preparation.SampleBounds_units, [2 4]);
+    verifySize(testCase, preparation.IntervalBounds_units, [1 4]);
+    verifyEqual(testCase, size(preparation.SampleEdgeStart_units{1}, 1), 4);
+    verifyEqual(testCase, preparation.SampleEdgeStart_units{1}, preparation.SampleEdgeEnd_units{1}([4 1 2 3], :), "AbsTol", 0);
 
     mutated = prepared;
     % Exercise each sample covered by this regression.
-    for sampleIndex = 1:numel(mutated.az_deg)
-        mutated.az_deg{sampleIndex} = mutated.az_deg{sampleIndex} + 5;
+    for sampleIndex = 1:numel(mutated.x_units)
+        mutated.x_units{sampleIndex} = mutated.x_units{sampleIndex} + 5;
     end
     [shape, geometry] = obstacleAvoidance.obstacles.shapeAtTime(mutated, 2);
     verifyTrue(testCase, geometry.Active);
     verifyEqual(testCase, min(shape.Vertices(:, 1)), 3, "AbsTol", 1e-12);
     verifyFalse(testCase, obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(mutated, 0, 0, 2));
     [~, projection] = obstacleAvoidance.obstacles.createStationaryObstacleEnclosures(obstacleAvoidance.obstacles.prepareObstacles(mutated), 0, 4);
-    verifyEqual(testCase, min(projection.Records.Boundary_deg(:, 1)), 3, "AbsTol", 1e-12);
+    verifyEqual(testCase, min(projection.Records.Boundary_units(:, 1)), 3, "AbsTol", 1e-12);
     reprepared = obstacleAvoidance.obstacles.prepareObstacles(mutated);
     verifyNotEqual(testCase, reprepared.InternalPreparation.SourceSnapshot, preparation.SourceSnapshot);
-    verifyEqual(testCase, reprepared.InternalPreparation.SampleBounds_deg(:, 1), [3; 3], "AbsTol", 1e-12);
+    verifyEqual(testCase, reprepared.InternalPreparation.SampleBounds_units(:, 1), [3; 3], "AbsTol", 1e-12);
 end
 
 function testPreparedConvexClearanceMatchesPolyshapePath(testCase)
     % Verify cached clockwise and counterclockwise edges preserve signed clearance.
-    vertices_deg = [-2 -1; 2 -1; 2 1; -2 1];
-    shape        = polyshape(vertices_deg, "Simplify", false);
-    points_deg   = [-3 0; 0 0; 2 0; 3 0; 0 1 + 1e-13];
-    referenceClearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg);
-    vertexOrientations_deg = {vertices_deg, flipud(vertices_deg)};
+    vertices_units = [-2 -1; 2 -1; 2 1; -2 1];
+    shape        = polyshape(vertices_units, "Simplify", false);
+    points_units   = [-3 0; 0 0; 2 0; 3 0; 0 1 + 1e-13];
+    referenceClearance_units = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_units);
+    vertexOrientations_units = {vertices_units, flipud(vertices_units)};
     % Exercise each orientation covered by this regression.
-    for orientationIndex = 1:numel(vertexOrientations_deg)
-        orderedVertices_deg = vertexOrientations_deg{orientationIndex};
-        nextVertices_deg    = circshift(orderedVertices_deg, -1, 1);
-        signedDoubleArea    = sum(orderedVertices_deg(:, 1) .* nextVertices_deg(:, 2) - orderedVertices_deg(:, 2) .* nextVertices_deg(:, 1));
-        geometry = struct("EdgeStart_deg", orderedVertices_deg, ...
-            "EdgeEnd_deg", nextVertices_deg, ...
+    for orientationIndex = 1:numel(vertexOrientations_units)
+        orderedVertices_units = vertexOrientations_units{orientationIndex};
+        nextVertices_units    = circshift(orderedVertices_units, -1, 1);
+        signedDoubleArea    = sum(orderedVertices_units(:, 1) .* nextVertices_units(:, 2) - orderedVertices_units(:, 2) .* nextVertices_units(:, 1));
+        geometry = struct("EdgeStart_units", orderedVertices_units, ...
+            "EdgeEnd_units", nextVertices_units, ...
             "HasOrderedSingleRegion", true, "IsConvex", true, ...
             "OutwardSign", -sign(signedDoubleArea));
-        cachedClearance_deg = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_deg, geometry);
-        verifyEqual(testCase, cachedClearance_deg, referenceClearance_deg, "AbsTol", 1e-12);
+        cachedClearance_units = obstacleAvoidance.geometry.pointPolygonClearance(shape, points_units, geometry);
+        verifyEqual(testCase, cachedClearance_units, referenceClearance_units, "AbsTol", 1e-12);
     end
 end
 
@@ -291,7 +291,7 @@ function testStaticHorizonClassifiesSpanAndGeometry(testCase)
     verifyEmpty(testCase, unsupportedShape.Vertices);
 
     movingObstacle = staticObstacle;
-    movingObstacle.az_deg{2} = movingObstacle.az_deg{2} + 1;
+    movingObstacle.x_units{2} = movingObstacle.x_units{2} + 1;
     preparedMoving = obstacleAvoidance.obstacles.prepareObstacles(movingObstacle);
     verifyFalse(testCase, obstacleAvoidance.obstacles.queryStaticHorizon(preparedMoving, 0, 4));
 
@@ -304,17 +304,17 @@ end
 
 function obstacle = normalizationFixture()
     % Construct one raw moving, multi-ring record requiring normalization.
-    azimuthSlices_deg = {[-3 -1 -1 -3 NaN 1 3 3 1], ...
+    xSlices_units = {[-3 -1 -1 -3 NaN 1 3 3 1], ...
         [-2 0 0 -2 NaN 2 4 4 2]};
-    elevationSlices_deg = {[-1 -1 1 1 NaN -1 -1 1 1], ...
+    ySlices_units = {[-1 -1 1 1 NaN -1 -1 1 1], ...
         [-1 -1 1 1 NaN -1 -1 1 1]};
     obstacle = struct("targetName", "normalization fixture", ...
         "time_s", [0 2], ...
-        "az_deg", {azimuthSlices_deg}, ...
-        "el_deg", {elevationSlices_deg}, ...
-        "originalAz_deg", {azimuthSlices_deg}, ...
-        "originalEl_deg", {elevationSlices_deg}, ...
-        "safetyMargin_deg", 0.25, ...
+        "x_units", {xSlices_units}, ...
+        "y_units", {ySlices_units}, ...
+        "originalX_units", {xSlices_units}, ...
+        "originalY_units", {ySlices_units}, ...
+        "safetyMargin_units", 0.25, ...
         "status", "visible");
 end
 
@@ -322,39 +322,39 @@ function obstacle = movingMultiRingObstacle()
     % Construct two translating protected regions in one canonical obstacle.
     inputData = normalizationFixture();
     inputData.targetName       = "moving multi-ring";
-    inputData.safetyMargin_deg = 0;
+    inputData.safetyMargin_units = 0;
     obstacle = obstacleAvoidance.obstacles.createObstacle(inputData);
 end
 
 function obstacle = topologyChangingObstacle()
     % Construct one protected region that splits into two rings between samples.
-    closed_deg = [-2 -1; 2 -1; 2 1; -2 1];
-    left_deg   = [-2 -1; -0.5 -1; -0.5 1; -2 1];
-    right_deg  = [0.5 -1; 2 -1; 2 1; 0.5 1];
-    open_deg   = [left_deg; NaN NaN; right_deg];
-    obstacle   = obstacleAvoidance.obstacles.createObstacle("opening", [0; 2], {closed_deg(:, 1); open_deg(:, 1)}, {closed_deg(:, 2); open_deg(:, 2)}, 0);
+    closed_units = [-2 -1; 2 -1; 2 1; -2 1];
+    left_units   = [-2 -1; -0.5 -1; -0.5 1; -2 1];
+    right_units  = [0.5 -1; 2 -1; 2 1; 0.5 1];
+    open_units   = [left_units; NaN NaN; right_units];
+    obstacle   = obstacleAvoidance.obstacles.createObstacle("opening", [0; 2], {closed_units(:, 1); open_units(:, 1)}, {closed_units(:, 2); open_units(:, 2)}, 0);
 end
 
-function obstacle = rawObstacle(time_s, positionBySlice_deg)
+function obstacle = rawObstacle(time_s, positionBySlice_units)
     % Construct the minimum protected history consumed by preparation queries.
-    azimuthBySlice_deg   = cell(numel(positionBySlice_deg), 1);
-    elevationBySlice_deg = cell(numel(positionBySlice_deg), 1);
+    xBySlice_units   = cell(numel(positionBySlice_units), 1);
+    yBySlice_units = cell(numel(positionBySlice_units), 1);
     % Exercise each sample covered by this regression.
-    for sampleIndex = 1:numel(positionBySlice_deg)
-        position_deg = positionBySlice_deg{sampleIndex};
-        azimuthBySlice_deg{sampleIndex} = position_deg(:, 1);
-        elevationBySlice_deg{sampleIndex} = position_deg(:, 2);
+    for sampleIndex = 1:numel(positionBySlice_units)
+        position_units = positionBySlice_units{sampleIndex};
+        xBySlice_units{sampleIndex} = position_units(:, 1);
+        yBySlice_units{sampleIndex} = position_units(:, 2);
     end
     obstacle = struct("time_s", time_s(:), ...
-        "az_deg", {azimuthBySlice_deg}, ...
-        "el_deg", {elevationBySlice_deg});
+        "x_units", {xBySlice_units}, ...
+        "y_units", {yBySlice_units});
 end
 
-function obstacle = rectangleObstacle(name, time_s, bounds_deg)
+function obstacle = rectangleObstacle(name, time_s, bounds_units)
     % Construct one canonical static rectangle.
-    azimuth_deg   = bounds_deg([1 2 2 1]).';
-    elevation_deg = bounds_deg([3 3 4 4]).';
-    obstacle      = obstacleAvoidance.obstacles.createObstacle(name, time_s, azimuth_deg, elevation_deg, 0);
+    x_units   = bounds_units([1 2 2 1]).';
+    y_units = bounds_units([3 3 4 4]).';
+    obstacle      = obstacleAvoidance.obstacles.createObstacle(name, time_s, x_units, y_units, 0);
 end
 
 function value = setField(value, fieldName, fieldValue)
@@ -362,10 +362,10 @@ function value = setField(value, fieldName, fieldValue)
     value.(fieldName) = fieldValue;
 end
 
-function value = setBoundaryPair(value, azimuth_deg, elevation_deg)
+function value = setBoundaryPair(value, x_units, y_units)
     % Replace the first protected slice with a requested malformed boundary.
-    value.az_deg{1} = azimuth_deg;
-    value.el_deg{1} = elevation_deg;
+    value.x_units{1} = x_units;
+    value.y_units{1} = y_units;
 end
 
 function identifier = captureErrorIdentifier(normalizer, inputData)

@@ -1,6 +1,6 @@
 ---
 name: planner-failure-diagnosis
-description: Diagnose an unexplained Az/El planner failure, no-path result, invalid trajectory, or validation disagreement by locating the earliest broken stage before changing planner behavior.
+description: Diagnose an unexplained X/Y planner failure, no-path result, invalid trajectory, or validation disagreement by locating the earliest broken stage before changing planner behavior.
 ---
 
 # Planner Failure Diagnosis

@@ -1,9 +1,9 @@
-function certificate = checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_deg, obstacleTarget_deg)
+function certificate = checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   certificate = bmtpEngine.checkFinalMotion( ...
-%       request, warmStart, preparedMotion, roundoffReserve_deg, ...
-%       obstacleTarget_deg)
+%       request, warmStart, preparedMotion, roundoffReserve_units, ...
+%       obstacleTarget_units)
 %
 % PURPOSE
 %   - Check every applicable final curve span against each supplied convex
@@ -12,15 +12,15 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 % INPUTS
 %   - request, warmStart, preparedMotion (scalar structs)
 %       Checked request, region applicability, and final prepared curve.
-%   - roundoffReserve_deg, obstacleTarget_deg (finite scalars)
-%       Numerical reserve and required obstacle-side target in degrees.
+%   - roundoffReserve_units, obstacleTarget_units (finite scalars)
+%       Numerical reserve and required obstacle-side target in coordinate units.
 %
 % OUTPUTS
 %   - certificate (scalar struct)
 %       Pair coverage, separating planes, counts, and passing state.
 %
 % UNITS
-%   - Position, gaps, and reserves are degrees.
+%   - Position, gaps, and reserves are coordinate units.
 %
 
 %% Section 1: Check All Curve And Obstacle Pairs
@@ -28,41 +28,41 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 % Each optimized segment becomes two output spans.
 % Repeat its timed-region mask for both spans.
 regionActiveBySegment = repelem(warmStart.RegionActiveBySegment, 2, 1);
-certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_deg, request.Regions_deg, request.Coverage, regionActiveBySegment, roundoffReserve_deg, obstacleTarget_deg, request.TightPlaneOptions);
+certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units, request.TightPlaneOptions);
 end
 
 %% Section 2: Local Functions
 
-function certificate = checkAllCurveObstaclePairs(controlPoint_deg, regions_deg, coverage, regionActiveBySegment, reserve_deg, target_deg, solverOptions)
+function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units, solverOptions)
     % Verify every applicable output-span and convex-exclusion-region pair.
-    segmentCount   = size(controlPoint_deg, 1);
-    regionCount    = numel(regions_deg);
+    segmentCount   = size(controlPoint_units, 1);
+    regionCount    = numel(regions_units);
     planes         = repmat(createEmptyPlane(), segmentCount, regionCount);
     verifiedCount  = 0;
     conicCount     = 0;
     analyticCount  = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
-    minimumGap_deg = Inf;
+    minimumGap_units = Inf;
     % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
-        trajectory_deg = squeeze(controlPoint_deg(segmentIndex, :, :));
+        trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
         % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
-            plane = checkHullSeparationLine(trajectory_deg, regions_deg{regionIndex}, reserve_deg, target_deg);
+            plane = checkHullSeparationLine(trajectory_units, regions_units{regionIndex}, reserve_units, target_units);
             if plane.Verified
                 analyticCount = analyticCount + 1;
             else
-                [plane, ~, output] = bmtpEngine.solveSeparatingLine(trajectory_deg, regions_deg{regionIndex}, target_deg, reserve_deg, solverOptions);
+                [plane, ~, output] = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units, solverOptions);
                 conicCount  = conicCount + 1;
                 conicSolver = bmtpEngine.accumulateConicDiagnostics(conicSolver, output);
             end
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified
                 verifiedCount  = verifiedCount + 1;
-                minimumGap_deg = min(minimumGap_deg, plane.SignedGap_deg);
+                minimumGap_units = min(minimumGap_units, plane.SignedGap_units);
             end
         end
     end
@@ -78,40 +78,40 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_deg, regions_deg,
     certificate = struct("Kind", certificateKind, ...
         "Passed", coverage.Passed && verifiedCount == allPairCount, ...
         "ExactRegionCount", exactRegionCount, ...
-        "SolverRegionCount", regionCount, "Regions_deg", {regions_deg}, ...
+        "SolverRegionCount", regionCount, "Regions_units", {regions_units}, ...
         "Planes", planes, "RegionActiveBySegment", regionActiveBySegment, ...
-        "RequiredGap_deg", target_deg + reserve_deg, ...
-        "RoundoffReserve_deg", reserve_deg, ...
-        "MinimumSignedGap_deg", minimumGap_deg, ...
+        "RequiredGap_units", target_units + reserve_units, ...
+        "RoundoffReserve_units", reserve_units, ...
+        "MinimumSignedGap_units", minimumGap_units, ...
         "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
         "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 
-function plane = checkHullSeparationLine(controlPoint_deg, vertices_deg, reserve_deg, target_deg)
+function plane = checkHullSeparationLine(controlPoint_units, vertices_units, reserve_units, target_units)
     % Prove disjoint convex hulls by separating axes; leave overlap to SOCP.
     plane        = createEmptyPlane();
-    edge_deg     = vertices_deg([2:end 1], :) - vertices_deg;
-    controlPairs = nchoosek(1:size(controlPoint_deg, 1), 2);
-    edge_deg     = [edge_deg; ...
-        controlPoint_deg(controlPairs(:, 2), :) - controlPoint_deg(controlPairs(:, 1), :)];
-    edgeLength_deg = vecnorm(edge_deg, 2, 2);
-    edge_deg       = edge_deg(edgeLength_deg > 0, :);
-    edgeLength_deg = edgeLength_deg(edgeLength_deg > 0);
-    if isempty(edge_deg)
+    edge_units     = vertices_units([2:end 1], :) - vertices_units;
+    controlPairs = nchoosek(1:size(controlPoint_units, 1), 2);
+    edge_units     = [edge_units; ...
+        controlPoint_units(controlPairs(:, 2), :) - controlPoint_units(controlPairs(:, 1), :)];
+    edgeLength_units = vecnorm(edge_units, 2, 2);
+    edge_units       = edge_units(edgeLength_units > 0, :);
+    edgeLength_units = edgeLength_units(edgeLength_units > 0);
+    if isempty(edge_units)
         return;
     end
-    normals  = [-edge_deg(:, 2), edge_deg(:, 1)] ./ edgeLength_deg;
+    normals  = [-edge_units(:, 2), edge_units(:, 1)] ./ edgeLength_units;
     normals  = [normals; -normals];
-    gaps_deg = min(vertices_deg * normals.', [], 1) - max(controlPoint_deg * normals.', [], 1);
-    [maximumGap_deg, normalIndex] = max(gaps_deg);
-    if maximumGap_deg < target_deg + reserve_deg
+    gaps_units = min(vertices_units * normals.', [], 1) - max(controlPoint_units * normals.', [], 1);
+    [maximumGap_units, normalIndex] = max(gaps_units);
+    if maximumGap_units < target_units + reserve_units
         return;
     end
     normal = normals(normalIndex, :);
-    [plane.Active, plane.Normal, plane.Offset_deg] = deal(true, repmat(normal, 2, 1), zeros(1, 2));
-    plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg);
+    [plane.Active, plane.Normal, plane.Offset_units] = deal(true, repmat(normal, 2, 1), zeros(1, 2));
+    plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units);
 end
 
 function plane = createEmptyPlane()
@@ -121,6 +121,6 @@ function plane = createEmptyPlane()
     plane.Verified      = false;
     plane.ExitFlag      = NaN;
     plane.Normal        = zeros(2, 2);
-    plane.Offset_deg    = zeros(1, 2);
-    plane.SignedGap_deg = NaN;
+    plane.Offset_units    = zeros(1, 2);
+    plane.SignedGap_units = NaN;
 end

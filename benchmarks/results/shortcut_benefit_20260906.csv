@@ -1,4 +1,4 @@
-caseIndex,name,family,seed,mode,repeat,status,wall_s,success,validated,polyline_deg,smooth_deg,duration_s,collision,kinematic,certificate,reason,message,shortcutSelected,shortcutAttempted,shortcutTime_s
+caseIndex,name,family,seed,mode,repeat,status,wall_s,success,validated,polyline_units,smooth_units,duration_s,collision,kinematic,certificate,reason,message,shortcutSelected,shortcutAttempted,shortcutTime_s
 1,static_6101,static,6101,off,0,completed,1.1435456,True,True,16.206934682731685,16.862438494931293,7.756750499041244,True,True,True,goalReached,A validated motion was found.,False,False,0
 1,static_6101,static,6101,on,0,completed,4.6335587,True,True,16.213082018577897,16.213082018577897,7.708333333333334,True,True,True,goalReached,A fixed-clock lateral excursion attained the physical time floor.,True,True,4.5215104
 1,static_6101,static,6101,off,1,completed,1.2446323,True,True,16.206934682731685,16.862438494931293,7.756750499041244,True,True,True,goalReached,A validated motion was found.,False,False,0

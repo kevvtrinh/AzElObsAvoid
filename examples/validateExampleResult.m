@@ -21,7 +21,7 @@ function validation = validateExampleResult(result, scenarioLabel, requirements,
 %       Pass state, message, trajectory validation, and diagnostic checks.
 %
 % UNITS
-%   - Direct-route collision probes use degrees and seconds.
+%   - Direct-route collision probes use coordinate units and seconds.
 %
 
 %% Section 1: Resolve The Example Requirements
@@ -46,7 +46,7 @@ requireDirectBlocked = fieldOrDefault(requirements, "RequireDirectBlocked", fals
 expectedSuccess      = obstacleAvoidance.input.normalizeLogicalScalar(expectedSuccess, "ExpectedSuccess", "validateExampleResult:InvalidExpectedSuccess");
 requireDirectBlocked = obstacleAvoidance.input.normalizeLogicalScalar(requireDirectBlocked, "RequireDirectBlocked", "validateExampleResult:InvalidRequireDirectBlocked");
 requiredFields       = {'Success', 'Message', 'TerminationReason', 'Inputs', ...
-    'Options', 'Route_deg', 'BestPartialRoute_deg'};
+    'Options', 'Route_units', 'BestPartialRoute_units'};
 formatIsStable = all(isfield(result, requiredFields));
 
 %% Section 2: Validate Motion Or Expected Failure
@@ -63,7 +63,7 @@ diagnosticsAreConsistent = formatIsStable && (isempty(fieldnames(diagnosis)) || 
 recognizedFailure        = false;
 if formatIsStable && ~result.Success
     recognizedReasons = ["endpointBlocked", "dynamicEndpointInfeasible", ...
-        "endpointOutsideWorkspace", "noValidatedSeed", "targetLeftAzElFrame"];
+        "endpointOutsideWorkspace", "noValidatedSeed", "targetLeftXYFrame"];
     recognizedFailure = any(result.TerminationReason == recognizedReasons) && strlength(string(result.Message)) > 0 && diagnosticsAreConsistent;
 end
 
@@ -122,13 +122,13 @@ function valid = diagnosticCountsAreValid(searchDiagnostics)
             valid = valid && isnumeric(value) && isscalar(value) && isfinite(value) && value >= 0;
         end
     end
-    if isfield(gridRecord, "ExploredNodes_deg")
-        explored_deg = gridRecord.ExploredNodes_deg;
-        valid        = valid && size(explored_deg, 2) == 2 && all(isfinite(explored_deg), "all");
+    if isfield(gridRecord, "ExploredNodes_units")
+        explored_units = gridRecord.ExploredNodes_units;
+        valid        = valid && size(explored_units, 2) == 2 && all(isfinite(explored_units), "all");
     end
-    if isfield(gridRecord, "FrontierNodes_deg")
-        frontier_deg = gridRecord.FrontierNodes_deg;
-        valid        = valid && size(frontier_deg, 2) == 2 && all(isfinite(frontier_deg), "all");
+    if isfield(gridRecord, "FrontierNodes_units")
+        frontier_units = gridRecord.FrontierNodes_units;
+        valid        = valid && size(frontier_units, 2) == 2 && all(isfinite(frontier_units), "all");
     end
 end
 
@@ -138,18 +138,18 @@ function blocked = directRouteHasCollision(result)
     initialState     = result.Inputs.initialState;
     goalState        = result.Inputs.goalState;
     sampleTime_s     = linspace(initialState.time_s, goalState.time_s, sampleCount).';
-    goalPosition_deg = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
+    goalPosition_units = obstacleAvoidance.input.goalPositionAtTime(goalState, goalState.time_s);
     fraction         = linspace(0, 1, sampleCount).';
-    position_deg     = initialState.position_deg + fraction .* (goalPosition_deg - initialState.position_deg);
+    position_units     = initialState.position_units + fraction .* (goalPosition_units - initialState.position_units);
     queryOptions     = struct();
     coarseIndex      = unique(round(linspace(1, sampleCount, 41))).';
-    occupied         = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, position_deg(coarseIndex, 1), position_deg(coarseIndex, 2), sampleTime_s(coarseIndex), queryOptions);
+    occupied         = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, position_units(coarseIndex, 1), position_units(coarseIndex, 2), sampleTime_s(coarseIndex), queryOptions);
     blocked          = any(occupied);
     if blocked
         return;
     end
     remainingIndex = setdiff((1:sampleCount).', coarseIndex, "stable");
-    occupied       = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, position_deg(remainingIndex, 1), position_deg(remainingIndex, 2), sampleTime_s(remainingIndex), queryOptions);
+    occupied       = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(result.Inputs.obstacles, position_units(remainingIndex, 1), position_units(remainingIndex, 2), sampleTime_s(remainingIndex), queryOptions);
     blocked        = any(occupied);
 end
 

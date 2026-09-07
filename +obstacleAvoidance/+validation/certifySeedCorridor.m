@@ -1,9 +1,9 @@
-function [certified, minimumClearance_deg] = certifySeedCorridor(trajectory, obstacles, tolerance_deg)
+function [certified, minimumClearance_units] = certifySeedCorridor(trajectory, obstacles, tolerance_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [certified, minimumClearance_deg] = ...
+%   [certified, minimumClearance_units] = ...
 %       obstacleAvoidance.validation.certifySeedCorridor( ...
-%       trajectory, obstacles, tolerance_deg)
+%       trajectory, obstacles, tolerance_units)
 %
 % PURPOSE
 %   - Independently verify complete obstacle-envelope containment, support
@@ -11,41 +11,41 @@ function [certified, minimumClearance_deg] = certifySeedCorridor(trajectory, obs
 %
 % INPUTS
 %   - trajectory (scalar struct)
-%       Polynomial, SeedCorridorBoundary_deg, and SeedCorridor are required.
+%       Polynomial, SeedCorridorBoundary_units, and SeedCorridor are required.
 %   - obstacles (prepared protected obstacle struct array)
 %       Complete histories that the supplied envelope must contain.
-%   - tolerance_deg (nonnegative numeric scalar)
+%   - tolerance_units (nonnegative numeric scalar)
 %       Certificate comparison tolerance.
 %
 % OUTPUTS
 %   - certified (logical scalar)
 %       True only when every segment/region record passes.
-%   - minimumClearance_deg (numeric scalar)
+%   - minimumClearance_units (numeric scalar)
 %       Smallest continuous certified clearance, or NaN on failure.
 %
 % UNITS
-%   - Geometry, clearance, and tolerance are degrees.
+%   - Geometry, clearance, and tolerance are coordinate units.
 %
 
 %% Section 1: Validate Complete Certificate Evidence
 
-validateattributes(tolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+validateattributes(tolerance_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 certified            = false;
-minimumClearance_deg = NaN;
-requiredFields       = {'Polynomial', 'SeedCorridorBoundary_deg', 'SeedCorridor'};
-if ~isstruct(trajectory) || ~isscalar(trajectory) || ~all(isfield(trajectory, requiredFields)) || isempty(trajectory.SeedCorridorBoundary_deg) || isempty(trajectory.SeedCorridor)
+minimumClearance_units = NaN;
+requiredFields       = {'Polynomial', 'SeedCorridorBoundary_units', 'SeedCorridor'};
+if ~isstruct(trajectory) || ~isscalar(trajectory) || ~all(isfield(trajectory, requiredFields)) || isempty(trajectory.SeedCorridorBoundary_units) || isempty(trajectory.SeedCorridor)
     return;
 end
-boundary_deg = double(trajectory.SeedCorridorBoundary_deg);
-if size(boundary_deg, 2) ~= 2 || any(xor(isfinite(boundary_deg(:, 1)), isfinite(boundary_deg(:, 2))))
+boundary_units = double(trajectory.SeedCorridorBoundary_units);
+if size(boundary_units, 2) ~= 2 || any(xor(isfinite(boundary_units(:, 1)), isfinite(boundary_units(:, 2))))
     return;
 end
-shape        = polyshape(boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
+shape        = polyshape(boundary_units(:, 1), boundary_units(:, 2), "Simplify", true);
 regions      = obstacleAvoidance.geometry.convexPolygonRegions(shape);
 corridor     = trajectory.SeedCorridor;
 segmentCount = trajectory.Polynomial.SegmentCount;
 regionCount  = numel(regions);
-if segmentCount < 1 || regionCount < 1 || numel(corridor) ~= segmentCount * regionCount || ~seedEnvelopeContainsObstacles(boundary_deg, obstacles, tolerance_deg)
+if segmentCount < 1 || regionCount < 1 || numel(corridor) ~= segmentCount * regionCount || ~seedEnvelopeContainsObstacles(boundary_units, obstacles, tolerance_units)
     return;
 end
 pairIndex = [[corridor.SegmentIndex].', [corridor.RegionIndex].'];
@@ -57,39 +57,39 @@ end
 
 %% Section 2: Verify Supports And Continuous Separation
 
-supportTolerance_deg = max(1e-9, 10 * tolerance_deg);
+supportTolerance_units = max(1e-9, 10 * tolerance_units);
 % Process each corridor needed to verify seed corridor.
 for corridorIndex = 1:numel(corridor)
     record = corridor(corridorIndex);
-    if abs(norm(record.Normal) - 1) > 1e-9 || record.Clearance_deg < 0
+    if abs(norm(record.Normal) - 1) > 1e-9 || record.Clearance_units < 0
         return;
     end
-    vertices_deg       = regions(record.RegionIndex).Vertices;
-    vertices_deg       = vertices_deg(all(isfinite(vertices_deg), 2), :);
-    verifiedOffset_deg = max(vertices_deg * record.Normal.');
-    if abs(verifiedOffset_deg - record.BoundaryOffset_deg) > supportTolerance_deg
+    vertices_units       = regions(record.RegionIndex).Vertices;
+    vertices_units       = vertices_units(all(isfinite(vertices_units), 2), :);
+    verifiedOffset_units = max(vertices_units * record.Normal.');
+    if abs(verifiedOffset_units - record.BoundaryOffset_units) > supportTolerance_units
         return;
     end
 end
-coefficientCount        = size(trajectory.Polynomial.positionPower_deg, 3);
+coefficientCount        = size(trajectory.Polynomial.positionPower_units, 3);
 corridorCount           = numel(corridor);
 segmentIndex            = [corridor.SegmentIndex].';
 normal                  = vertcat(corridor.Normal);
-selectedPower_deg       = trajectory.Polynomial.positionPower_deg(segmentIndex, :, :);
-azimuthPower_deg        = reshape(selectedPower_deg(:, 1, :), corridorCount, coefficientCount);
-elevationPower_deg      = reshape(selectedPower_deg(:, 2, :), corridorCount, coefficientCount);
-projectionPower_deg     = normal(:, 1) .* azimuthPower_deg + normal(:, 2) .* elevationPower_deg;
-projectionBernstein_deg = convertPowerToBernstein(projectionPower_deg.');
-offset_deg              = [corridor.BoundaryOffset_deg] + ...
-    [corridor.Clearance_deg];
-inequalityMatrix_deg = offset_deg - projectionBernstein_deg;
-inequality_deg       = inequalityMatrix_deg(:);
-if isempty(inequality_deg) || any(~isfinite(inequality_deg)) || any(inequality_deg > tolerance_deg)
+selectedPower_units       = trajectory.Polynomial.positionPower_units(segmentIndex, :, :);
+xPower_units        = reshape(selectedPower_units(:, 1, :), corridorCount, coefficientCount);
+yPower_units      = reshape(selectedPower_units(:, 2, :), corridorCount, coefficientCount);
+projectionPower_units     = normal(:, 1) .* xPower_units + normal(:, 2) .* yPower_units;
+projectionBernstein_units = convertPowerToBernstein(projectionPower_units.');
+offset_units              = [corridor.BoundaryOffset_units] + ...
+    [corridor.Clearance_units];
+inequalityMatrix_units = offset_units - projectionBernstein_units;
+inequality_units       = inequalityMatrix_units(:);
+if isempty(inequality_units) || any(~isfinite(inequality_units)) || any(inequality_units > tolerance_units)
     return;
 end
-requiredClearance_deg = reshape(repelem([corridor.Clearance_deg], coefficientCount), [], 1);
-clearance_deg         = requiredClearance_deg - inequality_deg;
-minimumClearance_deg  = min(clearance_deg, [], "all");
+requiredClearance_units = reshape(repelem([corridor.Clearance_units], coefficientCount), [], 1);
+clearance_units         = requiredClearance_units - inequality_units;
+minimumClearance_units  = min(clearance_units, [], "all");
 certified             = true;
 end
 
@@ -107,25 +107,25 @@ function coefficient = convertPowerToBernstein(powerCoefficient)
     coefficient = conversionMatrixByDegree{degree + 1} * double(powerCoefficient);
 end
 
-function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obstacles, tolerance_deg)
+function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_units, obstacles, tolerance_units)
     % Verify one envelope region contains every complete obstacle history.
-    validateattributes(tolerance_deg, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
+    validateattributes(tolerance_units, {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
     containsAllObstacles = false;
-    if isempty(boundary_deg) || ~isnumeric(boundary_deg) || size(boundary_deg, 2) ~= 2
+    if isempty(boundary_units) || ~isnumeric(boundary_units) || size(boundary_units, 2) ~= 2
         return;
     end
-    boundary_deg = double(boundary_deg);
-    if any(xor(isfinite(boundary_deg(:, 1)), isfinite(boundary_deg(:, 2))))
+    boundary_units = double(boundary_units);
+    if any(xor(isfinite(boundary_units(:, 1)), isfinite(boundary_units(:, 2))))
         return;
     end
-    shape           = polyshape(boundary_deg(:, 1), boundary_deg(:, 2), "Simplify", true);
+    shape           = polyshape(boundary_units(:, 1), boundary_units(:, 2), "Simplify", true);
     envelopeRegions = regions(shape);
     if isempty(envelopeRegions)
         return;
     end
     % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(envelopeRegions)
-        envelopeRegions(regionIndex) = polybuffer(envelopeRegions(regionIndex), max(1e-9, tolerance_deg));
+        envelopeRegions(regionIndex) = polybuffer(envelopeRegions(regionIndex), max(1e-9, tolerance_units));
     end
     % Evaluate each obstacle against the current geometry or motion.
     for obstacleIndex = 1:numel(obstacles)
@@ -134,26 +134,26 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_deg, obst
         if preparation.IsTimeInvariant
             sweptShape = preparation.StaticShape;
         else
-            vertices_deg = zeros(0, 2);
+            vertices_units = zeros(0, 2);
             % Process each sample in temporal order and accumulate its result.
-            for sampleIndex = 1:numel(obstacle.az_deg)
-                sample_deg = [obstacle.az_deg{sampleIndex}(:), ...
-                    obstacle.el_deg{sampleIndex}(:)];
-                vertices_deg = [vertices_deg; ...
-                    sample_deg(all(isfinite(sample_deg), 2), :)]; %#ok<AGROW>
+            for sampleIndex = 1:numel(obstacle.x_units)
+                sample_units = [obstacle.x_units{sampleIndex}(:), ...
+                    obstacle.y_units{sampleIndex}(:)];
+                vertices_units = [vertices_units; ...
+                    sample_units(all(isfinite(sample_units), 2), :)]; %#ok<AGROW>
             end
-            vertices_deg = unique(vertices_deg, "rows", "stable");
-            if size(vertices_deg, 1) < 3
+            vertices_units = unique(vertices_units, "rows", "stable");
+            if size(vertices_units, 1) < 3
                 return;
             end
-            hullIndex  = convhull(vertices_deg(:, 1), vertices_deg(:, 2));
-            sweptShape = polyshape(vertices_deg(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
+            hullIndex  = convhull(vertices_units(:, 1), vertices_units(:, 2));
+            sweptShape = polyshape(vertices_units(hullIndex(1:end - 1), :), "Simplify", false, "KeepCollinearPoints", true);
         end
-        areaTolerance_deg2 = 256 * eps(max(1, area(sweptShape)));
+        areaTolerance_units2 = 256 * eps(max(1, area(sweptShape)));
         isContained        = false;
         % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:numel(envelopeRegions)
-            if area(subtract(sweptShape, envelopeRegions(regionIndex))) <= areaTolerance_deg2
+            if area(subtract(sweptShape, envelopeRegions(regionIndex))) <= areaTolerance_units2
                 isContained = true;
                 break;
             end

@@ -1,8 +1,8 @@
-function plane = verifySeparatingLine(plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg)
+function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   plane = bmtpEngine.verifySeparatingLine( ...
-%       plane, controlPoint_deg, vertices_deg, reserve_deg, target_deg)
+%       plane, controlPoint_units, vertices_units, reserve_units, target_units)
 %
 % PURPOSE
 %   - Verify obstacle, trajectory, gap, and normal inequalities for one
@@ -11,9 +11,9 @@ function plane = verifySeparatingLine(plane, controlPoint_deg, vertices_deg, res
 % INPUTS
 %   - plane (scalar separating-line struct)
 %       Candidate normals and offsets.
-%   - controlPoint_deg, vertices_deg (N-by-2 numeric arrays)
+%   - controlPoint_units, vertices_units (N-by-2 numeric arrays)
 %       Bezier control hull and convex obstacle region.
-%   - reserve_deg, target_deg (nonnegative numeric scalars)
+%   - reserve_units, target_units (nonnegative numeric scalars)
 %       Trajectory-side reserve and obstacle-side target.
 %
 % OUTPUTS
@@ -21,35 +21,35 @@ function plane = verifySeparatingLine(plane, controlPoint_deg, vertices_deg, res
 %       Corrected offsets, certified gap, and Verified state.
 %
 % UNITS
-%   - Positions, offsets, targets, reserves, and gaps are degrees.
+%   - Positions, offsets, targets, reserves, and gaps are coordinate units.
 %
 
 %% Section 1: Verify Direct Separation Inequalities
 
-minimumObstacleSide_deg = min(vertices_deg * plane.Normal.' + plane.Offset_deg, [], "all");
-degree = size(controlPoint_deg, 1) - 1;
+minimumObstacleSide_units = min(vertices_units * plane.Normal.' + plane.Offset_units, [], "all");
+degree = size(controlPoint_units, 1) - 1;
 % Exact degree-N by degree-one Bernstein product weights.
 beta   = (0:degree + 1).' / (degree + 1);
 alpha  = 1 - beta;
-product_deg = alpha .* [sum(controlPoint_deg .* plane.Normal(1, :), 2); 0] + beta .* [0; sum(controlPoint_deg .* plane.Normal(2, :), 2)] + alpha * plane.Offset_deg(1) + beta * plane.Offset_deg(2);
-[maximumTrajectorySide_deg, maximumNormalNorm] = deal(max(product_deg), max(vecnorm(plane.Normal, 2, 2)));
-[minimumCorrection_deg, maximumCorrection_deg] = deal(target_deg - minimumObstacleSide_deg, -reserve_deg - maximumTrajectorySide_deg);
-if minimumCorrection_deg <= maximumCorrection_deg
-    scale_deg    = bmtpEngine.createCoordinateTolerances(plane.Offset_deg, vertices_deg, controlPoint_deg);
-    roundoff_deg = 16 * eps(scale_deg);
-    [robustMinimum_deg, robustMaximum_deg] = deal(minimumCorrection_deg + roundoff_deg, maximumCorrection_deg - roundoff_deg);
-    if robustMinimum_deg <= robustMaximum_deg
-        correction_deg = min(max(0, robustMinimum_deg), robustMaximum_deg);
+product_units = alpha .* [sum(controlPoint_units .* plane.Normal(1, :), 2); 0] + beta .* [0; sum(controlPoint_units .* plane.Normal(2, :), 2)] + alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
+[maximumTrajectorySide_units, maximumNormalNorm] = deal(max(product_units), max(vecnorm(plane.Normal, 2, 2)));
+[minimumCorrection_units, maximumCorrection_units] = deal(target_units - minimumObstacleSide_units, -reserve_units - maximumTrajectorySide_units);
+if minimumCorrection_units <= maximumCorrection_units
+    scale_units    = bmtpEngine.createCoordinateTolerances(plane.Offset_units, vertices_units, controlPoint_units);
+    roundoff_units = 16 * eps(scale_units);
+    [robustMinimum_units, robustMaximum_units] = deal(minimumCorrection_units + roundoff_units, maximumCorrection_units - roundoff_units);
+    if robustMinimum_units <= robustMaximum_units
+        correction_units = min(max(0, robustMinimum_units), robustMaximum_units);
     else
-        correction_deg = 0.5 * (minimumCorrection_deg + maximumCorrection_deg);
+        correction_units = 0.5 * (minimumCorrection_units + maximumCorrection_units);
     end
-    plane.Offset_deg = plane.Offset_deg + correction_deg;
-    [minimumObstacleSide_deg, maximumTrajectorySide_deg] = deal(minimumObstacleSide_deg + correction_deg, maximumTrajectorySide_deg + correction_deg);
+    plane.Offset_units = plane.Offset_units + correction_units;
+    [minimumObstacleSide_units, maximumTrajectorySide_units] = deal(minimumObstacleSide_units + correction_units, maximumTrajectorySide_units + correction_units);
 end
-signedGap_deg = minimumObstacleSide_deg - maximumTrajectorySide_deg;
-plane.SignedGap_deg = signedGap_deg;
+signedGap_units = minimumObstacleSide_units - maximumTrajectorySide_units;
+plane.SignedGap_units = signedGap_units;
 normalNormLimit        = 1 + 2 ^ 20 * eps;
-clearanceTarget_deg    = (target_deg - reserve_deg) / normalNormLimit;
-certifiedClearance_deg = (signedGap_deg - 2 * reserve_deg) / max(maximumNormalNorm, realmin);
-plane.Verified = minimumObstacleSide_deg >= target_deg && maximumTrajectorySide_deg <= -reserve_deg && signedGap_deg >= target_deg + reserve_deg && certifiedClearance_deg >= clearanceTarget_deg && maximumNormalNorm <= normalNormLimit;
+clearanceTarget_units    = (target_units - reserve_units) / normalNormLimit;
+certifiedClearance_units = (signedGap_units - 2 * reserve_units) / max(maximumNormalNorm, realmin);
+plane.Verified = minimumObstacleSide_units >= target_units && maximumTrajectorySide_units <= -reserve_units && signedGap_units >= target_units + reserve_units && certifiedClearance_units >= clearanceTarget_units && maximumNormalNorm <= normalNormLimit;
 end

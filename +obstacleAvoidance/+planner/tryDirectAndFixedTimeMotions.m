@@ -23,7 +23,7 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %       stable not-attempted diagnostics.
 %
 % UNITS
-%   - Position and path length are degrees; time is seconds.
+%   - Position and path length are coordinate units; time is seconds.
 %
 
 %% Section 1: Create Stable Attempt Records
@@ -44,7 +44,7 @@ end
 preparedObstacles = scene.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
-endpointDerivative      = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
+endpointDerivative      = [initialState.velocity_units_s, initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
 useStateToStateMotion   = any(abs(endpointDerivative) > options.ConstraintTolerance);
 directSuccessMessage    = "An exact direct rest-to-rest motion passed independent validation.";
 motionTimer             = tic;
@@ -123,7 +123,7 @@ function record = directAttemptTemplate()
     record.ElapsedTime_s           = 0;
     record.ValidationElapsedTime_s = 0;
     record.TrajectoryDuration_s    = NaN;
-    record.MotionLength_deg        = NaN;
+    record.MotionLength_units        = NaN;
 
     record.MinimumAxisDuration_s             = [NaN NaN];
     record.StraightProgressMinimumDuration_s = NaN;
@@ -148,7 +148,7 @@ function record = recordDirectAttempt(candidate, validation, elapsedTime_s, vali
     record.ElapsedTime_s           = elapsedTime_s;
     record.ValidationElapsedTime_s = validationElapsedTime_s;
     % Apply the required validation or transfer to each name.
-    for name = ["TrajectoryDuration_s", "MotionLength_deg", "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", "UsedStraightProgress"]
+    for name = ["TrajectoryDuration_s", "MotionLength_units", "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", "UsedStraightProgress"]
         record.(name) = candidate.(name);
     end
     if record.ValidationAttempted && ~validation.Passed
@@ -162,13 +162,13 @@ end
 
 function seed = createDirectSeed(initialState, goalState, duration_s)
     % Create the two-endpoint direct seed.
-    position_deg = [initialState.position_deg; goalState.position_deg];
+    position_units = [initialState.position_units; goalState.position_units];
     seed         = obstacleAvoidance.search.createEmptyPathGuess();
     seed.Index  = 1;
     seed.Source = "directRestToRest";
-    [seed.position_deg, seed.tau] = deal(position_deg, [0; 1]);
+    [seed.position_units, seed.tau] = deal(position_units, [0; 1]);
     seed.EstimatedDuration_s = duration_s;
-    seed.Length_deg          = norm(diff(position_deg, 1, 1));
+    seed.Length_units          = norm(diff(position_units, 1, 1));
 end
 
 function seed = createMotionSeed(candidate, source)
@@ -182,9 +182,9 @@ function seed = createMotionSeed(candidate, source)
     seed.Source         = string(source);
     seed.ParameterBasis = "normalizedTime";
 
-    [seed.position_deg, seed.tau] = deal(candidate.position_deg, tau);
+    [seed.position_units, seed.tau] = deal(candidate.position_units, tau);
     seed.EstimatedDuration_s = duration_s;
-    seed.Length_deg          = candidate.MotionLength_deg;
+    seed.Length_units          = candidate.MotionLength_units;
 end
 
 function [stageTiming, motionSolvingTime_s] = accountConstructorValidation(stageTiming, constructorElapsedTime_s, diagnostics)

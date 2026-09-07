@@ -1,8 +1,8 @@
-function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_deg)
+function [edgeStart_units, edgeEnd_units] = boundaryToEdges(shape, closureTolerance_units)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [edgeStart_deg, edgeEnd_deg] = ...
-%       obstacleAvoidance.geometry.boundaryToEdges(shape, closureTolerance_deg)
+%   [edgeStart_units, edgeEnd_units] = ...
+%       obstacleAvoidance.geometry.boundaryToEdges(shape, closureTolerance_units)
 %
 % PURPOSE
 %   - Convert every connected boundary ring into explicit start/end edge rows.
@@ -12,15 +12,15 @@ function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_
 % INPUTS
 %   - shape (scalar polyshape)
 %       Polygon geometry whose boundary traversal order is retained.
-%   - closureTolerance_deg (nonnegative finite scalar)
+%   - closureTolerance_units (nonnegative finite scalar)
 %       Distance for recognizing a repeated final ring vertex.
 %
 % OUTPUTS
-%   - edgeStart_deg, edgeEnd_deg (N-by-2 arrays)
+%   - edgeStart_units, edgeEnd_units (N-by-2 arrays)
 %       Matched edge endpoints in deterministic boundary order.
 %
 % UNITS
-%   - Shape vertices, edge endpoints, and tolerance are degrees.
+%   - Shape vertices, edge endpoints, and tolerance are coordinate units.
 %
 
 %% Section 1: Validate And Split NaN-Separated Boundary Rings
@@ -30,10 +30,10 @@ function [edgeStart_deg, edgeEnd_deg] = boundaryToEdges(shape, closureTolerance_
 if ~isa(shape, "polyshape") || ~isscalar(shape)
     error("boundaryToEdges:InvalidShape", "shape must be a scalar polyshape.");
 end
-validateattributes(closureTolerance_deg, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
-[azimuth_deg, elevation_deg] = boundary(shape);
-boundaryPosition_deg = [double(azimuth_deg(:)), double(elevation_deg(:))];
-finiteRow            = all(isfinite(boundaryPosition_deg), 2);
+validateattributes(closureTolerance_units, {'numeric'}, {'scalar', 'real', 'finite', 'nonnegative'});
+[x_units, y_units] = boundary(shape);
+boundaryPosition_units = [double(x_units(:)), double(y_units(:))];
+finiteRow            = all(isfinite(boundaryPosition_units), 2);
 % Find the start and end of each finite run.
 runStart = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
 runEnd   = find(finiteRow & [~finiteRow(2:end); true]);
@@ -43,26 +43,26 @@ runEnd   = find(finiteRow & [~finiteRow(2:end); true]);
 % Connect adjacent vertices and close each ring.
 
 % Remove a repeated closing vertex before creating edges.
-emptyEdges_deg      = zeros(0, 2);
-edgeStartByRing_deg = repmat({emptyEdges_deg}, numel(runStart), 1);
-edgeEndByRing_deg   = repmat({emptyEdges_deg}, numel(runStart), 1);
+emptyEdges_units      = zeros(0, 2);
+edgeStartByRing_units = repmat({emptyEdges_units}, numel(runStart), 1);
+edgeEndByRing_units   = repmat({emptyEdges_units}, numel(runStart), 1);
 
 for runIndex = 1:numel(runStart)
     % Rings with fewer than two distinct vertices cannot produce a segment.
-    ring_deg = boundaryPosition_deg(runStart(runIndex):runEnd(runIndex), :);
-    if size(ring_deg, 1) < 2
+    ring_units = boundaryPosition_units(runStart(runIndex):runEnd(runIndex), :);
+    if size(ring_units, 1) < 2
         continue;
     end
-    if norm(ring_deg(end, :) - ring_deg(1, :)) <= closureTolerance_deg
-        ring_deg(end, :) = [];
+    if norm(ring_units(end, :) - ring_units(1, :)) <= closureTolerance_units
+        ring_units(end, :) = [];
     end
-    if size(ring_deg, 1) < 2
+    if size(ring_units, 1) < 2
         continue;
     end
-    edgeStartByRing_deg{runIndex} = ring_deg;
+    edgeStartByRing_units{runIndex} = ring_units;
     % Connect the last vertex to the first.
-    edgeEndByRing_deg{runIndex} = ring_deg([2:end 1], :);
+    edgeEndByRing_units{runIndex} = ring_units([2:end 1], :);
 end
-edgeStart_deg = vertcat(edgeStartByRing_deg{:});
-edgeEnd_deg   = vertcat(edgeEndByRing_deg{:});
+edgeStart_units = vertcat(edgeStartByRing_units{:});
+edgeEnd_units   = vertcat(edgeEndByRing_units{:});
 end

@@ -9,7 +9,7 @@ function tests = testTimedRouteArrivalHandoff
 % OUTPUTS
 %   MATLAB function tests for motion quality and independent validation.
 % UNITS
-%   Degrees and seconds.
+%   Coordinate units and seconds.
 
 %% Section 1: Register Tests
 tests = functiontests(localfunctions);
@@ -27,7 +27,7 @@ function testSavedGrowingObstacleUsesEarlierTurn(testCase)
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, 0.95 * bundle.Result.TrajectoryDuration_s);
-    verifyLessThan(testCase, sum(vecnorm(diff(result.position_deg), 2, 2)), sum(vecnorm(diff(bundle.Result.position_deg), 2, 2)));
+    verifyLessThan(testCase, sum(vecnorm(diff(result.position_units), 2, 2)), sum(vecnorm(diff(bundle.Result.position_units), 2, 2)));
     verifyEqual(testCase, diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source, "timeExpandedVisibilityGraph");
     details = testSupport.solverDetails(diagnosis, diagnosis.SelectedAttemptIndex);
     times = details(endsWith(details.Field, 'WarmStartWaypointTime_s'), :);
