@@ -788,6 +788,272 @@
       padding: 1rem;
     }
 
+    .walkthrough-panel {
+      position: absolute;
+      z-index: 6;
+      left: 0.75rem;
+      bottom: 0.75rem;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.42rem;
+      align-items: center;
+      width: min(540px, calc(100% - 1.5rem));
+      max-height: min(220px, calc(100% - 5rem));
+      margin: 0;
+      padding: 0.58rem 0.65rem;
+      overflow: auto;
+      border: 1px solid rgba(118, 229, 235, 0.62);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 16px 40px rgba(32, 57, 84, 0.22);
+      backdrop-filter: blur(10px);
+    }
+
+    .walkthrough-replay-menu {
+      position: absolute;
+      z-index: 7;
+      top: 0.65rem;
+      left: 50%;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      max-width: calc(100% - 1.3rem);
+      padding: 0.3rem 0.38rem;
+      border: 1px solid rgba(118, 229, 235, 0.58);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: 0 8px 24px rgba(32, 57, 84, 0.16);
+      transform: translateX(-50%);
+      backdrop-filter: blur(10px);
+    }
+
+    .walkthrough-replay-menu[hidden],
+    .walkthrough-panel[hidden] {
+      display: none;
+    }
+
+    .walkthrough-replay-label {
+      color: #36516f;
+      font-size: 0.64rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .walkthrough-replay-menu .compact-button,
+    .walkthrough-controls .compact-button {
+      min-height: 27px;
+      padding: 0.28rem 0.48rem;
+      font-size: 0.67rem;
+      white-space: nowrap;
+    }
+
+    .walkthrough-heading {
+      display: flex;
+      align-items: baseline;
+      gap: 0.55rem;
+      margin-bottom: 0.18rem;
+    }
+
+    .walkthrough-heading h2 {
+      margin: 0;
+      font-size: 0.92rem;
+    }
+
+    .walkthrough-counter,
+    .walkthrough-function,
+    .walkthrough-description {
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.45;
+    }
+
+    .walkthrough-description {
+      margin: 0.18rem 0 0;
+      max-height: 5.2rem;
+      overflow: auto;
+      white-space: pre-line;
+    }
+
+    .walkthrough-details {
+      margin-top: 0.2rem;
+      color: var(--muted);
+      font-size: 0.66rem;
+    }
+
+    .walkthrough-details summary {
+      cursor: pointer;
+      color: #526780;
+    }
+
+    .walkthrough-details .walkthrough-function {
+      margin-top: 0.16rem;
+    }
+
+    .walkthrough-decision-path {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.35rem;
+      margin: 0.28rem 0 0;
+      color: #36516f;
+      font-size: 0.68rem;
+      line-height: 1.4;
+    }
+
+    .walkthrough-decision {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.35rem;
+      padding: 0.15rem 0.45rem;
+      border: 1px solid #b8c8dc;
+      border-radius: 999px;
+      color: #36516f;
+      background: #f4f8fc;
+      font-size: 0.61rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .walkthrough-decision[data-decision="pruned"] {
+      border-color: rgba(212, 67, 89, 0.45);
+      color: #a72d42;
+      background: rgba(212, 67, 89, 0.08);
+    }
+
+    .walkthrough-decision[data-decision="kept"] {
+      border-color: rgba(23, 139, 111, 0.45);
+      color: #116d58;
+      background: rgba(23, 139, 111, 0.08);
+    }
+
+    #walkthroughDepthButton[aria-pressed="true"] {
+      border-color: rgba(134, 84, 200, 0.65);
+      color: #68409e;
+      background: rgba(134, 84, 200, 0.10);
+    }
+
+    .walkthrough-function {
+      margin: 0;
+    }
+
+    .walkthrough-function code {
+      color: #36516f;
+    }
+
+    .walkthrough-controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-start;
+      gap: 0.3rem;
+    }
+
+    .walkthrough-controls .walkthrough-nav-primary {
+      border-color: rgba(57, 208, 216, 0.65);
+      color: #ffffff;
+      background: linear-gradient(135deg, #2464da, #315ac4);
+    }
+
+    .walkthrough-progress {
+      height: 3px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e9eff7;
+    }
+
+    .walkthrough-progress-fill {
+      height: 100%;
+      background: var(--cyan);
+      transition: width 160ms ease;
+    }
+
+    .canvas-wrap.walkthrough-open .canvas-hint {
+      display: none;
+    }
+
+    .decision-tree-note {
+      margin: -0.25rem 0 0.7rem;
+      color: var(--muted);
+      font-size: 0.7rem;
+      line-height: 1.45;
+    }
+
+    .decision-tree {
+      display: grid;
+      max-height: min(62vh, 610px);
+      padding: 0.1rem 0.15rem 0.1rem 0;
+      overflow: auto;
+    }
+
+    .decision-tree-node {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.45rem minmax(0, 1fr) auto;
+      gap: 0.45rem;
+      align-items: center;
+      width: calc(100% - var(--tree-indent, 0px));
+      min-height: 2.35rem;
+      margin-left: var(--tree-indent, 0px);
+      padding: 0.35rem 0.45rem;
+      border: 0;
+      border-left: 2px solid #d9e3ef;
+      border-radius: 0 8px 8px 0;
+      color: #36516f;
+      background: transparent;
+      text-align: left;
+    }
+
+    .decision-tree-node::before {
+      position: absolute;
+      top: 50%;
+      left: -2px;
+      width: 0.55rem;
+      border-top: 1px solid #d9e3ef;
+      content: "";
+    }
+
+    .decision-tree-node:hover {
+      color: #17324f;
+      background: #f2f7fc;
+    }
+
+    .decision-tree-node[aria-current="step"] {
+      border-left-color: var(--cyan);
+      color: #17324f;
+      background: rgba(57, 208, 216, 0.13);
+      box-shadow: inset 0 0 0 1px rgba(57, 208, 216, 0.2);
+    }
+
+    .decision-tree-index {
+      display: grid;
+      width: 1.35rem;
+      height: 1.35rem;
+      place-items: center;
+      border: 1px solid #c4d1e0;
+      border-radius: 50%;
+      font: 700 0.61rem/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .decision-tree-label {
+      overflow: hidden;
+      font-size: 0.7rem;
+      font-weight: 680;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .decision-tree-status {
+      font-size: 0.55rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .decision-tree-status[data-decision="pruned"] { color: #a72d42; }
+    .decision-tree-status[data-decision="kept"] { color: #116d58; }
+
     .diagnostics-header {
       display: flex;
       align-items: center;
@@ -1098,6 +1364,10 @@
       .time-value { min-width: 0; font-size: 0.66rem; }
       .kinematics-heading { align-items: flex-start; flex-direction: column; gap: 0.4rem; }
       .diagnostics-header { flex-wrap: wrap; }
+      .walkthrough-panel { grid-template-columns: 1fr; }
+      .walkthrough-controls { justify-content: flex-start; }
+      .walkthrough-progress { grid-column: 1; }
+      .walkthrough-replay-menu { left: 0.65rem; right: 0.65rem; justify-content: center; transform: none; }
     }
   </style>
 </head>
@@ -1159,6 +1429,52 @@
         <div id="canvasWrap" class="canvas-wrap">
           <canvas id="workspaceCanvas" tabindex="0"
             aria-label="Azimuth elevation plotting workspace. Use the toolbar to place points and draw polygons."></canvas>
+          <div id="walkthroughReplayMenu" class="walkthrough-replay-menu"
+            role="toolbar" aria-label="Planner replay" hidden>
+            <span class="walkthrough-replay-label">Planner replay</span>
+            <button id="walkthroughDepthButton" class="compact-button"
+              type="button" aria-pressed="false">Super deep dive: Off</button>
+            <button id="walkthroughRestartButton" class="compact-button"
+              type="button">Start replay</button>
+          </div>
+          <section id="walkthroughPanel" class="walkthrough-panel"
+            aria-label="Planner walkthrough dialogue" hidden>
+            <div>
+              <div class="walkthrough-heading">
+                <span id="walkthroughCounter" class="walkthrough-counter">Step 1 of 6</span>
+                <h2 id="walkthroughTitle">Planner request</h2>
+              </div>
+              <p id="walkthroughDescription" class="walkthrough-description"
+                aria-live="polite"></p>
+              <p class="walkthrough-decision-path">
+                <span id="walkthroughDecision" class="walkthrough-decision">Inspect</span>
+                <span id="walkthroughPath">Decision path: Request</span>
+              </p>
+              <details class="walkthrough-details">
+                <summary>Technical details</summary>
+                <p id="walkthroughFunction" class="walkthrough-function">
+                  Produced by <code>normalizePlannerRequest</code>
+                </p>
+                <p id="walkthroughInput" class="walkthrough-function"></p>
+                <p id="walkthroughOutput" class="walkthrough-function"></p>
+              </details>
+            </div>
+            <div class="walkthrough-controls">
+              <button id="walkthroughBackButton" class="compact-button"
+                type="button">Back</button>
+              <button id="walkthroughContinueButton"
+                class="compact-button walkthrough-nav-primary"
+                type="button">Continue</button>
+              <button id="walkthroughExploreButton" class="compact-button"
+                type="button">End</button>
+            </div>
+            <div class="walkthrough-progress" role="progressbar"
+              aria-label="Planner walkthrough progress" aria-valuemin="1"
+              aria-valuemax="6" aria-valuenow="1">
+              <div id="walkthroughProgressFill"
+                class="walkthrough-progress-fill" style="width:16.667%"></div>
+            </div>
+          </section>
           <div id="finalPoseActionMenu" class="obstacle-action-menu final-pose-menu" hidden
             role="toolbar" aria-label="Final pose actions">
             <button id="previewPoseButton" class="obstacle-action-button" type="button"
@@ -1318,7 +1634,23 @@
           </div>
         </section>
 
-        <section class="panel card" aria-label="Planner inputs">
+        <section id="plannerInputsCard" class="panel card" aria-label="Planner inputs">
+          <div id="decisionTreePanel" hidden>
+            <div class="card-title-row">
+              <div>
+                <div class="eyebrow">Walkthrough</div>
+                <h2>Decision tree</h2>
+              </div>
+              <span id="decisionTreeCount" class="obstacle-kind"></span>
+            </div>
+            <p class="decision-tree-note">
+              Click any decision to jump there. The active branch controls the
+              geometry and diagnostics shown in the Az/El view.
+            </p>
+            <nav id="decisionTree" class="decision-tree"
+              aria-label="Planner decision tree"></nav>
+          </div>
+          <div id="plannerInputsContent">
           <div class="card-title-row">
             <div>
               <div class="eyebrow">Request</div>
@@ -1454,6 +1786,7 @@
               </label>
             </div>
           </details>
+          </div>
         </section>
 
         <section class="panel card" aria-label="Obstacle editor">
@@ -1662,6 +1995,56 @@
       const PROBE_TIMEOUT_MS = 800;
       const HEALTH_POLL_MS = 3000;
       const CIRCLE_VERTEX_COUNT = 24;
+      const WALKTHROUGH_STAGES = Object.freeze([
+        {
+          title: "Planner request",
+          functionName: "normalizePlannerRequest",
+          input: "Public obstacles, initial state, goal state, limits, and option overrides",
+          output: "Normalized planner request and original geometry",
+          description: "The requested start, goal, workspace, and original obstacle shapes before the planner changes any geometry.",
+          view: "request"
+        },
+        {
+          title: "Protected obstacle geometry",
+          functionName: "createObstaclePlanningData",
+          input: "Normalized request obstacles and safety margins",
+          output: "Prepared obstacles and route-search geometry",
+          description: "Dashed red outlines show the safety-adjusted regions that the route and motion must avoid.",
+          view: "protected"
+        },
+        {
+          title: "Route search",
+          functionName: "searchRoutes",
+          input: "Start, goal, protected geometry, limits, and search options",
+          output: "Candidate routes, explored states, accepted edges, and rejected transitions",
+          description: "The plot shows accepted visibility edges, collision-rejected edges, expanded nodes, the remaining frontier, and any best partial route.",
+          view: "search"
+        },
+        {
+          title: "Selected geometric route",
+          functionName: "selectValidatedCandidate",
+          input: "Constructed candidates and their validation results",
+          output: "Selected route or the best retained partial route",
+          description: "The purple dashed line is the geometric route retained after candidate construction and rejection decisions.",
+          view: "route"
+        },
+        {
+          title: "Timed motion",
+          functionName: "solvePathGuess / checkCandidateMotion",
+          input: "Selected path guess, endpoint states, motion limits, and obstacles",
+          output: "Time, position, velocity, acceleration, and jerk histories",
+          description: "The teal path and kinematic plots show how the selected route became a time-parameterized motion.",
+          view: "motion"
+        },
+        {
+          title: "Independent validation",
+          functionName: "validateTrajectory",
+          input: "Complete returned trajectory and original public planning request",
+          output: "Collision, kinematic, endpoint, continuity, and certificate checks",
+          description: "The final trajectory is shown with protected obstacles; the result panel reports whether independent collision and motion checks passed.",
+          view: "validation"
+        }
+      ]);
       const FREEHAND_MAXIMUM_VERTICES = 40;
       const HANDLE_RADIUS_PX = 10;
       const MAXIMUM_OBSTACLE_SPEED_DEG_S = 10;
@@ -1714,6 +2097,9 @@
         bundleRequestId: "",
         showSearchOverlay: false,
         showSelectedSeed: false,
+        walkthroughActive: false,
+        walkthroughStep: 0,
+        walkthroughDeepDive: false,
         importedSceneIsReadOnly: false,
         applyingResult: false,
         connectionMode: "checking",
@@ -1975,6 +2361,8 @@
         state.diagnosis = null;
         state.validation = null;
         state.responseObstacles = [];
+        state.walkthroughActive = false;
+        state.walkthroughStep = 0;
         renderResult();
         configureTimeline();
         const nextAction = state.connectionMode === "live" ?
@@ -2997,6 +3385,8 @@
         state.result = response.result;
         state.diagnosis = response.diagnosis || {};
         state.validation = response.validation;
+        state.walkthroughActive = false;
+        state.walkthroughStep = 0;
         state.showSearchOverlay = false;
         state.showSelectedSeed = false;
         element("searchOverlayToggle").checked = false;
@@ -3097,8 +3487,16 @@
         const hasResult = Boolean(state.result);
         element("resultEmpty").hidden = hasResult;
         element("resultContent").hidden = !hasResult;
+        element("walkthroughReplayMenu").hidden = !hasResult;
+        element("walkthroughPanel").hidden = !hasResult ||
+          !state.walkthroughActive;
         element("diagnosticsPanel").hidden = !hasResult;
         if (!hasResult) {
+          canvasWrap.classList.remove("walkthrough-open");
+          element("walkthroughReplayMenu").hidden = true;
+          element("decisionTreePanel").hidden = true;
+          element("plannerInputsContent").hidden = false;
+          element("plannerInputsCard").setAttribute("aria-label", "Planner inputs");
           return;
         }
         setBooleanMetric("plannerSuccess", Boolean(state.result.Success),
@@ -3116,6 +3514,417 @@
           state.result.TerminationReason || "—";
         element("resultMessage").textContent = state.result.Message || "";
         renderDiagnostics();
+        updateWalkthrough();
+      }
+
+      function walkthroughStage() {
+        return walkthroughStages()[state.walkthroughStep];
+      }
+
+      function walkthroughStages() {
+        return state.walkthroughDeepDive ? buildDeepDiveStages() :
+          WALKTHROUGH_STAGES;
+      }
+
+      function deepDiveStage(title, functionName, input, output, description,
+          view, path, decision = "Inspect", focus = {}) {
+        return { title, functionName, input, output, description, view, path,
+          decision, ...focus };
+      }
+
+      function formattedPoint(point) {
+        return Array.isArray(point) && point.length >= 2 &&
+          point.slice(0, 2).every(finiteNumber) ?
+          `[${point[0].toFixed(3)}, ${point[1].toFixed(3)}] deg` :
+          "an unavailable point";
+      }
+
+      function checkDescription(fieldName, label) {
+        const value = state.validation && state.validation[fieldName];
+        if (typeof value !== "boolean") {
+          return `${label} was not available in this result.`;
+        }
+        return value ? `${label} passed, so this branch is retained.` :
+          `${label} failed, so a candidate reaching this check is pruned.`;
+      }
+
+      function checkDecision(fieldName) {
+        const value = state.validation && state.validation[fieldName];
+        return typeof value === "boolean" ? (value ? "Kept" : "Pruned") :
+          "Inspect";
+      }
+
+      function buildDeepDiveStages() {
+        const result = state.result || {};
+        const inputs = result.Inputs || {};
+        const limits = inputs.limits || {};
+        const diagnosis = state.diagnosis || {};
+        const search = diagnosis.Search || {};
+        const validation = state.validation || {};
+        const rejectedEdges = matrix(search.RejectedEdges_deg, 4)
+          .filter((edge) => edge.every(finiteNumber));
+        const acceptedEdges = matrix(search.AcceptedEdges_deg, 4)
+          .filter((edge) => edge.every(finiteNumber));
+        const exploredNodes = matrix(search.ExploredNodes_deg, 2);
+        const frontierNodes = matrix(search.FrontierNodes_deg, 2);
+        const attempts = asArray(diagnosis.Attempts);
+        const obstacleCount = state.responseObstacles.length;
+        const generatedSeedCount = finiteNumber(search.GeneratedSeedCount) ?
+          search.GeneratedSeedCount : attempts.length;
+        const rejectedEdgeSummary = rejectedEdges.length ?
+          rejectedEdges.map((edge, index) =>
+            `${index + 1}. ${formattedPoint(edge.slice(0, 2))} → ` +
+            formattedPoint(edge.slice(2, 4))).join("\n") :
+          "No pruned edges were returned in the display trace.";
+        const prefix = [
+          deepDiveStage("Read the public request", "normalizePlannerRequest",
+            "Obstacles, endpoint states, limits, and options",
+            "One normalized, reproducible request",
+            `The planner received ${obstacleCount} obstacle${obstacleCount === 1 ? "" : "s"}. This is the root of the decision tree; no route has been preferred yet.`,
+            "request", "Request", "Kept"),
+          deepDiveStage("Pin the start state", "normalizePlannerRequest",
+            "Initial time, position, velocity, and acceleration",
+            "Validated initial boundary condition",
+            `The search begins at ${formattedPoint(inputs.initialState && inputs.initialState.position_deg)}. An invalid or out-of-workspace start would stop the tree before search.`,
+            "request", "Request › Start", "Kept"),
+          deepDiveStage("Pin the goal state", "normalizePlannerRequest",
+            "Goal time, position, velocity, and acceleration",
+            "Validated terminal boundary condition",
+            `The requested terminal position is ${formattedPoint(inputs.goalState && inputs.goalState.position_deg)}. Every surviving branch must ultimately meet this state.`,
+            "request", "Request › Goal", "Kept"),
+          deepDiveStage("Apply workspace bounds", "normalizeLimits",
+            "Azimuth and elevation intervals", "Legal search domain",
+            `Azimuth is limited to ${formattedPoint(limits.azimuthInterval_deg)} and elevation to ${formattedPoint(limits.elevationInterval_deg)}. Nodes outside these intervals are not eligible for the tree.`,
+            "request", "Request › Bounds", "Kept"),
+          deepDiveStage("Keep original obstacle geometry",
+            "createObstaclePlanningData", "Public obstacle keyframes",
+            "Unmodified geometry for reporting and validation",
+            "The gray shapes are the original obstacles. They remain separate from the safety-adjusted geometry so the margin is applied exactly once.",
+            "request", "Request › Original geometry", "Kept"),
+          deepDiveStage("Apply safety margins", "createObstaclePlanningData",
+            "Original shapes and per-obstacle safety margins",
+            "Protected obstacle regions",
+            `The dashed red outlines are the protected regions for ${obstacleCount} obstacle${obstacleCount === 1 ? "" : "s"}. A route touching these regions is rejected.`,
+            "protected", "Request › Protection", "Kept"),
+          deepDiveStage("Choose the search branch", "searchRoutes",
+            "Direct-route outcome and protected geometry",
+            "Direct result or graph-search work",
+            acceptedEdges.length + rejectedEdges.length > 0 ?
+              "The returned diagnostics contain graph decisions, so follow the graph-search branch next." :
+              "No graph-edge trace was returned. The planner may have completed on a direct branch or stopped before graph construction; the result does not justify a more specific claim.",
+            "search", "Request › Search gate",
+            acceptedEdges.length + rejectedEdges.length > 0 ? "Kept" : "Inspect"),
+          deepDiveStage("Propose decision nodes", "createVisibilityGraph",
+            "Protected boundaries, endpoints, and workspace",
+            "Visibility-graph nodes",
+            `${finiteNumber(search.NodeCount) ? search.NodeCount : exploredNodes.length} nodes were retained for graph decisions. Candidate reduction keeps search bounded; omitted node-level reasons are not present in this browser result.`,
+            "search", "Search › Nodes", "Kept"),
+          deepDiveStage("Test possible connections", "checkVisibilitySegments",
+            "Candidate node pairs and protected geometry",
+            "Accepted and collision-rejected edges",
+            `${acceptedEdges.length} displayed edges were kept and ${rejectedEdges.length} displayed edges were pruned. The counts can be samples when the trace-downsample rule says so.`,
+            "search", "Search › Edge tests", "Inspect"),
+          deepDiveStage("Keep visible edges", "createVisibilityGraph",
+            "Collision-free candidate connections", "Traversable graph edges",
+            `${finiteNumber(search.VisibilityEdgeCount) ? search.VisibilityEdgeCount : acceptedEdges.length} connections were accepted. These remain available to later route expansion; acceptance here does not yet prove a valid timed motion.`,
+            "search", "Search › Edge tests › Kept", "Kept"),
+          deepDiveStage("Prune blocked edges", "createVisibilityGraph",
+            "Connections intersecting protected proposal geometry",
+            "Rejected transitions retained for diagnosis",
+            `${finiteNumber(search.RejectedTransitionCount) ? search.RejectedTransitionCount : rejectedEdges.length} transitions were rejected. All ${rejectedEdges.length} pruned edges returned in the display trace are grouped in this single step:\n${rejectedEdgeSummary}`,
+            "search", "Search › Edge tests › Pruned",
+            rejectedEdges.length > 0 ? "Pruned" : "Inspect",
+            { rejectedEdgeIndices: rejectedEdges.map((edge, index) => index) }),
+          deepDiveStage("Disclose trace coverage", "createSearchDiagnostics",
+            "Complete counts and bounded display traces",
+            "An honest interpretation boundary",
+            search.TraceDownsampleRule ||
+              "No trace-downsampling rule was supplied, so displayed rows should not be assumed to be the complete internal decision history.",
+            "search", "Search › Trace coverage", "Inspect")
+        ];
+
+        const suffix = [
+          deepDiveStage("Expand reachable states", "searchDistinctSpatialRoutes",
+            "Accepted graph edges and accumulated route cost",
+            "Expanded states and parent decisions",
+            `${finiteNumber(search.ExpandedCount) ? search.ExpandedCount : exploredNodes.length} states were expanded. Expansion means considered, not automatically selected.`,
+            "search", "Search › Expansion", "Inspect"),
+          deepDiveStage("Leave the frontier", "searchDistinctSpatialRoutes",
+            "Discovered but unexpanded states", "Remaining alternatives",
+            `${frontierNodes.length} frontier nodes remain in the returned trace. They were not selected before the search termination condition was reached.`,
+            "search", "Search › Frontier", frontierNodes.length ? "Pruned" : "Inspect"),
+          deepDiveStage("Retain the best partial branch",
+            "searchDistinctSpatialRoutes", "Explored routes that did not reach the goal",
+            "Best partial route for diagnosis",
+            matrix(result.BestPartialRoute_deg, 2).length > 1 ?
+              "The orange path is the best retained partial branch. It explains how far the search progressed without pretending it reached the goal." :
+              "No best partial route was returned; there is no partial branch to display.",
+            "search", "Search › Best partial", "Inspect"),
+          deepDiveStage("Build motion seeds", "searchRoutes",
+            "Distinct geometric route classes", "Ordered motion candidates",
+            `${generatedSeedCount} seed${generatedSeedCount === 1 ? " was" : "s were"} generated for motion solving. Each can still be pruned by optimization or independent validation.`,
+            "route", "Search › Seeds", generatedSeedCount ? "Kept" : "Pruned"),
+          deepDiveStage("Summarize candidate pruning", "selectValidatedCandidate",
+            "Optimizer and validation outcome for every attempted seed",
+            "Surviving candidates and explicit failure reasons",
+            `${finiteNumber(diagnosis.AttemptedCount) ? diagnosis.AttemptedCount : attempts.length} candidates were attempted; ${finiteNumber(diagnosis.ValidatedCount) ? diagnosis.ValidatedCount : attempts.filter((attempt) => attempt.ValidationPassed).length} passed validation. Candidate-specific steps above quote the returned termination reason and message when available.`,
+            "route", "Seeds › Candidate decisions", "Inspect"),
+          deepDiveStage("Select the geometric route", "selectValidatedCandidate",
+            "Validated candidates and ranking metrics", "Selected route",
+            matrix(result.Route_deg, 2).length > 1 ?
+              "The purple route is the branch retained for timed motion. Other candidates were either invalid or ranked behind it." :
+              "No complete geometric route survived selection, so the decision tree has no branch to send to timed motion.",
+            "route", "Candidates › Selection",
+            matrix(result.Route_deg, 2).length > 1 ? "Kept" : "Pruned"),
+          deepDiveStage("Solve time along the route",
+            "solvePathGuess / checkCandidateMotion", "Selected route and endpoint states",
+            "Time-parameterized position history",
+            trajectoryData().positions.length > 1 ?
+              `A motion lasting ${displayNumber(result.TrajectoryDuration_s, 3, " s")} was returned for continuous checking.` :
+              "No timed motion survived; downstream checks report unavailable or failed evidence rather than inventing a trajectory.",
+            "motion", "Selection › Timed motion",
+            trajectoryData().positions.length > 1 ? "Kept" : "Pruned"),
+          deepDiveStage("Check velocity", "validateTrajectory",
+            "Continuous motion polynomial and velocity limits",
+            "Velocity-limit decision", checkDescription("VelocityWithinLimits",
+              "The continuous velocity-limit check"),
+            "motion", "Validation › Velocity", checkDecision("VelocityWithinLimits")),
+          deepDiveStage("Check acceleration", "validateTrajectory",
+            "Continuous motion polynomial and acceleration limits",
+            "Acceleration-limit decision", checkDescription("AccelerationWithinLimits",
+              "The continuous acceleration-limit check"),
+            "motion", "Validation › Acceleration", checkDecision("AccelerationWithinLimits")),
+          deepDiveStage("Check jerk", "validateTrajectory",
+            "Continuous motion polynomial and jerk limits",
+            "Jerk-limit decision", checkDescription("JerkWithinLimits",
+              "The continuous jerk-limit check"),
+            "motion", "Validation › Jerk", checkDecision("JerkWithinLimits")),
+          deepDiveStage("Check endpoint and continuity", "validateTrajectory",
+            "Trajectory endpoints, time base, and segment joins",
+            "Boundary-state and continuity decisions",
+            `${checkDescription("TerminalStateMatched", "The terminal-state check")} ${checkDescription("PolynomialSegmentContinuity", "The segment-continuity check")}`,
+            "validation", "Validation › Endpoints", checkDecision("TerminalStateMatched")),
+          deepDiveStage("Certify collision freedom", "checkObstacleClearance",
+            "Complete motion and protected obstacle histories",
+            "Continuous collision decision",
+            `${checkDescription("CollisionFree", "The collision check")} Minimum clearance: ${displayNumber(validation.MinimumClearance_deg, 3, " deg")}. Unresolved intervals: ${finiteNumber(validation.UnresolvedIntervalCount) ? validation.UnresolvedIntervalCount : "—"}.`,
+            "validation", "Validation › Collision", checkDecision("CollisionFree")),
+          deepDiveStage("Return the final decision", "validateTrajectory",
+            "All endpoint, kinematic, collision, and certificate checks",
+            "Planner result and termination reason",
+            `${validation.Message || result.Message || "No final message was returned."} Termination reason: ${result.TerminationReason || "unavailable"}.`,
+            "validation", "Decision tree › Final",
+            Boolean(validation.Passed) ? "Kept" : "Pruned")
+        ];
+
+        const extraBudget = 40 - prefix.length - suffix.length;
+        const extras = [];
+        const attemptBudget = Math.max(0, extraBudget);
+        attempts.slice(0, attemptBudget).forEach((attempt, index) => {
+          const passed = Boolean(attempt.ValidationPassed);
+          const optimizerFeasible = Boolean(attempt.OptimizerFeasible);
+          const reason = attempt.TerminationReason ||
+            (passed ? "validated" : optimizerFeasible ?
+              "independent validation failed" : "optimizer did not find a feasible motion");
+          const detail = attempt.Message ? ` ${attempt.Message}` : "";
+          extras.push(deepDiveStage(
+            `Candidate ${index + 1}: ${passed ? "kept" : "pruned"}`,
+            "solvePathGuess / selectValidatedCandidate",
+            `${attempt.SeedSource || "route"} seed ${attempt.SeedIndex || index + 1}`,
+            "Optimizer and independent-validation decision",
+            `This candidate was ${passed ? "retained" : "pruned"}. Reason: ${reason}.${detail}`,
+            "route", `Seeds › Candidate ${index + 1}`, passed ? "Kept" : "Pruned",
+            { attemptIndex: index }));
+        });
+        return prefix.concat(extras, suffix).slice(0, 40);
+      }
+
+      function walkthroughViewIs(...names) {
+        return state.walkthroughActive && names.includes(walkthroughStage().view);
+      }
+
+      function walkthroughHasReachedView(view) {
+        if (!state.walkthroughActive) return false;
+        const firstViewStep = walkthroughStages().findIndex((stage) =>
+          stage.view === view);
+        return firstViewStep >= 0 && state.walkthroughStep >= firstViewStep;
+      }
+
+      function setWalkthroughStep(step) {
+        if (!state.result) return;
+        stopPlayback();
+        state.walkthroughActive = true;
+        const stages = walkthroughStages();
+        state.walkthroughStep = Math.max(0,
+          Math.min(stages.length - 1, step));
+        const bounds = timelineBounds();
+        const stage = stages[state.walkthroughStep];
+        state.currentTime_s = ["motion", "validation"].includes(stage.view) ?
+          bounds[1] : bounds[0];
+        syncTimelineControl();
+        updateWalkthrough();
+        draw();
+      }
+
+      function renderDecisionTree(stages) {
+        const tree = element("decisionTree");
+        tree.replaceChildren();
+        stages.forEach((treeStage, index) => {
+          const button = document.createElement("button");
+          const pathDepth = Math.max(0, (treeStage.path || "")
+            .split("›").length - 1);
+          const decision = (treeStage.decision || "inspect").toLowerCase();
+          button.type = "button";
+          button.className = "decision-tree-node";
+          button.dataset.walkthroughStep = String(index);
+          button.style.setProperty("--tree-indent",
+            `${Math.min(3, pathDepth) * 0.72}rem`);
+          button.setAttribute("aria-label",
+            `Step ${index + 1}: ${treeStage.title}. ${treeStage.decision || "Inspect"}`);
+          if (state.walkthroughActive && index === state.walkthroughStep) {
+            button.setAttribute("aria-current", "step");
+          }
+          const number = document.createElement("span");
+          number.className = "decision-tree-index";
+          number.textContent = String(index + 1);
+          const label = document.createElement("span");
+          label.className = "decision-tree-label";
+          label.textContent = treeStage.title;
+          const status = document.createElement("span");
+          status.className = "decision-tree-status";
+          status.dataset.decision = decision;
+          status.textContent = treeStage.decision || "Inspect";
+          button.append(number, label, status);
+          tree.append(button);
+        });
+        element("decisionTreeCount").textContent =
+          `${state.walkthroughStep + 1} / ${stages.length}`;
+        const current = tree.querySelector('[aria-current="step"]');
+        if (current) {
+          const currentTop = current.offsetTop;
+          const currentBottom = currentTop + current.offsetHeight;
+          const visibleBottom = tree.scrollTop + tree.clientHeight;
+          if (currentTop < tree.scrollTop) {
+            tree.scrollTop = currentTop;
+          } else if (currentBottom > visibleBottom) {
+            tree.scrollTop = currentBottom - tree.clientHeight;
+          }
+        }
+      }
+
+      function updateWalkthrough() {
+        if (!state.result) return;
+        const stage = walkthroughStage();
+        const counter = element("walkthroughCounter");
+        const progress = element("walkthroughProgressFill");
+        const progressTrack = progress.parentElement;
+        const restartButton = element("walkthroughRestartButton");
+        const backButton = element("walkthroughBackButton");
+        const continueButton = element("walkthroughContinueButton");
+        const exploreButton = element("walkthroughExploreButton");
+        const depthButton = element("walkthroughDepthButton");
+        const stages = walkthroughStages();
+        let description = stage.description;
+        if (!state.walkthroughDeepDive && stage.view === "search") {
+          const search = (state.diagnosis && state.diagnosis.Search) || {};
+          const searchCount = matrix(search.AcceptedEdges_deg, 4).length +
+            matrix(search.RejectedEdges_deg, 4).length +
+            matrix(search.ExploredNodes_deg, 2).length +
+            matrix(search.FrontierNodes_deg, 2).length;
+          if (searchCount === 0) {
+            description = "No route-search trace was returned. A direct motion may have succeeded before route search was needed.";
+          } else if (finiteNumber(search.ExpandedCount)) {
+            description += ` The search expanded ${search.ExpandedCount} states.`;
+          }
+        } else if (!state.walkthroughDeepDive && stage.view === "route") {
+          const attempted = finiteNumber(state.diagnosis &&
+            state.diagnosis.AttemptedCount) ? state.diagnosis.AttemptedCount : 0;
+          const validated = finiteNumber(state.diagnosis &&
+            state.diagnosis.ValidatedCount) ? state.diagnosis.ValidatedCount : 0;
+          if (matrix(state.result.Route_deg, 2).length < 2) {
+            description = "No selected geometric route was returned, so no purple route is plotted.";
+          }
+          description += ` ${attempted} candidates were attempted and ${validated} passed validation.`;
+        } else if (!state.walkthroughDeepDive && stage.view === "motion" &&
+            trajectoryData().positions.length < 2) {
+          description = "No timed motion was returned. Continue to see the final validation and failure status.";
+        } else if (!state.walkthroughDeepDive && stage.view === "validation") {
+          const passed = Boolean(state.validation && state.validation.Passed);
+          description += passed ? " Independent validation passed." :
+            " Independent validation did not pass.";
+        }
+        if (state.walkthroughActive) {
+          const ordinal = state.walkthroughStep + 1;
+          counter.textContent = `Step ${ordinal} of ${stages.length}`;
+          element("walkthroughTitle").textContent = stage.title;
+          element("walkthroughFunction").innerHTML =
+            `Produced by <code>${stage.functionName}</code>`;
+          element("walkthroughInput").textContent = `Input: ${stage.input}`;
+          element("walkthroughOutput").textContent = `Output: ${stage.output}`;
+          element("walkthroughDescription").textContent = description;
+          element("walkthroughPath").textContent =
+            `Decision path: ${stage.path || stage.title}`;
+          const decision = element("walkthroughDecision");
+          decision.textContent = stage.decision || "Inspect";
+          decision.dataset.decision = (stage.decision || "inspect").toLowerCase();
+          progress.style.width = `${100 * ordinal / stages.length}%`;
+          progressTrack.setAttribute("aria-valuenow", String(ordinal));
+          progressTrack.setAttribute("aria-valuemax", String(stages.length));
+          restartButton.textContent = "Restart";
+          backButton.disabled = state.walkthroughStep === 0;
+          continueButton.disabled =
+            state.walkthroughStep === stages.length - 1;
+          continueButton.textContent = continueButton.disabled ?
+            "Complete" : "Continue";
+          exploreButton.textContent = "End";
+          exploreButton.disabled = false;
+        } else {
+          counter.textContent = "Walkthrough paused";
+          element("walkthroughTitle").textContent = "Free exploration";
+          element("walkthroughFunction").innerHTML =
+            "Use the timeline and diagnosis overlays directly.";
+          element("walkthroughInput").textContent = "";
+          element("walkthroughOutput").textContent = "";
+          element("walkthroughDescription").textContent =
+            "Restart the walkthrough at any time to replay the planner milestones.";
+          element("walkthroughPath").textContent = state.walkthroughDeepDive ?
+            "Decision path: Super deep dive ready" :
+            "Decision path: Milestone walkthrough ready";
+          const decision = element("walkthroughDecision");
+          decision.textContent = "Inspect";
+          decision.dataset.decision = "inspect";
+          progress.style.width = "0%";
+          progressTrack.setAttribute("aria-valuenow", "1");
+          restartButton.textContent = "Start replay";
+          backButton.disabled = true;
+          continueButton.disabled = true;
+          continueButton.textContent = "Continue";
+          exploreButton.textContent = "End";
+          exploreButton.disabled = true;
+        }
+        depthButton.textContent = state.walkthroughDeepDive ?
+          `Super deep dive: On (${stages.length} steps)` :
+          "Super deep dive: Off";
+        depthButton.setAttribute("aria-pressed",
+          String(state.walkthroughDeepDive));
+        canvasWrap.classList.toggle("walkthrough-open", state.walkthroughActive);
+        element("walkthroughReplayMenu").hidden = !state.result;
+        element("walkthroughPanel").hidden = !state.walkthroughActive;
+        element("decisionTreePanel").hidden = !state.walkthroughActive;
+        element("plannerInputsContent").hidden = state.walkthroughActive;
+        element("plannerInputsCard").setAttribute("aria-label",
+          state.walkthroughActive ? "Planner decision tree" : "Planner inputs");
+        if (state.walkthroughActive) {
+          renderDecisionTree(stages);
+        }
+        element("searchOverlayToggle").disabled = state.walkthroughActive;
+        element("selectedSeedToggle").disabled = state.walkthroughActive;
+        const hidesMotion = state.walkthroughActive &&
+          !["motion", "validation"].includes(stage.view);
+        playButton.disabled = hidesMotion;
+        timeSlider.disabled = hidesMotion;
+        element("motionKinematicsPanel").hidden =
+          hidesMotion;
       }
 
       function renderDiagnostics() {
@@ -3766,23 +4575,31 @@
       }
 
       function drawResponseObstacles() {
+        const showOriginal = !state.walkthroughActive ||
+          !walkthroughViewIs("validation");
+        const showProtected = !state.walkthroughActive ||
+          !walkthroughViewIs("request");
         state.responseObstacles.forEach((obstacle) => {
           const original = historyAtTime(obstacle,
             "OriginalVerticesByTime_deg", state.currentTime_s);
           const protectedVertices = historyAtTime(obstacle,
             "ProtectedVerticesByTime_deg", state.currentTime_s);
-          splitRegions(original).forEach((region) => strokePath(region, {
-            stroke: "#526780",
-            width: 1.2,
-            fill: "rgba(145,166,184,0.20)",
-            close: true
-          }));
-          splitRegions(protectedVertices).forEach((region) => strokePath(region, {
-            stroke: "#d44359",
-            width: 1.7,
-            dash: [7, 5],
-            close: true
-          }));
+          if (showOriginal) {
+            splitRegions(original).forEach((region) => strokePath(region, {
+              stroke: "#526780",
+              width: 1.2,
+              fill: "rgba(145,166,184,0.20)",
+              close: true
+            }));
+          }
+          if (showProtected) {
+            splitRegions(protectedVertices).forEach((region) => strokePath(region, {
+              stroke: "#d44359",
+              width: 1.7,
+              dash: [7, 5],
+              close: true
+            }));
+          }
         });
       }
 
@@ -3975,7 +4792,8 @@
       }
 
       function drawSearchDiagnostics() {
-        if (!state.result || !state.showSearchOverlay) {
+        const showForWalkthrough = walkthroughHasReachedView("search");
+        if (!state.result || (!state.showSearchOverlay && !showForWalkthrough)) {
           return;
         }
         const diagnostics = state.diagnosis || {};
@@ -3987,11 +4805,20 @@
             });
           }
         });
-        matrix(grid.RejectedEdges_deg, 4).forEach((edge) => {
-          if (edge.every(finiteNumber)) {
-            strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
-              stroke: "#d44359", width: 0.8, alpha: 0.45, dash: [3, 4]
-            });
+        const activeStage = state.walkthroughActive ? walkthroughStage() : null;
+        matrix(grid.RejectedEdges_deg, 4)
+          .filter((edge) => edge.every(finiteNumber))
+          .forEach((edge, index) => {
+          const isFocused = activeStage &&
+            Array.isArray(activeStage.rejectedEdgeIndices) &&
+            activeStage.rejectedEdgeIndices.includes(index);
+          strokePath([[edge[0], edge[1]], [edge[2], edge[3]]], {
+            stroke: "#d44359", width: isFocused ? 3 : 0.8,
+            alpha: isFocused ? 1 : 0.45, dash: isFocused ? [8, 4] : [3, 4]
+          });
+          if (isFocused) {
+            drawPoint([edge[0], edge[1]], "#d44359", "FROM");
+            drawPoint([edge[2], edge[3]], "#d44359", "TO");
           }
         });
         drawDiagnosticNodes(matrix(grid.ExploredNodes_deg, 2),
@@ -4008,7 +4835,8 @@
       }
 
       function drawSelectedSeed() {
-        if (!state.result || !state.showSelectedSeed) {
+        const showForWalkthrough = walkthroughViewIs("route", "motion");
+        if (!state.result || (!state.showSelectedSeed && !showForWalkthrough)) {
           return;
         }
         const seed = matrix(state.result.Route_deg, 2)
@@ -4262,6 +5090,10 @@
       }
 
       function drawTrajectory() {
+        if (state.walkthroughActive &&
+            !walkthroughViewIs("motion", "validation")) {
+          return;
+        }
         const data = trajectoryData();
         if (data.positions.length < 2) {
           return;
@@ -4396,7 +5228,10 @@
         } else {
           drawRequestObstacles();
         }
-        if (!state.obstaclePreview && state.start && state.goal) {
+        const showRequestedLine = !state.walkthroughActive ||
+          walkthroughViewIs("request", "protected");
+        if (!state.obstaclePreview && showRequestedLine &&
+            state.start && state.goal) {
           wrappedSegments([state.start, state.goal]).forEach((segment) =>
             strokePath(segment, {
               stroke: "#4279cc", width: 1.1, dash: [7, 6], alpha: 0.62
@@ -4413,7 +5248,10 @@
         }
         drawCrosshair();
         context.restore();
-        if (!state.obstaclePreview) drawKinematicCharts();
+        if (!state.obstaclePreview && (!state.walkthroughActive ||
+            walkthroughViewIs("motion", "validation"))) {
+          drawKinematicCharts();
+        }
         positionObstacleActionMenu();
         positionFinalPoseActionMenu();
         updateSpeedOverlay();
@@ -5104,6 +5942,8 @@
         state.diagnosis = null;
         state.validation = null;
         state.responseObstacles = [];
+        state.walkthroughActive = false;
+        state.walkthroughStep = 0;
         state.lastRequestId = "";
         state.bundleRequestId = "";
         state.showSearchOverlay = false;
@@ -5267,6 +6107,33 @@
       });
       element("selectedSeedToggle").addEventListener("change", (event) => {
         state.showSelectedSeed = event.target.checked;
+        draw();
+      });
+      element("walkthroughRestartButton").addEventListener("click", () => {
+        setWalkthroughStep(0);
+      });
+      element("walkthroughDepthButton").addEventListener("click", () => {
+        if (!state.result) return;
+        state.walkthroughDeepDive = !state.walkthroughDeepDive;
+        setWalkthroughStep(0);
+      });
+      element("decisionTree").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-walkthrough-step]");
+        if (!button) return;
+        setWalkthroughStep(Number(button.dataset.walkthroughStep));
+      });
+      element("walkthroughBackButton").addEventListener("click", () => {
+        setWalkthroughStep(state.walkthroughStep - 1);
+      });
+      element("walkthroughContinueButton").addEventListener("click", () => {
+        setWalkthroughStep(state.walkthroughStep + 1);
+      });
+      element("walkthroughExploreButton").addEventListener("click", () => {
+        if (!state.result) return;
+        state.walkthroughActive = false;
+        element("motionKinematicsPanel").hidden = false;
+        renderDiagnostics();
+        updateWalkthrough();
         draw();
       });
       playButton.addEventListener("click", () => {

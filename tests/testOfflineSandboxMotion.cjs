@@ -87,6 +87,7 @@ test('result display reads separate diagnosis and the compact route', () => {
   context.state.showSelectedSeed = true;
   context.matrix = (value) => value;
   context.wrappedSegments = (value) => [value];
+  context.walkthroughViewIs = () => false;
   let drawn;
   context.strokePath = (value) => { drawn = value; };
   context.drawSelectedSeed();
@@ -463,4 +464,10 @@ test('arrival controls offer only earliest and fixed timing', () => {
   assert.match(select, /value="earliestArrival" selected/);
   assert.doesNotMatch(html, /minimumTravelSavingsRate|balancedArrival/);
   new vm.Script(script);
+});
+
+test('walkthrough keeps accepted edges visible and confines tree scrolling', () => {
+  assert.match(script, /walkthroughHasReachedView\("search"\)/);
+  assert.match(script, /tree\.scrollTop/);
+  assert.doesNotMatch(script, /scrollIntoView/);
 });
