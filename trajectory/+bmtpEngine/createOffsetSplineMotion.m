@@ -1,9 +1,11 @@
-function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset_deg, axisIndex, initialState, sampleStep_s, seedSource)
+function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset_deg, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_deg_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = bmtpEngine.createOffsetSplineMotion( ...
 %       baseMotion, knotTime_s, knotOffset_deg, axisIndex, ...
 %       initialState, sampleStep_s, seedSource)
+%   candidate = bmtpEngine.createOffsetSplineMotion(baseMotion, knotTime_s, ...
+%       knotOffset_deg, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_deg_s)
 %
 % PURPOSE
 %   - Add a minimum-integrated-jerk scalar offset to one motion coordinate.
@@ -23,6 +25,9 @@ function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset
 %       Requested output-history spacing in seconds.
 %   - seedSource (scalar text)
 %       Input-driven construction label copied to the motion record.
+%   - knotVelocity_deg_s (optional vector matching knotTime_s)
+%       Prescribed offset velocities. NaN leaves an interior velocity free.
+%       Omitted or empty leaves all interior velocities free; endpoints stay zero.
 %
 % OUTPUTS
 %   - candidate (scalar trajectory-engine result struct)
@@ -35,8 +40,8 @@ function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset
 
 %% Section 1: Validate The Clock And Offset Knots
 
-if nargin ~= 7 || ~isstruct(baseMotion) || ~isscalar(baseMotion) || ~isfield(baseMotion, "Polynomial")
-    error("createOffsetSplineMotion:InvalidCall", "Seven inputs and a scalar baseMotion.Polynomial are required.");
+if nargin < 7 || nargin > 8 || ~isstruct(baseMotion) || ~isscalar(baseMotion) || ~isfield(baseMotion, "Polynomial")
+    error("createOffsetSplineMotion:InvalidCall", "Seven or eight inputs and a scalar baseMotion.Polynomial are required.");
 end
 knotTime_s     = double(knotTime_s(:));
 knotOffset_deg = double(knotOffset_deg(:));
@@ -48,6 +53,14 @@ seedSource = string(seedSource);
 if ~knotsAreValid || ~isscalar(seedSource)
     error("createOffsetSplineMotion:InvalidKnots", "Knot times must increase and match finite offsets; seedSource is scalar.");
 end
+if nargin < 8 || isempty(knotVelocity_deg_s)
+    knotVelocity_deg_s = NaN(size(knotTime_s));
+end
+validateattributes(knotVelocity_deg_s, {'numeric'}, {'real', 'vector', 'numel', numel(knotTime_s)});
+knotVelocity_deg_s = double(knotVelocity_deg_s(:));
+if any(isinf(knotVelocity_deg_s)) || any(isfinite(knotVelocity_deg_s([1 end])) & knotVelocity_deg_s([1 end]) ~= 0)
+    error("createOffsetSplineMotion:InvalidKnotVelocity", "Offset velocities must be finite or NaN, with zero or unspecified endpoint values.");
+end
 clockTolerance_s = 1024 * eps(max(1, max(abs(knotTime_s))));
 baseStartTime_s  = baseMotion.Polynomial.SegmentStartTime_s(1);
 baseFinalTime_s  = baseMotion.Polynomial.FinalTime_s;
@@ -57,7 +70,7 @@ end
 
 %% Section 2: Create And Compose The Minimum-Jerk Spline
 
-lateral    = createMinimumJerkSpline(knotTime_s, knotOffset_deg);
+lateral    = createMinimumJerkSpline(knotTime_s, knotOffset_deg, knotVelocity_deg_s);
 break_s    = unique([baseMotion.Polynomial.SegmentStartTime_s; baseMotion.Polynomial.FinalTime_s; lateral.SegmentStartTime_s; lateral.FinalTime_s]);
 polynomial = combinePolynomials(baseMotion.Polynomial, lateral, break_s, axisIndex);
 candidate  = bmtpEngine.createMotionRecord(baseMotion, initialState, polynomial, [], sampleStep_s, seedSource);
@@ -65,7 +78,7 @@ end
 
 %% Section 3: Local Functions
 
-function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_deg)
+function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_deg, knotVelocity_deg_s)
     % Solve the quadratic minimum-jerk quintic Hermite interpolation system.
     segmentDuration_s = diff(knotTime_s);
     knotCount         = numel(knotTime_s);
@@ -87,6 +100,11 @@ function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_deg)
     knotState(1:3:end) = knotPosition_deg;
     isFixed = mod((1:stateCount).' - 1, 3) == 0;
     isFixed([2, 3, stateCount - 1, stateCount]) = true;
+    % A prescribed interior velocity can make a waypoint a true turning point.
+    % Acceleration remains free, so adjacent pieces still join smoothly.
+    velocityRows = 3 * find(isfinite(knotVelocity_deg_s)) - 1;
+    knotState(velocityRows) = knotVelocity_deg_s(isfinite(knotVelocity_deg_s));
+    isFixed(velocityRows) = true;
     knotState(~isFixed) = -hessian(~isFixed, ~isFixed) \ (hessian(~isFixed, isFixed) * knotState(isFixed));
     positionPower_deg = zeros(knotCount - 1, 1, 6);
     % Process each segment while assembling the complete motion or interval result.

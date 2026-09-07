@@ -115,7 +115,7 @@ boundaryResolution_deg = max(8 * double(options.CollisionClearanceTolerance_deg)
 % Choose times to try the largest sideways offset, based on when the
 % direct move encounters obstacles. Also try the middle of the move.
 peakTime_s  = createPeakTimeCandidates(directCandidate, obstacles, options);
-axisReports = repmat(createAxisReport(), 2 * dimensionCount * numel(peakTime_s), 1);
+axisReports = repmat(createAxisReport(), 4 * dimensionCount * numel(peakTime_s), 1);
 reportIndex = 0;
 
 % Try each axis, both directions, and several times for the largest offset.
@@ -126,12 +126,17 @@ for axisIndex = 1:dimensionCount
     % Repeat the direction alternatives needed to refine the current solution.
     for direction = [-1, 1]
         % Process each peak needed to find fixed time detour.
-        for peakIndex = 1:numel(peakTime_s)
+        for peakChoiceIndex = 1:2 * numel(peakTime_s)
+            % Preserve through-point proposals and also try an actual axis turn.
+            % A through-point spline may continue rising well past this time.
+            peakIndex = 1 + mod(peakChoiceIndex - 1, numel(peakTime_s));
+            constrainPeakVelocity = peakChoiceIndex > numel(peakTime_s);
             reportIndex = reportIndex + 1;
             report      = createAxisReport();
             report.AxisIndex        = axisIndex;
             report.Direction        = direction;
             report.PeakTime_s       = peakTime_s(peakIndex);
+            report.ConstrainedPeakVelocity = constrainPeakVelocity;
             report.AxisGovernsClock = axisGovernsClock;
             if axisGovernsClock
                 % This axis already needs the full travel time. This method
@@ -174,7 +179,7 @@ for axisIndex = 1:dimensionCount
             % Each trial adds a smooth offset that is zero at both endpoints.
             for levelIndex = 1:coarseLevelCount
                 magnitude_deg                   = maximumMagnitude_deg * levelIndex / coarseLevelCount;
-                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_deg,  axisIndex, peakTime_s(peakIndex), initialState, options);
+                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
                 trialMagnitudes_deg(levelIndex) = magnitude_deg;
             end
             % Quickly reject collisions at the stored sample times. A clear
@@ -219,7 +224,7 @@ for axisIndex = 1:dimensionCount
             % Refine the passing detour magnitude until resolution or iteration limits stop the search.
             while upperMagnitude_deg - lowerMagnitude_deg > boundaryResolution_deg && refinementCount < 6
                 midpointMagnitude_deg = 0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
-                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options);
+                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options, constrainPeakVelocity);
                 validationTimer       = tic;
                 midpointValidation    = obstacleAvoidance.validation.validatePreparedTrajectory(midpointCandidate, obstacles, initialState, goalState, limits, options);
                 diagnostics           = addValidationTiming(diagnostics, midpointValidation, toc(validationTimer));
@@ -257,6 +262,7 @@ for axisIndex = 1:dimensionCount
             diagnostics.Message                       =  "A one-sided fixed-clock excursion passed independent validation.";
             diagnostics.SelectedAxisIndex             = report.AxisIndex;
             diagnostics.SelectedDirection             = report.Direction;
+            diagnostics.SelectedPeakVelocityConstrained = report.ConstrainedPeakVelocity;
             diagnostics.InvalidBoundaryMagnitude_deg  =  report.InvalidBoundaryMagnitude_deg;
             diagnostics.ValidBoundaryMagnitude_deg    =  report.ValidBoundaryMagnitude_deg;
             diagnostics.BoundaryResolutionReserve_deg =  report.BoundaryResolutionReserve_deg;
@@ -299,6 +305,7 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
     record              = createTravelRefinement();
     record.Attempted         = true;
     record.InitialLength_deg = candidate.MotionLength_deg;
+    record.InitialIntegratedSquaredJerk_deg2_s5 = candidate.IntegratedSquaredJerk_deg2_s5;
     record.KnotTime_s        = knotTime_s;
     initialStep_deg = max(abs(offset_deg)) / 2;
     % Nudge one interior offset at a time in both directions. Start with larger
@@ -316,8 +323,9 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
                     trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
                     trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_deg, axisIndex, initialState, options.SampleTime_s,  "fixedClockLateralExcursion");
                     record.TrialCount = record.TrialCount + 1;
-                    % Avoid a full safety check unless the proposed motion is
-                    % shorter by more than 1e-8 degrees (a numerical noise guard).
+                    % Arrival is unchanged, so shorter travel is the objective.
+                    % The full validator below enforces all derivative limits;
+                    % integrated squared jerk is diagnostic, not a ranking gate.
                     if trial.MotionLength_deg >= candidate.MotionLength_deg - 1e-8
                         continue;
                     end
@@ -336,6 +344,7 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
         end
     end
     record.FinalLength_deg = candidate.MotionLength_deg;
+    record.FinalIntegratedSquaredJerk_deg2_s5 = candidate.IntegratedSquaredJerk_deg2_s5;
     record.KnotOffset_deg  = offset_deg;
     diagnostics.TravelRefinement   = record;
     diagnostics.MotionLength_deg   = candidate.MotionLength_deg;
@@ -355,17 +364,25 @@ function record = createTravelRefinement()
     record.TrialCount        = 0;
     record.InitialLength_deg = NaN;
     record.FinalLength_deg   = NaN;
+    record.InitialIntegratedSquaredJerk_deg2_s5 = NaN;
+    record.FinalIntegratedSquaredJerk_deg2_s5   = NaN;
     record.KnotTime_s        = zeros(0, 1);
     record.KnotOffset_deg    = zeros(0, 1);
 end
 
-function candidate = createExcursion(directCandidate, amplitude_deg, axisIndex, peakTime_s,  initialState, options)
+function candidate = createExcursion(directCandidate, amplitude_deg, axisIndex, peakTime_s, initialState, options, constrainPeakVelocity)
     % Add an offset of zero at the start, amplitude_deg at the chosen interior
-    % time, and zero at arrival. The smooth curve need not stop at that interior
-    % point; its velocity and acceleration are not forced to zero there.
+    % time, and zero at arrival. Try either a free through-point velocity or
+    % zero complete-axis velocity there; acceleration is free in both families.
     startTime_s = initialState.time_s;
     endTime_s   = directCandidate.ArrivalTime_s;
-    candidate   = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s],  [0; amplitude_deg; 0], axisIndex, initialState,  options.SampleTime_s, "fixedClockLateralExcursion");
+    knotVelocity_deg_s = NaN(3, 1);
+    if constrainPeakVelocity
+        % Cancel the base velocity so the complete axis turns at the waypoint.
+        [~, ~, baseVelocity_deg_s] = bmtpEngine.evaluatePolynomial(directCandidate.Polynomial, peakTime_s);
+        knotVelocity_deg_s(2) = -baseVelocity_deg_s(axisIndex);
+    end
+    candidate = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s], [0; amplitude_deg; 0], axisIndex, initialState, options.SampleTime_s, "fixedClockLateralExcursion", knotVelocity_deg_s);
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
@@ -441,6 +458,7 @@ function report = createAxisReport()
     report.Direction                     = 0;
     report.AxisGovernsClock              = false;
     report.PeakTime_s                    = NaN;
+    report.ConstrainedPeakVelocity       = false;
     report.Eligible                      = false;
     report.MaximumMagnitude_deg          = 0;
     report.InvalidBoundaryMagnitude_deg  = NaN;
@@ -470,6 +488,7 @@ function diagnostics = createDiagnostics()
     diagnostics.ScreeningCount                 = 0;
     diagnostics.SelectedAxisIndex              = 0;
     diagnostics.SelectedDirection              = 0;
+    diagnostics.SelectedPeakVelocityConstrained = false;
     diagnostics.InvalidBoundaryMagnitude_deg   = NaN;
     diagnostics.ValidBoundaryMagnitude_deg     = NaN;
     diagnostics.BoundaryResolutionReserve_deg  = NaN;

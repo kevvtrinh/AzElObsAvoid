@@ -176,6 +176,33 @@ function trajectory = linearTrajectory(initialState, goalState)
         "jerk_deg_s3", zeros(2, 2), "Polynomial", polynomial);
 end
 
+function testFixedClockRefinementMinimizesLengthWithinJerkLimits(testCase)
+    % Reproduce the reported triangular-obstacle detour without depending on
+    % the external diagnosis bundle. Jerk is a hard limit, not a travel penalty.
+    initial = state(0, [-72.5138204844708 49.9844205447784]);
+    goal    = state(180, [53.987335410594 11.1945924213489]);
+    limits  = struct();
+    limits.maxVelocity_deg_s      = [2 2];
+    limits.maxAcceleration_deg_s2 = [0.75 0.75];
+    limits.maxJerk_deg_s3         = [2.5 2.5];
+    limits.azimuthInterval_deg    = [-180 180];
+    limits.elevationInterval_deg  = [-90 90];
+    vertices_deg = [-28.5134184340135 29.142124836667; ...
+        -7.96059905518143 43.9054176299126; ...
+        -3.03950145743289 12.3524977384662];
+    obstacle     = obstacleAvoidance.obstacles.createObstacle("triangular detour regression", 0, vertices_deg(:, 1), vertices_deg(:, 2), 0.2);
+    options      = obstacleAvoidance.planTrajectory();
+
+    [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);
+    validation = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, result.Success, result.Message);
+    verifyTrue(testCase, validation.Passed, validation.Message);
+    verifyTrue(testCase, validation.JerkWithinLimits);
+    initialLength_deg = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_deg");
+    finalLength_deg   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_deg");
+    verifyLessThan(testCase, finalLength_deg, initialLength_deg);
+end
+
 function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
     % A detour at the physical time floor can be the sole validated construction.
     for vertices = {[-1 -1;1 -1;1 1;-1 1], ...
@@ -208,6 +235,10 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
             verifyTrue(testCase, isfinite(diagnosis.FirstValidatedMotionTime_s));
             verifyGreaterThan(testCase, diagnosis.FirstValidatedMotionTime_s, 0);
             verifyLessThanOrEqual(testCase, diagnosis.FirstValidatedMotionTime_s, result.ElapsedPlanningTime_s);
+            verifyTrue(testCase, validation.JerkWithinLimits);
+            initialLength_deg = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.InitialLength_deg");
+            finalLength_deg   = testSupport.diagnosisValue(diagnosis.PathRefinement, "TravelRefinement.FinalLength_deg");
+            verifyLessThanOrEqual(testCase, finalLength_deg, initialLength_deg);
             if mode == "fixedArrival"
                 verifyFalse(testCase, any([diagnosis.Attempts(~isDetour).ValidationPassed]));
             end

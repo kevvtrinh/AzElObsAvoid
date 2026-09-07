@@ -198,3 +198,45 @@ but regressed dense-concave by 24.04% and accelerating circles by 9.89%. A
 33-line constant separating-plane shortcut failed the correctness gate before
 timing because a retained plane invalidated a later trajectory iteration. No
 rejected experiment was retained or added to `benchmark.csv`.
+
+## Circle detour and explicit objective priority (2026-09-06)
+
+The exact `inefficientroutecircle.mat` replay reached the physical arrival floor
+but traveled 249.201569069 deg. The fixed-clock excursion treated its nominal
+peak as an unconstrained spline through-point; elevation continued rising to
+54.920807222 deg after the obstacle's approximately 26 deg top. An additional
+proposal now imposes zero complete-axis velocity at the proposed turn while
+leaving acceleration free. Original through-point proposals remain available,
+and every retained motion still passes independent continuous validation.
+
+The user explicitly clarified the objective: earliest arrival, then shortest
+path, subject to all physical limits. Accordingly, the earlier integrated-jerk
+rejection within fixed-clock travel refinement has been removed. Integrated
+squared jerk remains diagnostic and may increase; no physical derivative limit,
+collision tolerance, protected geometry, or endpoint condition was relaxed.
+
+On the unchanged saved circle request, travel falls to 227.456480998 deg
+(-8.73%) at the identical 113.691362616 s arrival. Peak elevation falls to
+26.602152360 deg, and independently checked clearance is 0.000413923 deg.
+A structurally different asymmetric rectangle with the other governing axis
+and a nonzero start time improves from 112.397597877 to 103.355070722 deg
+(-8.05%) at the identical 52.966666667 s duration. One warm-up and three measured
+calls per implementation and case all passed. Warmed median planning time
+increased from 2.067310 to 3.910954 s for the circle and from 0.938971 to
+1.629758 s for the rectangle. This is a motion-quality improvement with extra
+planning work, not a runtime speedup or a global shortest-path certificate.
+
+All 18 maintained examples ran before and after: 17 independently valid motions
+and the expected `noValidatedSeed` failure, with unchanged durations. Three
+maintained paths shortened; none lengthened. MATLAB R2024b passed 60 affected
+tests, including static/moving obstacles, fixed/earliest arrival, and expected
+failure behavior. Code Analyzer reported no messages in the four changed MATLAB
+files. The full test suite was not rerun; the two route-economy tests requiring
+previously deleted MAT fixtures were excluded. Existing user edits and missing
+fixtures were preserved, except for the jerk-cost policy explicitly superseded
+by the user's instruction. Production changes add 49 and remove 18 lines
+relative to the starting working source, with no new planner option or dependency.
+
+[Complete measurements and all 18 example comparisons](benchmarks/results/circle_route_economy_20260906.md).
+Actual accepted comparison and example runs are appended to `benchmark.csv`;
+raw MAT results, starting-source copies, and plots remain in ignored `tmp`.
