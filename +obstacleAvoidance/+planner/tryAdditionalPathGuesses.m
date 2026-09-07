@@ -10,7 +10,7 @@ function [candidateSet, routeSet, generatedSeeds] = tryAdditionalPathGuesses(ini
 % INPUTS
 %   Normalized states, limits, options, prior candidates, and searched routes.
 %   generatedSeeds contains existing guesses. recoveryContext holds the shared
-%   planning context, visibility graph, solver context, exact-motion status,
+%   obstacle-planning data, visibility graph, solver context, exact-motion status,
 %   and timer.
 % OUTPUTS
 %   Updated candidates, route evidence, and guesses, including deferred searches.
@@ -63,7 +63,7 @@ end
 % Resume the deferred timed search before generating unrelated spatial recovery seeds.
 if needsDeferredTimedRecovery
     recoverySearchTimer         = tic;
-    routeSet                    = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, recoveryContext.PlanningContext, recoveryContext.VisibilityGraph, routeSet);
+    routeSet                    = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, recoveryContext.ObstaclePlanningData, recoveryContext.VisibilityGraph, routeSet);
     recoverySearchElapsedTime_s = toc(recoverySearchTimer);
     candidateSet.StageTiming.RouteSearchElapsedTime_s = candidateSet.StageTiming.RouteSearchElapsedTime_s + recoverySearchElapsedTime_s;
 end
@@ -80,7 +80,7 @@ if needsDeferredSpatialRecovery
 else
     recoveredOnlyRouteSet.SpatialRoutes_deg = cell(0, 1);
 end
-recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses(recoveredOnlyRouteSet, recoveryContext.PlanningContext.routeSearchGeometry.shape.Vertices, generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
+recoveredSeeds = obstacleAvoidance.search.createRoutePathGuesses(recoveredOnlyRouteSet, recoveryContext.ObstaclePlanningData.routeSearchGeometry.shape.Vertices, generatedSeeds(1).EstimatedDuration_s, generatedSeeds(1).Length_deg);
 
 % Evaluate each recovery before retaining the best admissible candidate.
 for recoveryIndex = 1:min(remainingSeedCount, numel(recoveredSeeds))
@@ -105,7 +105,7 @@ end
 function [candidateSet, passed, recoveryContext] = solveAndAppend(initialState, goalState, limits, options, candidateSet, seed, recoveryContext)
     % Solve an additional seed and append its diagnostics.
     seed.Index = numel(candidateSet.Seeds) + 1;
-    [candidate, summary, stageTiming, recoveryContext.SeedSolveContext] = obstacleAvoidance.planner.solvePathGuess(recoveryContext.PlanningContext, initialState, goalState, limits, options, seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
+    [candidate, summary, stageTiming, recoveryContext.SeedSolveContext] = obstacleAvoidance.planner.solvePathGuess(recoveryContext.ObstaclePlanningData, initialState, goalState, limits, options, seed, recoveryContext.SeedSolveContext, candidateSet.StageTiming);
     candidateSet.Seeds(end + 1, 1) = seed;
     candidateSet.Candidates{end + 1, 1} = candidate;
     candidateSet.Summaries(end + 1, 1) = summary;

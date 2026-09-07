@@ -175,7 +175,7 @@ function testEarliestArrivalAcceptsExactAndInsideHorizon(testCase)
 
     % Instantaneous endpoint values can be inside every box while their required
     % bounded-jerk continuation is not. The minimum acceleration-canceling
-    % excursion must be classified as physical infeasibility, not a missing
+    % detour must be classified as physical infeasibility, not a missing
     % switching family.
     initialState.position     = 0;
     initialState.velocity     = 0.9;

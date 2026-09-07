@@ -1,8 +1,8 @@
-function visibilityGraph = createVisibilityGraph(limits, planningContext)
+function visibilityGraph = createVisibilityGraph(limits, obstaclePlanningData)
 %% Section 0: Header & Readme
 % SYNTAX
 %   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-%       limits, planningContext)
+%       limits, obstaclePlanningData)
 %
 % PURPOSE
 %   - Connect points with clear straight segments; retry farther from obstacles if needed.
@@ -10,7 +10,7 @@ function visibilityGraph = createVisibilityGraph(limits, planningContext)
 %
 % INPUTS
 %   - limits: workspace bounds.
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       The request-wide record containing route-search geometry.
 %
 % OUTPUTS
@@ -26,7 +26,7 @@ function visibilityGraph = createVisibilityGraph(limits, planningContext)
 
 % Choose initial and retry offsets from obstacle and workspace dimensions.
 
-routeSearchGeometry = planningContext.routeSearchGeometry;
+routeSearchGeometry = obstaclePlanningData.routeSearchGeometry;
 shape               = routeSearchGeometry.shape;
 start_deg           = routeSearchGeometry.start_deg;
 goal_deg            = routeSearchGeometry.goal_deg;

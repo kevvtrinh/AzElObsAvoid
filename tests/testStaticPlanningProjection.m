@@ -78,7 +78,7 @@ function testProjectedBmtpDetourPassesMovingValidation(testCase)
     verifyTrue(testCase, candidate.Success, candidate.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyTrue(testCase, validation.CollisionFree);
-    verifyLessThanOrEqual(testCase, candidate.MotionLength_deg, 1.1 * seed.Length_deg, "Travel refinement made a broad excursion outside its route topology.");
+    verifyLessThanOrEqual(testCase, candidate.MotionLength_deg, 1.1 * seed.Length_deg, "Travel refinement made a broad detour outside its route topology.");
     verifyLessThanOrEqual(testCase, max(candidate.position_deg(:, 2)), 0.1, "The lower detour seed was unnecessarily smoothed over the obstacle.");
     verifyGreaterThan(testCase, max(vecnorm(candidate.velocity_deg_s, 2, 2)), 0);
     interiorTime_s = initialState.time_s + seed.tau(2:end - 1) * candidate.TrajectoryDuration_s;

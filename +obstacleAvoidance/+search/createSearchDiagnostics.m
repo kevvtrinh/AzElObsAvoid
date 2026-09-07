@@ -1,15 +1,15 @@
-function diagnostics = createSearchDiagnostics(planningContext, visibilityGraph, routeSet, seeds)
+function diagnostics = createSearchDiagnostics(obstaclePlanningData, visibilityGraph, routeSet, seeds)
 %% Section 0: Header & Readme
 % SYNTAX
 %   diagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
-%       planningContext, visibilityGraph, routeSet, seeds)
+%       obstaclePlanningData, visibilityGraph, routeSet, seeds)
 %
 % PURPOSE
 %   - Assemble stable search diagnostics from completed production stages
 %     without recomputing geometry, graph, route, or seed decisions.
 %
 % INPUTS
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       The request-wide record. routeSearchGeometry is empty when graph
 %       work was skipped.
 %   - visibilityGraph, routeSet (scalar structs)
@@ -31,7 +31,7 @@ start_deg   = seeds(1).position_deg(1, :);
 goal_deg    = seeds(1).position_deg(end, :);
 diagnostics = emptyDiagnostics(start_deg, goal_deg);
 diagnostics.GeneratedSeedCount = numel(seeds);
-routeSearchGeometry = planningContext.routeSearchGeometry;
+routeSearchGeometry = obstaclePlanningData.routeSearchGeometry;
 if isempty(fieldnames(routeSearchGeometry))
     return;
 end

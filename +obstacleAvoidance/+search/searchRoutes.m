@@ -1,9 +1,9 @@
-function routeSet = searchRoutes(initialState, goalState, limits, options, planningContext, visibilityGraph, priorRouteSet)
+function routeSet = searchRoutes(initialState, goalState, limits, options, obstaclePlanningData, visibilityGraph, priorRouteSet)
 %% Section 0: Header & Readme
 % SYNTAX
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
 %       initialState, goalState, limits, options, ...
-%       planningContext, visibilityGraph, priorRouteSet)
+%       obstaclePlanningData, visibilityGraph, priorRouteSet)
 %
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
@@ -12,7 +12,7 @@ function routeSet = searchRoutes(initialState, goalState, limits, options, plann
 %
 % INPUTS
 %   - initialState, goalState, limits, options: route-search constraints.
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       The request-wide record containing prepared obstacle histories,
 %       the request horizon, and spatial route-search geometry.
 %   - visibilityGraph (scalar visibility-graph struct)
@@ -43,8 +43,8 @@ if isTimedRecovery && (~isstruct(priorRouteSet) || ~isscalar(priorRouteSet) || ~
     error("searchRoutes:InvalidRecoveryState", "priorRouteSet must be a deferred scalar route-set record.");
 end
 
-routeSearchGeometry          = planningContext.routeSearchGeometry;
-obstacles                    = planningContext.preparedObstacles;
+routeSearchGeometry          = obstaclePlanningData.routeSearchGeometry;
+obstacles                    = obstaclePlanningData.preparedObstacles;
 nodePosition_deg             = visibilityGraph.NodePosition_deg;
 timedRoute_deg               = zeros(0, 2);
 timedRouteTime_s             = zeros(0, 1);
@@ -53,7 +53,7 @@ timedSearchOptions           = options;
 timedSearchAttempted         = false;
 timedSearchDeferred          = false;
 timedSearchSuppressionReason = "staticObstacleHistory";
-requiresTimedSearch          = ~planningContext.obstaclesRemainStatic;
+requiresTimedSearch          = ~obstaclePlanningData.obstaclesRemainStatic;
 % Defer timed search after dense-envelope planning so recovery can reuse the spatial evidence without duplicating work.
 if requiresTimedSearch && routeSearchGeometry.usedDenseEnvelope && ~isTimedRecovery
     timedSearchDeferred          = true;

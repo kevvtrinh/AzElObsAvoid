@@ -109,11 +109,11 @@ end
 function testPartialRoutesAndVisibilityAttemptsSurviveOutputAssembly(testCase)
     s        = testCase.TestData;
     obstacle = obstacleAvoidance.obstacles.createObstacle('box', 0, [-1;1;1;-1], [-1;-1;1;1], 0);
-    planningContext = obstacleAvoidance.obstacles.createPlanningContext(obstacle, s.Initial, s.Goal);
-    planningContext = obstacleAvoidance.search.addRouteSearchGeometry(planningContext, s.Initial, s.Goal, s.Options);
-    routeSearchGeometry = planningContext.routeSearchGeometry;
-    graph    = obstacleAvoidance.search.createVisibilityGraph(s.Limits, planningContext);
-    routes   = obstacleAvoidance.search.searchRoutes(s.Initial, s.Goal, s.Limits, s.Options, planningContext, graph);
+    obstaclePlanningData = obstacleAvoidance.obstacles.createObstaclePlanningData(obstacle, s.Initial, s.Goal);
+    obstaclePlanningData = obstacleAvoidance.search.addRouteSearchGeometry(obstaclePlanningData, s.Initial, s.Goal, s.Options);
+    routeSearchGeometry = obstaclePlanningData.routeSearchGeometry;
+    graph    = obstacleAvoidance.search.createVisibilityGraph(s.Limits, obstaclePlanningData);
+    routes   = obstacleAvoidance.search.searchRoutes(s.Initial, s.Goal, s.Limits, s.Options, obstaclePlanningData, graph);
     routes.TimedSearchAttempted = true;
     routes.TimedSearchRecord    = struct('LayerTimes_s', [0;10], 'CandidateLayerCount', 2, 'NodeCount', 2, ...
         'WaitEdgeCount', 1, 'MotionEdgeCount', 1, 'ExpandedCount', 2, 'RejectedTransitionCount', 0, ...
@@ -121,7 +121,7 @@ function testPartialRoutesAndVisibilityAttemptsSurviveOutputAssembly(testCase)
         'BestPartialRoute_deg', [-3 0;0 -2], 'SelectedGoalLayerIndex', [], 'ReachableGoalLayerCount', 0);
     routes.SpatialSearchRecord.BestPartialRoute_deg = [-3 0;-1 0];
     guesses = obstacleAvoidance.search.createPathGuesses(s.Initial, s.Goal, s.Limits, s.Options, routes, routeSearchGeometry.shape.Vertices);
-    search  = obstacleAvoidance.search.createSearchDiagnostics(planningContext, graph, routes, guesses);
+    search  = obstacleAvoidance.search.createSearchDiagnostics(obstaclePlanningData, graph, routes, guesses);
     verifyEqual(testCase, search.TimedBestPartialRoute_deg, [-3 0;0 -2]);
     verifyEqual(testCase, search.SpatialBestPartialRoute_deg, [-3 0;-1 0]);
     verifyEqual(testCase, search.BestPartialRoute_deg, search.TimedBestPartialRoute_deg);
@@ -129,7 +129,7 @@ function testPartialRoutesAndVisibilityAttemptsSurviveOutputAssembly(testCase)
     record.SearchDiagnostics.GraphSearch = search;record.Seeds = guesses;
     empty = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions();
     record.SearchDiagnostics.DirectAttempt       = empty.DirectAttempt;
-    record.SearchDiagnostics.FixedClockExcursion = empty.ExcursionDiagnostics;
+    record.SearchDiagnostics.MinimumTimeDetour = empty.MinimumTimeDetourDiagnostics;
     record.SearchDiagnostics.SelectionPolicy     = struct();
     [~, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(record, true);
     verifyTrue(testCase, any(diagnosis.VisibilityAttempts.Field=="EdgeRejectionReasons"));

@@ -66,7 +66,7 @@ if ~isstruct(directCandidate) || ~isscalar(directCandidate) ||  ~all(isfield(dir
 end
 % Promote the successful candidate; otherwise continue the configured fallback or search path.
 if ~directCandidate.Success || isempty(directCandidate.position_deg)
-    diagnostics = finishFailure(diagnostics, "directMotionUnavailable",  "A successful direct motion is required before an excursion is tried.", timer);
+    diagnostics = finishFailure(diagnostics, "directMotionUnavailable",  "A successful direct motion is required before a minimum-time detour is tried.", timer);
     return;
 end
 dimensionCount = size(directCandidate.position_deg, 2);
@@ -161,7 +161,7 @@ for axisIndex = 1:dimensionCount
             report.MaximumMagnitude_deg = maximumMagnitude_deg;
             report.Eligible             = maximumMagnitude_deg > boundaryResolution_deg;
             if ~report.Eligible
-                report.TerminationReason = "noExcursionRoom";
+                report.TerminationReason = "noDetourRoom";
                 axisReports(reportIndex) = report;
                 continue;
             end
@@ -174,7 +174,7 @@ for axisIndex = 1:dimensionCount
             % Each trial adds a smooth offset that is zero at both endpoints.
             for levelIndex = 1:coarseLevelCount
                 magnitude_deg                   = maximumMagnitude_deg * levelIndex / coarseLevelCount;
-                trialCandidates{levelIndex}     = createExcursion(directCandidate, direction * magnitude_deg,  axisIndex, peakTime_s(peakIndex), initialState, options);
+                trialCandidates{levelIndex}     = createDetour(directCandidate, direction * magnitude_deg,  axisIndex, peakTime_s(peakIndex), initialState, options);
                 trialMagnitudes_deg(levelIndex) = magnitude_deg;
             end
             % Quickly reject collisions at the stored sample times. A clear
@@ -219,7 +219,7 @@ for axisIndex = 1:dimensionCount
             % Refine the passing detour magnitude until resolution or iteration limits stop the search.
             while upperMagnitude_deg - lowerMagnitude_deg > boundaryResolution_deg && refinementCount < 6
                 midpointMagnitude_deg = 0.5 * (lowerMagnitude_deg + upperMagnitude_deg);
-                midpointCandidate     = createExcursion(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options);
+            midpointCandidate     = createDetour(directCandidate, direction * midpointMagnitude_deg, axisIndex, peakTime_s(peakIndex), initialState, options);
                 validationTimer       = tic;
                 midpointValidation    = obstacleAvoidance.validation.validatePreparedTrajectory(midpointCandidate, obstacles, initialState, goalState, limits, options);
                 diagnostics           = addValidationTiming(diagnostics, midpointValidation, toc(validationTimer));
@@ -254,7 +254,7 @@ for axisIndex = 1:dimensionCount
             diagnostics.Success                       = true;
             diagnostics.TerminationReason             = "goalReached";
             diagnostics.SelectedMode                  = "singleAmplitude";
-            diagnostics.Message                       =  "A one-sided fixed-clock excursion passed independent validation.";
+            diagnostics.Message                       =  "A one-sided minimum-time detour passed independent validation.";
             diagnostics.SelectedAxisIndex             = report.AxisIndex;
             diagnostics.SelectedDirection             = report.Direction;
             diagnostics.InvalidBoundaryMagnitude_deg  =  report.InvalidBoundaryMagnitude_deg;
@@ -277,7 +277,7 @@ if diagnostics.Success
     diagnostics.ElapsedTime_s = toc(timer);
     return;
 end
-diagnostics = finishFailure(diagnostics, "noValidatedExcursion",  "No enumerated fixed-clock excursion passed independent validation.", timer);
+diagnostics = finishFailure(diagnostics, "noValidatedMinimumTimeDetour",  "No enumerated minimum-time detour passed independent validation.", timer);
 end
 
 %% Section 4: Local Functions
@@ -314,7 +314,7 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
                 for direction = [-1 1]
                     trialOffset_deg            = offset_deg;
                     trialOffset_deg(knotIndex) = trialOffset_deg(knotIndex) + direction * step_deg;
-                    trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_deg, axisIndex, initialState, options.SampleTime_s,  "fixedClockLateralExcursion");
+                    trial                      = bmtpEngine.createOffsetSplineMotion(direct, knotTime_s,  trialOffset_deg, axisIndex, initialState, options.SampleTime_s,  "minimumTimeDetour");
                     record.TrialCount = record.TrialCount + 1;
                     % Avoid a full safety check unless the proposed motion is
                     % shorter by more than 1e-8 degrees (a numerical noise guard).
@@ -359,13 +359,13 @@ function record = createTravelRefinement()
     record.KnotOffset_deg    = zeros(0, 1);
 end
 
-function candidate = createExcursion(directCandidate, amplitude_deg, axisIndex, peakTime_s,  initialState, options)
+function candidate = createDetour(directCandidate, amplitude_deg, axisIndex, peakTime_s,  initialState, options)
     % Add an offset of zero at the start, amplitude_deg at the chosen interior
     % time, and zero at arrival. The smooth curve need not stop at that interior
     % point; its velocity and acceleration are not forced to zero there.
     startTime_s = initialState.time_s;
     endTime_s   = directCandidate.ArrivalTime_s;
-    candidate   = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s],  [0; amplitude_deg; 0], axisIndex, initialState,  options.SampleTime_s, "fixedClockLateralExcursion");
+    candidate   = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s],  [0; amplitude_deg; 0], axisIndex, initialState,  options.SampleTime_s, "minimumTimeDetour");
 end
 
 function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, options)
@@ -459,7 +459,7 @@ function diagnostics = createDiagnostics()
     diagnostics = struct();
     diagnostics.Attempted                      = false;
     diagnostics.Success                        = false;
-    diagnostics.Message                        = "The fixed-clock excursion was not attempted.";
+    diagnostics.Message                        = "The minimum-time detour was not attempted.";
     diagnostics.TerminationReason              = "notRun";
     diagnostics.SelectedMode                   = "";
     diagnostics.ClockMatched                   = false;

@@ -26,7 +26,7 @@ function setupOnce(~)
     addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 end
 
-function testPlanningContextOwnsSharedRequestData(testCase)
+function testObstaclePlanningDataOwnsSharedRequestData(testCase)
     % Keep request-wide obstacle, horizon, and route-search data in one record.
     obstacleTime_s  = [0; 10];
     staticObstacle  = obstacleAvoidance.obstacles.createObstacle("static", obstacleTime_s, [-1 1 1 -1], [-1 -1 1 1], 0.1);
@@ -38,28 +38,28 @@ function testPlanningContextOwnsSharedRequestData(testCase)
         "goalState", restState(10, [8 0]), ...
         "limits", physicalLimits(), ...
         "options", obstacleAvoidance.input.resolvePlannerOptions(plannerOptions("earliestArrival")));
-    planningContext = obstacleAvoidance.obstacles.createPlanningContext(request.obstacles, request.initialState, request.goalState);
+    obstaclePlanningData = obstacleAvoidance.obstacles.createObstaclePlanningData(request.obstacles, request.initialState, request.goalState);
 
-    verifyEqual(testCase, planningContext.startTime_s, 0);
-    verifyEqual(testCase, planningContext.endTime_s, 10);
-    verifyFalse(testCase, planningContext.obstaclesRemainStatic);
-    verifyEqual(testCase, numel(planningContext.preparedObstacles), 2);
-    verifyEqual(testCase, numel(planningContext.preparedObstacles(1).time_s), 2);
-    verifyEqual(testCase, numel(planningContext.preparedObstacles(2).time_s), 2);
-    verifyTrue(testCase, planningContext.preparedObstacles(1).InternalPreparation.IsTimeInvariant);
-    verifyFalse(testCase, planningContext.preparedObstacles(2).InternalPreparation.IsTimeInvariant);
-    verifyEqual(testCase, planningContext.preparedObstacles(2).InternalPreparation.IntervalGeometryModel, "linearCorrespondingVertices");
-    verifyEmpty(testCase, fieldnames(planningContext.routeSearchGeometry));
+    verifyEqual(testCase, obstaclePlanningData.startTime_s, 0);
+    verifyEqual(testCase, obstaclePlanningData.endTime_s, 10);
+    verifyFalse(testCase, obstaclePlanningData.obstaclesRemainStatic);
+    verifyEqual(testCase, numel(obstaclePlanningData.preparedObstacles), 2);
+    verifyEqual(testCase, numel(obstaclePlanningData.preparedObstacles(1).time_s), 2);
+    verifyEqual(testCase, numel(obstaclePlanningData.preparedObstacles(2).time_s), 2);
+    verifyTrue(testCase, obstaclePlanningData.preparedObstacles(1).InternalPreparation.IsTimeInvariant);
+    verifyFalse(testCase, obstaclePlanningData.preparedObstacles(2).InternalPreparation.IsTimeInvariant);
+    verifyEqual(testCase, obstaclePlanningData.preparedObstacles(2).InternalPreparation.IntervalGeometryModel, "linearCorrespondingVertices");
+    verifyEmpty(testCase, fieldnames(obstaclePlanningData.routeSearchGeometry));
 
-    planningContext = obstacleAvoidance.search.addRouteSearchGeometry(planningContext, request.initialState, request.goalState, request.options);
-    routeSearchGeometry = planningContext.routeSearchGeometry;
+    obstaclePlanningData = obstacleAvoidance.search.addRouteSearchGeometry(obstaclePlanningData, request.initialState, request.goalState, request.options);
+    routeSearchGeometry = obstaclePlanningData.routeSearchGeometry;
     verifyEqual(testCase, routeSearchGeometry.start_deg, [-4 0]);
     verifyEqual(testCase, routeSearchGeometry.goal_deg, [8 0]);
     verifyEqual(testCase, routeSearchGeometry.sampleTimes_s, linspace(0, 10, 9).');
-    maximumVerticesPerObstacle = zeros(1, numel(planningContext.preparedObstacles));
+    maximumVerticesPerObstacle = zeros(1, numel(obstaclePlanningData.preparedObstacles));
     % Exercise each obstacle covered by this regression.
-    for obstacleIndex = 1:numel(planningContext.preparedObstacles)
-        maximumVerticesPerObstacle(obstacleIndex) = max(cellfun(@numel, planningContext.preparedObstacles(obstacleIndex).az_deg));
+    for obstacleIndex = 1:numel(obstaclePlanningData.preparedObstacles)
+        maximumVerticesPerObstacle(obstacleIndex) = max(cellfun(@numel, obstaclePlanningData.preparedObstacles(obstacleIndex).az_deg));
     end
     expectedVertexWork = numel(routeSearchGeometry.sampleTimes_s) * sum(maximumVerticesPerObstacle);
     verifyEqual(testCase, routeSearchGeometry.estimatedVertexWork, expectedVertexWork);
@@ -68,7 +68,7 @@ function testPlanningContextOwnsSharedRequestData(testCase)
     verifyEqual(testCase, routeSearchGeometry.sampledShapeCount, 18);
     verifyEqual(testCase, size(routeSearchGeometry.edgeStart_deg), size(routeSearchGeometry.edgeEnd_deg));
 
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(request.limits, planningContext);
+    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(request.limits, obstaclePlanningData);
     verifyGreaterThanOrEqual(testCase, visibilityGraph.FinalAttemptIndex, 1);
     verifyEqual(testCase, numel(visibilityGraph.Attempts), visibilityGraph.FinalAttemptIndex);
     verifyEqual(testCase, visibilityGraph.NodePosition_deg, visibilityGraph.Attempts(end).Nodes.Positions_deg);
@@ -78,7 +78,7 @@ function testPlanningContextOwnsSharedRequestData(testCase)
     verifyTrue(testCase, isfield(visibilityGraph.Attempts, "EdgeRejectionReasons"));
     verifyTrue(testCase, isfield(visibilityGraph.Attempts, "RecoverySteps"));
 
-    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, planningContext, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, obstaclePlanningData, visibilityGraph);
     seedSet  = obstacleAvoidance.search.createPathGuesses(request.initialState, request.goalState, request.limits, request.options, routeSet, routeSearchGeometry.shape.Vertices);
     verifyEqual(testCase, seedSet(1).Source, "directPathGuess");
     verifyEqual(testCase, [seedSet.Index], 1:numel(seedSet));
@@ -138,13 +138,13 @@ function testSpatialSearchAllowsMultipleWindingAndEndsWhenDisconnected(testCase)
         "goalState", restState(20, nodePosition_deg(2, :)), ...
         "limits", physicalLimits(), ...
         "options", obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "earliestArrival", "MaximumSeedCount", 2)));
-    planningContext = obstacleAvoidance.obstacles.createPlanningContext(request.obstacles, request.initialState, request.goalState);
-    planningContext.routeSearchGeometry = struct("usedDenseEnvelope", false, "sampleTimes_s", [0; 20], ...
+    obstaclePlanningData = obstacleAvoidance.obstacles.createObstaclePlanningData(request.obstacles, request.initialState, request.goalState);
+    obstaclePlanningData.routeSearchGeometry = struct("usedDenseEnvelope", false, "sampleTimes_s", [0; 20], ...
         "goal_deg", nodePosition_deg(2, :), "shape", polyshape(), ...
         "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
     visibilityGraph = struct("NodePosition_deg", nodePosition_deg, "EdgeCost_deg", edgeCost_deg, ...
         "ObstacleReferencePoints_deg", [0 0]);
-    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, planningContext, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, obstaclePlanningData, visibilityGraph);
     verifyEmpty(testCase, routeSet.SpatialRoutes_deg);
     verifyNumElements(testCase, routeSet.DeferredSpatialRoutes_deg, 1);
     verifyFalse(testCase, routeSet.DeferredSpatialSolveAttempted);
@@ -177,8 +177,8 @@ function testDenseRouteGeometryDefersThenRunsExactTimedSearch(testCase)
         "limits", physicalLimits(), ...
         "options", obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "fixedArrival", "MaximumSeedCount", 1, ...
             "MaximumTimeLayerCount", 3)));
-    planningContext = obstacleAvoidance.obstacles.createPlanningContext(request.obstacles, request.initialState, request.goalState);
-    planningContext.routeSearchGeometry = struct("usedDenseEnvelope", true, "sampleTimes_s", [0; 5; 10], ...
+    obstaclePlanningData = obstacleAvoidance.obstacles.createObstaclePlanningData(request.obstacles, request.initialState, request.goalState);
+    obstaclePlanningData.routeSearchGeometry = struct("usedDenseEnvelope", true, "sampleTimes_s", [0; 5; 10], ...
         "goal_deg", [2 0], "shape", polyshape(), ...
         "edgeStart_deg", zeros(0, 2), "edgeEnd_deg", zeros(0, 2));
     visibilityGraph = struct();
@@ -186,14 +186,14 @@ function testDenseRouteGeometryDefersThenRunsExactTimedSearch(testCase)
     visibilityGraph.EdgeCost_deg                = [0 2; 2 0];
     visibilityGraph.ObstacleReferencePoints_deg = zeros(0, 2);
 
-    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, planningContext, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, obstaclePlanningData, visibilityGraph);
 
     verifyFalse(testCase, routeSet.TimedSearchAttempted);
     verifyTrue(testCase, routeSet.TimedSearchDeferred);
     verifyEqual(testCase, routeSet.TimedSearchSuppressionReason, "deferredDenseTimedSearch");
 
     routeSet.SpatialSearchRecord.RecoverySentinel = 314;
-    recoveredRouteSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, planningContext, visibilityGraph, routeSet);
+    recoveredRouteSet = obstacleAvoidance.search.searchRoutes(request.initialState, request.goalState, request.limits, request.options, obstaclePlanningData, visibilityGraph, routeSet);
 
     verifyTrue(testCase, recoveredRouteSet.TimedSearchAttempted);
     verifyTrue(testCase, recoveredRouteSet.TimedSearchDeferred);
@@ -618,7 +618,7 @@ function testReflectedProgressAxisKeepsShortExactClockDetour(testCase)
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
     verifyTrue(testCase, result.Validation.CollisionFree);
     verifyTrue(testCase, result.Validation.CollisionResolved);
-    diagnostics = resultDiagnosis.PathRefinement;
+    diagnostics = resultDiagnosis.MinimumTimeDetour;
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "Success"), testSupport.diagnosisValue(diagnostics, "Message"));
     verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.Attempted"));
     verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.FinalLength_deg"), testSupport.diagnosisValue(diagnostics, "TravelRefinement.InitialLength_deg"));

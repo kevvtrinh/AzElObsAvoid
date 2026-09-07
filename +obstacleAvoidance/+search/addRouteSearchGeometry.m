@@ -1,8 +1,8 @@
-function planningContext = addRouteSearchGeometry(planningContext, initialState, goalState, options)
+function obstaclePlanningData = addRouteSearchGeometry(obstaclePlanningData, initialState, goalState, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   planningContext = obstacleAvoidance.search.addRouteSearchGeometry( ...
-%       planningContext, initialState, goalState, options)
+%   obstaclePlanningData = obstacleAvoidance.search.addRouteSearchGeometry( ...
+%       obstaclePlanningData, initialState, goalState, options)
 %
 % PURPOSE
 %   - Build a 2-D obstacle outline for finding possible paths.
@@ -11,12 +11,12 @@ function planningContext = addRouteSearchGeometry(planningContext, initialState,
 % INPUTS
 %   - initialState, goalState: route endpoints.
 %   - options: coordinate wrapping policy.
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       Prepared obstacles and the physical request horizon. Its empty
 %       routeSearchGeometry field receives the derived search geometry.
 %
 % OUTPUTS
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       The same request-wide record with routeSearchGeometry populated.
 %       Route-search geometry can suggest paths but cannot approve motion.
 %
@@ -28,13 +28,13 @@ function planningContext = addRouteSearchGeometry(planningContext, initialState,
 
 % Use the planning horizon and resolve the wrapped endpoint.
 
-obstacles = planningContext.preparedObstacles;
+obstacles = obstaclePlanningData.preparedObstacles;
 start_deg = initialState.position_deg;
-goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, planningContext.endTime_s);
+goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, obstaclePlanningData.endTime_s);
 if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
-sampleTimes_s = createObstacleSampleTimes(obstacles, planningContext.startTime_s, planningContext.endTime_s);
+sampleTimes_s = createObstacleSampleTimes(obstacles, obstaclePlanningData.startTime_s, obstaclePlanningData.endTime_s);
 
 %% Section 2: Select The Route-Search Representation
 
@@ -77,7 +77,7 @@ end
 
 % Save geometry choices for diagnostics and plots.
 
-planningContext.routeSearchGeometry = struct("start_deg", start_deg, ...
+obstaclePlanningData.routeSearchGeometry = struct("start_deg", start_deg, ...
     "goal_deg", goal_deg, ...
     "sampleTimes_s", sampleTimes_s, ...
     "vertexWorkBudget", vertexWorkBudget, ...

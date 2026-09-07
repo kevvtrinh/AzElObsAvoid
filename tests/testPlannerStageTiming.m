@@ -176,7 +176,7 @@ function trajectory = linearTrajectory(initialState, goalState)
         "jerk_deg_s3", zeros(2, 2), "Polynomial", polynomial);
 end
 
-function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
+function testMinimumTimeDetourTimingIsExclusive(testCase)
     % A detour at the physical time floor can be the sole validated construction.
     for vertices = {[-1 -1;1 -1;1 1;-1 1], ...
             [-1.5 -0.5;0 -1.3;1.5 0;0.3 1.7;-1 0.6]}
@@ -203,7 +203,7 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
             verifyTrue(testCase, result.Success, result.Message);
             validation = obstacleAvoidance.validateTrajectory(result);
             verifyTrue(testCase, validation.Passed, validation.Message);
-            isDetour = [diagnosis.Attempts.SeedSource] == "fixedClockLateralExcursion";
+    isDetour = [diagnosis.Attempts.SeedSource] == "minimumTimeDetour";
             verifyTrue(testCase, any(isDetour & [diagnosis.Attempts.ValidationPassed]));
             verifyTrue(testCase, isfinite(diagnosis.FirstValidatedMotionTime_s));
             verifyGreaterThan(testCase, diagnosis.FirstValidatedMotionTime_s, 0);

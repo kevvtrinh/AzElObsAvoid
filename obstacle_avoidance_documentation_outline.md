@@ -71,7 +71,7 @@ references in appendices. Describe current behavior, not the development history
 - Public `shapeAtTime` and occupancy queries versus prepared internal versions.
 - Boundary occupancy, clearance tolerance, query broadcasting, blocking-obstacle
   identity, and batching of repeated geometry evaluations.
-- `createPlanningContext` and `queryStaticHorizon`: prepare one shared request
+- `createObstaclePlanningData` and `queryStaticHorizon`: prepare one shared request
   record and classify the entire requested
   horizon, including mixed static/moving scenes and activity changes.
 
@@ -92,7 +92,7 @@ references in appendices. Describe current behavior, not the development history
 ## 7. Building geometry for route search
 
 - `addRouteSearchGeometry`: add endpoints, wrapped goal, and search geometry to
-  the shared planning context.
+  the shared obstacle-planning data record.
 - Sample-time construction: source times, interval midpoints, endpoints, and
   nine uniform request times; clipping and deduplication.
 - Sampled obstacle union versus `denseSweptEnvelope`.
@@ -254,7 +254,7 @@ Required groups:
 
 - Geometry cleanup/alignment, interpolation selection, history enclosure,
   construction parallelism, and cache invalidation.
-- Direct-motion eligibility, excursion enumeration/screening/refinement.
+- Direct-motion eligibility and minimum-time-detour enumeration, screening, and refinement.
 - Dense-envelope work threshold and endpoint guard.
 - Visibility offsets/retries, node selection, pair budget, and connectivity repair.
 - Spatial route signatures, shortcutting, class limits, and deferred winding paths.
@@ -286,7 +286,7 @@ behind safety-preserving rules separately from search-quality tradeoffs.
 
 A. Complete public input, option, result, diagnosis, and validation field tables.
 
-B. Internal data structures: planning context, graph, timed state,
+B. Internal data structures: obstacle-planning data, graph, timed state,
 route set, seed, candidate, polynomial, and certificate. Include producer/consumer
 relationships, dimensions, units, and ownership.
 
@@ -326,7 +326,7 @@ coverage; it does not substitute for reading each implementation.
 - `+obstacleAvoidance/+obstacles/createStationaryObstacleEnclosures.m`
 - `+obstacleAvoidance/+obstacles/prepareObstacles.m`
 - `+obstacleAvoidance/+obstacles/prepareOneObstacle.m`
-- `+obstacleAvoidance/+obstacles/createPlanningContext.m`
+- `+obstacleAvoidance/+obstacles/createObstaclePlanningData.m`
 - `+obstacleAvoidance/+obstacles/preparedShapeAtTime.m`
 - `+obstacleAvoidance/+obstacles/queryObstacleOccupancyAtTime.m`
 - `+obstacleAvoidance/+obstacles/queryPreparedObstacles.m`

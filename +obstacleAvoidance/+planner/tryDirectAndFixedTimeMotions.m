@@ -1,9 +1,9 @@
-function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, planningContext, stageTiming)
+function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, obstaclePlanningData, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   defaults = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions()
 %   exactMotionSet = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions( ...
-%       initialState, goalState, limits, options, planningContext, stageTiming)
+%       initialState, goalState, limits, options, obstaclePlanningData, stageTiming)
 %
 % PURPOSE
 %   - Before searching for a route, try a direct move and detours with the
@@ -11,14 +11,14 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %
 % INPUTS
 %   - initialState, goalState, limits, options: motion constraints.
-%   - planningContext (scalar struct)
+%   - obstaclePlanningData (scalar struct)
 %       The request-wide record containing prepared obstacles.
 %   - stageTiming (scalar timing struct)
 %       Accumulated planner stage timings before exact motion work.
 %
 % OUTPUTS
 %   - exactMotionSet (scalar struct)
-%       Direct and excursion candidates, checks, diagnostics, timing, and an
+%       Direct and minimum-time-detour candidates, checks, diagnostics, timing, and an
 %       explicit fully validated fast-path record. A zero-input call returns
 %       stable not-attempted diagnostics.
 %
@@ -28,20 +28,20 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 
 %% Section 1: Create Stable Attempt Records
 
-[~, excursionDiagnostics] = obstacleAvoidance.planner.tryFixedTimeDetour();
+[~, minimumTimeDetourDiagnostics] = obstacleAvoidance.planner.tryFixedTimeDetour();
 exactMotionSet                          = struct();
 exactMotionSet.DirectAttempt          = directAttemptTemplate();
-exactMotionSet.ExcursionCandidate     = struct();
-exactMotionSet.ExcursionDiagnostics   = excursionDiagnostics;
-exactMotionSet.ExcursionElapsedTime_s = 0;
-exactMotionSet.ExcursionIsValidated   = false;
-exactMotionSet.ExcursionSeed          = obstacleAvoidance.search.createEmptyPathGuess();
+exactMotionSet.MinimumTimeDetourCandidate     = struct();
+exactMotionSet.MinimumTimeDetourDiagnostics   = minimumTimeDetourDiagnostics;
+exactMotionSet.MinimumTimeDetourElapsedTime_s = 0;
+exactMotionSet.MinimumTimeDetourIsValidated   = false;
+exactMotionSet.MinimumTimeDetourSeed          = obstacleAvoidance.search.createEmptyPathGuess();
 exactMotionSet.FastPath               = emptyFastPath();
 exactMotionSet.StageTiming            = struct();
 if nargin == 0
     return;
 end
-preparedObstacles = planningContext.preparedObstacles;
+preparedObstacles = obstaclePlanningData.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
 endpointDerivative      = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];
@@ -77,25 +77,25 @@ if directValidation.Passed
 end
 exactMotionSet.DirectAttempt.FallbackContinued = true;
 
-%% Section 3: Create And Check The Fixed-Clock Excursion
+%% Section 3: Create And Check The Minimum-Time Detour
 
-% The excursion constructor already validates its motion.
+% The detour constructor already validates its motion.
 % Account for that validation separately from construction time.
 motionTimer = tic;
-[excursionCandidate, excursionDiagnostics] = obstacleAvoidance.planner.tryFixedTimeDetour(directCandidate, preparedObstacles, initialState, goalState, limits, options, directValidation);
-excursionElapsedTime_s = toc(motionTimer);
-[stageTiming, excursionSolvingTime_s] = accountConstructorValidation(stageTiming, excursionElapsedTime_s, excursionDiagnostics);
-exactMotionSet.ExcursionCandidate     = excursionCandidate;
-exactMotionSet.ExcursionDiagnostics   = excursionDiagnostics;
-exactMotionSet.ExcursionElapsedTime_s = excursionSolvingTime_s;
-% Accept the direct excursion only when construction and independent validation both pass; otherwise continue to route search.
-if excursionDiagnostics.Success && excursionCandidate.Validation.Passed
-    excursionSeed = createMotionSeed(excursionCandidate, "fixedClockLateralExcursion");
-    exactMotionSet.ExcursionIsValidated = true;
-    exactMotionSet.ExcursionSeed        = excursionSeed;
+[minimumTimeDetourCandidate, minimumTimeDetourDiagnostics] = obstacleAvoidance.planner.tryFixedTimeDetour(directCandidate, preparedObstacles, initialState, goalState, limits, options, directValidation);
+minimumTimeDetourElapsedTime_s = toc(motionTimer);
+[stageTiming, minimumTimeDetourSolvingTime_s] = accountConstructorValidation(stageTiming, minimumTimeDetourElapsedTime_s, minimumTimeDetourDiagnostics);
+exactMotionSet.MinimumTimeDetourCandidate     = minimumTimeDetourCandidate;
+exactMotionSet.MinimumTimeDetourDiagnostics   = minimumTimeDetourDiagnostics;
+exactMotionSet.MinimumTimeDetourElapsedTime_s = minimumTimeDetourSolvingTime_s;
+% Accept the detour only when construction and independent validation both pass; otherwise continue to route search.
+if minimumTimeDetourDiagnostics.Success && minimumTimeDetourCandidate.Validation.Passed
+    minimumTimeDetourSeed = createMotionSeed(minimumTimeDetourCandidate, "minimumTimeDetour");
+    exactMotionSet.MinimumTimeDetourIsValidated = true;
+    exactMotionSet.MinimumTimeDetourSeed        = minimumTimeDetourSeed;
     % Continue searching only until the first reachable goal layer in earliest-arrival mode; fixed-arrival mode must evaluate its prescribed horizon.
     if options.GoalTimeMode == "earliestArrival"
-        exactMotionSet.FastPath = createFastPath(excursionCandidate, excursionCandidate.Validation, excursionDiagnostics, excursionSolvingTime_s, excursionSeed, "A fixed-clock lateral excursion attained the physical time floor.");
+        exactMotionSet.FastPath = createFastPath(minimumTimeDetourCandidate, minimumTimeDetourCandidate.Validation, minimumTimeDetourDiagnostics, minimumTimeDetourSolvingTime_s, minimumTimeDetourSeed, "A minimum-time detour attained the physical time floor.");
     end
 end
 exactMotionSet.StageTiming = stageTiming;

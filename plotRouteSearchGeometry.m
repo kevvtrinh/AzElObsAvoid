@@ -6,7 +6,7 @@
 %   Visualize the geometry added by addRouteSearchGeometry without
 %   running the trajectory planner or optimizer. Requires this repository.
 % INPUTS
-%   Existing planningContext in the currently selected debug workspace.
+%   Existing obstaclePlanningData in the currently selected debug workspace.
 %   This script reads that record directly; it does not recreate it.
 % OUTPUTS
 %   Leaves geometryFigure and plot variables in the workspace.
@@ -28,8 +28,8 @@ maximumDisplayedSnapshots = 25; % Display only; the context retains all samples.
 addpath(fileparts(mfilename('fullpath')));
 
 %% Section 2: Require The Paused Planner Geometry
-assert(exist('planningContext', 'var') == 1 && isstruct(planningContext) && isfield(planningContext, 'routeSearchGeometry'), 'plotRouteSearchGeometry:MissingPlanningContext', ['Pause after addRouteSearchGeometry returns, then run this script ' 'in the planTrajectory debug workspace.']);
-routeSearchGeometry = planningContext.routeSearchGeometry;
+assert(exist('obstaclePlanningData', 'var') == 1 && isstruct(obstaclePlanningData) && isfield(obstaclePlanningData, 'routeSearchGeometry'), 'plotRouteSearchGeometry:MissingObstaclePlanningData', ['Pause after addRouteSearchGeometry returns, then run this script ' 'in the planTrajectory debug workspace.']);
+routeSearchGeometry = obstaclePlanningData.routeSearchGeometry;
 
 %% Section 3: Plot Sampled Obstacles And Route-Search Boundary
 geometryFigure = figure('Name', 'Route-search geometry', 'Color', 'w', 'Visible', figureVisibility);
@@ -41,18 +41,18 @@ timeColors      = parula(256);
 % Process each sample in temporal order and accumulate its result.
 for sampleIndex = snapshotIndices
     sampleTime_s = routeSearchGeometry.sampleTimes_s(sampleIndex);
-    timeFraction = (sampleTime_s - planningContext.startTime_s) / (planningContext.endTime_s - planningContext.startTime_s);
+    timeFraction = (sampleTime_s - obstaclePlanningData.startTime_s) / (obstaclePlanningData.endTime_s - obstaclePlanningData.startTime_s);
     colorIndex   = 1 + round(255 * timeFraction);
     % Evaluate each obstacle against the current geometry or motion.
-    for obstacleIndex = 1:numel(planningContext.preparedObstacles)
-        snapshotShape = obstacleAvoidance.obstacles.preparedShapeAtTime(planningContext.preparedObstacles(obstacleIndex), sampleTime_s);
+    for obstacleIndex = 1:numel(obstaclePlanningData.preparedObstacles)
+        snapshotShape = obstacleAvoidance.obstacles.preparedShapeAtTime(obstaclePlanningData.preparedObstacles(obstacleIndex), sampleTime_s);
         if ~isempty(snapshotShape.Vertices)
             plot(snapshotAxes, snapshotShape, 'FaceColor', timeColors(colorIndex, :), 'FaceAlpha', 0.08, 'EdgeColor', timeColors(colorIndex, :));
         end
     end
 end
 colormap(snapshotAxes, timeColors);
-clim(snapshotAxes, [planningContext.startTime_s planningContext.endTime_s]);
+clim(snapshotAxes, [obstaclePlanningData.startTime_s obstaclePlanningData.endTime_s]);
 timeColorbar = colorbar(snapshotAxes);
 timeColorbar.Label.String = 'Sample time (s)';
 title(snapshotAxes, sprintf('Protected snapshots: %d of %d times', numel(snapshotIndices), numel(routeSearchGeometry.sampleTimes_s)));
@@ -89,4 +89,4 @@ drawnow; % Render immediately while the planner remains paused.
 fprintf('Representation: %s\n', routeSearchGeometry.representation);
 fprintf('Sample times: %d; displayed: %d; boundary edges: %d\n', numel(routeSearchGeometry.sampleTimes_s), numel(snapshotIndices), size(routeSearchGeometry.edgeStart_deg, 1));
 fprintf('Estimated vertex work: %g; envelope threshold: %g\n', routeSearchGeometry.estimatedVertexWork, routeSearchGeometry.vertexWorkBudget);
-disp(planningContext);
+disp(obstaclePlanningData);

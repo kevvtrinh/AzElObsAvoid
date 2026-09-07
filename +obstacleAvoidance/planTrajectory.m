@@ -62,7 +62,7 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 
-%% Section 3: Normalize The Request And Create The Planning Context
+%% Section 3: Normalize The Request And Create Obstacle-Planning Data
 
 planningTimer = tic;
 
@@ -74,10 +74,10 @@ options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
 [result, summaryTemplate] = obstacleAvoidance.planner.initializePlanningRecord(obstacles, initialState, goalState, limits, options, obstacleAvoidance.validateTrajectory());
 
 % Create the one request-wide record shared by search, motion planning, and validation.
-planningContext = obstacleAvoidance.obstacles.createPlanningContext(obstacles, initialState, goalState);
+obstaclePlanningData = obstacleAvoidance.obstacles.createObstaclePlanningData(obstacles, initialState, goalState);
 
-preparedObstacles = planningContext.preparedObstacles;
-useStaticSolver   = planningContext.obstaclesRemainStatic;
+preparedObstacles = obstaclePlanningData.preparedObstacles;
+useStaticSolver   = obstaclePlanningData.obstaclesRemainStatic;
 stageTiming       = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.SelectionPolicy = struct("GoalTimeMode", options.GoalTimeMode, "JerkRole", "hardConstraintOnly");
 %% Section 4: Check Physical Endpoints
@@ -87,7 +87,7 @@ result.SearchDiagnostics.SelectionPolicy = struct("GoalTimeMode", options.GoalTi
 if ~endpointFeasible
     emptyMotions = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions();
     result.SearchDiagnostics.DirectAttempt       = emptyMotions.DirectAttempt;
-    result.SearchDiagnostics.FixedClockExcursion = emptyMotions.ExcursionDiagnostics;
+    result.SearchDiagnostics.MinimumTimeDetour = emptyMotions.MinimumTimeDetourDiagnostics;
 
     result = finalizePlanningTiming(result, planningTimer, stageTiming);
     [result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
@@ -97,14 +97,14 @@ end
 %% Section 5: Try Exact Physical-Time Motions
 
 % Try validated direct and fixed-clock motions before building the graph.
-exactMotionSet             = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, planningContext, stageTiming);
+exactMotionSet             = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, obstaclePlanningData, stageTiming);
 stageTiming                = exactMotionSet.StageTiming;
 firstValidatedMotionTime_s = NaN;
-if exactMotionSet.ExcursionIsValidated
+if exactMotionSet.MinimumTimeDetourIsValidated
     firstValidatedMotionTime_s = toc(planningTimer);
 end
 result.SearchDiagnostics.DirectAttempt       = exactMotionSet.DirectAttempt;
-result.SearchDiagnostics.FixedClockExcursion = exactMotionSet.ExcursionDiagnostics;
+result.SearchDiagnostics.MinimumTimeDetour = exactMotionSet.MinimumTimeDetourDiagnostics;
 if exactMotionSet.FastPath.Available
     fastPath = exactMotionSet.FastPath;
     result   = finishFastPath(result, fastPath.Candidate, fastPath.Validation, fastPath.AttemptDetails, fastPath.ElapsedTime_s, fastPath.Seed, summaryTemplate, fastPath.Message, planningTimer, stageTiming);
@@ -122,15 +122,15 @@ obstacleEnvelope_deg = zeros(0, 2);
 needsRouteSearch     = options.MaximumSeedCount > 1 && ~isempty(preparedObstacles);
 if needsRouteSearch
     % Add route-search geometry to the shared context; final validation still uses the prepared obstacle histories.
-    planningContext = obstacleAvoidance.search.addRouteSearchGeometry(planningContext, initialState, goalState, options);
+    obstaclePlanningData = obstacleAvoidance.search.addRouteSearchGeometry(obstaclePlanningData, initialState, goalState, options);
 
     % Build the visibility graph and record its attempts.
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, planningContext);
+    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, obstaclePlanningData);
 
     % Search timed routes and distinct spatial routes.
-    routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, planningContext, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, obstaclePlanningData, visibilityGraph);
 
-    obstacleEnvelope_deg = planningContext.routeSearchGeometry.shape.Vertices;
+    obstacleEnvelope_deg = obstaclePlanningData.routeSearchGeometry.shape.Vertices;
 end
 % Seed the general solver with a direct guess, then any searched detours.
 seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg);
@@ -150,7 +150,7 @@ primaryCandidates = cell(primarySeedCount, 1);
 % Evaluate each seed before retaining the best admissible candidate.
 for seedIndex = 1:primarySeedCount
     [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
-        stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(planningContext, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
+        stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(obstaclePlanningData, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
     % Record the first validation time once; later successful candidates must not overwrite that milestone.
     if primarySummaries(seedIndex).ValidationPassed && isnan(firstValidatedMotionTime_s)
         firstValidatedMotionTime_s = toc(planningTimer);
@@ -163,15 +163,15 @@ candidateSet = struct("Seeds", primarySeeds, ...
     "StageTiming", stageTiming);
 
 % Try additional seeds after failure, up to MaximumSeedCount.
-recoveryContext = struct("PlanningContext", planningContext, ...
+recoveryContext = struct("ObstaclePlanningData", obstaclePlanningData, ...
     "VisibilityGraph", visibilityGraph, ...
     "SeedSolveContext", seedSolveContext, ...
-    "HasValidatedExactMotion", exactMotionSet.ExcursionIsValidated, ...
+    "HasValidatedExactMotion", exactMotionSet.MinimumTimeDetourIsValidated, ...
     "PlanningTimer", planningTimer);
 [candidateSet, routeSet, generatedSeeds] = obstacleAvoidance.planner.tryAdditionalPathGuesses(initialState, goalState, limits, options, candidateSet, routeSet, seeds, recoveryContext);
 
 % Assemble diagnostics after recovery has added its routes and seeds.
-searchDiagnostics = obstacleAvoidance.search.createSearchDiagnostics(planningContext, visibilityGraph, routeSet, generatedSeeds);
+searchDiagnostics = obstacleAvoidance.search.createSearchDiagnostics(obstaclePlanningData, visibilityGraph, routeSet, generatedSeeds);
 searchDiagnostics.ElapsedTime_s = candidateSet.StageTiming.RouteSearchElapsedTime_s;
 result.SearchDiagnostics.GraphSearch = searchDiagnostics;
 
@@ -182,16 +182,16 @@ firstValidatedMotionTime_s = candidateSet.FirstValidatedMotionTime_s;
 stageTiming                = candidateSet.StageTiming;
 
 % Compare validated fixed-arrival motions by travel length.
-if exactMotionSet.ExcursionIsValidated
-    excursionCandidate     = exactMotionSet.ExcursionCandidate;
-    excursionDiagnostics   = exactMotionSet.ExcursionDiagnostics;
-    excursionElapsedTime_s = exactMotionSet.ExcursionElapsedTime_s;
-    excursionSeed          = exactMotionSet.ExcursionSeed;
-    excursionCandidate.SeedIndex = numel(seeds) + 1;
-    excursionSeed.Index = excursionCandidate.SeedIndex;
-    seeds(end + 1) = excursionSeed;
-    candidates{end + 1, 1} = excursionCandidate;
-    seedSummaries(end + 1, 1) = obstacleAvoidance.planner.createCandidateSummary(excursionCandidate, excursionCandidate.Validation, excursionDiagnostics, excursionElapsedTime_s, summaryTemplate, limits);
+if exactMotionSet.MinimumTimeDetourIsValidated
+    minimumTimeDetourCandidate     = exactMotionSet.MinimumTimeDetourCandidate;
+    minimumTimeDetourDiagnostics   = exactMotionSet.MinimumTimeDetourDiagnostics;
+    minimumTimeDetourElapsedTime_s = exactMotionSet.MinimumTimeDetourElapsedTime_s;
+    minimumTimeDetourSeed          = exactMotionSet.MinimumTimeDetourSeed;
+    minimumTimeDetourCandidate.SeedIndex = numel(seeds) + 1;
+    minimumTimeDetourSeed.Index = minimumTimeDetourCandidate.SeedIndex;
+    seeds(end + 1) = minimumTimeDetourSeed;
+    candidates{end + 1, 1} = minimumTimeDetourCandidate;
+    seedSummaries(end + 1, 1) = obstacleAvoidance.planner.createCandidateSummary(minimumTimeDetourCandidate, minimumTimeDetourCandidate.Validation, minimumTimeDetourDiagnostics, minimumTimeDetourElapsedTime_s, summaryTemplate, limits);
 end
 
 %% Section 7: Select A Valid Motion Or Return Evidence

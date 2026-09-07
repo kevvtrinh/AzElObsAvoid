@@ -56,7 +56,7 @@ function verifySavedRoute(testCase, name, baselineLength_deg, baselineDuration_s
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyLessThan(testCase, motionLength(result), baselineLength_deg - 1);
-    refinement = resultDiagnosis.PathRefinement;
+    refinement = resultDiagnosis.MinimumTimeDetour;
     verifyGreaterThan(testCase, testSupport.diagnosisValue(refinement, "TravelRefinement.AcceptedCount"), 0);
     verifyLessThan(testCase, testSupport.diagnosisValue(refinement, "TravelRefinement.FinalLength_deg"), testSupport.diagnosisValue(refinement, "TravelRefinement.InitialLength_deg"));
     verifyLessThanOrEqual(testCase, result.TrajectoryDuration_s, baselineDuration_s + 1e-7);
@@ -81,7 +81,7 @@ function testStaticCircleHasOneEconomicalDetour(testCase)
 
     verifyLessThanOrEqual(testCase, motionLength(result), 1.01 * geometricLowerBound_deg, "The circle detour exceeds the tangent-and-arc lower bound by over 1%%.");
     verifyLessThanOrEqual(testCase, lateralReversalCount(result), 1, "The circle detour repeatedly reverses its lateral joint motion.");
-    details = resultDiagnosis.PathRefinement;
+    details = resultDiagnosis.MinimumTimeDetour;
     indices = endsWith(details.Field, ".BoundaryRefinementCount");
     counts  = cell2mat(details.Value(indices));
     verifyGreaterThan(testCase, sum(counts), 0, "The fixed-clock clearance boundary was not refined.");

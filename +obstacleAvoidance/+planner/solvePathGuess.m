@@ -1,12 +1,12 @@
-function [candidate, summary, stageTiming, solverContext] = solvePathGuess(planningContext, initialState, goalState, limits, options, seed, solverContext, stageTiming)
+function [candidate, summary, stageTiming, solverContext] = solvePathGuess(obstaclePlanningData, initialState, goalState, limits, options, seed, solverContext, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, summary, stageTiming, solverContext] = solvePathGuess( ...
-%       planningContext, initialState, goalState, limits, options, seed, solverContext, stageTiming)
+%       obstaclePlanningData, initialState, goalState, limits, options, seed, solverContext, stageTiming)
 % PURPOSE
 %   Construct and independently validate motion for one path guess.
 % INPUTS
-%   planningContext is the request-wide source of prepared obstacles.
+%   obstaclePlanningData is the request-wide source of prepared obstacles.
 %   States, limits, options, and seed describe this motion attempt.
 %   solverContext holds solver choice, summary template, and reusable geometry.
 %   stageTiming contains accumulated exclusive times.
@@ -23,7 +23,7 @@ motionTimer            = tic;
 candidateWasPrechecked = false;
 precheckElapsedTime_s  = 0;
 checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
-preparedObstacles      = planningContext.preparedObstacles;
+preparedObstacles      = obstaclePlanningData.preparedObstacles;
 % Dispatch non-rest endpoint requests to the state-to-state engine; rest-to-rest requests use the specialized planner paths.
 if solverContext.UseStateToStateSolver
     [candidate, solverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);

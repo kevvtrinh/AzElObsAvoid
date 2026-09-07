@@ -145,8 +145,8 @@ function [obstacles, initialState, goalState, limits, scenario] = createStressSc
     witnessElevation_deg           = -18;
     maximumRadiusWithMargin_deg    = max(maximumSourceRadius_deg) + safetyMargin_deg;
     sideClearanceLowerBound_deg    = abs(startPosition_deg(1) - (-centerAzimuthLimit_deg)) - maximumRadiusWithMargin_deg;
-    maximumCenterExcursion_deg     = max(abs(centerElevation_deg)) + 0.75;
-    bottomClearanceLowerBound_deg  = abs(witnessElevation_deg) - maximumCenterExcursion_deg - maximumRadiusWithMargin_deg;
+maximumCenterOffset_deg        = max(abs(centerElevation_deg)) + 0.75;
+bottomClearanceLowerBound_deg  = abs(witnessElevation_deg) - maximumCenterOffset_deg - maximumRadiusWithMargin_deg;
     witnessClearanceLowerBound_deg = min(sideClearanceLowerBound_deg, bottomClearanceLowerBound_deg);
     if witnessClearanceLowerBound_deg <= 0
         error("benchmarkRandomMovingPolygonStress:InvalidWitness", "Generated radial bounds do not leave the declared witness route clear.");

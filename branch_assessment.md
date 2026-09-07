@@ -10,7 +10,7 @@ and [benchmarks](benchmarks/); earlier prose remains in Git history.
 | Keep automatic static-scene detection. | Forcing dynamic search increased Philippines median planner time from 13.437 to 115.169 s and worsened its motion. [Comparison](benchmarks/results/static_dynamic_flag_20260905.md). |
 | Prefer earliest arrival; shorten travel at the retained arrival time. | `earliestArrival` and `fixedArrival` are the supported modes. Removed balanced-arrival pricing, migration, and the single-choice trajectory-method field. |
 | Prepare obstacles once at the planning boundary; share solver geometry across guesses. | Internal queries and validation reuse prepared histories; public calls still check caller data. Four comparisons preserved motion and validation exactly apart from timing. [Evidence](benchmarks/results/lean_workflow_20260905.md). |
-| Use one internal planning context across route search and motion planning. | The context owns prepared obstacles, the request horizon, the static/dynamic classification, and nested route-search geometry. This removes the overlapping `scene` and `proposal` carriers; route sets, seeds, candidates, and solver state remain separate because they represent later-stage results. |
+| Use one internal obstacle-planning data record across route search and motion planning. | The record owns prepared obstacles, the request horizon, the static/dynamic classification, and nested route-search geometry. This removes the overlapping `scene` and `proposal` carriers; route sets, seeds, candidates, and solver state remain separate because they represent later-stage results. |
 | Return `[result, diagnosis]`. | Keep motion, plotting inputs, and validation evidence in result; put detailed attempts and solver evidence in optional diagnosis. Functions receive only used inputs. |
 | Use explicit path-guess stages and preserve failure evidence. | Removed dead work, duplicate timing fields, and discarded diagnostics; retain cold recovery paths proven reachable. Rejected motion remains marked unsuccessful. [Audit](benchmarks/results/planner_execution_audit_20260906.md). |
 | Preserve full protected geometry and independent validation. | Apply margins once. Search sampling is not continuous collision proof. A failed search is not proof of infeasibility. |
@@ -66,7 +66,7 @@ claimed.
 Focused diagnostic cleanup: removed the retired `BarrierSequence` and
 `ProgressPolynomial` placeholder reports and their three private constructors
 from `tryFixedTimeDetour`. No maintained source consumer reads those fields;
-the optional `PathRefinement` table previously exposed them through generic
+the optional minimum-time-detour table previously exposed them through generic
 flattening. New tables omit those obsolete rows. Active search, validation,
 and failure reports remain intact; historical saved MAT files are unchanged.
 No motion algorithm or runtime improvement is claimed. MATLAB R2024b passed

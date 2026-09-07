@@ -282,7 +282,7 @@ obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
 - `Search`, `SearchCoverage`: graph traces, complete counts, search limitations, and separate timed/spatial partial routes.
 - `Timing`: exclusive stage times that add up to total planning time.
 - `SolverDetails`, `VisibilityAttempts`: tables with `Attempt`, `Field`, and `Value` columns, including rejected edges and graph connectivity.
-- `DirectMotion`, `PathRefinement`: field/value tables for the initial motion attempts.
+- `DirectMotion`, `MinimumTimeDetour`: field/value tables for the initial motion attempts.
 - `Selection`: the actual ranking columns, values, and candidate order; jerk remains a hard constraint.
 - Attempt counts and time to the first validated motion.
 
