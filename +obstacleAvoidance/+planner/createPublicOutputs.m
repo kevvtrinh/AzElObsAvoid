@@ -1,7 +1,7 @@
-function [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
+function [result, diagnosis] = createPublicOutputs(record, includeDiagnosis)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
+%   [result, diagnosis] = createPublicOutputs(record, includeDiagnosis)
 % PURPOSE
 %   Separate the usable motion from optional search and solver evidence.
 % INPUTS

@@ -1,7 +1,7 @@
-function [result, emptySeedSummary] = createPlanningRecord(obstacles, initialState, goalState, limits, options, validationTemplate)
+function [result, emptySeedSummary] = initializePlanningRecord(obstacles, initialState, goalState, limits, options, validationTemplate)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [result, emptySeedSummary] = createPlanningRecord( ...
+%   [result, emptySeedSummary] = initializePlanningRecord( ...
 %       obstacles, initialState, goalState, limits, options, validationTemplate)
 % PURPOSE
 %   Define stable internal motion and candidate-summary records.

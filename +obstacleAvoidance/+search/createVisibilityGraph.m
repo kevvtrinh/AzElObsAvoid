@@ -1,8 +1,8 @@
-function visibilityGraph = createVisibilityGraph(limits, proposal)
+function visibilityGraph = createVisibilityGraph(limits, planningContext)
 %% Section 0: Header & Readme
 % SYNTAX
 %   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-%       limits, proposal)
+%       limits, planningContext)
 %
 % PURPOSE
 %   - Connect points with clear straight segments; retry farther from obstacles if needed.
@@ -10,8 +10,8 @@ function visibilityGraph = createVisibilityGraph(limits, proposal)
 %
 % INPUTS
 %   - limits: workspace bounds.
-%   - proposal (scalar proposal-geometry struct)
-%       Spatial shape, endpoints, and reusable boundary edges.
+%   - planningContext (scalar struct)
+%       The request-wide record containing route-search geometry.
 %
 % OUTPUTS
 %   - visibilityGraph (scalar struct)
@@ -26,9 +26,10 @@ function visibilityGraph = createVisibilityGraph(limits, proposal)
 
 % Choose initial and retry offsets from obstacle and workspace dimensions.
 
-shape               = proposal.shape;
-start_deg           = proposal.start_deg;
-goal_deg            = proposal.goal_deg;
+routeSearchGeometry = planningContext.routeSearchGeometry;
+shape               = routeSearchGeometry.shape;
+start_deg           = routeSearchGeometry.start_deg;
+goal_deg            = routeSearchGeometry.goal_deg;
 allPositions_deg    = [start_deg; goal_deg; shape.Vertices];
 coordinateScale_deg = bmtpEngine.createCoordinateTolerances(allPositions_deg);
 baseOffset_deg      = max(1e-3, 256 * eps(coordinateScale_deg));

@@ -21,7 +21,7 @@ function [routes_deg, classPattern, searchRecord] = searchDistinctSpatialRoutes(
 %   - maximumClassCount (nonnegative integer scalar)
 %       Requested number of distinct classes; zero disables the search.
 %   - edgeCheck (scalar function handle)
-%       Exact proposal-geometry chord predicate used during cleanup.
+%       Exact route-search chord predicate used during cleanup.
 %
 % OUTPUTS
 %   - routes_deg (cell column of N-by-2 numeric arrays)

@@ -71,7 +71,8 @@ references in appendices. Describe current behavior, not the development history
 - Public `shapeAtTime` and occupancy queries versus prepared internal versions.
 - Boundary occupancy, clearance tolerance, query broadcasting, blocking-obstacle
   identity, and batching of repeated geometry evaluations.
-- `preparePlanningScene` and `queryStaticHorizon`: classify the entire requested
+- `createPlanningContext` and `queryStaticHorizon`: prepare one shared request
+  record and classify the entire requested
   horizon, including mixed static/moving scenes and activity changes.
 
 ## 6. Endpoint feasibility and direct motion attempts
@@ -90,7 +91,8 @@ references in appendices. Describe current behavior, not the development history
 
 ## 7. Building geometry for route search
 
-- `createRouteSearchGeometry`: endpoints and wrapped goal coordinate.
+- `addRouteSearchGeometry`: add endpoints, wrapped goal, and search geometry to
+  the shared planning context.
 - Sample-time construction: source times, interval midpoints, endpoints, and
   nine uniform request times; clipping and deduplication.
 - Sampled obstacle union versus `denseSweptEnvelope`.
@@ -208,7 +210,7 @@ references in appendices. Describe current behavior, not the development history
 - Complete termination-reason catalog, including where each reason originates
   and whether it means invalid input, exhausted search, unsupported construction,
   unresolved checking, or validated success.
-- `createEmptyResult`, `assemblePlannerOutputs`, and `flattenDiagnosis`: stable empty
+- `initializePlanningRecord`, `createPublicOutputs`, and `flattenDiagnosis`: stable empty
   values, optional details, field-path tables, and failure plotting without rerun.
 - Stage timing: inclusive versus exclusive costs and avoidance of double counting.
 
@@ -284,7 +286,7 @@ behind safety-preserving rules separately from search-quality tradeoffs.
 
 A. Complete public input, option, result, diagnosis, and validation field tables.
 
-B. Internal data structures: prepared interval, proposal, graph, timed state,
+B. Internal data structures: planning context, graph, timed state,
 route set, seed, candidate, polynomial, and certificate. Include producer/consumer
 relationships, dimensions, units, and ownership.
 
@@ -324,7 +326,7 @@ coverage; it does not substitute for reading each implementation.
 - `+obstacleAvoidance/+obstacles/createStationaryObstacleEnclosures.m`
 - `+obstacleAvoidance/+obstacles/prepareObstacles.m`
 - `+obstacleAvoidance/+obstacles/prepareOneObstacle.m`
-- `+obstacleAvoidance/+obstacles/preparePlanningScene.m`
+- `+obstacleAvoidance/+obstacles/createPlanningContext.m`
 - `+obstacleAvoidance/+obstacles/preparedShapeAtTime.m`
 - `+obstacleAvoidance/+obstacles/queryObstacleOccupancyAtTime.m`
 - `+obstacleAvoidance/+obstacles/queryPreparedObstacles.m`
@@ -333,9 +335,9 @@ coverage; it does not substitute for reading each implementation.
 - `+obstacleAvoidance/+planner/checkCandidateMotion.m`
 - `+obstacleAvoidance/+planner/createCandidateSummary.m`
 - `+obstacleAvoidance/+planner/createWaitThenMoveMotion.m`
-- `+obstacleAvoidance/+planner/createEmptyResult.m`
+- `+obstacleAvoidance/+planner/initializePlanningRecord.m`
 - `+obstacleAvoidance/+planner/tryFixedTimeDetour.m`
-- `+obstacleAvoidance/+planner/assemblePlannerOutputs.m`
+- `+obstacleAvoidance/+planner/createPublicOutputs.m`
 - `+obstacleAvoidance/+planner/createRuckigWaypointMotion.m`
 - `+obstacleAvoidance/+planner/resolveFixedEndpointForSolver.m`
 - `+obstacleAvoidance/+planner/findEarliestLinearIntercept.m`
@@ -351,7 +353,7 @@ coverage; it does not substitute for reading each implementation.
 - `+obstacleAvoidance/+plotting/createWrappedSpatialPath.m`
 - `+obstacleAvoidance/+plotting/plotTrajectory.m`
 - `+obstacleAvoidance/+search/checkVisibilitySegments.m`
-- `+obstacleAvoidance/+search/createRouteSearchGeometry.m`
+- `+obstacleAvoidance/+search/addRouteSearchGeometry.m`
 - `+obstacleAvoidance/+search/createSearchDiagnostics.m`
 - `+obstacleAvoidance/+search/createEmptyPathGuess.m`
 - `+obstacleAvoidance/+search/createPathGuesses.m`

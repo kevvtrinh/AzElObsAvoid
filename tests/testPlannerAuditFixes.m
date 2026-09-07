@@ -109,28 +109,29 @@ end
 function testPartialRoutesAndVisibilityAttemptsSurviveOutputAssembly(testCase)
     s        = testCase.TestData;
     obstacle = obstacleAvoidance.obstacles.createObstacle('box', 0, [-1;1;1;-1], [-1;-1;1;1], 0);
-    scene    = obstacleAvoidance.obstacles.preparePlanningScene(obstacle, s.Initial, s.Goal);
-    proposal = obstacleAvoidance.search.createRouteSearchGeometry(s.Initial, s.Goal, s.Options, scene);
-    graph    = obstacleAvoidance.search.createVisibilityGraph(s.Limits, proposal);
-    routes   = obstacleAvoidance.search.searchRoutes(s.Initial, s.Goal, s.Limits, s.Options, scene, proposal, graph);
+    planningContext = obstacleAvoidance.obstacles.createPlanningContext(obstacle, s.Initial, s.Goal);
+    planningContext = obstacleAvoidance.search.addRouteSearchGeometry(planningContext, s.Initial, s.Goal, s.Options);
+    routeSearchGeometry = planningContext.routeSearchGeometry;
+    graph    = obstacleAvoidance.search.createVisibilityGraph(s.Limits, planningContext);
+    routes   = obstacleAvoidance.search.searchRoutes(s.Initial, s.Goal, s.Limits, s.Options, planningContext, graph);
     routes.TimedSearchAttempted = true;
     routes.TimedSearchRecord    = struct('LayerTimes_s', [0;10], 'CandidateLayerCount', 2, 'NodeCount', 2, ...
         'WaitEdgeCount', 1, 'MotionEdgeCount', 1, 'ExpandedCount', 2, 'RejectedTransitionCount', 0, ...
         'ExploredNodes_deg', [-3 0;0 -2], 'FrontierNodes_deg', [0 -2], ...
         'BestPartialRoute_deg', [-3 0;0 -2], 'SelectedGoalLayerIndex', [], 'ReachableGoalLayerCount', 0);
     routes.SpatialSearchRecord.BestPartialRoute_deg = [-3 0;-1 0];
-    guesses = obstacleAvoidance.search.createPathGuesses(s.Initial, s.Goal, s.Limits, s.Options, routes, proposal.shape.Vertices);
-    search  = obstacleAvoidance.search.createSearchDiagnostics(proposal, graph, routes, guesses);
+    guesses = obstacleAvoidance.search.createPathGuesses(s.Initial, s.Goal, s.Limits, s.Options, routes, routeSearchGeometry.shape.Vertices);
+    search  = obstacleAvoidance.search.createSearchDiagnostics(planningContext, graph, routes, guesses);
     verifyEqual(testCase, search.TimedBestPartialRoute_deg, [-3 0;0 -2]);
     verifyEqual(testCase, search.SpatialBestPartialRoute_deg, [-3 0;-1 0]);
     verifyEqual(testCase, search.BestPartialRoute_deg, search.TimedBestPartialRoute_deg);
-    [record, ~] = obstacleAvoidance.planner.createPlanningRecord(obstacle, s.Initial, s.Goal, s.Limits, s.Options, obstacleAvoidance.validateTrajectory());
+    [record, ~] = obstacleAvoidance.planner.initializePlanningRecord(obstacle, s.Initial, s.Goal, s.Limits, s.Options, obstacleAvoidance.validateTrajectory());
     record.SearchDiagnostics.GraphSearch = search;record.Seeds = guesses;
     empty = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions();
     record.SearchDiagnostics.DirectAttempt       = empty.DirectAttempt;
     record.SearchDiagnostics.FixedClockExcursion = empty.ExcursionDiagnostics;
     record.SearchDiagnostics.SelectionPolicy     = struct();
-    [~, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(record, true);
+    [~, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(record, true);
     verifyTrue(testCase, any(diagnosis.VisibilityAttempts.Field=="EdgeRejectionReasons"));
     verifyTrue(testCase, any(diagnosis.VisibilityAttempts.Field=="GraphComponents"));
 end
@@ -158,7 +159,7 @@ end
 function testUnsupportedDirectGuessIsNotCalledMultiWaypoint(testCase)
     s     = testCase.TestData;
     guess = obstacleAvoidance.search.createPathGuesses(s.Initial, s.Goal, s.Limits, s.Options, struct(), []);
-    [~, template] = obstacleAvoidance.planner.createPlanningRecord([], s.Initial, s.Goal, s.Limits, s.Options, obstacleAvoidance.validateTrajectory());
+    [~, template] = obstacleAvoidance.planner.initializePlanningRecord([], s.Initial, s.Goal, s.Limits, s.Options, obstacleAvoidance.validateTrajectory());
     context = struct('SummaryTemplate', template, 'EnclosureGeometry', struct(), 'Enclosure', struct());
     [candidate, ~, details] = obstacleAvoidance.planner.solveDynamicPathGuess([], s.Initial, s.Goal, s.Limits, s.Options, guess, obstacleAvoidance.planner.createStageTiming(), context);
     verifyEqual(testCase, candidate.TerminationReason, "unsupportedDynamicDirectGuess");

@@ -1,9 +1,9 @@
-function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming)
+function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, planningContext, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
 %   defaults = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions()
 %   exactMotionSet = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions( ...
-%       initialState, goalState, limits, options, scene, stageTiming)
+%       initialState, goalState, limits, options, planningContext, stageTiming)
 %
 % PURPOSE
 %   - Before searching for a route, try a direct move and detours with the
@@ -11,8 +11,8 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %
 % INPUTS
 %   - initialState, goalState, limits, options: motion constraints.
-%   - scene (scalar prepared-scene struct)
-%       Prepared obstacles shared with later graph and validation stages.
+%   - planningContext (scalar struct)
+%       The request-wide record containing prepared obstacles.
 %   - stageTiming (scalar timing struct)
 %       Accumulated planner stage timings before exact motion work.
 %
@@ -41,7 +41,7 @@ exactMotionSet.StageTiming            = struct();
 if nargin == 0
     return;
 end
-preparedObstacles = scene.preparedObstacles;
+preparedObstacles = planningContext.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
 endpointDerivative      = [initialState.velocity_deg_s, initialState.acceleration_deg_s2, goalState.velocity_deg_s, goalState.acceleration_deg_s2];

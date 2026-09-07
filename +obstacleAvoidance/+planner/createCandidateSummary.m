@@ -19,7 +19,7 @@ function summary = createCandidateSummary(candidate, checkResult, diagnostics, e
 %   - elapsedTime_s (nonnegative finite scalar)
 %       Wall-clock motion-solving duration excluding validation.
 %   - template (scalar candidate-summary struct)
-%       Stable empty summary returned by createPlanningRecord.
+%       Stable empty summary returned by initializePlanningRecord.
 %   - limits (scalar struct)
 %       Physical limits used to normalize peak motion measures.
 %

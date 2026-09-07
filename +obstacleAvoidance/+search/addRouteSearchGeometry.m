@@ -1,8 +1,8 @@
-function proposal = createRouteSearchGeometry(initialState, goalState, options, scene)
+function planningContext = addRouteSearchGeometry(planningContext, initialState, goalState, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   proposal = obstacleAvoidance.search.createRouteSearchGeometry( ...
-%       initialState, goalState, options, scene)
+%   planningContext = obstacleAvoidance.search.addRouteSearchGeometry( ...
+%       planningContext, initialState, goalState, options)
 %
 % PURPOSE
 %   - Build a 2-D obstacle outline for finding possible paths.
@@ -11,13 +11,14 @@ function proposal = createRouteSearchGeometry(initialState, goalState, options, 
 % INPUTS
 %   - initialState, goalState: route endpoints.
 %   - options: coordinate wrapping policy.
-%   - scene (scalar prepared-scene struct)
-%       Prepared obstacles and physical request horizon.
+%   - planningContext (scalar struct)
+%       Prepared obstacles and the physical request horizon. Its empty
+%       routeSearchGeometry field receives the derived search geometry.
 %
 % OUTPUTS
-%   - proposal (scalar struct)
-%       Start, goal, times, work data, selected polyshape, and boundary edges.
-%       This route-search input cannot approve a completed trajectory.
+%   - planningContext (scalar struct)
+%       The same request-wide record with routeSearchGeometry populated.
+%       Route-search geometry can suggest paths but cannot approve motion.
 %
 % UNITS
 %   - Geometry is degrees, time is seconds, and work is a vertex count.
@@ -27,21 +28,21 @@ function proposal = createRouteSearchGeometry(initialState, goalState, options, 
 
 % Use the planning horizon and resolve the wrapped endpoint.
 
-obstacles = scene.preparedObstacles;
+obstacles = planningContext.preparedObstacles;
 start_deg = initialState.position_deg;
-goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, scene.endTime_s);
+goal_deg  = obstacleAvoidance.input.goalPositionAtTime(goalState, planningContext.endTime_s);
 if options.AllowAzimuthWrapping
     goal_deg(1) = goal_deg(1) + 360 * round((start_deg(1) - goal_deg(1)) / 360);
 end
-sampleTimes_s = createObstacleSampleTimes(obstacles, scene.startTime_s, scene.endTime_s);
+sampleTimes_s = createObstacleSampleTimes(obstacles, planningContext.startTime_s, planningContext.endTime_s);
 
-%% Section 2: Select The Proposal Representation
+%% Section 2: Select The Route-Search Representation
 
 % For dense histories, try a conservative envelope first.
 % Use the sampled union if the envelope covers an endpoint.
 
 vertexWorkBudget = 10e3;
-[proposalShape, usedDenseEnvelope, estimatedVertexWork] = obstacleAvoidance.search.denseSweptEnvelope(obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
+[routeSearchShape, usedDenseEnvelope, estimatedVertexWork] = obstacleAvoidance.search.denseSweptEnvelope(obstacles, sampleTimes_s, [start_deg; goal_deg], vertexWorkBudget);
 if usedDenseEnvelope
     sampledShapeCount = numel(sampleTimes_s) * numel(obstacles);
     representation    = "denseHistoryEnvelope";
@@ -59,24 +60,24 @@ else
             end
         end
     end
-    proposalShape = polyshape();
+    routeSearchShape = polyshape();
     if sampledShapeCount > 0
-        proposalShape = union([parts{1:sampledShapeCount}]);
+        routeSearchShape = union([parts{1:sampledShapeCount}]);
     end
     representation = "sampledObstacleUnion";
 end
 
-%% Section 3: Create Reusable Proposal Edges
+%% Section 3: Create Reusable Boundary Edges
 
-% Cache proposal edges for visibility checks and route shortening.
+% Cache boundary edges for visibility checks and route shortening.
 
-[edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(proposalShape, 1e-12);
+[edgeStart_deg, edgeEnd_deg] = obstacleAvoidance.geometry.boundaryToEdges(routeSearchShape, 1e-12);
 
-%% Section 4: Assemble The Proposal
+%% Section 4: Add The Route-Search Geometry
 
 % Save geometry choices for diagnostics and plots.
 
-proposal = struct("start_deg", start_deg, ...
+planningContext.routeSearchGeometry = struct("start_deg", start_deg, ...
     "goal_deg", goal_deg, ...
     "sampleTimes_s", sampleTimes_s, ...
     "vertexWorkBudget", vertexWorkBudget, ...
@@ -84,7 +85,7 @@ proposal = struct("start_deg", start_deg, ...
     "representation", representation, ...
     "usedDenseEnvelope", usedDenseEnvelope, ...
     "sampledShapeCount", sampledShapeCount, ...
-    "shape", proposalShape, ...
+    "shape", routeSearchShape, ...
     "edgeStart_deg", edgeStart_deg, ...
     "edgeEnd_deg", edgeEnd_deg);
 end

@@ -1,7 +1,7 @@
-function scene = preparePlanningScene(obstacles, initialState, goalState)
+function planningContext = createPlanningContext(obstacles, initialState, goalState)
 %% Section 0: Header & Readme
 % SYNTAX
-%   scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
+%   planningContext = obstacleAvoidance.obstacles.createPlanningContext( ...
 %       obstacles, initialState, goalState)
 %
 % PURPOSE
@@ -13,8 +13,10 @@ function scene = preparePlanningScene(obstacles, initialState, goalState)
 %   - initialState, goalState: start and end of the planning interval.
 %
 % OUTPUTS
-%   - scene (scalar struct)
-%       Prepared obstacles, start/end times, and the stationary-scene flag.
+%   - planningContext (scalar struct)
+%       The single request-wide record shared by route search and motion
+%       planning. It owns prepared obstacles, the planning interval, the
+%       stationary-scene flag, and later the derived route-search geometry.
 %
 % UNITS
 %   - Geometry is degrees, time is seconds, and speed is degrees per second.
@@ -37,8 +39,12 @@ preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 
 obstaclesRemainStatic = obstacleAvoidance.obstacles.queryStaticHorizon(preparedObstacles, startTime_s, endTime_s);
 
-%% Section 4: Return The Shared Planning Scene
-scene = struct("preparedObstacles", preparedObstacles, ...
+%% Section 4: Return The Shared Planning Context
+
+% Keep request-wide inputs and derived geometry in one record. The empty
+% routeSearchGeometry field is filled only when graph search is required.
+planningContext = struct("preparedObstacles", preparedObstacles, ...
     "startTime_s", startTime_s, "endTime_s", endTime_s, ...
-    "obstaclesRemainStatic", obstaclesRemainStatic);
+    "obstaclesRemainStatic", obstaclesRemainStatic, ...
+    "routeSearchGeometry", struct());
 end

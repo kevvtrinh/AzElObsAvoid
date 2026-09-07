@@ -62,7 +62,7 @@ if nargin < 5 || isempty(optionOverrides)
     optionOverrides = struct();
 end
 
-%% Section 3: Normalize The Request And Prepare The Scene
+%% Section 3: Normalize The Request And Create The Planning Context
 
 planningTimer = tic;
 
@@ -71,13 +71,13 @@ options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
 
 [obstacles, initialState, goalState, limits] = obstacleAvoidance.input.normalizePlannerRequest(obstacles, initialState, goalState, limits, options);
 
-[result, summaryTemplate] = obstacleAvoidance.planner.createPlanningRecord(obstacles, initialState, goalState, limits, options, obstacleAvoidance.validateTrajectory());
+[result, summaryTemplate] = obstacleAvoidance.planner.initializePlanningRecord(obstacles, initialState, goalState, limits, options, obstacleAvoidance.validateTrajectory());
 
-% Prepare shared obstacle geometry once for search and validation.
-scene = obstacleAvoidance.obstacles.preparePlanningScene(obstacles, initialState, goalState);
+% Create the one request-wide record shared by search, motion planning, and validation.
+planningContext = obstacleAvoidance.obstacles.createPlanningContext(obstacles, initialState, goalState);
 
-preparedObstacles = scene.preparedObstacles;
-useStaticSolver   = scene.obstaclesRemainStatic;
+preparedObstacles = planningContext.preparedObstacles;
+useStaticSolver   = planningContext.obstaclesRemainStatic;
 stageTiming       = result.SearchDiagnostics.StageTiming;
 result.SearchDiagnostics.SelectionPolicy = struct("GoalTimeMode", options.GoalTimeMode, "JerkRole", "hardConstraintOnly");
 %% Section 4: Check Physical Endpoints
@@ -90,14 +90,14 @@ if ~endpointFeasible
     result.SearchDiagnostics.FixedClockExcursion = emptyMotions.ExcursionDiagnostics;
 
     result = finalizePlanningTiming(result, planningTimer, stageTiming);
-    [result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
+    [result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
     return;
 end
 
 %% Section 5: Try Exact Physical-Time Motions
 
 % Try validated direct and fixed-clock motions before building the graph.
-exactMotionSet             = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming);
+exactMotionSet             = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, planningContext, stageTiming);
 stageTiming                = exactMotionSet.StageTiming;
 firstValidatedMotionTime_s = NaN;
 if exactMotionSet.ExcursionIsValidated
@@ -108,30 +108,29 @@ result.SearchDiagnostics.FixedClockExcursion = exactMotionSet.ExcursionDiagnosti
 if exactMotionSet.FastPath.Available
     fastPath = exactMotionSet.FastPath;
     result   = finishFastPath(result, fastPath.Candidate, fastPath.Validation, fastPath.AttemptDetails, fastPath.ElapsedTime_s, fastPath.Seed, summaryTemplate, fastPath.Message, planningTimer, stageTiming);
-    [result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
+    [result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
     return;
 end
 
-%% Section 6: Create Proposal Geometry And Search Routes
+%% Section 6: Add Route-Search Geometry And Search Routes
 
 routeSearchTimer = tic;
 
-proposal             = struct();
 visibilityGraph      = struct();
 routeSet             = struct();
 obstacleEnvelope_deg = zeros(0, 2);
 needsRouteSearch     = options.MaximumSeedCount > 1 && ~isempty(preparedObstacles);
 if needsRouteSearch
-    % Build proposal geometry for route search; final validation uses the original obstacles.
-    proposal = obstacleAvoidance.search.createRouteSearchGeometry(initialState, goalState, options, scene);
+    % Add route-search geometry to the shared context; final validation still uses the prepared obstacle histories.
+    planningContext = obstacleAvoidance.search.addRouteSearchGeometry(planningContext, initialState, goalState, options);
 
     % Build the visibility graph and record its attempts.
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, proposal);
+    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, planningContext);
 
     % Search timed routes and distinct spatial routes.
-    routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, scene, proposal, visibilityGraph);
+    routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, planningContext, visibilityGraph);
 
-    obstacleEnvelope_deg = proposal.shape.Vertices;
+    obstacleEnvelope_deg = planningContext.routeSearchGeometry.shape.Vertices;
 end
 % Seed the general solver with a direct guess, then any searched detours.
 seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, options, routeSet, obstacleEnvelope_deg);
@@ -151,7 +150,7 @@ primaryCandidates = cell(primarySeedCount, 1);
 % Evaluate each seed before retaining the best admissible candidate.
 for seedIndex = 1:primarySeedCount
     [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
-        stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(preparedObstacles, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
+        stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(planningContext, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
     % Record the first validation time once; later successful candidates must not overwrite that milestone.
     if primarySummaries(seedIndex).ValidationPassed && isnan(firstValidatedMotionTime_s)
         firstValidatedMotionTime_s = toc(planningTimer);
@@ -164,8 +163,7 @@ candidateSet = struct("Seeds", primarySeeds, ...
     "StageTiming", stageTiming);
 
 % Try additional seeds after failure, up to MaximumSeedCount.
-recoveryContext = struct("Scene", scene, ...
-    "Proposal", proposal, ...
+recoveryContext = struct("PlanningContext", planningContext, ...
     "VisibilityGraph", visibilityGraph, ...
     "SeedSolveContext", seedSolveContext, ...
     "HasValidatedExactMotion", exactMotionSet.ExcursionIsValidated, ...
@@ -173,7 +171,7 @@ recoveryContext = struct("Scene", scene, ...
 [candidateSet, routeSet, generatedSeeds] = obstacleAvoidance.planner.tryAdditionalPathGuesses(initialState, goalState, limits, options, candidateSet, routeSet, seeds, recoveryContext);
 
 % Assemble diagnostics after recovery has added its routes and seeds.
-searchDiagnostics = obstacleAvoidance.search.createSearchDiagnostics(proposal, visibilityGraph, routeSet, generatedSeeds);
+searchDiagnostics = obstacleAvoidance.search.createSearchDiagnostics(planningContext, visibilityGraph, routeSet, generatedSeeds);
 searchDiagnostics.ElapsedTime_s = candidateSet.StageTiming.RouteSearchElapsedTime_s;
 result.SearchDiagnostics.GraphSearch = searchDiagnostics;
 
@@ -231,7 +229,7 @@ elseif selection.BestPartialSeedIndex > 0
 end
 
 result = finalizePlanningTiming(result, planningTimer, stageTiming);
-[result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
+[result, diagnosis] = obstacleAvoidance.planner.createPublicOutputs(result, nargout > 1);
 end
 
 %% Section 8: Local Functions

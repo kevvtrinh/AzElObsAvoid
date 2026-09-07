@@ -170,7 +170,7 @@ function recovery = recoverVisibilityConnectivity(nodes, pairSet, edgeCheck, sha
 
     % Use all-pairs visibility only within the work budget.
     usedFallback = component(1) ~= component(2) && ~usedExhaustive && pairSet.EstimatedExhaustiveWork <= pairSet.WorkBudget;
-    % Record that fallback geometry supplied the proposal so downstream diagnostics can distinguish it from the primary method.
+% Record that fallback geometry supplied the search boundary so downstream diagnostics can distinguish it from the primary method.
     if usedFallback
         pairMask       = triu(true(nodeCount), 1);
         edgeCheck      = evaluateVisibilityPairs(positions_deg, pairMask, shape, edgeStart_deg, edgeEnd_deg);

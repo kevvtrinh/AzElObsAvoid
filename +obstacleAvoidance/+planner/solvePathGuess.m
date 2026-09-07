@@ -1,17 +1,18 @@
-function [candidate, summary, stageTiming, context] = solvePathGuess(obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
+function [candidate, summary, stageTiming, solverContext] = solvePathGuess(planningContext, initialState, goalState, limits, options, seed, solverContext, stageTiming)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [candidate, summary, stageTiming, context] = solvePathGuess( ...
-%       obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
+%   [candidate, summary, stageTiming, solverContext] = solvePathGuess( ...
+%       planningContext, initialState, goalState, limits, options, seed, solverContext, stageTiming)
 % PURPOSE
 %   Construct and independently validate motion for one path guess.
 % INPUTS
-%   Normalized obstacles, states, limits, options, and indexed path guess.
-%   context holds solver choice, summary template, and reusable geometry.
+%   planningContext is the request-wide source of prepared obstacles.
+%   States, limits, options, and seed describe this motion attempt.
+%   solverContext holds solver choice, summary template, and reusable geometry.
 %   stageTiming contains accumulated exclusive times.
 % OUTPUTS
 %   candidate and summary retain the attempted motion, validation, and diagnostics.
-%   Updated stageTiming and context are reused by later guesses in this request.
+%   Updated stageTiming and solverContext are reused by later guesses.
 % UNITS
 %   Degrees, seconds, and derivatives in deg/s, deg/s^2, and deg/s^3.
 
@@ -22,19 +23,19 @@ motionTimer            = tic;
 candidateWasPrechecked = false;
 precheckElapsedTime_s  = 0;
 checkResult            = obstacleAvoidance.validation.validatePreparedTrajectory();
-preparedObstacles      = obstacles;
+preparedObstacles      = planningContext.preparedObstacles;
 % Dispatch non-rest endpoint requests to the state-to-state engine; rest-to-rest requests use the specialized planner paths.
-if context.UseStateToStateSolver
+if solverContext.UseStateToStateSolver
     [candidate, solverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(seed, initialState, goalState, limits, options);
 % Use exact static-region BMTP when geometry is stationary; moving geometry proceeds through the dynamic solver.
-elseif context.UseStaticSolver
-    if isempty(fieldnames(context.StaticGeometry))
-        context.StaticGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(preparedObstacles, initialState.time_s, goalState.time_s);
+elseif solverContext.UseStaticSolver
+    if isempty(fieldnames(solverContext.StaticGeometry))
+        solverContext.StaticGeometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(preparedObstacles, initialState.time_s, goalState.time_s);
     end
-    [candidate, solverDiagnostics] = obstacleAvoidance.planner.solveStaticBmtpTrajectory(seed, context.StaticGeometry, initialState, goalState, limits, options);
+    [candidate, solverDiagnostics] = obstacleAvoidance.planner.solveStaticBmtpTrajectory(seed, solverContext.StaticGeometry, initialState, goalState, limits, options);
 else
     [candidate, checkResult, solverDiagnostics, ...
-        candidateWasPrechecked, precheckElapsedTime_s, stageTiming, context] = obstacleAvoidance.planner.solveDynamicPathGuess(preparedObstacles, initialState, goalState, limits, options, seed, stageTiming, context);
+        candidateWasPrechecked, precheckElapsedTime_s, stageTiming, solverContext] = obstacleAvoidance.planner.solveDynamicPathGuess(preparedObstacles, initialState, goalState, limits, options, seed, stageTiming, solverContext);
 end
 
 %% Section 2: Run The Full Motion Check
@@ -63,7 +64,7 @@ end
 
 % Record the solve, fallback, and validation results for candidate selection.
 
-summary = obstacleAvoidance.planner.createCandidateSummary(candidate, checkResult, solverDiagnostics, elapsedTime_s, context.SummaryTemplate, limits);
+summary = obstacleAvoidance.planner.createCandidateSummary(candidate, checkResult, solverDiagnostics, elapsedTime_s, solverContext.SummaryTemplate, limits);
 end
 
 %% Section 4: Local Functions

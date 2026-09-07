@@ -1,15 +1,18 @@
-function diagnostics = createSearchDiagnostics(proposal, visibilityGraph, routeSet, seeds)
+function diagnostics = createSearchDiagnostics(planningContext, visibilityGraph, routeSet, seeds)
 %% Section 0: Header & Readme
 % SYNTAX
 %   diagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
-%       proposal, visibilityGraph, routeSet, seeds)
+%       planningContext, visibilityGraph, routeSet, seeds)
 %
 % PURPOSE
 %   - Assemble stable search diagnostics from completed production stages
-%     without recomputing proposal, graph, route, or seed decisions.
+%     without recomputing geometry, graph, route, or seed decisions.
 %
 % INPUTS
-%   - proposal, visibilityGraph, routeSet (scalar structs)
+%   - planningContext (scalar struct)
+%       The request-wide record. routeSearchGeometry is empty when graph
+%       work was skipped.
+%   - visibilityGraph, routeSet (scalar structs)
 %       Completed stage records, or empty structs when graph work was skipped.
 %   - seeds (nonempty route-seed struct array)
 %       Final deterministic seed order.
@@ -28,19 +31,20 @@ start_deg   = seeds(1).position_deg(1, :);
 goal_deg    = seeds(1).position_deg(end, :);
 diagnostics = emptyDiagnostics(start_deg, goal_deg);
 diagnostics.GeneratedSeedCount = numel(seeds);
-if isempty(fieldnames(proposal))
+routeSearchGeometry = planningContext.routeSearchGeometry;
+if isempty(fieldnames(routeSearchGeometry))
     return;
 end
 
-%% Section 2: Copy Proposal And Visibility Evidence
+%% Section 2: Copy Route-Search Geometry And Visibility Evidence
 
-diagnostics.SampleTimes_s         = proposal.sampleTimes_s;
-diagnostics.SampledShapeCount     = proposal.sampledShapeCount;
-diagnostics.DenseSeedEnvelopeUsed = proposal.usedDenseEnvelope;
+diagnostics.SampleTimes_s         = routeSearchGeometry.sampleTimes_s;
+diagnostics.SampledShapeCount     = routeSearchGeometry.sampledShapeCount;
+diagnostics.DenseSeedEnvelopeUsed = routeSearchGeometry.usedDenseEnvelope;
 diagnostics.NodeCount             = size(visibilityGraph.NodePosition_deg, 1);
 diagnostics.NodePosition_deg      = visibilityGraph.NodePosition_deg;
-if proposal.usedDenseEnvelope
-    diagnostics.DenseSeedEnvelope_deg = proposal.shape.Vertices;
+if routeSearchGeometry.usedDenseEnvelope
+    diagnostics.DenseSeedEnvelope_deg = routeSearchGeometry.shape.Vertices;
 end
 diagnostics.GraphType          = "visibilityGraph";
 diagnostics.VisibilityAttempts = visibilityGraph.Attempts;
@@ -58,8 +62,8 @@ for fieldIndex = 1:numel(graphFields)
     diagnostics.(fieldName) = graphRecord.(fieldName);
 end
 diagnostics.RouteClassRepresentative_deg          = visibilityGraph.ObstacleReferencePoints_deg;
-diagnostics.Coverage.ExactSpatialProposalUsed     = ~proposal.usedDenseEnvelope;
-diagnostics.Coverage.ReducedSpatialProposalUsed   = proposal.usedDenseEnvelope;
+diagnostics.Coverage.ExactSpatialProposalUsed     = ~routeSearchGeometry.usedDenseEnvelope;
+diagnostics.Coverage.ReducedSpatialProposalUsed   = routeSearchGeometry.usedDenseEnvelope;
 diagnostics.Coverage.TimedSearchInitialDeferred   = routeSet.TimedSearchDeferred;
 diagnostics.Coverage.TimedSearchRecoveryAttempted = routeSet.TimedSearchRecoveryAttempted;
 diagnostics.Coverage.MultiWindingRouteCount       = numel(routeSet.DeferredSpatialRoutes_deg);
@@ -113,7 +117,7 @@ for fieldIndex = 1:numel(cleanupFields)
     diagnostics.(fieldName) = searchRecord.(fieldName);
 end
 % Attribute completeness loss to the reduced envelope when used; otherwise attribute it to the bounded graph search.
-if proposal.usedDenseEnvelope
+if routeSearchGeometry.usedDenseEnvelope
     diagnostics.Coverage.CompletenessLossReason = "reducedSpatialProposalAndBoundedSearch";
 else
     diagnostics.Coverage.CompletenessLossReason = "boundedSeedNodeAndTimeSearch";

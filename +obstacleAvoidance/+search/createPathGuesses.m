@@ -12,7 +12,7 @@ function seedSet = createPathGuesses(initialState, goalState, limits, options, r
 %   - initialState, goalState, limits, options: normalized planning inputs.
 %   - routeSet (scalar struct or empty)
 %       Timed and spatial route suggestions returned by searchRoutes.
-%   - obstacleEnvelope_deg: spatial proposal boundary, or empty without routes.
+%   - obstacleEnvelope_deg: route-search boundary, or empty without routes.
 %
 % OUTPUTS
 %   - seedSet (struct array)
