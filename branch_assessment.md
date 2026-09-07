@@ -303,3 +303,72 @@ The full test suite and all 18 maintained examples were not rerun for this
 input-contract change; no example runs or benchmark rows were added. The
 pre-existing missing `failed.mat` replay fixture remains untouched. No runtime
 improvement or additional trajectory optimality is claimed.
+
+## Vietnam keep-out input diagnosis (2026-09-07)
+
+The exact `Rogue Examples/vietnam_keepout_slew_input.mat` request succeeds on
+`5872d456` plus the existing working changes. MATLAB R2024b independently
+validated its 30 s motion: polyline 17.297991315814 units, sampled smoothed
+length 17.305374620919 units, and reported protected clearance 0.000061818787
+units. Collision and continuous kinematic checks pass. The optional plane
+certificate is not accepted; adaptive continuous validation resolves all
+intervals instead.
+
+At the diagnosis snapshot, the public call took 203.211984 s, with 180.112266 s in route search and
+14.083587 s in motion solving. A separate unchanged-search profile attributes
+the dominant cost to timed-edge collision queries over 111 positions and 65
+time layers. The exact search records 4.82 million rejected transitions;
+this count includes cost and timing decisions. This is successful but costly
+planning, not evidence of physical infeasibility.
+
+All 248 protected slices repeat their closing vertex despite the documented
+open-ring contract. Removing only that duplicate in a geometry-only copy
+preserves sampled occupied sets exactly and restores certified interpolation
+for seven regions (210 intervals); the main concave region still uses a hull.
+A rotating-triangle control reproduces the same representation dependence.
+During that diagnosis, no source behavior, input file, or validation tolerance
+was changed, and no speedup or corrected-input planning outcome was claimed.
+That profile was for attribution; the diagnosis itself did not measure timing
+medians or run the full suite. The subsequent optimization is recorded below.
+
+[Complete diagnosis and verification limits](benchmarks/results/vietnam_keepout_diagnosis_20260907.md).
+The one actual planner replay is appended to `benchmark.csv`; raw evidence is
+retained under ignored `tmp/vietnam-diagnosis-20260907/`.
+
+## 2026-09-07: Vietnam runtime reduction applied
+
+The exact saved request now has a **25.8342754 s median planner runtime**, down
+from the frozen working baseline's **198.1828721 s**: **86.9644% less time**
+(7.6713x). The final measured repeats were 35.1461561, 25.8342754, and
+23.2860196 s; the preliminary run was 39.468021 s. The median meets the requested
+30 s target, with visible run-to-run variation rather than a hard deadline.
+
+`timeExpandedVisibilitySearch` now reuses exact occupancy answers within
+stationary geometry intervals, batches query positions and candidate entry
+construction, and reuses checked endpoints only when both coordinates and time
+match exactly. The private lookup allowance is 300 MiB as requested; this
+request needs much less. Cache eviction and bypass repeat existing checks.
+The protected geometry, all 65 input-derived search layers, physical limits,
+13-sample screening semantics, validation tolerances, and candidate order remain
+unchanged. Nonfinite query clocks cannot populate finite-time cache entries.
+
+The complete route, polynomial, motion histories, resolved inputs/options,
+search record, and fresh independent validation matched exactly after excluding
+runtime fields. The selected physical motion remains 30 s long: polyline
+17.297991315813945 units, sampled smoothed length 17.305374620918947 units,
+`goalReached`, collision-free and kinematically valid. The optional plane
+certificate remains unaccepted; continuous adaptive validation resolves safety.
+
+All 18 maintained examples matched the frozen original in full result/search/
+validation comparisons, including the expected no-path failure. The affected
+suite passed 126/126 tests; an additional overflow-cache control passed on both
+implementations, for 127 distinct covered checks. Code Analyzer reported zero
+issues in the changed production file and new test file. Verification was
+focused, not the entire repository suite; the unrelated convergence-summary
+case and user-deleted legacy fixtures were not exercised.
+
+The two production/test files were promoted from byte-identical tested copies.
+The supplied input MAT hash and the user's preexisting changes were preserved.
+Actual accepted runs are appended to `benchmark.csv`; unsuccessful experiments
+and measurement limitations are recorded in the
+[runtime report](benchmarks/results/vietnam_keepout_runtime_20260907.md).
