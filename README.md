@@ -366,3 +366,20 @@ The geographic sequence exposes its three unmodified planner results as an
 optional third output. The benchmark runner independently checks every
 subcase and writes their individual metrics to an ignored subcase CSV;
 the final Philippines result alone cannot establish sequence success.
+
+A subsequent geographic audit was interrupted after more than five minutes
+without returning results. A bounded profile attributed 42.01 s to three
+conic solves, versus 4.11 s to visibility search. The unchanged geographic
+inputs were captured separately for reproducible per-region diagnosis.
+Hawaii has 278 convex cells and 13 clock spans; Croatia has 340 cells and
+8 spans; the Philippines has 2,193 cells and 20 spans. The shortest geographic
+clock spans are about 5--6 milliseconds.
+
+Removing optimization pairs already separated along the prescribed axis was
+tried with physical derivative row scaling. The small clock tests passed
+after scaling, but the geographic sequence still did not return within several
+minutes. That trial was removed. Arc-length timing and uniform-time spatial
+mesh trials were also removed: four spans per edge yielded static-U arrival
+20.8921 s and length 38.7071, narrowly missing both references; three yielded
+21.2814 s and 40.0102, and five became too slow to retain. These experiments
+do not change the thirteen-case milestone or its committed production core.
