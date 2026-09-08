@@ -58,7 +58,7 @@ end
 function testMaintainedExampleSourceContracts(testCase)
     % Verify shared source contracts from one maintained-example inventory.
     allExampleNames = [ ...
-        "exampleAlternatingSlalom", "exampleObstacleAvoidance", ...
+        "exampleAlternatingSlalom", "exampleVietnamKeepoutSlew", ...
         "exampleDenseConcaveObstacle", "exampleFourAcceleratingCircles", ...
         "exampleInterceptMovingTargetAtSetTime", ...
         "exampleInterceptMovingTargetEarliest", ...
@@ -73,6 +73,7 @@ function testMaintainedExampleSourceContracts(testCase)
         "exampleStaticUShapedObstacle", "exampleUSOutlineExtremeVisibility"];
     fixedArrivalExamples = [ ...
         "exampleFourAcceleratingCircles", ...
+        "exampleVietnamKeepoutSlew", ...
         "exampleInterceptMovingTargetAtSetTime", ...
         "exampleInterceptMovingTargetEarliest", ...
         "exampleStraightTargetAlternatingOcclusion", ...
@@ -83,7 +84,7 @@ function testMaintainedExampleSourceContracts(testCase)
     for exampleName = allExampleNames
         examplePath = fullfile(testCase.TestData.RepositoryRoot, "examples", exampleName + ".m");
         sourceText  = string(fileread(examplePath));
-        routedMatch = regexp(sourceText, '"maxJerk_units_s3"\s*,\s*\w+\.MaxJerk_units_s3', 'once');
+        routedMatch = regexp(sourceText, '(?:"maxJerk_units_s3"\s*,\s*\w+\.MaxJerk_units_s3|maxJerk_units_s3\s*=\s*displayOptions\.MaxJerk_units_s3)', 'once');
         verifyNotEmpty(testCase, routedMatch, exampleName + " must route MaxJerk_units_s3 into limits.");
         addedField = regexp(sourceText, '(?m)^\s*result\.[A-Za-z]\w*\s*=', 'once');
         verifyEmpty(testCase, addedField, exampleName + " must not append fields to the planner result.");
@@ -147,16 +148,41 @@ function testExampleResolverRejectsRetiredPlannerOptions(testCase)
     end
 end
 
-function testObstacleAvoidanceRunsHeadlessly(testCase)
-    % Execute the maintained static example and protect selected diagnostics.
-    [result, resultDiagnosis] = exampleObstacleAvoidance(struct("PlotOutputs", false, "FigureVisible", "off"));
+function testVietnamKeepoutSlewRunsHeadlessly(testCase)
+    % Execute the maintained timed example and protect its physical answer.
+    [result, resultDiagnosis] = exampleVietnamKeepoutSlew(struct("PlotOutputs", false, "FigureVisible", "off"));
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
-    % The degree-eight coneprog engine selects this independently validated curve
-    % with the original regression tolerance.
-    verifyEqual(testCase, result.ArrivalTime_s, 7.56468149867628, "AbsTol", 1e-6);
+    independentValidation = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase, independentValidation.Passed, independentValidation.Message);
+    verifyEqual(testCase, result.TerminationReason, "goalReached");
+    verifyEqual(testCase, result.TrajectoryDuration_s, 30, "AbsTol", 1e-12);
+    verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.Route_units), 17.297991315813945, "AbsTol", 1e-9);
+    verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.position_units), 17.305374620918947, "AbsTol", 1e-9);
     summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
-    verifyEqual(testCase, summary.MotionLength_units, 11.4406845061664, "AbsTol", 1e-6);
+    verifyEqual(testCase, summary.MotionLength_units, 17.305374620918947, "AbsTol", 1e-9);
+    verifyEqual(testCase, resultDiagnosis.Search.MotionEdgeCount, 29231);
+    verifyEqual(testCase, resultDiagnosis.Search.WaitEdgeCount, 5618);
+    verifyEqual(testCase, resultDiagnosis.Search.RejectedTransitionCount, 2859775);
+    verifyEqual(testCase, resultDiagnosis.Search.GoalCostBoundRejectionCount, 214274);
+    verifyEqual(testCase, resultDiagnosis.Search.CandidateBatchSplitCount, 0);
+    selectedDetails = resultDiagnosis.SolverDetails(resultDiagnosis.SolverDetails.Attempt == resultDiagnosis.SelectedAttemptIndex, :);
+    verifyFalse(testCase, any(startsWith(selectedDetails.Field, "TimedBmtp.SolverDiagnostics")));
+    verifyTrue(testCase, any(selectedDetails.Field == "TimedBmtp.FullObstacleValidation.Passed"));
+end
+
+function testVietnamInputHash(testCase)
+    % Keep the maintained physical request byte-for-byte unchanged.
+    inputPath = fullfile(testCase.TestData.RepositoryRoot, "examples", "data", "vietnamKeepoutSlewInput.mat");
+    fileIdentifier = fopen(inputPath, "r");
+    verifyGreaterThan(testCase, fileIdentifier, 0, "The maintained Vietnam input could not be opened.");
+    fileCleanup = onCleanup(@() fclose(fileIdentifier));
+    inputBytes = fread(fileIdentifier, Inf, "*uint8");
+    hashEngine = java.security.MessageDigest.getInstance("SHA-256");
+    hashEngine.update(inputBytes);
+    hashBytes = mod(double(hashEngine.digest()), 256);
+    actualHash = lower(string(reshape(dec2hex(hashBytes, 2).', 1, [])));
+    verifyEqual(testCase, actualHash, "dbd475086da1398e4735887b78d3a5466a6c22deb67174fb889540de392c7cac");
 end
 
 function testMovingRotatingObstacleFieldRunsHeadlessly(testCase)

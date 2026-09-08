@@ -94,13 +94,16 @@ for sourceIndex = 1:nodeCount
         motionEdgeLengths_units(sourceIndex, targetIndex) = norm(displacement_units(targetIndex, :));
     end
 end
+distanceToGoal_units = vecnorm(nodePosition_units - nodePosition_units(2, :), 2, 2);
+goalCanWaitToFinal = nodeIsFree(:, 2) & double(waitComponentFinalLayerIndex(:, 2)) == layerCount;
 reachable        = false(layerCount, nodeCount);
 spatialCost_units  = Inf(layerCount, nodeCount);
 parentLayerIndex = zeros(layerCount, nodeCount, "uint32");
 parentNodeIndex  = zeros(layerCount, nodeCount, "uint16");
 reachable(1, 1) = nodeIsFree(1, 1);
 spatialCost_units(1, 1) = 0;
-[waitCount, motionCount, rejectedCount, expandedCount] = deal(0);
+[waitCount, motionCount, rejectedCount, expandedCount, goalBoundRejectionCount, candidateBatchSplitCount] = deal(0);
+goalCostBound_units = Inf;
 exploredNodes_units = zeros(0, 2);
 % Process each layer needed to complete time expanded visibility search.
 for layerIndex = 1:layerCount - 1
@@ -122,8 +125,10 @@ for layerIndex = 1:layerCount - 1
             rejectedCount = rejectedCount + 1;
         end
     end
-    [motionCandidates, candidateRejections] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
+    goalCostBound_units = min([goalCostBound_units; spatialCost_units(goalCanWaitToFinal, 2)]);
+    [motionCandidates, candidateRejections, batchSplitCount] = buildLayerCandidates(currentNodeIndices, layerTimes_s(layerIndex), layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
     rejectedCount = rejectedCount + candidateRejections;
+    candidateBatchSplitCount = candidateBatchSplitCount + batchSplitCount;
     motionCandidateCount = size(motionCandidates, 1);
     pendingMotion    = true(motionCandidateCount, 1);
 
@@ -143,6 +148,15 @@ for layerIndex = 1:layerCount - 1
                 pendingMotion(queryIndices(isDominated)) = false;
                 rejectedCount = rejectedCount + nnz(isDominated);
                 queryIndices  = queryIndices(~isDominated);
+                trialCost_units = trialCost_units(~isDominated);
+                % A goal state that can wait to the final layer supplies an
+                % admissible completion bound. Retain cost ties because they
+                % participate in the existing deterministic parent policy.
+                cannotImproveGoal = trialCost_units + distanceToGoal_units(motionCandidates(queryIndices, 2)) > goalCostBound_units + 1e-12;
+                pendingMotion(queryIndices(cannotImproveGoal)) = false;
+                rejectedCount = rejectedCount + nnz(cannotImproveGoal);
+                goalBoundRejectionCount = goalBoundRejectionCount + nnz(cannotImproveGoal);
+                queryIndices = queryIndices(~cannotImproveGoal);
             end
             if isempty(queryIndices)
                 continue;
@@ -154,6 +168,11 @@ for layerIndex = 1:layerCount - 1
             for motionIndex = reshape(clearIndices, 1, [])
                 [reachable, spatialCost_units, parentLayerIndex, ...
                     parentNodeIndex] = updateTemporalState(reachable, spatialCost_units, parentLayerIndex, parentNodeIndex, layerIndex, motionCandidates(motionIndex, 1), motionCandidates(motionIndex, 3), motionCandidates(motionIndex, 2), motionCandidates(motionIndex, 5));
+            end
+            clearGoalIndices = clearIndices(motionCandidates(clearIndices, 2) == 2 & goalCanWaitToFinal(motionCandidates(clearIndices, 3)));
+            if ~isempty(clearGoalIndices)
+                clearGoalLayers = motionCandidates(clearGoalIndices, 3);
+                goalCostBound_units = min([goalCostBound_units; spatialCost_units(clearGoalLayers, 2)]);
             end
             rejectedCount = rejectedCount + nnz(~queryIsClear);
             pendingMotion(queryIndices) = false;
@@ -183,7 +202,10 @@ end
 record = struct("LayerTimes_s", layerTimes_s, ...
     "CandidateLayerCount", layerCount, "NodeCount", nodeCount, ...
     "WaitEdgeCount", waitCount, "MotionEdgeCount", motionCount, ...
-    "RejectedTransitionCount", rejectedCount, "ExpandedCount", expandedCount, ...
+    "RejectedTransitionCount", rejectedCount, ...
+    "GoalCostBoundRejectionCount", goalBoundRejectionCount, ...
+    "CandidateBatchSplitCount", candidateBatchSplitCount, ...
+    "ExpandedCount", expandedCount, ...
     "ExploredNodes_units", exploredNodes_units, "FrontierNodes_units", frontier_units, ...
     "BestPartialRoute_units", bestPartial_units, ...
     "SelectedGoalLayerIndex", goalLayerIndex, ...
@@ -251,12 +273,34 @@ function clear = edgeIsClear(firstNodeIndices, secondNodeIndices, first_s, secon
 end
 end
 %% Section 3: Local Functions
-function [candidates, rejectedCount] = buildLayerCandidates(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
+function [candidates, rejectedCount, batchSplitCount] = buildLayerCandidates(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
     % Enumerate [entry layer, target node, source node] in the original order.
-    % Through-moving nodes retain the velocity-only duration lower bound.
+    % Bound the temporary logical tensor while retaining the vectorized path
+    % for ordinary inputs and the velocity-only duration lower bound.
     candidates = zeros(0, 5);
     rejectedCount = 0;
+    batchSplitCount = 0;
     if isempty(sourceNodes), return; end
+    layerCount = numel(layerTimes_s);
+    nodeCount = size(nodeIsFree, 2);
+    sourceCount = numel(sourceNodes);
+    maximumCandidateTensorElements = 1024 ^ 2;
+    sourceBatchSize = max(1, floor(maximumCandidateTensorElements / max(1, layerCount * nodeCount)));
+    batchCount = ceil(sourceCount / sourceBatchSize);
+    batchSplitCount = batchCount - 1;
+    candidateBlocks = cell(batchCount, 1);
+    for batchIndex = 1:batchCount
+        firstSourceOffset = 1 + (batchIndex - 1) * sourceBatchSize;
+        finalSourceOffset = min(sourceCount, batchIndex * sourceBatchSize);
+        batchSources = sourceNodes(firstSourceOffset:finalSourceOffset);
+        [candidateBlocks{batchIndex}, batchRejectedCount] = buildCandidateBatch(batchSources, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex);
+        rejectedCount = rejectedCount + batchRejectedCount;
+    end
+    candidates = vertcat(candidateBlocks{:});
+end
+
+function [candidates, rejectedCount] = buildCandidateBatch(sourceNodes, sourceTime_s, layerTimes_s, motionEdgeExists, minimumEdgeDuration_s, motionEdgeLengths_units, nodeIsFree, isWaitComponentStart, waitComponentFinalLayerIndex)
+    % Vectorize one bounded block and preserve source/target/layer ordering.
     layerCount = numel(layerTimes_s);
     nodeCount = size(nodeIsFree, 2);
     sourceCount = numel(sourceNodes);
@@ -272,7 +316,7 @@ function [candidates, rejectedCount] = buildLayerCandidates(sourceNodes, sourceT
     enabledEdges = motionEdgeExists(sourceNodes, :).';
     starts = starts & reshape(enabledEdges, 1, nodeCount, sourceCount);
     rejectedCount = nnz(enabledEdges & ~reshape(any(starts, 1), nodeCount, sourceCount));
-    % Column-major enumeration matches the old source/target/layer loops.
+    % Column-major enumeration matches the original source/target/layer loops.
     [entryLayers, targetNodes, sourceOffsets] = ind2sub([layerCount, nodeCount, sourceCount], find(starts));
     selectedSources = reshape(sourceNodes(sourceOffsets), [], 1);
     finalStates = entryLayers + layerCount * (targetNodes - 1);

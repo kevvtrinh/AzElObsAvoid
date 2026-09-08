@@ -10,7 +10,7 @@ optimization comparison or an optimality claim.
 
 ## Reproduction
 
-- Input: `Rogue Examples/vietnam_keepout_slew_input.mat`, SHA-256
+- Input: `examples/data/vietnamKeepoutSlewInput.mat`, SHA-256
   `DBD475086DA1398E4735887B78D3A5466A6C22DEB67174FB889540DE392C7CAC`.
 - Revision: `5872d456d1fd6f31925b04a4491d3479ad4cb3e5`, branch
   `bmtp-cleanup-codex`, plus pre-existing working changes. The starting diff and

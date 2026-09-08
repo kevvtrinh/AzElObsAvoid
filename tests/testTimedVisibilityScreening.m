@@ -5,7 +5,7 @@ function tests = testTimedVisibilityScreening
 % PURPOSE
 %   Preserve timed reachability when rejected edges stop collision sampling.
 % INPUTS
-%   None. Replay the unchanged saved request and small moving-obstacle cases.
+%   None. Exercise small moving-obstacle and numerical edge cases.
 % OUTPUTS
 %   Deterministic MATLAB function tests and independent validation checks.
 % UNITS
@@ -15,10 +15,9 @@ function tests = testTimedVisibilityScreening
 tests = functiontests(localfunctions);
 end
 
-function setupOnce(testCase)
+function setupOnce(~)
     repositoryRoot = fileparts(fileparts(mfilename('fullpath')));
     addpath(repositoryRoot, fullfile(repositoryRoot, 'trajectory'));
-    testCase.TestData.RepositoryRoot = repositoryRoot;
 end
 
 function testBlockedSampleBeforeAtAndAfterMidpoint(testCase)
@@ -44,20 +43,49 @@ function testAllClearSamplesPreserveTheTimedRoute(testCase)
     verifyEqual(testCase, record.SelectedGoalLayerIndex, 2);
 end
 
-function testExactVietnamRequestPreservesValidatedMotion(testCase)
-    % The saved input is known feasible; require its established physical answer.
-    loaded = load(fullfile(testCase.TestData.RepositoryRoot, 'Rogue Examples', 'vietnam_keepout_slew_input.mat'));
-    [result, diagnosis] = obstacleAvoidance.planTrajectory(loaded.protectedObstacles, loaded.initialState, loaded.goalState, loaded.limits, loaded.options);
-    validation = obstacleAvoidance.validateTrajectory(result);
-    verifyTrue(testCase, result.Success, result.Message);
-    verifyTrue(testCase, validation.Passed, validation.Message);
-    verifyEqual(testCase, result.TerminationReason, "goalReached");
-    verifyEqual(testCase, result.TrajectoryDuration_s, 30, 'AbsTol', 1e-12);
-    verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.Route_units), 17.297991315813945, 'AbsTol', 1e-9);
-    verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.position_units), 17.305374620918947, 'AbsTol', 1e-9);
-    verifyEqual(testCase, diagnosis.Search.MotionEdgeCount, 56571);
-    verifyEqual(testCase, diagnosis.Search.WaitEdgeCount, 5618);
-    verifyEqual(testCase, diagnosis.Search.RejectedTransitionCount, 4818010);
+function testGoalCostBoundPreservesEqualCostCompletions(testCase)
+    % A known final-arrival route may exclude only transitions whose spatial
+    % lower bound is strictly worse. Equal-cost alternatives remain eligible.
+    nodes = [0 0; 10 0; 5 0; 100 0];
+    costs = hypot(nodes(:, 1) - nodes(:, 1).', nodes(:, 2) - nodes(:, 2).');
+    initial = struct();
+    initial.time_s = 0;
+    initial.position_units = nodes(1, :);
+    goal = struct();
+    goal.time_s = 5;
+    goal.position_units = nodes(2, :);
+    limits = struct();
+    limits.maxVelocity_units_s = [100 100];
+    options = obstacleAvoidance.input.resolvePlannerOptions(struct('GoalTimeMode', 'fixedArrival'));
+    [route, time_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodes, costs, [], initial, goal, limits, (0:5).', options);
+    verifyEqual(testCase, route(1, :), initial.position_units);
+    verifyEqual(testCase, route(end, :), goal.position_units);
+    verifyEqual(testCase, time_s([1 end]), [initial.time_s; goal.time_s]);
+    verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(route), 10, 'AbsTol', 1e-12);
+    verifyGreaterThan(testCase, record.GoalCostBoundRejectionCount, 0);
+end
+
+function testCandidateEnumerationBatchesLargeFrontiers(testCase)
+    % A wide reachable frontier must not require one layer-by-node-by-source
+    % temporary tensor. Batching preserves the exact fixed-arrival route.
+    nodeCount = 600;
+    nodes = [(0:nodeCount - 1).', zeros(nodeCount, 1)];
+    costs = Inf(nodeCount);
+    costs(1, :) = nodes(:, 1).';
+    costs(1, 1) = 0;
+    initial = struct();
+    initial.time_s = 0;
+    initial.position_units = nodes(1, :);
+    goal = struct();
+    goal.time_s = 2;
+    goal.position_units = nodes(2, :);
+    limits = struct();
+    limits.maxVelocity_units_s = [nodeCount nodeCount];
+    options = obstacleAvoidance.input.resolvePlannerOptions(struct('GoalTimeMode', 'fixedArrival'));
+    [route, time_s, record] = obstacleAvoidance.search.timeExpandedVisibilitySearch(nodes, costs, [], initial, goal, limits, (0:2).', options);
+    verifyEqual(testCase, route([1 end], :), [initial.position_units; goal.position_units]);
+    verifyEqual(testCase, time_s([1 end]), [initial.time_s; goal.time_s]);
+    verifyGreaterThan(testCase, record.CandidateBatchSplitCount, 0);
 end
 
 function testAuthoritativeSampleStaysSeparateFromStationaryHulls(testCase)

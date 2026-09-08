@@ -32,7 +32,7 @@ addpath(fullfile(repositoryDirectory, "trajectory"));
 
 %% Section 2: Run And Independently Check The Public Example
 
-[result, diagnosis] = exampleObstacleAvoidance(struct("PlotOutputs", false));
+[result, diagnosis] = exampleVietnamKeepoutSlew(struct("PlotOutputs", false));
 if ~result.Success || ~result.Validation.Passed
     error("exportPlannerManualData:ExampleFailed", "The maintained example did not return an independently checked motion: %s", result.TerminationReason);
 end

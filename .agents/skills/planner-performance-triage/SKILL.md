@@ -63,7 +63,7 @@ Do not judge or bless a change that moves any sentinel. Stop and report it.
 | `Rogue Examples/failed.mat` | success and independent validation; polyline 143.92829584254 units, smooth length 145.143797542061 units, arrival 71.2828117654205 s |
 | `exampleTwoOpposingUVisibilityGraph` | arrival 21.6333333333333 s |
 | `exampleStaticUShapedObstacle` | polyline 34.9425880404659 units, smooth length 39.1412774270613 units, arrival 20.7865397074203 s |
-| README quick-start (`exampleObstacleAvoidance`) | polyline 11.1521195190242 units, smooth length 11.4116854105306 units, arrival 7.52917416639509 s |
+| README quick-start (`exampleVietnamKeepoutSlew`) | polyline 17.2979913158139 units, smooth length 17.3053746209189 units, arrival 30 s |
 | `exampleMovingBarrierWait` | arrival 10.0903015136719 s |
 | `exampleMovingCircleNoWrap` | arrival 8.5 s |
 | `exampleMovingDeformingUSOutlineVisibility` | arrival 7.91666666666667 s |

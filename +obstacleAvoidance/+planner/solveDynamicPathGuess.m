@@ -80,6 +80,10 @@ if tryTimedBmtp
     end
     if timedCheck.Passed
         timedBmtpAttempt.Outcome = "acceptedAfterFullValidation";
+        % The accepted solver diagnostics become the attempt root below.
+        % Keep the nested attempt outcome and validation without duplicating
+        % that complete diagnostic tree a second time.
+        timedBmtpAttempt = rmfield(timedBmtpAttempt, "SolverDiagnostics");
         candidate         = timedCandidate;
         checkResult       = timedCheck;
         solverDiagnostics = timedBmtpDiagnostics;

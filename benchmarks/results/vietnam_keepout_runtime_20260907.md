@@ -8,7 +8,7 @@ individual runs are not guaranteed to stay below 30 s.
 
 ## Baseline and scope
 
-The exact saved input is `Rogue Examples/vietnam_keepout_slew_input.mat`, SHA256
+The exact saved input is `examples/data/vietnamKeepoutSlewInput.mat`, SHA256
 `DBD475086DA1398E4735887B78D3A5466A6C22DEB67174FB889540DE392C7CAC`.
 The reference is revision `5872d456d1fd6f31925b04a4491d3479ad4cb3e5` plus the
 user's existing working changes, frozen before this experiment. The original
@@ -134,7 +134,7 @@ From the repository root in MATLAB:
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
-source = load(fullfile('Rogue Examples', 'vietnam_keepout_slew_input.mat'));
+source = load(fullfile('examples', 'data', 'vietnamKeepoutSlewInput.mat'));
 timer = tic;
 [result, diagnosis] = obstacleAvoidance.planTrajectory(source.protectedObstacles, source.initialState, source.goalState, source.limits, source.options);
 elapsed_s = toc(timer);

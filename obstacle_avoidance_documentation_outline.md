@@ -387,7 +387,7 @@ coverage; it does not substitute for reading each implementation.
 - `examples/exampleMovingDeformingUSOutlineVisibility.m`
 - `examples/exampleMovingRotatingObstacleField.m`
 - `examples/exampleNoPath.m`
-- `examples/exampleObstacleAvoidance.m`
+- `examples/exampleVietnamKeepoutSlew.m`
 - `examples/exampleObstacleFree.m`
 - `examples/exampleOpeningUShapedObstacle.m`
 - `examples/exampleStaticUShapedObstacle.m`

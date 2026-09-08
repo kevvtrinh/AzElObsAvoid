@@ -306,7 +306,7 @@ improvement or additional trajectory optimality is claimed.
 
 ## Vietnam keep-out input diagnosis (2026-09-07)
 
-The exact `Rogue Examples/vietnam_keepout_slew_input.mat` request succeeds on
+The exact `examples/data/vietnamKeepoutSlewInput.mat` request succeeds on
 `5872d456` plus the existing working changes. MATLAB R2024b independently
 validated its 30 s motion: polyline 17.297991315814 units, sampled smoothed
 length 17.305374620919 units, and reported protected clearance 0.000061818787
@@ -372,3 +372,37 @@ The supplied input MAT hash and the user's preexisting changes were preserved.
 Actual accepted runs are appended to `benchmark.csv`; unsuccessful experiments
 and measurement limitations are recorded in the
 [runtime report](benchmarks/results/vietnam_keepout_runtime_20260907.md).
+
+## 2026-09-07: Vietnam promoted to maintained example and pruned search
+
+`exampleVietnamKeepoutSlew` now replaces `exampleObstacleAvoidance` in the
+maintained 18-example inventory. The source request moved unchanged to
+`examples/data/vietnamKeepoutSlewInput.mat`; its SHA-256 remains
+`dbd475086da1398e4735887b78d3a5466a6c22deb67174fb889540de392c7cac`.
+
+Fixed-arrival timed search now uses an incumbent goal cost with Euclidean
+distance as an admissible completion lower bound. It rejects only strictly worse
+candidates and preserves cost ties. For the maintained Vietnam request, motion
+edges fall from 56,571 to 29,231 while the exact route, polynomial, and complete
+motion histories remain unchanged and independently valid. Candidate enumeration
+also batches consecutive source nodes so its temporary logical tensor cannot
+exceed 1,048,576 elements; this request remains on the one-batch fast path.
+
+Accepted timed-solver diagnostics have one complete owner, and exact diagnostic
+flattening now preallocates and block-collects homogeneous leaf arrays. The
+Vietnam solver-detail table falls from 136,333 to 68,275 rows without losing
+field paths. An unhelpful convex-occupancy experiment was removed.
+
+The fully integrated CBBC comparison measured a 21.8339201 s baseline median and
+17.56002525 s candidate median, 19.5746% lower. All runs returned the exact
+frozen physical motion and passed fresh validation. Earlier measurements include
+an unfavorable 37.6722 s candidate outlier and are retained in the report.
+
+All 18 maintained examples produced their expected outcome. Across the full
+suite and post-fix focused reruns, all 186 tests independent of pre-existing
+Rogue Example fixture state passed. Three remaining tests require user-deleted
+MAT files; the fourth fails identically under the frozen implementation against
+the user-modified `inefficientroute.mat`. Code Analyzer and `git diff --check`
+are clean.
+
+[Complete follow-up, runtime evidence, and verification limits](benchmarks/results/vietnam_maintained_example_runtime_20260907.md).
