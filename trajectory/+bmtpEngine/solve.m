@@ -134,10 +134,16 @@ if any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestA
         boundDiagnostics.Coverage = coverage;
         boundDiagnostics.WarmRouteResampled = true;
         boundDiagnostics.ApplicablePairCount = nnz(boundWarm.RegionActiveBySegment);
-        [boundResult,boundDiagnostics] = bmtpEngine.solveAlternatingTrajectory(boundRequest,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
+        boundPowers_units = boundWarm.FixedPower_units;
+        if ~isfield(coverage,'ActiveTimeInterval_s')
+            [boundResult,boundDiagnostics] = bmtpEngine.solveStaticCorridor(request,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
+            boundPowers_units = boundResult.PositionPower_units;
+        else
+            [boundResult,boundDiagnostics] = bmtpEngine.solveAlternatingTrajectory(boundRequest,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
+        end
         boundStats = boundDiagnostics.ConicSolver;
         if boundResult.Success
-            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s,boundWarm.FixedPower_units);
+            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s,boundPowers_units);
             if boundMotion.Success
                 boundCertificate = bmtpEngine.checkFinalMotion(request,boundWarm,boundMotion,roundoffReserve_units,obstacleTarget_units);
                 if boundCertificate.Passed
@@ -147,11 +153,15 @@ if any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestA
                     boundAccepted = true;
                     analyticIdentifier = "kinematicBoundBmtp";
                     analyticRepresentation = "fixedClockElasticSocp";
+                    if ~isfield(coverage,'ActiveTimeInterval_s')
+                        analyticIdentifier = "monotoneStaticCorridor";
+                        analyticRepresentation = "integratedQuinticCorridor";
+                    end
                 end
             end
         end
     end
-    boundRecord.Passed = boundAccepted;
+    boundRecord.Passed = boundAccepted && abs(sum(preparedMotion.SegmentTime_s)-boundWarm.Duration_s)<=options.ArrivalTimeTolerance_s;
     boundRecord.ElapsedTime_s = toc(boundTimer);
     boundRecord.TrajectorySocpCount = boundStats.CallCount;
 end

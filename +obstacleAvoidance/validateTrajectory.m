@@ -221,6 +221,15 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
         passed = false; return;
     end
     for segmentIndex = 1:size(activePairs, 1)
+        if ~exist('cells','var')
+            % Recheck every independently rebuilt static cell in one batch.
+            % The coefficient products, gap, and roundoff conditions match
+            % the scalar verifier used for affine time-dependent geometry.
+            planes = bmtpEngine.verifyStaticSeparatingLines(certificate.Planes(segmentIndex,:), ...
+                squeeze(controlPoint_units(segmentIndex,:,:)),regions_units,reserve_units,target_units);
+            if ~all([planes.Verified]), passed = false; return; end
+            continue;
+        end
         for regionIndex = 1:size(activePairs, 2)
             if ~activePairs(segmentIndex, regionIndex)
                 continue;

@@ -52,14 +52,34 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     reusedCount    = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
+    staticGeometry = ~isfield(coverage,'ActiveTimeInterval_s');
+    if staticGeometry && regionCount>0
+        staticVertices_units = vertcat(regions_units{:});
+        staticOwners = repelem((1:regionCount).',cellfun(@(v)size(v,1),regions_units));
+        staticOwners = staticOwners(:);
+    end
     % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        if staticGeometry && regionCount>0 && segmentIndex>1
+            normalPages = reshape([previousPlanes.Normal],2,2,regionCount);
+            normals = reshape(normalPages(1,:,:),2,regionCount).';
+            supports_units = accumarray(staticOwners,sum(staticVertices_units.*normals(staticOwners,:),2),[regionCount,1],@min);
+            offsets = num2cell(repmat(target_units-supports_units,1,2),2);
+            [previousPlanes.Offset_units] = offsets{:};
+            previousPlanes = bmtpEngine.verifyStaticSeparatingLines(previousPlanes,trajectory_units,regions_units,reserve_units,target_units);
+            verified = [previousPlanes.Verified];
+            planes(segmentIndex,:) = previousPlanes;
+            reusedCount = reusedCount+nnz(verified);
+            verifiedCount = verifiedCount+nnz(verified);
+            if any(verified), minimumGap_units = min(minimumGap_units,min([previousPlanes(verified).SignedGap_units])); end
+        end
         % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
+            if staticGeometry && segmentIndex>1 && previousPlanes(regionIndex).Verified, continue; end
             restricted_units = trajectory_units;
             interval_s = spanBreaks_s(segmentIndex:segmentIndex+1).';
             if isfield(coverage,'ActiveTimeInterval_s')
@@ -72,7 +92,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             % A neighboring span's direction is only a proposal. Recompute
             % supports on this physical interval and verify the entire pair.
             plane = previousPlanes(regionIndex);
-            if plane.Active
+            if plane.Active && ~staticGeometry
                 normal = plane.Normal(1,:);
                 plane.Offset_units = target_units-[min(vertices_units(:,:,1)*normal.'),min(vertices_units(:,:,end)*normal.')];
                 plane = bmtpEngine.verifySeparatingLine(plane,restricted_units,vertices_units,reserve_units,target_units);

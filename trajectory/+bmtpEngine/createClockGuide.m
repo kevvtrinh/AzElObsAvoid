@@ -8,6 +8,13 @@ function graph = createClockGuide(request, phases, axisIndex)
 
 %% Section 1: Intersect Constant-Velocity Phases With Space-Time Cells
 
+if isfield(request.Coverage,'StaticScene')
+    direction = [0,0];
+    direction(axisIndex) = sign(request.GoalState.position_units(axisIndex)-request.InitialState.position_units(axisIndex));
+    graph = obstacleAvoidance.search.createVisibilityGraph(request.Coverage.StaticScene,request.InitialState.position_units, ...
+        request.GoalState.position_units,request.Limits,request.Options,direction);
+    return;
+end
 scene = struct('ProtectedShape',{});
 for k = 1:numel(phases.SegmentTime_s)
     phaseStart_s = request.InitialState.time_s+phases.StartTime_s(k);
