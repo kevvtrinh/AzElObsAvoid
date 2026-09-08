@@ -235,7 +235,12 @@ function testPreparationCachesGeometryAndRejectsStaleSource(testCase)
     obstacle    = rectangleObstacle("cache source", [0; 4], [-2 2 -1 1]);
     prepared    = obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     preparation = prepared.InternalPreparation;
-    verifyEqual(testCase, preparation.PreparationVersion, 1);
+    verifyEqual(testCase, preparation.PreparationVersion, 2);
+    legacy = prepared;
+    legacy.InternalPreparation.PreparationVersion = 1;
+    legacy.InternalPreparation = rmfield(legacy.InternalPreparation, {'SampleGeometry','IntervalGeometry'});
+    upgraded = obstacleAvoidance.obstacles.prepareObstacles(legacy);
+    verifyEqual(testCase, upgraded.InternalPreparation, preparation);
     verifySize(testCase, preparation.SampleBounds_units, [2 4]);
     verifySize(testCase, preparation.IntervalBounds_units, [1 4]);
     verifyEqual(testCase, size(preparation.SampleEdgeStart_units{1}, 1), 4);

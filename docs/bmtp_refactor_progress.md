@@ -5,14 +5,65 @@ based on cleanup revision `c04f3b280725edd30824947f18751afe07a7a0d9`.
 The emptycore reference is `26c343b9ab7704d0cd5a3d8f72af058e99c936b1`.
 The original checkout and its existing `AGENTS.md` edit remain untouched.
 
-**The complete eight-stage plan is not implemented.** The retained production
-change batches offset-spline polynomial translation. The static-corridor port
+**The complete eight-stage plan is not implemented.** Retained production
+changes batch offset-spline polynomial translation and reuse time-invariant
+source geometry. The static-corridor port
 remains an unretained experiment in the ignored `scratch/corridor_draft` folder.
 Geometry batching, further preparation reuse, analytic waiting, corridor and
 clock integration, continuous-length optimization, and broader consolidation
 still require implementation and their respective verification gates. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of
-every geographic subcase is also outstanding.
+every geographic subcase is also outstanding for the reference core. The resumed
+cleanup/candidate comparison now captures all 20 physical requests (including
+all three geographic subcases) with a shared warm-up policy and three timed
+repetitions. These are planner-request replays; they exclude example setup and
+the interception wrapper's time search.
+
+## Resumed work: source-derived geometry reuse
+
+The geometry-query change caches authoritative sample and interval
+classification for time-invariant histories. Moving histories retain their original evaluation. The public
+validator rebuilds caller-supplied preparation from canonical source histories.
+The [feature-gate report](bmtp_refactor_feature_gates.md) documents eligibility,
+cache invalidation, the forged-cache rejection test, and measured query cost.
+
+The complete 60-record cleanup/candidate comparison passes exact equality of
+returned polynomials, sampled histories, route choices, certificates, search
+records, arrival times, and adaptively integrated arc lengths. Every successful
+motion passes fresh independent validation. The no-path outcome remains
+`noValidatedSeed`. All 120 individual measurements are appended to `benchmark.csv`.
+
+The final candidate's full MATLAB run passes all **192 tests**. An earlier run
+exposed an old assertion that preparation version must remain 1. The test now
+expects the new version and additionally requires a version-1 record to rebuild
+completely. The new later-interception regression also passes on
+the pinned cleanup baseline, including a translated time origin.
+
+| Physical request | Cleanup median (s) | Candidate median (s) |
+| --- | ---: | ---: |
+| Dense concave obstacle | 1.3847 | 1.1155 |
+| Moving circle | 0.75893 | 0.71484 |
+| Rotating obstacle field | 1.0912 | 0.9268 |
+| Hawaii | 2.2110 | 1.6471 |
+| Four accelerating circles | 0.82057 | 0.84892 |
+| Obstacle free | 0.0076241 | 0.0087251 |
+
+The first eager-cache formulation slowed the accelerating-history case in both
+the initial comparison and the one matched rerun. Profiles showed 1,430 geometry
+queries rather than 242, caused by eagerly preparing rarely reused moving
+samples. That formulation was rejected. The retained static-only cache restores
+242 queries and removes that added work. The remaining median difference is
+about 0.028 seconds and the run distributions overlap; the obstacle-free
+difference is about 0.0011 seconds with no geometry work involved. No universal
+speedup is claimed. These comparisons cover both retained changes relative to
+the cleanup baseline; the query microbenchmark isolates cache reuse itself.
+All raw captures, unfavorable measurements, and the interrupted
+serialization-heavy benchmark log remain in ignored scratch storage.
+
+The source-derived geometry increment adds 37 physical production lines to the
+previous 15,519-line state, for 15,556 lines across 108 production files.
+Removing displaced solver implementations remains part of the unfinished plan;
+this intermediate increment alone does not satisfy its final size gate.
 
 ## Retained change
 

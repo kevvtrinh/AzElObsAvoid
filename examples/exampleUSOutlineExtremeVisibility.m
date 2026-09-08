@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
+function [result, diagnosis, sequence] = exampleUSOutlineExtremeVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleUSOutlineExtremeVisibility()
@@ -16,6 +16,8 @@ function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result for the final region.
+%   - sequence (optional scalar struct)
+%       Names, unmodified results, and diagnoses for every geographic case.
 %
 % UNITS
 %   - Position is coordinate units, time is seconds, velocity is coordinate units per second,
@@ -100,6 +102,7 @@ end
 
 result    = regionResults{end};
 diagnosis = regionDiagnoses{end};
+sequence = struct('Names', regionNames, 'Results', {regionResults}, 'Diagnoses', {regionDiagnoses});
 if ~all(regionPassed)
     warning("exampleUSOutlineExtremeVisibility:SequenceValidationFailed", "One or more regional planning results failed independent validation.");
 end

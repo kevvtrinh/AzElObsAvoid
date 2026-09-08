@@ -13,6 +13,26 @@ claims. The experimental corridor port remains outside production because it
 does not preserve all measured motion-quality gates. The full plan is unfinished.
 See [the progress and limitations report](docs/bmtp_refactor_progress.md).
 
+### Resumed geometry verification — 2026-09-08
+
+The refactor now retains source-derived geometry for time-invariant histories;
+the public validator rebuilds caller-supplied preparation independently. All
+192 MATLAB tests pass. Three matched repetitions of 20 frozen physical requests
+preserve exact polynomials, samples, routes, certificates, search records,
+arrival times, and adaptively integrated lengths. Every successful motion
+passes fresh validation; the expected no-path result remains explicit. The
+geographic capture now includes Hawaii, Croatia, and Philippines separately.
+
+An eager moving-history cache was rejected after the matched rerun confirmed a
+slowdown and profiles showed geometry calls rise from 242 to 1,430. The retained
+static-only change restores 242 calls. Both favorable and unfavorable runs are
+recorded in `benchmark.csv`. Full-branch medians improve on dense concave and
+Hawaii cases by about 19% and 26%; other cases show little change or small
+slowdowns. These are planner-request replays, excluding example setup and
+interception-search overhead. The reference-core comparison is still running.
+Production currently has 108 MATLAB files and 15,556 physical lines; the final
+code-reduction and solver-replacement gates remain unfinished.
+
 ## Generic coordinates — 2026-09-07
 
 The repository now uses x/y coordinates and caller-consistent units. Independent WrapX and WrapY flags use each workspace interval width, with stable positive-displacement half-period ties. Unwrapped physics and validation matched exactly across all 18 maintained finite-jerk examples. The shifted-period wrapping regression now reaches the equivalent endpoint in 3.372281 s instead of 6.5 s. All eight wrapping regressions and 27 browser-function checks pass; 172 distinct MATLAB tests pass. One saved-route diagnostic regression reproduces in the untouched baseline, and three pre-existing deleted fixtures block their tests. No validation tolerance or assertion was weakened. Periodic obstacles and moving goals remain unsupported. [Detailed evidence](benchmarks/results/xy_coordinate_migration_20260907.md).

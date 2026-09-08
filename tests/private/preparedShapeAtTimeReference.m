@@ -1,7 +1,7 @@
-function [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly)
+function [shape, geometry] = preparedShapeAtTimeReference(obstacle, queryTime_s, geometryOnly)
 %% Section 0: Header & Readme
 % SYNTAX
-%   [shape, geometry] = preparedShapeAtTime(obstacle, queryTime_s, geometryOnly)
+%   [shape, geometry] = preparedShapeAtTimeReference(obstacle, queryTime_s, geometryOnly)
 % PURPOSE
 %   Evaluate one prepared obstacle at a physical time.
 % INPUTS
@@ -30,23 +30,6 @@ upperIndex = find(time_s >= queryTime_s, 1, "first");
 if isscalar(time_s)
     lowerIndex = 1;
     upperIndex = 1;
-end
-% Preparation owns these immutable records; source-snapshot checks invalidate
-% them when geometry, activity times, margins, or source histories change.
-if isfield(preparation, 'SampleGeometry') && ~isempty(preparation.SampleGeometry)
-    if lowerIndex == upperIndex
-        geometry = preparation.SampleGeometry{lowerIndex};
-        if ~geometryOnly, shape = preparation.SampleShapes{lowerIndex}; end
-        return;
-    elseif ~isempty(preparation.IntervalGeometry{lowerIndex})
-        geometry = preparation.IntervalGeometry{lowerIndex};
-        if ~preparation.MatchingTopology(lowerIndex)
-            shape = preparation.IntervalUnionShapes{lowerIndex};
-        elseif ~geometryOnly
-            shape = preparation.SampleShapes{lowerIndex};
-        end
-        return;
-    end
 end
 fraction = 0;
 if lowerIndex ~= upperIndex

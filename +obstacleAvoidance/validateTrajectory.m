@@ -51,9 +51,12 @@ elseif nargin ~= 6
 end
 limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
 goalState.position_units = obstacleAvoidance.input.resolveWrappedGoal(initialState.position_units, goalState.position_units, limits, options);
-if isempty(obstacles) || ~isfield(obstacles, "InternalPreparation")
-    obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
+% This public boundary rebuilds geometry from source histories. Internal
+% candidate checks reuse preparation, but caller-supplied caches are not proof.
+if isfield(obstacles, "InternalPreparation")
+    obstacles = rmfield(obstacles, "InternalPreparation");
 end
+obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacles);
 obstacles  = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 validation = obstacleAvoidance.validation.validatePreparedTrajectory(trajectory, obstacles, initialState, goalState, limits, options);
 validation.ElapsedTime_s = toc(validationTimer);

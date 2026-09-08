@@ -154,6 +154,23 @@ preparation = struct("PreparationVersion", preparationVersion, ...
     "IsTimeInvariant", isTimeInvariant, ...
     "StaticShape", staticShape);
 obstacle.InternalPreparation = preparation;
+% Static geometry is queried repeatedly during curve certification. Eager
+% classification of long moving histories costs more than their sparse queries.
+sampleGeometry = cell(0, 1);
+intervalGeometry = cell(0, 1);
+if isTimeInvariant
+    sampleGeometry = cell(sampleCount, 1);
+    intervalGeometry = cell(intervalCount, 1);
+    for sampleIndex = 1:sampleCount
+        [~, sampleGeometry{sampleIndex}] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, obstacle.time_s(sampleIndex), true);
+    end
+    for intervalIndex = 1:intervalCount
+        midpoint_s = obstacle.time_s(intervalIndex) + intervalDuration_s(intervalIndex) / 2;
+        [~, intervalGeometry{intervalIndex}] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, midpoint_s, true);
+    end
+end
+obstacle.InternalPreparation.SampleGeometry = sampleGeometry;
+obstacle.InternalPreparation.IntervalGeometry = intervalGeometry;
 end
 
 %% Section 5: Local Functions
