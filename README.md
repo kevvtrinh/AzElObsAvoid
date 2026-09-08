@@ -422,3 +422,12 @@ medians for the waiting examples were 0.269 and 0.300 s, also below their gates.
 The remaining failures are alternating-occlusion runtime, static-U quality,
 and the three-region geographic sequence. No claim of complete goal success
 is made.
+
+Sparse separating-plane constraints are now assembled in one triplet operation,
+and control-pair enumeration uses the exact lower-triangular index order.
+These algebraically equivalent changes reduce the core to 4,635 physical
+production lines. All 56 tests still pass; original and triplet-assembled
+occlusion runs returned bit-identical polynomial records. Interleaved warm
+comparisons saved about 0.12 s, but a fresh five-run median of 2.586333 s still
+misses the 2.466633 s occlusion runtime gate. This is a code-size and assembly
+improvement, not an additional passing benchmark.

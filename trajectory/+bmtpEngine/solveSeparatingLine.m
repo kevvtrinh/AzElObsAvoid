@@ -18,7 +18,8 @@ edges_units = diff([first_units;first_units(1,:)],1,1);
 if size(vertices_units,3)>1
     edges_units = [edges_units;diff([last_units;last_units(1,:)],1,1)];
 end
-controlPairs = nchoosek(1:size(controlPoint_units,1),2);
+[secondControl,firstControl] = find(tril(true(size(controlPoint_units,1)),-1));
+controlPairs = [firstControl,secondControl];
 edges_units = [edges_units;relativeControl_units(controlPairs(:,2),:)-relativeControl_units(controlPairs(:,1),:)];
 length_units = vecnorm(edges_units,2,2);
 edges_units = edges_units(length_units>0,:); length_units = length_units(length_units>0);

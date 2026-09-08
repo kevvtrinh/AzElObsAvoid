@@ -282,21 +282,11 @@ function [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, seg
     % Exact degree-N by degree-one Bernstein product weights.
     beta  = (0:degree + 1).' / (degree + 1);
     alpha = 1 - beta;
-    rows = spalloc(degree + 2, variableCount, 4 * (degree + 2));
-    % Process each product needed to complete fixed plane rows.
-    for productIndex = 1:degree + 2
-        if alpha(productIndex) > 0
-            indices = controlIndexOf(segmentIndex, productIndex - 1, 1:2, degree);
-            rows(productIndex, indices) = ...
-                alpha(productIndex) * plane.Normal(1, :); %#ok<SPRIX>
-        end
-        if beta(productIndex) > 0
-            indices       = controlIndexOf(segmentIndex, productIndex - 2, 1:2, degree);
-            currentValues = full(rows(productIndex, indices));
-            rows(productIndex, indices) = currentValues + ...
-                beta(productIndex) * plane.Normal(2, :); %#ok<SPRIX>
-        end
-    end
+    controlColumns = (segmentIndex-1)*2*(degree+1)+(1:2*(degree+1)).';
+    rowIndices = [repelem((1:degree+1).',2);repelem((2:degree+2).',2)];
+    values = [reshape((alpha(1:end-1)*plane.Normal(1,:)).',[],1); ...
+        reshape((beta(2:end)*plane.Normal(2,:)).',[],1)];
+    rows = sparse(rowIndices,[controlColumns;controlColumns],values,degree+2,variableCount);
     offset_units = alpha * plane.Offset_units(1) + beta * plane.Offset_units(2);
 end
 
