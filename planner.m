@@ -1,24 +1,25 @@
-function result = planTrajectory(obstacles, initialState, goalState, limits, options)
+function [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   result = obstacleAvoidance.planTrajectory()
-%   result = obstacleAvoidance.planTrajectory( ...
+%   result = planner()
+%   result = planner( ...
 %       obstacles, initialState, goalState, limits, options)
 %
 % PURPOSE
-%   - Prepare static convex obstacles, build one exhaustive visibility graph,
-%     and turn its shortest route into one BMTP trajectory.
+%   - Prepare protected polygon histories, find an exact visibility seed,
+%     and construct independently certified BMTP motion.
 %
 % INPUTS
-%   - obstacles: static polygon structs accepted by prepareObstacles.
+%   - obstacles: static polygon structs or canonical polygon histories.
 %   - initialState, goalState: position_units and time_s; omitted endpoint
 %     velocity and acceleration default to zero.
 %   - limits: workspace intervals and per-axis velocity, acceleration, jerk.
-%   - options: fixed-arrival BMTP sampling and validation tolerances.
+%   - options: arrival policy, BMTP sampling, and validation tolerances.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
 %     prepared geometry, visibility graph, BMTP diagnostics, and validation.
+%   - diagnosis: optional empty compatibility output; evidence is in result.
 %
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
@@ -27,6 +28,7 @@ function result = planTrajectory(obstacles, initialState, goalState, limits, opt
 %% Section 1: Resolve The Independent Defaults
 
 useIndependentDefaults = nargin == 0;
+diagnosis = struct();
 [defaultObstacles, defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
 if useIndependentDefaults
     obstacles = defaultObstacles;
@@ -52,7 +54,8 @@ end
 
 totalTimer = tic;
 preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
-visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(preparedObstacles, initialState.position_units, goalState.position_units, limits, options);
+scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
+visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene, initialState.position_units, goalState.position_units, limits, options);
 result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph);
 if ~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree
     result.Message = "An endpoint lies inside or on protected obstacle geometry.";
@@ -80,11 +83,21 @@ seed.tau = [0; cumsum(edgeLength_units)] / routeLength_units;
 seed.Index = 1;
 seed.Source = "visibilityGraph";
 seed.ObstacleEnvelope_units = zeros(0, 2);
-regions_units = reshape({preparedObstacles.ProtectedVertices_units}, [], 1);
+isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant,preparedObstacles));
+regions_units = cell(0,1);
+for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
+if isDynamic && options.GoalTimeMode == "fixedArrival"
+    cells = obstacleAvoidance.obstacles.createTimeCells(preparedObstacles,initialState.time_s,goalState.time_s);
+    regions_units = cells.Regions_units;
+end
 coverage = struct("Passed", true, ...
     "ExactRegionCount", numel(regions_units), ...
     "SolverRegionCount", numel(regions_units), ...
     "AuthoritativeCoverageCheck", "independentPlaneVerification");
+if isDynamic && options.GoalTimeMode == "fixedArrival"
+    coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
+    coverage.BreakTime_s = cells.BreakTime_s;
+end
 [candidate, solverDiagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
 candidateFields = string(fieldnames(candidate));
 for fieldName = reshape(candidateFields, 1, [])
@@ -112,13 +125,13 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
         "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
     goalState = struct("time_s", 12, "position_units", [4 0], ...
         "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
-    limits = struct("xInterval_units", [-6 6], "yInterval_units", [-4 4], ...
+    limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
         "maxVelocity_units_s", [2 2], ...
         "maxAcceleration_units_s2", [2 2], "maxJerk_units_s3", [4 4]);
     options = struct("GoalTimeMode", "fixedArrival", ...
         "SampleTime_s", 0.05, "ConstraintTolerance", 1e-8, ...
         "CollisionClearanceTolerance_units", 1e-7, ...
-        "ArrivalTimeTolerance_s", 1e-8);
+        "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -139,10 +152,10 @@ function state = normalizeState(state, defaults, argumentName)
     validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
     for fieldName = ["position_units", "velocity_units_s", "acceleration_units_s2"]
         value = double(state.(fieldName));
-        if ~isnumeric(state.(fieldName)) || ~isequal(size(value), [1 2]) || any(~isfinite(value))
+        if ~isnumeric(state.(fieldName)) || ~isreal(value) || ~isvector(value) || numel(value) ~= 2 || any(~isfinite(value))
             error("planTrajectory:InvalidState", "%s.%s must be a finite 1-by-2 row.", argumentName, fieldName);
         end
-        state.(fieldName) = value;
+        state.(fieldName) = reshape(value,1,2);
     end
     state.time_s = double(state.time_s);
 end
@@ -164,18 +177,18 @@ function limits = normalizeLimits(limits, defaults)
     end
     for fieldName = ["xInterval_units", "yInterval_units"]
         interval = double(limits.(fieldName));
-        if ~isnumeric(limits.(fieldName)) || ~isequal(size(interval), [1 2]) || any(~isfinite(interval)) || interval(2) <= interval(1)
+        if ~isnumeric(limits.(fieldName)) || ~isreal(interval) || ~isvector(interval) || numel(interval) ~= 2 || any(~isfinite(interval)) || interval(2) <= interval(1)
             error("planTrajectory:InvalidWorkspace", "%s must be a finite increasing 1-by-2 row.", fieldName);
         end
-        limits.(fieldName) = interval;
+        limits.(fieldName) = reshape(interval,1,2);
     end
     for fieldName = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"]
         value = double(limits.(fieldName));
         if isscalar(value), value = [value value]; end %#ok<AGROW>
-        if ~isnumeric(limits.(fieldName)) || ~isequal(size(value), [1 2]) || any(~isfinite(value)) || any(value <= 0)
+        if ~isnumeric(limits.(fieldName)) || ~isreal(value) || ~isvector(value) || numel(value) ~= 2 || any(~isfinite(value)) || any(value <= 0)
             error("planTrajectory:InvalidDerivativeLimit", "%s must be a positive scalar or finite 1-by-2 row.", fieldName);
         end
-        limits.(fieldName) = value;
+        limits.(fieldName) = reshape(value,1,2);
     end
 end
 
@@ -197,8 +210,8 @@ function options = resolveOptions(options, defaults)
         end
     end
     options.GoalTimeMode = string(options.GoalTimeMode);
-    if ~isscalar(options.GoalTimeMode) || options.GoalTimeMode ~= "fixedArrival"
-        error("planTrajectory:UnsupportedGoalTimeMode", "The empty core supports GoalTimeMode='fixedArrival' only.");
+    if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["fixedArrival", "earliestArrival"])
+        error("planner:UnsupportedGoalTimeMode", "GoalTimeMode must be fixedArrival or earliestArrival.");
     end
     for fieldName = ["SampleTime_s", "ConstraintTolerance", "CollisionClearanceTolerance_units", "ArrivalTimeTolerance_s"]
         validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
@@ -212,7 +225,7 @@ function result = createEmptyResult(obstacles, preparedObstacles, initialState, 
     result.Success = false;
     result.Message = "Planning has not completed.";
     result.TerminationReason = "notStarted";
-    result.Inputs = struct("obstacles", obstacles, "initialState", initialState, ...
+    result.Inputs = struct("obstacles", {obstacles}, "initialState", initialState, ...
         "goalState", goalState, "limits", limits, "options", options);
     result.PreparedObstacles = preparedObstacles;
     result.Limits = limits;

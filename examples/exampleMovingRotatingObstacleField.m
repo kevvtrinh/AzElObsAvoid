@@ -79,7 +79,7 @@ limits    = struct("xInterval_units", [-12 12], ...
 
 %% Section 4: Run Planner
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

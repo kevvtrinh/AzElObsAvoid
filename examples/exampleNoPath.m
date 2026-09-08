@@ -59,15 +59,15 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 % The planner must return a failure result. It must not stop the example with an
 % error for this expected planning outcome.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 
 % Check the failure reason, search counts, and diagnostic arrays. These outputs
 % help a junior engineer find where and why the search ended.
 
-recognizedReason   = result.TerminationReason == "noValidatedSeed";
-diagnosticsPresent = isfield(diagnosis, "Search") && isfield(diagnosis.Search, "ExpandedCount");
+recognizedReason   = result.TerminationReason == "noVisibilityRoute";
+diagnosticsPresent = isfield(result, "VisibilityGraph") && ~result.VisibilityGraph.IsConnected;
 exampleValidation  = struct("Passed", ~result.Success && isempty(result.time_s) && ...
     recognizedReason && diagnosticsPresent, ...
     "Message", "Expected failure must retain a recognized reason and " + ...

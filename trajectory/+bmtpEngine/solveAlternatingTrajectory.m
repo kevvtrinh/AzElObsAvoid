@@ -14,7 +14,7 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 %   - obstacleTarget_units, roundoffReserve_units: required separation.
 %
 % OUTPUTS
-%   - result: best all-pair-verified controls and common segment time.
+%   - result: best all-pair-verified controls and per-segment durations.
 %   - diagnostics: solver counts, residual pair counts, and termination data.
 %
 % UNITS
@@ -24,8 +24,9 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 
 segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
+request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
-diagnostics.WarmStartDuration_s = segmentCount * warmStart.SegmentTime_s;
+diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 planes = repmat(createEmptyPlane(), segmentCount, regionCount);
 [planes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(warmStart.ControlPoint_units, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
 diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
@@ -38,11 +39,14 @@ solverMessage = "The all-pair alternating iteration limit was reached.";
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions);
+        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, isfield(request.Coverage,'BreakTime_s'));
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;
-        if exitFlag <= 0 || isempty(trialControl_units)
+        if isfield(output,'MaximumClearanceSlack_units')
+            diagnostics.MaximumClearanceSlack_units = output.MaximumClearanceSlack_units;
+        end
+        if (exitFlag <= 0 && exitFlag ~= -7) || isempty(trialControl_units)
             solverMessage = "Trajectory SOCP failed: " + string(output.message);
             break;
         end
@@ -50,11 +54,14 @@ if allPlanesActive
         [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(trialControl_units, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
         planes = updatedPlanes;
         unverifiedPairCount = nnz(~verifiedPairs);
-        duration_s = segmentCount * trialTime_s;
+        duration_s = sum(trialTime_s);
         diagnostics.TrialDuration_s(iterationIndex) = duration_s;
         diagnostics.CollisionPairCountHistory(iterationIndex) = unverifiedPairCount;
         diagnostics.TrialWasCollisionFree(iterationIndex) = unverifiedPairCount == 0;
         diagnostics.FinalCollisionPairCount = unverifiedPairCount;
+        [unverifiedSegment,unverifiedRegion] = find(~verifiedPairs);
+        diagnostics.UnverifiedPairs = [unverifiedSegment,unverifiedRegion];
+        diagnostics.UnverifiedGaps_units = reshape([planes(~verifiedPairs).SignedGap_units],[],1);
         if ~allPlanesActive
             solverMessage = "A complete separating-line update failed.";
             break;
@@ -66,7 +73,7 @@ if allPlanesActive
         selectedControl_units = trialControl_units;
         selectedSegmentTime_s = trialTime_s;
         diagnostics.BestDuration_s = duration_s;
-        diagnostics.Converged = true;
+        diagnostics.Converged = exitFlag > 0;
         solverMessage = "A complete all-pair-verified iterate was found.";
         break;
     end
@@ -89,12 +96,13 @@ end
 
 function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(controlPoint_units, planes, request, diagnostics, target_units, reserve_units)
     % Update every static curve-region pair without sampled discovery or pruning.
-    verifiedPairs = false(size(planes));
+    verifiedPairs = ~request.RegionActiveBySegment;
     allActive = true;
     for segmentIndex = 1:size(planes, 1)
         for regionIndex = 1:size(planes, 2)
-            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(squeeze(controlPoint_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, target_units, reserve_units, request.PlaneOptions);
-            diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + 1;
+            if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
+            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(squeeze(controlPoint_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, target_units, reserve_units);
+            diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
             planes(segmentIndex, regionIndex) = plane;
             verifiedPairs(segmentIndex, regionIndex) = plane.Verified;

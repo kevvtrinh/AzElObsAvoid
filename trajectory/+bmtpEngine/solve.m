@@ -55,6 +55,10 @@ diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled       = warmStart.WarmRouteResampled;
 diagnostics.Coverage                 = coverage;
 diagnostics.ApplicablePairCount      = nnz(regionActiveBySegment);
+if isfield(coverage,'BreakTime_s')
+    diagnostics.Identifier = "bmtpTimeCellsDegree"+string(degree);
+    diagnostics.ConstraintRepresentation = "fixedClockElasticSocp";
+end
 [~, ~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(route_units, limits.xInterval_units, limits.yInterval_units, regions_units);
 normalNormLimit    = 1 + 2 ^ 20 * eps;
 obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_units + roundoffReserve_units;

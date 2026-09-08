@@ -37,9 +37,30 @@ warmStart = struct();
 warmStart.Route_units = route_units;
 warmStart.ControlPoint_units = controlPoint_units;
 warmStart.SegmentTime_s = segmentTime_s;
-warmStart.Duration_s = segmentCount * segmentTime_s;
+warmStart.Duration_s = sum(segmentTime_s);
+warmStart.SegmentRatio = segmentTime_s / mean(segmentTime_s);
 warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = segmentCount;
 warmStart.WarmRouteResampled = false;
+if isfield(request.Coverage,'BreakTime_s')
+    breakTime_s = request.Coverage.BreakTime_s;
+    segmentTime_s = diff(breakTime_s);
+    segmentCount = numel(segmentTime_s);
+    tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
+        segmentTime_s.*((0:degree)/degree))/request.MotionHorizon_s;
+    controls = interp1(request.Seed.tau,route_units,tau(:),'linear');
+    controlPoint_units = reshape(controls,segmentCount,degree+1,2);
+    controlPoint_units(1,1:3,:) = reshape(repmat(request.InitialState.position_units,3,1),1,3,2);
+    controlPoint_units(end,end-2:end,:) = reshape(repmat(request.GoalState.position_units,3,1),1,3,2);
+    intervals_s = request.Coverage.ActiveTimeInterval_s;
+    warmStart.ControlPoint_units = controlPoint_units;
+    warmStart.SegmentTime_s = segmentTime_s;
+    warmStart.SegmentRatio = segmentTime_s/mean(segmentTime_s);
+    warmStart.Duration_s = sum(segmentTime_s);
+    warmStart.SegmentCount = segmentCount;
+    warmStart.RegionActiveBySegment = breakTime_s(1:end-1) < intervals_s(:,2).' & ...
+        breakTime_s(2:end) > intervals_s(:,1).';
+    warmStart.WarmRouteResampled = true;
+end
 end

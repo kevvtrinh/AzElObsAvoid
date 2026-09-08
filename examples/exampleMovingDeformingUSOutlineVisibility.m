@@ -73,7 +73,7 @@ limits = struct("maxVelocity_units_s", [8 8], "maxAcceleration_units_s2", [3 3],
 
 % Run the public planner with both obstacle histories.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

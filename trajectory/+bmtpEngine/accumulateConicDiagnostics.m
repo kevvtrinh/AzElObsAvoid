@@ -15,6 +15,7 @@ if nargin == 0
     stats.TotalTime_s = 0;
     return;
 end
+if isfield(output,'IsAnalytic') && output.IsAnalytic, return; end
 stats.CallCount   = stats.CallCount + 1;
 stats.TotalTime_s = stats.TotalTime_s + output.TotalTime_s;
 end

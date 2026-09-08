@@ -1,4 +1,4 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
@@ -30,7 +30,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Solved control points, or an empty array on expected solve failure.
 %   - segmentTime_s (scalar numeric)
-%       Common segment time, or NaN on expected solve failure.
+%       Per-segment durations, or NaN on expected solve failure.
 %   - exitFlag (numeric scalar), output (solver record)
 %       Original coneprog status and measured solver time.
 %
@@ -41,11 +41,15 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %% Section 1: Create Decision Bounds And Continuity Rows
 
 controlCount           = segmentCount * (degree + 1) * 2;
+if nargin < 10, segmentRatio = ones(segmentCount, 1); end
+if nargin < 11, fixedClock = false; end
 powerIndex             = controlCount + (1:4);
-variableCount          = controlCount + 4;
+lengthCount = fixedClock * segmentCount * degree;
+activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
+slackCount = fixedClock * activePlaneCount;
+variableCount          = controlCount + 4 + lengthCount + slackCount;
 differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
 baseInequalityCount    = 4 * segmentCount * (3 * degree - 3);
-activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
 inequalityCount        = baseInequalityCount + activePlaneCount * (degree + 2);
 equalityCount          = 13 + 8 * (segmentCount - 1);
 A                      = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
@@ -89,9 +93,10 @@ for segmentIndex = 1:segmentCount - 1
             equalityIndex = equalityIndex + 1;
             left          = controlIndexOf(segmentIndex, degree - order + coefficientIndex, axisIndex, degree);
             right         = controlIndexOf(segmentIndex + 1, coefficientIndex, axisIndex, degree);
-            Aeq(equalityIndex, left) = coefficients; %#ok<SPRIX>
+            rowScale = max(segmentRatio(segmentIndex:segmentIndex+1))^order;
+            Aeq(equalityIndex, left) = coefficients * segmentRatio(segmentIndex+1)^order / rowScale; %#ok<SPRIX>
             Aeq(equalityIndex, right) = ...
-                Aeq(equalityIndex, right) - coefficients; %#ok<SPRIX>
+                Aeq(equalityIndex, right) - coefficients * segmentRatio(segmentIndex)^order / rowScale; %#ok<SPRIX>
         end
     end
 end
@@ -118,12 +123,13 @@ for segmentIndex = 1:segmentCount
         A(targets, controlColumns) = signedRows; %#ok<SPRIX>
         axisLimits = repmat(limitValues(order, :), derivativeCount, 1);
         A(targets, powerIndex(order + 1)) = ...
-            -repelem(reshape(axisLimits.', [], 1), 2); %#ok<SPRIX>
+            -repelem(reshape(axisLimits.', [], 1), 2) * segmentRatio(segmentIndex)^order; %#ok<SPRIX>
         inequalityIndex = targets(end);
     end
 end
 b               = zeros(inequalityCount, 1);
 inequalityIndex = baseInequalityCount;
+slackIndex = controlCount+4+lengthCount;
 % Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     % Process each geometric region while constructing or checking the region topology.
@@ -135,7 +141,11 @@ for segmentIndex = 1:segmentCount
         [rows, offset_units] = fixedPlaneRows(plane, degree, variableCount, segmentIndex);
         targets = inequalityIndex + (1:size(rows, 1));
         A(targets, :) = rows; %#ok<SPRIX>
-        b(targets) = -reserve_units - offset_units;
+        if fixedClock
+            slackIndex = slackIndex+1;
+            A(targets,slackIndex) = -1;
+        end
+        b(targets) = -(1+fixedClock)*reserve_units - offset_units;
         inequalityIndex = targets(end);
     end
 end
@@ -145,19 +155,46 @@ end
 cones = createTimePowerCones(variableCount, powerIndex);
 f = zeros(variableCount, 1);
 f(powerIndex(4)) = 1;
-maximumSegmentTime_s = maximumMotionDuration_s / segmentCount;
+maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
 timePowers_s         = [1; maximumSegmentTime_s; ...
     maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
 ub(powerIndex) = timePowers_s;
+if fixedClock
+    lb(powerIndex) = timePowers_s;
+    f(:) = 0;
+    lengthIndex = controlCount+4+(1:lengthCount);
+    lb(lengthIndex) = 0; f(lengthIndex) = 1;
+    slackIndices = controlCount+4+lengthCount+(1:slackCount);
+    lb(slackIndices) = 0;
+    % Elastic sequential convex programming: penalize clearance slack in the
+    % same distance units as control-polygon length. Only independently clear
+    % motion may be accepted by the outer solve.
+    f(slackIndices) = 1e3;
+    emptyCone = secondordercone(sparse(2,variableCount),zeros(2,1),sparse(variableCount,1),0);
+    cones = repmat(emptyCone,lengthCount,1);
+    for k = 1:segmentCount
+        for j = 1:degree
+            row = (k-1)*degree+j;
+            coneA = sparse(2,variableCount);
+            coneA(:,controlIndexOf(k,j,1:2,degree)) = eye(2);
+            coneA(:,controlIndexOf(k,j-1,1:2,degree)) = -eye(2);
+            coneD = sparse(variableCount,1); coneD(lengthIndex(row)) = 1;
+            cones(row) = secondordercone(coneA,zeros(2,1),coneD,0);
+        end
+    end
+end
 solverTimer = tic;
 [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
 output.TotalTime_s = toc(solverTimer);
-if exitFlag <= 0 || isempty(x) || any(~isfinite(x))
+if fixedClock && ~isempty(x), output.MaximumClearanceSlack_units = max(x(slackIndices)); end
+% A stalled finite iterate remains a proposal, never a feasibility certificate.
+% Independent physical checks decide whether it can become returned motion.
+if (exitFlag <= 0 && exitFlag ~= -7) || isempty(x) || any(~isfinite(x))
     controlPoint_units = zeros(0, degree + 1, 2);
     segmentTime_s    = NaN;
     return;
 end
-segmentTime_s    = max(x(powerIndex(4)), 0) ^ (1 / 3);
+segmentTime_s    = max(x(powerIndex(4)), 0) ^ (1 / 3) * segmentRatio;
 controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCount), [3 2 1]);
 end
 

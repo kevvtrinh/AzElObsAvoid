@@ -123,7 +123,9 @@ end
 % Get the maintained planner defaults before scenario values are applied.
 % A list of public field names prevents display-only values from reaching the
 % planner and producing an unknown-option warning.
-plannerOptions = obstacleAvoidance.planTrajectory();
+plannerOptions = struct("GoalTimeMode", "earliestArrival", "SampleTime_s", 0.05, ...
+    "ConstraintTolerance", 1e-8, "CollisionClearanceTolerance_units", 1e-7, ...
+    "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false);
 plannerNames   = string(fieldnames(plannerOptions));
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.

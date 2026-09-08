@@ -46,8 +46,7 @@ function sampled = samplePolynomial(polynomial, sampleTime_s)
     % Sample the output polynomial.
     initialTime_s  = polynomial.SegmentStartTime_s(1);
     duration_s     = polynomial.FinalTime_s - initialTime_s;
-    segmentTime_s  = polynomial.SegmentDuration_s(1);
-    relativeTime_s = unique([(0:sampleTime_s:duration_s).'; (0:polynomial.SegmentCount).' * segmentTime_s; duration_s]);
+    relativeTime_s = unique([(0:sampleTime_s:duration_s).'; polynomial.SegmentStartTime_s-initialTime_s; duration_s]);
     [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, initialTime_s + relativeTime_s);
     sampled = struct("time_s", time_s, "position_units", position_units, ...
         "velocity_units_s", velocity_units_s, ...

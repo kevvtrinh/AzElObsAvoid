@@ -8,7 +8,7 @@ function validation = validateTrajectory(result)
 %     workspace and derivative extrema, sampled histories, and BMTP planes.
 %
 % INPUTS
-%   - result: output from obstacleAvoidance.planTrajectory.
+%   - result: output from planner.
 %
 % OUTPUTS
 %   - validation: stable pass/fail record with individual certificate status.
@@ -121,7 +121,12 @@ goalState    = result.Inputs.goalState;
 initialPolynomialState = [reshape(powerArrays{1}(1, :, 1), 1, 2), reshape(powerArrays{2}(1, :, 1), 1, 2), reshape(powerArrays{3}(1, :, 1), 1, 2)];
 terminalPolynomialState = [sum(reshape(powerArrays{1}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{2}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{3}(end, :, :), 2, []), 2).'];
 expectedEndpointState = [initialState.position_units initialState.velocity_units_s initialState.acceleration_units_s2 goalState.position_units goalState.velocity_units_s goalState.acceleration_units_s2];
-timeMatched = abs(polynomial.SegmentStartTime_s(1) - initialState.time_s) <= tolerance && abs(polynomial.FinalTime_s - goalState.time_s) <= result.Options.ArrivalTimeTolerance_s;
+timeMatched = abs(polynomial.SegmentStartTime_s(1) - initialState.time_s) <= tolerance;
+if result.Options.GoalTimeMode == "fixedArrival"
+    timeMatched = timeMatched && abs(polynomial.FinalTime_s - goalState.time_s) <= result.Options.ArrivalTimeTolerance_s;
+else
+    timeMatched = timeMatched && polynomial.FinalTime_s <= goalState.time_s + result.Options.ArrivalTimeTolerance_s;
+end
 validation.EndpointStatesMatched = timeMatched && max(abs([initialPolynomialState terminalPolynomialState] - expectedEndpointState)) <= tolerance;
 
 %% Section 4: Check Returned Histories And Collision Certificate
@@ -157,16 +162,53 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     if ~passed
         return;
     end
-    regions_units = reshape({result.PreparedObstacles.ProtectedVertices_units}, [], 1);
+    authoritativeInput = result.Inputs.obstacles;
+    if isstruct(authoritativeInput) && isfield(authoritativeInput,'InternalPreparation')
+        authoritativeInput = rmfield(authoritativeInput,'InternalPreparation');
+    end
+    authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput);
+    endpoints_units = [result.Inputs.initialState.position_units;result.Inputs.goalState.position_units];
+    endpointTimes_s = [result.Polynomial.SegmentStartTime_s(1);result.Polynomial.FinalTime_s];
+    occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(authoritativeObstacles, ...
+        endpoints_units(:,1),endpoints_units(:,2),endpointTimes_s);
+    if any(occupied), passed = false; return; end
+    scene = obstacleAvoidance.obstacles.snapshot(authoritativeObstacles, result.Inputs.initialState.time_s);
+    regions_units = cell(0,1);
+    for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
+    expectedActive = true(size(positionPower_units,1),numel(regions_units));
+    if isfield(certificate,'Coverage') && isfield(certificate.Coverage,'ActiveTimeInterval_s')
+        cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
+            result.Inputs.initialState.time_s,result.Inputs.goalState.time_s);
+        regions_units = cells.Regions_units;
+        starts_s = result.Polynomial.SegmentStartTime_s;
+        ends_s = starts_s+result.Polynomial.SegmentDuration_s;
+        expectedActive = starts_s < cells.ActiveTimeInterval_s(:,2).' & ends_s > cells.ActiveTimeInterval_s(:,1).';
+        if ~isequal(certificate.Coverage.ActiveTimeInterval_s,cells.ActiveTimeInterval_s)
+            passed = false; return;
+        end
+    else
+        % Static certificates cannot certify changing geometry or activity.
+        for k = 1:numel(authoritativeObstacles)
+            obstacle = authoritativeObstacles(k);
+            if ~obstacle.InternalPreparation.IsTimeInvariant || ...
+                    (numel(obstacle.time_s) > 1 && (result.time_s(1) < obstacle.time_s(1) || result.time_s(end) > obstacle.time_s(end)))
+                passed = false; return;
+            end
+        end
+    end
     activePairs = certificate.RegionActiveBySegment;
-    expectedPairCount = size(positionPower_units, 1) * numel(regions_units);
-    passed = certificate.Passed && isequaln(certificate.Regions_units, regions_units) && isequal(size(activePairs), [size(positionPower_units, 1), numel(regions_units)]) && isequal(size(activePairs), size(certificate.Planes)) && all(activePairs, "all") && certificate.AllPairCount == expectedPairCount && certificate.VerifiedPairCount == expectedPairCount && certificate.ExactRegionCount == numel(regions_units) && certificate.SolverRegionCount == numel(regions_units);
+    expectedPairCount = nnz(expectedActive);
+    passed = certificate.Passed && isequaln(certificate.Regions_units, regions_units) && isequal(activePairs,expectedActive) && isequal(size(activePairs), size(certificate.Planes)) && certificate.AllPairCount == expectedPairCount && certificate.VerifiedPairCount == expectedPairCount && certificate.ExactRegionCount == numel(regions_units) && certificate.SolverRegionCount == numel(regions_units);
     if ~passed
         return;
     end
     controlPoint_units = powerToBernstein(positionPower_units);
-    reserve_units = certificate.RoundoffReserve_units;
-    target_units = certificate.RequiredGap_units - reserve_units;
+    [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(result.Route_units, ...
+        result.Limits.xInterval_units,result.Limits.yInterval_units,regions_units);
+    target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
+    if ~isequal(certificate.RoundoffReserve_units,reserve_units) || ~isequal(certificate.RequiredGap_units,target_units+reserve_units)
+        passed = false; return;
+    end
     for segmentIndex = 1:size(activePairs, 1)
         for regionIndex = 1:size(activePairs, 2)
             if ~activePairs(segmentIndex, regionIndex)

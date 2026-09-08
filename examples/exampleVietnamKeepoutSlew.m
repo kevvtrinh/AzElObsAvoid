@@ -58,7 +58,7 @@ limits.maxJerk_units_s3 = displayOptions.MaxJerk_units_s3;
 % Use the public entry point so the example exercises normalization, timed
 % search, motion construction, independent validation, and diagnostics.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

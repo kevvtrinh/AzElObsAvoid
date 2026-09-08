@@ -1,4 +1,4 @@
-function handles = plotTrajectory(result, axesHandle)
+function handles = plotTrajectory(result, axesHandle, diagnosis)
 %% Section 0: Header & Readme
 % SYNTAX
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
@@ -9,7 +9,7 @@ function handles = plotTrajectory(result, axesHandle)
 %     BMTP motion stored in an empty-core planner result.
 %
 % INPUTS
-%   - result: output from obstacleAvoidance.planTrajectory.
+%   - result: output from planner.
 %   - axesHandle (optional): target Cartesian axes.
 %
 % OUTPUTS
@@ -25,8 +25,10 @@ requiredFields = {'PreparedObstacles', 'VisibilityGraph', 'Route_units', ...
 if ~isstruct(result) || ~isscalar(result) || ~all(isfield(result, requiredFields))
     error("plotTrajectory:InvalidResult", "result must be a complete empty-core planner result.");
 end
-if nargin < 2 || isempty(axesHandle)
-    figureHandle = figure("Name", "BMTP empty core");
+if nargin < 2 || isempty(axesHandle) || isstruct(axesHandle)
+    visible = "on";
+    if nargin >= 2 && isstruct(axesHandle) && isfield(axesHandle,'FigureVisible'), visible = axesHandle.FigureVisible; end
+    figureHandle = figure("Name", "BMTP core", "Visible", visible);
     axesHandle = axes("Parent", figureHandle);
 elseif ~isgraphics(axesHandle, "axes")
     error("plotTrajectory:InvalidAxes", "axesHandle must be Cartesian axes.");
@@ -40,8 +42,12 @@ originalObstacle = gobjects(0, 1);
 protectedObstacle = gobjects(0, 1);
 for obstacleIndex = 1:numel(result.PreparedObstacles)
     prepared = result.PreparedObstacles(obstacleIndex);
-    original = [prepared.OriginalVertices_units; prepared.OriginalVertices_units(1, :)];
-    protected = [prepared.ProtectedVertices_units; prepared.ProtectedVertices_units(1, :)];
+    original = [prepared.originalX_units{1}, prepared.originalY_units{1}];
+    original = [original; original(1,:)];
+    [~,geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(prepared,result.Inputs.initialState.time_s,true);
+    protected = [geometry.x_units,geometry.y_units];
+    if isempty(protected), continue; end
+    protected = [protected;protected(1,:)];
     protectedObstacle(end + 1, 1) = patch(axesHandle, protected(:, 1), protected(:, 2), [0.96 0.82 0.82], "EdgeColor", [0.70 0.18 0.18], "LineWidth", 1.25, "DisplayName", "protected obstacle"); %#ok<AGROW>
     originalObstacle(end + 1, 1) = plot(axesHandle, original(:, 1), original(:, 2), "-", "Color", [0.25 0.25 0.25], "LineWidth", 1.0, "DisplayName", "original obstacle"); %#ok<AGROW>
 end
@@ -72,7 +78,7 @@ ylim(axesHandle, result.Limits.yInterval_units);
 grid(axesHandle, "on");
 xlabel(axesHandle, "x (units)");
 ylabel(axesHandle, "y (units)");
-title(axesHandle, "BMTP empty core: " + string(result.TerminationReason), "Interpreter", "none");
+title(axesHandle, "BMTP: " + string(result.TerminationReason), "Interpreter", "none");
 
 %% Section 4: Return The Created Handles
 

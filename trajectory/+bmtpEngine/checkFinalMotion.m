@@ -28,12 +28,18 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 % Each optimized segment becomes two output spans. Repeat the static
 % all-region mask for both spans.
 regionActiveBySegment = repelem(warmStart.RegionActiveBySegment, 2, 1);
-certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units, request.TightPlaneOptions);
+if isfield(request.Coverage,'ActiveTimeInterval_s')
+    intervals_s = request.Coverage.ActiveTimeInterval_s;
+    starts_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s(1:end-1))];
+    ends_s = starts_s+preparedMotion.SegmentTime_s;
+    regionActiveBySegment = starts_s < intervals_s(:,2).' & ends_s > intervals_s(:,1).';
+end
+certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units);
 end
 
 %% Section 2: Local Functions
 
-function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units, solverOptions)
+function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units)
     % Verify every applicable output-span and convex-exclusion-region pair.
     segmentCount   = size(controlPoint_units, 1);
     regionCount    = numel(regions_units);
@@ -51,14 +57,8 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
-            plane = checkHullSeparationLine(trajectory_units, regions_units{regionIndex}, reserve_units, target_units);
-            if plane.Verified
-                analyticCount = analyticCount + 1;
-            else
-                [plane, ~, output] = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units, solverOptions);
-                conicCount  = conicCount + 1;
-                conicSolver = bmtpEngine.accumulateConicDiagnostics(conicSolver, output);
-            end
+            plane = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units);
+            analyticCount = analyticCount + 1;
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified
                 verifiedCount  = verifiedCount + 1;
@@ -83,31 +83,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
         "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
-end
-
-function plane = checkHullSeparationLine(controlPoint_units, vertices_units, reserve_units, target_units)
-    % Prove disjoint convex hulls by separating axes; leave overlap to SOCP.
-    plane        = createEmptyPlane();
-    edge_units     = vertices_units([2:end 1], :) - vertices_units;
-    controlPairs = nchoosek(1:size(controlPoint_units, 1), 2);
-    edge_units     = [edge_units; ...
-        controlPoint_units(controlPairs(:, 2), :) - controlPoint_units(controlPairs(:, 1), :)];
-    edgeLength_units = vecnorm(edge_units, 2, 2);
-    edge_units       = edge_units(edgeLength_units > 0, :);
-    edgeLength_units = edgeLength_units(edgeLength_units > 0);
-    if isempty(edge_units)
-        return;
-    end
-    normals  = [-edge_units(:, 2), edge_units(:, 1)] ./ edgeLength_units;
-    normals  = [normals; -normals];
-    gaps_units = min(vertices_units * normals.', [], 1) - max(controlPoint_units * normals.', [], 1);
-    [maximumGap_units, normalIndex] = max(gaps_units);
-    if maximumGap_units < target_units + reserve_units
-        return;
-    end
-    normal = normals(normalIndex, :);
-    [plane.Active, plane.Normal, plane.Offset_units] = deal(true, repmat(normal, 2, 1), zeros(1, 2));
-    plane = bmtpEngine.verifySeparatingLine(plane, controlPoint_units, vertices_units, reserve_units, target_units);
 end
 
 function plane = createEmptyPlane()

@@ -14,7 +14,7 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite scalar)
-%       Selected common segment time.
+%       Selected per-segment durations.
 %
 % OUTPUTS
 %   - preparedMotion (scalar struct)
@@ -29,16 +29,16 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 controlPoint_units(1, 1:3, :) = reshape(repmat(request.InitialState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units(end, end - 2:end, :) = reshape(repmat(request.GoalState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units = subdivideMidpoint(controlPoint_units);
-segmentTime_s    = segmentTime_s / 2;
+segmentTime_s    = repelem(segmentTime_s(:), 2, 1) / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
 exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, 1, 0);
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
-dilationScale             = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
+dilationScale             = max([1; requiredTime_s ./ segmentTime_s]) * (1 + 64 * eps);
 segmentTime_s             = segmentTime_s * dilationScale;
-minimumDuration_s         = size(controlPoint_units, 1) * segmentTime_s;
+minimumDuration_s         = sum(segmentTime_s);
 isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
 success                   = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
 message                   = "";
@@ -112,8 +112,8 @@ end
 
 function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
     % Record the derivative bound used to stretch time.
-    motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
+    motion = struct("Passed", all(segmentTime_s >= requiredTime_s), ...
         "SegmentTime_s", segmentTime_s, ...
         "RequiredSegmentTime_s", requiredTime_s, ...
-        "MaximumViolation", max(0, requiredTime_s - segmentTime_s));
+        "MaximumViolation", max([0; requiredTime_s - segmentTime_s]));
 end
