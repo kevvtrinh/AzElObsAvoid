@@ -5,8 +5,8 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       request, controlPoint_units, segmentTime_s)
 %
 % PURPOSE
-%   - Impose exact rest-to-rest endpoints, split the selected curve, and
-%     increase segment times enough to satisfy derivative-control bounds.
+%   - Impose physical endpoint states, split the selected curve, and
+%     dilate eligible rest motion to satisfy derivative-control bounds.
 %
 % INPUTS
 %   - request (scalar struct)
@@ -44,8 +44,7 @@ if ~isempty(prescribedPower_units)
     end
     prescribedPower_units = refined;
 end
-controlPoint_units(1, 1:3, :) = reshape(repmat(request.InitialState.position_units, 3, 1), 1, 3, 2);
-controlPoint_units(end, end - 2:end, :) = reshape(repmat(request.GoalState.position_units, 3, 1), 1, 3, 2);
+controlPoint_units = bmtpEngine.imposeEndpointControls(controlPoint_units,segmentTime_s,request.InitialState,request.GoalState);
 controlPoint_units = subdivideMidpoint(controlPoint_units);
 segmentTime_s    = repelem(segmentTime_s(:), 2, 1) / 2;
 
@@ -55,6 +54,9 @@ exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units,
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 dilationScale             = max([1; requiredTime_s ./ segmentTime_s]) * (1 + 64 * eps);
+% Nonzero boundary derivatives fix the physical clock. Continuous validation
+% decides whether the exported proposal meets limits; it is never time-scaled.
+if ~request.IsRest, dilationScale = 1; end
 segmentTime_s             = segmentTime_s * dilationScale;
 minimumDuration_s         = sum(segmentTime_s);
 isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
@@ -67,7 +69,7 @@ if ~success
         "The certified minimum exceeds the fixed arrival."];
     message           = messages(1 + isFixedArrival);
     terminationReason = reasons(1 + isFixedArrival);
-elseif isFixedArrival
+elseif isFixedArrival && request.IsRest
     fixedScale    = request.MotionHorizon_s / minimumDuration_s;
     segmentTime_s = segmentTime_s * fixedScale;
     dilationScale = dilationScale * fixedScale;

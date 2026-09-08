@@ -16,8 +16,10 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %     velocity and acceleration default to zero.
 %     A goal may supply targetMotion (sampled time_s and N-by-2
 %     position_units, with linear or pchip InterpolationMethod) instead.
-%   - limits: workspace intervals and per-axis velocity, acceleration, jerk.
-%   - options: arrival policy, BMTP sampling, and validation tolerances.
+%   - limits: workspace intervals; scalar derivative limits are combined
+%     magnitudes allocated equally, and two-element vectors are per-axis.
+%   - options: arrival policy, BMTP sampling, validation tolerances, WrapX/Y,
+%     MatchTargetVelocity/Acceleration, TemporalResolution_s, MaxArrivalTrials.
 %
 % OUTPUTS
 %   - result: stable success/failure record containing resolved inputs,
@@ -42,10 +44,45 @@ if nargin < 2 || isempty(initialState), initialState = defaultInitialState; end
 if nargin < 3 || isempty(goalState), goalState = defaultGoalState; end
 if nargin < 4 || isempty(limits), limits = defaultLimits; end
 if nargin < 5 || isempty(options), options = struct(); end
+suppliedLimits = limits;
+suppliedGoalState = goalState;
 initialState = normalizeState(initialState, defaultInitialState, "initialState");
 goalState    = normalizeState(goalState, defaultGoalState, "goalState");
 limits       = normalizeLimits(limits, defaultLimits);
 options      = resolveOptions(options, defaultOptions);
+requestedLimits = limits;
+requestedGoalState = goalState;
+if options.MatchTargetVelocity || options.MatchTargetAcceleration
+    if isempty(goalState.targetMotion)
+        error('planner:MissingTarget','Derivative matching requires goalState.targetMotion.');
+    end
+    derivativeNames = ["velocity_units_s","acceleration_units_s2"];
+    matches = [options.MatchTargetVelocity,options.MatchTargetAcceleration];
+    [~,targetVelocity,targetAcceleration] = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,goalState.time_s);
+    derivatives = [targetVelocity;targetAcceleration];
+    for k = find(matches)
+        name = derivativeNames(k);
+        if isfield(suppliedGoalState,name) && ~isempty(suppliedGoalState.(name)) && ...
+                any(abs(suppliedGoalState.(name)-derivatives(k,:))>options.ConstraintTolerance)
+            error('planner:ConflictingTargetDerivative','Explicit and matched target derivatives conflict.');
+        end
+        goalState.(name) = derivatives(k,:);
+    end
+end
+if options.WrapX || options.WrapY
+    if ~isempty(obstacles) || ~isempty(goalState.targetMotion)
+        error('planner:UnsupportedPeriodicRequest','Wrapping supports obstacle-free fixed-position goals only.');
+    end
+    names = ["xInterval_units","yInterval_units"];
+    for axis = find([options.WrapX options.WrapY])
+        period = diff(limits.(names(axis)));
+        goalState.position_units(axis) = goalState.position_units(axis)+period* ...
+            floor((initialState.position_units(axis)-goalState.position_units(axis))/period+0.5);
+        reach = limits.maxVelocity_units_s(axis)*(goalState.time_s-initialState.time_s);
+        limits.(names(axis)) = initialState.position_units(axis)+[-reach reach];
+    end
+end
+isRest = all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0);
 if goalState.time_s <= initialState.time_s
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
@@ -58,7 +95,7 @@ end
 totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
 interceptTime_s = goalState.time_s;
-if earliestTarget
+if earliestTarget && isRest && ~options.MatchTargetVelocity && ~options.MatchTargetAcceleration
     interceptTime_s = obstacleAvoidance.input.findEarliestTargetTime(goalState.targetMotion,initialState,goalState.time_s,limits);
     if isfinite(interceptTime_s)
         goalState.position_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,interceptTime_s);
@@ -72,6 +109,16 @@ visibilityGraph = struct('NodePosition_units',zeros(0,2),'AcceptedNodeIndex',zer
     'SourceFree',false,'GoalFree',false,'IsConnected',false,'ExpandedCount',0, ...
     'GraphIsFullyEnumerated',false,'SearchKind',"notSearched");
 result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph);
+result.SuppliedLimits = suppliedLimits;
+result.RequestedLimits = requestedLimits;
+result.RequestedGoalState = requestedGoalState;
+result.SuppliedGoalState = suppliedGoalState;
+[endpointFeasible,result.Message,result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints( ...
+    preparedObstacles,initialState,goalState,limits,options);
+if ~endpointFeasible
+    result.ElapsedTime_s = toc(totalTimer);
+    return;
+end
 if earliestTarget && isnan(interceptTime_s)
     result.Message = "The target never enters the rest-to-rest reachable set within the supplied horizon.";
     result.TerminationReason = "targetUnreachable";
@@ -80,6 +127,11 @@ if earliestTarget && isnan(interceptTime_s)
     return;
 end
 isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant,preparedObstacles));
+if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget) && ...
+        (~isRest || options.MatchTargetVelocity || options.MatchTargetAcceleration)
+    result = obstacleAvoidance.input.searchArrivalTimes(result);
+    return;
+end
 regions_units = cell(0,1);
 for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
 if isDynamic
@@ -106,7 +158,7 @@ route_units = [initialState.position_units;goalState.position_units];
 seed = struct('position_units',route_units,'tau',[0;1],'Index',1, ...
     'Source',"kinematicBound",'ObstacleEnvelope_units',zeros(0,2));
 candidate = struct('Success',false);
-boundAttempted = options.GoalTimeMode=="earliestArrival";
+boundAttempted = options.GoalTimeMode=="earliestArrival" && isRest;
 if boundAttempted
     [candidate,solverDiagnostics,clockGuide] = bmtpEngine.solve(seed,regions_units,coverage, ...
         initialState,motionGoalState,limits,options,"kinematicBound");
@@ -130,25 +182,42 @@ if ~candidate.Success
             initialState,motionGoalState,limits,options,"delayedChord");
         attemptedDiagnostics{end+1} = delayedDiagnostics;
     end
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,initialState.position_units,goalState.position_units,limits,options);
-    visibilityGraph.SearchKind = "initialSpatialSnapshot";
+    % A future terminal point blocked only in the initial snapshot is not an
+    % invalid endpoint. Use the direct seed with authoritative affine cells.
+    futureGoalBlocked = isDynamic && obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+        preparedObstacles,goalState.position_units(1),goalState.position_units(2),initialState.time_s);
+    if futureGoalBlocked
+        visibilityGraph = result.VisibilityGraph;
+        visibilityGraph.Route_units = route_units;
+        visibilityGraph.RouteLength_units = norm(diff(route_units));
+        visibilityGraph.SearchKind = "temporalDirectSeed";
+    else
+        visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,initialState.position_units,goalState.position_units,limits,options);
+        visibilityGraph.SearchKind = "initialSpatialSnapshot";
+    end
     result.VisibilityGraph = visibilityGraph;
     % Compare the scheduled chord with the speed bound for traversing the
     % spatial guide. A valid schedule also resolves disconnected snapshots.
     useDelayed = delayedCandidate.Success && (~visibilityGraph.IsConnected || ...
         delayedCandidate.TrajectoryDuration_s<=visibilityGraph.RouteLength_units/norm(limits.maxVelocity_units_s));
-    if ~useDelayed && (~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree)
+    if ~useDelayed && ~futureGoalBlocked && (~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree)
         result.Message = "An endpoint lies inside or on protected obstacle geometry.";
         result.TerminationReason = "invalidEndpoint";
         result.ElapsedTime_s = toc(totalTimer);
         result.Validation = obstacleAvoidance.validateTrajectory(result);
+        if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+            result = obstacleAvoidance.input.searchArrivalTimes(result);
+        end
         return;
     end
-    if ~useDelayed && ~visibilityGraph.IsConnected
+    if ~useDelayed && ~futureGoalBlocked && ~visibilityGraph.IsConnected
         result.Message = "The initial visibility graph contains no start-to-goal route.";
         result.TerminationReason = "noVisibilityRoute";
         result.ElapsedTime_s = toc(totalTimer);
         result.Validation = obstacleAvoidance.validateTrajectory(result);
+        if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+            result = obstacleAvoidance.input.searchArrivalTimes(result);
+        end
         return;
     end
     if ~useDelayed
@@ -157,6 +226,7 @@ if ~candidate.Success
         seed.position_units = route_units;
         seed.tau = [0;cumsum(edgeLength_units)]/sum(edgeLength_units);
         seed.Source = "visibilityGraph";
+        if futureGoalBlocked, seed.Source = "temporalDirectSeed"; end
         stage = "complete";
         if boundAttempted, stage = "route"; end
         [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
@@ -200,7 +270,12 @@ result.Route_units = route_units;
 result.SolverDiagnostics = solverDiagnostics;
 if ~isempty(goalState.targetMotion)
     result.Intercept = struct('Time_s',candidate.ArrivalTime_s, ...
-        'TargetPosition_units',goalState.position_units,'TerminalVelocityPolicy',"zero");
+        'TargetPosition_units',goalState.position_units,'TerminalVelocityPolicy',"explicit", ...
+        'TerminalAccelerationPolicy',"explicit");
+    if all(goalState.velocity_units_s==0), result.Intercept.TerminalVelocityPolicy = "zero"; end
+    if all(goalState.acceleration_units_s2==0), result.Intercept.TerminalAccelerationPolicy = "zero"; end
+    if options.MatchTargetVelocity, result.Intercept.TerminalVelocityPolicy = "matched"; end
+    if options.MatchTargetAcceleration, result.Intercept.TerminalAccelerationPolicy = "matched"; end
 end
 result.Validation = obstacleAvoidance.validateTrajectory(result);
 if candidate.Success && ~result.Validation.Passed
@@ -209,6 +284,9 @@ if candidate.Success && ~result.Validation.Passed
     result.TerminationReason = "invalidMotion";
 end
 result.ElapsedTime_s = toc(totalTimer);
+if ~result.Success && options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+    result = obstacleAvoidance.input.searchArrivalTimes(result);
+end
 end
 
 %% Section 5: Local Functions
@@ -228,7 +306,9 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
     options = struct("GoalTimeMode", "fixedArrival", ...
         "SampleTime_s", 0.05, "ConstraintTolerance", 1e-8, ...
         "CollisionClearanceTolerance_units", 1e-7, ...
-        "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false);
+        "ArrivalTimeTolerance_s", 1e-8, "WrapX", false, "WrapY", false, ...
+        "MatchTargetVelocity",false,"MatchTargetAcceleration",false, ...
+        "TemporalResolution_s",0.5,"MaxArrivalTrials",100);
 end
 
 function state = normalizeState(state, defaults, argumentName)
@@ -282,9 +362,14 @@ function limits = normalizeLimits(limits, defaults)
         end
         limits.(fieldName) = reshape(interval,1,2);
     end
-    for fieldName = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"]
+    physicalNames = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"];
+    sizes = arrayfun(@(name) numel(limits.(name)),physicalNames);
+    if any(sizes~=sizes(1))
+        error('planTrajectory:MixedLimitModes','Velocity, acceleration, and jerk limits must all be scalars or all be two-element vectors.');
+    end
+    for fieldName = physicalNames
         value = double(limits.(fieldName));
-        if isscalar(value), value = [value value]; end %#ok<AGROW>
+        if isscalar(value), value = [value value]/sqrt(2); end %#ok<AGROW>
         if ~isnumeric(limits.(fieldName)) || ~isreal(value) || ~isvector(value) || numel(value) ~= 2 || any(~isfinite(value)) || any(value <= 0)
             error("planTrajectory:InvalidDerivativeLimit", "%s must be a positive scalar or finite 1-by-2 row.", fieldName);
         end
@@ -313,10 +398,14 @@ function options = resolveOptions(options, defaults)
     if ~isscalar(options.GoalTimeMode) || ~any(options.GoalTimeMode == ["fixedArrival", "earliestArrival"])
         error("planner:UnsupportedGoalTimeMode", "GoalTimeMode must be fixedArrival or earliestArrival.");
     end
-    for fieldName = ["SampleTime_s", "ConstraintTolerance", "CollisionClearanceTolerance_units", "ArrivalTimeTolerance_s"]
+    for fieldName = ["SampleTime_s", "ConstraintTolerance", "CollisionClearanceTolerance_units", "ArrivalTimeTolerance_s","TemporalResolution_s"]
         validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
         options.(fieldName) = double(options.(fieldName));
     end
+    for name = ["WrapX","WrapY","MatchTargetVelocity","MatchTargetAcceleration"]
+        options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name),name,"planner:InvalidLogicalOption");
+    end
+    validateattributes(options.MaxArrivalTrials,{'numeric'},{'scalar','finite','integer','positive'});
 end
 
 function result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph)

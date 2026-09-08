@@ -36,6 +36,16 @@ end
 
 %% Section 2: Draw Stored Geometry And Graph
 
+% Display periodic coordinates while the stored polynomial stays unwrapped.
+if isfield(result,'RequestedLimits') && (result.Options.WrapX || result.Options.WrapY)
+    result.Route_units = wrapDisplay(result.Route_units,result);
+    result.position_units = wrapDisplay(result.position_units,result);
+    result.VisibilityGraph.NodePosition_units = wrapDisplay(result.VisibilityGraph.NodePosition_units,result,false);
+    endpoints = wrapDisplay([result.Inputs.initialState.position_units;result.Inputs.goalState.position_units],result,false);
+    result.Inputs.initialState.position_units = endpoints(1,:);
+    result.Inputs.goalState.position_units = endpoints(2,:);
+    result.Limits = result.RequestedLimits;
+end
 cla(axesHandle);
 hold(axesHandle, "on");
 originalObstacle = gobjects(0, 1);
@@ -56,6 +66,9 @@ nodes_units = result.VisibilityGraph.NodePosition_units;
 edges = result.VisibilityGraph.AcceptedNodeIndex;
 for edgeIndex = 1:size(edges, 1)
     points_units = nodes_units(edges(edgeIndex, :), :);
+    if isfield(result,'RequestedLimits') && (result.Options.WrapX || result.Options.WrapY)
+        points_units = wrapDisplay(points_units,result);
+    end
     graphHandle(end + 1, 1) = plot(axesHandle, points_units(:, 1), points_units(:, 2), "-", "Color", [0.72 0.82 0.92], "LineWidth", 0.75, "HandleVisibility", "off"); %#ok<AGROW>
 end
 nodeHandle = plot(axesHandle, nodes_units(:, 1), nodes_units(:, 2), ".", "Color", [0.18 0.42 0.67], "MarkerSize", 10, "DisplayName", "visibility node");
@@ -91,4 +104,20 @@ handles.VisibilityNode = nodeHandle;
 handles.Route = routeHandle;
 handles.Trajectory = trajectoryHandle;
 handles.Endpoint = endpointHandle;
+end
+
+function points = wrapDisplay(points,result,breakSeams)
+    if nargin<3, breakSeams = true; end
+    intervals = [result.RequestedLimits.xInterval_units;result.RequestedLimits.yInterval_units];
+    seam = false(max(0,size(points,1)-1),1);
+    for axis = find([result.Options.WrapX result.Options.WrapY])
+        period = diff(intervals(axis,:));
+        points(:,axis) = intervals(axis,1)+mod(points(:,axis)-intervals(axis,1),period);
+        seam = seam | abs(diff(points(:,axis)))>period/2;
+    end
+    if breakSeams && any(seam)
+        expanded = NaN(size(points,1)+nnz(seam),2);
+        indices = (1:size(points,1))'+[0;cumsum(seam)];
+        expanded(indices,:) = points; points = expanded;
+    end
 end

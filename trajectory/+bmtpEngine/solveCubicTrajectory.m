@@ -28,7 +28,7 @@ result=struct('Success',false,'SolverMessage',"Cubic clock initialization failed
     'ControlPoint_units',zeros(0,degree+1,2),'SegmentTime_s',NaN,'PositionPower_units',[]);
 diagnostics.Identifier="cubicJerkClock";
 diagnostics.ConstraintRepresentation="integratedCubicVariableClock";
-[controls_units,times_s,~,initial]=solveCubicStep(request,planes,warmStart.SegmentRatio,reserve_units,false);
+[controls_units,times_s,~,initial]=solveCubicStep(request,planes,warmStart.SegmentRatio,reserve_units,false,request.MotionHorizon_s);
 diagnostics.TrajectorySocpCount=initial.SolveCount;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(bmtpEngine.accumulateConicDiagnostics(),initial);
 if isempty(controls_units) || any(~isfinite(controls_units),'all'), return; end
@@ -50,7 +50,7 @@ diagnostics.NonlinearSolver=nonlinear;
 if any(~isfinite(times_s) | times_s<=0)
     result.SolverMessage="The phase-time optimizer did not return positive finite durations."; return;
 end
-[controls_units,times_s,exitFlag,final]=solveCubicStep(request,planes,times_s/mean(times_s),reserve_units,true);
+[controls_units,times_s,exitFlag,final]=solveCubicStep(request,planes,times_s/mean(times_s),reserve_units,true,sum(times_s));
 diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+final.SolveCount;
 diagnostics.ConicSolver=bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,final);
 diagnostics.FinalTrajectoryExitFlag=exitFlag;
@@ -70,7 +70,7 @@ diagnostics.IterationCount=1;
 end
 
 %% Section 3: Convex Integrated-Jerk Subproblem
-function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,planes,ratios,reserve_units,minimizeLength)
+function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,planes,ratios,reserve_units,minimizeLength,fixedDuration_s)
     segmentCount=size(planes,1); degree=3; limits=request.Limits;
     start_units=request.InitialState.position_units; goal_units=request.GoalState.position_units;
     horizon_s=request.MotionHorizon_s; options=request.TrajectoryOptions;
@@ -79,9 +79,12 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
     goal_units=goal_units-origin_units; start_units=[0,0];
     domain_units=[limits.xInterval_units-origin_units(1);limits.yInterval_units-origin_units(2)];
     jerkCount=segmentCount*(degree-2); stateCount=2*jerkCount;
-    [~,profileTimes_s]=bmtpEngine.createJerkLimitedChord(start_units,goal_units,limits,degree);
-    referenceTime_s=sum(profileTimes_s);
-    referenceTimes_s=referenceTime_s*ratios/sum(ratios);
+    referenceTime_s=fixedDuration_s;
+    if request.IsRest
+        [~,profileTimes_s]=bmtpEngine.createJerkLimitedChord(start_units,goal_units,limits,degree);
+        referenceTime_s=sum(profileTimes_s);
+    end
+    referenceTimes_s=referenceTime_s*ratios(:)/sum(ratios);
     powerIndex=stateCount+(1:4);
     lengthCount=segmentCount*degree;
     planeCount=nnz([planes.Active]);
@@ -100,19 +103,33 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
         end
         for order=0:2, stateMaps(order+1,:)=basis{order+1,segment}(end,:); end
     end
+    % Integrate the initial physical state on the same fixed clock as jerk.
+    offsets=cell(4,segmentCount);
+    stateOffset=[zeros(1,2);request.InitialState.velocity_units_s;request.InitialState.acceleration_units_s2];
+    for segment=1:segmentCount
+        offsets{4,segment}=zeros(1,2);
+        for order=2:-1:0
+            count=degree-order+1;
+            offsets{order+1,segment}=stateOffset(order+1,:)+ ...
+                referenceTimes_s(segment)/(count-1)*tril(ones(count,count-1),-1)*offsets{order+2,segment};
+        end
+        for order=0:2, stateOffset(order+1,:)=offsets{order+1,segment}(end,:); end
+    end
     lb=-Inf(variableCount,1); ub=Inf(variableCount,1);
     lb(powerIndex)=0; lb(powerIndex(2))=eps;
     lb(lengthIndex)=0;
     maximumClockScale=horizon_s/referenceTime_s;
     timePowers=[1;maximumClockScale;maximumClockScale^2;maximumClockScale^3];
     ub(powerIndex)=timePowers;
+    if ~request.IsRest, lb(powerIndex)=1; ub(powerIndex)=1; end
     %% Section 2: Impose Physical Continuity And Bounds
     Aeq=spalloc(7,variableCount,6*stateCount);
     beq=zeros(size(Aeq,1),1); row=0;
     for axis=1:2
         for order=0:2
             row=row+1; Aeq(row,axis:2:stateCount)=basis{order+1,segmentCount}(end,:);
-            if order==0, beq(row)=goal_units(axis); end
+            terminalState=[goal_units;request.GoalState.velocity_units_s;request.GoalState.acceleration_units_s2];
+            beq(row)=terminalState(order+1,axis)-offsets{order+1,segmentCount}(end,axis);
         end
     end
     row=row+1; Aeq(row,powerIndex(1))=1; beq(row)=1;
@@ -132,6 +149,8 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
                 values=repmat(limitValues(order,:),count,1);
                 A(indices,powerIndex(order+1))=-repelem(reshape(values.',[],1),2);
             end
+            offset=reshape(offsets{order+1,segment}.',[],1);
+            b(indices)=b(indices)-reshape([offset.';-offset.'],[],1);
         end
     end
     for segment=1:segmentCount
@@ -145,7 +164,7 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
             rows(:,columns)=localRows*kron(basis{1,segment},speye(2));
             indices=row+(1:size(rows,1)); row=indices(end);
             A(indices,:)=rows;
-            b(indices)=-reserve_units-offset_units;
+            b(indices)=-reserve_units-offset_units-localRows*reshape(offsets{1,segment}.',[],1);
         end
     end
     assert(row==inequalityCount);
@@ -161,14 +180,16 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
             coneA=sparse(2,variableCount);
             coneA(:,columns)=kron(referenceTimes_s(segment)/degree*basis{2,segment}(control,:),speye(2));
             coneD=sparse(variableCount,1); coneD(lengthIndex(index))=1;
-            lengthCones(index)=secondordercone(coneA,zeros(2,1),coneD,0);
+            lengthOffset=referenceTimes_s(segment)/degree*offsets{2,segment}(control,:);
+            lengthCones(index)=secondordercone(coneA,-lengthOffset.',coneD,0);
         end
     end
     f=zeros(variableCount,1); f(powerIndex(4))=1;
+    if ~request.IsRest, cones=lengthCones; f(:)=0; f(lengthIndex)=1; end
     timer=tic;
     [x,~,exitFlag,output]=coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
     output.TotalTime_s=toc(timer); output.SolveCount=1; output.OptimizationConverged=exitFlag>0;
-    if minimizeLength && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
+    if minimizeLength && request.IsRest && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
         ub(powerIndex(4))=x(powerIndex(4));
         f(:)=0; f(lengthIndex)=1; timer=tic;
         [shortX,~,shortFlag,shortOutput]=coneprog(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options);
@@ -193,10 +214,10 @@ function [controls_units,times_s,exitFlag,output] = solveCubicStep(request,plane
     states=reshape(x(1:stateCount),2,jerkCount).';
     controls_units=zeros(segmentCount,degree+1,2); powers_units=zeros(segmentCount,2,degree+1);
     for segment=1:segmentCount
-        controls_units(segment,:,:)=basis{1,segment}*states+origin_units;
-        powers_units(segment,:,1)=basis{1,segment}(1,:)*states+origin_units;
-        powers_units(segment,:,2)=basis{2,segment}(1,:)*states*referenceTimes_s(segment);
-        powers_units(segment,:,3)=basis{3,segment}(1,:)*states*referenceTimes_s(segment)^2/2;
+        controls_units(segment,:,:)=basis{1,segment}*states+offsets{1,segment}+origin_units;
+        powers_units(segment,:,1)=basis{1,segment}(1,:)*states+offsets{1,segment}(1,:)+origin_units;
+        powers_units(segment,:,2)=(basis{2,segment}(1,:)*states+offsets{2,segment}(1,:))*referenceTimes_s(segment);
+        powers_units(segment,:,3)=(basis{3,segment}(1,:)*states+offsets{3,segment}(1,:))*referenceTimes_s(segment)^2/2;
         jerkPowers=basis{4,segment}*states;
         for power=0:degree-3
             powers_units(segment,:,power+4)=jerkPowers(power+1,:)*referenceTimes_s(segment)^3/((power+1)*(power+2)*(power+3));
@@ -316,7 +337,7 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
             useH=~isempty(lambda);
             inequalityResidual=zeros(constraintCount,1,'like',x);
             inequalityJacobian=zeros(constraintCount,variableCount,'like',x);
-            motionState=zeros(4,2,'like',x); motionState(1,:)=request.InitialState.position_units;
+            motionState=zeros(4,2,'like',x); motionState(1:3,:)=[request.InitialState.position_units;request.InitialState.velocity_units_s;request.InitialState.acceleration_units_s2];
             stateJacobian=zeros(4,2,variableCount,'like',x); lagrangianHessian=zeros(variableCount,variableCount,'like',x);
             stateByPhase=zeros(4,2,segmentCount,'like',x);
             stateJacobianByPhase=zeros(4,2,variableCount,segmentCount,'like',x);
@@ -352,7 +373,7 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
                 motionState(1:3,:)=stateControls([4,7,9],:); stateJacobian(1:3,:,:)=derivatives([4,7,9],:,:);
             end
             inequalityResidual(end)=sum(duration_s)-request.MotionHorizon_s; inequalityJacobian(end,2*segmentCount+(1:segmentCount))=1;
-            goal=[request.GoalState.position_units;zeros(2,2)];
+            goal=[request.GoalState.position_units;request.GoalState.velocity_units_s;request.GoalState.acceleration_units_s2];
             equalityResidual=reshape(((motionState(1:3,:)-goal)./endpointScale).',[],1);
             equalityJacobian=reshape(permute(stateJacobian(1:3,:,:)./reshape(endpointScale,3,2,1),[2,1,3]),6,variableCount);
             if useH

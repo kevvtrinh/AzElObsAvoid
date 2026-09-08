@@ -50,9 +50,9 @@ end
 warmStart = struct();
 warmStart.Route_units = route_units;
 warmStart.ControlPoint_units = controlPoint_units;
-warmStart.SegmentTime_s = segmentTime_s;
+warmStart.SegmentTime_s = segmentTime_s(:);
 warmStart.Duration_s = sum(segmentTime_s);
-warmStart.SegmentRatio = segmentTime_s / mean(segmentTime_s);
+warmStart.SegmentRatio = segmentTime_s(:) / mean(segmentTime_s);
 warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
@@ -69,7 +69,7 @@ if isfield(request.Coverage,'BreakTime_s')
     controlPoint_units(end,end-2:end,:) = reshape(repmat(request.GoalState.position_units,3,1),1,3,2);
     intervals_s = request.Coverage.ActiveTimeInterval_s;
     warmStart.ControlPoint_units = controlPoint_units;
-    warmStart.SegmentTime_s = segmentTime_s;
+    warmStart.SegmentTime_s = segmentTime_s(:);
     warmStart.SegmentRatio = segmentTime_s/mean(segmentTime_s);
     warmStart.Duration_s = sum(segmentTime_s);
     warmStart.SegmentCount = segmentCount;
@@ -77,4 +77,10 @@ if isfield(request.Coverage,'BreakTime_s')
         breakTime_s(2:end) > intervals_s(:,1).';
     warmStart.WarmRouteResampled = true;
 end
+if request.Options.GoalTimeMode=="fixedArrival"
+    warmStart.SegmentTime_s = warmStart.SegmentTime_s * request.MotionHorizon_s/sum(warmStart.SegmentTime_s);
+    warmStart.Duration_s = request.MotionHorizon_s;
+end
+warmStart.ControlPoint_units = bmtpEngine.imposeEndpointControls(warmStart.ControlPoint_units, ...
+    warmStart.SegmentTime_s,request.InitialState,request.GoalState);
 end

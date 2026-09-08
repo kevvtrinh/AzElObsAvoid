@@ -65,14 +65,14 @@ initialState.velocity_units_s      = [0 0];
 initialState.acceleration_units_s2 = [0 0];
 limits = struct("maxVelocity_units_s", [2 2], ...
     "maxAcceleration_units_s2", [0.8 0.8], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
-interceptOptions = struct("InterceptMode", "specifiedTime", "SpecifiedInterceptTime_s", interceptTime_s, "PlannerOptions", options);
+
 
 %% Section 4: Run Planner
 
 % Evaluate the target at the set time and plan one position-only intercept.
 
-goalState = struct("time_s",interceptOptions.SpecifiedInterceptTime_s,"targetMotion",targetMotion);
-plannerOptions = interceptOptions.PlannerOptions;
+goalState = struct("time_s",interceptTime_s,"targetMotion",targetMotion);
+plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
 [result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 

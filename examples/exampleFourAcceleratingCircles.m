@@ -112,15 +112,14 @@ targetPosition_units = [ 8.0 -1.5; 8.3 -1.0; 8.8 0.2; 9.2 0.8; 9.5 0.5; 9.8 -0.4
 targetMotion       = struct("time_s", targetTime_s, "position_units", targetPosition_units, "InterpolationMethod", "pchip");
 limits             = struct("maxVelocity_units_s", [2 2], ...
     "maxAcceleration_units_s2", [0.75 0.75], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
-interceptOptions = struct("InterceptMode", "specifiedTime", ...
-    "SpecifiedInterceptTime_s", missionEndTime_s, "MatchTargetVelocity", false, "PlannerOptions", options);
+
 
 %% Section 4: Run Planner
 
 % Run the moving-target planner with the full obstacle history.
 
-goalState = struct("time_s",interceptOptions.SpecifiedInterceptTime_s,"targetMotion",targetMotion);
-plannerOptions = interceptOptions.PlannerOptions;
+goalState = struct("time_s",missionEndTime_s,"targetMotion",targetMotion);
+plannerOptions = options;
 plannerOptions.GoalTimeMode = "fixedArrival";
 [result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 

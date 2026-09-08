@@ -32,6 +32,12 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 
 % Validate convex static regions before solving.
 
+for name = ["velocity_units_s","acceleration_units_s2"]
+    if ~isfield(initialState,name) || isempty(initialState.(name)), initialState.(name) = [0 0]; end
+    if ~isfield(goalState,name) || isempty(goalState.(name)), goalState.(name) = [0 0]; end
+    validateattributes(initialState.(name),{'numeric'},{'real','finite','size',[1 2]});
+    validateattributes(goalState.(name),{'numeric'},{'real','finite','size',[1 2]});
+end
 validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
 
 %% Section 2: Select The Polynomial Representation
@@ -65,6 +71,7 @@ request                     = struct("Seed", seed, ...
     "GoalState", goalState, ...
     "Limits", limits, ...
     "Options", options, ...
+    "IsRest", all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0), ...
     "Degree", degree, ...
     "SplitCount", splitCount, ...
     "MotionHorizon_s", motionHorizon_s, ...
@@ -99,8 +106,8 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
     endpointDerivative = [initialState.velocity_units_s, ...
         initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
     limitsMatrix       = [limits.maxVelocity_units_s; limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-    requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && any(string(options.GoalTimeMode) == ["fixedArrival", "earliestArrival"]) && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
+    requestIsSupported = all(isfinite(endpointDerivative)) && any(string(options.GoalTimeMode) == ["fixedArrival", "earliestArrival"]) && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
     if ~requestIsSupported
-        error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped rest-to-rest request.");
+        error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped full-state request.");
     end
 end

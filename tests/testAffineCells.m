@@ -73,7 +73,7 @@ end
 function testFinalCertificateRechecksNeighborDirections(testCase)
     box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
     request = struct('Regions_units',{{box}},'Coverage',struct('Passed',true), ...
-        'InitialState',struct('time_s',0));
+        'InitialState',struct('time_s',0),'IsRest',true);
     points = [-2,0;-2,0;2,0;0,0];
     prepared = struct('CertifiedControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
         'SegmentTime_s',ones(4,1));

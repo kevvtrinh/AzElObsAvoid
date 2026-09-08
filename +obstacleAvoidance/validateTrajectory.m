@@ -21,6 +21,7 @@ function validation = validateTrajectory(result)
 validation = struct();
 validation.Passed                    = false;
 validation.Message                   = "No successful motion is available.";
+validation.OutputMetadataConsistent = false;
 validation.PolynomialValid           = false;
 validation.SegmentTimingConsistent   = false;
 validation.InterSegmentContinuous    = false;
@@ -121,6 +122,11 @@ initialState = result.Inputs.initialState;
 goalState    = result.Inputs.goalState;
 if isfield(goalState,'targetMotion') && ~isempty(goalState.targetMotion)
     goalState.position_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,polynomial.FinalTime_s);
+    if result.Options.MatchTargetVelocity || result.Options.MatchTargetAcceleration
+        [~,velocity,acceleration] = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,polynomial.FinalTime_s);
+        if result.Options.MatchTargetVelocity, goalState.velocity_units_s = velocity; end
+        if result.Options.MatchTargetAcceleration, goalState.acceleration_units_s2 = acceleration; end
+    end
 end
 initialPolynomialState = [reshape(powerArrays{1}(1, :, 1), 1, 2), reshape(powerArrays{2}(1, :, 1), 1, 2), reshape(powerArrays{3}(1, :, 1), 1, 2)];
 terminalPolynomialState = [sum(reshape(powerArrays{1}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{2}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{3}(end, :, :), 2, []), 2).'];
@@ -131,12 +137,63 @@ if result.Options.GoalTimeMode == "fixedArrival"
 else
     timeMatched = timeMatched && polynomial.FinalTime_s <= goalState.time_s + result.Options.ArrivalTimeTolerance_s;
 end
+metadataFields = {'TerminalState'};
+metadata = all(isfield(polynomial,metadataFields)) && ...
+    all(isfield(polynomial.TerminalState,{'position_units','velocity_units_s','acceleration_units_s2'}));
+if metadata
+    terminal = polynomial.TerminalState;
+    metadata = max(abs([terminal.position_units terminal.velocity_units_s terminal.acceleration_units_s2]-terminalPolynomialState))<=tolerance;
+end
+metadata = metadata && abs(result.ArrivalTime_s-polynomial.FinalTime_s)<=result.Options.ArrivalTimeTolerance_s && ...
+    abs(result.TrajectoryDuration_s-sum(duration_s))<=result.Options.ArrivalTimeTolerance_s;
+if isfield(result,'SuppliedLimits')
+    for name = ["maxVelocity_units_s","maxAcceleration_units_s2","maxJerk_units_s3"]
+        supplied = result.RequestedLimits.(name);
+        if isfield(result.SuppliedLimits,name) && ~isempty(result.SuppliedLimits.(name))
+            supplied = result.SuppliedLimits.(name);
+            if isscalar(supplied), supplied = [supplied supplied]/sqrt(2); end
+        end
+        metadata = metadata && isequal(reshape(supplied,1,[]),result.Limits.(name));
+    end
+end
+if isfield(result,'RequestedLimits')
+    for name = ["xInterval_units","yInterval_units"]
+        axis = 1+(name=="yInterval_units");
+        expectedInterval = result.RequestedLimits.(name);
+        wrapAxes = [result.Options.WrapX,result.Options.WrapY];
+        if wrapAxes(axis)
+            reach = result.Limits.maxVelocity_units_s(axis)*(goalState.time_s-initialState.time_s);
+            expectedInterval = initialState.position_units(axis)+[-reach reach];
+        end
+        metadata = metadata && isequal(expectedInterval,result.Limits.(name));
+    end
+end
+if isfield(result,'FixedArrivalTrialTime_s')
+    metadata = metadata && result.FixedArrivalTrialTime_s==polynomial.FinalTime_s;
+end
+if isfield(result,'RequestedGoalState') && (result.Options.WrapX || result.Options.WrapY)
+    expectedGoal = result.RequestedGoalState.position_units;
+    intervals = [result.RequestedLimits.xInterval_units;result.RequestedLimits.yInterval_units];
+    for axis = find([result.Options.WrapX result.Options.WrapY])
+        period = diff(intervals(axis,:));
+        expectedGoal(axis) = expectedGoal(axis)+period*floor((initialState.position_units(axis)-expectedGoal(axis))/period+0.5);
+    end
+    metadata = metadata && max(abs(expectedGoal-goalState.position_units))<=tolerance;
+end
+if isfield(goalState,'targetMotion') && ~isempty(goalState.targetMotion)
+    metadata = metadata && max(abs(result.Inputs.goalState.velocity_units_s-goalState.velocity_units_s))<=tolerance && ...
+        max(abs(result.Inputs.goalState.acceleration_units_s2-goalState.acceleration_units_s2))<=tolerance;
+    metadata = metadata && max(abs(result.Intercept.TargetPosition_units-goalState.position_units))<=tolerance && ...
+        abs(result.Intercept.Time_s-polynomial.FinalTime_s)<=result.Options.ArrivalTimeTolerance_s;
+end
+validation.OutputMetadataConsistent = metadata;
 validation.EndpointStatesMatched = timeMatched && max(abs([initialPolynomialState terminalPolynomialState] - expectedEndpointState)) <= tolerance;
 
 %% Section 4: Check Returned Histories And Collision Certificate
 
 [~, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, result.time_s);
-historyMatches = isequal(size(position_units), size(result.position_units)) && isequal(size(velocity_units_s), size(result.velocity_units_s)) && isequal(size(acceleration_units_s2), size(result.acceleration_units_s2)) && isequal(size(jerk_units_s3), size(result.jerk_units_s3));
+historyMatches = ~isempty(result.time_s) && all(isfinite(result.time_s)) && all(diff(result.time_s)>0) && ...
+    abs(result.time_s(1)-segmentStartTime_s(1))<=tolerance && abs(result.time_s(end)-polynomial.FinalTime_s)<=tolerance && isequal(size(position_units), size(result.position_units)) && isequal(size(velocity_units_s), size(result.velocity_units_s)) && isequal(size(acceleration_units_s2), size(result.acceleration_units_s2)) && isequal(size(jerk_units_s3), size(result.jerk_units_s3));
 if historyMatches
     validation.MaximumHistoryResidual = max(abs([position_units - result.position_units, velocity_units_s - result.velocity_units_s, acceleration_units_s2 - result.acceleration_units_s2, jerk_units_s3 - result.jerk_units_s3]), [], "all");
     validation.SampledHistoriesMatched = validation.MaximumHistoryResidual <= tolerance;
@@ -146,7 +203,7 @@ validation.CollisionFree = validation.PlaneCertificateValid;
 
 %% Section 5: Finalize The Independent Decision
 
-validation.Passed = validation.PolynomialValid && validation.SegmentTimingConsistent && validation.InterSegmentContinuous && validation.EndpointStatesMatched && validation.SampledHistoriesMatched && validation.DynamicsConsistent && all(within) && validation.CollisionFree;
+validation.Passed = validation.OutputMetadataConsistent && validation.PolynomialValid && validation.SegmentTimingConsistent && validation.InterSegmentContinuous && validation.EndpointStatesMatched && validation.SampledHistoriesMatched && validation.DynamicsConsistent && all(within) && validation.CollisionFree;
 if validation.Passed
     validation.Message = "Independent polynomial, limit, endpoint, history, and collision checks passed.";
 else
@@ -184,8 +241,10 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
     expectedActive = true(size(positionPower_units,1),numel(regions_units));
     if isfield(certificate,'Coverage') && isfield(certificate.Coverage,'ActiveTimeInterval_s')
+        coverageEnd_s = result.Inputs.goalState.time_s;
+        if isfield(result,'FixedArrivalTrialTime_s'), coverageEnd_s = result.Polynomial.FinalTime_s; end
         cells = obstacleAvoidance.obstacles.createTimeCells(authoritativeObstacles, ...
-            result.Inputs.initialState.time_s,result.Inputs.goalState.time_s);
+            result.Inputs.initialState.time_s,coverageEnd_s);
         regions_units = cells.Regions_units;
         starts_s = result.Polynomial.SegmentStartTime_s;
         ends_s = starts_s+result.Polynomial.SegmentDuration_s;

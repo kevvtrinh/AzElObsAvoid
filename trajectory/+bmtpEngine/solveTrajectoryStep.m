@@ -1,9 +1,9 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, initialState, goalState, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.solveTrajectoryStep( ...
-%       segmentCount, degree, start_units, goal_units, limits, planes, ...
+%       segmentCount, degree, initialState, goalState, limits, planes, ...
 %       reserve_units, maximumMotionDuration_s, options)
 %
 % PURPOSE
@@ -13,8 +13,8 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 % INPUTS
 %   - segmentCount, degree (positive integer scalars)
 %       Composite Bezier representation size.
-%   - start_units, goal_units (1-by-2 numeric rows)
-%       Fixed endpoint positions.
+%   - initialState, goalState (full normalized state structs)
+%       Prescribed physical endpoint positions, velocities, and accelerations.
 %   - limits (scalar struct)
 %       Workspace, velocity, acceleration, and jerk limits.
 %   - planes (S-by-R struct array)
@@ -44,6 +44,11 @@ controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
 prescribedAxis = nargin>=12 && ~isempty(fixedControl_units) && any(isfinite(fixedControl_units(:)));
+start_units = initialState.position_units; goal_units = goalState.position_units;
+isRest = all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0);
+assert(fixedClock || isRest,'bmtpEngine:NonrestRelaxedClock','Nonzero boundary states require physical fixed durations.');
+boundaryControls = bmtpEngine.imposeEndpointControls(zeros(segmentCount,degree+1,2), ...
+    maximumMotionDuration_s*segmentRatio/sum(segmentRatio),initialState,goalState);
 powerIndex             = controlCount + (1:4);
 lengthCount = segmentCount * degree;
 activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
@@ -84,9 +89,11 @@ for axisIndex = 1:2
         equalityIndex = equalityIndex + 1;
         indices       = controlIndexOf(1, [endpointOrder 0], axisIndex, degree);
         Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
+        beq(equalityIndex) = boundaryControls(1,endpointOrder+1,axisIndex)-start_units(axisIndex);
         equalityIndex = equalityIndex + 1;
         indices       = controlIndexOf(segmentCount, [degree - endpointOrder degree], axisIndex, degree);
         Aeq(equalityIndex, indices) = [1 -1]; %#ok<SPRIX>
+        beq(equalityIndex) = boundaryControls(end,degree-endpointOrder+1,axisIndex)-goal_units(axisIndex);
     end
 end
 % Process each segment while assembling the complete motion or interval result.

@@ -1,4 +1,4 @@
-function position_units = targetPositionAtTime(targetMotion, time_s)
+function [position_units,velocity_units_s,acceleration_units_s2] = targetPositionAtTime(targetMotion, time_s)
 %% Section 0: Header & Readme
 % SYNTAX: position = obstacleAvoidance.input.targetPositionAtTime(target,time)
 % PURPOSE: Validate and evaluate an explicitly sampled target without extrapolation.
@@ -28,4 +28,33 @@ end
 
 %% Section 2: Evaluate The Declared Interpolant
 position_units = interp1(sampleTime_s,double(targetMotion.position_units),time_s(:),method);
+if nargout<2, return; end
+% Differentiate the declared piecewise polynomial. Interior knots use the
+% right-hand piece; the final knot uses the left-hand piece. A linear corner
+% has no velocity or acceleration and cannot supply a matched state.
+velocity_units_s = zeros(numel(time_s),2);
+acceleration_units_s2 = velocity_units_s;
+for axis = 1:2
+    values = double(targetMotion.position_units(:,axis));
+    if string(method)=="pchip"
+        pp = pchip(sampleTime_s,values);
+    else
+        slopes = diff(values)./diff(sampleTime_s);
+        for k = 2:numel(sampleTime_s)-1
+            if any(time_s==sampleTime_s(k)) && slopes(k)~=slopes(k-1)
+                error('planner:UndefinedTargetDerivative','A linear target corner has no defined matched derivative.');
+            end
+        end
+        pp = mkpp(sampleTime_s,[slopes,values(1:end-1)]);
+    end
+    order = pp.order;
+    if order>1
+        velocityPP = mkpp(pp.breaks,pp.coefs(:,1:end-1).*(order-1:-1:1));
+        velocity_units_s(:,axis) = ppval(velocityPP,time_s(:));
+        if order>2
+            accelerationPP = mkpp(pp.breaks,velocityPP.coefs(:,1:end-1).*(order-2:-1:1));
+            acceleration_units_s2(:,axis) = ppval(accelerationPP,time_s(:));
+        end
+    end
+end
 end

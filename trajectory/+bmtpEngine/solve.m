@@ -19,7 +19,7 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 %       Requires Passed. Optional RegionActiveTauInterval is R-by-2 and
 %       limits each region to an absolute normalized motion-time interval.
 %   - initialState, goalState (normalized scalar state structs)
-%       Positions are fixed and endpoint velocity and acceleration are zero.
+%       Position, velocity, and acceleration are prescribed at both endpoints.
 %   - limits (normalized scalar struct)
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
@@ -47,6 +47,7 @@ assert(any(stage==["complete","kinematicBound","delayedChord","route"]),'bmtpEng
 clockGuide = struct();
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
+initialState = request.InitialState; goalState = request.GoalState;
 
 % Create a kinematically feasible starting curve from the seed.
 warmStart             = bmtpEngine.createWarmStart(request);
@@ -81,7 +82,7 @@ preparedMotion = struct('Success',false);
 certificate = struct('Passed',false);
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticFixedTime";
-if stage=="delayedChord"
+if stage=="delayedChord" && request.IsRest
     [controls_units,durations_s,powers_units,schedule] = bmtpEngine.createDelayedChord(request);
     diagnostics.DepartureSchedule = schedule;
     if schedule.Available
@@ -101,11 +102,25 @@ elseif stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixe
         end
     end
     controls_units = initialState.position_units + fraction.*(goalState.position_units-initialState.position_units);
+    if ~request.IsRest
+        h = request.MotionHorizon_s;
+        power = [initialState.position_units;h*initialState.velocity_units_s;h^2*initialState.acceleration_units_s2/2;zeros(3,2)];
+        residual = [goalState.position_units-sum(power,1); ...
+            h*goalState.velocity_units_s-power(2,:)-2*power(3,:); ...
+            h^2*goalState.acceleration_units_s2-2*power(3,:)];
+        power(4:6,:) = [1 1 1;3 4 5;6 12 20]\residual;
+        controls_units = zeros(degree+1,2);
+        for k = 0:degree
+            for j = 0:min(k,5)
+                controls_units(k+1,:) = controls_units(k+1,:)+nchoosek(k,j)/nchoosek(degree,j)*power(j+1,:);
+            end
+        end
+    end
     preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),request.MotionHorizon_s);
     if preparedMotion.Success
         certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
     end
-elseif stage~="route" && options.GoalTimeMode=="earliestArrival"
+elseif stage~="route" && options.GoalTimeMode=="earliestArrival" && request.IsRest
     [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord(initialState.position_units,goalState.position_units,limits,degree);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
     if preparedMotion.Success
@@ -117,7 +132,7 @@ end
 boundAccepted = false;
 boundStats = bmtpEngine.accumulateConicDiagnostics();
 boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
-if any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
+if request.IsRest && any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
     % At the independent-axis lower bound, the limiting axis is analytic.
     % Optimize only the remaining freedom on a source-derived clock guide.
     boundTimer = tic;

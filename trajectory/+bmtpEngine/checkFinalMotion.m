@@ -36,6 +36,25 @@ if isfield(request.Coverage,'ActiveTimeInterval_s')
 end
 spanBreaks_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s)];
 certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units,spanBreaks_s);
+if ~request.IsRest
+    % Fixed physical boundary derivatives prevent post-solve dilation. Reject
+    % an over-limit analytic proposal here so the shared optimizer can run.
+    polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
+        preparedMotion.SegmentTime_s,request.InitialState.time_s,preparedMotion.PrescribedPower_units);
+    arrays = {polynomial.velocityPower_units_s,polynomial.accelerationPower_units_s2,polynomial.jerkPower_units_s3};
+    bounds = [request.Limits.maxVelocity_units_s;request.Limits.maxAcceleration_units_s2;request.Limits.maxJerk_units_s3];
+    certificate.DynamicsPassed = true;
+    for order = 1:3
+        for axis = 1:2
+            for segment = 1:polynomial.SegmentCount
+                coefficients = reshape(arrays{order}(segment,axis,:),[],1);
+                certificate.DynamicsPassed = certificate.DynamicsPassed && ...
+                    obstacleAvoidance.validation.certifyPolynomialRange(coefficients,-bounds(order,axis),bounds(order,axis),request.Options.ConstraintTolerance);
+            end
+        end
+    end
+    certificate.Passed = certificate.Passed && certificate.DynamicsPassed;
+end
 end
 
 %% Section 2: Local Functions
