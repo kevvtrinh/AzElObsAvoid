@@ -18,13 +18,29 @@ boundaryOccupied = true;
 if isfield(options,'BoundaryIsOccupied'), boundaryOccupied = options.BoundaryIsOccupied; end
 boundaryOccupied = obstacleAvoidance.input.normalizeLogicalScalar(boundaryOccupied, 'BoundaryIsOccupied', 'queryObstacleOccupancyAtTime:InvalidBoundaryPolicy');
 obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
-occupied = false(size(x_units)); blockingIndex = zeros(size(x_units));
+occupied = false(size(x_units)); blockingIndex = zeros(size(x_units),'uint32');
 
-%% Section 2: Evaluate Equal-Time Queries Together
+%% Section 2: Batch Identical Geometry And Equal-Time Queries
 queryTimes_s = unique(time_s(:));
-for k = 1:numel(queryTimes_s)
-    indices = find(time_s == queryTimes_s(k));
-    for j = 1:numel(obstacles)
+for j = 1:numel(obstacles)
+    obstacle = obstacles(j);
+    % Require exact source equality, not tolerance-based shape equivalence.
+    identical = all(cellfun(@(x,y) isequaln(x,obstacle.x_units{1}) && ...
+        isequaln(y,obstacle.y_units{1}),obstacle.x_units,obstacle.y_units));
+    if identical
+        active = true(size(time_s));
+        if numel(obstacle.time_s)>1
+            active = time_s>=obstacle.time_s(1) & time_s<=obstacle.time_s(end);
+        end
+        indices = find(active & ~occupied);
+        [inside,on] = inpolygon(x_units(indices),y_units(indices),obstacle.x_units{1},obstacle.y_units{1});
+        fresh = indices(inside & (~on | boundaryOccupied));
+        occupied(fresh) = true; blockingIndex(fresh) = j;
+        continue;
+    end
+    for k = 1:numel(queryTimes_s)
+        indices = find(time_s == queryTimes_s(k) & ~occupied);
+        if isempty(indices), continue; end
         [~, geometry] = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacles(j),queryTimes_s(k),true);
         if ~geometry.Active, continue; end
         [inside, on] = inpolygon(x_units(indices),y_units(indices),geometry.x_units,geometry.y_units);

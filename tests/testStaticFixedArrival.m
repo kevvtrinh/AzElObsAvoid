@@ -8,6 +8,16 @@ function tests = testStaticFixedArrival
 tests = functiontests(localfunctions);
 end
 
+function testAlternatingTargetOcclusion(testCase)
+    root = fileparts(fileparts(mfilename('fullpath')));
+    addpath(root,fullfile(root,'trajectory'),fullfile(root,'examples'));
+    r = exampleStraightTargetAlternatingOcclusion(struct('PlotOutputs',false,'Verbose',false));
+    verifyTrue(testCase,r.Success,r.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
+    verifyEqual(testCase,r.TrajectoryDuration_s,20.8695652173913,'AbsTol',1e-8);
+    verifyLessThanOrEqual(testCase,r.MotionLength_units,13.6104156606847);
+end
+
 function testTargetExitsObstacle(testCase)
     root = fileparts(fileparts(mfilename('fullpath')));
     addpath(root,fullfile(root,'trajectory'),fullfile(root,'examples'));

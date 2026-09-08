@@ -16,7 +16,10 @@ Optimization Toolbox are the behavioral reference.
 The core separates protected obstacle preparation, exact implicit visibility
 search, BMTP optimization, independent polynomial validation, and plotting.
 Obstacle margins are applied once to retained originals. Concave static
-regions are covered by exact polygon triangulation. Visibility search operates
+regions are triangulated and adjacent faces are merged only when their union
+is convex. This removes internal diagonals without changing occupied geometry.
+Identical static source boundaries share one vectorized occupancy query over
+their original activity interval. Visibility search operates
 on the occupied union and evaluates graph edges as A* expands nodes, preserving
 the Euclidean shortest-route objective. BMTP uses nonuniform segment durations
 and retains continuous position, velocity, acceleration, and jerk. Fixed-time
@@ -50,7 +53,7 @@ length-minimizing convex formulation; scene motion does not choose the objective
 
 ```matlab
 addpath('tests');
-assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m'}));
+assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m','tests/testStaticFixedArrival.m','tests/testConvexPreparation.m'}));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 ```
@@ -140,7 +143,7 @@ The four accelerating circles also pass unchanged: arrival 22 s, exact motion
 and route length 20, and five-run median wall time 4.030 s versus 7.1524886 s.
 All 880 source intervals remain certified, with two exported polynomial spans
 and no SOCP. Four additional tests cover polynomial restriction, full source
-coverage, forged activity, and interior source changes. The core contains
+coverage, forged activity, and interior source changes. That milestone contained
 3,696 physical production lines. A profile of the prior formulation attributed
 12.44 s to `coneprog` within a 23.13 s run that failed validation; the direct
 formulation removes that solve, rather than relaxing any physical constraints.
@@ -148,10 +151,31 @@ Profiled time is diagnostic only; the benchmark medians have profiling off.
 
 The static target-exit example now passes physical benchmarks: arrival 24 s,
 motion length 20.5043115855 versus 20.6851467568, and five-run median wall time
-2.114 s versus 4.6280002 s. Alternating occlusion improves to motion length
-13.5563779512 versus 13.6104156607, with matching arrival, but its 4.113 s median
-still exceeds the 2.4666327 s reference. No passing runtime is claimed for it.
+2.114 s versus 4.6280002 s. Alternating occlusion also passes after exact convex
+merging and static occupancy batching: its five-run median wall time fell from
+4.113 s to 2.035 s, below 2.4666327 s. Arrival remains 20.8695652174 s and motion
+length 13.5563779512 beats 13.6104156607. The scene has 18 convex regions instead
+of 48. Tests check occupied-area equality, disjoint interiors, convexity, holes,
+disconnected components, exact source equality, activity endpoints, and first
+blocking-obstacle order. The current core has 3,765 physical production lines.
 
-Vietnam, fixed-time interception, accelerating circles, target exit, and the
-expected no-path case have demonstrated the physical benchmark metrics.
+With merged convex regions, static U now returns valid motion in a three-run
+median of 0.316 s, but duration 24.010 s and length 43.576 still exceed references
+20.873 s and 38.678. The earliest-arrival formulation still needs improvement.
+
+Vietnam, fixed-time interception, accelerating circles, target exit, alternating
+occlusion, and the expected no-path case have demonstrated the physical benchmark metrics.
 The full suite remains unfinished. No scenario-specific fallback was added.
+
+Latest combined regression: all 25 tests pass and all five runs independently
+validate for each of the six demonstrated examples (no-path returns the expected
+explicit failure). Profiling is disabled; medians include full example execution:
+
+| Example | Arrival / reference (s) | Motion length / reference | Wall / reference (s) |
+| --- | --- | --- | --- |
+| Vietnam slew | 30 / 30 | 17.144737 / 17.305375 | 2.936 / 21.210 |
+| Accelerating circles | 22 / 22 | 20 / 20 | 4.339 / 7.152 |
+| Fixed-time target | 12 / 12 | 9.538941 / 9.538941 | 0.01380 / 0.19506 |
+| Target exit | 24 / 24 | 20.504312 / 20.685147 | 1.934 / 4.628 |
+| Alternating occlusion | 20.869565 / 20.869565 | 13.556378 / 13.610416 | 1.854 / 2.467 |
+| No path | Expected no route | n.a. | 0.01026 / 0.56736 |

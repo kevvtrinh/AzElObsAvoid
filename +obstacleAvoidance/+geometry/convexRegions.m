@@ -21,8 +21,59 @@ for k = 1:numel(components)
         end
     end
     mesh = triangulation(components(k));
-    for j = 1:size(mesh.ConnectivityList, 1)
-        regions_units{end+1,1} = mesh.Points(mesh.ConnectivityList(j,:),:); %#ok<AGROW>
+    faces = mergeConvexFaces(mesh);
+    for j = 1:numel(faces)
+        regions_units{end+1,1} = mesh.Points(faces{j},:); %#ok<AGROW>
     end
 end
+end
+
+%% Section 2: Remove Interior Diagonals Without Changing Geometry
+function faces = mergeConvexFaces(mesh)
+    % Every accepted merge removes one shared diagonal from two exact faces.
+    % Original vertices and the occupied union remain unchanged. Concave or
+    % multiply connected unions are rejected, with no geometric tolerance.
+    count = size(mesh.ConnectivityList,1);
+    faces = mat2cell(mesh.ConnectivityList,ones(count,1),3);
+    adjacent = neighbors(mesh);
+    owner = (1:count).';
+    first = repmat(owner,1,3);
+    pairs = [first(:),adjacent(:)];
+    pairs = pairs(isfinite(pairs(:,2)) & pairs(:,1)<pairs(:,2),:);
+    changed = true;
+    while changed
+        changed = false;
+        for k = 1:size(pairs,1)
+            left = pairs(k,1); right = pairs(k,2);
+            while owner(left)~=left, left = owner(left); end
+            while owner(right)~=right, right = owner(right); end
+            if left==right, continue; end
+            a = faces{left}; b = faces{right};
+            shared = intersect(a,b);
+            if numel(shared)~=2, continue; end
+            index = find(a==shared(1));
+            if a(mod(index,numel(a))+1)~=shared(2)
+                index = find(a==shared(2));
+                if a(mod(index,numel(a))+1)~=shared(1), continue; end
+            end
+            next = a(mod(index,numel(a))+1);
+            other = find(b==next);
+            if b(mod(other,numel(b))+1)~=a(index)
+                b = fliplr(b); other = find(b==next);
+                if b(mod(other,numel(b))+1)~=a(index), continue; end
+            end
+            a = a([index+1:end,1:index]);
+            b = b([other+1:end,1:other]);
+            merged = [a,b(2:end-1)];
+            points_units = mesh.Points(merged,:);
+            edges_units = circshift(points_units,-1)-points_units;
+            nextEdge_units = circshift(edges_units,-1);
+            turns_units2 = edges_units(:,1).*nextEdge_units(:,2)-edges_units(:,2).*nextEdge_units(:,1);
+            if ~(all(turns_units2>=0) || all(turns_units2<=0)), continue; end
+            faces{left} = merged; faces{right} = [];
+            owner(right) = left;
+            changed = true;
+        end
+    end
+    faces = faces(~cellfun(@isempty,faces));
 end
