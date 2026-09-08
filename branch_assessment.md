@@ -1,5 +1,17 @@
 # Planner decisions
 
+## Bounded visibility — 2026-09-08
+
+The exact existing predicate now bounds temporary matrices to 65,536
+segment-edge pairs and skips further work only after rejection. Full source
+decisions and graph-edge evidence agree with the independent prior reference;
+215 tests and all 60 frozen quality records pass. Large-array checks improve,
+while some small predicates are slower. The one matched rerun's moving-case
+slow totals were traced to paths that never call the changed function; their
+unfavorable timings remain recorded. Dense concave's modest overhead is an
+explicit memory-bound tradeoff. Production is 16,488 physical lines in 115
+files. See [visibility evidence](docs/bmtp_refactor_visibility.md).
+
 ## Sampling-independent executable length — 2026-09-08
 
 Motion records, selection, and fixed-clock offset refinement now use adaptive

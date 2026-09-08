@@ -28,3 +28,25 @@ All successful entries pass collision, kinematic, and applicable certificate che
 | GeographyCroatia | 1.1943847 | 0.614449 | 3.2750913251299 | 3.24930547581 | 7.51903810119471 | 7.45277336909 | goalReached |
 | GeographyHawaii | 2.2110267 | 4.721238 | 4.3142358035265 | 5.47210633785 | 12.9198952189363 | 13.5295918701 | goalReached |
 | GeographyPhilippines | 5.5686077 | 7.285259 | 5.82760502419256 | 5.20493999178 | 23.2586701098087 | 18.8014078814 | goalReached |
+
+## Selected-method attribution and cubic reversal decision
+
+A later read-only replay identifies the selected reference methods. Opposing U,
+Hawaii, Croatia, and Philippines select `monotoneStaticCorridor`; their selected
+guides do not reverse the limiting coordinate. Static U selects `cubicJerkClock`
+and does reverse that coordinate. All five replayed motions pass fresh public
+validation, collision, kinematic, and plane-certificate checks and terminate
+with `goalReached`. Durations and arcs match the table above. Their polyline
+lengths are respectively 24.0352599972, 12.4904452364, 7.27676998356,
+18.7718791135, and 34.9385998374 units. The replay has one unwarmed call per
+case and is for attribution, not a replacement runtime comparison; those calls
+also remain in the CSV.
+
+The cubic reversal formulation is **not retained as a speed replacement**.
+On the tested reversing static-U request, the pinned matched comparison gives
+4.9740 s versus cleanup's 4.3238 s, despite improving duration from 20.8725 to
+20.7628 s and arc length from 38.6784 to 37.7793 units. Its extra conic and
+nonlinear phase-time pipeline has no demonstrated speed benefit on that
+reversal case. The broader existing solver remains responsible for reversal
+and non-monotone guides. This decision is limited to the evaluated case; it
+does not claim cubic jerk methods are generally slower or inferior.

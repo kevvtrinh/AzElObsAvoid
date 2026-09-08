@@ -24,7 +24,11 @@ production after the corridor commit is 114 files and 16,408 physical lines.
 The following [length stage](bmtp_refactor_length.md) makes every motion-record
 length and candidate ranking independent of display sampling, passes 213 tests
 and 60 unchanged frozen quality comparisons, and brings production to 115
-files/16,477 physical lines. Visibility batching,
+files/16,477 physical lines. [Bounded visibility](bmtp_refactor_visibility.md)
+then passes 215 tests and 60 unchanged quality comparisons, with exact predicate
+and graph-edge equivalence and 16,488 physical production lines. The reference
+cubic reversal method is evaluated and rejected as a speed replacement on its
+tested reversing case, as documented in the reference comparison. Remaining:
 the single public entry point, and final consolidation remain unfinished. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of
 every geographic subcase is now recorded in the [reference comparison](bmtp_refactor_reference_comparison.md). It rejects wholesale replacement: the reference loses one supported fixed-time interception and worsens Hawaii's arrival, length, and runtime. The resumed
