@@ -46,7 +46,7 @@ function testTwoSegmentDetourSupportsEarliestAndFixedArrival(testCase)
     limits.maxJerk_units_s3         = [2 2];
     limits.xInterval_units    = [-10 10];
     limits.yInterval_units  = [-10 10];
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     seed    = struct();
     seed.Index        = 1;
     seed.Source       = "visibilityGraph";
@@ -93,7 +93,7 @@ function testThreeSegmentRouteReturnsExplicitUnsupportedResult(testCase)
     limits.maxJerk_units_s3         = [2 2];
     limits.xInterval_units    = [-10 10];
     limits.yInterval_units  = [-10 10];
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     seed    = struct();
     seed.Index        = 1;
     seed.Source       = "visibilityGraph";

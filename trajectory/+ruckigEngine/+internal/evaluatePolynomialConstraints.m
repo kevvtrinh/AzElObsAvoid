@@ -4,11 +4,9 @@ function [inequality, equality] = evaluatePolynomialConstraints(polynomial, term
 %   [inequality, equality] = ...
 %       ruckigEngine.internal.evaluatePolynomialConstraints( ...
 %       polynomial, terminalState, limits, pathConstraints)
-%
 % PURPOSE
 %   - Certify continuous derivative, position, affine path, and endpoint
 %     constraints from the common polynomial format.
-%
 % INPUTS
 %   - polynomial (scalar struct)
 %       Segment durations and ascending-power derivative coefficients.
@@ -18,14 +16,11 @@ function [inequality, equality] = evaluatePolynomialConstraints(polynomial, term
 %       Position-through-jerk lower and upper coordinate bounds.
 %   - pathConstraints (resolved scalar struct)
 %       Affine point or single-segment interval inequalities.
-%
 % OUTPUTS
 %   - inequality (numeric column), feasible when every value is <= 0.
 %   - equality (3D-by-1 numeric column), terminal state residuals.
-%
 % UNITS
 %   - Values retain the caller's consistent coordinate and time units.
-%
 
 %% Section 1: Evaluate Complete Polynomial Bounds
 
@@ -61,14 +56,12 @@ function inequality = continuousBoundConstraints(polynomial, limits)
     inequality     = zeros(0, 1);
     % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
-        % Process each quantity needed to complete continuous bound constraints.
         for quantityIndex = 1:numel(coefficientFields)
             coefficientArray = polynomial.(coefficientFields(quantityIndex));
             upperBounds      = limits.(upperFields(quantityIndex));
             lowerBounds      = limits.(lowerFields(quantityIndex));
             upperBound       = upperBounds(dimensionIndex);
             lowerBound       = lowerBounds(dimensionIndex);
-            % Process each segment while assembling the complete motion or interval result.
             for segmentIndex = 1:polynomial.SegmentCount
                 powerCoefficient = reshape(coefficientArray(segmentIndex, dimensionIndex, :), [], 1);
                 [~, minimumValue, maximumValue] = ruckigEngine.internal.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, 0);
@@ -90,7 +83,6 @@ function inequality = affinePathConstraints(polynomial, pathConstraints)
     coefficientCount = size(polynomial.positionPower, 3);
     segmentCount     = polynomial.SegmentCount;
     inequality       = zeros(0, 1);
-    % Process each constraint needed to complete affine path constraints.
     for constraintIndex = 1:numel(pathConstraints.Tau)
         scaledStart       = segmentCount * pathConstraints.Tau(constraintIndex);
         scaledEnd         = segmentCount * pathConstraints.TauEnd(constraintIndex);
@@ -99,7 +91,6 @@ function inequality = affinePathConstraints(polynomial, pathConstraints)
         if scaledEnd > scaledStart
             lastSegmentIndex = min(segmentCount, ceil(scaledEnd));
         end
-        % Process each segment while assembling the complete motion or interval result.
         for segmentIndex = firstSegmentIndex:lastSegmentIndex
             localStart      = min(1, max(0, scaledStart - segmentIndex + 1));
             localEnd        = min(1, max(0, scaledEnd - segmentIndex + 1));
@@ -123,9 +114,7 @@ function restriction = createSubintervalPowerMap(localStart, localEnd, coefficie
     targetExponent = (0:degree).';
     shiftExponent  = sourceExponent - targetExponent;
     binomialWeight = zeros(coefficientCount);
-    % Process each target needed to build subinterval power map.
     for targetIndex = 0:degree
-        % Process each source needed to build subinterval power map.
         for sourceIndex = targetIndex:degree
             binomialWeight(targetIndex + 1, sourceIndex + 1) = nchoosek(sourceIndex, targetIndex);
         end

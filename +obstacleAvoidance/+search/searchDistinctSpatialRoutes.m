@@ -5,12 +5,10 @@ function [routes_units, classPattern, searchRecord] = searchDistinctSpatialRoute
 %       obstacleAvoidance.search.searchDistinctSpatialRoutes( ...
 %       edgeCost_units, nodePosition_units, obstacleReferencePoints_units, ...
 %       maximumClassCount, edgeCheck)
-%
 % PURPOSE
 %   - Search visibility-node and route-class states for shortest routes that
 %     pass obstacle reference points in distinct ways.
 %   - Shorten each route using only visible chords that preserve its class.
-%
 % INPUTS
 %   - edgeCost_units (N-by-N numeric matrix)
 %       Symmetric finite visibility-edge costs with start and goal first.
@@ -22,7 +20,6 @@ function [routes_units, classPattern, searchRecord] = searchDistinctSpatialRoute
 %       Requested number of distinct classes; zero disables the search.
 %   - edgeCheck (scalar function handle)
 %       Exact proposal-geometry chord predicate used during cleanup.
-%
 % OUTPUTS
 %   - routes_units (cell column of N-by-2 numeric arrays)
 %       Deterministically ordered shortest routes for distinct classes.
@@ -30,10 +27,8 @@ function [routes_units, classPattern, searchRecord] = searchDistinctSpatialRoute
 %       Route-class pattern corresponding to every returned route.
 %   - searchRecord (scalar struct)
 %       Search, frontier, best-partial, and cleanup evidence.
-%
 % UNITS
 %   - Position and edge cost are coordinate units; class patterns are dimensionless.
-%
 
 %% Section 1: Expand Route-Class Visibility States
 
@@ -74,7 +69,6 @@ expandedCount = 0;
 component       = conncomp(graph(isfinite(edgeCost_units), "upper"));
 goalIsReachable = nodeCount >= 2 && component(1) == component(2);
 
-% Continue iterating until the stopping condition for find distinct spatial routes is satisfied.
 while goalIsReachable && numel(routes_units) < maximumClassCount
     expandedCount     = expandedCount + 1;
     unsettledCost_units = stateCost_units(1:stateCount);
@@ -99,7 +93,6 @@ while goalIsReachable && numel(routes_units) < maximumClassCount
         else
             classPattern = zeros(numel(routes_units), 0);
         end
-        % Apply the required validation or transfer to each field.
         for fieldIndex = 1:numel(cleanupFields)
             fieldName = cleanupFields(fieldIndex);
             cleanup.(fieldName) = cleanup.(fieldName) + routeCleanup.(fieldName);
@@ -107,7 +100,6 @@ while goalIsReachable && numel(routes_units) < maximumClassCount
         continue;
     end
     neighbors = find(isfinite(edgeCost_units(currentNode, :)));
-    % Process each geometric neighbor while constructing or checking the region topology.
     for neighbor = reshape(neighbors, 1, [])
         % Skip self-edges because they cannot improve cost or topology.
         if neighbor == currentNode
@@ -186,7 +178,6 @@ end
 function statePath = reconstructStatePath(parentState, targetState)
     % Reconstruct the route from stored parent states.
     statePath = targetState;
-    % Continue iterating until the stopping condition for complete reconstruct state path is satisfied.
     while statePath(1) ~= 1
         statePath = [parentState(statePath(1)), statePath]; %#ok<AGROW>
     end
@@ -226,7 +217,6 @@ function pattern = routeClassPattern(route_units, referencePoints_units)
     end
     phase     = atan2(route_units(:, 2) - referencePoints_units(:, 2).', route_units(:, 1) - referencePoints_units(:, 1).');
     reference = principalAngle(phase - phase(1, :)) / (2 * pi);
-    % Process each geometric edge while constructing or checking the region topology.
     for edgeIndex = 1:size(route_units, 1) - 1
         step    = principalAngle(phase(edgeIndex + 1, :) - phase(edgeIndex, :)) / (2 * pi);
         pattern = pattern + round(reference(edgeIndex, :) + step - reference(edgeIndex + 1, :));
@@ -252,15 +242,12 @@ function [cleanedRoute_units, record] = shortenVisibilityRoute(route_units, visi
     if size(route_units, 1) < 3 || ~isequal(signatureFunction(route_units), requiredSignature)
         return;
     end
-    % Continue iterating until the stopping condition for complete shorten visibility route is satisfied.
     while size(cleanedRoute_units, 1) >= 3
         currentLength_units   = obstacleAvoidance.geometry.routeLength(cleanedRoute_units);
         lengthTolerance_units = max(1e-12, 1e-12 * currentLength_units);
         bestReduction_units   = 0;
         bestRoute_units       = cleanedRoute_units;
-        % Process each first needed to complete shorten visibility route.
         for firstIndex = 1:size(cleanedRoute_units, 1) - 2
-            % Process each second needed to complete shorten visibility route.
             for secondIndex = firstIndex + 2:size(cleanedRoute_units, 1)
                 record.CandidateCount = record.CandidateCount + 1;
                 reduction_units = obstacleAvoidance.geometry.routeLength(cleanedRoute_units(firstIndex:secondIndex, :)) - norm(cleanedRoute_units(secondIndex, :) - cleanedRoute_units(firstIndex, :));

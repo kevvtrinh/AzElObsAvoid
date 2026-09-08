@@ -5,11 +5,9 @@ function [profile, candidates] = createMinimumTimeAxisProfile(initialState, term
 %       initialState, terminalState, limits)
 %   [profile, candidates] = ruckigEngine.createMinimumTimeAxisProfile( ...
 %       initialState, terminalState, limits)
-%
 % PURPOSE
 %   - Create the shortest one-dimensional position trajectory admitted by
 %     symmetric velocity, acceleration, and jerk limits.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar time, position, velocity, and acceleration fields.
@@ -18,7 +16,6 @@ function [profile, candidates] = createMinimumTimeAxisProfile(initialState, term
 %   - limits (scalar struct)
 %       Positive scalar maximumVelocity, maximumAcceleration, and
 %       maximumJerk fields.
-%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, seven phase durations and jerks, minimum duration, and the
@@ -27,10 +24,8 @@ function [profile, candidates] = createMinimumTimeAxisProfile(initialState, term
 %   - candidates (structure array)
 %       Every certified extremal profile used to derive synchronization
 %       block intervals, including duration and signed initial direction.
-%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.
@@ -225,7 +220,6 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h2None        = (context.a0Squared - context.afSquared) / (2 * jMaximum) + context.vf - context.v0;
     h2NoneSquared = h2None^2;
     rootsNone     = realQuarticRoots([1, 0, -2 * (context.a0Squared + context.afSquared - 2 * jMaximum * (context.v0 + context.vf)) / jSquared, 4 * (context.a0Cubed - context.afCubed + 3 * jMaximum * (context.af * context.vf - context.a0 * context.v0)) / (3 * jMaximum * jSquared) - 4 * context.displacement / jMaximum, -h2NoneSquared / jSquared]);
-    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsNone)
         time = rootsNone(rootIndex);
         if time < (context.a0 - context.af) / jMaximum || time > (aMaximum - aMinimum) / jMaximum || time <= eps
@@ -248,7 +242,6 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h0Initial    = 3 * (context.afFourth - context.a0Fourth) + 8 * (context.a0Cubed - context.afCubed) * aMaximum + 24 * aMaximum * jMaximum * (context.af * context.vf - context.a0 * context.v0) - 6 * context.a0Squared * (aMaximum^2 - 2 * jMaximum * context.v0) + 6 * context.afSquared * (aMaximum^2 - 2 * jMaximum * context.vf) + 12 * jMaximum * (jMaximum * (context.vfSquared - context.v0Squared - 2 * aMaximum * context.displacement) - aMaximum^2 * (context.vf - context.v0));
     h2Initial    = -context.afSquared + aMaximum^2 + 2 * jMaximum * context.vf;
     rootsInitial = realQuarticRoots([1, -2 * aMaximum / jMaximum, h2Initial / jSquared, 0, h0Initial / (12 * jSquared^2)]);
-    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsInitial)
         time = rootsInitial(rootIndex);
         if time < (aMaximum - context.af) / jMaximum || time > (aMaximum - aMinimum) / jMaximum || time <= eps
@@ -270,7 +263,6 @@ function candidates = appendUnconstrainedProfiles(candidates, context, limits)
     h0Terminal    = (context.a0Fourth - context.afFourth) / 4 + 2 * (context.afCubed - context.a0Cubed) * aMinimum / 3 + (context.a0Squared - context.afSquared) * aMinimum^2 / 2 + jMaximum * (context.afSquared * context.vf + context.a0Squared * context.v0 + 2 * aMinimum * (jMaximum * context.displacement - context.a0 * context.v0 - context.af * context.vf) + aMinimum^2 * (context.v0 + context.vf) + jMaximum * (context.v0Squared - context.vfSquared));
     h2Terminal    = context.a0Squared - context.a0 * aMinimum + 2 * jMaximum * context.v0;
     rootsTerminal = realQuarticRoots([1, 2 * (2 * context.a0 - aMinimum) / jMaximum, (5 * context.a0Squared + aMinimum * (aMinimum - 6 * context.a0) + 2 * jMaximum * context.v0) / jSquared, 2 * (context.a0 - aMinimum) * h2Terminal / (jSquared * jMaximum), h0Terminal / jSquared^2]);
-    % Process each root needed to complete append unconstrained profiles.
     for rootIndex = 1:numel(rootsTerminal)
         time = rootsTerminal(rootIndex);
         if time < (aMinimum - context.a0) / jMaximum || time > (aMaximum - context.a0) / jMaximum || time <= eps

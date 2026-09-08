@@ -75,7 +75,7 @@ warningState = warning;
 warning("off", "MATLAB:nearlySingularMatrix");
 warning("off", "MATLAB:singularMatrix");
 warningCleanup = onCleanup(@() warning(warningState));
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 clear warningCleanup;
 
 %% Section 5: Validate Result

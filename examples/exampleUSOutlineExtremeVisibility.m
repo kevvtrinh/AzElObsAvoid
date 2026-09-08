@@ -71,7 +71,7 @@ for regionIndex = 1:regionCount
     initialState  = struct("time_s", 0, "position_units", scenario.initialPosition_units);
     goalState     = struct("time_s", missionEndTime_s, "position_units", scenario.goalPosition_units);
     regionOptions = options;
-    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = obstacleAvoidance.planTrajectory(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
+    [regionResults{regionIndex}, regionDiagnoses{regionIndex}] = planner(obstacles{regionIndex}, initialState, goalState, limits, regionOptions);
 end
 
 %% Section 5: Validate Result

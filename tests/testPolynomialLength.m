@@ -71,8 +71,8 @@ function testPlannerKeepsItsMotionWhenOnlySamplingChanges(testCase)
     limits = struct('maxVelocity_units_s',[2 3],'maxAcceleration_units_s2',[1 2],'maxJerk_units_s3',[2 4],'xInterval_units',[-20 20],'yInterval_units',[-20 20]);
     obstacle = obstacleAvoidance.obstacles.createObstacle("sampling detour",7,[-.2;.2;.2;-.2],[-.3;-.3;.3;.3],0);
     for mode = ["earliestArrival","fixedArrival"]
-        [coarse, coarseDiagnosis] = obstacleAvoidance.planTrajectory(obstacle,initial,goal,limits,struct('GoalTimeMode',mode,'SampleTime_s',.5));
-        [fine, fineDiagnosis] = obstacleAvoidance.planTrajectory(obstacle,initial,goal,limits,struct('GoalTimeMode',mode,'SampleTime_s',.01));
+        [coarse, coarseDiagnosis] = planner(obstacle,initial,goal,limits,struct('GoalTimeMode',mode,'SampleTime_s',.5));
+        [fine, fineDiagnosis] = planner(obstacle,initial,goal,limits,struct('GoalTimeMode',mode,'SampleTime_s',.01));
         verifyTrue(testCase,coarse.Success,coarse.Message);
         verifyTrue(testCase,fine.Success,fine.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(coarse).Passed);

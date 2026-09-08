@@ -59,7 +59,7 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 % The planner must return a failure result. It must not stop the example with an
 % error for this expected planning outcome.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

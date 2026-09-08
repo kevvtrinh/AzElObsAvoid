@@ -26,7 +26,7 @@ function testExactSavedCircleAvoidsLateOvershoot(testCase)
     loaded = load(fullfile(testCase.TestData.RepositoryRoot, 'Rogue Examples', 'inefficientroutecircle.mat'));
     bundle = loaded.diagnosisBundle;
     inputs = bundle.PlannerInputs;
-    result = obstacleAvoidance.planTrajectory(inputs.obstacles, inputs.initialState, inputs.goalState, inputs.limits, bundle.PlannerOptions);
+    result = planner(inputs.obstacles, inputs.initialState, inputs.goalState, inputs.limits, bundle.PlannerOptions);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -49,7 +49,7 @@ function testEarlyRectangleWithYGoverningClock(testCase)
     vertices = [-12 -13; 10 -13; 10 -4; -12 -4];
     obstacle = obstacleAvoidance.obstacles.createObstacle('early rectangle', [7; 107], vertices(:,1), vertices(:,2), 0.2);
     options  = obstacleAvoidance.input.resolvePlannerOptions(struct('GoalTimeMode', 'earliestArrival'));
-    result   = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);
+    result   = planner(obstacle, initial, goal, limits, options);
     validation = obstacleAvoidance.validateTrajectory(result);
     direct = bmtpEngine.createDirectMotion(initial, goal, limits, options);
     verifyTrue(testCase, result.Success, result.Message);

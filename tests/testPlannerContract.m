@@ -343,7 +343,7 @@ function testDenseMovingBarrierRecoversDeferredTimedSeed(testCase)
     options.MaximumTimeLayerCount = 17;
     options.SampleTime_s          = 0.1;
 
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(barrier, restState(0, [-2 0]), restState(10, [2 0]), limits, options);
+    [result, resultDiagnosis] = planner(barrier, restState(0, [-2 0]), restState(10, [2 0]), limits, options);
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -381,7 +381,7 @@ function testObstacleFreeEarliestMotionPassesPublicValidation(testCase)
     % Require a finite rest-to-rest direct motion inside the supplied horizon.
     initialState = restState(0, [0 0]);
     goalState    = restState(20, [4 2]);
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
+    [result, resultDiagnosis] = planner([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -421,9 +421,9 @@ function testSuccessAndEndpointFailureShareResultShape(testCase)
     goalState    = restState(10, [2 0]);
     limits       = physicalLimits();
     options      = plannerOptions("earliestArrival");
-    success      = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    success      = planner([], initialState, goalState, limits, options);
     blocking     = obstacleAvoidance.obstacles.createObstacle("blocked start", [0; 10], [-3 -1 -1 -3], [-1 -1 1 1], 0);
-    failure      = obstacleAvoidance.planTrajectory(blocking, initialState, goalState, limits, options);
+    failure      = planner(blocking, initialState, goalState, limits, options);
 
     verifyTrue(testCase, success.Success);
     verifyFalse(testCase, failure.Success);
@@ -438,7 +438,7 @@ function testStaticDetourReturnsCertifiedCollisionFreeMotion(testCase)
     obstacle     = obstacleAvoidance.obstacles.createObstacle("center box", [0; 30], [-1 1 1 -1], [-1 -1 1 1], 0.2);
     initialState = restState(0, [-4 0]);
     goalState    = restState(30, [4 0]);
-    result       = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
+    result       = planner(obstacle, initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -464,7 +464,7 @@ function testTightHorizonContinuesBeforeLaterSeedRecovery(testCase)
     twoSeedOptions = struct();
     twoSeedOptions.GoalTimeMode     = "earliestArrival";
     twoSeedOptions.MaximumSeedCount = 2;
-    [twoSeedResult, twoSeedResultDiagnosis] = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, twoSeedOptions);
+    [twoSeedResult, twoSeedResultDiagnosis] = planner(obstacle, initialState, goalState, limits, twoSeedOptions);
     verifyTrue(testCase, twoSeedResult.Success, twoSeedResult.Message);
     twoSeedValidation = obstacleAvoidance.validateTrajectory(twoSeedResult);
     verifyTrue(testCase, twoSeedValidation.Passed, twoSeedValidation.Message);
@@ -476,7 +476,7 @@ function testTightHorizonContinuesBeforeLaterSeedRecovery(testCase)
 
     recoveryOptions = twoSeedOptions;
     recoveryOptions.MaximumSeedCount = 5;
-    [recoveredResult, recoveredResultDiagnosis] = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, recoveryOptions);
+    [recoveredResult, recoveredResultDiagnosis] = planner(obstacle, initialState, goalState, limits, recoveryOptions);
     validation = obstacleAvoidance.validateTrajectory(recoveredResult);
 
     verifyTrue(testCase, recoveredResult.Success, recoveredResult.Message);
@@ -501,7 +501,7 @@ function testDirectWaitDoesNotFreezeHorizonStretchedMotion(testCase)
     % Exercise each horizon s covered by this regression.
     for horizon_s = [12 16 24 32]
         goalState  = restState(horizon_s, [10 0]);
-        result     = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+        result     = planner(obstacles, initialState, goalState, limits, options);
         validation = obstacleAvoidance.validateTrajectory(result);
         verifyTrue(testCase, result.Success, result.Message);
         verifyTrue(testCase, validation.Passed, validation.Message);
@@ -524,7 +524,7 @@ function testDirectWaitRetimingHandlesTranslationAndOffsetClock(testCase)
     limits.maxJerk_units_s3         = [2 1];
     limits.xInterval_units    = [-6 6];
     limits.yInterval_units  = [-0.5 2.5];
-    result     = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, struct("GoalTimeMode", "earliestArrival"));
+    result     = planner(obstacles, initialState, goalState, limits, struct("GoalTimeMode", "earliestArrival"));
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -558,7 +558,7 @@ function testEarliestArrivalRefinesObjectiveRelevantDirectWait(testCase)
     options.MaximumSeedCount = 5;
     options.SampleTime_s     = 0.05;
 
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options);
+    [result, resultDiagnosis] = planner(obstacle, initialState, goalState, limits, options);
     directWaitIndex = find(string({resultDiagnosis.Routes.Source}) == "directWait", 1);
     verifyTrue(testCase, result.Success, result.Message);
     verifyNotEmpty(testCase, directWaitIndex);
@@ -616,7 +616,7 @@ function testReflectedProgressAxisKeepsShortExactClockDetour(testCase)
     limits         = physicalLimits();
     limits.xInterval_units   = [-12 12];
     limits.yInterval_units = [-4 4];
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, plannerOptions("earliestArrival"));
+    [result, resultDiagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -639,7 +639,7 @@ function testNearStartBarrierKeepsShortOneSidedExactClockDetour(testCase)
     limits       = physicalLimits();
     limits.xInterval_units   = [-20 20];
     limits.yInterval_units = [-10 10];
-    result = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, plannerOptions("earliestArrival"));
+    result = planner(obstacle, initialState, goalState, limits, plannerOptions("earliestArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -656,7 +656,7 @@ function testEarliestDefaultReportsUtilization(testCase)
     % Report measured envelope use on success.
     initialState = restState(0, [0 0]);
     goalState    = restState(20, [4 2]);
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits());
+    [result, resultDiagnosis] = planner([], initialState, goalState, physicalLimits());
 
     verifyTrue(testCase, result.Success, result.Message);
     summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
@@ -688,7 +688,7 @@ function testFixedArrivalBelowPhysicalMinimumReturnsFailure(testCase)
     initialState = restState(0, [0 0]);
     goalState    = restState(0.25, [1 0]);
     limits       = physicalLimits();
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, plannerOptions("fixedArrival"));
+    [result, resultDiagnosis] = planner([], initialState, goalState, limits, plannerOptions("fixedArrival"));
 
     verifyFalse(testCase, result.Success);
     verifyNotEmpty(testCase, result.Message);
@@ -702,7 +702,7 @@ function testNonRestEndpointUsesStateToStateSolver(testCase)
     initialState                = restState(0, [0 0]);
     initialState.velocity_units_s = [0.1 0];
     goalState                   = restState(10, [2 0]);
-    result                      = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
+    result                      = planner([], initialState, goalState, physicalLimits(), plannerOptions("earliestArrival"));
     validation                  = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -717,7 +717,7 @@ function testNoPathReturnsRecognizedDiagnostics(testCase)
     limits.yInterval_units = [-10 10];
     options = plannerOptions("earliestArrival");
     options.MaximumSeedCount = 3;
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(wall, initialState, goalState, limits, options);
+    [result, resultDiagnosis] = planner(wall, initialState, goalState, limits, options);
 
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "noValidatedSeed");
@@ -731,8 +731,8 @@ function testRepeatedDirectRequestIsDeterministic(testCase)
     initialState = restState(0, [-1 0.5]);
     goalState    = restState(12, [3 -1]);
     options      = plannerOptions("earliestArrival");
-    first        = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), options);
-    second       = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), options);
+    first        = planner([], initialState, goalState, physicalLimits(), options);
+    second       = planner([], initialState, goalState, physicalLimits(), options);
 
     verifyEqual(testCase, second.TerminationReason, first.TerminationReason);
     verifyEqual(testCase, second.time_s, first.time_s);
@@ -747,7 +747,7 @@ function testInterceptValidatesInitialStateBeforeFieldAccess(testCase)
     targetMotion = struct();
     targetMotion.time_s       = [0; 1];
     targetMotion.position_units = [0 0; 1 0];
-    verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(struct(), targetMotion, physicalLimits(), struct()), "planTrajectory:InvalidState");
+    verifyError(testCase, @() planner([], struct(), struct("time_s", 1, "targetMotion", targetMotion), physicalLimits()), "planner:InvalidState");
 end
 
 function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
@@ -755,10 +755,8 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
     targetMotion = struct();
     targetMotion.time_s       = [0; 5];
     targetMotion.position_units = [0 0; 4 0];
-    interceptOptions = struct("InterceptMode", "specifiedTime", ...
-        "SpecifiedInterceptTime_s", 5, ...
-        "PlannerOptions", plannerOptions("earliestArrival"));
-    [result, resultDiagnosis] = obstacleAvoidance.planMovingTargetIntercept(restState(0, [0 0]), targetMotion, physicalLimits(), interceptOptions);
+    goal = struct("time_s", 5, "targetMotion", targetMotion);
+    [result, resultDiagnosis] = planner([], restState(0, [0 0]), goal, physicalLimits(), plannerOptions("fixedArrival"));
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyEqual(testCase, result.Options.GoalTimeMode, "fixedArrival");
@@ -769,34 +767,25 @@ function testInterceptEchoesTheFixedArrivalModeItUses(testCase)
     movingTarget       = struct("time_s", (0:0.5:12).', ...
         "position_units", repmat([6 1], 25, 1), ...
         "InterpolationMethod", "pchip");
-    asapOptions = struct();
-    asapOptions.InterceptMode           = "earliest";
-    asapOptions.MaximumSearchDuration_s = 12;
-    asapOptions.PlannerOptions          = struct();
-    [asapResult, asapResultDiagnosis] = obstacleAvoidance.planMovingTargetIntercept(movingInitialState, movingTarget, physicalLimits(), asapOptions);
+    goal = struct("time_s", 12, "targetMotion", movingTarget);
+    [asapResult, asapResultDiagnosis] = planner([], movingInitialState, goal, physicalLimits());
     verifyTrue(testCase, asapResult.Success, asapResult.Message);
     verifyTrue(testCase, asapResult.Validation.Passed, asapResult.Validation.Message);
     verifyEqual(testCase, asapResult.Intercept.Mode, "earliest");
     verifyEqual(testCase, testSupport.diagnosisValue(asapResultDiagnosis.InterceptSearch, "OptimalityStatus"), "resolutionBounded");
     verifyEqual(testCase, testSupport.diagnosisValue(asapResultDiagnosis.InterceptSearch, "MaximumCoarseStep_s"), 0.5, "AbsTol", 1e-12);
 
-    atTimeOptions = asapOptions;
-    atTimeOptions.InterceptMode            = "specifiedTime";
-    atTimeOptions.SpecifiedInterceptTime_s = 10;
-    atTimeResult = obstacleAvoidance.planMovingTargetIntercept(movingInitialState, movingTarget, physicalLimits(), atTimeOptions);
+    goal.time_s = 10;
+    atTimeResult = planner([], movingInitialState, goal, physicalLimits(), struct("GoalTimeMode", "fixedArrival"));
     verifyTrue(testCase, atTimeResult.Success, atTimeResult.Message);
     verifyTrue(testCase, atTimeResult.Validation.Passed, atTimeResult.Validation.Message);
     verifyEqual(testCase, atTimeResult.Intercept.Mode, "specifiedTime");
     verifyEqual(testCase, atTimeResult.Intercept.Time_s, 10, "AbsTol", 1e-12);
     verifyLessThan(testCase, asapResult.Intercept.Time_s, atTimeResult.Intercept.Time_s);
 
-    certifiedOptions = struct();
-    certifiedOptions.InterceptMode           = "earliest";
-    certifiedOptions.MaximumSearchDuration_s = 12;
-    certifiedOptions.PlannerOptions          = struct();
     certifiedTarget = movingTarget;
     certifiedTarget.InterpolationMethod = "linear";
-    [certifiedResult, certifiedResultDiagnosis] = obstacleAvoidance.planMovingTargetIntercept(restState(0, [0 0]), certifiedTarget, physicalLimits(), certifiedOptions);
+    [certifiedResult, certifiedResultDiagnosis] = planner([], restState(0, [0 0]), struct("time_s", 12, "targetMotion", certifiedTarget), physicalLimits());
     verifyTrue(testCase, certifiedResult.Success, certifiedResult.Message);
     verifyEqual(testCase, testSupport.diagnosisValue(certifiedResultDiagnosis.InterceptSearch, "OptimalityStatus"), "certifiedEarliest");
 end
@@ -812,12 +801,10 @@ function testSpecifiedInterceptMatchesTargetDerivatives(testCase)
     policies = ["zero", "target"];
     % Exercise each case covered by this regression.
     for caseIndex = 1:size(cases, 1)
-        interceptOptions = struct("InterceptMode", "specifiedTime", ...
-            "SpecifiedInterceptTime_s", 10, ...
+        goal = struct("time_s", 10, "targetMotion", targetMotion, ...
             "MatchTargetVelocity", cases(caseIndex, 1), ...
-            "MatchTargetAcceleration", cases(caseIndex, 2), ...
-            "PlannerOptions", struct("MaximumSeedCount", 1));
-        result = obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, physicalLimits(), interceptOptions);
+            "MatchTargetAcceleration", cases(caseIndex, 2));
+        result = planner([], initialState, goal, physicalLimits(), struct("GoalTimeMode", "fixedArrival", "MaximumSeedCount", 1));
         verifyTrue(testCase, result.Success, result.Message);
         verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
         verifyEqual(testCase, result.Intercept.TerminalVelocityPolicy, policies(cases(caseIndex, 1) + 1));
@@ -832,7 +819,7 @@ function testFixedArrivalSupportsNonRestTerminalState(testCase)
         "velocity_units_s", [0.2 -0.1], "acceleration_units_s2", [0.05 0]);
     options                  = plannerOptions("fixedArrival");
     options.MaximumSeedCount = 1;
-    result                   = obstacleAvoidance.planTrajectory([], initialState, goalState, physicalLimits(), options);
+    result                   = planner([], initialState, goalState, physicalLimits(), options);
     validation               = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -861,4 +848,20 @@ function options = plannerOptions(goalTimeMode)
     % Resolve only behavior-level public choices for deterministic tests.
     options = struct("GoalTimeMode", goalTimeMode, ...
         "SampleTime_s", 0.05);
+end
+
+function testTargetGoalPreservesExplicitTerminalDerivatives(testCase)
+    initial = restState(0,[0 0]);
+    target = struct('time_s',[0;10],'position_units',[2 0;4 1]);
+    goal = struct('time_s',8,'targetMotion',target,'velocity_units_s',[0.1 0], ...
+        'acceleration_units_s2',[0 0.01]);
+    result = planner([],initial,goal,physicalLimits(),struct('GoalTimeMode',"fixedArrival"));
+    verifyTrue(testCase,result.Success,result.Message);
+    verifyEqual(testCase,result.Inputs.goalState.velocity_units_s,goal.velocity_units_s);
+    verifyEqual(testCase,result.Inputs.goalState.acceleration_units_s2,goal.acceleration_units_s2);
+    verifyEqual(testCase,result.Intercept.TerminalVelocityPolicy,"specified");
+    verifyEqual(testCase,result.Intercept.TerminalAccelerationPolicy,"specified");
+    check = obstacleAvoidance.validateTrajectory(result);
+    verifyTrue(testCase,check.Passed,check.Message);
+    verifyError(testCase,@()planner([],initial,goal,physicalLimits()),"planner:UnsupportedMovingDerivative");
 end

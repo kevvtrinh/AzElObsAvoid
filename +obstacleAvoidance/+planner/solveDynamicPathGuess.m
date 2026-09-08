@@ -141,7 +141,6 @@ end
 % eligibility failure. Preserve all attempted-method diagnostics separately.
 if ~candidate.Success && ~isempty(rejectedCandidates)
     summaries = repmat(context.SummaryTemplate, numel(rejectedCandidates), 1);
-    % Process each item needed to find dynamic path guess.
     for index = 1:numel(rejectedCandidates)
         summaries(index) = obstacleAvoidance.planner.createCandidateSummary(rejectedCandidates{index}, rejectedChecks{index}, struct(), 0, context.SummaryTemplate, limits);
     end
@@ -169,7 +168,6 @@ function diagnostics = combineFallbackDiagnostics(timedDiagnostics, fallbackDiag
     end
     diagnostics.FallbackOutcome     = string(fallbackDiagnostics.EngineTerminationReason);
     diagnostics.FallbackDiagnostics = fallbackDiagnostics;
-    % Apply the required validation or transfer to each field name.
     for fieldName = ["InteriorWaypointTime_s", ...
             "InteriorWaypointPosition_units", ...
             "InteriorWaypointVelocity_units_s", ...

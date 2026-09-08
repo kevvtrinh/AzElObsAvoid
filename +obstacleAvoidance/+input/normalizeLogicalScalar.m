@@ -3,12 +3,10 @@ function value = normalizeLogicalScalar(value, fieldName, errorIdentifier)
 % SYNTAX
 %   value = obstacleAvoidance.input.normalizeLogicalScalar( ...
 %       value, fieldName, errorIdentifier)
-%
 % PURPOSE
 %   - Normalize the repository-wide logical-or-binary-numeric input rule.
 %   - Keep the owning public function's error identifier and field name in
 %     the resulting diagnostic.
-%
 % INPUTS
 %   - value (logical scalar or numeric 0/1 scalar)
 %       Candidate control value.
@@ -16,14 +14,11 @@ function value = normalizeLogicalScalar(value, fieldName, errorIdentifier)
 %       User-facing option name included in an invalid-value message.
 %   - errorIdentifier (scalar text)
 %       Owning function's identified-error name.
-%
 % OUTPUTS
 %   - value (logical scalar)
 %       Normalized control value.
-%
 % UNITS
 %   - Logical controls are dimensionless.
-%
 
 %% Section 1: Accept Only Unambiguous Scalar Logical Values
 

@@ -4,11 +4,9 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialSta
 %   [interceptTime_s, diagnostics] = ...
 %       obstacleAvoidance.planner.findEarliestLinearIntercept( ...
 %       initialState, targetTime_s, targetPosition_units, limits, horizonTime_s)
-%
 % PURPOSE
 %   - Find the globally earliest obstacle-free position-only interception
 %     of a piecewise-linear target by a rest-to-rest triple integrator.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Requires scalar time_s and one-by-D position_units. Velocity and
@@ -22,17 +20,14 @@ function [interceptTime_s, diagnostics] = findEarliestLinearIntercept(initialSta
 %       maxJerk_units_s3 limits.
 %   - horizonTime_s (finite scalar)
 %       Latest allowed absolute intercept time.
-%
 % OUTPUTS
 %   - interceptTime_s (scalar)
 %       Earliest complete polynomial-inequality solution, or NaN.
 %   - diagnostics (scalar struct)
 %       Search coverage, algebraic residuals, and termination reason.
-%
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
 %     and units/s^3. Histories are N-by-D.
-%
 
 %% Section 1: Normalize The Algebraic Request
 
@@ -74,7 +69,6 @@ maximumRootResidual_units = 0;
 selectedSlack_units       = NaN(1, dimensionCount);
 selectedSegmentIndex    = 0;
 selectedElapsedTime_s   = NaN;
-% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:numel(targetTime_s) - 1
     segmentStart_s = max(initialTime_s, targetTime_s(segmentIndex));
     segmentEnd_s   = min(horizonTime_s, targetTime_s(segmentIndex + 1));
@@ -93,7 +87,6 @@ for segmentIndex = 1:numel(targetTime_s) - 1
     eventTime_s      = unique(eventTime_s(eventTime_s >= elapsedStart_s & eventTime_s <= elapsedEnd_s));
     transitionTime_s = eventTime_s;
 
-    % Process each slab in temporal order and accumulate its result.
     for slabIndex = 1:numel(eventTime_s) - 1
         slabStart_s    = eventTime_s(slabIndex);
         slabEnd_s      = eventTime_s(slabIndex + 1);

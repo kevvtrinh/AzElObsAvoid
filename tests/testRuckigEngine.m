@@ -28,7 +28,7 @@ end
 function testExactMotionMatchesIndependentMinimum(testCase)
     % Verify exact switching remains independently callable and certified.
     [initialState, terminalState, limits] = restToRestFixture();
-    result           = planTrajRuckig(initialState, terminalState, limits, struct("SampleTime", 0.01));
+    result           = ruckigEngine.solve(initialState, terminalState, limits, struct("SampleTime", 0.01));
     expectedDuration = 4 * nthroot(1 / 2, 3);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -193,8 +193,8 @@ end
 
 function testWrapperRejectsUnsupportedArities(testCase)
     % Return the public InvalidCall error before referencing missing arguments.
-    verifyError(testCase, @() planTrajRuckig(struct()), "planTrajRuckig:InvalidCall");
-    verifyError(testCase, @() planTrajRuckig(struct(), struct()), "planTrajRuckig:InvalidCall");
+    verifyError(testCase, @() ruckigEngine.solve(struct()), "ruckigEngine:InvalidCall");
+    verifyError(testCase, @() ruckigEngine.solve(struct(), struct()), "ruckigEngine:InvalidCall");
 end
 
 function testColumnStatesAndScalarLimitsNormalizeIdentically(testCase)

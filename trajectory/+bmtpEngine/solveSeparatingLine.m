@@ -3,11 +3,9 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 % SYNTAX
 %   [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine( ...
 %       controlPoint_units, vertices_units, target_units, reserve_units, options)
-%
 % PURPOSE
 %   - Solve and directly verify one degree-one maximum-margin separating line
 %     between a Bezier control hull and a convex region.
-%
 % INPUTS
 %   - controlPoint_units (N-by-2 numeric array)
 %       One Bezier span's control points.
@@ -17,7 +15,6 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 %       Obstacle-side target and trajectory-side numerical reserve.
 %   - options (coneprog options)
 %       Numerical solver controls.
-%
 % OUTPUTS
 %   - plane (scalar struct)
 %       Line normals, offsets, verified gap, and active state.
@@ -25,10 +22,8 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 %       Original coneprog exit flag.
 %   - output (scalar struct, optional output)
 %       Original coneprog diagnostics and measured solver time.
-%
 % UNITS
 %   - Positions, offsets, targets, reserves, and gaps are coordinate units.
-%
 
 %% Section 1: Solve The Maximum-Margin Line
 
@@ -40,7 +35,6 @@ f = zeros(variableCount, 1);
 f(marginIndex) = 1;
 emptyCone = secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), -1);
 cones     = repmat(emptyCone, 2, 1);
-% Process each plane needed to find separating line.
 for planeIndex = 0:1
     coneA = zeros(2, variableCount);
     coneA(:, planeIndex * 2 + (1:2)) = eye(2);
@@ -69,7 +63,6 @@ function [A, b] = maximumMarginRows(controlPoint_units, vertices_units, target_u
     A             = zeros(2 * size(vertices_units, 1) + degree + 2, variableCount);
     b             = zeros(size(A, 1), 1);
     rowIndex      = 0;
-    % Process each plane needed to complete maximum margin rows.
     for planeIndex = 0:1
         targets = rowIndex + (1:size(vertices_units, 1));
         normal  = planeIndex * 2 + (1:2);

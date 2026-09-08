@@ -26,7 +26,7 @@ function setupOnce(testCase)
     repositoryRoot = fileparts(fileparts(mfilename("fullpath")));
     addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
     [obstacles, initialState, goalState, limits, options] = createScenario();
-    [result, resultDiagnosis]                             = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+    [result, resultDiagnosis]                             = planner(obstacles, initialState, goalState, limits, options);
     testCase.TestData.Result          = result;
     testCase.TestData.ResultDiagnosis = resultDiagnosis;
     testCase.TestData.Validation      = obstacleAvoidance.validateTrajectory(result);

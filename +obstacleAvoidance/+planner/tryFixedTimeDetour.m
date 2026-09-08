@@ -7,13 +7,11 @@ function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacle
 %       obstacleAvoidance.planner.tryFixedTimeDetour( ...
 %       directCandidate, obstacles, initialState, goalState, limits, options, ...
 %       directValidation)
-%
 % PURPOSE
 %   - Try detours around obstacles while keeping the
 %     direct move's minimum travel time and starting and ending at rest.
 %   - Return the shortest detour among those tried that passes all safety
 %     and motion checks.
-%
 % INPUTS
 %   - directCandidate (scalar planner candidate struct)
 %       A successful exact direct motion whose duration equals its reported
@@ -29,7 +27,6 @@ function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacle
 %   - directValidation (scalar validation record)
 %       The caller's authoritative validation of directCandidate avoids
 %       repeating the identical full-trajectory validation.
-%
 % OUTPUTS
 %   - candidate (scalar planner candidate struct)
 %       An independently validated fixed-clock motion, or the unchanged
@@ -37,11 +34,9 @@ function [candidate, diagnostics] = tryFixedTimeDetour(directCandidate, obstacle
 %   - diagnostics (scalar struct)
 %       Stable clock, enumeration, feasible-side boundary, validation, and
 %       explicit unsupported-or-failure evidence.
-%
 % UNITS
 %   - Position and path length are coordinate units. Time is seconds. Derivatives use
 %     coordinate units per second and its second and third powers.
-%
 
 %% Section 1: Check That The Direct Move Uses The Minimum Travel Time
 
@@ -125,7 +120,6 @@ for axisIndex = 1:dimensionCount
     axisGovernsClock = axisMinimum_s >= duration_s - clockTolerance_s;
     % Repeat the direction alternatives needed to refine the current solution.
     for direction = [-1, 1]
-        % Process each peak needed to find fixed time detour.
         for peakChoiceIndex = 1:2 * numel(peakTime_s)
             % Preserve through-point proposals and also try an actual axis turn.
             % A through-point spline may continue rising well past this time.
@@ -315,7 +309,6 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
         step_units = initialStep_units / 2^level;
         % Repeat the sweep alternatives needed to refine the current solution.
         for sweep = 1:2
-            % Process each knot needed to find offset travel.
             for knotIndex = 2:numel(knotTime_s)-1
                 % Repeat the direction alternatives needed to refine the current solution.
                 for direction = [-1 1]
@@ -416,7 +409,6 @@ function peakTime_s = createPeakTimeCandidates(directCandidate, obstacles, optio
     peakTime_s              = peakTime_s(peakTime_s > startTime_s + endpointReserve_s &  peakTime_s < endTime_s - endpointReserve_s);
     minimumPeakSeparation_s = max(endpointReserve_s, 0.5 * options.SampleTime_s);
     retainedPeak            = false(size(peakTime_s));
-    % Process each peak needed to build peak time candidates.
     for peakIndex = 1:numel(peakTime_s)
         retainedPeak(peakIndex) = ~any(abs(peakTime_s(1:peakIndex - 1) -  peakTime_s(peakIndex)) < minimumPeakSeparation_s &  retainedPeak(1:peakIndex - 1));
     end

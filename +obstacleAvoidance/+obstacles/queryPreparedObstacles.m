@@ -50,7 +50,6 @@ for obstacleIndex = 1:numel(obstacles)
         obstacleQueryTime_s = obstacleTime_s(1);
         activeQuery         = finiteQuery & (isscalar(obstacleTime_s) | (queryTime_s >= obstacleTime_s(1) & queryTime_s <= obstacleTime_s(end)));
     end
-    % Process each time in temporal order and accumulate its result.
     for timeIndex = 1:numel(obstacleQueryTime_s)
         queryIndices = find(activeQuery & (obstacleIsTimeInvariant | queryTime_s == obstacleQueryTime_s(timeIndex)));
         candidate    = queryIndices;
@@ -112,7 +111,6 @@ function [x_units, y_units, time_s, outputSize] = broadcastQueries(x_units, y_un
         error("queryObstacleOccupancyAtTime:SizeMismatch", "Non-scalar x, y, and time must have equal counts.");
     end
     outputSize = size(values{find(counts == queryCount, 1)});
-    % Process each value needed to complete broadcast queries.
     for valueIndex = 1:3
         if counts(valueIndex) == 1
             values{valueIndex} = repmat(values{valueIndex}, queryCount, 1);

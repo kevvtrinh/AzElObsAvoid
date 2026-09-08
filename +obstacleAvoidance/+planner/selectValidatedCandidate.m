@@ -3,25 +3,20 @@ function selection = selectValidatedCandidate(summaries, options)
 % SYNTAX
 %   selection = obstacleAvoidance.planner.selectValidatedCandidate( ...
 %       summaries, options)
-%
 % PURPOSE
 %   - Restrict selection to motions that passed the full trajectory check.
 %   - Return either the declared best passing index or useful failure evidence.
-%
 % INPUTS
 %   - summaries (candidate-summary struct array)
 %       Stable solve and authoritative-check evidence for attempted seeds.
 %   - options (resolved scalar struct)
 %       Goal-time mode and declared candidate-ranking policy.
-%
 % OUTPUTS
 %   - selection (scalar struct)
 %       Passing indices, ranking, selected index, best partial index, status,
 %       message, and termination reason.
-%
 % UNITS
 %   - Units are carried by the candidate ranking and summary fields.
-%
 
 %% Section 1: Identify Fully Checked Candidates
 

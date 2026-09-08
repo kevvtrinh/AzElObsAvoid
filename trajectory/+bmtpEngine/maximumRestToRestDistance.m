@@ -4,10 +4,8 @@ function distance_units = maximumRestToRestDistance(duration_s, velocityLimit_un
 %   distance_units = bmtpEngine.maximumRestToRestDistance( ...
 %       duration_s, velocityLimit_units_s, ...
 %       accelerationLimit_units_s2, jerkLimit_units_s3)
-%
 % PURPOSE
 %   - Return the exact maximum rest-to-rest scalar displacement in one clock.
-%
 % INPUTS
 %   - duration_s (nonnegative finite scalar)
 %       Available motion duration.
@@ -17,15 +15,12 @@ function distance_units = maximumRestToRestDistance(duration_s, velocityLimit_un
 %       Symmetric acceleration magnitude limit.
 %   - jerkLimit_units_s3 (positive finite scalar)
 %       Symmetric jerk magnitude limit.
-%
 % OUTPUTS
 %   - distance_units (nonnegative scalar)
 %       Maximum displacement attained by the exact symmetric switching law.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivative limits use units/s,
 %     units/s^2, and units/s^3.
-%
 
 %% Section 1: Validate The Scalar Limits
 

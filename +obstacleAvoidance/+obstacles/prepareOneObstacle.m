@@ -3,11 +3,9 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 % SYNTAX
 %   obstacle = obstacleAvoidance.obstacles.prepareOneObstacle( ...
 %       obstacle, preparationVersion, sourceSnapshot)
-%
 % PURPOSE
 %   - Prepare one complete obstacle history for repeated geometry queries.
 %   - Retain the interval method, bounds, edges, motion, and static status.
-%
 % INPUTS
 %   - obstacle (scalar canonical obstacle struct)
 %       Protected and original source histories remain unchanged.
@@ -15,14 +13,11 @@ function obstacle = prepareOneObstacle(obstacle, preparationVersion, sourceSnaps
 %       Version written into the internal preparation record.
 %   - sourceSnapshot (scalar struct)
 %       Source fields assembled by prepareObstacles for cache validation.
-%
 % OUTPUTS
 %   - obstacle (scalar canonical obstacle struct)
 %       InternalPreparation contains reusable source-derived geometry data.
-%
 % UNITS
 %   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
-%
 
 %% Section 1: Prepare Sample Geometry
 
@@ -47,7 +42,6 @@ intervalBounds_units             = NaN(intervalCount, 4);
 intervalUnionEdgeStart_units     = cell(intervalCount, 1);
 intervalUnionEdgeEnd_units       = cell(intervalCount, 1);
 intervalUnionBoundaryRunBounds = cell(intervalCount, 1);
-% Process each sample in temporal order and accumulate its result.
 for sampleIndex = 1:sampleCount
     x_units   = double(obstacle.x_units{sampleIndex}(:));
     y_units = double(obstacle.y_units{sampleIndex}(:));
@@ -69,7 +63,6 @@ end
 % Otherwise use geometry that conservatively covers the interval.
 
 intervalDuration_s = diff(double(obstacle.time_s(:)));
-% Process each interval while assembling the complete motion or interval result.
 for intervalIndex = 1:intervalCount
     lowerX_units   = double(obstacle.x_units{intervalIndex}(:));
     lowerY_units = double(obstacle.y_units{intervalIndex}(:));
@@ -114,7 +107,6 @@ end
 % Cache sample speeds and whether the whole history is static.
 
 sampleSpeed_units_s = zeros(sampleCount, 1);
-% Process each interval while assembling the complete motion or interval result.
 for intervalIndex = 1:intervalCount
     sampleSpeed_units_s(intervalIndex) = max(sampleSpeed_units_s(intervalIndex), intervalSpeed_units_s(intervalIndex));
     sampleSpeed_units_s(intervalIndex + 1) = max(sampleSpeed_units_s(intervalIndex + 1), intervalSpeed_units_s(intervalIndex));
@@ -187,7 +179,6 @@ function [bounds_units, edgeStart_units, edgeEnd_units, runBounds_units] = creat
     runStart      = find(finiteRow & [true; ~finiteRow(1:end - 1)]);
     runEnd        = find(finiteRow & [~finiteRow(2:end); true]);
     runBounds_units = NaN(numel(runStart), 4);
-    % Process each run needed to build shape cache.
     for runIndex = 1:numel(runStart)
         runBounds_units(runIndex, :) = finiteBounds(boundary_units(runStart(runIndex):runEnd(runIndex), :));
     end
@@ -216,7 +207,6 @@ function [verified, alignedUpper_units] = alignVerifiedSingleRing(lowerX_units, 
     end
     vertexCount   = size(lower_units, 1);
     bestCost_units2 = Inf;
-    % Process each orientation needed to complete align verified single ring.
     for orientationIndex = 1:2
         orientedUpper_units = upper_units;
         if orientationIndex == 2
@@ -261,7 +251,6 @@ function verified = remainsStrictlyConvex(lower_units, upper_units, coordinateSc
     linear_units2       = cross2d(edgeDelta_units, nextLowerEdge_units) + cross2d(lowerEdge_units, nextEdgeDelta_units);
     quadratic_units2    = cross2d(edgeDelta_units, nextEdgeDelta_units);
     verified          = true;
-    % Process each geometric vertex while constructing or checking the region topology.
     for vertexIndex = 1:size(lower_units, 1)
         candidateTau = [0; 1];
         if quadratic_units2(vertexIndex) ~= 0

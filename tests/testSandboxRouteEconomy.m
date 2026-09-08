@@ -136,7 +136,7 @@ end
 
 function [result, resultDiagnosis] = runAndValidate(testCase, obstacles, request)
     % Require the public planner and independent validator to agree on success.
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(obstacles, request.initialState, request.goalState, request.limits, request.options);
+    [result, resultDiagnosis] = planner(obstacles, request.initialState, request.goalState, request.limits, request.options);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);

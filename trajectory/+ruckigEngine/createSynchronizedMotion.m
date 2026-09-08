@@ -1,28 +1,11 @@
 function attempt = createSynchronizedMotion(initialState, terminalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   attempt = ruckigEngine.createSynchronizedMotion( ...
-%       initialState, terminalState, limits, options)
-%
-% PURPOSE
-%   - Create the exact fastest profile and synchronize every motion axis.
-%   - Retain direct-progress use, profile failure, and solve timing explicitly.
-%
-% INPUTS
-%   - initialState, terminalState, limits (normalized scalar structs)
-%       Dimension-neutral boundary states and derivative limits.
-%   - options (resolved scalar struct)
-%       Fixed or earliest-arrival time policy and tolerances.
-%
-% OUTPUTS
-%   - attempt (scalar struct)
-%       Profile, requested final time, elapsed time, success, message, and
-%       termination reason.
-%
-% UNITS
-%   - Units are caller-defined and consistent across derivatives; time is in
-%     the caller's time unit.
-%
+% SYNTAX: attempt = ruckigEngine.createSynchronizedMotion(initialState, terminalState, limits, options)
+% PURPOSE: Create and synchronize exact fastest profiles across all motion axes.
+% INPUTS: Normalized dimension-neutral states, derivative limits, and resolved
+%   fixed/earliest-arrival options and tolerances.
+% OUTPUTS: Profile, requested final time, timing, status, and termination reason.
+% UNITS: Caller-defined position and time units consistent across derivatives.
 
 %% Section 1: Resolve The Requested Final Time
 

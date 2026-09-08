@@ -4,27 +4,22 @@ function [planningObstacles, projection] = createStationaryObstacleEnclosures(ob
 %   [planningObstacles, projection] = ...
 %       obstacleAvoidance.obstacles.createStationaryObstacleEnclosures( ...
 %       obstacles, startTime_s, endTime_s)
-%
 % PURPOSE
 %   - Create a conservative static planning projection for complete obstacle
 %     histories without changing the authoritative validation geometry.
-%
 % INPUTS
 %   - obstacles (canonical or prepared obstacle struct array)
 %       Protected histories are used exactly once; moving histories are
 %       enclosed by a convex hull of every protected sample vertex.
 %   - startTime_s, endTime_s (finite numeric scalars)
 %       Inclusive request horizon with endTime_s not before startTime_s.
-%
 % OUTPUTS
 %   - planningObstacles (canonical obstacle struct array)
 %       Static exact obstacles and conservative moving-history surrogates.
 %   - projection (scalar struct)
 %       Source mapping, construction method, and planning boundaries.
-%
 % UNITS
 %   - Position and boundary coordinates are coordinate units; time is seconds.
-%
 
 %% Section 1: Validate And Normalize The Projection Request
 
@@ -61,7 +56,6 @@ for obstacleIndex = 1:numel(obstacles)
     end
 
     historyVertices_units = zeros(0, 2);
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacle.time_s)
         vertices_units = [ ...
             obstacle.x_units{sampleIndex}, obstacle.y_units{sampleIndex}];

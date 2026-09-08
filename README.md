@@ -25,9 +25,9 @@ defaults:
 ```matlab
 addpath(repositoryRoot, fullfile(repositoryRoot, "trajectory"));
 
-options = obstacleAvoidance.planTrajectory();
+options = planner();
 
-result = obstacleAvoidance.planTrajectory( ...
+result = planner( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
@@ -128,8 +128,8 @@ limits = struct( ...
     "maxAcceleration_units_s2", [1 1], ...
     "maxJerk_units_s3", [2 2]);
 
-options = obstacleAvoidance.planTrajectory();
-result = obstacleAvoidance.planTrajectory( ...
+options = planner();
+result = planner( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
@@ -138,7 +138,7 @@ result = obstacleAvoidance.planTrajectory( ...
 The public fixed-goal interface is:
 
 ```matlab
-result = obstacleAvoidance.planTrajectory( ...
+result = planner( ...
     obstacles, initialState, goalState, limits, options);
 ```
 
@@ -166,8 +166,9 @@ Each state requires:
 - `position_units`: one-by-two `[x y]` position in coordinate units.
 
 Optional `velocity_units_s` and `acceleration_units_s2` fields default to zero.
-A moving goal additionally supplies increasing `targetTime_s`, matching
-`targetPosition_units`, and its interpolation method.
+For interception, replace goal `position_units` with `targetMotion` as described
+below. Resolved fixed-time trials store `targetTime_s`, `targetPosition_units`,
+and the interpolation method alongside their evaluated endpoint.
 
 ### Limits
 
@@ -180,7 +181,7 @@ The required physical limits are:
 All three must use the same form: positive finite scalars for combined
 magnitudes, or two-element `[x y]` vectors for separate axis
 limits. Mixing scalar and vector derivative limits raises
-`planTrajectory:MixedLimitModes`.
+`planner:MixedLimitModes`.
 
 A combined limit `L` is the hypotenuse and is allocated equally as
 `[L/sqrt(2), L/sqrt(2)]` internally. For example:
@@ -207,7 +208,7 @@ their `MaxJerk_units_s3` override must also be a two-element vector.
 
 ### Options
 
-Call `obstacleAvoidance.planTrajectory()` to inspect the exact planner options.
+Call `planner()` to inspect the exact planner options.
 Partial override structures are accepted, and empty fields retain their
 defaults.
 
@@ -230,7 +231,7 @@ fold enabled axes into their intervals and split lines at either seam; a
 separate continuous view preserves the actual motion. Disabled axes retain
 their workspace bounds. Wrapping currently accepts only obstacle-free,
 fixed-position goals; periodic obstacles and moving goals raise
-`planTrajectory:UnsupportedWrappedGeometry`.
+`planner:UnsupportedWrappedGeometry`.
 
 This API uses `position_units`, `velocity_units_s`, `acceleration_units_s2`,
 and `jerk_units_s3`, with `[x y]` columns throughout. Rotation controls for
@@ -244,27 +245,33 @@ finite search. It is not a proof of global completeness or optimality.
 
 ## Moving-target interception
 
-The public call forms are:
+Use the same planner entry point. The goal carries the target history and the
+fixed arrival or latest search time:
 
 ```matlab
-result = obstacleAvoidance.planMovingTargetIntercept( ...
-    initialState, targetMotion, limits, interceptOptions);
-
-result = obstacleAvoidance.planMovingTargetIntercept( ...
-    obstacles, initialState, targetMotion, limits, interceptOptions);
+goalState = struct("time_s", 20, "targetMotion", targetMotion);
+options = struct("GoalTimeMode", "earliestArrival");
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 ```
 
-Configure obstacle planning inside `PlannerOptions`:
+`targetMotion` requires increasing `time_s` and N-by-2 `position_units`.
+`InterpolationMethod` is `"linear"` (default) or `"pchip"`. An eligible empty-scene
+linear target uses complete algebraic event enumeration. Other earliest requests
+retain the bounded chronological fixed-time search, including later meetings
+after an early one fails. This search does not assume moving-scene feasibility
+is monotone and does not prove global optimality.
 
-```matlab
-interceptOptions = obstacleAvoidance.planMovingTargetIntercept();
-interceptOptions.InterceptMode = "earliest";
-interceptOptions.PlannerOptions = obstacleAvoidance.planTrajectory();
-```
+Set `GoalTimeMode="fixedArrival"` for one trial at `goalState.time_s`.
+Optional goal flags `MatchTargetVelocity` and `MatchTargetAcceleration` match
+target derivatives at that time. Otherwise supplied goal velocity/acceleration
+are respected and omitted derivatives mean zero. Earliest interception supports
+only zero terminal derivatives. Periodic target histories remain unsupported.
 
-Earliest interception performs a bounded chronological sequence of
-fixed-arrival trials and refines the first observed feasible bracket.
-Specified-time interception performs one fixed-arrival trial.
+The returned `Inputs.goalState` and `Options` describe the selected fixed-time
+trial, so the public validator can check it independently. `result.Intercept`
+records the outer search mode and terminal policy; `diagnosis.InterceptSearch`
+and `InterceptOptions` retain its search evidence. There is no separate public
+interception wrapper or nested `PlannerOptions` option.
 
 ## Planning workflow
 
@@ -311,7 +318,7 @@ The first output contains the motion and everything needed to plot and independe
 validate it. Request the second output when investigating a planning run:
 
 ```matlab
-[result, diagnosis] = obstacleAvoidance.planTrajectory( ...
+[result, diagnosis] = planner( ...
     obstacles, initialState, goalState, limits, options);
 obstacleAvoidance.plotting.plotTrajectory(result);
 obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
@@ -331,8 +338,9 @@ obstacleAvoidance.plotting.plotTrajectory(result, plotOptions, diagnosis);
 - `Routes`, `Attempts`, `SelectedAttemptIndex`: tried paths and their outcomes.
 - `Search`, `SearchCoverage`: graph traces, complete counts, search limitations, and separate timed/spatial partial routes.
 - `Timing`: exclusive stage times that add up to total planning time.
-- `SolverDetails`, `VisibilityAttempts`: tables with `Attempt`, `Field`, and `Value` columns, including rejected edges and graph connectivity.
-- `DirectMotion`, `PathRefinement`: field/value tables for the initial motion attempts.
+- `SolverDetails`: a cell per attempt containing the complete solver record.
+- `VisibilityAttempts`: structured records including rejected edges and graph connectivity.
+- `DirectMotion`, `PathRefinement`: complete records for the initial motion attempts.
 - `Selection`: the actual ranking columns, values, and candidate order; jerk remains a hard constraint.
 - Attempt counts and time to the first validated motion.
 
@@ -342,14 +350,9 @@ or normalized time. `Routes.ObstacleEnvelope_units` stores the search obstacle
 outline. `Validation.CertificateRejectionReason` explains a rejected timed
 coverage certificate when validation proceeds to adaptive collision checks.
 
-Detail tables use readable field paths instead of nested structures. For example,
-filter `diagnosis.SolverDetails.Attempt == diagnosis.SelectedAttemptIndex` to inspect
-the chosen attempt. The planner still collects search evidence during planning;
-it assembles the optional detail tables only when the second output is requested.
-
-`planMovingTargetIntercept` supports the same two outputs. Its result adds the
-achieved intercept and terminal policies; its diagnosis adds `InterceptSearch`
-and `InterceptOptions`.
+Inspect `diagnosis.SolverDetails{diagnosis.SelectedAttemptIndex}` for the chosen
+attempt. Numeric arrays, nested certificates, and failure reasons remain intact;
+optional output no longer recursively flattens them into tables.
 
 Expected planning failures return `Success=false` and a reason. If a rejected
 motion was constructed, its samples, polynomial, attempted arrival, and failed
@@ -385,9 +388,8 @@ motion independently, including between-sample collisions.
 ## Repository layout
 
 ```text
+planner.m                          single public planner entry point
 +obstacleAvoidance/                 obstacle-avoidance product namespace
-|-- planTrajectory.m                public obstacle-planning entry point
-|-- planMovingTargetIntercept.m     chronological intercept adapter
 |-- validateTrajectory.m            public independent validation
 |-- +input/                         request, endpoint, and option requirements
 |-- +obstacles/                     construction, queries, and history
@@ -438,8 +440,8 @@ map as follows; removed engine implementations have no forwarding shims:
 
 | Previous call | Current call |
 | --- | --- |
-| `planXYMotion(...)` | `obstacleAvoidance.planTrajectory(...)` |
-| `planXYMovingTargetIntercept(...)` | `obstacleAvoidance.planMovingTargetIntercept(...)` |
+| `planXYMotion(...)` | `planner(...)` |
+| `planXYMovingTargetIntercept(...)` | `planner(...)` with `goalState.targetMotion` |
 | `validateXYTrajectory(...)` | `obstacleAvoidance.validateTrajectory(...)` |
 | `xyObstacles.makeXYObstacleData(...)` | `obstacleAvoidance.obstacles.createObstacle(...)` |
 | `xyObstacles.makeMovingXYObstacleData(...)` | `obstacleAvoidance.obstacles.createMovingObstacle(...)` |

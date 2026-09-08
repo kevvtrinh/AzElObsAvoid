@@ -24,7 +24,7 @@ function verifySharedPlannerRequirement(testCase, requirementName)
 % The adapter gives each shared check one way to call the maintained planner.
 % This separates tested behavior from package names and entry-point code.
 
-adapter = struct("FixedOptions", @() obstacleAvoidance.planTrajectory());
+adapter = struct("FixedOptions", @() planner());
 
 %% Section 2: Run Named Behavior Check
 
@@ -87,9 +87,9 @@ function testXWrappingChangesThePhysicalRequest(testCase, adapter)
     limits       = testCase.TestData.Fixtures.PhysicalLimits([1 1], [1 1], [2 2]);
     options      = adapter.FixedOptions();
     options.WrapX = false;
-    longResult = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    longResult = planner([], initialState, goalState, limits, options);
     options.WrapX = true;
-    shortResult = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    shortResult = planner([], initialState, goalState, limits, options);
     verifyFalse(testCase, longResult.Success);
     verifyTrue(testCase, shortResult.Success, shortResult.Message);
     verifyEqual(testCase, shortResult.position_units(end, 1), 181, "AbsTol", 1e-6);
@@ -104,7 +104,7 @@ function testXWrappingRejectsUnmodeledPeriodicGeometry(testCase, adapter)
     options      = adapter.FixedOptions();
     options.WrapX = true;
     obstacle = testCase.TestData.Fixtures.RectangleObstacle([0 8], [-180.5 -179.5 -1 1], 0);
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options), "planTrajectory:UnsupportedWrappedGeometry");
+    verifyError(testCase, @() planner(obstacle, initialState, goalState, limits, options), "planner:UnsupportedWrappedGeometry");
 end
 
 function testBetweenNodeCollisionFailsValidation(testCase, adapter)
@@ -154,7 +154,7 @@ function testDeformingObstacleUsesThePlannerPath(testCase, adapter)
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    result       = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, adapter.FixedOptions());
+    result       = planner(obstacle, initialState, goalState, limits, adapter.FixedOptions());
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
     verifyTrue(testCase, result.Validation.CollisionFree);
@@ -191,8 +191,8 @@ function testDeterministicRepeatedRun(testCase, adapter)
     goalState    = testCase.TestData.Fixtures.State(6, [3 1], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options      = adapter.FixedOptions();
-    [first, firstDiagnosis]   = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
-    [second, secondDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    [first, firstDiagnosis]   = planner([], initialState, goalState, limits, options);
+    [second, secondDiagnosis] = planner([], initialState, goalState, limits, options);
     verifyEqual(testCase, first.Success, second.Success);
     verifyEqual(testCase, [firstDiagnosis.Routes.Source], [secondDiagnosis.Routes.Source]);
     verifyEqual(testCase, first.time_s, second.time_s, "AbsTol", 1e-12);
@@ -210,7 +210,7 @@ function testEarliestGoalIsNotRejectedByHorizonOccupancy(testCase, adapter)
     limits              = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options             = adapter.FixedOptions();
     options.GoalTimeMode = "earliestArrival";
-    result = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options);
+    result = planner(obstacle, initialState, goalState, limits, options);
     verifyTrue(testCase, result.Success, result.Message);
     verifyLessThan(testCase, result.ArrivalTime_s, goalState.time_s);
     verifyTrue(testCase, result.Validation.CollisionFree);
@@ -221,9 +221,9 @@ function testEarlyPlannerFailureKeepsValidationFieldOrder(testCase, adapter)
     initialState     = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState        = testCase.TestData.Fixtures.State(8, [4 0], [0 0], [0 0]);
     limits           = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    success          = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
+    success          = planner([], initialState, goalState, limits, adapter.FixedOptions());
     blockingObstacle = testCase.TestData.Fixtures.RectangleObstacle([0 8], [-1 1 -1 1], 0);
-    failure          = obstacleAvoidance.planTrajectory(blockingObstacle, initialState, goalState, limits, adapter.FixedOptions());
+    failure          = planner(blockingObstacle, initialState, goalState, limits, adapter.FixedOptions());
     verifyTrue(testCase, success.Validation.Passed);
     verifyFalse(testCase, failure.Success);
     verifyEqual(testCase, failure.TerminationReason, "endpointBlocked");
@@ -237,7 +237,7 @@ function testInterceptWrapperRequiresTwoTargetSamples(testCase, ~)
     targetMotion.position_units = [1 0];
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, limits, struct()), "planMovingTargetIntercept:TargetHistoryTooShort");
+    verifyError(testCase, @() planner([], initialState, struct("time_s", 10, "targetMotion", targetMotion), limits), "planner:TargetHistoryTooShort");
 end
 
 function testInterceptWrapperTextOptionsMustBeScalar(testCase, ~)
@@ -248,10 +248,10 @@ function testInterceptWrapperTextOptionsMustBeScalar(testCase, ~)
     targetMotion.InterpolationMethod = "linear";
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    options      = struct("InterceptMode", ["earliest" "specifiedTime"]);
-    verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, limits, options), "planMovingTargetIntercept:InvalidMode");
+    options      = struct("GoalTimeMode", ["earliestArrival" "fixedArrival"]);
+    verifyError(testCase, @() planner([], initialState, struct("time_s", 10, "targetMotion", targetMotion), limits, options), "planner:InvalidGoalTimeMode");
     targetMotion.InterpolationMethod = ["linear" "pchip"];
-    verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(initialState, targetMotion, limits, struct()), "planMovingTargetIntercept:InvalidInterpolation");
+    verifyError(testCase, @() planner([], initialState, struct("time_s", 10, "targetMotion", targetMotion), limits), "planner:InvalidInterpolation");
 end
 
 function testMovingGoalHistoryRequiresTwoSamples(testCase, adapter)
@@ -261,7 +261,7 @@ function testMovingGoalHistoryRequiresTwoSamples(testCase, adapter)
     goalState.targetTime_s       = 10;
     goalState.targetPosition_units = [1 0];
     limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions()), "planTrajectory:MovingGoalHistoryTooShort");
+    verifyError(testCase, @() planner([], initialState, goalState, limits, adapter.FixedOptions()), "planner:MovingGoalHistoryTooShort");
 end
 
 function testMovingGoalInterpolationMethodMustBeScalar(testCase, adapter)
@@ -272,7 +272,7 @@ function testMovingGoalInterpolationMethodMustBeScalar(testCase, adapter)
     goalState.targetPosition_units  = [4 0; 5 0];
     goalState.InterpolationMethod = ["linear" "pchip"];
     limits = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions()), "planTrajectory:InvalidGoalInterpolation");
+    verifyError(testCase, @() planner([], initialState, goalState, limits, adapter.FixedOptions()), "planner:InvalidGoalInterpolation");
 end
 
 function testObstacleActivationAtTerminalTimeFailsValidation(testCase, adapter)
@@ -295,7 +295,7 @@ function testOldWorkspaceOptionGivesMigrationError(testCase, adapter)
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options      = adapter.FixedOptions();
     options.YInterval_units = [-5 5];
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options), "planTrajectory:WorkspaceLimitMoved");
+    verifyError(testCase, @() planner([], initialState, goalState, limits, options), "planner:WorkspaceLimitMoved");
 end
 
 function testRemovedPlanningTimeOptionGivesMigrationError(testCase, adapter)
@@ -305,7 +305,7 @@ function testRemovedPlanningTimeOptionGivesMigrationError(testCase, adapter)
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options      = adapter.FixedOptions();
     options.MaximumPlanningTime_s = 1;
-    verifyWarning(testCase, @() obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options), "planTrajectory:UnknownOptions");
+    verifyWarning(testCase, @() planner([], initialState, goalState, limits, options), "planner:UnknownOptions");
 end
 
 function testSafetyMarginIsAppliedExactlyOnce(testCase, ~)
@@ -344,7 +344,7 @@ function testStaticObstacleProducesOppositeSideSeeds(testCase, adapter)
     limits       = testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]);
     options      = adapter.FixedOptions();
     options.MaximumSeedCount = 3;
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options);
+    [result, resultDiagnosis] = planner(obstacle, initialState, goalState, limits, options);
     verifyGreaterThanOrEqual(testCase, numel(resultDiagnosis.Routes), 3);
     verifyTrue(testCase, any([resultDiagnosis.Routes.Source] == "visibilityGraph"));
     verifyEqual(testCase, resultDiagnosis.Search.GraphType, "visibilityGraph");
@@ -435,12 +435,12 @@ function testWorkspaceIntervalsBelongToLimits(testCase, adapter)
     initialState = testCase.TestData.Fixtures.State(0, [0 0], [0 0], [0 0]);
     goalState    = testCase.TestData.Fixtures.State(6, [2 0], [0 0], [0 0]);
     limits       = rmfield(testCase.TestData.Fixtures.PhysicalLimits([2 2], [1 1], [2 2]), ["xInterval_units", "yInterval_units"]);
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
+    [result, resultDiagnosis] = planner([], initialState, goalState, limits, adapter.FixedOptions());
     verifyEqual(testCase, result.Inputs.limits.xInterval_units, [-180 180]);
     verifyEqual(testCase, result.Inputs.limits.yInterval_units, [-90 90]);
     limits.xInterval_units   = [-12 14];
     limits.yInterval_units = [-5 6];
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, adapter.FixedOptions());
+    [result, resultDiagnosis] = planner([], initialState, goalState, limits, adapter.FixedOptions());
     verifyEqual(testCase, result.Inputs.limits.xInterval_units, [-12 14]);
     verifyEqual(testCase, result.Inputs.limits.yInterval_units, [-5 6]);
 end

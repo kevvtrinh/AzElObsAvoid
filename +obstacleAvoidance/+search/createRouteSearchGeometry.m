@@ -3,24 +3,19 @@ function proposal = createRouteSearchGeometry(initialState, goalState, scene)
 % SYNTAX
 %   proposal = obstacleAvoidance.search.createRouteSearchGeometry( ...
 %       initialState, goalState, scene)
-%
 % PURPOSE
 %   - Build a 2-D obstacle outline for finding possible paths.
 %   - Expose sample times, work estimate, geometry choice, shape, and edges.
-%
 % INPUTS
 %   - initialState, goalState: route endpoints.
 %   - scene (scalar prepared-scene struct)
 %       Prepared obstacles and physical request horizon.
-%
 % OUTPUTS
 %   - proposal (scalar struct)
 %       Start, goal, times, work data, selected polyshape, and boundary edges.
 %       This route-search input cannot approve a completed trajectory.
-%
 % UNITS
 %   - Geometry is coordinate units, time is seconds, and work is a vertex count.
-%
 
 %% Section 1: Resolve Endpoints And Sample Times
 
@@ -44,7 +39,6 @@ if usedDenseEnvelope
 else
     parts             = cell(numel(sampleTimes_s) * numel(obstacles), 1);
     sampledShapeCount = 0;
-    % Process each time in temporal order and accumulate its result.
     for timeIndex = 1:numel(sampleTimes_s)
         % Evaluate each obstacle against the current geometry or motion.
         for obstacleIndex = 1:numel(obstacles)

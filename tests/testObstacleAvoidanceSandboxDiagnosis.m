@@ -37,7 +37,7 @@ end
 function testSuccessfulBundleRoundTripsAndReproduces(testCase)
     % Preserve exact success inputs/result and replay the public planner call.
     [initialState, goalState, limits, options] = simpleRequest();
-    result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    result = planner([], initialState, goalState, limits, options);
     verifyTrue(testCase, result.Success, result.Message);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -58,7 +58,7 @@ function testSuccessfulBundleRoundTripsAndReproduces(testCase)
     verifyTrue(testCase, bundle.IndependentValidation.Passed);
     verifyFalse(testCase, isfield(bundle.Scene, "GraphicsHandles"));
 
-    reproduced           = obstacleAvoidance.planTrajectory(bundle.PlannerInputs.obstacles, bundle.PlannerInputs.initialState, bundle.PlannerInputs.goalState, bundle.PlannerInputs.limits, bundle.PlannerOptions);
+    reproduced           = planner(bundle.PlannerInputs.obstacles, bundle.PlannerInputs.initialState, bundle.PlannerInputs.goalState, bundle.PlannerInputs.limits, bundle.PlannerOptions);
     reproducedValidation = obstacleAvoidance.validateTrajectory(reproduced);
     verifyTrue(testCase, reproduced.Success, reproduced.Message);
     verifyTrue(testCase, reproducedValidation.Passed, reproducedValidation.Message);
@@ -136,7 +136,7 @@ function testSandboxDefaultsBoundInteractivePlannerWork(testCase)
     verifyEqual(testCase, plannerOptions.GoalTimeMode, "earliestArrival");
     verifyFalse(testCase, plannerOptions.WrapX);
     verifyFalse(testCase, plannerOptions.WrapY);
-    productionOptions = obstacleAvoidance.planTrajectory();
+    productionOptions = planner();
     verifyEqual(testCase, productionOptions.MaximumSeedCount, 2);
 end
 
@@ -253,7 +253,7 @@ end
 function testPublicExportBundleWritesCurrentState(testCase)
     % Verify the public no-dialog hook writes the live guidata-backed result.
     [initialState, goalState, limits, options] = simpleRequest();
-    result       = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    result       = planner([], initialState, goalState, limits, options);
     validation   = obstacleAvoidance.validateTrajectory(result);
     sandboxState = obstacleAvoidanceSandbox(struct("FigureVisible", "off"));
     testCase.addTeardown(@() closeIfPresent(sandboxState.FigureHandle));
@@ -289,7 +289,7 @@ function testFailedBundleRetainsDiagnosisEvidence(testCase)
     % Preserve endpoint-blocked failure inputs, diagnostics, and validation.
     [initialState, goalState, limits, options] = simpleRequest();
     obstacle = obstacleAvoidance.obstacles.createObstacle("start enclosure", [0; goalState.time_s], [-1; 1; 1; -1], [-1; -1; 1; 1], 0);
-    result   = obstacleAvoidance.planTrajectory(obstacle, initialState, goalState, limits, options);
+    result   = planner(obstacle, initialState, goalState, limits, options);
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "endpointBlocked");
     sandboxState = syntheticSandboxState(result, result.Validation, initialState, goalState, obstacle);
@@ -324,7 +324,7 @@ function [initialState, goalState, limits, options] = simpleRequest()
     limits.maxVelocity_units_s      = [2 2];
     limits.maxAcceleration_units_s2 = [1 1];
     limits.maxJerk_units_s3         = [2 2];
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     options.GoalTimeMode = "fixedArrival";
 end
 

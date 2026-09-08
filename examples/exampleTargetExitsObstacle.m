@@ -90,14 +90,14 @@ targetMotion              = struct("time_s", targetTime_s, "position_units", tar
 
 limits = struct("maxVelocity_units_s", [2 2], ...
     "maxAcceleration_units_s2", [0.8 0.8], "maxJerk_units_s3", jerkConfiguration.MaxJerk_units_s3);
-interceptOptions = struct("InterceptMode", "specifiedTime", ...
-    "SpecifiedInterceptTime_s", missionEndTime_s, "MatchTargetVelocity", false, "PlannerOptions", options);
+goalState = struct("time_s", missionEndTime_s, "targetMotion", targetMotion);
+options.GoalTimeMode = "fixedArrival";
 
 %% Section 4: Run Planner
 
 % Run the specified-time moving-target planner.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

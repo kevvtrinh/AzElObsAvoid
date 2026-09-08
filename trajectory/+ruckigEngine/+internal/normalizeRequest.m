@@ -4,10 +4,8 @@ function [initialState, terminalState, limits, pathConstraints] = normalizeReque
 %   [initialState, terminalState, limits, pathConstraints] = ...
 %       ruckigEngine.internal.normalizeRequest( ...
 %       initialState, terminalState, limits, pathConstraints)
-%
 % PURPOSE
 %   - Normalize state, limit, and path inputs for the Ruckig engine.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Fields time, position, and velocity are required. Acceleration may
@@ -21,7 +19,6 @@ function [initialState, terminalState, limits, pathConstraints] = normalizeReque
 %       is required only for the third-order jerk-controlled interface.
 %   - pathConstraints (scalar struct or empty)
 %       Tau/TauEnd, Normal, and LowerBound describe affine path rows.
-%
 % OUTPUTS
 %   - initialState, terminalState (scalar structs)
 %       Motion vectors are normalized to 1-by-D double rows.
@@ -29,10 +26,8 @@ function [initialState, terminalState, limits, pathConstraints] = normalizeReque
 %       Scalar maxima are expanded and every lower/upper pair is resolved.
 %   - pathConstraints (scalar struct)
 %       Empty input becomes a stable zero-row path-constraint record.
-%
 % UNITS
 %   - Units are caller-defined and must be consistent across derivatives.
-%
 
 %% Section 1: Normalize States
 

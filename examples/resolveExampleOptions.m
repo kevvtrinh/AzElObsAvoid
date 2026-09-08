@@ -123,7 +123,7 @@ end
 % Get the maintained planner defaults before scenario values are applied.
 % A list of public field names prevents display-only values from reaching the
 % planner and producing an unknown-option warning.
-plannerOptions = obstacleAvoidance.planTrajectory();
+plannerOptions = planner();
 plannerNames   = string(fieldnames(plannerOptions));
 
 % Apply recognized scenario planner defaults. Ignore display-only fields here.

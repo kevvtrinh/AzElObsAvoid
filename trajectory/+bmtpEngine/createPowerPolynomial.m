@@ -3,11 +3,9 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 % SYNTAX
 %   polynomial = bmtpEngine.createPowerPolynomial( ...
 %       controlPoint_units, segmentTime_s, initialTime_s)
-%
 % PURPOSE
 %   - Convert composite Bernstein control points to the stable ascending-power
 %     polynomial representation and stabilize exact endpoint derivatives.
-%
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
@@ -17,15 +15,12 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %       Absolute motion start time.
 %   - prescribedPower_units (optional S-by-2-by-(D+1) numeric array)
 %       Exact analytic coefficients; NaN axes remain optimized.
-%
 % OUTPUTS
 %   - polynomial (scalar struct)
 %       Position, derivative powers, segment times, and terminal state.
-%
 % UNITS
 %   - Position is coordinate units; time is seconds; derivatives use units/s,
 %     units/s^2, and units/s^3.
-%
 
 %% Section 1: Convert Bernstein Controls To Powers
 
@@ -89,7 +84,6 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
     target       = zeros(segmentCount, 2, 4);
     power_units(:, :, 1) = reshape(controlPoint_units(:, 1, :), segmentCount, 2);
     target(:, :, 1) = reshape(controlPoint_units(:, end, :), segmentCount, 2);
-    % Process each order needed to complete stabilize polynomial endpoints.
     for order = 1:3
         difference = diff(controlPoint_units, order, 2);
         scale      = factorial(degree) / factorial(degree - order);
@@ -109,7 +103,6 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
     end
     for projectionPass = 1:2
         current = zeros(segmentCount, 2, 4);
-        % Process each order needed to complete stabilize polynomial endpoints.
         for order = 0:3
             indices     = order:degree;
             multipliers = reshape(factorial(indices) ./ factorial(indices - order), 1, 1, []);

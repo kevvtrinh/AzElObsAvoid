@@ -973,9 +973,9 @@ function [result, validation, logLines, diagnosis] = callPlanner(obstacles, init
     result      = struct();
     plannerText = "";
     if captureVerbose
-        plannerText = string(evalc('[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);'));
+        plannerText = string(evalc('[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);'));
     else
-        [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+        [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
     end
     if result.Success
         validation = obstacleAvoidance.validateTrajectory(result);

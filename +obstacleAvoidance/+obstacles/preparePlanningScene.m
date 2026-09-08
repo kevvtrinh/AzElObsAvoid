@@ -3,22 +3,17 @@ function scene = preparePlanningScene(obstacles, initialState, goalState)
 % SYNTAX
 %   scene = obstacleAvoidance.obstacles.preparePlanningScene( ...
 %       obstacles, initialState, goalState)
-%
 % PURPOSE
 %   - Prepare obstacle histories once for repeated planning queries.
 %   - Record the planning interval and whether all obstacles remain stationary.
-%
 % INPUTS
 %   - obstacles: canonical obstacle histories.
 %   - initialState, goalState: start and end of the planning interval.
-%
 % OUTPUTS
 %   - scene (scalar struct)
 %       Prepared obstacles, start/end times, and the stationary-scene flag.
-%
 % UNITS
 %   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
-%
 
 %% Section 1: Read The Planning Horizon
 

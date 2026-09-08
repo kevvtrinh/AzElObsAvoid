@@ -4,11 +4,9 @@ function attempt = createVisibilityAttempt(shape, start_units, goal_units, limit
 %   attempt = obstacleAvoidance.search.createVisibilityAttempt( ...
 %       shape, start_units, goal_units, limits, candidateOffset_units, ...
 %       offsetRetryCount, workBudget)
-%
 % PURPOSE
 %   - Create, check, and recover one offset visibility-graph attempt.
 %   - Return every representation needed to inspect its decisions.
-%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Spatial obstacle representation used only for route proposals.
@@ -22,15 +20,12 @@ function attempt = createVisibilityAttempt(shape, start_units, goal_units, limit
 %       Zero-based index of this attempt in the offset schedule.
 %   - workBudget (positive finite scalar)
 %       Pair-edge work cap governing node count and exhaustive recovery.
-%
 % OUTPUTS
 %   - attempt (scalar struct)
 %       Raw and retained nodes, candidate pairs, accepted and rejected
 %       edges, components, recovery steps, costs, and connectivity state.
-%
 % UNITS
 %   - Positions, offsets, bounds, and graph costs are coordinate units.
-%
 
 %% Section 1: Bound The Candidate Nodes
 
@@ -133,7 +128,6 @@ function selected_units = selectVisibilityCandidates(candidates_units, start_uni
         [~, support] = max(candidates_units * direction.', [], 1);
         selected = [selected; support(:)];
     end
-    % Process each reference units needed to complete select visibility candidates.
     for reference_units = [start_units; goal_units].'
         [~, order] = sort(vecnorm(candidates_units - reference_units.', 2, 2));
         selected = [selected; order(1:endpointCount)]; %#ok<AGROW>

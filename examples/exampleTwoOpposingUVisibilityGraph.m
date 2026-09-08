@@ -59,7 +59,7 @@ limits    = struct("maxVelocity_units_s", [1 1], ...
 
 % Run the automatic visibility planner. Do not supply route directions.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

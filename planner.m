@@ -1,53 +1,26 @@
-function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState, limits, optionOverrides)
+function [result, diagnosis] = planner(obstacles, initialState, goalState, limits, optionOverrides)
 %% Section 0: Header & Readme
-% SYNTAX
-%   options = obstacleAvoidance.planTrajectory()
-%   result = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits)
-%   result = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits, optionOverrides)
-%   [result, diagnosis] = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits, optionOverrides)
-%
-% PURPOSE
-%   - Plan collision-free X/Y motion through one public entry point.
-%   - Minimize arrival time, breaking ties by path length, or minimize travel
-%     at a specified arrival time.
-%
-% INPUTS
-%   - obstacles (canonical protected obstacle array, nested cells, or [])
-%       Use obstacleAvoidance.obstacles.createObstacle to add each safety
-%       margin one time.
-%   - initialState (scalar struct)
-%       Initial time, position, and supported derivatives.
-%   - goalState (scalar struct)
-%       Fixed or moving-goal state accepted by the obstacle planner.
-%   - limits (scalar struct)
-%       Physical and workspace limits with units in field names.
-%       maxVelocity_units_s, maxAcceleration_units_s2, and maxJerk_units_s3 must
-%       all be positive finite scalars (combined magnitudes) or all be
-%       two-element [x y] vectors. Each combined limit is
-%       divided by sqrt(2) for each axis. Mixing the two forms is invalid.
-%   - optionOverrides (scalar struct, optional; default struct())
-%       Partial planner options. Empty fields use their documented defaults.
-%       WrapX and WrapY independently enable periodic coordinates using each
-%       axis's workspace interval width. Both default to false. Periodic
-%       requests currently require no obstacles and a fixed-position goal.
-%
-% OUTPUTS
-%   - result (scalar struct)
-%       Status, selected route, motion, plotting inputs, and validation data.
-%       Failure retains rejected motion when available; Success remains false.
-%   - diagnosis (optional scalar struct)
-%       Timing, candidate attempts, search evidence, and flat solver details.
-%   - options (scalar struct, zero-input call)
-%       Fully resolved planner defaults.
-%
-% UNITS
-%   - Position is in coordinate units. Time is in seconds.
-%   - Derivatives use units/s, units/s^2, and units/s^3.
-%   - Histories are N-by-2 [x y] arrays.
-%
+% SYNTAX: options = planner(); [result, diagnosis] = planner(obstacles, initialState, goalState, limits, options)
+% PURPOSE: Plan X/Y motion, prioritizing earliest arrival then travel length,
+%   or minimizing travel at a fixed arrival. Success requires public validation.
+% INPUTS: obstacles is a protected array, nested cells, or []; constructors apply
+%   margins once. initialState requires time_s and position_units; derivatives default zero.
+%   goalState specifies position_units, or targetMotion with increasing time_s,
+%   N-by-2 position_units, and optional linear/pchip InterpolationMethod.
+%   For targetMotion, goalState.time_s is the fixed arrival or search horizon;
+%   MatchTargetVelocity/MatchTargetAcceleration apply only at a fixed arrival.
+%   Earliest interception requires zero terminal derivatives.
+%   limits requires maxVelocity_units_s, maxAcceleration_units_s2, maxJerk_units_s3:
+%   all positive finite combined scalars, or all [x y] vectors. Combined limits
+%   are divided by sqrt(2) per axis; mixing scalar and vector forms is invalid.
+%   Partial or omitted options use defaults. WrapX/WrapY require an empty scene
+%   and fixed-position goal; each periodic width is its workspace interval width.
+% OUTPUTS: result contains status, route, polynomial, histories, authoritative
+%   inputs, and validation. Failures retain available rejected motion.
+%   Target results contain the selected fixed-time trial plus Intercept metadata.
+%   Optional diagnosis contains timings, attempts, and complete structured evidence.
+%   A zero-input call returns resolved defaults.
+% UNITS: Coordinate units, seconds, and units/s, units/s^2, units/s^3; histories N-by-2.
 
 %% Section 1: Resolve Defaults Requests
 
@@ -62,7 +35,7 @@ end
 
 % Require obstacles, initial state, goal state, and limits.
 if nargin < 4
-    error("planTrajectory:MissingInputs", "obstacles, initialState, goalState, and limits are required.");
+    error("planner:MissingInputs", "obstacles, initialState, goalState, and limits are required.");
 end
 % Use defaults when options are omitted or empty.
 if nargin < 5 || isempty(optionOverrides)
@@ -75,6 +48,14 @@ planningTimer = tic;
 
 % Normalize the planning inputs.
 options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
+if isstruct(goalState) && isscalar(goalState) && isfield(goalState, 'targetMotion') && ~isempty(goalState.targetMotion)
+    if nargout > 1
+        [result, diagnosis] = obstacleAvoidance.planner.planTargetIntercept(obstacles, initialState, goalState, limits, options);
+    else
+        result = obstacleAvoidance.planner.planTargetIntercept(obstacles, initialState, goalState, limits, options);
+    end
+    return;
+end
 
 [obstacles, initialState, goalState, limits] = obstacleAvoidance.input.normalizePlannerRequest(obstacles, initialState, goalState, limits, options);
 

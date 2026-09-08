@@ -20,7 +20,7 @@ intervals_units = [limits.xInterval_units; limits.yInterval_units];
 for axisIndex = find(wrapAxes)
     period_units = diff(intervals_units(axisIndex, :));
     if ~isfinite(period_units) || period_units <= 0
-        error("planTrajectory:InvalidWrapPeriod", "A wrapped axis requires a positive finite workspace interval width.");
+        error("planner:InvalidWrapPeriod", "A wrapped axis requires a positive finite workspace interval width.");
     end
     % Resolve half-period ties toward positive displacement. This makes a
     % second normalization preserve the selected endpoint exactly.

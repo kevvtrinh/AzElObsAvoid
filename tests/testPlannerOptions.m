@@ -17,7 +17,7 @@ function testDefaultsMatchPublicPlannerRequirement(testCase)
     % Keep one source of truth between the package and public defaults calls.
     options = obstacleAvoidance.input.resolvePlannerOptions();
     verifyFalse(testCase, isfield(options, "CancellationCheckFcn"));
-    expected = obstacleAvoidance.planTrajectory();
+    expected = planner();
 
     verifyEqual(testCase, options, expected);
     requiredFields = {'GoalTimeMode', 'SampleTime_s', 'MaximumSeedCount', ...
@@ -58,7 +58,7 @@ function testRetiredFieldsUseAggregateUnknownWarningAndAreIgnored(testCase)
     retiredOptions.WaypointWarmStartMode            = "invalid";
     retiredOptions.RequestedWaypointWarmStartMode   = "invalid";
     retiredOptions.IsWaypointWarmStartAvailable     = true;
-    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(retiredOptions), "planTrajectory:UnknownOptions");
+    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(retiredOptions), "planner:UnknownOptions");
     resolvedOptions = callWithoutWarning(retiredOptions);
     verifyEqual(testCase, resolvedOptions, obstacleAvoidance.input.resolvePlannerOptions());
 end
@@ -89,7 +89,7 @@ function testUnknownFieldsWarnOnceAndRemainIgnored(testCase)
     overrides = struct();
     overrides.UnknownFirst  = 1;
     overrides.UnknownSecond = 2;
-    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), "planTrajectory:UnknownOptions");
+    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), "planner:UnknownOptions");
     options = callWithoutWarning(overrides);
     verifyFalse(testCase, isfield(options, "UnknownFirst"));
     verifyFalse(testCase, isfield(options, "UnknownSecond"));
@@ -102,29 +102,29 @@ function testRetiredTrajectoryMethodIsIgnored(testCase)
     % Exercise each value covered by this regression.
     for value = ["bmtp", "ruckigWaypoint", "invalid"]
         overrides = struct("TrajectoryMethod", value);
-        verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), "planTrajectory:UnknownOptions");
+        verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(overrides), "planner:UnknownOptions");
         verifyEqual(testCase, callWithoutWarning(overrides), defaults);
     end
 end
 
 function testInvalidRequirementsRetainEstablishedErrors(testCase)
     % Preserve explicit errors for malformed, moved, and invalid values.
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(1), "planTrajectory:InvalidOptions");
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("XInterval_units", [-1 1])), "planTrajectory:WorkspaceLimitMoved");
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "invalid")), "planTrajectory:InvalidGoalTimeMode");
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("UnsupportedTimedTopologyPolicy", "invalid")), "planTrajectory:InvalidUnsupportedTimedTopologyPolicy");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(1), "planner:InvalidOptions");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("XInterval_units", [-1 1])), "planner:WorkspaceLimitMoved");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "invalid")), "planner:InvalidGoalTimeMode");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("UnsupportedTimedTopologyPolicy", "invalid")), "planner:InvalidUnsupportedTimedTopologyPolicy");
     verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("MaximumSeedCount", 6)), "MATLAB:notLessEqual");
-    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("DirectSeedOnly", true)), "planTrajectory:UnknownOptions");
-    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("CollectAllSeedCandidates", true)), "planTrajectory:UnknownOptions");
+    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("DirectSeedOnly", true)), "planner:UnknownOptions");
+    verifyWarning(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("CollectAllSeedCandidates", true)), "planner:UnknownOptions");
 end
 
 function options = callWithoutWarning(overrides)
     % Suppress the already-verified aggregate warning for output inspection.
-    warningState   = warning("off", "planTrajectory:UnknownOptions");
+    warningState   = warning("off", "planner:UnknownOptions");
     warningCleanup = onCleanup(@() warning(warningState));
     options        = obstacleAvoidance.input.resolvePlannerOptions(overrides);
 end
 
 function testUnsupportedArrivalModeIsRejected(testCase)
-    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "balancedArrival")), "planTrajectory:InvalidGoalTimeMode");
+    verifyError(testCase, @() obstacleAvoidance.input.resolvePlannerOptions(struct("GoalTimeMode", "balancedArrival")), "planner:InvalidGoalTimeMode");
 end

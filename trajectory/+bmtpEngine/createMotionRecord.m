@@ -7,11 +7,9 @@ function [candidate, terminalState] = createMotionRecord(candidate, initialState
 %       bmtpEngine.createMotionRecord( ...
 %       candidate, initialState, relativeBreak_s, segmentJerk_units_s3, ...
 %       sampleStep_s, seedSource)
-%
 % PURPOSE
 %   - Create the shared candidate record and exactly integrate a
 %     sequence of constant-jerk intervals without changing its time partition.
-%
 % INPUTS
 %   - candidate (scalar struct)
 %       Empty creates the common record; nonempty preserves caller metadata.
@@ -27,18 +25,15 @@ function [candidate, terminalState] = createMotionRecord(candidate, initialState
 %       Output-history spacing; exact event times are always retained.
 %   - seedSource (scalar text)
 %       Input-derived construction label copied to the candidate.
-%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable exact-motion record with polynomial and sampled histories.
 %       MotionLength_units integrates polynomial speed independently of samples.
 %   - terminalState (scalar struct)
 %       Analytically integrated terminal position, velocity, and acceleration.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivatives use units/s,
 %     units/s^2, and units/s^3. Histories are N-by-D.
-%
 
 %% Section 1: Create The Stable Record
 
@@ -107,7 +102,6 @@ else
     position_units             = initialState.position_units;
     velocity_units_s           = initialState.velocity_units_s;
     acceleration_units_s2      = initialState.acceleration_units_s2;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         step_s      = segmentDuration_s(segmentIndex);
         jerk_units_s3 = segmentJerk_units_s3(segmentIndex, :);

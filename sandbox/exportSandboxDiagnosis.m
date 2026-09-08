@@ -142,7 +142,7 @@ validationCommand   = "";
 if hasReplayableInputs
     % Store commands as guidance only. The exporter does not run the planner.
     % A developer can load the file and use these commands in a clean session.
-    plannerCommand    = "[reproduced, reproducedDiagnosis] = obstacleAvoidance.planTrajectory(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);";
+    plannerCommand    = "[reproduced, reproducedDiagnosis] = planner(" + "diagnosisBundle.PlannerInputs.obstacles, " + "diagnosisBundle.PlannerInputs.initialState, " + "diagnosisBundle.PlannerInputs.goalState, " + "diagnosisBundle.PlannerInputs.limits, " + "diagnosisBundle.PlannerOptions);";
     validationCommand = "reproducedValidation = obstacleAvoidance.validateTrajectory(reproduced);";
 end
 reproduction = struct("LoadCommand", ...

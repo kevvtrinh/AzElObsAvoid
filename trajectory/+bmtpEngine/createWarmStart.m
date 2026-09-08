@@ -2,23 +2,18 @@ function warmStart = createWarmStart(request)
 %% Section 0: Header & Readme
 % SYNTAX
 %   warmStart = bmtpEngine.createWarmStart(request)
-%
 % PURPOSE
 %   - Convert the proposed path into an initial smooth curve for optimization.
 %   - Return route resampling, active obstacle pairs, controls, and duration.
-%
 % INPUTS
 %   - request (scalar BMTP solve-request struct)
 %       Validated seed, regions, coverage, representation, limits, and horizon.
-%
 % OUTPUTS
 %   - warmStart (scalar struct)
 %       Route, controls, uniform segment time, active pairs, counts, and
 %       resampling evidence.
-%
 % UNITS
 %   - Position is coordinate units and segment time is seconds.
-%
 
 %% Section 1: Create The Timed Or Spatial Warm Route
 
@@ -97,7 +92,6 @@ function [route_units, wasReduced] = removeRedundantRoutePoints(route_units)
     distinctRoute_units  = zeros(size(route_units));
     distinctPointCount = 1;
     distinctRoute_units(1, :) = route_units(1, :);
-    % Process each point needed to complete remove redundant route points.
     for pointIndex = 2:originalPointCount
         % Retain points separated beyond the geometry tolerance and drop near-duplicate consecutive points.
         if norm(route_units(pointIndex, :) - distinctRoute_units(distinctPointCount, :)) > geometryTolerance_units
@@ -115,11 +109,9 @@ function [route_units, wasReduced] = removeRedundantRoutePoints(route_units)
 
     route_units          = zeros(size(distinctRoute_units));
     retainedPointCount = 0;
-    % Process each point needed to complete remove redundant route points.
     for pointIndex = 1:distinctPointCount
         retainedPointCount = retainedPointCount + 1;
         route_units(retainedPointCount, :) = distinctRoute_units(pointIndex, :);
-        % Continue iterating until the stopping condition for complete remove redundant route points is satisfied.
         while retainedPointCount >= 3 && pointLiesOnSegment(route_units(retainedPointCount - 1, :), route_units(retainedPointCount - 2, :), route_units(retainedPointCount, :), geometryTolerance_units)
             route_units(retainedPointCount - 1, :) = route_units(retainedPointCount, :);
             retainedPointCount = retainedPointCount - 1;
@@ -167,7 +159,6 @@ function route_units = splitRouteByCount(seedRoute_units, segmentCountByEdge)
     edgeCount       = size(seedRoute_units, 1) - 1;
     route_units       = zeros(sum(segmentCountByEdge) + 1, 2);
     routePointIndex = 1;
-    % Process each geometric edge while constructing or checking the region topology.
     for edgeIndex = 1:edgeCount
         segmentCount      = segmentCountByEdge(edgeIndex);
         fractions         = (0:segmentCount - 1).' / segmentCount;

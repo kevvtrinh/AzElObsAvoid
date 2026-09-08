@@ -47,10 +47,10 @@ function testWrappedResultCreatesPeriodicAndContinuousViews(testCase)
     limits.maxJerk_units_s3         = [2 2];
     limits.xInterval_units    = [-180 180];
     limits.yInterval_units  = [-90 90];
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     options.GoalTimeMode         = "fixedArrival";
     options.WrapX = true;
-    result = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    result = planner([], initialState, goalState, limits, options);
     verifyTrue(testCase, result.Success, result.Message);
     plotOptions = struct("FigureVisible", "off", ...
         "ShowWorkspace", true, ...
@@ -80,7 +80,7 @@ function testHalfPeriodTiesRemainStableDuringValidation(testCase)
     goal = stateAt(30, [-5 100]);
     limits = struct('maxVelocity_units_s', [2 2], 'maxAcceleration_units_s2', [1 1], 'maxJerk_units_s3', [2 2], 'xInterval_units', [-5 5], 'yInterval_units', [100 120]);
     options = struct('WrapX', true, 'WrapY', true);
-    result = obstacleAvoidance.planTrajectory([], initial, goal, limits, options);
+    result = planner([], initial, goal, limits, options);
     verifyTrue(testCase, result.Success, result.Message);
     verifyEqual(testCase, result.Inputs.goalState.position_units, [5 120]);
     validation = obstacleAvoidance.validateTrajectory(result);
@@ -100,11 +100,11 @@ function testIndependentWrappingUsesShiftedUnequalPeriods(testCase)
     limits.xInterval_units = [-5 5];
     limits.yInterval_units = [100 120];
     for mask = 0:3
-        options = obstacleAvoidance.planTrajectory();
+        options = planner();
         options.WrapX = logical(bitget(mask, 1));
         options.WrapY = logical(bitget(mask, 2));
         expected = goal.position_units + [10 * options.WrapX, 20 * options.WrapY];
-        result = obstacleAvoidance.planTrajectory([], initial, goal, limits, options);
+        result = planner([], initial, goal, limits, options);
         assertTrue(testCase, result.Success, result.Message);
         verifyEqual(testCase, result.position_units(end, :), expected, 'AbsTol', 1e-9);
         verifyEqual(testCase, result.Inputs.goalState.position_units, expected);
@@ -118,11 +118,11 @@ function testDisabledAxisBoundsRemainEnforced(testCase)
     limits = struct('maxVelocity_units_s', [2 2], 'maxAcceleration_units_s2', [1 1], 'maxJerk_units_s3', [2 2], 'xInterval_units', [-5 5], 'yInterval_units', [100 120]);
     initial = stateAt(0, [4 119]);
     goal = stateAt(30, [-4 121]);
-    result = obstacleAvoidance.planTrajectory([], initial, goal, limits, struct('WrapX', true, 'WrapY', false));
+    result = planner([], initial, goal, limits, struct('WrapX', true, 'WrapY', false));
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "endpointOutsideWorkspace");
     initial.position_units = [14 139];
-    result = obstacleAvoidance.planTrajectory([], initial, goal, limits, struct('WrapX', true, 'WrapY', true));
+    result = planner([], initial, goal, limits, struct('WrapX', true, 'WrapY', true));
     verifyTrue(testCase, result.Success, result.Message);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -134,10 +134,10 @@ function testYWrappingRejectsUnsupportedPeriodicGeometry(testCase)
     limits = struct('maxVelocity_units_s', [2 2], 'maxAcceleration_units_s2', [1 1], 'maxJerk_units_s3', [2 2], 'xInterval_units', [-5 5], 'yInterval_units', [100 120]);
     options = struct('WrapY', true);
     obstacle = obstacleAvoidance.obstacles.createObstacle('periodic obstacle', [0; 30], [-1; 1; 1; -1], [109; 109; 111; 111]);
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options), "planTrajectory:UnsupportedWrappedGeometry");
+    verifyError(testCase, @() planner(obstacle, initial, goal, limits, options), "planner:UnsupportedWrappedGeometry");
     goal.targetTime_s = [0; 30];
     goal.targetPosition_units = [0 102; 0 101];
-    verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initial, goal, limits, options), "planTrajectory:UnsupportedWrappedGeometry");
+    verifyError(testCase, @() planner([], initial, goal, limits, options), "planner:UnsupportedWrappedGeometry");
 end
 
 function testMultipleAndSimultaneousDisplaySeams(testCase)
@@ -157,7 +157,7 @@ function testYWrappedPlotPreservesContinuousView(testCase)
     initial = stateAt(0, [0 119]);
     goal = stateAt(30, [0 101]);
     limits = struct('maxVelocity_units_s', [2 2], 'maxAcceleration_units_s2', [1 1], 'maxJerk_units_s3', [2 2], 'xInterval_units', [-5 5], 'yInterval_units', [100 120]);
-    result = obstacleAvoidance.planTrajectory([], initial, goal, limits, struct('WrapY', true));
+    result = planner([], initial, goal, limits, struct('WrapY', true));
     assertTrue(testCase, result.Success, result.Message);
     plots = struct('FigureVisible', 'off', 'ShowWorkspace', true, 'ShowVisibilityGraphs', false, 'ShowKinematics', false, 'ShowAnimation', false);
     handles = obstacleAvoidance.plotting.plotTrajectory(result, plots);

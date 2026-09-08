@@ -85,7 +85,7 @@ function testPlannerStillChoosesAFasterDetour(testCase)
     obstacle=obstacleAvoidance.obstacles.createObstacle("detour",[0;12],[-.2;.2;.2;-.2],[-1;-1;1;1],0);
     prepared=obstacleAvoidance.obstacles.prepareObstacles(obstacle);
     [waiting,details]=obstacleAvoidance.planner.scheduleDirectWait(prepared,initial,goal,limits,options);
-    result=obstacleAvoidance.planTrajectory(obstacle,initial,goal,limits,options);
+    result=planner(obstacle,initial,goal,limits,options);
     verifyTrue(testCase,details.Available);
     verifyTrue(testCase,result.Success,result.Message);
     check=obstacleAvoidance.validateTrajectory(result);

@@ -5,11 +5,9 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %   validation = obstacleAvoidance.validateTrajectory(result)
 %   validation = obstacleAvoidance.validateTrajectory( ...
 %       trajectory, obstacles, initialState, goalState, limits, options)
-%
 % PURPOSE
 %   - Validate one complete polynomial motion independently of planner status.
 %   - Fail closed when a continuous collision interval cannot be resolved.
-%
 % INPUTS
 %   - trajectory (scalar candidate or planner-result struct)
 %       Must contain sampled histories and Polynomial segment coefficients.
@@ -19,15 +17,12 @@ function validation = validateTrajectory(trajectory, obstacles, initialState, go
 %       Same combined-scalar or per-axis contract as planTrajectory; each
 %       combined magnitude is divided by sqrt(2) for each axis.
 %   - options (resolved planner options, optional with result)
-%
 % OUTPUTS
 %   - validation (scalar struct)
 %       Stable checks, clearance, message, collision counts, and timings.
-%
 % UNITS
 %   - Position and clearance are coordinate units. Derivatives use units/s, units/s^2,
 %     and units/s^3. Time is seconds.
-%
 if nargin == 0
     validation = obstacleAvoidance.validation.validatePreparedTrajectory();
     return;

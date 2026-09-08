@@ -3,11 +3,9 @@ function profile = createRestToRestJerkProfile(initialState, terminalState, limi
 % SYNTAX
 %   profile = ruckigEngine.createRestToRestJerkProfile( ...
 %       initialState, terminalState, limits, requestedFinalTime)
-%
 % PURPOSE
 %   - Create the exact minimum-time monotone unit-displacement profile with
 %     bounded velocity, acceleration, and piecewise-constant jerk.
-%
 % INPUTS
 %   - initialState (scalar normalized one-dimensional state struct)
 %       Position, velocity, and acceleration must be zero.
@@ -18,15 +16,12 @@ function profile = createRestToRestJerkProfile(initialState, terminalState, limi
 %   - requestedFinalTime (empty or finite scalar)
 %       Empty selects minimum arrival. A supplied time stretches the minimum
 %       profile when it is not earlier than the physical minimum.
-%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, message, variable-duration polynomial, phase jerk controls,
 %       final time, minimum final time, and integrated squared jerk.
-%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%
 
 %% Section 1: Create The Minimum-Time Phase Law
 
@@ -69,7 +64,6 @@ position          = initialState.position;
 velocity          = initialState.velocity;
 acceleration      = initialState.acceleration;
 
-% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     duration            = phaseDuration(segmentIndex);
     jerk                = phaseJerk(segmentIndex);

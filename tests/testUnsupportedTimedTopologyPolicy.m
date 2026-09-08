@@ -34,8 +34,8 @@ function setupOnce(testCase)
     failOptions.UnsupportedTimedTopologyPolicy = "fail";
     fallbackOptions = baseOptions;
     fallbackOptions.UnsupportedTimedTopologyPolicy = "ruckigStopAtWaypoints";
-    [testCase.TestData.FailResult, testCase.TestData.FailResultDiagnosis]         = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, failOptions);
-    [testCase.TestData.FallbackResult, testCase.TestData.FallbackResultDiagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, fallbackOptions);
+    [testCase.TestData.FailResult, testCase.TestData.FailResultDiagnosis]         = planner(obstacles, initialState, goalState, limits, failOptions);
+    [testCase.TestData.FallbackResult, testCase.TestData.FallbackResultDiagnosis] = planner(obstacles, initialState, goalState, limits, fallbackOptions);
     testCase.TestData.FallbackValidation = obstacleAvoidance.validateTrajectory(testCase.TestData.FallbackResult);
 end
 

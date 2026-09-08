@@ -1,17 +1,10 @@
 function [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
-% PURPOSE
-%   Separate the usable motion from optional search and solver evidence.
-% INPUTS
-%   record is the completed internal planner record.
-%   includeDiagnosis selects whether to assemble the second output.
-% OUTPUTS
-%   result contains motion, plotting inputs, and independent-validation data.
-%   diagnosis contains shallow search records and flat solver-detail tables.
-% UNITS
-%   Positions are coordinate units, times are seconds, and derivatives retain their units.
+% SYNTAX: [result, diagnosis] = assemblePlannerOutputs(record, includeDiagnosis)
+% PURPOSE: Separate usable motion from optional complete search/solver evidence.
+% INPUTS: Completed internal record and a logical selector for the second output.
+% OUTPUTS: Motion with validation inputs; optional structured evidence without duplication.
+% UNITS: Coordinate units, seconds, and physical derivatives.
 
 %% Section 1: Keep The Motion And Its Validation Inputs
 names = ["Success", "Message", "TerminationReason", "Inputs", "Options", ...
@@ -20,7 +13,6 @@ names = ["Success", "Message", "TerminationReason", "Inputs", "Options", ...
     "SeedCorridorBoundary_units", "Validation", "ArrivalTime_s", ...
     "TrajectoryDuration_s", "ElapsedPlanningTime_s"];
 result = struct();
-% Apply the required validation or transfer to each name.
 for name = names
     result.(name) = record.(name);
 end
@@ -40,11 +32,11 @@ diagnosis = struct();
 % Skip optional diagnostic assembly when the caller requested only the planning result.
 if ~includeDiagnosis, return; end
 attempts           = rmfield(record.SeedSummaries, "SolverDiagnostics");
-solverDetails      = flattenAttempts({record.SeedSummaries.SolverDiagnostics});
+solverDetails      = {record.SeedSummaries.SolverDiagnostics};
 searchRecord       = search.GraphSearch;
-visibilityAttempts = flattenAttempts({});
+visibilityAttempts = struct([]);
 if isfield(searchRecord, "VisibilityAttempts")
-    visibilityAttempts = flattenAttempts(num2cell(searchRecord.VisibilityAttempts));
+    visibilityAttempts = searchRecord.VisibilityAttempts;
     searchRecord       = rmfield(searchRecord, "VisibilityAttempts");
 end
 coverage = struct();
@@ -60,20 +52,8 @@ diagnosis = struct("SelectedAttemptIndex", record.SelectedSeedIndex, ...
     "Timing", search.StageTiming, ...
     "Search", searchRecord, "SearchCoverage", coverage, ...
     "Routes", record.Seeds, "Attempts", attempts, ...
-    "SolverDetails", solverDetails, "VisibilityAttempts", visibilityAttempts, ...
-    "DirectMotion", obstacleAvoidance.planner.flattenDiagnosis(search.DirectAttempt), ...
-    "PathRefinement", obstacleAvoidance.planner.flattenDiagnosis(search.FixedClockExcursion), ...
+    "SolverDetails", {solverDetails}, "VisibilityAttempts", visibilityAttempts, ...
+    "DirectMotion", search.DirectAttempt, ...
+    "PathRefinement", search.FixedClockExcursion, ...
     "Selection", search.SelectionPolicy);
-end
-
-function combined = flattenAttempts(records)
-    % Preserve per-attempt evidence in one shallow table.
-    combined = table(zeros(0,1), strings(0,1), cell(0,1), ...
-        'VariableNames', {'Attempt', 'Field', 'Value'});
-    % Process each item needed to complete flatten attempts.
-    for index = 1:numel(records)
-        details  = obstacleAvoidance.planner.flattenDiagnosis(records{index});
-        combined = [combined; table(repmat(index,height(details),1), ...
-            details.Field, details.Value, 'VariableNames', {'Attempt','Field','Value'})]; %#ok<AGROW>
-    end
 end

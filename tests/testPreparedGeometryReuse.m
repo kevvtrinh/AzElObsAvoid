@@ -63,7 +63,7 @@ function testPublicValidatorRebuildsCallerSuppliedCaches(testCase)
     initial = struct('time_s',0,'position_units',[0 0]);
     goal = struct('time_s',6,'position_units',[4 0]);
     limits = struct('maxVelocity_units_s',[2 2], 'maxAcceleration_units_s2',[2 2], 'maxJerk_units_s3',[4 4]);
-    result = obstacleAvoidance.planTrajectory([],initial,goal,limits,struct('GoalTimeMode',"fixedArrival"));
+    result = planner([],initial,goal,limits,struct('GoalTimeMode',"fixedArrival"));
     verifyTrue(testCase,result.Success);
     blocked = obstacleAvoidance.obstacles.createObstacle("blocked",[0;6],[1;3;3;1],[-1;-1;1;1],0);
     far = obstacleAvoidance.obstacles.createObstacle("far",[0;6],[11;13;13;11],[-1;-1;1;1],0);

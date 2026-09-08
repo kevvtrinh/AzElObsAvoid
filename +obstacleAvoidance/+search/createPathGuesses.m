@@ -3,25 +3,20 @@ function seedSet = createPathGuesses(initialState, goalState, limits, routeSet, 
 % SYNTAX
 %   seedSet = obstacleAvoidance.search.createPathGuesses( ...
 %       initialState, goalState, limits, routeSet, obstacleEnvelope_units)
-%
 % PURPOSE
 %   - Create initial path guesses for the motion solver.
 %   - Preserve spatial routes while keeping duration estimates advisory.
-%
 % INPUTS
 %   - initialState, goalState, limits: normalized planning inputs.
 %   - routeSet (scalar struct or empty)
 %       Timed and spatial route suggestions returned by searchRoutes.
 %   - obstacleEnvelope_units: spatial proposal boundary, or empty without routes.
-%
 % OUTPUTS
 %   - seedSet (struct array)
 %       Direct seed first, followed by a timed seed and distinct spatial
 %       seeds in search order. Estimates never reject a route.
-%
 % UNITS
 %   - Positions, boundaries, and lengths are coordinate units; duration is seconds.
-%
 
 %% Section 1: Create The Required Direct Seed
 
@@ -48,7 +43,6 @@ if isempty(routeSet) || isempty(fieldnames(routeSet))
 end
 
 routeGuesses = obstacleAvoidance.search.createRoutePathGuesses(routeSet, obstacleEnvelope_units, directDuration_s, directLength_units);
-% Process each item needed to build path guesses.
 for index = 1:numel(routeGuesses)
     routeGuesses(index).Index = index + 1;
 end

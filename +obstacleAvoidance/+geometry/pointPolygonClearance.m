@@ -3,10 +3,8 @@ function [clearance_units, nearestPoint_units, edgeIndex] = pointPolygonClearanc
 % SYNTAX
 %   [clearance_units, nearestPoint_units, edgeIndex] = ...
 %       obstacleAvoidance.geometry.pointPolygonClearance(shape, point_units)
-%
 % PURPOSE
 %   - Compute signed Euclidean clearance from points to one polyshape.
-%
 % INPUTS
 %   - shape (scalar polyshape)
 %       Occupied polygon geometry.
@@ -14,7 +12,6 @@ function [clearance_units, nearestPoint_units, edgeIndex] = pointPolygonClearanc
 %       Query points in [x y] order.
 %   - geometry (optional prepared boundary record)
 %       Supplies cached edges and verified convex-ring classification.
-%
 % OUTPUTS
 %   - clearance_units (N-by-1 vector)
 %       Positive outside, zero on the boundary, and negative inside.
@@ -22,10 +19,8 @@ function [clearance_units, nearestPoint_units, edgeIndex] = pointPolygonClearanc
 %       Closest boundary point, or [NaN NaN] for empty geometry.
 %   - edgeIndex (N-by-1 positive integer or zero)
 %       One-based edge index in deterministic boundary traversal order.
-%
 % UNITS
 %   - Point, clearance, and nearest boundary position are coordinate units.
-%
 
 %% Section 1: Validate Inputs
 
@@ -73,7 +68,6 @@ isInside = false(queryCount, 1);
 % row for larger polygons. Small polygons can process more queries together.
 maximumProjectionElementCount = 65536;
 blockQueryCount               = max(1, floor(maximumProjectionElementCount / size(edgeStart_units, 1)));
-% Process each block start needed to complete point polygon clearance.
 for blockStart = 1:blockQueryCount:queryCount
     selectedQuery       = blockStart:min(queryCount, blockStart + blockQueryCount - 1);
     xOffset_units   = point_units(selectedQuery, 1) - edgeStart_units(:, 1).';

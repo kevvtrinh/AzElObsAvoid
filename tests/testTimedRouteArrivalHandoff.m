@@ -22,7 +22,7 @@ function testSavedGrowingObstacleUsesEarlierTurn(testCase)
     loaded = load(fullfile(repositoryRoot, 'Rogue Examples', 'inefficientroute.mat'));
     bundle = loaded.diagnosisBundle;
     inputs = bundle.PlannerInputs;
-    [result, diagnosis] = obstacleAvoidance.planTrajectory(inputs.obstacles, inputs.initialState, inputs.goalState, inputs.limits, bundle.PlannerOptions);
+    [result, diagnosis] = planner(inputs.obstacles, inputs.initialState, inputs.goalState, inputs.limits, bundle.PlannerOptions);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);

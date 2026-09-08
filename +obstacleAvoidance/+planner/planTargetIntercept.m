@@ -1,107 +1,45 @@
-function [result, diagnosis] = planMovingTargetIntercept(varargin)
+function [result, diagnosis] = planTargetIntercept(obstacles, initialState, goalState, limits, plannerOptions)
 %% Section 0: Header & Readme
-% SYNTAX
-%   options = obstacleAvoidance.planMovingTargetIntercept()
-%   result = obstacleAvoidance.planMovingTargetIntercept( ...
-%       initialState, targetMotion, limits, options)
-%   result = obstacleAvoidance.planMovingTargetIntercept( ...
-%       obstacles, initialState, targetMotion, limits, options)
-%   [result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept( ...
-%       obstacles, initialState, targetMotion, limits, options)
-%
-% PURPOSE
-%   - Convert sampled target motion into fixed-time planner requests.
-%   - Use a fixed arrival time for every planner trial because each trial
-%     evaluates one selected intercept time.
-%   - Enumerate every algebraic event for an obstacle-free linear target;
-%     otherwise retain a bounded chronological planner search.
-%
-% INPUTS
-%   - obstacles (canonical protected obstacle array, optional; default [])
-%   - initialState (scalar state struct)
-%   - targetMotion (scalar struct)
-%       Increasing time_s and N-by-2 position_units are required. Optional
-%       InterpolationMethod is "linear" or "pchip".
-%   - limits (scalar limits struct)
-%       Same combined-scalar or per-axis contract as planTrajectory. All
-%       three derivative limits must use the same form.
-%   - options (scalar struct, optional; default struct())
-%       InterceptMode is "earliest" or "specifiedTime". SpecifiedInterceptTime_s
-%       is required for specifiedTime. MaximumSearchDuration_s defaults to 60.
-%       MatchTargetVelocity and MatchTargetAcceleration default false.
-%       PlannerOptions is a partial planTrajectory options struct.
-%
-% OUTPUTS
-%   - result (scalar planTrajectory result)
-%       Adds the intercept time, target position, and terminal policies.
-%   - diagnosis (optional second output): planner and intercept search evidence.
-%
-% UNITS
-%   - Position is coordinate units; time is seconds; derivatives use units/s and units/s^2.
-%
+% SYNTAX: [result, diagnosis] = planTargetIntercept(obstacles, initialState, goalState, limits, plannerOptions)
+% PURPOSE: Resolve target history through exact or bounded chronological fixed-time trials.
+% INPUTS: The public planner request; targetMotion and terminal policies are in goalState.
+% OUTPUTS: Selected fixed-time result, intercept policy, and complete search evidence.
+% UNITS: Coordinate units, seconds, and their physical derivatives.
 
-%% Section 1: Resolve The Call And Options
-
-defaults = struct();
-defaults.InterceptMode            = "earliest";
-defaults.SpecifiedInterceptTime_s = NaN;
-defaults.MaximumSearchDuration_s  = 60;
-defaults.MatchTargetVelocity      = false;
-defaults.MatchTargetAcceleration  = false;
-defaults.PlannerOptions           = struct();
-if nargin == 0
-    result    = defaults;
-    diagnosis = struct();
-    return;
-elseif nargin == 4
-    obstacles       = [];
-    initialState    = varargin{1};
-    targetMotion    = varargin{2};
-    limits          = varargin{3};
-    optionOverrides = varargin{4};
-elseif nargin == 5
-    obstacles       = varargin{1};
-    initialState    = varargin{2};
-    targetMotion    = varargin{3};
-    limits          = varargin{4};
-    optionOverrides = varargin{5};
-else
-    error("planMovingTargetIntercept:InvalidCall", "Use zero, four, or five inputs as documented.");
+%% Section 1: Normalize States And Terminal Policies
+initialState = obstacleAvoidance.input.normalizePlannerState(initialState, "initialState");
+limits = obstacleAvoidance.input.normalizePlannerLimits(limits);
+targetMotion = goalState.targetMotion;
+goalState.position_units = [0 0];
+terminalState = obstacleAvoidance.input.normalizePlannerState(goalState, "goalState");
+options = struct();
+options.InterceptMode = "earliest";
+if plannerOptions.GoalTimeMode == "fixedArrival"
+    options.InterceptMode = "specifiedTime";
 end
-if isempty(optionOverrides)
-    optionOverrides = struct();
-end
-if ~isstruct(optionOverrides) || ~isscalar(optionOverrides)
-    error("planMovingTargetIntercept:InvalidOptions", "options must be a scalar struct.");
-end
-[options, unknownNames] = obstacleAvoidance.input.resolveOptions(defaults, optionOverrides);
-if ~isempty(unknownNames)
-    warning("planMovingTargetIntercept:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
-end
-options.InterceptMode = string(options.InterceptMode);
-if ~isscalar(options.InterceptMode) || ~any(options.InterceptMode == ["earliest", "specifiedTime"])
-    error("planMovingTargetIntercept:InvalidMode", "InterceptMode must be 'earliest' or 'specifiedTime'.");
-end
-% Apply the required validation or transfer to each field name.
+options.SpecifiedInterceptTime_s = terminalState.time_s;
+options.MaximumSearchDuration_s = terminalState.time_s - initialState.time_s;
+options.PlannerOptions = plannerOptions;
+options.TerminalVelocity_units_s = terminalState.velocity_units_s;
+options.TerminalAcceleration_units_s2 = terminalState.acceleration_units_s2;
 for fieldName = ["MatchTargetVelocity", "MatchTargetAcceleration"]
-    options.(fieldName) = obstacleAvoidance.input.normalizeLogicalScalar(options.(fieldName), fieldName, "planMovingTargetIntercept:InvalidLogicalOption");
+    value = false;
+    if isfield(goalState, fieldName) && ~isempty(goalState.(fieldName))
+        value = goalState.(fieldName);
+    end
+    options.(fieldName) = obstacleAvoidance.input.normalizeLogicalScalar(value, fieldName, "planner:InvalidLogicalOption");
 end
 validateattributes(options.MaximumSearchDuration_s, {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
-if ~isstruct(options.PlannerOptions) || ~isscalar(options.PlannerOptions)
-    error("planMovingTargetIntercept:InvalidPlannerOptions", "PlannerOptions must be a scalar struct.");
-end
-initialState = obstacleAvoidance.input.normalizePlannerState(initialState, "initialState");
-limits       = obstacleAvoidance.input.normalizePlannerLimits(limits);
 
 %% Section 2: Normalize The Sampled Target
 
 if ~isstruct(targetMotion) || ~isscalar(targetMotion) || ~all(isfield(targetMotion, {'time_s', 'position_units'}))
-    error("planMovingTargetIntercept:InvalidTargetMotion", "targetMotion must contain time_s and position_units.");
+    error("planner:InvalidTargetMotion", "targetMotion must contain time_s and position_units.");
 end
 validateattributes(targetMotion.time_s, {'numeric'}, {'real', 'finite', 'vector', 'increasing'});
 targetMotion.time_s = double(targetMotion.time_s(:));
 if numel(targetMotion.time_s) < 2
-    error("planMovingTargetIntercept:TargetHistoryTooShort", "targetMotion.time_s must contain at least two samples.");
+    error("planner:TargetHistoryTooShort", "targetMotion.time_s must contain at least two samples.");
 end
 validateattributes(targetMotion.position_units, {'numeric'}, {'real', 'finite', '2d', 'ncols', 2, 'nrows', numel(targetMotion.time_s)});
 targetMotion.position_units = double(targetMotion.position_units);
@@ -110,7 +48,7 @@ if ~isfield(targetMotion, "InterpolationMethod") || isempty(targetMotion.Interpo
 end
 targetMotion.InterpolationMethod = string(targetMotion.InterpolationMethod);
 if ~isscalar(targetMotion.InterpolationMethod) || ~any(targetMotion.InterpolationMethod == ["linear", "pchip"])
-    error("planMovingTargetIntercept:InvalidInterpolation", "InterpolationMethod must be 'linear' or 'pchip'.");
+    error("planner:InvalidInterpolation", "InterpolationMethod must be 'linear' or 'pchip'.");
 end
 
 %% Section 3: Plan The Intercept
@@ -120,13 +58,13 @@ if options.InterceptMode == "specifiedTime"
     interceptTime_s = double(options.SpecifiedInterceptTime_s);
     validateattributes(interceptTime_s, {'numeric'}, {'real', 'finite', 'scalar', '>', initialTime_s});
     if interceptTime_s < targetMotion.time_s(1) || interceptTime_s > targetMotion.time_s(end)
-        error("planMovingTargetIntercept:InterceptOutsideHistory", "SpecifiedInterceptTime_s must be inside targetMotion.time_s.");
+        error("planner:InterceptOutsideHistory", "SpecifiedInterceptTime_s must be inside targetMotion.time_s.");
     end
     [result, diagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, interceptTime_s, nargout > 1);
     search = searchRecord("specifiedFixedTime", 1, 0, 0, interceptTime_s, interceptTime_s, interceptTime_s, interceptTime_s, 0, struct());
 else
-    if options.MatchTargetVelocity || options.MatchTargetAcceleration
-        error("planMovingTargetIntercept:UnsupportedMovingDerivative", "Earliest intercept supports explicit zero terminal velocity " + "and acceleration only.");
+    if options.MatchTargetVelocity || options.MatchTargetAcceleration || any(options.TerminalVelocity_units_s ~= 0) || any(options.TerminalAcceleration_units_s2 ~= 0)
+        error("planner:UnsupportedMovingDerivative", "Earliest intercept supports explicit zero terminal velocity " + "and acceleration only.");
     end
     [result, search, diagnosis] = searchEarliest(obstacles, initialState, targetMotion, limits, options, nargout > 1);
 end
@@ -145,8 +83,14 @@ result.Intercept = struct("Mode", options.InterceptMode, ...
     "TerminalVelocityPolicy", policies(options.MatchTargetVelocity + 1), ...
     "TerminalAccelerationPolicy", ...
         policies(options.MatchTargetAcceleration + 1));
+if ~options.MatchTargetVelocity && any(options.TerminalVelocity_units_s ~= 0)
+    result.Intercept.TerminalVelocityPolicy = "specified";
+end
+if ~options.MatchTargetAcceleration && any(options.TerminalAcceleration_units_s2 ~= 0)
+    result.Intercept.TerminalAccelerationPolicy = "specified";
+end
 if nargout > 1
-    diagnosis.InterceptSearch  = obstacleAvoidance.planner.flattenDiagnosis(search);
+    diagnosis.InterceptSearch  = search;
     diagnosis.InterceptOptions = rmfield(options, "PlannerOptions");
 end
 end
@@ -155,18 +99,14 @@ end
 
 function [result, search, diagnosis] = searchEarliest(obstacles, initialState, targetMotion, limits, options, includeDiagnosis)
     % Use the exact direct-intercept solver when eligible; otherwise search a time grid.
-    plannerDefaults = obstacleAvoidance.planTrajectory();
-    tolerance_s     = plannerDefaults.ArrivalTimeTolerance_s;
-    if isfield(options.PlannerOptions, "ArrivalTimeTolerance_s")
-        tolerance_s = options.PlannerOptions.ArrivalTimeTolerance_s;
-    end
+    tolerance_s = options.PlannerOptions.ArrivalTimeTolerance_s;
     searchStart_s = max(targetMotion.time_s(1), initialState.time_s + tolerance_s);
     searchEnd_s   = min(targetMotion.time_s(end), initialState.time_s + options.MaximumSearchDuration_s);
     if searchEnd_s <= searchStart_s
-        error("planMovingTargetIntercept:EmptySearchWindow", "The target history and MaximumSearchDuration_s do not overlap " + "after initialState.time_s.");
+        error("planner:EmptySearchWindow", "The target history and MaximumSearchDuration_s do not overlap " + "after initialState.time_s.");
     end
     exactDiagnostics = struct();
-    isDirectExact    = isempty(obstacles) && targetMotion.InterpolationMethod == "linear" && derivativeIsZero(initialState, "velocity_units_s") && derivativeIsZero(initialState, "acceleration_units_s2");
+    isDirectExact    = isempty(obstacles) && targetMotion.InterpolationMethod == "linear" && all(initialState.velocity_units_s == 0) && all(initialState.acceleration_units_s2 == 0);
     if isDirectExact
         [exactTime_s, exactDiagnostics] = obstacleAvoidance.planner.findEarliestLinearIntercept(initialState, targetMotion.time_s, targetMotion.position_units, limits, searchEnd_s);
         if isfinite(exactTime_s) && exactTime_s >= searchStart_s
@@ -186,7 +126,6 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
     selectedTime_s      = NaN;
     lowerTime_s         = searchStart_s;
     result              = [];
-    % Process each query time s in temporal order and accumulate its result.
     for queryTime_s = coarseTime_s.'
         [trial, trialDiagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, queryTime_s, includeDiagnosis);
         trialCount = trialCount + 1;
@@ -200,7 +139,6 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
     end
     initialUpperTime_s = selectedTime_s;
     refinementCount    = 0;
-    % Continue iterating until the stopping condition for find earliest is satisfied.
     while isfinite(selectedTime_s) && selectedTime_s - lowerTime_s > tolerance_s && refinementCount < 16
         queryTime_s = 0.5 * (lowerTime_s + selectedTime_s);
         [trial, trialDiagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, queryTime_s, includeDiagnosis);
@@ -218,16 +156,11 @@ function [result, search, diagnosis] = searchEarliest(obstacles, initialState, t
     search.MaximumCoarseStep_s = max(diff(coarseTime_s));
 end
 
-function isZero = derivativeIsZero(state, fieldName)
-    % Check for the rest state required by the exact solver.
-    isZero = ~isfield(state, fieldName) || isempty(state.(fieldName)) || all(double(state.(fieldName)) == 0, "all");
-end
-
 function [result, diagnosis] = planAtTime(obstacles, initialState, targetMotion, limits, options, interceptTime_s, includeDiagnosis)
     % Call the public planner for one fixed-time intercept.
     terminalPosition_units        = targetAtTime(targetMotion, interceptTime_s);
-    terminalVelocity_units_s      = [0 0];
-    terminalAcceleration_units_s2 = [0 0];
+    terminalVelocity_units_s      = options.TerminalVelocity_units_s;
+    terminalAcceleration_units_s2 = options.TerminalAcceleration_units_s2;
     if options.MatchTargetVelocity || options.MatchTargetAcceleration
         [targetVelocity_units_s, targetAcceleration_units_s2] = targetDerivatives(targetMotion.time_s, targetMotion.position_units, interceptTime_s, targetMotion.InterpolationMethod);
         if options.MatchTargetVelocity
@@ -247,9 +180,9 @@ function [result, diagnosis] = planAtTime(obstacles, initialState, targetMotion,
     plannerOptions = options.PlannerOptions;
     plannerOptions.GoalTimeMode = "fixedArrival";
     if includeDiagnosis
-        [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, plannerOptions);
+        [result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
     else
-        result    = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, plannerOptions);
+        result    = planner(obstacles, initialState, goalState, limits, plannerOptions);
         diagnosis = struct();
     end
 end

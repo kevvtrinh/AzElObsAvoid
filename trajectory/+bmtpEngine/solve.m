@@ -4,12 +4,10 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %   [candidate, diagnostics] = ...
 %       bmtpEngine.solve( ...
 %       seed, regions_units, coverage, initialState, goalState, limits, options)
-%
 % PURPOSE
 %   Turn one proposed path into a smooth motion that respects motion limits.
 %   Adjust the curve and obstacle-separating boundaries in alternating steps.
 %   Use degree-eight Bezier segments; the planner independently validates the result.
-%
 % INPUTS
 %   - seed (scalar struct)
 %       position_units is N-by-2; tau strictly increases from zero to one.
@@ -24,17 +22,14 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivatives use units/s,
 %     units/s^2, and units/s^3. Polynomial powers use local normalized time.
-%
 
 %% Section 1: Validate And Create The Exclusion Representation
 

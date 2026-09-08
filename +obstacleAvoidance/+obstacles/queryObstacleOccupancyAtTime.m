@@ -7,28 +7,23 @@ function [isOccupied, blockingObstacleIndex, queryDetails] = queryObstacleOccupa
 %   [isOccupied, blockingObstacleIndex, queryDetails] = ...
 %       obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
 %       obstacles, x_units, y_units, queryTime, optionOverrides)
-%
 % PURPOSE
 %   - Query protected polygon occupancy at explicit physical times.
 %   - Return signed-clearance and nearest-obstacle diagnostics.
-%
 % INPUTS
 %   - obstacles (canonical obstacle array, nested cells, or [])
 %   - x_units, y_units (numeric arrays or scalars)
 %   - queryTime (numeric seconds or datetime array)
 %   - optionOverrides (scalar struct, optional; default struct())
 %       BoundaryIsOccupied, ClearanceTolerance_units, and ReferenceTime.
-%
 % OUTPUTS
 %   - isOccupied (logical array)
 %   - blockingObstacleIndex (uint32 array)
 %       First blocker in caller order, or zero when clear.
 %   - queryDetails (scalar struct)
 %       Signed clearance, nearest obstacle, times, margins, and options.
-%
 % UNITS
 %   - Position and clearance are coordinate units. Numeric time is seconds.
-%
 
 %% Section 1: Resolve Options And Queries
 

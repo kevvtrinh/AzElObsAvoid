@@ -1,17 +1,10 @@
 function [result, emptySeedSummary] = createPlanningRecord(obstacles, initialState, goalState, limits, options, validationTemplate)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [result, emptySeedSummary] = createPlanningRecord( ...
-%       obstacles, initialState, goalState, limits, options, validationTemplate)
-% PURPOSE
-%   Define stable internal motion and candidate-summary records.
-% INPUTS
-%   Canonical obstacles, normalized states/limits/options, and empty validation.
-% OUTPUTS
-%   result holds planning data; emptySeedSummary initializes each attempt.
-%   Success and failure use the same fields and empty-value conventions.
-% UNITS
-%   Coordinate units, seconds, and derivatives in units/s, units/s^2, and units/s^3.
+% SYNTAX: [result, emptySeedSummary] = createPlanningRecord(obstacles, initialState, goalState, limits, options, validationTemplate)
+% PURPOSE: Define stable internal motion and candidate-summary records.
+% INPUTS: Canonical obstacles, normalized states/limits/options, and empty validation.
+% OUTPUTS: Planning record and attempt template; success/failure share empty-value conventions.
+% UNITS: Coordinate units, seconds, and physical derivatives.
 
 %% Section 1: Create Planner Templates
 

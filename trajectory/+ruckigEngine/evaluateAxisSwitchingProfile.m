@@ -3,10 +3,8 @@ function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, l
 % SYNTAX
 %   candidate = ruckigEngine.evaluateAxisSwitchingProfile( ...
 %       initialState, terminalState, limits, phaseDuration, phaseJerk, family)
-%
 % PURPOSE
 %   - Integrate and certify one scalar piecewise-constant-jerk profile.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar position, velocity, and acceleration fields.
@@ -20,15 +18,12 @@ function candidate = evaluateAxisSwitchingProfile(initialState, terminalState, l
 %       Constant jerk applied during each corresponding phase.
 %   - family (scalar text)
 %       Diagnostic name for the switching family.
-%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Success and exact phase-boundary position, velocity, acceleration,
 %       duration, jerk, and family values.
-%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%
 
 %% Section 1: Integrate The Phase Law
 
@@ -47,7 +42,6 @@ position(1) = initialState.position;
 velocity(1) = initialState.velocity;
 acceleration(1) = initialState.acceleration;
 
-% Process each phase while assembling the complete motion or interval result.
 for phaseIndex = 1:phaseCount
     duration = phaseDuration(phaseIndex);
     jerk     = phaseJerk(phaseIndex);
@@ -82,7 +76,6 @@ end
 function peak = maximumAbsoluteVelocity(phaseDuration, phaseJerk, velocity, acceleration)
     % Include interior velocity extrema where acceleration crosses zero.
     peak = max(abs(velocity));
-    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         jerk = phaseJerk(phaseIndex);
         if jerk == 0
@@ -100,7 +93,6 @@ end
 function lengthValue = continuousPathLength(phaseDuration, phaseJerk, position, velocity, acceleration)
     % Split each phase at velocity zeros so scalar path length is exact.
     lengthValue = 0;
-    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         duration      = phaseDuration(phaseIndex);
         jerk          = phaseJerk(phaseIndex);

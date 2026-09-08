@@ -4,27 +4,22 @@ function [feasible, message, reason] = validatePlannerEndpoints(obstacles, initi
 %   [feasible, message, reason] = ...
 %       obstacleAvoidance.input.validatePlannerEndpoints( ...
 %       obstacles, initialState, goalState, limits, options)
-%
 % PURPOSE
 %   - Reject endpoint geometry, dynamics, timing, or workspace failures
 %     before route search or trajectory optimization begins.
-%
 % INPUTS
 %   - obstacles (canonical protected-obstacle array)
 %   - initialState, goalState, limits (normalized scalar structs)
 %   - options (scalar struct)
 %       Requires GoalTimeMode, ArrivalTimeTolerance_s, and
 %       WrapX and WrapY.
-%
 % OUTPUTS
 %   - feasible (logical scalar)
 %   - message, reason (string scalars)
 %       Empty on success; otherwise actionable and machine-readable failure.
-%
 % UNITS
 %   - Position and workspace intervals are coordinate units; time is seconds;
 %     derivatives use units/s and units/s^2.
-%
 
 %% Section 1: Check Protected Endpoint Geometry
 

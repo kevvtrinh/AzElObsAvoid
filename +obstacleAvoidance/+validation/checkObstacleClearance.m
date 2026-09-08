@@ -6,12 +6,10 @@ function [collisionFree, collisionResolved, seedCorridorCertified, planeCertific
 %       collisionCheckCount, unresolvedIntervalCount, certificateRejectionReason] = ...
 %       obstacleAvoidance.validation.checkObstacleClearance( ...
 %       trajectory, obstacles, limits, options, canCheckCollision)
-%
 % PURPOSE
 %   - Check a complete polynomial motion against protected obstacle histories.
 %   - Prefer independently replayed certificates, then resolve ambiguity with
 %     conservative adaptive curve-obstacle checks that fail closed.
-%
 % INPUTS
 %   - trajectory (scalar motion struct)
 %       Complete sampled and polynomial motion plus optional certificates.
@@ -23,7 +21,6 @@ function [collisionFree, collisionResolved, seedCorridorCertified, planeCertific
 %       Collision clearance and minimum-time-step controls.
 %   - canCheckCollision (scalar logical)
 %       True only when histories and polynomial bounds are structurally valid.
-%
 % OUTPUTS
 %   - collisionFree, collisionResolved (scalar logicals)
 %       Complete collision result and whether every interval was resolved.
@@ -35,10 +32,8 @@ function [collisionFree, collisionResolved, seedCorridorCertified, planeCertific
 %       Exact polygon queries and intervals that reached the resolution floor.
 %   - certificateRejectionReason (string scalar)
 %       Failed timed-coverage check, or empty when no such check failed.
-%
 % UNITS
 %   - Geometry and clearance are coordinate units; time is seconds.
-%
 
 %% Section 1: Check Complete Separation Evidence
 
@@ -176,7 +171,6 @@ function [passed, failure] = timedRegionCoverageMatches(regions_units, activeTau
                 return;
             end
             unionShape = polyshape();
-            % Process each geometric region while constructing or checking the region topology.
             for regionIndex = reshape(find(staticRegion), 1, [])
                 unionShape = union(unionShape, polyshape(regions_units{regionIndex}(:, 1), regions_units{regionIndex}(:, 2)));
             end
@@ -191,14 +185,12 @@ function [passed, failure] = timedRegionCoverageMatches(regions_units, activeTau
         obstacleTimes_s = double(obstacle.time_s(:));
         internalEdges_s = obstacleTimes_s(obstacleTimes_s > startTime_s & obstacleTimes_s < finishTime_s);
         cellEdges_s     = snapTimedCellEdges([baseEdges_s; internalEdges_s], obstacleTimes_s);
-        % Process each geometric cell while constructing or checking the region topology.
         for cellIndex = 1:numel(cellEdges_s) - 1
             cellStart_s  = cellEdges_s(cellIndex);
             cellFinish_s = cellEdges_s(cellIndex + 1);
             queryTime_s  = [cellStart_s; ...
                 0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
             expectedVertices_units = zeros(0, 2);
-            % Process each query in temporal order and accumulate its result.
             for queryIndex = 1:numel(queryTime_s)
                 shape                = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s(queryIndex));
                 vertices_units         = double(shape.Vertices);
@@ -246,7 +238,6 @@ function cellEdges_s = snapTimedCellEdges(candidateEdges_s, obstacleTimes_s)
     % Merge certificate and obstacle event times that differ only by roundoff.
     timeScale_s     = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
     timeTolerance_s = 4096 * eps(timeScale_s);
-    % Process each event in temporal order and accumulate its result.
     for eventIndex = 1:numel(obstacleTimes_s)
         nearEvent = abs(candidateEdges_s - obstacleTimes_s(eventIndex)) <= timeTolerance_s;
         candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);
@@ -260,19 +251,16 @@ function [certified, minimumClearance_units] = verifyDegreeOneCertificate(trajec
     regionCount            = numel(regionVertices);
     segmentCount           = trajectory.Polynomial.SegmentCount;
     trajectoryControls_units = cell(segmentCount, 1);
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         positionPower = reshape(trajectory.Polynomial.positionPower_units(segmentIndex, :, :), 2, []).';
         trajectoryControls_units{segmentIndex} = powerToBernstein(positionPower);
     end
     [~, ~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(trajectoryControls_units, regionVertices);
     minimumClearance_units = Inf;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectoryControl_units = trajectoryControls_units{segmentIndex};
         degree                = size(trajectoryControl_units, 1) - 1;
         fraction              = (0:degree + 1).' / (degree + 1);
-        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~activePairs(segmentIndex, regionIndex)
                 continue;
@@ -311,7 +299,6 @@ function [regions_units, passed] = reconstructCertificateRegions(certificate, oc
     exactRecords     = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
     exactRegionCount = numel(exactRecords);
     regions_units      = cell(exactRegionCount, 1);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:exactRegionCount
         vertices_units = exactRecords(regionIndex).Vertices;
         vertices_units = vertices_units(all(isfinite(vertices_units), 2), :);
@@ -340,7 +327,6 @@ function [regions_units, passed] = reconstructCertificateRegions(certificate, oc
         return;
     end
     memberCount = 0;
-    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:planeRegionCount
         memberIndex     = grouping.GroupMemberIndices{groupIndex};
         membersAreValid = isnumeric(memberIndex) && isreal(memberIndex) && isvector(memberIndex) && ~isempty(memberIndex) && all(isfinite(memberIndex)) && all(memberIndex == fix(memberIndex)) && all(memberIndex >= 1 & memberIndex <= exactRegionCount);
@@ -355,7 +341,6 @@ function [regions_units, passed] = reconstructCertificateRegions(certificate, oc
     allMemberIndices = zeros(exactRegionCount, 1);
     regions_units      = cell(planeRegionCount, 1);
     nextMemberIndex  = 1;
-    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:planeRegionCount
         memberIndex = reshape(grouping.GroupMemberIndices{groupIndex}, [], 1);
         targets     = nextMemberIndex:(nextMemberIndex + numel(memberIndex) - 1);
@@ -375,7 +360,6 @@ end
 function regions_units = regions_unitsForMembers(exactRecords, memberIndex)
     % Extract finite vertices for the region's convex hull.
     regions_units = cell(numel(memberIndex), 1);
-    % Process each local needed to complete regions units for members.
     for localIndex = 1:numel(memberIndex)
         vertices_units = exactRecords(memberIndex(localIndex)).Vertices;
         regions_units{localIndex} = vertices_units(all(isfinite(vertices_units), 2), :);
@@ -392,9 +376,7 @@ function bernstein = powerToBernstein(power)
     % so a shared conversion bug cannot make an invalid curve pass validation.
     degree    = size(power, 1) - 1;
     transform = zeros(degree + 1);
-    % Process each bernstein needed to complete power to bernstein.
     for bernsteinIndex = 0:degree
-        % Process each power needed to complete power to bernstein.
         for powerIndex = 0:bernsteinIndex
             transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
         end
@@ -421,7 +403,6 @@ function [collisionFree, resolved, minimumClearance_units, checkCount, unresolve
             obstacles(obstacleIndex).time_s(:)]; %#ok<AGROW>
     end
     obstacleEventTimes_s = unique(obstacleEventTimes_s);
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:polynomial.SegmentCount
         segmentStart_s = polynomial.SegmentStartTime_s(segmentIndex);
         durationIndex  = min(segmentIndex, numel(polynomial.SegmentDuration_s));
@@ -441,7 +422,6 @@ function [collisionFree, resolved, minimumClearance_units, checkCount, unresolve
         end
         splitTimes_s = unique(splitTimes_s);
         [~, splitPoints_units] = bmtpEngine.evaluatePolynomial(polynomial, splitTimes_s, segmentIndex);
-        % Process each split needed to verify curve obstacle separation.
         for splitIndex = 1:numel(splitTimes_s)
             % Evaluate each obstacle against the current geometry or motion.
             for obstacleIndex = 1:numel(obstacles)
@@ -461,7 +441,6 @@ function [collisionFree, resolved, minimumClearance_units, checkCount, unresolve
             end
         end
         stack_s = [splitTimes_s(1:end - 1), splitTimes_s(2:end)];
-        % Continue iterating until the stopping condition for verify curve obstacle separation is satisfied.
         while ~isempty(stack_s)
             interval_s = stack_s(end, :);
             stack_s(end, :) = [];

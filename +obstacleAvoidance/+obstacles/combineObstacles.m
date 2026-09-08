@@ -6,22 +6,17 @@ function obstacleField = combineObstacles(varargin)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacle1, ...)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(obstacleArray)
 %   obstacles = obstacleAvoidance.obstacles.combineObstacles(nestedCells)
-%
 % PURPOSE
 %   - Flatten and validate canonical obstacle inputs in caller order.
 %   - Return a field-preserving empty array for obstacle-free planning.
-%
 % INPUTS
 %   - varargin (struct arrays, nested cell arrays, or empty numeric input)
 %       Every nonempty leaf must be a canonical obstacle record.
-%
 % OUTPUTS
 %   - obstacleField (column struct array)
 %       Independently normalized obstacle records in caller order.
-%
 % UNITS
 %   - Canonical x_units and y_units fields are coordinate units; time_s is seconds.
-%
 
 %% Section 1: Flatten Nested Inputs
 
@@ -31,7 +26,6 @@ if nargin == 0
     return;
 end
 obstacleItems = cell(0, 1);
-% Process each input needed to complete combine obstacles.
 for inputIndex = 1:nargin
     obstacleItems = [obstacleItems; flattenValue(varargin{inputIndex}, inputIndex)]; %#ok<AGROW>
 end
@@ -58,7 +52,6 @@ function items = flattenValue(value, owner)
         items = num2cell(value(:));
     elseif iscell(value)
         items = cell(0, 1);
-        % Process each child needed to complete flatten value.
         for childIndex = 1:numel(value)
             items = [items; flattenValue(value{childIndex}, owner)]; %#ok<AGROW>
         end

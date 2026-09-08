@@ -1,35 +1,15 @@
 function [candidate, diagnostics] = createRuckigWaypointMotion(seed, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [candidate, diagnostics] = ...
-%       obstacleAvoidance.planner.createRuckigWaypointMotion( ...
-%       seed, initialState, goalState, limits, options)
-%
-% PURPOSE
-%   - Compose at most two exact state-to-state Ruckig route segments.
-%
-% INPUTS
-%   - seed (scalar route-seed struct)
-%       position_units is an N-by-2 obstacle-derived route. After consecutive
-%       duplicate removal, N must be two or three; longer routes return an
-%       expected unsupported result rather than running Ruckig.
-%   - initialState, goalState (normalized scalar state structs)
-%       Endpoint position and derivatives define the first and final states.
-%   - limits (normalized scalar planner-limit struct)
-%       Workspace, velocity, acceleration, and jerk limits use named units.
-%   - options (normalized scalar planner-option struct)
-%       GoalTimeMode controls earliest or exact fixed arrival behavior.
-%
-% OUTPUTS
-%   - candidate (scalar motion-candidate struct)
-%       Exact composite motion, or a stable identified segment failure.
-%   - diagnostics (scalar struct)
-%       Ruckig provenance, segment counts, failures, and elapsed time.
-%
-% UNITS
-%   - Position is coordinate units and time is seconds. Derivatives use units/s,
-%     units/s^2, and units/s^3. Route and histories are N-by-2.
-%
+% SYNTAX: [candidate, diagnostics] = createRuckigWaypointMotion(seed, initialState, goalState, limits, options)
+% PURPOSE: Compose at most two exact state-to-state Ruckig route segments.
+% INPUTS: Normalized endpoint states, limits, options, and seed.position_units.
+%   Consecutive duplicate removal must leave two or three route vertices.
+%   Endpoint derivatives are retained; an interior waypoint forces rest.
+%   Longer routes return an identified unsupported outcome. This is an explicit
+%   fallback for rest requests; non-rest endpoints use the state-to-state engine.
+% OUTPUTS: candidate motion or segment failure; diagnostics retain provenance,
+%   segment counts, failures, and elapsed time.
+% UNITS: Coordinate units, seconds, and physical derivatives; histories N-by-2.
 
 %% Section 1: Normalize The Route And Engine Request
 
@@ -92,7 +72,6 @@ end
 polynomialParts            = cell(partCount, 1);
 maximumConstraintViolation = 0;
 currentTime_s              = initialState.time_s;
-% Process each part while assembling the complete motion or interval result.
 for partIndex = 1:partCount
     engineInitialState = struct("time", currentTime_s, ...
         "position", route_units(partIndex, :), ...
@@ -157,7 +136,6 @@ end
 function combined = combinePolynomials(parts)
     % Concatenate exact switching segments without altering local coefficients.
     combined = parts{1};
-    % Process each part while assembling the complete motion or interval result.
     for partIndex = 2:numel(parts)
         part = parts{partIndex};
         combined.SegmentStartTime = [ ...

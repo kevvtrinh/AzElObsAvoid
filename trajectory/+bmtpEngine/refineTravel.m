@@ -4,26 +4,21 @@ function [result, diagnostics] = refineTravel(request, warmStart, alternatingRes
 %   [result, diagnostics] = bmtpEngine.refineTravel( ...
 %       request, warmStart, alternatingResult, diagnostics, ...
 %       obstacleTarget_units, roundoffReserve_units)
-%
 % PURPOSE
 %   - Reduce the convex travel surrogate after the alternating solve has
 %     established a feasible obstacle homotopy.
-%
 % INPUTS
 %   - request, warmStart, alternatingResult, diagnostics (scalar structs)
 %       Checked request, prepared curve, retained attempt, and diagnostics.
 %   - obstacleTarget_units, roundoffReserve_units (finite scalars)
 %       Required obstacle-side target and numerical reserve in coordinate units.
-%
 % OUTPUTS
 %   - result (scalar struct)
 %       Selected controls and segment time.
 %   - diagnostics (scalar struct)
 %       Updated active-pair count after optional refinement.
-%
 % UNITS
 %   - Position and travel are coordinate units; time is seconds.
-%
 
 %% Section 1: Preserve The Feasible Alternating Result
 
@@ -72,7 +67,6 @@ for refinementIndex = 1:8
             break;
         end
         planeUpdateFailed = false;
-        % Process each new pair needed to find travel.
         for newPairIndex = newPairIndices
             [segmentIndex, regionIndex]               = ind2sub(size(newPairs), newPairIndex);
             [travelPlane, planeExitFlag, planeOutput] = bmtpEngine.solveSeparatingLine(squeeze(baseControl_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, obstacleTarget_units, roundoffReserve_units, request.PlaneOptions);

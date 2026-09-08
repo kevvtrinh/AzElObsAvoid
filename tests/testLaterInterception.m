@@ -11,11 +11,11 @@ end
 function setupOnce(~)
     % Using the current implementation lets the same test establish the pinned
     % baseline before a replacement is installed on the refactor branch.
-    plannerPath = which('obstacleAvoidance.planTrajectory');
+    plannerPath = which('planner');
     if isempty(plannerPath)
         root = fileparts(fileparts(mfilename('fullpath')));
     else
-        root = fileparts(fileparts(plannerPath));
+        root = fileparts(plannerPath);
     end
     addpath(root,fullfile(root,'trajectory'));
 end
@@ -28,14 +28,14 @@ function testEarlyBlockedMeetingDoesNotEndTheSearch(testCase)
     for origin_s = [0 7]
         initial = struct('time_s',origin_s,'position_units',[-2 0]);
         target = struct('time_s',origin_s+[0;8], 'position_units',[2 0;2.4 0], 'InterpolationMethod',"linear");
-        options = struct('InterceptMode',"earliest", 'MaximumSearchDuration_s',8, ...
-            'PlannerOptions',struct('ArrivalTimeTolerance_s',1e-4));
-        unblocked = obstacleAvoidance.planMovingTargetIntercept(initial,target,limits,options);
+        options = struct('ArrivalTimeTolerance_s',1e-4);
+        goal = struct('time_s',origin_s+8,'targetMotion',target);
+        unblocked = planner([],initial,goal,limits,options);
         verifyTrue(testCase,unblocked.Success);
         verifyLessThan(testCase,unblocked.Intercept.Time_s,origin_s+5);
         obstacle = obstacleAvoidance.obstacles.createObstacle("active through early meetings",origin_s+[0;5], ...
             [1;3;3;1],[-1;-1;1;1],0);
-        [result,diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacle,initial,target,limits,options);
+        [result,diagnosis] = planner(obstacle,initial,goal,limits,options);
         verifyTrue(testCase,result.Success,result.Message);
         verifyGreaterThan(testCase,result.Intercept.Time_s,origin_s+5);
         % The route must also enter the cleared region after deactivation;
@@ -45,8 +45,7 @@ function testEarlyBlockedMeetingDoesNotEndTheSearch(testCase)
         relativeArrival_s(caseIndex) = result.Intercept.Time_s-origin_s;
         check = obstacleAvoidance.validateTrajectory(result);
         verifyTrue(testCase,check.Passed,check.Message);
-        rows = diagnosis.InterceptSearch.Field == "TrialCount";
-        verifyGreaterThan(testCase,diagnosis.InterceptSearch.Value{rows},1);
+        verifyGreaterThan(testCase,diagnosis.InterceptSearch.TrialCount,1);
     end
     verifyEqual(testCase,relativeArrival_s(1),relativeArrival_s(2),'AbsTol',1e-4);
 end

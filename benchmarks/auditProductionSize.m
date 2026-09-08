@@ -1,73 +1,49 @@
 function report = auditProductionSize(maximumLineCount)
 %% Section 0: Header & Readme
-% SYNTAX
-%   report = auditProductionSize()
-%   report = auditProductionSize(maximumLineCount)
-%**************************************************************************
-% PURPOSE
-%   - Count nonblank, noncomment MATLAB lines in maintained production roots.
-%**************************************************************************
-% INPUTS
-%   - maximumLineCount (positive integer scalar, optional; default 11482)
-%       Inclusive ceiling for the complete production count. The default is
-%       a historical target, not a claim about current size; it can fail.
-%       For a refactor comparison, pass the frozen baseline's measured count.
-%       Do not raise a ceiling solely to make a failing size check pass.
-%**************************************************************************
-% OUTPUTS
-%   - report (scalar struct)
-%       Contains the count rule, file table, total, ceiling, and pass flag.
-%**************************************************************************
-% UNITS
-%   - Counts are source lines and files.
-%**************************************************************************
+% SYNTAX: report = auditProductionSize(maximumLineCount)
+% PURPOSE: Audit physical production size separately from code, comments, and blanks.
+% INPUTS: Inclusive physical ceiling; default 15527 is strictly below the 15528-line baseline.
+% OUTPUTS: Per-file and subsystem counts, total, ceiling, and pass flag.
+% UNITS: Physical source lines and files; examples, tests, and reports are excluded.
 
-%% Section 1: Resolve The Maintained Production Roots
-
-if nargin == 0
-    maximumLineCount = 11482;
-end
-validateattributes(maximumLineCount, {'numeric'}, {'real', 'finite', 'scalar', 'integer', 'positive'});
-repositoryRoot  = fileparts(fileparts(mfilename("fullpath")));
-productionRoots = ["+obstacleAvoidance", "trajectory"];
-filePaths       = strings(0, 1);
-% Process each root name included in this benchmark measurement.
-for rootName = productionRoots
-    rootPath = fullfile(repositoryRoot, rootName);
-    if isfolder(rootPath)
-        found = dir(fullfile(rootPath, "**", "*.m"));
-        % Process each found included in this benchmark measurement.
-        for foundIndex = 1:numel(found)
-            filePaths(end + 1, 1) = fullfile(found(foundIndex).folder, found(foundIndex).name); %#ok<AGROW>
-        end
-    end
+%% Section 1: Enumerate Production Including The Root Planner
+if nargin == 0, maximumLineCount = 15527; end
+validateattributes(maximumLineCount, {'numeric'}, {'scalar','integer','positive','finite'});
+repositoryRoot = fileparts(fileparts(mfilename('fullpath')));
+records = [dir(fullfile(repositoryRoot,'+obstacleAvoidance','**','*.m')); ...
+    dir(fullfile(repositoryRoot,'trajectory','**','*.m')); dir(fullfile(repositoryRoot,'planner.m'))];
+paths = strings(numel(records),1);
+subsystems = paths;
+counts = zeros(numel(records),4);
+for k = 1:numel(records)
+    paths(k) = string(fullfile(records(k).folder,records(k).name));
+    source = fileread(paths(k));
+    lines = regexp(source, '\r\n|\n|\r', 'split');
+    if ~isempty(lines) && isempty(lines{end}), lines(end) = []; end
+    lines = strtrim(string(lines));
+    blank = strlength(lines)==0;
+    comment = startsWith(lines,'%');
+    counts(k,:) = [numel(lines),nnz(~blank & ~comment),nnz(comment),nnz(blank)];
+    paths(k) = erase(paths(k),string(repositoryRoot)+filesep);
+    components = split(paths(k),filesep);
+    subsystems(k) = components(1);
+    if numel(components)>2, subsystems(k) = join(components(1:2),'/'); end
 end
 
-%% Section 2: Count Executable Source Lines
-
-relativePath        = strings(numel(filePaths), 1);
-noncommentLineCount = zeros(numel(filePaths), 1);
-% Process each file included in this benchmark measurement.
-for fileIndex = 1:numel(filePaths)
-    filePath         = filePaths(fileIndex);
-    sourceLines      = readlines(filePath);
-    isExecutableLine = strlength(strtrim(sourceLines)) > 0 & ~startsWith(strtrim(sourceLines), "%");
-    noncommentLineCount(fileIndex) = nnz(isExecutableLine);
-    relativePath(fileIndex) = erase(string(filePath), string(repositoryRoot) + string(filesep));
-end
-[noncommentLineCount, order] = sort(noncommentLineCount, "descend");
-relativePath = relativePath(order);
-fileTable    = table(relativePath, noncommentLineCount, ...
-    'VariableNames', {'Path', 'NoncommentLineCount'});
-
-%% Section 3: Assemble Reproducible Evidence
-
-totalLineCount = sum(noncommentLineCount);
-report         = struct("Rule", "Nonblank lines whose first nonspace character is not %.", ...
-    "ProductionRoots", productionRoots, ...
-    "Files", fileTable, "FileCount", height(fileTable), ...
-    "TotalLineCount", totalLineCount, ...
-    "MaximumLineCount", double(maximumLineCount), ...
-    "Passed", totalLineCount <= maximumLineCount);
-fprintf("PRODUCTION_SIZE files=%d lines=%d ceiling=%d passed=%d\n", report.FileCount, report.TotalLineCount, report.MaximumLineCount, report.Passed);
+%% Section 2: Report Reproducible Counts
+report = struct();
+report.Rule = "Physical lines, including comments and blanks; code starts with a non-% nonspace character.";
+report.Files = table(paths,subsystems,counts(:,1),counts(:,2),counts(:,3),counts(:,4), ...
+    'VariableNames',{'Path','Subsystem','Physical','Code','Comment','Blank'});
+names = unique(subsystems);
+totals = zeros(numel(names),4);
+for k = 1:numel(names), totals(k,:) = sum(counts(subsystems==names(k),:),1); end
+report.Subsystems = table(names,totals(:,1),totals(:,2),totals(:,3),totals(:,4), ...
+    'VariableNames',{'Subsystem','Physical','Code','Comment','Blank'});
+report.FileCount = numel(records);
+report.TotalLineCount = sum(counts(:,1));
+report.MaximumLineCount = maximumLineCount;
+report.Passed = report.TotalLineCount <= maximumLineCount;
+fprintf('PRODUCTION_SIZE files=%d physical=%d code=%d comment=%d blank=%d ceiling=%d passed=%d\n', ...
+    report.FileCount,sum(counts,1),maximumLineCount,report.Passed);
 end

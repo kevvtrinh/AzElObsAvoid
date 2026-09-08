@@ -1,19 +1,11 @@
 function [candidate, summary, stageTiming, context] = solvePathGuess(obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
 %% Section 0: Header & Readme
-% SYNTAX
-%   [candidate, summary, stageTiming, context] = solvePathGuess( ...
-%       obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
-% PURPOSE
-%   Construct and independently validate motion for one path guess.
-% INPUTS
-%   Normalized obstacles, states, limits, options, and indexed path guess.
-%   context holds solver choice, summary template, and reusable geometry.
-%   stageTiming contains accumulated exclusive times.
-% OUTPUTS
-%   candidate and summary retain the attempted motion, validation, and diagnostics.
-%   Updated stageTiming and context are reused by later guesses in this request.
-% UNITS
-%   Coordinate units, seconds, and derivatives in units/s, units/s^2, and units/s^3.
+% SYNTAX: [candidate, summary, stageTiming, context] = solvePathGuess(obstacles, initialState, goalState, limits, options, seed, context, stageTiming)
+% PURPOSE: Construct and independently validate one path guess.
+% INPUTS: Normalized request and indexed seed; context holds solver choice,
+%   summary template, and reusable geometry. stageTiming accumulates exclusive times.
+% OUTPUTS: Candidate, summary with validation/evidence, and updated timing/context.
+% UNITS: Coordinate units, seconds, and physical derivatives.
 
 %% Section 1: Choose And Solve The Primary Motion Method
 

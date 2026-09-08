@@ -6,13 +6,11 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %       obstacleAvoidance.planner.solveTimedBmtpTrajectory( ...
 %       seed, obstacles, initialState, goalState, limits, options, ...
 %       stageTiming)
-%
 % PURPOSE
 %   - Adapt one timed multi-waypoint seed to the smooth BMTP engine without
 %     stretching its proposed crossing times when trying a different arrival.
 %   - Conservatively bind each moving-obstacle time cell to the polynomial
 %     spans that overlap it, without constraining interior waypoints to rest.
-%
 % INPUTS
 %   - seed (scalar struct)
 %       position_units is N-by-2, tau increases zero to one, and
@@ -23,7 +21,6 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %       Normalized planner request and fully resolved planner options.
 %   - stageTiming (scalar struct)
 %       Accumulated planner timing before this timed solve.
-%
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Smooth motion or stable expected-failure record for public validation.
@@ -38,11 +35,9 @@ function [candidate, checkResult, diagnostics, validationElapsedTime_s, stageTim
 %       Total authoritative-validation time nested inside this stage.
 %   - stageTiming (scalar struct)
 %       Timing updated by every authoritative trial check.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivatives use units/s,
 %     units/s^2, and units/s^3. Histories and polygon vertices are N-by-2.
-%
 
 %% Section 1: Retain The Route Search's Physical Arrival Times
 
@@ -183,7 +178,6 @@ function [regions_units, coverage] = createTimeCellRegions(obstacles, startTime_
         [isStatic, staticShape] = obstacleAvoidance.obstacles.queryStaticHorizon(obstacle, startTime_s, finishTime_s);
         if isStatic
             exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(staticShape);
-            % Process each geometric region while constructing or checking the region topology.
             for regionIndex = 1:numel(exactRegions)
                 vertices_units = finiteVertices(exactRegions(regionIndex).Vertices);
                 if size(vertices_units, 1) >= 3
@@ -198,14 +192,12 @@ function [regions_units, coverage] = createTimeCellRegions(obstacles, startTime_
         obstacleTimes_s = double(obstacle.time_s(:));
         internalEdges_s = obstacleTimes_s(obstacleTimes_s > startTime_s & obstacleTimes_s < finishTime_s);
         cellEdges_s     = snapCellEdgesToObstacleTimes([baseEdges_s; internalEdges_s], obstacleTimes_s);
-        % Process each geometric cell while constructing or checking the region topology.
         for cellIndex = 1:numel(cellEdges_s) - 1
             cellStart_s  = cellEdges_s(cellIndex);
             cellFinish_s = cellEdges_s(cellIndex + 1);
             queryTime_s  = [cellStart_s; ...
                 0.5 * (cellStart_s + cellFinish_s); cellFinish_s];
             vertices_units = zeros(0, 2);
-            % Process each query in temporal order and accumulate its result.
             for queryIndex = 1:numel(queryTime_s)
                 shape        = obstacleAvoidance.obstacles.preparedShapeAtTime(obstacle, queryTime_s(queryIndex));
                 vertices_units = [vertices_units; ...
@@ -243,7 +235,6 @@ function cellEdges_s = snapCellEdgesToObstacleTimes(candidateEdges_s, obstacleTi
     % Merge event times that differ only by roundoff.
     timeScale_s     = max([1; abs(candidateEdges_s); abs(obstacleTimes_s)]);
     timeTolerance_s = 4096 * eps(timeScale_s);
-    % Process each event in temporal order and accumulate its result.
     for eventIndex = 1:numel(obstacleTimes_s)
         nearEvent = abs(candidateEdges_s - obstacleTimes_s(eventIndex)) <= timeTolerance_s;
         candidateEdges_s(nearEvent) = obstacleTimes_s(eventIndex);

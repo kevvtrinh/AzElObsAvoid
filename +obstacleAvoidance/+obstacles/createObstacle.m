@@ -14,12 +14,10 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       canonicalObstacles, safetyMargin_units)
 %   obstacleData = obstacleAvoidance.obstacles.createObstacle( ...
 %       canonicalObstacles, safetyMargin_units, constructionOptions)
-%
 % PURPOSE
 %   - Own canonical obstacle construction and normalization.
 %   - Rebuild protected histories from retained original geometry so an
 %     absolute safety margin is applied exactly once.
-%
 % INPUTS
 %   - obstacleInput (scalar text or canonical obstacle container)
 %   - varargin
@@ -30,15 +28,12 @@ function obstacleData = createObstacle(obstacleInput, varargin)
 %       Paired nonfinite rows separate rings. Ring orientation and first
 %       vertex are representation details. The status field is metadata and
 %       does not deactivate physical geometry.
-%
 % OUTPUTS
 %   - obstacleData (canonical scalar or column struct array)
 %       Original and protected histories, margin, status, and stable fields.
-%
 % UNITS
 %   - Boundary coordinates and safety margins are coordinate units; time is seconds.
 %   - See obstacle_history_contract.md for between-sample semantics.
-%
 
 %% Section 1: Select Construction Or Canonical Rebuild
 
@@ -160,7 +155,6 @@ function [xHistory_units, yHistory_units, removedCount, removalBySample] = norma
         "createObstacle:OriginalBoundarySizeMismatch"];
     fieldNames = ["x_units", "y_units"; "originalX_units", "originalY_units"];
     roleIndex  = 1 + (role == "original");
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:sampleCount
         validateattributes(xHistory_units{sampleIndex}, {'numeric'}, {'vector', 'real'});
         validateattributes(yHistory_units{sampleIndex}, {'numeric'}, {'vector', 'real'});
@@ -203,7 +197,6 @@ function [x_units, y_units, removedCount] = normalizeSlice(x_units, y_units, sam
     newX_units   = NaN(outputCount, 1);
     newY_units = NaN(outputCount, 1);
     writeIndex       = 1;
-    % Process each retained needed to prepare slice.
     for retainedIndex = 1:numel(retainedRegions)
         regionIndex = retainedRegions(retainedIndex);
         inputRows   = regionStarts(regionIndex):regionStops(regionIndex);
@@ -241,13 +234,11 @@ function obstacles = protectObstacles(obstacles, safetyMargin_units, verbose)
         end
         if useBackgroundWorkers
             futures(1, sampleCount) = parallel.FevalFuture; %#ok<AGROW>
-            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 futures(sampleIndex) = parfeval(workerPool, @inflateSlice, 2, obstacle.originalX_units{sampleIndex}, obstacle.originalY_units{sampleIndex}, safetyMargin_units);
             end
             [protectedX_units, protectedY_units] = fetchOutputs(futures, "UniformOutput", false);
         else
-            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:sampleCount
                 [protectedX_units{sampleIndex}, ...
                     protectedY_units{sampleIndex}] = inflateSlice(obstacle.originalX_units{sampleIndex}, obstacle.originalY_units{sampleIndex}, safetyMargin_units);

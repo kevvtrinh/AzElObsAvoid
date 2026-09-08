@@ -7,11 +7,9 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope
 %   [envelopeShape, usedEnvelope, estimatedVertexWork] = ...
 %       obstacleAvoidance.search.denseSweptEnvelope( ...
 %       obstacles, sampleTimes_s, endpointPosition_units, vertexWorkBudget)
-%
 % PURPOSE
 %   - Replace an unaffordable sampled union with one conservative convex
 %     history envelope per obstacle for topology proposals only.
-%
 % INPUTS
 %   - obstacles (canonical protected obstacle struct array)
 %       Complete stored histories whose vertices define each envelope.
@@ -21,7 +19,6 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope
 %       Start and goal in [x y] order.
 %   - vertexWorkBudget (positive numeric scalar)
 %       Maximum estimated sampled-union vertex work.
-%
 % OUTPUTS
 %   - envelopeShape (scalar polyshape)
 %       Separate conservative history hulls, or empty when unused.
@@ -29,10 +26,8 @@ function [envelopeShape, usedEnvelope, estimatedVertexWork] = denseSweptEnvelope
 %       True only when dense fallback was needed and protects both endpoints.
 %   - estimatedVertexWork (nonnegative integer scalar)
 %       Sample-time count times the maximum stored vertices per obstacle.
-%
 % UNITS
 %   - Position is coordinate units; time is seconds; work is a vertex count.
-%
 
 %% Section 1: Detect Dense History Work
 
@@ -43,7 +38,6 @@ verticesPerLayer = 0;
 % Evaluate each obstacle against the current geometry or motion.
 for obstacleIndex = 1:numel(obstacles)
     maximumVertexCount = 0;
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacles(obstacleIndex).x_units)
         maximumVertexCount = max(maximumVertexCount, numel(obstacles(obstacleIndex).x_units{sampleIndex}));
     end
@@ -66,7 +60,6 @@ envelopeCount = 0;
 for obstacleIndex = 1:numel(obstacles)
     obstacle     = obstacles(obstacleIndex);
     vertices_units = zeros(0, 2);
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:numel(obstacle.x_units)
         sample_units   = [obstacle.x_units{sampleIndex}(:), obstacle.y_units{sampleIndex}(:)];
         vertices_units = [vertices_units; sample_units(all(isfinite(sample_units), 2), :)]; %#ok<AGROW>

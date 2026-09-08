@@ -521,7 +521,7 @@ end
 function isFailure = isRequestFailure(exception)
     % Distinguish invalid request/planner requirements from server defects.
     identifier = string(exception.identifier);
-    isFailure  = contains(identifier, "runPlanningRequest:") || startsWith(identifier, "planTrajectory:") || startsWith(identifier, "createObstacle:") || startsWith(identifier, "combineObstacles:") || startsWith(identifier, "bmtpEngine:") || startsWith(identifier, "ruckigEngine:");
+    isFailure  = contains(identifier, "runPlanningRequest:") || startsWith(identifier, "planner:") || startsWith(identifier, "createObstacle:") || startsWith(identifier, "combineObstacles:") || startsWith(identifier, "bmtpEngine:") || startsWith(identifier, "ruckigEngine:");
 end
 
 function isTimeout = isSocketTimeout(exception)

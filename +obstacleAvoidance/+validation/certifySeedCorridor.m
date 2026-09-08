@@ -4,11 +4,9 @@ function [certified, minimumClearance_units] = certifySeedCorridor(trajectory, o
 %   [certified, minimumClearance_units] = ...
 %       obstacleAvoidance.validation.certifySeedCorridor( ...
 %       trajectory, obstacles, tolerance_units)
-%
 % PURPOSE
 %   - Independently verify complete obstacle-envelope containment, support
 %     integrity, and continuous Bernstein separation for a seed corridor.
-%
 % INPUTS
 %   - trajectory (scalar struct)
 %       Polynomial, SeedCorridorBoundary_units, and SeedCorridor are required.
@@ -16,16 +14,13 @@ function [certified, minimumClearance_units] = certifySeedCorridor(trajectory, o
 %       Complete histories that the supplied envelope must contain.
 %   - tolerance_units (nonnegative numeric scalar)
 %       Certificate comparison tolerance.
-%
 % OUTPUTS
 %   - certified (logical scalar)
 %       True only when every segment/region record passes.
 %   - minimumClearance_units (numeric scalar)
 %       Smallest continuous certified clearance, or NaN on failure.
-%
 % UNITS
 %   - Geometry, clearance, and tolerance are coordinate units.
-%
 
 %% Section 1: Validate Complete Certificate Evidence
 
@@ -58,7 +53,6 @@ end
 %% Section 2: Verify Supports And Continuous Separation
 
 supportTolerance_units = max(1e-9, 10 * tolerance_units);
-% Process each corridor needed to verify seed corridor.
 for corridorIndex = 1:numel(corridor)
     record = corridor(corridorIndex);
     if abs(norm(record.Normal) - 1) > 1e-9 || record.Clearance_units < 0
@@ -123,7 +117,6 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_units, ob
     if isempty(envelopeRegions)
         return;
     end
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(envelopeRegions)
         envelopeRegions(regionIndex) = polybuffer(envelopeRegions(regionIndex), max(1e-9, tolerance_units));
     end
@@ -135,7 +128,6 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_units, ob
             sweptShape = preparation.StaticShape;
         else
             vertices_units = zeros(0, 2);
-            % Process each sample in temporal order and accumulate its result.
             for sampleIndex = 1:numel(obstacle.x_units)
                 sample_units = [obstacle.x_units{sampleIndex}(:), ...
                     obstacle.y_units{sampleIndex}(:)];
@@ -151,7 +143,6 @@ function containsAllObstacles = seedEnvelopeContainsObstacles(boundary_units, ob
         end
         areaTolerance_units2 = 256 * eps(max(1, area(sweptShape)));
         isContained        = false;
-        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:numel(envelopeRegions)
             if area(subtract(sweptShape, envelopeRegions(regionIndex))) <= areaTolerance_units2
                 isContained = true;

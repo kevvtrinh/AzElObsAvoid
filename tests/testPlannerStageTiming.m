@@ -39,9 +39,9 @@ function testSuccessAndEndpointFailureShareTiming(testCase)
     goalState    = state(4, [1 0]);
     limits       = physicalLimits();
     options      = fixedTimeOptions();
-    [success, successDiagnosis] = obstacleAvoidance.planTrajectory([], initialState, goalState, limits, options);
+    [success, successDiagnosis] = planner([], initialState, goalState, limits, options);
     blockingObstacle = rectangleObstacle([0 4], [-1 1 -1 1], 0);
-    [failure, failureDiagnosis] = obstacleAvoidance.planTrajectory(blockingObstacle, initialState, goalState, limits, options);
+    [failure, failureDiagnosis] = planner(blockingObstacle, initialState, goalState, limits, options);
 
     verifyTrue(testCase, success.Success, success.Message);
     verifyTrue(testCase, success.Validation.Passed, success.Validation.Message);
@@ -61,7 +61,7 @@ function testMotionSolverWorkReconcilesTiming(testCase)
     limits       = physicalLimits();
     options      = fixedTimeOptions();
     farObstacle  = rectangleObstacle([0 3], [-100 -90 70 80], 0);
-    [result, resultDiagnosis] = obstacleAvoidance.planTrajectory(farObstacle, initialState, goalState, limits, options);
+    [result, resultDiagnosis] = planner(farObstacle, initialState, goalState, limits, options);
 
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
@@ -122,7 +122,7 @@ end
 
 function options = fixedTimeOptions()
     % Return deterministic fixed-time controls for timing tests.
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     options.GoalTimeMode     = "fixedArrival";
     options.MaximumSeedCount = 1;
     options.SampleTime_s     = 0.05;
@@ -191,9 +191,9 @@ function testFixedClockRefinementMinimizesLengthWithinJerkLimits(testCase)
         -7.96059905518143 43.9054176299126; ...
         -3.03950145743289 12.3524977384662];
     obstacle     = obstacleAvoidance.obstacles.createObstacle("triangular detour regression", 0, vertices_units(:, 1), vertices_units(:, 2), 0.2);
-    options      = obstacleAvoidance.planTrajectory();
+    options      = planner();
 
-    [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);
+    [result, diagnosis] = planner(obstacle, initial, goal, limits, options);
     validation = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, result.Success, result.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
@@ -215,7 +215,7 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
         limits.maxJerk_units_s3         = [4 4];
         limits.xInterval_units    = [-10 10];
         limits.yInterval_units  = [-6 6];
-        options = obstacleAvoidance.planTrajectory();
+        options = planner();
         options.MaximumSeedCount = 1;
         options.GoalTimeMode     = "fixedArrival";
         [~, initial, goal, limits] = obstacleAvoidance.input.normalizePlannerRequest([], initial, goal, limits, options);
@@ -226,7 +226,7 @@ function testFixedClockTimingPreservesFirstAcceptanceAndExclusiveWork(testCase)
         % Exercise each mode covered by this regression.
         for mode = ["fixedArrival", "earliestArrival"]
             options.GoalTimeMode = mode;
-            [result, diagnosis] = obstacleAvoidance.planTrajectory(obstacle, initial, goal, limits, options);
+            [result, diagnosis] = planner(obstacle, initial, goal, limits, options);
             verifyTrue(testCase, result.Success, result.Message);
             validation = obstacleAvoidance.validateTrajectory(result);
             verifyTrue(testCase, validation.Passed, validation.Message);

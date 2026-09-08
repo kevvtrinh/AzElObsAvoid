@@ -56,7 +56,7 @@ for familyIndex=1:4
         end
         request=struct('obstacles',obstacleAvoidance.obstacles.combineObstacles(items), ...
             'initialState',initialState,'goalState',goalState,'limits',limits, ...
-            'options',obstacleAvoidance.planTrajectory());
+            'options',planner());
         cases{index}=struct('name',family+"_"+seed,'family',family,'seed',seed,'request',request);
     end
 end

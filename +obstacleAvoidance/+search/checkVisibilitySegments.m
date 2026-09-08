@@ -3,11 +3,9 @@ function isVisible = checkVisibilitySegments(first_units, second_units, shape, e
 % SYNTAX
 %   isVisible = obstacleAvoidance.search.checkVisibilitySegments( ...
 %       first_units, second_units, shape, edgeStart_units, edgeEnd_units)
-%
 % PURPOSE
 %   - Check straight spatial segments against one proposal obstacle shape.
 %   - Provide one shared visibility rule for graph and route cleanup stages.
-%
 % INPUTS
 %   - first_units, second_units (N-by-2 finite numeric matrices)
 %       Paired segment endpoints in [x y] order.
@@ -15,14 +13,11 @@ function isVisible = checkVisibilitySegments(first_units, second_units, shape, e
 %       Spatial proposal obstacle used for route guidance.
 %   - edgeStart_units, edgeEnd_units (M-by-2 numeric matrices)
 %       Ordered proposal-boundary edge endpoints.
-%
 % OUTPUTS
 %   - isVisible (N-by-1 logical vector)
 %       True where the segment avoids the proposal shape and its boundary.
-%
 % UNITS
 %   - All geometry is coordinate units.
-%
 
 %% Section 1: Check Exact Visibility In Bounded Pair Blocks
 isVisible = true(size(first_units,1),1);

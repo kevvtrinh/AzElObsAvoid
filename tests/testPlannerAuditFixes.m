@@ -28,7 +28,7 @@ function setupOnce(testCase)
     limits.maxJerk_units_s3         = [2 2];
     limits.xInterval_units    = [-5 5];
     limits.yInterval_units  = [-5 5];
-    options = obstacleAvoidance.planTrajectory();
+    options = planner();
     [~, initial, goal, limits] = obstacleAvoidance.input.normalizePlannerRequest([], initial, goal, limits, options);
     testCase.TestData = struct('Initial', initial, 'Goal', goal, 'Limits', limits, 'Options', options);
 end
@@ -99,7 +99,7 @@ end
 
 function testSelectionReportsTheExecutedRanking(testCase)
     s = testCase.TestData;
-    [result, diagnosis] = obstacleAvoidance.planTrajectory([], s.Initial, s.Goal, s.Limits);
+    [result, diagnosis] = planner([], s.Initial, s.Goal, s.Limits);
     verifyTrue(testCase, result.Success);
     verifyEqual(testCase, diagnosis.Selection.ColumnNames, ["ArrivalTime_s", "MotionLength_units", "CandidateIndex"]);
     verifyEqual(testCase, diagnosis.Selection.Values(1, 1), result.ArrivalTime_s);
@@ -131,14 +131,14 @@ function testPartialRoutesAndVisibilityAttemptsSurviveOutputAssembly(testCase)
     record.SearchDiagnostics.FixedClockExcursion = empty.ExcursionDiagnostics;
     record.SearchDiagnostics.SelectionPolicy     = struct();
     [~, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(record, true);
-    verifyTrue(testCase, any(diagnosis.VisibilityAttempts.Field=="EdgeRejectionReasons"));
-    verifyTrue(testCase, any(diagnosis.VisibilityAttempts.Field=="GraphComponents"));
+    verifyTrue(testCase, isfield(diagnosis.VisibilityAttempts,"EdgeRejectionReasons"));
+    verifyTrue(testCase, isfield(diagnosis.VisibilityAttempts,"GraphComponents"));
 end
 
 function testRequestedPolynomialOutputsMatchFullEvaluation(testCase)
     % Fewer requested derivatives must leave the requested values unchanged.
     s = testCase.TestData;
-    [result, ~] = obstacleAvoidance.planTrajectory([], s.Initial, s.Goal, s.Limits);
+    [result, ~] = planner([], s.Initial, s.Goal, s.Limits);
     polynomial = result.Polynomial;
     % Exercise each times covered by this regression.
     for times = {result.time_s, zeros(0, 1), NaN}

@@ -1,33 +1,13 @@
 function candidate = createDirectMotion(initialState, goalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   candidate = bmtpEngine.createDirectMotion( ...
-%       initialState, goalState, limits, options)
-%
-% PURPOSE
-%   - Create an exact minimum-time synchronized rest-to-rest trajectory.
-%   - Use analytic scalar jerk-switching laws and lossless time scaling.
-%
-% INPUTS
-%   - initialState, goalState (scalar structs)
-%       Require scalar time_s and one-by-D position_units. Omitted velocity
-%       and acceleration fields mean zero.
-%   - limits (scalar struct)
-%       Require positive one-by-D maxVelocity_units_s,
-%       maxAcceleration_units_s2, and maxJerk_units_s3.
-%   - options (scalar struct)
-%       Require GoalTimeMode and positive SampleTime_s. An optional positive
-%       ConstraintTolerance controls endpoint-rest acceptance.
-%
-% OUTPUTS
-%   - candidate (scalar struct)
-%       Stable success-or-failure record containing an exact piecewise
-%       constant-jerk Polynomial compatible with the public validator.
-%
-% UNITS
-%   - Position is coordinate units; time is seconds; derivatives use units/s,
-%     units/s^2, and units/s^3. Histories are N-by-D.
-%
+% SYNTAX: candidate = bmtpEngine.createDirectMotion(initialState, goalState, limits, options)
+% PURPOSE: Synchronize exact rest-to-rest jerk-switching profiles by lossless time scaling.
+% INPUTS: States require time_s and 1-by-D position_units; omitted derivatives mean zero.
+%   Limits require positive 1-by-D maxVelocity_units_s, maxAcceleration_units_s2,
+%   and maxJerk_units_s3. Options require GoalTimeMode and positive SampleTime_s;
+%   optional positive ConstraintTolerance controls endpoint-rest acceptance.
+% OUTPUTS: Stable success/failure candidate with exact piecewise constant-jerk Polynomial.
+% UNITS: Coordinate units, seconds, and physical derivatives; histories N-by-D.
 
 %% Section 1: Normalize The Rest-To-Rest Request
 
@@ -178,7 +158,6 @@ function [maximumVelocity_units_s, maximumAcceleration_units_s2, maximumJerk_uni
     if ~isstruct(limits) || ~isscalar(limits) || ~all(isfield(limits, names))
         error("createDirectMotion:MissingLimit", "limits requires positive per-axis velocity, acceleration, and jerk.");
     end
-    % Process each limit needed to complete read limits.
     for limitIndex = 1:3
         value = limits.(names(limitIndex));
         validateattributes(value, {'numeric'}, {'real', 'finite', 'vector', 'nonempty'}, mfilename, "limits." + names(limitIndex));
@@ -262,7 +241,6 @@ function [relativeBreak_s, segmentJerk_units_s3] = mergeProfiles(phaseDuration_s
     relativeBreak_s    = mergeBreaks([0; duration_s; axisBreak_s(:)], duration_s, 1024 * eps(max(1, duration_s)));
     segmentCount       = numel(relativeBreak_s) - 1;
     segmentJerk_units_s3 = zeros(segmentCount, dimensionCount);
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         midpoint_s = 0.5 * sum(relativeBreak_s(segmentIndex:segmentIndex + 1));
         % Evaluate each coordinate axis and combine its limiting result.
@@ -281,7 +259,6 @@ function merged_s = mergeBreaks(values_s, duration_s, tolerance_s)
     values_s    = sort(min(duration_s, max(0, double(values_s(:)))));
     merged_s    = zeros(size(values_s));
     mergedCount = 0;
-    % Process each value needed to complete merge breaks.
     for valueIndex = 1:numel(values_s)
         if mergedCount == 0 || values_s(valueIndex) - merged_s(mergedCount) > tolerance_s
             mergedCount = mergedCount + 1;

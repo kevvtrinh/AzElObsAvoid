@@ -3,27 +3,22 @@ function [resolvedOptions, unknownNames] = resolveOptions(defaultOptions, option
 % SYNTAX
 %   [resolvedOptions, unknownNames] = obstacleAvoidance.input.resolveOptions( ...
 %       defaultOptions, optionOverrides)
-%
 % PURPOSE
 %   - Apply the repository-wide partial-option merge rule once.
 %   - Preserve default field order and report, but never apply, unknown
 %     fields so each public caller can emit its own warning identifier.
-%
 % INPUTS
 %   - defaultOptions (scalar struct)
 %       Complete defaults. Its field order is preserved in the result.
 %   - optionOverrides (scalar struct)
 %       Partial overrides. Empty values retain their corresponding default.
-%
 % OUTPUTS
 %   - resolvedOptions (scalar struct)
 %       Defaults with known, nonempty overrides applied.
 %   - unknownNames (N-by-1 string vector)
 %       Ignored override fields in caller-supplied order.
-%
 % UNITS
 %   - Values retain the units documented by their owning public function.
-%
 
 %% Section 1: Classify Override Names Without Reordering Defaults
 
@@ -45,7 +40,6 @@ knownNames   = intersect(overrideNames, defaultNames, "stable");
 % Apply nonempty overrides; the caller checks their types and ranges.
 
 resolvedOptions = defaultOptions;
-% Apply the required validation or transfer to each field name.
 for fieldName = reshape(knownNames, 1, [])
     if ~isempty(optionOverrides.(fieldName))
         resolvedOptions.(fieldName) = optionOverrides.(fieldName);

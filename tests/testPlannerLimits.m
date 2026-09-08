@@ -30,8 +30,8 @@ function testCombinedPlanningMatchesExplicitAxisLimits(testCase)
     separate = fixtures.PhysicalLimits([2 2] / sqrt(2), [1 1] / sqrt(2), [2.5 2.5] / sqrt(2));
     for mode = ["earliestArrival", "fixedArrival"]
         options = struct("GoalTimeMode", mode);
-        result  = obstacleAvoidance.planTrajectory([], initial, goal, combined, options);
-        reference = obstacleAvoidance.planTrajectory([], initial, goal, separate, options);
+        result  = planner([], initial, goal, combined, options);
+        reference = planner([], initial, goal, separate, options);
         assertTrue(testCase, result.Success, result.Message);
         assertTrue(testCase, reference.Success, reference.Message);
         verifyEqual(testCase, result.Inputs.limits, separate);
@@ -78,7 +78,7 @@ function testAllMixedFormsRejectedAtPublicBoundaries(testCase)
     goal     = fixtures.State(30, [8 3], [0 0], [0 0]);
     target   = struct("time_s", [0; 30], "position_units", [6 2; 9 5]);
     names    = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"];
-    options  = obstacleAvoidance.planTrajectory();
+    options  = planner();
     for mask = 1:6
         limits = fixtures.PhysicalLimits(2, 1, 2.5);
         for fieldIndex = 1:3
@@ -86,9 +86,9 @@ function testAllMixedFormsRejectedAtPublicBoundaries(testCase)
                 limits.(names(fieldIndex)) = repmat(limits.(names(fieldIndex)), 1, 2);
             end
         end
-        verifyError(testCase, @() obstacleAvoidance.planTrajectory([], initial, goal, limits), "planTrajectory:MixedLimitModes");
-        verifyError(testCase, @() obstacleAvoidance.planMovingTargetIntercept(initial, target, limits, struct()), "planTrajectory:MixedLimitModes");
-        verifyError(testCase, @() obstacleAvoidance.validateTrajectory(struct(), [], initial, goal, limits, options), "planTrajectory:MixedLimitModes");
+        verifyError(testCase, @() planner([], initial, goal, limits), "planner:MixedLimitModes");
+        verifyError(testCase, @() planner([], initial, struct("time_s", 30, "targetMotion", target), limits), "planner:MixedLimitModes");
+        verifyError(testCase, @() obstacleAvoidance.validateTrajectory(struct(), [], initial, goal, limits, options), "planner:MixedLimitModes");
     end
 end
 
@@ -100,9 +100,14 @@ function testCombinedInterceptMatchesExplicitAxisLimits(testCase)
     combined = fixtures.PhysicalLimits(2, 1, 2.5);
     separate = fixtures.PhysicalLimits([2 2] / sqrt(2), [1 1] / sqrt(2), [2.5 2.5] / sqrt(2));
     for mode = ["earliest", "specifiedTime"]
-        options = struct("InterceptMode", mode, "SpecifiedInterceptTime_s", 15);
-        [result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(initial, target, combined, options);
-        reference = obstacleAvoidance.planMovingTargetIntercept(initial, target, separate, options);
+        options = struct("GoalTimeMode", "earliestArrival");
+        goal = struct("time_s", 60, "targetMotion", target);
+        if mode == "specifiedTime"
+            options.GoalTimeMode = "fixedArrival";
+            goal.time_s = 15;
+        end
+        [result, diagnosis] = planner([], initial, goal, combined, options);
+        reference = planner([], initial, goal, separate, options);
         assertTrue(testCase, result.Success, result.Message);
         assertTrue(testCase, reference.Success, reference.Message);
         verifyEqual(testCase, result.Inputs.limits, separate);
@@ -112,7 +117,7 @@ function testCombinedInterceptMatchesExplicitAxisLimits(testCase)
         verifyTrue(testCase, validation.Passed, validation.Message);
         if mode == "earliest"
             search = diagnosis.InterceptSearch;
-            verifyEqual(testCase, search.Value{search.Field == "Policy"}, "completePiecewisePolynomialDirect");
+            verifyEqual(testCase, search.Policy, "completePiecewisePolynomialDirect");
         end
     end
 end
@@ -123,7 +128,7 @@ function testEndpointAboveAllocatedShareReturnsExpectedFailure(testCase)
     initial  = fixtures.State(0, [0 0], [1.5 0], [0 0]);
     goal     = fixtures.State(30, [8 3], [0 0], [0 0]);
     limits   = fixtures.PhysicalLimits(2, 1, 2.5);
-    result   = obstacleAvoidance.planTrajectory([], initial, goal, limits);
+    result   = planner([], initial, goal, limits);
     verifyFalse(testCase, result.Success);
     verifyEqual(testCase, result.TerminationReason, "dynamicEndpointInfeasible");
     verifyEqual(testCase, result.Inputs.limits.maxVelocity_units_s, [2 2] / sqrt(2));
@@ -172,12 +177,12 @@ end
 function testMalformedLimitsAndScalarPositionIntervalsAreRejected(testCase)
     fixtures = testCase.TestData.Fixtures;
     limits   = fixtures.PhysicalLimits(2, 1, 2.5);
-    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(rmfield(limits, 'maxJerk_units_s3')), "planTrajectory:InvalidLimits");
+    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(rmfield(limits, 'maxJerk_units_s3')), "planner:InvalidLimits");
     limits.maxVelocity_units_s = [1 2 3];
-    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "planTrajectory:InvalidLimits");
+    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "planner:InvalidLimits");
     limits = fixtures.PhysicalLimits(2, 1, 2.5);
     limits.xInterval_units = 180;
-    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "MATLAB:planTrajectory:incorrectNumel");
+    verifyError(testCase, @() obstacleAvoidance.input.normalizePlannerLimits(limits), "MATLAB:planner:incorrectNumel");
 end
 
 function testExampleJerkOverrideCannotHideMixedLimitForms(testCase)
@@ -212,7 +217,7 @@ function testNativeSandboxResolvesCombinedOverridesBeforeGraphics(testCase)
         end
     end
     overrides.MaxJerk_units_s3 = [2.5 2.5];
-    verifyError(testCase, @() obstacleAvoidanceSandbox(overrides), "planTrajectory:MixedLimitModes");
+    verifyError(testCase, @() obstacleAvoidanceSandbox(overrides), "planner:MixedLimitModes");
 end
 
 function testOfflineJsonAcceptsCombinedLimitsAndRejectsMixing(testCase)
@@ -238,7 +243,7 @@ function testOfflineJsonAcceptsCombinedLimitsAndRejectsMixing(testCase)
     verifyEqual(testCase, bundle.PlannerInputs.limits.maxJerk_units_s3, [2.5 2.5] / sqrt(2));
     request.limits.maxAcceleration_units_s2 = [1 1];
     writeJson(requestPath, request);
-    verifyError(testCase, @() offlineSandbox.runPlanningRequest(requestPath, resultPath), "planTrajectory:MixedLimitModes");
+    verifyError(testCase, @() offlineSandbox.runPlanningRequest(requestPath, resultPath), "planner:MixedLimitModes");
 end
 
 function writeJson(path, request)

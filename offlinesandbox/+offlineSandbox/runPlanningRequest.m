@@ -94,7 +94,7 @@ obstacles = createObstacles(request.obstacles);
 
 %% Section 3: Run The Public Planner & Independent Validator
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 if result.Success
     validation = obstacleAvoidance.validateTrajectory(result);
 else

@@ -3,24 +3,19 @@ function visibilityGraph = createVisibilityGraph(limits, proposal)
 % SYNTAX
 %   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
 %       limits, proposal)
-%
 % PURPOSE
 %   - Connect points with clear straight segments; retry farther from obstacles if needed.
 %   - Return all attempts and the final graph used by route search.
-%
 % INPUTS
 %   - limits: workspace bounds.
 %   - proposal (scalar proposal-geometry struct)
 %       Spatial shape, endpoints, and reusable boundary edges.
-%
 % OUTPUTS
 %   - visibilityGraph (scalar struct)
 %       Final nodes and costs, all offset attempts, and the graph
 %       record used by search diagnostics.
-%
 % UNITS
 %   - Positions, graph costs, bounds, and offsets are coordinate units.
-%
 
 %% Section 1: Create The Offset Schedule Inputs
 
@@ -45,7 +40,6 @@ candidateOffset_units       = baseOffset_units;
 offsetRetryCount          = 0;
 anyExhaustiveUsed         = false;
 anyExhaustiveFallbackUsed = false;
-% Continue the search until build visibility graph reaches an explicit termination condition.
 while true
     attempt = obstacleAvoidance.search.createVisibilityAttempt(shape, start_units, goal_units, limits, candidateOffset_units, offsetRetryCount, workBudget);
     attempts(end + 1, 1) = attempt; %#ok<AGROW>
@@ -103,7 +97,6 @@ function referencePoints_units = createObstacleReferencePoints(shape)
     % Select one guaranteed interior point for each connected occupied region.
     shapeRegions        = regions(shape);
     referencePoints_units = zeros(numel(shapeRegions), 2);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(shapeRegions)
         [candidate_units, radius_units] = incenter(triangulation(shapeRegions(regionIndex)));
         [~, largestIndex]           = max(radius_units);

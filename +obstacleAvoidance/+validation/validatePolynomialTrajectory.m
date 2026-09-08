@@ -6,12 +6,10 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory(polynomial, t
 %       polynomial, time_s, position_units, velocity_units_s, ...
 %       acceleration_units_s2, jerk_units_s3, initialState, goalState, limits, ...
 %       options, tolerance, rangeCheck)
-%
 % PURPOSE
 %   - Validate a degree-neutral piecewise polynomial independently.
 %   - Check its time base, derivative chain, knots, endpoints, sampled
 %     histories, and continuous physical bounds.
-%
 % INPUTS
 %   - polynomial (scalar planner polynomial struct)
 %       Ascending-power position coefficients have degree at least three;
@@ -24,15 +22,12 @@ function [bounds, dynamics, checks] = validatePolynomialTrajectory(polynomial, t
 %       Absolute state and polynomial consistency tolerance.
 %   - rangeCheck (function handle)
 %       Complete polynomial range certificate for normalized time [0, 1].
-%
 % OUTPUTS
 %   - bounds, dynamics, checks (scalar structs)
 %       Stable continuous-bound, derivative, format, and history checks.
-%
 % UNITS
 %   - Position is coordinate units. Derivatives use units/s, units/s^2, and units/s^3.
 %     Time is seconds.
-%
 
 %% Section 1: Validate The Polynomial Representation
 
@@ -65,7 +60,6 @@ powerArrays = {polynomial.positionPower_units, ...
     polynomial.accelerationPower_units_s2, polynomial.jerkPower_units_s3};
 positionCoefficientCount = size(powerArrays{1}, 3);
 arraysAreValid           = numel(segmentStartTime_s) == segmentCount && all(isfinite(segmentStartTime_s));
-% Process each derivative order needed to verify polynomial trajectory.
 for derivativeOrder = 0:3
     array          = powerArrays{derivativeOrder + 1};
     arraysAreValid = arraysAreValid && isnumeric(array) && positionCoefficientCount >= 4 && size(array, 1) == segmentCount && size(array, 2) == 2 && size(array, 3) == positionCoefficientCount - derivativeOrder && all(isfinite(array), "all");
@@ -89,11 +83,9 @@ upperLimits = {[limits.xInterval_units(2), ...
     limits.yInterval_units(2)], limits.maxVelocity_units_s, limits.maxAcceleration_units_s2, limits.maxJerk_units_s3};
 within = true(1, 4);
 wrapAxes = [options.WrapX, options.WrapY];
-% Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount
     % Evaluate each coordinate axis and combine its limiting result.
     for axisIndex = 1:2
-        % Process each derivative order needed to verify polynomial trajectory.
         for derivativeOrder = 0:3
             shouldCheck = derivativeOrder > 0 || ~wrapAxes(axisIndex);
             if shouldCheck && within(derivativeOrder + 1)
@@ -106,7 +98,6 @@ end
 bounds           = createBounds(within);
 durationScale_s  = reshape(segmentDuration_s, [], 1, 1);
 dynamicsResidual = zeros(0, 1);
-% Process each derivative order needed to verify polynomial trajectory.
 for derivativeOrder = 0:2
     source           = powerArrays{derivativeOrder + 1};
     derivative       = source(:, :, 2:end) .* reshape(1:size(source, 3) - 1, 1, 1, []) ./ durationScale_s;

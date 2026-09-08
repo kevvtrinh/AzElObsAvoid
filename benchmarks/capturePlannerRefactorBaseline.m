@@ -167,7 +167,7 @@ function record = createRuckigBackupRecord()
     options.MaximumSeedCount               = 3;
     options.SampleTime_s                   = 0.05;
     options.UnsupportedTimedTopologyPolicy = "ruckigStopAtWaypoints";
-    result = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+    result = planner(obstacles, initialState, goalState, limits, options);
     record = createPhysicalRecord(result);
 end
 

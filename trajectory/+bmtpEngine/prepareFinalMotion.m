@@ -3,11 +3,9 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
 %       request, controlPoint_units, segmentTime_s)
-%
 % PURPOSE
 %   - Impose exact rest-to-rest endpoints, split the selected curve, and
 %     increase segment times enough to satisfy derivative-control bounds.
-%
 % INPUTS
 %   - request (scalar struct)
 %       Checked BMTP request, limits, horizon, and goal-time policy.
@@ -17,14 +15,11 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       Selected common or individual segment durations.
 %   - prescribedPower_units (optional analytic normalized coefficients)
 %       Preserved through subdivision; NaN axes remain optimized.
-%
 % OUTPUTS
 %   - preparedMotion (scalar struct)
 %       Prepared controls, time, timing certificate, and expected failure.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds.
-%
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
 
@@ -106,7 +101,6 @@ function subdivided_units = subdivideMidpoint(controlPoint_units)
     segmentCount   = size(controlPoint_units, 1);
     degree         = size(controlPoint_units, 2) - 1;
     subdivided_units = zeros(2 * segmentCount, degree + 1, 2);
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         work_units  = squeeze(controlPoint_units(segmentIndex, :, :));
         left_units  = zeros(degree + 1, 2);
@@ -128,9 +122,7 @@ function controlPoint_units = powerToBernsteinControls(positionPower_units)
     % Reconstruct Bezier controls from the exported power coefficients.
     degree    = size(positionPower_units, 3) - 1;
     transform = zeros(degree + 1);
-    % Process each bernstein needed to complete power to bernstein controls.
     for bernsteinIndex = 0:degree
-        % Process each power needed to complete power to bernstein controls.
         for powerIndex = 0:bernsteinIndex
             transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
         end

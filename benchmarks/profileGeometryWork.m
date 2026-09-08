@@ -11,12 +11,12 @@ data = load(casesPath,'cases');
 selected = find(string({data.cases.Name}) == "exampleFourAcceleratingCircles",1);
 request = data.cases(selected).Inputs;
 options = data.cases(selected).Options;
-[~,~] = obstacleAvoidance.planTrajectory(request.obstacles,request.initialState,request.goalState,request.limits,options);
+[~,~] = planner(request.obstacles,request.initialState,request.goalState,request.limits,options);
 
 %% Section 2: Profile Once And Retain Complete Attribution
 profile clear;
 profile on;
-[result,diagnosis] = obstacleAvoidance.planTrajectory(request.obstacles,request.initialState,request.goalState,request.limits,options);
+[result,diagnosis] = planner(request.obstacles,request.initialState,request.goalState,request.limits,options);
 profile off;
 profileInfo = profile('info');
 save(outputPath,'profileInfo','result','diagnosis');

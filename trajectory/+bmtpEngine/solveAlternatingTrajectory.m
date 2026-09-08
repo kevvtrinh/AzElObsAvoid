@@ -4,26 +4,21 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 %   [result, diagnostics] = bmtpEngine.solveAlternatingTrajectory( ...
 %       request, warmStart, diagnostics, obstacleTarget_units, ...
 %       roundoffReserve_units)
-%
 % PURPOSE
 %   - Alternate trajectory and separating-line solves until a sampled-clear
 %     motion is retained or the bounded iteration fails.
-%
 % INPUTS
 %   - request, warmStart, diagnostics (scalar structs)
 %       Checked engine request, feasible starting curve, and diagnostics.
 %   - obstacleTarget_units, roundoffReserve_units (finite scalars)
 %       Required obstacle-side target and numerical reserve in coordinate units.
-%
 % OUTPUTS
 %   - result (scalar struct)
 %       Best sampled-clear controls, timing, planes, tags, and failure reason.
 %   - diagnostics (scalar struct)
 %       Updated iteration, solver, overlap, and separating-line evidence.
-%
 % UNITS
 %   - Position and clearance are coordinate units; time is seconds.
-%
 
 %% Section 1: Initialize The Alternating State
 
@@ -124,7 +119,6 @@ for iterationIndex = 1:35
     % Add separating lines where samples overlap. Final certification follows later.
     updateFailed      = false;
     activePairIndices = reshape(find(activePairs), 1, []);
-    % Process each active needed to find alternating trajectory.
     for activeIndex = 1:numel(activePairIndices)
         pairIndex = activePairIndices(activeIndex);
         [segmentIndex, regionIndex]         = ind2sub(size(activePairs), pairIndex);

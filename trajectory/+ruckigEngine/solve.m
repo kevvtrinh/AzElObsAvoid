@@ -7,11 +7,9 @@ function result = solve(initialState, terminalState, limits, options, pathConstr
 %       initialState, terminalState, limits, options)
 %   result = ruckigEngine.solve( ...
 %       initialState, terminalState, limits, options, pathConstraints)
-%
 % PURPOSE
 %   - Create certified second- or third-order state-to-state trajectories
 %     with the extracted Ruckig-derived exact switching equations.
-%
 % INPUTS
 %   - initialState, terminalState, limits (scalar structs)
 %       Dimension-neutral boundary state and limit inputs. Supplying endpoint
@@ -22,24 +20,23 @@ function result = solve(initialState, terminalState, limits, options, pathConstr
 %   - pathConstraints (scalar struct, optional; default empty)
 %       Affine rows continuously certify the constructed exact profile. They
 %       reject a violating profile but do not steer profile construction.
-%
 % OUTPUTS
 %   - result (scalar struct)
 %       Certified success or identified unsupported/failure record.
 %       Invalid requirements throw identified errors.
-%
 % UNITS
 %   - Units are caller-defined and must be consistent across derivatives.
-%
 % REFERENCE
 %   - L. Berscheid and T. Kroeger, "Jerk-limited Real-time Trajectory
 %     Generation with Arbitrary Target States," Robotics: Science and
 %     Systems XVII, 2021. https://doi.org/10.15607/RSS.2021.XVII.015
-%
 
 if nargin == 0
     result = ruckigEngine.defaultOptions();
     return;
+end
+if nargin < 3
+    error("ruckigEngine:InvalidCall", "initialState, terminalState, and limits are required.");
 end
 if nargin < 4 || isempty(options)
     options = struct();
@@ -134,7 +131,6 @@ function options = normalizeEngineOptions(options)
     if ~isempty(unknownNames)
         warning("ruckigEngine:UnknownOptions", "Ignoring unknown option fields: %s. No behavior changed.", strjoin(unknownNames, ", "));
     end
-    % Apply the required validation or transfer to each field name.
     for fieldName = string(fieldnames(resolvedOptions)).'
         if isfield(options, fieldName) && ~isempty(options.(fieldName))
             resolvedOptions.(fieldName) = options.(fieldName);
@@ -148,7 +144,6 @@ function options = normalizeEngineOptions(options)
         validateattributes(resolvedOptions.FinalTime, {'numeric'}, {'real', 'finite', 'scalar'});
         resolvedOptions.FinalTime = double(resolvedOptions.FinalTime);
     end
-    % Apply the required validation or transfer to each field name.
     for fieldName = ["SampleTime", "ConstraintTolerance", ...
             "ArrivalTimeTolerance"]
         validateattributes(resolvedOptions.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});

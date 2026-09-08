@@ -5,11 +5,9 @@ function handles = plotTrajectory(result, optionOverrides, diagnosis)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides)
 %   handles = obstacleAvoidance.plotting.plotTrajectory(result, optionOverrides, diagnosis)
-%
 % PURPOSE
 %   - Plot retained motion, search diagnostics, and physical limits.
 %   - Animate returned samples against time-varying obstacles and targets.
-%
 % INPUTS
 %   - result (scalar planTrajectory result)
 %       Success or failure record; plotting never reruns the planner.
@@ -17,14 +15,11 @@ function handles = plotTrajectory(result, optionOverrides, diagnosis)
 %       Display, animation, and GIF controls. Hidden figures never pause.
 %   - diagnosis (optional second planner output)
 %       Adds candidate routes, search edges, and frontier diagnostics.
-%
 % OUTPUTS
 %   - handles (scalar struct)
 %       Stable workspace, visibility, kinematic, and animation handles.
-%
 % UNITS
 %   - Axes use coordinate units, seconds, units/s, units/s^2, and units/s^3.
-%
 
 %% Section 1: Resolve Display Controls
 
@@ -72,12 +67,10 @@ if ~isscalar(options.Title) || ~isscalar(options.AnimationGifFile) || strlength(
 end
 logicalNames = ["ShowWorkspace", "ShowKinematics", "ShowAnimation", "ShowSeedPaths", ...
     "ShowSearchEdges", "ShowVisibilityGraphs", "ShowSweptSurfaces", "SaveAnimationGif"];
-% Apply the required validation or transfer to each name.
 for name = logicalNames
     options.(name) = obstacleAvoidance.input.normalizeLogicalScalar(options.(name), name, "plotTrajectory:InvalidLogicalOption");
 end
 nonnegativeNames = ["Pause_s", "AnimationGifDelay_s"];
-% Apply the required validation or transfer to each name.
 for name = nonnegativeNames
     validateattributes(options.(name), {'numeric'}, {'real', 'finite', 'scalar', 'nonnegative'});
 end
@@ -169,7 +162,6 @@ if (options.ShowAnimation || options.SaveAnimationGif) && result.Success
     frameIndices    = unique([1:options.FrameStride:numel(result.time_s), numel(result.time_s)]);
     [complete_units, sourceIndex] = displayPath(result, result.position_units);
     gifFrameCount = 0;
-    % Process each frame in temporal order and accumulate its result.
     for frameIndex = frameIndices
         cla(animationAxes);
         configureSpatialAxes(animationAxes, result);
@@ -224,7 +216,6 @@ function options = normalizePlotAliases(options)
     end
     aliases = ["AnimationFrameStride", "FrameStride"; ...
         "ShowKinematicPlot", "ShowKinematics"; "AnimationPause_s", "Pause_s"];
-    % Process each alias needed to prepare plot aliases.
     for aliasIndex = 1:size(aliases, 1)
         oldName = aliases(aliasIndex, 1);
         newName = aliases(aliasIndex, 2);
@@ -317,7 +308,6 @@ function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
     edgeStyles = ["-", ":"];
     edgeLabels = ["Accepted visibility edge", "Collision-rejected edge"];
     if showEdges
-        % Process each category needed to complete s.
         for categoryIndex = 1:2
             if hasData(gridRecord, edgeNames(categoryIndex))
                 edges_units     = gridRecord.(edgeNames(categoryIndex));
@@ -330,7 +320,6 @@ function drawSearchDiagnostics(axesHandle, gridRecord, showEdges)
     end
     pointNames  = ["ExploredNodes_units", "FrontierNodes_units"];
     pointLabels = ["Expanded search node", "Final search frontier"];
-    % Process each category needed to complete s.
     for categoryIndex = 1:2
         if hasData(gridRecord, pointNames(categoryIndex))
             points_units = gridRecord.(pointNames(categoryIndex));
@@ -385,7 +374,6 @@ function axesHandles = createKinematicPanels(layout, result, animated)
     limits        = [nan(1, 2); result.Inputs.limits.maxVelocity_units_s; ...
         result.Inputs.limits.maxAcceleration_units_s2; result.Inputs.limits.maxJerk_units_s3];
     axesHandles = gobjects(4, 1);
-    % Process each quantity needed to build kinematic panels.
     for quantityIndex = 1:4
         tileIndex = quantityIndex * (1 + animated);
         axesHandles(quantityIndex) = nexttile(layout, tileIndex);

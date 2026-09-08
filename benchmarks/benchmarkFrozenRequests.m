@@ -11,7 +11,7 @@ function report = benchmarkFrozenRequests(casesPath, outputPath, repetitionCount
 %% Section 1: Read Frozen Physical Inputs
 if nargin < 3, repetitionCount = 3; end
 if nargin < 4, measurement = struct(); end
-defaults = struct('WarmupCount',1,'WarmupOutputCount',0,'SaveFormat','-v7.3','PlannerFunction',@obstacleAvoidance.planTrajectory);
+defaults = struct('WarmupCount',1,'WarmupOutputCount',0,'SaveFormat','-v7.3','PlannerFunction',@planner);
 for name = string(fieldnames(defaults)).'
     if ~isfield(measurement,name), measurement.(name) = defaults.(name); end
 end

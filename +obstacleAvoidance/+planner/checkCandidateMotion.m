@@ -5,11 +5,9 @@ function [candidate, checkResult, elapsedTime_s, stageTiming] = checkCandidateMo
 %       obstacleAvoidance.planner.checkCandidateMotion( ...
 %       candidate, obstacles, initialState, goalState, limits, options, ...
 %       stageTiming, emptyMessage)
-%
 % PURPOSE
 %   - Run and time the sole authoritative check for one candidate motion.
 %   - Attach that unchanged check result and update planner stage timing.
-%
 % INPUTS
 %   - candidate (scalar motion struct)
 %       Candidate motion with a sampled time history or documented empties.
@@ -25,7 +23,6 @@ function [candidate, checkResult, elapsedTime_s, stageTiming] = checkCandidateMo
 %       Accumulated planner stage durations.
 %   - emptyMessage (scalar text)
 %       Failure explanation used when no motion history exists.
-%
 % OUTPUTS
 %   - candidate (scalar motion struct)
 %       Input motion with Validation set to checkResult.
@@ -35,11 +32,9 @@ function [candidate, checkResult, elapsedTime_s, stageTiming] = checkCandidateMo
 %       Wall-clock duration of the full validation call.
 %   - stageTiming (scalar struct)
 %       Updated collision-checking and remaining validation durations.
-%
 % UNITS
 %   - elapsedTime_s and stage timing are seconds; motion units follow the
 %     public planner contract.
-%
 
 %% Section 1: Run The Authoritative Motion Check
 

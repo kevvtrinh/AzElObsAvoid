@@ -4,24 +4,19 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 %   certificate = bmtpEngine.checkFinalMotion( ...
 %       request, warmStart, preparedMotion, roundoffReserve_units, ...
 %       obstacleTarget_units)
-%
 % PURPOSE
 %   - Check every applicable final curve span against each supplied convex
 %     obstacle region using direct separating-plane certificates.
-%
 % INPUTS
 %   - request, warmStart, preparedMotion (scalar structs)
 %       Checked request, region applicability, and final prepared curve.
 %   - roundoffReserve_units, obstacleTarget_units (finite scalars)
 %       Numerical reserve and required obstacle-side target in coordinate units.
-%
 % OUTPUTS
 %   - certificate (scalar struct)
 %       Pair coverage, separating planes, counts, and passing state.
-%
 % UNITS
 %   - Position, gaps, and reserves are coordinate units.
-%
 
 %% Section 1: Check All Curve And Obstacle Pairs
 
@@ -49,7 +44,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
     useBatchedReuse = ~isfield(coverage, 'RegionActiveTauInterval') && nnz(regionActiveBySegment) >= 128;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
         if useBatchedReuse && segmentIndex > 1
@@ -60,7 +54,6 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             planes(segmentIndex, reusable) = previous(reusable);
             reusedCount = reusedCount + numel(reusable);
         end
-        % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;

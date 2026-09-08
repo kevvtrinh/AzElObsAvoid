@@ -4,12 +4,10 @@ function routeSet = searchRoutes(initialState, goalState, limits, options, scene
 %   routeSet = obstacleAvoidance.search.searchRoutes( ...
 %       initialState, goalState, limits, options, ...
 %       scene, proposal, visibilityGraph, priorRouteSet)
-%
 % PURPOSE
 %   - Coordinate timed route search and distinct spatial route search.
 %   - Retain multi-winding routes for failure-only motion recovery.
 %   - Return route suggestions and complete search records before seeding.
-%
 % INPUTS
 %   - initialState, goalState, limits, options: route-search constraints.
 %   - scene (scalar prepared-scene struct)
@@ -21,17 +19,14 @@ function routeSet = searchRoutes(initialState, goalState, limits, options, scene
 %   - priorRouteSet (scalar route-set struct, optional)
 %       Initial deferred result to resume with exact timed search. Its
 %       spatial routes and search record are reused without recomputation.
-%
 % OUTPUTS
 %   - routeSet (scalar struct)
 %       Timed, ordinary spatial, and deferred multi-winding routes plus
 %       route-class patterns, search records, selected search modes, and
 %       coverage details. Routes are suggestions and cannot approve a
 %       completed obstacle-avoidance motion.
-%
 % UNITS
 %   - Positions and route lengths are coordinate units; physical times are seconds.
-%
 
 %% Section 1: Search Complete Input-Derived Time Layers
 

@@ -6,12 +6,10 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, 
 %   [obstaclesRemainStatic, occupiedShape] = ...
 %       obstacleAvoidance.obstacles.queryStaticHorizon( ...
 %       obstacles, startTime_s, endTime_s)
-%
 % PURPOSE
 %   - Determine whether every prepared obstacle is time invariant and active
 %     over a complete request horizon.
 %   - Create the protected static union only when a caller requests it.
-%
 % INPUTS
 %   - obstacles (prepared obstacle struct array)
 %       Each record supplies time_s and InternalPreparation.
@@ -19,7 +17,6 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, 
 %       Inclusive beginning of the query horizon.
 %   - endTime_s (finite numeric scalar)
 %       Inclusive end of the query horizon, not earlier than startTime_s.
-%
 % OUTPUTS
 %   - obstaclesRemainStatic (scalar logical)
 %       True only when every obstacle is invariant and active throughout the
@@ -27,10 +24,8 @@ function [obstaclesRemainStatic, occupiedShape] = queryStaticHorizon(obstacles, 
 %   - occupiedShape (scalar polyshape)
 %       Union of StaticShape records when supported and requested; otherwise
 %       an empty polyshape.
-%
 % UNITS
 %   - Time is seconds and protected boundary coordinates are coordinate units.
-%
 
 %% Section 1: Evaluate Static Activity Over The Horizon
 

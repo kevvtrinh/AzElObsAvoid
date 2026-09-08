@@ -3,12 +3,10 @@ function within = certifyPolynomialRange(powerCoefficient, lowerBound, upperBoun
 % SYNTAX
 %   within = obstacleAvoidance.validation.certifyPolynomialRange( ...
 %       powerCoefficient, lowerBound, upperBound, tolerance)
-%
 % PURPOSE
 %   - Certify a scalar polynomial range on normalized time [0, 1].
 %   - Resolve easy intervals with Bernstein hulls before using stationary
 %     points for cases that remain ambiguous after subdivision.
-%
 % INPUTS
 %   - powerCoefficient (finite real numeric vector)
 %       Ascending-power coefficients supplied by the validated polynomial
@@ -17,15 +15,12 @@ function within = certifyPolynomialRange(powerCoefficient, lowerBound, upperBoun
 %       Inclusive range limits with lowerBound no greater than upperBound.
 %   - tolerance (nonnegative finite real numeric scalar)
 %       Absolute allowance applied once to both limits.
-%
 % OUTPUTS
 %   - within (scalar logical)
 %       True only when the complete polynomial is within the tolerated range.
-%
 % UNITS
 %   - Coefficients, bounds, and tolerance share the caller's physical unit.
 %     Polynomial time is dimensionless normalized time on [0, 1].
-%
 
 %% Section 1: Try Certified Bernstein Range Tests
 
@@ -73,9 +68,7 @@ function bernsteinControl = convertPowerToBernstein(powerCoefficient)
     if needsTransform
         % Cache the degree-dependent basis conversion.
         transform = zeros(coefficientCount);
-        % Process each bernstein needed to complete convert power to bernstein.
         for bernsteinIndex = 0:degree
-            % Process each power needed to complete convert power to bernstein.
             for powerIndex = 0:bernsteinIndex
                 transform(bernsteinIndex + 1, powerIndex + 1) = nchoosek(bernsteinIndex, powerIndex) / nchoosek(degree, powerIndex);
             end

@@ -3,11 +3,9 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 % SYNTAX
 %   request = bmtpEngine.createSolveRequest( ...
 %       seed, regions_units, coverage, initialState, goalState, limits, options)
-%
 % PURPOSE
 %   - Check BMTP inputs and select the established polynomial representation.
 %   - Collect horizon, region, objective, and numerical solver controls once.
-%
 % INPUTS
 %   - seed (scalar route-seed struct)
 %       Ordered positions and normalized route progress.
@@ -17,16 +15,13 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %       Conservative grouping or timed-region applicability evidence.
 %   - initialState, goalState, limits, options (scalar structs)
 %       Dimension-neutral boundary request, limits, and resolved controls.
-%
 % OUTPUTS
 %   - request (scalar struct)
 %       Validated inputs, representation choice, horizon, region bounds,
 %       objective rate, and numerical solver options.
-%
 % UNITS
 %   - Position is coordinate units and time is seconds; derivatives use units/s,
 %     units/s^2, and units/s^3.
-%
 
 %% Section 1: Check The Engine Inputs
 
@@ -56,7 +51,6 @@ end
 
 regionMinimum_units = zeros(numel(regions_units), 2);
 regionMaximum_units = zeros(numel(regions_units), 2);
-% Process each geometric region while constructing or checking the region topology.
 for regionIndex = 1:numel(regions_units)
     regionMinimum_units(regionIndex, :) = min(regions_units{regionIndex}, [], 1);
     regionMaximum_units(regionIndex, :) = max(regions_units{regionIndex}, [], 1);
@@ -99,7 +93,6 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
         error("bmtpEngine:InvalidSeedTau", "seed.position_units must be finite N-by-2 and tau must increase 0 to 1.");
     end
     regionsAreValid = iscell(regions_units) && iscolumn(regions_units);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(regions_units)
         region_units      = regions_units{regionIndex};
         regionsAreValid = regionsAreValid && isnumeric(region_units) && size(region_units, 2) == 2 && size(region_units, 1) >= 3 && all(isfinite(region_units), "all");

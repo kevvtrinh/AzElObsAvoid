@@ -36,7 +36,6 @@ function [regions_units, coverage] = createExactRegions(occupiedShape, obstacleC
     % Split protected geometry into convex regions.
     exactRegions = obstacleAvoidance.geometry.convexPolygonRegions(occupiedShape);
     regions_units  = cell(numel(exactRegions), 1);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:numel(exactRegions)
         vertices_units = exactRegions(regionIndex).Vertices;
         regions_units{regionIndex} = vertices_units(all(isfinite(vertices_units), 2), :);
@@ -65,7 +64,6 @@ function [groupedRegions_units, record] = createSolverRegions(regions_units)
     end
 
     centroid_units = zeros(regionCount, 2);
-    % Process each geometric region while constructing or checking the region topology.
     for regionIndex = 1:regionCount
         centroid_units(regionIndex, :) = mean(regions_units{regionIndex}, 1);
     end
@@ -75,7 +73,6 @@ function [groupedRegions_units, record] = createSolverRegions(regions_units)
     % Merge compatible region groups until the requested group count is reached.
     while activeGroupCount < targetGroupCount
         groupSizes = zeros(activeGroupCount, 1);
-        % Process each geometric group while constructing or checking the region topology.
         for groupIndex = 1:activeGroupCount
             groupSizes(groupIndex) = numel(groups{groupIndex});
         end
@@ -95,14 +92,12 @@ function [groupedRegions_units, record] = createSolverRegions(regions_units)
     end
     groups           = groups(1:activeGroupCount);
     firstRegionIndex = zeros(activeGroupCount, 1);
-    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:activeGroupCount
         firstRegionIndex(groupIndex) = min(groups{groupIndex});
     end
     [~, groupOrder] = sort(firstRegionIndex);
     groups             = groups(groupOrder);
     groupedRegions_units = cell(activeGroupCount, 1);
-    % Process each geometric group while constructing or checking the region topology.
     for groupIndex = 1:activeGroupCount
         vertices_units = vertcat(regions_units{groups{groupIndex}});
         hullIndex    = convhull(vertices_units(:, 1), vertices_units(:, 2));

@@ -3,25 +3,20 @@ function [segmentTime_s, requiredBySegment_s] = findRequiredSegmentTime(controlP
 % SYNTAX
 %   segmentTime_s = bmtpEngine.findRequiredSegmentTime( ...
 %       controlPoint_units, limits)
-%
 % PURPOSE
 %   - Find one common segment time that satisfies derivative control bounds.
-%
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 finite numeric array)
 %       Bezier controls for S equal-duration degree-D curve segments.
 %   - limits (scalar struct)
 %       Per-axis maximum velocity, acceleration, and jerk.
-%
 % OUTPUTS
 %   - segmentTime_s (positive finite scalar)
 %       Smallest common segment duration implied by exact derivative controls.
 %   - requiredBySegment_s (S-by-1 positive vector)
 %       Individual bounds for callers using unequal physical durations.
-%
 % UNITS
 %   - Controls are coordinate units and segmentTime_s is seconds.
-%
 
 %% Section 1: Bound Every Derivative Order
 
@@ -30,7 +25,6 @@ limitValues = [limits.maxVelocity_units_s; ...
     limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
 segmentCount = size(controlPoint_units, 1);
 requiredBySegment_s = zeros(segmentCount, 1);
-% Process each derivative order needed to find required segment time.
 for derivativeOrder = 1:3
     scale         = factorial(degree) / factorial(degree - derivativeOrder);
     peak = reshape(max(abs(scale * diff(controlPoint_units, derivativeOrder, 2)), [], 2), segmentCount, 2);

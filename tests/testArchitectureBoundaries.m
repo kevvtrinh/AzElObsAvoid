@@ -52,8 +52,9 @@ function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
     expectedNames  = sort([ "+geometry", "+input", "+obstacles", "+planner", "+plotting", "+search", "+validation"]);
     verifyEqual(testCase, actualNames, expectedNames);
     publicSources   = sort(string({dir(fullfile(productRoot, "*.m")).name}));
-    expectedSources = sort(["planTrajectory.m", "planMovingTargetIntercept.m", "validateTrajectory.m"]);
+    expectedSources = "validateTrajectory.m";
     verifyEqual(testCase, publicSources, expectedSources);
+    verifyTrue(testCase, isfile(fullfile(testCase.TestData.RepositoryRoot, "planner.m")));
     plottingRoot    = fullfile(productRoot, "+plotting");
     plottingSources = dir(fullfile(plottingRoot, "*.m"));
     % Exercise each source covered by this regression.
@@ -73,11 +74,11 @@ function testObstacleAvoidancePackagesMatchResponsibilities(testCase)
     end
 end
 
-function testTrajectoryRootContainsEnginePackagesAndRuckigFacade(testCase)
-    % Keep both engines packaged while the remaining Ruckig facade is explicit.
+function testTrajectoryRootContainsOnlyEnginePackages(testCase)
+    % Keep both engines packaged without forwarding entry points.
     trajectoryRoot    = testCase.TestData.TrajectoryRoot;
     actualRootSources = string({dir(fullfile(trajectoryRoot, "*.m")).name});
-    verifyEqual(testCase, sort(actualRootSources), "planTrajRuckig.m");
+    verifyEmpty(testCase, actualRootSources);
     packageRecords = dir(fullfile(trajectoryRoot, "+*"));
     actualNames    = sort(string({packageRecords([packageRecords.isdir]).name}));
     verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
@@ -139,7 +140,7 @@ function testScenarioSpecificOrthogonalPlannersRemainAbsent(testCase)
     for sourceIndex = 1:numel(removedSources)
         verifyFalse(testCase, isfile(fullfile(plannerRoot, removedSources(sourceIndex))));
     end
-    plannerText = lower(string(fileread(fullfile(testCase.TestData.ProductRoot, "planTrajectory.m"))));
+    plannerText = lower(string(fileread(fullfile(testCase.TestData.RepositoryRoot, "planner.m"))));
     verifyFalse(testCase, contains(plannerText, "orthogonal"));
     verifyFalse(testCase, contains(plannerText, "cavity"));
 end

@@ -2,22 +2,17 @@ function obstacles = prepareObstacles(obstacles)
 %% Section 0: Header & Readme
 % SYNTAX
 %   obstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles)
-%
 % PURPOSE
 %   - Reuse current obstacle-history preparation for a complete collection.
 %   - Rebuild stale preparation through one per-obstacle stage.
-%
 % INPUTS
 %   - obstacles (canonical obstacle struct array)
 %       Protected histories remain unchanged and authoritative.
-%
 % OUTPUTS
 %   - obstacles (prepared obstacle struct array)
 %       Each record contains source-checked reusable geometry data.
-%
 % UNITS
 %   - Geometry is coordinate units, time is seconds, and speed is coordinate units per second.
-%
 
 %% Section 1: Reuse Only Current Complete Preparation
 

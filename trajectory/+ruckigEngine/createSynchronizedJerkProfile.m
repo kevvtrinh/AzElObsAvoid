@@ -3,11 +3,9 @@ function profile = createSynchronizedJerkProfile(initialState, terminalState, li
 % SYNTAX
 %   profile = ruckigEngine.createSynchronizedJerkProfile( ...
 %       initialState, terminalState, limits, requestedFinalTime)
-%
 % PURPOSE
 %   - Create a dimension-neutral trajectory at the maximum independent
 %     minimum axis time and synchronize faster axes without delaying arrival.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar time and row-vector position, velocity, and acceleration.
@@ -17,15 +15,12 @@ function profile = createSynchronizedJerkProfile(initialState, terminalState, li
 %       Row-vector maximumVelocity, maximumAcceleration, and maximumJerk.
 %   - requestedFinalTime (empty or finite scalar)
 %       Empty selects minimum arrival. A supplied time requests fixed arrival.
-%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, message, variable-duration polynomial, phase jerk controls,
 %       arrival time, independent axis minima, and path-length evidence.
-%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%
 
 %% Section 1: Create Independent Minimum-Time Axis Profiles
 
@@ -115,7 +110,6 @@ for dimensionIndex = 1:dimensionCount
     axisDuration = axisProfiles{dimensionIndex}.PhaseDuration;
     axisEndTime  = cumsum(axisDuration);
     axisJerk     = axisProfiles{dimensionIndex}.PhaseJerk;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         segmentMiddleTime = 0.5 * (switchTime(segmentIndex) + switchTime(segmentIndex + 1));
         phaseIndex        = find(segmentMiddleTime < axisEndTime + 1e-12, 1);
@@ -147,7 +141,6 @@ profile.AxisFamily            = strings(1, dimensionCount);
 % Evaluate each coordinate axis and combine its limiting result.
 for dimensionIndex = 1:dimensionCount
     block = synchronizationBlocks{dimensionIndex};
-    % Process each interval while assembling the complete motion or interval result.
     for intervalIndex = 1:block.IntervalCount
         columns = (2 * intervalIndex - 1):(2 * intervalIndex);
         profile.BlockedInterval(dimensionIndex, columns) = [block.Left(intervalIndex), block.Right(intervalIndex)];
@@ -225,7 +218,6 @@ function block = createSynchronizationBlock(minimumProfile, candidates)
     else
         pairs = otherIndices([1, 4; 2, 3]);
     end
-    % Process each pair needed to build synchronization block.
     for pairIndex = 1:2
         block = appendBlockInterval(block, candidates(pairs(pairIndex, 1)), candidates(pairs(pairIndex, 2)));
     end
@@ -268,7 +260,6 @@ function duration = selectEarliestSynchronizationDuration(blocks, minimumDuratio
         % Evaluate each coordinate axis and combine its limiting result.
         for dimensionIndex = 1:numel(blocks)
             block = blocks{dimensionIndex};
-            % Process each interval while assembling the complete motion or interval result.
             for intervalIndex = 1:block.IntervalCount
                 % Mark this duration blocked when it lies strictly inside an axis's infeasible interval; interval boundaries remain feasible.
                 if candidateDuration > block.Left(intervalIndex) && candidateDuration < block.Right(intervalIndex)
@@ -290,7 +281,6 @@ end
 function profile = findBlockBoundaryProfile(block, duration, tolerance)
     % Reuse the extremal profile that proves feasibility at a block's right edge.
     profile = [];
-    % Process each interval while assembling the complete motion or interval result.
     for intervalIndex = 1:block.IntervalCount
         if abs(duration - block.Right(intervalIndex)) <= tolerance
             profile = block.RightProfile{intervalIndex};
@@ -341,7 +331,6 @@ function [polynomial, position, velocity, acceleration] = createPolynomial(initi
     velocity          = initialState.velocity;
     acceleration      = initialState.acceleration;
 
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         duration            = segmentDuration(segmentIndex);
         jerk                = controlJerk(segmentIndex, :);
@@ -424,7 +413,6 @@ function lengthValue = sampledSpatialPathLength(axisProfiles, commonDuration)
         axisProfile = axisProfiles{dimensionIndex};
         phaseStart  = [0, cumsum(axisProfile.PhaseDuration(1:end - 1))];
         phaseEnd    = cumsum(axisProfile.PhaseDuration);
-        % Process each phase while assembling the complete motion or interval result.
         for phaseIndex = 1:numel(axisProfile.PhaseDuration)
             if phaseIndex == numel(axisProfile.PhaseDuration)
                 isInPhase = sampleTime >= phaseStart(phaseIndex) & sampleTime <= phaseEnd(phaseIndex) + 1e-11;

@@ -190,7 +190,7 @@ function record = runStressCase(randomSeed, obstacles, initialState, goalState, 
     plannerOptions = controls.PlannerOverrides;
     plannerOptions.GoalTimeMode = "earliestArrival";
     plannerTimer      = tic;
-    result            = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, plannerOptions);
+    result            = planner(obstacles, initialState, goalState, limits, plannerOptions);
     plannerWallTime_s = toc(plannerTimer);
     validation        = obstacleAvoidance.validateTrajectory();
     if result.Success

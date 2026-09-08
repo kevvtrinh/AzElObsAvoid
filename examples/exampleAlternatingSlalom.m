@@ -69,7 +69,7 @@ limits = struct("maxVelocity_units_s", [2 2], ...
 
 % Call the maintained planner once. The example does not add route hints.
 
-[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, options);
 
 %% Section 5: Validate Result
 

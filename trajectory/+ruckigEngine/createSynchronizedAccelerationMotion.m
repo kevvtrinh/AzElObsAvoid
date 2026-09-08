@@ -1,30 +1,13 @@
 function attempt = createSynchronizedAccelerationMotion(initialState, terminalState, limits, options)
 %% Section 0: Header & Readme
-% SYNTAX
-%   attempt = ruckigEngine.createSynchronizedAccelerationMotion( ...
-%       initialState, terminalState, limits, options)
-%
-% PURPOSE
-%   - Create an exact second-order Ruckig position trajectory when
-%     acceleration is the discontinuous control and jerk is unconstrained.
-%
-% INPUTS
-%   - initialState, terminalState, limits (normalized scalar structs)
-%       Position and velocity boundary states with symmetric velocity and
-%       acceleration bounds. Acceleration endpoint values are not imposed.
-%   - options (resolved scalar struct)
-%       Earliest-arrival or fixed-time policy and numerical tolerances.
-%
-% OUTPUTS
-%   - attempt (scalar struct)
-%       Exact synchronized profile, solve status, reason, and elapsed time.
-%
-% UNITS
-%   - Units are caller-defined and consistent across position derivatives.
-%
-
-% The switching equations are adapted from Ruckig v0.19.4 under its MIT
-% license; see trajectory/THIRD_PARTY_NOTICES.txt.
+% SYNTAX: attempt = ruckigEngine.createSynchronizedAccelerationMotion(initialState, terminalState, limits, options)
+% PURPOSE: Create exact second-order profiles with discontinuous acceleration and unbounded jerk.
+% INPUTS: Normalized position/velocity states, symmetric velocity/acceleration limits,
+%   and resolved timing/tolerance options. Endpoint accelerations are not imposed.
+% OUTPUTS: Synchronized profile, status, termination reason, and elapsed time.
+% UNITS: Caller-defined units consistent across position derivatives.
+% Switching equations adapted from MIT-licensed Ruckig v0.19.4;
+% see trajectory/THIRD_PARTY_NOTICES.txt.
 
 %% Section 1: Create Independent Minimum-Time Profiles
 
@@ -229,7 +212,6 @@ function candidates = appendAxisCandidate(candidates, p0, v0, pf, vf, maximumVel
     velocity      = position;
     position(1) = p0;
     velocity(1) = v0;
-    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:numel(phaseDuration)
         duration     = phaseDuration(phaseIndex);
         acceleration = phaseAcceleration(phaseIndex);
@@ -322,7 +304,6 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     for dimensionIndex = 1:dimensionCount
         axisEndTime      = cumsum(axisProfiles{dimensionIndex}.PhaseDuration);
         axisAcceleration = axisProfiles{dimensionIndex}.PhaseAcceleration;
-        % Process each segment while assembling the complete motion or interval result.
         for segmentIndex = 1:segmentCount
             middleTime = 0.5 * (switchTime(segmentIndex) + switchTime(segmentIndex + 1));
             phaseIndex = find(middleTime < axisEndTime + 1e-12, 1);
@@ -336,7 +317,6 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
     jerkPower         = zeros(segmentCount, dimensionCount, 3);
     position          = initialState.position;
     velocity          = initialState.velocity;
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         duration            = segmentDuration(segmentIndex);
         acceleration        = controlAcceleration(segmentIndex, :);

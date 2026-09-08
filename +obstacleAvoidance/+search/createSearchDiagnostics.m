@@ -3,24 +3,19 @@ function diagnostics = createSearchDiagnostics(proposal, visibilityGraph, routeS
 % SYNTAX
 %   diagnostics = obstacleAvoidance.search.createSearchDiagnostics( ...
 %       proposal, visibilityGraph, routeSet, seeds)
-%
 % PURPOSE
 %   - Assemble stable search diagnostics from completed production stages
 %     without recomputing proposal, graph, route, or seed decisions.
-%
 % INPUTS
 %   - proposal, visibilityGraph, routeSet (scalar structs)
 %       Completed stage records, or empty structs when graph work was skipped.
 %   - seeds (nonempty route-seed struct array)
 %       Final deterministic seed order.
-%
 % OUTPUTS
 %   - diagnostics (scalar struct)
 %       Stable graph, route, rejection, coverage, and bounded-search evidence.
-%
 % UNITS
 %   - Position and path length are coordinate units; time is seconds.
-%
 
 %% Section 1: Create Stable Direct-Only Diagnostics
 
@@ -52,7 +47,6 @@ graphFields = ["Bounds_units", "CandidateOffset_units", ...
     "VisibilityCandidatePairCount", "VisibilityEdgeCount", ...
     "AcceptedEdges_units", "RejectedEdges_units", ...
     "RejectedTransitionCount"];
-% Apply the required validation or transfer to each field.
 for fieldIndex = 1:numel(graphFields)
     fieldName = graphFields(fieldIndex);
     diagnostics.(fieldName) = graphRecord.(fieldName);
@@ -113,7 +107,6 @@ cleanupFields = ["RouteShorteningAttemptedCount", ...
     "RouteShorteningCandidateCount", "RouteShorteningVisibilityRejectedCount", ...
     "RouteShorteningRouteClassRejectedCount", "RouteShorteningAcceptedCount", ...
     "RouteShorteningLengthReduction_units"];
-% Apply the required validation or transfer to each field.
 for fieldIndex = 1:numel(cleanupFields)
     fieldName = cleanupFields(fieldIndex);
     diagnostics.(fieldName) = searchRecord.(fieldName);

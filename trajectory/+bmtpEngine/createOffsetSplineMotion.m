@@ -1,42 +1,15 @@
 function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset_units, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_units_s)
 %% Section 0: Header & Readme
-% SYNTAX
-%   candidate = bmtpEngine.createOffsetSplineMotion( ...
-%       baseMotion, knotTime_s, knotOffset_units, axisIndex, ...
-%       initialState, sampleStep_s, seedSource)
-%   candidate = bmtpEngine.createOffsetSplineMotion(baseMotion, knotTime_s, ...
-%       knotOffset_units, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_units_s)
-%
-% PURPOSE
-%   - Add a minimum-integrated-jerk scalar offset to one motion coordinate.
-%   - Keep the motion duration unchanged and represent the offset with fifth-degree polynomials.
-%
-% INPUTS
-%   - baseMotion (scalar trajectory-engine result struct)
-%       Requires a complete Polynomial and stable motion-result fields.
-%   - knotTime_s, knotOffset_units (matching numeric column vectors)
-%       Absolute increasing knot times and prescribed scalar offsets.
-%   - axisIndex (positive integer scalar)
-%       Coordinate receiving the additive offset.
-%   - initialState (scalar struct)
-%       Requires time_s, position_units, velocity_units_s, and
-%       acceleration_units_s2.
-%   - sampleStep_s (positive numeric scalar)
-%       Requested output-history spacing in seconds.
-%   - seedSource (scalar text)
-%       Input-driven construction label copied to the motion record.
-%   - knotVelocity_units_s (optional vector matching knotTime_s)
-%       Prescribed offset velocities. NaN leaves an interior velocity free.
-%       Omitted or empty leaves all interior velocities free; endpoints stay zero.
-%
-% OUTPUTS
-%   - candidate (scalar trajectory-engine result struct)
-%       Motion record containing the composite polynomial and histories.
-%
-% UNITS
-%   - Position and offsets are coordinate units; time is seconds; derivatives use
-%     units/s, units/s^2, and units/s^3. Histories are N-by-D.
-%
+% SYNTAX: candidate = bmtpEngine.createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset_units, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_units_s)
+% PURPOSE: Add a minimum-integrated-jerk quintic offset to one coordinate without changing duration.
+% INPUTS: baseMotion requires a complete Polynomial. Increasing absolute knotTime_s
+%   and knotOffset_units are matching columns; axisIndex selects the offset coordinate.
+%   initialState contains time, position, velocity, and acceleration; sampleStep_s is positive.
+%   seedSource labels the construction. Optional knotVelocity_units_s matches the knots:
+%   NaN leaves an interior velocity free; omitted/empty leaves all interior velocities free.
+%   Endpoint offset velocities remain zero.
+% OUTPUTS: candidate motion record with composite polynomial and histories.
+% UNITS: Coordinate units, seconds, physical derivatives; histories N-by-D.
 
 %% Section 1: Validate The Clock And Offset Knots
 
@@ -88,7 +61,6 @@ function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_units, kn
     jerkMap           = [zeros(3), diag([6, 24, 60])];
     moment            = [1, 1 / 2, 1 / 3; 1 / 2, 1 / 3, 1 / 4; ...
         1 / 3, 1 / 4, 1 / 5];
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:knotCount - 1
         duration_s = segmentDuration_s(segmentIndex);
         coefficientMap(:, :, segmentIndex) = quinticHermiteMap(duration_s);
@@ -107,7 +79,6 @@ function polynomial = createMinimumJerkSpline(knotTime_s, knotPosition_units, kn
     isFixed(velocityRows) = true;
     knotState(~isFixed) = -hessian(~isFixed, ~isFixed) \ (hessian(~isFixed, isFixed) * knotState(isFixed));
     positionPower_units = zeros(knotCount - 1, 1, 6);
-    % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:knotCount - 1
         rows = 3 * segmentIndex - 2:3 * segmentIndex + 3;
         positionPower_units(segmentIndex, 1, :) = coefficientMap(:, :, segmentIndex) * knotState(rows);

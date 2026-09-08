@@ -4,11 +4,9 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %   defaults = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions()
 %   exactMotionSet = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions( ...
 %       initialState, goalState, limits, options, scene, stageTiming)
-%
 % PURPOSE
 %   - Before searching for a route, try a direct move and detours with the
 %     same travel time. Report whether either passes all safety and motion checks.
-%
 % INPUTS
 %   - initialState, goalState, limits, options: motion constraints.
 %   - scene (scalar prepared-scene struct)
@@ -17,16 +15,13 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %       Accumulated planner stage timings before exact motion work.
 %   - priorAttempt (optional internal deferred attempt)
 %       Resume the broader excursion using its already checked direct motion.
-%
 % OUTPUTS
 %   - exactMotionSet (scalar struct)
 %       Direct and excursion candidates, checks, diagnostics, timing, and an
 %       explicit fully validated fast-path record. A zero-input call returns
 %       stable not-attempted diagnostics.
-%
 % UNITS
 %   - Position and path length are coordinate units; time is seconds.
-%
 
 %% Section 1: Create Stable Attempt Records
 
@@ -168,7 +163,6 @@ function record = recordDirectAttempt(candidate, validation, elapsedTime_s, vali
     record.Message                 = candidate.Message;
     record.ElapsedTime_s           = elapsedTime_s;
     record.ValidationElapsedTime_s = validationElapsedTime_s;
-    % Apply the required validation or transfer to each name.
     for name = ["TrajectoryDuration_s", "MotionLength_units", "MinimumAxisDuration_s", "StraightProgressMinimumDuration_s", "UsedStraightProgress"]
         record.(name) = candidate.(name);
     end

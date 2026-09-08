@@ -5,10 +5,8 @@ function [profile, candidates] = createFixedTimeAxisProfile(initialState, termin
 %       initialState, terminalState, limits, duration)
 %   [profile, candidates] = ruckigEngine.createFixedTimeAxisProfile( ...
 %       initialState, terminalState, limits, duration)
-%
 % PURPOSE
 %   - Create a path-short scalar jerk-switching profile at a prescribed time.
-%
 % INPUTS
 %   - initialState (scalar struct)
 %       Scalar position, velocity, and acceleration fields.
@@ -18,17 +16,14 @@ function [profile, candidates] = createFixedTimeAxisProfile(initialState, termin
 %       Positive maximumVelocity, maximumAcceleration, and maximumJerk.
 %   - duration (positive finite scalar)
 %       Required motion duration.
-%
 % OUTPUTS
 %   - profile (scalar struct)
 %       Success, phase law, exact boundary histories, path length, and family.
 %       Unsupported numerical edge cases return Success = false.
 %   - candidates (structure array)
 %       Every certified fixed-time family for multidimensional path ranking.
-%
 % UNITS
 %   - Time and coordinate units are caller-defined and must be consistent.
-%
 
 % The switching equations are adapted from Ruckig v0.19.4 under its MIT
 % license; see trajectory/THIRD_PARTY_NOTICES.txt.
@@ -187,7 +182,6 @@ function candidates = appendInitialAccelerationVelocityProfiles(candidates, cont
     rootsFound     = realNonnegativeRoots(polynomial);
     minimumTime    = -context.af / jMaximum;
     maximumTime    = min(duration - (2 * aMaximum - context.a0) / jMaximum, -aMinimum / jMaximum);
-    % Process each root needed to complete append initial acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         time = rootsFound(rootIndex);
         if time < minimumTime || time > maximumTime
@@ -220,7 +214,6 @@ function candidates = appendInitialAccelerationVelocityProfiles(candidates, cont
     rootsFound     = realNonnegativeRoots(polynomial);
     minimumTime    = context.af / jMaximum;
     maximumTime    = min(duration - aMaximum / jMaximum, aMaximum / jMaximum);
-    % Process each root needed to complete append initial acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         time = rootsFound(rootIndex);
         if time < minimumTime || time > maximumTime
@@ -254,7 +247,6 @@ function candidates = appendTerminalAccelerationVelocityProfiles(candidates, con
     lower      = -context.a0 / jMaximum;
     upper      = min((duration + 2 * aMinimum / jMaximum - (context.a0 + context.af) / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
     rootsFound = findProfileRoots(@createUdduPhase, lower, upper, context, limits, "UDDU");
-    % Process each root needed to complete append terminal acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createUdduPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, -1, 0, 1], "synchronizedTerminalAccelerationVelocity");
@@ -262,7 +254,6 @@ function candidates = appendTerminalAccelerationVelocityProfiles(candidates, con
 
     upper      = min((duration + context.accelerationDifference / jMaximum - 2 * aMaximum / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
     rootsFound = findProfileRoots(@createUdudPhase, lower, upper, context, limits, "UDUD");
-    % Process each root needed to complete append terminal acceleration velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createUdudPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, 1, 0, -1], "synchronizedAlternatingTerminalAccelerationVelocity");
@@ -301,14 +292,12 @@ function candidates = appendVelocityProfiles(candidates, context, limits)
     upper    = min((context.duration - context.a0 / jMaximum) / 2, (aMaximum - context.a0) / jMaximum);
 
     rootsFound = findProfileRoots(@createVelocityUdduPhase, lower, upper, context, limits, "UDDU");
-    % Process each root needed to complete append velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createVelocityUdduPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, -1, 0, 1], "synchronizedVelocity");
     end
 
     rootsFound = findProfileRoots(@createVelocityUdudPhase, lower, upper, context, limits, "UDUD");
-    % Process each root needed to complete append velocity profiles.
     for rootIndex = 1:numel(rootsFound)
         phase      = createVelocityUdudPhase(rootsFound(rootIndex), context, limits);
         candidates = appendEvaluated(candidates, context.InitialState, context.TerminalState, context.Limits, phase, jMaximum * [1, 0, -1, 0, 1, 0, -1], "synchronizedAlternatingVelocity");
@@ -348,13 +337,11 @@ function rootsFound = findProfileRoots(phaseFunction, lower, upper, context, lim
     residual    = NaN(size(sample));
     rootsFound  = zeros(1, 2 * sampleCount + 1);
     rootCount   = 0;
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:sampleCount
         residual(sampleIndex) = positionResidual(sample(sampleIndex), phaseFunction, context, limits, controlSigns);
     end
     scale         = max(1, abs(context.displacement));
     zeroTolerance = 1e-9 * scale;
-    % Process each sample in temporal order and accumulate its result.
     for sampleIndex = 1:(sampleCount - 1)
         leftValue  = residual(sampleIndex);
         rightValue = residual(sampleIndex + 1);
@@ -405,7 +392,6 @@ function residual = positionResidual(time, phaseFunction, context, limits, contr
     position     = context.p0;
     velocity     = context.v0;
     acceleration = context.a0;
-    % Process each phase while assembling the complete motion or interval result.
     for phaseIndex = 1:7
         duration     = phase(phaseIndex);
         position     = position + duration * (velocity + duration * (acceleration / 2 + duration * jerk(phaseIndex) / 6));
