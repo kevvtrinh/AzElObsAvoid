@@ -19,9 +19,28 @@ function testMovingCircleAtKinematicBound(testCase)
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyTrue(testCase,r.SolverDiagnostics.LowerBoundAttempt.Passed);
+    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"kinematicClockProjection");
+    verifyEqual(testCase,r.Route_units,r.VisibilityGraph.Route_units);
     verifyEqual(testCase,r.ArrivalTime_s,8.5,'AbsTol',1e-8);
     verifyLessThanOrEqual(testCase,r.MotionLength_units,12.4537884589941);
     verifyEqual(testCase,r.SolverDiagnostics.ConicSolver.CallCount,r.SolverDiagnostics.TrajectorySocpCount);
+end
+
+function testInitiallyOccupiedGoalCanClearBeforeArrival(testCase)
+    vertices = [3.5,-0.5;4.5,-0.5;4.5,0.5;3.5,0.5];
+    raised = vertices+[0,6];
+    obstacle = obstacleAvoidance.obstacles.createObstacle('departing goal obstacle',[0;1;12], ...
+        {vertices(:,1);raised(:,1);raised(:,1)},{vertices(:,2);raised(:,2);raised(:,2)},0.1);
+    initial = struct('time_s',0,'position_units',[-4,0]);
+    goal = struct('time_s',12,'position_units',[4,0]);
+    limits = struct('maxVelocity_units_s',[2,2],'maxAcceleration_units_s2',[2,2],'maxJerk_units_s3',[4,4]);
+    r = planner(obstacle,initial,goal,limits,struct('GoalTimeMode',"earliestArrival"));
+    verifyTrue(testCase,r.Success,r.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
+    verifyEqual(testCase,r.VisibilityGraph.SearchKind,"analyticMotion");
+    verifyEmpty(testCase,r.VisibilityGraph.AcceptedNodeIndex);
+    verifyTrue(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle,4,0,0));
+    verifyFalse(testCase,obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(obstacle,4,0,r.ArrivalTime_s));
 end
 
 function testStaticAndRotatingDetourQuality(testCase)

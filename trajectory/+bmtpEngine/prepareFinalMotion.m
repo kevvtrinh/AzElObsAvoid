@@ -1,4 +1,4 @@
-function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s)
+function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s, prescribedPower_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
@@ -15,6 +15,8 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       Selected composite Bezier control points.
 %   - segmentTime_s (positive finite scalar)
 %       Selected per-segment durations.
+%   - prescribedPower_units (optional normalized analytic axis coefficients)
+%       Preserved exactly through subdivision and independently certified.
 %
 % OUTPUTS
 %   - preparedMotion (scalar struct)
@@ -26,6 +28,22 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
 
+if nargin<4, prescribedPower_units = []; end
+if ~isempty(prescribedPower_units)
+    % Restrict the prescribed power polynomial directly. Returning through
+    % absolute degree-eight controls would lose its known low-degree form.
+    degree = size(controlPoint_units,2)-1;
+    refined = NaN(2*size(controlPoint_units,1),2,degree+1);
+    for k = 0:degree
+        refined(1:2:end,:,k+1) = prescribedPower_units(:,:,k+1)*0.5^k;
+        value = zeros(size(controlPoint_units,1),2);
+        for j = k:degree
+            value = value+nchoosek(j,k)*prescribedPower_units(:,:,j+1)*0.5^j;
+        end
+        refined(2:2:end,:,k+1) = value;
+    end
+    prescribedPower_units = refined;
+end
 controlPoint_units(1, 1:3, :) = reshape(repmat(request.InitialState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units(end, end - 2:end, :) = reshape(repmat(request.GoalState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units = subdivideMidpoint(controlPoint_units);
@@ -33,7 +51,7 @@ segmentTime_s    = repelem(segmentTime_s(:), 2, 1) / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
-exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, segmentTime_s, 0);
+exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, segmentTime_s, 0,prescribedPower_units);
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 dilationScale             = max([1; requiredTime_s ./ segmentTime_s]) * (1 + 64 * eps);
@@ -68,6 +86,7 @@ preparedMotion    = struct("Success", success, ...
     "DilationScale", dilationScale, ...
     "ArrivalAtHorizon", isFixedArrival, ...
     "MotionCertificate", motionCertificate);
+preparedMotion.PrescribedPower_units = prescribedPower_units;
 end
 
 %% Section 4: Local Functions

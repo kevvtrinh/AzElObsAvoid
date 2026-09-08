@@ -25,7 +25,8 @@ function candidate = createMotionOutput(candidate, request, preparedMotion)
 
 %% Section 1: Create The Stable Motion Record
 
-polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, request.InitialState.time_s);
+polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, ...
+    request.InitialState.time_s,preparedMotion.PrescribedPower_units);
 sampled    = samplePolynomial(polynomial, request.Options.SampleTime_s);
 candidate.ArrivalTime_s                 = polynomial.FinalTime_s;
 candidate.TrajectoryDuration_s          = polynomial.FinalTime_s - request.InitialState.time_s;

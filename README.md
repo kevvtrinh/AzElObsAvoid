@@ -336,3 +336,33 @@ current evidence supports twelve of eighteen examples meeting all gates,
 with occlusion, static U, both waiting cases, and both large geographic
 examples outstanding. Eliminating endpoint equalities was tried and removed:
 it did not resolve occlusion runtime and missed the circle's arrival tolerance.
+
+The planner now tests the analytic/kinematic-bound motion before constructing
+the initial spatial visibility graph. A successful clock projection is the
+returned graph; an analytic chord reports `SearchKind="analyticMotion"` with
+empty search trace arrays. Failed bound attempts proceed to spatial search
+without repeating the bound solve. This also permits an initially occupied
+goal that clears before the actual arrival. Fixed-arrival planning is unchanged.
+
+Prescribed cubic axis coefficients now remain analytic through subdivision
+and export. This avoids manufacturing higher-degree roundoff on very short
+cruise spans. Both original controls and the complete exported curve retain
+the existing derivative-bound, collision, and independent validation checks.
+Trials of generic endpoint reconstruction and derivative-bound changes were
+discarded; no tolerances were relaxed.
+
+All 50 tests pass. At 4,452 production lines, thirteen of eighteen historical
+examples meet every gate. The deforming US outline now passes with arrival
+7.916666667972 s (reference 7.916666666667), motion length 40.238008060418
+(reference 40.248219224097), and three-run median wall time 17.130697 s
+(reference 30.8049645). Before moving the bound solve upfront, the first valid
+run took 42.86 s. Its tiny export-related timing excess was also corrected.
+Vietnam's repeated median is 3.0494 s with unchanged 30 s arrival and 17.1441
+motion length. The latest occlusion median remains above its runtime gate:
+2.588 s versus 2.467 s. Static U, both waiting cases, and the static geographic
+sequence also remain outstanding.
+
+The geographic sequence exposes its three unmodified planner results as an
+optional third output. The benchmark runner independently checks every
+subcase and writes their individual metrics to an ignored subcase CSV;
+the final Philippines result alone cannot establish sequence success.

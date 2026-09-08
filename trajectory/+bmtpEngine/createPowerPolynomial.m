@@ -1,4 +1,4 @@
-function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, initialTime_s)
+function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, initialTime_s, prescribedPower_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   polynomial = bmtpEngine.createPowerPolynomial( ...
@@ -15,6 +15,8 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %       Physical segment durations.
 %   - initialTime_s (finite numeric scalar)
 %       Absolute motion start time.
+%   - prescribedPower_units (optional S-by-2-by-(D+1) array)
+%       Exact normalized analytic coefficients; NaN axes remain optimized.
 %
 % OUTPUTS
 %   - polynomial (scalar struct)
@@ -38,6 +40,12 @@ conversion(valid) = factorial(degree) * (-1) .^ (powerIndex(valid) - bernsteinIn
 bernsteinPages    = permute(controlPoint_units, [2 1 3]);
 positionPower_units = permute(pagemtimes(conversion, bernsteinPages), [2 3 1]);
 positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units,segmentTime_s);
+if nargin>=4 && ~isempty(prescribedPower_units)
+    assert(isequal(size(prescribedPower_units),size(positionPower_units)), ...
+        'bmtpEngine:InvalidPrescribedPower','Analytic coefficients must match the composite basis.');
+    prescribed = repmat(all(isfinite(prescribedPower_units),3),1,1,degree+1);
+    positionPower_units(prescribed) = prescribedPower_units(prescribed);
+end
 
 %% Section 2: Create Physical Derivative Powers And Timing
 

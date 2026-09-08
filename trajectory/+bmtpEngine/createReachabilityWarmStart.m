@@ -100,6 +100,22 @@ end
 
 fixedControl_units = NaN(size(controlPoint_units));
 fixedControl_units(:,:,minimumTime_s==duration_s) = controlPoint_units(:,:,minimumTime_s==duration_s);
+fixedPower_units = NaN(segmentCount,2,degree+1);
+for axis = find(minimumTime_s==duration_s)
+    phases = axisPhases{axis};
+    for k = 1:segmentCount
+        source = find(phases.StartTime_s<(breaks_s(k)+breaks_s(k+1))/2,1,'last');
+        local_s = breaks_s(k)-phases.StartTime_s(source);
+        jerk_units_s3 = phases.Jerk_units_s3(source,1);
+        acceleration_units_s2 = phases.Acceleration_units_s2(source,1)+jerk_units_s3*local_s;
+        velocity_units_s = phases.Velocity_units_s(source,1)+phases.Acceleration_units_s2(source,1)*local_s+jerk_units_s3*local_s^2/2;
+        position_units = phases.Position_units(source,1)+phases.Velocity_units_s(source,1)*local_s+ ...
+            phases.Acceleration_units_s2(source,1)*local_s^2/2+jerk_units_s3*local_s^3/6;
+        fixedPower_units(k,axis,:) = 0;
+        fixedPower_units(k,axis,1:4) = [position_units,velocity_units_s*segmentTime_s(k), ...
+            acceleration_units_s2*segmentTime_s(k)^2/2,jerk_units_s3*segmentTime_s(k)^3/6];
+    end
+end
 active = true(segmentCount,numel(request.Regions_units));
 if isfield(request.Coverage,'ActiveTimeInterval_s')
     intervals_s = request.Coverage.ActiveTimeInterval_s-request.InitialState.time_s;
@@ -109,5 +125,5 @@ warmStart = struct('Route_units',request.Seed.position_units,'ControlPoint_units
     'SegmentTime_s',segmentTime_s,'Duration_s',duration_s,'SegmentRatio',segmentTime_s/mean(segmentTime_s), ...
     'SegmentCount',segmentCount,'RegionActiveBySegment',active,'OriginalSeedSegmentCount',1, ...
     'WarmRouteResampled',true,'FixedControl_units',fixedControl_units,'AxisMinimumTime_s',minimumTime_s, ...
-    'ClockGuide',guide,'GuideTimes_s',guideTimes_s);
+    'ClockGuide',guide,'GuideTimes_s',guideTimes_s,'FixedPower_units',fixedPower_units);
 end

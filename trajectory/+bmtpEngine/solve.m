@@ -1,4 +1,4 @@
-function [candidate, diagnostics] = solve(seed, regions_units, coverage, initialState, goalState, limits, options)
+function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, coverage, initialState, goalState, limits, options, stage)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -24,12 +24,15 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
+%   - stage (optional internal policy): complete, kinematicBound, or route.
+%       Allows the planner to defer spatial search until the bound is tested.
 %
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
+%   - clockGuide (scalar struct): searched clock projection, when available.
 %
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivatives use units/s,
@@ -39,6 +42,9 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %% Section 1: Validate And Create The Exclusion Representation
 
 totalTimer = tic;
+if nargin<8, stage = "complete"; end
+assert(any(stage==["complete","kinematicBound","route"]),'bmtpEngine:InvalidStage','Unknown internal solve stage.');
+clockGuide = struct();
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
 
@@ -75,7 +81,7 @@ preparedMotion = struct('Success',false);
 certificate = struct('Passed',false);
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticFixedTime";
-if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
+if stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
     for k = 0:degree
@@ -88,7 +94,7 @@ if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     if preparedMotion.Success
         certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
     end
-elseif options.GoalTimeMode=="earliestArrival"
+elseif stage~="route" && options.GoalTimeMode=="earliestArrival"
     [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord(initialState.position_units,goalState.position_units,limits,degree);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
     if preparedMotion.Success
@@ -100,11 +106,12 @@ end
 boundAccepted = false;
 boundStats = bmtpEngine.accumulateConicDiagnostics();
 boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
-if options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
+if stage~="route" && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
     % At the independent-axis lower bound, the limiting axis is analytic.
     % Optimize only the remaining freedom on a source-derived clock guide.
     boundTimer = tic;
     boundWarm = bmtpEngine.createReachabilityWarmStart(request);
+    clockGuide = boundWarm.ClockGuide;
     boundRecord.Attempted = true;
     boundRecord.Time_s = boundWarm.Duration_s;
     if boundWarm.ClockGuide.IsConnected && boundWarm.Duration_s<=request.MotionHorizon_s && ...
@@ -119,7 +126,7 @@ if options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certif
         [boundResult,boundDiagnostics] = bmtpEngine.solveAlternatingTrajectory(boundRequest,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
         boundStats = boundDiagnostics.ConicSolver;
         if boundResult.Success
-            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s);
+            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s,boundWarm.FixedPower_units);
             if boundMotion.Success
                 boundCertificate = bmtpEngine.checkFinalMotion(request,boundWarm,boundMotion,roundoffReserve_units,obstacleTarget_units);
                 if boundCertificate.Passed
@@ -146,6 +153,14 @@ if preparedMotion.Success && certificate.Passed
     end
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
+    if stage=="kinematicBound"
+        diagnostics.TrajectorySocpCount = boundStats.CallCount;
+        diagnostics.ConicSolver = boundStats;
+        diagnostics.LowerBoundAttempt = boundRecord;
+        [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer, ...
+            "Motion at the kinematic time bound was not certified.","kinematicBoundUncertified",false);
+        return;
+    end
     [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount+boundStats.CallCount;
     diagnostics.ConicSolver.CallCount = diagnostics.ConicSolver.CallCount+boundStats.CallCount;

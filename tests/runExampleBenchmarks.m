@@ -16,6 +16,7 @@ if nargin < 2, repetitions = 3; end
 caseNames = string(caseNames);
 records = struct([]);
 runs = struct([]);
+subruns = struct([]);
 warningState = warning;
 restoreWarnings = onCleanup(@() warning(warningState)); %#ok<NASGU>
 productionFiles = [dir(fullfile(root, '+obstacleAvoidance', '**', '*.m')); ...
@@ -38,12 +39,29 @@ for caseIndex = 1:numel(caseNames)
     for repeatIndex = 1:repetitions
         try
             timer = tic;
-            result = feval(name, struct('PlotOutputs', false, 'Verbose', false));
+            if nargout(name)>=3
+                [result,~,caseResults] = feval(name,struct('PlotOutputs',false,'Verbose',false));
+            else
+                result = feval(name,struct('PlotOutputs',false,'Verbose',false));
+                caseResults = {result};
+            end
             elapsed_s(repeatIndex) = toc(timer);
             validation = obstacleAvoidance.validateTrajectory(result);
             expectedSuccess = logical(row{10});
             passed(repeatIndex) = result.Success == expectedSuccess && ...
                 (validation.Passed || (~expectedSuccess && isempty(result.time_s) && result.TerminationReason=="noVisibilityRoute"));
+            for subcaseIndex = 1:numel(caseResults)
+                subcase = caseResults{subcaseIndex};
+                subvalidation = obstacleAvoidance.validateTrajectory(subcase);
+                valid = subcase.Success==expectedSuccess && (subvalidation.Passed || ...
+                    (~expectedSuccess && isempty(subcase.time_s) && subcase.TerminationReason=="noVisibilityRoute"));
+                passed(repeatIndex) = passed(repeatIndex) && valid;
+                subLength_units = NaN;
+                if subcase.Success, subLength_units = subcase.MotionLength_units; end
+                subruns = [subruns;struct('Case',name,'Repetition',repeatIndex,'Subcase',subcaseIndex, ...
+                    'Valid',valid,'Duration_s',subcase.TrajectoryDuration_s,'Length_units',subLength_units, ...
+                    'PlannerTime_s',subcase.ElapsedTime_s,'Message',subcase.TerminationReason)]; %#ok<AGROW>
+            end
             if result.Success
                 arrival_s(repeatIndex) = result.TrajectoryDuration_s;
                 length_units(repeatIndex) = result.MotionLength_units;
@@ -79,6 +97,7 @@ for caseIndex = 1:numel(caseNames)
     summary = struct2table(records);
     writetable(summary, fullfile(root, 'benchmarks', 'current_summary.csv'));
     writetable(struct2table(runs),fullfile(root,'benchmarks','current_runs.csv'));
+    if ~isempty(subruns), writetable(struct2table(subruns),fullfile(root,'benchmarks','current_subcase_runs.csv')); end
 end
 end
 

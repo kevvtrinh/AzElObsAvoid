@@ -1,4 +1,4 @@
-function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
+function [result, diagnosis, regionResults] = exampleUSOutlineExtremeVisibility(options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   result = exampleUSOutlineExtremeVisibility()
@@ -6,8 +6,7 @@ function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
 %
 % PURPOSE
 %   - Plan sequential routes around the dense static outlines of Hawaii,
-%     Croatia, and the Philippines using bounded extreme visibility
-%     candidates and full protected collision geometry.
+%     Croatia, and the Philippines using full protected collision geometry.
 %
 % INPUTS
 %   - options (scalar struct, optional; default struct())
@@ -16,6 +15,7 @@ function [result, diagnosis] = exampleUSOutlineExtremeVisibility(options)
 % OUTPUTS
 %   - result (scalar struct)
 %       Unmodified public planner result for the final region.
+%   - regionResults (optional third output): every unmodified region result.
 %
 % UNITS
 %   - Position is coordinate units, time is seconds, velocity is coordinate units per second,

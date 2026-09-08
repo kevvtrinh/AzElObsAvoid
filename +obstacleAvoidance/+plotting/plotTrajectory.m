@@ -64,7 +64,7 @@ nodeHandle = plot(axesHandle, nodes_units(:, 1), nodes_units(:, 2), ".", "Color"
 
 routeHandle = gobjects(0, 1);
 if ~isempty(result.Route_units)
-    routeHandle = plot(axesHandle, result.Route_units(:, 1), result.Route_units(:, 2), "--", "Color", [0.15 0.52 0.25], "LineWidth", 1.5, "DisplayName", "visibility route");
+    routeHandle = plot(axesHandle, result.Route_units(:, 1), result.Route_units(:, 2), "--", "Color", [0.15 0.52 0.25], "LineWidth", 1.5, "DisplayName", "planner guide");
 end
 trajectoryHandle = gobjects(0, 1);
 if ~isempty(result.position_units)
