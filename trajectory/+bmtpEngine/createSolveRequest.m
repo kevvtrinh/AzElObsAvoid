@@ -14,7 +14,7 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 %   - regions_units (R-by-1 cell array)
 %       Convex exclusion polygons.
 %   - coverage (scalar struct)
-%       Conservative grouping or timed-region applicability evidence.
+%       Static region-coverage evidence from the caller.
 %   - initialState, goalState, limits, options (scalar structs)
 %       Dimension-neutral boundary request, limits, and resolved controls.
 %
@@ -30,22 +30,15 @@ function request = createSolveRequest(seed, regions_units, coverage, initialStat
 
 %% Section 1: Check The Engine Inputs
 
-% Validate convex regions and their active intervals before solving.
+% Validate convex static regions before solving.
 
 validateKernelInputs(seed, regions_units, coverage, initialState, goalState, limits, options);
-usesConservativeGrouping = isfield(coverage, "ConservativeGrouping") && isstruct(coverage.ConservativeGrouping) && isfield(coverage.ConservativeGrouping, "Applied") && isequal(coverage.ConservativeGrouping.Applied, true);
-usesTimedCells           = isfield(coverage, "RegionActiveTauInterval");
 
 %% Section 2: Select The Polynomial Representation
 
-% Use degree eight. Allocate one span per grouped/timed segment
-% and three spans per ordinary spatial segment.
+% Use one degree-eight span per exact visibility edge.
 
-if usesConservativeGrouping || usesTimedCells
-    [degree, splitCount] = deal(8, 1);
-else
-    [degree, splitCount] = deal(8, 3);
-end
+[degree, splitCount] = deal(8, 1);
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");
@@ -72,11 +65,8 @@ request                     = struct("Seed", seed, ...
     "GoalState", goalState, ...
     "Limits", limits, ...
     "Options", options, ...
-    "UsesConservativeGrouping", usesConservativeGrouping, ...
-    "UsesTimedCells", usesTimedCells, ...
     "Degree", degree, ...
     "SplitCount", splitCount, ...
-    "MaximumWarmSegmentCount", 20, ...
     "MotionHorizon_s", motionHorizon_s, ...
     "RegionMinimum_units", regionMinimum_units, ...
     "RegionMaximum_units", regionMaximum_units, ...
@@ -108,21 +98,10 @@ function validateKernelInputs(seed, regions_units, coverage, initialState, goalS
     if ~(regionsAreValid && coverageIsValid)
         error("bmtpEngine:InvalidExclusionRegions", "regions_units must be a column cell array of finite N-by-2 polygons " + "and coverage must contain scalar logical Passed.");
     end
-    if isfield(coverage, "RegionActiveTauInterval")
-        activeInterval    = double(coverage.RegionActiveTauInterval);
-        intervalsAreValid = isnumeric(coverage.RegionActiveTauInterval) && isreal(coverage.RegionActiveTauInterval) && isequal(size(activeInterval), [numel(regions_units), 2]) && all(isfinite(activeInterval), "all") && all(activeInterval(:, 1) >= 0) && all(activeInterval(:, 2) <= 1) && all(activeInterval(:, 2) > activeInterval(:, 1));
-        if ~intervalsAreValid
-            error("bmtpEngine:InvalidRegionActiveTauInterval", "coverage.RegionActiveTauInterval must be finite R-by-2 " + "intervals satisfying 0 <= start < finish <= 1.");
-        end
-        timedSegmentCountIsValid = isfield(coverage, "TimedSegmentCount") && isnumeric(coverage.TimedSegmentCount) && isreal(coverage.TimedSegmentCount) && isscalar(coverage.TimedSegmentCount) && isfinite(coverage.TimedSegmentCount) && coverage.TimedSegmentCount >= 1 && coverage.TimedSegmentCount == round(coverage.TimedSegmentCount);
-        if ~timedSegmentCountIsValid
-            error("bmtpEngine:InvalidTimedSegmentCount", "Timed coverage requires a positive integer TimedSegmentCount.");
-        end
-    end
     endpointDerivative = [initialState.velocity_units_s, ...
         initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
     limitsMatrix       = [limits.maxVelocity_units_s; limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-    requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && any(string(options.GoalTimeMode) == ["earliestArrival", "fixedArrival"]) && ~options.WrapX && ~options.WrapY && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
+    requestIsSupported = max(abs(endpointDerivative)) <= options.ConstraintTolerance && string(options.GoalTimeMode) == "fixedArrival" && options.SampleTime_s > 0 && isequal(size(limitsMatrix), [3 2]) && all(isfinite(limitsMatrix), "all") && all(limitsMatrix > 0, "all") && (~isfield(goalState, "targetTime_s") || isempty(goalState.targetTime_s));
     if ~requestIsSupported
         error("bmtpEngine:UnsupportedRequest", "The BMTP kernel requires a finite unwrapped rest-to-rest request.");
     end

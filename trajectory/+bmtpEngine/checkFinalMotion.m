@@ -25,8 +25,8 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 
 %% Section 1: Check All Curve And Obstacle Pairs
 
-% Each optimized segment becomes two output spans.
-% Repeat its timed-region mask for both spans.
+% Each optimized segment becomes two output spans. Repeat the static
+% all-region mask for both spans.
 regionActiveBySegment = repelem(warmStart.RegionActiveBySegment, 2, 1);
 certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units, request.TightPlaneOptions);
 end
@@ -71,11 +71,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     if isfield(coverage, "ExactRegionCount")
         exactRegionCount = coverage.ExactRegionCount;
     end
-    certificateKind = "staticDegreeOne";
-    if isfield(coverage, "RegionActiveTauInterval")
-        certificateKind = "timeCellDegreeOne";
-    end
-    certificate = struct("Kind", certificateKind, ...
+    certificate = struct("Kind", "staticDegreeOne", ...
         "Passed", coverage.Passed && verifiedCount == allPairCount, ...
         "ExactRegionCount", exactRegionCount, ...
         "SolverRegionCount", regionCount, "Regions_units", {regions_units}, ...

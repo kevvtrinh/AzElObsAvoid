@@ -1,286 +1,234 @@
-function [result, diagnosis] = planTrajectory(obstacles, initialState, goalState, limits, optionOverrides)
+function result = planTrajectory(obstacles, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
-%   options = obstacleAvoidance.planTrajectory()
+%   result = obstacleAvoidance.planTrajectory()
 %   result = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits)
-%   result = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits, optionOverrides)
-%   [result, diagnosis] = obstacleAvoidance.planTrajectory( ...
-%       obstacles, initialState, goalState, limits, optionOverrides)
+%       obstacles, initialState, goalState, limits, options)
 %
 % PURPOSE
-%   - Plan collision-free X/Y motion through one public entry point.
-%   - Minimize arrival time, breaking ties by path length, or minimize travel
-%     at a specified arrival time.
+%   - Prepare static convex obstacles, build one exhaustive visibility graph,
+%     and turn its shortest route into one BMTP trajectory.
 %
 % INPUTS
-%   - obstacles (canonical protected obstacle array, nested cells, or [])
-%       Use obstacleAvoidance.obstacles.createObstacle to add each safety
-%       margin one time.
-%   - initialState (scalar struct)
-%       Initial time, position, and supported derivatives.
-%   - goalState (scalar struct)
-%       Fixed or moving-goal state accepted by the obstacle planner.
-%   - limits (scalar struct)
-%       Physical and workspace limits with units in field names.
-%       maxVelocity_units_s, maxAcceleration_units_s2, and maxJerk_units_s3 must
-%       all be positive finite scalars (combined magnitudes) or all be
-%       two-element [x y] vectors. Each combined limit is
-%       divided by sqrt(2) for each axis. Mixing the two forms is invalid.
-%   - optionOverrides (scalar struct, optional; default struct())
-%       Partial planner options. Empty fields use their documented defaults.
-%       WrapX and WrapY independently enable periodic coordinates using each
-%       axis's workspace interval width. Both default to false. Periodic
-%       requests currently require no obstacles and a fixed-position goal.
+%   - obstacles: static polygon structs accepted by prepareObstacles.
+%   - initialState, goalState: position_units and time_s; omitted endpoint
+%     velocity and acceleration default to zero.
+%   - limits: workspace intervals and per-axis velocity, acceleration, jerk.
+%   - options: fixed-arrival BMTP sampling and validation tolerances.
 %
 % OUTPUTS
-%   - result (scalar struct)
-%       Status, selected route, motion, plotting inputs, and validation data.
-%       Failure retains rejected motion when available; Success remains false.
-%   - diagnosis (optional scalar struct)
-%       Timing, candidate attempts, search evidence, and flat solver details.
-%   - options (scalar struct, zero-input call)
-%       Fully resolved planner defaults.
+%   - result: stable success/failure record containing resolved inputs,
+%     prepared geometry, visibility graph, BMTP diagnostics, and validation.
 %
 % UNITS
-%   - Position is in coordinate units. Time is in seconds.
-%   - Derivatives use units/s, units/s^2, and units/s^3.
-%   - Histories are N-by-2 [x y] arrays.
-%
+%   - Position is coordinate units; time is seconds; derivatives use units/s,
+%     units/s^2, and units/s^3.
 
-%% Section 1: Resolve Defaults Requests
+%% Section 1: Resolve The Independent Defaults
 
-% Return planner defaults when called without inputs.
-if nargin == 0
-    result    = obstacleAvoidance.input.resolvePlannerOptions();
-    diagnosis = struct();
+useIndependentDefaults = nargin == 0;
+[defaultObstacles, defaultInitialState, defaultGoalState, defaultLimits, defaultOptions] = createDefaults();
+if useIndependentDefaults
+    obstacles = defaultObstacles;
+elseif nargin < 1
+    obstacles = [];
+end
+if nargin < 2 || isempty(initialState), initialState = defaultInitialState; end
+if nargin < 3 || isempty(goalState), goalState = defaultGoalState; end
+if nargin < 4 || isempty(limits), limits = defaultLimits; end
+if nargin < 5 || isempty(options), options = struct(); end
+initialState = normalizeState(initialState, defaultInitialState, "initialState");
+goalState    = normalizeState(goalState, defaultGoalState, "goalState");
+limits       = normalizeLimits(limits, defaultLimits);
+options      = resolveOptions(options, defaultOptions);
+if goalState.time_s <= initialState.time_s
+    error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
+end
+if norm(goalState.position_units - initialState.position_units) <= options.ConstraintTolerance
+    error("planTrajectory:CoincidentEndpoints", "Initial and goal positions must be distinct.");
+end
+
+%% Section 2: Prepare Obstacles And Visibility Route
+
+totalTimer = tic;
+preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
+visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(preparedObstacles, initialState.position_units, goalState.position_units, limits, options);
+result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph);
+if ~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree
+    result.Message = "An endpoint lies inside or on protected obstacle geometry.";
+    result.TerminationReason = "invalidEndpoint";
+    result.ElapsedTime_s = toc(totalTimer);
+    result.Validation = obstacleAvoidance.validateTrajectory(result);
+    return;
+end
+if ~visibilityGraph.IsConnected
+    result.Message = "The static visibility graph contains no start-to-goal route.";
+    result.TerminationReason = "noVisibilityRoute";
+    result.ElapsedTime_s = toc(totalTimer);
+    result.Validation = obstacleAvoidance.validateTrajectory(result);
     return;
 end
 
-%% Section 2: Resolve The Planner Request
+%% Section 3: Solve The Visibility Route With BMTP
 
-% Require obstacles, initial state, goal state, and limits.
-if nargin < 4
-    error("planTrajectory:MissingInputs", "obstacles, initialState, goalState, and limits are required.");
+route_units = visibilityGraph.Route_units;
+edgeLength_units = vecnorm(diff(route_units, 1, 1), 2, 2);
+routeLength_units = sum(edgeLength_units);
+seed = struct();
+seed.position_units = route_units;
+seed.tau = [0; cumsum(edgeLength_units)] / routeLength_units;
+seed.Index = 1;
+seed.Source = "visibilityGraph";
+seed.ObstacleEnvelope_units = zeros(0, 2);
+regions_units = reshape({preparedObstacles.ProtectedVertices_units}, [], 1);
+coverage = struct("Passed", true, ...
+    "ExactRegionCount", numel(regions_units), ...
+    "SolverRegionCount", numel(regions_units), ...
+    "AuthoritativeCoverageCheck", "independentPlaneVerification");
+[candidate, solverDiagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
+candidateFields = string(fieldnames(candidate));
+for fieldName = reshape(candidateFields, 1, [])
+    result.(fieldName) = candidate.(fieldName);
 end
-% Use defaults when options are omitted or empty.
-if nargin < 5 || isempty(optionOverrides)
-    optionOverrides = struct();
+result.Route_units = route_units;
+result.SolverDiagnostics = solverDiagnostics;
+result.Validation = obstacleAvoidance.validateTrajectory(result);
+if candidate.Success && ~result.Validation.Passed
+    result.Success = false;
+    result.Message = "BMTP returned motion that failed independent validation: " + result.Validation.Message;
+    result.TerminationReason = "invalidMotion";
 end
-
-%% Section 3: Normalize The Request And Prepare The Scene
-
-planningTimer = tic;
-
-% Normalize the planning inputs.
-options = obstacleAvoidance.input.resolvePlannerOptions(optionOverrides);
-
-[obstacles, initialState, goalState, limits] = obstacleAvoidance.input.normalizePlannerRequest(obstacles, initialState, goalState, limits, options);
-
-[result, summaryTemplate] = obstacleAvoidance.planner.createPlanningRecord(obstacles, initialState, goalState, limits, options, obstacleAvoidance.validateTrajectory());
-
-% Prepare shared obstacle geometry once for search and validation.
-scene = obstacleAvoidance.obstacles.preparePlanningScene(obstacles, initialState, goalState);
-
-preparedObstacles = scene.preparedObstacles;
-useStaticSolver   = scene.obstaclesRemainStatic;
-stageTiming       = result.SearchDiagnostics.StageTiming;
-result.SearchDiagnostics.SelectionPolicy = struct("GoalTimeMode", options.GoalTimeMode, "JerkRole", "hardConstraintOnly");
-%% Section 4: Check Physical Endpoints
-
-[endpointFeasible, result.Message, result.TerminationReason] = obstacleAvoidance.input.validatePlannerEndpoints(preparedObstacles, initialState, goalState, limits, options);
-% Reject the request before route search when endpoint states violate motion limits.
-if ~endpointFeasible
-    emptyMotions = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions();
-    result.SearchDiagnostics.DirectAttempt       = emptyMotions.DirectAttempt;
-    result.SearchDiagnostics.FixedClockExcursion = emptyMotions.ExcursionDiagnostics;
-
-    result = finalizePlanningTiming(result, planningTimer, stageTiming);
-    [result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
-    return;
+result.ElapsedTime_s = toc(totalTimer);
 end
 
-%% Section 5: Try Exact Physical-Time Motions
+%% Section 4: Local Functions
 
-% Try validated direct and fixed-clock motions before building the graph.
-exactMotionSet             = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming);
-stageTiming                = exactMotionSet.StageTiming;
-firstValidatedMotionTime_s = NaN;
-if exactMotionSet.ExcursionIsValidated
-    firstValidatedMotionTime_s = toc(planningTimer);
+function [obstacles, initialState, goalState, limits, options] = createDefaults()
+    % Provide one independently runnable static detour request.
+    obstacles = struct("Name", "center block", ...
+        "Vertices_units", [-1 -1; 1 -1; 1 1; -1 1], ...
+        "SafetyMargin_units", 0.25);
+    initialState = struct("time_s", 0, "position_units", [-4 0], ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+    goalState = struct("time_s", 12, "position_units", [4 0], ...
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+    limits = struct("xInterval_units", [-6 6], "yInterval_units", [-4 4], ...
+        "maxVelocity_units_s", [2 2], ...
+        "maxAcceleration_units_s2", [2 2], "maxJerk_units_s3", [4 4]);
+    options = struct("GoalTimeMode", "fixedArrival", ...
+        "SampleTime_s", 0.05, "ConstraintTolerance", 1e-8, ...
+        "CollisionClearanceTolerance_units", 1e-7, ...
+        "ArrivalTimeTolerance_s", 1e-8);
 end
-result.SearchDiagnostics.DirectAttempt       = exactMotionSet.DirectAttempt;
-result.SearchDiagnostics.FixedClockExcursion = exactMotionSet.ExcursionDiagnostics;
-if exactMotionSet.FastPath.Available
-    fastPath = exactMotionSet.FastPath;
-    result   = finishFastPath(result, fastPath.Candidate, fastPath.Validation, fastPath.AttemptDetails, fastPath.ElapsedTime_s, fastPath.Seed, summaryTemplate, fastPath.Message, planningTimer, stageTiming);
-    [result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
-    return;
-end
 
-%% Section 6: Create Proposal Geometry And Search Routes
-
-routeSearchTimer = tic;
-
-proposal             = struct();
-visibilityGraph      = struct();
-routeSet             = struct();
-obstacleEnvelope_units = zeros(0, 2);
-needsRouteSearch     = options.MaximumSeedCount > 1 && ~isempty(preparedObstacles);
-if needsRouteSearch
-    % Build proposal geometry for route search; final validation uses the original obstacles.
-    proposal = obstacleAvoidance.search.createRouteSearchGeometry(initialState, goalState, scene);
-
-    % Build the visibility graph and record its attempts.
-    visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(limits, proposal);
-
-    % Search timed routes and distinct spatial routes.
-    routeSet = obstacleAvoidance.search.searchRoutes(initialState, goalState, limits, options, scene, proposal, visibilityGraph);
-
-    obstacleEnvelope_units = proposal.shape.Vertices;
-end
-% Seed the general solver with a direct guess, then any searched detours.
-seeds = obstacleAvoidance.search.createPathGuesses(initialState, goalState, limits, routeSet, obstacleEnvelope_units);
-
-stageTiming.RouteSearchElapsedTime_s = toc(routeSearchTimer);
-endpointDerivative = [initialState.velocity_units_s, initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
-useStateToStateSolver = any(abs(endpointDerivative) > options.ConstraintTolerance);
-seedSolveContext = struct("UseStaticSolver", useStaticSolver, ...
-    "UseStateToStateSolver", useStateToStateSolver, ...
-    "SummaryTemplate", summaryTemplate, ...
-    "StaticGeometry", struct(), "EnclosureGeometry", struct(), "Enclosure", struct());
-% Try the first two ordinary seeds before failure recovery.
-primarySeedCount  = min(2, numel(seeds));
-primarySeeds      = seeds(1:primarySeedCount);
-primarySummaries  = repmat(summaryTemplate, primarySeedCount, 1);
-primaryCandidates = cell(primarySeedCount, 1);
-% Evaluate each seed before retaining the best admissible candidate.
-for seedIndex = 1:primarySeedCount
-    [primaryCandidates{seedIndex}, primarySummaries(seedIndex), ...
-        stageTiming, seedSolveContext] = obstacleAvoidance.planner.solvePathGuess(preparedObstacles, initialState, goalState, limits, options, primarySeeds(seedIndex), seedSolveContext, stageTiming);
-    % Record the first validation time once; later successful candidates must not overwrite that milestone.
-    if primarySummaries(seedIndex).ValidationPassed && isnan(firstValidatedMotionTime_s)
-        firstValidatedMotionTime_s = toc(planningTimer);
+function state = normalizeState(state, defaults, argumentName)
+    % Resolve omitted rest-to-rest fields and reject unsupported state data.
+    if ~isstruct(state) || ~isscalar(state)
+        error("planTrajectory:InvalidState", "%s must be a scalar struct.", argumentName);
     end
-end
-candidateSet = struct("Seeds", primarySeeds, ...
-    "Candidates", {primaryCandidates}, ...
-    "Summaries", primarySummaries, ...
-    "FirstValidatedMotionTime_s", firstValidatedMotionTime_s, ...
-    "StageTiming", stageTiming);
-
-% Try additional seeds after failure, up to MaximumSeedCount.
-recoveryContext = struct("Scene", scene, ...
-    "Proposal", proposal, ...
-    "VisibilityGraph", visibilityGraph, ...
-    "SeedSolveContext", seedSolveContext, ...
-    "HasValidatedExactMotion", exactMotionSet.ExcursionIsValidated, ...
-    "PlanningTimer", planningTimer);
-[candidateSet, routeSet, generatedSeeds] = obstacleAvoidance.planner.tryAdditionalPathGuesses(initialState, goalState, limits, options, candidateSet, routeSet, seeds, recoveryContext);
-
-% Assemble diagnostics after recovery has added its routes and seeds.
-searchDiagnostics = obstacleAvoidance.search.createSearchDiagnostics(proposal, visibilityGraph, routeSet, generatedSeeds);
-searchDiagnostics.ElapsedTime_s = candidateSet.StageTiming.RouteSearchElapsedTime_s;
-result.SearchDiagnostics.GraphSearch = searchDiagnostics;
-
-seeds                      = candidateSet.Seeds;
-candidates                 = candidateSet.Candidates;
-seedSummaries              = candidateSet.Summaries;
-firstValidatedMotionTime_s = candidateSet.FirstValidatedMotionTime_s;
-stageTiming                = candidateSet.StageTiming;
-
-% Compare validated fixed-arrival motions by travel length.
-if exactMotionSet.ExcursionIsValidated
-    excursionCandidate     = exactMotionSet.ExcursionCandidate;
-    excursionDiagnostics   = exactMotionSet.ExcursionDiagnostics;
-    excursionElapsedTime_s = exactMotionSet.ExcursionElapsedTime_s;
-    excursionSeed          = exactMotionSet.ExcursionSeed;
-    excursionCandidate.SeedIndex = numel(seeds) + 1;
-    excursionSeed.Index = excursionCandidate.SeedIndex;
-    seeds(end + 1) = excursionSeed;
-    candidates{end + 1, 1} = excursionCandidate;
-    seedSummaries(end + 1, 1) = obstacleAvoidance.planner.createCandidateSummary(excursionCandidate, excursionCandidate.Validation, excursionDiagnostics, excursionElapsedTime_s, summaryTemplate, limits);
+    allowedFields = string(fieldnames(defaults));
+    unknownFields = setdiff(string(fieldnames(state)), allowedFields);
+    if ~isempty(unknownFields)
+        error("planTrajectory:UnsupportedStateField", "%s contains unsupported fields: %s.", argumentName, strjoin(unknownFields, ", "));
+    end
+    for fieldName = reshape(allowedFields, 1, [])
+        if ~isfield(state, fieldName) || isempty(state.(fieldName))
+            state.(fieldName) = defaults.(fieldName);
+        end
+    end
+    validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
+    for fieldName = ["position_units", "velocity_units_s", "acceleration_units_s2"]
+        value = double(state.(fieldName));
+        if ~isnumeric(state.(fieldName)) || ~isequal(size(value), [1 2]) || any(~isfinite(value))
+            error("planTrajectory:InvalidState", "%s.%s must be a finite 1-by-2 row.", argumentName, fieldName);
+        end
+        state.(fieldName) = value;
+    end
+    state.time_s = double(state.time_s);
 end
 
-%% Section 7: Select A Valid Motion Or Return Evidence
-
-% Select only validated motions; keep a partial attempt for failure diagnostics.
-selection = obstacleAvoidance.planner.selectValidatedCandidate(seedSummaries, options);
-result.SearchDiagnostics.SelectionPolicy          = selection.Ranking;
-result.SearchDiagnostics.SelectionPolicy.JerkRole = "hardConstraintOnly";
-
-% Attach diagnostics and the selected validated motion, if any.
-result.Seeds         = seeds;
-result.SeedSummaries = seedSummaries;
-
-result.SearchDiagnostics.AttemptedSeedCount = numel(seeds);
-
-result.FirstValidatedMotionTime_s                = firstValidatedMotionTime_s;
-result.SearchDiagnostics.ValidatedCandidateCount = selection.ValidatedCandidateCount;
-result.SearchDiagnostics.BestPartialSeedIndex    = selection.BestPartialSeedIndex;
-result.Message                                   = selection.Message;
-result.TerminationReason                         = selection.TerminationReason;
-% Publish the selected validated motion on success; failure branches retain partial-route diagnostics instead.
-if selection.Success
-    selectedIndex = selection.SelectedCandidateIndex;
-    result.Success           = true;
-    result.SelectedSeedIndex = selectedIndex;
-    result.SelectedSeed_units  = seeds(selectedIndex).position_units;
-    result = copyMotion(result, candidates{selectedIndex});
-% Expose the best partial seed only when no complete candidate succeeded.
-elseif selection.BestPartialSeedIndex > 0
-    partialCandidate = candidates{selection.BestPartialSeedIndex};
-    if ~isempty(partialCandidate.time_s)
-        % Keep rejected motion and its failed validation available for inspection.
-        result = copyMotion(result, partialCandidate);
+function limits = normalizeLimits(limits, defaults)
+    % Resolve the small fixed set of workspace and derivative limits.
+    if ~isstruct(limits) || ~isscalar(limits)
+        error("planTrajectory:InvalidLimits", "limits must be a scalar struct.");
+    end
+    names = string(fieldnames(defaults));
+    unknownFields = setdiff(string(fieldnames(limits)), names);
+    if ~isempty(unknownFields)
+        error("planTrajectory:UnsupportedLimitField", "Unsupported limit fields: %s.", strjoin(unknownFields, ", "));
+    end
+    for fieldName = reshape(names, 1, [])
+        if ~isfield(limits, fieldName) || isempty(limits.(fieldName))
+            limits.(fieldName) = defaults.(fieldName);
+        end
+    end
+    for fieldName = ["xInterval_units", "yInterval_units"]
+        interval = double(limits.(fieldName));
+        if ~isnumeric(limits.(fieldName)) || ~isequal(size(interval), [1 2]) || any(~isfinite(interval)) || interval(2) <= interval(1)
+            error("planTrajectory:InvalidWorkspace", "%s must be a finite increasing 1-by-2 row.", fieldName);
+        end
+        limits.(fieldName) = interval;
+    end
+    for fieldName = ["maxVelocity_units_s", "maxAcceleration_units_s2", "maxJerk_units_s3"]
+        value = double(limits.(fieldName));
+        if isscalar(value), value = [value value]; end %#ok<AGROW>
+        if ~isnumeric(limits.(fieldName)) || ~isequal(size(value), [1 2]) || any(~isfinite(value)) || any(value <= 0)
+            error("planTrajectory:InvalidDerivativeLimit", "%s must be a positive scalar or finite 1-by-2 row.", fieldName);
+        end
+        limits.(fieldName) = value;
     end
 end
 
-result = finalizePlanningTiming(result, planningTimer, stageTiming);
-[result, diagnosis] = obstacleAvoidance.planner.assemblePlannerOutputs(result, nargout > 1);
-end
-
-%% Section 8: Local Functions
-
-function result = finishFastPath(result, candidate, validation, diagnostics, elapsedTime_s, seed, summaryTemplate, message, timer, stageTiming)
-    % Assemble the validated fast-path result.
-    summary   = obstacleAvoidance.planner.createCandidateSummary(candidate, validation, diagnostics, elapsedTime_s, summaryTemplate, result.Inputs.limits);
-    selection = obstacleAvoidance.planner.selectValidatedCandidate(summary, result.Options);
-    result.SearchDiagnostics.SelectionPolicy          = selection.Ranking;
-    result.SearchDiagnostics.SelectionPolicy.JerkRole = "hardConstraintOnly";
-    result.Success                                    = true;
-    result.Message                                    = message;
-    result.TerminationReason                          = "goalReached";
-    result.Seeds                                      = seed;
-    result.SeedSummaries                              = summary;
-    result.SelectedSeedIndex                          = seed.Index;
-    result.SelectedSeed_units                           = seed.position_units;
-    result = copyMotion(result, candidate);
-    result.FirstValidatedMotionTime_s = toc(timer);
-
-    result.SearchDiagnostics.AttemptedSeedCount      = 1;
-    result.SearchDiagnostics.ValidatedCandidateCount = 1;
-
-    result.SearchDiagnostics.BestPartialSeedIndex = seed.Index;
-
-    result = finalizePlanningTiming(result, timer, stageTiming);
-end
-
-function result = copyMotion(result, candidate)
-    % Copy the selected motion and arrival fields.
-    for name = ["time_s", "position_units", "velocity_units_s", ...
-            "acceleration_units_s2", "jerk_units_s3", "Polynomial", ...
-            "SeedCorridorBoundary_units", "SeedCorridor", ...
-            "PlaneCertificate", "Validation"]
-        result.(name) = candidate.(name);
+function options = resolveOptions(options, defaults)
+    % Resolve all BMTP controls in one place and warn once about unknown fields.
+    if ~isstruct(options) || ~isscalar(options)
+        error("planTrajectory:InvalidOptions", "options must be a scalar struct.");
     end
-    result.ArrivalTime_s        = candidate.ArrivalTime_s;
-    result.TrajectoryDuration_s = candidate.TrajectoryDuration_s;
+    knownFields = string(fieldnames(defaults));
+    unknownFields = setdiff(string(fieldnames(options)), knownFields);
+    if ~isempty(unknownFields)
+        warning("planTrajectory:UnknownOptions", "Ignoring unknown option fields: %s.", strjoin(unknownFields, ", "));
+    end
+    supplied = options;
+    options = defaults;
+    for fieldName = reshape(intersect(string(fieldnames(supplied)), knownFields, "stable"), 1, [])
+        if ~isempty(supplied.(fieldName))
+            options.(fieldName) = supplied.(fieldName);
+        end
+    end
+    options.GoalTimeMode = string(options.GoalTimeMode);
+    if ~isscalar(options.GoalTimeMode) || options.GoalTimeMode ~= "fixedArrival"
+        error("planTrajectory:UnsupportedGoalTimeMode", "The empty core supports GoalTimeMode='fixedArrival' only.");
+    end
+    for fieldName = ["SampleTime_s", "ConstraintTolerance", "CollisionClearanceTolerance_units", "ArrivalTimeTolerance_s"]
+        validateattributes(options.(fieldName), {'numeric'}, {'real', 'finite', 'scalar', 'positive'});
+        options.(fieldName) = double(options.(fieldName));
+    end
 end
 
-function result = finalizePlanningTiming(result, planningTimer, timing)
-    % Attach reconciled stage times to the planning record.
-    result.SearchDiagnostics.StageTiming = obstacleAvoidance.planner.reconcileStageTiming(timing, toc(planningTimer));
-    result.ElapsedPlanningTime_s         = result.SearchDiagnostics.StageTiming.TotalElapsedTime_s;
+function result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph)
+    % Keep one result schema for expected search and solver failures.
+    result = struct();
+    result.Success = false;
+    result.Message = "Planning has not completed.";
+    result.TerminationReason = "notStarted";
+    result.Inputs = struct("obstacles", obstacles, "initialState", initialState, ...
+        "goalState", goalState, "limits", limits, "options", options);
+    result.PreparedObstacles = preparedObstacles;
+    result.Limits = limits;
+    result.Options = options;
+    result.VisibilityGraph = visibilityGraph;
+    result.Route_units = zeros(0, 2);
+    result.time_s = zeros(0, 1);
+    result.position_units = zeros(0, 2);
+    result.velocity_units_s = zeros(0, 2);
+    result.acceleration_units_s2 = zeros(0, 2);
+    result.jerk_units_s3 = zeros(0, 2);
+    result.Polynomial = struct();
+    result.PlaneCertificate = struct();
+    result.SolverDiagnostics = struct();
+    result.Validation = struct("Passed", false, "Message", "No motion is available.");
+    result.ArrivalTime_s = NaN;
+    result.TrajectoryDuration_s = NaN;
+    result.ElapsedTime_s = 0;
 end

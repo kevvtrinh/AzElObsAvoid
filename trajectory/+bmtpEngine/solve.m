@@ -49,7 +49,7 @@ splitCount            = request.SplitCount;
 route_units             = warmStart.Route_units;
 segmentCount          = warmStart.SegmentCount;
 regionActiveBySegment = warmStart.RegionActiveBySegment;
-candidate             = createEmptyCandidate(seed, initialState, options);
+candidate             = createEmptyCandidate(seed, initialState);
 diagnostics           = createEmptyDiagnostics(degree, splitCount, segmentCount, numel(regions_units));
 diagnostics.OriginalSeedSegmentCount = warmStart.OriginalSeedSegmentCount;
 diagnostics.WarmRouteResampled       = warmStart.WarmRouteResampled;
@@ -70,11 +70,8 @@ if ~alternatingResult.Success
     return;
 end
 
-% Find a feasible route before minimizing travel; starting from the direct
-% chord can place separating planes on the wrong side of concave obstacles.
-[selectedMotion, diagnostics] = bmtpEngine.refineTravel(request, warmStart, alternatingResult, diagnostics, obstacleTarget_units, roundoffReserve_units);
-bestControl_units   = selectedMotion.ControlPoint_units;
-bestSegmentTime_s = selectedMotion.SegmentTime_s;
+bestControl_units   = alternatingResult.ControlPoint_units;
+bestSegmentTime_s = alternatingResult.SegmentTime_s;
 
 %% Section 3: Prepare And Check The Final Motion
 
@@ -126,18 +123,34 @@ function plane = emptyPlane()
     plane.SignedGap_units = NaN;
 end
 
-function candidate = createEmptyCandidate(seed, initialState, options)
+function candidate = createEmptyCandidate(seed, initialState)
     % Use the same candidate fields on success and failure.
     seedIndex            = optionalField(seed, "Index", 0);
     seedSource           = string(optionalField(seed, "Source", ""));
     obstacleEnvelope_units = optionalField(seed, "ObstacleEnvelope_units", zeros(0, 2));
-    [candidate, ~] = bmtpEngine.createMotionRecord(struct(), initialState, [], [], options.SampleTime_s, seedSource);
-    candidate.ArrivalAtHorizon              = false;
-    candidate.SeedIndex                     = seedIndex;
-    candidate.MotionLength_units              = Inf;
+    dimensionCount = numel(initialState.position_units);
+    candidate = struct();
+    candidate.Success = false;
+    candidate.OptimizerFeasible = false;
+    candidate.Message = "The BMTP kernel was not run.";
+    candidate.TerminationReason = "notRun";
+    candidate.SeedIndex = seedIndex;
+    candidate.SeedSource = seedSource;
+    candidate.ArrivalTime_s = NaN;
+    candidate.TrajectoryDuration_s = NaN;
+    candidate.ArrivalAtHorizon = false;
+    candidate.MotionLength_units = Inf;
     candidate.IntegratedSquaredJerk_units2_s5 = Inf;
-    candidate.SeedCorridorBoundary_units      = obstacleEnvelope_units;
-    candidate.Message                       = "The BMTP kernel was not run.";
+    candidate.MaximumConstraintViolation = Inf;
+    candidate.time_s = zeros(0, 1);
+    candidate.position_units = zeros(0, dimensionCount);
+    candidate.velocity_units_s = zeros(0, dimensionCount);
+    candidate.acceleration_units_s2 = zeros(0, dimensionCount);
+    candidate.jerk_units_s3 = zeros(0, dimensionCount);
+    candidate.Polynomial = struct();
+    candidate.PlaneCertificate = struct();
+    candidate.SeedCorridorBoundary_units = obstacleEnvelope_units;
+    candidate.SolverDiagnostics = struct();
 end
 
 function value = optionalField(record, name, defaultValue)
@@ -158,21 +171,13 @@ function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, 
         "WarmRouteResampled", false, "OptimizerSpanCount", segmentCount, ...
         "SegmentCount", 2 * segmentCount, "ExactRegionCount", regionCount, ...
         "IterationCount", 0, "Converged", false, ...
-        "PlaneReuseApplied", false, "PlaneReuseCount", 0, ...
-        "RetainedHorizonRetryCount", 0, ...
-        "TaggedPairCount", 0, "ApplicablePairCount", segmentCount * regionCount, ...
+        "ApplicablePairCount", segmentCount * regionCount, ...
         "TrajectorySocpCount", 0, "FinalCollisionPairCount", 0, ...
         "PlaneSocpCount", 0, "UnverifiedPlaneInitializationCount", 0, ...
         "FinalTrajectoryExitFlag", NaN, ...
         "FailedPlaneSegmentIndex", 0, "FailedPlaneRegionIndex", 0, ...
         "FailedPlane", emptyPlane(), "WarmStartDuration_s", NaN, ...
-        "BestDuration_s", NaN, "RetainedBestTrialDuration_s", NaN, ...
-        "TravelRefinementAttempted", false, ...
-        "TravelRefinementInitialLength_units", NaN, ...
-        "TravelRefinementFinalLength_units", NaN, ...
-        "TravelRefinementInitialDuration_s", NaN, ...
-        "TravelRefinementFinalDuration_s", NaN, ...
-        "TravelRefinementAccepted", false, ...
+        "BestDuration_s", NaN, ...
         "EndpointProjectionApplied", false, ...
         "TrialDuration_s", NaN(35, 1), "TrialWasCollisionFree", false(35, 1), ...
         "CollisionPairCountHistory", NaN(35, 1), ...

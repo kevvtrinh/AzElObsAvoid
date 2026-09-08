@@ -1,112 +1,226 @@
-function visibilityGraph = createVisibilityGraph(limits, proposal)
+function visibilityGraph = createVisibilityGraph(preparedObstacles, start_units, goal_units, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   visibilityGraph = obstacleAvoidance.search.createVisibilityGraph( ...
-%       limits, proposal)
+%       preparedObstacles, start_units, goal_units, limits, options)
 %
 % PURPOSE
-%   - Connect points with clear straight segments; retry farther from obstacles if needed.
-%   - Return all attempts and the final graph used by route search.
+%   - Build an exhaustive visibility graph around static convex obstacles.
+%   - Return the shortest polyline from start to goal when one exists.
 %
 % INPUTS
-%   - limits: workspace bounds.
-%   - proposal (scalar proposal-geometry struct)
-%       Spatial shape, endpoints, and reusable boundary edges.
+%   - preparedObstacles: output from prepareObstacles.
+%   - start_units, goal_units: finite 1-by-2 endpoint rows.
+%   - limits: resolved xInterval_units and yInterval_units.
+%   - options: resolved numerical tolerance.
 %
 % OUTPUTS
-%   - visibilityGraph (scalar struct)
-%       Final nodes and costs, all offset attempts, and the graph
-%       record used by search diagnostics.
+%   - visibilityGraph: nodes, accepted/rejected edges, costs, and Route_units.
 %
 % UNITS
-%   - Positions, graph costs, bounds, and offsets are coordinate units.
-%
+%   - Positions and distances are coordinate units.
 
-%% Section 1: Create The Offset Schedule Inputs
+%% Section 1: Create Endpoint And Exact Boundary Nodes
 
-% Choose initial and retry offsets from obstacle and workspace dimensions.
-
-shape               = proposal.shape;
-start_units           = proposal.start_units;
-goal_units            = proposal.goal_units;
-allPositions_units    = [start_units; goal_units; shape.Vertices];
-coordinateScale_units = bmtpEngine.createCoordinateTolerances(allPositions_units);
-baseOffset_units      = max(1e-3, 256 * eps(coordinateScale_units));
-maximumOffset_units   = max([diff(limits.xInterval_units), diff(limits.yInterval_units)]);
-workBudget          = 1e6;
-
-%% Section 2: Retry Visibility Attempts
-
-% Retry disconnected visibility graphs with a wider offset.
-% These spatial checks do not validate the final timed motion.
-
-attempts                  = repmat(createEmptyAttempt(), 0, 1);
-candidateOffset_units       = baseOffset_units;
-offsetRetryCount          = 0;
-anyExhaustiveUsed         = false;
-anyExhaustiveFallbackUsed = false;
-% Continue the search until build visibility graph reaches an explicit termination condition.
-while true
-    attempt = obstacleAvoidance.search.createVisibilityAttempt(shape, start_units, goal_units, limits, candidateOffset_units, offsetRetryCount, workBudget);
-    attempts(end + 1, 1) = attempt; %#ok<AGROW>
-    anyExhaustiveUsed         = anyExhaustiveUsed || attempt.ExhaustiveVisibilityUsed;
-    anyExhaustiveFallbackUsed = anyExhaustiveFallbackUsed || attempt.ExhaustiveVisibilityFallbackUsed;
-    % Stop expanding the visibility offset after connectivity is achieved or the permitted offset is exhausted.
-    if attempt.IsConnected || candidateOffset_units >= maximumOffset_units
-        break;
+tolerance_units = max(1e-12, options.ConstraintTolerance);
+sourceFree = pointIsFree(start_units, preparedObstacles, tolerance_units);
+goalFree   = pointIsFree(goal_units, preparedObstacles, tolerance_units);
+nodePosition_units = [start_units; goal_units];
+for obstacleIndex = 1:numel(preparedObstacles)
+    candidate_units = preparedObstacles(obstacleIndex).ProtectedVertices_units;
+    insideWorkspace = candidate_units(:, 1) >= limits.xInterval_units(1) & candidate_units(:, 1) <= limits.xInterval_units(2) & candidate_units(:, 2) >= limits.yInterval_units(1) & candidate_units(:, 2) <= limits.yInterval_units(2);
+    candidate_units = candidate_units(insideWorkspace, :);
+    keep = false(size(candidate_units, 1), 1);
+    for candidateIndex = 1:size(candidate_units, 1)
+        keep(candidateIndex) = boundaryNodeIsAvailable(candidate_units(candidateIndex, :), obstacleIndex, preparedObstacles, tolerance_units);
     end
-    candidateOffset_units = min(4 * candidateOffset_units, maximumOffset_units);
-    offsetRetryCount    = offsetRetryCount + 1;
+    nodePosition_units = [nodePosition_units; candidate_units(keep, :)]; %#ok<AGROW>
 end
+nodePosition_units = unique(nodePosition_units, "rows", "stable");
+nodeCount = size(nodePosition_units, 1);
 
-%% Section 3: Create The Final Graph Record
+%% Section 2: Check Every Candidate Segment
 
-% Keep final-attempt diagnostics and aggregate the exhaustive-search flags.
+maximumEdgeCount = nodeCount * (nodeCount - 1) / 2;
+acceptedNodeIndex = zeros(maximumEdgeCount, 2);
+acceptedWeight_units = zeros(maximumEdgeCount, 1);
+rejectedNodeIndex = zeros(maximumEdgeCount, 2);
+acceptedCount = 0;
+rejectedCount = 0;
+if sourceFree && goalFree
+    for firstNodeIndex = 1:nodeCount - 1
+        for secondNodeIndex = firstNodeIndex + 1:nodeCount
+            first_units  = nodePosition_units(firstNodeIndex, :);
+            second_units = nodePosition_units(secondNodeIndex, :);
+            if segmentIsClear(first_units, second_units, preparedObstacles, tolerance_units)
+                acceptedCount = acceptedCount + 1;
+                acceptedNodeIndex(acceptedCount, :) = [firstNodeIndex secondNodeIndex];
+                acceptedWeight_units(acceptedCount) = norm(second_units - first_units);
+            else
+                rejectedCount = rejectedCount + 1;
+                rejectedNodeIndex(rejectedCount, :) = [firstNodeIndex secondNodeIndex];
+            end
+        end
+    end
+end
+acceptedNodeIndex = acceptedNodeIndex(1:acceptedCount, :);
+acceptedWeight_units = acceptedWeight_units(1:acceptedCount);
+rejectedNodeIndex = rejectedNodeIndex(1:rejectedCount, :);
 
-finalAttempt = attempts(end);
-minimum_units  = min(allPositions_units, [], 1);
-maximum_units  = max(allPositions_units, [], 1);
-record       = struct("Bounds_units", [minimum_units(1), maximum_units(1), ...
-    minimum_units(2), maximum_units(2)], "CandidateOffset_units", finalAttempt.CandidateOffset_units, "CandidateOffsetRetryCount", finalAttempt.OffsetRetryCount, "VisibilityWorkBudget", workBudget, "EstimatedExhaustiveVisibilityWork", finalAttempt.EstimatedExhaustiveVisibilityWork, "ExhaustiveVisibilityUsed", anyExhaustiveUsed, "ExhaustiveVisibilityFallbackUsed", anyExhaustiveFallbackUsed, "VisibilityCandidatePairCount", finalAttempt.VisibilityCandidatePairCount, "VisibilityEdgeCount", finalAttempt.VisibilityEdgeCount, "AcceptedEdges_units", finalAttempt.AcceptedEdges_units, "RejectedEdges_units", finalAttempt.RejectedEdges_units, "RejectedTransitionCount", finalAttempt.RejectedTransitionCount);
-visibilityGraph = struct("NodePosition_units", finalAttempt.Nodes.Positions_units, ...
-    "EdgeCost_units", finalAttempt.Cost_units, ...
-    "ObstacleReferencePoints_units", ...
-    createObstacleReferencePoints(shape), "Attempts", attempts, "FinalAttemptIndex", numel(attempts), "IsConnected", finalAttempt.IsConnected, "Record", record);
+%% Section 3: Select The Shortest Visibility Route
+
+routeNodeIndex = zeros(1, 0);
+routeLength_units = Inf;
+if sourceFree && goalFree
+    visibilityNetwork = graph(acceptedNodeIndex(:, 1), acceptedNodeIndex(:, 2), acceptedWeight_units, nodeCount);
+    [routeNodeIndex, routeLength_units] = shortestpath(visibilityNetwork, 1, 2, "Method", "positive");
+end
+route_units = zeros(0, 2);
+if ~isempty(routeNodeIndex)
+    route_units = nodePosition_units(routeNodeIndex, :);
+end
+visibilityGraph = struct();
+visibilityGraph.NodePosition_units    = nodePosition_units;
+visibilityGraph.AcceptedNodeIndex     = acceptedNodeIndex;
+visibilityGraph.AcceptedWeight_units  = acceptedWeight_units;
+visibilityGraph.RejectedNodeIndex     = rejectedNodeIndex;
+visibilityGraph.RouteNodeIndex        = routeNodeIndex;
+visibilityGraph.Route_units           = route_units;
+visibilityGraph.RouteLength_units     = routeLength_units;
+visibilityGraph.SourceFree            = sourceFree;
+visibilityGraph.GoalFree              = goalFree;
+visibilityGraph.IsConnected           = ~isempty(routeNodeIndex);
 end
 
 %% Section 4: Local Functions
 
-function attempt = createEmptyAttempt()
-    % Initialize visibility-attempt records.
-    attempt = struct();
-    attempt.OffsetRetryCount                  = 0;
-    attempt.CandidateOffset_units               = NaN;
-    attempt.Nodes                             = struct();
-    attempt.InitialPairSet                    = struct();
-    attempt.FinalCandidatePairs               = zeros(0, 2);
-    attempt.AcceptedEdges_units                 = zeros(0, 4);
-    attempt.RejectedEdges_units                 = zeros(0, 4);
-    attempt.EdgeRejectionReasons              = strings(0, 1);
-    attempt.GraphComponents                   = zeros(1, 0);
-    attempt.RecoverySteps                     = strings(0, 1);
-    attempt.ExhaustiveVisibilityUsed          = false;
-    attempt.ExhaustiveVisibilityFallbackUsed  = false;
-    attempt.IsConnected                       = false;
-    attempt.Cost_units                          = zeros(0);
-    attempt.VisibilityEdgeCount               = 0;
-    attempt.RejectedTransitionCount           = 0;
-    attempt.VisibilityCandidatePairCount      = 0;
-    attempt.EstimatedExhaustiveVisibilityWork = 0;
+function clear = pointIsFree(point_units, preparedObstacles, tolerance_units)
+    % Treat obstacle interiors and boundaries as occupied.
+    clear = true;
+    for obstacleIndex = 1:numel(preparedObstacles)
+        shape = preparedObstacles(obstacleIndex).ProtectedShape;
+        if isinterior(shape, point_units(1), point_units(2)) || pointTouchesBoundary(point_units, preparedObstacles(obstacleIndex).ProtectedVertices_units, tolerance_units)
+            clear = false;
+            return;
+        end
+    end
 end
 
-function referencePoints_units = createObstacleReferencePoints(shape)
-    % Select one guaranteed interior point for each connected occupied region.
-    shapeRegions        = regions(shape);
-    referencePoints_units = zeros(numel(shapeRegions), 2);
-    % Process each geometric region while constructing or checking the region topology.
-    for regionIndex = 1:numel(shapeRegions)
-        [candidate_units, radius_units] = incenter(triangulation(shapeRegions(regionIndex)));
-        [~, largestIndex]           = max(radius_units);
-        referencePoints_units(regionIndex, :) = candidate_units(largestIndex, :);
+function available = boundaryNodeIsAvailable(point_units, ownerIndex, preparedObstacles, tolerance_units)
+    % Keep an exact owner vertex unless another obstacle occupies it.
+    available = true;
+    for obstacleIndex = 1:numel(preparedObstacles)
+        if obstacleIndex == ownerIndex
+            continue;
+        end
+        shape = preparedObstacles(obstacleIndex).ProtectedShape;
+        if isinterior(shape, point_units(1), point_units(2)) || pointTouchesBoundary(point_units, preparedObstacles(obstacleIndex).ProtectedVertices_units, tolerance_units)
+            available = false;
+            return;
+        end
     end
+end
+
+function touches = pointTouchesBoundary(point_units, vertices_units, tolerance_units)
+    % Check point-to-edge distance on the closed polygon ring.
+    touches = false;
+    for edgeIndex = 1:size(vertices_units, 1)
+        nextIndex = mod(edgeIndex, size(vertices_units, 1)) + 1;
+        if pointSegmentDistance(point_units, vertices_units(edgeIndex, :), vertices_units(nextIndex, :)) <= tolerance_units
+            touches = true;
+            return;
+        end
+    end
+end
+
+function distance_units = pointSegmentDistance(point_units, first_units, second_units)
+    % Return Euclidean distance from one point to a closed segment.
+    edge_units = second_units - first_units;
+    denominator_units2 = dot(edge_units, edge_units);
+    if denominator_units2 == 0
+        distance_units = norm(point_units - first_units);
+        return;
+    end
+    fraction = min(1, max(0, dot(point_units - first_units, edge_units) / denominator_units2));
+    distance_units = norm(point_units - (first_units + fraction * edge_units));
+end
+
+function clear = segmentIsClear(first_units, second_units, preparedObstacles, tolerance_units)
+    % Allow tangent endpoint contacts and polygon edges, but never an interior crossing.
+    clear = true;
+    for obstacleIndex = 1:numel(preparedObstacles)
+        vertices_units = preparedObstacles(obstacleIndex).ProtectedVertices_units;
+        for edgeIndex = 1:size(vertices_units, 1)
+            nextIndex = mod(edgeIndex, size(vertices_units, 1)) + 1;
+            if segmentEdgeContactIsForbidden(first_units, second_units, vertices_units(edgeIndex, :), vertices_units(nextIndex, :), tolerance_units)
+                clear = false;
+                return;
+            end
+        end
+        midpoint_units = 0.5 * (first_units + second_units);
+        midpointOnBoundary = pointTouchesBoundary(midpoint_units, vertices_units, tolerance_units);
+        if isinterior(preparedObstacles(obstacleIndex).ProtectedShape, midpoint_units(1), midpoint_units(2)) && ~midpointOnBoundary
+            clear = false;
+            return;
+        end
+    end
+end
+
+function forbidden = segmentEdgeContactIsForbidden(firstStart_units, firstEnd_units, secondStart_units, secondEnd_units, tolerance_units)
+    % Permit contact only at a candidate endpoint or along one polygon edge.
+    [intersects, collinear, overlapLength_units] = segmentIntersection(firstStart_units, firstEnd_units, secondStart_units, secondEnd_units, tolerance_units);
+    if ~intersects
+        forbidden = false;
+        return;
+    end
+    firstOnEdge  = pointSegmentDistance(firstStart_units, secondStart_units, secondEnd_units) <= tolerance_units;
+    secondOnEdge = pointSegmentDistance(firstEnd_units, secondStart_units, secondEnd_units) <= tolerance_units;
+    if collinear && overlapLength_units > tolerance_units
+        forbidden = ~(firstOnEdge && secondOnEdge);
+        return;
+    end
+    firstIsEdgeVertex = norm(firstStart_units - secondStart_units) <= tolerance_units || norm(firstStart_units - secondEnd_units) <= tolerance_units;
+    secondIsEdgeVertex = norm(firstEnd_units - secondStart_units) <= tolerance_units || norm(firstEnd_units - secondEnd_units) <= tolerance_units;
+    forbidden = ~(firstOnEdge && firstIsEdgeVertex) && ~(secondOnEdge && secondIsEdgeVertex);
+end
+
+function [intersects, collinear, overlapLength_units] = segmentIntersection(firstStart_units, firstEnd_units, secondStart_units, secondEnd_units, tolerance_units)
+    % Solve the two-segment intersection parameters, including collinear overlap.
+    firstDirection_units  = firstEnd_units - firstStart_units;
+    secondDirection_units = secondEnd_units - secondStart_units;
+    offset_units          = secondStart_units - firstStart_units;
+    denominator_units2    = cross2(firstDirection_units, secondDirection_units);
+    scale_units           = max([1, norm(firstDirection_units), norm(secondDirection_units)]);
+    crossTolerance_units2 = tolerance_units * scale_units;
+    if abs(denominator_units2) > crossTolerance_units2
+        firstFraction  = cross2(offset_units, secondDirection_units) / denominator_units2;
+        secondFraction = cross2(offset_units, firstDirection_units) / denominator_units2;
+        parameterTolerance = tolerance_units / scale_units;
+        intersects = firstFraction >= -parameterTolerance && firstFraction <= 1 + parameterTolerance && secondFraction >= -parameterTolerance && secondFraction <= 1 + parameterTolerance;
+        collinear = false;
+        overlapLength_units = 0;
+        return;
+    end
+    if abs(cross2(offset_units, firstDirection_units)) > crossTolerance_units2
+        intersects = false;
+        collinear = false;
+        overlapLength_units = 0;
+        return;
+    end
+    collinear = true;
+    firstLength_units2 = dot(firstDirection_units, firstDirection_units);
+    if firstLength_units2 == 0
+        intersects = pointSegmentDistance(firstStart_units, secondStart_units, secondEnd_units) <= tolerance_units;
+        overlapLength_units = 0;
+        return;
+    end
+    projection = [dot(secondStart_units - firstStart_units, firstDirection_units), dot(secondEnd_units - firstStart_units, firstDirection_units)] / firstLength_units2;
+    overlapFraction = min(max(projection), 1) - max(min(projection), 0);
+    intersects = overlapFraction >= -tolerance_units / scale_units;
+    overlapLength_units = max(0, overlapFraction) * norm(firstDirection_units);
+end
+
+function value = cross2(first_units, second_units)
+    % Return the signed two-dimensional cross product.
+    value = first_units(1) * second_units(2) - first_units(2) * second_units(1);
 end

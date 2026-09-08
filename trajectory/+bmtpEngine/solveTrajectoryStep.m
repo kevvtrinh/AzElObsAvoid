@@ -1,10 +1,10 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, goalTimeMode, options)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
 %       bmtpEngine.solveTrajectoryStep( ...
 %       segmentCount, degree, start_units, goal_units, limits, planes, ...
-%       reserve_units, maximumMotionDuration_s, goalTimeMode, options)
+%       reserve_units, maximumMotionDuration_s, options)
 %
 % PURPOSE
 %   - Solve one convex trajectory step for fixed separating lines, timing
@@ -22,9 +22,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 %   - reserve_units (nonnegative scalar)
 %       Numerical separation reserve.
 %   - maximumMotionDuration_s (positive scalar)
-%       Upper bound or fixed motion duration.
-%   - goalTimeMode (scalar text)
-%       earliestArrival or fixedArrival.
+%       Upper bound on the internal minimum-time solve.
 %   - options (coneprog options)
 %       Numerical solver controls.
 %
@@ -44,9 +42,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 
 controlCount           = segmentCount * (degree + 1) * 2;
 powerIndex             = controlCount + (1:4);
-travelBoundCount       = (goalTimeMode ~= "earliestArrival") * segmentCount * degree;
-travelBoundIndex       = controlCount + 4 + (1:travelBoundCount);
-variableCount          = controlCount + 4 + travelBoundCount;
+variableCount          = controlCount + 4;
 differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
 baseInequalityCount    = 4 * segmentCount * (3 * degree - 3);
 activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
@@ -62,7 +58,6 @@ lb(1:controlCount) = repmat(domain_units(:, 1), segmentCount * (degree + 1), 1);
 ub(1:controlCount) = repmat(domain_units(:, 2), segmentCount * (degree + 1), 1);
 lb(powerIndex) = 0;
 lb(powerIndex(2)) = eps;
-lb(travelBoundIndex) = 0;
 equalityIndex = 0;
 % Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:2
@@ -147,23 +142,13 @@ end
 
 %% Section 3: Create The Objective And Solve
 
-cones = [createTimePowerCones(variableCount, powerIndex); ...
-    createTravelBoundCones(variableCount, travelBoundIndex, segmentCount, degree)];
+cones = createTimePowerCones(variableCount, powerIndex);
 f = zeros(variableCount, 1);
-if goalTimeMode == "earliestArrival"
-    f(powerIndex(4)) = 1;
-else
-    f(travelBoundIndex) = 1;
-end
+f(powerIndex(4)) = 1;
 maximumSegmentTime_s = maximumMotionDuration_s / segmentCount;
 timePowers_s         = [1; maximumSegmentTime_s; ...
     maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
-if goalTimeMode == "fixedArrival"
-    lb(powerIndex) = timePowers_s;
-    ub(powerIndex) = timePowers_s;
-else
-    ub(powerIndex) = timePowers_s;
-end
+ub(powerIndex) = timePowers_s;
 solverTimer = tic;
 [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
 output.TotalTime_s = toc(solverTimer);
@@ -191,33 +176,6 @@ function soc = createTimePowerCones(variableCount, powerIndex)
         coneD = zeros(variableCount, 1);
         coneD(powerIndex([coneIndex coneIndex + 2])) = 1;
         soc(coneIndex) = secondordercone(coneA, zeros(2, 1), coneD, 0);
-    end
-end
-
-function soc = createTravelBoundCones(variableCount, travelBoundIndex, segmentCount, degree)
-    % Bound travel by the sum of Bezier control-edge lengths.
-    if isempty(travelBoundIndex)
-        soc = repmat(secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0), 0, 1);
-        return;
-    end
-    soc        = repmat(secondordercone(zeros(2, variableCount), zeros(2, 1), zeros(variableCount, 1), 0), numel(travelBoundIndex), 1);
-    boundIndex = 0;
-    % Process each segment while assembling the complete motion or interval result.
-    for segmentIndex = 1:segmentCount
-        % Process each control needed to build travel bound cones.
-        for controlIndex = 0:degree - 1
-            boundIndex = boundIndex + 1;
-            coneA      = zeros(2, variableCount);
-            % Evaluate each coordinate axis and combine its limiting result.
-            for axisIndex = 1:2
-                firstIndex  = controlIndexOf(segmentIndex, controlIndex, axisIndex, degree);
-                secondIndex = controlIndexOf(segmentIndex, controlIndex + 1, axisIndex, degree);
-                coneA(axisIndex, [firstIndex secondIndex]) = [-1 1];
-            end
-            coneC = zeros(variableCount, 1);
-            coneC(travelBoundIndex(boundIndex)) = 1;
-            soc(boundIndex) = secondordercone(coneA, zeros(2, 1), coneC, 0);
-        end
     end
 end
 
