@@ -91,3 +91,24 @@ function testVisibilityMatchesExhaustiveReference(testCase)
         verifyEqual(testCase,actual.RouteLength_units,reference.RouteLength_units,'AbsTol',1e-8);
     end
 end
+
+function testBatchedContactsHolesAndConcavities(testCase)
+    limits = struct('xInterval_units',[-12 12],'yInterval_units',[-10 10]);
+    options = struct('ConstraintTolerance',1e-8);
+    uShape = polyshape([-4,5;-2,5;-2,-2;2,-2;2,5;4,5;4,-4;-4,-4]);
+    ring = subtract(polyshape([-4,-4;4,-4;4,4;-4,4]),polyshape([-2,-2;2,-2;2,2;-2,2]));
+    islands = union(polyshape([-3,-1;-1,-1;-1,1;-3,1]),polyshape([1,-1;3,-1;3,1;1,1]));
+    touching = union(polyshape([-3,-3;0,-3;0,0;-3,0]),polyshape([0,0;3,0;3,3;0,3]));
+    shapes = {uShape,ring,ring,islands,touching};
+    starts = [0,0;0,0;-7,0;-7,1;-7,0];
+    goals = [0,-7;1,1;7,0;7,1;7,0];
+    % Analytic boundary routes: U opening and outer corners; ring exterior;
+    % and straight tangent routes along the remaining component boundaries.
+    expectedLength_units = [16+sqrt(29);sqrt(2);18;14;14];
+    for k = 1:numel(shapes)
+        scene = struct('ProtectedShape',shapes{k},'ProtectedVertices_units',shapes{k}.Vertices);
+        actual = obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:),goals(k,:),limits,options);
+        verifyTrue(testCase,actual.IsConnected);
+        verifyEqual(testCase,actual.RouteLength_units,expectedLength_units(k),'AbsTol',1e-8);
+    end
+end

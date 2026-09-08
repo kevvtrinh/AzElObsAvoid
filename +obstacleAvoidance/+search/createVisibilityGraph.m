@@ -42,16 +42,25 @@ if sourceFree && goalFree
         if current == 2, break; end
         distances_units = vecnorm(nodes_units-nodes_units(current,:),2,2);
         candidates = find(~closed & cost_units(current)+distances_units < cost_units);
-        for next = reshape(candidates,1,[])
-            if segmentIsClear(nodes_units(current,:),nodes_units(next,:),boundary_units,edgeStart_units,edgeEnd_units,tolerance_units)
-                accepted(end+1,:) = [current,next]; %#ok<AGROW>
-                weights_units(end+1,1) = distances_units(next); %#ok<AGROW>
-                cost_units(next) = cost_units(current)+distances_units(next);
-                parent(next) = current;
-            else
-                rejected(end+1,:) = [current,next]; %#ok<AGROW>
-            end
+        clear = true(numel(candidates),1);
+        queryPoints_units = zeros(0,2); queryOwner = zeros(0,1);
+        for k = 1:numel(candidates)
+            [clear(k),midpoints_units] = segmentIntervals(nodes_units(current,:),nodes_units(candidates(k),:),edgeStart_units,edgeEnd_units,tolerance_units);
+            queryPoints_units = [queryPoints_units;midpoints_units]; %#ok<AGROW>
+            queryOwner = [queryOwner;repmat(k,size(midpoints_units,1),1)]; %#ok<AGROW>
         end
+        % Keep every contact-partition interval, but classify them together.
+        % Repeated scalar calls needlessly preprocess the same polygon rings.
+        if ~isempty(queryOwner)
+            [inside,on] = inpolygon(queryPoints_units(:,1),queryPoints_units(:,2),boundary_units(:,1),boundary_units(:,2));
+            clear(queryOwner(inside & ~on)) = false;
+        end
+        next = candidates(clear);
+        accepted = [accepted;repmat(current,numel(next),1),next]; %#ok<AGROW>
+        weights_units = [weights_units;distances_units(next)]; %#ok<AGROW>
+        cost_units(next) = cost_units(current)+distances_units(next);
+        parent(next) = current;
+        rejected = [rejected;repmat(current,nnz(~clear),1),candidates(~clear)]; %#ok<AGROW>
     end
 end
 
@@ -78,8 +87,9 @@ function free = pointIsFree(point_units,boundary_units,first_units,last_units,to
     free = ~inside && all(distance_units > tolerance_units);
 end
 
-function clear = segmentIsClear(first_units,last_units,boundary_units,edgeStart_units,edgeEnd_units,tolerance_units)
+function [clear,midpoints_units] = segmentIntervals(first_units,last_units,edgeStart_units,edgeEnd_units,tolerance_units)
     clear = true;
+    midpoints_units = zeros(0,2);
     if isempty(edgeStart_units), return; end
     relevant = all(max(edgeStart_units,edgeEnd_units) >= min(first_units,last_units)-tolerance_units & ...
         min(edgeStart_units,edgeEnd_units) <= max(first_units,last_units)+tolerance_units,2);
@@ -101,6 +111,4 @@ function clear = segmentIsClear(first_units,last_units,boundary_units,edgeStart_
     collinear = ~nonparallel & abs(offset_units(:,1)*direction_units(2)-offset_units(:,2)*direction_units(1)) <= tolerance_units*norm(direction_units);
     cuts = unique([0;1;t(contact);min(1,max(0,projection(collinear)));min(1,max(0,endProjection(collinear)))]);
     midpoints_units = first_units+((cuts(1:end-1)+cuts(2:end))/2).*direction_units;
-    [inside,on] = inpolygon(midpoints_units(:,1),midpoints_units(:,2),boundary_units(:,1),boundary_units(:,2));
-    clear = ~any(inside & ~on);
 end

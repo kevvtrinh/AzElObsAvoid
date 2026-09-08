@@ -269,3 +269,21 @@ adding analytic jerk switches by subdivision. Opposing-U time improved to
 21.6337 s, but median runtime increased to 3.595 s, above 2.092 s. Dense-concave,
 slalom, and static-U timing still missed their references. This refinement was
 also removed; the original detour mesh remains in production.
+
+Visibility containment queries now run once per expanded A* node, retaining
+every edge-contact partition and the same MATLAB `inpolygon` decision. A
+60-second profile of the deforming-outline request attributed 48.587 s to
+visibility search, with 219,280 segment tests and 117,640 containment calls.
+Batched search took 20.917 s on the saved identical scene; its entire graph
+record, including accepted/rejected edges, weights, expansion count, and route,
+was exactly equal to the saved pre-change result (`isequaln`).
+
+The full deforming-outline example now has a three-run median of 36.376 s.
+The earlier single-run audit was 114.977 s; its historical runtime reference
+is 30.805 s, and motion certification still fails. This is a measured search
+speedup, not a passing example. Vietnam's three-run regression still passes at
+30 s arrival and 17.1441 length, with median wall time 2.9615 s. All 40 tests
+pass, including analytic route lengths for holes, disconnected/touching
+components, collinear contact, and a concave U. The core contains 3,996 physical
+production lines. No ring-correspondence optimization was retained: the profile
+identified graph containment work as the main cost.
