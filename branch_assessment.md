@@ -1,5 +1,19 @@
 # Planner decisions
 
+## Analytic departure scheduling — 2026-09-08
+
+Eligible straight-progress direct waits now use forbidden source-derived
+departure intervals from emptycore, reusing cleanup's exact motion generator.
+All 198 tests pass and all 60 frozen records pass independent validation,
+outcome, arrival, and adaptive-length gates. Barrier planner median falls from
+0.223737 to 0.120265 s; opening U falls from 0.505405 to 0.404099 s and arrives
+2.032189 s earlier. The barrier's additional 0.000787382 s is within the unchanged
+0.001 s arrival tolerance. Direct-motion constructions fall from 18/19 to 3 in
+the two profiles. Failed grazing proposals and sharp-corner tests are preserved;
+only the construction reserve changed, never the validator or protected geometry.
+Broader numerical refinement remains for ineligible or rejected proposals.
+See [departure evidence and limitations](docs/bmtp_refactor_departure.md).
+
 ## Resumed containment and pinned-reference comparison — 2026-09-08
 
 Batched containment now reuses bounded edge-projection arrays, retaining the

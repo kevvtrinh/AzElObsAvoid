@@ -7,12 +7,14 @@ The original checkout and its existing `AGENTS.md` edit remain untouched.
 
 **The complete eight-stage plan is not implemented.** Retained production
 changes batch offset-spline polynomial translation and containment, and reuse time-invariant
-source geometry. The [containment report](bmtp_refactor_containment.md) records
+source geometry. [Analytic departure scheduling](bmtp_refactor_departure.md)
+now replaces eligible wait-trial execution, with 198 passing tests and 60
+successful quality comparisons. The [containment report](bmtp_refactor_containment.md) records
 194 passing tests, 60 exact motion/search comparisons, profiles, and the
-unfavorable runs. Production currently has 108 files and 15,577 physical lines;
+unfavorable runs. Production currently has 110 files and 15,824 physical lines;
 the final code-reduction gate remains unmet. The static-corridor port
 remains an unretained experiment in the ignored `scratch/corridor_draft` folder.
-Further plane batching, preparation reuse, analytic waiting, corridor and
+Further plane batching, preparation reuse, corridor and
 clock integration, continuous-length optimization, and broader consolidation
 still require implementation and their respective verification gates. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of

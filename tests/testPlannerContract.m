@@ -565,7 +565,7 @@ function testEarliestArrivalRefinesObjectiveRelevantDirectWait(testCase)
     diagnostics = testSupport.solverDetails(resultDiagnosis, directWaitIndex);
     validation  = obstacleAvoidance.validateTrajectory(result);
     verifyTrue(testCase, validation.Passed, validation.Message);
-    verifyGreaterThan(testCase, testSupport.diagnosisValue(diagnostics, "RefinementCount"), 0);
+    verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "DepartureScheduling.Accepted"));
     verifyLessThan(testCase, testSupport.diagnosisValue(diagnostics, "FinalWaitTime_s"), testSupport.diagnosisValue(diagnostics, "InitialWaitTime_s"));
 end
 

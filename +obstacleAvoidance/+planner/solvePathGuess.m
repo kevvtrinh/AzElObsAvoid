@@ -79,6 +79,31 @@ function [candidate, checkResult, diagnostics, motionElapsedTime_s, stageTiming]
         candidate.SolverDiagnostics = diagnostics;
         return;
     end
+    % Replace repeated wait trials when one exact chord and source time cells
+    % can describe the encounter. A failed proposal preserves the broader path.
+    motionTimer = tic;
+    [scheduled, scheduling] = obstacleAvoidance.planner.scheduleDirectWait(obstacles, initialState, goalState, limits, options);
+    motionElapsedTime_s = toc(motionTimer);
+    scheduling.Accepted = false;
+    if scheduling.Available
+        scheduled.SeedIndex = seed.Index;
+        scheduled.SeedSource = string(seed.Source);
+        [scheduled, scheduledCheck, ~, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(scheduled, obstacles, initialState, goalState, limits, options, stageTiming, "The departure scheduler returned no trajectory.");
+        scheduling.Validation = scheduledCheck;
+        if scheduledCheck.Passed && scheduled.ArrivalTime_s <= candidate.ArrivalTime_s
+            scheduling.Accepted = true;
+            diagnostics.DepartureScheduling = scheduling;
+            diagnostics.WaitTime_s = scheduling.DepartureDelay_s;
+            diagnostics.FinalWaitTime_s = scheduling.DepartureDelay_s;
+            diagnostics.FinalDirectMotionDuration_s = scheduling.MotionDuration_s;
+            diagnostics.ElapsedTime_s = diagnostics.ElapsedTime_s + motionElapsedTime_s;
+            candidate = scheduled;
+            checkResult = scheduledCheck;
+            candidate.SolverDiagnostics = diagnostics;
+            return;
+        end
+    end
+    diagnostics.DepartureScheduling = scheduling;
     directMotionDuration_s = candidate.TrajectoryDuration_s - initialWaitTime_s;
     diagnostics.InitialDirectMotionDuration_s = directMotionDuration_s;
     diagnostics.FinalDirectMotionDuration_s   = directMotionDuration_s;
