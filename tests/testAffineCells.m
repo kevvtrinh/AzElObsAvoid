@@ -69,3 +69,23 @@ function testPlaneSearchUsesCertifiedProductHull(testCase)
     verifyGreaterThan(testCase,plane.SignedGap_units,0.18);
     verifyTrue(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
 end
+
+function testFinalCertificateRechecksNeighborDirections(testCase)
+    box = [-0.5,-0.5;0.5,-0.5;0.5,0.5;-0.5,0.5];
+    request = struct('Regions_units',{{box}},'Coverage',struct('Passed',true), ...
+        'InitialState',struct('time_s',0));
+    points = [-2,0;-2,0;2,0;0,0];
+    prepared = struct('CertifiedControlPoint_units',repmat(reshape(points,4,1,2),1,9,1), ...
+        'SegmentTime_s',ones(4,1));
+    certificate = bmtpEngine.checkFinalMotion(request,struct(),prepared,1e-8,1e-6);
+    verifyFalse(testCase,certificate.Passed);
+    verifyEqual(testCase,certificate.VerifiedPairCount,3);
+    verifyEqual(testCase,certificate.ReusedPairCount,1);
+    verifyTrue(testCase,certificate.Planes(3).Verified);
+    verifyFalse(testCase,certificate.Planes(4).Verified);
+    for k = 1:3
+        checked = bmtpEngine.verifySeparatingLine(certificate.Planes(k), ...
+            squeeze(prepared.CertifiedControlPoint_units(k,:,:)),box,1e-8,1e-6);
+        verifyTrue(testCase,checked.Verified);
+    end
+end

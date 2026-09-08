@@ -45,9 +45,11 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     segmentCount   = size(controlPoint_units, 1);
     regionCount    = numel(regions_units);
     planes         = repmat(createEmptyPlane(), segmentCount, regionCount);
+    previousPlanes = repmat(createEmptyPlane(),1,regionCount);
     verifiedCount  = 0;
     conicCount     = 0;
     analyticCount  = 0;
+    reusedCount    = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
     % Process each segment while assembling the complete motion or interval result.
@@ -67,8 +69,21 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
                     min(interval_s(2),coverage.ActiveTimeInterval_s(regionIndex,2))];
             end
             vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex},coverage,regionIndex,interval_s);
-            plane = bmtpEngine.solveSeparatingLine(restricted_units, vertices_units, target_units, reserve_units);
-            analyticCount = analyticCount + 1;
+            % A neighboring span's direction is only a proposal. Recompute
+            % supports on this physical interval and verify the entire pair.
+            plane = previousPlanes(regionIndex);
+            if plane.Active
+                normal = plane.Normal(1,:);
+                plane.Offset_units = target_units-[min(vertices_units(:,:,1)*normal.'),min(vertices_units(:,:,end)*normal.')];
+                plane = bmtpEngine.verifySeparatingLine(plane,restricted_units,vertices_units,reserve_units,target_units);
+            end
+            if plane.Verified
+                reusedCount = reusedCount+1;
+            else
+                plane = bmtpEngine.solveSeparatingLine(restricted_units, vertices_units, target_units, reserve_units);
+                analyticCount = analyticCount + 1;
+            end
+            previousPlanes(regionIndex) = plane;
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified
                 verifiedCount  = verifiedCount + 1;
@@ -91,7 +106,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "MinimumSignedGap_units", minimumGap_units, ...
         "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-        "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
+        "ReusedPairCount", reusedCount, "AnalyticPairCount", analyticCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 

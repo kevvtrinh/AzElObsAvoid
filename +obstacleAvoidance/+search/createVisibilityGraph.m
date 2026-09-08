@@ -18,6 +18,9 @@ validateattributes(monotoneDirection,{'numeric'},{'real','finite','size',[1,2]})
 shape = polyshape();
 for k = 1:numel(scene), shape = union(shape,scene(k).ProtectedShape); end
 [edgeStart_units,edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape,0);
+edgeVector_units = edgeEnd_units-edgeStart_units;
+edgeBounds_units = [min(edgeStart_units,edgeEnd_units),max(edgeStart_units,edgeEnd_units)];
+parallelTolerance_units2 = tolerance_units*max(1,vecnorm(edgeVector_units,2,2));
 boundary_units = shape.Vertices;
 nodes_units = boundary_units(all(isfinite(boundary_units),2),:);
 inWorkspace = nodes_units(:,1) > limits.xInterval_units(1) & nodes_units(:,1) < limits.xInterval_units(2) & ...
@@ -48,13 +51,8 @@ if sourceFree && goalFree
         if any(monotoneDirection)
             candidates = candidates((nodes_units(candidates,:)-nodes_units(current,:))*monotoneDirection.'>tolerance_units);
         end
-        clear = true(numel(candidates),1);
-        queryPoints_units = zeros(0,2); queryOwner = zeros(0,1);
-        for k = 1:numel(candidates)
-            [clear(k),midpoints_units] = segmentIntervals(nodes_units(current,:),nodes_units(candidates(k),:),edgeStart_units,edgeEnd_units,tolerance_units);
-            queryPoints_units = [queryPoints_units;midpoints_units]; %#ok<AGROW>
-            queryOwner = [queryOwner;repmat(k,size(midpoints_units,1),1)]; %#ok<AGROW>
-        end
+        [clear,queryPoints_units,queryOwner] = segmentIntervals(nodes_units(current,:),nodes_units(candidates,:), ...
+            edgeStart_units,edgeEnd_units,edgeVector_units,edgeBounds_units,parallelTolerance_units2,tolerance_units);
         % Keep every contact-partition interval, but classify them together.
         % Repeated scalar calls needlessly preprocess the same polygon rings.
         if ~isempty(queryOwner)
@@ -93,28 +91,41 @@ function free = pointIsFree(point_units,boundary_units,first_units,last_units,to
     free = ~inside && all(distance_units > tolerance_units);
 end
 
-function [clear,midpoints_units] = segmentIntervals(first_units,last_units,edgeStart_units,edgeEnd_units,tolerance_units)
-    clear = true;
-    midpoints_units = zeros(0,2);
+function [clear,midpoints_units,owners] = segmentIntervals(first_units,last_units,edgeStart_units,edgeEnd_units,edge_units,bounds_units,parallelTolerance_units2,tolerance_units)
+    clear = true(size(last_units,1),1);
+    midpoints_units = zeros(0,2); owners = zeros(0,1);
     if isempty(edgeStart_units), return; end
-    relevant = all(max(edgeStart_units,edgeEnd_units) >= min(first_units,last_units)-tolerance_units & ...
-        min(edgeStart_units,edgeEnd_units) <= max(first_units,last_units)+tolerance_units,2);
-    a_units = edgeStart_units(relevant,:); b_units = edgeEnd_units(relevant,:);
-    direction_units = last_units-first_units; edge_units = b_units-a_units;
-    offset_units = a_units-first_units;
-    denominator_units2 = direction_units(1)*edge_units(:,2)-direction_units(2)*edge_units(:,1);
-    parameterTolerance = tolerance_units/max(norm(direction_units),realmin);
-    nonparallel = abs(denominator_units2) > tolerance_units*max(1,vecnorm(edge_units,2,2));
-    t = (offset_units(:,1).*edge_units(:,2)-offset_units(:,2).*edge_units(:,1))./denominator_units2;
-    u = (offset_units(:,1)*direction_units(2)-offset_units(:,2)*direction_units(1))./denominator_units2;
-    crosses = nonparallel & t > parameterTolerance & t < 1-parameterTolerance & u > parameterTolerance & u < 1-parameterTolerance;
-    if any(crosses), clear = false; return; end
-    % All contacts partition the segment. Testing every open interval covers
-    % concavities and holes, where testing a single midpoint is insufficient.
-    contact = nonparallel & t >= 0 & t <= 1 & u >= -parameterTolerance & u <= 1+parameterTolerance;
-    projection = (offset_units*direction_units.')/sum(direction_units.^2);
-    endProjection = ((b_units-first_units)*direction_units.')/sum(direction_units.^2);
-    collinear = ~nonparallel & abs(offset_units(:,1)*direction_units(2)-offset_units(:,2)*direction_units(1)) <= tolerance_units*norm(direction_units);
-    cuts = unique([0;1;t(contact);min(1,max(0,projection(collinear)));min(1,max(0,endProjection(collinear)))]);
-    midpoints_units = first_units+((cuts(1:end-1)+cuts(2:end))/2).*direction_units;
+    offset_units = edgeStart_units-first_units;
+    endOffset_units = edgeEnd_units-first_units;
+    numerator_units2 = offset_units(:,1).*edge_units(:,2)-offset_units(:,2).*edge_units(:,1);
+    % Bound temporary edge-by-candidate arrays independently of scene size.
+    blockSize = max(1,floor(2^18/size(edge_units,1)));
+    points = cell(size(last_units,1),1); pointOwners = points;
+    for blockStart = 1:blockSize:size(last_units,1)
+        indices = blockStart:min(size(last_units,1),blockStart+blockSize-1);
+        direction_units = last_units(indices,:)-first_units;
+        lengths_units = vecnorm(direction_units,2,2).';
+        parameterTolerance = tolerance_units./max(lengths_units,realmin);
+        lower_units = min(first_units,last_units(indices,:))-tolerance_units;
+        upper_units = max(first_units,last_units(indices,:))+tolerance_units;
+        relevant = bounds_units(:,3)>=lower_units(:,1).' & bounds_units(:,4)>=lower_units(:,2).' & ...
+            bounds_units(:,1)<=upper_units(:,1).' & bounds_units(:,2)<=upper_units(:,2).';
+        denominator_units2 = edge_units(:,2)*direction_units(:,1).'-edge_units(:,1)*direction_units(:,2).';
+        crossOffset_units2 = offset_units(:,1)*direction_units(:,2).'-offset_units(:,2)*direction_units(:,1).';
+        nonparallel = abs(denominator_units2)>parallelTolerance_units2;
+        t = numerator_units2./denominator_units2; u = crossOffset_units2./denominator_units2;
+        crosses = relevant & nonparallel & t>parameterTolerance & t<1-parameterTolerance & u>parameterTolerance & u<1-parameterTolerance;
+        clear(indices) = ~any(crosses,1).';
+        % Retain every contact-partition interval, including collinear edges.
+        contact = relevant & nonparallel & t>=0 & t<=1 & u>=-parameterTolerance & u<=1+parameterTolerance;
+        collinear = relevant & ~nonparallel & abs(crossOffset_units2)<=tolerance_units*lengths_units;
+        for k = find(clear(indices)).'
+            projection = (offset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
+            endProjection = (endOffset_units(collinear(:,k),:)*direction_units(k,:).')/sum(direction_units(k,:).^2);
+            cuts = unique([0;1;t(contact(:,k),k);min(1,max(0,projection));min(1,max(0,endProjection))]);
+            points{indices(k)} = first_units+((cuts(1:end-1)+cuts(2:end))/2).*direction_units(k,:);
+            pointOwners{indices(k)} = repmat(indices(k),numel(cuts)-1,1);
+        end
+    end
+    midpoints_units = vertcat(points{:}); owners = vertcat(pointOwners{:});
 end

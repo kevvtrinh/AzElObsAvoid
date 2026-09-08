@@ -451,3 +451,36 @@ kinematic-bound clock. Letting that clock vary took about 122 s and failed to
 return a certified motion. These failures apply to the tested formulation;
 they do not establish global infeasibility. No failed mesh, clock, or coordinate
 translation trial remains in production.
+
+Visibility now prepares edge vectors, bounds, and parallel tolerances once per
+scene, then batches the unchanged intersection predicates with bounded temporary
+storage. It still classifies every open interval between contacts. Complete
+visibility records were identical to the previous implementation on occlusion
+and all three geographic scenes. Geographic graph times changed from
+3.258/0.040/1.770 s to 2.278/0.034/1.210 s for Hawaii/Croatia/Philippines.
+
+Final certification tries the preceding span's separating direction, recomputes
+its supports on the current physical interval, and runs the full Bernstein
+inequalities before accepting it. A failed proposal triggers the existing
+supporting-axis search. Every pair remains covered by the unchanged independent
+validator. The new regression checks reuse, reversal to the opposite side of an
+obstacle, and rejection of an interior point.
+
+The core has 4,669 physical production lines. All 58 correctness tests pass.
+Occlusion's five-run median is 2.391 s against its 2.466633 s reference, with
+unchanged arrival 20.8695652173913 s and motion length 13.5563597604046.
+The prior five-run baseline in this comparison was 2.676 s. The static-U and
+geographic motion benchmarks remain outstanding; faster visibility alone does
+not solve their optimization failures.
+All sixteen achieved examples also pass a separate three-run sweep: occlusion
+has a 2.382127 s median and Vietnam has a 2.738645 s median. Vietnam retains
+arrival 30 s and motion length 17.144137073137 against references 30 s,
+17.305374620919, and 21.210319 s wall time.
+
+Two further optimization experiments were rejected without production changes.
+Exact dual clock sensitivities agreed with finite differences, but optimizing
+static-U span ratios took 25.993 s and arrived at 20.914458 s, still missing the
+20.872548 s reference. Integrated jerk formulations did not improve the original
+conic step: separate span states failed validation in 4.701 s, while globally
+integrated jerk controls took 43.572 s and failed endpoint validation. These
+results do not justify adding either formulation to the planning core.
