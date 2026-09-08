@@ -15,9 +15,10 @@ assert(~isfield(request.Coverage,'ActiveTimeInterval_s'), ...
     'bmtpEngine:InvalidCorridorRequest','The monotone corridor requires static geometry.');
 degree = 5; segmentCount = warmStart.SegmentCount;
 jerkCount = segmentCount*(degree-2);
-variableCount = jerkCount+4+segmentCount*degree;
+quadratureCount = request.Degree;
+variableCount = jerkCount+4+segmentCount*quadratureCount;
 powerIndex = jerkCount+(1:4);
-lengthIndex = jerkCount+4+(1:segmentCount*degree);
+lengthIndex = jerkCount+4+(1:segmentCount*quadratureCount);
 result = struct('Success',false,'ControlPoint_units',zeros(0,request.Degree+1,2), ...
     'PositionPower_units',[],'SegmentTime_s',NaN,'SolverMessage',"No certified corridor proposal was found.");
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
@@ -111,17 +112,28 @@ for k = 1:2
     coneD = sparse(variableCount,1); coneD(powerIndex([k,k+2])) = 1;
     timeCones(k) = secondordercone(coneA,zeros(2,1),coneD,0);
 end
-lengthCones = repmat(emptyCone,segmentCount*degree,1);
+% Positive Gauss-Legendre weights give a convex quadrature of actual speed.
+% This avoids minimizing the larger degree-five control-polygon perimeter.
+indices = (1:quadratureCount-1).';
+offDiagonal = indices./sqrt(4*indices.^2-1);
+[eigenvectors,eigenvalues] = eig(diag(offDiagonal,1)+diag(offDiagonal,-1));
+nodes = (diag(eigenvalues)+1)/2;
+weights = eigenvectors(1,:).'.^2;
+velocityBasis = zeros(quadratureCount,degree);
+for k = 0:degree-1
+    velocityBasis(:,k+1) = nchoosek(degree-1,k)*nodes.^k.*(1-nodes).^(degree-1-k);
+end
+lengthCones = repmat(emptyCone,segmentCount*quadratureCount,1);
 for segment = 1:segmentCount
-    for k = 1:degree
+    for k = 1:quadratureCount
         coneA = sparse(2,variableCount);
-        coneA(freeAxis,1:jerkCount) = referenceTimes_s(segment)/degree*basis{2,segment}(k,:);
-        coneB = zeros(2,1); coneB(axisIndex) = -diff(axisControls_units(segment,k:k+1));
-        coneD = sparse(variableCount,1); coneD(lengthIndex((segment-1)*degree+k)) = 1;
-        lengthCones((segment-1)*degree+k) = secondordercone(coneA,coneB,coneD,0);
+        coneA(freeAxis,1:jerkCount) = referenceTimes_s(segment)*velocityBasis(k,:)*basis{2,segment};
+        coneB = zeros(2,1); coneB(axisIndex) = -degree*velocityBasis(k,:)*diff(axisControls_units(segment,:)).';
+        coneD = sparse(variableCount,1); coneD(lengthIndex((segment-1)*quadratureCount+k)) = 1;
+        lengthCones((segment-1)*quadratureCount+k) = secondordercone(coneA,coneB,coneD,0);
     end
 end
-objective = zeros(variableCount,1); objective(lengthIndex) = 1;
+objective = zeros(variableCount,1); objective(lengthIndex) = repmat(weights,segmentCount,1);
 fixedUpper = upper; fixedUpper(powerIndex) = 1;
 timer = tic;
 [x,~,exitFlag,output] = coneprog(objective,lengthCones,A,b,Aeq,beq,lower,fixedUpper,request.TrajectoryOptions);
@@ -133,7 +145,7 @@ if ~linearFeasible(x,A,b,Aeq,beq,lower,fixedUpper,request.Options.ConstraintTole
     output.TotalTime_s = toc(timer);
     diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,output);
     if linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance)
-        upper(powerIndex(4)) = x(powerIndex(4)); objective(:) = 0; objective(lengthIndex) = 1; timer = tic;
+        upper(powerIndex(4)) = x(powerIndex(4)); objective(:) = 0; objective(lengthIndex) = repmat(weights,segmentCount,1); timer = tic;
         [shortX,~,shortFlag,shortOutput] = coneprog(objective,[timeCones;lengthCones],A,b,Aeq,beq,lower,upper,request.TrajectoryOptions);
         shortOutput.TotalTime_s = toc(timer);
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver,shortOutput);

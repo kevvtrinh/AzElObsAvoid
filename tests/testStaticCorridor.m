@@ -32,6 +32,13 @@ function testAxisDirectionAndTranslation(testCase)
         verifyEqual(testCase,result.TrajectoryDuration_s,5.5,'AbsTol',1e-8);
         verifyEqual(testCase,result.PlaneCertificate.AllPairCount, ...
             result.Polynomial.SegmentCount*numel(result.PlaneCertificate.Regions_units));
+        if k==1
+            coarse = planner(obstacle,initial,goal,limits,struct('GoalTimeMode','earliestArrival','SampleTime_s',0.9));
+            verifyTrue(testCase,coarse.Success,coarse.Message);
+            verifyEqual(testCase,coarse.MotionLength_units,result.MotionLength_units,'AbsTol',1e-9);
+            sampledLength_units = sum(vecnorm(diff(coarse.position_units),2,2));
+            verifyGreaterThan(testCase,coarse.MotionLength_units-sampledLength_units,1e-3);
+        end
         % Changing the authoritative source must invalidate a cached corridor.
         blocker = obstacleAvoidance.obstacles.createObstacle('new blocker',[0;30], ...
             shift_units(1)+[-3;3;3;-3],shift_units(2)+[-3;-3;3;3],0);

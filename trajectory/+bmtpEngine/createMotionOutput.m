@@ -30,7 +30,13 @@ polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units,
 sampled    = samplePolynomial(polynomial, request.Options.SampleTime_s);
 candidate.ArrivalTime_s                 = polynomial.FinalTime_s;
 candidate.TrajectoryDuration_s          = polynomial.FinalTime_s - request.InitialState.time_s;
-candidate.MotionLength_units              = sum(vecnorm(diff(sampled.position_units, 1, 1), 2, 2));
+candidate.MotionLength_units = 0;
+for segment = 1:polynomial.SegmentCount
+    velocityPower_units_s = squeeze(polynomial.velocityPower_units_s(segment,:,:));
+    speed_units_s = @(tau) hypot(polyval(fliplr(velocityPower_units_s(1,:)),tau),polyval(fliplr(velocityPower_units_s(2,:)),tau));
+    candidate.MotionLength_units = candidate.MotionLength_units+polynomial.SegmentDuration_s(segment)* ...
+        integral(speed_units_s,0,1,'AbsTol',1e-11,'RelTol',1e-11);
+end
 candidate.IntegratedSquaredJerk_units2_s5 = integratedSquaredJerk(polynomial);
 candidate.MaximumConstraintViolation    = preparedMotion.MotionCertificate.MaximumViolation;
 % Apply the required validation or transfer to each field name.
