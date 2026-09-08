@@ -71,7 +71,10 @@ interceptOptions = struct("InterceptMode", "specifiedTime", "SpecifiedInterceptT
 
 % Evaluate the target at the set time and plan one position-only intercept.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+goalState = struct("time_s",interceptOptions.SpecifiedInterceptTime_s,"targetMotion",targetMotion);
+plannerOptions = interceptOptions.PlannerOptions;
+plannerOptions.GoalTimeMode = "fixedArrival";
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 

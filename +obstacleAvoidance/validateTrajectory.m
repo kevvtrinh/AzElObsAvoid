@@ -118,6 +118,9 @@ validation.AccelerationWithinLimits = within(3);
 validation.JerkWithinLimits         = within(4);
 initialState = result.Inputs.initialState;
 goalState    = result.Inputs.goalState;
+if isfield(goalState,'targetMotion') && ~isempty(goalState.targetMotion)
+    goalState.position_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,polynomial.FinalTime_s);
+end
 initialPolynomialState = [reshape(powerArrays{1}(1, :, 1), 1, 2), reshape(powerArrays{2}(1, :, 1), 1, 2), reshape(powerArrays{3}(1, :, 1), 1, 2)];
 terminalPolynomialState = [sum(reshape(powerArrays{1}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{2}(end, :, :), 2, []), 2).', sum(reshape(powerArrays{3}(end, :, :), 2, []), 2).'];
 expectedEndpointState = [initialState.position_units initialState.velocity_units_s initialState.acceleration_units_s2 goalState.position_units goalState.velocity_units_s goalState.acceleration_units_s2];

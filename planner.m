@@ -13,6 +13,8 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %   - obstacles: static polygon structs or canonical polygon histories.
 %   - initialState, goalState: position_units and time_s; omitted endpoint
 %     velocity and acceleration default to zero.
+%     A fixed-time goal may supply targetMotion (sampled time_s and N-by-2
+%     position_units, with linear or pchip InterpolationMethod) instead.
 %   - limits: workspace intervals and per-axis velocity, acceleration, jerk.
 %   - options: arrival policy, BMTP sampling, and validation tolerances.
 %
@@ -43,6 +45,9 @@ initialState = normalizeState(initialState, defaultInitialState, "initialState")
 goalState    = normalizeState(goalState, defaultGoalState, "goalState");
 limits       = normalizeLimits(limits, defaultLimits);
 options      = resolveOptions(options, defaultOptions);
+if ~isempty(goalState.targetMotion) && options.GoalTimeMode ~= "fixedArrival"
+    error('planner:UnsupportedTargetMode','Sampled targets currently require fixedArrival.');
+end
 if goalState.time_s <= initialState.time_s
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
@@ -105,6 +110,10 @@ for fieldName = reshape(candidateFields, 1, [])
 end
 result.Route_units = route_units;
 result.SolverDiagnostics = solverDiagnostics;
+if ~isempty(goalState.targetMotion)
+    result.Intercept = struct('Time_s',candidate.ArrivalTime_s, ...
+        'TargetPosition_units',goalState.position_units,'TerminalVelocityPolicy',"zero");
+end
 result.Validation = obstacleAvoidance.validateTrajectory(result);
 if candidate.Success && ~result.Validation.Passed
     result.Success = false;
@@ -124,7 +133,7 @@ function [obstacles, initialState, goalState, limits, options] = createDefaults(
     initialState = struct("time_s", 0, "position_units", [-4 0], ...
         "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
     goalState = struct("time_s", 12, "position_units", [4 0], ...
-        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0]);
+        "velocity_units_s", [0 0], "acceleration_units_s2", [0 0], 'targetMotion', []);
     limits = struct("xInterval_units", [-180 180], "yInterval_units", [-90 90], ...
         "maxVelocity_units_s", [2 2], ...
         "maxAcceleration_units_s2", [2 2], "maxJerk_units_s3", [4 4]);
@@ -150,6 +159,9 @@ function state = normalizeState(state, defaults, argumentName)
         end
     end
     validateattributes(state.time_s, {'numeric'}, {'real', 'finite', 'scalar'});
+    if isfield(state,'targetMotion') && ~isempty(state.targetMotion)
+        state.position_units = obstacleAvoidance.input.targetPositionAtTime(state.targetMotion,state.time_s);
+    end
     for fieldName = ["position_units", "velocity_units_s", "acceleration_units_s2"]
         value = double(state.(fieldName));
         if ~isnumeric(state.(fieldName)) || ~isreal(value) || ~isvector(value) || numel(value) ~= 2 || any(~isfinite(value))
@@ -242,6 +254,8 @@ function result = createEmptyResult(obstacles, preparedObstacles, initialState, 
     result.SolverDiagnostics = struct();
     result.Validation = struct("Passed", false, "Message", "No motion is available.");
     result.ArrivalTime_s = NaN;
+    result.Intercept = struct('Time_s',NaN,'TargetPosition_units',goalState.position_units, ...
+        'TerminalVelocityPolicy',"zero");
     result.TrajectoryDuration_s = NaN;
     result.ElapsedTime_s = 0;
 end

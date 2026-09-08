@@ -63,25 +63,38 @@ end
 normalNormLimit    = 1 + 2 ^ 20 * eps;
 obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_units + roundoffReserve_units;
 
-%% Section 2: Alternate Time-Power And Maximum-Margin SOCPs
+%% Section 2: Solve The Direct Curve Or Alternating Convex Problem
 
-% Alternate trajectory and separating-line solves.
-% Keep the best sampled-clear candidate for final certification.
-[alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
-% Return the alternating optimizer's stable failure result instead of attempting final-motion preparation on invalid controls.
-if ~alternatingResult.Success
-    [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
-    return;
+% The unconstrained fixed-time minimum-jerk solution is a quintic on the
+% endpoint chord. Degree elevation preserves it exactly in the shared basis.
+preparedMotion = struct('Success',false);
+if isempty(regions_units) && options.GoalTimeMode == "fixedArrival"
+    fraction = zeros(degree+1,1);
+    coefficients = [10 -15 6];
+    for k = 0:degree
+        for power = 3:min(k,5)
+            fraction(k+1) = fraction(k+1)+coefficients(power-2)*nchoosek(k,power)/nchoosek(degree,power);
+        end
+    end
+    controls_units = initialState.position_units + fraction.*(goalState.position_units-initialState.position_units);
+    preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),request.MotionHorizon_s);
 end
-
-bestControl_units   = alternatingResult.ControlPoint_units;
-bestSegmentTime_s = alternatingResult.SegmentTime_s;
+if preparedMotion.Success
+    diagnostics.Identifier = "minimumJerkQuintic";
+    diagnostics.ConstraintRepresentation = "analyticFixedTime";
+    diagnostics.Converged = true;
+else
+    [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+    if ~alternatingResult.Success
+        [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
+        return;
+    end
+    % Endpoint correction and export can increase the derivative bounds.
+    preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
+end
 
 %% Section 3: Prepare And Check The Final Motion
 
-% Endpoint corrections can increase derivative peaks.
-% Correct endpoints and adjust segment times before final checks.
-preparedMotion = bmtpEngine.prepareFinalMotion(request, bestControl_units, bestSegmentTime_s);
 diagnostics.EndpointProjectionApplied = true;
 diagnostics.DilationScale             = preparedMotion.DilationScale;
 % Return reconstruction failure without certification because no complete motion exists to certify.

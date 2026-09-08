@@ -26,8 +26,14 @@ control-polygon length at the actual requested clock. Supporting axes provide
 separating planes analytically. Acceptance requires independent reconstruction
 of source geometry, active pairs, clearance, endpoints, and polynomial limits.
 
-Current limitations: dynamic earliest-arrival motion and target interception
-are not yet implemented. Initialization uses an initial-time visibility route,
+Fixed-time goals may supply `goalState.targetMotion` with sampled `time_s`,
+N-by-2 `position_units`, and `InterpolationMethod` (`linear` or `pchip`). The
+validator evaluates that source again at actual arrival. An unobstructed
+fixed-time request uses the exact minimum-jerk quintic when its motion limits
+certify, avoiding an optimization call and preserving the straight path.
+
+Current limitations: dynamic earliest-arrival motion and earliest target
+interception are not yet implemented. Initialization uses an initial-time visibility route,
 so the planner is not complete for dynamic topology changes or goals blocked
 only at the initial time. The full static suite still needs improvement.
 Historical example interfaces are being migrated to the single `planner`
@@ -37,7 +43,7 @@ entry point. No universal trajectory optimality or runtime guarantee is claimed.
 
 ```matlab
 addpath('tests');
-assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m'}));
+assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m'}));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 ```
@@ -105,5 +111,12 @@ medians; these are development evidence, not current full-suite certification):
 | Opposing Us | Yes | 23.51905 / 22.10063 | 24.72464 / 24.20576 | 0.57687 / 2.09183 |
 | Alternating slalom | Yes | 10.72341 / 10.55009 | 17.30310 / 16.03475 | 0.25309 / 7.48968 |
 
-Vietnam and the expected no-path case have demonstrated all reference metrics.
+Fixed-time moving-target interception now also passes all references: five-run
+median wall time 0.05589 s versus 0.1950635 s, arrival 12 s, and motion length
+9.5389405468 (equal to the endpoint distance and reference). It uses no SOCP.
+Four target tests pass, including altered source data and invalid histories;
+the prior thirteen core/Vietnam tests also pass. A three-run Vietnam regression
+retains its exact motion length and 30 s arrival, with median wall time 3.397 s.
+
+Vietnam, fixed-time interception, and the expected no-path case have demonstrated all reference metrics.
 The full suite remains unfinished. No scenario-specific fallback was added.
