@@ -48,12 +48,19 @@ Historical example interfaces are being migrated to the single `planner`
 entry point. No universal trajectory optimality or runtime guarantee is claimed.
 Static and dynamic fixed-arrival requests now share the same elastic
 length-minimizing convex formulation; scene motion does not choose the objective.
+Earliest-arrival requests use four degree-eight subspans per visibility edge.
+One convex solve minimizes the time-power objective; a second minimizes
+control-polygon length while preserving that returned time value. Finite stalled
+iterates remain proposals, and convergence is reported only when both stages
+converge. Polynomial export shares physical position through jerk at joins,
+then rebuilds derivative bounds and collision certificates for the corrected
+curve. Validation limits and tolerances remain unchanged.
 
 ## Verification
 
 ```matlab
 addpath('tests');
-assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m','tests/testStaticFixedArrival.m','tests/testConvexPreparation.m'}));
+assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m','tests/testStaticFixedArrival.m','tests/testConvexPreparation.m','tests/testEarliestRefinement.m'}));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 ```
@@ -167,7 +174,7 @@ Vietnam, fixed-time interception, accelerating circles, target exit, alternating
 occlusion, and the expected no-path case have demonstrated the physical benchmark metrics.
 The full suite remains unfinished. No scenario-specific fallback was added.
 
-Latest combined regression: all 25 tests pass and all five runs independently
+The preparation milestone's combined regression: all 25 tests pass and all five runs independently
 validate for each of the six demonstrated examples (no-path returns the expected
 explicit failure). Profiling is disabled; medians include full example execution:
 
@@ -179,3 +186,22 @@ explicit failure). Profiling is disabled; medians include full example execution
 | Target exit | 24 / 24 | 20.504312 / 20.685147 | 1.934 / 4.628 |
 | Alternating occlusion | 20.869565 / 20.869565 | 13.556378 / 13.610416 | 1.854 / 2.467 |
 | No path | Expected no route | n.a. | 0.01026 / 0.56736 |
+
+The subsequent earliest-arrival milestone adds opposing Us: arrival
+21.8551 s versus 22.1006 s, motion length 24.1924 versus 24.2058, and five-run
+median wall time 0.8174 s versus 2.0918 s. The core contains 3,816 physical
+production lines, and 27 tests pass. The short-span reconstruction test checks
+actual physical derivative continuity after correcting the curve; it does not
+relax the independent validator's 1e-8 threshold.
+
+Remaining earliest-arrival limitations are measured explicitly. Static U now
+has valid motion of length 37.458, below 38.678, but arrival 23.300 s exceeds
+20.873 s. Slalom remains above both targets (11.171 s and 16.569, versus
+10.550 s and 16.035). Obstacle-free motion improves to straight length
+4.472135955 and duration 4.65699 s; its exact historical duration remains
+incompatible with the continuous-jerk requirement described above.
+
+Trials of extra alternating iterations, a shared bangbang progress clock for
+knot initialization, and joint nonlinear time/control optimization were
+discarded. They missed quality or runtime targets, or failed validation. No
+nonlinear optimizer or scenario-specific repair was retained in production.

@@ -6,13 +6,13 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %
 % PURPOSE
 %   - Convert composite Bernstein control points to the stable ascending-power
-%     polynomial representation and stabilize exact endpoint derivatives.
+%     polynomial representation and share physical derivatives at joins.
 %
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
-%   - segmentTime_s (positive numeric scalar)
-%       Common physical segment duration.
+%   - segmentTime_s (positive numeric scalar or S-by-1 vector)
+%       Physical segment durations.
 %   - initialTime_s (finite numeric scalar)
 %       Absolute motion start time.
 %
@@ -37,7 +37,7 @@ conversion = zeros(degree + 1);
 conversion(valid) = factorial(degree) * (-1) .^ (powerIndex(valid) - bernsteinIndex(valid)) ./ (factorial(bernsteinIndex(valid)) .* factorial(powerIndex(valid) - bernsteinIndex(valid)) .* factorial(degree - powerIndex(valid)));
 bernsteinPages    = permute(controlPoint_units, [2 1 3]);
 positionPower_units = permute(pagemtimes(conversion, bernsteinPages), [2 3 1]);
-positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units);
+positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units,segmentTime_s);
 
 %% Section 2: Create Physical Derivative Powers And Timing
 
@@ -60,7 +60,7 @@ end
 
 %% Section 3: Local Functions
 
-function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_units)
+function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_units,segmentTime_s)
     % Correct roundoff so position through jerk match at Bernstein endpoints.
     degree       = size(controlPoint_units, 2) - 1;
     segmentCount = size(controlPoint_units, 1);
@@ -76,6 +76,17 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
         scale      = factorial(degree) / factorial(degree - order);
         power_units(:, :, order + 1) = reshape(difference(:, 1, :), segmentCount, 2) * scale / factorial(order);
         target(:, :, order + 1) = reshape(difference(:, end, :), segmentCount, 2) * scale;
+    end
+    % Share physical endpoint jets before reconstructing each polynomial.
+    % A small normalized solver residual can otherwise be amplified by the
+    % inverse cube of a short span's duration. This changes the returned curve;
+    % all derivative bounds and collision certificates are rebuilt afterward.
+    for order = 0:3
+        left = target(1:end-1,:,order+1)./segmentTime_s(1:end-1).^order;
+        right = power_units(2:end,:,order+1)*factorial(order)./segmentTime_s(2:end).^order;
+        common = (left+right)/2;
+        target(1:end-1,:,order+1) = common.*segmentTime_s(1:end-1).^order;
+        power_units(2:end,:,order+1) = common.*segmentTime_s(2:end).^order/factorial(order);
     end
     % Process each projection pass needed to complete stabilize polynomial endpoints.
     for projectionPass = 1:2

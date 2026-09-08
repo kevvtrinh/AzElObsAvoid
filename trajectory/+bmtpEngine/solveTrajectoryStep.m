@@ -44,7 +44,7 @@ controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
 powerIndex             = controlCount + (1:4);
-lengthCount = fixedClock * segmentCount * degree;
+lengthCount = segmentCount * degree;
 activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
 slackCount = fixedClock * activePlaneCount;
 variableCount          = controlCount + 4 + lengthCount + slackCount;
@@ -159,33 +159,55 @@ maximumSegmentTime_s = maximumMotionDuration_s / sum(segmentRatio);
 timePowers_s         = [1; maximumSegmentTime_s; ...
     maximumSegmentTime_s ^ 2; maximumSegmentTime_s ^ 3];
 ub(powerIndex) = timePowers_s;
+lengthIndex = controlCount+4+(1:lengthCount);
+lb(lengthIndex) = 0;
 if fixedClock
     lb(powerIndex) = timePowers_s;
     f(:) = 0;
-    lengthIndex = controlCount+4+(1:lengthCount);
-    lb(lengthIndex) = 0; f(lengthIndex) = 1;
+    f(lengthIndex) = 1;
     slackIndices = controlCount+4+lengthCount+(1:slackCount);
     lb(slackIndices) = 0;
     % Elastic sequential convex programming: penalize clearance slack in the
     % same distance units as control-polygon length. Only independently clear
     % motion may be accepted by the outer solve.
     f(slackIndices) = 1e3;
-    emptyCone = secondordercone(sparse(2,variableCount),zeros(2,1),sparse(variableCount,1),0);
-    cones = repmat(emptyCone,lengthCount,1);
-    for k = 1:segmentCount
-        for j = 1:degree
-            row = (k-1)*degree+j;
-            coneA = sparse(2,variableCount);
-            coneA(:,controlIndexOf(k,j,1:2,degree)) = eye(2);
-            coneA(:,controlIndexOf(k,j-1,1:2,degree)) = -eye(2);
-            coneD = sparse(variableCount,1); coneD(lengthIndex(row)) = 1;
-            cones(row) = secondordercone(coneA,zeros(2,1),coneD,0);
-        end
+end
+emptyCone = secondordercone(sparse(2,variableCount),zeros(2,1),sparse(variableCount,1),0);
+lengthCones = repmat(emptyCone,lengthCount,1);
+for k = 1:segmentCount
+    for j = 1:degree
+        row = (k-1)*degree+j;
+        coneA = sparse(2,variableCount);
+        coneA(:,controlIndexOf(k,j,1:2,degree)) = eye(2);
+        coneA(:,controlIndexOf(k,j-1,1:2,degree)) = -eye(2);
+        coneD = sparse(variableCount,1); coneD(lengthIndex(row)) = 1;
+        lengthCones(row) = secondordercone(coneA,zeros(2,1),coneD,0);
     end
 end
+if fixedClock, cones = lengthCones; end
 solverTimer = tic;
 [x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
 output.TotalTime_s = toc(solverTimer);
+output.SolveCount = 1;
+output.OptimizationConverged = exitFlag>0;
+if ~fixedClock && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7)
+    % Lexicographic optimization: preserve the first time-power value while
+    % minimizing path length. Unconstrained lateral motion must not be chosen
+    % arbitrarily merely because another axis determines the arrival time.
+    ub(powerIndex(4)) = x(powerIndex(4));
+    f(:) = 0; f(lengthIndex) = 1;
+    timer = tic;
+    [shortX,~,shortFlag,shortOutput] = coneprog(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options);
+    bothConverged = output.OptimizationConverged && shortFlag>0;
+    shortElapsed_s = toc(timer);
+    elapsed_s = output.TotalTime_s+shortElapsed_s;
+    if ~isempty(shortX) && all(isfinite(shortX)) && (shortFlag>0 || shortFlag==-7)
+        x = shortX; exitFlag = shortFlag; output = shortOutput;
+    end
+    output.TotalTime_s = elapsed_s;
+    output.SolveCount = 2;
+    output.OptimizationConverged = bothConverged;
+end
 if fixedClock && ~isempty(x), output.MaximumClearanceSlack_units = max(x(slackIndices)); end
 % A stalled finite iterate remains a proposal, never a feasibility certificate.
 % Independent physical checks decide whether it can become returned motion.

@@ -30,6 +30,20 @@ start_units = reshape(route_units(1:end - 1, :), segmentCount, 1, 2);
 finish_units = reshape(route_units(2:end, :), segmentCount, 1, 2);
 controlPoint_units = (1 - fraction) .* start_units + fraction .* finish_units;
 segmentTime_s = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
+originalSegmentCount = segmentCount;
+if request.SplitCount>1
+    subdivisions = request.SplitCount;
+    refined_units = zeros(segmentCount*subdivisions,degree+1,2);
+    for k = 1:segmentCount
+        for j = 1:subdivisions
+            refined_units((k-1)*subdivisions+j,:,:) = bmtpEngine.restrictBezier(squeeze(controlPoint_units(k,:,:)),[(j-1),j]/subdivisions);
+        end
+    end
+    controlPoint_units = refined_units;
+    segmentTime_s = repelem(segmentTime_s,subdivisions)/subdivisions;
+    regionActiveBySegment = repelem(regionActiveBySegment,subdivisions,1);
+    segmentCount = segmentCount*subdivisions;
+end
 
 %% Section 3: Return The Solver Initialization
 
@@ -41,7 +55,7 @@ warmStart.Duration_s = sum(segmentTime_s);
 warmStart.SegmentRatio = segmentTime_s / mean(segmentTime_s);
 warmStart.SegmentCount = segmentCount;
 warmStart.RegionActiveBySegment = regionActiveBySegment;
-warmStart.OriginalSeedSegmentCount = segmentCount;
+warmStart.OriginalSeedSegmentCount = originalSegmentCount;
 warmStart.WarmRouteResampled = false;
 if isfield(request.Coverage,'BreakTime_s')
     breakTime_s = request.Coverage.BreakTime_s;

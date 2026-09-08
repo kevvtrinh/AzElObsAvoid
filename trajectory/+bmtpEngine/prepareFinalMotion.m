@@ -33,7 +33,7 @@ segmentTime_s    = repelem(segmentTime_s(:), 2, 1) / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
-exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, 1, 0);
+exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, segmentTime_s, 0);
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
 requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
 dilationScale             = max([1; requiredTime_s ./ segmentTime_s]) * (1 + 64 * eps);

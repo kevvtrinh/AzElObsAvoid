@@ -36,9 +36,11 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 
 %% Section 2: Select The Polynomial Representation
 
-% Use one degree-eight span per exact visibility edge.
+% Fixed-time event meshes already resolve time. Earliest-arrival optimization
+% uses four degree-eight subspans per visibility edge to resolve transients.
 
 [degree, splitCount] = deal(8, 1);
+if options.GoalTimeMode=="earliestArrival", splitCount = 4; end
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");

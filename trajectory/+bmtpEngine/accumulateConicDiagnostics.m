@@ -16,6 +16,8 @@ if nargin == 0
     return;
 end
 if isfield(output,'IsAnalytic') && output.IsAnalytic, return; end
-stats.CallCount   = stats.CallCount + 1;
+count = 1;
+if isfield(output,'SolveCount'), count = output.SolveCount; end
+stats.CallCount   = stats.CallCount + count;
 stats.TotalTime_s = stats.TotalTime_s + output.TotalTime_s;
 end
