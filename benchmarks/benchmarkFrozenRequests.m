@@ -1,21 +1,32 @@
-function report = benchmarkFrozenRequests(casesPath, outputPath, repetitionCount)
+function report = benchmarkFrozenRequests(casesPath, outputPath, repetitionCount, measurement)
 %% Section 0: Header & Readme
 % SYNTAX: report = benchmarkFrozenRequests(casesPath, outputPath, repetitionCount)
-% PURPOSE: Measure identical physical requests with one untimed warm-up per case.
+% PURPOSE: Measure identical physical requests with an explicit warm-up policy.
 % INPUTS: MAT file containing cases, output MAT path, and at least three repetitions.
+%   Optional measurement fields: WarmupCount, WarmupOutputCount (0 or 2),
+%   SaveFormat ('-v7' or '-v7.3'), and PlannerFunction (two-output handle).
 % OUTPUTS: Individual timings, results, fresh validation, and adaptive arc lengths.
 % UNITS: Seconds, coordinate units, and physical derivatives in those units.
 
 %% Section 1: Read Frozen Physical Inputs
 if nargin < 3, repetitionCount = 3; end
+if nargin < 4, measurement = struct(); end
+defaults = struct('WarmupCount',1,'WarmupOutputCount',0,'SaveFormat','-v7.3','PlannerFunction',@obstacleAvoidance.planTrajectory);
+for name = string(fieldnames(defaults)).'
+    if ~isfield(measurement,name), measurement.(name) = defaults.(name); end
+end
+validateattributes(measurement.WarmupCount, {'numeric'}, {'scalar','integer','>=',1});
+assert(ismember(measurement.WarmupOutputCount,[0 2]));
+assert(ismember(string(measurement.SaveFormat),["-v7","-v7.3"]));
+assert(isa(measurement.PlannerFunction,'function_handle'));
 validateattributes(repetitionCount, {'numeric'}, {'scalar','integer','>=',3});
 data = load(casesPath, 'cases');
 cases = data.cases;
 report = struct();
 report.MatlabVersion = version;
-report.PlannerPath = which('obstacleAvoidance.planTrajectory');
+report.PlannerPath = which(func2str(measurement.PlannerFunction));
 report.Toolboxes = ver;
-report.WarmupPolicy = "One complete untimed solve per physical case before three timed solves";
+report.WarmupPolicy = sprintf('%d untimed solves with %d outputs per case; %d timed solves with two outputs',measurement.WarmupCount,measurement.WarmupOutputCount,repetitionCount);
 report.CaseNames = string({cases.Name}).';
 report.CasesPath = string(casesPath);
 report.Results = cell(numel(cases), repetitionCount);
@@ -28,10 +39,16 @@ report.Length_units = NaN(numel(cases), repetitionCount);
 for caseIndex = 1:numel(cases)
     request = cases(caseIndex).Inputs;
     options = cases(caseIndex).Options;
-    obstacleAvoidance.planTrajectory(request.obstacles, request.initialState, request.goalState, request.limits, options);
+    for warmupIndex = 1:measurement.WarmupCount
+        if measurement.WarmupOutputCount == 2
+            [~, ~] = measurement.PlannerFunction(request.obstacles, request.initialState, request.goalState, request.limits, options);
+        else
+            measurement.PlannerFunction(request.obstacles, request.initialState, request.goalState, request.limits, options);
+        end
+    end
     for repeatIndex = 1:repetitionCount
         timer = tic;
-        [result, diagnosis] = obstacleAvoidance.planTrajectory(request.obstacles, request.initialState, request.goalState, request.limits, options);
+        [result, diagnosis] = measurement.PlannerFunction(request.obstacles, request.initialState, request.goalState, request.limits, options);
         report.ElapsedTime_s(caseIndex, repeatIndex) = toc(timer);
         % Discard internal caches so validation rebuilds authoritative geometry.
         sourceObstacles = request.obstacles;
@@ -58,7 +75,9 @@ for caseIndex = 1:numel(cases)
     end
 end
 report.MedianTime_s = median(report.ElapsedTime_s, 2);
-save(outputPath, 'report', '-v7.3');
+save(outputPath, 'report', measurement.SaveFormat);
+roundTrip = load(outputPath, 'report');
+assert(isequaln(report, roundTrip.report), 'Capture round-trip changed report data.');
 end
 
 function length_units = polynomialArcLength(polynomial)

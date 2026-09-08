@@ -164,6 +164,18 @@ for seedIndex = 1:primarySeedCount
         firstValidatedMotionTime_s = toc(planningTimer);
     end
 end
+if exactMotionSet.Deferred
+    clockTolerance_s = max(options.ConstraintTolerance, 256 * eps(max(1, exactMotionSet.DirectCandidate.TrajectoryDuration_s)));
+    attainedClock = any([primarySummaries.ValidationPassed] & [primarySummaries.ArrivalTime_s] <= exactMotionSet.DirectCandidate.ArrivalTime_s + clockTolerance_s);
+    if ~attainedClock
+        exactMotionSet = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming, exactMotionSet);
+        stageTiming = exactMotionSet.StageTiming;
+        result.SearchDiagnostics.FixedClockExcursion = exactMotionSet.ExcursionDiagnostics;
+        if exactMotionSet.ExcursionIsValidated && isnan(firstValidatedMotionTime_s)
+            firstValidatedMotionTime_s = toc(planningTimer);
+        end
+    end
+end
 candidateSet = struct("Seeds", primarySeeds, ...
     "Candidates", {primaryCandidates}, ...
     "Summaries", primarySummaries, ...

@@ -1,5 +1,22 @@
 # Planner decisions
 
+## Static corridor integration — 2026-09-08
+
+The working refactor integrates exact source facets, physical clocks, and
+speed quadrature through shared engine helpers and removes the duplicate
+motion exporter. All 209 tests pass, as do 60 complete frozen quality records
+and 18 affected-request comparisons under a matched three-warmup policy. Runtime
+regressions on broader fallbacks were confirmed by one matched rerun and traced
+to failed clock attempts. Cheap geometric and reachability checks reduce that
+work, and a linear feasibility precheck avoids unresolved speed-cone solves.
+Prescribed arrivals keep the general solver. Matched medians are slalom
+1.9574/0.3829 s, dense concave 0.8445/0.3588 s, Hawaii 1.3997/1.2505 s, and
+target exit 2.6185/2.6282 s. Opposing U remains slower (1.1211/1.2311 s), as
+does Philippines (4.1073/4.2335 s); the additional failed attempt is retained
+as an explicit cost of the conditional formulation. Production is 16,408
+physical lines in 114 files. The complete refactor and size gate are unfinished.
+See [corridor evidence and rejected changes](docs/bmtp_refactor_corridors.md).
+
 ## Analytic departure scheduling — 2026-09-08
 
 Eligible straight-progress direct waits now use forbidden source-derived

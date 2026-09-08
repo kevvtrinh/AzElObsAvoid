@@ -622,16 +622,13 @@ function testReflectedProgressAxisKeepsShortExactClockDetour(testCase)
     verifyTrue(testCase, result.Validation.Passed, result.Validation.Message);
     verifyTrue(testCase, result.Validation.CollisionFree);
     verifyTrue(testCase, result.Validation.CollisionResolved);
-    diagnostics = resultDiagnosis.PathRefinement;
-    verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "Success"), testSupport.diagnosisValue(diagnostics, "Message"));
-    verifyTrue(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.Attempted"));
-    verifyLessThanOrEqual(testCase, testSupport.diagnosisValue(diagnostics, "TravelRefinement.FinalLength_units"), testSupport.diagnosisValue(diagnostics, "TravelRefinement.InitialLength_units"));
+    diagnostics = testSupport.solverDetails(resultDiagnosis, resultDiagnosis.SelectedAttemptIndex);
+    verifyEqual(testCase, testSupport.diagnosisValue(diagnostics, "Identifier"), "monotoneStaticCorridor");
     verifyEqual(testCase, result.TrajectoryDuration_s, 12.5, "AbsTol", 1e-9);
-    verifyEqual(testCase, result.Route_units, result.position_units);
-    verifyEqual(testCase, resultDiagnosis.Routes(1).Length_units, sum(vecnorm(diff(result.position_units), 2, 2)), "AbsTol", 1e-12);
+    verifyEqual(testCase, resultDiagnosis.Routes(resultDiagnosis.SelectedAttemptIndex).Length_units, sum(vecnorm(diff(result.Route_units), 2, 2)), "AbsTol", 1e-12);
     % The refined detour must remain within 1.25 percent of the direct distance.
     directLength_units = norm(goalState.position_units - initialState.position_units);
-    verifyLessThan(testCase, resultDiagnosis.Routes(1).Length_units, 1.0125 * directLength_units, "The exact-clock detour contains unnecessary joint travel.");
+    verifyLessThan(testCase, sum(vecnorm(diff(result.position_units), 2, 2)), 1.0125 * directLength_units, "The exact-clock detour contains unnecessary joint travel.");
 end
 
 function testNearStartBarrierKeepsShortOneSidedExactClockDetour(testCase)

@@ -1,4 +1,4 @@
-function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming)
+function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, limits, options, scene, stageTiming, priorAttempt)
 %% Section 0: Header & Readme
 % SYNTAX
 %   defaults = obstacleAvoidance.planner.tryDirectAndFixedTimeMotions()
@@ -15,6 +15,8 @@ function exactMotionSet = tryDirectAndFixedTimeMotions(initialState, goalState, 
 %       Prepared obstacles shared with later graph and validation stages.
 %   - stageTiming (scalar timing struct)
 %       Accumulated planner stage timings before exact motion work.
+%   - priorAttempt (optional internal deferred attempt)
+%       Resume the broader excursion using its already checked direct motion.
 %
 % OUTPUTS
 %   - exactMotionSet (scalar struct)
@@ -38,44 +40,63 @@ exactMotionSet.ExcursionIsValidated   = false;
 exactMotionSet.ExcursionSeed          = obstacleAvoidance.search.createEmptyPathGuess();
 exactMotionSet.FastPath               = emptyFastPath();
 exactMotionSet.StageTiming            = struct();
+exactMotionSet.Deferred               = false;
+exactMotionSet.DirectCandidate        = struct();
+exactMotionSet.DirectValidation       = struct();
 if nargin == 0
     return;
 end
 preparedObstacles = scene.preparedObstacles;
 
 %% Section 2: Create And Check The Exact Direct Motion
-endpointDerivative      = [initialState.velocity_units_s, initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
-useStateToStateMotion   = any(abs(endpointDerivative) > options.ConstraintTolerance);
-directSuccessMessage    = "An exact direct rest-to-rest motion passed independent validation.";
-motionTimer             = tic;
-% Use state-to-state motion for non-rest endpoints; otherwise use the simpler rest-to-rest constructor.
-if useStateToStateMotion
-    directSeed        = createDirectSeed(initialState, goalState, goalState.time_s - initialState.time_s);
-    directSeed.Source = "directStateToState";
-    [directCandidate, directSolverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(directSeed, initialState, goalState, limits, options);
-    directCandidate.SolverDiagnostics = directSolverDiagnostics;
-    directSuccessMessage = "An exact direct state-to-state motion passed independent validation.";
+if nargin == 7
+    exactMotionSet = priorAttempt;
+    exactMotionSet.Deferred = false;
+    directCandidate = priorAttempt.DirectCandidate;
+    directValidation = priorAttempt.DirectValidation;
 else
-    directCandidate = bmtpEngine.createDirectMotion(initialState, goalState, limits, options);
-end
-directElapsedTime_s = toc(motionTimer);
-stageTiming.MotionSolvingElapsedTime_s = stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
-[directCandidate, directValidation, directValidationTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(directCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "");
-directAttempt = recordDirectAttempt(directCandidate, directValidation, directElapsedTime_s, directValidationTime_s);
-exactMotionSet.DirectAttempt = directAttempt;
-% Accept the direct route when independent validation passes; otherwise preserve its evidence and try obstacle-avoiding alternatives.
-if directValidation.Passed
+    endpointDerivative      = [initialState.velocity_units_s, initialState.acceleration_units_s2, goalState.velocity_units_s, goalState.acceleration_units_s2];
+    useStateToStateMotion   = any(abs(endpointDerivative) > options.ConstraintTolerance);
+    directSuccessMessage    = "An exact direct rest-to-rest motion passed independent validation.";
+    motionTimer             = tic;
     % Use state-to-state motion for non-rest endpoints; otherwise use the simpler rest-to-rest constructor.
     if useStateToStateMotion
-        directSeed = createMotionSeed(directCandidate, directCandidate.SeedSource);
+        directSeed        = createDirectSeed(initialState, goalState, goalState.time_s - initialState.time_s);
+        directSeed.Source = "directStateToState";
+        [directCandidate, directSolverDiagnostics] = obstacleAvoidance.planner.createRuckigWaypointMotion(directSeed, initialState, goalState, limits, options);
+        directCandidate.SolverDiagnostics = directSolverDiagnostics;
+        directSuccessMessage = "An exact direct state-to-state motion passed independent validation.";
     else
-        directSeed = createDirectSeed(initialState, goalState, directCandidate.TrajectoryDuration_s);
+        directCandidate = bmtpEngine.createDirectMotion(initialState, goalState, limits, options);
     end
-    exactMotionSet.FastPath    = createFastPath(directCandidate, directValidation, directAttempt, directElapsedTime_s, directSeed, directSuccessMessage);
-    exactMotionSet.StageTiming = stageTiming;
-    return;
+    directElapsedTime_s = toc(motionTimer);
+    stageTiming.MotionSolvingElapsedTime_s = stageTiming.MotionSolvingElapsedTime_s + directElapsedTime_s;
+    [directCandidate, directValidation, directValidationTime_s, stageTiming] = obstacleAvoidance.planner.checkCandidateMotion(directCandidate, preparedObstacles, initialState, goalState, limits, options, stageTiming, "");
+    directAttempt = recordDirectAttempt(directCandidate, directValidation, directElapsedTime_s, directValidationTime_s);
+    exactMotionSet.DirectAttempt = directAttempt;
+    % Accept the direct route when independent validation passes; otherwise preserve its evidence and try obstacle-avoiding alternatives.
+    if directValidation.Passed
+        % Use state-to-state motion for non-rest endpoints; otherwise use the simpler rest-to-rest constructor.
+        if useStateToStateMotion
+            directSeed = createMotionSeed(directCandidate, directCandidate.SeedSource);
+        else
+            directSeed = createDirectSeed(initialState, goalState, directCandidate.TrajectoryDuration_s);
+        end
+        exactMotionSet.FastPath    = createFastPath(directCandidate, directValidation, directAttempt, directElapsedTime_s, directSeed, directSuccessMessage);
+        exactMotionSet.StageTiming = stageTiming;
+        return;
+    end
+    exactMotionSet.DirectAttempt.FallbackContinued = true;
+    % Try source-facet corridors first when route search is available. If no
+    % validated proposal attains the direct clock, resume the broader excursion.
+    if options.GoalTimeMode == "earliestArrival" && scene.obstaclesRemainStatic && options.MaximumSeedCount > 1 && directCandidate.Success && all(endpointDerivative == 0) && all(isfinite(limits.maxJerk_units_s3))
+        exactMotionSet.Deferred = true;
+        exactMotionSet.DirectCandidate = directCandidate;
+        exactMotionSet.DirectValidation = directValidation;
+        exactMotionSet.StageTiming = stageTiming;
+        return;
+    end
 end
-exactMotionSet.DirectAttempt.FallbackContinued = true;
 
 %% Section 3: Create And Check The Fixed-Clock Excursion
 

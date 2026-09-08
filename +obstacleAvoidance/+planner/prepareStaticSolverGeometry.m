@@ -20,9 +20,15 @@ end
 [regions_units, grouping]      = createSolverRegions(exactRegions_units);
 coverage.SolverRegionCount    = numel(regions_units);
 coverage.ConservativeGrouping = grouping;
+exactCoverage = coverage;
+exactCoverage.SolverRegionCount = numel(exactRegions_units);
+exactCoverage.ConservativeGrouping.Applied = false;
+exactCoverage.ConservativeGrouping.SolverRegionCount = numel(exactRegions_units);
+exactCoverage.ConservativeGrouping.RelationToExactGeometry = "equal";
+exactCoverage.ConservativeGrouping.GroupMemberIndices = num2cell((1:numel(exactRegions_units)).');
 
 geometry = struct("ExactRegions_units", {exactRegions_units}, ...
-    "Regions_units", {regions_units}, "Grouping", grouping, "Coverage", coverage);
+    "Regions_units", {regions_units}, "Grouping", grouping, "Coverage", coverage, "ExactCoverage", exactCoverage);
 end
 
 %% Section 2: Local Functions

@@ -11,12 +11,17 @@ source geometry. [Analytic departure scheduling](bmtp_refactor_departure.md)
 now replaces eligible wait-trial execution, with 198 passing tests and 60
 successful quality comparisons. The [containment report](bmtp_refactor_containment.md) records
 194 passing tests, 60 exact motion/search comparisons, profiles, and the
-unfavorable runs. Production currently has 110 files and 15,824 physical lines;
-the final code-reduction gate remains unmet. The static-corridor port
-remains an unretained experiment in the ignored `scratch/corridor_draft` folder.
-Further plane batching, preparation reuse, corridor and
-clock integration, continuous-length optimization, and broader consolidation
-still require implementation and their respective verification gates. The
+unfavorable runs. Committed production at `8710e8f` has 110 files and 15,824
+physical lines; the final code-reduction gate remains unmet. The working
+[corridor integration](bmtp_refactor_corridors.md) now shares the engine's
+polynomial and motion exporters, batches complete static plane checks, and
+uses physical clocks and speed quadrature. Its unconditional fallback removal
+was rejected after saved behavioral tests failed. The broader excursion was
+restored. Its final full suite passes 209 tests, all 60 frozen quality records
+pass, and a matched three-warmup comparison verifies major slalom/dense/Hawaii
+gains while retaining the opposing-U and Philippines overhead. Working
+production is 114 files and 16,408 physical lines. Visibility batching, output-sampling-independent ranking,
+the single public entry point, and final consolidation remain unfinished. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of
 every geographic subcase is now recorded in the [reference comparison](bmtp_refactor_reference_comparison.md). It rejects wholesale replacement: the reference loses one supported fixed-time interception and worsens Hawaii's arrival, length, and runtime. The resumed
 cleanup/candidate comparison now captures all 20 physical requests (including

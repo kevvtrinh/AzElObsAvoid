@@ -1,4 +1,4 @@
-function candidate = createMotionOutput(candidate, request, preparedMotion)
+function candidate = createMotionOutputReference(candidate, request, preparedMotion)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = bmtpEngine.createMotionOutput( ...

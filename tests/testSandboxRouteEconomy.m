@@ -81,10 +81,8 @@ function testStaticCircleHasOneEconomicalDetour(testCase)
 
     verifyLessThanOrEqual(testCase, motionLength(result), 1.01 * geometricLowerBound_units, "The circle detour exceeds the tangent-and-arc lower bound by over 1%%.");
     verifyLessThanOrEqual(testCase, lateralReversalCount(result), 1, "The circle detour repeatedly reverses its lateral joint motion.");
-    details = resultDiagnosis.PathRefinement;
-    indices = endsWith(details.Field, ".BoundaryRefinementCount");
-    counts  = cell2mat(details.Value(indices));
-    verifyGreaterThan(testCase, sum(counts), 0, "The fixed-clock clearance boundary was not refined.");
+    details = testSupport.solverDetails(resultDiagnosis, resultDiagnosis.SelectedAttemptIndex);
+    verifyEqual(testCase, testSupport.diagnosisValue(details, "Identifier"), "monotoneStaticCorridor");
 end
 
 function testIrregularStaticObstacleAvoidsRepeatedJointMotion(testCase)

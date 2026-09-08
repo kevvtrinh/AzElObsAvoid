@@ -1,4 +1,4 @@
-function [segmentTime_s, requiredBySegment_s] = findRequiredSegmentTime(controlPoint_units, limits)
+function segmentTime_s = findRequiredSegmentTimeReference(controlPoint_units, limits)
 %% Section 0: Header & Readme
 % SYNTAX
 %   segmentTime_s = bmtpEngine.findRequiredSegmentTime( ...
@@ -16,8 +16,6 @@ function [segmentTime_s, requiredBySegment_s] = findRequiredSegmentTime(controlP
 % OUTPUTS
 %   - segmentTime_s (positive finite scalar)
 %       Smallest common segment duration implied by exact derivative controls.
-%   - requiredBySegment_s (S-by-1 positive vector)
-%       Individual bounds for callers using unequal physical durations.
 %
 % UNITS
 %   - Controls are coordinate units and segmentTime_s is seconds.
@@ -28,14 +26,12 @@ function [segmentTime_s, requiredBySegment_s] = findRequiredSegmentTime(controlP
 degree      = size(controlPoint_units, 2) - 1;
 limitValues = [limits.maxVelocity_units_s; ...
     limits.maxAcceleration_units_s2; limits.maxJerk_units_s3];
-segmentCount = size(controlPoint_units, 1);
-requiredBySegment_s = zeros(segmentCount, 1);
+segmentTime_s = 0;
 % Process each derivative order needed to find required segment time.
 for derivativeOrder = 1:3
     scale         = factorial(degree) / factorial(degree - derivativeOrder);
-    peak = reshape(max(abs(scale * diff(controlPoint_units, derivativeOrder, 2)), [], 2), segmentCount, 2);
-    requiredBySegment_s = max(requiredBySegment_s, max((peak ./ limitValues(derivativeOrder, :)) .^ (1 / derivativeOrder), [], 2));
+    peak          = squeeze(max(abs(scale * diff(controlPoint_units, derivativeOrder, 2)), [], [1 2]));
+    segmentTime_s = max(segmentTime_s, max((peak(:).' ./ limitValues(derivativeOrder, :)) .^ (1 / derivativeOrder)));
 end
-requiredBySegment_s = max(requiredBySegment_s, eps);
-segmentTime_s = max(requiredBySegment_s);
+segmentTime_s = max(segmentTime_s, eps);
 end

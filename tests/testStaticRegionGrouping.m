@@ -46,7 +46,8 @@ function testComplexCombUsesEightConservativeGroups(testCase)
         "position_units", [initialState.position_units; goalState.position_units], ...
         "tau", [0; 1], "ObstacleEnvelope_units", zeros(0, 2));
 
-    [candidate, diagnostics] = obstacleAvoidance.planner.solveStaticBmtpTrajectory(seed, obstacleAvoidance.planner.prepareStaticSolverGeometry(obstacleAvoidance.obstacles.prepareObstacles(obstacle), initialState.time_s, goalState.time_s), initialState, goalState, limits, options);
+    geometry = obstacleAvoidance.planner.prepareStaticSolverGeometry(obstacleAvoidance.obstacles.prepareObstacles(obstacle), initialState.time_s, goalState.time_s);
+    [candidate, diagnostics] = bmtpEngine.solve(seed, geometry.Regions_units, geometry.Coverage, initialState, goalState, limits, options);
     validation = obstacleAvoidance.validateTrajectory(candidate, obstacle, initialState, goalState, limits, options);
 
     grouping = diagnostics.Coverage.ConservativeGrouping;
@@ -74,7 +75,7 @@ function testComplexCombUsesEightConservativeGroups(testCase)
     verifyTrue(testCase, corruptValidation.CollisionFree);
 end
 
-function testGroupedFailureRetriesSeparatedExactRegions(testCase)
+function testExactCorridorPreservesSeparatedRegions(testCase)
     % Prevent conservative grouping from closing an exact free corridor.
     obstacleCells = cell(66, 1);
     obstacleIndex = 0;
@@ -106,10 +107,10 @@ function testGroupedFailureRetriesSeparatedExactRegions(testCase)
     [candidate, diagnostics] = obstacleAvoidance.planner.solveStaticBmtpTrajectory(seed, obstacleAvoidance.planner.prepareStaticSolverGeometry(obstacleAvoidance.obstacles.prepareObstacles(obstacles), initialState.time_s, goalState.time_s), initialState, goalState, limits, options);
     validation = obstacleAvoidance.validateTrajectory(candidate, obstacles, initialState, goalState, limits, options);
 
-    verifyTrue(testCase, diagnostics.ExactRegionFallback.Attempted);
-    verifyEqual(testCase, diagnostics.ExactRegionFallback.Outcome, "exactRegionAttemptAccepted");
+    verifyEqual(testCase, diagnostics.Identifier, "monotoneStaticCorridor");
     verifyTrue(testCase, candidate.Success, candidate.Message);
     verifyTrue(testCase, validation.Passed, validation.Message);
+    verifyTrue(testCase, validation.PlaneCertificateCertified);
     verifyFalse(testCase, diagnostics.Coverage.ConservativeGrouping.Applied);
     verifyEqual(testCase, diagnostics.Coverage.SolverRegionCount, 66);
 end

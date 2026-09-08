@@ -152,17 +152,11 @@ if polynomial.Degree <= 3
     jerk = reshape(polynomial.jerkPower_units_s3, segmentCount, dimensionCount);
     candidate.IntegratedSquaredJerk_units2_s5 = sum(segmentDuration_s .* sum(jerk .^ 2, 2));
 else
-    integratedSquaredJerk_units2_s5 = 0;
-    % Process each segment while assembling the complete motion or interval result.
-    for segmentIndex = 1:segmentCount
-        % Evaluate each coordinate axis and combine its limiting result.
-        for axisIndex = 1:dimensionCount
-            jerkPower                     = reshape(polynomial.jerkPower_units_s3(segmentIndex, axisIndex, :), 1, []);
-            squaredPower                  = conv(jerkPower, jerkPower);
-            integratedSquaredJerk_units2_s5 = integratedSquaredJerk_units2_s5 + segmentDuration_s(segmentIndex) * sum(squaredPower ./ (1:numel(squaredPower)));
-        end
-    end
-    candidate.IntegratedSquaredJerk_units2_s5 = integratedSquaredJerk_units2_s5;
+    coefficients = permute(polynomial.jerkPower_units_s3, [3 1 2]);
+    order = (1:size(coefficients, 1)).';
+    gram = 1 ./ (order + order.' - 1);
+    segmentCosts = sum(coefficients .* pagemtimes(gram, coefficients), 1);
+    candidate.IntegratedSquaredJerk_units2_s5 = sum(segmentDuration_s(:) .* reshape(segmentCosts, segmentCount, dimensionCount), 'all');
 end
 end
 

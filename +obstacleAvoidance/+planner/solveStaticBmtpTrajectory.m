@@ -23,7 +23,13 @@ coverage         = geometry.Coverage;
 
 %% Section 2: Generate The Motion In The Independent Engine
 
+[candidate, corridorDiagnostics] = bmtpEngine.solveClockCorridor(seed, geometry, initialState, goalState, limits, options);
+if candidate.Success
+    diagnostics = corridorDiagnostics;
+    return;
+end
 [candidate, diagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
+diagnostics.ClockCorridor = corridorDiagnostics;
 fallback = struct("Attempted", false, ...
     "PrimaryTerminationReason", candidate.TerminationReason, ...
     "Outcome", "notApplicable", ...
@@ -38,14 +44,7 @@ if grouping.Applied && ~candidate.Success
     fallback.Attempted                = true;
     fallback.Outcome                  = "exactRegionAttemptFailed";
     fallback.PrimarySolverDiagnostics = diagnostics;
-    exactCoverage = coverage;
-    exactCoverage.SolverRegionCount = numel(exactRegions_units);
-    exactGrouping = grouping;
-    exactGrouping.Applied                 = false;
-    exactGrouping.SolverRegionCount       = numel(exactRegions_units);
-    exactGrouping.RelationToExactGeometry = "equal";
-    exactGrouping.GroupMemberIndices      = num2cell((1:numel(exactRegions_units)).');
-    exactCoverage.ConservativeGrouping = exactGrouping;
+    exactCoverage = geometry.ExactCoverage;
     [candidate, diagnostics] = bmtpEngine.solve(seed, exactRegions_units, exactCoverage, initialState, goalState, limits, options);
     % Promote the successful candidate; otherwise continue the configured fallback or search path.
     if candidate.Success

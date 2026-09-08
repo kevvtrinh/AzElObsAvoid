@@ -1,4 +1,4 @@
-function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s)
+function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmentTime_s, prescribedPower_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   preparedMotion = bmtpEngine.prepareFinalMotion( ...
@@ -13,8 +13,10 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 %       Checked BMTP request, limits, horizon, and goal-time policy.
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Selected composite Bezier control points.
-%   - segmentTime_s (positive finite scalar)
-%       Selected common segment time.
+%   - segmentTime_s (positive finite scalar or S-by-1 vector)
+%       Selected common or individual segment durations.
+%   - prescribedPower_units (optional analytic normalized coefficients)
+%       Preserved through subdivision; NaN axes remain optimized.
 %
 % OUTPUTS
 %   - preparedMotion (scalar struct)
@@ -26,19 +28,45 @@ function preparedMotion = prepareFinalMotion(request, controlPoint_units, segmen
 
 %% Section 1: Set Endpoint Derivatives And Split The Curve
 
+if nargin < 4, prescribedPower_units = []; end
+variableTiming = ~isscalar(segmentTime_s);
+if ~isempty(prescribedPower_units)
+    % Restrict analytic powers directly to retain their known low degree.
+    degree = size(controlPoint_units, 2) - 1;
+    refinedPower_units = NaN(2 * size(controlPoint_units, 1), 2, degree + 1);
+    for powerIndex = 0:degree
+        refinedPower_units(1:2:end, :, powerIndex + 1) = prescribedPower_units(:, :, powerIndex + 1) * 0.5 ^ powerIndex;
+        value_units = zeros(size(controlPoint_units, 1), 2);
+        for sourcePower = powerIndex:degree
+            value_units = value_units + nchoosek(sourcePower, powerIndex) * prescribedPower_units(:, :, sourcePower + 1) * 0.5 ^ sourcePower;
+        end
+        refinedPower_units(2:2:end, :, powerIndex + 1) = value_units;
+    end
+    prescribedPower_units = refinedPower_units;
+end
 controlPoint_units(1, 1:3, :) = reshape(repmat(request.InitialState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units(end, end - 2:end, :) = reshape(repmat(request.GoalState.position_units, 3, 1), 1, 3, 2);
 controlPoint_units = subdivideMidpoint(controlPoint_units);
-segmentTime_s    = segmentTime_s / 2;
+if variableTiming, segmentTime_s = repelem(segmentTime_s(:), 2, 1); end
+segmentTime_s = segmentTime_s / 2;
 
 %% Section 2: Find And Apply The Required Segment Time
 
-exportPolynomial          = bmtpEngine.createPowerPolynomial(controlPoint_units, 1, 0);
+exportTime_s = 1;
+if variableTiming, exportTime_s = segmentTime_s; end
+exportPolynomial = bmtpEngine.createPowerPolynomial(controlPoint_units, exportTime_s, 0, prescribedPower_units);
 certifiedControlPoint_units = powerToBernsteinControls(exportPolynomial.positionPower_units);
-requiredTime_s            = max(bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits), bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits));
-dilationScale             = max(1, requiredTime_s / segmentTime_s) * (1 + 64 * eps);
+[controlTime_s, controlTimes_s] = bmtpEngine.findRequiredSegmentTime(controlPoint_units, request.Limits);
+[certifiedTime_s, certifiedTimes_s] = bmtpEngine.findRequiredSegmentTime(certifiedControlPoint_units, request.Limits);
+requiredTime_s = max(controlTime_s, certifiedTime_s);
+if variableTiming, requiredTime_s = max(controlTimes_s, certifiedTimes_s); end
+dilationScale = max([1; requiredTime_s ./ segmentTime_s]) * (1 + 64 * eps);
 segmentTime_s             = segmentTime_s * dilationScale;
-minimumDuration_s         = size(controlPoint_units, 1) * segmentTime_s;
+if variableTiming
+    minimumDuration_s = sum(segmentTime_s);
+else
+    minimumDuration_s = size(controlPoint_units, 1) * segmentTime_s;
+end
 isFixedArrival            = request.Options.GoalTimeMode == "fixedArrival";
 success                   = minimumDuration_s <= request.MotionHorizon_s + request.Options.ConstraintTolerance;
 message                   = "";
@@ -68,6 +96,7 @@ preparedMotion    = struct("Success", success, ...
     "DilationScale", dilationScale, ...
     "ArrivalAtHorizon", isFixedArrival, ...
     "MotionCertificate", motionCertificate);
+if nargin >= 4, preparedMotion.PrescribedPower_units = prescribedPower_units; end
 end
 
 %% Section 4: Local Functions
@@ -112,8 +141,8 @@ end
 
 function motion = createMotionCertificate(segmentTime_s, requiredTime_s)
     % Record the derivative bound used to stretch time.
-    motion = struct("Passed", segmentTime_s >= requiredTime_s, ...
+    motion = struct("Passed", all(segmentTime_s >= requiredTime_s), ...
         "SegmentTime_s", segmentTime_s, ...
         "RequiredSegmentTime_s", requiredTime_s, ...
-        "MaximumViolation", max(0, requiredTime_s - segmentTime_s));
+        "MaximumViolation", max([0; requiredTime_s - segmentTime_s]));
 end

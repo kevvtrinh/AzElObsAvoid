@@ -96,7 +96,9 @@ diagnostics.PlaneCertificate  = certificate;
 candidate.PlaneCertificate = certificate;
 
 % Convert the checked curve to the public motion format and sample it.
-candidate = bmtpEngine.createMotionOutput(candidate, request, preparedMotion);
+polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, preparedMotion.SegmentTime_s, request.InitialState.time_s);
+candidate = bmtpEngine.createMotionRecord(candidate, initialState, polynomial, [], options.SampleTime_s, seed.Source);
+candidate.MaximumConstraintViolation = preparedMotion.MotionCertificate.MaximumViolation;
 [candidate.OptimizerFeasible, candidate.ArrivalAtHorizon] = deal(true, preparedMotion.ArrivalAtHorizon);
 diagnostics.BestDuration_s = candidate.TrajectoryDuration_s;
 % Reject optimizer output that fails the independent certificate even when the numerical solver reported success.

@@ -27,7 +27,11 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 
 % Each optimized segment becomes two output spans.
 % Repeat its timed-region mask for both spans.
-regionActiveBySegment = repelem(warmStart.RegionActiveBySegment, 2, 1);
+regionActiveBySegment = warmStart.RegionActiveBySegment;
+if size(regionActiveBySegment, 1) ~= size(preparedMotion.CertifiedControlPoint_units, 1)
+    regionActiveBySegment = repelem(regionActiveBySegment, 2, 1);
+end
+assert(isequal(size(regionActiveBySegment), [size(preparedMotion.CertifiedControlPoint_units, 1), numel(request.Regions_units)]), 'bmtpEngine:InvalidRegionMask', 'Every certified span requires its complete region applicability mask.');
 certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units, request.TightPlaneOptions);
 end
 
@@ -41,23 +45,36 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     verifiedCount  = 0;
     conicCount     = 0;
     analyticCount  = 0;
+    reusedCount    = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
+    useBatchedReuse = ~isfield(coverage, 'RegionActiveTauInterval') && nnz(regionActiveBySegment) >= 128;
     % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        if useBatchedReuse && segmentIndex > 1
+            previous = planes(segmentIndex - 1, :);
+            reusable = find(regionActiveBySegment(segmentIndex, :) & [previous.Active]);
+            previous(reusable) = bmtpEngine.verifyStaticSeparatingLines(previous(reusable), trajectory_units, regions_units(reusable), reserve_units, target_units);
+            reusable = reusable([previous(reusable).Verified]);
+            planes(segmentIndex, reusable) = previous(reusable);
+            reusedCount = reusedCount + numel(reusable);
+        end
         % Process each geometric region while constructing or checking the region topology.
         for regionIndex = 1:regionCount
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
-            plane = checkHullSeparationLine(trajectory_units, regions_units{regionIndex}, reserve_units, target_units);
-            if plane.Verified
-                analyticCount = analyticCount + 1;
-            else
-                [plane, ~, output] = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units, solverOptions);
-                conicCount  = conicCount + 1;
-                conicSolver = bmtpEngine.accumulateConicDiagnostics(conicSolver, output);
+            plane = planes(segmentIndex, regionIndex);
+            if ~plane.Verified
+                plane = checkHullSeparationLine(trajectory_units, regions_units{regionIndex}, reserve_units, target_units);
+                if plane.Verified
+                    analyticCount = analyticCount + 1;
+                else
+                    [plane, ~, output] = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units, solverOptions);
+                    conicCount  = conicCount + 1;
+                    conicSolver = bmtpEngine.accumulateConicDiagnostics(conicSolver, output);
+                end
             end
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified
@@ -85,7 +102,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "MinimumSignedGap_units", minimumGap_units, ...
         "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-        "ReusedPairCount", 0, "AnalyticPairCount", analyticCount, ...
+        "ReusedPairCount", reusedCount, "AnalyticPairCount", analyticCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 

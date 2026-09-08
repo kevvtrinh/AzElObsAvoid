@@ -1,4 +1,4 @@
-function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, initialTime_s, prescribedPower_units)
+function polynomial = createPowerPolynomialReference(controlPoint_units, segmentTime_s, initialTime_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   polynomial = bmtpEngine.createPowerPolynomial( ...
@@ -11,12 +11,10 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 % INPUTS
 %   - controlPoint_units (S-by-(D+1)-by-2 numeric array)
 %       Composite Bezier control points.
-%   - segmentTime_s (positive numeric scalar or S-by-1 vector)
-%       Common or per-segment physical durations.
+%   - segmentTime_s (positive numeric scalar)
+%       Common physical segment duration.
 %   - initialTime_s (finite numeric scalar)
 %       Absolute motion start time.
-%   - prescribedPower_units (optional S-by-2-by-(D+1) numeric array)
-%       Exact analytic coefficients; NaN axes remain optimized.
 %
 % OUTPUTS
 %   - polynomial (scalar struct)
@@ -30,8 +28,6 @@ function polynomial = createPowerPolynomial(controlPoint_units, segmentTime_s, i
 %% Section 1: Convert Bernstein Controls To Powers
 
 segmentCount = size(controlPoint_units, 1);
-variableTiming = ~isscalar(segmentTime_s);
-if variableTiming, segmentTime_s = segmentTime_s(:); end
 degree       = size(controlPoint_units, 2) - 1;
 [powerIndex, bernsteinIndex] = ndgrid(0:degree);
 valid      = bernsteinIndex <= powerIndex;
@@ -39,36 +35,19 @@ conversion = zeros(degree + 1);
 conversion(valid) = factorial(degree) * (-1) .^ (powerIndex(valid) - bernsteinIndex(valid)) ./ (factorial(bernsteinIndex(valid)) .* factorial(powerIndex(valid) - bernsteinIndex(valid)) .* factorial(degree - powerIndex(valid)));
 bernsteinPages    = permute(controlPoint_units, [2 1 3]);
 positionPower_units = permute(pagemtimes(conversion, bernsteinPages), [2 3 1]);
-joinTimes_s = [];
-if variableTiming, joinTimes_s = segmentTime_s; end
-positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units, joinTimes_s);
-if nargin >= 4 && ~isempty(prescribedPower_units)
-    assert(isequal(size(prescribedPower_units), size(positionPower_units)), 'bmtpEngine:InvalidPrescribedPower', 'Analytic coefficients must match the composite basis.');
-    prescribed = repmat(all(isfinite(prescribedPower_units), 3), 1, 1, degree + 1);
-    positionPower_units(prescribed) = prescribedPower_units(prescribed);
-end
+positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units);
 
 %% Section 2: Create Physical Derivative Powers And Timing
 
-velocityPower_units_s      = positionPower_units(:, :, 2:end) .* reshape(1:degree, 1, 1, []) ./ segmentTime_s;
-accelerationPower_units_s2 = velocityPower_units_s(:, :, 2:end) .* reshape(1:degree - 1, 1, 1, []) ./ segmentTime_s;
-jerkPower_units_s3         = accelerationPower_units_s2(:, :, 2:end) .* reshape(1:degree - 2, 1, 1, []) ./ segmentTime_s;
-if variableTiming
-    segmentStartTime_s = initialTime_s + [0; cumsum(segmentTime_s(1:end - 1))];
-    durations_s = segmentTime_s;
-    breakTau = [0; cumsum(segmentTime_s)] / sum(segmentTime_s);
-    finalTime_s = initialTime_s + sum(segmentTime_s);
-else
-    segmentStartTime_s = initialTime_s + (0:segmentCount - 1).' * segmentTime_s;
-    durations_s = repmat(segmentTime_s, segmentCount, 1);
-    breakTau = (0:segmentCount).' / segmentCount;
-    finalTime_s = initialTime_s + segmentCount * segmentTime_s;
-end
+velocityPower_units_s      = positionPower_units(:, :, 2:end) .* reshape(1:degree, 1, 1, []) / segmentTime_s;
+accelerationPower_units_s2 = velocityPower_units_s(:, :, 2:end) .* reshape(1:degree - 1, 1, 1, []) / segmentTime_s;
+jerkPower_units_s3         = accelerationPower_units_s2(:, :, 2:end) .* reshape(1:degree - 2, 1, 1, []) / segmentTime_s;
+segmentStartTime_s       = initialTime_s + (0:segmentCount - 1).' * segmentTime_s;
 polynomial               = struct("Degree", degree, "SegmentCount", segmentCount, ...
     "SegmentStartTime_s", segmentStartTime_s, ...
-    "SegmentDuration_s", durations_s, ...
-    "SegmentBreakTau", breakTau, ...
-    "FinalTime_s", finalTime_s, ...
+    "SegmentDuration_s", repmat(segmentTime_s, segmentCount, 1), ...
+    "SegmentBreakTau", (0:segmentCount).' / segmentCount, ...
+    "FinalTime_s", initialTime_s + segmentCount * segmentTime_s, ...
     "positionPower_units", positionPower_units, ...
     "velocityPower_units_s", velocityPower_units_s, ...
     "accelerationPower_units_s2", accelerationPower_units_s2, ...
@@ -79,7 +58,7 @@ end
 
 %% Section 3: Local Functions
 
-function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_units, segmentTime_s)
+function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_units)
     % Correct roundoff so position through jerk match at Bernstein endpoints.
     degree       = size(controlPoint_units, 2) - 1;
     segmentCount = size(controlPoint_units, 1);
@@ -96,17 +75,7 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
         power_units(:, :, order + 1) = reshape(difference(:, 1, :), segmentCount, 2) * scale / factorial(order);
         target(:, :, order + 1) = reshape(difference(:, end, :), segmentCount, 2) * scale;
     end
-    if ~isempty(segmentTime_s)
-        % Share physical position through acceleration on unequal spans.
-        % Jerk may jump. Rebuild bounds and collision certificates afterward.
-        for order = 0:2
-            left = target(1:end - 1, :, order + 1) ./ segmentTime_s(1:end - 1) .^ order;
-            right = power_units(2:end, :, order + 1) * factorial(order) ./ segmentTime_s(2:end) .^ order;
-            common = (left + right) / 2;
-            target(1:end - 1, :, order + 1) = common .* segmentTime_s(1:end - 1) .^ order;
-            power_units(2:end, :, order + 1) = common .* segmentTime_s(2:end) .^ order / factorial(order);
-        end
-    end
+    % Process each projection pass needed to complete stabilize polynomial endpoints.
     for projectionPass = 1:2
         current = zeros(segmentCount, 2, 4);
         % Process each order needed to complete stabilize polynomial endpoints.
