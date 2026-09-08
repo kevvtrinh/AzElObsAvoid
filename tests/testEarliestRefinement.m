@@ -19,7 +19,7 @@ function testOpposingUQuality(testCase)
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
     verifyLessThanOrEqual(testCase,r.TrajectoryDuration_s,22.1006280522374);
     verifyLessThanOrEqual(testCase,r.MotionLength_units,24.2057644137651);
-    verifyEqual(testCase,r.SolverDiagnostics.SubspansPerSeedEdge,4);
+    verifyTrue(testCase,r.SolverDiagnostics.LowerBoundAttempt.Passed);
     verifyEqual(testCase,r.SolverDiagnostics.ConicSolver.CallCount,r.SolverDiagnostics.TrajectorySocpCount);
 end
 

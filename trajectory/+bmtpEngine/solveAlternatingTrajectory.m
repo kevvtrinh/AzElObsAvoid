@@ -25,6 +25,8 @@ function [result, diagnostics] = solveAlternatingTrajectory(request, warmStart, 
 segmentCount = warmStart.SegmentCount;
 regionCount = numel(request.Regions_units);
 request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
+fixedControl_units = [];
+if isfield(warmStart,'FixedControl_units'), fixedControl_units = warmStart.FixedControl_units; end
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 planes = repmat(createEmptyPlane(), segmentCount, regionCount);
@@ -39,7 +41,7 @@ solverMessage = "The all-pair alternating iteration limit was reached.";
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival");
+        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival",fixedControl_units);
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + output.SolveCount;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;

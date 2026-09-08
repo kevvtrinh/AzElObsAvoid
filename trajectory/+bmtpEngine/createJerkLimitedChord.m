@@ -1,9 +1,10 @@
-function [controlPoint_units, segmentTime_s] = createJerkLimitedChord(start_units, goal_units, limits, degree)
+function [controlPoint_units, segmentTime_s, phases] = createJerkLimitedChord(start_units, goal_units, limits, degree)
 %% Section 0: Header & Readme
 % SYNTAX: [controls, durations] = bmtpEngine.createJerkLimitedChord(start, goal, limits, degree)
 % PURPOSE: Exact minimum-time rest-to-rest scalar progress along a chord.
 % INPUTS: Distinct 1-by-2 endpoints, positive axis limits, degree at least three.
-% OUTPUTS: Degree-elevated cubic Bezier spans and their physical durations.
+% OUTPUTS: Degree-elevated cubic Bezier spans, physical durations, and optional
+%          analytic phase position, velocity, acceleration, and jerk states.
 % UNITS: Position in coordinate units; durations in seconds.
 
 %% Section 1: Solve The Scalar Jerk-Limited Profile
@@ -36,10 +37,17 @@ for k = 0:degree
     end
 end
 controlPoint_units = zeros(numel(segmentTime_s),degree+1,2);
+phases = struct('StartTime_s',[0;cumsum(segmentTime_s(1:end-1))], ...
+    'SegmentTime_s',segmentTime_s,'Position_units',zeros(numel(segmentTime_s),2), ...
+    'Velocity_units_s',zeros(numel(segmentTime_s),2),'Acceleration_units_s2',zeros(numel(segmentTime_s),2), ...
+    'Jerk_units_s3',segmentJerk_s3.*displacement_units);
 position = 0; velocity_s1 = 0; acceleration_s2 = 0;
 for k = 1:numel(segmentTime_s)
     duration_s = segmentTime_s(k);
     jerk_s3 = segmentJerk_s3(k);
+    phases.Position_units(k,:) = start_units+position*displacement_units;
+    phases.Velocity_units_s(k,:) = velocity_s1*displacement_units;
+    phases.Acceleration_units_s2(k,:) = acceleration_s2*displacement_units;
     powers = [position;velocity_s1*duration_s;acceleration_s2*duration_s^2/2;jerk_s3*duration_s^3/6];
     controlPoint_units(k,:,:) = start_units+(conversion*powers).*displacement_units;
     position = sum(powers);

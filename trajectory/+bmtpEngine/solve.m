@@ -88,7 +88,7 @@ if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     if preparedMotion.Success
         certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
     end
-elseif size(route_units,1)==2
+elseif options.GoalTimeMode=="earliestArrival"
     [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord(initialState.position_units,goalState.position_units,limits,degree);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
     if preparedMotion.Success
@@ -97,14 +97,60 @@ elseif size(route_units,1)==2
     analyticIdentifier = "jerkLimitedChord";
     analyticRepresentation = "analyticMinimumTime";
 end
+boundAccepted = false;
+boundStats = bmtpEngine.accumulateConicDiagnostics();
+boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
+if options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
+    % At the independent-axis lower bound, the limiting axis is analytic.
+    % Optimize only the remaining freedom on a source-derived clock guide.
+    boundTimer = tic;
+    boundWarm = bmtpEngine.createReachabilityWarmStart(request);
+    boundRecord.Attempted = true;
+    boundRecord.Time_s = boundWarm.Duration_s;
+    if boundWarm.ClockGuide.IsConnected && boundWarm.Duration_s<=request.MotionHorizon_s && ...
+            nnz(boundWarm.AxisMinimumTime_s==boundWarm.Duration_s)<2
+        boundRequest = request;
+        boundRequest.Options.GoalTimeMode = "fixedArrival";
+        boundRequest.MotionHorizon_s = boundWarm.Duration_s;
+        boundDiagnostics = createEmptyDiagnostics(degree,0,boundWarm.SegmentCount,numel(regions_units));
+        boundDiagnostics.Coverage = coverage;
+        boundDiagnostics.WarmRouteResampled = true;
+        boundDiagnostics.ApplicablePairCount = nnz(boundWarm.RegionActiveBySegment);
+        [boundResult,boundDiagnostics] = bmtpEngine.solveAlternatingTrajectory(boundRequest,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
+        boundStats = boundDiagnostics.ConicSolver;
+        if boundResult.Success
+            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s);
+            if boundMotion.Success
+                boundCertificate = bmtpEngine.checkFinalMotion(request,boundWarm,boundMotion,roundoffReserve_units,obstacleTarget_units);
+                if boundCertificate.Passed
+                    preparedMotion = boundMotion;
+                    certificate = boundCertificate;
+                    diagnostics = boundDiagnostics;
+                    boundAccepted = true;
+                    analyticIdentifier = "kinematicBoundBmtp";
+                    analyticRepresentation = "fixedClockElasticSocp";
+                end
+            end
+        end
+    end
+    boundRecord.Passed = boundAccepted;
+    boundRecord.ElapsedTime_s = toc(boundTimer);
+    boundRecord.TrajectorySocpCount = boundStats.CallCount;
+end
 if preparedMotion.Success && certificate.Passed
     diagnostics.Identifier = analyticIdentifier;
     diagnostics.ConstraintRepresentation = analyticRepresentation;
-    diagnostics.Converged = true;
-    diagnostics.OptimizerSpanCount = 0;
+    if ~boundAccepted
+        diagnostics.Converged = true;
+        diagnostics.OptimizerSpanCount = 0;
+    end
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
     [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount+boundStats.CallCount;
+    diagnostics.ConicSolver.CallCount = diagnostics.ConicSolver.CallCount+boundStats.CallCount;
+    diagnostics.ConicSolver.TotalTime_s = diagnostics.ConicSolver.TotalTime_s+boundStats.TotalTime_s;
+    diagnostics.LowerBoundAttempt = boundRecord;
     if ~alternatingResult.Success
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
         return;
@@ -113,6 +159,7 @@ else
     preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
     certificate = struct('Passed',false);
 end
+diagnostics.LowerBoundAttempt = boundRecord;
 
 %% Section 3: Prepare And Check The Final Motion
 

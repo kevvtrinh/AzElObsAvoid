@@ -303,3 +303,36 @@ references for Vietnam (2.998 s, arrival 30 s, motion 17.1441) and accelerating
 circles (3.913 s, arrival 22 s, motion 20). Motion bounds and safety margins
 are unchanged. Unknown-clock optimization still uses the conservative spatial
 projection; fixed-clock optimization uses the retained cell motion.
+
+The kinematic-bound guide first solves the independent-axis jerk-limited
+profiles. It projects authoritative space-time cells onto the limiting axis's
+clock, searches the resulting exact monotone visibility graph, and optimizes
+the remaining axis on the common phase/event mesh. Constant-velocity phases
+use convex space-time intersections; nonlinear phases retain conservative
+spatial enclosures. The returned trajectory still passes the original full
+independent validator. Prescribed analytic controls are eliminated exactly
+from the conic system to avoid redundant axis constraints.
+
+All 49 correctness tests pass, including coordinate exchange, absolute clock
+shifts, and rejection of zero-time edges that would falsely escape a cavity.
+The core contains 4,355 physical production lines, including comments and
+blank lines. Three-run results add four passing benchmark examples:
+
+| Example | Arrival (s) | Motion length | Median wall (s) | Reference wall (s) |
+| --- | --- | --- | --- | --- |
+| Dense concave | 8.5000000002 | 12.756125 | 1.570 | 3.835 |
+| Moving circle | 8.5000000004 | 12.448756 | 0.359 | 2.097 |
+| Alternating slalom | 10.5000000006 | 16.020389 | 0.661 | 7.490 |
+| Rotating field | 9.0416666670 | 20.4559 | 0.414 | 2.380 |
+| Opposing Us | 21.6333333333 | 24.0563 | 0.883 | 2.092 |
+| Vietnam slew | 30 | 17.1441 | 3.418 | 21.210 |
+
+Opposing Us now reaches its kinematic time bound as well. The full historical
+goal remains incomplete. Alternating occlusion still passes physical quality,
+but its latest three-run median is 2.718 s against 2.467 s. Interleaved runs
+of the committed and proposed conic steps produce identical motion and similar
+warm runtimes around 2.5 s; this runtime gate needs more margin. Thus the
+current evidence supports twelve of eighteen examples meeting all gates,
+with occlusion, static U, both waiting cases, and both large geographic
+examples outstanding. Eliminating endpoint equalities was tried and removed:
+it did not resolve occlusion runtime and missed the circle's arrival tolerance.

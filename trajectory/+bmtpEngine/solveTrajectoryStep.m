@@ -1,4 +1,4 @@
-function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock)
+function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectoryStep(segmentCount, degree, start_units, goal_units, limits, planes, reserve_units, maximumMotionDuration_s, options, segmentRatio, fixedClock, fixedControl_units)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [controlPoint_units, segmentTime_s, exitFlag, output] = ...
@@ -43,6 +43,7 @@ function [controlPoint_units, segmentTime_s, exitFlag, output] = solveTrajectory
 controlCount           = segmentCount * (degree + 1) * 2;
 if nargin < 10, segmentRatio = ones(segmentCount, 1); end
 if nargin < 11, fixedClock = false; end
+prescribedAxis = nargin>=12 && ~isempty(fixedControl_units) && any(isfinite(fixedControl_units(:)));
 powerIndex             = controlCount + (1:4);
 lengthCount = segmentCount * degree;
 activePlaneCount       = nnz(reshape([planes.Active], size(planes)));
@@ -60,6 +61,12 @@ ub                     = Inf(variableCount, 1);
 domain_units             = [limits.xInterval_units; limits.yInterval_units];
 lb(1:controlCount) = repmat(domain_units(:, 1), segmentCount * (degree + 1), 1);
 ub(1:controlCount) = repmat(domain_units(:, 2), segmentCount * (degree + 1), 1);
+if nargin>=12 && ~isempty(fixedControl_units)
+    fixedValues = reshape(permute(fixedControl_units,[3,2,1]),[],1);
+    indices = find(isfinite(fixedValues));
+    lb(indices) = fixedValues(indices);
+    ub(indices) = fixedValues(indices);
+end
 lb(powerIndex) = 0;
 lb(powerIndex(2)) = eps;
 equalityIndex = 0;
@@ -186,7 +193,7 @@ for k = 1:segmentCount
 end
 if fixedClock, cones = lengthCones; end
 solverTimer = tic;
-[x, ~, exitFlag, output] = coneprog(f, cones, A, b, Aeq, beq, lb, ub, options);
+[x, ~, exitFlag, output] = solveConic(f, cones, A, b, Aeq, beq, lb, ub, options, prescribedAxis);
 output.TotalTime_s = toc(solverTimer);
 output.SolveCount = 1;
 output.OptimizationConverged = exitFlag>0;
@@ -197,7 +204,7 @@ if ~fixedClock && ~isempty(x) && all(isfinite(x)) && (exitFlag>0 || exitFlag==-7
     ub(powerIndex(4)) = x(powerIndex(4));
     f(:) = 0; f(lengthIndex) = 1;
     timer = tic;
-    [shortX,~,shortFlag,shortOutput] = coneprog(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options);
+    [shortX,~,shortFlag,shortOutput] = solveConic(f,[cones;lengthCones],A,b,Aeq,beq,lb,ub,options,prescribedAxis);
     bothConverged = output.OptimizationConverged && shortFlag>0;
     shortElapsed_s = toc(timer);
     elapsed_s = output.TotalTime_s+shortElapsed_s;
@@ -221,6 +228,38 @@ controlPoint_units = permute(reshape(x(1:controlCount), 2, degree + 1, segmentCo
 end
 
 %% Section 4: Local Functions
+
+function [x,value,exitFlag,output] = solveConic(f,cones,A,b,Aeq,beq,lb,ub,options,prescribedAxis)
+    % Eliminate prescribed variables exactly. Leaving a complete analytic
+    % axis as equal bounds produces redundant, poorly scaled solver rows.
+    fixed = find(lb==ub & isfinite(lb));
+    if ~prescribedAxis || isempty(fixed)
+        [x,value,exitFlag,output] = coneprog(f,cones,A,b,Aeq,beq,lb,ub,options);
+        return;
+    end
+    free = find(lb~=ub);
+    fixedValues = lb(fixed);
+    b = b-A(:,fixed)*fixedValues;
+    beq = beq-Aeq(:,fixed)*fixedValues;
+    A = A(:,free); Aeq = Aeq(:,free);
+    % Constant rows are checked at the existing conic tolerance; the complete
+    % physical motion is still subject to the unchanged independent validator.
+    keep = any(A~=0,2) | b < -options.ConstraintTolerance;
+    A = A(keep,:); b = b(keep);
+    keep = any(Aeq~=0,2) | abs(beq)>options.ConstraintTolerance;
+    Aeq = Aeq(keep,:); beq = beq(keep);
+    for k = 1:numel(cones)
+        cone = cones(k);
+        cones(k) = secondordercone(cone.A(:,free),cone.b-cone.A(:,fixed)*fixedValues, ...
+            cone.d(free),cone.gamma-cone.d(fixed).'*fixedValues);
+    end
+    [reduced,value,exitFlag,output] = coneprog(f(free),cones,A,b,Aeq,beq,lb(free),ub(free),options);
+    x = [];
+    if ~isempty(reduced)
+        x = zeros(size(f)); x(fixed) = fixedValues; x(free) = reduced;
+        value = value+f(fixed).'*fixedValues;
+    end
+end
 
 function soc = createTimePowerCones(variableCount, powerIndex)
     % Create p0*p2>=p1^2 and p1*p3>=p2^2 as standard cones.

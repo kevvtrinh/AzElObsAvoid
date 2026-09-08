@@ -1,9 +1,10 @@
-function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options)
+function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units, limits, options, monotoneDirection)
 %% Section 0: Header & Readme
 % SYNTAX: visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,start,goal,limits,options)
 % PURPOSE: Find the exact shortest polygonal route in an implicit visibility
 %          graph. A* evaluates edges on demand using an admissible distance.
 % INPUTS: Protected polygon scene, endpoints, workspace, numerical tolerance.
+%         Optional monotoneDirection requires strictly positive edge progress.
 % OUTPUTS: Exact boundary nodes, examined edges, route, and connectivity.
 %          Unexamined edges remain implicit, never classified as blocked.
 % UNITS: Coordinate units.
@@ -12,6 +13,8 @@ function visibilityGraph = createVisibilityGraph(scene, start_units, goal_units,
 validateattributes(start_units, {'numeric'}, {'real','finite','size',[1 2]});
 validateattributes(goal_units, {'numeric'}, {'real','finite','size',[1 2]});
 tolerance_units = options.ConstraintTolerance;
+if nargin<6, monotoneDirection = [0,0]; end
+validateattributes(monotoneDirection,{'numeric'},{'real','finite','size',[1,2]});
 shape = polyshape();
 for k = 1:numel(scene), shape = union(shape,scene(k).ProtectedShape); end
 [edgeStart_units,edgeEnd_units] = obstacleAvoidance.geometry.boundaryToEdges(shape,0);
@@ -42,6 +45,9 @@ if sourceFree && goalFree
         if current == 2, break; end
         distances_units = vecnorm(nodes_units-nodes_units(current,:),2,2);
         candidates = find(~closed & cost_units(current)+distances_units < cost_units);
+        if any(monotoneDirection)
+            candidates = candidates((nodes_units(candidates,:)-nodes_units(current,:))*monotoneDirection.'>tolerance_units);
+        end
         clear = true(numel(candidates),1);
         queryPoints_units = zeros(0,2); queryOwner = zeros(0,1);
         for k = 1:numel(candidates)
