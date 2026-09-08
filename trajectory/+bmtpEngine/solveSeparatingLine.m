@@ -27,7 +27,15 @@ normals = [-edges_units(:,2),edges_units(:,1)]./length_units;
 normals = [normals;-normals];
 firstSupport_units = min(first_units*normals.',[],1);
 lastSupport_units = min(last_units*normals.',[],1);
-gaps_units = -max(controlPoint_units*normals.'-(1-fraction).*firstSupport_units-fraction.*lastSupport_units,[],1);
+supportDifference_units = controlPoint_units*normals.'-(1-fraction).*firstSupport_units-fraction.*lastSupport_units;
+gaps_units = -max(supportDifference_units,[],1);
+% Rank supporting directions by the original hull, but retain every direction
+% certified by the exact degree-D by degree-one product used by the verifier.
+beta = (0:size(controlPoint_units,1))'/size(controlPoint_units,1);
+productGaps_units = -max((1-beta).*[supportDifference_units;zeros(1,size(normals,1))]+ ...
+    beta.*[zeros(1,size(normals,1));supportDifference_units],[],1);
+certifiable = productGaps_units>=target_units+reserve_units;
+if any(certifiable), gaps_units(~certifiable) = -Inf; end
 [gap_units,index] = max(gaps_units);
 plane = struct('Active',false,'Verified',false,'ExitFlag',-2, ...
     'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);

@@ -431,3 +431,23 @@ occlusion runs returned bit-identical polynomial records. Interleaved warm
 comparisons saved about 0.12 s, but a fresh five-run median of 2.586333 s still
 misses the 2.466633 s occlusion runtime gate. This is a code-size and assembly
 improvement, not an additional passing benchmark.
+
+Supporting-direction selection now accounts for the exact Bernstein product
+used by certification. It retains the original hull-clearance ranking, but
+when any available direction can certify the product, directions that cannot
+certify it are excluded. Existing successful selections remain unchanged.
+A regression covers a curve whose original hull overlaps an obstacle while
+the certified product hull has a separating direction that the old ranking
+missed. All 57 tests pass, and all fifteen achieved examples again pass three-run
+benchmark checks. The core contains 4,643 physical production lines. Occlusion
+remains above its runtime reference at 2.517 s.
+
+A separate motion-knot/collision-partition prototype was tested and removed.
+It used exact de Casteljau constraint restrictions and direct Taylor export,
+with one or two spans per physical phase. The one-span version missed several
+path-length gates; the two-span version still missed slalom length. Hawaii
+retained collision slack up to 0.115 after 35 iterations (about 61 s) at the
+kinematic-bound clock. Letting that clock vary took about 122 s and failed to
+return a certified motion. These failures apply to the tested formulation;
+they do not establish global infeasibility. No failed mesh, clock, or coordinate
+translation trial remains in production.

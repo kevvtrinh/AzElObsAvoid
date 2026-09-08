@@ -58,3 +58,14 @@ function testAlteredEndpointCoverageRejected(testCase)
     altered.PlaneCertificate.Coverage = rmfield(altered.PlaneCertificate.Coverage,'EndRegions_units');
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(altered).Passed);
 end
+
+function testPlaneSearchUsesCertifiedProductHull(testCase)
+    controls = [ones(9,1),zeros(9,1)]; controls(5,2) = 2;
+    vertices = [0.5,1.3;10,1.3;10,3;0.5,3];
+    % The original control hull penetrates more in y than x. Its degree-nine
+    % product hull is separated in y, so choosing by the original hull fails.
+    plane = bmtpEngine.solveSeparatingLine(controls,vertices,1e-6,1e-8);
+    verifyTrue(testCase,plane.Verified);
+    verifyGreaterThan(testCase,plane.SignedGap_units,0.18);
+    verifyTrue(testCase,bmtpEngine.verifySeparatingLine(plane,controls,vertices,1e-8,1e-6).Verified);
+end
