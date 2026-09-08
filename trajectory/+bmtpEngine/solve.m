@@ -172,7 +172,13 @@ else
             "The "+stage+" motion was not certified.",stage+"Uncertified",false);
         return;
     end
-    [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+    prescribedPower_units = [];
+    if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
+        [alternatingResult,diagnostics] = bmtpEngine.solveCubicTrajectory(request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
+        prescribedPower_units = alternatingResult.PositionPower_units;
+    else
+        [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
+    end
     diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount+boundStats.CallCount;
     diagnostics.ConicSolver.CallCount = diagnostics.ConicSolver.CallCount+boundStats.CallCount;
     diagnostics.ConicSolver.TotalTime_s = diagnostics.ConicSolver.TotalTime_s+boundStats.TotalTime_s;
@@ -182,7 +188,7 @@ else
         return;
     end
     % Endpoint correction and export can increase the derivative bounds.
-    preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
+    preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
     certificate = struct('Passed',false);
 end
 diagnostics.LowerBoundAttempt = boundRecord;

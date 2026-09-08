@@ -1,7 +1,9 @@
 # MATLAB planning core
 
-Development baseline: `8cd15bb`. The Vietnam slew milestone passes its
-benchmarks. The full example-suite goal is **not complete**.
+Development baseline: `8cd15bb`. Seventeen of eighteen examples now meet their
+arrival, motion-length, and three-run median runtime references, with 5,050
+physical production lines. The geographic sequence remains outstanding.
+The full example-suite goal is **not complete**.
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
@@ -46,18 +48,22 @@ kinematic lower bound; later meeting times are not yet searched if obstacles
 prevent certification there. Dynamic earliest requests retain full source-cell
 coverage, but initialization uses an initial-time visibility route,
 so the planner is not complete for dynamic topology changes or goals blocked
-only at the initial time. The full static suite still needs improvement.
-Historical example interfaces are being migrated to the single `planner`
-entry point. No universal trajectory optimality or runtime guarantee is claimed.
-Static and dynamic fixed-arrival requests now share the same elastic
-length-minimizing convex formulation; scene motion does not choose the objective.
-Earliest-arrival requests use four degree-eight subspans per visibility edge.
-One convex solve minimizes the time-power objective; a second minimizes
-control-polygon length while preserving that returned time value. Finite stalled
-iterates remain proposals, and convergence is reported only when both stages
-converge. Polynomial export shares physical position through acceleration at joins,
-then rebuilds derivative bounds and collision certificates for the corrected
-curve. Validation limits and tolerances remain unchanged.
+only at the initial time. The geographic sequence still needs improvement.
+No universal trajectory optimality or runtime guarantee is claimed.
+Static and dynamic fixed-arrival requests share the same elastic
+length-minimizing convex formulation. Earliest requests first test the kinematic
+clock bound. Static detours that need additional time use four cubic phases per
+visibility edge, with constant bounded jerk integrated through shared physical
+position, velocity, and acceleration. A conic solve initializes the motion;
+joint optimization varies jerk and phase boundary times; a final conic solve
+optimizes time and then control-polygon length at the proposed time ratios.
+Analytic gradients and an adjoint Hessian support the joint solve. Repeated
+boundary constraints are removed algebraically. Endpoint solver residuals are
+projected through the integrated jerk variables before export, and the cubics
+are degree-elevated for the common motion record. Finite stalled iterates remain
+proposals. Acceptance still requires reconstructed derivative bounds, complete
+collision certificates, and the public independent validator, at unchanged
+limits and tolerances.
 
 ## Verification
 
@@ -484,3 +490,34 @@ static-U span ratios took 25.993 s and arrived at 20.914458 s, still missing the
 conic step: separate span states failed validation in 4.701 s, while globally
 integrated jerk controls took 43.572 s and failed endpoint validation. These
 results do not justify adding either formulation to the planning core.
+
+Static detours now use the integrated cubic clock described above. Constant jerk
+phases eliminate internal continuity equations, and the shared conic model serves
+both initialization and final time/length optimization. The nonlinear phase-clock
+solve proposes ratios; its iteration-limit status is retained in diagnostics.
+A proposal is accepted only after final conic refinement, endpoint projection,
+polynomial preparation, and unchanged independent validation.
+
+All 61 correctness tests pass, including translated/swapped-coordinate detours,
+jerk discontinuities with continuous position/velocity/acceleration, and stable
+failure for an infeasible detour. All seventeen achieved examples pass a complete
+three-run benchmark sweep. The core contains 5,050 physical production lines.
+
+| Static U metric | Returned motion | Historical reference |
+| --- | --- | --- |
+| Arrival (s) | 20.762801368109 | 20.872548349101 |
+| Motion length | 37.778945520299 | 38.678082286936 |
+| Median full-example wall time (s) | 5.537971 | 6.497415 |
+
+Vietnam remains at arrival 30 s and length 17.144137073137, with a 2.805540 s
+median against 21.210319 s. Occlusion remains below its runtime gate at 2.365568 s.
+The geographic Hawaii/Croatia/Philippines sequence is the only outstanding
+benchmark; this milestone does not establish complete goal success.
+
+Earlier joint degree-eight control/time and Hermite-state prototypes were
+rejected after failing quality, numerical feasibility, or runtime. The first
+validated cubic quality result needed about 60 s. Exact adjoint derivatives,
+algebraic removal of duplicate endpoint bounds, scaled iterative subproblems,
+and one time-only initialization reduced the complete example runtime to the
+reported median. None of the rejected formulations or case-specific parameter
+choices is retained in production.
