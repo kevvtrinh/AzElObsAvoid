@@ -11,8 +11,8 @@ function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units,
 % INPUTS
 %   - plane (scalar separating-line struct)
 %       Candidate normals and offsets.
-%   - controlPoint_units, vertices_units (N-by-2 numeric arrays)
-%       Bezier control hull and convex obstacle region.
+%   - controlPoint_units (N-by-2), vertices_units (M-by-2 or M-by-2-by-2)
+%       Bezier control hull and static or affine obstacle endpoint vertices.
 %   - reserve_units, target_units (nonnegative numeric scalars)
 %       Trajectory-side reserve and obstacle-side target.
 %
@@ -26,7 +26,14 @@ function plane = verifySeparatingLine(plane, controlPoint_units, vertices_units,
 
 %% Section 1: Verify Direct Separation Inequalities
 
-minimumObstacleSide_units = min(vertices_units * plane.Normal.' + plane.Offset_units, [], "all");
+first_units = vertices_units(:,:,1);
+last_units = vertices_units(:,:,end);
+% Affine vertex motion times an affine normal is quadratic. Its three
+% Bernstein coefficients bound the obstacle side throughout the interval.
+obstacleSide_units = [first_units*plane.Normal(1,:).'+plane.Offset_units(1), ...
+    (first_units*plane.Normal(2,:).'+last_units*plane.Normal(1,:).'+sum(plane.Offset_units))/2, ...
+    last_units*plane.Normal(2,:).'+plane.Offset_units(2)];
+minimumObstacleSide_units = min(obstacleSide_units,[],"all");
 degree = size(controlPoint_units, 1) - 1;
 % Exact degree-N by degree-one Bernstein product weights.
 beta   = (0:degree + 1).' / (degree + 1);

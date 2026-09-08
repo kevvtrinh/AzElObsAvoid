@@ -4,19 +4,29 @@ function [plane, exitFlag, output] = solveSeparatingLine(controlPoint_units, ver
 % PURPOSE: Compute a convex supporting plane and verify its exact Bernstein
 %          clearance. Overlap selects the least-penetrating nonzero axis for
 %          the elastic trajectory subproblem; it is never marked verified.
-% INPUTS: Bezier control hull, convex obstacle vertices, clearance and reserve.
+% INPUTS: Bezier control hull, N-by-2 static obstacle vertices or N-by-2-by-2
+%         affine endpoint vertices, clearance and reserve.
 % OUTPUTS: Supporting plane, construction status, and analytic diagnostics.
 % UNITS: Coordinate units.
 
 %% Section 1: Evaluate Convex Supporting Axes
-edges_units = diff([vertices_units;vertices_units(1,:)],1,1);
+first_units = vertices_units(:,:,1);
+last_units = vertices_units(:,:,end);
+fraction = (0:size(controlPoint_units,1)-1)'/(size(controlPoint_units,1)-1);
+relativeControl_units = controlPoint_units-fraction.*(mean(last_units,1)-mean(first_units,1));
+edges_units = diff([first_units;first_units(1,:)],1,1);
+if size(vertices_units,3)>1
+    edges_units = [edges_units;diff([last_units;last_units(1,:)],1,1)];
+end
 controlPairs = nchoosek(1:size(controlPoint_units,1),2);
-edges_units = [edges_units;controlPoint_units(controlPairs(:,2),:)-controlPoint_units(controlPairs(:,1),:)];
+edges_units = [edges_units;relativeControl_units(controlPairs(:,2),:)-relativeControl_units(controlPairs(:,1),:)];
 length_units = vecnorm(edges_units,2,2);
 edges_units = edges_units(length_units>0,:); length_units = length_units(length_units>0);
 normals = [-edges_units(:,2),edges_units(:,1)]./length_units;
 normals = [normals;-normals];
-gaps_units = min(vertices_units*normals.',[],1)-max(controlPoint_units*normals.',[],1);
+firstSupport_units = min(first_units*normals.',[],1);
+lastSupport_units = min(last_units*normals.',[],1);
+gaps_units = -max(controlPoint_units*normals.'-(1-fraction).*firstSupport_units-fraction.*lastSupport_units,[],1);
 [gap_units,index] = max(gaps_units);
 plane = struct('Active',false,'Verified',false,'ExitFlag',-2, ...
     'Normal',zeros(2,2),'Offset_units',zeros(1,2),'SignedGap_units',NaN);
@@ -27,6 +37,6 @@ if isempty(gap_units), return; end
 %% Section 2: Verify The Proposed Separation
 plane.Active = true; plane.ExitFlag = 1; exitFlag = 1;
 plane.Normal = repmat(normals(index,:),2,1);
-plane.Offset_units = repmat(target_units-min(vertices_units*normals(index,:).'),1,2);
+plane.Offset_units = target_units-[firstSupport_units(index),lastSupport_units(index)];
 plane = bmtpEngine.verifySeparatingLine(plane,controlPoint_units,vertices_units,reserve_units,target_units);
 end

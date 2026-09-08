@@ -190,7 +190,9 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
         starts_s = result.Polynomial.SegmentStartTime_s;
         ends_s = starts_s+result.Polynomial.SegmentDuration_s;
         expectedActive = starts_s < cells.ActiveTimeInterval_s(:,2).' & ends_s > cells.ActiveTimeInterval_s(:,1).';
-        if ~isequal(certificate.Coverage.ActiveTimeInterval_s,cells.ActiveTimeInterval_s)
+        if ~isequal(certificate.Coverage.ActiveTimeInterval_s,cells.ActiveTimeInterval_s) || ...
+                ~isfield(certificate.Coverage,'EndRegions_units') || ...
+                ~isequal(certificate.Coverage.EndRegions_units,cells.EndRegions_units)
             passed = false; return;
         end
     else
@@ -210,8 +212,10 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
         return;
     end
     controlPoint_units = powerToBernstein(positionPower_units);
+    endRegions_units = cell(0,1);
+    if exist('cells','var'), endRegions_units = cells.EndRegions_units; end
     [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(result.Route_units, ...
-        result.Limits.xInterval_units,result.Limits.yInterval_units,regions_units);
+        result.Limits.xInterval_units,result.Limits.yInterval_units,regions_units,endRegions_units);
     target_units = (1+2^20*eps)*result.Options.CollisionClearanceTolerance_units+reserve_units;
     if ~isequal(certificate.RoundoffReserve_units,reserve_units) || ~isequal(certificate.RequiredGap_units,target_units+reserve_units)
         passed = false; return;
@@ -222,11 +226,15 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
                 continue;
             end
             restricted_units = squeeze(controlPoint_units(segmentIndex,:,:));
+            vertices_units = regions_units{regionIndex};
             if exist('cells','var')
                 interval = (cells.ActiveTimeInterval_s(regionIndex,:)-starts_s(segmentIndex))/(ends_s(segmentIndex)-starts_s(segmentIndex));
                 restricted_units = bmtpEngine.restrictBezier(restricted_units,max(0,min(1,interval)));
+                interval_s = [max(starts_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,1)), ...
+                    min(ends_s(segmentIndex),cells.ActiveTimeInterval_s(regionIndex,2))];
+                vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex},cells,regionIndex,interval_s);
             end
-            plane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), restricted_units, regions_units{regionIndex}, reserve_units, target_units);
+            plane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), restricted_units, vertices_units, reserve_units, target_units);
             if ~plane.Verified
                 passed = false;
                 return;

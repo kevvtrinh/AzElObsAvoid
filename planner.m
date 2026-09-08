@@ -113,6 +113,7 @@ coverage = struct("Passed", true, ...
     "AuthoritativeCoverageCheck", "independentPlaneVerification");
 if isDynamic
     coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
+    coverage.EndRegions_units = cells.EndRegions_units;
     if options.GoalTimeMode == "fixedArrival", coverage.BreakTime_s = cells.BreakTime_s; end
 end
 motionGoalState = goalState;

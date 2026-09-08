@@ -59,11 +59,15 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
                 continue;
             end
             restricted_units = trajectory_units;
+            interval_s = spanBreaks_s(segmentIndex:segmentIndex+1).';
             if isfield(coverage,'ActiveTimeInterval_s')
                 interval = (coverage.ActiveTimeInterval_s(regionIndex,:)-spanBreaks_s(segmentIndex))/diff(spanBreaks_s(segmentIndex:segmentIndex+1));
                 restricted_units = bmtpEngine.restrictBezier(trajectory_units,max(0,min(1,interval)));
+                interval_s = [max(interval_s(1),coverage.ActiveTimeInterval_s(regionIndex,1)), ...
+                    min(interval_s(2),coverage.ActiveTimeInterval_s(regionIndex,2))];
             end
-            plane = bmtpEngine.solveSeparatingLine(restricted_units, regions_units{regionIndex}, target_units, reserve_units);
+            vertices_units = bmtpEngine.regionOnInterval(regions_units{regionIndex},coverage,regionIndex,interval_s);
+            plane = bmtpEngine.solveSeparatingLine(restricted_units, vertices_units, target_units, reserve_units);
             analyticCount = analyticCount + 1;
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified

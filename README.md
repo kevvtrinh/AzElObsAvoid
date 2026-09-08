@@ -287,3 +287,19 @@ pass, including analytic route lengths for holes, disconnected/touching
 components, collinear contact, and a concave U. The core contains 3,996 physical
 production lines. No ring-correspondence optimization was retained: the profile
 identified graph containment work as the main cost.
+
+Time cells retain affine endpoint vertices for source intervals whose vertex
+correspondence has been verified. Constant cells retain equal endpoints, and
+uncertain topology still uses the authoritative conservative interval union.
+Separating planes can therefore translate with an obstacle. The obstacle-side
+certificate bounds the exact quadratic Bernstein product of affine vertices
+and an affine normal. The independent validator reconstructs endpoint geometry
+from the original source and checks every active physical-time overlap.
+
+All 44 tests pass. New tests cover a safe translating separation whose spatial
+sweep overlaps the curve, clipping a source interval, interior plane violations,
+and forged or omitted endpoint coverage. Three-run medians remain below
+references for Vietnam (2.998 s, arrival 30 s, motion 17.1441) and accelerating
+circles (3.913 s, arrival 22 s, motion 20). Motion bounds and safety margins
+are unchanged. Unknown-clock optimization still uses the conservative spatial
+projection; fixed-clock optimization uses the retained cell motion.

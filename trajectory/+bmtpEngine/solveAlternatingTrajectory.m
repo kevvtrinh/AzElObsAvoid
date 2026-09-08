@@ -28,7 +28,7 @@ request.RegionActiveBySegment = warmStart.RegionActiveBySegment;
 diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics();
 diagnostics.WarmStartDuration_s = sum(warmStart.SegmentTime_s);
 planes = repmat(createEmptyPlane(), segmentCount, regionCount);
-[planes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(warmStart.ControlPoint_units, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
+[planes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(warmStart.ControlPoint_units, warmStart.SegmentTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
 diagnostics.UnverifiedPlaneInitializationCount = nnz(~verifiedPairs);
 selectedControl_units = zeros(0, request.Degree + 1, 2);
 selectedSegmentTime_s = NaN;
@@ -51,7 +51,7 @@ if allPlanesActive
             break;
         end
 
-        [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(trialControl_units, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
+        [updatedPlanes, allPlanesActive, verifiedPairs, diagnostics] = solveAllPlanes(trialControl_units, trialTime_s, planes, request, diagnostics, obstacleTarget_units, roundoffReserve_units);
         planes = updatedPlanes;
         unverifiedPairCount = nnz(~verifiedPairs);
         duration_s = sum(trialTime_s);
@@ -94,14 +94,20 @@ end
 
 %% Section 4: Local Functions
 
-function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(controlPoint_units, planes, request, diagnostics, target_units, reserve_units)
+function [planes, allActive, verifiedPairs, diagnostics] = solveAllPlanes(controlPoint_units, segmentTime_s, planes, request, diagnostics, target_units, reserve_units)
     % Update every static curve-region pair without sampled discovery or pruning.
     verifiedPairs = ~request.RegionActiveBySegment;
     allActive = true;
+    breaks_s = request.InitialState.time_s+[0;cumsum(segmentTime_s)];
     for segmentIndex = 1:size(planes, 1)
         for regionIndex = 1:size(planes, 2)
             if ~request.RegionActiveBySegment(segmentIndex,regionIndex), continue; end
-            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(squeeze(controlPoint_units(segmentIndex, :, :)), request.Regions_units{regionIndex}, target_units, reserve_units);
+            interval_s = [];
+            if request.Options.GoalTimeMode=="fixedArrival"
+                interval_s = breaks_s(segmentIndex:segmentIndex+1).';
+            end
+            vertices_units = bmtpEngine.regionOnInterval(request.Regions_units{regionIndex},request.Coverage,regionIndex,interval_s);
+            [plane, exitFlag, output] = bmtpEngine.solveSeparatingLine(squeeze(controlPoint_units(segmentIndex, :, :)), vertices_units, target_units, reserve_units);
             diagnostics.PlaneSocpCount = diagnostics.PlaneSocpCount + ~(isfield(output,'IsAnalytic') && output.IsAnalytic);
             diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
             planes(segmentIndex, regionIndex) = plane;

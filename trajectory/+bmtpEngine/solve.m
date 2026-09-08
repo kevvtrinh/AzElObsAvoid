@@ -61,7 +61,9 @@ end
 if options.GoalTimeMode=="fixedArrival"
     diagnostics.ConstraintRepresentation = "fixedClockElasticSocp";
 end
-[~, ~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(route_units, limits.xInterval_units, limits.yInterval_units, regions_units);
+endRegions_units = cell(0,1);
+if isfield(coverage,'EndRegions_units'), endRegions_units = coverage.EndRegions_units; end
+[~, ~, roundoffReserve_units] = bmtpEngine.createCoordinateTolerances(route_units, limits.xInterval_units, limits.yInterval_units, regions_units,endRegions_units);
 normalNormLimit    = 1 + 2 ^ 20 * eps;
 obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_units + roundoffReserve_units;
 
