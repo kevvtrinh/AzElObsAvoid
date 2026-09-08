@@ -6,14 +6,17 @@ The emptycore reference is `26c343b9ab7704d0cd5a3d8f72af058e99c936b1`.
 The original checkout and its existing `AGENTS.md` edit remain untouched.
 
 **The complete eight-stage plan is not implemented.** Retained production
-changes batch offset-spline polynomial translation and reuse time-invariant
-source geometry. The static-corridor port
+changes batch offset-spline polynomial translation and containment, and reuse time-invariant
+source geometry. The [containment report](bmtp_refactor_containment.md) records
+194 passing tests, 60 exact motion/search comparisons, profiles, and the
+unfavorable runs. Production currently has 108 files and 15,577 physical lines;
+the final code-reduction gate remains unmet. The static-corridor port
 remains an unretained experiment in the ignored `scratch/corridor_draft` folder.
-Geometry batching, further preparation reuse, analytic waiting, corridor and
+Further plane batching, preparation reuse, analytic waiting, corridor and
 clock integration, continuous-length optimization, and broader consolidation
 still require implementation and their respective verification gates. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of
-every geographic subcase is also outstanding for the reference core. The resumed
+every geographic subcase is now recorded in the [reference comparison](bmtp_refactor_reference_comparison.md). It rejects wholesale replacement: the reference loses one supported fixed-time interception and worsens Hawaii's arrival, length, and runtime. The resumed
 cleanup/candidate comparison now captures all 20 physical requests (including
 all three geographic subcases) with a shared warm-up policy and three timed
 repetitions. These are planner-request replays; they exclude example setup and

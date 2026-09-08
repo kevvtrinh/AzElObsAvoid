@@ -1,5 +1,25 @@
 # Planner decisions
 
+## Resumed containment and pinned-reference comparison — 2026-09-08
+
+Batched containment now reuses bounded edge-projection arrays, retaining the
+original MATLAB predicate in its near-edge uncertainty band. An initial parity-only
+experiment failed exact signed-clearance tests and was corrected without changing
+the occupancy tolerance. All 194 tests pass; all 60 frozen planner records retain
+exact motions, route/search decisions, certificates, arrivals, and adaptive lengths.
+Philippines median runtime is 4.1861 s versus pinned cleanup's 5.5686 s; the matched
+profile reduces clearance inclusive time from 2.5516 to 1.1519 s. An initial
+deforming-US slowdown did not persist in the one matched rerun. Startup/JIT noise
+in millisecond cases remains disclosed, and all individual runs are preserved.
+See [containment evidence](docs/bmtp_refactor_containment.md).
+
+The [pinned reference comparison](docs/bmtp_refactor_reference_comparison.md)
+also captures all 20 identical physical requests three times. Emptycore loses a
+supported fixed-time interception and worsens Hawaii arrival/length/runtime, so
+wholesale replacement is rejected. Selective solver replacement continues. The
+production count is 108 files / 15,577 physical lines, still above cleanup's
+15,528: neither the eight-stage refactor nor its code-reduction gate is complete.
+
 ## BMTP refactor started — 2026-09-08
 
 The shared eight-stage plan is imported as `bmtp_refactor.md`, based on `c04f3b2`.

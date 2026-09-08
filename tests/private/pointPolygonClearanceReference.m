@@ -1,4 +1,4 @@
-function [clearance_units, nearestPoint_units, edgeIndex] = pointPolygonClearance(shape, point_units, geometry)
+function [clearance_units, nearestPoint_units, edgeIndex] = pointPolygonClearanceReference(shape, point_units, geometry)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [clearance_units, nearestPoint_units, edgeIndex] = ...
@@ -67,7 +67,6 @@ nonzeroEdge            = edgeLengthSquared_units2 > 0;
 % Treat zero-length edges as points and avoid division by zero.
 edgeLengthSquared_units2(~nonzeroEdge) = 1;
 clearance_units = zeros(queryCount, 1);
-isInside = false(queryCount, 1);
 
 % Target 512 KiB per double projection matrix, permitting one complete edge
 % row for larger polygons. Small polygons can process more queries together.
@@ -91,32 +90,12 @@ for blockStart = 1:blockQueryCount:queryCount
     nearestPoint_units(selectedQuery, :) = edgeStart_units(selectedEdgeIndex, :) + selectedFraction .* edgeDelta_units(selectedEdgeIndex, :);
     edgeIndex(selectedQuery) = selectedEdgeIndex;
     clearance_units(selectedQuery) = sqrt(max(0, minimumDistanceSquared_units2));
-    % A half-open horizontal ray counts each shared vertex once. Parity over
-    % every boundary ring preserves holes and disconnected occupied regions.
-    % Reuse the bounded projection block; no dense all-query/edge array is needed.
-    crossesHeight = (edgeStart_units(:, 2).' > point_units(selectedQuery, 2)) ~= (edgeEnd_units(:, 2).' > point_units(selectedQuery, 2));
-    crossProduct_units2 = xOffset_units .* edgeDelta_units(:, 2).' - yOffset_units .* edgeDelta_units(:, 1).';
-    crossesRight = (edgeDelta_units(:, 2).' > 0 & crossProduct_units2 < 0) | (edgeDelta_units(:, 2).' < 0 & crossProduct_units2 > 0);
-    if usePreparedGeometry && geometry.HasOrderedSingleRegion && geometry.IsConvex
-        isInside(selectedQuery) = all(geometry.OutwardSign * crossProduct_units2 >= 0, 2);
-    else
-        isInside(selectedQuery) = mod(sum(crossesHeight & crossesRight, 2), 2) ~= 0;
-    end
 end
-% MATLAB's polyshape predicate includes a coordinate-scaled determinant
-% tolerance near edges. Preserve that policy by querying it in the uncertainty
-% band; ray parity alone would change signed gaps for near-boundary points.
-if ~(usePreparedGeometry && geometry.HasOrderedSingleRegion && geometry.IsConvex)
-    boundsMinimum_units = min(edgeStart_units, [], 1);
-    boundsMaximum_units = max(edgeStart_units, [], 1);
-    shapeScale_units = max(abs([boundsMinimum_units boundsMaximum_units]));
-    determinantTolerance_units2 = (shapeScale_units + max(boundsMaximum_units - boundsMinimum_units)) * 1e-12;
-    shortestEdge_units = sqrt(min(edgeLengthSquared_units2(nonzeroEdge)));
-    uncertainty_units = determinantTolerance_units2 / shortestEdge_units + 64 * eps(max(1, max(shapeScale_units, max(abs(point_units), [], 2))));
-    uncertain = clearance_units <= uncertainty_units;
-    if any(uncertain)
-        isInside(uncertain) = isinterior(shape, point_units(uncertain, 1), point_units(uncertain, 2));
-    end
+if usePreparedGeometry && geometry.HasOrderedSingleRegion && geometry.IsConvex
+    outwardCross = geometry.OutwardSign * ((point_units(:, 1) - edgeStart_units(:, 1).') .* edgeDelta_units(:, 2).' - (point_units(:, 2) - edgeStart_units(:, 2).') .* edgeDelta_units(:, 1).');
+    isInside = all(outwardCross >= 0, 2);
+else
+    isInside = isinterior(shape, point_units(:, 1), point_units(:, 2));
 end
 % Make clearance negative inside the polygon.
 clearance_units(isInside) = -clearance_units(isInside);
@@ -124,3 +103,4 @@ coordinateScale_units = max(1, max(abs(point_units), [], 2));
 % Snap boundary noise below 1e-12 of the coordinate scale to zero.
 clearance_units(abs(clearance_units) <= 1e-12 * coordinateScale_units) = 0;
 end
+
