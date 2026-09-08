@@ -43,6 +43,8 @@ so the planner is not complete for dynamic topology changes or goals blocked
 only at the initial time. The full static suite still needs improvement.
 Historical example interfaces are being migrated to the single `planner`
 entry point. No universal trajectory optimality or runtime guarantee is claimed.
+Static and dynamic fixed-arrival requests now share the same elastic
+length-minimizing convex formulation; scene motion does not choose the objective.
 
 ## Verification
 
@@ -61,6 +63,15 @@ warnings count as benchmark failures, and expected no-path outcomes require
 the explicit no-route termination reason. The geographic sequence contains
 three internal requests; it still requires per-request capture before claiming
 full benchmark coverage from the historical final-result row.
+
+The workbook's route-length column measures the historical selected seed,
+which can be a blocked direct chord. For example, target-exit's seed length
+20.1357890335 equals `norm([12.1,1.2]-[-8,0])`, and alternating occlusion's
+13.3416640641 equals `norm([-1,0]-[-14,3])`; both examples explicitly require
+the direct path to be blocked. The old solver bends the returned motion while
+retaining that diagnostic seed. Current `Route_units` is the exact protected
+visibility route. The runner reports both route lengths and their comparison,
+but uses the executable motion length for the physical path-quality gate.
 
 ## Timing contract conflict
 
@@ -135,6 +146,12 @@ coverage, forged activity, and interior source changes. The core contains
 formulation removes that solve, rather than relaxing any physical constraints.
 Profiled time is diagnostic only; the benchmark medians have profiling off.
 
-Vietnam, fixed-time interception, accelerating circles, and the expected
-no-path case have demonstrated all reference metrics.
+The static target-exit example now passes physical benchmarks: arrival 24 s,
+motion length 20.5043115855 versus 20.6851467568, and five-run median wall time
+2.114 s versus 4.6280002 s. Alternating occlusion improves to motion length
+13.5563779512 versus 13.6104156607, with matching arrival, but its 4.113 s median
+still exceeds the 2.4666327 s reference. No passing runtime is claimed for it.
+
+Vietnam, fixed-time interception, accelerating circles, target exit, and the
+expected no-path case have demonstrated the physical benchmark metrics.
 The full suite remains unfinished. No scenario-specific fallback was added.

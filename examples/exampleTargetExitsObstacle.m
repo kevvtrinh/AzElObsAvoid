@@ -97,7 +97,10 @@ interceptOptions = struct("InterceptMode", "specifiedTime", ...
 
 % Run the specified-time moving-target planner.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+goalState = struct("time_s",interceptOptions.SpecifiedInterceptTime_s,"targetMotion",targetMotion);
+plannerOptions = interceptOptions.PlannerOptions;
+plannerOptions.GoalTimeMode = "fixedArrival";
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 

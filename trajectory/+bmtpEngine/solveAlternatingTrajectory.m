@@ -39,7 +39,7 @@ solverMessage = "The all-pair alternating iteration limit was reached.";
 if allPlanesActive
     for iterationIndex = 1:35
         diagnostics.IterationCount = iterationIndex;
-        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, isfield(request.Coverage,'BreakTime_s'));
+        [trialControl_units, trialTime_s, exitFlag, output] = bmtpEngine.solveTrajectoryStep(segmentCount, request.Degree, request.InitialState.position_units, request.GoalState.position_units, request.Limits, planes, roundoffReserve_units, request.MotionHorizon_s, request.TrajectoryOptions, warmStart.SegmentRatio, request.Options.GoalTimeMode=="fixedArrival");
         diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount + 1;
         diagnostics.ConicSolver = bmtpEngine.accumulateConicDiagnostics(diagnostics.ConicSolver, output);
         diagnostics.FinalTrajectoryExitFlag = exitFlag;
