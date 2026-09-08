@@ -1,0 +1,85 @@
+function [result, diagnosis] = exampleDenseConcaveObstacle(exampleOverrides)
+%% Section 0: Header & Readme
+% SYNTAX
+%   result = exampleDenseConcaveObstacle()
+%   result = exampleDenseConcaveObstacle(exampleOverrides)
+%
+% PURPOSE
+%   - Demonstrate protected dense concave geometry without special waypoints.
+%
+% INPUTS
+%   - exampleOverrides (scalar struct, optional; default struct())
+%       Uniform display controls and public planner option overrides.
+%
+% OUTPUTS
+%   - result (scalar struct)
+%       Unmodified public planner result.
+%   - diagnosis (optional second output): search attempts and solver details.
+%
+% UNITS
+%   - Position is coordinate units; time is seconds; derivatives use units/s, units/s^2,
+%     and units/s^3.
+%
+
+%% Section 1: Resolve Example Controls
+
+% Resolve shared display controls and planner options before scenario setup.
+
+if nargin < 1 || isempty(exampleOverrides)
+    exampleOverrides = struct();
+end
+[options, displayOptions] = resolveExampleOptions(exampleOverrides, struct("GoalTimeMode", "earliestArrival"), [2 2]);
+
+%% Section 2: Create Obstacles
+
+% The boundary has many vertices and inward corners. An inward corner makes the
+% polygon concave. This case checks that dense concave geometry does not need
+% manually selected waypoints.
+
+vertexCount           = 80;
+angle_rad             = (0:vertexCount - 1).' * (2 * pi / vertexCount);
+radius_units            = 1.6 + 0.45 * cos(5 * angle_rad);
+obstacleX_units   = radius_units .* cos(angle_rad);
+obstacleY_units = radius_units .* sin(angle_rad);
+obstacleTime_s        = [0; 20];
+safetyMargin_units      = 0.1;
+obstacles             = obstacleAvoidance.obstacles.createObstacle("dense concave polygon", obstacleTime_s, obstacleX_units, obstacleY_units, safetyMargin_units);
+
+%% Section 3: Create Planner Inputs
+
+% Put the start and goal on opposite sides of the protected polygon. The direct
+% line is blocked, so the planner must select a collision-free outer route.
+
+initialState = struct();
+initialState.time_s       = 0;
+initialState.position_units = [-6 0];
+goalState = struct();
+goalState.time_s       = 15;
+goalState.position_units = [6 0];
+limits = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
+
+%% Section 4: Run Planner
+
+% Run the public planner with the visible inputs defined above.
+
+[result, diagnosis] = obstacleAvoidance.planTrajectory(obstacles, initialState, goalState, limits, options);
+
+%% Section 5: Validate Result
+
+% Check the complete timed trajectory. Do not accept success from route geometry
+% alone because smoothing can move a trajectory toward the obstacle.
+
+exampleValidation = obstacleAvoidance.validateTrajectory(result);
+if ~exampleValidation.Passed
+    warning("exampleDenseConcaveObstacle:ValidationFailed", "%s", exampleValidation.Message);
+end
+
+%% Section 6: Plot Diagnostics And Motion
+
+% Show protected geometry, the selected route, and motion limits when enabled.
+
+if displayOptions.PlotOutputs
+    obstacleAvoidance.plotting.plotTrajectory(result, displayOptions.PlotOptions, diagnosis);
+end
+
+end
