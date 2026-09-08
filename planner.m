@@ -13,7 +13,7 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %   - obstacles: static polygon structs or canonical polygon histories.
 %   - initialState, goalState: position_units and time_s; omitted endpoint
 %     velocity and acceleration default to zero.
-%     A fixed-time goal may supply targetMotion (sampled time_s and N-by-2
+%     A goal may supply targetMotion (sampled time_s and N-by-2
 %     position_units, with linear or pchip InterpolationMethod) instead.
 %   - limits: workspace intervals and per-axis velocity, acceleration, jerk.
 %   - options: arrival policy, BMTP sampling, and validation tolerances.
@@ -45,9 +45,6 @@ initialState = normalizeState(initialState, defaultInitialState, "initialState")
 goalState    = normalizeState(goalState, defaultGoalState, "goalState");
 limits       = normalizeLimits(limits, defaultLimits);
 options      = resolveOptions(options, defaultOptions);
-if ~isempty(goalState.targetMotion) && options.GoalTimeMode ~= "fixedArrival"
-    error('planner:UnsupportedTargetMode','Sampled targets currently require fixedArrival.');
-end
 if goalState.time_s <= initialState.time_s
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
@@ -58,10 +55,25 @@ end
 %% Section 2: Prepare Obstacles And Visibility Route
 
 totalTimer = tic;
+earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
+interceptTime_s = goalState.time_s;
+if earliestTarget
+    interceptTime_s = obstacleAvoidance.input.findEarliestTargetTime(goalState.targetMotion,initialState,goalState.time_s,limits);
+    if isfinite(interceptTime_s)
+        goalState.position_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,interceptTime_s);
+    end
+end
 preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
 visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene, initialState.position_units, goalState.position_units, limits, options);
 result = createEmptyResult(obstacles, preparedObstacles, initialState, goalState, limits, options, visibilityGraph);
+if earliestTarget && isnan(interceptTime_s)
+    result.Message = "The target never enters the rest-to-rest reachable set within the supplied horizon.";
+    result.TerminationReason = "targetUnreachable";
+    result.ElapsedTime_s = toc(totalTimer);
+    result.Validation = obstacleAvoidance.validateTrajectory(result);
+    return;
+end
 if ~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree
     result.Message = "An endpoint lies inside or on protected obstacle geometry.";
     result.TerminationReason = "invalidEndpoint";
@@ -103,7 +115,13 @@ if isDynamic
     coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
     if options.GoalTimeMode == "fixedArrival", coverage.BreakTime_s = cells.BreakTime_s; end
 end
-[candidate, solverDiagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
+motionGoalState = goalState;
+motionGoalState.time_s = interceptTime_s;
+[candidate, solverDiagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, motionGoalState, limits, options);
+if earliestTarget && ~candidate.Success
+    candidate.Message = "Motion at the kinematic interception bound was not certified; later interception has not been searched.";
+    candidate.TerminationReason = "earliestInterceptUncertified";
+end
 candidateFields = string(fieldnames(candidate));
 for fieldName = reshape(candidateFields, 1, [])
     result.(fieldName) = candidate.(fieldName);

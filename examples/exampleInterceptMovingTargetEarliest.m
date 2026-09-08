@@ -51,15 +51,14 @@ targetTime_s       = (0:4:20).';
 targetPosition_units = [ 6 + 0.2 * targetTime_s, 1 + 0.02 * targetTime_s];
 targetMotion       = struct("time_s", targetTime_s, "position_units", targetPosition_units, "InterpolationMethod", "linear");
 limits             = struct("maxVelocity_units_s", [2 2], "maxAcceleration_units_s2", [1 1], "maxJerk_units_s3", displayOptions.MaxJerk_units_s3);
-interceptOptions = struct("InterceptMode", "earliest", ...
-    "MaximumSearchDuration_s", 20, ...
-    "MatchTargetVelocity", false, "MatchTargetAcceleration", false, "PlannerOptions", plannerOptions);
+goalState = struct("time_s",20,"targetMotion",targetMotion);
+plannerOptions.GoalTimeMode = "earliestArrival";
 
 %% Section 4: Run Planner
 
 % Run the moving-target planner. It searches for the earliest valid meeting.
 
-[result, diagnosis] = obstacleAvoidance.planMovingTargetIntercept(obstacles, initialState, targetMotion, limits, interceptOptions);
+[result, diagnosis] = planner(obstacles, initialState, goalState, limits, plannerOptions);
 
 %% Section 5: Validate Result
 

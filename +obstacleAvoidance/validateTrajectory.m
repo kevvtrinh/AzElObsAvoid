@@ -173,6 +173,9 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
     authoritativeObstacles = obstacleAvoidance.obstacles.prepareObstacles(authoritativeInput);
     endpoints_units = [result.Inputs.initialState.position_units;result.Inputs.goalState.position_units];
     endpointTimes_s = [result.Polynomial.SegmentStartTime_s(1);result.Polynomial.FinalTime_s];
+    if isfield(result.Inputs.goalState,'targetMotion') && ~isempty(result.Inputs.goalState.targetMotion)
+        endpoints_units(2,:) = obstacleAvoidance.input.targetPositionAtTime(result.Inputs.goalState.targetMotion,endpointTimes_s(2));
+    end
     occupied = obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime(authoritativeObstacles, ...
         endpoints_units(:,1),endpoints_units(:,2),endpointTimes_s);
     if any(occupied), passed = false; return; end

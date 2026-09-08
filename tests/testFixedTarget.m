@@ -40,7 +40,10 @@ function testInvalidTargetDomain(testCase)
     verifyError(testCase,@() planner([],r.Inputs.initialState,goal,r.Limits,r.Options),'planner:InvalidTargetTime');
 end
 
-function testUnsupportedTargetMode(testCase)
+function testEarliestTargetUsesActualMeetingTime(testCase)
     r = testCase.TestData.Result; options = r.Options; options.GoalTimeMode = "earliestArrival";
-    verifyError(testCase,@() planner([],r.Inputs.initialState,r.Inputs.goalState,r.Limits,options),'planner:UnsupportedTargetMode');
+    earliest = planner([],r.Inputs.initialState,r.Inputs.goalState,r.Limits,options);
+    verifyTrue(testCase,earliest.Success,earliest.Message);
+    verifyTrue(testCase,obstacleAvoidance.validateTrajectory(earliest).Passed);
+    verifyLessThan(testCase,earliest.ArrivalTime_s,r.ArrivalTime_s);
 end

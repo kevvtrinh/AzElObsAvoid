@@ -30,7 +30,7 @@ control-polygon length at the actual requested clock. Supporting axes provide
 separating planes analytically. Acceptance requires independent reconstruction
 of source geometry, active pairs, clearance, endpoints, and polynomial limits.
 
-Fixed-time goals may supply `goalState.targetMotion` with sampled `time_s`,
+Goals may supply `goalState.targetMotion` with sampled `time_s`,
 N-by-2 `position_units`, and `InterpolationMethod` (`linear` or `pchip`). The
 validator evaluates that source again at actual arrival. A visible direct
 fixed-time request uses the exact minimum-jerk quintic when its motion and
@@ -229,3 +229,25 @@ and velocity cruise with unequal axis limits and nonzero absolute start times.
 Independent tests accept bounded jerk jumps, reject excessive jerk, and reject
 acceleration discontinuities even when derivative arrays and histories agree.
 Source-history coverage is also required for dynamic earliest motion.
+
+Earliest sampled-target interception now uses the single public planner. It
+partitions linear or pchip target histories at source and reachability events,
+then intersects cubic polynomial inequalities for both axes. This enumerates
+meeting windows even when feasibility disappears before the horizon. A target
+outside the entire reachable set returns `targetUnreachable`; an uncertified
+motion at its lower bound returns `earliestInterceptUncertified` without claiming
+that later interception is impossible. The public validator reevaluates the
+original target at the actual returned arrival, including endpoint occupancy.
+
+Five-run earliest-target results: arrival 6.111111111 s, equal reference motion
+length 7.308885511, and median wall time 0.01559 s versus 0.1488886 s. The core
+contains 3,988 physical production lines. Fixed-time target and obstacle-free
+regressions also pass all benchmark gates. Additional tests cover disconnected
+meeting windows, unreachable targets, source tampering, shifted clocks, pchip
+motion, and all bounded-jerk timing regimes.
+
+A trial mapping route vertices onto a single chord's jerk-phase clock was
+removed. It passed slalom quality (10.500004 s and 16.020866 length) but missed
+dense-concave references (8.5000038 s and 12.774610 versus 8.5 and 12.761105),
+regressed static U to 27.743 s and 41.962 length, and made opposing-U optimization
+slow enough to terminate. No case-dependent mesh fallback was retained.
