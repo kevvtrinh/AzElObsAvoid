@@ -48,7 +48,7 @@ phaseJerk_units_s3      = zeros(dimensionCount, 7);
 minimumAxisDuration_s = zeros(1, dimensionCount);
 % Evaluate each coordinate axis and combine its limiting result.
 for axisIndex = 1:dimensionCount
-    [phaseDuration_s(axisIndex, :), phaseJerk_units_s3(axisIndex, :)] = minimumProfile(displacement_units(axisIndex), maximumVelocity_units_s(axisIndex), maximumAcceleration_units_s2(axisIndex), maximumJerk_units_s3(axisIndex));
+    [phaseDuration_s(axisIndex, :), phaseJerk_units_s3(axisIndex, :)] = motionCore.createRestToRestLaw(displacement_units(axisIndex), maximumVelocity_units_s(axisIndex), maximumAcceleration_units_s2(axisIndex), maximumJerk_units_s3(axisIndex));
     minimumAxisDuration_s(axisIndex) = sum(phaseDuration_s(axisIndex, :));
 end
 minimumDuration_s = max(minimumAxisDuration_s);
@@ -78,7 +78,7 @@ end
 % Use shared straight-line progress if it can meet the minimum clock.
 % Otherwise synchronize the individual axis profiles by time scaling.
 activeAxis = displacement_units ~= 0;
-[progressPhase_s, progressJerk_1_s3] = minimumProfile(1, min(maximumVelocity_units_s(activeAxis) ./ abs(displacement_units(activeAxis))), min(maximumAcceleration_units_s2(activeAxis) ./ abs(displacement_units(activeAxis))), min(maximumJerk_units_s3(activeAxis) ./ abs(displacement_units(activeAxis))));
+[progressPhase_s, progressJerk_1_s3] = motionCore.createRestToRestLaw(1, min(maximumVelocity_units_s(activeAxis) ./ abs(displacement_units(activeAxis))), min(maximumAcceleration_units_s2(activeAxis) ./ abs(displacement_units(activeAxis))), min(maximumJerk_units_s3(activeAxis) ./ abs(displacement_units(activeAxis))));
 straightMinimumDuration_s = sum(progressPhase_s);
 usedStraightProgress      = straightMinimumDuration_s <= duration_s + 256 * eps(max(1, duration_s));
 if usedStraightProgress
@@ -190,38 +190,6 @@ function [goalTimeMode, sampleTime_s, tolerance] = readOptions(options)
     end
 end
 
-function [duration_s, jerk_units_s3] = minimumProfile(displacement_units, velocityLimit_units_s, accelerationLimit_units_s2, jerkLimit_units_s3)
-    % Return the exact symmetric seven-phase scalar minimum-time law.
-    distance_units = abs(displacement_units);
-    duration_s   = zeros(1, 7);
-    jerk_units_s3  = zeros(1, 7);
-    if distance_units == 0
-        return;
-    end
-    ramp_s = accelerationLimit_units_s2 / jerkLimit_units_s3;
-    if 2 * accelerationLimit_units_s2 ^ 3 / jerkLimit_units_s3 ^ 2 >= distance_units
-        ramp_s    = nthroot(distance_units / (2 * jerkLimit_units_s3), 3);
-        plateau_s = 0;
-    else
-        plateau_s = 0.5 * (sqrt(ramp_s ^ 2 + 4 * distance_units / accelerationLimit_units_s2) - 3 * ramp_s);
-    end
-    peakVelocity_units_s = jerkLimit_units_s3 * ramp_s * (ramp_s + plateau_s);
-    cruise_s           = 0;
-    if peakVelocity_units_s > velocityLimit_units_s
-        if velocityLimit_units_s <= accelerationLimit_units_s2 ^ 2 / jerkLimit_units_s3
-            ramp_s    = sqrt(velocityLimit_units_s / jerkLimit_units_s3);
-            plateau_s = 0;
-        else
-            ramp_s    = accelerationLimit_units_s2 / jerkLimit_units_s3;
-            plateau_s = velocityLimit_units_s / accelerationLimit_units_s2 - ramp_s;
-        end
-        minimumDistance_units = velocityLimit_units_s * (2 * ramp_s + plateau_s);
-        cruise_s            = (distance_units - minimumDistance_units) / velocityLimit_units_s;
-    end
-    duration_s = [ramp_s, plateau_s, ramp_s, max(0, cruise_s), ...
-        ramp_s, plateau_s, ramp_s];
-    jerk_units_s3 = sign(displacement_units) * jerkLimit_units_s3 * [1, 0, -1, 0, -1, 0, 1];
-end
 
 function [duration_s, jerk] = stretchProfile(duration_s, jerk, targetDuration_s)
     % Stretch time to reduce derivative peaks without moving endpoints.

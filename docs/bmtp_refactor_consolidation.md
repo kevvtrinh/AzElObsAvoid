@@ -39,7 +39,33 @@ and their quality reports. These filenames identify a checkpoint, not completion
 of the user's subsequent request for deeper deletion. All repetitions, including
 unfavorable timings, remain in the benchmark history.
 
-Next: share the numerical motion law, event integration, polynomial format and
-evaluation, and independent scalar range checking across their existing callers.
-Retain the general switching equations for nonzero endpoints and the broader
-obstacle formulations where reduced clocks do not cover the request.
+## Verified shared-core consolidation
+
+The deeper consolidation now shares the numerical motion law, event integration,
+polynomial format and evaluation, and independent scalar range checking across
+their existing callers in four `motionCore` files. Superseded production copies
+and the waypoint format conversion are deleted. General switching equations,
+acceleration-only standalone motion, nonzero endpoints, and broader obstacle
+formulations remain supported. The public validator independently reconstructs
+the polynomial and authoritative geometry before acceptance.
+
+Production is now **111 files / 15,088 physical / 10,949 code / 3,183 comment /
+956 blank lines**. Relative to the first API checkpoint, this removes 424 physical
+and **282 executable lines**. Relative to the original baseline, physical lines
+decrease by 440 but executable lines increase by 433. The physical gate passes;
+an executable-line reduction against the original branch has not been achieved.
+Standalone solver functionality is preserved while the additional scope choice
+is pending; no capability was silently discarded to reduce this count.
+
+The final full suite passes **222/222 tests**. All 60 frozen comparisons against
+pinned cleanup pass the unchanged quality gates, and all 60 comparisons against
+the preceding shared-core capture preserve arrivals and arcs. Five migrated
+interception examples also pass end-to-end validation and returned-motion plotting.
+The scalar range and event-law references cover both former callers, multiple
+scales and axes, nonzero endpoints, and event boundaries.
+
+The shared-core change alone is not uniformly faster. One matched rerun preserved
+small direct-call regressions; profiles exposed duplicate endpoint calculations
+and a single-caller coefficient helper, which were removed before final capture.
+All unfavorable timings remain recorded. See the [complete measured results,
+subsystem counts, and limitations](bmtp_refactor_results.md).

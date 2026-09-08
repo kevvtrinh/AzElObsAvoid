@@ -397,21 +397,21 @@ end
 function testBernsteinOutlierIsNotAnExactRangeRejection(testCase)
     % Require subdivision because one control can exceed the polynomial range.
     safePower = [0; 4; -4];
-    within    = obstacleAvoidance.validation.certifyPolynomialRange(safePower, -0.1, 1.1, 0);
+    within    = motionCore.checkPolynomialRange(safePower, -0.1, 1.1, 0);
     verifyTrue(testCase, within);
 end
 
 function testBernsteinSubdivisionFindsInteriorViolation(testCase)
     % Reject a true interior peak even though both endpoints satisfy the bounds.
     violatingPower = [0; 4.4; -4.4];
-    within         = obstacleAvoidance.validation.certifyPolynomialRange(violatingPower, -0.1, 0.5, 0);
+    within         = motionCore.checkPolynomialRange(violatingPower, -0.1, 0.5, 0);
     verifyFalse(testCase, within);
 end
 
 function testStationaryFallbackAcceptsNondyadicTangent(testCase)
     % Keep exact stationary-point resolution for a boundary tangent at tau=1/3.
     tangentPower = [8 / 9; 2 / 3; -1];
-    within       = obstacleAvoidance.validation.certifyPolynomialRange(tangentPower, -0.1, 1, 1e-12);
+    within       = motionCore.checkPolynomialRange(tangentPower, -0.1, 1, 1e-12);
     verifyTrue(testCase, within);
 end
 

@@ -421,7 +421,7 @@ function [collisionFree, resolved, minimumClearance_units, checkCount, unresolve
                 obstacleTimes_s < segmentEnd_s)]; %#ok<AGROW>
         end
         splitTimes_s = unique(splitTimes_s);
-        [~, splitPoints_units] = bmtpEngine.evaluatePolynomial(polynomial, splitTimes_s, segmentIndex);
+        [~, splitPoints_units] = motionCore.evaluatePolynomial(polynomial, splitTimes_s, segmentIndex);
         for splitIndex = 1:numel(splitTimes_s)
             % Evaluate each obstacle against the current geometry or motion.
             for obstacleIndex = 1:numel(obstacles)
@@ -445,7 +445,7 @@ function [collisionFree, resolved, minimumClearance_units, checkCount, unresolve
             interval_s = stack_s(end, :);
             stack_s(end, :) = [];
             intervalMid_s = mean(interval_s);
-            [~, point_units] = bmtpEngine.evaluatePolynomial(polynomial, intervalMid_s, segmentIndex);
+            [~, point_units] = motionCore.evaluatePolynomial(polynomial, intervalMid_s, segmentIndex);
             halfDuration_s        = diff(interval_s) / 2;
             pathDisplacement_units  = pathSpeedBound_units_s * halfDuration_s;
             intervalResolved      = true;

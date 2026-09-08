@@ -52,7 +52,7 @@ upper_s = repmat(base.ArrivalTime_s, size(guideCoordinate_units));
 for iteration = 1:48
     middle_s = (lower_s + upper_s) / 2;
     if isempty(middle_s), break; end
-    [~, position_units] = bmtpEngine.evaluatePolynomial(base.Polynomial, middle_s);
+    [~, position_units] = motionCore.evaluatePolynomial(base.Polynomial, middle_s);
     before = direction * position_units(:, axisIndex) < direction * guideCoordinate_units;
     lower_s(before) = middle_s(before);
     upper_s(~before) = middle_s(~before);
@@ -62,7 +62,7 @@ breaks_s = breaks_s([true; diff(breaks_s) > 64 * eps(max(1, max(abs(breaks_s))))
 durations_s = diff(breaks_s);
 segmentCount = numel(durations_s);
 [~, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = ...
-    bmtpEngine.evaluatePolynomial(base.Polynomial, breaks_s(1:end - 1));
+    motionCore.evaluatePolynomial(base.Polynomial, breaks_s(1:end - 1));
 fixedPower_units = zeros(segmentCount, 2, 9);
 fixedPower_units(:, :, 1) = position_units;
 fixedPower_units(:, :, 2) = velocity_units_s .* durations_s;

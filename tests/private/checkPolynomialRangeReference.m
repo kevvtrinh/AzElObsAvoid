@@ -1,4 +1,4 @@
-function [within, minimumValue, maximumValue] = checkPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+function [within, minimumValue, maximumValue] = checkPolynomialRangeReference(powerCoefficient, lowerBound, upperBound, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [within, minimumValue, maximumValue] = ...

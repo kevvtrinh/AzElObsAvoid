@@ -5,37 +5,27 @@ based on cleanup revision `c04f3b280725edd30824947f18751afe07a7a0d9`.
 The emptycore reference is `26c343b9ab7704d0cd5a3d8f72af058e99c936b1`.
 The original checkout and its existing `AGENTS.md` edit remain untouched.
 
-**The complete eight-stage plan is not implemented.** Retained production
-changes batch offset-spline polynomial translation and containment, and reuse time-invariant
-source geometry. [Analytic departure scheduling](bmtp_refactor_departure.md)
-now replaces eligible wait-trial execution, with 198 passing tests and 60
-successful quality comparisons. The [containment report](bmtp_refactor_containment.md) records
-194 passing tests, 60 exact motion/search comparisons, profiles, and the
-unfavorable runs. Committed production at `8710e8f` has 110 files and 15,824
-physical lines; the final code-reduction gate remains unmet. The working
-[corridor integration](bmtp_refactor_corridors.md) now shares the engine's
-polynomial and motion exporters, batches complete static plane checks, and
-uses physical clocks and speed quadrature. Its unconditional fallback removal
-was rejected after saved behavioral tests failed. The broader excursion was
-restored. Its final full suite passes 209 tests, all 60 frozen quality records
-pass, and a matched three-warmup comparison verifies major slalom/dense/Hawaii
-gains while retaining the opposing-U and Philippines overhead. Working
-production after the corridor commit is 114 files and 16,408 physical lines.
-The following [length stage](bmtp_refactor_length.md) makes every motion-record
-length and candidate ranking independent of display sampling, passes 213 tests
-and 60 unchanged frozen quality comparisons, and brings production to 115
-files/16,477 physical lines. [Bounded visibility](bmtp_refactor_visibility.md)
-then passes 215 tests and 60 unchanged quality comparisons, with exact predicate
-and graph-edge equivalence and 16,488 physical production lines. The reference
-cubic reversal method is evaluated and rejected as a speed replacement on its
-tested reversing case, as documented in the reference comparison. Remaining:
-the single public entry point, and final consolidation remain unfinished. The
-cross-branch benchmark with a uniform warm-up policy and explicit capture of
-every geographic subcase is now recorded in the [reference comparison](bmtp_refactor_reference_comparison.md). It rejects wholesale replacement: the reference loses one supported fixed-time interception and worsens Hawaii's arrival, length, and runtime. The resumed
-cleanup/candidate comparison now captures all 20 physical requests (including
-all three geographic subcases) with a shared warm-up policy and three timed
-repetitions. These are planner-request replays; they exclude example setup and
-the interception wrapper's time search.
+The retained eight-stage implementation and measured limits are recorded in the
+[verified results report](bmtp_refactor_results.md). Final MATLAB verification
+passes **222/222 tests** and **60** frozen quality comparisons against pinned
+cleanup. Identical requests, three warmups, and three timed repetitions give
+21.7% less runtime in the sum of case medians, with gains concentrated in slalom,
+dense concave geometry, departure scheduling, and Hawaii. Opposing U is effectively
+unchanged. Interception timing excludes the outer time search.
+
+Production has **111 files / 15,088 physical / 10,949 executable lines**. The
+physical gate is met by 440 lines; executable code remains 433 lines above the
+original baseline. The more aggressive shared numerical core pass deletes 282
+executable lines from the API consolidation checkpoint, covering duplicate event
+exporters, timing laws, evaluators, range checkers, and format conversion. Broader
+capabilities remain supported; standalone solver scope is unchanged while the
+additional scope choice is pending. See the [consolidation report](bmtp_refactor_consolidation.md)
+for failed intermediate checks and the matched slowdown investigation.
+
+The records below preserve earlier stage evidence and counts. They are historical,
+not the final source size or runtime comparison. The [reference comparison](bmtp_refactor_reference_comparison.md)
+explains why wholesale emptycore replacement and the tested cubic reversal port
+were rejected; neither is an outstanding unverified port.
 
 ## Resumed work: source-derived geometry reuse
 

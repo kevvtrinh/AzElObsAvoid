@@ -72,9 +72,9 @@ function testPrescribedTurnPreservesMotionAndDefaultCompatibility(testCase)
     direct = bmtpEngine.createDirectMotion(initial, goal, limits, options);
     knots_s = [7; 20; 47];
     offsets_units = [0; 3; 0];
-    [~, ~, baseVelocity_units_s] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knots_s(2));
+    [~, ~, baseVelocity_units_s] = motionCore.evaluatePolynomial(direct.Polynomial, knots_s(2));
     candidate = bmtpEngine.createOffsetSplineMotion(direct, knots_s, offsets_units, 2, initial, options.SampleTime_s, 'turnRegression', [NaN; -baseVelocity_units_s(2); NaN]);
-    [~, ~, velocity_units_s] = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knots_s(2));
+    [~, ~, velocity_units_s] = motionCore.evaluatePolynomial(candidate.Polynomial, knots_s(2));
     validation = obstacleAvoidance.validateTrajectory(candidate, [], initial, goal, limits, options);
     verifyTrue(testCase, validation.Passed, validation.Message);
     verifyEqual(testCase, velocity_units_s(2), 0, 'AbsTol', 1e-12);

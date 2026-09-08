@@ -311,35 +311,10 @@ function [polynomial, controlAcceleration] = createPolynomial(initialState, term
         end
     end
 
-    positionPower     = zeros(segmentCount, dimensionCount, 6);
-    velocityPower     = zeros(segmentCount, dimensionCount, 5);
-    accelerationPower = zeros(segmentCount, dimensionCount, 4);
-    jerkPower         = zeros(segmentCount, dimensionCount, 3);
-    position          = initialState.position;
-    velocity          = initialState.velocity;
-    for segmentIndex = 1:segmentCount
-        duration            = segmentDuration(segmentIndex);
-        acceleration        = controlAcceleration(segmentIndex, :);
-        positionCoefficient = [position; velocity * duration; ...
-            acceleration * duration^2 / 2; zeros(3, dimensionCount)].';
-        velocityCoefficient = [velocity; acceleration * duration; ...
-            zeros(3, dimensionCount)].';
-        positionPower(segmentIndex, :, :) = positionCoefficient;
-        velocityPower(segmentIndex, :, :) = velocityCoefficient;
-        accelerationPower(segmentIndex, :, 1) = acceleration;
-        position = sum(positionCoefficient, 2).';
-        velocity = sum(velocityCoefficient, 2).';
-    end
-    polynomial = struct("SegmentCount", segmentCount, ...
-        "SegmentStartTime", segmentStartTime, ...
-        "SegmentDuration", segmentDuration, ...
-        "FinalTime", initialState.time + commonDuration, ...
-        "positionPower", positionPower, ...
-        "velocityPower", velocityPower, ...
-        "accelerationPower", accelerationPower, ...
-        "jerkPower", jerkPower, ...
-        "TerminalState", struct("position", position, "velocity", velocity, ...
-        "acceleration", terminalState.acceleration));
+    state = struct('time_s',initialState.time,'position_units',initialState.position, ...
+        'velocity_units_s',initialState.velocity,'acceleration_units_s2',zeros(1,dimensionCount));
+    polynomial = motionCore.createJerkPolynomial(state,switchTime,zeros(size(controlAcceleration)),controlAcceleration);
+    polynomial.TerminalState.acceleration_units_s2 = terminalState.acceleration;
 end
 
 function attempt = createAttempt(profile, solveTimer, reason)

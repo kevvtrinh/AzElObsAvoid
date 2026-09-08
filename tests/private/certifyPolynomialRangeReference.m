@@ -1,4 +1,4 @@
-function within = certifyPolynomialRange(powerCoefficient, lowerBound, upperBound, tolerance)
+function within = certifyPolynomialRangeReference(powerCoefficient, lowerBound, upperBound, tolerance)
 %% Section 0: Header & Readme
 % SYNTAX
 %   within = obstacleAvoidance.validation.certifyPolynomialRange( ...

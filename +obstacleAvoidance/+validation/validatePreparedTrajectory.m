@@ -30,7 +30,7 @@ end
 
 stateTolerance = max(10 * options.ConstraintTolerance, 1e-7);
 [initialStateMatched, terminalStateMatched, goalTimeSatisfied] = checkEndpointStates(time_s, position_units, velocity_units_s, acceleration_units_s2, historyIsFinite, timeIsFinite, initialState, goalState, options, stateTolerance);
-[continuousBounds, dynamics, polynomialChecks]                 = obstacleAvoidance.validation.validatePolynomialTrajectory(trajectory.Polynomial, time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3, initialState, goalState, limits, options, stateTolerance, @obstacleAvoidance.validation.certifyPolynomialRange);
+[continuousBounds, dynamics, polynomialChecks]                 = obstacleAvoidance.validation.validatePolynomialTrajectory(trajectory.Polynomial, time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3, initialState, goalState, limits, options, stateTolerance, @motionCore.checkPolynomialRange);
 
 %% Section 3: Certify Continuous Collision Freedom
 

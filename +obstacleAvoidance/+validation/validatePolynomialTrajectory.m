@@ -115,7 +115,7 @@ if segmentCount > 1
     previousSegmentIndex = (1:segmentCount - 1).';
     previousEndTime_s    = segmentStartTime_s(1:end - 1) + segmentDuration_s(1:end - 1);
     [~, previousPosition_units, previousVelocity_units_s, ...
-        previousAcceleration_units_s2] = bmtpEngine.evaluatePolynomial(polynomial, previousEndTime_s, previousSegmentIndex);
+        previousAcceleration_units_s2] = motionCore.evaluatePolynomial(polynomial, previousEndTime_s, previousSegmentIndex);
     nextInitialState = [reshape(powerArrays{1}(2:end, :, 1), [], 2), ...
         reshape(powerArrays{2}(2:end, :, 1), [], 2), reshape(powerArrays{3}(2:end, :, 1), [], 2)];
     previousFinalState = [previousPosition_units, previousVelocity_units_s, ...
@@ -134,7 +134,7 @@ expectedEndpointState = [initialState.position_units, ...
     goalPosition_units, goalState.velocity_units_s, goalState.acceleration_units_s2];
 checks.EndpointStatesMatched = max(abs([initialPolynomialState, terminalPolynomialState] - expectedEndpointState)) <= tolerance;
 [~, polynomialPosition_units, polynomialVelocity_units_s, ...
-    polynomialAcceleration_units_s2, polynomialJerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, time_s);
+    polynomialAcceleration_units_s2, polynomialJerk_units_s3] = motionCore.evaluatePolynomial(polynomial, time_s);
 historySizesMatch = isequal(size(position_units), size(polynomialPosition_units)) && isequal(size(velocity_units_s), size(polynomialVelocity_units_s)) && isequal(size(acceleration_units_s2), size(polynomialAcceleration_units_s2)) && isequal(size(jerk_units_s3), size(polynomialJerk_units_s3));
 if historySizesMatch
     checks.MaximumHistoryResidual = max(abs([ position_units - polynomialPosition_units, velocity_units_s - polynomialVelocity_units_s, acceleration_units_s2 - polynomialAcceleration_units_s2, jerk_units_s3 - polynomialJerk_units_s3]), [], "all");

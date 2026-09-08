@@ -82,7 +82,7 @@ function testProjectedBmtpDetourPassesMovingValidation(testCase)
     verifyLessThanOrEqual(testCase, max(candidate.position_units(:, 2)), 0.1, "The lower detour seed was unnecessarily smoothed over the obstacle.");
     verifyGreaterThan(testCase, max(vecnorm(candidate.velocity_units_s, 2, 2)), 0);
     interiorTime_s = initialState.time_s + seed.tau(2:end - 1) * candidate.TrajectoryDuration_s;
-    [~, ~, interiorVelocity_units_s] = bmtpEngine.evaluatePolynomial(candidate.Polynomial, interiorTime_s);
+    [~, ~, interiorVelocity_units_s] = motionCore.evaluatePolynomial(candidate.Polynomial, interiorTime_s);
     verifyGreaterThan(testCase, min(vecnorm(interiorVelocity_units_s, 2, 2)), 1e-3, "A multi-segment BMTP route was incorrectly forced to rest internally.");
 end
 

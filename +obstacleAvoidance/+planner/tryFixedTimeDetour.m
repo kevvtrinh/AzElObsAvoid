@@ -291,8 +291,8 @@ function [candidate, diagnostics] = refineOffsetTravel(candidate, direct,  diagn
     % Use nine evenly spaced times plus the original peak time as adjustment
     % points (knots). Their offsets describe how far to depart from the direct move.
     knotTime_s            = unique([linspace(initialState.time_s, direct.ArrivalTime_s, 9).';  reports(selectedReport).PeakTime_s]);
-    [~, basePosition_units] = bmtpEngine.evaluatePolynomial(direct.Polynomial, knotTime_s);
-    [~, position_units]     = bmtpEngine.evaluatePolynomial(candidate.Polynomial, knotTime_s);
+    [~, basePosition_units] = motionCore.evaluatePolynomial(direct.Polynomial, knotTime_s);
+    [~, position_units]     = motionCore.evaluatePolynomial(candidate.Polynomial, knotTime_s);
     offset_units            = position_units(:, axisIndex) - basePosition_units(:, axisIndex);
     % The detour must still start and end at the requested positions.
     offset_units([1 end]) = 0;
@@ -372,7 +372,7 @@ function candidate = createExcursion(directCandidate, amplitude_units, axisIndex
     knotVelocity_units_s = NaN(3, 1);
     if constrainPeakVelocity
         % Cancel the base velocity so the complete axis turns at the waypoint.
-        [~, ~, baseVelocity_units_s] = bmtpEngine.evaluatePolynomial(directCandidate.Polynomial, peakTime_s);
+        [~, ~, baseVelocity_units_s] = motionCore.evaluatePolynomial(directCandidate.Polynomial, peakTime_s);
         knotVelocity_units_s(2) = -baseVelocity_units_s(axisIndex);
     end
     candidate = bmtpEngine.createOffsetSplineMotion(directCandidate, [startTime_s; peakTime_s; endTime_s], [0; amplitude_units; 0], axisIndex, initialState, options.SampleTime_s, "fixedClockLateralExcursion", knotVelocity_units_s);

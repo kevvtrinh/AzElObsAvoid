@@ -1,5 +1,24 @@
 # Planner decisions
 
+## Verified public API and shared numerical core — 2026-09-08
+
+The full refactor now exposes `planner(...)`, preserves raw diagnostic evidence,
+and removes duplicate event exporters, timing laws, polynomial evaluators, range
+checkers, and waypoint format conversion. Final MATLAB verification passes 222
+tests and 60 identical-request quality comparisons. Matched case medians sum to
+40.493 s before and 31.710 s now (21.7% less); individual results range from 6.64x
+for slalom to effectively unchanged opposing U. These timings exclude example
+setup and interception search. They do not establish a universal speedup.
+
+Production has 111 files and 15,088 physical lines, including 10,949 executable
+lines. This is 440 fewer physical lines than baseline, but 433 more executable
+lines. The deeper shared-core pass removes 282 executable lines from the preceding
+API checkpoint. Broader and standalone solver capabilities remain retained.
+The physical size gate passes; a smaller executable core would require further
+replacement or the separately raised scope decision. Read [final evidence and
+limitations](docs/bmtp_refactor_results.md) before interpreting historical sections
+below as current counts or current performance.
+
 ## Bounded visibility — 2026-09-08
 
 The exact existing predicate now bounds temporary matrices to 65,536

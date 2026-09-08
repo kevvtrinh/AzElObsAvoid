@@ -143,11 +143,11 @@ function testRequestedPolynomialOutputsMatchFullEvaluation(testCase)
     % Exercise each times covered by this regression.
     for times = {result.time_s, zeros(0, 1), NaN}
         t = times{1};
-        [allTime, p, v, a, j]           = bmtpEngine.evaluatePolynomial(polynomial, t);
-        [twoTime, twoP]                 = bmtpEngine.evaluatePolynomial(polynomial, t);
-        [threeTime, threeP, threeV]     = bmtpEngine.evaluatePolynomial(polynomial, t);
-        [fourTime, fourP, fourV, fourA] = bmtpEngine.evaluatePolynomial(polynomial, t);
-        verifyEqual(testCase, bmtpEngine.evaluatePolynomial(polynomial, t), allTime);
+        [allTime, p, v, a, j]           = motionCore.evaluatePolynomial(polynomial, t);
+        [twoTime, twoP]                 = motionCore.evaluatePolynomial(polynomial, t);
+        [threeTime, threeP, threeV]     = motionCore.evaluatePolynomial(polynomial, t);
+        [fourTime, fourP, fourV, fourA] = motionCore.evaluatePolynomial(polynomial, t);
+        verifyEqual(testCase, motionCore.evaluatePolynomial(polynomial, t), allTime);
         verifyEqual(testCase, {twoTime, twoP}, {allTime, p});
         verifyEqual(testCase, {threeTime, threeP, threeV}, {allTime, p, v});
         verifyEqual(testCase, {fourTime, fourP, fourV, fourA}, {allTime, p, v, a});

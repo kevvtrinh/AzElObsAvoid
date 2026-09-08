@@ -88,43 +88,10 @@ if isstruct(relativeBreak_s)
     finalTime_s       = polynomial.FinalTime_s;
     terminalState     = polynomial.TerminalState;
 else
-    relativeBreak_s    = double(relativeBreak_s(:));
-    segmentDuration_s  = diff(relativeBreak_s);
-    segmentJerk_units_s3 = double(segmentJerk_units_s3);
-    segmentCount       = numel(segmentDuration_s);
-    partitionValid     = relativeBreak_s(1) == 0 && all(segmentDuration_s > 0) && isequal(size(segmentJerk_units_s3), [segmentCount, dimensionCount]);
-    if ~partitionValid
-        error("createMotionRecord:InvalidEventWord", "Breaks must increase from zero and jerk must be N-by-D.");
-    end
-    positionPower_units        = zeros(segmentCount, dimensionCount, 4);
-    velocityPower_units_s      = zeros(segmentCount, dimensionCount, 3);
-    accelerationPower_units_s2 = zeros(segmentCount, dimensionCount, 2);
-    position_units             = initialState.position_units;
-    velocity_units_s           = initialState.velocity_units_s;
-    acceleration_units_s2      = initialState.acceleration_units_s2;
-    for segmentIndex = 1:segmentCount
-        step_s      = segmentDuration_s(segmentIndex);
-        jerk_units_s3 = segmentJerk_units_s3(segmentIndex, :);
-        [positionPower_units(segmentIndex, :, :), ...
-            velocityPower_units_s(segmentIndex, :, :), accelerationPower_units_s2(segmentIndex, :, :)] = bmtpEngine.createConstantJerkPowerCoefficients(position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3, step_s);
-        position_units        = position_units + velocity_units_s * step_s + acceleration_units_s2 * step_s ^ 2 / 2 + jerk_units_s3 * step_s ^ 3 / 6;
-        velocity_units_s      = velocity_units_s + acceleration_units_s2 * step_s + jerk_units_s3 * step_s ^ 2 / 2;
-        acceleration_units_s2 = acceleration_units_s2 + jerk_units_s3 * step_s;
-    end
-    terminalState = struct("position_units", position_units, ...
-        "velocity_units_s", velocity_units_s, ...
-        "acceleration_units_s2", acceleration_units_s2);
-    initialTime_s = initialState.time_s;
-    finalTime_s   = initialTime_s + relativeBreak_s(end);
-    polynomial    = struct("Degree", 3, "SegmentCount", segmentCount, ...
-        "SegmentStartTime_s", initialTime_s + relativeBreak_s(1:end - 1), ...
-        "SegmentDuration_s", segmentDuration_s, ...
-        "SegmentBreakTau", relativeBreak_s / relativeBreak_s(end), ...
-        "FinalTime_s", finalTime_s, "positionPower_units", positionPower_units, ...
-        "velocityPower_units_s", velocityPower_units_s, ...
-        "accelerationPower_units_s2", accelerationPower_units_s2, ...
-        "jerkPower_units_s3", reshape(segmentJerk_units_s3, ...
-        segmentCount, dimensionCount, 1), "TerminalState", terminalState);
+    [polynomial, terminalState] = motionCore.createJerkPolynomial(initialState, relativeBreak_s, segmentJerk_units_s3);
+    segmentCount = polynomial.SegmentCount;
+    segmentDuration_s = polynomial.SegmentDuration_s;
+    finalTime_s = polynomial.FinalTime_s;
 end
 
 %% Section 3: Sample And Update Shared Quality Fields
@@ -133,7 +100,7 @@ initialTime_s = initialState.time_s;
 sampleTime_s  = (initialTime_s:sampleStep_s:finalTime_s).';
 sampleTime_s  = unique([sampleTime_s; polynomial.SegmentStartTime_s; finalTime_s]);
 [sampleTime_s, position_units, velocity_units_s, acceleration_units_s2, ...
-    jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, sampleTime_s);
+    jerk_units_s3] = motionCore.evaluatePolynomial(polynomial, sampleTime_s);
 candidate.ArrivalTime_s        = finalTime_s;
 candidate.TrajectoryDuration_s = finalTime_s - initialTime_s;
 candidate.time_s               = sampleTime_s;

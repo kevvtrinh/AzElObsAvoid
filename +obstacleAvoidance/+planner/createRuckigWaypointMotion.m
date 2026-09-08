@@ -118,8 +118,7 @@ end
 
 %% Section 3: Assemble The Exact Composite Motion
 
-enginePolynomial = combinePolynomials(polynomialParts);
-polynomial       = convertPolynomial(enginePolynomial, initialState.time_s);
+polynomial = combinePolynomials(polynomialParts);
 candidate        = bmtpEngine.createMotionRecord(candidate, initialState, polynomial, [], options.SampleTime_s, seed.Source);
 [candidate.Success, candidate.OptimizerFeasible] = deal(true);
 candidate.Message                    = "Exact Ruckig state-to-state route motion was constructed.";
@@ -138,38 +137,17 @@ function combined = combinePolynomials(parts)
     combined = parts{1};
     for partIndex = 2:numel(parts)
         part = parts{partIndex};
-        combined.SegmentStartTime = [ ...
-            combined.SegmentStartTime; part.SegmentStartTime];
-        combined.SegmentDuration = [ ...
-            combined.SegmentDuration; part.SegmentDuration];
-        combined.positionPower     = cat(1, combined.positionPower, part.positionPower);
-        combined.velocityPower     = cat(1, combined.velocityPower, part.velocityPower);
-        combined.accelerationPower = cat(1, combined.accelerationPower, part.accelerationPower);
-        combined.jerkPower         = cat(1, combined.jerkPower, part.jerkPower);
+        combined.SegmentStartTime_s = [ ...
+            combined.SegmentStartTime_s; part.SegmentStartTime_s];
+        combined.SegmentDuration_s = [ ...
+            combined.SegmentDuration_s; part.SegmentDuration_s];
+        combined.positionPower_units     = cat(1, combined.positionPower_units, part.positionPower_units);
+        combined.velocityPower_units_s     = cat(1, combined.velocityPower_units_s, part.velocityPower_units_s);
+        combined.accelerationPower_units_s2 = cat(1, combined.accelerationPower_units_s2, part.accelerationPower_units_s2);
+        combined.jerkPower_units_s3         = cat(1, combined.jerkPower_units_s3, part.jerkPower_units_s3);
         combined.SegmentCount      = combined.SegmentCount + part.SegmentCount;
-        combined.FinalTime         = part.FinalTime;
+        combined.FinalTime_s       = part.FinalTime_s;
         combined.TerminalState     = part.TerminalState;
     end
-end
-
-function polynomial = convertPolynomial(enginePolynomial, initialTime_s)
-    % Convert engine field names to the planner's polynomial format.
-    terminalState   = enginePolynomial.TerminalState;
-    duration_s      = enginePolynomial.FinalTime - initialTime_s;
-    segmentBreakTau = [enginePolynomial.SegmentStartTime; ...
-        enginePolynomial.FinalTime] - initialTime_s;
-    segmentBreakTau = segmentBreakTau / duration_s;
-    polynomial      = struct("Degree", size(enginePolynomial.positionPower, 3) - 1, ...
-        "SegmentCount", enginePolynomial.SegmentCount, ...
-        "SegmentStartTime_s", enginePolynomial.SegmentStartTime, ...
-        "SegmentDuration_s", enginePolynomial.SegmentDuration, ...
-        "SegmentBreakTau", segmentBreakTau, ...
-        "FinalTime_s", enginePolynomial.FinalTime, ...
-        "positionPower_units", enginePolynomial.positionPower, ...
-        "velocityPower_units_s", enginePolynomial.velocityPower, ...
-        "accelerationPower_units_s2", enginePolynomial.accelerationPower, ...
-        "jerkPower_units_s3", enginePolynomial.jerkPower, ...
-        "TerminalState", struct("position_units", terminalState.position, ...
-        "velocity_units_s", terminalState.velocity, ...
-        "acceleration_units_s2", terminalState.acceleration));
+    combined.SegmentBreakTau = ([combined.SegmentStartTime_s; combined.FinalTime_s] - combined.SegmentStartTime_s(1)) / (combined.FinalTime_s - combined.SegmentStartTime_s(1));
 end

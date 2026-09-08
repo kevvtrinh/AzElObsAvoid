@@ -1,0 +1,77 @@
+function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = evaluatePolynomial(polynomial, time_s, segmentIndex)
+%% Section 0: Header & Readme
+% SYNTAX
+%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
+%       jerk_units_s3] = motionCore.evaluatePolynomial(polynomial, time_s)
+%   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
+%       jerk_units_s3] = motionCore.evaluatePolynomial( ...
+%       polynomial, time_s, segmentIndex)
+% PURPOSE
+%   - Evaluate shared ascending-power segment records at absolute times.
+% INPUTS
+%   - polynomial (scalar normalized trajectory polynomial struct)
+%       Coefficient arrays use N-by-D-by-P shape and ascending powers.
+%   - time_s (numeric vector)
+%       Absolute evaluation times. The output uses a numeric column.
+%   - segmentIndex (numeric scalar or vector, optional; default [])
+%       Select an exact segment for each time. Empty values select segments
+%       from polynomial start-time records. A scalar applies to all times.
+% OUTPUTS
+%   - time_s (N-by-1 numeric column)
+%       Normalized requested times.
+%   - position_units through jerk_units_s3 (N-by-D numeric arrays)
+%       Evaluated motion histories for every modeled coordinate.
+% UNITS
+%   - Position is coordinate units; time is seconds; derivatives use units/s powers.
+
+%% Section 1: Select Polynomial Segments
+
+time_s              = double(time_s(:));
+sampleCount         = numel(time_s);
+dimensionCount      = size(polynomial.positionPower_units, 2);
+position_units        = NaN(sampleCount, dimensionCount);
+velocity_units_s      = position_units;
+acceleration_units_s2 = position_units;
+jerk_units_s3         = position_units;
+if nargout < 2 || isempty(time_s) || any(~isfinite(time_s))
+    return;
+end
+if nargin < 3 || isempty(segmentIndex)
+    segmentStarts_s = double(polynomial.SegmentStartTime_s(:));
+    segmentIndex    = discretize(time_s, [-Inf; segmentStarts_s(2:end); Inf]);
+else
+    segmentIndex = double(segmentIndex(:));
+    if isscalar(segmentIndex)
+        segmentIndex = repmat(segmentIndex, sampleCount, 1);
+    end
+end
+
+%% Section 2: Evaluate Ascending-Power Records
+
+if isscalar(polynomial.SegmentDuration_s)
+    selectedDuration_s = polynomial.SegmentDuration_s;
+else
+    selectedDuration_s = polynomial.SegmentDuration_s(segmentIndex);
+end
+localTau     = (time_s - polynomial.SegmentStartTime_s(segmentIndex)) ./ selectedDuration_s;
+localTau     = min(1, max(0, localTau));
+position_units = evaluateRecords(polynomial.positionPower_units, segmentIndex, localTau);
+if nargout >= 3
+    velocity_units_s = evaluateRecords(polynomial.velocityPower_units_s, segmentIndex, localTau);
+end
+if nargout >= 4
+    acceleration_units_s2 = evaluateRecords(polynomial.accelerationPower_units_s2, segmentIndex, localTau);
+end
+if nargout >= 5
+    jerk_units_s3 = evaluateRecords(polynomial.jerkPower_units_s3, segmentIndex, localTau);
+end
+end
+
+%% Section 3: Local Functions
+
+function value = evaluateRecords(coefficientArray, segmentIndex, localTau)
+    % Evaluate the selected polynomial segments in local time.
+    coefficientCount = size(coefficientArray, 3);
+    power            = reshape(localTau .^ (0:coefficientCount - 1), [], 1, coefficientCount);
+    value            = sum(coefficientArray(segmentIndex, :, :) .* power, 3);
+end

@@ -61,7 +61,7 @@ function testInteriorWaypointsAreNotForcedToRest(testCase)
     resultDiagnosis = testCase.TestData.ResultDiagnosis;
     seed            = resultDiagnosis.Routes(resultDiagnosis.SelectedAttemptIndex);
     interiorTime_s  = result.time_s(1) + seed.tau(2:end - 1) * (result.time_s(end) - result.time_s(1));
-    [~, ~, velocity_units_s] = bmtpEngine.evaluatePolynomial(result.Polynomial, interiorTime_s);
+    [~, ~, velocity_units_s] = motionCore.evaluatePolynomial(result.Polynomial, interiorTime_s);
     verifyGreaterThan(testCase, min(vecnorm(velocity_units_s, 2, 2)), 1e-3);
     verifyTrue(testCase, testCase.TestData.TimedCandidate.Success, testCase.TestData.TimedCandidate.Message);
     verifyTrue(testCase, testCase.TestData.TimedValidation.Passed, testCase.TestData.TimedValidation.Message);

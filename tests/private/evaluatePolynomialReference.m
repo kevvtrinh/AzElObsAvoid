@@ -1,10 +1,10 @@
-function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = evaluatePolynomial(polynomial, time_s, segmentIndex)
+function [time_s, position_units, velocity_units_s, acceleration_units_s2, jerk_units_s3] = evaluatePolynomialReference(polynomial, time_s, segmentIndex)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
-%       jerk_units_s3] = bmtpEngine.evaluatePolynomial(polynomial, time_s)
+%       jerk_units_s3] = motionCore.evaluatePolynomial(polynomial, time_s)
 %   [time_s, position_units, velocity_units_s, acceleration_units_s2, ...
-%       jerk_units_s3] = bmtpEngine.evaluatePolynomial( ...
+%       jerk_units_s3] = motionCore.evaluatePolynomial( ...
 %       polynomial, time_s, segmentIndex)
 % PURPOSE
 %   - Evaluate shared ascending-power segment records at absolute times.

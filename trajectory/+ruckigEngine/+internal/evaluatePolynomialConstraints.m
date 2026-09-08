@@ -31,11 +31,11 @@ if ~isempty(pathConstraints.Tau)
 end
 terminal = polynomial.TerminalState;
 equality = [ ...
-    terminal.position - terminalState.position, ...
-    terminal.velocity - terminalState.velocity].';
+    terminal.position_units - terminalState.position, ...
+    terminal.velocity_units_s - terminalState.velocity].';
 if limits.ControlOrder == 3
     equality = [equality; ...
-        (terminal.acceleration - terminalState.acceleration).'];
+        (terminal.acceleration_units_s2 - terminalState.acceleration).'];
 end
 end
 
@@ -44,15 +44,15 @@ end
 function inequality = continuousBoundConstraints(polynomial, limits)
     % Check segment extrema; control points are not curve samples.
     coefficientFields = [ ...
-        "positionPower", "velocityPower", ...
-        "accelerationPower", "jerkPower"];
+        "positionPower_units", "velocityPower_units_s", ...
+        "accelerationPower_units_s2", "jerkPower_units_s3"];
     lowerFields = [ ...
         "positionLower", "velocityLower", ...
         "accelerationLower", "jerkLower"];
     upperFields = [ ...
         "positionUpper", "velocityUpper", ...
         "accelerationUpper", "jerkUpper"];
-    dimensionCount = size(polynomial.positionPower, 2);
+    dimensionCount = size(polynomial.positionPower_units, 2);
     inequality     = zeros(0, 1);
     % Evaluate each coordinate axis and combine its limiting result.
     for dimensionIndex = 1:dimensionCount
@@ -64,7 +64,7 @@ function inequality = continuousBoundConstraints(polynomial, limits)
             lowerBound       = lowerBounds(dimensionIndex);
             for segmentIndex = 1:polynomial.SegmentCount
                 powerCoefficient = reshape(coefficientArray(segmentIndex, dimensionIndex, :), [], 1);
-                [~, minimumValue, maximumValue] = ruckigEngine.internal.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, 0);
+                [~, minimumValue, maximumValue] = motionCore.checkPolynomialRange(powerCoefficient, lowerBound, upperBound, 0);
                 if isfinite(upperBound)
                     inequality(end + 1, 1) = ...
                         maximumValue - upperBound; %#ok<AGROW>
@@ -80,7 +80,7 @@ end
 
 function inequality = affinePathConstraints(polynomial, pathConstraints)
     % Restrict each requested interval and certify its projected Bernstein hull.
-    coefficientCount = size(polynomial.positionPower, 3);
+    coefficientCount = size(polynomial.positionPower_units, 3);
     segmentCount     = polynomial.SegmentCount;
     inequality       = zeros(0, 1);
     for constraintIndex = 1:numel(pathConstraints.Tau)
@@ -95,10 +95,10 @@ function inequality = affinePathConstraints(polynomial, pathConstraints)
             localStart      = min(1, max(0, scaledStart - segmentIndex + 1));
             localEnd        = min(1, max(0, scaledEnd - segmentIndex + 1));
             restriction     = createSubintervalPowerMap(localStart, localEnd, coefficientCount);
-            segmentPower    = reshape(polynomial.positionPower(segmentIndex, :, :), [], coefficientCount);
+            segmentPower    = reshape(polynomial.positionPower_units(segmentIndex, :, :), [], coefficientCount);
             projectedPower  = pathConstraints.Normal(constraintIndex, :) * segmentPower;
             restrictedPower = restriction * projectedPower.';
-            [~, minimumValue] = ruckigEngine.internal.checkPolynomialRange(restrictedPower, pathConstraints.LowerBound(constraintIndex), Inf, 0);
+            [~, minimumValue] = motionCore.checkPolynomialRange(restrictedPower, pathConstraints.LowerBound(constraintIndex), Inf, 0);
             inequality(end + 1, 1) = ...
                 pathConstraints.LowerBound(constraintIndex) - ...
                 minimumValue; %#ok<AGROW>

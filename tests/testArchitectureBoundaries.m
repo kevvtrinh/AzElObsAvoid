@@ -81,7 +81,7 @@ function testTrajectoryRootContainsOnlyEnginePackages(testCase)
     verifyEmpty(testCase, actualRootSources);
     packageRecords = dir(fullfile(trajectoryRoot, "+*"));
     actualNames    = sort(string({packageRecords([packageRecords.isdir]).name}));
-    verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine"]));
+    verifyEqual(testCase, actualNames, sort(["+bmtpEngine", "+ruckigEngine", "+motionCore"]));
 
 end
 
@@ -143,4 +143,13 @@ function testScenarioSpecificOrthogonalPlannersRemainAbsent(testCase)
     plannerText = lower(string(fileread(fullfile(testCase.TestData.RepositoryRoot, "planner.m"))));
     verifyFalse(testCase, contains(plannerText, "orthogonal"));
     verifyFalse(testCase, contains(plannerText, "cavity"));
+end
+
+function testSharedMotionCoreHasNoPlannerOrSolverDependencies(testCase)
+    sources = dir(fullfile(testCase.TestData.TrajectoryRoot,'+motionCore','*.m'));
+    verifyNotEmpty(testCase,sources);
+    for k = 1:numel(sources)
+        source = fileread(fullfile(sources(k).folder,sources(k).name));
+        verifyEmpty(testCase,regexp(source,'obstacleAvoidance\.|bmtpEngine\.|ruckigEngine\.|coneprog\(|fmincon\(','once'));
+    end
 end

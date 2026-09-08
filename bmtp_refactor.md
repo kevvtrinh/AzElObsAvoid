@@ -1,5 +1,30 @@
 # BMTP refactor: speed up cleanup and remove displaced code
 
+## Implementation record — September 8, 2026
+
+The original checklist below is retained as the reviewed specification. Its dated
+implementation record is the [verified results report](docs/bmtp_refactor_results.md).
+
+| Stage | Retained outcome |
+| --- | --- |
+| 0 | Pinned physical-request comparisons, separate profiles, all geographic cases, and missing feature regressions. |
+| 1 | Bounded exact visibility, containment, and static plane verification, with independent prior references. |
+| 2 | Immutable static source preparation reused within a request; authoritative public validation rebuilds it. |
+| 3 | Existing exact direct law retained and shared; eligible analytic departure replaces repeated waiting trials. |
+| 4 | Eligible source-facet corridors compile constraints once; broader unsupported geometry retains its solver. |
+| 5 | Eligible limiting-axis clock avoids arrival search; cubic reversal replacement was evaluated and rejected for lack of measured speed benefit. |
+| 6 | Positive speed quadrature in eligible convex solves; adaptive final arc and ranking independent of display sampling. |
+| 7 | Single public planner, raw diagnostics, shared numerical core, and superseded implementations deleted. |
+
+Final verification is 222 passing tests and 60 passing frozen quality comparisons.
+The specified physical size gate passes at 15,088 lines versus 15,528. Executable
+lines are 10,949 versus 10,516: report that growth separately from physical shrinkage.
+The user's subsequent request for more aggressive production reduction prompted
+another 282 executable lines of deletion after API consolidation. Standalone solver
+scope remains unchanged while that additional scope choice is pending. Conditional
+formulations do not replace unsupported broader cases, and the original bounded
+search coverage is not promoted to a global-completeness claim.
+
 ## Objective
 
 Improve `bmtp-cleanup-codex` using the successful formulations and implementation techniques from `bmtp-emptycore`. Reduce computation and production code while preserving cleanup's supported technical capabilities.

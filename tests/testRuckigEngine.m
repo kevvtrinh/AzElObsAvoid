@@ -220,7 +220,7 @@ function testPolynomialEvaluationMatchesReturnedHistories(testCase)
     % Verify engine-owned reconstruction agrees at every published sample.
     [initialState, terminalState, limits] = restToRestFixture();
     result = ruckigEngine.solve(initialState, terminalState, limits, struct("SampleTime", 0.01));
-    [time, position, velocity, acceleration, jerk] = ruckigEngine.internal.evaluatePolynomial(result.Polynomial, result.time);
+    [time, position, velocity, acceleration, jerk] = motionCore.evaluatePolynomial(result.Polynomial, result.time);
     verifyEqual(testCase, time, result.time);
     verifyEqual(testCase, position, result.position, "AbsTol", 1e-12);
     verifyEqual(testCase, velocity, result.velocity, "AbsTol", 1e-12);

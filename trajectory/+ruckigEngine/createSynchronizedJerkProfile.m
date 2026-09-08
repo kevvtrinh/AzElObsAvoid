@@ -120,10 +120,9 @@ for dimensionIndex = 1:dimensionCount
     end
 end
 
-[polynomial, terminalPosition, terminalVelocity, terminalAcceleration] = createPolynomial(initialState, segmentStartTime, segmentDuration, controlJerk);
-polynomial.TerminalState = struct("position", terminalPosition, ...
-    "velocity", terminalVelocity, ...
-    "acceleration", terminalAcceleration);
+state = struct('time_s',initialState.time,'position_units',initialState.position, ...
+    'velocity_units_s',initialState.velocity,'acceleration_units_s2',initialState.acceleration);
+polynomial = motionCore.createJerkPolynomial(state,switchTime(:),controlJerk);
 
 %% Section 4: Assemble The Synchronized Profile
 
@@ -317,50 +316,6 @@ function switchTime = mergeSwitchTimes(switchTime, commonDuration)
     if switchTime(end) ~= commonDuration
         switchTime = [switchTime, commonDuration];
     end
-end
-
-function [polynomial, position, velocity, acceleration] = createPolynomial(initialState, segmentStartTime, segmentDuration, controlJerk)
-    % Combine all axis switch times into the shared polynomial format.
-    segmentCount      = numel(segmentDuration);
-    dimensionCount    = numel(initialState.position);
-    positionPower     = zeros(segmentCount, dimensionCount, 6);
-    velocityPower     = zeros(segmentCount, dimensionCount, 5);
-    accelerationPower = zeros(segmentCount, dimensionCount, 4);
-    jerkPower         = zeros(segmentCount, dimensionCount, 3);
-    position          = initialState.position;
-    velocity          = initialState.velocity;
-    acceleration      = initialState.acceleration;
-
-    for segmentIndex = 1:segmentCount
-        duration            = segmentDuration(segmentIndex);
-        jerk                = controlJerk(segmentIndex, :);
-        positionCoefficient = [ ...
-            position; velocity * duration; ...
-            0.5 * acceleration * duration^2; jerk * duration^3 / 6; ...
-            zeros(2, dimensionCount)].';
-        velocityCoefficient = [ ...
-            velocity; acceleration * duration; ...
-            0.5 * jerk * duration^2; zeros(2, dimensionCount)].';
-        accelerationCoefficient = [ ...
-            acceleration; jerk * duration; zeros(2, dimensionCount)].';
-        positionPower(segmentIndex, :, :) = positionCoefficient;
-        velocityPower(segmentIndex, :, :) = velocityCoefficient;
-        accelerationPower(segmentIndex, :, :) = accelerationCoefficient;
-        jerkPower(segmentIndex, :, :) = [jerk; zeros(2, dimensionCount)].';
-        position     = sum(positionCoefficient, 2).';
-        velocity     = sum(velocityCoefficient, 2).';
-        acceleration = sum(accelerationCoefficient, 2).';
-    end
-
-    polynomial = struct("SegmentCount", segmentCount, ...
-        "SegmentStartTime", segmentStartTime, ...
-        "SegmentDuration", segmentDuration, ...
-        "FinalTime", segmentStartTime(1) + sum(segmentDuration), ...
-        "positionPower", positionPower, ...
-        "velocityPower", velocityPower, ...
-        "accelerationPower", accelerationPower, ...
-        "jerkPower", jerkPower, ...
-        "TerminalState", struct());
 end
 
 function selectedProfiles = selectSpatiallyShortestProfiles(selectedProfiles, candidateSets, commonDuration)

@@ -4,8 +4,9 @@ This branch provides one public obstacle-avoidance planner for trajectories in
 any two-dimensional x/y coordinate system. Use one consistent coordinate unit
 for both axes; the planner does not convert units. The `obstacleAvoidance` namespace owns inputs,
 obstacles, geometry, topology search, candidate selection, validation, and
-plotting. Dimension-neutral motion generation lives independently under
-`trajectory/+bmtpEngine`.
+plotting. Dimension-neutral motion generation lives under `trajectory`.
+`+motionCore` owns the shared exact switching law, event integration,
+polynomial evaluation, and scalar range checking used by both motion engines.
 
 A successful result is accepted only after canonical independent validation.
 The planner converts static protected geometry to numeric convex exclusion
@@ -406,7 +407,13 @@ trajectory/                         independent dimension-neutral motion
     |-- createMotionRecord.m        event-word integration and sampling
     |-- createOffsetSplineMotion.m  fixed-clock quintic composition
     |-- maximumRestToRestDistance.m exact scalar reachability bound
-    `-- evaluatePolynomial.m        shared polynomial evaluator
+    `-- measurePolynomialLength.m   adaptive executable arc length
+
+trajectory/+motionCore/             shared numerical motion representation
+|-- createRestToRestLaw.m            one exact scalar switching law
+|-- createJerkPolynomial.m           one event-word exporter for both engines
+|-- evaluatePolynomial.m            one polynomial evaluator
+`-- checkPolynomialRange.m          independent scalar range certification
 
 examples/                           maintained deterministic scenarios
 sandbox/                            persistent manual scene builder
@@ -416,6 +423,15 @@ benchmark.csv                       chronological measured example records
 branch_assessment.md                strengths, weaknesses, and limitations
 verification.md                     commands and historical evidence
 ```
+
+Both engines now return polynomial fields with physical-unit suffixes, including
+`SegmentStartTime_s`, `SegmentDuration_s`, `positionPower_units`, and derivative
+coefficient fields. The waypoint adapter concatenates these records directly;
+it no longer translates a second polynomial schema. General switching equations
+remain in `+ruckigEngine`, while numerical region optimization remains in
+`+bmtpEngine`. The public obstacle validator still independently reconstructs
+geometry and verifies continuous motion; sharing scalar numerical routines does
+not allow a solver's success flag or cached geometry to establish acceptance.
 
 Add the repository root and the trajectory package parent:
 

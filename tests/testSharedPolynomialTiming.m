@@ -53,7 +53,7 @@ function testUnequalDurationsPreserveCubicDerivatives(testCase)
     verifyEqual(testCase, polynomial.SegmentStartTime_s, 7 + starts);
     verifyEqual(testCase, polynomial.FinalTime_s, 7 + sum(durations));
     time = linspace(0, sum(durations) - 1e-5, 31).';
-    [~, position, velocity, acceleration, jerk] = bmtpEngine.evaluatePolynomial(polynomial, 7 + time);
+    [~, position, velocity, acceleration, jerk] = motionCore.evaluatePolynomial(polynomial, 7 + time);
     verifyEqual(testCase, position, [time.^3 time.^2], 'AbsTol', 1e-12);
     verifyEqual(testCase, velocity, [3*time.^2 2*time], 'AbsTol', 1e-12);
     verifyEqual(testCase, acceleration, [6*time 2+zeros(size(time))], 'AbsTol', 1e-12);
@@ -85,7 +85,7 @@ function testSharedRecordReplacesTheGeneralSolverExporter(testCase)
         verifyLessThanOrEqual(testCase, max(min(timeDifferences, [], 1)), timeTolerance);
         verifyLessThanOrEqual(testCase, max(min(timeDifferences, [], 2)), timeTolerance);
         verifyTrue(testCase, all(ismember(expected.Polynomial.SegmentStartTime_s, actual.time_s)));
-        [~, position, velocity, acceleration, jerk] = bmtpEngine.evaluatePolynomial(expected.Polynomial, actual.time_s);
+        [~, position, velocity, acceleration, jerk] = motionCore.evaluatePolynomial(expected.Polynomial, actual.time_s);
         verifyEqual(testCase, actual.position_units, position);
         verifyEqual(testCase, actual.velocity_units_s, velocity);
         verifyEqual(testCase, actual.acceleration_units_s2, acceleration);

@@ -28,7 +28,7 @@ profile    = struct();
 [hasDirectProgress, progressInitialState, progressTerminalState, ...
     progressLimits, displacement] = createDirectProgressProblem(initialState, terminalState, limits, options);
 if hasDirectProgress
-    progressProfile = ruckigEngine.createRestToRestJerkProfile(progressInitialState, progressTerminalState, progressLimits, requestedFinalTime);
+    progressProfile = createRestToRestProfile(progressInitialState, progressTerminalState, progressLimits, requestedFinalTime);
     if progressProfile.Success
         profile = liftDirectProfile(progressProfile, displacement, initialState);
     end
@@ -105,16 +105,16 @@ function profile = liftDirectProfile(progressProfile, displacement, initialState
     dimensionCount    = numel(displacement);
     displacementScale = reshape(displacement, 1, dimensionCount, 1);
     polynomial        = scalarPolynomial;
-    polynomial.positionPower = scalarPolynomial.positionPower .* displacementScale;
-    polynomial.positionPower(:, :, 1) = polynomial.positionPower(:, :, 1) + initialState.position;
-    polynomial.velocityPower     = scalarPolynomial.velocityPower .* displacementScale;
-    polynomial.accelerationPower = scalarPolynomial.accelerationPower .* displacementScale;
-    polynomial.jerkPower         = scalarPolynomial.jerkPower .* displacementScale;
+    polynomial.positionPower_units = scalarPolynomial.positionPower_units .* displacementScale;
+    polynomial.positionPower_units(:, :, 1) = polynomial.positionPower_units(:, :, 1) + initialState.position;
+    polynomial.velocityPower_units_s     = scalarPolynomial.velocityPower_units_s .* displacementScale;
+    polynomial.accelerationPower_units_s2 = scalarPolynomial.accelerationPower_units_s2 .* displacementScale;
+    polynomial.jerkPower_units_s3         = scalarPolynomial.jerkPower_units_s3 .* displacementScale;
     scalarTerminal = scalarPolynomial.TerminalState;
-    polynomial.TerminalState = struct("position", initialState.position + ...
-        scalarTerminal.position * displacement, ...
-        "velocity", scalarTerminal.velocity * displacement, ...
-        "acceleration", scalarTerminal.acceleration * displacement);
+    polynomial.TerminalState = struct("position_units", initialState.position + ...
+        scalarTerminal.position_units * displacement, ...
+        "velocity_units_s", scalarTerminal.velocity_units_s * displacement, ...
+        "acceleration_units_s2", scalarTerminal.acceleration_units_s2 * displacement);
     profile = progressProfile;
     profile.Polynomial            = polynomial;
     profile.ControlJerk           = progressProfile.ControlJerk * displacement;
@@ -138,5 +138,56 @@ function [reason, message] = classifyProfileFailure(profile, initialState, optio
     if isfinite(minimumFinalTime) && requestedFinalTime < minimumFinalTime
         reason  = "fixedTimeBelowMinimum";
         message = sprintf("Requested final time %.12g is below the certified minimum %.12g.", requestedFinalTime, minimumFinalTime);
+    end
+end
+
+function profile = createRestToRestProfile(initialState, terminalState, limits, requestedFinalTime)
+    % Preserve Ruckig timing reserves while sharing the analytic law and exporter.
+    velocityLimit     = limits.maximumVelocity;
+    accelerationLimit = limits.maximumAcceleration;
+    jerkLimit         = limits.maximumJerk;
+    [phaseDuration, phaseJerk] = motionCore.createRestToRestLaw(1, velocityLimit, accelerationLimit, jerkLimit);
+
+    % Add roundoff slack so analytic peaks remain within their limits.
+    guardScale    = 1 + 64 * eps;
+    phaseDuration = guardScale * phaseDuration.';
+    phaseJerk = phaseJerk.' / guardScale^3;
+    retainedPhase    = phaseDuration > 64 * eps;
+    phaseDuration    = phaseDuration(retainedPhase);
+    phaseJerk        = phaseJerk(retainedPhase);
+    minimumFinalTime = initialState.time + sum(phaseDuration);
+
+    profile = struct('Success',false,'Message',"No jerk-switching profile was created.", ...
+        'Polynomial',struct(),'ControlJerk',zeros(0,1),'FinalTime',NaN, ...
+        'MinimumFinalTime',minimumFinalTime,'IntegratedSquaredJerk',Inf);
+    if ~isempty(requestedFinalTime)
+        requestedDuration = requestedFinalTime - initialState.time;
+        minimumDuration   = minimumFinalTime - initialState.time;
+        timeTolerance     = 256 * eps(max([1, requestedDuration, minimumDuration]));
+        if requestedDuration < minimumDuration - timeTolerance
+            profile.Message = "The requested final time is below the jerk-switching minimum.";
+            return;
+        end
+        stretch       = max(1, requestedDuration / minimumDuration);
+        phaseDuration = stretch * phaseDuration;
+        phaseJerk     = phaseJerk / stretch^3;
+    end
+    state = struct('time_s',initialState.time,'position_units',initialState.position, ...
+        'velocity_units_s',initialState.velocity,'acceleration_units_s2',initialState.acceleration);
+    [polynomial, terminal] = motionCore.createJerkPolynomial(state,[0;cumsum(phaseDuration)],phaseJerk);
+    position = terminal.position_units;
+    velocity = terminal.velocity_units_s;
+    acceleration = terminal.acceleration_units_s2;
+    finalTime = polynomial.FinalTime_s;
+    endpointTolerance = 256 * eps(max([1, abs(position)]));
+    endpointError     = max(abs([ position - terminalState.position, velocity - terminalState.velocity, acceleration - terminalState.acceleration]));
+    profile.Success               = endpointError <= endpointTolerance;
+    profile.Message               = "The exact rest-to-rest jerk-switching profile was created.";
+    profile.Polynomial            = polynomial;
+    profile.ControlJerk           = phaseJerk;
+    profile.FinalTime             = finalTime;
+    profile.IntegratedSquaredJerk = sum(phaseJerk .^ 2 .* phaseDuration);
+    if ~profile.Success
+        profile.Message = sprintf("Jerk-switching endpoint error %.9g exceeds tolerance %.9g.", endpointError, endpointTolerance);
     end
 end
