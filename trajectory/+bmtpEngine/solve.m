@@ -24,7 +24,7 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%   - stage (optional internal policy): complete, kinematicBound, or route.
+%   - stage (optional internal policy): complete, kinematicBound, delayedChord, or route.
 %       Allows the planner to defer spatial search until the bound is tested.
 %
 % OUTPUTS
@@ -43,7 +43,7 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 
 totalTimer = tic;
 if nargin<8, stage = "complete"; end
-assert(any(stage==["complete","kinematicBound","route"]),'bmtpEngine:InvalidStage','Unknown internal solve stage.');
+assert(any(stage==["complete","kinematicBound","delayedChord","route"]),'bmtpEngine:InvalidStage','Unknown internal solve stage.');
 clockGuide = struct();
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
@@ -81,7 +81,18 @@ preparedMotion = struct('Success',false);
 certificate = struct('Passed',false);
 analyticIdentifier = "minimumJerkQuintic";
 analyticRepresentation = "analyticFixedTime";
-if stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
+if stage=="delayedChord"
+    [controls_units,durations_s,powers_units,schedule] = bmtpEngine.createDelayedChord(request);
+    diagnostics.DepartureSchedule = schedule;
+    if schedule.Available
+        preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s,powers_units);
+        if preparedMotion.Success
+            certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
+        end
+    end
+    analyticIdentifier = "delayedJerkLimitedChord";
+    analyticRepresentation = "analyticDelayedChord";
+elseif stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
     for k = 0:degree
@@ -106,7 +117,7 @@ end
 boundAccepted = false;
 boundStats = bmtpEngine.accumulateConicDiagnostics();
 boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
-if stage~="route" && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
+if any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
     % At the independent-axis lower bound, the limiting axis is analytic.
     % Optimize only the remaining freedom on a source-derived clock guide.
     boundTimer = tic;
@@ -153,12 +164,12 @@ if preparedMotion.Success && certificate.Passed
     end
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
-    if stage=="kinematicBound"
+    if any(stage==["kinematicBound","delayedChord"])
         diagnostics.TrajectorySocpCount = boundStats.CallCount;
         diagnostics.ConicSolver = boundStats;
         diagnostics.LowerBoundAttempt = boundRecord;
         [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer, ...
-            "Motion at the kinematic time bound was not certified.","kinematicBoundUncertified",false);
+            "The "+stage+" motion was not certified.",stage+"Uncertified",false);
         return;
     end
     [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
@@ -285,7 +296,8 @@ function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, 
         "TrialDuration_s", NaN(35, 1), "TrialWasCollisionFree", false(35, 1), ...
         "CollisionPairCountHistory", NaN(35, 1), ...
         "DilationScale", NaN, "MotionCertificate", struct(), "Coverage", struct(), ...
-        "PlaneCertificate", struct(), "SolverMessage", "", "ElapsedTime_s", 0);
+        "PlaneCertificate", struct(), "SolverMessage", "", "ElapsedTime_s", 0, ...
+        "ConicSolver",bmtpEngine.accumulateConicDiagnostics());
 end
 
 function [candidate, diagnostics] = finishFailure(candidate, diagnostics, timer, message, reason, optimizerFeasible)

@@ -119,39 +119,68 @@ if boundAttempted
     end
 end
 if ~candidate.Success
+    attemptedDiagnostics = {};
+    if boundAttempted, attemptedDiagnostics{end+1} = solverDiagnostics; end
+    delayedCandidate = struct('Success',false);
+    if isDynamic && boundAttempted && ~earliestTarget
+        delayedSeed = seed; delayedSeed.Source = "departureSchedule";
+        [delayedCandidate,delayedDiagnostics] = bmtpEngine.solve(delayedSeed,regions_units,coverage, ...
+            initialState,motionGoalState,limits,options,"delayedChord");
+        attemptedDiagnostics{end+1} = delayedDiagnostics;
+    end
     visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,initialState.position_units,goalState.position_units,limits,options);
     visibilityGraph.SearchKind = "initialSpatialSnapshot";
     result.VisibilityGraph = visibilityGraph;
-    if ~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree
+    % Compare the scheduled chord with the speed bound for traversing the
+    % spatial guide. A valid schedule also resolves disconnected snapshots.
+    useDelayed = delayedCandidate.Success && (~visibilityGraph.IsConnected || ...
+        delayedCandidate.TrajectoryDuration_s<=visibilityGraph.RouteLength_units/norm(limits.maxVelocity_units_s));
+    if ~useDelayed && (~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree)
         result.Message = "An endpoint lies inside or on protected obstacle geometry.";
         result.TerminationReason = "invalidEndpoint";
         result.ElapsedTime_s = toc(totalTimer);
         result.Validation = obstacleAvoidance.validateTrajectory(result);
         return;
     end
-    if ~visibilityGraph.IsConnected
+    if ~useDelayed && ~visibilityGraph.IsConnected
         result.Message = "The initial visibility graph contains no start-to-goal route.";
         result.TerminationReason = "noVisibilityRoute";
         result.ElapsedTime_s = toc(totalTimer);
         result.Validation = obstacleAvoidance.validateTrajectory(result);
         return;
     end
-    route_units = visibilityGraph.Route_units;
-    edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
-    seed.position_units = route_units;
-    seed.tau = [0;cumsum(edgeLength_units)]/sum(edgeLength_units);
-    seed.Source = "visibilityGraph";
-    stage = "complete";
-    if boundAttempted, stage = "route"; end
-    [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
-        initialState,motionGoalState,limits,options,stage);
+    if ~useDelayed
+        route_units = visibilityGraph.Route_units;
+        edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
+        seed.position_units = route_units;
+        seed.tau = [0;cumsum(edgeLength_units)]/sum(edgeLength_units);
+        seed.Source = "visibilityGraph";
+        stage = "complete";
+        if boundAttempted, stage = "route"; end
+        [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
+            initialState,motionGoalState,limits,options,stage);
+        attemptedDiagnostics{end+1} = solverDiagnostics;
+        useDelayed = delayedCandidate.Success && (~candidate.Success || ...
+            delayedCandidate.TrajectoryDuration_s<=candidate.TrajectoryDuration_s);
+    end
+    if useDelayed
+        candidate = delayedCandidate;
+        solverDiagnostics = delayedDiagnostics;
+        route_units = [initialState.position_units;goalState.position_units];
+    end
     if boundAttempted
-        previous = result.SolverDiagnostics;
-        solverDiagnostics.LowerBoundAttempt = previous.LowerBoundAttempt;
-        solverDiagnostics.TrajectorySocpCount = solverDiagnostics.TrajectorySocpCount+previous.TrajectorySocpCount;
-        solverDiagnostics.ConicSolver.CallCount = solverDiagnostics.ConicSolver.CallCount+previous.ConicSolver.CallCount;
-        solverDiagnostics.ConicSolver.TotalTime_s = solverDiagnostics.ConicSolver.TotalTime_s+previous.ConicSolver.TotalTime_s;
-        solverDiagnostics.ElapsedTime_s = solverDiagnostics.ElapsedTime_s+previous.ElapsedTime_s;
+        solverDiagnostics.LowerBoundAttempt = result.SolverDiagnostics.LowerBoundAttempt;
+        solverDiagnostics.TrajectorySocpCount = 0;
+        solverDiagnostics.ConicSolver.CallCount = 0;
+        solverDiagnostics.ConicSolver.TotalTime_s = 0;
+        solverDiagnostics.ElapsedTime_s = 0;
+        for k = 1:numel(attemptedDiagnostics)
+            previous = attemptedDiagnostics{k};
+            solverDiagnostics.TrajectorySocpCount = solverDiagnostics.TrajectorySocpCount+previous.TrajectorySocpCount;
+            solverDiagnostics.ConicSolver.CallCount = solverDiagnostics.ConicSolver.CallCount+previous.ConicSolver.CallCount;
+            solverDiagnostics.ConicSolver.TotalTime_s = solverDiagnostics.ConicSolver.TotalTime_s+previous.ConicSolver.TotalTime_s;
+            solverDiagnostics.ElapsedTime_s = solverDiagnostics.ElapsedTime_s+previous.ElapsedTime_s;
+        end
     end
 end
 

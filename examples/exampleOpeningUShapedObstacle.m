@@ -80,11 +80,11 @@ clear warningCleanup;
 
 %% Section 5: Validate Result
 
-% Run common trajectory checks. Then confirm that the selected seed waits and
+% Run common trajectory checks. Then confirm that the returned motion waits and
 % crosses the gap only after it opens.
 
 exampleValidation = validateExampleResult(result, "opening U-shaped obstacle", struct(), diagnosis);
-openingValidation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_units, safetyMargin_units);
+openingValidation = validateOpeningUse(result, openingTime_s, gapHalfWidth_units, safetyMargin_units);
 exampleValidation.Passed = exampleValidation.Passed && openingValidation.Passed;
 if ~openingValidation.Passed
     exampleValidation.Message = exampleValidation.Message + " " + openingValidation.Message;
@@ -103,40 +103,32 @@ end
 
 end
 
-function validation = validateOpeningUse(result, diagnosis, openingTime_s, gapHalfWidth_units, safetyMargin_units)
-    % Verify that the selected seed waits and then crosses the protected gap.
-    waitSeedSelected          = false;
+function validation = validateOpeningUse(result, openingTime_s, gapHalfWidth_units, safetyMargin_units)
+    % Verify the actual stationary interval and crossing of the protected gap.
+    hasStationarySpan         = false;
     stayedBeforeClosedBarrier = false;
     crossedOpenGap            = false;
     selectedArrivalTime_s     = NaN;
-    comparisonArrivalTime_s   = NaN;
     if result.Success
-        selectedSeed              = diagnosis.Routes(diagnosis.SelectedAttemptIndex);
-        repeatedPosition          = vecnorm(diff(selectedSeed.position_units, 1, 1), 2, 2) <= 1e-10;
-        waitSeedSelected          = any(repeatedPosition) || selectedSeed.Source == "directWait";
+        hasStationarySpan         = any(all(result.Polynomial.positionPower_units(:,:,2:end)==0,[2,3]));
         beforeOpening             = result.time_s <= openingTime_s;
         stayedBeforeClosedBarrier = any(beforeOpening) && all(result.position_units(beforeOpening, 2) >= -4 + safetyMargin_units - 1e-6);
         crossesBottomBar          = result.position_units(:, 2) <= -4 + safetyMargin_units & result.position_units(:, 2) >= -7 - safetyMargin_units;
         protectedGapHalfWidth_units = gapHalfWidth_units - safetyMargin_units;
         crossedOpenGap            = any(crossesBottomBar & abs(result.position_units(:, 1)) < protectedGapHalfWidth_units & result.time_s > openingTime_s);
         selectedArrivalTime_s     = result.time_s(end);
-        otherValidated            = find([diagnosis.Attempts.ValidationPassed]);
-        otherValidated(otherValidated == diagnosis.SelectedAttemptIndex) = [];
-        if ~isempty(otherValidated)
-            comparisonArrivalTime_s = min([diagnosis.Attempts(otherValidated).ArrivalTime_s]);
-        end
     end
-    passed = result.Success && waitSeedSelected && stayedBeforeClosedBarrier && crossedOpenGap;
+    passed = result.Success && hasStationarySpan && stayedBeforeClosedBarrier && crossedOpenGap;
     if passed
-        message = "The selected seed waited for and crossed the timed gap.";
+        message = "The returned motion waited for and crossed the timed gap.";
     else
-        message = sprintf("Opening use failed: success=%s, wait=%s, stayed=%s, crossed=%s.", string(logical(result.Success)), string(logical(waitSeedSelected)), string(logical(stayedBeforeClosedBarrier)), string(logical(crossedOpenGap)));
+        message = sprintf("Opening use failed: success=%s, wait=%s, stayed=%s, crossed=%s.", string(logical(result.Success)), string(logical(hasStationarySpan)), string(logical(stayedBeforeClosedBarrier)), string(logical(crossedOpenGap)));
     end
     validation = struct("Passed", passed, ...
         "Message", string(message), ...
-        "WaitSeedSelected", waitSeedSelected, ...
+        "HasStationarySpan", hasStationarySpan, ...
         "StayedBeforeClosedBarrier", stayedBeforeClosedBarrier, ...
         "CrossedOpenGap", crossedOpenGap, ...
         "OpeningTime_s", openingTime_s, ...
-        "SelectedArrivalTime_s", selectedArrivalTime_s, "ComparisonArrivalTime_s", comparisonArrivalTime_s);
+        "SelectedArrivalTime_s", selectedArrivalTime_s);
 end

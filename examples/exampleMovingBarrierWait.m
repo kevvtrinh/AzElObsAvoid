@@ -23,7 +23,7 @@ function [result, diagnosis] = exampleMovingBarrierWait(exampleOverrides)
 
 %% Section 1: Resolve Example Controls
 
-% Keep fixed-arrival timing so waiting can be part of the solution.
+% Search earliest arrival with waiting available in the complete motion.
 
 if nargin < 1 || isempty(exampleOverrides)
     exampleOverrides = struct();
@@ -83,11 +83,11 @@ clear warningCleanup;
 % barrier too early even if its geometric path looks correct.
 
 exampleValidation = obstacleAvoidance.validateTrajectory(result);
-waitSeedSelected  = result.Success && diagnosis.SelectedAttemptIndex > 0 && diagnosis.Routes(diagnosis.SelectedAttemptIndex).Source == "directWait";
-exampleValidation.WaitSeedSelected = waitSeedSelected;
-exampleValidation.Passed           = exampleValidation.Passed && waitSeedSelected;
-if ~waitSeedSelected
-    exampleValidation.Message = exampleValidation.Message + " The planner did not select the direct waiting seed.";
+hasStationarySpan = result.Success && any(all(result.Polynomial.positionPower_units(:,:,2:end)==0,[2,3]));
+exampleValidation.HasStationarySpan = hasStationarySpan;
+exampleValidation.Passed           = exampleValidation.Passed && hasStationarySpan;
+if ~hasStationarySpan
+    exampleValidation.Message = exampleValidation.Message + " The returned motion has no stationary waiting interval.";
 end
 if ~exampleValidation.Passed
     warning("exampleMovingBarrierWait:ValidationFailed", "%s", exampleValidation.Message);

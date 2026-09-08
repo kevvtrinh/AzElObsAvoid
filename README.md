@@ -383,3 +383,42 @@ mesh trials were also removed: four spans per edge yielded static-U arrival
 20.8921 s and length 38.7071, narrowly missing both references; three yielded
 21.2814 s and 40.0102, and five became too slow to retain. These experiments
 do not change the thirteen-case milestone or its committed production core.
+
+Departure scheduling now uses the same analytic jerk-limited progress clock
+and authoritative convex time cells. Intersecting each cell with the chord
+produces a convex polygon in path progress and absolute time. Along each
+polygon edge, forbidden departure times are a cubic function of local phase
+time; endpoints and real derivative roots give its extrema. The union of
+these intervals determines the first available departure without a time grid.
+The initial position must remain free throughout the wait. Returned motion
+includes the stationary interval, retains analytic cubic coefficients, and
+passes the unchanged public independent validator.
+
+Stationary intervals within an otherwise changing history retain their exact
+nonconvex decomposition. This shortcut requires verified vertex correspondence
+and zero motion. Unknown correspondence still retains the entire authoritative
+interval union, even when that conservative representation reports zero speed.
+The regression suite explicitly checks this distinction.
+
+The scheduled chord is compared with the speed bound for traversing the initial
+spatial guide; when that guide remains competitive, its optimized candidate is
+also compared. This searches a delayed direct-motion family, and does not claim
+global optimality among every possible moving detour. The waiting examples now
+check stationary spans and actual gap crossings rather than obsolete seed names.
+
+All 56 correctness tests pass. At 4,644 physical production lines, fifteen of
+eighteen examples now meet every historical gate in three-run measurements:
+
+| Example | Arrival (s) | Motion length | Median wall (s) | Reference wall (s) |
+| --- | --- | --- | --- | --- |
+| Moving barrier wait | 10.090088895723 | 10 | 0.048625 | 1.107174 |
+| Opening U | 11.584333447453 | 10 | 0.157334 | 1.769550 |
+| Vietnam slew | 30 | 17.144137073137 | 2.827637 | 21.210319 |
+| Deforming US outline | 7.916666667972 | 40.238008060418 | 16.75 | 30.804965 |
+
+The two waiting references arrive at 10.090301513672 and 13.617522354126 s,
+respectively, both with motion length 10. Separate fresh-process three-run
+medians for the waiting examples were 0.269 and 0.300 s, also below their gates.
+The remaining failures are alternating-occlusion runtime, static-U quality,
+and the three-region geographic sequence. No claim of complete goal success
+is made.

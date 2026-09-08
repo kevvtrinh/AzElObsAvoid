@@ -25,6 +25,11 @@ for k = 1:numel(obstacles)
             shape = preparation.SampleShapes{1};
             regions = obstacleAvoidance.geometry.convexRegions(shape);
             endRegions = regions;
+        elseif preparation.MatchingTopology(j) && preparation.IntervalSpeedBound_units_s(j)==0
+            % A history can change elsewhere while this interval remains
+            % stationary. Preserve its cavities and disconnected components.
+            regions = obstacleAvoidance.geometry.convexRegions(preparation.SampleShapes{j});
+            endRegions = regions;
         elseif preparation.MatchingTopology(j)
             % The convex hull of corresponding vertices at each instant
             % encloses the authoritative interpolated polygon. Keep its time
