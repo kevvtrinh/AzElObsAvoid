@@ -1,4 +1,4 @@
-function candidate = createOffsetSplineMotion(baseMotion, knotTime_s, knotOffset_units, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_units_s)
+function candidate = createOffsetSplineMotionReference(baseMotion, knotTime_s, knotOffset_units, axisIndex, initialState, sampleStep_s, seedSource, knotVelocity_units_s)
 %% Section 0: Header & Readme
 % SYNTAX
 %   candidate = bmtpEngine.createOffsetSplineMotion( ...
@@ -133,10 +133,18 @@ function polynomial = combinePolynomials(direct, lateral, break_s, axisIndex)
     % Split at both sets of breakpoints, then add the offset polynomial.
     duration_s        = diff(break_s);
     segmentCount      = numel(duration_s);
+    dimensionCount    = size(direct.positionPower_units, 2);
     coefficientCount  = max(size(direct.positionPower_units, 3), size(lateral.positionPower_units, 3));
-    positionPower_units = translatePolynomial(direct, break_s(1:end - 1), duration_s, coefficientCount);
-    lateralPower_units = translatePolynomial(lateral, break_s(1:end - 1), duration_s, coefficientCount);
-    positionPower_units(:, axisIndex, :) = positionPower_units(:, axisIndex, :) + lateralPower_units;
+    positionPower_units = zeros(segmentCount, dimensionCount, coefficientCount);
+    % Process each segment while assembling the complete motion or interval result.
+    for segmentIndex = 1:segmentCount
+        startTime_s  = break_s(segmentIndex);
+        step_s       = duration_s(segmentIndex);
+        directPower  = translatePolynomial(direct, startTime_s, step_s, coefficientCount);
+        lateralPower = translatePolynomial(lateral, startTime_s, step_s, coefficientCount);
+        directPower(axisIndex, :) = directPower(axisIndex, :) + lateralPower;
+        positionPower_units(segmentIndex, :, :) = reshape(directPower, 1, dimensionCount, coefficientCount);
+    end
     durationScale_s          = reshape(duration_s, [], 1, 1);
     velocityPower_units_s      = positionPower_units(:, :, 2:end) .* reshape(1:coefficientCount - 1, 1, 1, []) ./ durationScale_s;
     accelerationPower_units_s2 = velocityPower_units_s(:, :, 2:end) .* reshape(1:coefficientCount - 2, 1, 1, []) ./ durationScale_s;
@@ -156,17 +164,18 @@ function polynomial = combinePolynomials(direct, lateral, break_s, axisIndex)
 end
 
 function power = translatePolynomial(polynomial, startTime_s, duration_s, outputCount)
-    % Translate every requested subinterval together. The power sums retain
-    % their scalar order; only independent output spans are batched.
-    sourceIndex      = min(polynomial.SegmentCount, 1 + sum(startTime_s >= polynomial.SegmentStartTime_s(2:end).', 2));
+    % Re-express a segment on a normalized subinterval.
+    sourceIndex      = min(polynomial.SegmentCount, 1 + sum(startTime_s >= polynomial.SegmentStartTime_s(2:end)));
     sourceDuration_s = polynomial.SegmentDuration_s(sourceIndex);
-    sourceTau        = (startTime_s - polynomial.SegmentStartTime_s(sourceIndex)) ./ sourceDuration_s;
-    durationRatio    = duration_s ./ sourceDuration_s;
-    source           = polynomial.positionPower_units(sourceIndex, :, :);
-    power            = zeros(numel(startTime_s), size(source, 2), outputCount);
-    for targetPower = 0:size(source, 3) - 1
-        for sourcePower = targetPower:size(source, 3) - 1
-            power(:, :, targetPower + 1) = power(:, :, targetPower + 1) + source(:, :, sourcePower + 1) * nchoosek(sourcePower, targetPower) .* sourceTau .^ (sourcePower - targetPower) .* durationRatio .^ targetPower;
+    sourceTau        = (startTime_s - polynomial.SegmentStartTime_s(sourceIndex)) / sourceDuration_s;
+    durationRatio    = duration_s / sourceDuration_s;
+    source           = reshape(polynomial.positionPower_units(sourceIndex, :, :), size(polynomial.positionPower_units, 2), []);
+    power            = zeros(size(source, 1), outputCount);
+    % Process each target power needed to complete translate polynomial.
+    for targetPower = 0:size(source, 2) - 1
+        % Process each source power needed to complete translate polynomial.
+        for sourcePower = targetPower:size(source, 2) - 1
+            power(:, targetPower + 1) = power(:, targetPower + 1) + source(:, sourcePower + 1) * nchoosek(sourcePower, targetPower) * sourceTau ^ (sourcePower - targetPower) * durationRatio ^ targetPower;
         end
     end
 end

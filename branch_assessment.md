@@ -1,5 +1,18 @@
 # Planner decisions
 
+## BMTP refactor started — 2026-09-08
+
+The shared eight-stage plan is imported as `bmtp_refactor.md`, based on `c04f3b2`.
+The first retained change batches offset-spline translations while preserving
+exact motion outputs. All 188 MATLAB tests pass, and the 18 maintained examples
+meet their expected outcomes across three baseline and three candidate runs.
+Matched constructor measurements show 1.095–1.622x speedups for 8–30 output
+spans; physical production size decreases from 15,528 to 15,519 lines. Full-example
+warm-up histories differ, so their raw timing ratios are not controlled speedup
+claims. The experimental corridor port remains outside production because it
+does not preserve all measured motion-quality gates. The full plan is unfinished.
+See [the progress and limitations report](docs/bmtp_refactor_progress.md).
+
 ## Generic coordinates — 2026-09-07
 
 The repository now uses x/y coordinates and caller-consistent units. Independent WrapX and WrapY flags use each workspace interval width, with stable positive-displacement half-period ties. Unwrapped physics and validation matched exactly across all 18 maintained finite-jerk examples. The shifted-period wrapping regression now reaches the equivalent endpoint in 3.372281 s instead of 6.5 s. All eight wrapping regressions and 27 browser-function checks pass; 172 distinct MATLAB tests pass. One saved-route diagnostic regression reproduces in the untouched baseline, and three pre-existing deleted fixtures block their tests. No validation tolerance or assertion was weakened. Periodic obstacles and moving goals remain unsupported. [Detailed evidence](benchmarks/results/xy_coordinate_migration_20260907.md).
