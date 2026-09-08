@@ -217,7 +217,12 @@ function passed = verifyPlaneCertificate(result, positionPower_units)
             if ~activePairs(segmentIndex, regionIndex)
                 continue;
             end
-            plane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), squeeze(controlPoint_units(segmentIndex, :, :)), regions_units{regionIndex}, reserve_units, target_units);
+            restricted_units = squeeze(controlPoint_units(segmentIndex,:,:));
+            if exist('cells','var')
+                interval = (cells.ActiveTimeInterval_s(regionIndex,:)-starts_s(segmentIndex))/(ends_s(segmentIndex)-starts_s(segmentIndex));
+                restricted_units = bmtpEngine.restrictBezier(restricted_units,max(0,min(1,interval)));
+            end
+            plane = bmtpEngine.verifySeparatingLine(certificate.Planes(segmentIndex, regionIndex), restricted_units, regions_units{regionIndex}, reserve_units, target_units);
             if ~plane.Verified
                 passed = false;
                 return;

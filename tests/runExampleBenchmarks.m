@@ -15,6 +15,9 @@ if nargin < 1 || isempty(caseNames), caseNames = string(reference(:, 1)); end
 if nargin < 2, repetitions = 3; end
 caseNames = string(caseNames);
 records = struct([]);
+runs = struct([]);
+warningState = warning;
+restoreWarnings = onCleanup(@() warning(warningState)); %#ok<NASGU>
 productionFiles = [dir(fullfile(root, '+obstacleAvoidance', '**', '*.m')); ...
     dir(fullfile(root, 'trajectory', '**', '*.m')); dir(fullfile(root, 'planner.m'))];
 productionLines = 0;
@@ -26,6 +29,7 @@ fprintf('Production physical lines (including comments/blanks): %d\n', productio
 %% Section 2: Execute All Requested Cases Without Concealing Exceptions
 for caseIndex = 1:numel(caseNames)
     name = caseNames(caseIndex);
+    warning('error',name+":ValidationFailed");
     row = reference(strcmp(string(reference(:, 1)), name), :);
     assert(size(row, 1) == 1, 'Unknown benchmark case.');
     elapsed_s = NaN(repetitions, 1);
@@ -39,7 +43,7 @@ for caseIndex = 1:numel(caseNames)
             validation = obstacleAvoidance.validateTrajectory(result);
             expectedSuccess = logical(row{10});
             passed(repeatIndex) = result.Success == expectedSuccess && ...
-                (validation.Passed || (~expectedSuccess && isempty(result.time_s) && strlength(result.Message) > 0));
+                (validation.Passed || (~expectedSuccess && isempty(result.time_s) && result.TerminationReason=="noVisibilityRoute"));
             if result.Success
                 arrival_s(repeatIndex) = result.TrajectoryDuration_s;
                 length_units(repeatIndex) = result.MotionLength_units;
@@ -50,6 +54,10 @@ for caseIndex = 1:numel(caseNames)
             elapsed_s(repeatIndex) = toc(timer);
             message = string(exception.identifier) + ": " + string(exception.message);
         end
+        runs = [runs;struct('Case',name,'Repetition',repeatIndex,'Valid',passed(repeatIndex), ...
+            'Duration_s',arrival_s(repeatIndex),'Length_units',length_units(repeatIndex), ...
+            'RouteLength_units',routeLength_units(repeatIndex),'WallTime_s',elapsed_s(repeatIndex), ...
+            'Message',message)]; %#ok<AGROW>
     end
     record = struct('Case', name, 'Valid', all(passed), ...
         'Duration_s', median(arrival_s), 'Length_units', median(length_units), ...
@@ -68,6 +76,7 @@ for caseIndex = 1:numel(caseNames)
         name, record.Valid, record.Duration_s, record.Length_units, record.WallTime_s, record.MeetsAll, message);
     summary = struct2table(records);
     writetable(summary, fullfile(root, 'benchmarks', 'current_summary.csv'));
+    writetable(struct2table(runs),fullfile(root,'benchmarks','current_runs.csv'));
 end
 end
 

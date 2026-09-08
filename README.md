@@ -28,9 +28,14 @@ of source geometry, active pairs, clearance, endpoints, and polynomial limits.
 
 Fixed-time goals may supply `goalState.targetMotion` with sampled `time_s`,
 N-by-2 `position_units`, and `InterpolationMethod` (`linear` or `pchip`). The
-validator evaluates that source again at actual arrival. An unobstructed
-fixed-time request uses the exact minimum-jerk quintic when its motion limits
-certify, avoiding an optimization call and preserving the straight path.
+validator evaluates that source again at actual arrival. A visible direct
+fixed-time request uses the exact minimum-jerk quintic when its motion and
+collision limits certify, avoiding an optimization call and preserving the
+straight path. Exact de Casteljau restriction checks each curve only during
+each source cell's active interval; the validator independently reconstructs
+those overlaps from the physical clock and source history. The representation
+retains every source interval without requiring an optimizer span per sample
+for the direct solution.
 
 Current limitations: dynamic earliest-arrival motion and earliest target
 interception are not yet implemented. Initialization uses an initial-time visibility route,
@@ -43,7 +48,7 @@ entry point. No universal trajectory optimality or runtime guarantee is claimed.
 
 ```matlab
 addpath('tests');
-assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m'}));
+assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m'}));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 ```
@@ -51,7 +56,9 @@ summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 The runner preserves example inputs and workbook references, reports failures,
 uses median end-to-end example wall time, and counts all production `.m` lines
 (including comments/blanks) in the root entry point and production packages.
-Generated reports remain ignored by Git. The geographic sequence contains
+Per-run metrics and summary reports remain ignored by Git. Scenario-validation
+warnings count as benchmark failures, and expected no-path outcomes require
+the explicit no-route termination reason. The geographic sequence contains
 three internal requests; it still requires per-request capture before claiming
 full benchmark coverage from the historical final-result row.
 
@@ -118,5 +125,16 @@ Four target tests pass, including altered source data and invalid histories;
 the prior thirteen core/Vietnam tests also pass. A three-run Vietnam regression
 retains its exact motion length and 30 s arrival, with median wall time 3.397 s.
 
-Vietnam, fixed-time interception, and the expected no-path case have demonstrated all reference metrics.
+The four accelerating circles also pass unchanged: arrival 22 s, exact motion
+and route length 20, and five-run median wall time 4.030 s versus 7.1524886 s.
+All 880 source intervals remain certified, with two exported polynomial spans
+and no SOCP. Four additional tests cover polynomial restriction, full source
+coverage, forged activity, and interior source changes. The core contains
+3,696 physical production lines. A profile of the prior formulation attributed
+12.44 s to `coneprog` within a 23.13 s run that failed validation; the direct
+formulation removes that solve, rather than relaxing any physical constraints.
+Profiled time is diagnostic only; the benchmark medians have profiling off.
+
+Vietnam, fixed-time interception, accelerating circles, and the expected
+no-path case have demonstrated all reference metrics.
 The full suite remains unfinished. No scenario-specific fallback was added.

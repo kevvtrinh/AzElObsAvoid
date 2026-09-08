@@ -68,7 +68,8 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 % The unconstrained fixed-time minimum-jerk solution is a quintic on the
 % endpoint chord. Degree elevation preserves it exactly in the shared basis.
 preparedMotion = struct('Success',false);
-if isempty(regions_units) && options.GoalTimeMode == "fixedArrival"
+certificate = struct('Passed',false);
+if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
     for k = 0:degree
@@ -78,11 +79,16 @@ if isempty(regions_units) && options.GoalTimeMode == "fixedArrival"
     end
     controls_units = initialState.position_units + fraction.*(goalState.position_units-initialState.position_units);
     preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),request.MotionHorizon_s);
+    if preparedMotion.Success
+        certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
+    end
 end
-if preparedMotion.Success
+if preparedMotion.Success && certificate.Passed
     diagnostics.Identifier = "minimumJerkQuintic";
     diagnostics.ConstraintRepresentation = "analyticFixedTime";
     diagnostics.Converged = true;
+    diagnostics.OptimizerSpanCount = 0;
+    diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
     [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
     if ~alternatingResult.Success
@@ -91,6 +97,7 @@ else
     end
     % Endpoint correction and export can increase the derivative bounds.
     preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s);
+    certificate = struct('Passed',false);
 end
 
 %% Section 3: Prepare And Check The Final Motion
@@ -104,7 +111,10 @@ if ~preparedMotion.Success
 end
 
 % Certify every final curve-region pair; sampled clearance alone is insufficient.
-certificate = bmtpEngine.checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units);
+if ~certificate.Passed
+    certificate = bmtpEngine.checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units);
+end
+diagnostics.FinalCollisionPairCount = certificate.AllPairCount;
 diagnostics.MotionCertificate = preparedMotion.MotionCertificate;
 diagnostics.PlaneCertificate  = certificate;
 candidate.PlaneCertificate = certificate;

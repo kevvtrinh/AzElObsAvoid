@@ -27,19 +27,20 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 
 % Each optimized segment becomes two output spans. Repeat the static
 % all-region mask for both spans.
-regionActiveBySegment = repelem(warmStart.RegionActiveBySegment, 2, 1);
+regionActiveBySegment = true(size(preparedMotion.CertifiedControlPoint_units,1),numel(request.Regions_units));
 if isfield(request.Coverage,'ActiveTimeInterval_s')
     intervals_s = request.Coverage.ActiveTimeInterval_s;
     starts_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s(1:end-1))];
     ends_s = starts_s+preparedMotion.SegmentTime_s;
     regionActiveBySegment = starts_s < intervals_s(:,2).' & ends_s > intervals_s(:,1).';
 end
-certificate           = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units);
+spanBreaks_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s)];
+certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units,spanBreaks_s);
 end
 
 %% Section 2: Local Functions
 
-function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units)
+function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units,spanBreaks_s)
     % Verify every applicable output-span and convex-exclusion-region pair.
     segmentCount   = size(controlPoint_units, 1);
     regionCount    = numel(regions_units);
@@ -57,7 +58,12 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
             if ~regionActiveBySegment(segmentIndex, regionIndex)
                 continue;
             end
-            plane = bmtpEngine.solveSeparatingLine(trajectory_units, regions_units{regionIndex}, target_units, reserve_units);
+            restricted_units = trajectory_units;
+            if isfield(coverage,'ActiveTimeInterval_s')
+                interval = (coverage.ActiveTimeInterval_s(regionIndex,:)-spanBreaks_s(segmentIndex))/diff(spanBreaks_s(segmentIndex:segmentIndex+1));
+                restricted_units = bmtpEngine.restrictBezier(trajectory_units,max(0,min(1,interval)));
+            end
+            plane = bmtpEngine.solveSeparatingLine(restricted_units, regions_units{regionIndex}, target_units, reserve_units);
             analyticCount = analyticCount + 1;
             planes(segmentIndex, regionIndex) = plane;
             if plane.Verified
