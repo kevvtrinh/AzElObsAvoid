@@ -254,3 +254,18 @@ removed. It passed slalom quality (10.500004 s and 16.020866 length) but missed
 dense-concave references (8.5000038 s and 12.774610 versus 8.5 and 12.761105),
 regressed static U to 27.743 s and 41.962 length, and made opposing-U optimization
 slow enough to terminate. No case-dependent mesh fallback was retained.
+
+At the interception milestone, all 39 tests pass and nine of the eighteen
+historical examples have demonstrated all physical benchmark gates. The goal
+remains incomplete. A subsequent single-run audit confirmed unresolved static
+U, dense-concave, slalom, translating-circle, rotating-field, barrier-wait, and
+opening-U cases. The deforming-outline example failed certification and took
+114.977 s versus its 30.805 s reference. The audit was interrupted during the
+large static geographic sequence; its three internal requests still need
+separate capture and measurement. This audit is not a repeated-runtime result.
+
+A second phase-mesh trial exactly preserved old controls and knot timing while
+adding analytic jerk switches by subdivision. Opposing-U time improved to
+21.6337 s, but median runtime increased to 3.595 s, above 2.092 s. Dense-concave,
+slalom, and static-U timing still missed their references. This refinement was
+also removed; the original detour mesh remains in production.
