@@ -22,7 +22,8 @@ Identical static source boundaries share one vectorized occupancy query over
 their original activity interval. Visibility search operates
 on the occupied union and evaluates graph edges as A* expands nodes, preserving
 the Euclidean shortest-route objective. BMTP uses nonuniform segment durations
-and retains continuous position, velocity, acceleration, and jerk. Fixed-time
+and retains continuous position, velocity, and acceleration. Jerk may jump at
+joins, with both one-sided values subject to the same jerk bounds. Fixed-time
 dynamic motion uses convex regions with absolute activity intervals. Spline
 knots align with source events, and one elastic convex problem minimizes
 control-polygon length at the actual requested clock. Supporting axes provide
@@ -52,7 +53,7 @@ Earliest-arrival requests use four degree-eight subspans per visibility edge.
 One convex solve minimizes the time-power objective; a second minimizes
 control-polygon length while preserving that returned time value. Finite stalled
 iterates remain proposals, and convergence is reported only when both stages
-converge. Polynomial export shares physical position through jerk at joins,
+converge. Polynomial export shares physical position through acceleration at joins,
 then rebuilds derivative bounds and collision certificates for the corrected
 curve. Validation limits and tolerances remain unchanged.
 
@@ -83,7 +84,7 @@ retaining that diagnostic seed. Current `Route_units` is the exact protected
 visibility route. The runner reports both route lengths and their comparison,
 but uses the executable motion length for the physical path-quality gate.
 
-## Timing contract conflict
+## Bounded-jerk timing contract
 
 `exampleObstacleFree` requests x displacement 4, velocity bound 2, acceleration
 bound 1, and jerk bound 2. The exact minimum rest-to-rest duration is
@@ -199,9 +200,32 @@ has valid motion of length 37.458, below 38.678, but arrival 23.300 s exceeds
 20.873 s. Slalom remains above both targets (11.171 s and 16.569, versus
 10.550 s and 16.035). Obstacle-free motion improves to straight length
 4.472135955 and duration 4.65699 s; its exact historical duration remains
-incompatible with the continuous-jerk requirement described above.
+a limitation of that earlier C3 implementation. The approved C2 contract and
+exact jerk-limited primitive resolve the obstacle-free timing limitation.
 
 Trials of extra alternating iterations, a shared bangbang progress clock for
 knot initialization, and joint nonlinear time/control optimization were
 discarded. They missed quality or runtime targets, or failed validation. No
 nonlinear optimizer or scenario-specific repair was retained in production.
+
+The bounded-jerk milestone permits jerk jumps while retaining continuous
+position, velocity, and acceleration and every original magnitude bound.
+Thirty existing tests plus four new bounded-jerk tests pass. Five-run benchmark
+medians (3,877 physical production lines) all meet the eight listed references:
+
+| Example | Arrival (s) | Motion length | Wall (s) |
+| --- | --- | --- | --- |
+| Obstacle free | 4.531128874 | 4.472135955 | 0.02036 |
+| Vietnam slew | 30 | 17.1441 | 2.9191 |
+| Accelerating circles | 22 | 20 | 4.3479 |
+| Fixed-time target | 12 | 9.538940547 | 0.01055 |
+| Target exit | 24 | 20.5043 | 1.9423 |
+| Alternating occlusion | 20.869565217 | 13.5564 | 1.7238 |
+| No path | Expected no route | n.a. | 0.00955 |
+| Opposing Us | 21.8192 | 24.1877 | 0.7422 |
+
+The direct primitive covers triangular acceleration, acceleration saturation,
+and velocity cruise with unequal axis limits and nonzero absolute start times.
+Independent tests accept bounded jerk jumps, reject excessive jerk, and reject
+acceleration discontinuities even when derivative arrays and histories agree.
+Source-history coverage is also required for dynamic earliest motion.

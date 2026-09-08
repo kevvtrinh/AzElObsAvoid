@@ -71,6 +71,8 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 % endpoint chord. Degree elevation preserves it exactly in the shared basis.
 preparedMotion = struct('Success',false);
 certificate = struct('Passed',false);
+analyticIdentifier = "minimumJerkQuintic";
+analyticRepresentation = "analyticFixedTime";
 if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
@@ -84,10 +86,18 @@ if size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     if preparedMotion.Success
         certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
     end
+elseif size(route_units,1)==2
+    [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord(initialState.position_units,goalState.position_units,limits,degree);
+    preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
+    if preparedMotion.Success
+        certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
+    end
+    analyticIdentifier = "jerkLimitedChord";
+    analyticRepresentation = "analyticMinimumTime";
 end
 if preparedMotion.Success && certificate.Passed
-    diagnostics.Identifier = "minimumJerkQuintic";
-    diagnostics.ConstraintRepresentation = "analyticFixedTime";
+    diagnostics.Identifier = analyticIdentifier;
+    diagnostics.ConstraintRepresentation = analyticRepresentation;
     diagnostics.Converged = true;
     diagnostics.OptimizerSpanCount = 0;
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
@@ -194,7 +204,7 @@ function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, 
     % Initialize solver, timing, and certificate diagnostics.
     diagnostics = struct("Identifier", "bmtpStaticDegree" + string(degree), ...
         "ConstraintRepresentation", "thirdOrderTimePowerSocp", ...
-        "Representation", "C3CompositeBezier", "Attempted", true, ...
+        "Representation", "C2CompositeBezier", "Attempted", true, ...
         "Accepted", false, "Degree", degree, ...
         "SubspansPerSeedEdge", splitCount, "OriginalSeedSegmentCount", segmentCount, ...
         "WarmRouteResampled", false, "OptimizerSpanCount", segmentCount, ...

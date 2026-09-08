@@ -51,7 +51,7 @@ variableCount          = controlCount + 4 + lengthCount + slackCount;
 differenceCoefficients = {1, [-1 1], [1 -2 1], [-1 3 -3 1]};
 baseInequalityCount    = 4 * segmentCount * (3 * degree - 3);
 inequalityCount        = baseInequalityCount + activePlaneCount * (degree + 2);
-equalityCount          = 13 + 8 * (segmentCount - 1);
+equalityCount          = 13 + 6 * (segmentCount - 1);
 A                      = spalloc(inequalityCount, variableCount, 6 * inequalityCount);
 Aeq                    = spalloc(equalityCount, variableCount, 8 * equalityCount);
 beq                    = zeros(equalityCount, 1);
@@ -85,7 +85,7 @@ end
 % Process each segment while assembling the complete motion or interval result.
 for segmentIndex = 1:segmentCount - 1
     % Process each order needed to find trajectory step.
-    for order = 0:3
+    for order = 0:2
         coefficients     = differenceCoefficients{order + 1};
         coefficientIndex = 0:order;
         % Evaluate each coordinate axis and combine its limiting result.

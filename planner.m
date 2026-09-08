@@ -91,7 +91,7 @@ seed.ObstacleEnvelope_units = zeros(0, 2);
 isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant,preparedObstacles));
 regions_units = cell(0,1);
 for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
-if isDynamic && options.GoalTimeMode == "fixedArrival"
+if isDynamic
     cells = obstacleAvoidance.obstacles.createTimeCells(preparedObstacles,initialState.time_s,goalState.time_s);
     regions_units = cells.Regions_units;
 end
@@ -99,9 +99,9 @@ coverage = struct("Passed", true, ...
     "ExactRegionCount", numel(regions_units), ...
     "SolverRegionCount", numel(regions_units), ...
     "AuthoritativeCoverageCheck", "independentPlaneVerification");
-if isDynamic && options.GoalTimeMode == "fixedArrival"
+if isDynamic
     coverage.ActiveTimeInterval_s = cells.ActiveTimeInterval_s;
-    coverage.BreakTime_s = cells.BreakTime_s;
+    if options.GoalTimeMode == "fixedArrival", coverage.BreakTime_s = cells.BreakTime_s; end
 end
 [candidate, solverDiagnostics] = bmtpEngine.solve(seed, regions_units, coverage, initialState, goalState, limits, options);
 candidateFields = string(fieldnames(candidate));

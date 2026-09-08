@@ -86,7 +86,8 @@ end
 validation.MaximumDynamicsResidual = max(abs(dynamicsResidual));
 validation.DynamicsConsistent = validation.MaximumDynamicsResidual <= tolerance;
 continuityResidual = zeros(0, 1);
-for derivativeOrder = 0:3
+% C2 motion permits bounded jerk jumps; certify jerk on both closed spans.
+for derivativeOrder = 0:2
     array = powerArrays{derivativeOrder + 1};
     continuityResidual = [continuityResidual; reshape(sum(array(1:end - 1, :, :), 3) - array(2:end, :, 1), [], 1)]; %#ok<AGROW>
 end

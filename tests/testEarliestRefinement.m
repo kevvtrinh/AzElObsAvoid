@@ -1,7 +1,7 @@
 function tests = testEarliestRefinement
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testEarliestRefinement.m')
-% PURPOSE: Check general earliest-arrival refinement and physical C3 export.
+% PURPOSE: Check general earliest-arrival refinement and physical C2 export.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Function-based tests.
 % UNITS: Coordinate units and seconds.
@@ -34,7 +34,7 @@ function testSharedPhysicalDerivatives(testCase)
     initialGap = abs(differences(1,end,1)/durations_s(1)^3-differences(2,1,1)/durations_s(2)^3);
     verifyGreaterThan(testCase,initialGap,1e-8);
     p = bmtpEngine.createPowerPolynomial(spans,durations_s,7);
-    for order = 0:3
+    for order = 0:2
         indices = order:8;
         coefficients = p.positionPower_units(:,:,indices+1).*reshape(factorial(indices)./factorial(indices-order),1,1,[])./durations_s.^order;
         verifyEqual(testCase,sum(coefficients(1,:,:),3),coefficients(2,:,1),'AbsTol',1e-8);
