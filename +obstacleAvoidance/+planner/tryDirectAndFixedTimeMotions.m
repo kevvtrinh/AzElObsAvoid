@@ -205,7 +205,7 @@ function seed = createMotionSeed(candidate, source)
 
     [seed.position_units, seed.tau] = deal(candidate.position_units, tau);
     seed.EstimatedDuration_s = duration_s;
-    seed.Length_units          = candidate.MotionLength_units;
+    seed.Length_units          = sum(vecnorm(diff(seed.position_units), 2, 2));
 end
 
 function [stageTiming, motionSolvingTime_s] = accountConstructorValidation(stageTiming, constructorElapsedTime_s, diagnostics)

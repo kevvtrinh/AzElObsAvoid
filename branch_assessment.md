@@ -1,5 +1,17 @@
 # Planner decisions
 
+## Sampling-independent executable length — 2026-09-08
+
+Motion records, selection, and fixed-clock offset refinement now use adaptive
+polynomial arc length. A separate integration checks randomized polynomials,
+reversals, large coordinate offsets, and batch boundaries. Coarse/fine public
+planner calls select identical polynomials in both timing modes. All 213 tests
+pass, as do 60 frozen quality comparisons with unchanged arrivals and measured
+arcs. The CSV retains all runtimes, including unfavorable samples; this is an
+objective-correctness change with small measured evaluation cost. Production
+is 16,477 physical lines in 115 files; final consolidation remains required.
+See [length evidence](docs/bmtp_refactor_length.md).
+
 ## Static corridor integration — 2026-09-08
 
 The working refactor integrates exact source facets, physical clocks, and

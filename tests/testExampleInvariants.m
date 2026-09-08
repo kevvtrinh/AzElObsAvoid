@@ -160,7 +160,7 @@ function testVietnamKeepoutSlewRunsHeadlessly(testCase)
     verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.Route_units), 17.297991315813945, "AbsTol", 1e-9);
     verifyEqual(testCase, obstacleAvoidance.geometry.routeLength(result.position_units), 17.305374620918947, "AbsTol", 1e-9);
     summary = resultDiagnosis.Attempts(resultDiagnosis.SelectedAttemptIndex);
-    verifyEqual(testCase, summary.MotionLength_units, 17.305374620918947, "AbsTol", 1e-9);
+    verifyEqual(testCase, summary.MotionLength_units, 17.3054420695914, "AbsTol", 1e-9);
     verifyEqual(testCase, resultDiagnosis.Search.MotionEdgeCount, 29231);
     verifyEqual(testCase, resultDiagnosis.Search.WaitEdgeCount, 5618);
     verifyEqual(testCase, resultDiagnosis.Search.RejectedTransitionCount, 2859775);

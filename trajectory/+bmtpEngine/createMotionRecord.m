@@ -31,6 +31,7 @@ function [candidate, terminalState] = createMotionRecord(candidate, initialState
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable exact-motion record with polynomial and sampled histories.
+%       MotionLength_units integrates polynomial speed independently of samples.
 %   - terminalState (scalar struct)
 %       Analytically integrated terminal position, velocity, and acceleration.
 %
@@ -147,7 +148,7 @@ candidate.velocity_units_s       = velocity_units_s;
 candidate.acceleration_units_s2  = acceleration_units_s2;
 candidate.jerk_units_s3          = jerk_units_s3;
 candidate.Polynomial           = polynomial;
-candidate.MotionLength_units     = sum(vecnorm(diff(position_units), 2, 2));
+candidate.MotionLength_units     = bmtpEngine.measurePolynomialLength(polynomial);
 if polynomial.Degree <= 3
     jerk = reshape(polynomial.jerkPower_units_s3, segmentCount, dimensionCount);
     candidate.IntegratedSquaredJerk_units2_s5 = sum(segmentDuration_s .* sum(jerk .^ 2, 2));

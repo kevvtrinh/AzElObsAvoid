@@ -20,7 +20,11 @@ was rejected after saved behavioral tests failed. The broader excursion was
 restored. Its final full suite passes 209 tests, all 60 frozen quality records
 pass, and a matched three-warmup comparison verifies major slalom/dense/Hawaii
 gains while retaining the opposing-U and Philippines overhead. Working
-production is 114 files and 16,408 physical lines. Visibility batching, output-sampling-independent ranking,
+production after the corridor commit is 114 files and 16,408 physical lines.
+The following [length stage](bmtp_refactor_length.md) makes every motion-record
+length and candidate ranking independent of display sampling, passes 213 tests
+and 60 unchanged frozen quality comparisons, and brings production to 115
+files/16,477 physical lines. Visibility batching,
 the single public entry point, and final consolidation remain unfinished. The
 cross-branch benchmark with a uniform warm-up policy and explicit capture of
 every geographic subcase is now recorded in the [reference comparison](bmtp_refactor_reference_comparison.md). It rejects wholesale replacement: the reference loses one supported fixed-time interception and worsens Hawaii's arrival, length, and runtime. The resumed
