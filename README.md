@@ -41,8 +41,10 @@ those overlaps from the physical clock and source history. The representation
 retains every source interval without requiring an optimizer span per sample
 for the direct solution.
 
-Current limitations: dynamic earliest-arrival motion and earliest target
-interception are not yet implemented. Initialization uses an initial-time visibility route,
+Current limitations: earliest target interception certifies motion at its
+kinematic lower bound; later meeting times are not yet searched if obstacles
+prevent certification there. Dynamic earliest requests retain full source-cell
+coverage, but initialization uses an initial-time visibility route,
 so the planner is not complete for dynamic topology changes or goals blocked
 only at the initial time. The full static suite still needs improvement.
 Historical example interfaces are being migrated to the single `planner`
@@ -61,7 +63,7 @@ curve. Validation limits and tolerances remain unchanged.
 
 ```matlab
 addpath('tests');
-assertSuccess(runtests({'tests/testPlanningCore.m','tests/testVietnamSlew.m','tests/testFixedTarget.m','tests/testTimeRestriction.m','tests/testStaticFixedArrival.m','tests/testConvexPreparation.m','tests/testEarliestRefinement.m'}));
+assertSuccess(runtests('tests'));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks({'exampleVietnamKeepoutSlew'}, 5);
 ```
@@ -95,11 +97,12 @@ T = A/J + sqrt((A/J)^2 + 4D/A) = 4.531128874149275 seconds.
 
 Peak velocity is 1.765564437, below the velocity bound. Equality requires the
 bangbang jerk schedule `+J, 0, -J, 0, +J`, with instantaneous changes. The workbook
-reference equals this bound within floating-point precision. The empty-core
-validator requires jerk continuity, so no continuous-jerk trajectory can attain
-that exact bound. Resolving the benchmark goal therefore requires an explicit
-choice between revising this timing reference and permitting bounded jerk jumps.
-No validation tolerance has been increased to conceal the conflict.
+reference equals this bound within floating-point precision. The user approved
+bounded jerk jumps. Optimization and independent validation now require C2
+motion and retain the original jerk bounds, collision margins, and tolerances.
+Direct earliest motion uses an exact scalar jerk-limited profile on the endpoint
+chord, elevated into the shared Bezier representation and independently
+certified. Obstacle-free motion has no exemption from validation.
 
 ## Measured development results
 
@@ -240,7 +243,7 @@ that later interception is impossible. The public validator reevaluates the
 original target at the actual returned arrival, including endpoint occupancy.
 
 Five-run earliest-target results: arrival 6.111111111 s, equal reference motion
-length 7.308885511, and median wall time 0.01559 s versus 0.1488886 s. The core
+length 7.308890240, and median wall time 0.01559 s versus 0.1488863 s. The core
 contains 3,988 physical production lines. Fixed-time target and obstacle-free
 regressions also pass all benchmark gates. Additional tests cover disconnected
 meeting windows, unreachable targets, source tampering, shifted clocks, pchip
