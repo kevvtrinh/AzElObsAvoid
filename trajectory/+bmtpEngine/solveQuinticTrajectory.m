@@ -142,7 +142,14 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     origin_units=start_units;
     goal_units=goal_units-origin_units; start_units=[0,0];
     domain_units=[limits.xInterval_units-origin_units(1);limits.yInterval_units-origin_units(2)];
-    jerkCount=segmentCount*(degree-2); stateCount=2*jerkCount;
+    % Preserve ordinary initialization: changing its numerical solution can
+    % send the later nonconvex timing solve to a worse local optimum. Profile
+    % proposals and final fixed-clock repair use neighboring knot states.
+    useLocalStates=minimizeLength || isfield(request.Options,'C3ProfileWarmStart');
+    knotCount=3*(segmentCount-1);
+    scalarStateCount=segmentCount*(degree-2);
+    if useLocalStates, scalarStateCount=knotCount+2*segmentCount+1; end
+    stateCount=2*scalarStateCount;
     fixedPhysicalClock=~request.IsRest || minimizeLength;
     referenceTime_s=fixedDuration_s;
     if ~fixedPhysicalClock
@@ -156,9 +163,17 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     variableCount=stateCount+4+lengthCount+minimizeLength*segmentCount;
     lengthIndex=stateCount+4+(1:lengthCount);
     basis=cell(4,segmentCount);
-    stateMaps=zeros(3,jerkCount);
+    stateMaps=zeros(3,scalarStateCount);
     for segment=1:segmentCount
-        jerk=zeros(degree-2,jerkCount); jerk(:,(segment-1)*(degree-2)+(1:degree-2))=eye(degree-2);
+        if useLocalStates
+            stateMaps=sparse(3,scalarStateCount);
+            if segment>1, stateMaps(:,3*(segment-2)+(1:3))=speye(3); end
+            jerk=sparse(degree-2,scalarStateCount);
+            jerk(:,knotCount+2*(segment-1)+(1:degree-2))=speye(degree-2);
+        else
+            jerk=zeros(degree-2,scalarStateCount);
+            jerk(:,(segment-1)*(degree-2)+(1:degree-2))=eye(degree-2);
+        end
         basis{4,segment}=jerk;
         for order=2:-1:0
             count=degree-order+1;
@@ -166,7 +181,9 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
             integrated=integrated+stateMaps(order+1,:);
             basis{order+1,segment}=integrated;
         end
-        for order=0:2, stateMaps(order+1,:)=basis{order+1,segment}(end,:); end
+        if ~useLocalStates
+            for order=0:2, stateMaps(order+1,:)=basis{order+1,segment}(end,:); end
+        end
     end
     % Integrate the initial physical state on the same fixed clock as jerk.
     offsets=cell(4,segmentCount);
@@ -178,7 +195,11 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
             offsets{order+1,segment}=stateOffset(order+1,:)+ ...
                 referenceTimes_s(segment)/(count-1)*tril(ones(count,count-1),-1)*offsets{order+2,segment};
         end
-        for order=0:2, stateOffset(order+1,:)=offsets{order+1,segment}(end,:); end
+        if useLocalStates
+            stateOffset=zeros(3,2);
+        else
+            for order=0:2, stateOffset(order+1,:)=offsets{order+1,segment}(end,:); end
+        end
     end
     lb=-Inf(variableCount,1); ub=Inf(variableCount,1);
     lb(powerIndex)=0; lb(powerIndex(2))=eps;
@@ -188,19 +209,39 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     ub(powerIndex)=timePowers;
     if fixedPhysicalClock, lb(powerIndex)=1; ub(powerIndex)=1; end
     %% Section 2: Impose Physical Continuity And Bounds
-    Aeq=spalloc(7+2*(segmentCount-1),variableCount,8*stateCount);
+    equalityCount=7+2*(segmentCount-1);
+    if useLocalStates, equalityCount=6*segmentCount+1; end
+    Aeq=spalloc(equalityCount,variableCount,8*stateCount);
     beq=zeros(size(Aeq,1),1); row=0;
-    for axis=1:2
-        for order=0:2
-            row=row+1; Aeq(row,axis:2:stateCount)=basis{order+1,segmentCount}(end,:);
-            terminalState=[goal_units;request.GoalState.velocity_units_s;request.GoalState.acceleration_units_s2];
-            beq(row)=terminalState(order+1,axis)-offsets{order+1,segmentCount}(end,axis);
+    terminalState=[goal_units;request.GoalState.velocity_units_s;request.GoalState.acceleration_units_s2];
+    if useLocalStates
+        for segment=1:segmentCount
+            for axis=1:2
+                for order=0:2
+                    row=row+1;
+                    Aeq(row,axis:2:stateCount)=basis{order+1,segment}(end,:);
+                    beq(row)=-offsets{order+1,segment}(end,axis);
+                    if segment<segmentCount
+                        nextState=2*(3*(segment-1)+order)+axis;
+                        Aeq(row,nextState)=Aeq(row,nextState)-1;
+                    else
+                        beq(row)=beq(row)+terminalState(order+1,axis);
+                    end
+                end
+            end
         end
-    end
-    for segment=1:segmentCount-1
+    else
         for axis=1:2
-            row=row+1;
-            Aeq(row,axis:2:stateCount)=basis{4,segment}(end,:)-basis{4,segment+1}(1,:);
+            for order=0:2
+                row=row+1; Aeq(row,axis:2:stateCount)=basis{order+1,segmentCount}(end,:);
+                beq(row)=terminalState(order+1,axis)-offsets{order+1,segmentCount}(end,axis);
+            end
+        end
+        for segment=1:segmentCount-1
+            for axis=1:2
+                row=row+1;
+                Aeq(row,axis:2:stateCount)=basis{4,segment}(end,:)-basis{4,segment+1}(1,:);
+            end
         end
     end
     row=row+1; Aeq(row,powerIndex(1))=1; beq(row)=1;
@@ -285,7 +326,7 @@ function [controls_units,times_s,exitFlag,output] = solveQuinticStep(request,pla
     output.InitializationResidual=max([0;A*x-b;abs(Aeq*x-beq);lb-x;x-ub]);
     if ~minimizeLength && output.InitializationResidual>request.Options.ConstraintTolerance, return; end
     times_s=x(powerIndex(4))^(1/3)*referenceTimes_s;
-    states=reshape(x(1:stateCount),2,jerkCount).';
+    states=reshape(x(1:stateCount),2,scalarStateCount).';
     controls_units=zeros(segmentCount,degree+1,2); powers_units=zeros(segmentCount,2,degree+1);
     for segment=1:segmentCount
         controls_units(segment,:,:)=basis{1,segment}*states+offsets{1,segment}+origin_units;
