@@ -39,12 +39,61 @@ function [candidate, diagnostics] = solve(seed, regions_units, coverage, initial
 %% Section 1: Validate And Create The Exclusion Representation
 
 totalTimer = tic;
+if isfield(options,'C3ProfileLibrary') && ~isempty(options.C3ProfileLibrary)
+    request=bmtpEngine.createSolveRequest(seed,regions_units,coverage,initialState,goalState,limits,options);
+    warm=bmtpEngine.createWarmStart(request);
+    [warm,profileRecord]=bmtpEngine.lookupC3Profile(request,warm);
+    ordinaryOptions=options;
+    ordinaryOptions.C3ProfileLibrary=[];
+    accepted=false;
+    if profileRecord.Matched
+        trialOptions=ordinaryOptions;
+        trialOptions.C3ProfileWarmStart=warm;
+        attemptTimer=tic;
+        [candidate,diagnostics]=bmtpEngine.solve(seed,regions_units,coverage,initialState,goalState,limits,trialOptions);
+        profileRecord.AttemptTime_s=toc(attemptTimer);
+        if isfield(diagnostics,'ProfileSelectedEntryIndex')
+            profileRecord.EntryIndex=diagnostics.ProfileSelectedEntryIndex;
+            match=profileRecord.Shortlist(profileRecord.Shortlist(:,1)==profileRecord.EntryIndex,:);
+            profileRecord.RouteError=match(2); profileRecord.LimitError=match(3); profileRecord.Reflected=logical(match(4));
+            profileRecord.InitialTrials=diagnostics.ProfileInitialTrials;
+        end
+        profileRecord.Attempted=diagnostics.Identifier=="quinticJerkClock";
+        profileRecord.AttemptSucceeded=candidate.Success;
+        profileRecord.AttemptReason=candidate.TerminationReason;
+        profileRecord.AttemptSolverMessage=candidate.Message;
+        profileRecord.AttemptConicCalls=diagnostics.ConicSolver.CallCount;
+        profileRecord.AttemptArrival_s=candidate.ArrivalTime_s;
+        profileRecord.AttemptLength_units=candidate.MotionLength_units;
+        accepted=candidate.Success;
+        if accepted && profileRecord.Attempted && candidate.ArrivalTime_s>options.C3ProfileMaxArrival_s
+            accepted=false;
+            profileRecord.AttemptReason="profileArrivalCapExceeded";
+        end
+        if accepted && profileRecord.Attempted && candidate.MotionLength_units>options.C3ProfileMaxLength_units
+            accepted=false;
+            profileRecord.AttemptReason="profileLengthCapExceeded";
+        end
+        profileRecord.Accepted=accepted && profileRecord.Attempted;
+    end
+    if ~accepted
+        profileRecord.FallbackUsed=true;
+        fallbackTimer=tic;
+        [candidate,diagnostics]=bmtpEngine.solve(seed,regions_units,coverage,initialState,goalState,limits,ordinaryOptions);
+        profileRecord.FallbackTime_s=toc(fallbackTimer);
+    end
+    diagnostics.ProfileLibrary=profileRecord;
+    diagnostics.ElapsedTime_s=toc(totalTimer);
+    candidate.SolverDiagnostics=diagnostics;
+    return;
+end
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
 initialState = request.InitialState; goalState = request.GoalState;
 
 % Create a kinematically feasible starting curve from the seed.
 warmStart             = bmtpEngine.createWarmStart(request);
+if isfield(options,'C3ProfileWarmStart'), warmStart=options.C3ProfileWarmStart; end
 degree                = request.Degree;
 splitCount            = request.SplitCount;
 route_units             = warmStart.Route_units;

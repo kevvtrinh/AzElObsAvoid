@@ -8,6 +8,8 @@ audit at commit `bdb3a65`. The subsequent C3 quintic change and its
 verification are documented in [C3_QUINTIC.md](C3_QUINTIC.md).
 The subsequent runtime investigation and controlled comparisons are in
 [RUNTIME_OPTIMIZATION.md](RUNTIME_OPTIMIZATION.md).
+The optional normalized C3 profile library, training builder, guarded repair
+mode, and measured limitations are in [C3_PROFILE_LIBRARY.md](C3_PROFILE_LIBRARY.md).
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
