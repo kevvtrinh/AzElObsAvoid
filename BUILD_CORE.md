@@ -1,3 +1,6 @@
+> Historical audit of the C2 implementation committed as `bdb3a65`.
+> See C3_QUINTIC.md for the later C3 quintic change.
+
 # build-core implementation and audit
 
 Implemented on `build-core`, starting at `26c343b9ab7704d0cd5a3d8f72af058e99c936b1`

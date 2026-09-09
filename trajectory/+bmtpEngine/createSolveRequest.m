@@ -42,11 +42,10 @@ validateKernelInputs(seed, regions_units, coverage, initialState, goalState, lim
 
 %% Section 2: Select The Polynomial Representation
 
-% Fixed-time event meshes already resolve time. Earliest-arrival optimization
-% uses four degree-eight subspans per visibility edge to resolve transients.
+% Four quintic subspans per guide edge or source interval provide freedom
+% for continuous jerk while preserving endpoint position, velocity, and acceleration.
 
-[degree, splitCount] = deal(8, 1);
-if options.GoalTimeMode=="earliestArrival", splitCount = 4; end
+[degree, splitCount] = deal(5, 4);
 motionHorizon_s = goalState.time_s - initialState.time_s;
 if motionHorizon_s <= 0
     error("bmtpEngine:InvalidGoalTime", "goalState.time_s must be greater than initialState.time_s.");

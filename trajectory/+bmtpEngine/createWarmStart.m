@@ -4,7 +4,7 @@ function warmStart = createWarmStart(request)
 %   warmStart = bmtpEngine.createWarmStart(request)
 %
 % PURPOSE
-%   - Convert the exact visibility route into degree-eight BMTP controls.
+%   - Convert the exact visibility route into quintic BMTP controls.
 %
 % INPUTS
 %   - request: validated static BMTP solve request.
@@ -58,7 +58,8 @@ warmStart.RegionActiveBySegment = regionActiveBySegment;
 warmStart.OriginalSeedSegmentCount = originalSegmentCount;
 warmStart.WarmRouteResampled = false;
 if isfield(request.Coverage,'BreakTime_s')
-    breakTime_s = request.Coverage.BreakTime_s;
+    sourceBreaks_s = request.Coverage.BreakTime_s;
+    breakTime_s = unique(reshape(sourceBreaks_s(1:end-1)+diff(sourceBreaks_s)*(0:request.SplitCount)/request.SplitCount,[],1));
     segmentTime_s = diff(breakTime_s);
     segmentCount = numel(segmentTime_s);
     tau = (breakTime_s(1:end-1)-request.InitialState.time_s + ...
@@ -76,6 +77,19 @@ if isfield(request.Coverage,'BreakTime_s')
     warmStart.RegionActiveBySegment = breakTime_s(1:end-1) < intervals_s(:,2).' & ...
         breakTime_s(2:end) > intervals_s(:,1).';
     warmStart.WarmRouteResampled = true;
+end
+if request.Options.GoalTimeMode=="fixedArrival" && ~isfield(request.Coverage,'BreakTime_s')
+    % Uniform physical spans avoid derivative amplification on tiny polygon
+    % guide edges while retaining that route as the initialization.
+    segmentCount=max(8,request.SplitCount*originalSegmentCount);
+    tau=((0:segmentCount-1).'+(0:degree)/degree)/segmentCount;
+    controls=interp1(request.Seed.tau,route_units,tau(:),'linear');
+    warmStart.ControlPoint_units=reshape(controls,segmentCount,degree+1,2);
+    warmStart.SegmentTime_s=repmat(request.MotionHorizon_s/segmentCount,segmentCount,1);
+    warmStart.SegmentRatio=ones(segmentCount,1);
+    warmStart.SegmentCount=segmentCount;
+    warmStart.RegionActiveBySegment=true(segmentCount,numel(request.Regions_units));
+    warmStart.WarmRouteResampled=true;
 end
 if request.Options.GoalTimeMode=="fixedArrival"
     warmStart.SegmentTime_s = warmStart.SegmentTime_s * request.MotionHorizon_s/sum(warmStart.SegmentTime_s);

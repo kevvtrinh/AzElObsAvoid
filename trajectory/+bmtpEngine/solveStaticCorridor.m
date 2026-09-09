@@ -13,7 +13,11 @@ function [result,diagnostics] = solveStaticCorridor(request,warmStart,diagnostic
 %% Section 1: Integrate The Free Coordinate Through Shared Physical States
 assert(~isfield(request.Coverage,'ActiveTimeInterval_s'), ...
     'bmtpEngine:InvalidCorridorRequest','The monotone corridor requires static geometry.');
+% Keep solver feasibility residuals inside an additional numerical reserve.
+% The public clearance and validation tolerance remain unchanged.
+reserve_units=reserve_units+10*request.Options.ConstraintTolerance;
 degree = 5; segmentCount = warmStart.SegmentCount;
+diagnostics.OptimizerSpanCount=segmentCount;
 jerkCount = segmentCount*(degree-2);
 quadratureCount = request.Degree;
 variableCount = jerkCount+4+segmentCount*quadratureCount;
@@ -41,11 +45,11 @@ for segment = 1:segmentCount
     end
     for order = 0:2, terminal(order+1,:) = basis{order+1,segment}(end,:); end
 end
-conversion = zeros(degree+1,4);
+conversion = zeros(degree+1,degree+1);
 for k = 0:degree
-    for j = 0:min(k,3), conversion(k+1,j+1) = nchoosek(k,j)/nchoosek(degree,j); end
+    for j = 0:k, conversion(k+1,j+1) = nchoosek(k,j)/nchoosek(degree,j); end
 end
-axisPower_units = reshape(warmStart.FixedPower_units(:,axisIndex,1:4),segmentCount,4);
+axisPower_units = reshape(warmStart.FixedPower_units(:,axisIndex,1:6),segmentCount,6);
 axisPower_units(:,1) = axisPower_units(:,1)-origin_units(axisIndex);
 axisControls_units = axisPower_units*conversion.';
 
@@ -57,8 +61,7 @@ for iteration = 1:48
     middle_s = (lower_s+upper_s)/2;
     segment = max(1,min(segmentCount,sum(middle_s>=breaks_s(1:end-1).',2)));
     tau = (middle_s-breaks_s(segment))./referenceTimes_s(segment);
-    values_units = axisPower_units(segment,1)+tau.*(axisPower_units(segment,2)+ ...
-        tau.*(axisPower_units(segment,3)+tau.*axisPower_units(segment,4)));
+    values_units = sum(axisPower_units(segment,:).*tau.^(0:degree),2);
     left = direction*values_units<direction*events_units;
     lower_s(left) = middle_s(left); upper_s(~left) = middle_s(~left);
 end
@@ -98,6 +101,10 @@ end
 A = vertcat(rows{:}); b = vertcat(bounds{:});
 Aeq = sparse(4,variableCount); Aeq(1:3,1:jerkCount) = terminal; Aeq(4,powerIndex(1)) = 1;
 beq = [request.GoalState.position_units(freeAxis)-origin_units(freeAxis);0;0;1];
+for segment=1:segmentCount-1
+    Aeq(end+1,1:jerkCount)=basis{4,segment}(end,:)-basis{4,segment+1}(1,:);
+    beq(end+1,1)=0;
+end
 lower = -Inf(variableCount,1); upper = Inf(variableCount,1);
 lower(powerIndex) = 1;
 upper(powerIndex) = (request.MotionHorizon_s/breaks_s(end)).^(0:3);
@@ -166,7 +173,9 @@ if ~linearFeasible(x,A,b,Aeq,beq,lower,upper,request.Options.ConstraintTolerance
 %% Section 4: Preserve Integrated Continuity And Export Exact Powers
 % Correct solver endpoint roundoff globally in the integrated jerk variables.
 % The complete final polynomial and all original obstacle pairs are checked.
-x(1:jerkCount) = x(1:jerkCount)+terminal.'*((terminal*terminal.')\(beq(1:3)-terminal*x(1:jerkCount)));
+continuityRows=[1:3,5:size(Aeq,1)];
+continuity=Aeq(continuityRows,1:jerkCount); target=beq(continuityRows);
+x(1:jerkCount)=x(1:jerkCount)+continuity.'*((continuity*continuity.')\(target-continuity*x(1:jerkCount)));
 powers_units = zeros(segmentCount,2,request.Degree+1);
 controls_units = zeros(segmentCount,request.Degree+1,2);
 export = zeros(request.Degree+1,degree+1);
@@ -174,7 +183,7 @@ for k = 0:request.Degree
     for j = 0:min(k,degree), export(k+1,j+1) = nchoosek(k,j)/nchoosek(request.Degree,j); end
 end
 for segment = 1:segmentCount
-    powers_units(segment,axisIndex,1:4) = axisPower_units(segment,:);
+    powers_units(segment,axisIndex,1:6) = axisPower_units(segment,:);
     powers_units(segment,axisIndex,1) = powers_units(segment,axisIndex,1)+origin_units(axisIndex);
     powers_units(segment,freeAxis,1) = basis{1,segment}(1,:)*x(1:jerkCount)+origin_units(freeAxis);
     powers_units(segment,freeAxis,2) = basis{2,segment}(1,:)*x(1:jerkCount)*referenceTimes_s(segment);
@@ -190,6 +199,7 @@ result.Success = true;
 result.ControlPoint_units = controls_units;
 result.PositionPower_units = powers_units;
 result.SegmentTime_s = x(powerIndex(4))^(1/3)*referenceTimes_s;
+result.CertificateEventTime_s=x(powerIndex(4))^(1/3)*eventTimes_s;
 result.SolverMessage = "The exact monotone corridor returned an integrated quintic proposal.";
 end
 

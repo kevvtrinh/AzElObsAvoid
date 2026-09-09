@@ -1,7 +1,7 @@
 function tests = testBoundedJerk
 %% Section 0: Header & Readme
 % SYNTAX: results = runtests('tests/testBoundedJerk.m')
-% PURPOSE: Check exact jerk-limited timing and independent C2 validation.
+% PURPOSE: Check exact jerk-limited timing and independent C3 validation.
 % INPUTS: MATLAB unit test framework.
 % OUTPUTS: Function-based tests.
 % UNITS: Coordinate units, seconds, and physical derivatives.
@@ -14,16 +14,16 @@ function setupOnce(testCase)
     testCase.TestData.Result = exampleObstacleFree(struct('PlotOutputs',false,'Verbose',false));
 end
 
-function testExactBenchmarkAndJerkJumps(testCase)
+function testQuinticTimingAndContinuousJerk(testCase)
     r = testCase.TestData.Result;
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.TrajectoryDuration_s,0.5+sqrt(16.25),'AbsTol',1e-8);
+    verifyEqual(testCase,r.TrajectoryDuration_s,(120)^(1/3),'AbsTol',1e-8);
     verifyEqual(testCase,r.MotionLength_units,sqrt(20),'AbsTol',1e-10);
     verifyEqual(testCase,r.SolverDiagnostics.TrajectorySocpCount,0);
     jerk = r.Polynomial.jerkPower_units_s3;
     jumps = sum(jerk(1:end-1,:,:),3)-jerk(2:end,:,1);
-    verifyGreaterThan(testCase,max(abs(jumps),[],'all'),1.9);
+    verifyLessThanOrEqual(testCase,max(abs(jumps),[],'all'),1e-8);
     verifyLessThanOrEqual(testCase,max(abs(r.jerk_units_s3),[],'all'),2+1e-8);
 end
 
@@ -60,7 +60,9 @@ function testProfileRegimesAndAxes(testCase)
     velocity = [2,2;0.25,2;2,2;4,2];
     acceleration = [1,1;10,10;1,1;2,1];
     jerk = [2,2;2,2;2,2;4,2];
-    expected_s = [4*(0.1/4)^(1/3);4/0.25+2*sqrt(0.25/2);8.5;5.5];
+    expected_s = max([1.875*abs(displacements)./velocity, ...
+        sqrt((10/sqrt(3))*abs(displacements)./acceleration), ...
+        (60*abs(displacements)./jerk).^(1/3)],[],2);
     for k = 1:4
         initial = struct('time_s',7,'position_units',[1,-2]);
         goal = struct('time_s',40,'position_units',initial.position_units+displacements(k,:));

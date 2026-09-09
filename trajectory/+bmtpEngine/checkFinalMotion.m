@@ -1,4 +1,4 @@
-function certificate = checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units)
+function [certificate,cache] = checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units,cache)
 %% Section 0: Header & Readme
 % SYNTAX
 %   certificate = bmtpEngine.checkFinalMotion( ...
@@ -14,10 +14,14 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 %       Checked request, region applicability, and final prepared curve.
 %   - roundoffReserve_units, obstacleTarget_units (finite scalars)
 %       Numerical reserve and required obstacle-side target in coordinate units.
+%   - cache (optional opaque struct returned by this function)
+%       Previous refinement's checks within the same solve. Reuse requires
+%       exactly matching source geometry, coverage, controls, and tolerances.
 %
 % OUTPUTS
 %   - certificate (scalar struct)
 %       Pair coverage, separating planes, counts, and passing state.
+%   - cache: current checks for a later refinement; never a public input.
 %
 % UNITS
 %   - Position, gaps, and reserves are coordinate units.
@@ -25,6 +29,7 @@ function certificate = checkFinalMotion(request, warmStart, preparedMotion, roun
 
 %% Section 1: Check All Curve And Obstacle Pairs
 
+if nargin<6, cache=[]; end
 % Each optimized segment becomes two output spans. Repeat the static
 % all-region mask for both spans.
 regionActiveBySegment = true(size(preparedMotion.CertifiedControlPoint_units,1),numel(request.Regions_units));
@@ -35,8 +40,8 @@ if isfield(request.Coverage,'ActiveTimeInterval_s')
     regionActiveBySegment = starts_s < intervals_s(:,2).' & ends_s > intervals_s(:,1).';
 end
 spanBreaks_s = request.InitialState.time_s+[0;cumsum(preparedMotion.SegmentTime_s)];
-certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units,spanBreaks_s);
-if ~request.IsRest
+certificate = checkAllCurveObstaclePairs(preparedMotion.CertifiedControlPoint_units, request.Regions_units, request.Coverage, regionActiveBySegment, roundoffReserve_units, obstacleTarget_units,spanBreaks_s,cache);
+if isfield(preparedMotion,'ControlPoint_units')
     % Fixed physical boundary derivatives prevent post-solve dilation. Reject
     % an over-limit analytic proposal here so the shared optimizer can run.
     polynomial = bmtpEngine.createPowerPolynomial(preparedMotion.ControlPoint_units, ...
@@ -53,13 +58,23 @@ if ~request.IsRest
             end
         end
     end
-    certificate.Passed = certificate.Passed && certificate.DynamicsPassed;
+    certificate.ContinuityPassed = true;
+    allArrays = [{polynomial.positionPower_units},arrays];
+    for order = 1:4
+        values = allArrays{order};
+        residual = sum(values(1:end-1,:,:),3)-values(2:end,:,1);
+        certificate.ContinuityPassed = certificate.ContinuityPassed && ...
+            all(abs(residual)<=request.Options.ConstraintTolerance,'all');
+    end
+    certificate.Passed = certificate.Passed && certificate.DynamicsPassed && certificate.ContinuityPassed;
 end
+cache=struct('Controls',preparedMotion.CertifiedControlPoint_units,'Breaks',spanBreaks_s, ...
+    'Target_units',obstacleTarget_units,'Certificate',certificate);
 end
 
 %% Section 2: Local Functions
 
-function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units,spanBreaks_s)
+function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_units, coverage, regionActiveBySegment, reserve_units, target_units,spanBreaks_s,cache)
     % Verify every applicable output-span and convex-exclusion-region pair.
     segmentCount   = size(controlPoint_units, 1);
     regionCount    = numel(regions_units);
@@ -69,9 +84,25 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     conicCount     = 0;
     analyticCount  = 0;
     reusedCount    = 0;
+    cachedCount    = 0;
     conicSolver    = bmtpEngine.accumulateConicDiagnostics();
     minimumGap_units = Inf;
     staticGeometry = ~isfield(coverage,'ActiveTimeInterval_s');
+    % A subdivision leaves most spans unchanged. Their existing certificates
+    % remain valid only for identical curve controls and authoritative inputs.
+    % Static collision geometry is independent of the span's clock; moving
+    % geometry additionally requires the identical absolute time interval.
+    cachedSpan=zeros(segmentCount,1);
+    if ~isempty(cache) && isequaln(cache.Certificate.Regions_units,regions_units) && ...
+            isequaln(cache.Certificate.Coverage,coverage) && ...
+            cache.Certificate.RoundoffReserve_units==reserve_units && ...
+            cache.Target_units==target_units && ...
+            size(cache.Controls,2)==size(controlPoint_units,2)
+        oldKeys=[cache.Breaks(1:end-1),cache.Breaks(2:end),reshape(cache.Controls,size(cache.Controls,1),[])];
+        newKeys=[spanBreaks_s(1:end-1),spanBreaks_s(2:end),reshape(controlPoint_units,segmentCount,[])];
+        if staticGeometry, oldKeys=oldKeys(:,3:end); newKeys=newKeys(:,3:end); end
+        [~,cachedSpan]=ismember(newKeys,oldKeys,'rows');
+    end
     if staticGeometry && regionCount>0
         staticVertices_units = vertcat(regions_units{:});
         staticOwners = repelem((1:regionCount).',cellfun(@(v)size(v,1),regions_units));
@@ -80,6 +111,20 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
     % Process each segment while assembling the complete motion or interval result.
     for segmentIndex = 1:segmentCount
         trajectory_units = squeeze(controlPoint_units(segmentIndex, :, :));
+        oldSpan=cachedSpan(segmentIndex);
+        if oldSpan>0 && isequal(regionActiveBySegment(segmentIndex,:),cache.Certificate.RegionActiveBySegment(oldSpan,:))
+            active=regionActiveBySegment(segmentIndex,:);
+            oldPlanes=cache.Certificate.Planes(oldSpan,:);
+            if all([oldPlanes(active).Verified])
+                planes(segmentIndex,:)=oldPlanes;
+                previousPlanes=oldPlanes;
+                reusedCount=reusedCount+nnz(active);
+                cachedCount=cachedCount+nnz(active);
+                verifiedCount=verifiedCount+nnz(active);
+                if any(active), minimumGap_units=min(minimumGap_units,min([oldPlanes(active).SignedGap_units])); end
+                continue;
+            end
+        end
         if staticGeometry && regionCount>0 && segmentIndex>1
             normalPages = reshape([previousPlanes.Normal],2,2,regionCount);
             normals = reshape(normalPages(1,:,:),2,regionCount).';
@@ -145,7 +190,7 @@ function certificate = checkAllCurveObstaclePairs(controlPoint_units, regions_un
         "MinimumSignedGap_units", minimumGap_units, ...
         "CoveragePassed", coverage.Passed, "Coverage", coverage, ...
         "AllPairCount", allPairCount, "VerifiedPairCount", verifiedCount, ...
-        "ReusedPairCount", reusedCount, "AnalyticPairCount", analyticCount, ...
+        "ReusedPairCount", reusedCount, "CachedPairCount", cachedCount, "AnalyticPairCount", analyticCount, ...
         "ConicPairCount", conicCount, "ConicSolver", conicSolver);
 end
 

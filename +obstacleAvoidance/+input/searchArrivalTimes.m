@@ -41,7 +41,8 @@ for k = 1:numel(times_s)
     trialGoal = goal; trialGoal.time_s = times_s(k);
     tried = k;
     try
-        candidate = planner(previous.Inputs.obstacles,initial,trialGoal,previous.RequestedLimits,options);
+        candidate = planner(previous.PreparedObstacles,initial,trialGoal,previous.RequestedLimits,options);
+        candidate.Inputs.obstacles = previous.Inputs.obstacles;
     catch exception
         if any(string(exception.identifier)==["planner:UndefinedTargetDerivative","planTrajectory:CoincidentEndpoints"])
             reasons(k) = string(exception.identifier);

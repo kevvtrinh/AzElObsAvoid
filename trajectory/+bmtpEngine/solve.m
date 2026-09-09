@@ -1,4 +1,4 @@
-function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, coverage, initialState, goalState, limits, options, stage)
+function [candidate, diagnostics] = solve(seed, regions_units, coverage, initialState, goalState, limits, options)
 %% Section 0: Header & Readme
 % SYNTAX
 %   [candidate, diagnostics] = ...
@@ -8,7 +8,7 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 % PURPOSE
 %   Turn one proposed path into a smooth motion that respects motion limits.
 %   Adjust the curve and obstacle-separating boundaries in alternating steps.
-%   Use degree-eight Bezier segments; the planner independently validates the result.
+%   Use quintic Bezier segments; the planner independently validates the result.
 %
 % INPUTS
 %   - seed (scalar struct)
@@ -24,15 +24,12 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 %       Workspace, velocity, acceleration, and jerk bounds.
 %   - options (resolved scalar planner-options struct)
 %       Goal-time policy, sampling interval, work limits, and tolerances.
-%   - stage (optional internal policy): complete, kinematicBound, delayedChord, or route.
-%       Allows the planner to defer spatial search until the bound is tested.
 %
 % OUTPUTS
 %   - candidate (scalar struct)
 %       Stable motion record. Expected infeasibility returns Success=false.
 %   - diagnostics (scalar struct)
 %       Solver, timing, coverage, motion, and plane-certificate evidence.
-%   - clockGuide (scalar struct): searched clock projection, when available.
 %
 % UNITS
 %   - Position is coordinate units and time is seconds. Derivatives use units/s,
@@ -42,9 +39,6 @@ function [candidate, diagnostics, clockGuide] = solve(seed, regions_units, cover
 %% Section 1: Validate And Create The Exclusion Representation
 
 totalTimer = tic;
-if nargin<8, stage = "complete"; end
-assert(any(stage==["complete","kinematicBound","delayedChord","route"]),'bmtpEngine:InvalidStage','Unknown internal solve stage.');
-clockGuide = struct();
 % Validate the request and resolve shared solver settings.
 request = bmtpEngine.createSolveRequest(seed, regions_units, coverage, initialState, goalState, limits, options);
 initialState = request.InitialState; goalState = request.GoalState;
@@ -79,21 +73,18 @@ obstacleTarget_units = normalNormLimit * options.CollisionClearanceTolerance_uni
 % The unconstrained fixed-time minimum-jerk solution is a quintic on the
 % endpoint chord. Degree elevation preserves it exactly in the shared basis.
 preparedMotion = struct('Success',false);
-certificate = struct('Passed',false);
+certificateEventTime_s=[];
+certificate = struct('Passed',false); certificateCache=[];
 analyticIdentifier = "minimumJerkQuintic";
-analyticRepresentation = "analyticFixedTime";
-if stage=="delayedChord" && request.IsRest
-    [controls_units,durations_s,powers_units,schedule] = bmtpEngine.createDelayedChord(request);
-    diagnostics.DepartureSchedule = schedule;
-    if schedule.Available
-        preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s,powers_units);
-        if preparedMotion.Success
-            certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
-        end
+analyticRepresentation = "analyticQuinticClock";
+if size(route_units,1)==2 && (options.GoalTimeMode=="fixedArrival" || request.IsRest)
+    directDuration_s = request.MotionHorizon_s;
+    if options.GoalTimeMode=="earliestArrival"
+        displacement_units = abs(goalState.position_units-initialState.position_units);
+        directDuration_s = max([1.875*displacement_units./limits.maxVelocity_units_s, ...
+            sqrt((10/sqrt(3))*displacement_units./limits.maxAcceleration_units_s2), ...
+            (60*displacement_units./limits.maxJerk_units_s3).^(1/3)]);
     end
-    analyticIdentifier = "delayedJerkLimitedChord";
-    analyticRepresentation = "analyticDelayedChord";
-elseif stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixedArrival"
     fraction = zeros(degree+1,1);
     coefficients = [10 -15 6];
     for k = 0:degree
@@ -116,105 +107,76 @@ elseif stage~="route" && size(route_units,1)==2 && options.GoalTimeMode == "fixe
             end
         end
     end
-    preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),request.MotionHorizon_s);
+    preparedMotion = bmtpEngine.prepareFinalMotion(request,reshape(controls_units,1,degree+1,2),directDuration_s);
     if preparedMotion.Success
-        certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
+        [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
     end
-elseif stage~="route" && options.GoalTimeMode=="earliestArrival" && request.IsRest
-    [controls_units,durations_s] = bmtpEngine.createJerkLimitedChord(initialState.position_units,goalState.position_units,limits,degree);
-    preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,durations_s);
-    if preparedMotion.Success
-        certificate = bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units);
-    end
-    analyticIdentifier = "jerkLimitedChord";
-    analyticRepresentation = "analyticMinimumTime";
 end
-boundAccepted = false;
-boundStats = bmtpEngine.accumulateConicDiagnostics();
+if seed.Source=="departureSchedule"
+    [controls_units,times_s,powers_units,departure] = bmtpEngine.createDelayedChord(request);
+    diagnostics.DepartureSchedule = departure;
+    if isempty(times_s)
+        [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer,"No C3 chord departure fits the horizon.","noDepartureWindow",false);
+        return;
+    end
+    preparedMotion = bmtpEngine.prepareFinalMotion(request,controls_units,times_s,powers_units);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+    if ~preparedMotion.Success || ~certificate.Passed
+        [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer,"The C3 departure proposal did not pass certification.","departureUncertified",false);
+        return;
+    end
+    analyticIdentifier = "c3DepartureSchedule";
+end
 boundRecord = struct('Attempted',false,'Passed',false,'Time_s',NaN,'ElapsedTime_s',0,'TrajectorySocpCount',0);
-if request.IsRest && any(stage==["complete","kinematicBound"]) && options.GoalTimeMode=="earliestArrival" && ~(preparedMotion.Success && certificate.Passed)
-    % At the independent-axis lower bound, the limiting axis is analytic.
-    % Optimize only the remaining freedom on a source-derived clock guide.
-    boundTimer = tic;
-    boundWarm = bmtpEngine.createReachabilityWarmStart(request);
-    clockGuide = boundWarm.ClockGuide;
-    boundRecord.Attempted = true;
-    boundRecord.Time_s = boundWarm.Duration_s;
-    if boundWarm.ClockGuide.IsConnected && boundWarm.Duration_s<=request.MotionHorizon_s && ...
-            nnz(boundWarm.AxisMinimumTime_s==boundWarm.Duration_s)<2
-        boundRequest = request;
-        boundRequest.Options.GoalTimeMode = "fixedArrival";
-        boundRequest.MotionHorizon_s = boundWarm.Duration_s;
-        boundDiagnostics = createEmptyDiagnostics(degree,0,boundWarm.SegmentCount,numel(regions_units));
-        boundDiagnostics.Coverage = coverage;
-        boundDiagnostics.WarmRouteResampled = true;
-        boundDiagnostics.ApplicablePairCount = nnz(boundWarm.RegionActiveBySegment);
-        boundPowers_units = boundWarm.FixedPower_units;
-        if ~isfield(coverage,'ActiveTimeInterval_s')
-            [boundResult,boundDiagnostics] = bmtpEngine.solveStaticCorridor(request,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
-            boundPowers_units = boundResult.PositionPower_units;
-        else
-            [boundResult,boundDiagnostics] = bmtpEngine.solveAlternatingTrajectory(boundRequest,boundWarm,boundDiagnostics,obstacleTarget_units,roundoffReserve_units);
-        end
-        boundStats = boundDiagnostics.ConicSolver;
-        if boundResult.Success
-            boundMotion = bmtpEngine.prepareFinalMotion(request,boundResult.ControlPoint_units,boundResult.SegmentTime_s,boundPowers_units);
-            if boundMotion.Success
-                boundCertificate = bmtpEngine.checkFinalMotion(request,boundWarm,boundMotion,roundoffReserve_units,obstacleTarget_units);
-                if boundCertificate.Passed
-                    preparedMotion = boundMotion;
-                    certificate = boundCertificate;
-                    diagnostics = boundDiagnostics;
-                    boundAccepted = true;
-                    analyticIdentifier = "kinematicBoundBmtp";
-                    analyticRepresentation = "fixedClockElasticSocp";
-                    if ~isfield(coverage,'ActiveTimeInterval_s')
-                        analyticIdentifier = "monotoneStaticCorridor";
-                        analyticRepresentation = "integratedQuinticCorridor";
-                    end
-                end
-            end
-        end
-    end
-    boundRecord.Passed = boundAccepted && abs(sum(preparedMotion.SegmentTime_s)-boundWarm.Duration_s)<=options.ArrivalTimeTolerance_s;
-    boundRecord.ElapsedTime_s = toc(boundTimer);
-    boundRecord.TrajectorySocpCount = boundStats.CallCount;
-end
 if preparedMotion.Success && certificate.Passed
     diagnostics.Identifier = analyticIdentifier;
     diagnostics.ConstraintRepresentation = analyticRepresentation;
-    if ~boundAccepted
-        diagnostics.Converged = true;
-        diagnostics.OptimizerSpanCount = 0;
-    end
+    diagnostics.Converged = true;
+    diagnostics.OptimizerSpanCount = 0;
     diagnostics.SegmentCount = numel(preparedMotion.SegmentTime_s);
 else
-    if any(stage==["kinematicBound","delayedChord"])
-        diagnostics.TrajectorySocpCount = boundStats.CallCount;
-        diagnostics.ConicSolver = boundStats;
-        diagnostics.LowerBoundAttempt = boundRecord;
-        [candidate,diagnostics] = finishFailure(candidate,diagnostics,totalTimer, ...
-            "The "+stage+" motion was not certified.",stage+"Uncertified",false);
-        return;
-    end
     prescribedPower_units = [];
     if options.GoalTimeMode=="earliestArrival" && ~isfield(coverage,'ActiveTimeInterval_s')
-        [alternatingResult,diagnostics] = bmtpEngine.solveCubicTrajectory(request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
+        alternatingResult=struct('Success',false);
+        if request.IsRest
+            % Reuse exact source facets for monotone routes. The locked axis
+            % uses smoothed quintic spans; free-axis jerk is C0 across joins.
+            distance_units=abs(goalState.position_units-initialState.position_units);
+            axisTime_s=max([1.875*distance_units./limits.maxVelocity_units_s; ...
+                sqrt((10/sqrt(3))*distance_units./limits.maxAcceleration_units_s2); ...
+                (60*distance_units./limits.maxJerk_units_s3).^(1/3)],[],1);
+            [~,corridorTimes_s,corridorPower_units]=bmtpEngine.createC3Chord( ...
+                initialState.position_units,goalState.position_units,limits);
+            corridorWarm=warmStart;
+            corridorWarm.SegmentCount=numel(corridorTimes_s);
+            corridorWarm.SegmentTime_s=corridorTimes_s;
+            corridorWarm.FixedPower_units=corridorPower_units;
+            corridorWarm.AxisMinimumTime_s=axisTime_s;
+            corridorWarm.ClockGuide=struct('Route_units',route_units);
+            [alternatingResult,diagnostics]=bmtpEngine.solveStaticCorridor(request,corridorWarm,diagnostics,obstacleTarget_units,roundoffReserve_units);
+        end
+        if ~alternatingResult.Success
+            previousConic=diagnostics.ConicSolver;
+            previousSolveCount=diagnostics.TrajectorySocpCount;
+            [alternatingResult,diagnostics] = bmtpEngine.solveQuinticTrajectory(request,warmStart,diagnostics,obstacleTarget_units,roundoffReserve_units);
+            diagnostics.ConicSolver.CallCount=diagnostics.ConicSolver.CallCount+previousConic.CallCount;
+            diagnostics.ConicSolver.TotalTime_s=diagnostics.ConicSolver.TotalTime_s+previousConic.TotalTime_s;
+            diagnostics.TrajectorySocpCount=diagnostics.TrajectorySocpCount+previousSolveCount;
+        end
         prescribedPower_units = alternatingResult.PositionPower_units;
     else
         [alternatingResult, diagnostics] = bmtpEngine.solveAlternatingTrajectory(request, warmStart, diagnostics, obstacleTarget_units, roundoffReserve_units);
     end
-    diagnostics.TrajectorySocpCount = diagnostics.TrajectorySocpCount+boundStats.CallCount;
-    diagnostics.ConicSolver.CallCount = diagnostics.ConicSolver.CallCount+boundStats.CallCount;
-    diagnostics.ConicSolver.TotalTime_s = diagnostics.ConicSolver.TotalTime_s+boundStats.TotalTime_s;
-    diagnostics.LowerBoundAttempt = boundRecord;
     if ~alternatingResult.Success
         [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "No optimized collision-free iterate was found. " + alternatingResult.SolverMessage, "noOptimizedFeasibleIterate", false);
         return;
     end
+    if isfield(alternatingResult,'CertificateEventTime_s')
+        certificateEventTime_s=alternatingResult.CertificateEventTime_s;
+    end
     % Endpoint correction and export can increase the derivative bounds.
     preparedMotion = bmtpEngine.prepareFinalMotion(request, alternatingResult.ControlPoint_units, alternatingResult.SegmentTime_s,prescribedPower_units);
-    certificate = struct('Passed',false);
+    certificate = struct('Passed',false); certificateCache=[];
 end
 diagnostics.LowerBoundAttempt = boundRecord;
 
@@ -230,8 +192,28 @@ end
 
 % Certify every final curve-region pair; sampled clearance alone is insufficient.
 if ~certificate.Passed
-    certificate = bmtpEngine.checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request, warmStart, preparedMotion, roundoffReserve_units, obstacleTarget_units,certificateCache);
 end
+% A safe curved span need not admit one affine separator. Exact subdivision
+% can expose its clearance without moving the curve or changing tolerances.
+for refinement=1:10
+    if certificate.Passed || ~certificate.DynamicsPassed || ~certificate.ContinuityPassed, break; end
+    failed=~reshape([certificate.Planes.Verified],size(certificate.Planes)) & certificate.RegionActiveBySegment;
+    splitMask=any(failed,2); splitFraction=repmat(0.5,numel(splitMask),1);
+    breaks_s=[0;cumsum(preparedMotion.SegmentTime_s)];
+    for span=find(splitMask).'
+        events_s=certificateEventTime_s(certificateEventTime_s>breaks_s(span)+64*eps(breaks_s(end)) & ...
+            certificateEventTime_s<breaks_s(span+1)-64*eps(breaks_s(end)));
+        if ~isempty(events_s)
+            [~,event]=min(abs(events_s-mean(breaks_s(span:span+1))));
+            splitFraction(span)=(events_s(event)-breaks_s(span))/preparedMotion.SegmentTime_s(span);
+        end
+    end
+    preparedMotion=bmtpEngine.prepareFinalMotion(request,preparedMotion.ControlPoint_units, ...
+        preparedMotion.SegmentTime_s,preparedMotion.PrescribedPower_units,splitMask,splitFraction);
+    [certificate,certificateCache]=bmtpEngine.checkFinalMotion(request,warmStart,preparedMotion,roundoffReserve_units,obstacleTarget_units,certificateCache);
+end
+diagnostics.SegmentCount=numel(preparedMotion.SegmentTime_s);
 diagnostics.FinalCollisionPairCount = certificate.AllPairCount;
 diagnostics.MotionCertificate = preparedMotion.MotionCertificate;
 diagnostics.PlaneCertificate  = certificate;
@@ -243,7 +225,7 @@ candidate = bmtpEngine.createMotionOutput(candidate, request, preparedMotion);
 diagnostics.BestDuration_s = candidate.TrajectoryDuration_s;
 % Reject optimizer output that fails the independent certificate even when the numerical solver reported success.
 if ~certificate.Passed
-    [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "The optimized motion requires independent collision validation.", "planeCertificateUnavailable", true);
+    [candidate, diagnostics] = finishFailure(candidate, diagnostics, totalTimer, "The optimized motion failed continuous collision, dynamics, or C3 continuity certification.", "planeCertificateUnavailable", true);
     return;
 end
 
@@ -310,7 +292,7 @@ function diagnostics = createEmptyDiagnostics(degree, splitCount, segmentCount, 
     % Initialize solver, timing, and certificate diagnostics.
     diagnostics = struct("Identifier", "bmtpStaticDegree" + string(degree), ...
         "ConstraintRepresentation", "thirdOrderTimePowerSocp", ...
-        "Representation", "C2CompositeBezier", "Attempted", true, ...
+        "Representation", "C3CompositeQuintic", "Attempted", true, ...
         "Accepted", false, "Degree", degree, ...
         "SubspansPerSeedEdge", splitCount, "OriginalSeedSegmentCount", segmentCount, ...
         "WarmRouteResampled", false, "OptimizerSpanCount", segmentCount, ...

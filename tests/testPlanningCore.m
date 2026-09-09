@@ -112,3 +112,27 @@ function testBatchedContactsHolesAndConcavities(testCase)
         verifyEqual(testCase,actual.RouteLength_units,expectedLength_units(k),'AbsTol',1e-8);
     end
 end
+
+function testReflectedAndTranslatedConcavities(testCase)
+    % The occupied side must come from filled geometry, including hole rings.
+    uShape=polyshape([-4,5;-2,5;-2,-2;2,-2;2,5;4,5;4,-4;-4,-4]);
+    ring=subtract(polyshape([-4,-4;4,-4;4,4;-4,4]),polyshape([-2,-2;2,-2;2,2;-2,2]));
+    shapes={uShape,ring}; starts=[0,0;-7,0]; goals=[0,-7;7,0]; lengths=[16+sqrt(29),18];
+    transforms=cat(3,eye(2),[-1,0;0,1],[0,-1;1,0],[0,1;1,0]);
+    for translation=[0,128]
+        offset=[translation,-2*translation];
+        limits=struct('xInterval_units',[-12,12]+offset(1),'yInterval_units',[-12,12]+offset(2));
+        for transform=1:size(transforms,3)
+            rotation=transforms(:,:,transform);
+            for k=1:numel(shapes)
+                vertices=shapes{k}.Vertices*rotation+offset;
+                shape=polyshape(vertices(:,1),vertices(:,2));
+                scene=struct('ProtectedShape',shape);
+                graph=obstacleAvoidance.search.createVisibilityGraph(scene,starts(k,:)*rotation+offset, ...
+                    goals(k,:)*rotation+offset,limits,struct('ConstraintTolerance',1e-8));
+                verifyTrue(testCase,graph.IsConnected);
+                verifyEqual(testCase,graph.RouteLength_units,lengths(k),'AbsTol',1e-8);
+            end
+        end
+    end
+end

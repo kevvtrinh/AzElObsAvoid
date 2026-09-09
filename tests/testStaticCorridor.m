@@ -29,7 +29,9 @@ function testAxisDirectionAndTranslation(testCase)
         verifyTrue(testCase,result.Success,result.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
         verifyEqual(testCase,result.SolverDiagnostics.Identifier,"monotoneStaticCorridor");
-        verifyEqual(testCase,result.TrajectoryDuration_s,5.5,'AbsTol',1e-8);
+        verifyGreaterThanOrEqual(testCase,result.TrajectoryDuration_s,5.5);
+        verifyLessThanOrEqual(testCase,result.TrajectoryDuration_s,goal.time_s);
+        verifyEqual(testCase,result.Polynomial.Degree,5);
         verifyEqual(testCase,result.PlaneCertificate.AllPairCount, ...
             result.Polynomial.SegmentCount*numel(result.PlaneCertificate.Regions_units));
         if k==1

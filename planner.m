@@ -6,9 +6,8 @@ function [result, diagnosis] = planner(obstacles, initialState, goalState, limit
 %       obstacles, initialState, goalState, limits, options)
 %
 % PURPOSE
-%   - Prepare protected polygon histories, test the kinematic clock bound,
-%     and construct independently certified BMTP motion. Search the exact
-%     spatial visibility graph when a bound solution is unavailable.
+%   - Prepare protected polygon histories and an exact visibility guide,
+%     then construct independently certified C3 quintic BMTP motion.
 %
 % INPUTS
 %   - obstacles: static polygon structs or canonical polygon histories.
@@ -82,7 +81,6 @@ if options.WrapX || options.WrapY
         limits.(names(axis)) = initialState.position_units(axis)+[-reach reach];
     end
 end
-isRest = all([initialState.velocity_units_s initialState.acceleration_units_s2 goalState.velocity_units_s goalState.acceleration_units_s2]==0);
 if goalState.time_s <= initialState.time_s
     error("planTrajectory:InvalidTimeOrder", "goalState.time_s must be greater than initialState.time_s.");
 end
@@ -95,12 +93,6 @@ end
 totalTimer = tic;
 earliestTarget = ~isempty(goalState.targetMotion) && options.GoalTimeMode=="earliestArrival";
 interceptTime_s = goalState.time_s;
-if earliestTarget && isRest && ~options.MatchTargetVelocity && ~options.MatchTargetAcceleration
-    interceptTime_s = obstacleAvoidance.input.findEarliestTargetTime(goalState.targetMotion,initialState,goalState.time_s,limits);
-    if isfinite(interceptTime_s)
-        goalState.position_units = obstacleAvoidance.input.targetPositionAtTime(goalState.targetMotion,interceptTime_s);
-    end
-end
 preparedObstacles = obstacleAvoidance.obstacles.prepareObstacles(obstacles);
 scene = obstacleAvoidance.obstacles.snapshot(preparedObstacles, initialState.time_s);
 visibilityGraph = struct('NodePosition_units',zeros(0,2),'AcceptedNodeIndex',zeros(0,2), ...
@@ -119,19 +111,7 @@ if ~endpointFeasible
     result.ElapsedTime_s = toc(totalTimer);
     return;
 end
-if earliestTarget && isnan(interceptTime_s)
-    result.Message = "The target never enters the rest-to-rest reachable set within the supplied horizon.";
-    result.TerminationReason = "targetUnreachable";
-    result.ElapsedTime_s = toc(totalTimer);
-    result.Validation = obstacleAvoidance.validateTrajectory(result);
-    return;
-end
 isDynamic = ~isempty(preparedObstacles) && any(arrayfun(@(o) ~o.InternalPreparation.IsTimeInvariant,preparedObstacles));
-if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget) && ...
-        (~isRest || options.MatchTargetVelocity || options.MatchTargetAcceleration)
-    result = obstacleAvoidance.input.searchArrivalTimes(result);
-    return;
-end
 regions_units = cell(0,1);
 for k = 1:numel(scene), regions_units = [regions_units; scene(k).Regions_units]; end
 if isDynamic
@@ -149,119 +129,77 @@ if isDynamic
 else
     coverage.StaticScene = scene;
 end
+if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
+    isRest = all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
+        goalState.velocity_units_s,goalState.acceleration_units_s2]==0);
+    if isDynamic && ~earliestTarget && isRest
+        route_units = [initialState.position_units;goalState.position_units];
+        seed = struct('position_units',route_units,'tau',[0;1],'Source',"departureSchedule");
+        [candidate,diagnostics] = bmtpEngine.solve(seed,regions_units,coverage,initialState,goalState,limits,options);
+        if candidate.Success
+            for name=reshape(string(fieldnames(candidate)),1,[]), result.(name)=candidate.(name); end
+            result.Route_units=route_units; result.SolverDiagnostics=diagnostics;
+            result.VisibilityGraph.SearchKind="c3DepartureSchedule";
+            result.Validation=obstacleAvoidance.validateTrajectory(result);
+            result.Success=result.Validation.Passed;
+            result.ElapsedTime_s=toc(totalTimer);
+            if result.Success, return; end
+        end
+    end
+    result = obstacleAvoidance.input.searchArrivalTimes(result);
+    return;
+end
 motionGoalState = goalState;
 motionGoalState.time_s = interceptTime_s;
 
-%% Section 3: Test The Kinematic Bound Before Spatial Route Search
+%% Section 3: Construct A Spatial Guide And Solve C3 Quintic Motion
 
 route_units = [initialState.position_units;goalState.position_units];
-seed = struct('position_units',route_units,'tau',[0;1],'Index',1, ...
-    'Source',"kinematicBound",'ObstacleEnvelope_units',zeros(0,2));
-candidate = struct('Success',false);
-boundAttempted = options.GoalTimeMode=="earliestArrival" && isRest;
-if boundAttempted
-    [candidate,solverDiagnostics,clockGuide] = bmtpEngine.solve(seed,regions_units,coverage, ...
-        initialState,motionGoalState,limits,options,"kinematicBound");
-    result.SolverDiagnostics = solverDiagnostics;
-    if candidate.Success
-        result.VisibilityGraph.SearchKind = "analyticMotion";
-        if isfield(clockGuide,'Route_units')
-            clockGuide.SearchKind = "kinematicClockProjection";
-            result.VisibilityGraph = clockGuide;
-            route_units = clockGuide.Route_units;
-        end
-    end
-end
-if ~candidate.Success
-    attemptedDiagnostics = {};
-    if boundAttempted, attemptedDiagnostics{end+1} = solverDiagnostics; end
-    delayedCandidate = struct('Success',false);
-    if isDynamic && boundAttempted && ~earliestTarget
-        delayedSeed = seed; delayedSeed.Source = "departureSchedule";
-        [delayedCandidate,delayedDiagnostics] = bmtpEngine.solve(delayedSeed,regions_units,coverage, ...
-            initialState,motionGoalState,limits,options,"delayedChord");
-        attemptedDiagnostics{end+1} = delayedDiagnostics;
-    end
-    % A future terminal point blocked only in the initial snapshot is not an
-    % invalid endpoint. Use the direct seed with authoritative affine cells.
-    futureGoalBlocked = isDynamic && obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
-        preparedObstacles,goalState.position_units(1),goalState.position_units(2),initialState.time_s);
-    if futureGoalBlocked
-        visibilityGraph = result.VisibilityGraph;
-        visibilityGraph.Route_units = route_units;
-        visibilityGraph.RouteLength_units = norm(diff(route_units));
-        visibilityGraph.SearchKind = "temporalDirectSeed";
+futureGoalBlocked = isDynamic && obstacleAvoidance.obstacles.queryObstacleOccupancyAtTime( ...
+    preparedObstacles,goalState.position_units(1),goalState.position_units(2),initialState.time_s);
+if futureGoalBlocked
+    visibilityGraph.Route_units = route_units;
+    visibilityGraph.RouteLength_units = norm(diff(route_units));
+    visibilityGraph.SearchKind = "temporalDirectSeed";
+else
+    % Chronological trials often share exactly the same spatial problem.
+    % Compare all graph inputs directly so changed source geometry cannot
+    % reuse stale visibility edges. Retain only the most recent graph.
+    persistent previousVisibilityInput previousVisibilityGraph
+    visibilityInput=struct('Scene',scene,'Start',initialState.position_units, ...
+        'Goal',goalState.position_units,'Limits',limits,'Options',options);
+    if isequaln(visibilityInput,previousVisibilityInput)
+        visibilityGraph=previousVisibilityGraph;
     else
         visibilityGraph = obstacleAvoidance.search.createVisibilityGraph(scene,initialState.position_units,goalState.position_units,limits,options);
-        visibilityGraph.SearchKind = "initialSpatialSnapshot";
+        previousVisibilityInput=visibilityInput; previousVisibilityGraph=visibilityGraph;
     end
-    result.VisibilityGraph = visibilityGraph;
-    % Compare the scheduled chord with the speed bound for traversing the
-    % spatial guide. A valid schedule also resolves disconnected snapshots.
-    useDelayed = delayedCandidate.Success && (~visibilityGraph.IsConnected || ...
-        delayedCandidate.TrajectoryDuration_s<=visibilityGraph.RouteLength_units/norm(limits.maxVelocity_units_s));
-    if ~useDelayed && ~futureGoalBlocked && (~visibilityGraph.SourceFree || ~visibilityGraph.GoalFree)
-        result.Message = "An endpoint lies inside or on protected obstacle geometry.";
-        result.TerminationReason = "invalidEndpoint";
-        result.ElapsedTime_s = toc(totalTimer);
-        result.Validation = obstacleAvoidance.validateTrajectory(result);
-        if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
-            result = obstacleAvoidance.input.searchArrivalTimes(result);
-        end
-        return;
-    end
-    if ~useDelayed && ~futureGoalBlocked && ~visibilityGraph.IsConnected
-        result.Message = "The initial visibility graph contains no start-to-goal route.";
-        result.TerminationReason = "noVisibilityRoute";
-        result.ElapsedTime_s = toc(totalTimer);
-        result.Validation = obstacleAvoidance.validateTrajectory(result);
-        if options.GoalTimeMode=="earliestArrival" && (isDynamic || earliestTarget)
-            result = obstacleAvoidance.input.searchArrivalTimes(result);
-        end
-        return;
-    end
-    if ~useDelayed
-        route_units = visibilityGraph.Route_units;
-        edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
-        seed.position_units = route_units;
-        seed.tau = [0;cumsum(edgeLength_units)]/sum(edgeLength_units);
-        seed.Source = "visibilityGraph";
-        if futureGoalBlocked, seed.Source = "temporalDirectSeed"; end
-        stage = "complete";
-        if boundAttempted, stage = "route"; end
-        [candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
-            initialState,motionGoalState,limits,options,stage);
-        attemptedDiagnostics{end+1} = solverDiagnostics;
-        useDelayed = delayedCandidate.Success && (~candidate.Success || ...
-            delayedCandidate.TrajectoryDuration_s<=candidate.TrajectoryDuration_s);
-    end
-    if useDelayed
-        candidate = delayedCandidate;
-        solverDiagnostics = delayedDiagnostics;
-        route_units = [initialState.position_units;goalState.position_units];
-    end
-    if boundAttempted
-        solverDiagnostics.LowerBoundAttempt = result.SolverDiagnostics.LowerBoundAttempt;
-        solverDiagnostics.TrajectorySocpCount = 0;
-        solverDiagnostics.ConicSolver.CallCount = 0;
-        solverDiagnostics.ConicSolver.TotalTime_s = 0;
-        solverDiagnostics.ElapsedTime_s = 0;
-        for k = 1:numel(attemptedDiagnostics)
-            previous = attemptedDiagnostics{k};
-            solverDiagnostics.TrajectorySocpCount = solverDiagnostics.TrajectorySocpCount+previous.TrajectorySocpCount;
-            solverDiagnostics.ConicSolver.CallCount = solverDiagnostics.ConicSolver.CallCount+previous.ConicSolver.CallCount;
-            solverDiagnostics.ConicSolver.TotalTime_s = solverDiagnostics.ConicSolver.TotalTime_s+previous.ConicSolver.TotalTime_s;
-            solverDiagnostics.ElapsedTime_s = solverDiagnostics.ElapsedTime_s+previous.ElapsedTime_s;
-        end
-    end
+    visibilityGraph.SearchKind = "initialSpatialSnapshot";
 end
+if isDynamic && ~visibilityGraph.IsConnected
+    % A disconnected snapshot cannot rule out a route through a later opening.
+    % This chord is only a seed; all time-dependent exclusions remain active.
+    visibilityGraph.Route_units = route_units;
+    visibilityGraph.RouteLength_units = norm(diff(route_units));
+    visibilityGraph.SearchKind = "temporalDirectSeed";
+    futureGoalBlocked = true;
+end
+result.VisibilityGraph = visibilityGraph;
+if ~futureGoalBlocked && ~visibilityGraph.IsConnected
+    result.Message = "The initial visibility graph contains no start-to-goal route.";
+    result.TerminationReason = "noVisibilityRoute";
+    result.ElapsedTime_s = toc(totalTimer);
+    return;
+end
+route_units = visibilityGraph.Route_units;
+edgeLength_units = vecnorm(diff(route_units,1,1),2,2);
+seed = struct('position_units',route_units,'tau',[0;cumsum(edgeLength_units)]/sum(edgeLength_units), ...
+    'Index',1,'Source',visibilityGraph.SearchKind,'ObstacleEnvelope_units',zeros(0,2));
+[candidate,solverDiagnostics] = bmtpEngine.solve(seed,regions_units,coverage, ...
+    initialState,motionGoalState,limits,options);
 
 %% Section 4: Independently Validate The Complete Returned Motion
 
-if earliestTarget && ~candidate.Success
-    candidate.Message = "Motion at the kinematic interception bound was not certified; later interception has not been searched.";
-    candidate.TerminationReason = "earliestInterceptUncertified";
-end
 candidateFields = string(fieldnames(candidate));
 for fieldName = reshape(candidateFields, 1, [])
     result.(fieldName) = candidate.(fieldName);

@@ -44,5 +44,22 @@ if checkGoal && max(abs(goalState.position_units-initialState.position_units)./l
     message = "The displacement exceeds the velocity-limited travel distance within the horizon.";
     reason = "timeWindowInfeasible"; return;
 end
+if checkGoal && all([initialState.velocity_units_s,initialState.acceleration_units_s2, ...
+        goalState.velocity_units_s,goalState.acceleration_units_s2]==0)
+    % Allowing jerk jumps enlarges the C3 feasible set, so the exact C2 axis
+    % time is still a valid necessary bound, never an attained C3-time claim.
+    for axis=1:2
+        if initialState.position_units(axis)==goalState.position_units(axis), continue; end
+        axisLimits=struct('maxVelocity_units_s',repmat(limits.maxVelocity_units_s(axis),1,2), ...
+            'maxAcceleration_units_s2',repmat(limits.maxAcceleration_units_s2(axis),1,2), ...
+            'maxJerk_units_s3',repmat(limits.maxJerk_units_s3(axis),1,2));
+        [~,times_s]=bmtpEngine.createJerkLimitedChord([initialState.position_units(axis),0], ...
+            [goalState.position_units(axis),0],axisLimits,3);
+        if sum(times_s)>goalState.time_s-initialState.time_s+options.ArrivalTimeTolerance_s
+            message="The horizon is below a necessary rest-to-rest axis timing bound.";
+            reason="timeWindowInfeasible"; return;
+        end
+    end
+end
 feasible = true;
 end

@@ -14,13 +14,15 @@ function setupOnce(testCase)
     testCase.TestData.Result = exampleInterceptMovingTargetEarliest(struct('PlotOutputs',false,'Verbose',false));
 end
 
-function testHistoricalMinimumTime(testCase)
+function testChronologicalQuinticArrival(testCase)
     r = testCase.TestData.Result;
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.ArrivalTime_s,55/9,'AbsTol',1e-8);
-    verifyEqual(testCase,r.MotionLength_units,norm([6+0.2*55/9,1+0.02*55/9]),'AbsTol',1e-8);
-    verifyEqual(testCase,r.SolverDiagnostics.TrajectorySocpCount,0);
+    verifyGreaterThanOrEqual(testCase,r.ArrivalTime_s,55/9);
+    verifyFalse(testCase,r.TemporalSearch.GlobalEarliestProven);
+    verifyEqual(testCase,r.position_units(end,:),[6+0.2*r.ArrivalTime_s,1+0.02*r.ArrivalTime_s],'AbsTol',1e-8);
+    verifyEqual(testCase,r.ArrivalTime_s,r.TemporalSearch.TrialTime_s(end));
+    verifyEqual(testCase,r.SolverDiagnostics.ConicSolver.CallCount,r.SolverDiagnostics.TrajectorySocpCount);
 end
 
 function testDisconnectedFeasibleTimes(testCase)
@@ -30,8 +32,8 @@ function testDisconnectedFeasibleTimes(testCase)
     r = planner([],source.Inputs.initialState,goal,source.Limits,source.Options);
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.ArrivalTime_s,(-9+sqrt(273))/2,'AbsTol',1e-8);
-    verifyLessThan(testCase,r.ArrivalTime_s,4);
+    verifyGreaterThanOrEqual(testCase,r.ArrivalTime_s,(-9+sqrt(273))/2);
+    verifyLessThanOrEqual(testCase,r.ArrivalTime_s,4);
 end
 
 function testUnreachableTarget(testCase)
@@ -40,7 +42,7 @@ function testUnreachableTarget(testCase)
     goal = struct('time_s',20,'targetMotion',target);
     r = planner([],source.Inputs.initialState,goal,source.Limits,source.Options);
     verifyFalse(testCase,r.Success);
-    verifyEqual(testCase,r.TerminationReason,"targetUnreachable");
+    verifyEqual(testCase,r.TerminationReason,"arrivalSearchExhausted");
     verifyEmpty(testCase,r.time_s);
 end
 
@@ -51,7 +53,7 @@ function testShiftedClockAndSourceTampering(testCase)
     goal.targetMotion.time_s = goal.targetMotion.time_s+7;
     r = planner([],initial,goal,source.Limits,source.Options);
     verifyTrue(testCase,r.Success,r.Message);
-    verifyEqual(testCase,r.ArrivalTime_s,7+55/9,'AbsTol',1e-8);
+    verifyEqual(testCase,r.ArrivalTime_s,7+source.ArrivalTime_s,'AbsTol',1e-8);
     r.Inputs.goalState.targetMotion.position_units(2,1) = r.Inputs.goalState.targetMotion.position_units(2,1)+0.1;
     verifyFalse(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
 end
@@ -70,6 +72,8 @@ function testStationaryTargetsAcrossTimingRegimes(testCase)
         r = planner([],initial,goal,limits,struct('GoalTimeMode','earliestArrival'));
         verifyTrue(testCase,r.Success,r.Message);
         verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-        verifyEqual(testCase,r.ArrivalTime_s,expected_s(k),'AbsTol',1e-8);
+        verifyGreaterThanOrEqual(testCase,r.ArrivalTime_s,expected_s(k));
+        verifyEqual(testCase,r.ArrivalTime_s,r.TemporalSearch.TrialTime_s(end));
+        verifyFalse(testCase,r.TemporalSearch.GlobalEarliestProven);
     end
 end

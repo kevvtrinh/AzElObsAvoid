@@ -51,7 +51,7 @@ end
 %% Section 2: Check Polynomial Shape, Time, And Dynamics
 
 polynomial = result.Polynomial;
-polynomialFields = {'SegmentCount', 'SegmentStartTime_s', 'SegmentDuration_s', ...
+polynomialFields = {'Degree', 'SegmentCount', 'SegmentStartTime_s', 'SegmentDuration_s', ...
     'FinalTime_s', 'positionPower_units', 'velocityPower_units_s', ...
     'accelerationPower_units_s2', 'jerkPower_units_s3'};
 if ~isstruct(polynomial) || ~isscalar(polynomial) || ~all(isfield(polynomial, polynomialFields))
@@ -69,6 +69,8 @@ for derivativeOrder = 0:3
     array = powerArrays{derivativeOrder + 1};
     valid = valid && isnumeric(array) && size(array, 1) == segmentCount && size(array, 2) == 2 && size(array, 3) == positionPowerCount - derivativeOrder && all(isfinite(array), "all");
 end
+valid = valid && positionPowerCount==6 && isnumeric(polynomial.Degree) && ...
+    isscalar(polynomial.Degree) && polynomial.Degree==5;
 validation.PolynomialValid = valid;
 if ~valid
     validation.Message = "The polynomial arrays or segment times are invalid.";
@@ -87,8 +89,8 @@ end
 validation.MaximumDynamicsResidual = max(abs(dynamicsResidual));
 validation.DynamicsConsistent = validation.MaximumDynamicsResidual <= tolerance;
 continuityResidual = zeros(0, 1);
-% C2 motion permits bounded jerk jumps; certify jerk on both closed spans.
-for derivativeOrder = 0:2
+% C3 motion requires continuous physical jerk at every interior join.
+for derivativeOrder = 0:3
     array = powerArrays{derivativeOrder + 1};
     continuityResidual = [continuityResidual; reshape(sum(array(1:end - 1, :, :), 3) - array(2:end, :, 1), [], 1)]; %#ok<AGROW>
 end

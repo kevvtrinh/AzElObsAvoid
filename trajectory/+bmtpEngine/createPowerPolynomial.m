@@ -37,9 +37,21 @@ degree       = size(controlPoint_units, 2) - 1;
 valid      = bernsteinIndex <= powerIndex;
 conversion = zeros(degree + 1);
 conversion(valid) = factorial(degree) * (-1) .^ (powerIndex(valid) - bernsteinIndex(valid)) ./ (factorial(bernsteinIndex(valid)) .* factorial(powerIndex(valid) - bernsteinIndex(valid)) .* factorial(degree - powerIndex(valid)));
-bernsteinPages    = permute(controlPoint_units, [2 1 3]);
-positionPower_units = permute(pagemtimes(conversion, bernsteinPages), [2 3 1]);
-positionPower_units = stabilizePolynomialEndpoints(positionPower_units, controlPoint_units,segmentTime_s);
+fullyPrescribed=nargin>=4 && ~isempty(prescribedPower_units) && all(isfinite(prescribedPower_units),'all');
+% Fully prescribed powers replace every converted coefficient below. Avoid
+% solving a discarded control projection, especially on very short spans.
+if degree==5 && ~fullyPrescribed
+    controlPoint_units = projectQuinticContinuity(controlPoint_units,segmentTime_s);
+end
+% Subtract the common origin before conversion to avoid cancellation between
+% large absolute coordinates; only the constant power carries the origin.
+origin_units = reshape(controlPoint_units(1,1,:),1,1,2);
+bernsteinPages = permute(controlPoint_units-origin_units,[2,1,3]);
+positionPower_units = permute(pagemtimes(conversion,bernsteinPages),[2,3,1]);
+positionPower_units(:,:,1) = positionPower_units(:,:,1)+reshape(origin_units,1,2);
+if degree>5
+    positionPower_units = stabilizePolynomialEndpoints(positionPower_units,controlPoint_units,segmentTime_s);
+end
 if nargin>=4 && ~isempty(prescribedPower_units)
     assert(isequal(size(prescribedPower_units),size(positionPower_units)), ...
         'bmtpEngine:InvalidPrescribedPower','Analytic coefficients must match the composite basis.');
@@ -111,4 +123,40 @@ function power_units = stabilizePolynomialEndpoints(power_units, controlPoint_un
         correction = permute(reshape(endMap \ residual, 4, segmentCount, 2), [2 3 1]);
         power_units(:, :, endPower + 1) = power_units(:, :, endPower + 1) + correction;
     end
+end
+
+function controls_units = projectQuinticContinuity(controls_units,durations_s)
+    % A global linear projection enforces C3 joins while preserving endpoint
+    % p/v/a. Unlike independent span endpoint repair, these equations fit in
+    % the quintic spline space. The modified curve is certified afterward.
+    segmentCount = size(controls_units,1);
+    coefficients = {1,[-1,1],[1,-2,1],[-1,3,-3,1]};
+    rows = 6+4*(segmentCount-1);
+    map = spalloc(rows,6*segmentCount,8*rows);
+    row = 0;
+    for order = 0:2
+        scale = factorial(5)/factorial(5-order);
+        row = row+1;
+        map(row,1:order+1) = scale*coefficients{order+1}/durations_s(1)^order;
+        row = row+1;
+        map(row,6*segmentCount-order:6*segmentCount) = scale*coefficients{order+1}/durations_s(end)^order;
+    end
+    for segment = 1:segmentCount-1
+        for order = 0:3
+            scale = factorial(5)/factorial(5-order);
+            row = row+1;
+            map(row,6*segment-order:6*segment) = scale*coefficients{order+1}/durations_s(segment)^order;
+            map(row,6*segment+(1:order+1)) = -scale*coefficients{order+1}/durations_s(segment+1)^order;
+        end
+    end
+    rowScale = full(max(abs(map),[],2));
+    map = spdiags(1./rowScale,0,rows,rows)*map;
+    origin = reshape(controls_units(1,1,:),1,2);
+    values = reshape(permute(controls_units,[2,1,3]),[],2)-origin;
+    target = zeros(rows,2); target(1:6,:) = map(1:6,:)*values;
+    factor = decomposition(map*map.','chol');
+    for pass = 1:2
+        values = values+map.'*(factor\(target-map*values));
+    end
+    controls_units = permute(reshape(values+origin,6,segmentCount,2),[2,1,3]);
 end

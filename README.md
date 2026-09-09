@@ -4,7 +4,10 @@ The `build-core` branch starts at `bmtp-emptycore` commit `26c343b` and extends
 the shared BMTP equations to prescribed position, velocity, and acceleration
 at both endpoints. Reaching the terminal state ends the segment; stopping is
 optional. See [BUILD_CORE.md](BUILD_CORE.md) for the implementation and measured
-audit, including limitations and unfavorable results.
+audit at commit `bdb3a65`. The subsequent C3 quintic change and its
+verification are documented in [C3_QUINTIC.md](C3_QUINTIC.md).
+The subsequent runtime investigation and controlled comparisons are in
+[RUNTIME_OPTIMIZATION.md](RUNTIME_OPTIMIZATION.md).
 
 ```matlab
 addpath(pwd, fullfile(pwd, 'trajectory'));
@@ -22,8 +25,8 @@ Expected no-path and infeasible outcomes use stable `Success`, `Message`, and
 
 Omitted or empty `velocity_units_s` and `acceleration_units_s2` default to
 `[0 0]`; supplied values are preserved. Fixed-arrival BMTP constrains the first
-and last span using their own physical durations. Shared joins remain C2 and
-do not impose stops at route-guide vertices. Nonzero-state motion is never
+and last span using their own physical durations. Shared joins are C3 and
+do not impose stops at route-guide vertices. Motion is never
 stretched after solving. Static earliest arrival integrates the full initial
 state, optimizes physical jerk and phase times, and repairs at those exact
 durations. This local optimization does not prove a global earliest arrival.
@@ -66,14 +69,15 @@ bounds on disabled axes. Returned polynomials and samples remain continuous
 and unwrapped; plots wrap coordinates and break lines at display seams.
 Periodic obstacle and moving-target requests are explicitly unsupported.
 
-Eligible rest-only analytical bounds and departure schedules remain in use.
-Other earliest dynamic and target requests use chronological fixed-arrival
-trials, with `TemporalResolution_s` (default 0.5 s) and `MaxArrivalTrials`
-(default 100). Source/activity boundaries are included. `TemporalSearch`
-reports trial outcomes, budget, unsearched open intervals and tail, and the
-absence of a global earliest proof. No stationary wait is prepended to a
-nonzero initial state. `arrivalSearchExhausted` means that no tested time was
-certified, not that all physical trajectories are infeasible.
+Rest-to-rest dynamic chords can include a stationary wait joined with zero
+jerk. A positive triangular smoothing kernel turns the former bang-bang
+profile into continuous quadratic jerk and quintic position, increasing its
+duration. Other earliest dynamic and target requests use chronological
+fixed-arrival trials, with `TemporalResolution_s` (default 0.5 s) and
+`MaxArrivalTrials` (default 100). Source/activity boundaries are included.
+`TemporalSearch` reports trials, budget, unsearched intervals, and the absence
+of a global earliest proof. `arrivalSearchExhausted` means no tested time was
+certified; it does not prove physical infeasibility.
 
 ## Planning method
 
@@ -84,38 +88,26 @@ when their exact union is convex. Visibility search uses the protected occupied
 union, including holes and disconnected components. A* evaluates exact graph
 edges as needed, with a Euclidean distance lower bound.
 
-Eligible rest-to-rest earliest motion begins with the analytic jerk-limited direct chord and the
-independent-axis timing bound. For a static monotone detour, the prepared
-geometry is searched once. A sweep constructs the exact affine obstacle
-boundaries facing the visibility guide. The limiting coordinate follows its
-analytic clock; the free coordinate integrates quadratic Bernstein jerk through
-shared position, velocity, and acceleration. Restricting these polynomials to
-the source-facet intervals gives linear corridor constraints. One convex solve
-minimizes length at the timing bound. When more time is required, convex time
-powers determine a common dilation, followed by length optimization. Positive
-Gauss-Legendre weights provide a convex quadrature of the actual speed for
-this objective, avoiding the excess length of a control-polygon approximation.
+Returned position spans use degree-five polynomials, with continuous position,
+velocity, acceleration, and jerk at every internal join. Endpoint position,
+velocity, and acceleration remain prescribed; endpoint jerk is free unless
+joining a stationary wait. No new snap limit is imposed.
 
-This upfront representation removes repeated geometry projection and avoids
-one optimization constraint block per motion-span/source-cell pair. For the
-Philippines input, static geometry reuse reduces the clock graph from 1,983 to
-630 nodes and the motion mesh from 20 to 8 spans. The corridor still uses all
-2,193 exact convex source regions; no coastline is simplified.
+Direct rest motion uses a minimum-jerk quintic with duration determined by its
+exact velocity, acceleration, and jerk peaks. This optimizes duration within
+that family, not over all C3 splines. Static monotone detours reuse exact source
+facet corridors with a smoothed quintic locked coordinate and integrated quadratic jerk
+in the free coordinate. Other static detours jointly optimize quadratic jerk
+and phase durations, followed by a conic repair. Fixed-arrival motion enforces
+C3 joins in the shared Bernstein equations. Timed obstacles retain their exact
+affine cells and absolute activity intervals. No example identity selects a
+production method.
 
-Static routes that require reversing the limiting coordinate use integrated
-constant-jerk cubic phases. A conic solve initializes their clock, joint
-optimization varies jerk and phase times with analytic derivatives, and a final
-conic solve optimizes time and length at those phase ratios. Timed moving
-obstacles retain affine convex cells with their original absolute activity
-intervals. The fixed-clock formulation minimizes length under those cells;
-analytic departure scheduling also handles applicable earliest dynamic chords.
-No example names or geographic identities select production behavior.
-
-Every returned motion is C2: position, velocity, and acceleration are continuous.
-Bounded jerk jumps are allowed, as requested. Exact jerk-limited timing reaches
-the obstacle-free reference of 4.531128874149275 s; enforcing continuous jerk
-would prevent attaining that bound. Curves are exported in the shared
-degree-eight polynomial format, preserving analytic low-degree powers.
+Export preserves the physical clock. A global continuity projection stays in
+the quintic spline space, and every corrected motion is checked again. Exact
+subdivision exposes collision clearance without changing the curve. Historical
+C2 timing bounds generally cannot be attained with continuous jerk; the
+workbook references remain unchanged so regressions stay visible.
 
 Finite solver iterates are proposals. Success requires the public independent
 validator to reconstruct source geometry and the final motion and check
@@ -133,12 +125,12 @@ addpath('trajectory', 'examples', 'tests');
 assertSuccess(runtests('tests'));
 checkBenchmarkTimingContract();
 summary = runExampleBenchmarks([], 3);
-assert(all(summary.Valid & summary.MeetsQuality));
+disp(summary(:, {'Case','Valid','MeetsQuality'}));
 disp(summary(:, {'Case','WallTime_s','ReferenceWallTime_s','MeetsAll'}));
 ```
 
-Inspect the runtime gates separately; the final marginal timing miss is recorded
-in BUILD_CORE.md. The unchanged references are in
+Inspect validity and historical quality/runtime gates separately. C3 results
+and limitations are recorded in C3_QUINTIC.md. The unchanged references are in
 `benchmarks/bmtp_emptycore_benchmark.xlsx`.
 The runner times the entire example with plotting disabled and profiling off,
 uses identical inputs, reports all runs, and requires independent validity.
@@ -150,8 +142,8 @@ Generated CSV/MAT/log artifacts remain outside source control.
 The geographic example executes Hawaii, Croatia, and the Philippines in order.
 Every regional result is captured and independently validated. Its historical
 arrival and length row describes the final Philippines result; its runtime
-covers the complete three-region example. All nine regional results in this
-three-run audit passed. The no-path example passes only with the expected
+covers the complete three-region example. All nine regional results in the
+historical C2 three-run audit passed. The no-path example passes only with the expected
 explicit no-route outcome and no returned motion.
 
 The workbook's seed-route length may describe a blocked direct chord, while its

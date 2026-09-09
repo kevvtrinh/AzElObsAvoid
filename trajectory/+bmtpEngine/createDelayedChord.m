@@ -1,25 +1,25 @@
 function [controls_units,durations_s,prescribedPower_units,diagnostics] = createDelayedChord(request)
 %% Section 0: Header & Readme
 % SYNTAX: [controls,times,powers,diagnostics] = bmtpEngine.createDelayedChord(request)
-% PURPOSE: Find the earliest safe departure of the exact jerk-limited chord.
+% PURPOSE: Find the earliest safe departure of the C3 quintic chord.
 % INPUTS: Validated rest-to-rest request and authoritative convex time cells.
 % OUTPUTS: Waiting plus chord motion, or empty arrays when no delay is available.
 % UNITS: Coordinate units, seconds, and normalized polynomial coefficients.
 
 %% Section 1: Construct The Scalar Progress Clock
 
-[controls_units,durations_s,phases] = bmtpEngine.createJerkLimitedChord( ...
-    request.InitialState.position_units,request.GoalState.position_units,request.Limits,request.Degree);
+[controls_units,durations_s,prescribedPower_units] = bmtpEngine.createC3Chord( ...
+    request.InitialState.position_units,request.GoalState.position_units,request.Limits);
+phases = struct('StartTime_s',[0;cumsum(durations_s(1:end-1))],'SegmentTime_s',durations_s);
 duration_s = sum(durations_s);
 maximumWait_s = request.MotionHorizon_s-duration_s;
 initial_units = request.InitialState.position_units;
 direction_units = request.GoalState.position_units-initial_units;
 directionNorm2_units2 = sum(direction_units.^2);
 normal = [-direction_units(2),direction_units(1)]/sqrt(directionNorm2_units2);
-progressPower = [(phases.Position_units-initial_units)*direction_units.'/directionNorm2_units2, ...
-    phases.Velocity_units_s*direction_units.'.*durations_s/directionNorm2_units2, ...
-    phases.Acceleration_units_s2*direction_units.'.*durations_s.^2/(2*directionNorm2_units2), ...
-    phases.Jerk_units_s3*direction_units.'.*durations_s.^3/(6*directionNorm2_units2)];
+relativePower = prescribedPower_units;
+relativePower(:,:,1) = relativePower(:,:,1)-initial_units;
+progressPower = reshape(sum(relativePower.*reshape(direction_units,1,2,1),2),[],6)/directionNorm2_units2;
 endRegions_units = {};
 if isfield(request.Coverage,'EndRegions_units'), endRegions_units = request.Coverage.EndRegions_units; end
 [~,~,reserve_units] = bmtpEngine.createCoordinateTolerances(initial_units,request.GoalState.position_units, ...
@@ -70,17 +70,17 @@ for region = 1:numel(request.Regions_units)
         for phase = 1:numel(durations_s)
             overlap = [max(range(1),progressPower(phase,1)),min(range(2),sum(progressPower(phase,:)))];
             if overlap(1)>overlap(2), continue; end
-            u = [invertCubic(progressPower(phase,:),overlap(1)),invertCubic(progressPower(phase,:),overlap(2))];
+            u = [invertProgress(progressPower(phase,:),overlap(1)),invertProgress(progressPower(phase,:),overlap(2))];
             delayPower_s = slope_s*progressPower(phase,:);
             delayPower_s(1) = delayPower_s(1)+intercept_s-request.InitialState.time_s-phases.StartTime_s(phase);
             delayPower_s(2) = delayPower_s(2)-durations_s(phase);
-            derivative = delayPower_s(2:end).*(1:3);
+            derivative = delayPower_s(2:end).*(1:5);
             last = find(derivative~=0,1,'last');
             stationary = [];
             if ~isempty(last), stationary = roots(fliplr(derivative(1:last))); end
             stationary = real(stationary(abs(imag(stationary))<=64*eps(max(1,abs(stationary)))));
             u = [u,reshape(stationary(stationary>=u(1) & stationary<=u(2)),1,[])];
-            values_s = delayPower_s*[ones(size(u));u;u.^2;u.^3];
+            values_s = polyval(fliplr(delayPower_s),u);
             low_s = min(low_s,min(values_s)); high_s = max(high_s,max(values_s));
         end
     end
@@ -103,16 +103,10 @@ for k = 1:size(forbidden_s,1)
 end
 diagnostics = struct('DepartureDelay_s',wait_s,'ForbiddenDepartureInterval_s',forbidden_s, ...
     'Available',wait_s<=maximumWait_s,'MotionDuration_s',duration_s);
-prescribedPower_units = [];
 if ~diagnostics.Available
-    controls_units = zeros(0,request.Degree+1,2); durations_s = zeros(0,1);
+    controls_units = zeros(0,request.Degree+1,2); durations_s = zeros(0,1); prescribedPower_units = [];
     return;
 end
-prescribedPower_units = zeros(numel(durations_s),2,request.Degree+1);
-prescribedPower_units(:,:,1) = phases.Position_units;
-prescribedPower_units(:,:,2) = phases.Velocity_units_s.*durations_s;
-prescribedPower_units(:,:,3) = phases.Acceleration_units_s2.*durations_s.^2/2;
-prescribedPower_units(:,:,4) = phases.Jerk_units_s3.*durations_s.^3/6;
 if wait_s>0
     controls_units = cat(1,reshape(repmat(initial_units,request.Degree+1,1),1,request.Degree+1,2),controls_units);
     durations_s = [wait_s;durations_s];
@@ -132,14 +126,19 @@ end
 function relative_s = inverseProgress(progressPower,phases,position)
     phase = find(sum(progressPower,2)>=position,1);
     if isempty(phase), phase = size(progressPower,1); end
-    relative_s = phases.StartTime_s(phase)+phases.SegmentTime_s(phase)*invertCubic(progressPower(phase,:),position);
+    relative_s = phases.StartTime_s(phase)+phases.SegmentTime_s(phase)*invertProgress(progressPower(phase,:),position);
 end
 
-function u = invertCubic(coefficients,position)
+function u = invertProgress(coefficients,position)
+    % Most overlap endpoints are exact phase boundaries; their inverse is
+    % known. Avoid repeatedly bisecting these same endpoint values.
+    if position<=coefficients(1), u=0; return; end
+    if position>=sum(coefficients), u=1; return; end
     low = 0; high = 1;
     for iteration = 1:48
         middle = (low+high)/2;
-        value = coefficients*[1;middle;middle^2;middle^3];
+        value = coefficients(1)+middle*(coefficients(2)+middle*(coefficients(3)+ ...
+            middle*(coefficients(4)+middle*(coefficients(5)+middle*coefficients(6)))));
         if value<position, low=middle; else, high=middle; end
     end
     u = (low+high)/2;

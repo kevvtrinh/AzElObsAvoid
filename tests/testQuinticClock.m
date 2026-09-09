@@ -1,9 +1,9 @@
-function tests = testCubicClock
+function tests = testQuinticClock
 %% Section 0: Header & Readme
-% SYNTAX: results = runtests('tests/testCubicClock.m')
+% SYNTAX: results = runtests('tests/testQuinticClock.m')
 % PURPOSE: Check variable-clock detours, coordinate changes, and infeasibility.
 % INPUTS: MATLAB unit test framework.
-% OUTPUTS: Independent physical and collision checks of returned cubic motion.
+% OUTPUTS: Independent physical and collision checks of returned quintic motion.
 % UNITS: Coordinate units and seconds.
 tests = functiontests(localfunctions);
 end
@@ -14,16 +14,16 @@ function setupOnce(testCase)
     testCase.TestData.Vertices_units = [-8,7;-5,7;-5,-4;5,-4;5,7;8,7;8,-7;-8,-7];
 end
 
-function testStaticDetourHasBoundedJerkJumps(testCase)
+function testStaticDetourHasContinuousJerk(testCase)
     r = exampleStaticUShapedObstacle(struct('PlotOutputs',false,'Verbose',false));
     verifyTrue(testCase,r.Success,r.Message);
     verifyTrue(testCase,obstacleAvoidance.validateTrajectory(r).Passed);
-    verifyEqual(testCase,r.SolverDiagnostics.Identifier,"cubicJerkClock");
-    highPowers = r.Polynomial.positionPower_units(:,:,5:end);
-    verifyEqual(testCase,highPowers,zeros(size(highPowers)));
-    jerkJump_units_s3 = diff(r.Polynomial.jerkPower_units_s3(:,:,1),1,1);
-    verifyGreaterThan(testCase,max(abs(jerkJump_units_s3),[],'all'),0.1);
-    verifyLessThan(testCase,r.TrajectoryDuration_s,21);
+    verifyEqual(testCase,r.SolverDiagnostics.Identifier,"quinticJerkClock");
+    verifyEqual(testCase,r.Polynomial.Degree,5);
+    jerk=r.Polynomial.jerkPower_units_s3;
+    verifyLessThanOrEqual(testCase,max(abs(sum(jerk(1:end-1,:,:),3)-jerk(2:end,:,1)),[],'all'),1e-8);
+    verifyLessThanOrEqual(testCase,r.TrajectoryDuration_s,r.Inputs.goalState.time_s);
+
 end
 
 function testTranslatedSwappedAxes(testCase)
