@@ -64,8 +64,10 @@ recognized too.
    keep this model better conditioned. The final conic solve generates the path
    using length and jerk-variation objectives.
 5. The existing `PathLengthTimeAllowance_s` is shared between timing regularization
-   and the final length/variation solve: half for each, with no additional time
-   budget. Setting it to zero removes both allowances.
+   and the final length/variation solve: two thirds for timing regularization and
+   one third for final repair, with no additional time budget. Setting it to zero
+   removes both allowances. See [C3_CONIC_CORE.md](C3_CONIC_CORE.md) for the measured
+   runtime and arrival-time follow-up and its path-length tradeoffs.
 
 `C3ProfileMode='warmStart'` retains the ordinary phase grid and full 200-iteration
 timing budget. It still uses the profile shortlist. It is available for cases

@@ -95,9 +95,9 @@ iterationLimit=200;
 extraTime_s=0;
 if isProfile && warmStart.ProfileMode=="repair"
     iterationLimit=40;
-    % Share the existing allowance between phase generation and the final
-    % length/variation solve instead of adding another independent budget.
-    extraTime_s=request.Options.PathLengthTimeAllowance_s/2;
+    % Use one third of the existing allowance for final length/variation
+    % repair; the remaining two thirds regularize the arrival-time search.
+    extraTime_s=request.Options.PathLengthTimeAllowance_s/3;
 end
 refineRequest=request;
 refineRequest.Options.PathLengthTimeAllowance_s=request.Options.PathLengthTimeAllowance_s-extraTime_s;
@@ -442,7 +442,7 @@ function [times_s,exitFlag,output] = refinePhaseTimes(request,times_s,jerks_unit
     variationGram=(difference.'*difference)/(16*segmentCount);
     % Each normalized jerk difference is in [-2,2], so this entire penalty
     % is bounded by the allowance assigned to this timing refinement. Profile
-    % repair reserves the other half of its budget for final curve generation.
+    % repair reserves the remaining share for final curve generation.
     variationAllowance_s=request.Options.PathLengthTimeAllowance_s;
     lastJacobian=sparse(0,variableCount);
     subproblemAlgorithm='cg';

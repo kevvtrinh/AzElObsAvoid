@@ -77,6 +77,22 @@ function testWarmStartRetainsTimeOptimization(testCase)
     verifyGreaterThan(testCase,result.SolverDiagnostics.NonlinearSolver.funcCount,0);
 end
 
+function testRepairWithExplicitTimeAllowances(testCase)
+    for allowance_s=[0,0.3]
+        options=profileOptions(testCase);
+        options.PathLengthTimeAllowance_s=allowance_s;
+        result=planner(testCase.TestData.Inputs{:},options);
+        verifyTrue(testCase,result.Success,result.Message);
+        verifyTrue(testCase,obstacleAvoidance.validateTrajectory(result).Passed);
+        verifyTrue(testCase,result.SolverDiagnostics.ProfileLibrary.Accepted);
+        verifyGreaterThanOrEqual(testCase,result.SolverDiagnostics.ProfileExtraTime_s,0);
+        verifyLessThanOrEqual(testCase,result.SolverDiagnostics.ProfileExtraTime_s,allowance_s);
+        usedAllowance_s=result.SolverDiagnostics.ProfileExtraTime_s+ ...
+            result.SolverDiagnostics.NonlinearSolver.JerkVariationPenalty_s;
+        verifyLessThanOrEqual(testCase,usedAllowance_s,allowance_s+1e-8);
+    end
+end
+
 function testLengthCapRetriesOrdinarySolver(testCase)
     options=profileOptions(testCase);
     options.C3ProfileMaxLength_units=1;
